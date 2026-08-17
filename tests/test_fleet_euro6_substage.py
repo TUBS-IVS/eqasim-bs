@@ -62,12 +62,21 @@ def _write_derived(tmp_path: Path, name: str, df: pd.DataFrame) -> str:
     return str(tmp_path)
 
 
-def _mirror_real_data_with_extras(tmp_path: Path, extra_files: "dict[str, pd.DataFrame]") -> str:
+def _mirror_real_data_with_extras(tmp_path: Path,
+                                  extra_files: "dict[str, pd.DataFrame]",
+                                  omit_files: "tuple[str, ...]" = ()) -> str:
     """Symlink the real derived CSV directory into ``tmp_path`` and overlay
     ``extra_files`` (name -> DataFrame) on top, mirroring the pattern used by
     ``tests/test_fleet_b1_euro_kreis.py``. Skips the test when the real derived
     data directory is absent (server-generated CSVs may not be present locally
-    beyond the base fleet tables)."""
+    beyond the base fleet tables).
+
+    ``omit_files`` names CSVs that must NOT appear in the mirror. An
+    absent-data scenario has to state its absences explicitly: the real derived
+    directory is a moving target -- once a table is generated and committed, a
+    test that relied on it being missing would silently start testing the
+    present-data path instead (which is exactly what happened when the eight
+    new KBA tables landed)."""
     if not (DATA / "braunschweig" / "kba" / "derived").exists():
         pytest.skip("real derived data directory absent")
     derived = tmp_path / "braunschweig" / "kba" / "derived"
@@ -78,7 +87,7 @@ def _mirror_real_data_with_extras(tmp_path: Path, extra_files: "dict[str, pd.Dat
         # then write THROUGH the symlink into the real committed derived CSV and
         # corrupt it (the write-through-a-link data-loss class). Overlaid names are
         # written fresh below instead.
-        if src.name in extra_files:
+        if src.name in extra_files or src.name in omit_files:
             continue
         dst = derived / src.name
         if dst.exists():
@@ -339,8 +348,16 @@ def test_diesel_euro6_substage_reflects_kreis_composition(contrast_sampled):
         "not enough diesel cars drawn in the two contrast Kreise for a stable "
         f"comparison (n_a={len(diesel_a)}, n_b={len(diesel_b)})"
     )
-    share_6d_a = float((diesel_a["euro_class"] == "euro6d").mean())
-    share_6d_b = float((diesel_b["euro_class"] == "euro6d").mean())
+    # ADR-0084: the substage lives in its own column; euro_class keeps "euro6".
+    # Compare WITHIN the Euro-6 cars so the share is a substage composition and
+    # not diluted by the (Kreis-specific) Euro-6 share itself.
+    def _share_6d(df):
+        euro6 = df[df["euro_class"] == "euro6"]
+        assert len(euro6) > 20, f"too few euro6 diesel cars ({len(euro6)})"
+        return float((euro6["euro6_substage"] == "euro6d").mean())
+
+    share_6d_a = _share_6d(diesel_a)
+    share_6d_b = _share_6d(diesel_b)
     assert share_6d_a > share_6d_b + 0.3, (share_6d_a, share_6d_b)
 
 
@@ -366,7 +383,9 @@ def test_low_euro_classes_still_present_and_valid(contrast_sampled):
     df_spec, _, _ = contrast_sampled
     combustion = df_spec[df_spec["powertrain"].isin(hbefa.COMBUSTION_POWERTRAINS)]
     classes = set(combustion["euro_class"].unique())
-    allowed = (set(ft.EURO_CLASS_LABELS) - {"euro6"}) | set(SUBSTAGES)
+    # ADR-0084: euro_class NEVER leaves the canonical KBA vocabulary -- the
+    # substage refinement is carried by the euro6_substage column instead.
+    allowed = set(ft.EURO_CLASS_LABELS)
     assert classes <= allowed, classes - allowed
     assert classes & {"euro1", "euro2", "euro3", "euro4", "euro5", "other"}, (
         "expected at least one untouched low Euro class to still be present"
@@ -377,15 +396,21 @@ def test_substage_labels_actually_appear(contrast_sampled):
     """Sanity: with substage data present everywhere, the feature actually
     fires (this is not a vacuously-passing test suite)."""
     df_spec, _, _ = contrast_sampled
-    assert set(SUBSTAGES) & set(df_spec["euro_class"].unique())
-    combustion_classes = set(
-        df_spec.loc[df_spec["powertrain"].isin(hbefa.COMBUSTION_POWERTRAINS), "euro_class"]
-        .unique()
+    assert set(SUBSTAGES) & set(df_spec["euro6_substage"].unique())
+    # Every combustion Euro-6 car in this fixture has a usable substage pmf
+    # (per-Kreis and national), so none may keep the not-applicable label.
+    euro6_combustion = df_spec[
+        df_spec["powertrain"].isin(hbefa.COMBUSTION_POWERTRAINS)
+        & (df_spec["euro_class"] == "euro6")
+    ]
+    assert len(euro6_combustion) > 0
+    assert set(euro6_combustion["euro6_substage"].unique()) <= set(SUBSTAGES), (
+        "a combustion Euro-6 car kept the not-applicable substage label even "
+        "though both the per-Kreis and the national pmf are available"
     )
-    assert "euro6" not in combustion_classes, (
-        "every combustion Kreis+fuel in this fixture has a usable substage pmf "
-        "(per-Kreis and national); no plain 'euro6' should remain"
-    )
+    # ... and conversely every non-Euro-6 / electrified car keeps it.
+    others = df_spec[~df_spec.index.isin(euro6_combustion.index)]
+    assert (others["euro6_substage"] == ft.EURO6_SUBSTAGE_NOT_APPLICABLE).all()
 
 
 # --------------------------------------------------------------------------- #
@@ -401,18 +426,25 @@ def test_validator_not_flagged_for_euro_class(contrast_sampled):
 # --------------------------------------------------------------------------- #
 # (d) Flag OFF / data-absent -> byte-identical, no extra RNG consumed
 # --------------------------------------------------------------------------- #
-def test_absent_data_flag_value_does_not_matter():
-    """Locally, both kba_kreis_euro.csv and kba_fuel_euro6_substage_nds.csv are
-    absent (server-generated). With data absent, euro6_substage=True must
-    consume exactly as much RNG as euro6_substage=False -- i.e. produce a
-    byte-identical seeded fleet."""
-    sampler = fs.FleetSampler.from_data_path(DATA_PATH)
+def test_absent_data_flag_value_does_not_matter(tmp_path_factory):
+    """With BOTH substage sources absent, euro6_substage=True must consume
+    exactly as much RNG as euro6_substage=False -- i.e. produce a byte-identical
+    seeded fleet.
+
+    The absence is constructed explicitly in a mirror; both tables are committed
+    now, so reading the real data path would test the present-data path instead.
+    """
+    data_path = _mirror_real_data_with_extras(
+        tmp_path_factory.mktemp("b5_absent_both"), {},
+        omit_files=("kba_kreis_euro.csv", "kba_fuel_euro6_substage_nds.csv"),
+    )
+    sampler = fs.FleetSampler.from_data_path(data_path)
     df_cars = _make_cars(n_per_kreis=300, seed=1)
 
     df_on, _, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=99, sampler=sampler, euro6_substage=True)
+        df_cars, data_path, random_seed=99, sampler=sampler, euro6_substage=True)
     df_off, _, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=99, sampler=sampler, euro6_substage=False)
+        df_cars, data_path, random_seed=99, sampler=sampler, euro6_substage=False)
     pd.testing.assert_frame_equal(df_on, df_off)
 
 
@@ -436,10 +468,13 @@ def test_flag_off_matches_data_effectively_absent_pre_b4_schema(tmp_path_factory
         "kba_kreis_euro.csv": df_with_substage,
         "kba_fuel_euro6_substage_nds.csv": _make_national_substage_df_full(),
     })
-    dp_without = _mirror_real_data_with_extras(tmp_without, {
-        "kba_kreis_euro.csv": df_pre_b4,
-        # deliberately no kba_fuel_euro6_substage_nds.csv -> both sources absent.
-    })
+    dp_without = _mirror_real_data_with_extras(
+        tmp_without,
+        {"kba_kreis_euro.csv": df_pre_b4},
+        # The national substage table is committed now, so "deliberately not
+        # overlaid" is not enough -- it must be omitted from the mirror.
+        omit_files=("kba_fuel_euro6_substage_nds.csv",),
+    )
 
     sampler_with = fs.FleetSampler.from_data_path(dp_with)
     sampler_without = fs.FleetSampler.from_data_path(dp_without)

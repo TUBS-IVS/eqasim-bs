@@ -212,9 +212,17 @@ def test_ev_income_tilt_redistributes_within_kreis_and_preserves_aggregate(
     bev_low = float((df_spec.loc[df_spec["economic_status"] == "very_low", "powertrain"] == "bev").mean())
     bev_pooled = float((df_spec["powertrain"] == "bev").mean())
 
-    assert bev_high > bev_low + 0.02, (
+    # The redistribution is RELATIVE (f = clip(P(pt|status)/P(pt|all), 0.2, 5)),
+    # so its observable signature is a ratio, not a percentage-point gap: the
+    # absolute spread scales with the Kreis base bev share, which is ~3% under the
+    # per-Kreis 46251-02 marginal (ADR-0081). An absolute 2pp threshold silently
+    # encodes a base share above ~10% and fails for a purely arithmetic reason
+    # once the marginal is regionalised.
+    assert bev_low > 0.0, "test needs a non-zero very_low bev share for a ratio"
+    assert bev_high > 1.5 * bev_low, (
         f"very_high bev share ({bev_high:.4f}) should be clearly higher than "
-        f"very_low ({bev_low:.4f}) -- the within-Kreis redistribution effect"
+        f"very_low ({bev_low:.4f}) -- the within-Kreis redistribution effect "
+        f"(realised ratio {bev_high / bev_low:.2f}x, required > 1.5x)"
     )
     assert bev_pooled == pytest.approx(target_bev_share, abs=0.02), (
         f"pooled bev share ({bev_pooled:.4f}) should stay anchored to the "

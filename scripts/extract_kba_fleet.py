@@ -824,8 +824,13 @@ def _read_modellreihen(path) -> pd.DataFrame:
     # sep=None + the python engine runs csv.Sniffer over the header.
     raw = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig",
                       dtype=str)
-    # Normalise column names (strip leading/trailing whitespace).
-    raw.columns = [c.strip() for c in raw.columns]
+    # Normalise column names: strip whitespace AND any byte-order mark. The BOM
+    # strip is not redundant with encoding="utf-8-sig": the pandas C parser drops
+    # a BOM that survives decoding, the python engine (required for delimiter
+    # sniffing) does not, and a file whose content itself starts with U+FEFF and
+    # is additionally written as utf-8-sig carries two -- decoding removes one and
+    # the other would end up inside the first column's name.
+    raw.columns = [c.strip().lstrip("﻿").strip() for c in raw.columns]
     missing = [c for c in MODELLREIHEN_REQUIRED_COLUMNS if c not in raw.columns]
     if missing:
         raise ValueError(

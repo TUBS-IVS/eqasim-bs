@@ -70,6 +70,15 @@ EURO_CLASS_LABELS: tuple[str, ...] = (
 #: set has exactly three members.
 EURO6_SUBSTAGE_LABELS: tuple[str, ...] = ("euro6ab", "euro6dtemp", "euro6d")
 
+#: Value of the ``euro6_substage`` output column for every car the substage does
+#: NOT apply to: a non-Euro-6 vehicle, an electrified/fuel-cell drivetrain (no
+#: combustion Euro stage at all), or a combustion Euro-6 car for which no
+#: substage reference data resolved. This is a REAL category, not a missing
+#: marker: the emitted fleet carries no NA/None anywhere (ADR-0081 item A4), and
+#: a reader can distinguish "substage unknown/not applicable" from a drawn
+#: substage without null handling. See ADR-0084.
+EURO6_SUBSTAGE_NOT_APPLICABLE: str = "not_applicable"
+
 #: The three additive Euro-6 substage COUNT columns on ``kba_kreis_euro.csv``
 #: (Task B4). OPTIONAL for backward compatibility -- see :func:`load_kreis_euro`.
 EURO6_SUBSTAGE_COLUMNS: tuple[str, ...] = ("euro6d", "euro6dtemp", "euro6ab")

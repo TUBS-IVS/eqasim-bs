@@ -2332,6 +2332,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     out_segment = [""] * n
     out_powertrain = [""] * n
     out_euro = [""] * n
+    # Task B5 / ADR-0084: the Euro-6 substage lives in its OWN column so
+    # euro_class keeps the canonical FZ 27.4 vocabulary. Pre-filled with the
+    # not-applicable category, so a row that never reaches the substage draw
+    # (legacy path, non-Euro-6, electrified) still carries a real value.
+    out_euro6_substage = [ft.EURO6_SUBSTAGE_NOT_APPLICABLE] * n
     out_age_band = [""] * n
     out_age = [0] * n
     out_brand = [""] * n
@@ -2411,10 +2416,24 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     records = df_cars.to_dict(orient="records")
 
     def _finalize_spec(i: int, segment: str, powertrain: str, euro_class: str,
-                       age_band: str, brand: str, model: str) -> None:
-        """Map the (powertrain, euro, segment) triple to HBEFA and store row i."""
+                       age_band: str, brand: str, model: str,
+                       euro6_substage_label: str = ft.EURO6_SUBSTAGE_NOT_APPLICABLE
+                       ) -> None:
+        """Map the (powertrain, euro, segment) triple to HBEFA and store row i.
+
+        ``euro6_substage_label`` is the Euro-6 substage drawn for a combustion
+        Euro-6 car (``euro6ab`` / ``euro6dtemp`` / ``euro6d``) or
+        :data:`ft.EURO6_SUBSTAGE_NOT_APPLICABLE`. It refines the HBEFA emission
+        concept ONLY -- ``euro_class`` keeps its canonical headline label so the
+        realised Euro marginal stays comparable to the KBA reference (ADR-0084).
+        """
+        # The HBEFA concept is the one place the substage must be visible: HBEFA
+        # tabulates Euro-6ab / 6d-temp / 6d as distinct emission concepts.
+        euro_for_hbefa = (euro6_substage_label
+                          if euro6_substage_label in ft.EURO6_SUBSTAGE_LABELS
+                          else euro_class)
         vt = hbefa.vehicle_type_for(
-            powertrain, euro_class, segment,
+            powertrain, euro_for_hbefa, segment,
             size_map=sampler.size_map,
             fallback_counter=size_fallback_counter,
         )
@@ -2422,6 +2441,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         out_segment[i] = segment
         out_powertrain[i] = powertrain
         out_euro[i] = euro_class
+        out_euro6_substage[i] = euro6_substage_label
         out_age_band[i] = age_band
         out_age[i] = AGE_BAND_MIDPOINT_YEARS[age_band]
         out_brand[i] = brand
@@ -2740,6 +2760,10 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             # was already overridden to "electric"; phev/hybrid are excluded
             # because they are not in hbefa.COMBUSTION_POWERTRAINS, so they
             # always keep their drawn combustion-shaped euro_class untouched).
+            # ADR-0084: the drawn substage refines the HBEFA emission concept and
+            # is emitted as its own column; euro_class is NOT overwritten, so the
+            # realised Euro marginal stays comparable to FZ 27.4 / 46251-03.
+            _euro6_substage_label = ft.EURO6_SUBSTAGE_NOT_APPLICABLE
             if (euro6_substage and sampler.euro6_substage is not None
                     and euro_class == "euro6"
                     and powertrain in hbefa.COMBUSTION_POWERTRAINS):
@@ -2748,14 +2772,15 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 if _substage_pmf is not None:
                     # A real pmf resolved (per-Kreis or national fallback) ->
                     # draw. The absent-data path (both fallbacks miss) returns
-                    # None above and consumes NO rng here, keeping the plain
-                    # "euro6" label (determinism / byte-identity requirement).
-                    euro_class = _draw_categorical(
+                    # None above and consumes NO rng here, keeping the
+                    # not-applicable label (determinism / byte-identity).
+                    _euro6_substage_label = _draw_categorical(
                         rng, sampler.euro6_substage.substages, _substage_pmf)
 
             _finalize_spec(
                 i, car_segment[i], powertrain, euro_class, age_band,
-                car_brand[i], car_model[i])
+                car_brand[i], car_model[i],
+                euro6_substage_label=_euro6_substage_label)
             # Task 3: record the effective inputs used for this car so that the
             # validator can compare the aggregate expected marginals to the
             # realised marginals.
@@ -2783,6 +2808,10 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     if consistency_v2:
         df_spec["brand_source"] = brand_source_list
         df_spec["powertrain_feasibility"] = powertrain_feasibility_list
+        # Task B5 / ADR-0084: the Euro-6 substage refinement. Emitted in the v2
+        # path only, like the other two provenance columns, so the legacy frame
+        # keeps its exact pre-existing schema.
+        df_spec["euro6_substage"] = out_euro6_substage
 
     df_vehicle_types = pd.DataFrame.from_records(
         [vt.as_record() for vt in vehicle_types.values()]
@@ -2982,15 +3011,18 @@ def _effective_expected(
     # labels); track it separately and merge at the end.
     electric_euro = hbefa.ELECTRIC_EURO
     euro_labels_list = list(euro_labels)
-    # Task B5: the three Euro-6 substage labels are an additional, conditional
-    # extension of the euro dimension -- present only when a substage model is
-    # actually active (mirrors the draw, which only ever emits them then).
+    # Task B5 / ADR-0084: the three Euro-6 substage labels form their OWN
+    # dimension (mirroring the ``euro6_substage`` output column), present only
+    # when a substage model is actually active -- the draw only emits substages
+    # then. They are NOT folded into the euro dimension: euro_class keeps the
+    # headline KBA vocabulary on both the realised and the expected side, which is
+    # what makes the euro comparison meaningful against FZ 27.4 / 46251-03.
     substage_labels: list[str] = (
-        list(euro6_substage_model.substages) if euro6_substage_model is not None else []
+        list(euro6_substage_model.substages) + [ft.EURO6_SUBSTAGE_NOT_APPLICABLE]
+        if euro6_substage_model is not None else []
     )
-    # Extended euro dimension: real combustion labels + "electric" category +
-    # the (possibly empty) Euro-6 substage labels.
-    euro_labels_ext = euro_labels_list + [electric_euro] + substage_labels
+    # Euro dimension: real combustion labels + the "electric" category.
+    euro_labels_ext = euro_labels_list + [electric_euro]
     if n == 0:
         return {
             "powertrain": {p: 1.0 / len(powertrains) for p in powertrains},
@@ -3002,9 +3034,13 @@ def _effective_expected(
     acc_age = np.zeros(len(age_labels), dtype=float)
     acc_euro = np.zeros(len(euro_labels_ext), dtype=float)
     electric_idx = len(euro_labels_list)  # index of the "electric" category in acc_euro
+    # Separate accumulator for the substage dimension; its last slot is the
+    # not-applicable category. Empty (and unused) when no substage model is active.
+    acc_substage = np.zeros(len(substage_labels), dtype=float)
     # Precomputed indices for the substage split (avoids repeated list.index()
     # lookups inside the per-car loop).
-    substage_ext_idx = [euro_labels_ext.index(lbl) for lbl in substage_labels]
+    substage_ext_idx = list(range(len(substage_labels) - 1)) if substage_labels else []
+    substage_na_idx = len(substage_labels) - 1 if substage_labels else 0
     euro6_col = euro_labels_list.index("euro6") if "euro6" in euro_labels_list else None
 
     if drawn_powertrains is not None:
@@ -3050,21 +3086,29 @@ def _effective_expected(
             continue
 
         euro_marginal = M.sum(axis=0).copy()  # real euro marginal
-        # Task B5: mirror the conditional Euro-6 substage draw -- split this
-        # car's "euro6" mass across the substage labels using the SAME pmf the
-        # actual draw would resolve (kreis -> national -> absent). A car whose
-        # (Kreis, powertrain) has no usable pmf keeps its "euro6" mass unsplit,
-        # exactly mirroring the draw's plain-"euro6" fallback (no false alarm).
+        # Task B5 / ADR-0084: the Euro-6 substage is its OWN dimension, so the
+        # euro_class marginal stays on the headline KBA vocabulary here -- exactly
+        # like the draw, which no longer overwrites euro_class. What IS mirrored is
+        # the substage distribution itself: this car's "euro6" mass spread over the
+        # substage labels with the SAME pmf the draw would resolve
+        # (kreis -> national -> absent), everything else counting as
+        # not-applicable. A car whose (Kreis, powertrain) has no usable pmf
+        # contributes its whole mass to not-applicable, mirroring the draw's
+        # fallback (no false alarm).
         if (euro6_substage_model is not None and euro6_col is not None
                 and drawn_powertrains is not None and kreis is not None
                 and pt in hbefa.COMBUSTION_POWERTRAINS):
             euro6_mass = float(euro_marginal[euro6_col])
-            if euro6_mass > 0.0:
-                substage_pmf = euro6_substage_model.pmf_for(kreis, pt)
-                if substage_pmf is not None:
-                    euro_marginal[euro6_col] = 0.0
-                    for k, ext_idx in enumerate(substage_ext_idx):
-                        acc_euro[ext_idx] += euro6_mass * float(substage_pmf[k])
+            substage_pmf = (euro6_substage_model.pmf_for(kreis, pt)
+                            if euro6_mass > 0.0 else None)
+            if substage_pmf is not None:
+                for k, ext_idx in enumerate(substage_ext_idx):
+                    acc_substage[ext_idx] += euro6_mass * float(substage_pmf[k])
+                acc_substage[substage_na_idx] += 1.0 - euro6_mass
+            else:
+                acc_substage[substage_na_idx] += 1.0
+        elif euro6_substage_model is not None:
+            acc_substage[substage_na_idx] += 1.0
         acc_euro[:len(euro_labels_list)] += euro_marginal
 
     # Normalise by n to get mean expected marginals (which sum to 1.0).
@@ -3072,16 +3116,20 @@ def _effective_expected(
     # when they have mass (i.e. the corresponding feature was actually active
     # and drew at least once) -- the headline euro_labels_list entries (incl.
     # plain "euro6") are always included, even at 0.0.
-    conditional_labels = {electric_euro, *substage_labels}
+    conditional_labels = {electric_euro}
     euro_dict: dict[str, float] = {}
     for j, e in enumerate(euro_labels_ext):
         v = float(acc_euro[j] / n)
         if v > 0.0 or e not in conditional_labels:
             euro_dict[e] = v
-    return {
+    out: dict[str, dict[str, float]] = {
         "powertrain": {p: float(acc_pt[j] / n)
                        for j, p in enumerate(powertrains)},
         "age_band": {a: float(acc_age[j] / n)
                      for j, a in enumerate(age_labels)},
         "euro_class": euro_dict,
     }
+    if substage_labels:
+        out["euro6_substage"] = {lbl: float(acc_substage[j] / n)
+                                 for j, lbl in enumerate(substage_labels)}
+    return out
