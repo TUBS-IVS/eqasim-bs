@@ -56,18 +56,24 @@ The run analytics can additionally be exported as a self-contained
 dashboard is viewable inside the MATSim/SimWrapper ecosystem. There are two
 complementary, flag-gated layers:
 
-**Layer 1 - MATSim simwrapper contrib (Java).** NOTE (verified 2026-07-18): this
-Java Layer-1 integration is **not present in the `eqasim-java-bs` `main`** built
-by the pipeline. After the eqasim-java 2.2.0 upgrade the fork's `main` (MATSim
-`2026.0-2026w12`) carries **no `org.matsim.contrib:simwrapper` dependency and no
-`SimWrapperModule`** in `RunSimulation`; the Java dashboard work lives on the
-unmerged `feature/simwrapper-dashboards` branch. The Python side
-(`matsim/simulation/run.py`) still passes `--simwrapper true` when the config key
-`simwrapper_dashboards` is set (**default `False`**), but that flag is inert until
-the Java layer is merged. When active (on that branch) `RunSimulation` registers
-`SimWrapperModule` so MATSim writes standard dashboards (network volumes, mode
-share, trips/legs) as `dashboard-*.yaml` into `simulation_output/`. With the flag
-off (the default), standard runs are byte-identical.
+**Layer 1 - MATSim simwrapper contrib (Java).** Merged and active (ADR-0074,
+`eqasim-java-bs#12`; re-verified against the fork's `main` on 2026-08-17): the
+`braunschweig` module's `pom.xml` declares the `simwrapper` contrib and
+`org.eqasim.braunschweig.RunSimulation` imports `SimWrapperModule`, exposes a
+`simwrapper` command-line option and registers the module when that option is
+true. The Python side (`matsim.simulation.run`) reads the config key
+`simwrapper_dashboards` (**default `True`** per the feature-flag policy for an
+analysis-only module, ADR-0074) and appends `--simwrapper true` when it is set;
+`RunSimulation` then writes standard dashboards (network volumes, mode share,
+trips/legs) as `dashboard-*.yaml` into `simulation_output/`. Setting the key
+`false` omits the option entirely, so the Java side falls back to its own
+`false` default and the run's output directory stays byte-identical.
+
+> An earlier revision of this paragraph recorded Layer 1 as absent from the
+> fork and the flag as defaulting to `False`. Both statements predated ADR-0074
+> and were wrong on 2026-08-17; see issue #253. `tests/test_simwrapper_dashboards_default.py`
+> now pins the default from both the shipped `configure()` and
+> `braunschweig.documentation.checks.CODE_DEFAULT_TRUE`.
 
 **Layer 2 - Python emitter (`braunschweig.analysis.simwrapper`).** Converts the
 existing `record` dict from

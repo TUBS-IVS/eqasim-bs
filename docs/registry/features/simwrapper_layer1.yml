@@ -22,11 +22,12 @@ detail_doc: docs/features/run-analysis.md
 code_paths:
 - matsim/simulation/run.py
 evidence:
-  tests: []
+  tests:
+  - tests/test_simwrapper_dashboards_default.py
   off_path_byte_identical:
     claimed: 'false'
     note: |
-      ADR-0033 and docs/features/run-analysis.md both describe this layer as "default off, byte-identical when off", but no test was found asserting that -- and the code itself registers the default as true (see the assessment note below), so the claim cannot be made without a matching test.
+      The OFF path omits the --simwrapper option entirely, so the Java side applies its own false default and no dashboard files are written; byte-identity is plausible by construction but no test compares two output directories, so it is recorded as unverified rather than claimed. What IS pinned (tests/test_simwrapper_dashboards_default.py) is the ON default itself, from both matsim.simulation.run.configure and braunschweig.documentation.checks.CODE_DEFAULT_TRUE -- the drift that issue #253 reported went unnoticed because nothing pinned it.
   fallback_rate:
     instrumented: false
     note: Boolean CLI-arg passthrough to the Java contrib, not a fallback-rate computation.
@@ -43,8 +44,10 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    DISCREPANCY FOUND while researching this declaration: matsim/simulation/run.py:21 registers `context.config("simwrapper_dashboards", True)` -- a code-level default of TRUE -- while docs/features/run-analysis.md:66, PROJECT_STATUS.md and ADR-0033 all state the default is FALSE. The key is absent from configs/base_bs.yml and every overlay, so the code default is what actually governs behaviour. In practice this is inert either way, because the Java SimWrapperModule / `RunSimulation --simwrapper` contrib itself is not present in this fork's eqasim-java-bs `main` (per docs/features/run-analysis.md:59-64) -- it lives on the unmerged `feature/simwrapper-dashboards` branch. This default-value mismatch should be resolved by the owner (fix the code default, or update the docs/ADR) before this row can be assessed.
-  source: null
-notes: 'Issue #253: the code default is True (ADR-0074 records the flip to ON) while ADR-0033
-  and the retired STATUS matrix still said False -- the documentation contradiction is tracked
-  there.'
+    RESOLVED IN PART BY ISSUE #253 (2026-08-17). The discrepancy this record reported was real but pointed the wrong way. matsim.simulation.run registers a code-level default of TRUE, and that is the DELIBERATE current decision: ADR-0074 (2026-07-22) merged Java Layer 1 via eqasim-java-bs#12 and set the flag default-ON under the feature-flag policy for an analysis-only module. The three sources claiming FALSE were all older or retired -- ADR-0033 (2026-06-08, now carrying a superseded-in-part note), docs/features/run-analysis.md (corrected), and PROJECT_STATUS.md (retired to a pointer stub by ADR-0077).
+    Also corrected here: this record previously stated the Java contrib was absent from the fork's main and the flag therefore inert. Re-verified against TUBS-IVS/eqasim-java-bs main on 2026-08-17 -- braunschweig/pom.xml declares the simwrapper contrib and org.eqasim.braunschweig.RunSimulation imports SimWrapperModule, exposes the simwrapper option and registers the module when it is true. The flag is active, not inert, and a production run writes dashboard-*.yaml into simulation_output/.
+    STILL PENDING: the feature itself is unvalidated -- no run manifest records the Layer-1 dashboards actually being produced by a real MATSim run (the only e2e to date, matsim-e2e-2.2.0-kreis03101-2026-07-23, predates this verification and is a wiring proof at iteration 0). No owner verdict has been recorded.
+  source: ADR-0074
+notes: 'Issue #253 (closed 2026-08-17): the code default True is correct per ADR-0074; the stale
+  FALSE claims in ADR-0033 and docs/features/run-analysis.md were corrected and the default is
+  now pinned by tests/test_simwrapper_dashboards_default.py.'

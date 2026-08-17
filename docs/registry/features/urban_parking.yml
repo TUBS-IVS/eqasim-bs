@@ -47,5 +47,6 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0039 documents the design decision, but its own Decision text cites matsim/simulation/prepare.py as the implementation file -- verified incorrect, the flag actually resolves in matsim/scenario/population.py. This file-path discrepancy in ADR-0039 should be corrected. No owner verdict on the fixture parity gap noted above has been recorded.
+    ADR-0039 documents the design decision. The file-path discrepancy this record reported is FIXED (issue #254, 2026-08-17): ADR-0039's Decision text now names matsim/scenario/population.py and points at the enclosing symbols (registered in configure, forwarded by write_population, applied in add_person) rather than matsim/simulation/prepare.py, which contains no parking logic.
+    STILL PENDING: no owner verdict on the fixture parity gap noted above -- enable_urban_parking is false/absent in at least one fixture while configs/base_bs.yml sets it true.
   source: ADR-0039
