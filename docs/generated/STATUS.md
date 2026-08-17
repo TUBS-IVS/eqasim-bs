@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 69 | stages: 115 | datasets: 52 | ADRs: 77 | run manifests: 20
+- Features: 69 | stages: 115 | datasets: 52 | ADRs: 78 | run manifests: 20
 
 ## Population synthesis
 
@@ -33,17 +33,17 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
-| [Consistent car_availability](../registry/features/consistent_car_availability.yml) | active | off | i/i/A | unvalidated |  |
-| [Driving licence (P17.1, 3-margin IPF)](../registry/features/driving_licence_enrichment.yml) | active | off | i/i/A | unvalidated |  |
-| [Economic status (Bayes hhtype×region)](../registry/features/economic_status_bayes.yml) | active | off | i/i/A | unvalidated |  |
+| [Consistent car_availability](../registry/features/consistent_car_availability.yml) | active | off | -/-/A | unvalidated |  |
+| [Driving licence (P17.1, 3-margin IPF)](../registry/features/driving_licence_enrichment.yml) | active | off | -/-/A | unvalidated |  |
+| [Economic status (Bayes hhtype×region)](../registry/features/economic_status_bayes.yml) | active | off | -/-/A | unvalidated |  |
 | [Employment margin (IPF)](../registry/features/employment_margin.yml) | active | off | -/-/A | unvalidated |  |
-| [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | i/i/A | unvalidated |  |
+| [Household income € + distribution](../registry/features/household_income_distribution.yml) | active | off | -/-/A | unvalidated |  |
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
-| [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | i/i/A | unvalidated |  |
+| [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
-| [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | i/i/A | unvalidated |  |
-| [Reactivated attrs (couple/studies/SPC)](../registry/features/reactivated_person_attributes.yml) | active | off | i/i/A | unvalidated |  |
+| [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
+| [Reactivated attrs (couple/studies/SPC)](../registry/features/reactivated_person_attributes.yml) | active | off | -/-/A | unvalidated |  |
 | [SrV participation controls (#224)](../registry/features/srv_participation_controls.yml) | active | ON | A/i/- | unvalidated | [#224](https://github.com/TUBS-IVS/eqasim-bs/issues/224) |
 | [Tier-3 Kreis controls](../registry/features/tier3_kreis_controls.yml) | active | ON | A/i/- | unvalidated |  |
 

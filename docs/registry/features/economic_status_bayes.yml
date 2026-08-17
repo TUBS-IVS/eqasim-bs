@@ -2,12 +2,14 @@ feature: economic_status_bayes
 title: Economic status (Bayes hhtype×region)
 area: attributes
 description: Samples economic_status from the MiD status x household-type x region distribution
-  via Bayes inversion (ADR-0011).
+  via Bayes inversion (ADR-0011). Legacy simple_ipf_open mechanism -- under popsim_mid the
+  donor household's observed oek_status (attributes.map_economic_status) plus the hard
+  economic_status KREIS control supersede it (ADR-0079).
 stages:
 - synthesis.population.enriched
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: not_used
+  popsim_open: not_used
   simple_ipf_open: active
 lifecycle: active
 production:
@@ -50,9 +52,13 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0011 documents the design. NOTE: this flag lives entirely in braunschweig/synthesis/population/enriched.py, which is the legacy simple_ipf_open enrichment stage. configs/base_bs.yml sets braunschweig.population.method to popsim_mid, under which this whole stage (and this flag) is never invoked at all -- it is only live via configs/fixtures/config_local_braunschweig_25pct.yml. No owner verdict on realised Bayes-fit quality has been recorded.
-  source: ADR-0011
-notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
-  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
-  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
-  25% fixture).'
+    Wiring decided in ADR-0079: not ported to popsim_mid, where the donor household's
+    observed oek_status plus the hard per-Kreis economic_status control supersede the
+    Bayes draw. Still pending: no owner verdict on the realised quality of THAT donor
+    mechanism (no recorded run attributes a KPI to it).
+  source: ADR-0079 (mechanism decision); ADR-0011 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'

@@ -3,12 +3,14 @@ title: Household income € + distribution
 area: attributes
 description: Draws household income in EUR from empirical MiD distributions with INKAR per-Kreis
   scaling (ADR-0017); under popsim_mid the donor's own MiD income plus placement_income carries
-  this signal instead.
+  this signal instead. Legacy simple_ipf_open mechanism -- under popsim_mid
+  attributes.map_household_income_eur plus income_spatial_tilt, income_kreis_control,
+  placement_income (ADR-0069) and the open-top Pareto tail supersede it (ADR-0079).
 stages:
 - synthesis.population.enriched
 pipelines:
-  popsim_mid: inactive
-  popsim_open: inactive
+  popsim_mid: not_used
+  popsim_open: not_used
   simple_ipf_open: active
 lifecycle: active
 production:
@@ -49,9 +51,13 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    ADR-0017 is a combined ADR covering four flags at once (this one, cars_income_aware, consistent_car_availability, synthesise_housing_tenure) -- there is no ADR dedicated solely to this feature. Like economic_status_bayes.yml, this flag lives in synthesis/population/enriched.py and is dead under the active popsim_mid production method; it is only live via the simple_ipf_open fixture. docs/features/mid-reference-tables.md exists but has no dedicated section for this feature.
-  source: ADR-0017
-notes: 'Issue #255: this feature is implemented in the legacy synthesis.population.enriched stage,
-  which both PopulationSim workflows alias to braunschweig.popsim.enriched_adapter -- it never
-  executes under the production popsim_mid method and is live only under simple_ipf_open (committed
-  25% fixture).'
+    Wiring decided in ADR-0079: not ported to popsim_mid, where the donor's own income
+    class scaled by the INKAR per-Kreis factor plus the placement/tilt/control chain
+    supersede the H4 pmf draw. Still pending: no owner verdict on the realised income
+    distribution, and ADR-0017 remains a combined ADR covering four flags at once.
+  source: ADR-0079 (mechanism decision); ADR-0017 (original design)
+notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
+  implementation never executes under either PopulationSim pipeline (the stage name is
+  aliased to braunschweig.popsim.enriched_adapter), and it stays live under
+  simple_ipf_open. This is NOT a missing attribute -- see description for the mechanism
+  that runs in production.'
