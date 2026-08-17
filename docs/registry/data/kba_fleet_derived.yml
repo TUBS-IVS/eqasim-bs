@@ -43,6 +43,17 @@ limitations: |
     literal zeros in every BEV / plug-in-hybrid / fuel-cell column (ADR-0086).
   * Per-Kreis vehicle AGE and SEGMENT do not exist in any open source, so those axes stay national
     (ADR-0081); kba_age_national.csv is a validation anchor, not an IPF control.
+  * mid2023_age_by_segment_status.csv has NO `wohnmobile` rows: MiD's `seg_kba` variable carries 13
+    codes (Minis .. Utilities, plus 95 "nicht zuzuordnen") and motorhomes are not among them, while
+    the KBA Pkw segmentation (FZ 27.10) does have a Wohnmobile segment worth 1.99% of the national
+    stock. Those cars therefore draw their age from the STATUS-only pool, i.e. the age profile of an
+    average car of that economic status. No source at hand closes this: FZ 27.7 breaks age down by
+    Fahrzeugklasse, where motorhomes sit inside "Sonstige Kfz" together with ambulances and fire
+    engines (a different universe), and FZ 12.1 / FZ 13.x name Wohnmobile without an age dimension.
+    MEASURED BOUND (24000-car draw, 2026-08-17): motorhomes are 2.15% of drawn cars at a mean age of
+    9.99 yr against the 10.49 yr fleet mean; were their true mean 3 / 5 / 8 years higher, the FLEET
+    mean age would move by only +0.06 / +0.11 / +0.17 yr. The bias is material for a statement about
+    the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates.
   KBA counts vehicles REGISTERED in a Kreis (company cars at the business seat), the synthesis
   produces HOUSEHOLD cars: spatial patterns are comparable, exact levels are not.
 notes: |
