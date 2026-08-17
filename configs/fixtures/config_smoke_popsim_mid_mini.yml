@@ -123,8 +123,7 @@ config:
   # --- IPF: post-formation hh_type assignment (Zensus 2022 1000A-2081)
   braunschweig.ipf.use_household_type_margin: true
 
-  # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26)
-  braunschweig.ipf.use_employment_margin: true
+  # --- Phase 2 IPF (TASK-011, 2026-04-26)
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   gtfs_path: gtfs

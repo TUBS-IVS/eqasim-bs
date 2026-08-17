@@ -27,7 +27,7 @@ may only name run manifests (no run, no claim).
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [education_gravity](../registry/features/education_gravity.yml) | education | active | ON | A/A/- | 4 | not claimed | none | committed | unvalidated | pending |
 | [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 5 | -- | none | none | unvalidated | pending |
-| [employment_margin](../registry/features/employment_margin.yml) | attributes | active | off | -/-/A | 0 | -- | none | none | unvalidated | pending |
+| [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_purpose](../registry/features/escort_purpose.yml) | behavior | active | ON | A/-/- | 5 | proven | none | committed | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | pending |
 | [fleet_consistency_v2](../registry/features/fleet_consistency_v2.yml) | fleet | active | ON | A/A/- | 4 | proven | marker | committed | unvalidated | pending |

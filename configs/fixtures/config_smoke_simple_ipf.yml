@@ -74,8 +74,12 @@ config:
 
   # --- Phase 2 IPF (TASK-010, TASK-011, 2026-04-26) ----------------------
   # 4-way IPF (sex × age × hh_size × employment) with Dirichlet
-  # smoothing. Outer-product proxy when no external CSV is supplied.
-  braunschweig.ipf.use_employment_margin: true
+  # smoothing. The employment margin is PARKED (issue #252, ADR-0080): it
+  # needs a real (Kreis x hh_size x employed) cross-tab supplied through
+  # braunschweig.ipf.employment_by_hhsize_path, which no committed config
+  # has. The outer-product substitute it used to build instead forced
+  # employment and household size to be statistically independent.
+  braunschweig.ipf.use_employment_margin: false
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   # --- IPF household realism (#251): joint age x household-size margin

@@ -176,10 +176,13 @@ config:
   braunschweig.ipf.dirichlet_prior_strength: 0.5
 
   # --- Phase 2 IPF 4-way (TASK-010, 2026-04-26) --------------------------
-  # Adds an explicit hh_size × employment margin so 1P-HH/2P-HH employment
-  # rates match observed shares per Kreis. Without an external CSV the
-  # stage falls back to an outer-product proxy of the existing margins.
-  braunschweig.ipf.use_employment_margin: true
+  # Adds an explicit hh_size x employment margin so 1P-HH/2P-HH employment
+  # rates match observed shares per Kreis. PARKED (issue #252, ADR-0080):
+  # that requires a real cross-tab via employment_by_hhsize_path, which no
+  # committed config has. The outer-product substitute the stage used to
+  # build did the opposite of the stated intent -- it forced the 1P-HH and
+  # 2P-HH employment rates to be EQUAL, overwriting the donor correlation.
+  braunschweig.ipf.use_employment_margin: false
 
   # --- IPF household realism (#251) --------------------------------------
   # ADR-0004/0005/0006 decided these three refinements and the code has been in
