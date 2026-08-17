@@ -22,3 +22,5 @@ inputs:
 - destatis_population_kreis
 - urbistat_gemeinde_age
 - zensus2022_age_sex_size
+decisions:
+- ADR-0078
