@@ -1,7 +1,7 @@
 stage: matsim.runtime.java
 title: Java runtime probe
 layer: infrastructure
-description: Upstream Java runtime detection (JDK 25 via java_home for eqasim-java 2.2.0).
+description: Upstream Java runtime detection (JDK 25 via java_home for the eqasim-java fork).
 lineage:
   type: configured
   upstream: null

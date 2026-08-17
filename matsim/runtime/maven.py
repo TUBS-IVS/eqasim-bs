@@ -6,8 +6,8 @@ def configure(context):
     context.config("maven_skip_tests", False)
     # Optional JDK home for the Maven build. Default "" inherits the process
     # environment (byte-identical to the previous behaviour). Set it when the build
-    # needs a specific JDK that is not the environment default -- e.g. eqasim-java
-    # 2.2.0 requires JDK 25 while the felix system default is JDK 21. When set, it is
+    # needs a specific JDK that is not the environment default -- the eqasim-java fork
+    # requires JDK 25 while the felix system default is JDK 21. When set, it is
     # exported as JAVA_HOME (and prepended to PATH) for the Maven subprocess only.
     context.config("java_home", "")
 
@@ -38,7 +38,7 @@ def run(context, arguments = [], cwd = None):
     ] + vm_arguments + arguments
 
     # Build the subprocess environment. When java_home is configured, export it as
-    # JAVA_HOME so Maven compiles/runs tests with that JDK (the eqasim-java 2.2.0 jar
+    # JAVA_HOME so Maven compiles/runs tests with that JDK (the eqasim-java fork jar
     # targets Java 25); otherwise inherit the parent environment unchanged.
     build_env = dict(os.environ)
     java_home = context.config("java_home")
