@@ -172,7 +172,6 @@ config:
 
   java_memory: 100G
 
-  home_location_sampling: weighted
   mode_choice: false
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
@@ -241,18 +240,15 @@ config:
     - "03158"
 
   # --- Input data paths ---
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
   braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
   braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
   braunschweig.zensus_households_path: braunschweig/5000H-2001_de_flat.csv
   braunschweig.inkar_household_income_path: braunschweig/E_Haushaltseinkommen.xls
   braunschweig.inkar_year: latest
   braunschweig.home_density_weighting: true
-  braunschweig.buildings_path: braunschweig/buildings
 
   # WORK gravity at TAZ (sub-commune) resolution: fixes intra-city commute
   # distances in kreisfreie Staedte (e.g. Braunschweig). Requires local-only
@@ -305,7 +301,6 @@ config:
   # External toolchain (Linux paths).
   osmosis_binary: /usr/bin/osmosis
   osmconvert_binary: /usr/bin/osmconvert
-  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
 
   # --- Spatial income tilt + Kreis-Income-Control ---
   braunschweig.population.popsim.income_spatial_tilt: true

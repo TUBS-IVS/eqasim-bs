@@ -21,7 +21,7 @@ ported from another eqasim project), `retired`.
 | configured | 9 |
 | extended | 6 |
 | overridden | 22 |
-| braunschweig_new | 55 |
+| braunschweig_new | 56 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -63,7 +63,7 @@ ported from another eqasim project), `retired`.
 - **Freight**: `braunschweig.data.freight.german_wide`, `braunschweig.freight.extraction`, `braunschweig.freight.trips`
 - **Home locations**: `braunschweig.data.buildings`, `braunschweig.data.zensus_grid.population`
 - **MATSim**: `braunschweig.data.vrb.zones`
-- **Population synthesis**: `braunschweig.data.census.household_size`, `braunschweig.data.census.households_type`, `braunschweig.data.census.population`, `braunschweig.data.hts.mid_donor`, `braunschweig.ipf.model`, `braunschweig.ipf.prepare`, `braunschweig.popsim.completed_donor`
+- **Population synthesis**: `braunschweig.data.census.household_size`, `braunschweig.data.census.households_size_age`, `braunschweig.data.census.households_type`, `braunschweig.data.census.population`, `braunschweig.data.hts.mid_donor`, `braunschweig.ipf.model`, `braunschweig.ipf.prepare`, `braunschweig.popsim.completed_donor`
 - **Secondary locations**: `braunschweig.data.bosserhof_location_category`, `braunschweig.data.bosserhof_purpose`, `braunschweig.data.external_secondary_points`, `braunschweig.data.locations`, `braunschweig.synthesis.locations.secondary_candidates`
 - **Spatial base data**: `braunschweig.data.alkis`, `braunschweig.data.bbsr.regiostar`, `braunschweig.data.landuse`, `braunschweig.data.osm`, `braunschweig.data.spatial.taz`, `braunschweig.data.verbindungen.zones`
 - **Validation**: `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.verbindungen_validation`, `braunschweig.data.mid.references`, `braunschweig.data.verbindungen.margins`

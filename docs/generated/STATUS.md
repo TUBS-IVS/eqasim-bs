@@ -11,21 +11,21 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 69 | stages: 114 | datasets: 52 | ADRs: 78 | run manifests: 20
+- Features: 69 | stages: 115 | datasets: 52 | ADRs: 78 | run manifests: 20
 
 ## Population synthesis
 
-10 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
-| [Age-aware composition (#3b)](../registry/features/age_aware_composition.yml) | supported | off | -/-/i | unvalidated |  |
+| [Age-aware composition (#3b)](../registry/features/age_aware_composition.yml) | supported | off | -/-/A | unvalidated |  |
 | [Household-size margin](../registry/features/household_size_margin.yml) | active | off | -/-/A | unvalidated |  |
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
-| [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/i | unvalidated |  |
+| [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
 | [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) |  |
-| [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/i | unvalidated |  |
+| [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
 
 ## Person & household attributes
 

@@ -44,7 +44,6 @@ config:
 
   java_memory: 32G
 
-  home_location_sampling: weighted
   mode_choice: false
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
@@ -142,11 +141,9 @@ config:
     - "03158"
 
   # --- Input data paths (Braunschweig / Niedersachsen) ----------------------
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
 
   braunschweig.pendler_ein_path: braunschweig/statistik_pendler_2026042493412.csv
   braunschweig.pendler_aus_path: braunschweig/statistik_pendler_2026042493430.csv
@@ -157,10 +154,6 @@ config:
   braunschweig.inkar_year: latest
 
   braunschweig.home_density_weighting: true
-
-  braunschweig.buildings_path: braunschweig/buildings
-
-  osm_path_bavaria: osm/niedersachsen-latest.osm.pbf
 
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
@@ -269,6 +262,8 @@ config:
   # synthesise_housing_tenure, pt_subscription_conditioned,
   # braunschweig.ipf.use_joint_age_size_margin,
   # braunschweig.ipf.age_aware_chunking, braunschweig.chunking.sex_aware_couples.
+  # Absent HERE does not mean off everywhere: the last three are enabled in every
+  # simple_ipf_open run config (issue #251, pinned by tests/test_ipf_config_parity.py).
 
 # --- Aliases ------------------------------------------------------------------
 # Same pattern as config_local_braunschweig.yml. The key difference from the
