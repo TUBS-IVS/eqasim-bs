@@ -1,10 +1,18 @@
 # IPF household synthesis: joint age x size margin (#3) + age-aware composition (#3b)
 
 
-All household-synthesis features below are **flag-gated and default off**, so the
-pipeline stays byte-identical to the legacy formation unless a config enables
-them. They build on the per-commune household-size margin
+All household-synthesis features below are **flag-gated with a code default of
+off**, so the pipeline stays byte-identical to the legacy formation unless a
+config enables them. They build on the per-commune household-size margin
 (`braunschweig.ipf.use_household_size_margin`, Zensus 2022 1000A-2081).
+
+Since issue #251 all three are **enabled in every committed `simple_ipf_open` run
+config** (`config_local_braunschweig.yml`, `..._10pct.yml`, `..._25pct.yml`,
+`config_smoke_simple_ipf.yml`), pinned by `tests/test_ipf_config_parity.py`. They
+are deliberately **not** set in the `popsim_mid` / `popsim_open` configs: the
+production population method replaces the legacy IPF, so the keys would be dead
+there. Before #251 they were set in no config at all, so no run had ever executed
+them despite the ADRs treating them as decided.
 
 ### Joint age x household-size margin (#3)
 

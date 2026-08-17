@@ -53,8 +53,20 @@
    "synthesis.population.enriched"
   ],
   [
+   "braunschweig.data.census.households_size_age",
+   "braunschweig.data.census.population"
+  ],
+  [
+   "braunschweig.data.census.households_size_age",
+   "braunschweig.ipf.prepare"
+  ],
+  [
    "braunschweig.data.census.households_type",
    "braunschweig.ipf.prepare"
+  ],
+  [
+   "braunschweig.data.census.households_type",
+   "data.census.filtered"
   ],
   [
    "braunschweig.data.census.licenses",
@@ -717,6 +729,7 @@
   "braunschweig.data.census.employment",
   "braunschweig.data.census.household_income",
   "braunschweig.data.census.household_size",
+  "braunschweig.data.census.households_size_age",
   "braunschweig.data.census.households_type",
   "braunschweig.data.census.licenses",
   "braunschweig.data.census.pendler",

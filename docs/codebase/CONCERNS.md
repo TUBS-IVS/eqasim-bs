@@ -27,10 +27,10 @@ output paths `*_kreis5`, `settings_tier3_mef100_intseed_numba.yaml`, `num_worker
 **Built but never activated in ANY config, absent from PROJECT_STATUS/BACKLOG/DECISIONS (decide: wire or document as parked):**
 - `braunschweig.gravity.sector_aware_enabled` (default False; `a0ecee3` 2026-06-04) — establishment-density
   sub-Kreis attraction tilt, `braunschweig/gravity/model.py`.
-- `braunschweig.census.use_zensus_gemeinde_shares` (default False; `1f55fc2` 2026-06-04) — open Zensus
-  1000A-3082 Gemeinde shares replacing the scraped non-redistributable urbistat table,
-  `braunschweig/data/census/population.py`. Inert under `popsim_mid` (feeds only `braunschweig/ipf/prepare.py`),
-  but a licensing/reproducibility win for the legacy `simple_ipf` path.
+- ~~`braunschweig.census.use_zensus_gemeinde_shares`~~ — **RESOLVED (issue #251).** Now `true` in all
+  five committed `simple_ipf_open` configs, so the open Zensus 1000A-3082 Gemeinde shares replace the
+  scraped non-redistributable urbistat table; pinned by `tests/test_census_gemeinde_shares_wired.py`.
+  Correctly absent from the popsim configs, where the stage is off the DAG.
 - `braunschweig.use_landuse_prior` (default False) — `braunschweig/data/inspire/landuse.py` has NO pipeline
   consumer (orphaned stage; only tests reference it).
 - `education_bbs_share_by_age` (default None) — optional age-resolved BBS share; scalar 0.681 active instead.
@@ -155,12 +155,15 @@ re-derived here; this file records what the current branch actually shows.
   2023 is BMDV non-commercial**, and the extracted CSVs are derivative works that
   inherit those terms (DOWNLOAD_CHECKLIST_BS.md). Anything committed must respect
   re-distribution rules; urbistat shares are explicitly non-redistributable.
-- **Legacy dead-config keys.** `configs/fixtures/config_local_braunschweig.yml` still carries
-  `braunschweig.population_path: …/12111-0001_population_ni.xlsx` and
-  `braunschweig.work_flow_path: …/pendler_ni.xlsx` (and `bavaria.buildings_path`-style
-  keys described in the checklist) that were read only by now-absent `bavaria/`
-  modules. DOWNLOAD_CHECKLIST_BS.md ("Legacy dead-config keys") confirms these
-  filenames need not exist on disk for the BS pipeline to run.
+- ~~**Legacy dead-config keys.**~~ **RESOLVED (issue #251).** Five keys were set across the
+  committed configs while no live code could read them and have been DELETED, not documented:
+  `home_location_sampling` and `osm_path_bavaria` (named by no source file at all), plus
+  `braunschweig.population_path`, `braunschweig.work_flow_path` and
+  `braunschweig.buildings_path` (read only by the inherited `eqasim_common.data.census.population`
+  / `.employees` / `eqasim_common.data.buildings` loaders, which the Braunschweig forks replaced
+  and which appear in no DAG snapshot and are no config's alias target). Two of them pointed at
+  files that do not exist on disk, which is how they surfaced. Note the scope the earlier entry
+  understated: the keys were in ten configs including `configs/base_bs.yml`, not one fixture.
 - **ENTD 2008 (French HTS) donor.** Activity chains are still seeded from a 2008
   French survey; a German HTS replacement is open work (README "Known limitations").
 

@@ -10,7 +10,7 @@ may only name run manifests (no run, no claim).
 
 | Feature | Area | Lifecycle | Prod | mid/open/ipf | Tests | OFF byte-id | Fallback | Reference | Validation | Assessment |
 |---|---|---|---|---|---|---|---|---|---|---|
-| [age_aware_composition](../registry/features/age_aware_composition.yml) | population | supported | off | -/-/i | 1 | -- | none | assumption | unvalidated | pending |
+| [age_aware_composition](../registry/features/age_aware_composition.yml) | population | supported | off | -/-/A | 1 | -- | marker | assumption | unvalidated | pending |
 | [alkis_home_matching](../registry/features/alkis_home_matching.yml) | home | active | ON | A/A/- | 2 | -- | marker | none | unvalidated | pending |
 | [building_potentials_education](../registry/features/building_potentials_education.yml) | education | active | ON | A/A/- | 1 | -- | none | none | unvalidated | pending |
 | [building_potentials_secondary](../registry/features/building_potentials_secondary.yml) | secondary | active | ON | A/i/i | 1 | -- | none | committed | unvalidated | pending |
@@ -49,7 +49,7 @@ may only name run manifests (no run, no claim).
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 3 | -- | marker | none | unvalidated | pending |
-| [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/i | 1 | -- | none | none | unvalidated | pending |
+| [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
@@ -66,7 +66,7 @@ may only name run manifests (no run, no claim).
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
 | [secondary_srv_location_types](../registry/features/secondary_srv_location_types.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | pending |
 | [sector_aware_attraction_tilt](../registry/features/sector_aware_attraction_tilt.yml) | work | parked | off | i/i/i | 1 | -- | none | none | measured_vs_reference (`sector-aware-ab-2026-07-15`) | pending |
-| [sex_aware_couples](../registry/features/sex_aware_couples.yml) | population | supported | off | -/-/i | 1 | proven | none | assumption | unvalidated | pending |
+| [sex_aware_couples](../registry/features/sex_aware_couples.yml) | population | supported | off | -/-/A | 1 | proven | none | assumption | unvalidated | pending |
 | [shared_stage_cache](../registry/features/shared_stage_cache.yml) | infrastructure | active | ON | A/s/s | 3 | -- | marker | none | unvalidated | pending |
 | [simwrapper_export](../registry/features/simwrapper_export.yml) | analysis | active | ON | A/-/- | 5 | not claimed | marker | none | unvalidated | pending |
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 0 | not claimed | none | none | unvalidated | pending |

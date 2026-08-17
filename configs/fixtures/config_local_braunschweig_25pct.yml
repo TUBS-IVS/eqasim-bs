@@ -51,7 +51,6 @@ config:
   matsim_write_events_interval: 0   # 0 = only final iteration
   matsim_write_plans_interval: 50
 
-  home_location_sampling: weighted
   mode_choice: false
   # Optimization step (1): richer, behaviourally-relevant HTS matching keys.
   # Beyond the legacy [sex, age_class, has_license] we add the EXOGENOUS
@@ -182,6 +181,31 @@ config:
   # stage falls back to an outer-product proxy of the existing margins.
   braunschweig.ipf.use_employment_margin: true
 
+  # --- IPF household realism (#251) --------------------------------------
+  # ADR-0004/0005/0006 decided these three refinements and the code has been in
+  # place and unit-tested since; issue #251 found that no committed config ever
+  # enabled them, so no run had ever executed them. All three require the size
+  # margin above, and sex-aware pairing additionally requires age-aware chunking
+  # -- braunschweig.ipf.config_validation enforces both at stage entry.
+
+  # Joint age x household-size margin from Zensus 2022 1000A-3082 (ADR-0004).
+  # Raked (2D IPF) against the population and size marginals before use, so it
+  # agrees with both and cannot make the IPF infeasible. Suppresses implausible
+  # age/size combinations such as children in single-person households.
+  braunschweig.ipf.use_joint_age_size_margin: true
+
+  # Age-aware household composition (ADR-0005). Forms households within each
+  # (commune_id, hh_size) bucket from children-driven capacity plus a mother-age
+  # anchor instead of the legacy age-blind chunking of IPF weights. The anchor is
+  # a hardcoded default, not a committed table (docs/features/household-synthesis.md).
+  braunschweig.ipf.age_aware_chunking: true
+
+  # Sex-aware couple pairing inside the age-aware composition pass (ADR-0006).
+  # Opposite-sex-first allocation at the DEFAULT_SAME_SEX_COUPLE_SHARE default
+  # (0.011); that share's provenance is prose-documented, not a committed table.
+  # Byte-identical to legacy sex-blind pairing when the IPF emits no sex column.
+  braunschweig.chunking.sex_aware_couples: true
+
   gtfs_path: gtfs
   vrb_stations_path: vrb/stations.json
   osm_path: osm
@@ -203,14 +227,20 @@ config:
     - "03157"
     - "03158"
 
+  # Gemeinde population shares from the OPEN Zensus 2022 table 1000A-3082 instead
+  # of the scraped, non-redistributable urbistat table (#251). Only the spatial key
+  # WITHIN a Kreis changes -- the Kreis totals remain the official DESTATIS
+  # 12411-0018 figures. The Zensus source carries the authoritative 12-digit ARS,
+  # so it needs no fuzzy Gemeinde-name matching against VG250, and its age-band
+  # edges align with the DESTATIS classes (urbistat smears DESTATIS class 10,
+  # ages 10-14, into its 12-17 band). Affects the IPF population path only.
+  braunschweig.census.use_zensus_gemeinde_shares: true
+
   # --- Input data paths (Braunschweig / Niedersachsen) ---------------------
-  # GENESIS / Regionaldatenbank exports for Niedersachsen
-  braunschweig.population_path: braunschweig/12111-0001_population_ni.xlsx
   # Fork-spezifische Pfade (braunschweig.* — siehe braunschweig/data/census/*)
   braunschweig.employment_path: braunschweig/13111-06-02-4.xlsx
   braunschweig.employment_gemband_path: braunschweig/gemband-dlk-0-202506-xlsx.xlsx
   braunschweig.employees_path: braunschweig/13111-01-03-5.xlsx
-  braunschweig.work_flow_path:  braunschweig/pendler_ni.xlsx
 
   # BA Pendleratlas 2025 (Beschäftigtenstatistik, Gebietsstand 6/2025)
   # Kreis→Kreis OD-Matrix für Einpendler (Arbeitsort ZGB) und Auspendler
@@ -233,9 +263,6 @@ config:
 
   # TASK-003: Density-weighted home sampling (Zensus 2022 100m).
   braunschweig.home_density_weighting: true
-
-  # LGLN Hausumringe Niedersachsen (Shapefile deliveries)
-  braunschweig.buildings_path: braunschweig/buildings
 
   # Geofabrik snapshot for Niedersachsen
   osm_network_path: osm/niedersachsen-latest.osm.pbf

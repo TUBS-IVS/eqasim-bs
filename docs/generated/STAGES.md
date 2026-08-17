@@ -23,6 +23,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.census.employment](../registry/stages/braunschweig.data.census.employment.yml) | attributes | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.census.household_income](../registry/stages/braunschweig.data.census.household_income.yml) | attributes | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.data.census.household_size](../registry/stages/braunschweig.data.census.household_size.yml) | population | braunschweig_new | -- | -/-/A | -- | -- |
+| [braunschweig.data.census.households_size_age](../registry/stages/braunschweig.data.census.households_size_age.yml) | population | braunschweig_new | -- | -/-/A | -- | joint_age_size_margin |
 | [braunschweig.data.census.households_type](../registry/stages/braunschweig.data.census.households_type.yml) | population | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.data.census.licenses](../registry/stages/braunschweig.data.census.licenses.yml) | attributes | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.data.census.pendler](../registry/stages/braunschweig.data.census.pendler.yml) | cordon | braunschweig_new | x | A/A/A | -- | einpendler_injection |

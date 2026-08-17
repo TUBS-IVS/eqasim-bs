@@ -8,7 +8,7 @@ stages:
 pipelines:
   popsim_mid: not_used
   popsim_open: not_used
-  simple_ipf_open: inactive
+  simple_ipf_open: active
 lifecycle: supported
 production:
   enabled: false
@@ -46,7 +46,14 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    DISCREPANCY FOUND: braunschweig.chunking.sex_aware_couples is NOT set to true anywhere in any committed config -- explicitly listed as an intentionally-absent dead key on the active popsim_mid path. This contradicts PROJECT_STATUS.md's 🟢 legend ("ON in real-data run configs"), the same pattern as joint_age_size_margin.yml and age_aware_composition.yml. ADR-0006 documents the design but not this discrepancy.
+    Issue #251's config discrepancy is RESOLVED: braunschweig.chunking.sex_aware_couples is
+    now true in all four committed simple_ipf_open run configs, together with its
+    prerequisite braunschweig.ipf.age_aware_chunking (sex-aware pairing runs inside the
+    age-aware composition pass). The verification run derived the couple attribute for
+    104,279/252,954 persons (41.2%) from hh_type, so the pairing had a real population to
+    act on. What remains pending is scientific: the ~1.1% same-sex share is the hardcoded
+    DEFAULT_SAME_SEX_COUPLE_SHARE with prose-only provenance (see evidence.reference), and
+    no recorded run has compared the realised share to an observed reference.
   source: ADR-0006
-notes: 'Issue #251: the flag is not set in any committed run configuration (PROJECT_STATUS.md
-  previously marked it ON); the IPF path itself is not the production population method.'
+notes: 'Issue #251: enabled in the four simple_ipf_open run configs and pinned by
+  tests/test_ipf_config_parity.py. Not applicable to the production popsim_mid path.'
