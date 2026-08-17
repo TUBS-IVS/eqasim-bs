@@ -55,6 +55,17 @@
   (`consistency_v2=False`) frame is untouched. Cars that reach no usable substage
   pmf are visible as `not_applicable` rather than being indistinguishable from
   plain Euro-6 cars.
+- **Correction (2026-08-17, same day):** the first implementation of decision 3 had a
+  defect of its own. Pure-electric cars leave the expected-marginal loop early (their
+  euro mass collapses to the `electric` category), and that `continue` also skipped the
+  substage accumulator — so the expected `euro6_substage` distribution summed to
+  `1 − pure-electric share` and `not_applicable` was understated by ~4 pp. The
+  validator dutifully reported `euro6_substage: max dev 3.96pp (band 1.29pp) -> DRIFT`
+  on a draw that was correct. Fixed by adding the pure-electric mass to the
+  not-applicable bucket before the `continue`; the deviation dropped to 0.32 pp and
+  `any_flagged` returned to `False`. A false alarm is as damaging as a missed one — it
+  trains readers to ignore the flag — so the invariant "every expected marginal sums to
+  1.0" is now a test (`test_every_expected_dimension_is_a_distribution`).
 - **Evidence:** `tests/test_fleet_euro6_substage.py` (24 tests, all green):
   `test_substage_labels_actually_appear` now asserts both directions — every
   combustion Euro-6 car receives a real substage where data exists, and every

@@ -3176,6 +3176,14 @@ def _effective_expected(
         if drawn_powertrains is not None and pt in hbefa.ELECTRIC_EURO_POWERTRAINS:
             # All euro mass collapses to the "electric" category.
             acc_euro[electric_idx] += 1.0
+            # A pure-electric car carries NO Euro-6 substage, so its whole mass
+            # belongs in the not-applicable bucket. Skipping it here (the original
+            # ADR-0084 mirror did, via this `continue`) left acc_substage summing to
+            # less than n, which understated `not_applicable` by exactly the
+            # pure-electric share and made the validator report a ~4pp DRIFT on a
+            # dimension that was in fact correct.
+            if substage_labels:
+                acc_substage[substage_na_idx] += 1.0
             continue
 
         euro_marginal = M.sum(axis=0).copy()  # real euro marginal

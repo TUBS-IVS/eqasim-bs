@@ -423,6 +423,33 @@ def test_validator_not_flagged_for_euro_class(contrast_sampled):
     assert not euro_dim["flagged"], euro_dim
 
 
+def test_every_expected_dimension_is_a_distribution(contrast_sampled):
+    """Each expected marginal must sum to 1.0 -- the invariant that catches a car
+    contributing to no bucket at all.
+
+    The first ADR-0084 mirror let pure-electric cars leave the per-car loop before
+    the substage accumulator ran, so the expected euro6_substage distribution summed
+    to 1 minus the pure-electric share. That understated `not_applicable` by ~4pp and
+    the validator duly reported a DRIFT on a dimension whose DRAW was correct -- a
+    false alarm is as damaging as a missed one, because it trains everyone to ignore
+    the flag.
+    """
+    _, _, summary = contrast_sampled
+    for dim, payload in summary["dimensions"].items():
+        total = sum(payload["expected"].values())
+        assert total == pytest.approx(1.0, abs=1e-9), (
+            f"expected {dim} marginal sums to {total}, not 1.0 -- some car "
+            f"contributes to no bucket")
+
+
+def test_validator_not_flagged_for_euro6_substage(contrast_sampled):
+    """The substage dimension must be clean on its own contrast fixture."""
+    _, _, summary = contrast_sampled
+    dim = summary["dimensions"].get("euro6_substage")
+    assert dim is not None, "the substage dimension must be validated (ADR-0084)"
+    assert not dim["flagged"], dim
+
+
 # --------------------------------------------------------------------------- #
 # (d) Flag OFF / data-absent -> byte-identical, no extra RNG consumed
 # --------------------------------------------------------------------------- #
