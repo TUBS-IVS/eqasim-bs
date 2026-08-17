@@ -29,6 +29,7 @@ model-feasibility mask. Covers:
 from __future__ import annotations
 
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -83,12 +84,42 @@ def _synthetic_antrieb_df(bev_very_high: float = 0.30, bev_very_low: float = 0.0
 def sampler():
     """A real FleetSampler built from the committed local data.
 
-    ``mid2023_antrieb_by_status.csv`` is a server-generated derived CSV that is
-    NOT present in this local checkout, so ``sampler.ev_income_tilt`` is always
-    ``None`` here -- exactly the environment the absent-CSV fallback (case c)
-    must degrade gracefully in.
+    ``mid2023_antrieb_by_status.csv`` IS committed (built from the MiD 2023 B1
+    Autos micro-data, see ADR-0082), so ``sampler.ev_income_tilt`` is an active
+    model here -- this fixture exercises the PRIMARY path.
     """
     return fs.FleetSampler.from_data_path(DATA_PATH)
+
+
+def _data_path_without_antrieb_csv(tmp_path: Path) -> str:
+    """Mirror the committed derived CSVs into ``tmp_path``, omitting the MiD
+    powertrain-by-status table.
+
+    The absent-CSV fallback has to be tested against a constructed absence: the
+    table is committed now, so a test reading the real data path would silently
+    exercise the present-data path instead (the failure mode that hid every
+    fleet-realism feature until issue #277 generated the tables).
+    """
+    real_derived = DATA / "braunschweig" / "kba" / "derived"
+    if not real_derived.exists():
+        pytest.skip("real derived data directory absent")
+    derived = tmp_path / "braunschweig" / "kba" / "derived"
+    derived.mkdir(parents=True, exist_ok=True)
+    for src in real_derived.glob("*.csv"):
+        if src.name == _ANTRIEB_CSV.name:
+            continue
+        dst = derived / src.name
+        try:
+            dst.symlink_to(src)
+        except OSError:
+            shutil.copy2(src, dst)
+    return str(tmp_path)
+
+
+@pytest.fixture()
+def sampler_without_antrieb(tmp_path):
+    """A FleetSampler whose MiD powertrain-by-status table is absent."""
+    return fs.FleetSampler.from_data_path(_data_path_without_antrieb_csv(tmp_path))
 
 
 def _make_status_cars(kreis: str, statuses: list[str], n_per_status: int,
@@ -234,28 +265,45 @@ def test_ev_income_tilt_redistributes_within_kreis_and_preserves_aggregate(
 # --------------------------------------------------------------------------- #
 # (c) Absent CSV -> byte-identical (this checkout's real, unmodified state)
 # --------------------------------------------------------------------------- #
-def test_local_checkout_has_no_antrieb_csv():
-    """Sanity precondition for case (c): this is the actual local state."""
-    assert not _ANTRIEB_CSV.exists(), (
-        f"expected {_ANTRIEB_CSV} to be absent locally (server-generated); "
-        "if this now exists the absent-CSV assumption behind this test no "
-        "longer holds and the test should be revisited."
+def test_committed_antrieb_csv_is_present_and_builds_an_active_tilt(sampler):
+    """The PRIMARY path: the committed MiD table must load into a live model.
+
+    A test suite that only ever saw the absent-CSV fallback proves nothing about
+    the feature (CLAUDE.md: "Test the primary method, not just the fallback").
+    The table is built from the MiD 2023 B1 Autos micro-data by
+    scripts/build_mid_antrieb_by_status.py.
+    """
+    assert _ANTRIEB_CSV.exists(), (
+        f"{_ANTRIEB_CSV} is committed; rebuild it with "
+        "scripts/build_mid_antrieb_by_status.py --mid-path <MiD2023_Autos.csv>"
     )
+    assert sampler.ev_income_tilt is not None
+    # The real MiD gradient: higher economic status -> more BEV mass. Asserted as
+    # an inequality between the extreme classes, not against a pinned number, so
+    # the test survives a MiD vintage refresh.
+    bev_idx = fs.POWERTRAINS.index("bev")
+    factor_low = float(sampler.ev_income_tilt.tilt("very_low")[bev_idx])
+    factor_high = float(sampler.ev_income_tilt.tilt("very_high")[bev_idx])
+    assert factor_low < 1.0 < factor_high, (factor_low, factor_high)
 
 
-def test_absent_csv_disables_the_tilt(sampler):
-    assert sampler.ev_income_tilt is None
+def test_absent_csv_disables_the_tilt(sampler_without_antrieb):
+    assert sampler_without_antrieb.ev_income_tilt is None
 
 
-def test_absent_csv_sample_fleet_byte_identical_regardless_of_flag(sampler):
+def test_absent_csv_sample_fleet_byte_identical_regardless_of_flag(
+        sampler_without_antrieb, tmp_path):
     """With the CSV absent, ev_income_tilt=True and =False must be identical."""
+    data_path = _data_path_without_antrieb_csv(tmp_path / "run")
     df_cars = _make_status_cars(
         ft.ZGB_KREISE_AGS5[0], list(ft.STATUS_LABELS), n_per_status=50)
 
     df_spec_on, df_types_on, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, ev_income_tilt=True)
+        df_cars, data_path, random_seed=42, sampler=sampler_without_antrieb,
+        ev_income_tilt=True)
     df_spec_off, df_types_off, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, ev_income_tilt=False)
+        df_cars, data_path, random_seed=42, sampler=sampler_without_antrieb,
+        ev_income_tilt=False)
 
     pdt.assert_frame_equal(df_spec_on, df_spec_off)
     pdt.assert_frame_equal(df_types_on, df_types_off)
@@ -344,10 +392,11 @@ def test_flag_off_byte_identical_to_no_tilt(sampler):
     df_spec_flag_off, df_types_flag_off, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=99, sampler=sampler, ev_income_tilt=False)
 
-    # A second sampler with the tilt entirely absent (as in the real absent-CSV
-    # case) must produce the exact same output for the same seed.
+    # A second sampler with the tilt entirely absent (the absent-CSV case, built
+    # from a mirror without the committed table) must produce the exact same
+    # output for the same seed.
     sampler_no_tilt = fs.FleetSampler.from_data_path(DATA_PATH)
-    assert sampler_no_tilt.ev_income_tilt is None
+    sampler_no_tilt.ev_income_tilt = None
     df_spec_no_model, df_types_no_model, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=99, sampler=sampler_no_tilt, ev_income_tilt=True)
 
