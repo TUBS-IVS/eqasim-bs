@@ -72,3 +72,31 @@ python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml   # 1
 ```
 
 See [docs/ONBOARDING.md](docs/ONBOARDING.md) for the full environment + run guide.
+
+### After touching a PopulationSim control
+
+Two layers, cheapest first (issue #282). Both are required before claiming a control works.
+
+**1. Specification checks — seconds, no PopulationSim, no data:**
+
+```powershell
+python -m pytest tests/test_control_fit_smoke.py -q
+```
+
+These run against the ACTIVE catalog and registry and catch the defects a real run would only
+reveal hours in: categories that do not partition the seed universe (a person counted twice or
+dropped from a total that is supposed to be partitioned), a `census_source` column that is
+neither in the cell parquet nor produced by the aggregation map (PopulationSim fails with
+`<field> not in index`), and a target table that is not normalised or misses a Kreis. The
+reusable checks live in `braunschweig.analysis.population_validation.control_fit_smoke`.
+
+**2. Numerical smoke — one Kreis, full control set:**
+
+```powershell
+python scripts/run_synpp.py configs/base_bs.yml configs/overlays/smoke_kreis_control_fit.yml
+```
+
+Do NOT reach for a low `sampling_rate` to make this cheap: under `popsim_mid` the balancing
+covers the FULL population regardless of the rate, which only trims the MATSim extract
+afterwards. Shrinking the REGION is what reduces the work. The overlay runs Braunschweig only
+and stops at `data.census.filtered` (population synthesis, no locations/trips/MATSim).
