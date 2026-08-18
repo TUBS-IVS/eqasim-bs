@@ -70,6 +70,29 @@
     **+0.78 pp** on the regional flatrate share if counted as flatrate instead. The
     simulation-side mismatch (they are fare-free in reality but not flagged in the model) is
     recorded here rather than silently absorbed.
+  - **The blend weights the two surveys by RAW sample size, which overstates SrV's precision.**
+    `blend_kreis_target` uses `n_unweighted` as the precision weight (Braunschweig: SrV 3,844
+    against MiD 1,774). SrV is a stratified PSU design whose expansion factors vary 18x-70x
+    across strata (ADR-0055), so its EFFECTIVE sample size is smaller than the raw count -- a
+    design effect the framework does not model. This is the existing convention for all ten
+    per-Kreis targets, not something introduced here, and two things bound its impact for this
+    target: Braunschweig and Salzgitter are each a SINGLE stratum (`stratum 173` / `stratum 100`
+    carry the same n as the Kreis row), so within-Kreis weight variation and hence the design
+    effect are negligible there; and the precision blend fired for only three Kreise
+    (Braunschweig, Peine, Wolfenbuettel) -- the four rural disagreement cases took the shrink
+    path, where the raw-n weighting plays no role. It remains a real caveat for Peine and
+    Wolfenbuettel, which are mixtures of rural strata.
+  - **The SrV weighted totals are NOT Kreis populations.** The all-ages table sums to 787,251
+    weighted persons against roughly 1,002,608 census inhabitants in the seven covered Kreise
+    (~79 %), because `GEWICHT_*_ZENSUS` expands per SAMPLED municipality (~44 of them) rather
+    than to the full Kreis. The SHARES are therefore coverage estimates for the Kreis under the
+    assumption that the sampled municipalities represent it -- stated in the source table header
+    as ASSUMPTION-grade, and the reason the per-stratum level is the design-safe one. Verified
+    weighting on the extraction side: `GEWICHT_P_ZENSUS` (the expansion weight ADR-0055
+    mandates, not the stratum-internal `GEWICHT_P`), applied to the weight-validated frame, and
+    internally consistent (14+ total 688,010 against 17+ 662,733, i.e. +3.81 % for three
+    additional cohorts).
+
 - **Rejected alternatives:**
   - *Control all nine P24.1 categories.* 72 control columns to steer mostly simulation-neutral
     structure, competing for the same household weights as every other control.
