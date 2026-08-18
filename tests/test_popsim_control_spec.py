@@ -28,6 +28,7 @@ from braunschweig.popsim.control_spec import (
     controls_for_seed,
     render_catalog_csv,
     AGE_BANDS,
+    backbone_age_bands,
     GEO_100M,
     GEO_1KM,
     GEO_KREIS,
@@ -244,6 +245,13 @@ _AGE_BAND_NAMES = [
     for label, _lo, _hi in AGE_BANDS
 ]
 
+# The #320 default set: the 10-19 band replaced by 10-15 / 16-17 / 18-19 (22 names).
+_FINE_AGE_BAND_NAMES = [
+    f"{sex}_AGE_{label}_agg"
+    for sex in ("M", "F")
+    for label, _lo, _hi in backbone_age_bands(True)
+]
+
 
 def _names_by_geo(controls):
     by_geo: dict[str, set] = {}
@@ -253,16 +261,20 @@ def _names_by_geo(controls):
 
 
 def test_tier0_backbone_catalog_is_20_controls() -> None:
-    catalog = tier0_backbone_catalog()
-    assert len(catalog) == 20
+    """20 without the #320 fine teen bands, 24 with them (4 extra age x sex controls)."""
+    assert len(tier0_backbone_catalog(fine_teen_age_bands=False)) == 20
+    assert len(tier0_backbone_catalog()) == 24
 
 
 def test_tier0_backbone_geography_split_is_19_100m_and_1_1km() -> None:
-    catalog = tier0_backbone_catalog()
-    counts = {}
-    for c in catalog:
-        counts[c.geography] = counts.get(c.geography, 0) + 1
-    assert counts == {GEO_100M: 19, GEO_1KM: 1}
+    """The extra #320 controls all land at 100m; 1km stays the single HH_TOTAL anchor."""
+    def split(**kwargs):
+        counts = {}
+        for c in tier0_backbone_catalog(**kwargs):
+            counts[c.geography] = counts.get(c.geography, 0) + 1
+        return counts
+    assert split(fine_teen_age_bands=False) == {GEO_100M: 19, GEO_1KM: 1}
+    assert split() == {GEO_100M: 23, GEO_1KM: 1}
 
 
 def test_tier0_pop_total_absent_everywhere() -> None:
@@ -288,22 +300,28 @@ def test_tier0_hh_total_present_at_both_geographies() -> None:
 
 
 def test_tier0_eighteen_age_bands_only_at_100m() -> None:
-    by_geo = _names_by_geo(tier0_backbone_catalog())
-    # All 18 bands present at 100m...
-    for name in _AGE_BAND_NAMES:
-        assert name in by_geo[GEO_100M], name
-        # ...and none of them at 1km.
-        assert name not in by_geo[GEO_1KM], name
+    """Every age x sex band lives at 100m and none at 1km, in both band variants."""
+    for kwargs, names in ((dict(fine_teen_age_bands=False), _AGE_BAND_NAMES),
+                          (dict(), _FINE_AGE_BAND_NAMES)):
+        by_geo = _names_by_geo(tier0_backbone_catalog(**kwargs))
+        for name in names:
+            assert name in by_geo[GEO_100M], name
+            assert name not in by_geo[GEO_1KM], name
 
 
 def test_tier0_lossless_100m_set_is_hh_total_plus_18_bands() -> None:
     # LOSSLESS property: the dropped 100m totals (POP_TOTAL = sum of 18 bands;
     # M_TOTAL/F_TOTAL = per-sex sums) are exactly reconstructible from the kept
     # 100m set. We pin that the kept 100m set is exactly {HH_TOTAL} + the 18 bands.
-    by_geo = _names_by_geo(tier0_backbone_catalog())
+    by_geo = _names_by_geo(tier0_backbone_catalog(fine_teen_age_bands=False))
     assert by_geo[GEO_100M] == {_HH_TOTAL_BASE, *_AGE_BAND_NAMES}
     # And the kept 1km set is exactly the single HH_TOTAL anchor.
     assert by_geo[GEO_1KM] == {_HH_TOTAL_BASE}
+    # Same lossless property with the #320 fine teen bands: the three replacements sum
+    # to the band they replace, so POP_TOTAL / M_TOTAL / F_TOTAL stay reconstructible.
+    by_geo_fine = _names_by_geo(tier0_backbone_catalog())
+    assert by_geo_fine[GEO_100M] == {_HH_TOTAL_BASE, *_FINE_AGE_BAND_NAMES}
+    assert by_geo_fine[GEO_1KM] == {_HH_TOTAL_BASE}
 
 
 def test_tier1_is_10_controls_100m_only_no_einpersonen() -> None:
@@ -338,13 +356,19 @@ def test_tier3_is_7_controls_kreis_unchanged() -> None:
 
 
 def test_full_catalog_reduced_counts() -> None:
-    assert len(full_catalog(("tier0",))) == 20
-    assert len(full_catalog(("tier0", "tier1", "tier2"))) == 35
-    assert len(full_catalog(("tier0", "tier1", "tier2", "tier3"))) == 42
+    off = dict(fine_teen_age_bands=False)
+    assert len(full_catalog(("tier0",), **off)) == 20
+    assert len(full_catalog(("tier0", "tier1", "tier2"), **off)) == 35
+    assert len(full_catalog(("tier0", "tier1", "tier2", "tier3"), **off)) == 42
+    # The #320 fine teen bands add 4 controls to tier0, hence to every tier set.
+    assert len(full_catalog(("tier0",))) == 24
+    assert len(full_catalog(("tier0", "tier1", "tier2", "tier3"))) == 46
 
 
 def test_render_catalog_csv_full_reduced_catalog_42_rows() -> None:
-    catalog = full_catalog(("tier0", "tier1", "tier2", "tier3"))
+    """42 rows without the #320 fine teen bands (see the ON-path count below)."""
+    catalog = full_catalog(("tier0", "tier1", "tier2", "tier3"),
+                           fine_teen_age_bands=False)
     active = controls_for_seed(catalog, "mid")
     frame = render_catalog_csv(active, "mid")
     assert list(frame.columns) == [
@@ -360,6 +384,10 @@ def test_render_catalog_csv_full_reduced_catalog_42_rows() -> None:
     assert len(frame) == 42
     # Geographies present in the rendered controls.csv.
     assert set(frame["geography"]) == {GEO_100M, GEO_1KM, GEO_KREIS}
+    # With the fine teen bands the same render carries the 4 extra age x sex controls.
+    fine = render_catalog_csv(
+        controls_for_seed(full_catalog(("tier0", "tier1", "tier2", "tier3")), "mid"), "mid")
+    assert len(fine) == 46
 
 
 # ===========================================================================

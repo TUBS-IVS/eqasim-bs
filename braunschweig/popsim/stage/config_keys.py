@@ -59,6 +59,14 @@ KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
+
+# Fine teen age bands in the tier0 backbone (issue #320): "on" replaces the ten-year
+# 10-19 age x sex controls with 10-15 / 16-17 / 18-19, adding 4 controls at 100m. The
+# ten-year bands leave the composition inside a band unconstrained, which produced a
+# 15-17 excess of +64% and an 18-19 shortfall of -75% against DESTATIS 12411-0018 on the
+# 100% population (issue #307). Default "on"; "off" is byte-identical to the pre-#320
+# control set (pinned by tests/fixtures/prep3_controls_baseline.csv).
+KEY_FINE_TEEN_AGE_BANDS = "braunschweig.population.popsim.fine_teen_age_bands"
 # PopulationSim per-control importance profile name (see control_spec.IMPORTANCE_PROFILES).
 KEY_IMPORTANCE_PROFILE = "braunschweig.population.popsim.importance_profile"
 # Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim

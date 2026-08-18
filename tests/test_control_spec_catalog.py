@@ -66,9 +66,14 @@ def test_controls_for_seed_filters_and_warns_on_drop(caplog) -> None:
 
 
 def test_tier0_render_reproduces_production_baseline() -> None:
+    """The committed fixture is the PRE-#320 control set, so it is the flag-OFF baseline.
+
+    With the fine teen bands disabled the rendered catalog must still be byte-identical
+    to it (flag-OFF byte-identity, repository convention).
+    """
     import pandas as pd
     baseline = pd.read_csv("tests/fixtures/prep3_controls_baseline.csv", sep=";")
-    catalog = cs.tier0_backbone_catalog()
+    catalog = cs.tier0_backbone_catalog(fine_teen_age_bands=False)
     rendered = cs.render_catalog_csv(cs.controls_for_seed(catalog, "mid"), "mid")
     key = ["target", "geography", "seed_table", "importance", "control_field", "expression"]
     left = baseline[key].sort_values(key).reset_index(drop=True)
@@ -143,3 +148,56 @@ def test_tier2_tenure_is_mid_only() -> None:
 
 def test_default_catalog_has_no_tenure() -> None:
     assert all("Tenure" not in c.name for c in cs.full_catalog())
+
+
+# ---------------------------------------------------------------------------
+# Issue #320: fine teen age bands (10-15 / 16-17 / 18-19) in the tier0 backbone
+# ---------------------------------------------------------------------------
+
+
+def test_tier0_splits_the_teen_band_at_the_published_bin_edges() -> None:
+    """The 10-19 band is replaced by 10-15 / 16-17 / 18-19 per sex.
+
+    The backbone controls age in nine ten-year bands, so the composition INSIDE a band
+    is unconstrained. Measured on the 100% population (issue #307): 15-17 is +64% and
+    18-19 is -75% against DESTATIS 12411-0018 (5,297 synthetic persons against 21,582),
+    while the 10-19 total is fine. The two new edges sit on published Zensus bins (the
+    5-class Unter18 and the INFR a16bis18), so the targets rest on published data.
+
+    The old band is REPLACED, not kept alongside: the three new controls sum to it
+    exactly (verified bit-for-bit on the cell parquet), so keeping it would re-introduce
+    precisely the derivable redundancy the tier0 reduction removed.
+    """
+    catalog = cs.tier0_backbone_catalog()
+    names = {c.name for c in catalog if c.geography == cs.GEO_100M}
+    for sex in ("M", "F"):
+        for band in ("10_15", "16_17", "18_19"):
+            assert f"{sex}_AGE_{band}_agg" in names
+        assert f"{sex}_AGE_10_19_agg" not in names
+    # 1 household total + 22 age x sex controls (11 bands x 2 sexes).
+    assert len([c for c in catalog if c.geography == cs.GEO_100M]) == 23
+
+
+def test_fine_teen_controls_aggregate_the_single_year_census_columns() -> None:
+    """The new bands have no precomputed ``_agg`` column in the cell parquet, so their
+    census source is the tuple of single-year columns; the row-sum is done by
+    ``prepared_cells.add_aggregated_controls`` (the existing multi-source mechanism).
+    The untouched ten-year bands stay single-source identities."""
+    by_name = {c.name: c for c in cs.tier0_backbone_catalog()
+               if c.geography == cs.GEO_100M}
+    assert by_name["M_AGE_18_19_agg"].census_source == ("M_AGE_18", "M_AGE_19")
+    assert by_name["F_AGE_16_17_agg"].census_source == ("F_AGE_16", "F_AGE_17")
+    assert by_name["M_AGE_10_15_agg"].census_source == tuple(
+        f"M_AGE_{year}" for year in range(10, 16))
+    assert by_name["M_AGE_20_29_agg"].census_source == ("M_AGE_20_29_agg",)
+
+
+def test_fine_teen_band_expressions_select_exactly_their_ages() -> None:
+    """The seed expression must match the census column, or the control compares two
+    different populations."""
+    by_name = {c.name: c for c in cs.tier0_backbone_catalog()
+               if c.geography == cs.GEO_100M}
+    assert by_name["M_AGE_18_19_agg"].seed_expressions["mid"] == (
+        "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)")
+    assert by_name["F_AGE_10_15_agg"].seed_expressions["mid"] == (
+        "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 16)&(persons.HP_SEX==2)")

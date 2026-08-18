@@ -315,38 +315,72 @@ def test_all_kreis_entries_default_on():
 # --- Task 2: person-level per-Kreis total helper (partitions the PERSON total) ---
 
 
-def _cells_with_person_bands(kreis_codes, per_band_value=1):
-    """A minimal cells frame carrying all 18 age-x-sex 100m band columns.
+def _cells_with_person_bands(kreis_codes, per_band_value=1, *, fine_teen_age_bands=True):
+    """A minimal cells frame carrying every age-x-sex 100m band census-source column.
 
-    Each band column gets ``per_band_value`` per row, so the per-Kreis person total is
-    ``18 * per_band_value * (rows in that Kreis)``.
+    Each column gets ``per_band_value`` per row, so the per-Kreis person total is
+    ``len(band_cols) * per_band_value * (rows in that Kreis)``. The column COUNT depends on
+    the #320 fine teen bands (18 without, 36 with -- the three fine bands are sourced from
+    single-year columns), which is why it is derived rather than hardcoded.
     """
     from braunschweig.popsim.stage import person_band_census_columns
 
-    band_cols = person_band_census_columns()
-    assert len(band_cols) == 18, band_cols
+    band_cols = person_band_census_columns(fine_teen_age_bands=fine_teen_age_bands)
+    expected = 36 if fine_teen_age_bands else 18
+    assert len(band_cols) == expected, band_cols
     data = {c: [per_band_value] * len(kreis_codes) for c in band_cols}
     return pd.DataFrame(data), band_cols
 
 
-def test_person_total_by_kreis_sums_18_bands():
+def test_person_total_by_kreis_sums_every_band_column():
+    """The per-Kreis person total is the row-sum over ALL band census-source columns, in
+    both band variants (#320): 18 columns with the ten-year bands, 36 with the fine ones."""
     from braunschweig.popsim.stage import person_total_by_kreis
 
     kreis = pd.Series(["03101", "03101", "03102"])
-    cells, _band_cols = _cells_with_person_bands(kreis, per_band_value=2)
-    totals = person_total_by_kreis(cells, kreis)
-    # 18 bands x 2 per band: 03101 has 2 rows -> 72; 03102 has 1 row -> 36.
-    assert totals == {"03101": 72, "03102": 36}
+    for fine in (False, True):
+        cells, band_cols = _cells_with_person_bands(
+            kreis, per_band_value=2, fine_teen_age_bands=fine)
+        totals = person_total_by_kreis(cells, kreis, fine_teen_age_bands=fine)
+        per_row = 2 * len(band_cols)
+        assert totals == {"03101": 2 * per_row, "03102": per_row}
+
+
+def test_person_band_columns_cover_the_teen_years_as_single_years_when_fine():
+    """With the fine bands the 10-19 ``_agg`` column is replaced by exactly the ten
+    single-year columns it was the sum of, per sex -- so the same people are counted."""
+    from braunschweig.popsim.stage import person_band_census_columns
+
+    fine = set(person_band_census_columns(fine_teen_age_bands=True))
+    coarse = set(person_band_census_columns(fine_teen_age_bands=False))
+    for sex in ("M", "F"):
+        assert f"{sex}_AGE_10_19_agg" in coarse
+        assert f"{sex}_AGE_10_19_agg" not in fine
+        assert {f"{sex}_AGE_{year}" for year in range(10, 20)} <= fine
+    # Every other band column is untouched.
+    assert coarse - fine == {"M_AGE_10_19_agg", "F_AGE_10_19_agg"}
 
 
 def test_person_total_by_kreis_raises_on_missing_band_column():
-    from braunschweig.popsim.stage import person_total_by_kreis
+    from braunschweig.popsim.stage import person_total_by_kreis  # noqa: F811
 
     kreis = pd.Series(["03101", "03102"])
     cells, band_cols = _cells_with_person_bands(kreis)
     cells = cells.drop(columns=[band_cols[0]])  # drop one band -> no silent fallback
     with pytest.raises(RuntimeError, match="band columns"):
         person_total_by_kreis(cells, kreis)
+
+
+def test_person_total_by_kreis_rejects_a_band_variant_mismatch():
+    """Asking for the fine-band columns on a frame loaded for the ten-year path (or vice
+    versa) must raise instead of silently summing a partial set -- the desync this flag
+    makes possible (#320)."""
+    from braunschweig.popsim.stage import person_total_by_kreis
+
+    kreis = pd.Series(["03101"])
+    coarse_cells, _ = _cells_with_person_bands(kreis, fine_teen_age_bands=False)
+    with pytest.raises(RuntimeError, match="band columns"):
+        person_total_by_kreis(coarse_cells, kreis, fine_teen_age_bands=True)
 
 
 # --- Audit 2026-07-09: trip_class seed derives from the REALISED weekday plan source ---

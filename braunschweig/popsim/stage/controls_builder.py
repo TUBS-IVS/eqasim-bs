@@ -28,7 +28,7 @@ import pandas as pd
 
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
                       employment_grid=False, kreis_control_names=(), status_kreis=False,
-                      importance_profile="uniform"):
+                      importance_profile="uniform", fine_teen_age_bands=True):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -52,6 +52,11 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     status_kreis: backward-compat alias for kreis_control_names=("economic_status",).
     Default False. Kept so existing callers/tests stay byte-identical.
 
+    fine_teen_age_bands: when True (default, issue #320) the tier0 10-19 age x sex controls
+    are replaced by 10-15 / 16-17 / 18-19. MUST carry the same value as the
+    build_source_columns / build_aggregation_map calls in the same run, or the rendered
+    controls.csv and the loaded/derived cell columns disagree.
+
     importance_profile: a key of control_spec.IMPORTANCE_PROFILES selecting per-group
     PopulationSim importance weights. Default "uniform" leaves every control's importance
     untouched (byte-identical). Applied to BOTH sources after the frame is built.
@@ -69,7 +74,8 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
         df = pd.read_csv(controls_path, sep=";")
     elif controls_source == "catalog":
         catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid,
-                                  kreis_control_names=effective_kreis_names)
+                                  kreis_control_names=effective_kreis_names,
+                                  fine_teen_age_bands=fine_teen_age_bands)
         df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)
     else:
         raise ValueError(f"unknown controls_source {controls_source!r}")
@@ -89,26 +95,33 @@ def _kreis_controls_map(controls):
     return {f"{c.name}_{c.geography}": tuple(c.census_source) for c in controls}
 
 
-def person_band_census_columns():
-    """The 18 age-x-sex 100m band census-source column names (tier0 backbone).
+def person_band_census_columns(*, fine_teen_age_bands=True):
+    """The age-x-sex 100m band census-source column names (tier0 backbone).
 
     Person-level KREIS attribute controls (e.g. ``trip_class``) partition the per-Kreis
     PERSON total, not the household total. That person total is the per-Kreis sum over ALL
-    18 age-x-sex 100m band controls of the tier0 backbone (9 ten-year bands x {male,
-    female}), whose census-source column names are derived HERE from the backbone catalog
-    rather than hardcoded, so a backbone change (renamed/added bands) propagates
-    automatically instead of drifting out of sync.
+    age-x-sex 100m band controls of the tier0 backbone, whose census-source column names are
+    derived HERE from the backbone catalog rather than hardcoded, so a backbone change
+    (renamed/added bands) propagates automatically instead of drifting out of sync.
+
+    18 columns without the #320 fine teen bands (9 ten-year bands x 2 sexes, all
+    precomputed ``_agg`` columns); 36 with them, because the three fine bands are sourced
+    from single-year columns (6 + 2 + 2 per sex) instead of one ``_agg`` column. The SUM is
+    the same population either way -- the single-year columns partition the ten-year band
+    exactly -- but the column NAMES differ, so ``fine_teen_age_bands`` MUST match the value
+    used to build the controls frame and the parquet column selection. Asking for the ON
+    columns on a frame loaded for the OFF path raises in :func:`person_total_by_kreis`.
     """
     from braunschweig.popsim import control_spec as cs
     cols: list[str] = []
-    for control in cs.tier0_backbone_catalog():
+    for control in cs.tier0_backbone_catalog(fine_teen_age_bands=fine_teen_age_bands):
         if control.geography == cs.GEO_100M and control.seed_table == cs.SEED_TABLE_PERSONS:
             cols.extend(control.census_source)
     return tuple(cols)
 
 
-def person_total_by_kreis(cells, kreis_by_row):
-    """Per-Kreis PERSON total = per-Kreis sum over the 18 age-x-sex 100m band columns.
+def person_total_by_kreis(cells, kreis_by_row, *, fine_teen_age_bands=True):
+    """Per-Kreis PERSON total = per-Kreis sum over the age-x-sex 100m band columns.
 
     Parameters
     ----------
@@ -122,22 +135,23 @@ def person_total_by_kreis(cells, kreis_by_row):
     Returns
     -------
     dict[str, float]
-        ``{ars5: person_total}`` summed over the 18 band columns per Kreis.
+        ``{ars5: person_total}`` summed over the band columns per Kreis.
 
     Raises
     ------
     RuntimeError
-        If any of the 18 band columns is absent from ``cells`` (no silent fallback:
+        If any of the band columns is absent from ``cells`` (no silent fallback:
         a person-level control cannot be constrained without the person totals).
     """
-    band_cols = list(person_band_census_columns())
+    band_cols = list(person_band_census_columns(fine_teen_age_bands=fine_teen_age_bands))
     missing = [c for c in band_cols if c not in cells.columns]
     if missing:
         raise RuntimeError(
             "person_total_by_kreis: a person-level KREIS control is ON but the age-x-sex "
             f"band columns {missing} are absent from the cells frame (has "
-            f"{[c for c in band_cols if c in cells.columns]} of the 18 bands); cannot derive "
-            "the per-Kreis PERSON total (no silent fallback).")
+            f"{[c for c in band_cols if c in cells.columns]} of {len(band_cols)}); cannot "
+            "derive the per-Kreis PERSON total (no silent fallback). If the run has "
+            "fine_teen_age_bands OFF, this helper must be called with the same value.")
     return cells.groupby(kreis_by_row)[band_cols].sum().sum(axis=1).to_dict()
 
 
@@ -213,7 +227,8 @@ def _grid_geography_controls(controls, cs):
     return [c for c in controls if c.geography in grid_geos]
 
 
-def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",)):
+def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
+                          fine_teen_age_bands=True):
     """Return the multi-column aggregation map for the active controls.
 
     For ``controls_source="catalog"``: derives the aggregation map from the typed
@@ -231,12 +246,13 @@ def build_aggregation_map(*, controls_source="csv", controls_path=None, seed="mi
     if controls_source != "catalog":
         return {}
     from braunschweig.popsim import control_spec as cs
-    catalog = cs.full_catalog(include_tiers=tiers)
+    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands)
     active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.build_aggregation_map(active)
 
 
-def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid", tiers=("tier0",)):
+def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid", tiers=("tier0",),
+                         fine_teen_age_bands=True):
     """Return the RAW census parquet columns to load for the active controls.
 
     For ``controls_source="catalog"``: returns the union of all census_source columns
@@ -249,6 +265,6 @@ def build_source_columns(*, controls_source="csv", controls_df=None, seed="mid",
     if controls_source != "catalog":
         return None
     from braunschweig.popsim import control_spec as cs
-    catalog = cs.full_catalog(include_tiers=tiers)
+    catalog = cs.full_catalog(include_tiers=tiers, fine_teen_age_bands=fine_teen_age_bands)
     active = _grid_geography_controls(cs.controls_for_seed(catalog, seed), cs)
     return cs.source_columns_union(active)

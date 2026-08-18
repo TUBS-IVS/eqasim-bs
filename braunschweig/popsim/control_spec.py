@@ -80,6 +80,63 @@ AGE_BANDS: Sequence[tuple] = (
     ("80_plus", 80, None),
 )
 
+# Issue #320: the ten-year bands leave the composition INSIDE a band unconstrained, and
+# the 10-19 band is where that bites: measured on the 100% population, 15-17 came out
+# +64% and 18-19 -75% against DESTATIS 12411-0018 while the band TOTAL was fine. These
+# three replacement bands split it at edges that published Zensus bins actually carry
+# (the 5-class ``Unter18`` and the INFR ``a16bis18``), so the targets are not an
+# interpolation artefact. They sum to the old band EXACTLY -- verified bit-for-bit
+# against ``M_AGE_10_19_agg`` / ``F_AGE_10_19_agg`` in the cell parquet -- so replacing
+# it is lossless and keeping it alongside would re-introduce the derivable redundancy the
+# tier0 reduction removed. Same ``(label, lower, upper_exclusive)`` shape as AGE_BANDS.
+TEEN_BAND_LABEL: str = "10_19"
+FINE_TEEN_AGE_BANDS: Sequence[tuple] = (
+    ("10_15", 10, 16),
+    ("16_17", 16, 18),
+    ("18_19", 18, 20),
+)
+FINE_TEEN_BAND_LABELS: frozenset = frozenset(label for label, _, _ in FINE_TEEN_AGE_BANDS)
+
+
+def backbone_age_bands(fine_teen_age_bands: bool) -> List[tuple]:
+    """The backbone age bands, with ``10_19`` optionally replaced by the fine teen bands.
+
+    Parameters
+    ----------
+    fine_teen_age_bands:
+        ``True`` -> 11 bands (10-15 / 16-17 / 18-19 in place of 10-19);
+        ``False`` -> the nine ten-year :data:`AGE_BANDS` (the pre-#320 production set).
+    """
+    if not fine_teen_age_bands:
+        return list(AGE_BANDS)
+    bands: List[tuple] = []
+    for band in AGE_BANDS:
+        if band[0] == TEEN_BAND_LABEL:
+            bands.extend(FINE_TEEN_AGE_BANDS)
+        else:
+            bands.append(band)
+    return bands
+
+
+def backbone_age_census_source(sex_prefix: str, band_label: str,
+                               lower: int | None, upper: int | None) -> tuple:
+    """Census-source column(s) for one backbone age x sex control.
+
+    The ten-year bands exist as precomputed ``{M,F}_AGE_<band>_agg`` columns in the
+    prepared cell parquet, so they are single-source identities. The fine teen bands do
+    NOT exist there and are row-summed from the single-year ``{M,F}_AGE_<year>`` columns
+    by :func:`braunschweig.popsim.prepared_cells.add_aggregated_controls` (which also
+    carries the missing-source warnings and the all-sources-missing hard error, so a
+    permanently-zero control cannot slip through).
+    """
+    if band_label in FINE_TEEN_BAND_LABELS:
+        if lower is None or upper is None:
+            raise ValueError(
+                f"fine teen band {band_label!r} must have both bounds "
+                f"(got lower={lower}, upper={upper}).")
+        return tuple(f"{sex_prefix}_AGE_{year}" for year in range(lower, upper))
+    return (f"{sex_prefix}_AGE_{band_label}_agg",)
+
 
 @dataclass(frozen=True)
 class ControlDef:
@@ -354,8 +411,13 @@ def _backbone_age_expression(band_label: str, lower: int | None, upper: int | No
     return f"{lower_clause}&(persons.HP_ALTER < {upper})&{sex_clause}"
 
 
-def tier0_backbone_catalog() -> List[CatalogControl]:
-    """Build the Tier-0 backbone catalog (LOSSLESS-reduced): 20 controls.
+def tier0_backbone_catalog(*, fine_teen_age_bands: bool = True) -> List[CatalogControl]:
+    """Build the Tier-0 backbone catalog (LOSSLESS-reduced): 20 or 24 controls.
+
+    With ``fine_teen_age_bands=True`` (the default since issue #320) the 10-19 band is
+    replaced by 10-15 / 16-17 / 18-19, so the 100m block holds 22 age x sex controls
+    instead of 18 and the catalog has 24 controls instead of 20. ``False`` reproduces the
+    pre-#320 nine-band set byte-identically (see the committed baseline fixture).
 
     This is the over-controlling fix: redundant/derivable marginals are dropped so
     PopulationSim is constrained only by an independent, non-redundant set, without
@@ -363,7 +425,7 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
 
     Reduced structure (21 controls):
 
-    - ``ZENSUS100m`` (19): ``HH_TOTAL`` + the 18 age x sex bands.
+    - ``ZENSUS100m`` (19, or 23 with the fine teen bands): ``HH_TOTAL`` + the age x sex bands.
       * ``POP_TOTAL`` is DROPPED at 100m -- it is the exact sum of the 18 age x sex
         bands, so it is fully derivable (lossless) and adds no independent constraint.
       * ``M_TOTAL`` / ``F_TOTAL`` are DROPPED at 100m -- each is the exact sum of that
@@ -379,7 +441,8 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
         source set -> a 1km-only source column would be missing -> PopulationSim
         KeyError); persons are enforced via the 100m age x sex bands + aggregation.
 
-    Net: 100m = {HH_TOTAL, 18 bands} = 19 ; 1km = {HH_TOTAL} = 1 ; total 20.
+    Net: 100m = {HH_TOTAL, 18 bands} = 19 ; 1km = {HH_TOTAL} = 1 ; total 20
+    (with the fine teen bands: 100m = 23, total 24).
 
     All controls have both ``mid`` and ``entd`` seed expressions (the MiD and ENTD
     built tables share the column names HP_ALTER / HP_SEX / H_GEW / P_GEW).
@@ -397,7 +460,8 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
     Returns
     -------
     list[CatalogControl]
-        20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km).
+        20 backbone controls (19 at ZENSUS100m, 1 at ZENSUS1km); 24 (23 + 1) when
+        ``fine_teen_age_bands`` is set.
     """
     HH_TOTAL_BASE = HH_TOTAL_CENSUS_COLUMN
     POP_TOTAL_BASE = "POP_TOTAL_100m_adj"
@@ -419,9 +483,11 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
             seed_expressions={"mid": HH_TOTAL_EXPR, "entd": HH_TOTAL_EXPR},
         )
     )
-    # 9 male age bands then 9 female age bands.
+    # Male age bands then female age bands (9 each by default, 11 each with the #320
+    # fine teen bands).
+    bands = backbone_age_bands(fine_teen_age_bands)
     for sex_prefix, sex_value in (("M", 1), ("F", 2)):
-        for band_label, lower, upper in AGE_BANDS:
+        for band_label, lower, upper in bands:
             name = f"{sex_prefix}_AGE_{band_label}_agg"
             expr = _backbone_age_expression(band_label, lower, upper, sex_value)
             catalog.append(
@@ -430,7 +496,8 @@ def tier0_backbone_catalog() -> List[CatalogControl]:
                     geography=GEO_100M,
                     seed_table=SEED_TABLE_PERSONS,
                     importance=1000,
-                    census_source=(name,),
+                    census_source=backbone_age_census_source(
+                        sex_prefix, band_label, lower, upper),
                     seed_expressions={"mid": expr, "entd": expr},
                 )
             )
@@ -983,7 +1050,8 @@ def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
 
 def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,
                  include_status_kreis: bool = False,
-                 kreis_control_names: Sequence[str] = ()) -> List[CatalogControl]:
+                 kreis_control_names: Sequence[str] = (),
+                 fine_teen_age_bands: bool = True) -> List[CatalogControl]:
     """Build the combined catalog for the requested tier set.
 
     Parameters
@@ -996,6 +1064,9 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         building_type (3) controls at 100m. ``"tier3"`` adds the 7 employment/education
         controls at KREIS geography (MiD-only; ENTD drops all via controls_for_seed).
         Full ``("tier0","tier1","tier2","tier3")`` = 21 + 10 + 5 + 7 = 43.
+    fine_teen_age_bands:
+        Forwarded to :func:`tier0_backbone_catalog`; ``True`` (default, issue #320) adds
+        4 controls by splitting the 10-19 band into 10-15 / 16-17 / 18-19 per sex.
 
     Returns
     -------
@@ -1004,7 +1075,7 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
     """
     catalog: List[CatalogControl] = []
     if "tier0" in include_tiers:
-        catalog.extend(tier0_backbone_catalog())
+        catalog.extend(tier0_backbone_catalog(fine_teen_age_bands=fine_teen_age_bands))
     if "tier1" in include_tiers:
         catalog.extend(tier1_controls())
     if "tier2" in include_tiers:

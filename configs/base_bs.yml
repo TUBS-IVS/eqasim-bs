@@ -111,6 +111,14 @@ config:
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
   braunschweig.population.popsim.employment_grid: "on"
+  # Fine teen age bands in the tier0 backbone (issue #320): replaces the ten-year 10-19
+  # age x sex controls with 10-15 / 16-17 / 18-19 (22 instead of 18 controls at 100m).
+  # The ten-year band leaves the composition INSIDE it unconstrained, which produced a
+  # 15-17 excess of +64% and an 18-19 shortfall of -75% against DESTATIS 12411-0018 on
+  # the 100% population (issue #307). Targets come from the single-year cell columns,
+  # whose provenance is recorded in docs/registry/data/zensus2022_grid_cells.yml. 'on'
+  # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks =="on".
+  braunschweig.population.popsim.fine_teen_age_bands: "on"
   # Imported cleancensus Kreis control tables (kreis_erwerbsstatus / schulabschluss /
   # berufl_abschluss.parquet) -- required by BOTH employment_grid and tier3.
   braunschweig.population.popsim.kreis_controls_dir: eqasim-data/data/braunschweig/popsim/kreis_controls

@@ -93,8 +93,14 @@ def test_grid_source_columns_baseline_unchanged():
     # backbone single-source columns: HH_TOTAL + 18 age x sex bands (all 100m).
     # POP_TOTAL and M_TOTAL / F_TOTAL are dropped (derivable sums of the bands); the
     # 1km backbone is HH_TOTAL only, so POP_TOTAL is no longer in the source union.
-    src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0",))
+    src = stage.build_source_columns(controls_source="catalog", seed="mid", tiers=("tier0",),
+                                     fine_teen_age_bands=False)
     assert len(src) == 19
+    # With the #320 fine teen bands the two 10-19 _agg columns are replaced by the twenty
+    # single-year columns they aggregated (ten per sex): 19 - 2 + 20 = 37.
+    src_fine = stage.build_source_columns(controls_source="catalog", seed="mid",
+                                          tiers=("tier0",))
+    assert len(src_fine) == 37
 
 
 def test_tier3_kreis_control_totals_columns_match_controls_csv_control_field():

@@ -30,6 +30,7 @@ may only name run manifests (no run, no claim).
 | [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_purpose](../registry/features/escort_purpose.yml) | behavior | active | ON | A/-/- | 5 | proven | none | committed | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | pending |
+| [fine_teen_age_bands](../registry/features/fine_teen_age_bands.yml) | population | active | ON | A/A/- | 5 | proven | marker | none | unvalidated | pending |
 | [fleet_consistency_v2](../registry/features/fleet_consistency_v2.yml) | fleet | active | ON | A/A/- | 4 | proven | marker | committed | unvalidated | pending |
 | [fleet_electric_calibration](../registry/features/fleet_electric_calibration.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | committed | unvalidated | pending |
 | [fleet_hsn_tsn_attributes](../registry/features/fleet_hsn_tsn_attributes.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | none | unvalidated | pending |

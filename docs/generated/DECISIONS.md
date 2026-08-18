@@ -96,3 +96,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0085](../decisions/ADR-0085-rake-every-powertrain-per-kreis-not-only-the-electric-mass.md) | 2026-08-17 | active | Rake every powertrain per Kreis, not only the electric mass (issue #277) |
 | [ADR-0086](../decisions/ADR-0086-gemeinde-ev-tilt-uses-the-combined-electric-share-when-the-source-has-no-split.md) | 2026-08-17 | active | The Gemeinde EV tilt uses the combined electric share when the source publishes no BEV/PHEV split (issue #277) |
 | [ADR-0087](../decisions/ADR-0087-one-draw-for-the-pt-subscription-boolean-and-category.md) | 2026-08-18 | active | The PT-subscription boolean is derived from the resolved category, not drawn a second time (issue #319) |
+| [ADR-0088](../decisions/ADR-0088-fine-teen-age-bands-in-the-tier0-backbone.md) | 2026-08-18 | active | The tier0 backbone splits the 10-19 age band at the published Zensus bin edges (issue #320) |
