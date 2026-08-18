@@ -25,6 +25,8 @@ def load(name: str) -> pd.DataFrame:
     ("target2026_has_ebike_by_kreis.csv", ["ebike_yes", "ebike_no"]),
     ("target2026_number_of_bicycles_by_kreis.csv",
      ["bikes_0", "bikes_1", "bikes_2", "bikes_3", "bikes_4plus"]),
+    ("target2026_pt_ticket_group_by_kreis.csv",
+     ["deutschlandticket", "other_flatrate", "not_flatrate"]),
 ])
 def test_structure(name, cats):
     t = load(name)
@@ -58,6 +60,27 @@ def test_cars_sources():
     assert t.loc["03153", "source"] == "mid_shrunk"
     # shrunk Goslar 0-car: 0.7*0.22 + 0.3*0.15 = 0.199
     assert t.loc["03153", "cars_0"] == pytest.approx(0.199, abs=0.005)
+
+
+def test_pt_ticket_group_is_mid_only_and_reproduces_the_p24_1_flatrate_share():
+    """MiD P24.1 only (issue #321): SrV is not a valid target for subscription OWNERSHIP
+    (ADR-0060) and its Deutschlandticket table is all-ages against MiD's 14+ base, so every
+    row must be sourced 'mid' -- no blend, no shrinkage.
+
+    The two flatrate groups must also add back up to the published P24.1 flatrate share, or
+    the control would steer a different quantity than has_pt_subscription: region 19%,
+    Braunschweig 26%.
+    """
+    t = load("target2026_pt_ticket_group_by_kreis.csv").set_index("ars5")
+    assert set(t["source"]) == {"mid"}
+    flatrate = t["deutschlandticket"] + t["other_flatrate"]
+    assert abs(flatrate.loc["Gesamt"] - 0.19) < 1e-3
+    assert abs(flatrate.loc["03101"] - 0.26) < 1e-3
+    # Deutschlandticket is kept separate precisely because it is the one flatrate category
+    # with a second committed survey; the committed SrV figure (6.08% region, all ages) is
+    # BELOW the MiD 14+ target, which is the corridor recorded in the ADR -- pin the
+    # direction so a later "harmonisation" cannot quietly erase the disagreement.
+    assert t.loc["Gesamt", "deutschlandticket"] > 0.0608
 
 
 def test_ebike_is_srv_with_wob_assumption():

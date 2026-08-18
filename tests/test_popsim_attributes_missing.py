@@ -358,3 +358,48 @@ def test_has_pt_subscription_requires_the_resolved_type_column():
     persons = pd.DataFrame({"P_FKARTE": [3, 99], "alter_gr1": [5, 5]})
     with pytest.raises(KeyError, match="pt_subscription_type"):
         a.map_has_pt_subscription(persons)
+
+
+# ---------------------------------------------------------------------------
+# Issue #321: the three-group PT ticket control seed column
+# ---------------------------------------------------------------------------
+
+
+def test_pt_ticket_group_collapses_the_resolved_type_into_three_groups():
+    """The control steers 3 groups, not the 9 P24.1 categories.
+
+    ``BraunschweigPtCostModel.calculateCost_MU`` returns 0.0 for every flatrate holder, so
+    the four flatrate TYPES are simulation-equivalent and the non-flatrate split has no
+    effect at all. Controlling all 9 categories per Kreis would spend 72 control columns on
+    mostly simulation-neutral structure; these 3 groups spend 24 and keep the
+    Deutschlandticket separately steerable (the only flatrate category with a second
+    committed survey).
+    """
+    persons = pd.DataFrame({"pt_subscription_type": [
+        "deutschlandticket", "monat_abo_jahreskarte", "jobticket_semesterticket",
+        "wochen_monat_ohne_abo", "einzelfahrschein", "fahre_nie", "anderes",
+        "mehrfachkarte"]})
+    out = a.map_pt_ticket_group(persons)
+    assert out["pt_ticket_group"].tolist() == [
+        "deutschlandticket", "other_flatrate", "other_flatrate", "other_flatrate",
+        "not_flatrate", "not_flatrate", "not_flatrate", "not_flatrate"]
+
+
+def test_pt_ticket_group_flatrate_groups_reproduce_the_flatrate_definition():
+    """``deutschlandticket`` + ``other_flatrate`` must be exactly PT_TICKET_FLATRATE.
+
+    This is what makes the control steer the quantity eqasim reads: the sum of the two
+    flatrate groups is ``has_pt_subscription`` by construction, so raking the groups cannot
+    drift away from the boolean (the #319 failure mode).
+    """
+    covered = {"deutschlandticket"} | set(a.PT_TICKET_OTHER_FLATRATE)
+    assert covered == set(PT_TICKET_FLATRATE)
+    assert "deutschlandticket" not in a.PT_TICKET_OTHER_FLATRATE
+
+
+def test_pt_ticket_group_requires_the_resolved_type_column():
+    """Deriving the group from the raw P_FKARTE code would re-open the #319 defect (a
+    second independent resolution of the imputed codes), so the mapper demands the
+    already-resolved category and fails loudly without it."""
+    with pytest.raises(KeyError, match="pt_subscription_type"):
+        a.map_pt_ticket_group(pd.DataFrame({"P_FKARTE": [3, 99]}))

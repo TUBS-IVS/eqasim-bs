@@ -144,6 +144,26 @@ FKARTE_TO_CATEGORY: dict[int, str] = {
     8: "fahre_nie",              # never travels by PT
 }
 
+# --- Issue #321: the three-group PT ticket control -------------------------------------
+# The per-Kreis PT control steers THREE groups rather than the nine P24.1 categories.
+# Rationale: org.eqasim.braunschweig.mode_choice.BraunschweigPtCostModel.calculateCost_MU
+# returns 0.0 for every flatrate holder, so the four flatrate TYPES are simulation-
+# equivalent and the split among the non-flatrate types has no simulation effect at all.
+# Nine categories x 8 Kreise would be 72 control columns, most of them steering
+# simulation-neutral structure; these three groups are 24 and keep the Deutschlandticket
+# separately steerable -- it is the only flatrate category with a second committed survey
+# (srv2023_dticket_by_kreis.csv) and the natural policy lever.
+#
+# The Deutschlandticket is named explicitly and the REST of PT_TICKET_FLATRATE is derived,
+# so PT_TICKET_FLATRATE stays the single owner of "which ticket grants unlimited rides":
+# deutschlandticket + other_flatrate is PT_TICKET_FLATRATE by construction, hence the
+# control's flatrate mass equals has_pt_subscription and cannot drift from it (ADR-0087).
+PT_TICKET_DEUTSCHLANDTICKET: str = "deutschlandticket"
+PT_TICKET_OTHER_FLATRATE: frozenset[str] = frozenset(
+    PT_TICKET_FLATRATE - {PT_TICKET_DEUTSCHLANDTICKET})
+PT_TICKET_GROUPS: tuple[str, ...] = (
+    PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "not_flatrate")
+
 # The never-travels category is used for the structural under-14 floor
 # (code 402, children under the MiD PT-subscription basis age, not interviewed)
 # and as the default for persons whose code cannot be resolved. Adult
@@ -594,6 +614,53 @@ def map_pt_subscription_type(
             f"Check that FKARTE_TO_CATEGORY is consistent with PT_TICKET_CATEGORIES."
         )
     out["pt_subscription_type"] = out["pt_subscription_type"].astype("string")
+    return out
+
+
+def map_pt_ticket_group(
+    persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
+) -> pd.DataFrame:
+    """Add the three-group ``pt_ticket_group`` seed/control column (issue #321).
+
+    Collapses the resolved :data:`braunschweig.data.mid.reference_tables.PT_TICKET_CATEGORIES`
+    onto :data:`PT_TICKET_GROUPS`: ``deutschlandticket`` stays its own group, the remaining
+    flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
+
+    Deriving the group from the already-resolved category (and NOT a second time from the raw
+    ``P_FKARTE``) is what keeps it consistent with ``has_pt_subscription``: a second
+    resolution of the imputed codes 99 / 202 / 206 is exactly the defect ADR-0087 removed.
+
+    Raises
+    ------
+    KeyError
+        If ``type_col`` is absent -- see :func:`map_pt_subscription_type` for the resolver.
+    """
+    if type_col not in persons.columns:
+        raise KeyError(
+            f"[braunschweig.popsim.attributes] map_pt_ticket_group: required column "
+            f"{type_col!r} is absent. Call map_pt_subscription_type first; the group is "
+            f"derived from the resolved category so that it cannot disagree with "
+            f"has_pt_subscription (issue #319 / ADR-0087)."
+        )
+    out = persons.copy()
+    category = out[type_col].astype(str)
+    out["pt_ticket_group"] = np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 "not_flatrate"))
+    n = len(out)
+    if n:
+        counts = out["pt_ticket_group"].value_counts()
+        logger.info(
+            "[braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket "
+            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%)",
+            int(counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0)),
+            100.0 * counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0) / n,
+            int(counts.get("other_flatrate", 0)),
+            100.0 * counts.get("other_flatrate", 0) / n,
+            int(counts.get("not_flatrate", 0)),
+            100.0 * counts.get("not_flatrate", 0) / n,
+        )
     return out
 
 

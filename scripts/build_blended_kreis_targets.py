@@ -13,6 +13,11 @@ Attributes built:
 - has_ebike {yes,no}: SrV only (no MiD per-Kreis source exists).
   ASSUMPTION: Wolfsburg uses the SrV region-total share.
 - number_of_bicycles {0..4+}: MiD H12.3 x SrV bikes; no arbiter.
+- pt_ticket_group {deutschlandticket,other_flatrate,not_flatrate}: MiD P24.1 only
+  (issue #321). SrV is NOT blended in: ADR-0060 found its PT question to be a
+  usage-conditional ticket TYPE rather than a population ownership rate, and the
+  committed SrV Deutschlandticket table is all-ages against MiD's 14+ base. SrV stays
+  a corridor CHECK recorded in the ADR.
 - employment_status {vollzeit,teilzeit,geringfuegig,sonstiges,erwerbstaetig_unspec,
   in_ausbildung,nicht_erwerbstaetig}: MiD P9 x SrV V_ERW (feature #172); no arbiter
   -> disagreement shrinks MiD. Wolfsburg (03103, not covered by SrV) and Gesamt
@@ -164,10 +169,56 @@ def build_has_ebike(data: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_pt_ticket_group(data: Path) -> pd.DataFrame:
+    """Three-group PT ticket target from MiD P24.1 (issue #321).
+
+    MiD-ONLY, deliberately: ADR-0060 already rejected an SrV PT-subscription control
+    because the SrV question is usage-conditional (the ticket a PT USER travels with),
+    not an ownership rate over the population, "and MiD is the better source". The
+    committed SrV Deutschlandticket table additionally reports over ALL ages while MiD
+    P24.1 is a 14+ base, so precision-blending the two would mix universes -- the
+    #96 / #169 error class. SrV therefore stays a documented corridor CHECK
+    (srv2023_dticket_by_kreis.csv: 6.08% region / 8.78% Braunschweig, all ages) and is
+    NOT blended into this target.
+
+    The nine published categories are collapsed onto attributes.PT_TICKET_GROUPS and each
+    Kreis row is renormalised, because the published integer percentages sum to 99-101.
+    Collapsing to three groups also makes each cell far thicker than the 9-way split, so
+    no Dirichlet shrinkage is applied (consumer uses prior_n = 0, as for every target here).
+    """
+    from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
+    from braunschweig.popsim.attributes import (
+        PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_OTHER_FLATRATE)
+
+    mid = read_csv(data / "mid" / "mid2023_P24_1.csv", dtype={"ars5": str})
+    cats = list(PT_TICKET_CATEGORIES)
+    other = [c for c in cats if c in PT_TICKET_OTHER_FLATRATE]
+    rest = [c for c in cats
+            if c != PT_TICKET_DEUTSCHLANDTICKET and c not in PT_TICKET_OTHER_FLATRATE]
+    rows = []
+    for _, r in mid.iterrows():
+        total = float(sum(float(r[c]) for c in cats))
+        if total <= 0:
+            raise ValueError(f"build_pt_ticket_group: P24.1 row {r['ars5']} sums to {total}")
+        rows.append({
+            "ars5": "Gesamt" if str(r["ars5"]) == "03ZGB" else str(r["ars5"]),
+            "source": "mid",
+            "n_effective": int(r["n_unweighted"]),
+            PT_TICKET_DEUTSCHLANDTICKET: float(r[PT_TICKET_DEUTSCHLANDTICKET]) / total,
+            "other_flatrate": sum(float(r[c]) for c in other) / total,
+            "not_flatrate": sum(float(r[c]) for c in rest) / total,
+        })
+    return pd.DataFrame(rows)
+
+
 def write_target(df: pd.DataFrame, out_path: Path, config: BlendConfig,
-                 ebike: bool = False) -> None:
-    note = ("; EXCEPTION this file: SrV-only attribute, Wolfsburg uses the "
-            "SrV region total (ASSUMPTION)") if ebike else ""
+                 ebike: bool = False, note: str = "") -> None:
+    """Write one target table. ``note`` records a per-file exception to the common
+    blending rules in the header, so a single-source file cannot be mistaken for a
+    blended one (``ebike`` is the pre-existing shorthand for its own exception)."""
+    if ebike:
+        note = ("; EXCEPTION this file: SrV-only attribute, Wolfsburg uses the "
+                "SrV region total (ASSUMPTION)")
     header = HEADER_COMMON.format(tol=config.tolerance_pp,
                                   lam=config.disagreement_shrink_lambda,
                                   ebike_note=note)
@@ -198,6 +249,13 @@ def main(argv=None) -> int:
                  ebike=True)
     write_target(build_number_of_bicycles(args.data, config),
                  args.out_dir / "target2026_number_of_bicycles_by_kreis.csv", config)
+    write_target(build_pt_ticket_group(args.data),
+                 args.out_dir / "target2026_pt_ticket_group_by_kreis.csv", config,
+                 note=("; EXCEPTION this file: MiD P24.1 ONLY, no blending and no "
+                       "shrinkage. SrV is not a valid target for PT-subscription "
+                       "ownership (ADR-0060: usage-conditional ticket TYPE, not an "
+                       "ownership rate) and its Deutschlandticket table is all-ages "
+                       "against MiD's 14+ base; SrV stays a corridor CHECK only"))
     write_target(build_employment_status(args.data, config),
                  args.out_dir / "target2026_employment_status_by_kreis.csv", config)
     return 0
