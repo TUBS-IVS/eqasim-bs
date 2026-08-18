@@ -173,7 +173,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
-| [Own eqasim-java-bs fork (2.2.0, matsim.output e2e-green 2026-07-23)](../registry/features/eqasim_java_fork.yml) | active | ON | A/A/A | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) |  |
+| [Own eqasim-java-bs fork (2.3.0, matsim.output e2e-green 2026-07-23 at 2.2.0)](../registry/features/eqasim_java_fork.yml) | active | ON | A/A/A | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) |  |
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |

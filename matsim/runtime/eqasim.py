@@ -5,13 +5,22 @@ import matsim.runtime.git as git
 import matsim.runtime.java as java
 import matsim.runtime.maven as maven
 
-# eqasim-java-bs is rebased onto upstream eqasim-java v2.2.0 (ab938aaac, 2026-06-03).
-# The module version drives the built jar name (braunschweig-<version>.jar), so this
-# MUST match the <version> in eqasim-java-bs/braunschweig/pom.xml. Building v2.2.0
-# requires JDK 25 (upstream bumped maven.compiler source/target 21 -> 25); ensure the
-# felix build environment provides a JDK 25 (see docs/UPGRADE_SYNPP_AND_JAVA.md).
-DEFAULT_EQASIM_VERSION = "2.2.0"
+# eqasim-java-bs sits on upstream eqasim-java v2.2.0 (ab938aaac, 2026-06-03) but keeps
+# its own release line on top, so the fork's version is NOT the upstream one: v2.3.0 is
+# the fork's first own release and carries the same code the pipeline already built from
+# source before it (the release only labels it, see TUBS-IVS/eqasim-java-bs docs/
+# versioning.md). The module version drives the built jar name
+# (braunschweig-<version>.jar), so this MUST match the version that
+# eqasim-java-bs/braunschweig/pom.xml inherits from its <parent>. The fork targets
+# Java 25 (upstream bumped maven.compiler source/target 21 -> 25); ensure the build
+# environment provides a JDK 25 (see docs/UPGRADE_SYNPP_AND_JAVA.md).
+DEFAULT_EQASIM_VERSION = "2.3.0"
 DEFAULT_EQASIM_BRANCH = "main"
+# Only used by the legacy upstream-clone path below, which builds upstream's bavaria
+# module at this commit. That commit is upstream v2.2.0, so using the legacy path also
+# requires setting eqasim_version to the UPSTREAM version explicitly -- the default
+# above is the fork's version and would look for a bavaria-<fork version>.jar that
+# upstream never produces. The mismatch fails loudly in execute() rather than silently.
 DEFAULT_EQASIM_COMMIT = "ab938aaac"
 
 def configure(context):
