@@ -50,14 +50,19 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    Wiring decided in ADR-0079: not ported. Explicitly NOT settled: the realised
-    regional subscription share is UNMEASURED, and the subscription enters
-    BraunschweigPtCostModel (holders pay zero fare on every PT trip), which makes it
-    the serious per-Kreis control candidate of this feature family. A regional target
-    would first require extracting the full SrV E_OEV_FK category set -- the committed
-    SrV aggregate covers only the Deutschlandticket, over a different universe (all
-    persons vs. MiD's 14+), and is additionally distorted by the 2023-05 launch date.
-  source: ADR-0079 (mechanism decision); ADR-0012 (original design)
+    Wiring decided in ADR-0079: not ported. The realised share is no longer unmeasured:
+    issue #307 measured it on the 100% population (run manifest
+    docs/runs/i307-license-pt-measure-2026-08-18.yml). The popsim_mid flatrate share is
+    OVER-supplied -- 22.06% (14+) against the MiD P24.1 19.0%, +4.18pp in Braunschweig,
+    +8.50pp in Wolfsburg -- and the Deutschlandticket exceeds BOTH surveys (12.97% at 14+
+    vs MiD 10.0%; 11.37% all-ages vs SrV 6.08%). The per-Kreis control candidate is
+    therefore live and tracked as #321, where the reference conflict has to be handled as
+    a corridor (roughly 6-10% for the Deutschlandticket) rather than a point target: the
+    committed SrV aggregate covers only the Deutschlandticket, over a different universe
+    (all persons vs. MiD's 14+), and is additionally distorted by the 2023-05 launch date.
+    Prerequisite settled by ADR-0087 (#319): the boolean has_pt_subscription is now derived
+    from the resolved pt_subscription_type, so the steered quantity is well defined.
+  source: ADR-0079 (mechanism decision); ADR-0012 (original design); ADR-0087 (single draw)
 notes: 'Issue #255 is resolved by ADR-0079: the legacy synthesis.population.enriched
   implementation never executes under either PopulationSim pipeline (the stage name is
   aliased to braunschweig.popsim.enriched_adapter), and it stays live under

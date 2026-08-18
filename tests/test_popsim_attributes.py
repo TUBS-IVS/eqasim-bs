@@ -89,8 +89,10 @@ def test_map_has_pt_subscription_from_p_fkarte():
     # Monat-Abo/Jahreskarte, Jobticket/Semesterticket); 1,2,7,8 not.
     # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently False); the
     # imputed result is a bool, not NaN.
+    # Since #319 the boolean is DERIVED from the resolved pt_subscription_type (one draw
+    # for both attributes), so the category has to be resolved first.
     persons = pd.DataFrame({"P_FKARTE": [1, 2, 3, 4, 5, 6, 7, 8, 99]})
-    out = attr.map_has_pt_subscription(persons)
+    out = attr.map_has_pt_subscription(attr.map_pt_subscription_type(persons))
     assert list(out["has_pt_subscription"][:8]) == [
         False, False, True, True, True, True, False, False
     ]

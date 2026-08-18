@@ -10,12 +10,10 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYED_TAET
+from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
 from braunschweig.popsim.sampling import weighted_choice
 
 logger = logging.getLogger(__name__)
-
-PT_SUBSCRIPTION_CODES = frozenset({3, 4, 5, 6})  # see attributes.map_has_pt_subscription
 
 # Soft keys ordered HIGH→LOW priority (dropped from the END first). ``size`` AND
 # ``regiostar7`` are separate HARD keys (always required): equal size so the
@@ -34,7 +32,7 @@ def _car_class(n_cars: pd.Series) -> np.ndarray:
 def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.DataFrame:
     has_lic = persons.assign(_lic=persons["P_FSCHEIN"].eq(1)).groupby("H_ID")["_lic"].any()
     has_pt = persons.assign(
-        _pt=persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES)
+        _pt=persons["P_FKARTE"].isin(PT_SUBSCRIPTION_FKARTE)
     ).groupby("H_ID")["_pt"].any()
     feats = pd.DataFrame({
         "size": households["H_GR"].astype(int).to_numpy(),
@@ -135,7 +133,7 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
         # P_TAET in {1, 2, 3, 4, 6, 8} = employed, incl. 8 = Azubi/Ausbildung.
         # 5 = Elternzeit and 7 = Wehr-/Bundesfreiwilligendienst/FSJ are NOT employed.
         "employed": persons["P_TAET"].isin(EMPLOYED_TAET).to_numpy(),
-        "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_CODES).to_numpy(),
+        "has_pt": persons["P_FKARTE"].isin(PT_SUBSCRIPTION_FKARTE).to_numpy(),
     }, index=persons.index)
 
 

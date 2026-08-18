@@ -95,3 +95,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0084](../decisions/ADR-0084-euro6-substage-lives-in-its-own-column-not-in-euro-class.md) | 2026-08-17 | active | The Euro-6 substage lives in its own column, not inside euro_class (issue #277) |
 | [ADR-0085](../decisions/ADR-0085-rake-every-powertrain-per-kreis-not-only-the-electric-mass.md) | 2026-08-17 | active | Rake every powertrain per Kreis, not only the electric mass (issue #277) |
 | [ADR-0086](../decisions/ADR-0086-gemeinde-ev-tilt-uses-the-combined-electric-share-when-the-source-has-no-split.md) | 2026-08-17 | active | The Gemeinde EV tilt uses the combined electric share when the source publishes no BEV/PHEV split (issue #277) |
+| [ADR-0087](../decisions/ADR-0087-one-draw-for-the-pt-subscription-boolean-and-category.md) | 2026-08-18 | active | The PT-subscription boolean is derived from the resolved category, not drawn a second time (issue #319) |

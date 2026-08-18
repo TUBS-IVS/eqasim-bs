@@ -11,8 +11,10 @@ map_number_of_bicycles (Task 2b).
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import pandas as pd
 
+from braunschweig.data.mid.reference_tables import PT_TICKET_FLATRATE
 from braunschweig.popsim import attributes as a
 
 
@@ -223,7 +225,8 @@ def test_household_income_eur_nonresponse_imputed():
 def test_pt_subscription_structural_and_nonresponse():
     """P_FKARTE structural (402 = Kind<14) resolves to False; 99 is imputed."""
     persons = pd.DataFrame({"P_FKARTE": [3, 8, 402, 99], "alter_gr1": [3, 3, 1, 3]})
-    out = a.map_has_pt_subscription(persons, rng=np.random.RandomState(0))
+    out = a.map_has_pt_subscription(
+        a.map_pt_subscription_type(persons, rng=np.random.RandomState(0)))
     assert out["has_pt_subscription"].tolist()[:3] == [True, False, False]
     assert out["has_pt_subscription"].isna().sum() == 0
 
@@ -241,7 +244,8 @@ def test_pt_subscription_adult_coverage_codes_are_imputed_not_false():
         "P_FKARTE": [5, 5, 5, 202, 206],
         "alter_gr1": [5, 5, 5, 5, 5],
     })
-    out = a.map_has_pt_subscription(persons, rng=np.random.RandomState(0))
+    out = a.map_has_pt_subscription(
+        a.map_pt_subscription_type(persons, rng=np.random.RandomState(0)))
     # 202/206 imputed from the valid pool (all code 5 -> True) -> True, not deterministic False
     assert out["has_pt_subscription"].tolist() == [True, True, True, True, True]
     assert out["has_pt_subscription"].isna().sum() == 0
@@ -269,16 +273,22 @@ def test_pt_subscription_nonresponse_imputed():
         "P_FKARTE": [3, 8, 99],
         "alter_gr1": [2, 2, 2],
     })
-    out = a.map_has_pt_subscription(persons, rng=np.random.RandomState(0))
+    out = a.map_has_pt_subscription(
+        a.map_pt_subscription_type(persons, rng=np.random.RandomState(0)))
     assert out["has_pt_subscription"].iloc[2] in (True, False)
     assert out["has_pt_subscription"].isna().sum() == 0
 
 
-def test_pt_subscription_no_rng_backward_compatible():
-    """Callers that omit rng must not raise."""
+def test_pt_subscription_type_no_rng_backward_compatible():
+    """Callers that omit rng must not raise.
+
+    The rng belongs to the CATEGORY mapper only: since #319 the boolean is a pure
+    derivation and takes no rng at all.
+    """
     persons = pd.DataFrame({"P_FKARTE": [3, 99]})
-    out = a.map_has_pt_subscription(persons)
+    out = a.map_has_pt_subscription(a.map_pt_subscription_type(persons))
     assert out["has_pt_subscription"].isna().sum() == 0
+    assert out["pt_subscription_type"].isna().sum() == 0
 
 
 def test_number_of_bicycles_valid_codes_map_correctly():
@@ -308,3 +318,43 @@ def test_number_of_bicycles_no_rng_backward_compatible():
     out = a.map_number_of_bicycles(hh)
     assert out["number_of_bicycles"].isna().sum() == 0
     assert (out["number_of_bicycles"] >= 0).all()
+
+
+def test_pt_subscription_boolean_equals_flatrate_of_resolved_type():
+    """``has_pt_subscription`` must be exactly the flatrate subset of the resolved
+    ``pt_subscription_type``.
+
+    Both attributes are derived from the SAME MiD column ``P_FKARTE``. Resolving them
+    through two INDEPENDENT ``missing.resolve`` draws lets them disagree for the imputed
+    codes 99 / 202 / 206 -- measured at 9,723 persons (0.86%) on the 100% population,
+    bidirectionally (issue #319). The boolean is what
+    ``BraunschweigPtCostModel.calculateCost_MU`` reads (holders pay zero fare on every PT
+    trip); the category is what the MiD P24.1 validation compares. A disagreement means
+    the simulated and the validated population are not the same people.
+
+    The fixture deliberately mixes flatrate (3, 5) and non-flatrate (1, 8) donors inside
+    the same conditioning band, because a single-valued donor pool would agree by
+    construction and prove nothing. The rng is ADVANCED before the type is resolved for
+    the same reason: both mappers default to ``RandomState(0)``, so an unadvanced stream
+    makes an independent second draw coincide with the first by accident and the test
+    passes while the defect is still there.
+    """
+    rng = np.random.RandomState(0)
+    rng.rand(37)
+    persons = pd.DataFrame({
+        "P_FKARTE":  [3, 1, 5, 8, 99, 202, 206, 99, 202, 206, 402],
+        "alter_gr1": [5, 5, 5, 5, 5,   5,   5,   4,   4,   4,   1],
+    })
+    out = a.map_pt_subscription_type(persons, rng=rng)
+    out = a.map_has_pt_subscription(out)
+    expected = out["pt_subscription_type"].isin(PT_TICKET_FLATRATE).tolist()
+    assert out["has_pt_subscription"].tolist() == expected
+
+
+def test_has_pt_subscription_requires_the_resolved_type_column():
+    """Without ``pt_subscription_type`` the boolean cannot be derived, and drawing it
+    independently is the bug of #319 -- so the mapper must fail loudly instead of
+    silently re-drawing (CLAUDE.md: no silent fallbacks)."""
+    persons = pd.DataFrame({"P_FKARTE": [3, 99], "alter_gr1": [5, 5]})
+    with pytest.raises(KeyError, match="pt_subscription_type"):
+        a.map_has_pt_subscription(persons)
