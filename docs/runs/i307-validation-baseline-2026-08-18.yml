@@ -1,0 +1,72 @@
+id: i307-validation-baseline-2026-08-18
+date: '2026-08-18'
+repository:
+  commit: cd05890
+  branch: main
+  notes: 'Analysis code = the server working copy at cd05890 (2026-07-20). Deliberately NOT
+    updated to current main before the run: the object under measurement is the POPULATION,
+    and pulling would shift the synpp stage hashes of the shared cache and make a later 100%
+    re-run expensive for no analytical gain. The measured population itself was produced at
+    commit e1164cc.'
+configuration:
+  base: configs/base_bs.yml
+  overlays: []
+  notes: 'Analysis only, no synthesis. Command: python -m
+    braunschweig.analysis.population_validation.run_population_validation --run-output-dir
+    eqasim-data/output_bs_100pct_allfeat_popsim --label i307-baseline-100pct --geo (on felix,
+    nice -n 10, ~2 min). Measures the population of run synth-100pct-2.2.0-2026-07-23.'
+sampling:
+  rate: 100% (1,130,141 persons / 558,284 households / 2,315,037 vehicles / 3,442,579 trips)
+  scope: ZGB-8
+pipeline:
+  targets: []
+  notes: analysis only; no stage executed
+classification:
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: control fit, all 10 registered controls (SRMSE, mean absolute delta in pp)
+  reference: committed control tables (census cells, MiD/SrV per-Kreis)
+  result: '10 controls, grades 4 very good / 6 good, none moderate or worse. Largest mean
+    |delta|: employment 2.59pp (SRMSE 0.058), pt_ticket_type 2.39pp (SRMSE 0.457),
+    driving_license_type 2.31pp (SRMSE 0.096), household_size 1.56pp, bicycles_per_hh 1.26pp,
+    cars_per_hh 1.02pp.'
+  artifact: 'felix:.../output_bs_100pct_allfeat_popsim/analysis/population_validation/
+    (controls_long.csv, quality_summary.csv, report.json, summary.md, geo exports)'
+  notes: 'Control fit, NOT a behavioural validation. This is the baseline the #320 / #321 /
+    #322 changes will be measured against.'
+- metric: agreement between the validation stage and scripts/measure_license_pt_shares.py
+  reference: the same population, two independent code paths
+  result: 'Identical to the last decimal: Braunschweig licence 83.57699079386491% and
+    Deutschlandticket 17.879698326077627% (14+ base) from both the validation stage and the
+    #307 measurement script; fahre_nie 28.27317081716493% likewise.'
+  artifact: 'felix:.../analysis/population_validation/controls_long.csv vs
+    felix:.../analysis/i307_license_pt/pt_type_by_kreis.csv'
+  notes: 'Cross-check of the MEASUREMENT HARNESS, not of the model. It rules out a
+    script-side error behind the #307 figures.'
+- metric: age_group control (0-14 / 15-29 / 30-44 / 45-59 / 60-74 / 75+) per Kreis
+  reference: DESTATIS 12411-0018 via the census age/sex target loader
+  result: '15-29 deviates by +2.41pp (Wolfsburg), +1.52pp (Braunschweig), +1.26pp
+    (Helmstedt), -1.40pp (Salzgitter); the remaining Kreise stay under 0.75pp.'
+  notes: 'Demonstrates the blind spot of issue #320 rather than contradicting it: 15-17 is
+    +64% and 18-19 is -75% against DESTATIS, but both fall inside this single 15-29 band and
+    largely cancel, so the control shows only a fraction of the error. A finer regression
+    check is part of the #320 acceptance criteria.'
+features:
+  note: Replaces the stale population_validation artifacts in that output directory (dated
+    2026-07-01, 1,100,608 persons) which did not belong to this population; they are preserved
+    on the server as analysis/population_validation_2026-07-01_stale rather than overwritten.
+artifacts:
+- 'felix:/home/felix/eqasim-bs/eqasim-data/output_bs_100pct_allfeat_popsim/analysis/population_validation/'
+- 'felix:/home/felix/i307_validation.log'
+issues:
+- '#307'
+- '#320'
+- '#321'
+- '#322'
+decisions:
+- ADR-0079
+- ADR-0088
+source: 'F3 of the #307 follow-up queue, 2026-08-18'
