@@ -1,0 +1,118 @@
+id: i307-license-pt-measure-2026-08-18
+date: '2026-08-18'
+repository:
+  commit: e1164cc
+  branch: unknown
+  notes: e1164cc is the commit that PRODUCED the measured population (from the run's
+    population_validation report.json git_commit and *_meta.json). The measurement script
+    itself ran against the server working copy cd058903 (loaders spatial.assign_geographies /
+    data.mid.reference_tables only); the script is committed as
+    scripts/measure_license_pt_shares.py.
+configuration:
+  base: configs/base_bs.yml
+  overlays: []
+  notes: 'No pipeline run: post-hoc measurement of the EXISTING 100% population of run
+    synth-100pct-2.2.0-2026-07-23 (popsim_mid, all features) at
+    felix:/home/felix/eqasim-bs/eqasim-data/output_bs_100pct_allfeat_popsim. Command:
+    python scripts/measure_license_pt_shares.py --run-output-dir <that dir>
+    --label synth-100pct-2.2.0-2026-07-23 --output-dir eqasim-data/analysis/i307_license_pt'
+sampling:
+  rate: 100% (1,130,141 persons; 1,130,139 with a VG250 Kreis match, 2 unmatched = 0.0002%)
+  scope: ZGB-8
+pipeline:
+  targets: []
+  notes: analysis only; no stage executed
+classification:
+- validation
+status:
+  execution: completed
+environment: server
+validation:
+- metric: has_driving_license share, ZGB, per universe (share of persons in the universe)
+  reference: MiD 2023 P17.1 (mid2023_P17_1.csv, 14+ base) and SrV 2023 car licence
+    (srv2023_car_license_17plus_by_kreis.csv, 17+ base)
+  result: 'all ages 78.72%; 14+ 85.84%; 17+ 89.97%; 18+ 91.32%. Like-for-like: 14+ vs MiD 14+
+    ja 86.0% = -0.16pp (vs ja/(ja+nein) 86.87% = -1.03pp); 17+ vs SrV 17+ 92.4% = -2.43pp.
+    Recomputed from the MiD age bands, the same MiD table reads 87.15% on an 18+ base, so the
+    realised 18+ 91.32% sits +4.17pp above the MiD 18+ reading and -1.1pp below SrV 17+.'
+  artifact: 'felix:.../analysis/i307_license_pt/license_realised_by_universe.csv,
+    license_reference_comparison.csv, report.json'
+  notes: 'ADR-0079 states the P17.1 ZGB figure as an 18+ base; the table is in fact a 14+ base
+    (its age table starts at the 14-17 band and the band weights sum to the total row). The
+    acceptance corridor is therefore not a single-universe interval: the level lands INSIDE
+    [86.9%, 92.4%] on the 17+/18+ universes and just below it on the 14+ universe, while each
+    like-for-like pairing agrees to within 0.2pp (MiD) / 2.4pp (SrV). Control fit, NOT a
+    behavioural validation; the P17.1 table is also an input to the legacy licence rake, but
+    under popsim_mid the licence is donor-inherited (ADR-0079), so the 14+ agreement is not
+    circular.'
+- metric: has_driving_license structure, age bands x sex (14+ base)
+  reference: mid2023_P17_1_by_age.csv, mid2023_P17_1_by_sex.csv
+  result: 'Level per band is too HIGH in every adult band: 18-29 +5.97pp, 30-39 +2.87pp,
+    40-49 +5.23pp, 50-59 +0.32pp, 60-64 +3.45pp, 65-74 +1.18pp, 75-79 +5.79pp, 80+ +12.09pp;
+    14-17 is -5.71pp (13.29% vs 19%, the BF17 floor). Sex gradient nearly absent: realised
+    male 86.36% / female 85.34% (gap 1.02pp) against MiD male 90% / female 82% (gap 8pp).'
+  artifact: 'felix:.../analysis/i307_license_pt/license_by_age_band.csv, license_by_sex.csv'
+  notes: The aggregate 14+ agreement coexists with a per-band excess because the synthetic age
+    composition differs from MiD's weighted one (synthetic 14-17 = 7.0% of the 14+ population
+    vs 1.8% in the MiD weights). STRUCTURE is identifiable where the level is not, and the
+    missing sex gradient is the clearest identifiable defect of the licence attribute.
+- metric: has_pt_subscription (eqasim flatrate) share, per Kreis and ZGB
+  reference: MiD 2023 P24.1 flatrate aggregate (deutschlandticket + wochen_monat_ohne_abo +
+    monat_abo_jahreskarte + jobticket_semesterticket), mid2023_P24_1.csv, 14+ base
+  result: 'ZGB 14+ 22.06% vs 19.0% = +3.06pp (all ages 19.34%, 17+ 19.67%, 18+ 18.75%).
+    Per Kreis (14+): Wolfsburg +8.50pp, Braunschweig +4.18pp (30.18% vs 26.0%),
+    Wolfenbuettel +3.89pp, Peine +3.05pp, Goslar +1.87pp, Salzgitter +1.43pp,
+    Helmstedt +0.33pp, Gifhorn -0.19pp.'
+  artifact: 'felix:.../analysis/i307_license_pt/pt_flatrate_realised_by_universe.csv,
+    pt_flatrate_reference_comparison.csv, pt_flatrate_by_age_band.csv, pt_flatrate_by_sex.csv'
+  notes: Zero-fare holders under BraunschweigPtCostModel.calculateCost_MU, so the +3.1pp
+    regional / +4.2pp Braunschweig excess acts on every PT decision. Sex gradient is reversed
+    (realised female 22.74% > male 21.35%; MiD male 19.80% > female 18.0%).
+- metric: pt_subscription_type distribution (9 categories), per Kreis
+  reference: mid2023_P24_1.csv per-Kreis margins, renormalised per Kreis (14+ base)
+  result: 'ZGB: einzelfahrschein -5.60pp, deutschlandticket +2.97pp, fahre_nie +2.64pp,
+    monat_abo_jahreskarte +1.44pp, wochen_monat_ohne_abo -1.35pp, others <1pp.
+    Braunschweig is far worse: fahre_nie +14.27pp (28.27% vs 14%), einzelfahrschein -10.21pp,
+    mehrfachkarte -8.60pp, deutschlandticket +4.88pp.'
+  artifact: 'felix:.../analysis/i307_license_pt/pt_type_by_kreis.csv'
+  notes: 'The popsim path does not rake to the P24.1 margins (ADR-0079 item 5). The Braunschweig
+    shape error is a donor-composition signature: the urban Kreis inherits a region-shaped
+    ticket mix, so occasional-ticket users are replaced by never-users plus flatrate holders.'
+- metric: Deutschlandticket share, two independent surveys
+  reference: mid2023_P24_1.csv deutschlandticket column (14+) and
+    srv2023_dticket_by_kreis.csv (all persons with a valid weight)
+  result: 'ZGB realised 12.97% (14+) / 11.37% (all ages) against MiD 10.0% (+2.97pp) and
+    SrV 6.08% (+5.29pp, i.e. 1.87x the SrV level). Braunschweig realised 17.88% (14+) /
+    16.14% (all) against MiD 13.0% (+4.88pp) and SrV 8.78% (+7.36pp).'
+  artifact: 'felix:.../analysis/i307_license_pt/pt_dticket_two_survey_comparison.csv'
+  notes: The two references disagree with each other (MiD 10% on a 14+ base vs SrV 6.08% on an
+    all-ages base; the universe explains roughly 1pp of that), so the defensible reading is a
+    reference RANGE of about 6-10%. The realised share is above BOTH ends on every Kreis
+    except Goslar and Helmstedt, i.e. outside the range rather than inside a corridor.
+features:
+  note: 'Measures the two donor-inherited attributes ADR-0079 left unmeasured
+    (has_driving_license, has_pt_subscription / pt_subscription_type) under popsim_mid.'
+artifacts:
+- 'felix:/home/felix/eqasim-bs/eqasim-data/analysis/i307_license_pt/ (8 CSV + report.json)'
+- scripts/measure_license_pt_shares.py (committed)
+issues:
+- '#307'
+decisions:
+- ADR-0079
+notes: 'Three side findings, each a defect rather than a share: (1) has_pt_subscription and
+  pt_subscription_type disagree for 9,723 persons (0.86%), bidirectionally (4,782 flatrate
+  types with the boolean False, 4,941 non-flatrate types with the boolean True) -- both are
+  resolved from the same MiD P_FKARTE column but through two INDEPENDENT missing.resolve draws
+  for the imputed codes 99/202/206 (map_has_pt_subscription vs map_pt_subscription_type), so
+  eqasim (which reads the boolean) and the validation layer (which reads the category)
+  describe different people. (2) The population_validation artifacts inside the run output
+  directory are STALE: they date 2026-07-01 and report n_persons 1,100,608, while the
+  population CSVs date 2026-07-23 and hold 1,130,141 persons; the licence/PT rows in that
+  controls_long.csv (e.g. Braunschweig licence 82.47%, Deutschlandticket 22.19%) are NOT this
+  run''s and differ from the measurement above. (3) Age composition inside the Zensus 10-19
+  band is wrong: 15-17 is 51,435 vs 31,430 (+64%, +1.78pp of the population) and 18-19 is
+  5,297 vs 21,582 (-75%, -1.43pp) against DESTATIS 12411-0018, with single-year ages 18/19
+  nearly absent; the popsim age x sex controls are nine TEN-year bands, so within-band
+  composition is unconstrained (50-54 +1.92pp and 65-74 -1.20pp are the same effect). This
+  distorts every age-conditioned measurement, including the 17+/18+ licence universes above.'
+source: measurement 2026-08-18 (issue #307)
