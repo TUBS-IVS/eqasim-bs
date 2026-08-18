@@ -122,6 +122,13 @@ config:
   # Imported cleancensus Kreis control tables (kreis_erwerbsstatus / schulabschluss /
   # berufl_abschluss.parquet) -- required by BOTH employment_grid and tier3.
   braunschweig.population.popsim.kreis_controls_dir: eqasim-data/data/braunschweig/popsim/kreis_controls
+  # PT-subscription per-Kreis control (issue #321, ADR-0089): three groups
+  # (deutschlandticket / other_flatrate / not_flatrate) at 14+, soft tier. Target is
+  # MiD P24.1 blended with SrV E_OEV_FK on a matched 14+ universe. Steers the quantity
+  # BraunschweigPtCostModel reads (holders pay zero fare on every PT trip), which #307
+  # measured at +3.06pp region / +4.18pp Braunschweig. 'on' QUOTED -- YAML 1.1 parses
+  # bare on->True, but the stage compares against the string "on".
+  braunschweig.population.popsim.pt_ticket_kreis_control: "on"
 
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so

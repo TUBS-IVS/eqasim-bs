@@ -164,6 +164,8 @@ KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.
+KEY_PT_TICKET_KREIS_CONTROL = "braunschweig.population.popsim.pt_ticket_kreis_control"
+
 _KREIS_CONTROL_TOGGLE_KEY = {
     "economic_status": KEY_STATUS_KREIS_CONTROL,
     "number_of_cars": KEY_CARS_KREIS_CONTROL,
@@ -171,6 +173,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
     "trip_class": KEY_TRIPS_KREIS_CONTROL,
     "employment_status": KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    "pt_ticket_group": KEY_PT_TICKET_KREIS_CONTROL,
     "work_participation": KEY_WORK_PARTICIPATION_CONTROL,
     "leisure_participation": KEY_LEISURE_PARTICIPATION_CONTROL,
     "education_participation": KEY_EDUCATION_PARTICIPATION_CONTROL,
@@ -188,6 +191,7 @@ _KREIS_CONTROL_DEFAULT = {
     "has_ebike": "on",
     "trip_class": "on",
     "employment_status": "on",
+    "pt_ticket_group": "on",
     "work_participation": "on",
     "leisure_participation": "on",
     "education_participation": "on",

@@ -214,11 +214,12 @@ def test_registry_has_seven_entries_with_expected_tiers():
     assert by_name["work_participation"].min_age is None
 
 
-def test_registry_has_nine_entries_with_expected_tiers():
+def test_registry_has_the_expected_entries_with_expected_tiers():
     by_name = {c.name: c for c in REGISTRY}
     assert set(by_name) == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "work_participation", "leisure_participation", "education_participation",
+        "employment_status", "pt_ticket_group", "work_participation", "leisure_participation",
+        "education_participation",
     }
     for name in ("leisure_participation", "education_participation"):
         assert by_name[name].tier == "hard"

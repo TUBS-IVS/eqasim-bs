@@ -62,6 +62,7 @@ may only name run manifests (no run, no claim).
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
+| [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 4 | not claimed | marker | committed | unvalidated | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |

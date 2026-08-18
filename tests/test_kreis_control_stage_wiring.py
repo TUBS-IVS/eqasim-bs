@@ -28,6 +28,20 @@ from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
 )
 
 
+def _all_kreis_entry_names() -> set:
+    """Every REGISTRY entry name.
+
+    The per-toggle tests below assert "switching this entry off drops EXACTLY this entry",
+    which is the behaviour under test; they derive the expected remainder from the registry
+    instead of re-listing it, so adding a control (e.g. pt_ticket_group, issue #321) does not
+    require touching every one of them. The full default-on set stays pinned explicitly in
+    tests/test_popsim_seed_kreis_columns.py::test_all_kreis_entries_default_on, so a
+    silently vanishing entry is still caught.
+    """
+    from braunschweig.popsim import kreis_attribute_control as kac
+    return {c.name for c in kac.REGISTRY}
+
+
 def _entry(name):
     return next(c for c in REGISTRY if c.name == name)
 
@@ -205,16 +219,18 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all nine entries default "on" (project rule: new features default
+    # Empty config -> all ten entries default "on" (project rule: new features default
     # on), in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
     # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on;
     # employment_status (second person-level entry, 14+ universe) is feature #172 task 4;
     # work_participation / leisure_participation / education_participation (third,
-    # fourth, fifth person-level entries) are feature #224 tasks 4-5.
+    # fourth, fifth person-level entries) are feature #224 tasks 4-5; pt_ticket_group
+    # (sixth person-level entry, 14+ universe) is issue #321.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "work_participation", "leisure_participation", "education_participation",
+        "employment_status", "pt_ticket_group", "work_participation", "leisure_participation",
+        "education_participation",
     ]
 
 
@@ -235,6 +251,7 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_EBIKE_KREIS_CONTROL: "off",
         stage.KEY_TRIPS_KREIS_CONTROL: "off",
         stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
+        stage.KEY_PT_TICKET_KREIS_CONTROL: "off",
         stage.KEY_WORK_PARTICIPATION_CONTROL: "off",
         stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off",
         stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off",
@@ -245,17 +262,14 @@ def test_active_kreis_entries_all_off_is_empty():
 def test_active_kreis_entries_individual_toggle():
     from braunschweig.popsim import stage
 
-    # Turning off only number_of_cars keeps the other eight entries active (all nine
-    # default "on"; see test_active_kreis_entries_has_ebike_can_be_turned_off).
+    # Turning off only number_of_cars keeps every other entry active (all default "on";
+    # see test_active_kreis_entries_has_ebike_can_be_turned_off).
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_CARS_KREIS_CONTROL: "off"}), "mid"
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == {
-        "economic_status", "number_of_bicycles", "has_ebike", "trip_class", "employment_status",
-        "work_participation", "leisure_participation", "education_participation",
-    }
+    assert set(names) == _all_kreis_entry_names() - {"number_of_cars"}
 
 
 def test_active_kreis_entries_has_ebike_can_be_turned_off():
@@ -278,10 +292,7 @@ def test_active_kreis_entries_trip_class_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "trip_class" not in names
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "employment_status", "work_participation", "leisure_participation", "education_participation",
-    }
+    assert names == _all_kreis_entry_names() - {"trip_class"}
 
 
 def test_active_kreis_entries_employment_status_can_be_turned_off():
@@ -294,10 +305,7 @@ def test_active_kreis_entries_employment_status_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "employment_status" not in names
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "work_participation", "leisure_participation", "education_participation",
-    }
+    assert names == _all_kreis_entry_names() - {"employment_status"}
 
 
 def test_active_kreis_entries_work_participation_can_be_turned_off():
@@ -310,10 +318,7 @@ def test_active_kreis_entries_work_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "work_participation" not in names
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "leisure_participation", "education_participation",
-    }
+    assert names == _all_kreis_entry_names() - {"work_participation"}
 
 
 def test_active_kreis_entries_leisure_participation_can_be_turned_off():
@@ -326,10 +331,7 @@ def test_active_kreis_entries_leisure_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "leisure_participation" not in names
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "work_participation", "education_participation",
-    }
+    assert names == _all_kreis_entry_names() - {"leisure_participation"}
 
 
 def test_active_kreis_entries_education_participation_can_be_turned_off():
@@ -342,10 +344,7 @@ def test_active_kreis_entries_education_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "education_participation" not in names
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "work_participation", "leisure_participation",
-    }
+    assert names == _all_kreis_entry_names() - {"education_participation"}
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---

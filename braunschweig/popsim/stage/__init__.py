@@ -245,6 +245,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EMPLOYMENT_GRID,
     KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    KEY_PT_TICKET_KREIS_CONTROL,
     KEY_IMPORTANCE_PROFILE,
     KEY_INCOME_KC,
     KEY_INCOME_KC_HHSIZE,
@@ -679,6 +680,9 @@ def configure(context):
     # trip_class (first PERSON-level KREIS control, 2026-07-08). Default "on"; its
     # committed SrV target lives under data_path (declared below via the any()-gate).
     context.config(KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"])
+    # pt_ticket_group (issue #321): the three-group PT-subscription control. Default "on"
+    # (project rule); its target is MiD P24.1 with SrV as a corridor check (ADR-0060).
+    context.config(KEY_PT_TICKET_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["pt_ticket_group"])
     # employment_status (second PERSON-level KREIS control, feature #172 task 4).
     # Default "on"; its committed MiD-P9 x SrV-V_ERW blended target lives under
     # data_path (declared below via the any()-gate). 14+ universe restriction (min_age)

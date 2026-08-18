@@ -403,3 +403,53 @@ def test_pt_ticket_group_requires_the_resolved_type_column():
     already-resolved category and fails loudly without it."""
     with pytest.raises(KeyError, match="pt_subscription_type"):
         a.map_pt_ticket_group(pd.DataFrame({"P_FKARTE": [3, 99]}))
+
+
+def test_pt_ticket_group_is_a_registered_soft_person_control_on_the_mid_14plus_base():
+    """The #321 control: person level, soft tier, 14+ universe, three categories.
+
+    soft rather than hard because the level itself is uncertain -- the MiD P24.1
+    Deutschlandticket component sits ~4pp above the committed SrV figure, so its flatrate
+    aggregate may be biased high; a hard control would force a level the evidence does not
+    pin down. min_age=14 because P24.1 is a 14+ table (the #97 universe trap).
+    """
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group")
+    assert entry.level == "person"
+    assert entry.tier == "soft"
+    assert entry.min_age == 14
+    assert entry.seed_column == "pt_ticket_group"
+    assert tuple(label for label, _ in entry.categories) == a.PT_TICKET_GROUPS
+    assert entry.target_columns == a.PT_TICKET_GROUPS
+    assert entry.target_csv_relpath.endswith("target2026_pt_ticket_group_by_kreis.csv")
+
+
+def test_pt_ticket_group_control_target_loads_and_partitions_every_kreis():
+    """The committed target must load through the production loader for all 8 Kreise --
+    a missing or non-normalised row would only surface at run time otherwise."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group")
+    target = kac.load_kreis_target(
+        "eqasim-data/data", entry,
+        expected_ars5=("03101", "03102", "03103", "03151", "03153", "03154",
+                       "03157", "03158"),
+        share_tolerance=1e-3)
+    # 8 Kreise + the region row, which the loader keeps as the shrinkage prior.
+    assert set(target["ars5"]) == {"03101", "03102", "03103", "03151", "03153",
+                                   "03154", "03157", "03158", "Gesamt"}
+    assert list(target.columns) == ["ars5", *a.PT_TICKET_GROUPS]
+
+
+def test_pt_ticket_group_rendered_control_carries_the_age_clause():
+    """Both halves of the control must share the 14+ base: the target is a 14+ table, so
+    the seed expression has to restrict the synthetic side the same way."""
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = [c for c in kac.REGISTRY if c.name == "pt_ticket_group"]
+    rendered = {c.name: c.seed_expressions["mid"] for c in cs.attribute_kreis_controls(entry)}
+    assert rendered["pt_ticket_group_deutschlandticket"] == (
+        "(persons.pt_ticket_group == 'deutschlandticket') & (persons.HP_ALTER >= 14)")
+    assert set(rendered) == {f"pt_ticket_group_{g}" for g in a.PT_TICKET_GROUPS}
