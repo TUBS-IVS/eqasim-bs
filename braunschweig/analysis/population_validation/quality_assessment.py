@@ -37,11 +37,13 @@ CAUSE_HINTS = {
         "to MiD P9 (popsim_mid: Zensus 2022 kreis_erwerbsstatus levels + the "
         "employment_grid age shape; simple_ipf: GENESIS 13111). P9 is an "
         "INDEPENDENT cross-check with two known caveats: its per-Kreis rate is "
-        "survey-noisy (MiD sample is a few hundred to ~2000 per Kreis), and its "
-        "taxonomy counts 'in_ausbildung' as not employed while the synthetic "
-        "employed flag may include apprentices. Part of any deviation here is "
-        "therefore definitional, not a synthesis error; raking to P9 would "
-        "overfit survey noise and is intentionally avoided."),
+        "survey-noisy (MiD sample is a few hundred to ~2000 per Kreis), and the "
+        "census anchor follows the Zensus ILO employment concept while P9 is "
+        "self-reported employment extent, so a small definitional offset is "
+        "expected. (P9's former 'in_ausbildung'-counted-as-not-employed "
+        "mismatch no longer applies: since issue #169 the employment_target "
+        "loader counts apprentices as employed, matching the realized flag.) "
+        "Raking to P9 would overfit survey noise and is intentionally avoided."),
     # economic_status is intentionally NOT registered as a validation control
     # (no hard Kreis target exists -- it is Bayes-modelled from hhtype x region
     # and exported spatially via geo_export instead). Its hint key was removed
