@@ -554,11 +554,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.popsim.time_imputation",
         "braunschweig.popsim.trips",
     ),
-    "braunschweig.popsim.trips_stage": (
-        "braunschweig.popsim.plan_validation",
-        "braunschweig.popsim.sources",
-        "braunschweig.popsim.trips",
-    ),
     "braunschweig.synthesis.incommuters": (
         "braunschweig.synthesis.vehicles.fleet_sampling_de",
     ),
@@ -734,3 +729,44 @@ def test_allowed_violations_has_no_duplicate_uncovered_names_per_entry():
         assert len(uncovered) == len(set(uncovered)), (
             f"duplicate uncovered-module entries for {stage_name}: {uncovered}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression pins from the 2026-08-19 cache-invalidation hazard (smoke v2):
+# the popsim stage hash stayed IDENTICAL across a run pair although
+# braunschweig.popsim.attributes and braunschweig.popsim.trips had changed
+# behaviour -- both sit one transitive level BELOW the token's documented
+# boundary (attributes via assembly / mid.seed_loading, trips via
+# mid.participation), so a warm cache silently reused the pre-fix population.
+# These pins hold the two behavioural leaf modules inside the token so the
+# gap cannot reopen. Recorded in docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml.
+# ---------------------------------------------------------------------------
+
+
+def _popsim_stage_token_names() -> set:
+    import braunschweig.popsim.stage as stage_module
+
+    return ({m.__name__ for m in stage_module._HELPER_MODULES}
+            | set(stage_module._DEFERRED_HELPER_MODULE_NAMES))
+
+
+def test_popsim_stage_token_covers_the_attribute_and_trip_mappers():
+    names = _popsim_stage_token_names()
+    assert "braunschweig.popsim.attributes" in names
+    assert "braunschweig.popsim.trips" in names
+
+
+def test_trips_stage_declares_a_validate_token_over_its_helpers():
+    """braunschweig.popsim.trips_stage had NO validate() at all: editing trips.py
+    (the W_ZWECK purpose mapping!) or plan_validation never devalidated its cache."""
+    import braunschweig.popsim.trips_stage as trips_stage
+
+    assert hasattr(trips_stage, "validate")
+    names = ({m.__name__ for m in trips_stage._HELPER_MODULES}
+             | set(trips_stage._DEFERRED_HELPER_MODULE_NAMES))
+    for required in ("braunschweig.popsim.trips", "braunschweig.popsim.plan_validation",
+                     "braunschweig.popsim.sources", "braunschweig.popsim.sources.base",
+                     "braunschweig.popsim.sources.mid"):
+        assert required in names, required
+    token = trips_stage.validate(None)
+    assert isinstance(token, str) and len(token) == 32  # md5 hexdigest

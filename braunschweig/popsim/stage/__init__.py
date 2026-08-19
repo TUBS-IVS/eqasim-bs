@@ -450,11 +450,16 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # attributes / trips: the ONLY two second-level transitive entries, added after the
+    # 2026-08-19 hazard -- see the validate() docstring's boundary statement for why they
+    # are an explicit exception to the one-level rule.
+    "braunschweig.popsim.attributes",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.placement_income",
+    "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.synthesis.population.enriched",
     "braunschweig.synthesis.population.enriched.availability",
@@ -488,7 +493,17 @@ def validate(context):
     DIRECTLY, whether at module level or inside a function body, with the helper
     PACKAGES enumerated ONE LEVEL DEEP (``__init__`` plus each submodule on disk,
     because ``inspect.getsource`` of a package yields only its ``__init__``). The
-    transitive surface beyond that one level is deliberately NOT covered. Which of
+    transitive surface beyond that one level is deliberately NOT covered, with
+    EXACTLY TWO named exceptions: ``braunschweig.popsim.attributes`` (reached via
+    ``assembly`` and ``mid.seed_loading``) and ``braunschweig.popsim.trips``
+    (reached via ``mid.participation``, whose PARTICIPATION_W_ZWECK derives from
+    ``trips.PURPOSE_BY_W_ZWECK``). Both carry BEHAVIOUR this stage's output
+    depends on, and the 2026-08-19 verification smoke proved the hazard is real:
+    the under-16 licence floor (attributes) and the W_ZWECK purpose fix (trips)
+    changed the population while leaving this token untouched, so a warm cache
+    would have silently reused the pre-fix output
+    (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). Any FURTHER
+    second-level exception needs the same standard of evidence, not convenience. Which of
     the two tuples a module lands in is decided ONLY by its import site --
     module-level imports are hashed as module objects, function-level (deferred)
     imports by dotted name -- and not by what kind of module it is: a dotted-name

@@ -154,11 +154,18 @@ EXPECTED_ENRICHED_MODULE_NAMES = (
 EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # attributes / trips: the two deliberate SECOND-LEVEL exceptions to the one-level
+    # boundary (attributes via assembly / mid.seed_loading, trips via mid.participation).
+    # Added after the 2026-08-19 verification smoke showed both changing behaviour while
+    # the token stayed byte-identical, so a warm cache reused the pre-fix population
+    # (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml).
+    "braunschweig.popsim.attributes",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.placement_income",
+    "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
 ) + EXPECTED_ENRICHED_MODULE_NAMES
 
