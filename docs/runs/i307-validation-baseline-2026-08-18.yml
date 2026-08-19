@@ -54,6 +54,30 @@ validation:
     +64% and 18-19 is -75% against DESTATIS, but both fall inside this single 15-29 band and
     largely cancel, so the control shows only a fraction of the error. A finer regression
     check is part of the #320 acceptance criteria.'
+- metric: employment control delta decomposition (realized vs census steering level vs MiD
+    P9 vs SrV V_ERW), 14+ universe
+  reference: kreis_erwerbsstatus.parquet (the Zensus 2022 anchor the employment_grid steers
+    to), mid2023_P9.csv (the registered target; n_weighted 286 Wolfsburg - 1010 Braunschweig
+    per Kreis), srv2023_employment_status_by_kreis.csv (independent cross-check, same 14+
+    universe and P9 taxonomy; n_unweighted 1553-3839, no Wolfsburg coverage)
+  result: 'The 2.59pp mean |delta| splits into 0.90pp synthesis fidelity (realized vs census
+    level; worst Wolfsburg -2.25pp / -2,587 employed persons, sign-for-sign correlated with
+    the 15-29 age deviations of issue #320) and 3.47pp census-vs-MiD source disagreement.
+    The SrV employed share sits mean 1.4pp from the census anchor vs MiD 3.0pp (7 Kreise);
+    where both surveys deviate from the census they deviate in OPPOSITE directions (Gifhorn,
+    Wolfenbuettel), the signature of survey noise around a sound anchor. Aggregates: ZGB-7
+    realized 54.97% / census 55.26% / SrV 54.64%; ZGB-8 realized vs MiD P9 +0.74pp (P9
+    n_weighted 4,982). Verdict: the census employment anchor stays unchanged; raking to P9
+    is rejected (would overfit survey noise, as CAUSE_HINTS already states). Re-measure the
+    fidelity term after the #320 fine_teen_age_bands A/B and re-check the Wolfsburg count
+    attainment then.'
+  artifact: 'felix:.../analysis/population_validation/controls_long.csv (synthetic counts and
+    target_pct; the local target recomputation was pin-checked against it at 1e-6) plus the
+    committed sources named under reference'
+  notes: 'Analysis of 2026-08-19. Resolves the worst-control reading of this baseline: the
+    employment delta is dominated by reference-side noise, not synthesis error. The stale
+    in_ausbildung caveat in quality_assessment.CAUSE_HINTS was corrected in commit 8cefce5f.
+    Issue #311 (IPF-workflow employment margin) is unrelated to this production anchor.'
 features:
   note: Replaces the stale population_validation artifacts in that output directory (dated
     2026-07-01, 1,100,608 persons) which did not belong to this population; they are preserved
