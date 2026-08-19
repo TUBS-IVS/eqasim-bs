@@ -79,3 +79,51 @@ def load_ownership_conditionals(data_path: str) -> tuple[pd.DataFrame, pd.DataFr
     cars = _load_one_conditional(data_path, "mid2023_cars_by_rs7_haustyp.csv", _CARS_SHARE_COLUMNS)
     bikes = _load_one_conditional(data_path, "mid2023_bikes_by_rs7_haustyp.csv", _BIKES_SHARE_COLUMNS)
     return cars, bikes
+
+
+def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label):
+    """Mix the conditional per cell by dwelling composition; RS7-marginal fallback.
+
+    Parameters: rs7 (n,) int array of cell RS7 codes (71..77, already validated);
+    dwellings (n, 4) float array of dwelling counts per haustyp class (HAUSTYP_CLASSES
+    order); conditional indexed by (rs7, ht); share_columns the category columns.
+    Returns (n, n_cats) priors, rows summing to 1.
+
+    Fallback transparency (CLAUDE.md MANDATORY): cells without any dwelling info use
+    the n_unweighted-weighted RS7 marginal; the primary/fallback split is logged and
+    a 100 % fallback rate raises (it means the dwelling columns are broken, not that
+    every cell genuinely lacks buildings).
+    """
+    n = len(rs7)
+    n_cats = len(share_columns)
+    lut = {key: conditional.loc[key, list(share_columns)].to_numpy(dtype=float)
+           for key in conditional.index}
+    marginal = {}
+    for r in RS7_CLASSES:
+        sub = conditional.loc[r]
+        w = sub["n_unweighted"].to_numpy(dtype=float)
+        marginal[r] = (sub[list(share_columns)].to_numpy(dtype=float) * w[:, None]).sum(axis=0) / w.sum()
+
+    dw = np.asarray(dwellings, dtype=float)
+    dw_tot = dw.sum(axis=1)
+    prior = np.zeros((n, n_cats))
+    n_fallback = 0
+    for i in range(n):
+        r = int(rs7[i])
+        if dw_tot[i] > 0:
+            shares = dw[i] / dw_tot[i]
+            prior[i] = sum(shares[j] * lut[(r, HAUSTYP_CLASSES[j])] for j in range(4))
+        else:
+            prior[i] = marginal[r]
+            n_fallback += 1
+    if n and n_fallback == n:
+        raise ValueError(
+            f"per_cell_ownership_priors[{label}]: ALL {n} cells hit the RS7-marginal "
+            "fallback (no dwelling composition anywhere). This is a 100% fallback rate "
+            "and indicates broken/unloaded dwelling columns, not a data property.")
+    logger.info(
+        "[ownership_grid] %s prior: primary (dwelling-mixed) %d/%d (%.1f%%), "
+        "RS7-marginal fallback %d (%.1f%%)",
+        label, n - n_fallback, n, 100.0 * (n - n_fallback) / max(n, 1),
+        n_fallback, 100.0 * n_fallback / max(n, 1))
+    return prior
