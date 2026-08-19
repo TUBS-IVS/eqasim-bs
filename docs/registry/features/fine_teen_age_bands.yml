@@ -1,8 +1,11 @@
 feature: fine_teen_age_bands
-title: Fine teen age bands in the tier0 backbone (10-15 / 16-17 / 18-19)
+title: Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)
 area: population
 description: 'Replaces the ten-year 10-19 age x sex controls of the PopulationSim tier0
-  backbone with 10-15 / 16-17 / 18-19 per sex (22 instead of 18 age x sex controls at 100 m).
+  backbone with 10-14 / 15-17 / 18-19 per sex (22 instead of 18 age x sex controls at 100 m) --
+  the DESTATIS 12411-0018 class edges, revised from the initial INFR 15/16 cut after the first
+  smoke (ADR-0088 amendment 2026-08-19: within-band freedom piled onto age 15 and leaked across
+  the 14/15 validation edge).
   The ten-year band constrains only its total, so the composition inside it was free: measured
   on the 100% population, 15-17 came out +64% and 18-19 -75% against DESTATIS 12411-0018 while
   the band total was within +2.6%. Targets are row-summed from the single-year cell columns

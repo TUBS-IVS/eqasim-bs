@@ -171,9 +171,14 @@ def test_tier0_splits_the_teen_band_at_the_published_bin_edges() -> None:
     catalog = cs.tier0_backbone_catalog()
     names = {c.name for c in catalog if c.geography == cs.GEO_100M}
     for sex in ("M", "F"):
-        for band in ("10_15", "16_17", "18_19"):
+        for band in ("10_14", "15_17", "18_19"):
             assert f"{sex}_AGE_{band}_agg" in names
         assert f"{sex}_AGE_10_19_agg" not in names
+        # The first cut sat at 15/16 (INFR edge) until the 03101 smoke showed the
+        # within-band freedom piling onto age 15, which leaks across DESTATIS's 14/15
+        # validation edge (run manifest smoke-control-fit-03101-2026-08-19).
+        assert f"{sex}_AGE_10_15_agg" not in names
+        assert f"{sex}_AGE_16_17_agg" not in names
     # 1 household total + 22 age x sex controls (11 bands x 2 sexes).
     assert len([c for c in catalog if c.geography == cs.GEO_100M]) == 23
 
@@ -186,9 +191,9 @@ def test_fine_teen_controls_aggregate_the_single_year_census_columns() -> None:
     by_name = {c.name: c for c in cs.tier0_backbone_catalog()
                if c.geography == cs.GEO_100M}
     assert by_name["M_AGE_18_19_agg"].census_source == ("M_AGE_18", "M_AGE_19")
-    assert by_name["F_AGE_16_17_agg"].census_source == ("F_AGE_16", "F_AGE_17")
-    assert by_name["M_AGE_10_15_agg"].census_source == tuple(
-        f"M_AGE_{year}" for year in range(10, 16))
+    assert by_name["F_AGE_15_17_agg"].census_source == ("F_AGE_15", "F_AGE_16", "F_AGE_17")
+    assert by_name["M_AGE_10_14_agg"].census_source == tuple(
+        f"M_AGE_{year}" for year in range(10, 15))
     assert by_name["M_AGE_20_29_agg"].census_source == ("M_AGE_20_29_agg",)
 
 
@@ -199,5 +204,5 @@ def test_fine_teen_band_expressions_select_exactly_their_ages() -> None:
                if c.geography == cs.GEO_100M}
     assert by_name["M_AGE_18_19_agg"].seed_expressions["mid"] == (
         "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)")
-    assert by_name["F_AGE_10_15_agg"].seed_expressions["mid"] == (
-        "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 16)&(persons.HP_SEX==2)")
+    assert by_name["F_AGE_10_14_agg"].seed_expressions["mid"] == (
+        "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==2)")

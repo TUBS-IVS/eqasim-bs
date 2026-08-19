@@ -83,16 +83,27 @@ AGE_BANDS: Sequence[tuple] = (
 # Issue #320: the ten-year bands leave the composition INSIDE a band unconstrained, and
 # the 10-19 band is where that bites: measured on the 100% population, 15-17 came out
 # +64% and 18-19 -75% against DESTATIS 12411-0018 while the band TOTAL was fine. These
-# three replacement bands split it at edges that published Zensus bins actually carry
-# (the 5-class ``Unter18`` and the INFR ``a16bis18``), so the targets are not an
-# interpolation artefact. They sum to the old band EXACTLY -- verified bit-for-bit
-# against ``M_AGE_10_19_agg`` / ``F_AGE_10_19_agg`` in the cell parquet -- so replacing
-# it is lossless and keeping it alongside would re-introduce the derivable redundancy the
-# tier0 reduction removed. Same ``(label, lower, upper_exclusive)`` shape as AGE_BANDS.
+# three replacement bands split it; they sum to the old band EXACTLY -- verified
+# bit-for-bit against ``M_AGE_10_19_agg`` / ``F_AGE_10_19_agg`` in the cell parquet --
+# so replacing it is lossless and keeping it alongside would re-introduce the derivable
+# redundancy the tier0 reduction removed. Same ``(label, lower, upper_exclusive)`` shape
+# as AGE_BANDS.
+#
+# EDGE REVISION after the first one-Kreis smoke (run manifest
+# smoke-control-fit-03101-2026-08-19, ADR-0088 amendment): the first cut used the INFR
+# edge 15/16 (``10_15`` / ``16_17``). The smoke showed the within-band freedom does not
+# vanish but MOVES -- the balancer piled the 10-15 band onto age 15 (5,369 persons at 15
+# vs 1,933 at 16), and because DESTATIS 12411-0018 cuts at 14/15, that skew leaked
+# straight across the VALIDATION edge (15-17 read +1.21pp, 10-14 -1.17pp while the band
+# total was on target). The edges now sit on the DESTATIS classes (10-14 / 15-17 /
+# 18-19), so the classes the model is judged against are exactly the quantities the
+# balancer must hit. The cell single-year columns carry the 14/15 edge accurately (ZGB
+# aggregate: 10-14 -0.10pp, 15-17 -0.08pp against DESTATIS -- see the zensus2022_grid_cells
+# Data Registry entry), so the target anchoring is not weakened by leaving the INFR edge.
 TEEN_BAND_LABEL: str = "10_19"
 FINE_TEEN_AGE_BANDS: Sequence[tuple] = (
-    ("10_15", 10, 16),
-    ("16_17", 16, 18),
+    ("10_14", 10, 15),
+    ("15_17", 15, 18),
     ("18_19", 18, 20),
 )
 FINE_TEEN_BAND_LABELS: frozenset = frozenset(label for label, _, _ in FINE_TEEN_AGE_BANDS)

@@ -89,3 +89,34 @@
   a run manifest before #320 closes; no claim about the size of the improvement is made
   here. Control fit against a committed census margin remains control fit, not behavioural
   validation.
+
+---
+
+## Amendment 2026-08-19 · the split moves to the DESTATIS edges (10-14 / 15-17 / 18-19)
+
+The first one-Kreis smoke (run manifest `smoke-control-fit-03101-2026-08-19`, commit
+`01ea465`) tested the original 10-15 / 16-17 / 18-19 split and showed that decision 1's edge
+choice was wrong in one respect:
+
+- The licence-relevant 18 boundary worked as intended: 18-19 realised −0.19 pp against
+  DESTATIS (relative −11 %, against −75 % region-wide before the split).
+- But the within-band freedom did not vanish, it MOVED: the balancer piled the 10-15 band
+  onto age 15 (5,369 persons at age 15 against 1,933 at 16) while hitting the band total
+  (+2.4 %). DESTATIS 12411-0018 — the reference every validation of this attribute uses —
+  cuts at 14/15, so the skew leaked straight across the VALIDATION edge: 15-17 read
+  +1.21 pp and 10-14 −1.17 pp although the controlled band was on target.
+
+**Amended decision:** the split follows the DESTATIS class edges, `10_14` / `15_17` /
+`18_19`, so the classes the model is judged against are exactly the quantities the balancer
+must hit. The original argument for the INFR edge 15/16 — targets should rest on published
+bins — is not weakened by this: the cell single-year columns carry the 14/15 edge accurately
+(ZGB aggregate: 10-14 −0.10 pp, 15-17 −0.08 pp against DESTATIS, see the
+`zensus2022_grid_cells` Data Registry entry), because the cleancensus fit is raked against
+the national single-year profile inside each INFR bin. What the amendment gives up is the
+claim that every control edge is itself a published-bin edge; what it gains is that the
+within-band freedom can no longer cross a validation boundary. Column count is unchanged
+(three bands replace one, +4 controls at 100 m).
+
+The general lesson is recorded here because it will recur: **a sub-band control must share
+its edges with the reference it is validated against, or the uncontrolled within-band
+composition leaks across the validation edge and reads as model error.**

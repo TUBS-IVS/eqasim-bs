@@ -20,7 +20,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Age-aware composition (#3b)](../registry/features/age_aware_composition.yml) | supported | off | -/-/A | unvalidated |  |
-| [Fine teen age bands in the tier0 backbone (10-15 / 16-17 / 18-19)](../registry/features/fine_teen_age_bands.yml) | active | ON | A/A/- | unvalidated (`smoke-control-fit-03101-2026-08-19`) | [#320](https://github.com/TUBS-IVS/eqasim-bs/issues/320) |
+| [Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)](../registry/features/fine_teen_age_bands.yml) | active | ON | A/A/- | unvalidated (`smoke-control-fit-03101-2026-08-19`) | [#320](https://github.com/TUBS-IVS/eqasim-bs/issues/320) |
 | [Household-size margin](../registry/features/household_size_margin.yml) | active | off | -/-/A | unvalidated |  |
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
