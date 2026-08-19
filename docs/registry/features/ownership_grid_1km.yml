@@ -90,26 +90,29 @@ evidence:
       population_validation cars_per_hh / bicycles_per_hh controls.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - smoke-ownership-grid-03101-2026-08-19
   metric: null
-  note: 'No run has exercised the flag yet. Tasks 1-7 built and unit-tested the module in
-    isolation; this task (8) adds the spec-layer smoke coverage
-    (test_census_sources_available_with_both_grids_on) that checks the ACTIVE catalog''s census
-    sources resolve and the ownership-grid dwelling input columns exist in the real cell
-    parquet -- a specification check, not a numerical result. Owed: the 1% smoke (issue #282
-    two-layer control smoke already partially covers this) and the 100% ON/OFF A/B against
-    cars_per_hh / bicycles_per_hh, recorded in a run manifest.'
+  note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
+    97.0% OPTIMAL), the injected priors used the primary dwelling-mixed method for 100% of the
+    160 populated ZENSUS1km parents (0 fallback, 0.0% RS7-mixing), KREIS anchor category shares
+    held within 0.55pp of the blended target2026 tables, and within-city attainment against the
+    re-derived per-parent targets showed a household-weighted mean |delta| of 1.72pp on the
+    car-free share (corr 0.767). Control FIT against its own injected target, never independent
+    validation. Still owed: the full-region ON/OFF A/B against cars_per_hh / bicycles_per_hh,
+    recorded in a run manifest.'
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
-    Awaiting the first run with the flag on (1% smoke, then the 100% A/B). ADR-0092 records two
-    explicit open points: the modelled-prior ASSUMPTION (the national MiD ownership <-> RS7 x
-    building-type relationship transferring spatially within the ZGB) is unverified by
-    construction and cannot be resolved by this feature's own machinery, and the grid_shape=500
-    importance value is an initial choice pending the A/B showing whether it moves the urban-core
-    deficit without degrading the census backbone fit.
+    The first layer-2 smoke (Kreis 03101) has completed (see validation.note); awaiting the
+    full-region 100% ON/OFF A/B. ADR-0092 records two explicit open points: the modelled-prior
+    ASSUMPTION (the national MiD ownership <-> RS7 x building-type relationship transferring
+    spatially within the ZGB) is unverified by construction and cannot be resolved by this
+    feature's own machinery, and the grid_shape=500 importance value is an initial choice
+    pending the A/B showing whether it moves the urban-core deficit without degrading the
+    census backbone fit.
   source: ADR-0092
 notes: 'Sibling of employment_grid (ADR-0016): the SAME per-cell shape-then-rake-to-anchor
   pattern, one geography coarser (ZENSUS1km, not ZENSUS100m) because 1km carries markedly less

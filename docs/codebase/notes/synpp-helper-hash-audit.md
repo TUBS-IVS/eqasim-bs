@@ -24,6 +24,12 @@
 > `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare
 > `from . import name` relative-import binding) that a rough sizing probe for
 > that gate hit and that are recorded there so they are not reintroduced.
+>
+> **Grown since issue #240:** `braunschweig.popsim.stage`'s deferred helper
+> set grew by `braunschweig.popsim.ownership_grid`, covered via
+> `_DEFERRED_HELPER_MODULE_NAMES` and pinned by
+> `tests/test_popsim_stage_validate_token.py`; the category (b) row's
+> required/covered counts move from 44/46 to 45/47. No other row has changed.
 
 ## Scope
 

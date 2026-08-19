@@ -27,10 +27,13 @@ storage:
 verification:
   verifier_entry: null
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py or the README data-setup tables --
-    mirrors how the sibling committed braunschweig/mid/mid2023_*_by_rs7 tables (e.g.
-    mid2023_T43_school_distance_by_rs7.csv) are handled: the file ships committed with the repo
-    checkout, so there is nothing external for a contributor to download or verify presence of.
+    Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external for a
+    contributor to download or verify presence of, since the file ships committed with the repo
+    checkout (mirrors how the sibling committed braunschweig/mid/mid2023_*_by_rs7 tables, e.g.
+    mid2023_T43_school_distance_by_rs7.csv, are handled for the same reason). It IS listed in
+    the README derived-inputs table (the "MiD ownership cross tables (committed)" row, alongside
+    its cars sibling) together with the regeneration command, required by the D4 readme-data
+    check since requirements.production is "required" for both files.
 requirements:
   synthesis: optional
   matsim: not_needed
