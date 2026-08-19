@@ -190,3 +190,133 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
                 "supply the target margin (check for structurally-zero categories).")
         out[m] = M
     return out
+
+
+def select_load_columns(load_cols, available_parquet_cols):
+    """Extend the parquet load set with the dwelling composition columns that exist.
+
+    ONLY the dwelling columns need requesting: the loader always derives ZENSUS1km
+    from the 100m id and always loads RegionalSchlussel_ARS / RegioStaR7
+    (mid.load_control_cells _EXTRA_CELL_COLUMNS), and the HH_TOTAL census column is
+    part of the tier0 base columns. The OWN_* output columns are computed by
+    add_ownership_grid_columns, never loaded; missing runtime inputs fail fast there.
+    """
+    available = set(available_parquet_cols)
+    result, seen = [], set()
+    for col in list(load_cols) + [c for c in DWELLING_INPUT_COLUMNS if c in available]:
+        if col not in seen:
+            seen.add(col)
+            result.append(col)
+    return result
+
+
+def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bikes_cond,
+                               *, kreis_per_cell, hh_col=None):
+    """Compute and join the 9 OWN_* per-100m target columns (see module docstring).
+
+    ``kreis_per_cell`` MUST be the pipeline's own per-cell Kreis resolution
+    (``mid.resolved_kreis_per_cell``: population-weighted, highest-id tie-break,
+    zfill(12) ARS), which is constant within each ZENSUS1km parent. Reusing it is
+    what guarantees the OWN 1km columns aggregate EXACTLY to the KREIS anchor
+    counts (attribute_kreis_count_table groups by the same resolution); a second,
+    drifting dominance rule here would let the two layers mildly conflict on
+    straddling parents. A mixed parent therefore raises.
+    """
+    from braunschweig.popsim import cells as _cells
+    from braunschweig.popsim.control_spec import HH_TOTAL_CENSUS_COLUMN
+
+    hh_col = hh_col or HH_TOTAL_CENSUS_COLUMN
+    for col in ("ZENSUS1km", "RegioStaR7", hh_col):
+        if col not in cells.columns:
+            raise ValueError(f"add_ownership_grid_columns: required column {col!r} absent from cells.")
+    out = cells.copy()
+    hh_raw = pd.to_numeric(out[hh_col], errors="coerce")
+    n_hh_nan = int(hh_raw.isna().sum())
+    if n_hh_nan:
+        logger.info("[ownership_grid] %d/%d cells have NaN %s -> treated as 0 households",
+                    n_hh_nan, len(out), hh_col)
+    hh100 = hh_raw.fillna(0.0).to_numpy(dtype=float)
+    kreis100 = pd.Series(kreis_per_cell, index=out.index).astype(str).to_numpy()
+    rs7_100 = pd.to_numeric(out["RegioStaR7"], errors="coerce")
+    bad_rs7 = ~rs7_100.isin(RS7_CLASSES)
+    if bad_rs7.any():
+        raise ValueError(
+            f"add_ownership_grid_columns: {int(bad_rs7.sum())} cells have RegioStaR7 outside "
+            f"{RS7_CLASSES} (incl. NaN/unmapped); the ZGB prepared cells are expected to carry "
+            "a valid RS7 everywhere (fix the parquet, no fallback).")
+
+    # Per-class dwelling sums over the columns PRESENT, with NaN suppression made
+    # observable via the issue-#150 helper. An absent expected column is logged by
+    # name (a partial class is data, not an all-or-nothing miss); a fully absent
+    # dwelling set raises -- it would mean 100% RS7-marginal fallback downstream.
+    class_sums = []
+    n_present_total = 0
+    for ht_class, class_cols in DWELLING_COLUMNS_BY_HAUSTYP.items():
+        present = [c for c in class_cols if c in out.columns]
+        absent = [c for c in class_cols if c not in out.columns]
+        if absent:
+            logger.warning(
+                "[ownership_grid] dwelling class %d: %d/%d expected columns absent from the "
+                "cells frame: %s", ht_class, len(absent), len(class_cols), absent)
+        n_present_total += len(present)
+        class_sums.append(_cells.sum_columns_logging_nan(
+            out, present, f"ownership-grid dwelling sum haustyp {ht_class}").to_numpy(dtype=float))
+    if n_present_total == 0:
+        raise ValueError(
+            "add_ownership_grid_columns: NONE of the ten dwelling composition columns is "
+            "present on the cells frame; the prior would be a 100% RS7-marginal fallback. "
+            "Check the parquet load-column selection (select_load_columns).")
+    dw100 = np.column_stack(class_sums)
+
+    grp = pd.DataFrame({"parent": out["ZENSUS1km"].astype(str), "kreis": kreis100,
+                        "rs7": rs7_100.astype(int), "hh": hh100})
+    kreis_nunique = grp.groupby("parent")["kreis"].nunique()
+    if (kreis_nunique > 1).any():
+        broken = kreis_nunique[kreis_nunique > 1].index.tolist()[:5]
+        raise ValueError(
+            "add_ownership_grid_columns: kreis_per_cell is not constant within ZENSUS1km "
+            f"parents (e.g. {broken}); pass mid.resolved_kreis_per_cell (parent-atomic) -- "
+            "a mixed parent would break the KREIS-layer aggregation identity.")
+    # Household-weighted dominant RS7 per parent (RS7 has no cross-layer identity to
+    # preserve, unlike the Kreis); deterministic tie-break, mix rate logged.
+    dom_rs7 = (grp.groupby(["parent", "rs7"], as_index=False)["hh"].sum()
+                  .sort_values(["hh", "rs7"], ascending=[False, True])
+                  .drop_duplicates("parent").set_index("parent")["rs7"])
+    parent_kreis = grp.drop_duplicates("parent").set_index("parent")["kreis"]
+    n_parent = len(dom_rs7)
+    n_multi_rs7 = int((grp.groupby("parent")["rs7"].nunique() > 1).sum())
+    logger.info(
+        "[ownership_grid] %d 1km parents; RS7-mixing %d (%.1f%%) -> household-weighted "
+        "dominant RS7 assigned", n_parent, n_multi_rs7, 100.0 * n_multi_rs7 / max(n_parent, 1))
+
+    hh1 = grp.groupby("parent")["hh"].sum()
+    dw1 = (pd.DataFrame(dw100, index=grp["parent"].to_numpy()).groupby(level=0).sum()
+             .reindex(hh1.index))
+    parents = hh1.index.to_numpy()
+    active = hh1.to_numpy() > 0
+    rs7_p = dom_rs7.reindex(hh1.index).to_numpy()
+    kreis_p = parent_kreis.reindex(hh1.index).to_numpy()
+    logger.info("[ownership_grid] %d/%d 1km parents carry households", int(active.sum()), n_parent)
+
+    parent_targets = {}
+    for label, cond, share_cols, targets in (
+            ("cars", cars_cond, _CARS_SHARE_COLUMNS, cars_targets),
+            ("bikes", bikes_cond, _BIKES_SHARE_COLUMNS, bikes_targets)):
+        prior = per_cell_ownership_priors(rs7_p[active], dw1.to_numpy()[active], cond,
+                                          share_cols, label)
+        raked = rake_ownership_targets(prior, hh1.to_numpy()[active], kreis_p[active],
+                                       targets, share_cols, label)
+        full = np.zeros((n_parent, len(share_cols)))
+        full[active] = raked
+        parent_targets[label] = pd.DataFrame(full, index=parents)
+
+    # Back-distribute household-proportionally to the 100m member cells: any
+    # within-parent split aggregates back identically; household shares keep the
+    # 100m values consistent with the HH_TOTAL anchor.
+    parent_hh = hh1.reindex(grp["parent"]).to_numpy(dtype=float)
+    frac = np.divide(hh100, parent_hh, out=np.zeros_like(hh100), where=parent_hh > 0)
+    for label, columns in (("cars", CARS_COLUMNS), ("bikes", BIKES_COLUMNS)):
+        vals = parent_targets[label].reindex(grp["parent"]).to_numpy(dtype=float)
+        for j, col in enumerate(columns):
+            out[col] = vals[:, j] * frac
+    return out
