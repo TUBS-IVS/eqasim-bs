@@ -65,13 +65,15 @@ evidence:
       local-only SciUse microdata by scripts/extract_srv_kreis_tables.py.'
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - smoke-control-fit-03101-2026-08-19
   metric: null
-  note: 'Implemented and unit-tested; NOT yet run. Owed before any stronger claim: a 1% smoke
-    showing the balancer still converges with 24 additional KREIS control columns, then a 100%
-    run with the realised shares re-measured by scripts/measure_license_pt_shares.py and
-    recorded in a run manifest, plus an A/B against the toggle OFF. Hitting a committed margin
-    is control FIT, never behavioural validation.'
+  note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
+    96.6% OPTIMAL), realised group shares within 0.35pp of the blended target, flatrate total
+    25.51% vs 30.18% in the #307 baseline, ADR-0087 invariant 0 contradictions over 252,045
+    persons. Control FIT against its own steering target, never independent validation. Still
+    owed: the full-region one-flag-per-run A/B and the re-measured shares via
+    scripts/measure_license_pt_shares.py in a run manifest.'
 assessment:
   status: pending
   by: null

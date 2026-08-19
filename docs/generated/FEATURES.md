@@ -31,7 +31,7 @@ may only name run manifests (no run, no claim).
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_purpose](../registry/features/escort_purpose.yml) | behavior | active | ON | A/-/- | 5 | proven | none | committed | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | pending |
 | [explicit_w_zweck_purposes](../registry/features/explicit_w_zweck_purposes.yml) | behavior | active | ON | A/-/- | 2 | proven | marker | none | unvalidated | pending |
-| [fine_teen_age_bands](../registry/features/fine_teen_age_bands.yml) | population | active | ON | A/A/- | 5 | proven | marker | none | unvalidated | pending |
+| [fine_teen_age_bands](../registry/features/fine_teen_age_bands.yml) | population | active | ON | A/A/- | 5 | proven | marker | none | unvalidated (`smoke-control-fit-03101-2026-08-19`) | pending |
 | [fleet_consistency_v2](../registry/features/fleet_consistency_v2.yml) | fleet | active | ON | A/A/- | 4 | proven | marker | committed | unvalidated | pending |
 | [fleet_electric_calibration](../registry/features/fleet_electric_calibration.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | committed | unvalidated | pending |
 | [fleet_hsn_tsn_attributes](../registry/features/fleet_hsn_tsn_attributes.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | none | unvalidated | pending |
@@ -63,7 +63,7 @@ may only name run manifests (no run, no claim).
 | [popsim_method](../registry/features/popsim_method.yml) | population | active | ON | A/A/- | 4 | -- | none | none | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) | pending |
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
-| [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 4 | not claimed | marker | committed | unvalidated | pending |
+| [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 4 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |

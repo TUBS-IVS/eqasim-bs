@@ -1,0 +1,85 @@
+id: smoke-control-fit-03101-2026-08-19
+date: '2026-08-19'
+repository:
+  commit: 01ea465
+  branch: feature/i307-license-pt-measurement
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/smoke_kreis_control_fit.yml
+  notes: 'First run of the two-layer control smoke (#282): Braunschweig (03101) only, target
+    data.census.filtered, own cache eqasim-data/cache_smoke_control_fit (shared production
+    cache untouched; 61 entries primed from cache_shared). All three unproven changes of this
+    branch active together: fine_teen_age_bands (ADR-0088), pt_ticket_kreis_control
+    (ADR-0089), explicit_round_trip_purposes (ADR-0091). Runtime ~55 min wall on felix
+    (nice -n 10, 8 workers), of which ~45 min PopulationSim balancing (8 batches).'
+sampling:
+  rate: 'balancing always covers the full population; the expanded result holds 252,045
+    persons (03101)'
+  scope: Kreis 03101 (Braunschweig) only
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- smoke
+status:
+  execution: completed
+environment: server
+validation:
+- metric: PopulationSim convergence and integerizer feasibility with the 28 new control columns
+  reference: earlier full-region run log (old control set, 60 batches)
+  result: '8/8 batches converged, 0 error signatures in the log. Integerizer: 3937/4075 zones
+    OPTIMAL (96.6%), 138 INFEASIBLE -> smart-rounded (3.4%), 55 simul-retry-failed. The old
+    control set showed 6.8% INFEASIBLE over the full region (29,213 zones).'
+  notes: 'NOT an apples-to-apples integerizer comparison: the smoke covers only the densest
+    Kreis, and rural cells drive infeasibility. What it establishes is that the enlarged
+    control set does not blow up the integerizer; the precise delta needs the full-region A/B.'
+- metric: pt_ticket_group control fit (14+), realised vs blended target row 03101
+  reference: target2026_pt_ticket_group_by_kreis.csv (source=blend for 03101)
+  result: 'deutschlandticket 10.53% vs 10.88% (-0.35pp); other_flatrate 14.98% vs 14.88%
+    (+0.10pp); not_flatrate 74.49% vs 74.24% (+0.25pp). Flatrate total 25.51% against the
+    blend target 25.76% -- down from the #307 baseline 30.18% (14+, BS), i.e. the soft
+    control removed the +4.2pp over-supply.'
+  artifact: 'felix:/home/felix/i307_smoke.log; stage pickle
+    braunschweig.popsim.stage__ecae663c0c6e65f35e1f7997e288b081.p'
+  notes: 'Control FIT, not independent validation: the target is what the control steers to.
+    The seed pool itself carried 22.1% flatrate, so the balancer worked against the donor
+    skew, as designed. ADR-0087 invariant in the expanded population: 0 contradictions
+    between has_pt_subscription and pt_subscription_type over 252,045 persons; the
+    pt_never_contradiction plausibility check also reports 0.'
+- metric: teen age bands, realised vs DESTATIS 12411-0018 (Kreis 03101, independent)
+  reference: eqasim-data/data/braunschweig/12411-0018_de.csv via load_age_sex_by_kreis
+  result: '18-19: 1.60% vs 1.79% = -0.19pp (relative -11%; the #307 baseline was -75%
+    region-wide, single ages 18/19 nearly empty -- now 2,741 / 1,292 persons). 15-17: 3.67%
+    vs 2.46% = +1.21pp (relative +49%). 10-14: 2.87% vs 4.04% = -1.17pp (relative -29%).
+    Band total 10-19 within -2.3%.'
+  notes: 'The licence-relevant 18 boundary is fixed, but the within-band freedom MOVED rather
+    than vanished: the new 10-15 band leaves its internal mix free, and the balancer piles it
+    onto age 15 (5,369 persons at 15 vs 1,933 at 16) -- age 15 sits in DESTATIS''s 15-17
+    class, producing the +1.21pp there and the 10-14 deficit. ADR-0088 chose the 15/16 edge
+    from the INFR bins; DESTATIS cuts at 14/15. Candidate refinement (NOT built): align the
+    split to 10-14 / 15-17 / 18-19, which the single-year columns support equally well and
+    which would make the validation comparison apples-to-apples.'
+- metric: W_ZWECK coverage guard (ADR-0091)
+  reference: none (absence-of-warning check)
+  result: '0 map_purpose warnings in the whole log: every W_ZWECK code in the donor data is
+    explicitly mapped.'
+features:
+  note: 'First execution evidence for fine_teen_age_bands, pt_ticket_group_kreis_control and
+    explicit_w_zweck_purposes. All three flags were ON TOGETHER, so per-change attribution
+    still needs the one-flag-per-run A/B on the full region. Pre-existing defect surfaced by
+    the plausibility layer, NOT caused by this branch: license_underage 2.81% here
+    (has_license=True below 16); the old full run showed 3.78%.'
+artifacts:
+- 'felix:/home/felix/i307_smoke.log'
+- 'felix:/home/felix/eqasim-bs/eqasim-data/cache_smoke_control_fit/'
+issues:
+- '#282'
+- '#320'
+- '#321'
+- '#241'
+decisions:
+- ADR-0088
+- ADR-0089
+- ADR-0091
+source: 'first #282 layer-2 smoke, 2026-08-19'

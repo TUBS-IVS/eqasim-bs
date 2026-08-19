@@ -67,12 +67,15 @@ evidence:
       path is in the git index, so this is deliberately NOT declared as a committed reference.'
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - smoke-control-fit-03101-2026-08-19
   metric: null
-  note: 'Implemented and unit-tested; NOT yet run. The realised 15-17 / 18-19 counts and the
-    knock-on effect on the #307 licence and PT-subscription shares must be measured on the
-    next full synthesis and recorded in a run manifest before this can claim
-    measured_vs_reference. No claim about the size of the improvement is made yet.'
+  note: 'One-Kreis smoke (03101) ran 2026-08-19: the licence-relevant 18 boundary is fixed
+    (18-19 realised -0.19pp vs DESTATIS, relative -11%, against -75% region-wide before), but
+    the within-band freedom MOVED: the 10-15 band piles onto age 15 (15-17 +1.21pp, 10-14
+    -1.17pp). Candidate refinement recorded in the run manifest: align the split to the
+    DESTATIS edges 10-14 / 15-17 / 18-19. Still owed: the full-region one-flag-per-run A/B --
+    the smoke ran all three new flags together, so per-change attribution is not possible yet.'
 assessment:
   status: pending
   by: null
