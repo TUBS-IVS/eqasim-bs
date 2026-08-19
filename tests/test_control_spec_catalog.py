@@ -206,3 +206,36 @@ def test_fine_teen_band_expressions_select_exactly_their_ages() -> None:
         "(persons.HP_ALTER > 17)&(persons.HP_ALTER < 20)&(persons.HP_SEX==1)")
     assert by_name["F_AGE_10_14_agg"].seed_expressions["mid"] == (
         "(persons.HP_ALTER > 9)&(persons.HP_ALTER < 15)&(persons.HP_SEX==2)")
+
+
+# ---------------------------------------------------------------------------
+# Task 6: ZENSUS1km ownership grid controls (issue #240)
+# ---------------------------------------------------------------------------
+
+
+def test_ownership_grid_controls_shape_and_expressions():
+    controls = cs.ownership_grid_controls()
+    assert len(controls) == 9
+    assert {c.geography for c in controls} == {cs.GEO_1KM}
+    by_name = {c.name: c for c in controls}
+    assert by_name["OWN_CARS_0_agg"].seed_expressions["mid"] == "(households.number_of_cars == 0)"
+    assert by_name["OWN_CARS_3plus_agg"].seed_expressions["mid"] == "(households.number_of_cars >= 3)"
+    assert by_name["OWN_BIKES_4plus_agg"].seed_expressions["mid"] == "(households.number_of_bicycles >= 4)"
+    assert all(c.seed_expressions["entd"] is None for c in controls)
+    assert all(c.census_source == (c.name,) for c in controls)
+    assert all(c.importance == cs.GRID_SHAPE_IMPORTANCE_DEFAULT for c in controls)
+
+
+def test_full_catalog_ownership_grid_flag():
+    # OFF byte-identity in BOTH fine_teen_age_bands variants (spec section 8).
+    for teen in (True, False):
+        base = cs.full_catalog(include_tiers=("tier0",), fine_teen_age_bands=teen)
+        on = cs.full_catalog(include_tiers=("tier0",), fine_teen_age_bands=teen,
+                             include_ownership_grid=True)
+        assert len(on) == len(base) + 9
+        assert [c.name for c in base] == [c.name for c in on[: len(base)]]  # OFF prefix unchanged
+
+
+def test_grid_shape_importance_group():
+    assert cs.importance_group_for_field("OWN_CARS_0_agg_ZENSUS1km") == "grid_shape"
+    assert cs.IMPORTANCE_PROFILES["optimized_2026_06_30"]["grid_shape"] == 500

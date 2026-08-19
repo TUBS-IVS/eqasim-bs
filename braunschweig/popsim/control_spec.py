@@ -615,6 +615,8 @@ IMPORTANCE_PROFILES: dict[str, dict[str, int]] = {
         # Mobilitaetsquote target (synthetic immobility ~26.5% vs. SrV target ~11.2%),
         # so it is now pinned at the same weight as the other HARD Kreis controls.
         "kreis_hard": 2_000,
+        # 1km ownership shape layer (#240): below backbone (1000) and kreis_hard (2000).
+        "grid_shape": 500,
     },
 }
 
@@ -645,6 +647,8 @@ def importance_group_for_field(control_field: str) -> str:
         return "bld"
     if s.startswith("EMPLOYED_") or s.startswith("employed"):
         return "employed"
+    if s.startswith("OWN_"):
+        return "grid_shape"
     if s.startswith(("schulabschluss", "beruflabschluss")):
         return "edu"
     # KREIS attribute controls (kreis_attribute_control.REGISTRY): the entry's tier
@@ -1006,6 +1010,43 @@ def employment_grid_controls(importance: int = 1000) -> List[CatalogControl]:
     return out
 
 
+GRID_SHAPE_IMPORTANCE_DEFAULT = 500
+
+
+def ownership_grid_controls(importance: int = GRID_SHAPE_IMPORTANCE_DEFAULT) -> List[CatalogControl]:
+    """Nine ZENSUS1km car/bike ownership shape controls (issue #240). MiD-only.
+
+    census_source is the per-cell target column injected by
+    braunschweig.popsim.ownership_grid (OWN_CARS_{0,1,2,3plus}_agg +
+    OWN_BIKES_{0,1,2,3,4plus}_agg). The expressions are rendered from the SAME
+    kreis_attribute_control REGISTRY categories the KREIS ownership anchors use, so
+    the two layers select identical seed universes by construction. The 1km targets
+    are raked to the KREIS targets, so the layers cannot conflict; importance sits
+    BELOW the census backbone (1000) and the kreis_hard anchors (2000) -- shape must
+    yield to both.
+    """
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY
+    from braunschweig.popsim.ownership_grid import BIKES_COLUMNS, CARS_COLUMNS
+
+    by_name = {c.name: c for c in REGISTRY}
+    out: List[CatalogControl] = []
+    for entry_name, columns in (("number_of_cars", CARS_COLUMNS),
+                                ("number_of_bicycles", BIKES_COLUMNS)):
+        ctl = by_name[entry_name]
+        if len(ctl.categories) != len(columns):
+            raise ValueError(
+                f"ownership_grid_controls: {entry_name} registry has {len(ctl.categories)} "
+                f"categories but the grid defines {len(columns)} columns; the two layers "
+                "must share one category scheme.")
+        for (label, predicate), col in zip(ctl.categories, columns):
+            out.append(CatalogControl(
+                name=col, geography=GEO_1KM, seed_table=SEED_TABLE_HOUSEHOLDS,
+                importance=importance, census_source=(col,),
+                seed_expressions={"mid": f"(households.{ctl.seed_column} {predicate})",
+                                  "entd": None}))
+    return out
+
+
 # Generic per-Kreis attribute controls (S1a, issue #109 follow-up). A registered
 # KreisAttributeControl (kreis_attribute_control.REGISTRY) yields one GEO_KREIS control per
 # category: expression f"({table}.{seed_column} {predicate})" over the household/person seed
@@ -1060,6 +1101,7 @@ def status_kreis_controls(importance: int = 1000) -> List[CatalogControl]:
 
 
 def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employment_grid: bool = False,
+                 include_ownership_grid: bool = False,
                  include_status_kreis: bool = False,
                  kreis_control_names: Sequence[str] = (),
                  fine_teen_age_bands: bool = True) -> List[CatalogControl]:
@@ -1095,6 +1137,8 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         catalog.extend(tier3_controls())
     if include_employment_grid:
         catalog.extend(employment_grid_controls())
+    if include_ownership_grid:
+        catalog.extend(ownership_grid_controls())
     # Generic per-Kreis attribute controls (S1c). ``kreis_control_names`` is the generalised
     # knob (a list of REGISTRY entry names to render as GEO_KREIS controls). ``include_status_kreis``
     # is kept as a backward-compat alias for ``kreis_control_names=("economic_status",)`` so

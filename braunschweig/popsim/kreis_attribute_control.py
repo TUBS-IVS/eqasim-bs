@@ -32,6 +32,15 @@ _EMP_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 # the ars5 code "03ZGB"; other committed regional tables use "Gesamt". Both are accepted.
 _AGG_ARS5 = ("03ZGB", "Gesamt")
 
+# The share tolerance every CONSUMER of the committed blended targets (target2026_*) must
+# pass to :func:`load_kreis_target`. Those CSVs store shares rounded to 4 decimals, so a row
+# can sum to 0.9999 / 1.0001 (max observed deviation 1e-4); the loader's own 1e-6 default
+# REJECTS them. 1e-3 accepts that rounding while still catching a genuinely mis-normalised
+# row (e.g. 0.9 / 1.1); the per-Kreis counts are renormalised + integer-partitioned
+# downstream regardless. Stated once here so the two consumers in the popsim stage (the
+# KREIS attribute controls and the 1 km ownership grid, issue #240) cannot drift apart.
+TARGET_SHARE_TOLERANCE = 1e-3
+
 
 @dataclass(frozen=True)
 class KreisAttributeControl:
@@ -110,6 +119,20 @@ def load_kreis_target(
             f"load_kreis_target[{ctl.name}]: rows {out.loc[bad, 'ars5'].tolist()} do not "
             f"sum to 1 (got {sums[bad].tolist()}).")
     return out
+
+
+def kreis_rows_indexed_by_ars5(target_df: pd.DataFrame) -> pd.DataFrame:
+    """The per-Kreis rows of a loaded target, indexed by ``ars5``.
+
+    :func:`load_kreis_target` deliberately keeps the mandatory region-aggregate row
+    (``_AGG_ARS5``) alongside the per-Kreis rows, because :func:`_shrunk_shares` needs it
+    as the Dirichlet prior mean. A consumer that instead looks targets up BY KREIS -- e.g.
+    the 1 km ownership rake (``ownership_grid.rake_ownership_targets``, issue #240) -- must
+    drop it: it is not a Kreis, and leaving it in the index would let a lookup of a
+    non-Kreis key silently succeed instead of failing loudly.
+    """
+    out = target_df.set_index("ars5")
+    return out.drop(index=[key for key in _AGG_ARS5 if key in out.index])
 
 
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).

@@ -117,6 +117,13 @@ config:
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
   braunschweig.population.popsim.employment_grid: "on"
+  # Ownership grid (issue #240): 9 per-1km-cell car/bike ownership shape controls
+  # (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg). Shape from the
+  # committed MiD B1 RS7 x haustyp conditionals; level raked per Kreis to the SAME
+  # blended target2026 tables the KREIS ownership controls consume. Requires the
+  # number_of_cars + number_of_bicycles KREIS controls (default on). "off" is
+  # byte-identical to today's control set.
+  braunschweig.population.popsim.ownership_grid_1km: "on"
   # Fine teen age bands in the tier0 backbone (issue #320): replaces the ten-year 10-19
   # age x sex controls with 10-15 / 16-17 / 18-19 (22 instead of 18 controls at 100m).
   # The ten-year band leaves the composition INSIDE it unconstrained, which produced a

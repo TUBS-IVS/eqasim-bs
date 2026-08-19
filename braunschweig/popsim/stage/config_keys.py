@@ -59,6 +59,14 @@ KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
+# Ownership grid (issue #240): when "on", injects 9 per-100m-cell ownership target
+# columns (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg) and adds the
+# corresponding ZENSUS1km catalog controls. SHAPE from the committed MiD B1
+# RS7 x haustyp conditionals; LEVEL raked per Kreis to the SAME blended target2026
+# tables the KREIS ownership controls consume (asserted consistent). Requires the
+# number_of_cars AND number_of_bicycles KREIS entries active (their seed columns).
+# Default "on" (project rule); "off" is byte-identical to today's control set.
+KEY_OWNERSHIP_GRID = "braunschweig.population.popsim.ownership_grid_1km"
 
 # Fine teen age bands in the tier0 backbone (issue #320): "on" replaces the ten-year
 # 10-19 age x sex controls with 10-15 / 16-17 / 18-19, adding 4 controls at 100m. The

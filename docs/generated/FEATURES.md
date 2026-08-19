@@ -57,6 +57,7 @@ may only name run manifests (no run, no claim).
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
+| [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [placement_income_l2](../registry/features/placement_income_l2.yml) | attributes | active | ON | A/A/- | 4 | proven | marker | committed | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | pending |

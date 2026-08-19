@@ -27,8 +27,9 @@ import pandas as pd
 
 
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
-                      employment_grid=False, kreis_control_names=(), status_kreis=False,
-                      importance_profile="uniform", fine_teen_age_bands=True):
+                      employment_grid=False, ownership_grid=False, kreis_control_names=(),
+                      status_kreis=False, importance_profile="uniform",
+                      fine_teen_age_bands=True):
     """Return the PopulationSim controls.csv frame.
 
     controls_source="csv": read the external hand-edited file at controls_path (today's
@@ -41,6 +42,12 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
     employment_grid: when True (catalog source only), append the six age-group x
     sex-resolved 100m employment controls (EMPLOYED_{M,F}_{young,prime,old}_agg) to the
     catalog. Default False = byte-identical to the pre-employment-grid catalog.
+
+    ownership_grid: when True (catalog source only), append the nine ZENSUS1km car/bike
+    ownership shape controls (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg,
+    issue #240) to the catalog. Default False = byte-identical to the pre-#240 catalog.
+    The hand-edited CSV source cannot express them, so csv + ownership_grid is a
+    fail-fast error (a silently inert flag would ship a grid nobody constrains).
 
     kreis_control_names: names of the active KREIS attribute-control REGISTRY entries
     (kreis_attribute_control.REGISTRY) to render as GEO_KREIS household controls (catalog
@@ -71,9 +78,14 @@ def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", 
             raise ValueError(
                 "KREIS attribute controls require controls_source='catalog'; the hand-edited "
                 f"controls.csv cannot express {effective_kreis_names}.")
+        if ownership_grid:
+            raise ValueError(
+                "ownership_grid_1km requires controls_source='catalog'; the hand-edited "
+                "controls.csv cannot express the ZENSUS1km ownership controls.")
         df = pd.read_csv(controls_path, sep=";")
     elif controls_source == "catalog":
         catalog = cs.full_catalog(include_tiers=tiers, include_employment_grid=employment_grid,
+                                  include_ownership_grid=ownership_grid,
                                   kreis_control_names=effective_kreis_names,
                                   fine_teen_age_bands=fine_teen_age_bands)
         df = cs.render_catalog_csv(cs.controls_for_seed(catalog, seed), seed)

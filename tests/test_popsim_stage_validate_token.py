@@ -164,6 +164,7 @@ EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.employment_grid",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
+    "braunschweig.popsim.ownership_grid",
     "braunschweig.popsim.placement_income",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",

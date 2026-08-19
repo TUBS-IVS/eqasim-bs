@@ -122,6 +122,30 @@ def test_every_active_control_source_column_is_obtainable():
     assert report.n_controls_checked == len(grid)
 
 
+def test_census_sources_available_with_both_grids_on():
+    """The ACTIVE production catalog runs both grids; their census sources are injected
+    per cell by the stage, and the ownership grid's dwelling INPUT columns must exist
+    in the parquet (a cleaned-name mismatch here is exactly the silent-zero-control
+    class of defect this smoke exists to catch)."""
+    from braunschweig.popsim import ownership_grid as og
+
+    catalog = cs.controls_for_seed(
+        cs.full_catalog(("tier0", "tier1", "tier2"), include_employment_grid=True,
+                        include_ownership_grid=True), "mid")
+    grid = [c for c in catalog if c.geography in (cs.GEO_100M, cs.GEO_1KM)]
+    available = cfs.cell_parquet_columns(DATA_PATH)
+    if available is None:
+        pytest.skip("prepared cell parquet not present (local-only data)")
+    missing_inputs = set(og.DWELLING_INPUT_COLUMNS) - set(available)
+    assert missing_inputs == set(), (
+        f"ownership-grid dwelling input columns absent from the cell parquet: {missing_inputs}")
+    report = cfs.check_census_sources_available(
+        grid, available_columns=available,
+        aggregation_map=cs.build_aggregation_map(grid),
+        injected_columns=cfs.injected_cell_columns())
+    assert report.failures == [], report.failures
+
+
 def test_every_kreis_target_loads_and_partitions_every_kreis():
     """Every registered Kreis control's committed target must load, cover all 8 Kreise and
     sum to 1 per row -- a missing Kreis is a fail-fast at run time, a non-normalised row

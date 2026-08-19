@@ -122,6 +122,28 @@ def test_build_control_totals_fills_suppressed_nan_with_zero():
     assert totals["WELT"].loc[0, "WELT"] == 1
 
 
+def test_build_control_totals_writes_1km_column_for_a_1km_only_base():
+    """A base whose only control lives at ZENSUS1km must still get its 1km total.
+
+    Review finding C1 of issue #240: the nine OWN_* ownership controls exist ONLY at
+    ZENSUS1km. ``build_control_totals`` writes ``<base>_ZENSUS1km`` for exactly the
+    bases it is HANDED, so such a base must reach ``base_cols`` (the stage now unions
+    the ZENSUS100m and ZENSUS1km derivations, see
+    ``braunschweig.popsim.stage._build_control_frame``); otherwise PopulationSim
+    fails with ``<field> not in index``. This pins the totals half of that path: given
+    the base, the 1km column IS emitted and equals the sum of its 100 m members.
+    """
+    targets, xwalk = _targets_and_xwalk()
+    targets = targets.rename(columns={"POP": "OWN_CARS_0_agg"})
+    totals = mid.build_control_totals(targets, xwalk, ["OWN_CARS_0_agg"])
+    assert "OWN_CARS_0_agg_ZENSUS1km" in totals["ZENSUS1km"].columns
+    merged = totals["ZENSUS100m"].merge(xwalk[["ZENSUS100m", "ZENSUS1km"]], on="ZENSUS100m")
+    recon = merged.groupby("ZENSUS1km")["OWN_CARS_0_agg_ZENSUS100m"].sum()
+    df1km = totals["ZENSUS1km"].set_index("ZENSUS1km")["OWN_CARS_0_agg_ZENSUS1km"]
+    for parent, value in df1km.items():
+        assert recon[parent] == value
+
+
 # ---------------------------------------------------------------------------
 # filter_zgb_cells
 # ---------------------------------------------------------------------------

@@ -11,11 +11,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 72 | stages: 115 | datasets: 52 | ADRs: 91 | run manifests: 24
+- Features: 73 | stages: 115 | datasets: 54 | ADRs: 92 | run manifests: 25
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `zensus2022_age_sex_size`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -25,6 +25,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
 | [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
+| [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
 | [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) |  |
 | [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
 
