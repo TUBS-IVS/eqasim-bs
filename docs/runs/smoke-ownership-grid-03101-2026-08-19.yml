@@ -1,0 +1,84 @@
+id: smoke-ownership-grid-03101-2026-08-19
+date: '2026-08-19'
+repository:
+  commit: 09faf576
+  branch: feature/i240-ownership-grid-1km
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/smoke_kreis_control_fit.yml
+  notes: 'Layer-2 numerical smoke (#282 pattern) for the ownership_grid_1km feature (#240,
+    ADR-0092): Braunschweig (03101) only, target data.census.filtered, own cache
+    eqasim-data/cache_smoke_control_fit (shared production cache untouched; 62 entries
+    already in store, 1 new stage entry exported). All branch flags at their defaults, i.e.
+    ownership_grid_1km ON together with the merged #319-#321/#241 features. Runtime ~50 min
+    wall on felix (nice -n 10, 8 workers), of which ~47 min PopulationSim balancing
+    (8 batches).'
+sampling:
+  rate: 'balancing always covers the full population; the expanded result holds 252,055
+    persons / 136,609 households (03101)'
+  scope: Kreis 03101 (Braunschweig) only
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- smoke
+status:
+  execution: completed
+environment: server
+validation:
+- metric: PopulationSim convergence and integerizer feasibility with the 9 new OWN_* ZENSUS1km
+    control columns
+  reference: 'the #321-era smoke on the SAME Kreis and overlay (docs/runs/
+    smoke-control-fit-03101-2026-08-19.yml: 96.6% OPTIMAL, 3.4% INFEASIBLE)'
+  result: '8/8 batches converged, 0 error/traceback signatures in the log. Integerizer:
+    3942/4064 zones OPTIMAL (97.0%), 122 INFEASIBLE -> smart-rounded (3.0%), 50
+    simul-retry-failed. The nine additional ownership columns did not over-constrain the
+    integerizer (marginally BETTER than the previous smoke on the same Kreis).'
+  artifact: 'felix:/home/felix/i240_smoke.log'
+- metric: ownership-grid injection fallback transparency (CLAUDE.md mandatory rates)
+  reference: none (absence-of-fallback check)
+  result: '164 ZENSUS1km parents (160 with households), RS7-mixing 0 (0.0%); cars prior
+    primary (dwelling-mixed) 160/160 (100.0%), fallback 0; bikes prior identical. The
+    injected level was raked to the target2026 anchors with the shared 1e-3 tolerance;
+    batch cache correctly purged 8 stale pre-branch batches (config-signature change).'
+  artifact: 'felix:/home/felix/i240_smoke.log (grep ownership_grid)'
+- metric: KREIS anchor fit, realized vs target2026 (03101), household category shares
+  reference: 'target2026_number_of_cars_by_kreis.csv / target2026_number_of_bicycles_by_kreis.csv
+    (blended anchors; control FIT, not independent validation)'
+  result: 'cars: 0 -> 21.78% vs 22.00% (-0.22pp), 1 -> +0.02pp, 2 -> +0.19pp, 3plus ->
+    +0.01pp. bikes: 0 -> 14.78% vs 15.33% (-0.55pp), 1 -> +0.38pp, 2 -> -0.07pp, 3 ->
+    -0.07pp, 4plus -> +0.31pp. The 1km shape layer leaves the KREIS anchor intact (max
+    |delta| 0.55pp).'
+  artifact: 'stage pickle braunschweig.popsim.stage__4e04374b798acf43f3f124cb78168cc0.p
+    (households deduplicated from the persons frame)'
+- metric: per-ZENSUS1km attainment of the injected OWN_CARS_0 targets (the within-city
+    structure the feature exists for)
+  reference: 'the injected per-parent targets, re-derived exactly through
+    braunschweig.popsim.ownership_grid (load_ownership_conditionals +
+    add_ownership_grid_columns with mid.resolved_kreis_per_cell) on the same inputs'
+  result: 'n_parents=160; household-weighted mean |delta| of the car-free share 1.72pp;
+    corr(realized, target) 0.767; realized P10/P50/P90 = 15.8/23.4/25.8% (spread 10.0pp)
+    vs target 14.6/24.7/26.8% (spread 12.3pp). The balancer transmits most of the modelled
+    within-city structure; the damping is the designed behavior (grid_shape importance 500
+    below the census backbone, plus per-parent integerization).'
+  notes: 'Realized side from the stage pickle; target side re-derived through the module
+    itself, so this measures balancer attainment, not the prior. One dense Kreis only; a
+    smoke is not validation -- the full-region ON/OFF A/B (issue #240 acceptance) is still
+    owed, including the realized car-free-by-building-type check at 100m (implicit coupling
+    via the donor joint distribution).'
+features:
+  note: 'First execution evidence for ownership_grid_1km (ADR-0092). Known harness gap
+    surfaced (pre-existing, not caused by this branch): run_population_validation
+    --sim-cache expects location outputs (synthetic_homes.gpkg) and cannot read a
+    population-only smoke cache; measurements were taken directly from the stage pickle,
+    mirroring the previous smoke.'
+artifacts:
+- 'felix:/home/felix/i240_smoke.log'
+- 'felix:/home/felix/eqasim-bs/eqasim-data/cache_smoke_control_fit/'
+issues:
+- '#240'
+- '#282'
+decisions:
+- ADR-0092
+source: 'first #240 layer-2 smoke, 2026-08-19'
