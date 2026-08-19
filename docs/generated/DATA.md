@@ -55,6 +55,8 @@ microdata; it is the authority for variable value labels and settled the W_ZWECK
 for issue #241 (sheet "Wege"), which had previously been inferred from MiD's own derived
 variables.
 ` | o/-/r | YES |
+| [mid2023_bikes_by_rs7_haustyp](../registry/data/mid2023_bikes_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` | o/-/r | no |
+| [mid2023_cars_by_rs7_haustyp](../registry/data/mid2023_cars_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv` | o/-/r | no |
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |
 | [mid2023_regional_report](../registry/data/mid2023_regional_report.yml) | validation_reference, calibration_target | restricted_delivery (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/ (source PDFs local-only)` | o/-/o | YES |

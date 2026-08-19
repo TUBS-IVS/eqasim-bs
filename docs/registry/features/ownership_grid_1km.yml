@@ -1,0 +1,118 @@
+feature: ownership_grid_1km
+title: 1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)
+area: population
+description: 'Nine ZENSUS1km PopulationSim controls (OWN_CARS_{0,1,2,3plus}_agg +
+  OWN_BIKES_{0,1,2,3,4plus}_agg, issue #240) that give car/bike ownership a finer-than-KREIS
+  spatial shape without moving its level. SHAPE is a MODELLED prior from the committed MiD B1
+  RS7 x haustyp conditionals (mid2023_{cars,bikes}_by_rs7_haustyp.csv), mixed per 1km cell by its
+  Zensus dwelling composition (ASSUMPTION: the national MiD ownership <-> RS7 x building-type
+  relationship transfers spatially within the ZGB). LEVEL is the SAME blended
+  target2026_{number_of_cars,number_of_bicycles} KREIS tables the existing KREIS ownership
+  controls already consume: the per-cell priors are IPF-raked per Kreis (tol=1e-9 relative
+  margin error) so the two layers cannot conflict by construction. The nine controls reuse the
+  KREIS registry entries'' own category expressions on the existing number_of_cars /
+  number_of_bicycles seed columns, at importance group grid_shape=500 (below the census backbone
+  1000 and the kreis_hard anchors 2000 -- shape yields to both). See ADR-0092 for the full
+  rationale, the rejected alternatives (raw H7/H12.3 anchors, RS7-only prior, 100m geography,
+  replacing the KREIS controls) and the honest precision/tolerance clause (the 100m->1km row
+  identity is structurally exact; the per-Kreis column identity holds to the rake''s own 1e-9
+  tolerance, not literal bit-for-bit; build_control_totals integerizes downstream regardless).'
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.ownership_grid_1km
+introduced:
+  issue: '#240'
+  pr: null
+  adr: ADR-0092
+detail_doc: null
+code_paths:
+- braunschweig/popsim/ownership_grid.py
+- braunschweig/popsim/control_spec.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/stage/controls_builder.py
+- braunschweig/popsim/stage/config_keys.py
+- scripts/extract_mid_ownership_by_rs7_haustyp.py
+evidence:
+  tests:
+  - tests/test_ownership_grid.py
+  - tests/test_extract_mid_ownership_by_rs7_haustyp.py
+  - tests/test_control_spec_catalog.py
+  - tests/test_popsim_stage_controls_source.py
+  - tests/test_popsim_stage_validate_token.py
+  - tests/test_control_fit_smoke.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_control_spec_catalog.py::test_full_catalog_ownership_grid_flag
+    note: |
+      With the flag off (include_ownership_grid=False -- what stage/__init__.py's
+      _read_control_config resolves to for any config value other than "on") the rendered
+      catalog is an EXACT PREFIX match of the catalog built without the ownership-grid parameter
+      at all, proven for both fine_teen_age_bands variants
+      (test_full_catalog_ownership_grid_flag). The wiring the flag gates
+      (config_keys.KEY_OWNERSHIP_GRID; stage/__init__.py _read_control_config /
+      _build_control_frame / _inject_ownership_grid_columns) is a pure function of the flag and
+      touches no RNG stream -- no seed column is added or imputed, the nine controls reuse the
+      EXISTING number_of_cars / number_of_bicycles seed columns -- so the catalog-level proof is
+      expected to extend to the full synthetic population; that population-level identity is not
+      separately tested.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[ownership_grid] %s prior: primary (dwelling-mixed)'
+    note: |
+      per_cell_ownership_priors logs primary (dwelling-mixed) vs RS7-marginal-fallback counts and
+      rates per attribute (cars/bikes) and raises if ALL cells hit the fallback (a 100% rate means
+      the dwelling columns are broken, not a data property). add_ownership_grid_columns
+      separately logs the 1km-parent RS7-mixing rate and raises on a Kreis-mixed parent (would
+      break the KREIS-layer aggregation identity) and on any RS7 outside 71..77. The stage guard
+      (_read_control_config) logs and turns the flag into a no-op for a non-MiD source rather than
+      crashing or silently doing nothing unexplained. rake_ownership_targets raises (not a silent
+      fallback) on non-convergence within max_iter and on a non-finite margin error.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv
+    note: |
+      The shape's conditional source, committed alongside its bikes sibling
+      (mid2023_bikes_by_rs7_haustyp.csv, see the Data Registry entries of the same names). The
+      LEVEL every 1km parent is raked to is the SAME committed
+      eqasim-data/data/braunschweig/targets/target2026_{number_of_cars,number_of_bicycles}_by_kreis.csv
+      tables already registered for the KREIS ownership controls (dataset blended_kreis_targets)
+      -- not duplicated here. Hitting these committed tables is control FIT, not behavioural
+      validation: no observed reference for the REALISED per-cell distribution exists yet. That
+      comparison is owed by the pending A/B (ADR-0092 Consequences) against the
+      population_validation cars_per_hh / bicycles_per_hh controls.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: 'No run has exercised the flag yet. Tasks 1-7 built and unit-tested the module in
+    isolation; this task (8) adds the spec-layer smoke coverage
+    (test_census_sources_available_with_both_grids_on) that checks the ACTIVE catalog''s census
+    sources resolve and the ownership-grid dwelling input columns exist in the real cell
+    parquet -- a specification check, not a numerical result. Owed: the 1% smoke (issue #282
+    two-layer control smoke already partially covers this) and the 100% ON/OFF A/B against
+    cars_per_hh / bicycles_per_hh, recorded in a run manifest.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the first run with the flag on (1% smoke, then the 100% A/B). ADR-0092 records two
+    explicit open points: the modelled-prior ASSUMPTION (the national MiD ownership <-> RS7 x
+    building-type relationship transferring spatially within the ZGB) is unverified by
+    construction and cannot be resolved by this feature's own machinery, and the grid_shape=500
+    importance value is an initial choice pending the A/B showing whether it moves the urban-core
+    deficit without degrading the census backbone fit.
+  source: ADR-0092
+notes: 'Sibling of employment_grid (ADR-0016): the SAME per-cell shape-then-rake-to-anchor
+  pattern, one geography coarser (ZENSUS1km, not ZENSUS100m) because 1km carries markedly less
+  integerisation noise on already-fractional car/bike counts (issue #240). Directly motivated by
+  the #240 control-fit measurement (car-free -3.6pp, bicycle-free -4.7pp against the 100% run,
+  both urban-core concentrated) that the coarse KREIS-only control could not address.'

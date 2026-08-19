@@ -13,6 +13,7 @@ code:
 - data/census/filtered.py
 - braunschweig/ipf/attributed.py
 - braunschweig/popsim/stage/
+- braunschweig/popsim/ownership_grid.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -27,12 +28,15 @@ inputs:
 - cleancensus_kreis_controls
 - mid2023_b1
 - srv2023_reference_tables
+- mid2023_cars_by_rs7_haustyp
+- mid2023_bikes_by_rs7_haustyp
 features:
 - age_aware_composition
 - housing_tenure
 - income_spatial_tilt
 - ipf_synthesis_legacy
 - kreis_income_control
+- ownership_grid_1km
 - placement_income_l2
 - popsim_method
 - sex_aware_couples
@@ -40,3 +44,4 @@ features:
 - tier3_kreis_controls
 decisions:
 - ADR-0002
+- ADR-0092

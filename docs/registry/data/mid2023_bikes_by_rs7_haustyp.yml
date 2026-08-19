@@ -1,0 +1,73 @@
+dataset: mid2023_bikes_by_rs7_haustyp
+title: MiD 2023 B1 bicycle-ownership conditional by RegioStaR7 x haustyp (committed aggregate)
+inventory_id: E1.3
+provider: derived in-repo from MiD 2023 B1 household microdata (BMDV / infas)
+vintage: 2023 survey year
+geography: Germany (national MiD sample), aggregated to 28 RS7 x haustyp cells (7 RS7 classes
+  71..77 x 4 haustyp classes 1..4)
+crs: null
+roles:
+- control
+- assumption_basis
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_ownership_by_rs7_haustyp.py [--raw <file>]
+    [--out-dir <dir>]. Reads MiD2023_Haushalte.csv (RegioStaR7, haustyp, anzpedrad, H_GEW;
+    server-local raw, never committed) and writes this file plus its cars sibling
+    (mid2023_cars_by_rs7_haustyp.csv) together. Standalone (pandas only), so it can run on the
+    server where the raw microdata lives.
+  script: scripts/extract_mid_ownership_by_rs7_haustyp.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py or the README data-setup tables --
+    mirrors how the sibling committed braunschweig/mid/mid2023_*_by_rs7 tables (e.g.
+    mid2023_T43_school_distance_by_rs7.csv) are handled: the file ships committed with the repo
+    checkout, so there is nothing external for a contributor to download or verify presence of.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (derived from a restricted scientific-use source)
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: P(number of bicycles in {0,1,2,3,4plus} INCLUDING pedelecs/e-bikes |
+  RegioStaR7 x haustyp), H_GEW-weighted shares per (rs7, ht) cell; source variable anzpedrad
+  (verified 2026-07-08 to equal min(H_ANZRAD + H_ANZPED, 10) on all valid B1 rows -- the SAME
+  construct as MiD H12.3, the SrV alle-Raeder tables and the seed column number_of_bicycles,
+  see attributes.map_number_of_bicycles); column n_unweighted carries the raw respondent
+  household count per cell. Universe: households with H_GEW > 0, RegioStaR7 71..77, haustyp
+  (Gebaeudetyp, Raumbezug Siedlungsblock: 1 Ein-/Zweifamilienhaus, 2 Mehrfamilienhaus, 3
+  Geschosswohnungsbau, 4 sonstiges) 1..4 -- code 95 "nicht zuzuordnen" excluded (3.82% of rows,
+  identical base to the cars sibling) -- and a valid count (anzpedrad <= 30; the infas missing
+  code 99, 0.029% of rows, excluded). Categories capped at 4 (4plus), matching the
+  target2026_number_of_bicycles categories the KREIS ownership control and this table's
+  downstream 1 km rake (ADR-0092) both consume.
+  Thinnest cells (lowest n_unweighted): rs7=74 ht=3 n=62; rs7=77 ht=3 n=136 -- same thin cells as
+  the cars sibling (identical universe filter, only the count column differs).
+  Bicycle ownership carries a WEAKER spatial signal than cars in this conditional: it is driven
+  more by building type (haustyp) than by urbanity (RS7) -- e.g. within RS7 72, bike-free is
+  23.7% (EFH) vs 32.8% (Geschosswohnungsbau), a smaller contrast than the SAME cells' car-free
+  15.9% vs 44.3%. Recorded in ADR-0092 as expectation management for the downstream 1 km
+  control, not a defect in this table.
+  This is a MODELLED prior, not an observed per-cell truth: ADR-0092 states explicitly, as an
+  ASSUMPTION, that the national MiD ownership <-> RS7 x building-type relationship is assumed to
+  transfer spatially within the ZGB. The LEVEL every downstream 1 km target is raked to comes
+  from a DIFFERENT table (target2026_number_of_bicycles_by_kreis, dataset blended_kreis_targets),
+  so this table only ever supplies SHAPE, never the anchor.
+notes: |
+  Loaded and validated by braunschweig.popsim.ownership_grid.load_ownership_conditionals /
+  _load_one_conditional (rows must sum to 1 within 1e-6, no negative shares, all 28 (rs7, ht)
+  cells present, or the loader raises rather than silently using a partial table). Cross-checked
+  by the same double-implementation gate as the cars sibling
+  (tests/test_extract_mid_ownership_by_rs7_haustyp.py), pinning this committed file against an
+  INDEPENDENT aggregation run separately against the same raw B1 file (the 2026-08-19 spike).

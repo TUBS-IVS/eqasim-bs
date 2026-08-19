@@ -1,0 +1,68 @@
+dataset: mid2023_cars_by_rs7_haustyp
+title: MiD 2023 B1 car-ownership conditional by RegioStaR7 x haustyp (committed aggregate)
+inventory_id: E1.2
+provider: derived in-repo from MiD 2023 B1 household microdata (BMDV / infas)
+vintage: 2023 survey year
+geography: Germany (national MiD sample), aggregated to 28 RS7 x haustyp cells (7 RS7 classes
+  71..77 x 4 haustyp classes 1..4)
+crs: null
+roles:
+- control
+- assumption_basis
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_ownership_by_rs7_haustyp.py [--raw <file>]
+    [--out-dir <dir>]. Reads MiD2023_Haushalte.csv (RegioStaR7, haustyp, H_ANZAUTO, H_GEW;
+    server-local raw, never committed) and writes this file plus its bikes sibling
+    (mid2023_bikes_by_rs7_haustyp.csv) together. Standalone (pandas only), so it can run on the
+    server where the raw microdata lives.
+  script: scripts/extract_mid_ownership_by_rs7_haustyp.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py or the README data-setup tables --
+    mirrors how the sibling committed braunschweig/mid/mid2023_*_by_rs7 tables (e.g.
+    mid2023_P13_commute_distance_by_rs7.csv) are handled: the file ships committed with the repo
+    checkout, so there is nothing external for a contributor to download or verify presence of.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (derived from a restricted scientific-use source)
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: P(number of cars in {0,1,2,3plus} | RegioStaR7 x haustyp), H_GEW-weighted shares
+  per (rs7, ht) cell; column n_unweighted carries the raw respondent household count per cell.
+  Universe: households with H_GEW > 0, RegioStaR7 71..77, haustyp (Gebaeudetyp, Raumbezug
+  Siedlungsblock: 1 Ein-/Zweifamilienhaus, 2 Mehrfamilienhaus, 3 Geschosswohnungsbau, 4
+  sonstiges) 1..4 -- code 95 "nicht zuzuordnen" excluded (3.82% of rows) -- and a valid count
+  (H_ANZAUTO <= 20; the infas missing code 99, 0.029% of rows, excluded). Categories capped at
+  3 (3plus), matching the target2026_number_of_cars categories the KREIS ownership control and
+  this table's downstream 1 km rake (ADR-0092) both consume.
+  Thinnest cells (lowest n_unweighted, so their conditional is the least precise): rs7=74 ht=3
+  n=62; rs7=77 ht=3 n=136 -- they affect only rare cell compositions.
+  This is a MODELLED prior, not an observed per-cell truth: ADR-0092 states explicitly, as an
+  ASSUMPTION, that the national MiD ownership <-> RS7 x building-type relationship is assumed to
+  transfer spatially within the ZGB. The LEVEL every downstream 1 km target is raked to comes
+  from a DIFFERENT table (target2026_number_of_cars_by_kreis, dataset blended_kreis_targets), so
+  this table only ever supplies SHAPE, never the anchor.
+notes: |
+  Loaded and validated by braunschweig.popsim.ownership_grid.load_ownership_conditionals /
+  _load_one_conditional (rows must sum to 1 within 1e-6, no negative shares, all 28 (rs7, ht)
+  cells present, or the loader raises rather than silently using a partial table). Cross-checked
+  by a double-implementation gate (tests/test_extract_mid_ownership_by_rs7_haustyp.py) that pins
+  the committed file against an INDEPENDENT aggregation run separately against the same raw B1
+  file (the 2026-08-19 spike; a pin mismatch means the extraction script's universe/weighting
+  diverged from that independent check, not that the tolerance should be widened). The RS7
+  marginal of this table's car-free share reproduces the pre-existing
+  mid2023_cars_by_raumtyp.csv aggregate (a different, coarser committed table) to within the
+  provenance-verification tolerance used at design time.

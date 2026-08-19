@@ -214,6 +214,7 @@ tables keep all reference comparisons working.
 | HSN/TSN engine lookup | `python scripts/scrape_hsn_tsn.py` | `braunschweig/kba/hsn_tsn_lookup.csv` |
 | KBA derived fleet tables (committed) | `python scripts/extract_kba_fleet.py` | `braunschweig/kba/derived/*.csv` |
 | MiD fleet cross tables (committed) | `python scripts/build_mid_age_by_segment_status.py` and `python scripts/build_mid_antrieb_by_status.py` (both accept `--mid-path`) | `braunschweig/kba/derived/mid2023_{age_by_segment_status,antrieb_by_status}.csv` |
+| MiD ownership cross tables (committed) | `python scripts/extract_mid_ownership_by_rs7_haustyp.py` (accepts `--raw` / `--out-dir`) | `braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv`, `braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` |
 
 Two diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):

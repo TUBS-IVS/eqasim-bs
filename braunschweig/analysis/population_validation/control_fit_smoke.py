@@ -163,25 +163,48 @@ def cell_parquet_columns(data_path: str | Path) -> list | None:
     return [clean_col_name(c) for c in pq.ParquetFile(path).schema_arrow.names]
 
 
+def injected_cell_columns() -> set:
+    """Census-source columns COMPUTED per cell by the popsim stage at run time.
+
+    These are in neither the parquet nor the aggregation map: the employment grid's
+    ten EMPLOYED_*_agg targets and the ownership grid's nine OWN_*_agg targets
+    (issue #240). Derived from the catalog factories, never re-listed literally.
+    """
+    injected = set()
+    for control in (*cs.employment_grid_controls(), *cs.ownership_grid_controls()):
+        injected.update(control.census_source)
+    return injected
+
+
 def check_census_sources_available(
     controls: Iterable[cs.CatalogControl],
     *,
     available_columns: Sequence[str],
     aggregation_map: Mapping[str, tuple],
+    injected_columns: Iterable[str] = (),
 ) -> CheckReport:
-    """Assert every control's census source is either a real cell column or aggregated."""
+    """Assert every control's census source is a real cell column, aggregated, or injected.
+
+    ``injected_columns`` (default empty, so every existing caller stays byte-identical)
+    names the columns :func:`injected_cell_columns` reports -- computed per cell by the
+    popsim stage itself rather than read from the parquet or built by the aggregation map.
+    """
     report = CheckReport(check="census_sources_available")
     available = set(available_columns)
+    injected = set(injected_columns)
     for control in controls:
         for source in control.census_source:
             if source in available:
+                continue
+            if source in injected:
                 continue
             if source in aggregation_map:
                 continue
             report.failures.append(
                 f"{control.name}: census source column {source!r} is neither in the cell "
-                "parquet nor produced by the aggregation map -- PopulationSim would fail "
-                "with '<field> not in index' at run time")
+                "parquet, produced by the aggregation map, nor injected by the stage at "
+                "run time -- PopulationSim would fail with '<field> not in index' at run "
+                "time")
         report.n_controls_checked += 1
     logger.info("%s", report.summary())
     return report
@@ -192,13 +215,13 @@ def check_kreis_targets(
     data_path: str | Path,
     *,
     expected_ars5: Sequence[str],
-    share_tolerance: float = 1e-3,
+    share_tolerance: float = kac.TARGET_SHARE_TOLERANCE,
 ) -> CheckReport:
     """Assert every registered Kreis control's committed target loads and is normalised.
 
-    ``share_tolerance`` defaults to 1e-3 because the committed tables store shares rounded to
-    four decimals, so an exactly-1.0 row can read as 0.9999 -- the same tolerance the stage
-    uses.
+    ``share_tolerance`` defaults to :data:`kac.TARGET_SHARE_TOLERANCE` (1e-3): the committed
+    tables store shares rounded to four decimals, so an exactly-1.0 row can read as 0.9999 --
+    the same tolerance the popsim stage uses, stated once so the two cannot drift apart.
     """
     report = CheckReport(check="kreis_targets")
     for ctl in registry:
