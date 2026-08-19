@@ -149,6 +149,22 @@ def test_load_kreis_target_fails_on_missing_target_column(tmp_path):
         load_kreis_target(tmp_path, _TOY)
 
 
+def test_kreis_rows_indexed_by_ars5_drops_the_region_aggregate_row(tmp_path):
+    """A by-Kreis consumer must not keep the aggregate row in its lookup index.
+
+    ``load_kreis_target`` keeps it on purpose (the Dirichlet prior mean needs it), but the
+    1 km ownership rake (issue #240) looks targets up BY KREIS, where a non-Kreis key must
+    fail loudly rather than silently resolve.
+    """
+    from braunschweig.popsim.kreis_attribute_control import kreis_rows_indexed_by_ars5
+
+    _write_target_csv(tmp_path)
+    out = kreis_rows_indexed_by_ars5(load_kreis_target(tmp_path, _TOY))
+    assert list(out.index) == ["03101"]
+    assert list(out.columns) == ["a", "b"]
+    assert out.loc["03101", "a"] == pytest.approx(0.7)
+
+
 # --- Task 2: cars (hard) + bicycles/has_ebike (soft) registry entries ---
 
 

@@ -261,6 +261,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_LOGGING,
     KEY_MAX_CELLS,
     KEY_MID,
+    KEY_OWNERSHIP_GRID,
     KEY_PLACEMENT_INCOME,
     KEY_POPSIMPREP,
     KEY_SEED_DAY_FILTER,
@@ -415,7 +416,10 @@ _HELPER_MODULES = (
 #                                               _inject_employment_grid_columns
 #   braunschweig.popsim.folders                 _inject_employment_grid_columns
 #   braunschweig.popsim.kreis_attribute_control _derive_kreis_attribute_control_targets,
+#                                               _inject_ownership_grid_columns,
 #                                               source_resolution.active_kreis_entries
+#   braunschweig.popsim.ownership_grid          _resolve_cell_load_columns,
+#                                               _inject_ownership_grid_columns
 #   braunschweig.popsim.placement_income        _resolve_placement_income_flag,
 #                                               the placement_income block
 #   braunschweig.popsim.zensus_employment_age   _inject_employment_grid_columns
@@ -454,6 +458,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.employment_grid",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
+    "braunschweig.popsim.ownership_grid",
     "braunschweig.popsim.placement_income",
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.synthesis.population.enriched",
@@ -511,7 +516,7 @@ def validate(context):
     COVERED via ``_DEFERRED_HELPER_MODULE_NAMES`` (dotted names, imported LAZILY
     here and hashed second): the first-party modules this package imports inside a
     function body -- ``braunschweig.popsim.control_spec`` (the control catalog
-    itself), ``kreis_attribute_control``, ``placement_income``,
+    itself), ``kreis_attribute_control``, ``ownership_grid``, ``placement_income``,
     ``employment_grid``, ``zensus_employment_age``, ``folders``,
     ``braunschweig.parallelism``, ``braunschweig.data.mid.tenure_by_income``, and
     the ``braunschweig.synthesis.population.enriched`` package one level deep
@@ -647,6 +652,10 @@ def configure(context):
     context.config(KEY_KREIS_CONTROLS, "")
     # Employment grid control (Task 5). Default "off" = byte-identical to today.
     context.config(KEY_EMPLOYMENT_GRID, "off")
+    # Ownership grid control (issue #240). Default "on" (project rule: new features
+    # default on); "off" is byte-identical to the pre-#240 control set. Effective only
+    # for source="mid" -- an ENTD run logs and skips it (see _read_control_config).
+    context.config(KEY_OWNERSHIP_GRID, "on")
     # Fine teen age bands in the tier0 backbone (issue #320). Default "on": the ten-year
     # 10-19 band leaves the composition inside it unconstrained, which produced an 18-19
     # shortfall of -75% against DESTATIS on the 100% population. "off" restores the
@@ -664,6 +673,12 @@ def configure(context):
     # ensure data_path is declared so the reference CSV can be located; this is a
     # no-op when data_path is already declared (KEY_INCOME_KC / housing_tenure).
     if str(context.config(KEY_EMPLOYMENT_GRID, "off")).strip().lower() == "on":
+        context.config("data_path")
+    # The ownership grid control reads the committed RS7 x haustyp conditionals AND the
+    # blended target2026 ownership tables, both under data_path, in execute(); synpp's
+    # execute-config contract only serves DECLARED keys, so declare it here (no-op when
+    # data_path is already declared above / by KEY_INCOME_KC / housing_tenure).
+    if str(context.config(KEY_OWNERSHIP_GRID, "on")).strip().lower() == "on":
         context.config("data_path")
     # KREIS attribute controls (issue #109 + S1c). Each defaults per _KREIS_CONTROL_DEFAULT
     # (project rule: new features default on) -- all four entries default "on"; has_ebike's
@@ -893,8 +908,9 @@ def _read_control_config(context, source_name: str):
     Parse the comma-separated tier string (e.g. "tier0,tier1") into a tuple.
 
     Returns: ``(control_tiers, seed_day_filter, controls_source,
-    employment_grid_on, active_entries, active_entry_names, status_prior_n,
-    ebike_seed_column_cfg, importance_profile)``.
+    employment_grid_on, ownership_grid_on, active_entries, active_entry_names,
+    status_prior_n, ebike_seed_column_cfg, importance_profile,
+    fine_teen_bands_on)``.
     Mutates: nothing.
     """
     control_tiers_str = context.config(KEY_CONTROL_TIERS)
@@ -906,6 +922,15 @@ def _read_control_config(context, source_name: str):
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     # Employment grid control (Task 5): default "off" -> byte-identical path.
     employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
+    # Ownership grid (issue #240): MiD-only -- its catalog entries are entd: None and
+    # its guard depends on the MiD-only KREIS ownership entries, so the flag is
+    # effective only for source="mid" (an ENTD run with the default-"on" key must be
+    # a logged no-op, not a crash).
+    ownership_grid_on = str(context.config(KEY_OWNERSHIP_GRID)).strip().lower() == "on"
+    if ownership_grid_on and source_name != "mid":
+        logger.info("[popsim.stage] ownership_grid_1km is 'on' but source=%r has no MiD "
+                    "seed columns; the ownership grid is skipped for this source.", source_name)
+        ownership_grid_on = False
     # Fine teen age bands (issue #320): default "on". The SAME value must reach the
     # controls frame, the parquet column selection and the aggregation map, or the
     # rendered controls.csv and the cell columns disagree and a control silently
@@ -927,14 +952,14 @@ def _read_control_config(context, source_name: str):
     importance_profile = str(context.config(KEY_IMPORTANCE_PROFILE)).strip()
     return (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
-        active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
-        importance_profile, fine_teen_bands_on,
+        ownership_grid_on, active_entries, active_entry_names, status_prior_n,
+        ebike_seed_column_cfg, importance_profile, fine_teen_bands_on,
     )
 
 
 def _build_control_frame(controls_source, controls_path, source_name: str, control_tiers,
         employment_grid_on: bool, active_entry_names, importance_profile: str,
-        fine_teen_age_bands: bool = True):
+        fine_teen_age_bands: bool = True, ownership_grid_on: bool = False):
     """Build the PopulationSim ``controls.csv`` frame and its base cell columns.
 
     Returns: ``(controls_df, base_cols)``.
@@ -946,13 +971,22 @@ def _build_control_frame(controls_source, controls_path, source_name: str, contr
         seed=source_name,
         tiers=control_tiers,
         employment_grid=employment_grid_on,
+        ownership_grid=ownership_grid_on,
         kreis_control_names=active_entry_names,
         importance_profile=importance_profile,
         fine_teen_age_bands=fine_teen_age_bands,
     )
     if importance_profile and importance_profile != "uniform":
         logger.info("[popsim.stage] importance profile applied: %s", importance_profile)
-    base_cols = mid.control_base_columns(controls_df, "ZENSUS100m")
+    # Control bases must cover EVERY grid geography: a base that exists only at
+    # ZENSUS1km (the OWN_* ownership controls, issue #240) would otherwise never be
+    # written by build_control_totals -> PopulationSim '<field> not in index'. The
+    # OFF path is byte-identical: the OFF catalog's only 1km base is
+    # HH_TOTAL_CENSUS_COLUMN, which the ZENSUS100m list already contains.
+    base_cols = list(dict.fromkeys([
+        *mid.control_base_columns(controls_df, "ZENSUS100m"),
+        *mid.control_base_columns(controls_df, "ZENSUS1km"),
+    ]))
     return controls_df, base_cols
 
 
@@ -1003,7 +1037,8 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
-        employment_grid_on: bool, cells_path, fine_teen_age_bands: bool = True):
+        employment_grid_on: bool, cells_path, fine_teen_age_bands: bool = True,
+        ownership_grid_on: bool = False):
     """Resolve the column set loaded from the prepared-cells parquet.
 
     For catalog-based controls with multi-column census sources (e.g. building_type),
@@ -1011,10 +1046,10 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     rather than the derived control names.  For tier0-only or CSV-based controls,
     source_cols == base_cols == current behaviour -> byte-identical.
 
-    Returns: ``load_cols`` (rebound by the employment-grid and income-tilt
-    blocks, so the caller MUST reassign it).
-    Mutates: nothing; reads only the parquet SCHEMA when the employment grid
-    control is on.
+    Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid and
+    income-tilt blocks, so the caller MUST reassign it).
+    Mutates: nothing; reads only the parquet SCHEMA when the employment grid or
+    ownership grid control is on.
     """
     source_cols_override = build_source_columns(
         controls_source=controls_source,
@@ -1044,6 +1079,18 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
                 "EMPLOYED_F_50_59_agg", "EMPLOYED_F_60plus_agg",
             },
         )
+
+    # Ownership grid (issue #240): the nine OWN_*_agg targets are COMPUTED per cell
+    # (not stored in the parquet); add the Zensus dwelling-composition input columns
+    # plus the geography/weight inputs that ARE present. When OFF, load_cols is
+    # untouched (byte-identical).
+    if ownership_grid_on:
+        from braunschweig.popsim import ownership_grid as _og
+        import pyarrow.parquet as _pq_og
+
+        _og_raw_names = _pq_og.ParquetFile(cells_path).schema.names
+        _og_available = [prepared_cells.clean_col_name(_n) for _n in _og_raw_names]
+        load_cols = _og.select_load_columns(load_cols, _og_available)
 
     # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
     # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
@@ -1185,6 +1232,62 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
             "(census levels from %s, age shape from %s, %d Kreise).",
             _eg_levels_path, _eg_ref, _eg_census_levels["ARS_kreis"].nunique(),
         )
+    return cells
+
+
+def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_on: bool,
+        active_entry_names, kreise) -> pd.DataFrame:
+    """Inject the nine OWN_* per-cell ownership target columns (issue #240).
+
+    SHAPE from the committed MiD B1 RS7 x haustyp conditionals, LEVEL raked per Kreis
+    to the blended target2026 ownership tables -- loaded via
+    kreis_attribute_control.load_kreis_target with
+    ``share_tolerance=kreis_attribute_control.TARGET_SHARE_TOLERANCE`` and
+    expected_ars5=kreise, EXACTLY like _derive_kreis_attribute_control_targets (the
+    committed target2026 rows are 4-decimal rounded; the loader's 1e-6 default
+    REJECTS them -- verified on the real files, review finding C2). The per-cell
+    Kreis is the pipeline's own resolution (mid.resolved_kreis_per_cell), so the 1km
+    columns aggregate exactly to the KREIS anchor counts. When OFF (incl. the
+    source!="mid" gate in _read_control_config), nothing runs -> byte-identical.
+
+    Returns: the cells frame with the nine OWN_*_agg columns (MUST be reassigned);
+    returned unchanged when the control is off.
+    Mutates: nothing in place (add_ownership_grid_columns copies the frame); reads
+    the two committed conditional CSVs and the two committed target2026 CSVs.
+    """
+    if not ownership_grid_on:
+        return cells
+    required = {"number_of_cars", "number_of_bicycles"}
+    missing = required - set(active_entry_names)
+    if missing:
+        raise ValueError(
+            "[popsim.stage] ownership_grid_1km is on but the KREIS entries "
+            f"{sorted(missing)} are toggled off; the grid controls reuse their seed "
+            "columns and their target2026 anchors. Enable them or turn the grid off.")
+    from braunschweig.popsim import kreis_attribute_control as _kac
+    from braunschweig.popsim import ownership_grid as _og
+
+    data_path = context.config("data_path")
+    _og_by_name = {c.name: c for c in _kac.REGISTRY}
+    # kreis_rows_indexed_by_ars5 drops the loader's mandatory region-aggregate row: the
+    # rake looks targets up BY KREIS, so a non-Kreis key must not sit in that index.
+    _og_targets = {
+        entry_name: _kac.kreis_rows_indexed_by_ars5(_kac.load_kreis_target(
+            data_path, _og_by_name[entry_name], expected_ars5=kreise,
+            share_tolerance=_kac.TARGET_SHARE_TOLERANCE))
+        for entry_name in ("number_of_cars", "number_of_bicycles")
+    }
+    _og_cars_cond, _og_bikes_cond = _og.load_ownership_conditionals(data_path)
+    _og_kreis_per_cell = mid.resolved_kreis_per_cell(cells)
+    cells = _og.add_ownership_grid_columns(
+        cells, _og_targets["number_of_cars"], _og_targets["number_of_bicycles"],
+        _og_cars_cond, _og_bikes_cond, kreis_per_cell=_og_kreis_per_cell)
+    logger.info(
+        "[popsim.stage] ownership grid control ON: injected %d OWN_* per-cell targets "
+        "(%s) over %d Kreise; SHAPE from the committed MiD RS7 x haustyp conditionals, "
+        "LEVEL raked to the target2026 KREIS anchors.",
+        len(_og.OWNERSHIP_COLUMNS), ", ".join(_og.OWNERSHIP_COLUMNS),
+        _og_kreis_per_cell.nunique())
     return cells
 
 
@@ -1346,11 +1449,10 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
         _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
-        # The committed blended targets (target2026_*) store shares rounded to 4 decimals, so a
-        # row can sum to 0.9999 / 1.0001 (max observed deviation 1e-4). Accept that rounding via
-        # a 1e-3 share tolerance (still catches a genuinely mis-normalised row, e.g. 0.9 / 1.1);
-        # the per-Kreis counts are renormalised + integer-partitioned downstream regardless.
-        _kac_share_tol = 1e-3
+        # Share tolerance for the committed blended targets: the single canonical value
+        # (kreis_attribute_control.TARGET_SHARE_TOLERANCE, which documents WHY the loader's
+        # tighter 1e-6 default cannot be used), shared with the 1 km ownership grid.
+        _kac_share_tol = _kac.TARGET_SHARE_TOLERANCE
         for _ctl in active_entries:
             # economic_status keeps the configurable Dirichlet shrinkage prior (status_prior_n);
             # the S1c blended targets are FINAL (CONSUMER NOTE in the CSV headers) -> prior_n = 0.
@@ -2019,8 +2121,8 @@ def execute(context) -> pd.DataFrame:
 
     (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
-        active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
-        importance_profile, fine_teen_bands_on,
+        ownership_grid_on, active_entries, active_entry_names, status_prior_n,
+        ebike_seed_column_cfg, importance_profile, fine_teen_bands_on,
     ) = _read_control_config(context, source_name)
     # The band labels are DERIVED from the constant, never hardcoded: a hardcoded literal
     # here kept announcing the superseded 15/16 edges after the ADR-0088 amendment moved
@@ -2035,7 +2137,7 @@ def execute(context) -> pd.DataFrame:
     controls_df, base_cols = _build_control_frame(
         controls_source, controls_path, source_name, control_tiers,
         employment_grid_on, active_entry_names, importance_profile,
-        fine_teen_age_bands=fine_teen_bands_on,
+        fine_teen_age_bands=fine_teen_bands_on, ownership_grid_on=ownership_grid_on,
     )
     kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
         context, control_tiers, controls_source, source_name, kreise,
@@ -2043,6 +2145,7 @@ def execute(context) -> pd.DataFrame:
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
         employment_grid_on, cells_path, fine_teen_age_bands=fine_teen_bands_on,
+        ownership_grid_on=ownership_grid_on,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
@@ -2052,6 +2155,8 @@ def execute(context) -> pd.DataFrame:
         fine_teen_age_bands=fine_teen_bands_on,
     )
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
+    cells = _inject_ownership_grid_columns(
+        context, cells, ownership_grid_on, active_entry_names, kreise)
 
     (
         completed_donor_households, completed_donor_persons, seed_households,

@@ -263,3 +263,24 @@ def test_select_load_columns_adds_present_dwelling_columns():
     assert out[0] == "GITTER_ID_100m"
     assert og.DWELLING_INPUT_COLUMNS[0] in out and og.DWELLING_INPUT_COLUMNS[3] in out
     assert len(out) == len(set(out))
+
+
+def test_stage_injection_requires_active_kreis_entries():
+    # The 1km grid controls reuse the KREIS ownership entries' seed columns AND their
+    # target2026 anchors, so injecting them while an entry is toggled off would
+    # constrain a seed column PopulationSim does not carry. Fail fast instead.
+    from braunschweig.popsim import stage
+    with pytest.raises(ValueError, match="number_of_bicycles"):
+        stage._inject_ownership_grid_columns(
+            context=None, cells=pd.DataFrame(), ownership_grid_on=True,
+            active_entry_names=("number_of_cars",), kreise=("03101",))
+
+
+def test_stage_injection_off_returns_cells_unchanged():
+    # OFF must be byte-identical: the same frame object's content, no context touched.
+    from braunschweig.popsim import stage
+    cells = pd.DataFrame({"ZENSUS100m": ["a", "b"]})
+    out = stage._inject_ownership_grid_columns(
+        context=None, cells=cells, ownership_grid_on=False,
+        active_entry_names=(), kreise=("03101",))
+    pd.testing.assert_frame_equal(out, cells)
