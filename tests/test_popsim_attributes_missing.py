@@ -27,6 +27,7 @@ def test_mid_attr_cols_include_conditioning_columns():
 def test_has_license_structural_child_is_false_nonresponse_imputed():
     persons = pd.DataFrame({
         "P_FSCHEIN": [1, 2, 403, 9],
+        "HP_ALTER": [40, 41, 10, 42],
         "alter_gr1": [3, 3, 1, 3],
     })
     out = a.map_has_license(persons, rng=np.random.RandomState(0))
@@ -53,6 +54,7 @@ def test_license_adult_coverage_code_is_imputed_not_false():
     from braunschweig.popsim import attributes
     df = pd.DataFrame({
         "P_FSCHEIN": [1, 1, 1, 1, 202, 404],
+        "HP_ALTER": [40, 41, 42, 43, 44, 45],
         "alter_gr1": [5, 5, 5, 5, 5, 5],
     })
     out = attributes.map_has_license(df, rng=np.random.RandomState(0))
@@ -62,14 +64,14 @@ def test_license_adult_coverage_code_is_imputed_not_false():
 def test_license_underage_code_403_is_false():
     import numpy as np, pandas as pd
     from braunschweig.popsim import attributes
-    df = pd.DataFrame({"P_FSCHEIN": [1, 403], "alter_gr1": [5, 1]})
+    df = pd.DataFrame({"P_FSCHEIN": [1, 403], "HP_ALTER": [40, 10], "alter_gr1": [5, 1]})
     out = attributes.map_has_license(df, rng=np.random.RandomState(0))
     assert out["has_license"].tolist() == [True, False]
 
 
 def test_has_license_no_rng_backward_compatible():
     """Callers that omit rng must not raise; default rng is applied."""
-    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9]})
+    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9], "HP_ALTER": [40, 41, 42]})
     out = a.map_has_license(persons)  # no rng -> must not raise
     assert out["has_license"].isna().sum() == 0
 
@@ -453,3 +455,54 @@ def test_pt_ticket_group_rendered_control_carries_the_age_clause():
     assert rendered["pt_ticket_group_deutschlandticket"] == (
         "(persons.pt_ticket_group == 'deutschlandticket') & (persons.HP_ALTER >= 14)")
     assert set(rendered) == {f"pt_ticket_group_{g}" for g in a.PT_TICKET_GROUPS}
+
+
+# ---------------------------------------------------------------------------
+# license_underage (smoke finding 2026-08-19): the under-16 structural floor
+# ---------------------------------------------------------------------------
+
+
+def test_license_coverage_code_on_a_child_is_structurally_false():
+    """P_FSCHEIN=202 on an under-16 person resolves to False, never to an imputed value.
+
+    The codebook basis of the structural code 403 is 'Person unter 16 Jahren', but PAPI
+    households carry 202 ('im PAPI nicht erhoben') for their children instead of 403.
+    202 sits in impute_codes (correct for adults, the #131 fix), and an under-16 band has
+    NO valid donor codes at all, so the imputation fell through to the global adult pool:
+    61.6% of 202-children received has_license=True (7,088 persons in the 03101 smoke,
+    2.8-3.8% of the population in every run since). A person under 16 cannot hold a Pkw
+    licence regardless of WHY the item was not collected.
+
+    The donor pool here is all-True adults on purpose: if the floor were missing, the
+    child would be imputed True and this test fails.
+    """
+    persons = pd.DataFrame({
+        "P_FSCHEIN": [1, 1, 1, 202, 202],
+        "HP_ALTER": [40, 45, 50, 10, 15],
+        "alter_gr1": [5, 5, 5, 1, 2],
+    })
+    out = a.map_has_license(persons, rng=np.random.RandomState(0))
+    assert out["has_license"].tolist()[:3] == [True, True, True]
+    assert out["has_license"].tolist()[3:] == [False, False]
+
+
+def test_license_coverage_code_on_an_adult_is_still_imputed():
+    """The adult 202/404 imputation (the #131 fix) must survive the under-16 floor:
+    forcing adults back to False would re-open the 52%-licence-share defect."""
+    persons = pd.DataFrame({
+        "P_FSCHEIN": [1, 1, 1, 202],
+        "HP_ALTER": [40, 45, 50, 42],
+        "alter_gr1": [5, 5, 5, 5],
+    })
+    out = a.map_has_license(persons, rng=np.random.RandomState(0))
+    # all-True valid pool in the same band -> the adult 202 imputes to True
+    assert out["has_license"].tolist() == [True, True, True, True]
+
+
+def test_license_floor_requires_the_age_column():
+    """Without the raw age the floor cannot be applied; silently skipping it would
+    reintroduce the defect for exactly the frames where it hid before (no silent
+    fallback)."""
+    persons = pd.DataFrame({"P_FSCHEIN": [1, 202], "alter_gr1": [5, 1]})
+    with pytest.raises(KeyError, match="HP_ALTER"):
+        a.map_has_license(persons, rng=np.random.RandomState(0))

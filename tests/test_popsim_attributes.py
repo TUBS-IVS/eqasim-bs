@@ -38,7 +38,8 @@ def test_map_employed_handles_taet_17():
 
 
 def test_map_has_license_from_p_fschein():
-    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403]})
+    # HP_ALTER is required since the under-16 floor (smoke finding 2026-08-19).
+    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403], "HP_ALTER": [40, 41, 42, 10]})
     out = attr.map_has_license(persons)
     # 1 -> True; 2 -> False; 403 (structural under-age) -> False.
     # 9 (keine Angabe) is imputed from the valid pool {True, False} via missing.resolve;

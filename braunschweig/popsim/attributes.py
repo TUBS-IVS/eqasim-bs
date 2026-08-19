@@ -327,9 +327,21 @@ def map_studies(
     return out
 
 
+# MiD's own structural basis for the licence question: P_FSCHEIN code 403 is labelled
+# "Person unter 16 Jahren" (codebook MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet
+# Personen). Persons below this age can carry the PAPI coverage code 202 instead of 403
+# (PAPI households answer for their children on the paper form), and 202 is imputed for
+# adults -- so without an AGE-based floor those children fell through to the imputation
+# pool, which below 16 contains no valid codes at all and degraded to the global adult
+# pool: 61.6% of 202-children received has_license=True (smoke 2026-08-19; 2.8-3.8% of
+# every population since the #131 fix). A person under 16 cannot hold a Pkw licence
+# regardless of WHY the item was not collected.
+LICENSE_UNDER_AGE_YEARS: int = 16
+
+
 def map_has_license(
     persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None,
-    rs7_conditioning: bool = True,
+    rs7_conditioning: bool = True, age_col: str = "HP_ALTER",
 ) -> pd.DataFrame:
     """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
 
@@ -345,9 +357,23 @@ def map_has_license(
     imputed from the valid pool within the same age band (alter_gr1) when present,
     else from the global valid pool. The imputation is seeded via ``rng``.
 
+    The under-16 floor is AGE-based, not code-based: 403 marks most under-16 persons, but
+    PAPI children carry 202 instead, and 202 must stay imputable for adults. The floor is
+    therefore applied AFTER the resolve (rows below :data:`LICENSE_UNDER_AGE_YEARS` are
+    forced to False and counted), which also leaves the rng stream of every other row
+    untouched. Requires ``age_col`` -- resolving without it would silently reintroduce the
+    defect, so its absence raises.
+
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
     """
+    if age_col not in persons.columns:
+        raise KeyError(
+            f"[braunschweig.popsim.attributes] map_has_license: required column "
+            f"{age_col!r} is absent. The under-16 structural floor (MiD 403 basis "
+            f"'Person unter 16 Jahren') is age-based because PAPI children carry the "
+            f"coverage code 202 instead of 403; without the age the floor cannot be "
+            f"applied and 202-children would be imputed from the adult pool again.")
     rng = rng if rng is not None else np.random.RandomState(0)
     spec = missing.AttributeSpec(
         name="has_license",
@@ -360,6 +386,18 @@ def map_has_license(
     )
     out = persons.copy()
     out["has_license"], _ = missing.resolve(out, spec, rng=rng)
+    # Under-16 floor (see LICENSE_UNDER_AGE_YEARS above). Applied post-resolve so adult
+    # imputation draws are unchanged; the forced count is logged per the
+    # fallback-transparency rule.
+    underage = pd.to_numeric(out[age_col], errors="coerce") < LICENSE_UNDER_AGE_YEARS
+    forced = int((underage & out["has_license"].astype(bool)).sum())
+    if forced:
+        logger.info(
+            "[braunschweig.popsim.attributes] map_has_license: under-16 floor forced "
+            "%d/%d under-16 persons from an imputed True to False (PAPI coverage code "
+            "202 below the MiD 403 basis 'Person unter 16 Jahren')",
+            forced, int(underage.sum()))
+    out.loc[underage, "has_license"] = False
     out["has_license"] = out["has_license"].astype(bool)
     return out
 
