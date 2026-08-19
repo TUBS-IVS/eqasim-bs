@@ -2022,8 +2022,16 @@ def execute(context) -> pd.DataFrame:
         active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
         importance_profile, fine_teen_bands_on,
     ) = _read_control_config(context, source_name)
-    logger.info("[popsim.stage] fine teen age bands (issue #320): %s",
-                "on (10-15 / 16-17 / 18-19)" if fine_teen_bands_on else "off (ten-year 10-19)")
+    # The band labels are DERIVED from the constant, never hardcoded: a hardcoded literal
+    # here kept announcing the superseded 15/16 edges after the ADR-0088 amendment moved
+    # them, which is exactly the misleading instrumentation the fallback-transparency rule
+    # exists to prevent (caught live during the 2026-08-19 verification smoke).
+    if fine_teen_bands_on:
+        from braunschweig.popsim.control_spec import FINE_TEEN_AGE_BANDS as _ftb
+        _band_text = "on (" + " / ".join(lbl.replace("_", "-") for lbl, _, _ in _ftb) + ")"
+    else:
+        _band_text = "off (ten-year 10-19)"
+    logger.info("[popsim.stage] fine teen age bands (issue #320): %s", _band_text)
     controls_df, base_cols = _build_control_frame(
         controls_source, controls_path, source_name, control_tiers,
         employment_grid_on, active_entry_names, importance_profile,
