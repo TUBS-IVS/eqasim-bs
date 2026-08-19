@@ -52,6 +52,30 @@ DWELLING_INPUT_COLUMNS: tuple[str, ...] = tuple(
     c for cols in DWELLING_COLUMNS_BY_HAUSTYP.values() for c in cols)
 
 
+def _dwelling_columns_in_haustyp_order() -> tuple[tuple[int, tuple[str, ...]], ...]:
+    """Return the (haustyp class, dwelling columns) pairs in HAUSTYP_CLASSES order.
+
+    The dwelling-matrix COLUMN ORDER is a contract between the two halves of this
+    module: per_cell_ownership_priors reads matrix column j as haustyp
+    HAUSTYP_CLASSES[j]. Building the matrix from DWELLING_COLUMNS_BY_HAUSTYP's dict
+    literal order instead would make that contract implicit, so a future reordering of
+    the literal would silently swap conditional rows between building types (a
+    wrong-but-green result). Hence the explicit HAUSTYP_CLASSES ordering here plus a
+    loud check that both constants describe the same class set.
+    """
+    mapped = set(DWELLING_COLUMNS_BY_HAUSTYP)
+    expected = set(HAUSTYP_CLASSES)
+    if mapped != expected:
+        raise ValueError(
+            "ownership_grid: DWELLING_COLUMNS_BY_HAUSTYP and HAUSTYP_CLASSES describe "
+            f"different haustyp classes (only in the column mapping: {sorted(mapped - expected)}; "
+            f"only in HAUSTYP_CLASSES: {sorted(expected - mapped)}). The dwelling matrix column "
+            "order is a contract with per_cell_ownership_priors (column j == haustyp "
+            "HAUSTYP_CLASSES[j]) and must not be built from a divergent mapping; update both "
+            "constants (and the committed conditional CSVs) together.")
+    return tuple((ht, DWELLING_COLUMNS_BY_HAUSTYP[ht]) for ht in HAUSTYP_CLASSES)
+
+
 def _load_one_conditional(data_path: str, filename: str, share_columns: tuple[str, ...]) -> pd.DataFrame:
     path = f"{data_path}/braunschweig/mid/{filename}"
     df = pd.read_csv(path, comment="#")
@@ -85,9 +109,11 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
     """Mix the conditional per cell by dwelling composition; RS7-marginal fallback.
 
     Parameters: rs7 (n,) int array of cell RS7 codes (71..77, already validated);
-    dwellings (n, 4) float array of dwelling counts per haustyp class (HAUSTYP_CLASSES
-    order); conditional indexed by (rs7, ht); share_columns the category columns.
-    Returns (n, n_cats) priors, rows summing to 1.
+    dwellings (n, len(HAUSTYP_CLASSES)) float array of dwelling counts per haustyp class,
+    column j being haustyp HAUSTYP_CLASSES[j] (the contract enforced by
+    _dwelling_columns_in_haustyp_order on the producing side and by the shape check
+    below on this side); conditional indexed by (rs7, ht); share_columns the category
+    columns. Returns (n, n_cats) priors, rows summing to 1.
 
     Fallback transparency (CLAUDE.md MANDATORY): cells without any dwelling info use
     the n_unweighted-weighted RS7 marginal; the primary/fallback split is logged and
@@ -116,6 +142,16 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
         marginal[r] = (sub[list(share_columns)].to_numpy(dtype=float) * w[:, None]).sum(axis=0) / w_sum
 
     dw = np.asarray(dwellings, dtype=float)
+    # The column count is part of the haustyp contract: a wider array would have its
+    # extra classes counted in the dwelling TOTAL but never mixed into the prior, i.e.
+    # silently drop that class's mass; a narrower one would mis-address the conditional.
+    n_haustyp = len(HAUSTYP_CLASSES)
+    if dw.ndim != 2 or dw.shape[1] != n_haustyp:
+        raise ValueError(
+            f"per_cell_ownership_priors[{label}]: dwellings must be a (n, {n_haustyp}) array "
+            f"with column j holding haustyp HAUSTYP_CLASSES[j] = {HAUSTYP_CLASSES}, got shape "
+            f"{dw.shape}; build it with _dwelling_columns_in_haustyp_order to keep the column "
+            "order and the conditional's haustyp index aligned.")
     dw_tot = dw.sum(axis=1)
     prior = np.zeros((n, n_cats))
     n_fallback = 0
@@ -123,7 +159,7 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
         r = int(rs7[i])
         if dw_tot[i] > 0:
             shares = dw[i] / dw_tot[i]
-            prior[i] = sum(shares[j] * lut[(r, HAUSTYP_CLASSES[j])] for j in range(4))
+            prior[i] = sum(shares[j] * lut[(r, HAUSTYP_CLASSES[j])] for j in range(n_haustyp))
         else:
             prior[i] = marginal[r]
             n_fallback += 1
@@ -225,6 +261,10 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
     from braunschweig.popsim import cells as _cells
     from braunschweig.popsim.control_spec import HH_TOTAL_CENSUS_COLUMN
 
+    # Resolve the dwelling-matrix column order (and validate the two haustyp constants
+    # against each other) BEFORE touching data: a divergent mapping is a programming
+    # error and must not be discoverable only via a subtly wrong prior.
+    dwelling_order = _dwelling_columns_in_haustyp_order()
     hh_col = hh_col or HH_TOTAL_CENSUS_COLUMN
     for col in ("ZENSUS1km", "RegioStaR7", hh_col):
         if col not in cells.columns:
@@ -245,13 +285,14 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
             f"{RS7_CLASSES} (incl. NaN/unmapped); the ZGB prepared cells are expected to carry "
             "a valid RS7 everywhere (fix the parquet, no fallback).")
 
-    # Per-class dwelling sums over the columns PRESENT, with NaN suppression made
-    # observable via the issue-#150 helper. An absent expected column is logged by
-    # name (a partial class is data, not an all-or-nothing miss); a fully absent
-    # dwelling set raises -- it would mean 100% RS7-marginal fallback downstream.
+    # Per-class dwelling sums over the columns PRESENT, in HAUSTYP_CLASSES order (the
+    # column-j == HAUSTYP_CLASSES[j] contract per_cell_ownership_priors relies on), with
+    # NaN suppression made observable via the issue-#150 helper. An absent expected
+    # column is logged by name (a partial class is data, not an all-or-nothing miss); a
+    # fully absent dwelling set raises -- it would mean 100% RS7-marginal fallback.
     class_sums = []
     n_present_total = 0
-    for ht_class, class_cols in DWELLING_COLUMNS_BY_HAUSTYP.items():
+    for ht_class, class_cols in dwelling_order:
         present = [c for c in class_cols if c in out.columns]
         absent = [c for c in class_cols if c not in out.columns]
         if absent:

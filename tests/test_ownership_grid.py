@@ -239,6 +239,24 @@ def test_add_ownership_grid_columns_rejects_mixed_parent_kreis():
                                       kreis_per_cell=mixed)
 
 
+def test_add_ownership_grid_columns_rejects_divergent_haustyp_mapping(monkeypatch):
+    # The dwelling-matrix column order is a contract: per_cell_ownership_priors reads
+    # column j as haustyp HAUSTYP_CLASSES[j]. If DWELLING_COLUMNS_BY_HAUSTYP stops
+    # describing the same class set, the matrix would silently mis-address the
+    # conditional (swapped building types) or drop a class's dwelling mass -- both
+    # wrong-but-green -- so the divergence must fail loudly instead.
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    divergent = {ht: cols for ht, cols in og.DWELLING_COLUMNS_BY_HAUSTYP.items() if ht != 4}
+    divergent[5] = ("NewGebaeudetyp_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",)
+    monkeypatch.setattr(og, "DWELLING_COLUMNS_BY_HAUSTYP", divergent)
+    with pytest.raises(ValueError, match="HAUSTYP_CLASSES"):
+        og.add_ownership_grid_columns(cells, cars_t, bikes_t, cond, bcond,
+                                      kreis_per_cell=kreis_per_cell)
+
+
 def test_select_load_columns_adds_present_dwelling_columns():
     available = ["GITTER_ID_100m", og.DWELLING_INPUT_COLUMNS[0], og.DWELLING_INPUT_COLUMNS[3]]
     out = og.select_load_columns(["GITTER_ID_100m"], available)
