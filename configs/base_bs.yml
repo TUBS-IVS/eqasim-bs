@@ -79,6 +79,12 @@ config:
   # own leg; 100% minors) become the child's own education trip at their own
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
+  # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
+  # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
+  # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs
+  # (W_GEW-weighted) used to arrive at their purpose by fallback, 1.06% of them these three
+  # codes. false reproduces the pre-#241 assignment for the A/B.
+  explicit_round_trip_purposes: true
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location

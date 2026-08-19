@@ -226,6 +226,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         leisure_subtype_split: bool = False,
         other_subtype_split: bool = False,
         escort_purpose: bool = False,
+        explicit_round_trip_purposes: bool = True,
         escort_passive_education: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
@@ -325,6 +326,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     df = map_mode(map_purpose(
         df, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]

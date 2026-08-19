@@ -1,0 +1,77 @@
+feature: explicit_w_zweck_purposes
+title: Explicit W_ZWECK purpose mapping with a coverage guard
+area: behavior
+description: 'Maps every MiD W_ZWECK code the codebook documents explicitly instead of letting
+  the unknown ones reach "other" through a silent fillna, and reports an unmapped code with its
+  weighted share. Measured on the raw Wege file: 25,688 of 1,087,393 legs (3.03%, W_GEW-weighted)
+  used to arrive at their purpose by fallback -- codes 13 (1.38%), 14 (0.45%), 15 (0.50%),
+  16 (0.11%), 99 (0.59%). Only 14/15/16 -> leisure changes the population (1.06% of legs); that
+  part is flag-gated. Labels come from MiD2023_Codeplaene_B1_Standard_v1.1.xlsx (sheet Wege), not
+  from inference: 14 Sport/Sportverein, 15 Freunde besuchen/treffen, 16 Unterricht (nicht Schule).'
+stages:
+- synthesis.population.trips
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - explicit_round_trip_purposes
+introduced:
+  issue: '#241'
+  pr: null
+  adr: ADR-0091
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/distance_distributions.py
+evidence:
+  tests:
+  - tests/test_w_zweck_purpose_coverage.py
+  - tests/test_leisure_education_participation.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_w_zweck_purpose_coverage.py::test_leisure_remap_can_be_switched_off_for_the_ab_run
+    note: |
+      With the flag off, W_ZWECK 14/15/16 are remapped to "other" -- the pre-#241 assignment. The
+      claim is about the PURPOSE ASSIGNMENT, which is what the test pins; the explicit mapping of
+      13 and 99 produces the same value the fallback produced, so it changes nothing either way.
+      No rng draw is involved anywhere in this mapping, so there is no stream shift.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.trips] map_purpose: W_ZWECK code(s)'
+    note: |
+      The coverage guard warns with the offending codes, the leg count and the W_GEW-weighted
+      share. It stays silent when every code is known, so the warning cannot become noise. The
+      flag-off path additionally logs how many legs it reverted.
+  reference:
+    kind: none
+    note: 'No reference table: this is a code-to-purpose mapping, and its authority is the MiD
+      codebook (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet Wege), which is local-only under
+      the restricted MiD usage agreement -- see the mid2023_b1 Data Registry entry. The
+      frequencies quoted in the description were measured on the raw Wege file on the run host.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: 'Implemented and unit-tested; NOT yet run. Owed: an A/B varying THIS flag alone (ADR-0088
+    and ADR-0089 change the same population in the same release) with the realised trip-purpose
+    mix re-measured and recorded in a run manifest.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the A/B. One construct difference is accepted and recorded in ADR-0091: MiD 16
+    (Unterricht, nicht Schule) maps to leisure although its SrV pendant V_ZWECK 7 (Andere
+    Bildungseinrichtung) rolls into SrV education -- 0.11% of legs. Mapping it to eqasim
+    education would anchor an evening class at the person's assigned school.
+  source: ADR-0091
+notes: 'Side effect that is a repair, not a regression: PARTICIPATION_W_ZWECK is derived from the
+  same table, so the leisure_participation control universe widens from {7} to {7,14,15,16}. Its
+  SrV target uses E_ZWECK_9, whose leisure is one coarse bucket fed by the fine purposes 13-18
+  (verified by cross-tabulating V_ZWECK against E_ZWECK_9 on the SrV microdata), so the previous
+  narrow universe compared a synthetic definition against a broader target inside a HARD control.'

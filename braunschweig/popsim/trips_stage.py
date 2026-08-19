@@ -167,6 +167,7 @@ def run(
     random_seed: int,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -204,6 +205,7 @@ def run(
         random_seed=random_seed,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     )
 
     logger.info(
@@ -274,6 +276,11 @@ def configure(context):
     context.config("random_seed")
     context.config("escort_purpose", False)
     context.config("escort_passive_education", False)
+    # Explicit W_ZWECK purposes (issue #241): default True maps codes 14/15/16
+    # (Sport / Freunde besuchen / Unterricht nicht Schule) to "leisure" instead of letting
+    # them reach "other" through the silent fallback. False reproduces the pre-#241
+    # assignment for the A/B.
+    context.config("explicit_round_trip_purposes", True)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -316,9 +323,11 @@ def execute(context):
 
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config("escort_passive_education"))
+    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     )

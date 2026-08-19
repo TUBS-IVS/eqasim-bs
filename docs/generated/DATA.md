@@ -48,6 +48,12 @@ scripts/build_mid_antrieb_by_status.py (override with --mid-path). The three fil
 donor path needs are additionally synced to
 data/braunschweig/popsim/mid2023_raw/MiD2023_{Haushalte,Personen,Wege}.csv on the run
 host; the Autos file is NOT synced there.
+The CODEBOOK package (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, MiD2023_HandbuchZurDatennutzung.pdf)
+is synced to data/braunschweig/popsim/mid2023_raw/codebook/ from
+X:/ivs/14_Daten/MiD/MiD2023/MiD2023_B1_Codebook_HandbuchDatennutzung. Local-only like the
+microdata; it is the authority for variable value labels and settled the W_ZWECK 13-16 labels
+for issue #241 (sheet "Wege"), which had previously been inferred from MiD's own derived
+variables.
 ` | o/-/r | YES |
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |

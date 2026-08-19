@@ -99,3 +99,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0088](../decisions/ADR-0088-fine-teen-age-bands-in-the-tier0-backbone.md) | 2026-08-18 | active | The tier0 backbone splits the 10-19 age band at the published Zensus bin edges (issue #320) |
 | [ADR-0089](../decisions/ADR-0089-pt-subscription-per-kreis-control-three-groups-mid-x-srv.md) | 2026-08-18 | active | The PT subscription gets a three-group per-Kreis control, blended MiD × SrV on a matched 14+ universe (issue #321) |
 | [ADR-0090](../decisions/ADR-0090-which-mechanism-steers-which-quantity.md) | 2026-08-18 | active | Donor-joint quantities are steered through the weights, not by rewriting attributes |
+| [ADR-0091](../decisions/ADR-0091-explicit-w-zweck-purposes-and-a-coverage-guard.md) | 2026-08-18 | active | Every documented W_ZWECK code is mapped explicitly, and an unknown one is reported (issue #241) |
