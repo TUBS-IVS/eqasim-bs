@@ -100,3 +100,12 @@ Do NOT reach for a low `sampling_rate` to make this cheap: under `popsim_mid` th
 covers the FULL population regardless of the rate, which only trims the MATSim extract
 afterwards. Shrinking the REGION is what reduces the work. The overlay runs Braunschweig only
 and stops at `data.census.filtered` (population synthesis, no locations/trips/MATSim).
+
+**Delete the smoke cache before any code-change comparison.** synpp hashes only a stage
+module's own source; the helper surface rides on each stage's `validate()` token, and that
+token deliberately stops one import level deep (`docs/codebase/notes/synpp-helper-hash-audit.md`).
+A behaviour change in a module outside the token does NOT devalidate a warm cache, so an A/B
+on one silently compares two identical populations -- observed live on 2026-08-19, when the
+licence-floor and W_ZWECK fixes left the popsim stage hash byte-identical
+(`docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml`). `rm -rf` the run's cache directory
+(never the shared `cache_shared` store) between the two arms of any code-change A/B.
