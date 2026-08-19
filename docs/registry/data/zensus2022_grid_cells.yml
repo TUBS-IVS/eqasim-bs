@@ -28,7 +28,18 @@ licensing:
   license: dl-de/by-2-0 (source data)
   restricted: false
   redistribution: restricted
-limitations: null
-notes: 'THE PopulationSim control totals: the _adj-reconciled cell marginals are the targets every
+limitations: 'The per-cell single-year age columns (M_AGE_0..100 / F_AGE_*) are a DERIVED
+  decomposition, not published counts, and carry fractional values. Method (cleancensus
+  ages_stage.py, docs/AGES_GATE_REPORT.md): deterministic multiplicative trust-mixed fitting
+  of THREE overlapping published bin systems at once -- INFR (incl. 16-18, 19-24), 10-year
+  groups, 5 classes (incl. the 18 boundary) -- IPF-raked against the national single-year age
+  vector, then downscaled 10km -> 1km -> 100m with HARD row (cell total) and HARD column
+  (parent per-age) margins; no randomness. Verified 2026-08-18 (issue #320): the columns sum
+  to POP_TOTAL_100m_adj per cell to 2.6e-5, and aggregated over the ZGB-8 into the 17 DESTATIS
+  12411-0018 classes they agree to a mean |delta| of 0.259pp (max 1.233pp at 50-54, total
+  -0.43%). What is NOT verified is the age profile INSIDE a single cell. Note that the two
+  published band systems are perturbed independently and are mutually inconsistent per cell:
+  a10bis19 - (Unter18 - Unter10) is negative in 510,719 of 3,148,482 cells.'
+notes: 'Source repository: https://github.com/TUBS-IVS/cleancensus. THE PopulationSim control totals: the _adj-reconciled cell marginals are the targets every
   synthetic household/person is fitted to. Regenerate with the cleancensus pipeline (separate
   repository).'

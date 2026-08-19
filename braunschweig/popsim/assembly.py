@@ -304,7 +304,12 @@ def map_mid_person_attributes(
     # Bug D4: studies was absent, so the fallback treated all students as studies=False.
     persons = attributes.map_studies(persons)
     persons = attributes.map_has_license(persons, rng=rng, rs7_conditioning=rs7_conditioning)
-    persons = attributes.map_has_pt_subscription(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    # The categorical ticket type is resolved FIRST and the boolean flatrate flag is
+    # DERIVED from it: both describe the same MiD answer (P_FKARTE), and resolving them
+    # in two independent missing.resolve draws made them disagree for 0.86% of persons
+    # (issue #319). eqasim reads the boolean, the P24.1 validation reads the category.
+    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
+    persons = attributes.map_has_pt_subscription(persons)
 
     donor_hh = attributes.map_building_type_3class(
         attributes.map_housing_tenure(
@@ -426,7 +431,6 @@ def map_mid_person_attributes(
     persons, donor_map = assign_donor_surrogates(persons, donor_col=donor_col)
 
     persons = attributes.map_socioprofessional_class(persons)
-    persons = attributes.map_pt_subscription_type(persons, rng=rng, rs7_conditioning=rs7_conditioning)
 
     # weight = 1.0: popsim_mid produces an already-expanded population (each row
     # is one synthetic person, no stochastic rounding needed). synthesis.population.sampled

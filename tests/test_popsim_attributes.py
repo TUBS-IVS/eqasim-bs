@@ -38,7 +38,8 @@ def test_map_employed_handles_taet_17():
 
 
 def test_map_has_license_from_p_fschein():
-    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403]})
+    # HP_ALTER is required since the under-16 floor (smoke finding 2026-08-19).
+    persons = pd.DataFrame({"P_FSCHEIN": [1, 2, 9, 403], "HP_ALTER": [40, 41, 42, 10]})
     out = attr.map_has_license(persons)
     # 1 -> True; 2 -> False; 403 (structural under-age) -> False.
     # 9 (keine Angabe) is imputed from the valid pool {True, False} via missing.resolve;
@@ -89,8 +90,10 @@ def test_map_has_pt_subscription_from_p_fkarte():
     # Monat-Abo/Jahreskarte, Jobticket/Semesterticket); 1,2,7,8 not.
     # 99 (keine Angabe) is now IMPUTED via missing.resolve (not silently False); the
     # imputed result is a bool, not NaN.
+    # Since #319 the boolean is DERIVED from the resolved pt_subscription_type (one draw
+    # for both attributes), so the category has to be resolved first.
     persons = pd.DataFrame({"P_FKARTE": [1, 2, 3, 4, 5, 6, 7, 8, 99]})
-    out = attr.map_has_pt_subscription(persons)
+    out = attr.map_has_pt_subscription(attr.map_pt_subscription_type(persons))
     assert list(out["has_pt_subscription"][:8]) == [
         False, False, True, True, True, True, False, False
     ]

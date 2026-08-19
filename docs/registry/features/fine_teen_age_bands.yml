@@ -1,0 +1,96 @@
+feature: fine_teen_age_bands
+title: Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)
+area: population
+description: 'Replaces the ten-year 10-19 age x sex controls of the PopulationSim tier0
+  backbone with 10-14 / 15-17 / 18-19 per sex (22 instead of 18 age x sex controls at 100 m) --
+  the DESTATIS 12411-0018 class edges, revised from the initial INFR 15/16 cut after the first
+  smoke (ADR-0088 amendment 2026-08-19: within-band freedom piled onto age 15 and leaked across
+  the 14/15 validation edge).
+  The ten-year band constrains only its total, so the composition inside it was free: measured
+  on the 100% population, 15-17 came out +64% and 18-19 -75% against DESTATIS 12411-0018 while
+  the band total was within +2.6%. Targets are row-summed from the single-year cell columns
+  (census_source), whose fine structure is mass-exact per cell and matches the published
+  DESTATIS classes to a mean 0.259pp. The two new edges coincide with published Zensus bins
+  (5-class Unter18, INFR a16bis18). The three bands sum to the replaced one bit-for-bit, so
+  the tier0 lossless-reduction property and the 100m->1km nesting are preserved.'
+stages:
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.fine_teen_age_bands
+introduced:
+  issue: '#320'
+  pr: null
+  adr: ADR-0088
+code_paths:
+- braunschweig/popsim/control_spec.py
+- braunschweig/popsim/stage/controls_builder.py
+- braunschweig/popsim/stage/__init__.py
+evidence:
+  tests:
+  - tests/test_control_spec_catalog.py
+  - tests/test_popsim_control_spec.py
+  - tests/test_popsim_seed_kreis_columns.py
+  - tests/test_popsim_tier3_controls.py
+  - tests/test_popsim_stage_controls_source.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_control_spec_catalog.py::test_tier0_render_reproduces_production_baseline
+    note: |
+      With the flag off the rendered catalog is byte-identical to the committed production
+      baseline tests/fixtures/prep3_controls_baseline.csv
+      (test_tier0_render_reproduces_production_baseline, and the same equivalence via
+      build_controls_df in test_controls_source_catalog_renders_same_controls_as_csv). The
+      fixture is now explicitly the flag-OFF baseline.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.stage] fine teen age bands (issue #320)'
+    note: |
+      The stage logs which band variant is active. The per-cell targets are row-summed by
+      prepared_cells.add_aggregated_controls, which warns per missing source column and
+      raises when ALL sources of a control are missing (so a permanently-zero control cannot
+      slip through, issues #149/#150). person_total_by_kreis raises on a band-variant
+      mismatch instead of summing a partial column set.
+  reference:
+    kind: none
+    note: 'No committed file, because both the target source and its cross-check are local_only
+      datasets rather than repository tables. Targets: the single-year M_AGE_*/F_AGE_* columns of
+      the prepared 100 m cell parquet (dataset zensus2022_grid_cells) -- provenance, the
+      cleancensus fitting method and the per-cell mass check are recorded in
+      docs/registry/data/zensus2022_grid_cells.yml. Cross-check: DESTATIS 12411-0018
+      (eqasim-data/data/braunschweig/12411-0018_de.csv, read by
+      braunschweig.data.census.population.load_age_sex_by_kreis), against which the fine
+      structure agrees to a mean |delta| of 0.259pp over its 17 classes for the ZGB-8. Neither
+      path is in the git index, so this is deliberately NOT declared as a committed reference.'
+validation:
+  state: unvalidated
+  runs:
+  - smoke-control-fit-03101-2026-08-19
+  - smoke-control-fit-03101-v2-2026-08-19
+  metric: null
+  note: 'Verified on the one-Kreis smoke after the edge amendment (v2, 2026-08-19): 10-14
+    -0.06pp, 15-17 +0.05pp, 18-19 -0.18pp against DESTATIS 12411-0018, and the age-15 pile
+    of the first attempt is gone (2,765 vs 5,369 persons). The v1 run with the INFR 15/16
+    edges read +1.21pp / -1.17pp, which is what drove the amendment. Still owed for a stronger
+    state than unvalidated: the FULL-REGION one-flag-per-run A/B -- the smoke covers one Kreis
+    and ran three new flags together, so per-change attribution and the rural cells are still
+    untested.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the first run with the flag on. Two open points, both recorded in ADR-0088:
+    the effect on IPF convergence and on the integerizer of four additional targets over
+    small fractional per-cell counts, and whether 50-54 warrants the same treatment (of its
+    +1.92pp deviation, +1.23pp is already present in the control input).
+  source: ADR-0088
+notes: 'Sibling of the #307 measurement: the age-composition defect distorts every
+  age-conditioned figure in docs/runs/i307-license-pt-measure-2026-08-18.yml, including the
+  17+/18+ licence universes, so #321 and #322 depend on this fix landing first.'

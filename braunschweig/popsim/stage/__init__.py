@@ -243,7 +243,9 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EBIKE_SEED_COLUMN,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
+    KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    KEY_PT_TICKET_KREIS_CONTROL,
     KEY_IMPORTANCE_PROFILE,
     KEY_INCOME_KC,
     KEY_INCOME_KC_HHSIZE,
@@ -448,11 +450,16 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # attributes / trips: the ONLY two second-level transitive entries, added after the
+    # 2026-08-19 hazard -- see the validate() docstring's boundary statement for why they
+    # are an explicit exception to the one-level rule.
+    "braunschweig.popsim.attributes",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.placement_income",
+    "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.synthesis.population.enriched",
     "braunschweig.synthesis.population.enriched.availability",
@@ -486,7 +493,17 @@ def validate(context):
     DIRECTLY, whether at module level or inside a function body, with the helper
     PACKAGES enumerated ONE LEVEL DEEP (``__init__`` plus each submodule on disk,
     because ``inspect.getsource`` of a package yields only its ``__init__``). The
-    transitive surface beyond that one level is deliberately NOT covered. Which of
+    transitive surface beyond that one level is deliberately NOT covered, with
+    EXACTLY TWO named exceptions: ``braunschweig.popsim.attributes`` (reached via
+    ``assembly`` and ``mid.seed_loading``) and ``braunschweig.popsim.trips``
+    (reached via ``mid.participation``, whose PARTICIPATION_W_ZWECK derives from
+    ``trips.PURPOSE_BY_W_ZWECK``). Both carry BEHAVIOUR this stage's output
+    depends on, and the 2026-08-19 verification smoke proved the hazard is real:
+    the under-16 licence floor (attributes) and the W_ZWECK purpose fix (trips)
+    changed the population while leaving this token untouched, so a warm cache
+    would have silently reused the pre-fix output
+    (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). Any FURTHER
+    second-level exception needs the same standard of evidence, not convenience. Which of
     the two tuples a module lands in is decided ONLY by its import site --
     module-level imports are hashed as module objects, function-level (deferred)
     imports by dotted name -- and not by what kind of module it is: a dotted-name
@@ -645,6 +662,11 @@ def configure(context):
     context.config(KEY_KREIS_CONTROLS, "")
     # Employment grid control (Task 5). Default "off" = byte-identical to today.
     context.config(KEY_EMPLOYMENT_GRID, "off")
+    # Fine teen age bands in the tier0 backbone (issue #320). Default "on": the ten-year
+    # 10-19 band leaves the composition inside it unconstrained, which produced an 18-19
+    # shortfall of -75% against DESTATIS on the 100% population. "off" restores the
+    # pre-#320 nine-band control set byte-identically.
+    context.config(KEY_FINE_TEEN_AGE_BANDS, "on")
     # PopulationSim per-control importance profile (control_spec.IMPORTANCE_PROFILES).
     # Default "uniform" = every control importance untouched (byte-identical). Set to
     # "optimized_2026_06_30" to apply the searched per-group weights (see control_spec).
@@ -673,6 +695,9 @@ def configure(context):
     # trip_class (first PERSON-level KREIS control, 2026-07-08). Default "on"; its
     # committed SrV target lives under data_path (declared below via the any()-gate).
     context.config(KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"])
+    # pt_ticket_group (issue #321): the three-group PT-subscription control. Default "on"
+    # (project rule); its target is MiD P24.1 with SrV as a corridor check (ADR-0060).
+    context.config(KEY_PT_TICKET_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["pt_ticket_group"])
     # employment_status (second PERSON-level KREIS control, feature #172 task 4).
     # Default "on"; its committed MiD-P9 x SrV-V_ERW blended target lives under
     # data_path (declared below via the any()-gate). 14+ universe restriction (min_age)
@@ -896,6 +921,11 @@ def _read_control_config(context, source_name: str):
     controls_source = context.config(KEY_CONTROLS_SOURCE)
     # Employment grid control (Task 5): default "off" -> byte-identical path.
     employment_grid_on = str(context.config(KEY_EMPLOYMENT_GRID)).strip().lower() == "on"
+    # Fine teen age bands (issue #320): default "on". The SAME value must reach the
+    # controls frame, the parquet column selection and the aggregation map, or the
+    # rendered controls.csv and the cell columns disagree and a control silently
+    # resolves to zero.
+    fine_teen_bands_on = str(context.config(KEY_FINE_TEEN_AGE_BANDS)).strip().lower() == "on"
     # KREIS attribute controls (issue #109 + S1c): the active REGISTRY entries whose toggle
     # is "on" (each default "on"), MiD-only (their seed columns have no ENTD pendant), so an
     # ENTD run is unaffected (empty list). economic_status is one of them; it alone carries
@@ -913,12 +943,13 @@ def _read_control_config(context, source_name: str):
     return (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
         active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
-        importance_profile,
+        importance_profile, fine_teen_bands_on,
     )
 
 
 def _build_control_frame(controls_source, controls_path, source_name: str, control_tiers,
-        employment_grid_on: bool, active_entry_names, importance_profile: str):
+        employment_grid_on: bool, active_entry_names, importance_profile: str,
+        fine_teen_age_bands: bool = True):
     """Build the PopulationSim ``controls.csv`` frame and its base cell columns.
 
     Returns: ``(controls_df, base_cols)``.
@@ -932,6 +963,7 @@ def _build_control_frame(controls_source, controls_path, source_name: str, contr
         employment_grid=employment_grid_on,
         kreis_control_names=active_entry_names,
         importance_profile=importance_profile,
+        fine_teen_age_bands=fine_teen_age_bands,
     )
     if importance_profile and importance_profile != "uniform":
         logger.info("[popsim.stage] importance profile applied: %s", importance_profile)
@@ -986,7 +1018,7 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
-        employment_grid_on: bool, cells_path):
+        employment_grid_on: bool, cells_path, fine_teen_age_bands: bool = True):
     """Resolve the column set loaded from the prepared-cells parquet.
 
     For catalog-based controls with multi-column census sources (e.g. building_type),
@@ -1003,6 +1035,7 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
         controls_source=controls_source,
         seed=source_name,
         tiers=control_tiers,
+        fine_teen_age_bands=fine_teen_age_bands,
     )
     load_cols = source_cols_override if source_cols_override is not None else base_cols
 
@@ -1037,7 +1070,8 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     return load_cols
 
 
-def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers) -> pd.DataFrame:
+def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source_name: str, control_tiers,
+        fine_teen_age_bands: bool = True) -> pd.DataFrame:
     """Derive the multi-column aggregated control columns on the cells frame.
 
     Derive the multi-column aggregated control columns (e.g. building_type_*).
@@ -1052,6 +1086,7 @@ def _add_aggregated_control_columns(cells: pd.DataFrame, controls_source, source
         controls_source=controls_source,
         seed=source_name,
         tiers=control_tiers,
+        fine_teen_age_bands=fine_teen_age_bands,
     )
     cells = prepared_cells.add_aggregated_controls(cells, agg_map)
     return cells
@@ -1275,7 +1310,8 @@ def _prepare_batch_runner(context, uv_path, popsimprep_dir, stratify_regiostar: 
 
 
 def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active_entries, status_prior_n: float,
-        kreis_table, kreis_controls_map, household_control_names: set):
+        kreis_table, kreis_controls_map, household_control_names: set,
+        fine_teen_bands_on: bool = True):
     """Derive the per-Kreis targets of the active KREIS attribute controls.
 
     KREIS attribute controls (issue #109 + S1c): derive each ACTIVE registered attribute's
@@ -1355,7 +1391,8 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
                     _total_label = f"persons (age>={_entry_min_age})"
                 else:
                     if _kac_persons_by_kreis is None:
-                        _kac_persons_by_kreis = person_total_by_kreis(cells, _kac_kreis)
+                        _kac_persons_by_kreis = person_total_by_kreis(
+                            cells, _kac_kreis, fine_teen_age_bands=fine_teen_bands_on)
                     _total_by_kreis = _kac_persons_by_kreis
                     _total_label = "persons"
             else:
@@ -1998,24 +2035,36 @@ def execute(context) -> pd.DataFrame:
     (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
         active_entries, active_entry_names, status_prior_n, ebike_seed_column_cfg,
-        importance_profile,
+        importance_profile, fine_teen_bands_on,
     ) = _read_control_config(context, source_name)
+    # The band labels are DERIVED from the constant, never hardcoded: a hardcoded literal
+    # here kept announcing the superseded 15/16 edges after the ADR-0088 amendment moved
+    # them, which is exactly the misleading instrumentation the fallback-transparency rule
+    # exists to prevent (caught live during the 2026-08-19 verification smoke).
+    if fine_teen_bands_on:
+        from braunschweig.popsim.control_spec import FINE_TEEN_AGE_BANDS as _ftb
+        _band_text = "on (" + " / ".join(lbl.replace("_", "-") for lbl, _, _ in _ftb) + ")"
+    else:
+        _band_text = "off (ten-year 10-19)"
+    logger.info("[popsim.stage] fine teen age bands (issue #320): %s", _band_text)
     controls_df, base_cols = _build_control_frame(
         controls_source, controls_path, source_name, control_tiers,
         employment_grid_on, active_entry_names, importance_profile,
+        fine_teen_age_bands=fine_teen_bands_on,
     )
     kreis_table, kreis_controls_map, household_control_names = _load_tier3_kreis_controls(
         context, control_tiers, controls_source, source_name, kreise,
     )
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
-        employment_grid_on, cells_path,
+        employment_grid_on, cells_path, fine_teen_age_bands=fine_teen_bands_on,
     )
 
     cells = mid.load_control_cells(cells_path, load_cols)
     cells = mid.filter_zgb_cells(cells, kreise)
     cells = _add_aggregated_control_columns(
         cells, controls_source, source_name, control_tiers,
+        fine_teen_age_bands=fine_teen_bands_on,
     )
     cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
 
@@ -2032,7 +2081,7 @@ def execute(context) -> pd.DataFrame:
     )
     kreis_table, kreis_controls_map = _derive_kreis_attribute_control_targets(
         context, cells, active_entries, status_prior_n, kreis_table,
-        kreis_controls_map, household_control_names,
+        kreis_controls_map, household_control_names, fine_teen_bands_on,
     )
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,

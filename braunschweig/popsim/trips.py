@@ -22,9 +22,36 @@ from data.hts import hts
 logger = logging.getLogger(__name__)
 
 # MiD W_ZWECK (Wegezweck) -> eqasim activity type at the trip destination.
-# 1 Arbeit, 2 dienstlich -> work; 3 Ausbildung/Schule, 11 Schule, 12 Kita -> education;
-# 4 Einkauf -> shop; 7 Freizeit -> leisure; 8 nach Hause, 9 Rueckweg -> home;
-# 5 private Erledigungen, 6 Bringen/Holen, 10 anderer Zweck -> other.
+# Labels verbatim from the codeplan (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege",
+# variable W_ZWECK) -- NOT inferred from MiD's derived variables:
+#    1 Erreichen der Arbeitsstaette          -> work
+#    2 dienstlich/geschaeftlich               -> work
+#    3 Erreichen der Ausbildungsstaette/Schule -> education
+#    4 Einkauf                                -> shop
+#    5 private Erledigungen                   -> other
+#    6 Bringen oder Holen von Personen        -> other  (-> "escort" under the #201 flag)
+#    7 Freizeitaktivitaet                     -> leisure
+#    8 nach Hause                             -> home
+#    9 Rueckweg vom vorherigen Weg            -> home
+#   10 anderer Zweck                          -> other
+#   11 Schule, auch Vorschule                 -> education
+#   12 Kita/Kindergarten                      -> education
+#   13 Begleitung Erwachsener                 -> other  (-> "escort" under the #201 flag)
+#   14 Sport/Sportverein                      -> leisure
+#   15 Freunde besuchen/treffen               -> leisure
+#   16 Unterricht (nicht Schule)              -> leisure   <-- see the note below
+#   99 keine Angabe                           -> other
+#
+# Codes 13-16 and 99 used to reach "other" through a silent fillna (issue #241): about 3 % of
+# all donor legs (W_GEW-weighted) arrived at their purpose by fallback, with no counter and no
+# log line, and MiD 2023 had introduced those codes without anything noticing.
+#
+# Code 16 deserves its reasoning stated: the codeplan label "Unterricht (nicht Schule)" is
+# educational (music lessons, driving school, evening classes), yet it maps to LEISURE here,
+# following MiD's own `zweck` derivation (16 -> 7 Freizeit). The reason is what `education`
+# MEANS in eqasim: the person's ASSIGNED educational facility, which the primary-location
+# machinery anchors (school / Kita). An evening class is not that facility, so anchoring it
+# there would place the activity wrongly. See the ADR for the full argument.
 PURPOSE_BY_W_ZWECK = {
     1: "work",
     2: "work",
@@ -38,8 +65,19 @@ PURPOSE_BY_W_ZWECK = {
     10: "other",
     11: "education",
     12: "education",
+    13: "other",
+    14: "leisure",
+    15: "leisure",
+    16: "leisure",
+    99: "other",
 }
 DEFAULT_PURPOSE = "other"
+
+# The three codes whose mapping CHANGES the population relative to the pre-#241 behaviour
+# (they used to land in "other" via the fallback). Flag-gated so the A/B can isolate the
+# effect; with the flag off they are remapped to DEFAULT_PURPOSE explicitly, which keeps them
+# COVERED so the coverage guard below stays meaningful in both modes.
+ROUND_TRIP_LEISURE_W_ZWECK = frozenset({14, 15, 16})
 
 # Escort (Begleitung) W_ZWECK codes (issue #201). Code 6 = Bringen/Holen; code 13
 # is classified as escort by BOTH of MiD's own derived purpose variables
@@ -76,7 +114,8 @@ MODE_BY_HVM = {
 
 def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 escort_purpose: bool = False,
-                escort_passive_education: bool = False) -> pd.DataFrame:
+                escort_passive_education: bool = False,
+                explicit_round_trip_purposes: bool = True) -> pd.DataFrame:
     """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
 
     When ``escort_purpose`` is True (issue #201), W_ZWECK codes in
@@ -122,7 +161,40 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
         escort purpose being active).
     """
     out = wege.copy()
-    out["purpose"] = out[zweck_col].map(PURPOSE_BY_W_ZWECK).fillna(DEFAULT_PURPOSE)
+    codes = out[zweck_col]
+    mapped = codes.map(PURPOSE_BY_W_ZWECK)
+
+    # Coverage guard (issue #241, CLAUDE.md fallback transparency): a code the table does not
+    # know still falls back to DEFAULT_PURPOSE -- dropping the leg would be worse -- but it is
+    # now COUNTED and named. A new MiD edition adding a code must not pass unnoticed again.
+    unmapped = mapped.isna()
+    if bool(unmapped.any()):
+        if "W_GEW" in out.columns:
+            weights = out["W_GEW"].astype(float)
+            total = float(weights.sum())
+            share = float(weights[unmapped].sum() / total) if total else 0.0
+            basis = "W_GEW-weighted"
+        else:
+            share = float(unmapped.mean())
+            basis = "unweighted"
+        logger.warning(
+            "[popsim.trips] map_purpose: W_ZWECK code(s) %s are not in PURPOSE_BY_W_ZWECK "
+            "and fall back to %r -- %d/%d legs (%.2f%% %s). Every code the codeplan "
+            "documents is mapped, so this means a NEW code: add it to the table explicitly "
+            "instead of leaving it to the fallback (issue #241).",
+            sorted(set(codes[unmapped].dropna().tolist())), DEFAULT_PURPOSE,
+            int(unmapped.sum()), len(out), 100.0 * share, basis,
+        )
+    out["purpose"] = mapped.fillna(DEFAULT_PURPOSE)
+
+    if not explicit_round_trip_purposes:
+        # Pre-#241 behaviour for the A/B: the round-trip leisure codes go back to "other".
+        reverted = codes.isin(ROUND_TRIP_LEISURE_W_ZWECK)
+        out.loc[reverted, "purpose"] = DEFAULT_PURPOSE
+        logger.info(
+            "[popsim.trips] explicit_round_trip_purposes OFF: W_ZWECK %s reverted to %r "
+            "(%d legs) -- pre-#241 assignment for the A/B",
+            sorted(ROUND_TRIP_LEISURE_W_ZWECK), DEFAULT_PURPOSE, int(reverted.sum()))
     if escort_passive_education and not escort_purpose:
         raise ValueError(
             "[popsim.trips] escort_passive_education requires escort_purpose to be ON "
@@ -233,6 +305,7 @@ def build_trip_table(
     trip_col: str = "W_ID",
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -407,6 +480,7 @@ def expand_persons_to_trips(
     trip_col: str = "W_ID",
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -425,6 +499,7 @@ def expand_persons_to_trips(
     wege = map_mode(map_purpose(
         mid_wege, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     ))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")

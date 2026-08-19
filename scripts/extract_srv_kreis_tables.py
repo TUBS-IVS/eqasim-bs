@@ -522,6 +522,81 @@ def build_dticket_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Ticket groups at 14+ by Kreis (E_OEV_FK) -- the SrV half of the #321 blend
+# ---------------------------------------------------------------------------
+
+# E_OEV_FK code -> three-group collapse (SrV2023_Datenkodierung_SciUse.xlsx):
+#   50 Deutschland-Ticket           -> deutschlandticket
+#    3 Zeitkarte (ausser D-Ticket)  -> other_flatrate  (the unlimited-rides-within-
+#      validity concept, matching MiD P24.1's wochen_monat_ohne_abo +
+#      monat_abo_jahreskarte + jobticket_semesterticket)
+#    1 Einzel-/Mehrfachfahrkarte    -> not_flatrate
+#    2 Tageskarte                   -> not_flatrate
+#   70 Sonstige Fahrkarte           -> not_flatrate
+#   -8 Nicht erhoben                -> not_flatrate  (no PT use in the past 12 months;
+#      kept, same convention as the Deutschlandticket table)
+#   60 Freifahrtberechtigung        -> not_flatrate  (see below)
+#  -10 Unplausibel                  -> excluded
+#
+# Code 60 (free-travel entitlement for children / severely disabled persons) is
+# deliberately NOT counted as flatrate even though those persons pay nothing on PT:
+# MiD P24.1 has no pendant category, and this table exists to be BLENDED with MiD, so
+# both sides must carry the same construct. Measured effect of the choice: +0.78pp on
+# the regional flatrate share (2026-08-18). The simulation-side consequence is recorded
+# in the ADR, not silently absorbed here.
+TICKET_GROUP_MIN_AGE = 14
+TICKET_GROUP_DEUTSCHLANDTICKET_CODE = 50
+TICKET_GROUP_OTHER_FLATRATE_CODES = (3,)
+TICKET_GROUP_NOT_FLATRATE_CODES = (1, 2, 70, 60, -8)
+
+
+def build_ticket_groups_table(persons: pd.DataFrame) -> pd.DataFrame:
+    """Three-group PT ticket shares for persons aged >= 14 (issue #321).
+
+    Universe: persons with a valid GEWICHT_P_ZENSUS weight, ``E_OEV_FK != -10``
+    (Unplausibel) and ``V_ALTER >= 14`` -- the 14+ restriction makes this table
+    universe-compatible with MiD P24.1 ("ab 14 Jahre"), which the committed
+    all-ages ``srv2023_dticket_by_kreis.csv`` is NOT.
+    """
+    universe = persons[(persons["E_OEV_FK"] != -10)
+                       & (persons["V_ALTER"] >= TICKET_GROUP_MIN_AGE)].copy()
+    unknown = set(universe["E_OEV_FK"].unique()) - {
+        TICKET_GROUP_DEUTSCHLANDTICKET_CODE, *TICKET_GROUP_OTHER_FLATRATE_CODES,
+        *TICKET_GROUP_NOT_FLATRATE_CODES}
+    if unknown:
+        raise RuntimeError(
+            f"[ticket_groups] unmapped E_OEV_FK code(s) {sorted(unknown)} in the "
+            "universe; every code must be assigned to a group or the shares would not "
+            "sum to 1 (no silent drop).")
+    logger.info(
+        "[ticket_groups] universe = %d persons aged >= %d with a plausible E_OEV_FK; "
+        "code -8 (no PT use in 12 months) covers %d of them (%.1f%%) and is counted as "
+        "not_flatrate -- an ASSUMPTION carrying that share of the sample",
+        len(universe), TICKET_GROUP_MIN_AGE,
+        int((universe["E_OEV_FK"] == -8).sum()),
+        100.0 * (universe["E_OEV_FK"] == -8).sum() / max(len(universe), 1))
+
+    rows = []
+    for level, code, name, group in _iter_levels(universe):
+        w = group["GEWICHT_P_ZENSUS"]
+        total = float(w.sum())
+        if total <= 0:
+            raise RuntimeError(f"[ticket_groups] {level} {code}: zero total weight")
+        dt = float(w[group["E_OEV_FK"] == TICKET_GROUP_DEUTSCHLANDTICKET_CODE].sum())
+        other = float(w[group["E_OEV_FK"].isin(TICKET_GROUP_OTHER_FLATRATE_CODES)].sum())
+        rest = float(w[group["E_OEV_FK"].isin(TICKET_GROUP_NOT_FLATRATE_CODES)].sum())
+        rows.append({
+            "level": level, "code": code, "name": name,
+            "n_unweighted": len(group),
+            "n_weighted": round(total, 2),
+            "deutschlandticket": round(dt / total, 4),
+            "other_flatrate": round(other / total, 4),
+            "not_flatrate": round(rest / total, 4),
+        })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Table 7: covered municipalities (household sample composition)
 # ---------------------------------------------------------------------------
 
@@ -627,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     income_df = build_income_table(households_valid)
     license_df = build_license_table(persons_valid)
     dticket_df = build_dticket_table(persons_valid)
+    ticket_groups_df = build_ticket_groups_table(persons_valid)
     municipalities_df = build_municipalities_table(households_valid)
 
     _assert_cross_checks(cars_df, ebike_household_df, license_df, dticket_df)
@@ -689,6 +765,23 @@ def main(argv: list[str] | None = None) -> int:
                      "(Unplausibel); E_OEV_FK == -8 'nicht erhoben' (no PT use in "
                      "the past 12 months) is KEPT and counted as 'no "
                      "Deutschlandticket', not excluded",
+            weight_col="GEWICHT_P_ZENSUS",
+            missing_handling="only E_OEV_FK == -10 (Unplausibel) excluded",
+        ),
+    )
+    write_csv(
+        ticket_groups_df, args.out_dir / "srv2023_ticket_groups_14plus_by_kreis.csv",
+        _provenance_header(
+            universe="persons aged >= 14 (V_ALTER) with a valid GEWICHT_P_ZENSUS weight "
+                     "and E_OEV_FK != -10 (Unplausibel); the 14+ restriction makes this "
+                     "table universe-compatible with MiD P24.1 ('ab 14 Jahre'). "
+                     "E_OEV_FK == -8 'nicht erhoben' (no PT use in the past 12 months) "
+                     "is KEPT and counted as not_flatrate -- an ASSUMPTION that carries "
+                     "roughly a third of the sample. Code 60 "
+                     "(Freifahrtberechtigung) is counted as not_flatrate because MiD "
+                     "P24.1 has no pendant and this table is meant to be BLENDED with "
+                     "MiD (effect of that choice: +0.78pp on the regional flatrate "
+                     "share)",
             weight_col="GEWICHT_P_ZENSUS",
             missing_handling="only E_OEV_FK == -10 (Unplausibel) excluded",
         ),

@@ -7,7 +7,10 @@ from braunschweig.popsim import stage
 def test_controls_source_catalog_renders_same_controls_as_csv() -> None:
     # controls_source == "catalog" must build controls_df from the catalog (mid seed)
     # equal to the production CSV baseline (modulo row order).
-    rendered = stage.build_controls_df(controls_source="catalog", seed="mid")
+    # The committed CSV is the PRE-#320 control set, so this equivalence is a flag-OFF
+    # property; the ON path adds the four fine teen-band controls by design.
+    rendered = stage.build_controls_df(controls_source="catalog", seed="mid",
+                                       fine_teen_age_bands=False)
     baseline = pd.read_csv("tests/fixtures/prep3_controls_baseline.csv", sep=";")
     key = ["target", "geography", "seed_table", "importance", "control_field", "expression"]
     pd.testing.assert_frame_equal(

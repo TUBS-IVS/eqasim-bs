@@ -15,7 +15,7 @@ from typing import Mapping, Sequence, Union
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_BY_P_BKAT
+from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_BY_P_BKAT, PT_TICKET_GROUPS
 
 # Canonical low->high economic-status order (identical to
 # braunschweig.synthesis.population.enriched.ECONOMIC_STATUS_CATEGORIES).
@@ -219,6 +219,33 @@ REGISTRY: tuple = (
         categories=tuple((k, f"== '{k}'") for k in _EMP_STATUS_CATEGORIES),
         target_csv_relpath=f"{_TARGET_DIR}/target2026_employment_status_by_kreis.csv",
         target_columns=_EMP_STATUS_CATEGORIES,
+        tier="soft",
+        min_age=14,
+    ),
+    # pt_ticket_group x Kreis control (issue #321): the PT-subscription entry. seed_column
+    # pt_ticket_group is the THREE-group collapse of the resolved pt_subscription_type
+    # (attributes.map_pt_ticket_group), derived onto the seed on both seed paths exactly
+    # like employment_status. Three groups and not the nine P24.1 categories because
+    # BraunschweigPtCostModel.calculateCost_MU returns 0.0 for every flatrate holder: the
+    # four flatrate types are simulation-equivalent and the non-flatrate split has no
+    # simulation effect, so 9 x 8 Kreise = 72 control columns would mostly steer
+    # simulation-neutral structure. deutschlandticket stays its own group because it is the
+    # only flatrate category with a second committed survey and the natural policy lever.
+    #   * tier SOFT, not hard: the MiD P24.1 Deutschlandticket component sits ~4pp above
+    #     the committed SrV figure, so the MiD flatrate aggregate may be biased high. A
+    #     hard control would force a level the evidence does not pin down; soft shrinks
+    #     toward the region row instead.
+    #   * min_age=14: P24.1 is an "ab 14 Jahre" table, so BOTH the seed expression and the
+    #     per-Kreis person total it partitions are restricted to 14+ (the #97 trap).
+    #   * The target is MiD-only -- see the CSV header and ADR-0060 for why SrV is a
+    #     corridor check here rather than a target.
+    KreisAttributeControl(
+        name="pt_ticket_group",
+        seed_column="pt_ticket_group",
+        level="person",
+        categories=tuple((g, f"== '{g}'") for g in PT_TICKET_GROUPS),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_pt_ticket_group_by_kreis.csv",
+        target_columns=PT_TICKET_GROUPS,
         tier="soft",
         min_age=14,
     ),

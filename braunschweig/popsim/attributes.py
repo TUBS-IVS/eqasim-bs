@@ -17,7 +17,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
+from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES, PT_TICKET_FLATRATE
 from braunschweig.ipf.attributed import derive_socioprofessional_class
 from braunschweig.popsim import missing
 
@@ -143,6 +143,26 @@ FKARTE_TO_CATEGORY: dict[int, str] = {
     7: "anderes",                # other
     8: "fahre_nie",              # never travels by PT
 }
+
+# --- Issue #321: the three-group PT ticket control -------------------------------------
+# The per-Kreis PT control steers THREE groups rather than the nine P24.1 categories.
+# Rationale: org.eqasim.braunschweig.mode_choice.BraunschweigPtCostModel.calculateCost_MU
+# returns 0.0 for every flatrate holder, so the four flatrate TYPES are simulation-
+# equivalent and the split among the non-flatrate types has no simulation effect at all.
+# Nine categories x 8 Kreise would be 72 control columns, most of them steering
+# simulation-neutral structure; these three groups are 24 and keep the Deutschlandticket
+# separately steerable -- it is the only flatrate category with a second committed survey
+# (srv2023_dticket_by_kreis.csv) and the natural policy lever.
+#
+# The Deutschlandticket is named explicitly and the REST of PT_TICKET_FLATRATE is derived,
+# so PT_TICKET_FLATRATE stays the single owner of "which ticket grants unlimited rides":
+# deutschlandticket + other_flatrate is PT_TICKET_FLATRATE by construction, hence the
+# control's flatrate mass equals has_pt_subscription and cannot drift from it (ADR-0087).
+PT_TICKET_DEUTSCHLANDTICKET: str = "deutschlandticket"
+PT_TICKET_OTHER_FLATRATE: frozenset[str] = frozenset(
+    PT_TICKET_FLATRATE - {PT_TICKET_DEUTSCHLANDTICKET})
+PT_TICKET_GROUPS: tuple[str, ...] = (
+    PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "not_flatrate")
 
 # The never-travels category is used for the structural under-14 floor
 # (code 402, children under the MiD PT-subscription basis age, not interviewed)
@@ -307,9 +327,21 @@ def map_studies(
     return out
 
 
+# MiD's own structural basis for the licence question: P_FSCHEIN code 403 is labelled
+# "Person unter 16 Jahren" (codebook MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet
+# Personen). Persons below this age can carry the PAPI coverage code 202 instead of 403
+# (PAPI households answer for their children on the paper form), and 202 is imputed for
+# adults -- so without an AGE-based floor those children fell through to the imputation
+# pool, which below 16 contains no valid codes at all and degraded to the global adult
+# pool: 61.6% of 202-children received has_license=True (smoke 2026-08-19; 2.8-3.8% of
+# every population since the #131 fix). A person under 16 cannot hold a Pkw licence
+# regardless of WHY the item was not collected.
+LICENSE_UNDER_AGE_YEARS: int = 16
+
+
 def map_has_license(
     persons: pd.DataFrame, *, license_col: str = "P_FSCHEIN", rng=None,
-    rs7_conditioning: bool = True,
+    rs7_conditioning: bool = True, age_col: str = "HP_ALTER",
 ) -> pd.DataFrame:
     """Add a boolean ``has_license`` from MiD ``P_FSCHEIN`` via the uniform missing policy.
 
@@ -325,9 +357,23 @@ def map_has_license(
     imputed from the valid pool within the same age band (alter_gr1) when present,
     else from the global valid pool. The imputation is seeded via ``rng``.
 
+    The under-16 floor is AGE-based, not code-based: 403 marks most under-16 persons, but
+    PAPI children carry 202 instead, and 202 must stay imputable for adults. The floor is
+    therefore applied AFTER the resolve (rows below :data:`LICENSE_UNDER_AGE_YEARS` are
+    forced to False and counted), which also leaves the rng stream of every other row
+    untouched. Requires ``age_col`` -- resolving without it would silently reintroduce the
+    defect, so its absence raises.
+
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
     """
+    if age_col not in persons.columns:
+        raise KeyError(
+            f"[braunschweig.popsim.attributes] map_has_license: required column "
+            f"{age_col!r} is absent. The under-16 structural floor (MiD 403 basis "
+            f"'Person unter 16 Jahren') is age-based because PAPI children carry the "
+            f"coverage code 202 instead of 403; without the age the floor cannot be "
+            f"applied and 202-children would be imputed from the adult pool again.")
     rng = rng if rng is not None else np.random.RandomState(0)
     spec = missing.AttributeSpec(
         name="has_license",
@@ -340,6 +386,18 @@ def map_has_license(
     )
     out = persons.copy()
     out["has_license"], _ = missing.resolve(out, spec, rng=rng)
+    # Under-16 floor (see LICENSE_UNDER_AGE_YEARS above). Applied post-resolve so adult
+    # imputation draws are unchanged; the forced count is logged per the
+    # fallback-transparency rule.
+    underage = pd.to_numeric(out[age_col], errors="coerce") < LICENSE_UNDER_AGE_YEARS
+    forced = int((underage & out["has_license"].astype(bool)).sum())
+    if forced:
+        logger.info(
+            "[braunschweig.popsim.attributes] map_has_license: under-16 floor forced "
+            "%d/%d under-16 persons from an imputed True to False (PAPI coverage code "
+            "202 below the MiD 403 basis 'Person unter 16 Jahren')",
+            forced, int(underage.sum()))
+    out.loc[underage, "has_license"] = False
     out["has_license"] = out["has_license"].astype(bool)
     return out
 
@@ -479,50 +537,63 @@ def derive_car_availability(n_cars: int, n_adults: int) -> str:
 
 
 def map_has_pt_subscription(
-    persons: pd.DataFrame, *, fkarte_col: str = "P_FKARTE", rng=None,
-    rs7_conditioning: bool = True,
+    persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
 ) -> pd.DataFrame:
-    """Add a boolean ``has_pt_subscription`` from MiD ``P_FKARTE`` via the uniform missing policy.
+    """Add the boolean ``has_pt_subscription`` by DERIVING it from the resolved ``pt_subscription_type``.
 
-    MiD codebook mapping: 1 (Einzelfahrschein) -> False, 2 (Mehrfahrtenkarte) ->
-    False, 3 (Deutschlandticket) -> True, 4 (Wochen-/Monatskarte ohne Abo) -> True,
-    5 (Monatskarte im Abo / Jahreskarte) -> True, 6 (Jobticket / Semesterticket) ->
-    True, 7 (sonstiges) -> False, 8 (fahre nie mit OEPNV) -> False.
+    Both attributes describe the same MiD answer (``P_FKARTE``), so they must be resolved
+    ONCE. Until issue #319 each had its own ``missing.resolve`` call, which drew the
+    imputed codes 99 / 202 / 206 independently: on the 100% population 9,723 persons
+    (0.86%) ended up with a flatrate category but ``has_pt_subscription = False`` or vice
+    versa, in both directions (measurement:
+    ``docs/runs/i307-license-pt-measure-2026-08-18.yml``). That is not cosmetic --
+    ``org.eqasim.braunschweig.mode_choice.BraunschweigPtCostModel.calculateCost_MU`` reads
+    the BOOLEAN (holders pay zero fare on every PT trip) while the MiD P24.1 validation
+    reads the CATEGORY, so a disagreement means the simulated and the validated
+    population are not the same people.
 
-    Structural design-missing codes (Handbuch Tab. 3, first-digit conventions):
-    only 402 (Kind unter 14 Jahre, nicht befragt) is a legitimate deterministic
-    structural False -- it is the under-14 / PT-subscription basis-age floor (mirrors
-    the legacy ``braunschweig.minimum_age.pt_subscription`` rule): children below the
-    MiD PT-subscription basis age genuinely have no PT ticket of their own. The codes
-    202 (PAPI Interviewart, fragebogen-bedingt) and 206 (Erwachsener ab 14,
-    Proxy/Stellvertreter) are first-digit-2 interview-mode / coverage design-missings
-    on persons of subscription age; they are NOT "no ticket" and must be IMPUTED from
-    comparable adult respondents, not forced to False. Forcing them to False (the
-    previous behaviour) put adult proxy persons (P_FKARTE=206: ~24.6k MiD donors) on
-    the deterministic-False path and biased the subscription share downward. They are
-    therefore declared in ``impute_codes`` (treated as item non-response).
+    The draw therefore lives exclusively in :func:`map_pt_subscription_type`; this
+    function is a pure, deterministic derivation over
+    :data:`braunschweig.data.mid.reference_tables.PT_TICKET_FLATRATE`, which stays the
+    single owner of "which ticket grants unlimited rides".
 
-    99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
-    pool within the same age group (alter_gr1) when present, else global pool;
-    ``default=False`` (conservative: unknown PT use treated as no subscription).
+    Parameters
+    ----------
+    persons:
+        Person frame that ALREADY carries ``type_col`` (see :func:`map_pt_subscription_type`).
+    type_col:
+        Name of the resolved categorical ticket-type column.
 
-    ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
-    callers should pass the pipeline's seeded rng to ensure reproducibility.
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of ``persons`` with a boolean ``has_pt_subscription`` column.
+
+    Raises
+    ------
+    KeyError
+        If ``type_col`` is absent. Re-resolving ``P_FKARTE`` here would reintroduce the
+        independent second draw, so this fails loudly instead of falling back to its own
+        draw (CLAUDE.md: no silent fallbacks).
     """
-    rng = rng if rng is not None else np.random.RandomState(0)
-    value_map = {code: (code in PT_SUBSCRIPTION_FKARTE) for code in range(1, 9)}
-    spec = missing.AttributeSpec(
-        name="has_pt_subscription",
-        source_col=fkarte_col,
-        value_map=value_map,
-        structural={402: False},          # Kind unter 14: deterministic under-14 floor
-        impute_codes=(202, 206),          # interview-mode / adult proxy coverage: impute
-        group_cols=imputation_group_cols(persons, "alter_gr1", rs7_conditioning=rs7_conditioning),
-        default=False,
-    )
+    if type_col not in persons.columns:
+        raise KeyError(
+            f"[braunschweig.popsim.attributes] map_has_pt_subscription: required column "
+            f"{type_col!r} is absent. Call map_pt_subscription_type first; the boolean is "
+            f"derived from the resolved category so that the two cannot disagree (issue "
+            f"#319). Resolving P_FKARTE a second time here would reintroduce exactly the "
+            f"independent draw that caused the inconsistency."
+        )
     out = persons.copy()
-    out["has_pt_subscription"], _ = missing.resolve(out, spec, rng=rng)
-    out["has_pt_subscription"] = out["has_pt_subscription"].astype(bool)
+    out["has_pt_subscription"] = out[type_col].isin(PT_TICKET_FLATRATE).astype(bool)
+    n = len(out)
+    if n:
+        n_flatrate = int(out["has_pt_subscription"].sum())
+        logger.info(
+            "[braunschweig.popsim.attributes] map_has_pt_subscription: derived from %r; "
+            "flatrate %d/%d (%.2f%%)",
+            type_col, n_flatrate, n, 100.0 * n_flatrate / n,
+        )
     return out
 
 
@@ -581,6 +652,53 @@ def map_pt_subscription_type(
             f"Check that FKARTE_TO_CATEGORY is consistent with PT_TICKET_CATEGORIES."
         )
     out["pt_subscription_type"] = out["pt_subscription_type"].astype("string")
+    return out
+
+
+def map_pt_ticket_group(
+    persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
+) -> pd.DataFrame:
+    """Add the three-group ``pt_ticket_group`` seed/control column (issue #321).
+
+    Collapses the resolved :data:`braunschweig.data.mid.reference_tables.PT_TICKET_CATEGORIES`
+    onto :data:`PT_TICKET_GROUPS`: ``deutschlandticket`` stays its own group, the remaining
+    flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
+
+    Deriving the group from the already-resolved category (and NOT a second time from the raw
+    ``P_FKARTE``) is what keeps it consistent with ``has_pt_subscription``: a second
+    resolution of the imputed codes 99 / 202 / 206 is exactly the defect ADR-0087 removed.
+
+    Raises
+    ------
+    KeyError
+        If ``type_col`` is absent -- see :func:`map_pt_subscription_type` for the resolver.
+    """
+    if type_col not in persons.columns:
+        raise KeyError(
+            f"[braunschweig.popsim.attributes] map_pt_ticket_group: required column "
+            f"{type_col!r} is absent. Call map_pt_subscription_type first; the group is "
+            f"derived from the resolved category so that it cannot disagree with "
+            f"has_pt_subscription (issue #319 / ADR-0087)."
+        )
+    out = persons.copy()
+    category = out[type_col].astype(str)
+    out["pt_ticket_group"] = np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 "not_flatrate"))
+    n = len(out)
+    if n:
+        counts = out["pt_ticket_group"].value_counts()
+        logger.info(
+            "[braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket "
+            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%)",
+            int(counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0)),
+            100.0 * counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0) / n,
+            int(counts.get("other_flatrate", 0)),
+            100.0 * counts.get("other_flatrate", 0) / n,
+            int(counts.get("not_flatrate", 0)),
+            100.0 * counts.get("not_flatrate", 0) / n,
+        )
     return out
 
 

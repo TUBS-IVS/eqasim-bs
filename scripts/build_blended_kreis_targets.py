@@ -13,6 +13,10 @@ Attributes built:
 - has_ebike {yes,no}: SrV only (no MiD per-Kreis source exists).
   ASSUMPTION: Wolfsburg uses the SrV region-total share.
 - number_of_bicycles {0..4+}: MiD H12.3 x SrV bikes; no arbiter.
+- pt_ticket_group {deutschlandticket,other_flatrate,not_flatrate}: MiD P24.1 x SrV
+  E_OEV_FK on a matched 14+ universe (issue #321); no arbiter -> disagreement shrinks
+  MiD. The SrV half is srv2023_ticket_groups_14plus_by_kreis.csv, extracted at 14+ for
+  this comparison; the older all-ages dticket table is not usable as a blend input.
 - employment_status {vollzeit,teilzeit,geringfuegig,sonstiges,erwerbstaetig_unspec,
   in_ausbildung,nicht_erwerbstaetig}: MiD P9 x SrV V_ERW (feature #172); no arbiter
   -> disagreement shrinks MiD. Wolfsburg (03103, not covered by SrV) and Gesamt
@@ -164,10 +168,70 @@ def build_has_ebike(data: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_pt_ticket_group(data: Path, config: BlendConfig) -> pd.DataFrame:
+    """Three-group PT ticket target: MiD P24.1 x SrV E_OEV_FK, no arbiter (issue #321).
+
+    Both inputs are put on the SAME 14+ universe and the SAME three groups before blending;
+    the SrV half comes from ``srv2023_ticket_groups_14plus_by_kreis.csv``, which the
+    extractor builds at 14+ precisely for this comparison (the older
+    ``srv2023_dticket_by_kreis.csv`` is all-ages and carries only one category, so it is
+    NOT usable here).
+
+    Measured 2026-08-18 on the matched universe: the two surveys agree closely on the
+    simulation-relevant FLATRATE aggregate -- region 17.37% (SrV) vs 19.00% (MiD), i.e.
+    1.63pp, and Braunschweig 25.65% vs 26.00%, i.e. 0.35pp -- while disagreeing per Kreis
+    by up to 8pp (Goslar -7.99pp, Salzgitter -6.71pp, Helmstedt -6.09pp; Peine +2.56pp,
+    Wolfenbuettel +2.87pp). That is exactly the configuration this blender exists for:
+    precision blend where the two agree within the tolerance, MiD shrunk toward Gesamt
+    where they disagree and no arbiter exists, MiD for Wolfsburg (no SrV coverage) and for
+    the Gesamt row.
+
+    ADR-0060 rejected an SrV PT-subscription CONTROL because E_OEV_FK is usage-conditional
+    (asked of persons with PT use in the last 12 months). That objection stands for the
+    ticket-type SHAPE, but the extraction keeps the non-users (code -8) in the universe as
+    not_flatrate, which makes the FLATRATE construct comparable -- and the measured
+    agreement above is the evidence. Using SrV as one half of a blend rather than as the
+    target is the treatment every other per-Kreis target here gets.
+    """
+    from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
+    from braunschweig.popsim.attributes import (
+        PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_GROUPS, PT_TICKET_OTHER_FLATRATE)
+
+    cats = list(PT_TICKET_GROUPS)
+    mid_raw = read_csv(data / "mid" / "mid2023_P24_1.csv", dtype={"ars5": str})
+    p24_cats = list(PT_TICKET_CATEGORIES)
+    other = [c for c in p24_cats if c in PT_TICKET_OTHER_FLATRATE]
+    rest = [c for c in p24_cats
+            if c != PT_TICKET_DEUTSCHLANDTICKET and c not in PT_TICKET_OTHER_FLATRATE]
+    mid_rows = []
+    for _, r in mid_raw.iterrows():
+        total = float(sum(float(r[c]) for c in p24_cats))
+        if total <= 0:
+            raise ValueError(f"build_pt_ticket_group: P24.1 row {r['ars5']} sums to {total}")
+        mid_rows.append({
+            "ars5": "Gesamt" if str(r["ars5"]) == "03ZGB" else str(r["ars5"]),
+            "n_unweighted": int(r["n_unweighted"]),
+            PT_TICKET_DEUTSCHLANDTICKET: float(r[PT_TICKET_DEUTSCHLANDTICKET]) / total,
+            "other_flatrate": sum(float(r[c]) for c in other) / total,
+            "not_flatrate": sum(float(r[c]) for c in rest) / total,
+        })
+    mid = pd.DataFrame(mid_rows)
+
+    srv = srv_kreis_rows(
+        data / "srv" / "srv2023_ticket_groups_14plus_by_kreis.csv", {})
+    return blend_kreis_target(mid[["ars5", "n_unweighted", *cats]],
+                              srv[["code", "n_unweighted", *cats]],
+                              cats, config=config)
+
+
 def write_target(df: pd.DataFrame, out_path: Path, config: BlendConfig,
-                 ebike: bool = False) -> None:
-    note = ("; EXCEPTION this file: SrV-only attribute, Wolfsburg uses the "
-            "SrV region total (ASSUMPTION)") if ebike else ""
+                 ebike: bool = False, note: str = "") -> None:
+    """Write one target table. ``note`` records a per-file exception to the common
+    blending rules in the header, so a single-source file cannot be mistaken for a
+    blended one (``ebike`` is the pre-existing shorthand for its own exception)."""
+    if ebike:
+        note = ("; EXCEPTION this file: SrV-only attribute, Wolfsburg uses the "
+                "SrV region total (ASSUMPTION)")
     header = HEADER_COMMON.format(tol=config.tolerance_pp,
                                   lam=config.disagreement_shrink_lambda,
                                   ebike_note=note)
@@ -198,6 +262,15 @@ def main(argv=None) -> int:
                  ebike=True)
     write_target(build_number_of_bicycles(args.data, config),
                  args.out_dir / "target2026_number_of_bicycles_by_kreis.csv", config)
+    write_target(build_pt_ticket_group(args.data, config),
+                 args.out_dir / "target2026_pt_ticket_group_by_kreis.csv", config,
+                 note=("; NOTE this file: the SrV half is "
+                       "srv2023_ticket_groups_14plus_by_kreis.csv (14+, matching MiD "
+                       "P24.1's base) and NOT the all-ages srv2023_dticket_by_kreis.csv. "
+                       "Non-PT-users (E_OEV_FK -8, ~a third of the SrV sample) count as "
+                       "not_flatrate and Freifahrtberechtigung (code 60) likewise, so "
+                       "both halves carry the same construct -- see ADR and the SrV "
+                       "table header"))
     write_target(build_employment_status(args.data, config),
                  args.out_dir / "target2026_employment_status_by_kreis.csv", config)
     return 0

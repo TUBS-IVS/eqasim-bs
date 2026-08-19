@@ -59,6 +59,14 @@ KEY_KREIS_CONTROLS = "braunschweig.population.popsim.kreis_controls_dir"
 # Kreis x sex x group to the census Erwerbstaetige Kreis level
 # (braunschweig.popsim.employment_grid). Default "off" = byte-identical to today.
 KEY_EMPLOYMENT_GRID = "braunschweig.population.popsim.employment_grid"
+
+# Fine teen age bands in the tier0 backbone (issue #320): "on" replaces the ten-year
+# 10-19 age x sex controls with 10-15 / 16-17 / 18-19, adding 4 controls at 100m. The
+# ten-year bands leave the composition inside a band unconstrained, which produced a
+# 15-17 excess of +64% and an 18-19 shortfall of -75% against DESTATIS 12411-0018 on the
+# 100% population (issue #307). Default "on"; "off" is byte-identical to the pre-#320
+# control set (pinned by tests/fixtures/prep3_controls_baseline.csv).
+KEY_FINE_TEEN_AGE_BANDS = "braunschweig.population.popsim.fine_teen_age_bands"
 # PopulationSim per-control importance profile name (see control_spec.IMPORTANCE_PROFILES).
 KEY_IMPORTANCE_PROFILE = "braunschweig.population.popsim.importance_profile"
 # Seed reporting-day filter: which MiD kernwo values to KEEP in the PopulationSim
@@ -156,6 +164,8 @@ KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.
+KEY_PT_TICKET_KREIS_CONTROL = "braunschweig.population.popsim.pt_ticket_kreis_control"
+
 _KREIS_CONTROL_TOGGLE_KEY = {
     "economic_status": KEY_STATUS_KREIS_CONTROL,
     "number_of_cars": KEY_CARS_KREIS_CONTROL,
@@ -163,6 +173,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "has_ebike": KEY_EBIKE_KREIS_CONTROL,
     "trip_class": KEY_TRIPS_KREIS_CONTROL,
     "employment_status": KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    "pt_ticket_group": KEY_PT_TICKET_KREIS_CONTROL,
     "work_participation": KEY_WORK_PARTICIPATION_CONTROL,
     "leisure_participation": KEY_LEISURE_PARTICIPATION_CONTROL,
     "education_participation": KEY_EDUCATION_PARTICIPATION_CONTROL,
@@ -180,6 +191,7 @@ _KREIS_CONTROL_DEFAULT = {
     "has_ebike": "on",
     "trip_class": "on",
     "employment_status": "on",
+    "pt_ticket_group": "on",
     "work_participation": "on",
     "leisure_participation": "on",
     "education_participation": "on",

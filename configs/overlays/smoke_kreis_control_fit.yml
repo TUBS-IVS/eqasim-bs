@@ -1,0 +1,62 @@
+## Control-fit smoke overlay (issue #282): ONE Kreis, full control set, population only.
+##
+## Why the region and not the sampling rate: under popsim_mid the balancing runs over the
+## FULL population regardless of `sampling_rate` -- the rate only trims the MATSim extract
+## afterwards. A "1% smoke" therefore costs the same balancing as a 100% run and proves
+## nothing cheaply. Shrinking the REGION to Braunschweig (03101) is what actually reduces the
+## work, because the cells outside it are never balanced.
+##
+## What it is for: after adding or changing a control, this answers the one question the
+## CI-sized checks cannot -- does the balancer still converge, and does the realised fit land
+## where it should. The specification-level checks
+## (tests/test_control_fit_smoke.py, braunschweig.analysis.population_validation
+## .control_fit_smoke) run in seconds without PopulationSim and cover partitioning, source
+## columns and target normalisation; this overlay covers the numerical half.
+##
+## Target `data.census.filtered` = the population-synthesis producer only. No location
+## synthesis, no trips, no MATSim: those are unaffected by a control change and dominate the
+## runtime.
+##
+## Machine paths (popsimprep_dir / uv_path / settings_path / controls_path) are deliberately
+## NOT set here -- they come from configs/base_bs.yml, which carries the run-server values.
+## On a different machine, override them on the command line or in a local config; do not
+## edit them into this overlay, or every checkout will fight over them.
+##
+## Usage (conda env eqasim, from the repository root):
+##   python scripts/run_synpp.py configs/base_bs.yml configs/overlays/smoke_kreis_control_fit.yml
+## then read the control fit:
+##   python -m braunschweig.analysis.population_validation.run_population_validation \
+##       --sim-cache eqasim-data/cache_smoke_control_fit --label smoke-control-fit --no-geo
+
+working_directory: eqasim-data/cache_smoke_control_fit
+
+run:
+  - data.census.filtered
+
+config:
+  # The rate is irrelevant to the balancing (see the note above); kept low so that anything
+  # downstream a contributor adds to `run` stays cheap too.
+  sampling_rate: 0.01
+
+  output_path: eqasim-data/output_smoke_control_fit
+  analysis_working_directory: eqasim-data/cache_smoke_control_fit
+  output_prefix: smoke_control_fit_
+
+  # Braunschweig only. Every other Kreis is dropped before the cells are balanced, which is
+  # where the saving comes from. 03101 is the deliberate choice: it is the densest Kreis and a
+  # single stratum in the SrV design, so a Kreis-level control that breaks anywhere breaks
+  # here, and it is the Kreis with the largest measured control deviations (#307).
+  braunschweig.political_prefix:
+    - "03101"
+
+  # Own work_dir: the batches produced here have a different cell set than the production
+  # runs, so they must never land in the shared popsim_work_allfeat cache.
+  braunschweig.population.popsim.work_dir: eqasim-data/cache_smoke_control_fit/popsim_work
+
+  # 750 cells per batch is the value the 100% run proved safe on every Kreis (a dense Kreis at
+  # 3000 overflowed HDF5's VLArray); kept identical so the smoke exercises the production
+  # batching behaviour rather than a configuration nobody runs.
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 8
+
+  matsim_last_iteration: 0

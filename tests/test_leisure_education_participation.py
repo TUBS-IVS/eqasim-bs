@@ -39,8 +39,24 @@ def _entry(name):
 
 
 def test_participation_w_zweck_codes():
+    """The leisure set widened from {7} to {7, 14, 15, 16} with issue #241, which brings it
+    CLOSER to the SrV target it is compared against, not further away.
+
+    The target is built from SrV ``E_ZWECK_9``, whose leisure is ONE coarse bucket (code 7)
+    fed by the fine purposes 13-18 (Kultur, Gaststaette, Privater Besuch, Erholung/Sport,
+    Sportstaette, Andere Freizeit). MiD splits the same concept across W_ZWECK 7 + 14 Sport +
+    15 Freunde + 16 Unterricht. While 14/15/16 sat in "other" via the silent fallback, the
+    synthetic side of this control counted a NARROWER leisure than its target -- a latent
+    apples-to-apples gap (the #96 / #169 class), now closed for 14 and 15.
+
+    One construct difference remains, verified on the SrV microdata and deliberately accepted:
+    MiD 16 "Unterricht (nicht Schule)" corresponds to SrV V_ZWECK 7 "Andere
+    Bildungseinrichtung", which SrV rolls into E_ZWECK_9 = 4 (education), while we map it to
+    leisure. It is 0.11 % of MiD legs, and mapping it to eqasim ``education`` would anchor an
+    evening class at the person's assigned school -- see the ADR.
+    """
     assert mid.PARTICIPATION_W_ZWECK == {
-        "work": {1, 2}, "leisure": {7}, "education": {3, 11, 12},
+        "work": {1, 2}, "leisure": {7, 14, 15, 16}, "education": {3, 11, 12},
     }
 
 
@@ -129,7 +145,7 @@ def test_active_kreis_entries_includes_both_new_controls_by_default():
     names = {c.name for c in active}
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status",
+        "trip_class", "employment_status", "pt_ticket_group",
         "work_participation", "leisure_participation", "education_participation",
     }
 

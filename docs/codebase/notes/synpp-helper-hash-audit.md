@@ -148,14 +148,27 @@ since by definition there is nothing left uncovered:
 - **matsim** (11): `matsim.output`, `matsim.runtime.eqasim`, `matsim.runtime.git`, `matsim.runtime.java`, `matsim.runtime.maven`, `matsim.runtime.pt2matsim`, `matsim.scenario.supply.gtfs`, `matsim.scenario.supply.osm`, `matsim.scenario.supply.processed`, `matsim.simulation.prepare` *(vendored `matsim.simulation.prepare`; the BS override `braunschweig.matsim.simulation.prepare` is a separate stage, listed under category (c)/(d) below)*, `matsim.simulation.run`
 - **synthesis** (22): `synthesis.locations.education`, `synthesis.locations.home.addresses`, `synthesis.locations.home.locations`, `synthesis.locations.home.output`, `synthesis.locations.secondary`, `synthesis.locations.work`, `synthesis.output`, `synthesis.population.activities`, `synthesis.population.income.selected`, `synthesis.population.projection.ipu`, `synthesis.population.projection.reweighted`, `synthesis.population.sampled`, `synthesis.population.spatial.commute_distance`, `synthesis.population.spatial.home.zones`, `synthesis.population.spatial.locations`, `synthesis.population.spatial.primary.locations`, `synthesis.population.spatial.secondary.distance_distributions`, `synthesis.population.trips`, `synthesis.vehicles.cars.default`, `synthesis.vehicles.cars.fleet_sampling`, `synthesis.vehicles.passengers.default`, `synthesis.vehicles.vehicles`
 
-## Category (b) — has helpers, fully covered (1 stage)
+## Category (b) — has helpers, fully covered (2 stages)
 
 | Stage | Path | Required helpers | Covered | Uncovered |
 |---|---|---|---|---|
-| `braunschweig.popsim.stage` | `braunschweig/popsim/stage/__init__.py` | 44 | 44 | none |
+| `braunschweig.popsim.stage` | `braunschweig/popsim/stage/__init__.py` | 44 | 46 | none |
+| `braunschweig.popsim.trips_stage` | `braunschweig/popsim/trips_stage.py` | 4 | 8 | none |
 
-The only stage in the repo whose `validate()` closes its entire helper
-surface — see `docs/codebase/notes/popsim-stage-split.md` for the canonical
+`braunschweig.popsim.stage` covers 46 = its 44 direct helpers plus TWO deliberate
+second-level exceptions (`braunschweig.popsim.attributes` via `assembly` /
+`mid.seed_loading`, `braunschweig.popsim.trips` via `mid.participation`), added after the
+2026-08-19 verification smoke proved the hazard live: both modules changed behaviour (the
+under-16 licence floor, the W_ZWECK purpose fix) while the stage hash AND the token stayed
+identical, so a warm cache reused the pre-fix population
+(`docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml`). The one-level boundary otherwise
+stands; a further second-level entry needs the same standard of evidence.
+`braunschweig.popsim.trips_stage` had NO token at all until then (it sat in category (c));
+its token covers its four own-package helpers plus the `braunschweig.popsim.sources`
+adapters one level deep, whose `build_trips()` IS the trip construction. Both are pinned by
+regression tests in `tests/test_synpp_helper_hash_invariant.py`.
+
+`braunschweig.popsim.stage` — see `docs/codebase/notes/popsim-stage-split.md` for the canonical
 description. It is worth stating explicitly: this stage **also** exhibits the
 category-(d) pattern (it imports two other synpp stages,
 `braunschweig.data.census.household_size` and
@@ -206,7 +219,6 @@ minus `braunschweig.popsim.stage` (fully covered, category (b) above).
 | `braunschweig.matsim.simulation.prepare` | `braunschweig/matsim/simulation/prepare.py` | `braunschweig.data.cordon.extent`, `braunschweig.data.spatial.cordon`, `matsim.runtime.eqasim`, `matsim.simulation.prepare` | d |
 | `braunschweig.popsim.completed_donor` | `braunschweig/popsim/completed_donor.py` | `braunschweig.popsim.mid`, `braunschweig.popsim.seed`, `braunschweig.popsim.stage`, `braunschweig.popsim.weekend_plan_match` | d |
 | `braunschweig.popsim.distance_distributions` | `braunschweig/popsim/distance_distributions.py` | `braunschweig.constants`, `braunschweig.popsim.mid`, `braunschweig.popsim.purpose_subtype`, `braunschweig.popsim.shop_subtype`, `braunschweig.popsim.time_imputation`, `braunschweig.popsim.trips`, `synthesis.population.spatial.secondary.distance_distributions` | d |
-| `braunschweig.popsim.trips_stage` | `braunschweig/popsim/trips_stage.py` | `braunschweig.constants`, `braunschweig.popsim.plan_validation`, `braunschweig.popsim.sources`, `braunschweig.popsim.trips` | |
 | `braunschweig.synthesis.cordon_gates` | `braunschweig/synthesis/cordon_gates.py` | `braunschweig.data.cordon.gate_assignment`, `braunschweig.data.cordon.gates`, `braunschweig.data.spatial.cordon` | |
 | `braunschweig.synthesis.incommuters` | `braunschweig/synthesis/incommuters.py` | `braunschweig.constants`, `braunschweig.data.cordon.demand`, `braunschweig.data.cordon.gate_assignment`, `braunschweig.data.cordon.incommuter_origins`, `braunschweig.data.cordon.mode_balancer`, `braunschweig.data.cordon.mode_reference`, `braunschweig.data.cordon.network`, `braunschweig.data.cordon.plans`, `braunschweig.data.cordon.pt_reachability`, `braunschweig.data.external_workplaces`, `braunschweig.data.mikrozensus.reference`, `braunschweig.synthesis.vehicles.fleet_sampling_de` | d |
 | `braunschweig.synthesis.locations.education_gravity` | `braunschweig/synthesis/locations/education_gravity.py` | `braunschweig.data.schools.bbs_share`, `braunschweig.synthesis.locations.education_gravity_model` | |

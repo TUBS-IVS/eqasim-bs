@@ -16,11 +16,15 @@ Per-person jitter formula (matches synthesis/population/trips.py exactly):
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as popsim_trips
 # Authoritative plan-time bound lives in plan_validation (where bound-exceeding
 # persons are classified unfixable + resampled); re-exported here for the final
@@ -28,6 +32,53 @@ from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
 logger = logging.getLogger(__name__)
+
+# synpp hashes only THIS file's source; every helper that shapes the trip table must
+# therefore be folded into validate()'s token or an edit to it silently reuses the stale
+# cached trips. This stage had NO token at all until the 2026-08-19 hazard: the W_ZWECK
+# purpose fix changed trips.py and this stage's cache would never have noticed
+# (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). Boundary semantics follow the
+# canonical statement in braunschweig.popsim.stage.validate(); the deferred names cover
+# the function-level `from braunschweig.popsim import sources` plus the source adapters
+# one level deep, whose build_trips() IS the trip construction for the active donor.
+_HELPER_MODULES = (
+    popsim_trips,
+    _plan_validation,
+)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.sources",
+    "braunschweig.popsim.sources.base",
+    "braunschweig.popsim.sources.entd",
+    "braunschweig.popsim.sources.entd_diary_matching",
+    "braunschweig.popsim.sources.entd_trips",
+    "braunschweig.popsim.sources.mid",
+)
+
+
+def validate(context):
+    """synpp validation token: md5 over the helper modules above.
+
+    Same mechanism and boundary semantics as ``braunschweig.popsim.stage.validate()``
+    (the single canonical statement); kept minimal here because this stage's helper
+    surface is small. A deferred module that fails to import raises rather than being
+    skipped -- dropping it would keep the stale cache alive exactly when the code is
+    broken.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"trips_stage validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 # The 11-column output contract from synthesis/population/trips.py; downstream
 # stages (synthesis/population/activities.py) expect exactly these column names.
@@ -167,6 +218,7 @@ def run(
     random_seed: int,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -204,6 +256,7 @@ def run(
         random_seed=random_seed,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     )
 
     logger.info(
@@ -274,6 +327,11 @@ def configure(context):
     context.config("random_seed")
     context.config("escort_purpose", False)
     context.config("escort_passive_education", False)
+    # Explicit W_ZWECK purposes (issue #241): default True maps codes 14/15/16
+    # (Sport / Freunde besuchen / Unterricht nicht Schule) to "leisure" instead of letting
+    # them reach "other" through the silent fallback. False reproduces the pre-#241
+    # assignment for the A/B.
+    context.config("explicit_round_trip_purposes", True)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -316,9 +374,11 @@ def execute(context):
 
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config("escort_passive_education"))
+    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
     )

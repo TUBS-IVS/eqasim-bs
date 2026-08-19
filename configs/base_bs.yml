@@ -79,6 +79,12 @@ config:
   # own leg; 100% minors) become the child's own education trip at their own
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
+  # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
+  # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
+  # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs
+  # (W_GEW-weighted) used to arrive at their purpose by fallback, 1.06% of them these three
+  # codes. false reproduces the pre-#241 assignment for the A/B.
+  explicit_round_trip_purposes: true
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location
@@ -111,9 +117,24 @@ config:
   # to the census Erwerbstaetige Kreis levels in kreis_erwerbsstatus.parquet). 'on'
   # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks ==\"on\".
   braunschweig.population.popsim.employment_grid: "on"
+  # Fine teen age bands in the tier0 backbone (issue #320): replaces the ten-year 10-19
+  # age x sex controls with 10-15 / 16-17 / 18-19 (22 instead of 18 controls at 100m).
+  # The ten-year band leaves the composition INSIDE it unconstrained, which produced a
+  # 15-17 excess of +64% and an 18-19 shortfall of -75% against DESTATIS 12411-0018 on
+  # the 100% population (issue #307). Targets come from the single-year cell columns,
+  # whose provenance is recorded in docs/registry/data/zensus2022_grid_cells.yml. 'on'
+  # QUOTED -- YAML 1.1 parses bare on->True, but the stage checks =="on".
+  braunschweig.population.popsim.fine_teen_age_bands: "on"
   # Imported cleancensus Kreis control tables (kreis_erwerbsstatus / schulabschluss /
   # berufl_abschluss.parquet) -- required by BOTH employment_grid and tier3.
   braunschweig.population.popsim.kreis_controls_dir: eqasim-data/data/braunschweig/popsim/kreis_controls
+  # PT-subscription per-Kreis control (issue #321, ADR-0089): three groups
+  # (deutschlandticket / other_flatrate / not_flatrate) at 14+, soft tier. Target is
+  # MiD P24.1 blended with SrV E_OEV_FK on a matched 14+ universe. Steers the quantity
+  # BraunschweigPtCostModel reads (holders pay zero fare on every PT trip), which #307
+  # measured at +3.06pp region / +4.18pp Braunschweig. 'on' QUOTED -- YAML 1.1 parses
+  # bare on->True, but the stage compares against the string "on".
+  braunschweig.population.popsim.pt_ticket_kreis_control: "on"
 
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so

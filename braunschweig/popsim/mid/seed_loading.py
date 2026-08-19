@@ -201,6 +201,15 @@ def _read_seed_persons(
         for _es_col in ("P_BKAT", "alter_gr1"):
             if _es_col not in person_cols:
                 person_cols.append(_es_col)
+    # pt_ticket_group (PERSON-level KREIS control, issue #321): load the raw MiD
+    # Fahrkartenart code (P_FKARTE) and the age-band conditioning column (alter_gr1) so the
+    # ticket category can be resolved + the 99/202/206 coverage codes imputed within
+    # alter_gr1, then collapsed to the three control groups -- mirroring the
+    # employment_status block above exactly. Dedup-safe (alter_gr1 may already be present).
+    if "pt_ticket_group" in active_kreis_entry_names:
+        for _pt_col in ("P_FKARTE", "alter_gr1"):
+            if _pt_col not in person_cols:
+                person_cols.append(_pt_col)
     # participation controls (work_participation task 4; leisure_participation /
     # education_participation task 5, feature #224): load the raw diary trip count
     # (anzwege1, the default trips_col mid.compute_has_purpose_trip uses to carry
@@ -416,6 +425,40 @@ def _derive_employment_status_seed_column(
     """
     if "employment_status" in active_kreis_entry_names:
         persons = attributes.map_employment_status(persons, rng=kreis_seed_rng)
+    return persons
+
+
+def _derive_pt_ticket_group_seed_column(
+    persons: pd.DataFrame,
+    *,
+    active_kreis_entry_names: set[str],
+    kreis_seed_rng,
+) -> pd.DataFrame:
+    """Derive the person-level ``pt_ticket_group`` KREIS control seed column (issue #321).
+
+    Two steps, in this order and only this order: resolve the ticket CATEGORY from the raw
+    ``P_FKARTE`` via ``attributes.map_pt_subscription_type`` (imputing the coverage codes
+    99 / 202 / 206 within ``alter_gr1``), then collapse it onto the three control groups via
+    ``attributes.map_pt_ticket_group``. Resolving the group directly from the raw code would
+    be a SECOND independent draw over the same imputed codes -- the defect ADR-0087 removed,
+    which would let the control steer a quantity that differs from the ``has_pt_subscription``
+    the fare model reads.
+
+    Mirrors :func:`_derive_employment_status_seed_column`: derived AFTER the
+    complete-household filter + member completion in ``load_mid_seed`` (so a mirror-imputed
+    filler's group matches its inherited P_FKARTE and the imputation pool reflects only the
+    kept seed persons), and from the completed donor's P_FKARTE in
+    ``project_completed_seed``. Seed and expanded population agree deterministically for
+    every person with a valid P_FKARTE code; the imputed cases may differ by an independent
+    rng draw, which is acceptable for a control (the trip_class / employment_status
+    precedent).
+
+    Returns: the persons frame with the derived column (MUST be reassigned).
+    Mutates: nothing in place.
+    """
+    if "pt_ticket_group" in active_kreis_entry_names:
+        persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
+        persons = attributes.map_pt_ticket_group(persons)
     return persons
 
 
@@ -713,6 +756,11 @@ def load_mid_seed(
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
     )
+    persons = _derive_pt_ticket_group_seed_column(
+        persons,
+        active_kreis_entry_names=active_kreis_entry_names,
+        kreis_seed_rng=kreis_seed_rng,
+    )
     persons = _derive_employment_status_seed_column(
         persons,
         active_kreis_entry_names=active_kreis_entry_names,
@@ -818,6 +866,11 @@ def project_completed_seed(
     )
     persons = _derive_trip_class_seed_column(
         persons, columns,
+        active_kreis_entry_names=active_kreis_entry_names,
+        kreis_seed_rng=kreis_seed_rng,
+    )
+    persons = _derive_pt_ticket_group_seed_column(
+        persons,
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
     )
