@@ -138,3 +138,29 @@ def test_rake_infeasible_margin_raises():
     with pytest.raises(ValueError, match="converge"):
         og.rake_ownership_targets(prior, np.array([100.0]), np.array(["03101"]),
                                   targets, cond_cols, "cars")
+
+
+def test_prior_raises_on_zero_weight_rs7_stratum():
+    # RS7=71 has zero total n_unweighted across all haustyp strata: the n-weighted
+    # marginal would need a 0/0 division, which would silently produce a NaN prior
+    # (and eventually poison the rake) instead of failing loudly at its origin.
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    cond.loc[71, "n_unweighted"] = 0
+    with pytest.raises(ValueError, match="71"):
+        og.per_cell_ownership_priors(np.array([71]), np.array([[10.0, 0.0, 0.0, 0.0]]),
+                                     cond, og._CARS_SHARE_COLUMNS, "cars")
+
+
+def test_rake_raises_on_non_finite_margin_error_instead_of_silently_returning():
+    # A NaN entry in the prior (e.g. propagated from an upstream zero-weight RS7
+    # stratum) drives the margin error to NaN. Under IEEE-754 semantics both
+    # `err < tol` and `err >= tol` are False for NaN, so without an explicit
+    # finiteness guard the loop would silently exhaust max_iter and fall through to
+    # returning NaN-poisoned output -- exactly the failure this test guards against.
+    cond_cols = og._CARS_SHARE_COLUMNS
+    prior = np.array([[np.nan, 0.5, 0.3, 0.2]])
+    targets = pd.DataFrame({"cars_0": [0.25], "cars_1": [0.25], "cars_2": [0.25], "cars_3plus": [0.25]},
+                           index=pd.Index(["03101"], name="ars5"))
+    with pytest.raises(ValueError, match="non-finite"):
+        og.rake_ownership_targets(prior, np.array([100.0]), np.array(["03101"]),
+                                  targets, cond_cols, "cars")

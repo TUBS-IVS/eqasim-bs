@@ -93,6 +93,10 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
     the n_unweighted-weighted RS7 marginal; the primary/fallback split is logged and
     a 100 % fallback rate raises (it means the dwelling columns are broken, not that
     every cell genuinely lacks buildings).
+
+    Also raises if any RS7 class has zero total n_unweighted across its haustyp strata:
+    that marginal would require a 0/0 division (NaN), and a NaN prior would silently
+    poison the downstream IPF rake instead of failing loudly (no-silent-fallback rule).
     """
     n = len(rs7)
     n_cats = len(share_columns)
@@ -102,7 +106,14 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
     for r in RS7_CLASSES:
         sub = conditional.loc[r]
         w = sub["n_unweighted"].to_numpy(dtype=float)
-        marginal[r] = (sub[list(share_columns)].to_numpy(dtype=float) * w[:, None]).sum(axis=0) / w.sum()
+        w_sum = w.sum()
+        if w_sum <= 0:
+            raise ValueError(
+                f"per_cell_ownership_priors[{label}]: RS7 class {r} has zero total "
+                "n_unweighted across all haustyp strata; cannot compute an n-weighted "
+                "marginal fallback for this RS7 class (check the conditional input for "
+                "an unpopulated or corrupted survey-count column).")
+        marginal[r] = (sub[list(share_columns)].to_numpy(dtype=float) * w[:, None]).sum(axis=0) / w_sum
 
     dw = np.asarray(dwellings, dtype=float)
     dw_tot = dw.sum(axis=1)
@@ -137,6 +148,12 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
     share x Kreis-household-total. Raises on a Kreis absent from target_shares and on
     non-convergence within max_iter (e.g. a category the prior cannot supply) -- an
     unconverged rake would silently ship a wrong level (no-silent-fallback rule).
+
+    Also raises immediately if the margin error becomes non-finite (NaN/Inf): under
+    IEEE-754 semantics both `err < tol` and `err >= tol` are False for NaN, so without
+    this explicit check a non-finite state (e.g. a NaN prior propagated from an
+    upstream zero-weight RS7 stratum) would silently exhaust max_iter and fall through
+    to returning NaN-poisoned output.
     """
     hh = np.asarray(hh, dtype=float)
     out = np.zeros_like(prior, dtype=float)
@@ -160,6 +177,12 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
                                / np.maximum(target_counts, 1.0)))
             if err < tol:
                 break
+        if not np.isfinite(err):
+            raise ValueError(
+                f"rake_ownership_targets[{label}]: Kreis {ars5} produced a non-finite "
+                "relative margin error during the rake (NaN/Inf entered the IPF from a "
+                "non-finite prior or target, e.g. a zero-weight RS7 stratum upstream in "
+                "per_cell_ownership_priors); refusing to silently return NaN-poisoned output.")
         if err >= tol:
             raise ValueError(
                 f"rake_ownership_targets[{label}]: Kreis {ars5} did not converge within "
