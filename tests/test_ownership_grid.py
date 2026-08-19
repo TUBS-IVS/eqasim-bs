@@ -90,3 +90,51 @@ def test_prior_all_fallback_raises():
     with pytest.raises(ValueError, match="100"):
         og.per_cell_ownership_priors(np.array([71]), np.array([[0.0, 0.0, 0.0, 0.0]]),
                                      cond, og._CARS_SHARE_COLUMNS, "cars")
+
+
+def _shares_frame(share_columns, ars5=("03101", "03102")):
+    return pd.DataFrame(
+        {c: [1.0 / len(share_columns)] * len(ars5) for c in share_columns},
+        index=pd.Index(ars5, name="ars5"))
+
+
+def test_rake_hits_kreis_margins_and_preserves_row_sums():
+    cond_cols = og._CARS_SHARE_COLUMNS
+    prior = np.array([[0.7, 0.1, 0.1, 0.1], [0.1, 0.7, 0.1, 0.1],
+                      [0.25, 0.25, 0.25, 0.25]])
+    hh = np.array([100.0, 300.0, 50.0])
+    kreis = np.array(["03101", "03101", "03102"])
+    targets = _shares_frame(cond_cols)
+    raked = og.rake_ownership_targets(prior, hh, kreis, targets, cond_cols, "cars")
+    np.testing.assert_allclose(raked.sum(axis=1), hh, rtol=1e-9)
+    np.testing.assert_allclose(raked[:2].sum(axis=0), 400.0 / 4, rtol=1e-8)
+
+
+def test_rake_zero_prior_category_stays_zero():
+    cond_cols = og._CARS_SHARE_COLUMNS
+    prior = np.array([[0.5, 0.5, 0.0, 0.0], [0.6, 0.2, 0.2, 0.0]])
+    hh = np.array([10.0, 10.0])
+    kreis = np.array(["03101", "03101"])
+    targets = pd.DataFrame({"cars_0": [0.5], "cars_1": [0.3], "cars_2": [0.2], "cars_3plus": [0.0]},
+                           index=pd.Index(["03101"], name="ars5"))
+    raked = og.rake_ownership_targets(prior, hh, kreis, targets, cond_cols, "cars")
+    assert raked[0, 2] == pytest.approx(0.0)
+    assert raked[:, 3].sum() == pytest.approx(0.0)
+
+
+def test_rake_missing_kreis_target_raises():
+    cond_cols = og._CARS_SHARE_COLUMNS
+    with pytest.raises(ValueError, match="03102"):
+        og.rake_ownership_targets(np.full((1, 4), 0.25), np.array([10.0]), np.array(["03102"]),
+                                  _shares_frame(cond_cols, ars5=("03101",)), cond_cols, "cars")
+
+
+def test_rake_infeasible_margin_raises():
+    cond_cols = og._CARS_SHARE_COLUMNS
+    # Prior gives category 3plus zero mass everywhere, but the target demands 50% -> cannot converge.
+    prior = np.array([[0.5, 0.3, 0.2, 0.0]])
+    targets = pd.DataFrame({"cars_0": [0.25], "cars_1": [0.15], "cars_2": [0.10], "cars_3plus": [0.5]},
+                           index=pd.Index(["03101"], name="ars5"))
+    with pytest.raises(ValueError, match="converge"):
+        og.rake_ownership_targets(prior, np.array([100.0]), np.array(["03101"]),
+                                  targets, cond_cols, "cars")

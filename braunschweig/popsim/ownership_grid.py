@@ -127,3 +127,43 @@ def per_cell_ownership_priors(rs7, dwellings, conditional, share_columns, label)
         label, n - n_fallback, n, 100.0 * (n - n_fallback) / max(n, 1),
         n_fallback, 100.0 * n_fallback / max(n, 1))
     return prior
+
+
+def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label,
+                           *, tol=1e-9, max_iter=500):
+    """IPF the per-cell priors to the per-Kreis target shares, in household counts.
+
+    Rows (cells) keep their household total; columns (categories) hit
+    share x Kreis-household-total. Raises on a Kreis absent from target_shares and on
+    non-convergence within max_iter (e.g. a category the prior cannot supply) -- an
+    unconverged rake would silently ship a wrong level (no-silent-fallback rule).
+    """
+    hh = np.asarray(hh, dtype=float)
+    out = np.zeros_like(prior, dtype=float)
+    for ars5 in pd.unique(kreis):
+        if ars5 not in target_shares.index:
+            raise ValueError(
+                f"rake_ownership_targets[{label}]: Kreis {ars5} has cells but no row in "
+                "the target table; refusing a silent skip.")
+        m = kreis == ars5
+        hh_k = hh[m]
+        shares = target_shares.loc[ars5, list(share_columns)].to_numpy(dtype=float)
+        shares = shares / shares.sum()  # renormalise the integer-rounded published row
+        target_counts = shares * hh_k.sum()
+        M = prior[m] * hh_k[:, None]
+        err = np.inf
+        for _ in range(max_iter):
+            col = M.sum(axis=0)
+            M *= np.where(col > 0, target_counts / np.maximum(col, 1e-300), 1.0)[None, :]
+            M *= (hh_k / np.maximum(M.sum(axis=1), 1e-300))[:, None]
+            err = float(np.max(np.abs(M.sum(axis=0) - target_counts)
+                               / np.maximum(target_counts, 1.0)))
+            if err < tol:
+                break
+        if err >= tol:
+            raise ValueError(
+                f"rake_ownership_targets[{label}]: Kreis {ars5} did not converge within "
+                f"{max_iter} iterations (relative margin error {err:.2e}); the prior cannot "
+                "supply the target margin (check for structurally-zero categories).")
+        out[m] = M
+    return out
