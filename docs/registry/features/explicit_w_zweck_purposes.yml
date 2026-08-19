@@ -55,9 +55,13 @@ evidence:
       frequencies quoted in the description were measured on the raw Wege file on the run host.'
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - smoke-control-fit-03101-2026-08-19
+  - smoke-control-fit-03101-v2-2026-08-19
   metric: null
-  note: 'Implemented and unit-tested; NOT yet run. Owed: an A/B varying THIS flag alone (ADR-0088
+  note: 'Ran in both one-Kreis smokes (2026-08-19): the coverage guard stayed silent, i.e.
+    every W_ZWECK code in the donor data is explicitly mapped and nothing reaches the
+    fallback. The purpose SHARES are not yet measured against a reference. Owed: an A/B varying THIS flag alone (ADR-0088
     and ADR-0089 change the same population in the same release) with the realised trip-purpose
     mix re-measured and recorded in a run manifest.'
 assessment:

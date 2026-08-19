@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 72 | stages: 115 | datasets: 52 | ADRs: 91 | run manifests: 23
+- Features: 72 | stages: 115 | datasets: 52 | ADRs: 91 | run manifests: 24
 
 ## Population synthesis
 
@@ -20,7 +20,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Age-aware composition (#3b)](../registry/features/age_aware_composition.yml) | supported | off | -/-/A | unvalidated |  |
-| [Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)](../registry/features/fine_teen_age_bands.yml) | active | ON | A/A/- | unvalidated (`smoke-control-fit-03101-2026-08-19`) | [#320](https://github.com/TUBS-IVS/eqasim-bs/issues/320) |
+| [Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)](../registry/features/fine_teen_age_bands.yml) | active | ON | A/A/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#320](https://github.com/TUBS-IVS/eqasim-bs/issues/320) |
 | [Household-size margin](../registry/features/household_size_margin.yml) | active | off | -/-/A | unvalidated |  |
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
@@ -44,7 +44,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
 | [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
-| [PT-subscription per-Kreis control (three groups, MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |
+| [PT-subscription per-Kreis control (three groups, MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |
 | [Reactivated attrs (couple/studies/SPC)](../registry/features/reactivated_person_attributes.yml) | active | off | -/-/A | unvalidated |  |
 | [SrV participation controls (#224)](../registry/features/srv_participation_controls.yml) | active | ON | A/i/- | unvalidated | [#224](https://github.com/TUBS-IVS/eqasim-bs/issues/224) |
 | [Tier-3 Kreis controls](../registry/features/tier3_kreis_controls.yml) | active | ON | A/i/- | unvalidated |  |
@@ -56,7 +56,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
-| [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
+| [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
 
 ## Vehicle fleet
 

@@ -72,13 +72,15 @@ validation:
   state: unvalidated
   runs:
   - smoke-control-fit-03101-2026-08-19
+  - smoke-control-fit-03101-v2-2026-08-19
   metric: null
-  note: 'One-Kreis smoke (03101) ran 2026-08-19: the licence-relevant 18 boundary is fixed
-    (18-19 realised -0.19pp vs DESTATIS, relative -11%, against -75% region-wide before), but
-    the within-band freedom MOVED: the 10-15 band piles onto age 15 (15-17 +1.21pp, 10-14
-    -1.17pp). Candidate refinement recorded in the run manifest: align the split to the
-    DESTATIS edges 10-14 / 15-17 / 18-19. Still owed: the full-region one-flag-per-run A/B --
-    the smoke ran all three new flags together, so per-change attribution is not possible yet.'
+  note: 'Verified on the one-Kreis smoke after the edge amendment (v2, 2026-08-19): 10-14
+    -0.06pp, 15-17 +0.05pp, 18-19 -0.18pp against DESTATIS 12411-0018, and the age-15 pile
+    of the first attempt is gone (2,765 vs 5,369 persons). The v1 run with the INFR 15/16
+    edges read +1.21pp / -1.17pp, which is what drove the amendment. Still owed for a stronger
+    state than unvalidated: the FULL-REGION one-flag-per-run A/B -- the smoke covers one Kreis
+    and ran three new flags together, so per-change attribution and the rural cells are still
+    untested.'
 assessment:
   status: pending
   by: null

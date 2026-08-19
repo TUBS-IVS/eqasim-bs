@@ -67,10 +67,11 @@ validation:
   state: unvalidated
   runs:
   - smoke-control-fit-03101-2026-08-19
+  - smoke-control-fit-03101-v2-2026-08-19
   metric: null
   note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
-    96.6% OPTIMAL), realised group shares within 0.35pp of the blended target, flatrate total
-    25.51% vs 30.18% in the #307 baseline, ADR-0087 invariant 0 contradictions over 252,045
+    96.6% OPTIMAL), realised group shares within 0.26pp of the blended target in the v2 re-run
+    (0.35pp in v1), flatrate total 25.57% vs 30.18% in the #307 baseline, ADR-0087 invariant 0 contradictions over 252,045
     persons. Control FIT against its own steering target, never independent validation. Still
     owed: the full-region one-flag-per-run A/B and the re-measured shares via
     scripts/measure_license_pt_shares.py in a run manifest.'

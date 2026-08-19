@@ -1,0 +1,90 @@
+id: smoke-control-fit-03101-v2-2026-08-19
+date: '2026-08-19'
+repository:
+  commit: e1b6f6b
+  branch: feature/i307-license-pt-measurement
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/smoke_kreis_control_fit.yml
+  notes: 'Verification re-run of smoke-control-fit-03101-2026-08-19 after the two fixes that
+    run found: the age-based under-16 licence floor and the teen band edges moved to the
+    DESTATIS classes. Same overlay, same Kreis, cache deleted beforehand
+    (eqasim-data/cache_smoke_control_fit).'
+sampling:
+  rate: 'balancing covers the full population; expanded result 251,853 persons (03101)'
+  scope: Kreis 03101 (Braunschweig) only
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- smoke
+status:
+  execution: completed
+environment: server
+validation:
+- metric: license_underage plausibility violations (has_license=True below age 16)
+  reference: plausibility check, MiD P_FSCHEIN code 403 basis 'Person unter 16 Jahren'
+  result: '0/251,853 (0.0000%), against 7,088/252,045 (2.81%) in the v1 run and 42,707/1,130,141
+    (3.78%) in the last full 100% run. The floor logged what it corrected: 6,876 of 34,555
+    under-16 persons forced from an imputed True to False.'
+  notes: 'Root cause was traced before fixing (systematic-debugging): every violator carried
+    the PAPI coverage code 202, which is correctly imputable for adults but has no valid
+    donor codes below 16, so the imputation degraded to the global adult pool. Fix is
+    age-based, not code-based. The defect predates this branch.'
+- metric: teen age bands, realised vs DESTATIS 12411-0018 (Kreis 03101, independent)
+  reference: eqasim-data/data/braunschweig/12411-0018_de.csv via load_age_sex_by_kreis
+  result: '10-14 -0.06pp (was -1.17pp with the INFR edges), 15-17 +0.05pp (was +1.21pp),
+    18-19 -0.18pp (unchanged). The age-15 pile is gone: 2,765 persons at age 15 against
+    5,369 in v1, next to 1,776 at 16 and 2,803 at 18.'
+  notes: 'This is the ADR-0088 amendment verified: sharing the control edges with the
+    validation reference removed the leak, and the remaining deviations are at band
+    resolution. Still a comparison against the reference the CONTROL now uses, so read it as
+    fit, not as independent validation of the age model.'
+- metric: pt_ticket_group control fit (14+), realised vs blended target row 03101
+  reference: target2026_pt_ticket_group_by_kreis.csv (source=blend for 03101)
+  result: 'deutschlandticket 10.62% vs 10.88% (-0.26pp), other_flatrate 14.95% vs 14.88%
+    (+0.07pp), not_flatrate 74.43% vs 74.24% (+0.19pp). Flatrate total 25.57% against the
+    blend target 25.76% and the #307 baseline 30.18%. ADR-0087 invariant: 0 contradictions
+    over 251,853 persons.'
+  notes: Marginally better than v1 (-0.35/+0.10/+0.25pp); the band-edge change did not
+    disturb the PT fit. Control FIT against its own steering target.
+- metric: PopulationSim convergence and integerizer feasibility
+  reference: the v1 smoke (same Kreis, INFR band edges)
+  result: '8/8 batches converged, 0 error signatures. Integerizer 4046/4172 zones OPTIMAL
+    (97.0%), 126 INFEASIBLE -> smart-rounded (3.0%), against 96.6% / 3.4% in v1.'
+  notes: The moved edges did not make the control set harder to satisfy; the small
+    improvement is within run-to-run noise and is not claimed as an effect.
+- metric: W_ZWECK coverage guard (ADR-0091)
+  reference: none (absence-of-warning check)
+  result: '0 map_purpose warnings, as in v1: every donor code is explicitly mapped.'
+features:
+  note: 'Verification evidence for the two fixes found by the v1 smoke. Also caught DURING
+    this run: the stage log announced the superseded band labels because the message was a
+    hardcoded literal (fixed in dd39d9b3, labels now derived from
+    control_spec.FINE_TEEN_AGE_BANDS) -- the rendered controls were correct throughout,
+    verified as M_AGE_10_14_agg / M_AGE_15_17_agg / M_AGE_18_19_agg on the felix checkout.'
+artifacts:
+- 'felix:/home/felix/i307_smoke_v2.log (v1 preserved as i307_smoke_v1.log)'
+- 'felix:/home/felix/eqasim-bs/eqasim-data/cache_smoke_control_fit/'
+issues:
+- '#320'
+- '#321'
+- '#241'
+decisions:
+- ADR-0088
+- ADR-0089
+- ADR-0091
+notes: 'Cache-invalidation hazard observed and characterised, relevant to every planned A/B:
+  the popsim stage hash was IDENTICAL between v1 and v2 (ecae663c0c6e65f35e1f7997e288b081)
+  although both control_spec.py and attributes.py had changed. That is expected -- synpp
+  hashes only the stage module''s own source and the helper surface rides on a separate
+  validate() token -- but the token covers braunschweig.popsim.control_spec (so the band-edge
+  change WOULD devalidate the cache) while braunschweig.popsim.attributes and
+  braunschweig.popsim.trips are NOT in it: they are reached transitively via
+  braunschweig.popsim.assembly, and docs/codebase/notes/synpp-helper-hash-audit.md excludes
+  transitive imports beyond one level by design. Consequence: the licence-floor fix
+  (attributes.py) and the W_ZWECK fix (trips.py) do NOT invalidate a warm popsim cache. This
+  run was only correct because the cache directory was deleted first. Every code-change A/B
+  must delete the cache or the compared populations are identical.'
+source: 'verification re-run of the #282 layer-2 smoke, 2026-08-19'
