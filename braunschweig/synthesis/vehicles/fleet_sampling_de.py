@@ -2450,37 +2450,6 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     segments = sampler.segment_model.segments
 
     n = len(df_cars)
-
-    # Issue #315: wohnmobile holder-age tilt (consistency_v2 path only). Fitted
-    # per frame so P_pop and the calibration scalar describe THIS batch. NOTE:
-    # the fit queries segment_probabilities once per (status, raumtyp) cell,
-    # which adds a handful of hits to the segment model's own tilt counters.
-    _wm_tilt = None
-    _wm_index = -1
-    if consistency_v2 and wohnmobile_age_tilt:
-        if sampler.wohnmobile_age_tilt is None:
-            raise RuntimeError(
-                "fleet_wohnmobile_age_tilt=True but kba_wohnmobile_holder_age.csv "
-                "was not found under <data_path>/braunschweig/kba/derived/. The "
-                "table is COMMITTED: its absence is a checkout or data-path "
-                "wiring defect, never a normal state (project absent-input "
-                "rule). Restore the file (git checkout, or re-run "
-                "scripts/extract_kba_fleet.py) or set "
-                "fleet_wohnmobile_age_tilt=false explicitly."
-            )
-        if "owner_age" not in df_cars.columns:
-            sampler.wohnmobile_age_tilt.mark_batch_fallback(n)
-            logger.warning(
-                "[fleet_de]%s wohnmobile holder-age tilt: df_cars carries no "
-                "'owner_age' column -> 100%% fallback for this batch (the tilt "
-                "input never arrived; every car keeps the untilted segment pmf).",
-                f" [{population_label}]" if population_label else "",
-            )
-        else:
-            sampler.wohnmobile_age_tilt.fit_population(df_cars, sampler.segment_model)
-            _wm_tilt = sampler.wohnmobile_age_tilt
-            _wm_index = segments.index(WOHNMOBILE_SEGMENT)
-
     out_segment = [""] * n
     out_powertrain = [""] * n
     out_euro = [""] * n
@@ -2547,6 +2516,41 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     age_model: Optional[AgeIncomeModel] = None
     if consistency_v2 and age_income_coupling:
         age_model = AgeIncomeModel.from_data_path(data_path)
+
+    # Issue #315: wohnmobile holder-age tilt (consistency_v2 path only). MUST
+    # sit AFTER the model_brands downgrade above so it keys on the EFFECTIVE
+    # consistency_v2 (same effective-v2 contract as the age_income tilt just
+    # above), not the caller's raw flag -- otherwise a model_brands=False run
+    # would fit/raise for a tilt the (downgraded-to-legacy) draw never
+    # consults. Fitted per frame so P_pop and the calibration scalar describe
+    # THIS batch. NOTE: the fit queries segment_probabilities once per
+    # (status, raumtyp) cell, which adds a handful of hits to the segment
+    # model's own tilt counters.
+    _wm_tilt = None
+    _wm_index = -1
+    if consistency_v2 and wohnmobile_age_tilt:
+        if sampler.wohnmobile_age_tilt is None:
+            raise RuntimeError(
+                "fleet_wohnmobile_age_tilt=True but kba_wohnmobile_holder_age.csv "
+                "was not found under <data_path>/braunschweig/kba/derived/. The "
+                "table is COMMITTED: its absence is a checkout or data-path "
+                "wiring defect, never a normal state (project absent-input "
+                "rule). Restore the file (git checkout, or re-run "
+                "scripts/extract_kba_fleet.py) or set "
+                "fleet_wohnmobile_age_tilt=false explicitly."
+            )
+        if "owner_age" not in df_cars.columns:
+            sampler.wohnmobile_age_tilt.mark_batch_fallback(n)
+            logger.warning(
+                "[fleet_de]%s wohnmobile holder-age tilt: df_cars carries no "
+                "'owner_age' column -> 100%% fallback for this batch (the tilt "
+                "input never arrived; every car keeps the untilted segment pmf).",
+                f" [{population_label}]" if population_label else "",
+            )
+        else:
+            sampler.wohnmobile_age_tilt.fit_population(df_cars, sampler.segment_model)
+            _wm_tilt = sampler.wohnmobile_age_tilt
+            _wm_index = segments.index(WOHNMOBILE_SEGMENT)
 
     # Task 6 (consistency_v2): model-feasible powertrain mask (Bug 2).
     # When the HSN/TSN-derived feasible-fuels model is available we draw the
