@@ -77,10 +77,16 @@ _EXPECTED_SIGNATURES = {
     ),
     "donor_stratum": "(self, seed_households: 'pd.DataFrame') -> 'pd.Series'",
     "cell_stratum": "(self, cells: 'pd.DataFrame') -> 'pd.Series'",
+    # explicit_round_trip_purposes was added 2026-08-20: trips_stage.execute passes
+    # it to every source adapter (issue #241 threaded it only into the
+    # implementation, so a 100 % run raised TypeError here). The pin moves WITH the
+    # deliberate protocol change -- see tests/test_trips_adapter_signature_parity.py,
+    # which requires the keyword on all four layers.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
-        "escort_passive_education: 'bool' = False) -> 'pd.DataFrame'"
+        "escort_passive_education: 'bool' = False, "
+        "explicit_round_trip_purposes: 'bool' = True) -> 'pd.DataFrame'"
     ),
 }
 
