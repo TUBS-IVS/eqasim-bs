@@ -34,7 +34,10 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
     construction sees this frame; the persisted activities/plans keep the
     plain ``escort`` purpose. The MultiIndex/``isin`` masks are built only over
     the rows whose ``preceding_purpose`` / ``following_purpose`` is already
-    ``escort`` (typically 5-8% of all trips), not the full trips frame, since
+    ``escort`` (ASSUMPTION: typically 5-8% of all trips -- an order-of-magnitude
+    expectation motivating the mask-cost argument, not a committed reference;
+    the realised, W_GEW-weighted escort share is logged per run and the escort
+    mechanism is documented in ADR-0072), not the full trips frame, since
     building and probing a MultiIndex over every row is the dominant cost at
     scale for a candidate set this small."""
     out = df_trips.copy()

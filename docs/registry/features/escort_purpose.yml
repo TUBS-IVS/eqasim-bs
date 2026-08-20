@@ -70,4 +70,8 @@ assessment:
     backlog-migration issues; no owner verdict on realised escort behaviour yet.
   source: ADR-0073
 notes: 'Java companion eqasim-java-bs PR #15 and validation-CLI PR #264 landed 2026-08-13; PR
-  #260 merged 2026-08-12.'
+  #260 merged 2026-08-12. PR #15 is contained in the v2.3.0 release, which is the jar the
+  production runs consume (verified on the 2026-08-20 100% run, docs/runs/100pct-allfeat-i240-2026-08-20.yml)
+  -- the escort activity type is therefore active in MATSim. The 5-8% docstring cardinality in
+  secondary_chainsolvers/escort.py is labelled as an ASSUMPTION with an ADR-0072 pointer
+  (issue #274 remainder).'
