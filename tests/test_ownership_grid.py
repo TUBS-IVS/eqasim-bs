@@ -270,7 +270,8 @@ def test_stage_injection_requires_active_kreis_entries():
     # target2026 anchors, so injecting them while an entry is toggled off would
     # constrain a seed column PopulationSim does not carry. Fail fast instead.
     from braunschweig.popsim import stage
-    with pytest.raises(ValueError, match="number_of_bicycles"):
+    # The message must name the CONFIG KEYS to flip, not only the entry names.
+    with pytest.raises(ValueError, match="number_of_bicycles_kreis_control"):
         stage._inject_ownership_grid_columns(
             context=None, cells=pd.DataFrame(), ownership_grid_on=True,
             active_entry_names=("number_of_cars",), kreise=("03101",))
@@ -284,3 +285,87 @@ def test_stage_injection_off_returns_cells_unchanged():
         context=None, cells=cells, ownership_grid_on=False,
         active_entry_names=(), kreise=("03101",))
     pd.testing.assert_frame_equal(out, cells)
+
+
+# --- Review-minor hardening (2026-08-20 triage of the #240 build reviews) ------
+
+def test_load_ownership_conditionals_rejects_duplicate_grid_cells(tmp_path):
+    """A duplicated (rs7, ht) row must fail in the LOADER with a clear message.
+
+    Before this guard the duplicate survived validation and surfaced far away as a
+    pandas lookup returning a frame instead of a row inside the prior builder.
+    """
+    mid_dir = tmp_path / "braunschweig" / "mid"
+    mid_dir.mkdir(parents=True)
+    rows = [{"rs7": r, "ht": h, "cars_0": 1.0, "cars_1": 0.0, "cars_2": 0.0,
+             "cars_3plus": 0.0, "n_unweighted": 10}
+            for r in range(71, 78) for h in (1, 2, 3, 4)]
+    rows.append(dict(rows[0]))  # duplicate (71, 1)
+    pd.DataFrame(rows).to_csv(mid_dir / "mid2023_cars_by_rs7_haustyp.csv", index=False)
+    brows = [{"rs7": r, "ht": h, "bikes_0": 1.0, "bikes_1": 0.0, "bikes_2": 0.0,
+              "bikes_3": 0.0, "bikes_4plus": 0.0, "n_unweighted": 10}
+             for r in range(71, 78) for h in (1, 2, 3, 4)]
+    pd.DataFrame(brows).to_csv(mid_dir / "mid2023_bikes_by_rs7_haustyp.csv", index=False)
+    with pytest.raises(ValueError, match="duplicate"):
+        og.load_ownership_conditionals(str(tmp_path))
+
+
+def test_load_ownership_conditionals_rejects_negative_share(tmp_path):
+    """The negative-share branch was implemented but never exercised."""
+    mid_dir = tmp_path / "braunschweig" / "mid"
+    mid_dir.mkdir(parents=True)
+    rows = [{"rs7": r, "ht": h, "cars_0": 1.2, "cars_1": -0.2, "cars_2": 0.0,
+             "cars_3plus": 0.0, "n_unweighted": 10}
+            for r in range(71, 78) for h in (1, 2, 3, 4)]
+    pd.DataFrame(rows).to_csv(mid_dir / "mid2023_cars_by_rs7_haustyp.csv", index=False)
+    brows = [{"rs7": r, "ht": h, "bikes_0": 1.0, "bikes_1": 0.0, "bikes_2": 0.0,
+              "bikes_3": 0.0, "bikes_4plus": 0.0, "n_unweighted": 10}
+             for r in range(71, 78) for h in (1, 2, 3, 4)]
+    pd.DataFrame(brows).to_csv(mid_dir / "mid2023_bikes_by_rs7_haustyp.csv", index=False)
+    with pytest.raises(ValueError, match="negative"):
+        og.load_ownership_conditionals(str(tmp_path))
+
+
+def test_add_ownership_grid_columns_rejects_negative_household_counts():
+    """A negative household total would silently produce negative ownership targets."""
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    hh_col = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    broken = cells.copy()
+    broken.loc[0, hh_col] = -5.0
+    with pytest.raises(ValueError, match="negative"):
+        og.add_ownership_grid_columns(broken, cars_t, bikes_t, cond, bcond,
+                                      kreis_per_cell=kreis_per_cell)
+
+
+def test_add_ownership_grid_columns_bikes_branch_hits_its_kreis_targets():
+    """The bikes branch had no numeric assertion anywhere (cars-only coverage)."""
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    out = og.add_ownership_grid_columns(cells, cars_t, bikes_t, cond, bcond,
+                                        kreis_per_cell=kreis_per_cell)
+    hh_col = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj"
+    assert out.loc[kreis_per_cell == "03101", "OWN_BIKES_0_agg"].sum() == pytest.approx(20.0)
+    assert out.loc[kreis_per_cell == "03101", "OWN_BIKES_4plus_agg"].sum() == pytest.approx(40.0)
+    assert out.loc[kreis_per_cell == "03102", "OWN_BIKES_0_agg"].sum() == pytest.approx(40.0)
+    np.testing.assert_allclose(
+        out[list(og.BIKES_COLUMNS)].sum(axis=1).to_numpy(), out[hh_col].to_numpy(), rtol=1e-9)
+
+
+def test_select_load_columns_excludes_dwelling_columns_absent_from_the_parquet():
+    """The original test could not fail on the exclusion half of the contract."""
+    present, absent = og.DWELLING_INPUT_COLUMNS[0], og.DWELLING_INPUT_COLUMNS[1]
+    out = og.select_load_columns(["GITTER_ID_100m"], ["GITTER_ID_100m", present])
+    assert present in out
+    assert absent not in out, "a dwelling column absent from the parquet must not be requested"
+
+
+def test_select_load_columns_does_not_duplicate_an_already_requested_column():
+    """Dedup is real only if a genuine collision is exercised."""
+    present = og.DWELLING_INPUT_COLUMNS[0]
+    out = og.select_load_columns(["GITTER_ID_100m", present], ["GITTER_ID_100m", present])
+    assert out.count(present) == 1

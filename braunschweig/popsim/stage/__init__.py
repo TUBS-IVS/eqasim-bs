@@ -1275,10 +1275,15 @@ def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_
     required = {"number_of_cars", "number_of_bicycles"}
     missing = required - set(active_entry_names)
     if missing:
+        # Name the CONFIG KEYS the operator has to flip, not just the internal entry
+        # names: the toggle map is the single source for that mapping, so the message
+        # cannot drift from the keys the stage actually reads.
+        keys = [_KREIS_CONTROL_TOGGLE_KEY[name] for name in sorted(missing)]
         raise ValueError(
             "[popsim.stage] ownership_grid_1km is on but the KREIS entries "
             f"{sorted(missing)} are toggled off; the grid controls reuse their seed "
-            "columns and their target2026 anchors. Enable them or turn the grid off.")
+            "columns and their target2026 anchors. Set "
+            f"{keys} to 'on', or set {KEY_OWNERSHIP_GRID} to 'off'.")
     from braunschweig.popsim import kreis_attribute_control as _kac
     from braunschweig.popsim import ownership_grid as _og
 
