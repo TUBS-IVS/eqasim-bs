@@ -83,6 +83,12 @@ def _load_one_conditional(data_path: str, filename: str, share_columns: tuple[st
     if missing:
         raise ValueError(f"{filename}: missing columns {missing}.")
     df = df.astype({"rs7": int, "ht": int}).set_index(["rs7", "ht"]).sort_index()
+    duplicated = df.index[df.index.duplicated()].unique().tolist()
+    if duplicated:
+        raise ValueError(
+            f"{filename}: duplicate (rs7, ht) rows {duplicated}; each conditional cell "
+            "must appear exactly once (a duplicate makes the per-cell lookup ambiguous "
+            "and would surface far downstream as a frame where a row is expected).")
     expected = [(r, h) for r in RS7_CLASSES for h in HAUSTYP_CLASSES]
     absent = [k for k in expected if k not in df.index]
     if absent:
@@ -271,6 +277,12 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
             raise ValueError(f"add_ownership_grid_columns: required column {col!r} absent from cells.")
     out = cells.copy()
     hh_raw = pd.to_numeric(out[hh_col], errors="coerce")
+    n_negative = int((hh_raw < 0).sum())
+    if n_negative:
+        raise ValueError(
+            f"add_ownership_grid_columns: {n_negative} cell(s) have a NEGATIVE {hh_col}; "
+            "household counts cannot be negative and would produce negative ownership "
+            "targets (CLAUDE.md validation rule). Check the prepared-cell source.")
     n_hh_nan = int(hh_raw.isna().sum())
     if n_hh_nan:
         logger.info("[ownership_grid] %d/%d cells have NaN %s -> treated as 0 households",
