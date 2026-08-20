@@ -170,6 +170,7 @@ class PopsimSource(Protocol):
         random_seed: int,
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
+        explicit_round_trip_purposes: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -186,6 +187,11 @@ class PopsimSource(Protocol):
         escort_passive_education:
             map the passive escort leg (W_ZWECK 13) to 'education' instead of
             'escort' (issue #256). Requires ``escort_purpose=True``.
+        explicit_round_trip_purposes:
+            give the MiD round-trip leisure W_ZWECK codes their own purposes
+            instead of the 'other' catch-all (issue #241). Donor taxonomies
+            without those codes ignore it; the implementing adapter documents
+            what it does with the flag.
 
         Returns
         -------

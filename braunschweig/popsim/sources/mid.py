@@ -169,6 +169,7 @@ class MidSource:
         random_seed: int,
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
+        explicit_round_trip_purposes: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -188,6 +189,10 @@ class MidSource:
         escort_passive_education:
             map the passive escort leg (W_ZWECK 13) to 'education' instead of
             'escort' (issue #256). Requires ``escort_purpose=True``.
+        explicit_round_trip_purposes:
+            give the round-trip leisure W_ZWECK codes their own purposes instead
+            of the 'other' catch-all (issue #241); ``False`` restores the pre-#241
+            assignment for an A/B.
 
         Returns
         -------
@@ -199,4 +204,5 @@ class MidSource:
             persons, donor_trips, random_seed=random_seed,
             escort_purpose=escort_purpose,
             escort_passive_education=escort_passive_education,
+            explicit_round_trip_purposes=explicit_round_trip_purposes,
         )
