@@ -338,3 +338,39 @@ def test_tilt_changes_motorhome_owner_ages(sampler):
     mean_on = on.loc[on["segment"] == "wohnmobile", "owner_age"].mean()
     mean_off = off.loc[off["segment"] == "wohnmobile", "owner_age"].mean()
     assert mean_on > mean_off + 2.0  # reference is strongly old-skewed
+
+
+def test_incommuter_fleet_passes_owner_age(monkeypatch):
+    from braunschweig.synthesis import incommuters
+
+    captured = {}
+
+    def _fake_sample_fleet(df_cars, data_path, random_seed, population_label=""):
+        captured["df_cars"] = df_cars.copy()
+        n = len(df_cars)
+        df_spec = df_cars.copy()
+        for col, val in [("type_id", "t"), ("powertrain", "petrol"),
+                         ("age", 5.0), ("euro_class", "euro6"),
+                         ("segment", "kompaktklasse"), ("brand", ""), ("model", "")]:
+            df_spec[col] = val
+        types = pd.DataFrame([{"type_id": "t", "length": 4.0, "width": 1.8,
+                               "mode": "car", "hbefa_cat": "c", "hbefa_tech": "t",
+                               "hbefa_size": "s", "hbefa_emission": "e"}])
+        return df_spec, types, {}
+
+    monkeypatch.setattr(
+        "braunschweig.synthesis.vehicles.fleet_sampling_de.sample_fleet",
+        _fake_sample_fleet)
+    person_ids = np.array([1, 2, 3])
+    modes = np.array(["car", "pt", "car"])
+    orig_ars = np.array(["12345", "12345", "54321"])
+    income = np.array([3000.0, 3000.0, 3000.0])
+    ages = np.array([62.0, 30.0, 41.0])
+    rng = np.random.default_rng(0)
+    _, vehicles = incommuters.build_incommuter_fleet(
+        person_ids, modes, orig_ars, income, ages, DATA_PATH, rng)
+    assert "owner_age" in captured["df_cars"].columns
+    # Only the car-mode agents (indices 0 and 2), in order.
+    np.testing.assert_array_equal(
+        captured["df_cars"]["owner_age"].to_numpy(), np.array([62.0, 41.0]))
+    assert len(vehicles) == 2
