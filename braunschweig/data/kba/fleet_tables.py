@@ -96,6 +96,18 @@ AGE_NATIONAL_BAND_LABELS: tuple[str, ...] = (
     "under_2", "2_to_4", "5_to_9", "10_to_14", "15_to_29", "30_plus",
 )
 
+#: Canonical KBA holder-age class labels for the wohnmobile holder-age tilt
+#: (issue #315, ADR-0093), young -> old, exactly the classes published on the
+#: KBA infographic / PM 23/2025 (Stichtag 2025-04-01).
+WOHNMOBILE_AGE_CLASS_LABELS: tuple[str, ...] = (
+    "up_to_20", "21_29", "30_39", "40_49", "50_59", "60_69", "70_79", "80_plus",
+)
+
+#: Residual row label of the wohnmobile holder-age table: vehicles the KBA
+#: source pages attribute to NO age class (3.94% of the published stock). Kept
+#: for traceability; never asserted to be commercial holders (ADR-0093).
+WOHNMOBILE_AGE_NOT_ATTRIBUTED: str = "not_attributed"
+
 #: The 8 ZGB Kreise as AGS-5 ("03" + Kreis3 == KBA Kennziffer).
 ZGB_KREISE_AGS5: tuple[str, ...] = (
     "03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158",
@@ -461,6 +473,62 @@ def load_mid_antrieb_by_status(data_path: str) -> pd.DataFrame:
         raise RuntimeError(
             f"{filename}: missing the pooled 'all' row (overall MiD powertrain "
             f"mix, required as the EV-income tilt denominator)."
+        )
+    return df
+
+
+def load_wohnmobile_holder_age(data_path: str) -> pd.DataFrame:
+    """KBA wohnmobile stock by holder age class (Stichtag 2025-04-01, issue #315).
+
+    ``share_of_attributed`` is ``P(age class | wohnmobile)`` renormalised over
+    the eight published natural-person classes; the ``not_attributed`` residual
+    row carries NaN there (ADR-0093 ASSUMPTION: the unattributed 3.94% share the
+    attributed age composition). Produced by
+    ``scripts/extract_kba_fleet.py::extract_wohnmobile_holder_age`` from the
+    COMMITTED raw transcription of the KBA infographic / PM 23/2025 -- unlike
+    the server-generated MiD tables, absence of this file is a checkout/wiring
+    defect, which the sample_fleet flag guard turns into a hard error.
+    """
+    filename = "kba_wohnmobile_holder_age.csv"
+    df = _read(data_path, filename)
+    _require_columns(
+        df,
+        ["age_class", "age_min_years", "age_max_years", "vehicles",
+         "published_share_pct", "share_of_attributed", "total_stock", "stichtag"],
+        filename,
+    )
+    _require_labels(
+        df["age_class"],
+        (*WOHNMOBILE_AGE_CLASS_LABELS, WOHNMOBILE_AGE_NOT_ATTRIBUTED),
+        "age_class", filename,
+    )
+    missing = set(WOHNMOBILE_AGE_CLASS_LABELS) - set(df["age_class"])
+    if missing:
+        raise RuntimeError(
+            f"{filename}: missing holder-age class(es) {sorted(missing)} -- the "
+            f"tilt needs the complete published table."
+        )
+    if df["age_class"].duplicated().any():
+        raise RuntimeError(f"{filename}: duplicated age_class rows.")
+    attributed = df[df["age_class"] != WOHNMOBILE_AGE_NOT_ATTRIBUTED]
+    share_sum = float(attributed["share_of_attributed"].sum())
+    if abs(share_sum - 1.0) > 1e-9:
+        raise RuntimeError(
+            f"{filename}: share_of_attributed sums to {share_sum!r}, expected 1.0 "
+            f"over the {len(WOHNMOBILE_AGE_CLASS_LABELS)} attributed classes -- "
+            f"re-run scripts/extract_kba_fleet.py."
+        )
+    totals = df["total_stock"].unique()
+    if len(totals) != 1:
+        raise RuntimeError(
+            f"{filename}: total_stock must be one repeated value, got {totals!r}."
+        )
+    vehicles_sum = int(df["vehicles"].sum())
+    if vehicles_sum != int(totals[0]):
+        raise RuntimeError(
+            f"{filename}: vehicles sum to {vehicles_sum} but total_stock says "
+            f"{int(totals[0])} -- transcription drift; fix the raw CSV and re-run "
+            f"scripts/extract_kba_fleet.py."
         )
     return df
 
