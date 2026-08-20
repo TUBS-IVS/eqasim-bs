@@ -306,6 +306,7 @@ config:
   # nowhere in it is exactly the defect class ADR-0078/#253 removed.
   fleet_ev_income_tilt: true
   fleet_euro6_substage: true
+  fleet_wohnmobile_age_tilt: true
   # Grid mode adds the sub-communal 5 km EV tilt on top of the Gemeinde tilt; its
   # input kba_ev_grid.csv (714 cells) is committed since #277. Falls back to
   # Gemeinde-only (logged) if the CSV or the home-location geometry is missing.

@@ -31,7 +31,7 @@ FEATURE_FLAGS_ON = [
     # Fleet realism upgrade (issue #277, ADR-0081..ADR-0086). Guarded here so a
     # production-enabled feature can never quietly disappear from the resolved
     # config again -- the defect class ADR-0078/#253 removed.
-    "fleet_ev_income_tilt", "fleet_euro6_substage",
+    "fleet_ev_income_tilt", "fleet_euro6_substage", "fleet_wohnmobile_age_tilt",
     "cordon_enabled", "enable_urban_parking", "remode_carless_car_legs",
     "braunschweig.home_density_weighting",
     "braunschweig.population.popsim.income_spatial_tilt",
