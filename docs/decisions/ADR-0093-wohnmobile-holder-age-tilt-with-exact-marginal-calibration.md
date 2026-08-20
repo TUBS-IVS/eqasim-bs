@@ -71,5 +71,9 @@
   (household frame: assigned owner's age; in-commuters: donor age with the
   pre-existing constant-40 substitution). One more committed derived table
   (19). The sonstige-redistribution redraw leaks an age-independent,
-  second-order wohnmobile mass past the tilt; it is covered by the 4-sigma
-  aggregate band and would be the first suspect if that band ever flags.
+  second-order wohnmobile mass past the tilt; the aggregate flag in
+  `validate_wohnmobile_holder_age` compares the realised share against the
+  EFFECTIVE (redistribution-inclusive) expectation actually fed into the draw,
+  so this leak can no longer bias that flag itself, while the unflagged
+  `dev_untilted_pp` reported alongside it carries the leak and quantifies the
+  tilt's neutrality against the untilted baseline.

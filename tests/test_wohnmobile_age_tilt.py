@@ -378,8 +378,13 @@ def test_incommuter_fleet_passes_owner_age(monkeypatch):
 
 def test_acceptance_composition_and_preserved_aggregate(sampler):
     """Issue #315 acceptance: realised P(a | wohnmobile) within the +/-2pp band
-    (max'd with the MC band), national wohnmobile share within 4 sigma of the
-    untilted expectation, fallback rate ~0 on a frame with full owner ages."""
+    (max'd with the MC band); the aggregate wohnmobile share within 4 sigma of
+    the EFFECTIVE (redistribution-inclusive) expectation actually fed into the
+    draw -- review Finding I2, the unbiased implementation check; the UNTILTED
+    expectation is reported alongside as ``expected_untilted``/
+    ``dev_untilted_pp`` (tilt-neutrality evidence, never flagged, carries the
+    sonstige-redraw leak per ADR-0093); fallback rate ~0 on a frame with full
+    owner ages."""
     df = _synthetic_frame(n=60000, seed=13)
     df_spec, _, summary = fleet.sample_fleet(
         df, DATA_PATH, random_seed=99, sampler=sampler,
@@ -388,6 +393,10 @@ def test_acceptance_composition_and_preserved_aggregate(sampler):
     assert wm_summary["skipped_reason"] is None
     assert wm_summary["aggregate"]["flagged"] is False
     assert wm_summary["flagged"] is False
+    assert wm_summary["aggregate"]["expected_untilted"] is not None
     # PRIMARY-path coverage (no-silent-fallback rule): everything tilted.
     tilt = sampler.wohnmobile_age_tilt
     assert tilt._fallback == 0 and tilt._guard == 0
+    # review Finding M7: the same counts are surfaced in the summary itself.
+    tilt_counters = wm_summary["tilt_counters"]
+    assert tilt_counters["fallback"] == 0 and tilt_counters["guard"] == 0

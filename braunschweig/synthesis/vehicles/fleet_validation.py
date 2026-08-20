@@ -150,7 +150,9 @@ def crosscheck_ev_by_regiostar7(df_spec, df_rs7) -> dict:
 def validate_wohnmobile_holder_age(df_spec, tilt_model, sample_rate: float = 1.0,
                                    tol_sigma: float = 4.0,
                                    composition_band_pp: float = 2.0,
-                                   min_motorhomes: int = 30) -> dict:
+                                   min_motorhomes: int = 30,
+                                   expected_realised_share: float | None = None,
+                                   ) -> dict:
     """Issue #315 acceptance check: holder-age composition + preserved share.
 
     (1) Composition: realised ``P(age class | wohnmobile)`` (over drawn
@@ -159,10 +161,42 @@ def validate_wohnmobile_holder_age(df_spec, tilt_model, sample_rate: float = 1.0
         than ``max(composition_band_pp, tol_sigma * sqrt(p(1-p)/N_eff))`` -- the
         MC floor keeps a small smoke (few motorhomes) from false-flagging.
         Skipped (with a stated reason) below ``min_motorhomes``.
-    (2) Aggregate: the realised wohnmobile share of ALL cars vs the fitted
-        UNTILTED expectation ``tilt_model.expected_wm_share`` -- exact by the
-        ADR-0093 calibration, so only Monte-Carlo noise separates them:
-        flagged beyond ``tol_sigma * sqrt(p(1-p)/N_eff)``.
+    (2) Aggregate: the realised wohnmobile share of ALL cars (the FINAL
+        ``segment`` column, which INCLUDES any car that landed on
+        ``wohnmobile`` via the consistency_v2 sonstige-redraw -- see
+        ``sample_fleet``) vs an expectation, flagged beyond
+        ``tol_sigma * sqrt(p(1-p)/N_eff)``:
+
+        * ``expected_realised_share`` given (the caller's per-car-averaged
+          EFFECTIVE segment target -- tilt AND sonstige redistribution
+          included, i.e. exactly what the draw targets): the flag compares
+          realised against IT. This is the unbiased implementation check --
+          realised and expected are the same quantity by construction, so only
+          Monte-Carlo noise should separate them, at any N.
+        * ``expected_realised_share`` is ``None`` (standalone use, e.g. a unit
+          test that fits/tilts without running the full sonstige-redraw):
+          falls back to flagging against ``tilt_model.expected_wm_share`` (the
+          UNTILTED expectation), matching the pre-fix behaviour, so the
+          function stays usable standalone. CAVEAT: the sonstige-redraw is not
+          modelled in this mode, so the realised share carries a small,
+          deterministic, age-independent positive offset over
+          ``expected_wm_share`` (approximately the wohnmobile share of the
+          modelled redistribution pmf, times the mean redistributed
+          "sonstige" mass per car -- see ADR-0093). Unlike Monte-Carlo noise,
+          that offset does not shrink with N, so at large N it can exceed the
+          sigma band and falsely flag DRIFT; the production caller
+          (:mod:`fleet_sampling_de`) always supplies
+          ``expected_realised_share`` to avoid this bias.
+
+        ``tilt_model.expected_wm_share`` is reported in the output as
+        ``expected_untilted`` (with ``dev_untilted_pp``, the realised share's
+        deviation from it in percentage points) whenever it is available,
+        REGARDLESS of which target was used for the flag above -- this is the
+        tilt-NEUTRALITY evidence (the calibration's exact-aggregate-
+        preservation claim, ADR-0093, is against the untilted expectation) and
+        is intentionally NEVER flagged: ``dev_untilted_pp`` carries the
+        age-independent sonstige-redraw leak described above and is expected
+        to be slightly positive, not a sign of a broken tilt.
     Logging + summary only (mirrors :func:`validate_realised_margins`).
     """
     out = {"n_motorhomes": 0, "composition": {}, "aggregate": {},
@@ -176,26 +210,46 @@ def validate_wohnmobile_holder_age(df_spec, tilt_model, sample_rate: float = 1.0
     wm = df_spec[df_spec["segment"] == "wohnmobile"]
     out["n_motorhomes"] = int(len(wm))
 
-    expected_share = tilt_model.expected_wm_share
-    if expected_share is not None and n_total > 0:
+    expected_untilted = tilt_model.expected_wm_share
+    # The unbiased target when supplied (realised and expected are the SAME
+    # quantity by construction); else fall back to the untilted expectation,
+    # which carries the sonstige-redraw leak described in the docstring above.
+    flag_target = (expected_realised_share if expected_realised_share is not None
+                  else expected_untilted)
+    if flag_target is not None and n_total > 0:
         realised = float(len(wm)) / n_total
         band = tol_sigma * float(np.sqrt(
-            max(expected_share * (1.0 - expected_share), 1e-12) / n_eff_total))
-        agg_flag = bool(abs(realised - expected_share) > band)
+            max(flag_target * (1.0 - flag_target), 1e-12) / n_eff_total))
+        agg_flag = bool(abs(realised - flag_target) > band)
         out["aggregate"] = {
             "realised": round(realised, 6),
-            "expected_untilted": round(float(expected_share), 6),
-            "dev_pp": round((realised - expected_share) * 100.0, 4),
+            "dev_pp": round((realised - flag_target) * 100.0, 4),
             "band_pp": round(band * 100.0, 4),
             "flagged": agg_flag,
         }
+        if expected_realised_share is not None:
+            out["aggregate"]["expected_effective"] = round(
+                float(expected_realised_share), 6)
+        if expected_untilted is not None:
+            out["aggregate"]["expected_untilted"] = round(float(expected_untilted), 6)
+            out["aggregate"]["dev_untilted_pp"] = round(
+                (realised - expected_untilted) * 100.0, 4)
         out["flagged"] = out["flagged"] or agg_flag
         (LOGGER.warning if agg_flag else LOGGER.info)(
-            "[wohnmobile_holder_age] aggregate: realised %.4f%% vs untilted "
+            "[wohnmobile_holder_age] aggregate: realised %.4f%% vs %s "
             "%.4f%% (dev %+.3fpp, band %.3fpp) -> %s",
-            realised * 100.0, expected_share * 100.0,
-            (realised - expected_share) * 100.0, band * 100.0,
+            realised * 100.0,
+            "effective" if expected_realised_share is not None else "untilted",
+            flag_target * 100.0, (realised - flag_target) * 100.0, band * 100.0,
             "DRIFT" if agg_flag else "ok")
+        if expected_untilted is not None and expected_realised_share is not None:
+            # Reported, never flagged: the tilt-neutrality evidence (see the
+            # docstring for why a small positive dev_untilted_pp is expected).
+            LOGGER.info(
+                "[wohnmobile_holder_age] aggregate vs untilted (reported only, "
+                "carries the sonstige-redraw leak): %.4f%% (dev_untilted "
+                "%+.3fpp).", expected_untilted * 100.0,
+                (realised - expected_untilted) * 100.0)
 
     if len(wm) < min_motorhomes:
         out["skipped_reason"] = (

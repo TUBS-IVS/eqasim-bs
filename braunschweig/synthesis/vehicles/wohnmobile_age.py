@@ -240,6 +240,24 @@ class WohnmobileHolderAgeTilt:
         """Untilted expected wohnmobile share of the fitted frame (None before fit)."""
         return self._expected_wm_share
 
+    @property
+    def counters(self) -> dict:
+        """Primary/fallback/guard counts and the fitted calibration scalar.
+
+        A small public accessor for the private fallback counters (CLAUDE.md
+        no-silent-fallback rule): lets a caller attach this tilt's
+        primary-vs-fallback observability to a machine-readable validation
+        summary (see ``fleet_sampling_de.sample_fleet``'s
+        ``validation_summary["wohnmobile_holder_age"]["tilt_counters"]``)
+        without reaching into ``_primary``/``_fallback``/``_guard`` directly.
+        """
+        return {
+            "primary": self._primary,
+            "fallback": self._fallback,
+            "guard": self._guard,
+            "calibration": self._calibration,
+        }
+
     # -- per-car application ---------------------------------------------------
     def tilt(self, seg_pmf: np.ndarray, owner_age, wm_index: int) -> np.ndarray:
         """Return the holder-age-tilted segment pmf for one car.

@@ -2401,7 +2401,14 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         (issue #315, ADR-0093). The tilt consumes no RNG, so ``False`` (or
         ``consistency_v2=False``) is byte-identical to the untilted draw. The
         reference CSV is COMMITTED: with the flag ON its absence raises instead
-        of silently disabling the feature.
+        of silently disabling the feature. The stage config key
+        ``fleet_wohnmobile_age_tilt`` governs only the household resident fleet
+        draw (:mod:`braunschweig.synthesis.vehicles.cars.household`); the
+        in-commuter fleet draw
+        (:func:`braunschweig.synthesis.incommuters.build_incommuter_fleet`)
+        does not thread this parameter through and always uses this default
+        (``True``), matching the sibling flags ``age_income_coupling``,
+        ``ev_income_tilt`` and ``euro6_substage`` above.
     euro6_substage : when ``True`` (default) AND ``consistency_v2=True``, PASS 2
         refines a combustion vehicle's drawn ``euro_class`` from the headline
         ``"euro6"`` into one of the three real Euro-6 substages (``euro6ab``,
@@ -2424,7 +2431,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     When ``consistency_v2=True`` (default):
         ``(df_spec, df_vehicle_types, validation_summary)`` — a 3-tuple;
         ``validation_summary`` is the dict returned by
-        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_realised_margins`.
+        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_realised_margins`,
+        plus, on tilt-active runs (``wohnmobile_age_tilt=True`` with a fitted
+        tilt), a ``"wohnmobile_holder_age"`` key holding the dict returned by
+        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_wohnmobile_holder_age`
+        (itself carrying a ``"tilt_counters"`` sub-dict, issue #315), with
+        ``validation_summary["any_flagged"]`` re-derived to also reflect that
+        check's own ``flagged`` outcome.
     When ``consistency_v2=False`` (legacy path):
         ``(df_spec, df_vehicle_types)`` — 2-tuple, byte-identical to the
         pre-Task-3 legacy behaviour.
@@ -3069,8 +3082,22 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             "any_flagged=%s", _validation_summary["any_flagged"],
         )
         # Issue #315: wohnmobile holder-age acceptance check (tilt-active only).
+        # review Finding I2: the aggregate flag is compared against the
+        # EFFECTIVE per-car segment target actually fed into the draw (tilt +
+        # sonstige redistribution included) rather than the untilted
+        # expectation, so the sonstige-redraw leak (see
+        # fleet_validation.validate_wohnmobile_holder_age) can never bias the
+        # aggregate flag itself.
         if _wm_tilt is not None:
-            _wm_summary = _fv.validate_wohnmobile_holder_age(df_spec, _wm_tilt)
+            _wm_summary = _fv.validate_wohnmobile_holder_age(
+                df_spec, _wm_tilt,
+                expected_realised_share=_expected["segment"].get("wohnmobile"))
+            # review Finding M7 (CLAUDE.md no-silent-fallback rule #2): surface
+            # the tilt's own primary/fallback/guard counts in the per-run
+            # validation summary so a high fallback or guard rate on a
+            # tilt-active run is visible in the machine-readable output, not
+            # only in the log line emitted by log_fallback_rate().
+            _wm_summary["tilt_counters"] = _wm_tilt.counters
             _validation_summary["wohnmobile_holder_age"] = _wm_summary
             _validation_summary["any_flagged"] = (
                 _validation_summary["any_flagged"] or _wm_summary["flagged"])
