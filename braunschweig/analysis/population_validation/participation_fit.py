@@ -25,8 +25,12 @@ from braunschweig.popsim.mid import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 
-# The three per-purpose participation controls plus the derived mobility
-# ("Mobilitaetsquote") pseudo-purpose evaluated by this module.
+# The per-purpose participation controls evaluated by this module, derived from
+# mid.PARTICIPATION_W_ZWECK (the single source of truth for the registered purpose
+# set: work / leisure / education from feature #224, escort from issue #227), plus
+# the derived mobility ("Mobilitaetsquote") pseudo-purpose. A purpose registered
+# there is picked up here automatically -- including its committed target file
+# requirement in load_participation_targets.
 PARTICIPATION_PURPOSES = tuple(PARTICIPATION_W_ZWECK)
 
 
@@ -51,7 +55,8 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
     from ``trips``, who are immobile / non-participating by construction).
 
     Returns one row per (``ars5``, ``purpose``) with ``purpose`` in
-    {"work", "leisure", "education", "mobility"}: columns ``ars5, purpose,
+    ``PARTICIPATION_PURPOSES`` plus ``"mobility"`` (currently work / leisure /
+    education / escort / mobility): columns ``ars5, purpose,
     realised_rate, n_persons``. ``mobility`` is the share of persons with at
     least one trip of ANY purpose that day (the Mobilitaetsquote), i.e. the
     complement of the trip-class "0 trips" share.
@@ -115,12 +120,14 @@ def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> 
 def load_participation_targets(targets_dir: Path) -> pd.DataFrame:
     """Load the committed SrV per-Kreis participation targets as a tidy frame.
 
-    Reads ``target2026_{work,leisure,education}_participation_by_kreis.csv``
-    (``comment="#"``) and takes each purpose's ``<purpose>_yes`` column as the
-    target participation rate. Adds a ``mobility`` pseudo-purpose row per
-    Kreis from ``target2026_trip_class_by_kreis.csv``, with
-    ``target_rate = 1 - trips_0`` (the Mobilitaetsquote implied by the SrV
-    trip-class distribution).
+    Reads ``target2026_<purpose>_participation_by_kreis.csv`` for EVERY purpose in
+    ``PARTICIPATION_PURPOSES`` (currently work / leisure / education / escort;
+    ``comment="#"``) and takes each purpose's ``<purpose>_yes`` column as the
+    target participation rate -- one committed target file per registered purpose
+    is REQUIRED, independent of whether that purpose's control is toggled on. Adds
+    a ``mobility`` pseudo-purpose row per Kreis from
+    ``target2026_trip_class_by_kreis.csv``, with ``target_rate = 1 - trips_0``
+    (the Mobilitaetsquote implied by the SrV trip-class distribution).
 
     Returns tidy columns ``ars5, purpose, target_rate``.
 

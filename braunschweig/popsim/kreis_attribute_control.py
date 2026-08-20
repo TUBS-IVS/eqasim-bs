@@ -333,6 +333,33 @@ REGISTRY: tuple = (
         target_columns=("education_yes", "education_no"),
         tier="hard",
     ),
+    # escort_participation x Kreis control (issue #227): the sixth PERSON-level entry.
+    # Identical shape to work/leisure/education_participation -- same seed machinery
+    # (attributes.map_participation from mid.compute_has_purpose_trip), parametrized by
+    # purpose. mid.PARTICIPATION_W_ZWECK["escort"] = {6}: the ACTIVE escort leg only
+    # (W_ZWECK 6, Bringen/Holen); the PASSIVE leg (W_ZWECK 13, the escorted minors' own
+    # trips) is deliberately excluded to match the SrV target universe (E_ZWECK_9 == 6
+    # codes only the escorter's trip) -- see the PARTICIPATION_W_ZWECK comment. The
+    # committed target (target2026_escort_participation_by_kreis.csv) is built PURELY
+    # from the SAME SrV 2023 Braunschweig+RGB participation aggregate
+    # (scripts/build_participation_target.py --purpose escort; NO MiD blending), with
+    # the same two documented decisions as the other three (SrV level anchoring;
+    # Wolfsburg = SrV region total). tier="hard": mirrors work/leisure/education, so it
+    # is classified into the "kreis_hard" importance group.
+    # HONEST CAVEAT (issue #227): the SrV-vs-MiD escort gap is small (~+2.8pp per the
+    # issue-#227 measurement on the MiD donor; the MiD side is not committed in-repo,
+    # only the SrV 9.9% side is) and the #224 importance sweep showed participation
+    # fit is donor/feasibility-bound -- expect partial attainment, as for
+    # work_participation.
+    KreisAttributeControl(
+        name="escort_participation",
+        seed_column="escort_participation",
+        level="person",
+        categories=(("yes", "== 1"), ("no", "== 0")),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_escort_participation_by_kreis.csv",
+        target_columns=("escort_yes", "escort_no"),
+        tier="hard",
+    ),
 )
 
 

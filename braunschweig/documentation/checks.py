@@ -66,6 +66,12 @@ CODE_DEFAULT_TRUE = {
     "simwrapper_export_enabled": "braunschweig/analysis/simwrapper_export.py:26",
     "braunschweig.population.popsim.work_participation_kreis_control":
         "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
+    "braunschweig.population.popsim.leisure_participation_kreis_control":
+        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
+    "braunschweig.population.popsim.education_participation_kreis_control":
+        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
+    "braunschweig.population.popsim.escort_participation_kreis_control":
+        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #227)",
     "cordon_student_incommuters_enabled":
         "braunschweig/synthesis/student_incommuters.py (tri-state default None = ON "
         "when education_gravity_enabled, which configs/base_bs.yml sets true)",

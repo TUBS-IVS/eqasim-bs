@@ -1,8 +1,12 @@
 feature: srv_participation_controls
 title: SrV participation controls (#224)
 area: attributes
-description: SrV-2023-anchored per-Kreis trip-participation controls (work / leisure / education
-  / errand shares) applied to the MiD donor draw in the PopulationSim workflow (#224).
+description: >-
+  SrV-2023-anchored per-Kreis trip-participation controls (work / leisure / education
+  shares, #224; escort share, #227) applied to the MiD donor draw in the PopulationSim
+  workflow. The escort control counts only the ACTIVE MiD escort leg (W_ZWECK 6) to match
+  the SrV E_ZWECK_9 == 6 (Holen/Bringen) target universe; the passive leg (W_ZWECK 13,
+  escorted minors' own trips) is deliberately excluded.
 stages:
 - data.census.filtered
 pipelines:
@@ -14,6 +18,9 @@ production:
   enabled: true
   flags:
   - braunschweig.population.popsim.work_participation_kreis_control
+  - braunschweig.population.popsim.leisure_participation_kreis_control
+  - braunschweig.population.popsim.education_participation_kreis_control
+  - braunschweig.population.popsim.escort_participation_kreis_control
 introduced:
   issue: '#224'
   pr: '#225'
@@ -28,6 +35,7 @@ evidence:
   - tests/test_participation_fit.py
   - tests/test_map_work_participation.py
   - tests/test_leisure_education_participation.py
+  - tests/test_escort_participation.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_participation_target.py

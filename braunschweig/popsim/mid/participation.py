@@ -104,6 +104,18 @@ PARTICIPATION_W_ZWECK: dict[str, set[int]] = {
     purpose: {code for code, p in trips.PURPOSE_BY_W_ZWECK.items() if p == purpose}
     for purpose in ("work", "leisure", "education")
 }
+# escort (issue #227): NOT derivable from PURPOSE_BY_W_ZWECK (which maps the escort
+# codes to "other" unless the #201 escort-purpose flag rewrites the trips table), so
+# the code set is declared explicitly. It is the ACTIVE escort leg ONLY -- W_ZWECK 6
+# (Bringen/Holen, the escorter's own trip). W_ZWECK 13 (the PASSIVE leg: the escorted
+# person's own trip, 100% minors on the raw MiD file -- see trips.ESCORT_W_ZWECK and
+# the issue #256 active/passive split) is deliberately EXCLUDED: the SrV target this
+# control is anchored to is built from E_ZWECK_9 == 6 ("Holen/Bringen", verified
+# against SrV2023_Datenkodierung_SciUse.xlsx), which codes only the escorter's trip
+# (the escorted person's SrV trip carries its own destination purpose, e.g. Kita).
+# Counting 13 would put escorted minors into the MiD-side universe that the SrV
+# target does not measure (the #97 universe trap).
+PARTICIPATION_W_ZWECK["escort"] = {6}
 
 
 def compute_has_purpose_trip(

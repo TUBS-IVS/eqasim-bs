@@ -156,6 +156,14 @@ KEY_WORK_PARTICIPATION_CONTROL = "braunschweig.population.popsim.work_participat
 # (seed derivation reads the MiD Wege table); ignored for source="entd".
 KEY_LEISURE_PARTICIPATION_CONTROL = "braunschweig.population.popsim.leisure_participation_kreis_control"
 KEY_EDUCATION_PARTICIPATION_CONTROL = "braunschweig.population.popsim.education_participation_kreis_control"
+# escort_participation x Kreis control (issue #227, sixth PERSON-level entry): identical
+# wiring to work/leisure/education_participation, steering the per-Kreis distribution of
+# the 0/1 has-an-escort-trip flag (mid.compute_has_purpose_trip, ACTIVE W_ZWECK 6 only --
+# see mid.PARTICIPATION_W_ZWECK) to the committed SrV-2023 participation target. Default
+# "on" (project rule: new features default on). "off" drops its control + seed column
+# (byte-identical for that attribute). MiD-only (seed derivation reads the MiD Wege
+# table); ignored for source="entd".
+KEY_ESCORT_PARTICIPATION_CONTROL = "braunschweig.population.popsim.escort_participation_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -185,6 +193,7 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "work_participation": KEY_WORK_PARTICIPATION_CONTROL,
     "leisure_participation": KEY_LEISURE_PARTICIPATION_CONTROL,
     "education_participation": KEY_EDUCATION_PARTICIPATION_CONTROL,
+    "escort_participation": KEY_ESCORT_PARTICIPATION_CONTROL,
 }
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
@@ -203,4 +212,5 @@ _KREIS_CONTROL_DEFAULT = {
     "work_participation": "on",
     "leisure_participation": "on",
     "education_participation": "on",
+    "escort_participation": "on",
 }

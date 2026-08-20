@@ -7,9 +7,10 @@ srv2023_participation_by_kreis.csv aggregate).
 Reads ONLY the committed SrV aggregate (no raw microdata):
     eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
 
-Purposes: work, education, leisure (SrV E_ZWECK_9 groupings, see the aggregate's
-own header). This module is parametric by purpose; Task 2 generates the `work`
-target, Task 5 reuses the same script for `leisure` and `education`.
+Purposes: work, education, leisure, escort (SrV E_ZWECK_9 groupings, see the
+aggregate's own header). This module is parametric by purpose; Task 2 generated the
+`work` target, Task 5 reused the same script for `leisure` and `education`, and
+issue #227 for `escort` (E_ZWECK_9 == 6, Holen/Bringen).
 
 Documented decisions (verbatim; also recorded in the written target CSV header):
 
@@ -51,7 +52,7 @@ DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_participation_target")
 
-PURPOSES = ("work", "leisure", "education")
+PURPOSES = ("work", "leisure", "education", "escort")
 
 # Wolfsburg (kreisfreie Stadt) is not covered by the SrV 2023 Braunschweig+RGB
 # survey; per the documented ASSUMPTION above, its row uses the SrV region total

@@ -7,9 +7,9 @@ Reads raw SrV data:
     eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Personen.csv
     eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
 
-Computes per-Kreis participation shares (weighted by GEWICHT_P_ZENSUS) for three
-trip purposes: work, education, leisure. Participation = share of weighted persons
-with at least one trip of that purpose on the reporting day.
+Computes per-Kreis participation shares (weighted by GEWICHT_P_ZENSUS) for four
+trip purposes: work, education, leisure, escort. Participation = share of weighted
+persons with at least one trip of that purpose on the reporting day.
 
 The Kreis (5-digit ARS) is derived as the first 5 digits of the zero-padded
 8-digit household AGS and attached to persons via an HHNR join -- exactly as
@@ -22,13 +22,14 @@ Purpose mapping (SrV E_ZWECK_9):
     - work: {1, 2} (Arbeit, berufliche Tätigkeit)
     - education: {3, 4} (Ausbildung, Schule)
     - leisure: {7} (Freizeit/Privat)
+    - escort: {6} (Holen/Bringen; issue #227 -- the escorter's own trip)
 
 Filtered universe: persons with MITTL_WERKTAG == 1 (average weekday, Di-Do).
 
 Output (committed): eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
 with columns code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-and float share columns work, leisure, education. Region-total row coded "03ZGB"
-with level="total".
+and float share columns work, education, leisure, escort (PURPOSE dict order).
+Region-total row coded "03ZGB" with level="total".
 
 Usage:
     python scripts/build_srv_participation_aggregate.py [--data <eqasim-data/data/braunschweig>] [--out-dir <srv dir>]
@@ -49,11 +50,14 @@ DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_srv_participation_aggregate")
 
-# SrV E_ZWECK_9 purpose codes
+# SrV E_ZWECK_9 purpose codes. escort (issue #227) = code 6 "Holen/Bringen"
+# (verified against SrV2023_Datenkodierung_SciUse.xlsx): the escorter's own trip;
+# the escorted person's trip carries its own destination purpose (e.g. Kita = 3).
 PURPOSE = {
     "work": {1, 2},
     "education": {3, 4},
     "leisure": {7},
+    "escort": {6},
 }
 
 HEADER = """\
@@ -74,10 +78,11 @@ HEADER = """\
 #   work = {1, 2} (Arbeit, berufliche Tätigkeit)
 #   education = {3, 4} (Ausbildung, Schule)
 #   leisure = {7} (Freizeit/Privat)
+#   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/leisure/education (float shares, 0.0..1.0). Region-total row coded "03ZGB"
-# with level="total".
+# work/education/leisure/escort (float shares, 0.0..1.0, in PURPOSE dict order).
+# Region-total row coded "03ZGB" with level="total".
 """
 
 
@@ -165,7 +170,8 @@ def write_aggregate(df: pd.DataFrame, out_path: Path) -> None:
     """Write the participation aggregate to a CSV file with header."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rounded = df.copy()
-    rounded[["work", "leisure", "education"]] = rounded[["work", "leisure", "education"]].round(6)
+    share_cols = list(PURPOSE)
+    rounded[share_cols] = rounded[share_cols].round(6)
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         f.write(HEADER)
         rounded.to_csv(f, index=False)
@@ -233,8 +239,8 @@ def main(argv=None) -> int:
 
     # Log region-total row
     total_row = agg[agg["code"] == "03ZGB"].iloc[0]
-    log.info("region total (03ZGB): work=%.4f, leisure=%.4f, education=%.4f",
-             total_row["work"], total_row["leisure"], total_row["education"])
+    log.info("region total (03ZGB): %s",
+             ", ".join(f"{p}={total_row[p]:.4f}" for p in PURPOSE))
 
     return 0
 

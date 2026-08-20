@@ -42,6 +42,7 @@ from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTRO
 
 from .csv_format import detect_csv_separator
 from .donor import load_mid_wege
+from .participation import PARTICIPATION_W_ZWECK
 from .participation import derive_participation_seed
 from .participation import derive_trip_class_seed
 
@@ -217,9 +218,11 @@ def _read_seed_persons(
     # (alter_gr1) so the has-<purpose>-trip flag can be derived from the MiD Wege table +
     # the 803/804 codes imputed within alter_gr1, mirroring the trip_class block above.
     # Dedup-safe (anzwege1/alter_gr1 may already be present via trip_class/
-    # employment_status/tier3); shared across all three participation entries since
-    # they all read the same two raw columns.
-    if active_kreis_entry_names & {"work_participation", "leisure_participation", "education_participation"}:
+    # employment_status/tier3); shared across all participation entries since they all
+    # read the same two raw columns. The entry-name set is derived from
+    # PARTICIPATION_W_ZWECK (the single source of truth for the purpose set), so a
+    # newly registered purpose (e.g. escort, issue #227) needs no edit here.
+    if active_kreis_entry_names & {f"{p}_participation" for p in PARTICIPATION_W_ZWECK}:
         for _pp_col in ("anzwege1", "alter_gr1"):
             if _pp_col not in person_cols:
                 person_cols.append(_pp_col)
@@ -280,11 +283,15 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     _count_style_entries = active_kreis_entry_names & {
         "number_of_cars", "number_of_bicycles", "has_ebike"
     }
+    # The participation entry names are derived from PARTICIPATION_W_ZWECK (single
+    # source of truth for the purpose set): every participation control imputes the
+    # 803/804 diary-nonresponse codes within alter_gr1, so all of them draw random
+    # numbers and must be gated on the seeded rng.
     _rng_style_entries = _count_style_entries | (
-        active_kreis_entry_names & {
-            "trip_class", "employment_status",
-            "work_participation", "leisure_participation", "education_participation",
-        }
+        active_kreis_entry_names & (
+            {"trip_class", "employment_status"}
+            | {f"{p}_participation" for p in PARTICIPATION_W_ZWECK}
+        )
     )
     return _rng_style_entries
 
@@ -487,8 +494,11 @@ def _derive_participation_seed_columns(
     Mutates: nothing in place; reads ``MiD2023_Wege.csv`` from ``mid_dir`` when at
     least one participation control is active.
     """
+    # Every purpose in PARTICIPATION_W_ZWECK (work/leisure/education, feature #224;
+    # escort, issue #227) is seedable; the single source of truth for the purpose set
+    # is that constant, so a newly registered purpose needs no edit here.
     _active_participation_purposes = [
-        purpose for purpose in ("work", "leisure", "education")
+        purpose for purpose in PARTICIPATION_W_ZWECK
         if f"{purpose}_participation" in active_kreis_entry_names
     ]
     if _active_participation_purposes:
@@ -593,8 +603,10 @@ def _derive_projected_participation_seed_columns(
     Mutates: nothing in place; reads ``MiD2023_Wege.csv`` from ``mid_dir`` when at
     least one participation control is active.
     """
+    # Same single-source-of-truth purpose set as the load_mid_seed twin (see
+    # _derive_participation_seed_columns).
     _active_participation_purposes = [
-        purpose for purpose in ("work", "leisure", "education")
+        purpose for purpose in PARTICIPATION_W_ZWECK
         if f"{purpose}_participation" in active_kreis_entry_names
     ]
     if _active_participation_purposes:

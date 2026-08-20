@@ -57,6 +57,9 @@ def test_participation_w_zweck_codes():
     """
     assert mid.PARTICIPATION_W_ZWECK == {
         "work": {1, 2}, "leisure": {7, 14, 15, 16}, "education": {3, 11, 12},
+        # escort (issue #227): explicit {6} -- the ACTIVE Bringen/Holen leg only; see
+        # tests/test_escort_participation.py for the universe rationale.
+        "escort": {6},
     }
 
 
@@ -147,6 +150,7 @@ def test_active_kreis_entries_includes_both_new_controls_by_default():
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
         "trip_class", "employment_status", "pt_ticket_group",
         "work_participation", "leisure_participation", "education_participation",
+        "escort_participation",
     }
 
 
