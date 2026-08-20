@@ -18,8 +18,8 @@
 #   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/leisure/education/escort (float shares, 0.0..1.0). Region-total row coded
-# "03ZGB" with level="total".
+# work/education/leisure/escort (float shares, 0.0..1.0, in PURPOSE dict order).
+# Region-total row coded "03ZGB" with level="total".
 code,level,n_unweighted,work,education,leisure,escort
 03101,kreis,4519,0.34443,0.17582,0.41776,0.075053
 03102,kreis,1794,0.330209,0.193044,0.342177,0.100453

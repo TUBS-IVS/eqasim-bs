@@ -265,5 +265,9 @@ leg (`W_ZWECK 13`, the escorted person's own trip, 100% minors per the #256
 split) is deliberately excluded because SrV codes the escorted person's trip
 by its own destination purpose (e.g. Kita), so counting it would break the
 target-universe match. Hard tier, default ON, same Wolfsburg convention.
-Expected effect is small (SrV 9.9% vs MiD ~7.1%, +2.8pp) and, like work, the
-attainment is expected to be donor-bound (see the #224 sweep above).
+Expected effect is small: the SrV side is 9.9% (committed,
+`srv2023_participation_by_kreis.csv` region total 0.099172); the MiD side of
+the gap (~7.1%, i.e. ~+2.8pp -- ASSUMPTION: measured on the MiD donor during
+the #224 analysis and quoted in issue #227, not committed in this repo).
+Like work, the attainment is expected to be donor-bound (see the #224 sweep
+above); the realised effect must come from a run manifest, not this note.

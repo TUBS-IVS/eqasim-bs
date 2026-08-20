@@ -11,12 +11,13 @@ roles:
 used_by: []
 acquisition:
   method: derived
-  source: scripts/build_blended_kreis_targets.py
+  source: scripts/build_blended_kreis_targets.py, scripts/build_participation_target.py,
+    scripts/build_trip_class_target.py (each header names its own builder)
   script: null
 storage:
   expected_path: eqasim-data/data/braunschweig/targets/target2026_*.csv
-  committed: false
-  local_only: true
+  committed: true
+  local_only: false
 verification:
   verifier_entry: null
 requirements:

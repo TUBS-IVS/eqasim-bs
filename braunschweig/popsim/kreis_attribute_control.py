@@ -346,9 +346,11 @@ REGISTRY: tuple = (
     # the same two documented decisions as the other three (SrV level anchoring;
     # Wolfsburg = SrV region total). tier="hard": mirrors work/leisure/education, so it
     # is classified into the "kreis_hard" importance group.
-    # HONEST CAVEAT (issue #227): the SrV-vs-MiD escort gap is small (~+2.8pp) and the
-    # #224 importance sweep showed participation fit is donor/feasibility-bound --
-    # expect partial attainment, as for work_participation.
+    # HONEST CAVEAT (issue #227): the SrV-vs-MiD escort gap is small (~+2.8pp per the
+    # issue-#227 measurement on the MiD donor; the MiD side is not committed in-repo,
+    # only the SrV 9.9% side is) and the #224 importance sweep showed participation
+    # fit is donor/feasibility-bound -- expect partial attainment, as for
+    # work_participation.
     KreisAttributeControl(
         name="escort_participation",
         seed_column="escort_participation",

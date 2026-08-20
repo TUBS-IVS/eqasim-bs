@@ -28,8 +28,8 @@ Filtered universe: persons with MITTL_WERKTAG == 1 (average weekday, Di-Do).
 
 Output (committed): eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
 with columns code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-and float share columns work, leisure, education. Region-total row coded "03ZGB"
-with level="total".
+and float share columns work, education, leisure, escort (PURPOSE dict order).
+Region-total row coded "03ZGB" with level="total".
 
 Usage:
     python scripts/build_srv_participation_aggregate.py [--data <eqasim-data/data/braunschweig>] [--out-dir <srv dir>]
@@ -81,8 +81,8 @@ HEADER = """\
 #   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/leisure/education/escort (float shares, 0.0..1.0). Region-total row coded
-# "03ZGB" with level="total".
+# work/education/leisure/escort (float shares, 0.0..1.0, in PURPOSE dict order).
+# Region-total row coded "03ZGB" with level="total".
 """
 
 
