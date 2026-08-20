@@ -254,3 +254,16 @@ mobility gap is a documented SrV-vs-MiD survey-method offset (see `trip_class`
 above). Entry points: `braunschweig/popsim/kreis_attribute_control.py`,
 `data/mid/attributes.py` (`map_participation`), analysis
 `analysis/population_validation/participation_fit.py`.
+
+### escort_participation (#227)
+
+The fourth participation purpose, registered through the same machinery (no
+new derivation logic): SrV target from `E_ZWECK_9 == 6` ("Holen/Bringen",
+verified against the SrV codebook; region total 9.9%), MiD seed from the
+ACTIVE escort leg only (`W_ZWECK 6` -- the escorter's own trip). The PASSIVE
+leg (`W_ZWECK 13`, the escorted person's own trip, 100% minors per the #256
+split) is deliberately excluded because SrV codes the escorted person's trip
+by its own destination purpose (e.g. Kita), so counting it would break the
+target-universe match. Hard tier, default ON, same Wolfsburg convention.
+Expected effect is small (SrV 9.9% vs MiD ~7.1%, +2.8pp) and, like work, the
+attainment is expected to be donor-bound (see the #224 sweep above).
