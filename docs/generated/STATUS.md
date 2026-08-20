@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 74 | stages: 115 | datasets: 55 | ADRs: 93 | run manifests: 25
+- Features: 74 | stages: 115 | datasets: 55 | ADRs: 93 | run manifests: 26
 
 ## Population synthesis
 
@@ -25,7 +25,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
 | [IPF synthesis (legacy default)](../registry/features/ipf_synthesis_legacy.yml) | supported | off | -/-/A | unvalidated |  |
 | [Joint age×size margin (#3)](../registry/features/joint_age_size_margin.yml) | supported | off | -/-/A | unvalidated |  |
-| [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
+| [1 km car/bike ownership shape controls (MiD-conditional, raked to the blended Kreis anchors)](../registry/features/ownership_grid_1km.yml) | active | ON | A/-/- | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | [#240](https://github.com/TUBS-IVS/eqasim-bs/issues/240) |
 | [popsim_open / popsim_mid](../registry/features/popsim_method.yml) | active | ON | A/A/- | measured_vs_reference (`synth-100pct-2.2.0-2026-07-23`) |  |
 | [Sex-aware couples (~1.1%)](../registry/features/sex_aware_couples.yml) | supported | off | -/-/A | unvalidated |  |
 
