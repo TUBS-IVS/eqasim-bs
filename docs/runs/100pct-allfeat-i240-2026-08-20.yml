@@ -1,0 +1,146 @@
+id: 100pct-allfeat-i240-2026-08-20
+date: '2026-08-20'
+repository:
+  commit: 2714b857
+  branch: main
+  notes: 'main after PR #324 (ownership_grid_1km) plus two server-local hotfix patches that
+    were required to get past two latent main-branch defects this run exposed; both are now
+    merged as the REVIEWED fixes in PR #325 (mid.py explicit_round_trip_purposes threading;
+    gtfs/osm/processed.py pt2matsim configure delegates). The review minors of the #240 build
+    merged as PR #326. eqasim-java 2.3.0 (fork release PR #22), JDK 25.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:/home/felix/i240_test_100pct.yml'
+  notes: 'configs/overlays/test_100pct.yml verbatim EXCEPT output_path ->
+    eqasim-data/output_bs_100pct_allfeat_popsim_i240, so the July baseline output directory
+    stayed untouched. All feature flags at their defaults, i.e. ownership_grid_1km (ADR-0092),
+    fine_teen_age_bands (ADR-0088), pt_ticket_group_kreis_control (ADR-0089) and
+    explicit_w_zweck_purposes (ADR-0091) ON TOGETHER -> per-flag attribution is NOT possible
+    from this run.'
+sampling:
+  rate: 100% (1,130,617 persons / 558,279 households)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.simwrapper_export
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.verbindungen_validation
+classification:
+- production_candidate
+- validation
+status:
+  execution: partial
+  notes: 'Population synthesis and MATSim completed; the four analysis stages did NOT
+    run inside this invocation because the MATSim stage never returned (see the run
+    incident entry below). They were started separately the same day with a
+    run-list-only overlay (felix:/home/felix/i240_analyses_only.yml, identical config)
+    and were still executing when this manifest was written.'
+environment: server
+validation:
+- metric: control fit, all 10 registered controls (mean absolute delta in pp, SRMSE, grade)
+  reference: committed control tables (census cells, MiD/SrV per-Kreis targets, DESTATIS)
+  result: '5 very good / 5 good, none moderate or worse (the 2026-08-18 baseline had 4/6).
+    mean |delta| pp: bev_share 0.12, sex 0.16, age_group 0.78, cars_per_hh 0.98 (baseline
+    1.02, upgraded to very good), employment_status 0.99, bicycles_per_hh 1.15 (baseline
+    1.26), household_size 1.82 (baseline 1.56, slightly worse), pt_ticket_type 2.17 (baseline
+    2.39), driving_license_type 2.45 (baseline 2.31), employment 2.67 (baseline 2.59).
+    coverage_5pp is 1.0 for all except household_size 0.95, pt_ticket_type 0.89 and
+    driving_license_type 0.83.'
+  artifact: 'felix:.../output_bs_100pct_allfeat_popsim_i240/analysis/population_validation/
+    (controls_long.csv, quality_summary.csv, report.json, summary.md, geo exports incl.
+    population_explorer.gpkg)'
+  notes: 'Control fit, NOT a behavioural validation. All flags were ON together, so this is a
+    state measurement against the July baseline, not a per-flag A/B.'
+- metric: 'issue #320 acceptance: teen age bands and single ages vs DESTATIS 12411-0018 (ZGB-8)'
+  reference: eqasim-data/data/braunschweig/12411-0018_de.csv
+  result: '15-17 now +2.6% (baseline +64%), 18-19 now -26.5% (baseline -75%); single age 18
+    holds 11,148 persons (baseline 3,829) and age 19 holds 4,717 (baseline 1,468). 10-14 is
+    -3.8%. 50-54 stays +26.4% (deliberately deferred in ADR-0088). 65-74 is -10.1%.'
+  notes: 'The licence-relevant 18 boundary is fixed. The within-band freedom moved rather than
+    vanished: ages 16 (8,318) and 19 stay thinner than their DESTATIS share, exactly as the
+    one-Kreis smoke predicted.'
+- metric: 'issue #321 acceptance: pt_ticket_group (three groups) realised vs the blended
+    target, per Kreis, 14+'
+  reference: eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group_by_kreis.csv
+  result: 'all eight Kreise within 0.5pp on the Deutschlandticket group (deltas -0.49 to
+    +0.02pp); region flatrate 19.13% (the #307 baseline over-supply of 30.18% is gone).
+    ADR-0087 invariant: 0 contradictions between has_pt_subscription and pt_subscription_type
+    over 1,130,617 persons; the pt_never_contradiction check also reports 0.'
+- metric: 'pt_ticket_type, full P24.1 taxonomy per Kreis (the fahre_nie watch item)'
+  reference: eqasim-data/data/braunschweig/mid/mid2023_P24_1.csv
+  result: 'REAL DEFECT FOUND, filed as issue #329: the region aggregate looks benign (40.0%
+    vs MiD 36%) but the error is concentrated in the city. Braunschweig realises 30.17%
+    fahre_nie against a 14.00% target (+16.17pp), trading einzelfahrschein (-8.16pp) and
+    mehrfachkarte (-7.91pp); Salzgitter +9.90, Wolfenbuettel +6.42, Wolfsburg +3.13, Peine
+    +2.60, Gifhorn +1.89, Helmstedt +1.52, Goslar -3.71pp.'
+  notes: 'Mechanism: the three-group control fixes the group totals but leaves the composition
+    inside not_flatrate free, so the balancer puts never-PT people where PT supply is best.
+    Same defect class as #320 and #240. Mode-choice relevant: a fahre_nie agent will not
+    choose PT regardless of accessibility.'
+- metric: ownership grid, KREIS anchors, per-1km attainment and building-type coupling (#240)
+  reference: 'target2026_number_of_cars_by_kreis.csv and
+    target2026_number_of_bicycles_by_kreis.csv; the per-1km targets re-derived through
+    braunschweig.popsim.ownership_grid on the same inputs'
+  result: 'car-free realised within 0.35pp of target in every Kreis (max |delta| Goslar
+    +0.35pp; the -3.6pp region gap that opened #240 is closed). bike-free undershoots
+    slightly everywhere (-0.37 to -1.01pp; Goslar -1.00pp against the -5.5pp baseline).
+    Per-1km attainment over all eight Kreise: 2,233 parents, household-weighted mean |delta|
+    1.91pp, corr(realised, target) 0.758, realised P10/P50/P90 4.5/14.5/24.0% vs target
+    4.5/14.1/25.3%. Building coupling is realised at 100m without an explicit control:
+    car-free 4.26% in EFH/ZFH (n=256,978) vs 24.18% in MFH (n=273,170).'
+  notes: 'Control fit plus a structure measurement; the injection logged 100% primary
+    (dwelling-mixed) prior and 0% fallback region-wide.'
+- metric: employment fidelity decomposition, re-measured against the 2026-08-18 baseline
+  reference: 'kreis_erwerbsstatus.parquet (the census anchor the employment_grid steers to)
+    and mid2023_P9.csv'
+  result: 'mean |delta| of the synthesis-fidelity term 1.04pp (baseline 0.90pp); Wolfsburg
+    -2.42pp (baseline -2.25pp). The hypothesis that fixing #320 would shrink this term is
+    therefore NOT confirmed. The MiD-vs-census source disagreement stays dominant (mean
+    3.70pp).'
+  notes: 'The census anchor stands (SrV corroborated it on 2026-08-19); no calibration action.
+    The Wolfsburg census-level shortfall remains an open donor-feasibility question.'
+- metric: licence level and structure (#319 and the #307 follow-up)
+  reference: 'mid2023_P17_1.csv (level) and srv2023_car_license_17plus_by_kreis.csv (17+)'
+  result: 'licence 14+ 86.39% (MiD base 86.0%), 17+ 90.73% (SrV 92.4%), 18+ 91.42%; sex
+    gradient 1.05pp while MiD shows about 8pp, so the #322 pattern control stays relevant.
+    license_underage (under 16 holding a licence) is 0.00% - the pre-existing 3.78%
+    plausibility defect is gone.'
+- metric: 'run incident: the MATSim stage never returned (filed as issue #330)'
+  reference: none (process diagnosis)
+  result: 'MATSim finished its controler at 16:18 with every output and all five SimWrapper
+    dashboards written, then hung with the JVM alive at about 0% CPU until it was killed at
+    17:25. jstack proved the cause: SimWrapper dashboard generation reads CSV through
+    tablesaw, whose univocity-parsers backend leaves a NON-DAEMON input reading thread parked
+    in FixedInstancePool.allocate, so DestroyJavaVM waits indefinitely. Fix implemented as
+    eqasim-java-bs PR #23 (explicit System.exit(0) after controller.run()).'
+  notes: 'Nothing was lost - no file in the MATSim cache is newer than 16:00. The four
+    analysis stages do NOT depend on matsim.output, so they were re-launched separately
+    instead of repeating the 2.5h simulation. A complete end-to-end 100% run is owed once
+    PR #23 merges.'
+features:
+  note: 'First full-region execution of ownership_grid_1km (ADR-0092). The run also exposed
+    two latent main-branch defects (fixed in PR #325) and one JVM-exit defect (#330) that no
+    smoke could reach, because the control smokes stop before the trips stage and the supply
+    stages had been cached for weeks.'
+artifacts:
+- 'felix:/home/felix/i240_100pct.log'
+- 'felix:/home/felix/i240_analyses.log'
+- 'felix:/home/felix/i240_popmeasures.out'
+- 'felix:/home/felix/eqasim-bs/eqasim-data/output_bs_100pct_allfeat_popsim_i240/'
+- 'report Artifact: https://claude.ai/code/artifact/99751eba-6064-4b5a-8d8f-88f10fb6aa92'
+issues:
+- '#240'
+- '#320'
+- '#321'
+- '#329'
+- '#330'
+decisions:
+- ADR-0088
+- ADR-0089
+- ADR-0091
+- ADR-0092
+source: 'the 2026-08-19/20 overnight 100% run and its deep analysis'

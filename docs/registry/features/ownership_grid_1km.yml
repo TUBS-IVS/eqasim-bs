@@ -92,6 +92,7 @@ validation:
   state: unvalidated
   runs:
   - smoke-ownership-grid-03101-2026-08-19
+  - 100pct-allfeat-i240-2026-08-20
   metric: null
   note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
     97.0% OPTIMAL), the injected priors used the primary dwelling-mixed method for 100% of the
