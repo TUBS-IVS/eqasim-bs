@@ -52,6 +52,7 @@ may only name run manifests (no run, no claim).
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 3 | -- | marker | none | unvalidated | pending |
+| [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |
 | [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |

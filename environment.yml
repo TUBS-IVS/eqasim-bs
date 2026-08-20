@@ -30,6 +30,12 @@ dependencies:
   - statsmodels=0.14.3
   - requests=2.32.3
   - pyogrio=0.10.0
+  # Process CPU-time sampling for the Java hang watchdog
+  # (matsim/runtime/process_watchdog.py, issue #330). Cross-platform and tiny;
+  # the alternative was parsing /proc/<pid>/stat, which would leave every
+  # non-Linux developer machine unguarded. Without psutil the watchdog degrades
+  # to inert and says so in the log (it never falls back to a wall-clock kill).
+  - psutil=7.2.2
 
   - pip:
     - synpp==1.6.2

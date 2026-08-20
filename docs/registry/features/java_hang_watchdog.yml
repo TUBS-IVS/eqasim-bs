@@ -1,0 +1,78 @@
+feature: java_hang_watchdog
+title: CPU-accumulation hang watchdog for the pipeline's Java subprocesses
+area: infrastructure
+description: Every Java subprocess the pipeline spawns is watched by CPU-time accumulation; a process
+  that stays alive without accumulating CPU time is terminated so a hung JVM fails the run loudly
+  instead of stalling synpp for hours (ADR-0094).
+stages:
+- matsim.runtime.java
+- matsim.runtime.pt2matsim
+- matsim.simulation.prepare
+- matsim.simulation.run
+- matsim.scenario.supply.gtfs
+- matsim.scenario.supply.osm
+- matsim.scenario.supply.processed
+- braunschweig.freight.extraction
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - java_hang_timeout_s
+  - java_hang_min_cpu_seconds
+introduced:
+  issue: 330
+  pr: null
+  adr: ADR-0094
+detail_doc: null
+code_paths:
+- matsim/runtime/process_watchdog.py
+- matsim/runtime/java.py
+evidence:
+  tests:
+  - tests/test_java_hang_watchdog.py
+  - tests/test_runtime_config_declares.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_java_hang_watchdog.py::test_disabled_driver_just_waits
+    note: |
+      java_hang_timeout_s: 0 degenerates the guarded wait to a plain process.wait() plus the
+      same raise-on-non-zero behaviour the previous subprocess.check_call had, so the OFF path
+      is behaviourally identical. Pinned by test_disabled_driver_just_waits.
+  fallback_rate:
+    instrumented: true
+    log_marker: Hang watchdog
+    note: |
+      There is no primary/fallback SPLIT to rate here (the watchdog either has a CPU signal or
+      it has none), but the inert path is made observable as the project rule requires: when
+      the CPU counter cannot be read the watchdog logs once that the Java call is NOT protected
+      and never substitutes a wall-clock kill. Pinned by
+      test_driver_reports_an_unmeasurable_cpu_signal_once and
+      test_unmeasurable_cpu_never_declares_a_hang.
+  reference:
+    kind: none
+    note: |
+      Operational guard, no scientific reference applies. The 900 s / 1.0 CPU-second defaults are
+      an ASSUMPTION about the discrimination margin between a working and a parked JVM, not a
+      measured threshold: a working JVM accumulates roughly one CPU second per wall second per
+      busy thread, a parked one essentially nothing, so the margin is orders of magnitude wide.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: |
+    Unit-tested against a deterministic clock and a fake process; a real hang has NOT been
+    re-provoked end to end, and no run has yet executed with the watchdog armed. The pending
+    100 % re-run owed by issue #330 is the first such execution. Note that a green run proves
+    only that the guard does not misfire -- it cannot prove the guard would catch a hang.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Recorded from ADR-0094 on the day the guard was written. No owner verdict yet, and no run
+    has exercised the armed watchdog against a live JVM.
+  source: ADR-0094
