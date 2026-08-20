@@ -243,6 +243,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EBIKE_SEED_COLUMN,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
+    KEY_ESCORT_PARTICIPATION_CONTROL,
     KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
     KEY_PT_TICKET_KREIS_CONTROL,
@@ -731,6 +732,10 @@ def configure(context):
     # work_participation exactly (parametrized by purpose, not duplicated).
     context.config(KEY_LEISURE_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["leisure_participation"])
     context.config(KEY_EDUCATION_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["education_participation"])
+    # escort_participation (sixth PERSON-level KREIS control, issue #227). Default "on";
+    # identical wiring to the other three participation controls (parametrized by
+    # purpose "escort" = ACTIVE W_ZWECK 6 only, see mid.PARTICIPATION_W_ZWECK).
+    context.config(KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -744,6 +749,7 @@ def configure(context):
         (KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"]),
         (KEY_LEISURE_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["leisure_participation"]),
         (KEY_EDUCATION_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["education_participation"]),
+        (KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"

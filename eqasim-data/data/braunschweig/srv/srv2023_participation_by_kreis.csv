@@ -15,16 +15,17 @@
 #   work = {1, 2} (Arbeit, berufliche Tätigkeit)
 #   education = {3, 4} (Ausbildung, Schule)
 #   leisure = {7} (Freizeit/Privat)
+#   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/leisure/education (float shares, 0.0..1.0). Region-total row coded "03ZGB"
-# with level="total".
-code,level,n_unweighted,work,education,leisure
-03101,kreis,4519,0.34443,0.17582,0.41776
-03102,kreis,1794,0.330209,0.193044,0.342177
-03151,kreis,3574,0.323938,0.182649,0.382145
-03153,kreis,2258,0.328466,0.145629,0.347937
-03154,kreis,1761,0.321426,0.156608,0.383272
-03157,kreis,2446,0.316427,0.190131,0.372266
-03158,kreis,1871,0.33366,0.178342,0.385201
-03ZGB,total,18223,0.331558,0.1761,0.383163
+# work/leisure/education/escort (float shares, 0.0..1.0). Region-total row coded
+# "03ZGB" with level="total".
+code,level,n_unweighted,work,education,leisure,escort
+03101,kreis,4519,0.34443,0.17582,0.41776,0.075053
+03102,kreis,1794,0.330209,0.193044,0.342177,0.100453
+03151,kreis,3574,0.323938,0.182649,0.382145,0.11508
+03153,kreis,2258,0.328466,0.145629,0.347937,0.120013
+03154,kreis,1761,0.321426,0.156608,0.383272,0.106603
+03157,kreis,2446,0.316427,0.190131,0.372266,0.106357
+03158,kreis,1871,0.33366,0.178342,0.385201,0.115527
+03ZGB,total,18223,0.331558,0.1761,0.383163,0.099172

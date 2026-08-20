@@ -51,6 +51,7 @@ def _seed_persons() -> pd.DataFrame:
         "work_participation": [0, 0, 0, 1, 1, 1, 0, 0],
         "leisure_participation": [1, 1, 0, 0, 1, 0, 1, 1],
         "education_participation": [1, 1, 1, 0, 0, 0, 0, 0],
+        "escort_participation": [0, 1, 0, 1, 0, 0, 1, 0],
     })
 
 
