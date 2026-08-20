@@ -36,6 +36,7 @@ evidence:
   - tests/test_map_work_participation.py
   - tests/test_leisure_education_participation.py
   - tests/test_escort_participation.py
+  - tests/test_run_population_validation.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_participation_target.py
@@ -52,8 +53,17 @@ validation:
   state: unvalidated
   runs: []
   metric: participation_gap_closed_share
-  note: PROJECT_STATUS reports a Kreis 03101 smoke (78/78/53/30 % of the MiD->SrV gap closed,
-    residual donor-bound). Not copied here until attributable to a RUNS.md row.
+  note: >-
+    PROJECT_STATUS reports a Kreis 03101 smoke (78/78/53/30 % of the MiD->SrV gap closed,
+    residual donor-bound). Not copied here until attributable to a recorded run.
+    HOW THE METRIC IS PRODUCED (since #334): run_population_validation writes
+    participation_fit.csv and a participation_fit entry in report.json whenever the source
+    carries a trips table. Before #334 the analysis module participation_fit.py was called
+    by NOTHING, so no run produced this evidence and every check was hand-rolled. The
+    control-registry route stays structurally closed -- controls.build_registry validates
+    columns of the assembled population, and the participation flags are input-only popsim
+    seed columns that never reach it -- so the fit is measured from the realised trips.
+    It is a FIT CHECK against the steering SrV targets, never independent validation.
 assessment:
   status: pending
   by: null
