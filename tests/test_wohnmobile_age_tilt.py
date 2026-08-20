@@ -374,3 +374,20 @@ def test_incommuter_fleet_passes_owner_age(monkeypatch):
     np.testing.assert_array_equal(
         captured["df_cars"]["owner_age"].to_numpy(), np.array([62.0, 41.0]))
     assert len(vehicles) == 2
+
+
+def test_acceptance_composition_and_preserved_aggregate(sampler):
+    """Issue #315 acceptance: realised P(a | wohnmobile) within the +/-2pp band
+    (max'd with the MC band), national wohnmobile share within 4 sigma of the
+    untilted expectation, fallback rate ~0 on a frame with full owner ages."""
+    df = _synthetic_frame(n=60000, seed=13)
+    df_spec, _, summary = fleet.sample_fleet(
+        df, DATA_PATH, random_seed=99, sampler=sampler,
+        wohnmobile_age_tilt=True)
+    wm_summary = summary["wohnmobile_holder_age"]
+    assert wm_summary["skipped_reason"] is None
+    assert wm_summary["aggregate"]["flagged"] is False
+    assert wm_summary["flagged"] is False
+    # PRIMARY-path coverage (no-silent-fallback rule): everything tilted.
+    tilt = sampler.wohnmobile_age_tilt
+    assert tilt._fallback == 0 and tilt._guard == 0

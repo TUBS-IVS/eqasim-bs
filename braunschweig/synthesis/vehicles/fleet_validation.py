@@ -145,3 +145,91 @@ def crosscheck_ev_by_regiostar7(df_spec, df_rs7) -> dict:
             delta_pp, n_cars,
         )
     return out
+
+
+def validate_wohnmobile_holder_age(df_spec, tilt_model, sample_rate: float = 1.0,
+                                   tol_sigma: float = 4.0,
+                                   composition_band_pp: float = 2.0,
+                                   min_motorhomes: int = 30) -> dict:
+    """Issue #315 acceptance check: holder-age composition + preserved share.
+
+    (1) Composition: realised ``P(age class | wohnmobile)`` (over drawn
+        motorhomes with a classifiable ``owner_age``) vs the KBA reference
+        ``tilt_model.ref_share``. A class is flagged when it deviates by more
+        than ``max(composition_band_pp, tol_sigma * sqrt(p(1-p)/N_eff))`` -- the
+        MC floor keeps a small smoke (few motorhomes) from false-flagging.
+        Skipped (with a stated reason) below ``min_motorhomes``.
+    (2) Aggregate: the realised wohnmobile share of ALL cars vs the fitted
+        UNTILTED expectation ``tilt_model.expected_wm_share`` -- exact by the
+        ADR-0093 calibration, so only Monte-Carlo noise separates them:
+        flagged beyond ``tol_sigma * sqrt(p(1-p)/N_eff)``.
+    Logging + summary only (mirrors :func:`validate_realised_margins`).
+    """
+    out = {"n_motorhomes": 0, "composition": {}, "aggregate": {},
+           "flagged": False, "skipped_reason": None}
+    if "segment" not in df_spec.columns or "owner_age" not in df_spec.columns:
+        out["skipped_reason"] = "df_spec lacks segment/owner_age"
+        LOGGER.info("[wohnmobile_holder_age] skipped: %s.", out["skipped_reason"])
+        return out
+    n_total = len(df_spec)
+    n_eff_total = max(1.0, n_total * float(sample_rate))
+    wm = df_spec[df_spec["segment"] == "wohnmobile"]
+    out["n_motorhomes"] = int(len(wm))
+
+    expected_share = tilt_model.expected_wm_share
+    if expected_share is not None and n_total > 0:
+        realised = float(len(wm)) / n_total
+        band = tol_sigma * float(np.sqrt(
+            max(expected_share * (1.0 - expected_share), 1e-12) / n_eff_total))
+        agg_flag = bool(abs(realised - expected_share) > band)
+        out["aggregate"] = {
+            "realised": round(realised, 6),
+            "expected_untilted": round(float(expected_share), 6),
+            "dev_pp": round((realised - expected_share) * 100.0, 4),
+            "band_pp": round(band * 100.0, 4),
+            "flagged": agg_flag,
+        }
+        out["flagged"] = out["flagged"] or agg_flag
+        (LOGGER.warning if agg_flag else LOGGER.info)(
+            "[wohnmobile_holder_age] aggregate: realised %.4f%% vs untilted "
+            "%.4f%% (dev %+.3fpp, band %.3fpp) -> %s",
+            realised * 100.0, expected_share * 100.0,
+            (realised - expected_share) * 100.0, band * 100.0,
+            "DRIFT" if agg_flag else "ok")
+
+    if len(wm) < min_motorhomes:
+        out["skipped_reason"] = (
+            f"only {len(wm)} motorhomes < {min_motorhomes}: composition check "
+            f"skipped (aggregate check above still ran)")
+        LOGGER.info("[wohnmobile_holder_age] %s.", out["skipped_reason"])
+        return out
+    classes = wm["owner_age"].map(tilt_model.age_class_for)
+    valid = classes.notna()
+    n_wm_valid = int(valid.sum())
+    if n_wm_valid == 0:
+        out["skipped_reason"] = "no motorhome carries a classifiable owner_age"
+        LOGGER.warning("[wohnmobile_holder_age] %s.", out["skipped_reason"])
+        return out
+    realised_comp = classes[valid].value_counts(normalize=True).to_dict()
+    n_eff_wm = max(1.0, n_wm_valid * float(sample_rate))
+    comp_flagged = False
+    for label, ref in tilt_model.ref_share.items():
+        realised_share = float(realised_comp.get(label, 0.0))
+        dev_pp = abs(realised_share - ref) * 100.0
+        mc_pp = tol_sigma * float(np.sqrt(
+            max(ref * (1.0 - ref), 1e-12) / n_eff_wm)) * 100.0
+        band_pp = max(composition_band_pp, mc_pp)
+        flag = bool(dev_pp > band_pp)
+        comp_flagged = comp_flagged or flag
+        out["composition"][label] = {
+            "realised": round(realised_share, 4), "reference": round(ref, 4),
+            "dev_pp": round(dev_pp, 3), "band_pp": round(band_pp, 3),
+            "flagged": flag,
+        }
+    out["flagged"] = out["flagged"] or comp_flagged
+    (LOGGER.warning if comp_flagged else LOGGER.info)(
+        "[wohnmobile_holder_age] composition over %d motorhomes: max dev %.2fpp "
+        "-> %s", n_wm_valid,
+        max(v["dev_pp"] for v in out["composition"].values()),
+        "DRIFT" if comp_flagged else "ok")
+    return out

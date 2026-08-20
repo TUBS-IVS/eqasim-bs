@@ -3068,6 +3068,12 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             "[fleet_de] realised-margin validation (consistency_v2): "
             "any_flagged=%s", _validation_summary["any_flagged"],
         )
+        # Issue #315: wohnmobile holder-age acceptance check (tilt-active only).
+        if _wm_tilt is not None:
+            _wm_summary = _fv.validate_wohnmobile_holder_age(df_spec, _wm_tilt)
+            _validation_summary["wohnmobile_holder_age"] = _wm_summary
+            _validation_summary["any_flagged"] = (
+                _validation_summary["any_flagged"] or _wm_summary["flagged"])
         return df_spec, df_vehicle_types, _validation_summary
 
     return df_spec, df_vehicle_types
