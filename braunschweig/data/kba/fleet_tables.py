@@ -104,8 +104,9 @@ WOHNMOBILE_AGE_CLASS_LABELS: tuple[str, ...] = (
 )
 
 #: Residual row label of the wohnmobile holder-age table: vehicles the KBA
-#: source pages attribute to NO age class (3.94% of the published stock). Kept
-#: for traceability; never asserted to be commercial holders (ADR-0093).
+#: source pages attribute to NO age class (share recorded in the committed CSV
+#: itself). Kept for traceability; never asserted to be commercial holders
+#: (ADR-0093).
 WOHNMOBILE_AGE_NOT_ATTRIBUTED: str = "not_attributed"
 
 #: The 8 ZGB Kreise as AGS-5 ("03" + Kreis3 == KBA Kennziffer).
@@ -482,8 +483,9 @@ def load_wohnmobile_holder_age(data_path: str) -> pd.DataFrame:
 
     ``share_of_attributed`` is ``P(age class | wohnmobile)`` renormalised over
     the eight published natural-person classes; the ``not_attributed`` residual
-    row carries NaN there (ADR-0093 ASSUMPTION: the unattributed 3.94% share the
-    attributed age composition). Produced by
+    row carries NaN there (ADR-0093 ASSUMPTION: the unattributed residual
+    shares the attributed age composition (its size is recorded in the committed
+    CSV; see ADR-0093)). Produced by
     ``scripts/extract_kba_fleet.py::extract_wohnmobile_holder_age`` from the
     COMMITTED raw transcription of the KBA infographic / PM 23/2025 -- unlike
     the server-generated MiD tables, absence of this file is a checkout/wiring
