@@ -61,7 +61,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Vehicle fleet
 
-3 stage(s), 3 in the production DAG. Datasets: `hsn_tsn_lookup`, `kba_fleet_derived`, `mid2023_b1`
+3 stage(s), 3 in the production DAG. Datasets: `hsn_tsn_lookup`, `kba_fleet_derived`, `kba_wohnmobile_holder_age`, `mid2023_b1`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

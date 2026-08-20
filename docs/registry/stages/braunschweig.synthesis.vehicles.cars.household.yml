@@ -23,12 +23,14 @@ inputs:
 - kba_fleet_derived
 - hsn_tsn_lookup
 - mid2023_b1
+- kba_wohnmobile_holder_age
 features:
 - fleet_consistency_v2
 - fleet_electric_calibration
 - fleet_hsn_tsn_attributes
 - fleet_realism_upgrade
 - fleet_segment_brand_mix
+- fleet_wohnmobile_age_tilt
 - household_fleet
 decisions:
 - ADR-0019
@@ -40,3 +42,4 @@ decisions:
 - ADR-0084
 - ADR-0085
 - ADR-0086
+- ADR-0093
