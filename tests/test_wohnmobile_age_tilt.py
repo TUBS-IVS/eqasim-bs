@@ -93,3 +93,21 @@ def test_loader_rejects_count_total_mismatch(tmp_path):
     data_path = _write_reference_csv(tmp_path, df)
     with pytest.raises(RuntimeError, match="total_stock"):
         ft.load_wohnmobile_holder_age(data_path)
+
+
+def test_committed_reference_loads_and_matches_transcription():
+    """Loads the COMMITTED derived table; pins one count to the cited KBA pages.
+
+    The pinned 318,589 (class 60_69) is traceable to the committed raw CSV and
+    the two KBA source URLs in its header -- a transcription guard, not an
+    invented reference.
+    """
+    df = ft.load_wohnmobile_holder_age(DATA_PATH)
+    att = df[df["age_class"] != ft.WOHNMOBILE_AGE_NOT_ATTRIBUTED].set_index("age_class")
+    assert len(att) == 8
+    assert int(att.loc["60_69", "vehicles"]) == 318589
+    assert float(att["share_of_attributed"].sum()) == pytest.approx(1.0)
+    # Renormalisation is over the attributed classes, not the published total.
+    assert float(att.loc["60_69", "share_of_attributed"]) == pytest.approx(
+        318589 / float(att["vehicles"].sum()))
+    assert set(df["stichtag"]) == {"2025-04-01"}
