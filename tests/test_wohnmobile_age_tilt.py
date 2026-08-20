@@ -245,3 +245,96 @@ def test_tilt_before_fit_raises():
     model = wa.WohnmobileHolderAgeTilt._from_dataframe(_reference_df())
     with pytest.raises(RuntimeError, match="fit_population"):
         model.tilt(np.array([0.02, 0.98]), 65, wm_index=0)
+
+
+from braunschweig.synthesis.vehicles import fleet_sampling_de as fleet  # noqa: E402
+
+
+def _synthetic_frame(n=400, seed=7, with_owner_age=True):
+    rng = np.random.default_rng(seed)
+    statuses = rng.choice(list(ft.STATUS_LABELS), size=n)
+    df = pd.DataFrame({
+        "economic_status": statuses,
+        "kreis_ags5": "03101",
+        "gemeinde": np.nan,
+        "raumtyp": np.nan,
+    })
+    if with_owner_age:
+        # Ages correlated with status so the covariance path is exercised.
+        base = rng.integers(20, 85, size=n).astype(float)
+        df["owner_age"] = np.where(statuses == "very_high", base - 10, base)
+        df["owner_age"] = df["owner_age"].clip(18, 95)
+    return df
+
+
+@pytest.fixture(scope="module")
+def sampler():
+    return fleet.FleetSampler.from_data_path(DATA_PATH)
+
+
+def test_sampler_builds_the_tilt_from_committed_data(sampler):
+    assert sampler.wohnmobile_age_tilt is not None
+    assert set(sampler.wohnmobile_age_tilt.ref_share) == set(
+        ft.WOHNMOBILE_AGE_CLASS_LABELS)
+
+
+def test_flag_off_never_consults_tilt(sampler, monkeypatch):
+    df = _synthetic_frame()
+    monkeypatch.setattr(
+        sampler.wohnmobile_age_tilt, "fit_population",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("consulted")))
+    monkeypatch.setattr(
+        sampler.wohnmobile_age_tilt, "tilt",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("consulted")))
+    df_spec, _, _ = fleet.sample_fleet(
+        df, DATA_PATH, random_seed=1, sampler=sampler,
+        wohnmobile_age_tilt=False)
+    assert len(df_spec) == len(df)
+
+
+def test_flag_on_with_absent_reference_raises(sampler):
+    stripped = fleet.FleetSampler(**{**sampler.__dict__, "wohnmobile_age_tilt": None})
+    with pytest.raises(RuntimeError, match="COMMITTED"):
+        fleet.sample_fleet(_synthetic_frame(), DATA_PATH, random_seed=1,
+                           sampler=stripped, wohnmobile_age_tilt=True)
+
+
+def test_missing_owner_age_column_is_loud_untilted_fallback(sampler, caplog):
+    df = _synthetic_frame(with_owner_age=False)
+    with caplog.at_level(logging.WARNING):
+        df_a, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=11,
+                                        sampler=sampler, wohnmobile_age_tilt=True)
+    assert any("owner_age" in rec.message and "100%" in rec.message
+               for rec in caplog.records)
+    # Untilted fallback must be byte-identical to the flag-OFF draw (same seed).
+    df_b, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=11,
+                                    sampler=sampler, wohnmobile_age_tilt=False)
+    pd.testing.assert_frame_equal(
+        df_a.drop(columns=["owner_age"], errors="ignore"),
+        df_b.drop(columns=["owner_age"], errors="ignore"))
+
+
+def test_tilt_changes_motorhome_owner_ages(sampler):
+    """With the tilt, drawn motorhomes concentrate on older owners.
+
+    NOTE (plan-defect fix, verified 2026-08-20): the brief's draft used
+    ``model_brands=False`` here, but that flag forces ``consistency_v2=False``
+    (a pre-existing, 2026-06-18 gate in sample_fleet unrelated to issue #315:
+    "consistency_v2 relies on drawing brand/model; disable it when
+    model_brands=False"). The wohnmobile tilt only fires on the consistency_v2
+    path, so with that flag the test degenerates to the legacy path -- confirmed
+    empirically (``ValueError: not enough values to unpack (expected 3, got
+    2)``, i.e. the legacy 2-tuple return). Dropping ``model_brands=False``
+    (default ``True``) restores the v2 path this test is meant to exercise;
+    the test does not care about the drawn brand/model, only about segment and
+    owner_age, so this preserves the test's intent without touching production
+    code or the shared consistency_v2/model_brands gate (out of scope for #315).
+    """
+    df = _synthetic_frame(n=20000, seed=3)
+    on, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
+                                  wohnmobile_age_tilt=True)
+    off, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
+                                   wohnmobile_age_tilt=False)
+    mean_on = on.loc[on["segment"] == "wohnmobile", "owner_age"].mean()
+    mean_off = off.loc[off["segment"] == "wohnmobile", "owner_age"].mean()
+    assert mean_on > mean_off + 2.0  # reference is strongly old-skewed
