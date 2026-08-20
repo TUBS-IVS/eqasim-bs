@@ -308,7 +308,7 @@ def test_all_kreis_entries_default_on():
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
         "trip_class", "employment_status", "pt_ticket_group", "work_participation",
-        "leisure_participation", "education_participation",
+        "leisure_participation", "education_participation", "escort_participation",
     }
 
 

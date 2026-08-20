@@ -219,18 +219,19 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all ten entries default "on" (project rule: new features default
+    # Empty config -> all eleven entries default "on" (project rule: new features default
     # on), in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
     # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on;
     # employment_status (second person-level entry, 14+ universe) is feature #172 task 4;
     # work_participation / leisure_participation / education_participation (third,
     # fourth, fifth person-level entries) are feature #224 tasks 4-5; pt_ticket_group
-    # (sixth person-level entry, 14+ universe) is issue #321.
+    # (sixth person-level entry, 14+ universe) is issue #321; escort_participation
+    # (seventh person-level entry) is issue #227.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
         "employment_status", "pt_ticket_group", "work_participation", "leisure_participation",
-        "education_participation",
+        "education_participation", "escort_participation",
     ]
 
 
@@ -255,6 +256,7 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_WORK_PARTICIPATION_CONTROL: "off",
         stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off",
         stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off",
+        stage.KEY_ESCORT_PARTICIPATION_CONTROL: "off",
     }
     assert stage.active_kreis_entries(_FakeContext(off), "mid") == []
 

@@ -32,11 +32,14 @@ TARGETS_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "targets"
 
 # --- Shared fixture: 4 persons in 2 Kreise, purpose-string trip schema. ---
 #
-# Kreis 03101: person 1 (one work round-trip), person 2 (fully immobile).
-#   -> work 1/2=0.5, leisure 0/2=0.0, education 0/2=0.0, mobility 1/2=0.5
+# Kreis 03101: person 1 (one work round-trip PLUS one escort round-trip),
+# person 2 (fully immobile).
+#   -> work 1/2=0.5, leisure 0/2=0.0, education 0/2=0.0, escort 1/2=0.5,
+#      mobility 1/2=0.5
 # Kreis 03102: person 3 (one leisure round-trip), person 4 (one education
 # round-trip).
-#   -> work 0/2=0.0, leisure 1/2=0.5, education 1/2=0.5, mobility 2/2=1.0
+#   -> work 0/2=0.0, leisure 1/2=0.5, education 1/2=0.5, escort 0/2=0.0,
+#      mobility 2/2=1.0
 
 
 def _persons_kreis():
@@ -48,9 +51,11 @@ def _persons_kreis():
 
 def _trips_purpose_schema():
     return pd.DataFrame({
-        "person_id": [1, 1, 3, 3, 4, 4],
-        "preceding_purpose": ["home", "work", "home", "leisure", "home", "education"],
-        "following_purpose": ["work", "home", "leisure", "home", "education", "home"],
+        "person_id": [1, 1, 1, 1, 3, 3, 4, 4],
+        "preceding_purpose": ["home", "work", "home", "escort",
+                              "home", "leisure", "home", "education"],
+        "following_purpose": ["work", "home", "escort", "home",
+                              "leisure", "home", "education", "home"],
     })
 
 
@@ -58,10 +63,11 @@ def _trips_wzweck_schema():
     # One trip per mobile person is enough under the W_ZWECK schema: a person
     # participates in purpose P as soon as one trip carries a W_ZWECK code
     # from mid.PARTICIPATION_W_ZWECK[P]. 1 = Arbeit (work), 7 = Freizeit
-    # (leisure), 3 = Ausbildung/Schule (education).
+    # (leisure), 3 = Ausbildung/Schule (education), 6 = Bringen/Holen (the
+    # ACTIVE escort leg, issue #227).
     return pd.DataFrame({
-        "person_id": [1, 3, 4],
-        "W_ZWECK": [1, 7, 3],
+        "person_id": [1, 1, 3, 4],
+        "W_ZWECK": [1, 6, 7, 3],
     })
 
 
@@ -69,17 +75,19 @@ _EXPECTED = {
     ("03101", "work"): 0.5,
     ("03101", "leisure"): 0.0,
     ("03101", "education"): 0.0,
+    ("03101", "escort"): 0.5,
     ("03101", "mobility"): 0.5,
     ("03102", "work"): 0.0,
     ("03102", "leisure"): 0.5,
     ("03102", "education"): 0.5,
+    ("03102", "escort"): 0.0,
     ("03102", "mobility"): 1.0,
 }
 
 
 def _assert_matches_expected(result: pd.DataFrame):
     assert set(result.columns) == {"ars5", "purpose", "realised_rate", "n_persons"}
-    assert len(result) == 8
+    assert len(result) == 10
     indexed = result.set_index(["ars5", "purpose"])
     for (ars5, purpose), expected_rate in _EXPECTED.items():
         assert indexed.loc[(ars5, purpose), "realised_rate"] == pytest.approx(expected_rate)
@@ -105,7 +113,7 @@ def test_realised_participation_raises_on_unknown_trip_schema():
 def test_load_participation_targets_real_committed_files():
     targets = load_participation_targets(TARGETS_DIR)
     assert set(targets.columns) == {"ars5", "purpose", "target_rate"}
-    assert set(targets["purpose"]) == {"work", "leisure", "education", "mobility"}
+    assert set(targets["purpose"]) == {"work", "leisure", "education", "escort", "mobility"}
     assert ((targets["target_rate"] >= 0.0) & (targets["target_rate"] <= 1.0)).all()
     # Every Kreis present in the work-participation target must also carry a
     # mobility row derived from the trip-class target.
@@ -137,6 +145,11 @@ def _write_synthetic_targets(tmp_path: Path) -> Path:
         "03101,srv,100,0.05,0.95\n"
         "03102,srv,100,0.55,0.45\n",
         encoding="utf-8")
+    (targets_dir / "target2026_escort_participation_by_kreis.csv").write_text(
+        "ars5,source,n_effective,escort_yes,escort_no\n"
+        "03101,srv,100,0.2,0.8\n"
+        "03102,srv,100,0.05,0.95\n",
+        encoding="utf-8")
     (targets_dir / "target2026_trip_class_by_kreis.csv").write_text(
         "ars5,source,n_effective,trips_0,trips_1_2,trips_3_4,trips_5plus\n"
         "03101,srv,100,0.4,0.3,0.2,0.1\n"
@@ -150,17 +163,19 @@ def test_participation_fit_abs_error_on_fixture(tmp_path):
     result = participation_fit(_trips_purpose_schema(), _persons_kreis(), targets_dir)
 
     assert set(result.columns) == {"ars5", "purpose", "realised_rate", "target_rate", "abs_error"}
-    assert len(result) == 8
+    assert len(result) == 10
 
     indexed = result.set_index(["ars5", "purpose"])
     expected_abs_error = {
         ("03101", "work"): 0.1,
         ("03101", "leisure"): 0.1,
         ("03101", "education"): 0.05,
+        ("03101", "escort"): 0.3,   # realised 0.5 vs synthetic target 0.2
         ("03101", "mobility"): 0.1,
         ("03102", "work"): 0.1,
         ("03102", "leisure"): 0.1,
         ("03102", "education"): 0.05,
+        ("03102", "escort"): 0.05,  # realised 0.0 vs synthetic target 0.05
         ("03102", "mobility"): 0.0,
     }
     for key, expected in expected_abs_error.items():

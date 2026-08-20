@@ -127,7 +127,7 @@ def test_active_kreis_entries_includes_work_participation_by_default():
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
         "trip_class", "employment_status", "pt_ticket_group", "work_participation",
-        "leisure_participation", "education_participation",
+        "leisure_participation", "education_participation", "escort_participation",
     }
 
 
