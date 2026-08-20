@@ -50,7 +50,9 @@ Writes (to ``--out-dir``, default ``eqasim-data/data/braunschweig/srv``):
     srv2023_ebike_household_by_kreis.csv
     srv2023_income5_by_kreis.csv
     srv2023_car_license_17plus_by_kreis.csv
+    srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv
     srv2023_dticket_by_kreis.csv
+    srv2023_ticket_groups_14plus_by_kreis.csv
     srv2023_covered_municipalities.csv
 
 Usage:
@@ -478,6 +480,94 @@ def build_license_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Car driving licence resolved by sex x age cohort (issue #322)
+# ---------------------------------------------------------------------------
+#
+# Why this table exists: the licence STRUCTURE (who holds one) was being judged
+# against the committed MiD marginals mid2023_P17_1_by_sex.csv and
+# mid2023_P17_1_by_age.csv, which resolve ONE dimension each. Comparing a
+# synthetic population's overall male-female difference against a marginal that
+# mixes age cohorts produced a spurious 8pp "missing gradient" (issue #322): the
+# gap is concentrated in the 65+ cohort and nearly absent below it, so a marginal
+# comparison mostly measures the age composition of the survey sample. This table
+# resolves both dimensions from the microdata so the comparison is like-for-like.
+#
+# The 18+ base (not the 17+ of srv2023_car_license_17plus_by_kreis.csv, not the
+# 14+ of MiD P17.1) is deliberate: it is the universe the synthesis actually
+# assigns licences on, so no BF17 / minimum-age convention enters the comparison.
+LICENSE_SEX_COHORT_MIN_AGE = 18
+LICENSE_SEX_COHORT_EDGE_AGE = 65
+LICENSE_SEX_LABELS = {1: "male", 2: "female"}
+
+
+def build_license_by_sex_cohort_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
+    """Car-licence share per sex x age cohort for persons aged >= 18 (issue #322).
+
+    Universe: persons with a valid GEWICHT_P_ZENSUS weight, V_ALTER >= 18,
+    V_FUEHR_PKW in {1 ja, 2 nein} and V_GESCHLECHT in {1 male, 2 female}. Two
+    cohorts are reported, split at LICENSE_SEX_COHORT_EDGE_AGE: the coarse split
+    keeps every per-Kreis cell above ~100 unweighted respondents while still
+    separating the one cohort in which the sexes differ materially.
+
+    Rows are long over (sex, cohort) and carry the usual level triplet, so the
+    same table serves the region ('total'), the per-Kreis and the design-safe
+    per-stratum reading. Sex codes 3/4 (divers / keine Angabe) are excluded from
+    the universe and their rate is logged -- they cannot be mapped onto the
+    binary sex the synthesis carries (see CLAUDE.md "No silent fallbacks").
+    """
+    age_eligible = persons_valid[persons_valid["V_ALTER"] >= LICENSE_SEX_COHORT_MIN_AGE]
+    with_answer = age_eligible[age_eligible["V_FUEHR_PKW"].isin([1, 2])]
+    universe = with_answer[
+        with_answer["V_GESCHLECHT"].isin(sorted(LICENSE_SEX_LABELS))].copy()
+
+    n_no_response = len(age_eligible) - len(with_answer)
+    if n_no_response:
+        logger.warning(
+            "[license_sex_cohort] V_FUEHR_PKW: excluding %d/%d (%.1f%%) persons aged "
+            "%d+ with a missing response (-8 Nicht erhoben)",
+            n_no_response, len(age_eligible),
+            100.0 * n_no_response / len(age_eligible), LICENSE_SEX_COHORT_MIN_AGE,
+        )
+    n_other_sex = len(with_answer) - len(universe)
+    if n_other_sex:
+        logger.warning(
+            "[license_sex_cohort] V_GESCHLECHT: excluding %d/%d (%.2f%%) persons whose "
+            "sex is neither 1 (male) nor 2 (female); the synthesis carries a binary sex "
+            "so these rows have no comparable synthetic counterpart",
+            n_other_sex, len(with_answer), 100.0 * n_other_sex / len(with_answer),
+        )
+
+    universe["is_senior_cohort"] = universe["V_ALTER"] >= LICENSE_SEX_COHORT_EDGE_AGE
+
+    rows = []
+    for level, code, name, group in _iter_levels(universe):
+        for sex_code, sex_label in sorted(LICENSE_SEX_LABELS.items()):
+            for is_senior in (False, True):
+                cell = group[(group["V_GESCHLECHT"] == sex_code)
+                             & (group["is_senior_cohort"] == is_senior)]
+                cohort_label = "65plus" if is_senior else "18_64"
+                if cell.empty:
+                    raise RuntimeError(
+                        f"[license_sex_cohort] {level} {code}: no respondents in cell "
+                        f"({sex_label}, {cohort_label}); the cell grid must be complete "
+                        "or a consumer would silently read a missing cell as zero")
+                shares = _weighted_class_shares(
+                    cell, "GEWICHT_P_ZENSUS", "V_FUEHR_PKW", [1, 2])
+                rows.append({
+                    "level": level, "code": code, "name": name,
+                    "sex": sex_label,
+                    "cohort": cohort_label,
+                    "cohort_lo": (LICENSE_SEX_COHORT_EDGE_AGE if is_senior
+                                  else LICENSE_SEX_COHORT_MIN_AGE),
+                    "cohort_hi": 999 if is_senior else LICENSE_SEX_COHORT_EDGE_AGE - 1,
+                    "n_unweighted": len(cell),
+                    "n_weighted": round(float(cell["GEWICHT_P_ZENSUS"].sum()), 2),
+                    "share_with_license": round(shares[1], 4),
+                })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Table 6: Deutschlandticket holders by Kreis (E_OEV_FK)
 # ---------------------------------------------------------------------------
 
@@ -701,6 +791,7 @@ def main(argv: list[str] | None = None) -> int:
     ebike_household_df = build_ebike_household_table(households_valid)
     income_df = build_income_table(households_valid)
     license_df = build_license_table(persons_valid)
+    license_sex_cohort_df = build_license_by_sex_cohort_table(persons_valid)
     dticket_df = build_dticket_table(persons_valid)
     ticket_groups_df = build_ticket_groups_table(persons_valid)
     municipalities_df = build_municipalities_table(households_valid)
@@ -759,6 +850,20 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     write_csv(
+        license_sex_cohort_df,
+        args.out_dir / "srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv",
+        _provenance_header(
+            universe="persons aged >= 18 (V_ALTER) with a valid GEWICHT_P_ZENSUS "
+                     "weight, V_FUEHR_PKW in {1 ja, 2 nein} and V_GESCHLECHT in "
+                     "{1 male, 2 female}; rows are long over (sex, cohort) with the "
+                     "cohort split at age 65",
+            weight_col="GEWICHT_P_ZENSUS",
+            missing_handling="V_FUEHR_PKW == -8 (Nicht erhoben) and V_GESCHLECHT in "
+                              "{3 divers, 4 keine Angabe} excluded from the universe, "
+                              "each with a logged rate",
+        ),
+    )
+    write_csv(
         dticket_df, args.out_dir / "srv2023_dticket_by_kreis.csv",
         _provenance_header(
             universe="persons with a valid GEWICHT_P_ZENSUS weight and E_OEV_FK != -10 "
@@ -802,7 +907,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
 
-    logger.info("[srv-extract] wrote 7 aggregate CSVs to %s", args.out_dir)
+    logger.info("[srv-extract] wrote 9 aggregate CSVs to %s", args.out_dir)
 
     print("\n=== srv2023_cars_by_kreis.csv (level=kreis) ===")
     print(cars_df[cars_df["level"] == "kreis"].to_string(index=False))

@@ -1,0 +1,69 @@
+dataset: srv2023_license_by_sex_cohort
+title: SrV 2023 car-licence share by sex x age cohort, 18+ (committed aggregate)
+inventory_id: E5.4
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig; rows at three levels
+  (total / kreis / stratum). Covers 7 of the 8 ZGB Kreise - Wolfsburg (03103) is not part of
+  this survey and never appears.
+crs: null
+roles:
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_kreis_tables.py [--raw <dir>]
+    [--out-dir <dir>], which writes this table together with the other eight committed SrV
+    aggregates. Reads SrV2023_Personen.csv (V_ALTER, V_GESCHLECHT, V_FUEHR_PKW,
+    GEWICHT_P_ZENSUS) joined to the household file for the Kreis; the raw microdata is
+    local-only and never committed.
+  script: scripts/extract_srv_kreis_tables.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README derived-inputs
+    table: the file ships committed and requirements.production is "optional" because no
+    pipeline stage consumes it - it is a validation/interpretation reference, not an input.
+    Same treatment as the sibling committed srv2023_* tables that no stage reads.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed)
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: share of persons holding a car driving licence (V_FUEHR_PKW == 1),
+  GEWICHT_P_ZENSUS-weighted, per (level, sex, age cohort); cohorts split at age 65 into 18_64
+  and 65plus. Universe: V_ALTER >= 18, V_FUEHR_PKW in {1 ja, 2 nein}, V_GESCHLECHT in
+  {1 male, 2 female}; V_FUEHR_PKW == -8 (Nicht erhoben) and sex codes 3/4 (divers / keine
+  Angabe, 0.13% of respondents) are excluded with a logged rate rather than imputed, because
+  the synthesis carries a binary sex and has no comparable counterpart for them.
+  The 18+ base is deliberate and differs from the sibling srv2023_car_license_17plus_by_kreis
+  table (17+) and from MiD P17.1 (14+): it is the universe the synthesis assigns licences on,
+  so no BF17 / minimum-age convention enters a comparison against it.
+  Coverage caveat inherited from every SrV table: the sample is a stratified PSU design over
+  about 44 selected municipalities, so per-Kreis (and total) rows extrapolate from the sampled
+  municipalities to the full Kreis and are ASSUMPTION-grade; per-stratum rows are the
+  design-safe level. Thinnest cell 126 unweighted respondents, median 404.
+  NOT A CONTROL TARGET, deliberately - see ADR-0094. The 65+ female cell disagrees with MiD by
+  about 8pp (89.7% here vs 81.8% in MiD Niedersachsen), and this survey's overall licence level
+  sits about 7pp above MiD's, the ADR-0079 identification problem that this project has twice
+  declined to arbitrate.
+notes: |
+  Exists to make licence-structure comparisons like-for-like (issue #322): the committed MiD
+  references resolve sex and age as separate marginals, and comparing an overall male-female
+  difference against the by-sex marginal produced a spurious "missing 8pp gradient" - the gap
+  is a 65+ phenomenon (here +6.7pp) and nearly absent below (here +0.8pp).
+  Guarded by tests/test_license_sex_cohort_reference.py: the committed file's cell grid, share
+  bounds, the seven-Kreis coverage with Wolfsburg absent, and the cohort-concentration finding;
+  the extraction builder is covered on synthetic input, including that an empty cell raises
+  instead of being silently dropped.
+  Companion table on the donor side: mid2023_license_by_sex_cohort (larger n, but no Kreis
+  resolution is possible from the MiD microdata at all).
