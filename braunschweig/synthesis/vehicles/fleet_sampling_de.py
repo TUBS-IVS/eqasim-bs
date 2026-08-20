@@ -56,6 +56,8 @@ from braunschweig.data.kba.hsn_tsn import canonical_brand, model_family
 from braunschweig.ipf.joint_age_size import rake_2d
 from braunschweig.synthesis.vehicles import hbefa
 from braunschweig.synthesis.vehicles.age_income import AgeIncomeModel
+from braunschweig.synthesis.vehicles.wohnmobile_age import (
+    WOHNMOBILE_SEGMENT, WohnmobileHolderAgeTilt)
 from braunschweig.synthesis.vehicles.segment import SegmentModel
 
 logger = logging.getLogger(__name__)
@@ -2032,6 +2034,12 @@ class FleetSampler:
     #: ``Optional`` for defensive checks / direct test construction, mirroring
     #: the other optional models on this dataclass.
     euro6_substage: Optional[Euro6SubstageModel] = None
+    #: Issue #315: wohnmobile holder-age tilt built from the COMMITTED
+    #: kba_wohnmobile_holder_age.csv. ``None`` ONLY when that CSV is absent --
+    #: unlike the server-generated optional tables, :func:`sample_fleet` RAISES
+    #: in that state when its flag is ON (absence of a committed file is a
+    #: checkout/wiring defect, never a normal state; ADR-0093).
+    wohnmobile_age_tilt: Optional[WohnmobileHolderAgeTilt] = None
 
     @classmethod
     def from_data_path(cls, data_path: str,
@@ -2129,6 +2137,23 @@ class FleetSampler:
             "%d national fuel(s).",
             len(euro6_substage.kreis_pmf), len(euro6_substage.national_pmf),
         )
+        # Issue #315: wohnmobile holder-age tilt reference. Built leniently here
+        # (the sampler does not know the flag); sample_fleet raises when the
+        # flag is ON and this stayed None.
+        wohnmobile_age_tilt_model: Optional[WohnmobileHolderAgeTilt] = None
+        try:
+            wohnmobile_age_tilt_model = WohnmobileHolderAgeTilt.from_data_path(data_path)
+            logger.info(
+                "[fleet_de] wohnmobile holder-age tilt: reference loaded "
+                "(kba_wohnmobile_holder_age.csv)."
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "[fleet_de] wohnmobile holder-age tilt: "
+                "kba_wohnmobile_holder_age.csv ABSENT. Unlike the "
+                "server-generated MiD tables this file is COMMITTED; "
+                "sample_fleet will raise if fleet_wohnmobile_age_tilt is ON."
+            )
         return cls(
             segment_model=segment_model,
             powertrain_model=powertrain_model,
@@ -2142,6 +2167,7 @@ class FleetSampler:
             model_fuel=model_fuel,
             ev_income_tilt=ev_income_tilt,
             euro6_substage=euro6_substage,
+            wohnmobile_age_tilt=wohnmobile_age_tilt_model,
         )
 
 
@@ -2313,6 +2339,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                  age_income_coupling: bool = True,
                  age_euro_joint: bool = True,
                  ev_income_tilt: bool = True,
+                 wohnmobile_age_tilt: bool = True,
                  euro6_substage: bool = True,
                  population_label: str = "",
                  ) -> "tuple[pd.DataFrame, pd.DataFrame] | tuple[pd.DataFrame, pd.DataFrame, dict]":
@@ -2325,7 +2352,9 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         :data:`braunschweig.data.kba.fleet_tables.STATUS_LABELS`),
         ``kreis_ags5`` (home Kreis AGS-5 string), ``gemeinde`` (home Gemeinde
         name; may be missing/``NaN``) and ``raumtyp`` (RegioStaR-7 code 71..77;
-        may be missing/``NaN``).
+        may be missing/``NaN``); optionally ``owner_age`` (assigned owner's age
+        in years; consumed by the wohnmobile holder-age tilt; an absent column
+        is a loud 100%-fallback batch).
     data_path : the synpp ``data_path`` (the parent of ``braunschweig/kba/...``).
     random_seed : seed for the single :class:`numpy.random.Generator` used for
         every draw (reproducible).
@@ -2365,6 +2394,21 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         unchanged. ``False``, ``consistency_v2=False``, or an absent CSV leave
         the powertrain pmf untouched (byte-identical to the pre-Task-B2
         behaviour).
+    wohnmobile_age_tilt : when ``True`` (default) AND ``consistency_v2=True``,
+        PASS 1 tilts the segment pmf's ``wohnmobile`` mass by the owner's age
+        class against the KBA 2025-04-01 holder-age reference, with a global
+        calibration scalar keeping the expected national wohnmobile share exact
+        (issue #315, ADR-0093). The tilt consumes no RNG, so ``False`` (or
+        ``consistency_v2=False``) is byte-identical to the untilted draw. The
+        reference CSV is COMMITTED: with the flag ON its absence raises instead
+        of silently disabling the feature. The stage config key
+        ``fleet_wohnmobile_age_tilt`` governs only the household resident fleet
+        draw (:mod:`braunschweig.synthesis.vehicles.cars.household`); the
+        in-commuter fleet draw
+        (:func:`braunschweig.synthesis.incommuters.build_incommuter_fleet`)
+        does not thread this parameter through and always uses this default
+        (``True``), matching the sibling flags ``age_income_coupling``,
+        ``ev_income_tilt`` and ``euro6_substage`` above.
     euro6_substage : when ``True`` (default) AND ``consistency_v2=True``, PASS 2
         refines a combustion vehicle's drawn ``euro_class`` from the headline
         ``"euro6"`` into one of the three real Euro-6 substages (``euro6ab``,
@@ -2387,7 +2431,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     When ``consistency_v2=True`` (default):
         ``(df_spec, df_vehicle_types, validation_summary)`` — a 3-tuple;
         ``validation_summary`` is the dict returned by
-        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_realised_margins`.
+        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_realised_margins`,
+        plus, on tilt-active runs (``wohnmobile_age_tilt=True`` with a fitted
+        tilt), a ``"wohnmobile_holder_age"`` key holding the dict returned by
+        :func:`~braunschweig.synthesis.vehicles.fleet_validation.validate_wohnmobile_holder_age`
+        (itself carrying a ``"tilt_counters"`` sub-dict, issue #315), with
+        ``validation_summary["any_flagged"]`` re-derived to also reflect that
+        check's own ``flagged`` outcome.
     When ``consistency_v2=False`` (legacy path):
         ``(df_spec, df_vehicle_types)`` — 2-tuple, byte-identical to the
         pre-Task-3 legacy behaviour.
@@ -2479,6 +2529,41 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     age_model: Optional[AgeIncomeModel] = None
     if consistency_v2 and age_income_coupling:
         age_model = AgeIncomeModel.from_data_path(data_path)
+
+    # Issue #315: wohnmobile holder-age tilt (consistency_v2 path only). MUST
+    # sit AFTER the model_brands downgrade above so it keys on the EFFECTIVE
+    # consistency_v2 (same effective-v2 contract as the age_income tilt just
+    # above), not the caller's raw flag -- otherwise a model_brands=False run
+    # would fit/raise for a tilt the (downgraded-to-legacy) draw never
+    # consults. Fitted per frame so P_pop and the calibration scalar describe
+    # THIS batch. NOTE: the fit queries segment_probabilities once per
+    # (status, raumtyp) cell, which adds a handful of hits to the segment
+    # model's own tilt counters.
+    _wm_tilt = None
+    _wm_index = -1
+    if consistency_v2 and wohnmobile_age_tilt:
+        if sampler.wohnmobile_age_tilt is None:
+            raise RuntimeError(
+                "fleet_wohnmobile_age_tilt=True but kba_wohnmobile_holder_age.csv "
+                "was not found under <data_path>/braunschweig/kba/derived/. The "
+                "table is COMMITTED: its absence is a checkout or data-path "
+                "wiring defect, never a normal state (project absent-input "
+                "rule). Restore the file (git checkout, or re-run "
+                "scripts/extract_kba_fleet.py) or set "
+                "fleet_wohnmobile_age_tilt=false explicitly."
+            )
+        if "owner_age" not in df_cars.columns:
+            sampler.wohnmobile_age_tilt.mark_batch_fallback(n)
+            logger.warning(
+                "[fleet_de]%s wohnmobile holder-age tilt: df_cars carries no "
+                "'owner_age' column -> 100%% fallback for this batch (the tilt "
+                "input never arrived; every car keeps the untilted segment pmf).",
+                f" [{population_label}]" if population_label else "",
+            )
+        else:
+            sampler.wohnmobile_age_tilt.fit_population(df_cars, sampler.segment_model)
+            _wm_tilt = sampler.wohnmobile_age_tilt
+            _wm_index = segments.index(WOHNMOBILE_SEGMENT)
 
     # Task 6 (consistency_v2): model-feasible powertrain mask (Bug 2).
     # When the HSN/TSN-derived feasible-fuels model is available we draw the
@@ -2624,6 +2709,11 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
 
             # 1. segment <- income-coupled segment IPF.
             seg_pmf = sampler.segment_model.segment_probabilities(status, raumtyp)
+            # Issue #315: holder-age tilt on the wohnmobile mass -- BEFORE the
+            # draw and BEFORE the eff_seg accumulation below, so the realised-
+            # margin validator targets the distribution actually drawn from.
+            if _wm_tilt is not None:
+                seg_pmf = _wm_tilt.tilt(seg_pmf, car.get("owner_age"), _wm_index)
             segment = _draw_categorical(rng, segments, seg_pmf)
 
             # Task A2: effective segment pmf for the validator -- seg_pmf with
@@ -2918,6 +3008,8 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         sampler.ev_income_tilt.log_fallback_rate()
     if consistency_v2 and euro6_substage and sampler.euro6_substage is not None:
         sampler.euro6_substage.log_fallback_rate()
+    if consistency_v2 and wohnmobile_age_tilt and sampler.wohnmobile_age_tilt is not None:
+        sampler.wohnmobile_age_tilt.log_fallback_rate(population_label)
     _log_simple_fallback("HBEFA size map", sum(size_fallback_counter.values()), n)
     if model_brands:
         _log_simple_fallback("brand/model draw", brand_model_fallback, n)
@@ -2989,6 +3081,26 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             "[fleet_de] realised-margin validation (consistency_v2): "
             "any_flagged=%s", _validation_summary["any_flagged"],
         )
+        # Issue #315: wohnmobile holder-age acceptance check (tilt-active only).
+        # review Finding I2: the aggregate flag is compared against the
+        # EFFECTIVE per-car segment target actually fed into the draw (tilt +
+        # sonstige redistribution included) rather than the untilted
+        # expectation, so the sonstige-redraw leak (see
+        # fleet_validation.validate_wohnmobile_holder_age) can never bias the
+        # aggregate flag itself.
+        if _wm_tilt is not None:
+            _wm_summary = _fv.validate_wohnmobile_holder_age(
+                df_spec, _wm_tilt,
+                expected_realised_share=_expected["segment"].get("wohnmobile"))
+            # review Finding M7 (CLAUDE.md no-silent-fallback rule #2): surface
+            # the tilt's own primary/fallback/guard counts in the per-run
+            # validation summary so a high fallback or guard rate on a
+            # tilt-active run is visible in the machine-readable output, not
+            # only in the log line emitted by log_fallback_rate().
+            _wm_summary["tilt_counters"] = _wm_tilt.counters
+            _validation_summary["wohnmobile_holder_age"] = _wm_summary
+            _validation_summary["any_flagged"] = (
+                _validation_summary["any_flagged"] or _wm_summary["flagged"])
         return df_spec, df_vehicle_types, _validation_summary
 
     return df_spec, df_vehicle_types

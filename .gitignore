@@ -106,8 +106,13 @@ zensus_hh_inspect.txt
 # per-Kreis aggregate (eqasim-data/data/braunschweig/lsn/lsn2022_*.csv -- NOT
 # lsn/raw/, which stays local), the blended control-target tables
 # (eqasim-data/data/braunschweig/targets/target2026_*.csv, derived purely
-# from the committed aggregates above), and the project's own
-# calibration-evaluation outputs (.../mid/education_calibration/*), plus the
+# from the committed aggregates above), the project's own
+# calibration-evaluation outputs (.../mid/education_calibration/*), and the
+# hand-transcribed KBA wohnmobile holder-age RAW table
+# (eqasim-data/data/braunschweig/kba/raw/kba_wohnmobile_holder_age_20250401.csv
+# -- force-added despite being a RAW file, unlike every other raw/ input
+# above, because no downloadable table exists behind the KBA source pages:
+# the transcription itself IS the source), plus the
 # documentation markdown. Do NOT `git add -f` any other data file here
 # (Mikrozensus tables, NDS school/Hochschule/Kita facility tables, ALKIS/ATKIS,
 # OSM, GTFS, population/employment registers, ...) -- they stay local only.

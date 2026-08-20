@@ -683,7 +683,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
     # that omit it keep the single default-car row so their behaviour is unchanged.
     if data_path is not None:
         vehicle_types, vehicles = build_incommuter_fleet(
-            person_ids, modes, orig_ars, income_eur, data_path, rng)
+            person_ids, modes, orig_ars, income_eur,
+            persons["age"].to_numpy(dtype=float), data_path, rng)
     else:
         vehicle_types = pd.DataFrame(columns=["type_id", "length", "width", "mode",
                                               "hbefa_cat", "hbefa_tech", "hbefa_size",
@@ -934,7 +935,7 @@ def _incommuter_kreis_ags5(orig_ars):
     return np.array([str(a)[:5] for a in orig_ars])
 
 
-def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, rng):
+def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, ages, data_path, rng):
     """Draw cross-cordon in-commuter cars from the German NDS fleet (Task F6).
 
     Replaces the legacy single hardcoded ``Gazole/euro6`` row: each car-mode
@@ -951,6 +952,10 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
     modes : per-agent fixed commute mode; only ``"car"`` agents get a vehicle.
     orig_ars : per-agent 5-digit origin Kreis ARS.
     income_eur : per-agent monthly household income (EUR), origin-Kreis scaled.
+    ages : per-agent owner age in years (all modes, agent-ordered; the donor-age
+        constant-40 substitution of ``_build_persons`` is applied upstream — those
+        cars land in the 40-49 holder-age class through that pre-existing fallback,
+        kept visible by the tilt's per-batch rate log).
     data_path : the synpp ``data_path`` (parent of ``braunschweig/kba/...``).
     rng : the in-commuter :class:`numpy.random.Generator` (seed propagated to the
         fleet draw so the whole in-commuter synthesis stays reproducible).
@@ -971,6 +976,12 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
     modes = np.asarray(modes)
     orig_ars = np.asarray(orig_ars)
     income_eur = np.asarray(income_eur, dtype=float)
+    ages = np.asarray(ages, dtype=float)
+    if len(ages) != len(person_ids):
+        raise ValueError(
+            f"build_incommuter_fleet: ages ({len(ages)}) and person_ids "
+            f"({len(person_ids)}) must be agent-aligned."
+        )
 
     car_mask = modes == "car"
     car_person_ids = person_ids[car_mask]
@@ -990,6 +1001,7 @@ def build_incommuter_fleet(person_ids, modes, orig_ars, income_eur, data_path, r
         # sampler falls back to the Kreis / national levels (logged).
         "gemeinde": np.nan,
         "raumtyp": np.nan,
+        "owner_age": ages[car_mask],
     })
 
     # Derive a deterministic integer seed from the in-commuter rng so the fleet

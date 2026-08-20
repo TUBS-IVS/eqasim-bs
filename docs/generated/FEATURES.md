@@ -37,6 +37,7 @@ may only name run manifests (no run, no claim).
 | [fleet_hsn_tsn_attributes](../registry/features/fleet_hsn_tsn_attributes.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | none | unvalidated | pending |
 | [fleet_realism_upgrade](../registry/features/fleet_realism_upgrade.yml) | fleet | active | ON | A/A/- | 12 | not claimed | marker | committed | unvalidated | merge of issue, 2026-08-17 |
 | [fleet_segment_brand_mix](../registry/features/fleet_segment_brand_mix.yml) | fleet | active | ON | A/A/- | 1 | -- | marker | committed | unvalidated | pending |
+| [fleet_wohnmobile_age_tilt](../registry/features/fleet_wohnmobile_age_tilt.yml) | fleet | active | ON | A/A/- | 1 | proven | marker | committed | unvalidated | pending |
 | [freight_analysis_exclusion](../registry/features/freight_analysis_exclusion.yml) | freight | active | ON | A/-/- | 1 | -- | marker | none | unvalidated | pending |
 | [freight_assumptions](../registry/features/freight_assumptions.yml) | freight | active | ON | A/i/i | 0 | -- | none | assumption | unvalidated | pending |
 | [freight_longhaul_v3](../registry/features/freight_longhaul_v3.yml) | freight | active | ON | A/-/- | 4 | not claimed | none | assumption | unvalidated | pending |

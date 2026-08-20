@@ -56,6 +56,11 @@ requires:
     extraction.
   * ``raumtyp`` -- the home RegioStaR-7 code (71..77), from the RegioStaR
     reference (``commune_id`` -> ``regiostar7``) via the AGS-8 join.
+  * ``owner_age`` -- the assigned owner's age in years (float). Input-only:
+    consumed by the wohnmobile holder-age tilt in
+    :func:`~braunschweig.synthesis.vehicles.fleet_sampling_de.sample_fleet`
+    (issue #315) and dropped again before the writer -- it is never a vehicle
+    attribute.
 
 plus ``household_id`` and ``owner_id`` (the assigned licensed adult's
 ``person_id``) carried through to the writer.
@@ -177,6 +182,7 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
             n_zero_licensed_cars += number_of_cars
             owners = _fallback_owners(group, number_of_cars)
 
+        age_by_person = dict(zip(group["person_id"], group["age"]))
         for owner_id in owners:
             rows.append({
                 "household_id": household_id,
@@ -185,6 +191,9 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
                 "kreis_ags5": home_row["kreis_ags5"],
                 "gemeinde": home_row["gemeinde"],
                 "raumtyp": home_row["raumtyp"],
+                # Issue #315: the assigned owner's age feeds the wohnmobile
+                # holder-age tilt (input-only column, dropped before the writer).
+                "owner_age": float(age_by_person[owner_id]),
             })
 
     if n_zero_licensed_households:
@@ -197,7 +206,7 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     df_cars = pd.DataFrame.from_records(
         rows,
         columns=["household_id", "owner_id", "economic_status",
-                 "kreis_ags5", "gemeinde", "raumtyp"],
+                 "kreis_ags5", "gemeinde", "raumtyp", "owner_age"],
     )
     return df_cars
 
@@ -466,6 +475,15 @@ def configure(context):
     # absent substage CSVs (server-generated, not always present locally)
     # leave the plain "euro6" label (byte-identical).
     context.config("fleet_euro6_substage", True)
+    # Issue #315: wohnmobile holder-age tilt flag. When True (default) AND
+    # consistency_v2 is True, sample_fleet tilts the segment pmf's wohnmobile
+    # mass by the assigned owner's age class against the KBA 2025-04-01
+    # holder-age reference (kba_wohnmobile_holder_age.csv), with a global
+    # calibration scalar keeping the expected national wohnmobile share exact
+    # (ADR-0093). False keeps the untilted pmf (byte-identical; the tilt
+    # consumes no RNG). The reference CSV is COMMITTED, so with the flag ON its
+    # absence raises instead of silently disabling the feature.
+    context.config("fleet_wohnmobile_age_tilt", True)
     # T9b: default is the new grid-tilt mode; falls back gracefully to Gemeinde-
     # only when kba_ev_grid.csv is absent.  The legacy Gemeinde-only mode
     # ("kreis_mix_gemeinde_bev_tilt") remains supported for explicit rollback.
@@ -495,6 +513,7 @@ def execute(context):
     age_income_coupling = bool(context.config("fleet_age_income_coupling"))
     ev_income_tilt = bool(context.config("fleet_ev_income_tilt"))
     euro6_substage = bool(context.config("fleet_euro6_substage"))
+    wohnmobile_age_tilt = bool(context.config("fleet_wohnmobile_age_tilt"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -606,19 +625,22 @@ def execute(context):
         model_brands=model_brands, consistency_v2=consistency_v2,
         age_income_coupling=age_income_coupling,
         ev_income_tilt=ev_income_tilt,
+        wohnmobile_age_tilt=wohnmobile_age_tilt,
         euro6_substage=euro6_substage,
         population_label="residents")
     if len(_fleet_result) == 3:
         df_spec, df_vehicle_types, _ = _fleet_result
     else:
         df_spec, df_vehicle_types = _fleet_result
-    # The grid-tilt inputs (grid_ev_share, gemeinde_grid_mean) were consumed
-    # during the powertrain draw inside sample_fleet; they are NOT vehicle
-    # attributes. Drop them here so they do not leak into df_vehicles /
-    # vehicles.csv (and do not receive meaningless median fills on the routing
-    # default_car rows in _add_default_cars_for_non_owners). ``errors="ignore"``
-    # keeps this a no-op when the grid tilt was inactive (columns absent).
-    df_spec = df_spec.drop(columns=["grid_ev_share", "gemeinde_grid_mean"], errors="ignore")
+    # The grid-tilt and wohnmobile-tilt inputs (grid_ev_share,
+    # gemeinde_grid_mean, owner_age) were consumed during the powertrain draw
+    # inside sample_fleet; they are NOT vehicle attributes. Drop them here so
+    # they do not leak into df_vehicles / vehicles.csv (and do not receive
+    # meaningless median fills on the routing default_car rows in
+    # _add_default_cars_for_non_owners). ``errors="ignore"`` keeps this a
+    # no-op when a given tilt was inactive (columns absent).
+    df_spec = df_spec.drop(columns=["grid_ev_share", "gemeinde_grid_mean",
+                                    "owner_age"], errors="ignore")
 
     # Additive HSN/TSN engine attributes (power/displacement/fuel + a
     # representative HSN/TSN), matched by brand + model family. Requires the

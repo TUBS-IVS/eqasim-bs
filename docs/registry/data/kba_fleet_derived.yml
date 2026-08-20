@@ -14,7 +14,7 @@ acquisition:
   method: committed
   source: |
     Regenerate with, in this order:
-      python scripts/extract_kba_fleet.py                      (18 tables from kba/ + kba/raw/)
+      python scripts/extract_kba_fleet.py                      (19 tables from kba/ + kba/raw/)
       python scripts/build_mid_age_by_segment_status.py        (MiD Autos micro-data)
       python scripts/build_mid_antrieb_by_status.py            (MiD Autos micro-data)
     The two MiD builders need --mid-path unless the B1 package sits at their default location
@@ -53,11 +53,13 @@ limitations: |
     MEASURED BOUND (24000-car draw, 2026-08-17): motorhomes are 2.15% of drawn cars at a mean age of
     9.99 yr against the 10.49 yr fleet mean; were their true mean 3 / 5 / 8 years higher, the FLEET
     mean age would move by only +0.06 / +0.11 / +0.17 yr. The bias is material for a statement about
-    the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates.
+    the motorhome sub-fleet (49% of them currently draw euro6), not for fleet aggregates. The
+    holder-AGE gap is closed by kba_wohnmobile_holder_age.csv (#315, ADR-0093); this vehicle-AGE
+    gap stays open.
   KBA counts vehicles REGISTERED in a Kreis (company cars at the business seat), the synthesis
   produces HOUSEHOLD cars: spatial patterns are comparable, exact levels are not.
 notes: |
-  18 tables. Powertrain and Euro class per Kreis (kba_kreis_fuel.csv 403 Kreise, kba_kreis_euro.csv),
+  19 tables. Powertrain and Euro class per Kreis (kba_kreis_fuel.csv 403 Kreise, kba_kreis_euro.csv),
   Euro-6 substage split (kba_fuel_euro6_substage_nds.csv), segment x powertrain, brand x powertrain,
   segment -> model series and per-model fuel weights (kba_segment_model.csv / kba_model_fuel.csv,
   658 series), per-Gemeinde EV 2026 and the 5 km EV grid (kba_gemeinde_ev.csv, kba_ev_grid.csv),
@@ -66,4 +68,5 @@ notes: |
   (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
   mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).
   scripts/measure_combustion_split.py and scripts/measure_gemeinde_join_coverage.py check the
-  realised fleet against these tables.
+  realised fleet against these tables. kba_wohnmobile_holder_age.csv (holder-age reference for the
+  wohnmobile tilt, see the kba_wohnmobile_holder_age dataset entry; issue #315, ADR-0093).

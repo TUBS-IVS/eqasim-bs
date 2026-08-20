@@ -1,0 +1,19 @@
+# Hand transcription of the complete wohnmobile holder-age distribution (issue #315, ADR-0093).
+# There is NO downloadable table behind these pages; this CSV is the raw source materialisation
+# and is COMMITTED (git add -f), unlike the other local-only raw inputs in this directory.
+# source_infographic=https://www.kba.de/DE/Statistik/Infografiken/Bestand_Wohnmobile/fz_news_bestand_wohnmobile_node.html
+# source_press_release=https://www.kba.de/DE/Presse/Pressemitteilungen/Allgemein/2025/pm23_2025_wohnmobile.html
+# underlying_series=FZ27 press_release_date=2025-05-28 retrieved_on=2026-08-20
+# Both pages publish identical figures (verified 2026-08-20). not_attributed = published total
+# minus the eight published classes; the source pages attribute these vehicles to no age class
+# (NOT asserted to be commercial holders, see ADR-0093).
+age_class,age_min_years,age_max_years,vehicles,published_share_pct,total_stock,stichtag
+up_to_20,,20,733,0.1,1002562,2025-04-01
+21_29,21,29,16529,1.6,1002562,2025-04-01
+30_39,30,39,78939,7.9,1002562,2025-04-01
+40_49,40,49,132005,13.2,1002562,2025-04-01
+50_59,50,59,265073,26.4,1002562,2025-04-01
+60_69,60,69,318589,31.8,1002562,2025-04-01
+70_79,70,79,123614,12.3,1002562,2025-04-01
+80_plus,80,,27604,2.8,1002562,2025-04-01
+not_attributed,,,39476,,1002562,2025-04-01

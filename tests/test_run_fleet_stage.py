@@ -168,6 +168,11 @@ def _stub(config_overrides=None, path=None):
         # execute(); every single-argument context.config() key of execute() must
         # be present here (see tests/test_execute_context_config_contract.py).
         "fleet_euro6_substage": True,
+        # Issue #315 (wohnmobile holder-age tilt) is likewise read without a
+        # default in execute(); every single-argument context.config() key of
+        # execute() must be present here (see
+        # tests/test_execute_context_config_contract.py).
+        "fleet_wohnmobile_age_tilt": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }

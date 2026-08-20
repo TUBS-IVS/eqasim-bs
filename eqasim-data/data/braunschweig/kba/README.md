@@ -33,6 +33,17 @@ Legacy raw files (also local-only, used by earlier extractors):
 | `output_mit_2023_bundesland_fahrzeuge.xlsx` | MiD 2023 | Segment × economic status by Bundesland |
 | `output_mit_2023_raumtyp_fahrzeuge.xlsx` | MiD 2023 | Segment × economic status by RegioStaR Raumtyp |
 
+### Committed exception: wohnmobile holder-age transcription (added 2026-08-20)
+
+Unlike every other file in this subdirectory (including the legacy ones above), the
+following raw input **is committed** to git: no downloadable table exists behind either
+KBA source page, so the hand transcription itself is the source material (issue #315,
+ADR-0093).
+
+| File | Source | Stichtag / Period | Content |
+|------|--------|-------------------|---------|
+| `kba_wohnmobile_holder_age_20250401.csv` | Hand transcription of the KBA infographic "Eine Million Wohnmobile" (https://www.kba.de/DE/Statistik/Infografiken/Bestand_Wohnmobile/fz_news_bestand_wohnmobile_node.html) and PM 23/2025 (https://www.kba.de/DE/Presse/Pressemitteilungen/Allgemein/2025/pm23_2025_wohnmobile.html), both publishing identical figures | 2025-04-01 | Complete wohnmobile stock by registered-holder age class (eight natural-person classes plus a `not_attributed` residual); consumed by `extract_wohnmobile_holder_age` |
+
 ---
 
 ## derived/ subdirectory (committed to git)
@@ -68,6 +79,12 @@ files to run.  Re-running `scripts/extract_kba_fleet.py` regenerates them identi
 | `mid2023_segment_by_status_bundesland.csv` | MiD 2023 | Segment × economic status by Bundesland |
 | `mid2023_segment_by_status_raumtyp.csv` | MiD 2023 | Segment × economic status by RegioStaR Raumtyp |
 | `mid2023_age_by_segment_status.csv` | MiD 2023 | Age band × segment × economic status |
+
+### Wohnmobile holder-age tilt input (added 2026-08-20)
+
+| File | Stichtag | Provenance | Content |
+|------|----------|------------|---------|
+| `kba_wohnmobile_holder_age.csv` | 2025-04-01 | KBA infographic "Eine Million Wohnmobile" + PM 23/2025 (hand-transcribed; no downloadable table exists) | Wohnmobile stock by registered-holder age class (eight natural-person classes with a renormalised `share_of_attributed`, plus a `not_attributed` residual row); holder-age reference for the wohnmobile segment tilt (issue #315, ADR-0093) |
 
 ---
 

@@ -40,6 +40,9 @@ Regionalization inputs (``kba/raw/`` subdirectory):
     * national EV share by RegioStaR-7 (LOGGING-ONLY cross-check,
       never an IPF control -- see fleet_validation.crosscheck_ev_by_regiostar7)
                                                           -> kba_ev_regiostar7.csv
+- ``kba_wohnmobile_holder_age_20250401.csv`` (KBA infographic, COMMITTED)
+    * wohnmobile holder-age distribution (hand transcription, issue #315)
+                                                          -> kba_wohnmobile_holder_age.csv
 
 The xlsx headers are multi-line and the data starts around row 12, so every
 sheet is parsed by *explicit column indices* (documented in the README), never
@@ -108,6 +111,7 @@ GEMEINDE_EV_PATH = RAW_DIR / "kba_ev_gemeinde_timeseries_2023_2026.csv"
 MODELLREIHEN_PATH = RAW_DIR / "kba_modellreihen_bestand_2020_2026.csv"
 GRID_EV_PATH = RAW_DIR / "kba_ev_grid_5km_2026.gpkg"
 EV_REGIOSTAR7_PATH = RAW_DIR / "kba_ev_regiostar7_timeseries_2023_2026.csv"
+WOHNMOBILE_HOLDER_AGE_PATH = RAW_DIR / "kba_wohnmobile_holder_age_20250401.csv"
 
 # --------------------------------------------------------------------------- #
 # Canonical label sets
@@ -267,6 +271,13 @@ MID_STATUS_MAP = {
     "hoch": "high",
     "sehr hoch": "very_high",
 }
+
+# Wohnmobile holder-age classes (issue #315). Deliberately duplicated in
+# braunschweig.data.kba.fleet_tables (mutual extractor<->loader contract).
+WOHNMOBILE_AGE_CLASS_LABELS = (
+    "up_to_20", "21_29", "30_39", "40_49", "50_59", "60_69", "70_79", "80_plus",
+)
+WOHNMOBILE_AGE_NOT_ATTRIBUTED = "not_attributed"
 
 # KBA fuel ("Kraftstoffart") label -> canonical powertrain (FZ 27.4 / FZ 27.7).
 KBA_FUEL_MAP = {
@@ -1657,6 +1668,66 @@ def extract_age_national(path: Path = AGE_NATIONAL_PATH, year: int = 2026) -> pd
 
 
 # --------------------------------------------------------------------------- #
+# KBA wohnmobile holder-age distribution -> kba_wohnmobile_holder_age.csv
+# (issue #315)
+# --------------------------------------------------------------------------- #
+def extract_wohnmobile_holder_age(path: Path = WOHNMOBILE_HOLDER_AGE_PATH) -> pd.DataFrame:
+    """Wohnmobile stock by holder age (issue #315) -> kba_wohnmobile_holder_age.csv.
+
+    The raw file is a hand transcription (no downloadable table exists behind
+    the KBA infographic / PM 23/2025) and is COMMITTED; both source URLs, the
+    Stichtag and the retrieval date live in its comment header. Validates the
+    transcription -- counts including the ``not_attributed`` residual must sum
+    exactly to the published total stock, so a typo fails loudly instead of
+    silently re-weighting the tilt -- and adds ``share_of_attributed``: the age
+    shares renormalised over the eight published natural-person classes
+    (ADR-0093 ASSUMPTION: the unattributed residual carries the attributed age
+    composition).
+    """
+    df = pd.read_csv(path, comment="#")
+    required = ["age_class", "age_min_years", "age_max_years", "vehicles",
+                "published_share_pct", "total_stock", "stichtag"]
+    missing = set(required) - set(df.columns)
+    if missing:
+        raise RuntimeError(f"{path}: missing columns {sorted(missing)}.")
+    labels = set(df["age_class"])
+    expected = set(WOHNMOBILE_AGE_CLASS_LABELS) | {WOHNMOBILE_AGE_NOT_ATTRIBUTED}
+    if labels != expected:
+        raise RuntimeError(
+            f"{path}: age_class labels {sorted(labels)} != expected "
+            f"{sorted(expected)}."
+        )
+    totals = df["total_stock"].unique()
+    if len(totals) != 1:
+        raise RuntimeError(f"{path}: total_stock must be a single repeated value.")
+    total_stock = int(totals[0])
+    vehicles_sum = int(df["vehicles"].sum())
+    if vehicles_sum != total_stock:
+        raise RuntimeError(
+            f"{path}: transcribed counts sum to {vehicles_sum}, published total "
+            f"is {total_stock} -- transcription error; fix the raw CSV."
+        )
+    if len(df["stichtag"].unique()) != 1:
+        raise RuntimeError(f"{path}: stichtag must be a single repeated value.")
+    out = df.copy()
+    att_mask = out["age_class"] != WOHNMOBILE_AGE_NOT_ATTRIBUTED
+    att_total = float(out.loc[att_mask, "vehicles"].sum())
+    out["share_of_attributed"] = np.where(
+        att_mask, out["vehicles"] / att_total, np.nan)
+    residual = total_stock - att_total
+    logger.info(
+        "[wohnmobile_holder_age] %d vehicles in the 8 natural-person classes "
+        "(%.2f%% of the published stock %d); not_attributed residual %d "
+        "(%.2f%%) renormalised away (ADR-0093 assumption).",
+        int(att_total), 100.0 * att_total / total_stock, total_stock,
+        int(residual), 100.0 * residual / total_stock,
+    )
+    return out[["age_class", "age_min_years", "age_max_years", "vehicles",
+                "published_share_pct", "share_of_attributed", "total_stock",
+                "stichtag"]]
+
+
+# --------------------------------------------------------------------------- #
 # Driver
 # --------------------------------------------------------------------------- #
 def _write(frame: pd.DataFrame, name: str) -> None:
@@ -1690,7 +1761,8 @@ def _write_with_header(frame: pd.DataFrame, name: str, header_line: str) -> None
 def main() -> None:
     for required in (FZ27_PATH, FZ12_PATH, MID_BUNDESLAND_PATH, MID_RAUMTYP_PATH,
                      FUEL_46251_PATH, EURO_46251_PATH, AGE_NATIONAL_PATH,
-                     GEMEINDE_EV_PATH, MODELLREIHEN_PATH, GRID_EV_PATH):
+                     GEMEINDE_EV_PATH, MODELLREIHEN_PATH, GRID_EV_PATH,
+                     WOHNMOBILE_HOLDER_AGE_PATH):
         if not required.exists():
             raise FileNotFoundError(
                 f"Required raw KBA/MiD input missing: {required} "
@@ -1734,11 +1806,12 @@ def main() -> None:
     )
     _write(extract_gemeinde_ev(), "kba_gemeinde_ev.csv")
     _write(extract_ev_grid(), "kba_ev_grid.csv")
+    _write(extract_wohnmobile_holder_age(), "kba_wohnmobile_holder_age.csv")
 
     # Task B6: the RegioStaR7 EV timeseries is a NEW, OPTIONAL raw input (a
     # national logging-only cross-check, never an IPF control) -- guard it
     # separately from the hard-required tuple above so main() still runs to
-    # completion (and the other 15 derived CSVs still regenerate) before the
+    # completion (and the other derived CSVs still regenerate) before the
     # raw file has been supplied.
     if EV_REGIOSTAR7_PATH.exists():
         _write(extract_ev_regiostar7(), "kba_ev_regiostar7.csv")

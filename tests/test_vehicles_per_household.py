@@ -116,6 +116,17 @@ def test_car_frame_has_f4_columns_and_counts():
     assert len(df_cars) == 7
 
 
+def test_car_frame_carries_owner_age():
+    """Every car row's owner_age equals the age of its assigned owner_id (#315)."""
+    persons = _make_persons()
+    df_cars = hh.build_household_car_frame(
+        persons, _make_homes(), _make_regiostar())
+    assert "owner_age" in df_cars.columns
+    ages = persons.set_index("person_id")["age"]
+    for _, row in df_cars.iterrows():
+        assert row["owner_age"] == float(ages[row["owner_id"]])
+
+
 def test_vehicle_count_per_household_matches_number_of_cars():
     df_cars = hh.build_household_car_frame(
         _make_persons(), _make_homes(), _make_regiostar())
@@ -345,6 +356,7 @@ def test_sample_fleet_receives_age_income_coupling_kwarg(monkeypatch):
                 "fleet_age_income_coupling": self._coupling,
                 "fleet_ev_income_tilt": True,
                 "fleet_euro6_substage": True,
+                "fleet_wohnmobile_age_tilt": True,
                 "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
                 "kba_fleet_paths": None,
             }
