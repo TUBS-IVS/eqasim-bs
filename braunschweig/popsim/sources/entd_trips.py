@@ -46,6 +46,7 @@ def build_trips(
     random_seed: int,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
 ) -> pd.DataFrame:
     """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -96,6 +97,14 @@ def build_trips(
         ``euclidean_distance`` + remaining ENTD trip extras.
         Global ``trip_id`` is reassigned as a sequential integer.
 
+    ``explicit_round_trip_purposes`` (issue #241) is INERT here and accepted only
+    to keep the source-adapter signature uniform: it re-maps MiD ``W_ZWECK``
+    round-trip leisure codes, and the ENTD donor arrives with eqasim purposes
+    already assigned by ``data.hts.entd.cleaned`` -- there is no such code to
+    re-map. It is NOT rejected like the escort flags because it defaults to True
+    (project rule: new features default on), so rejecting it would break every
+    popsim_open run; a non-default value is logged instead of silently ignored.
+
     Raises
     ------
     NotImplementedError
@@ -103,6 +112,11 @@ def build_trips(
         ENTD donor has no W_ZWECK escort coding; disable both for
         popsim_open runs).
     """
+    if not explicit_round_trip_purposes:
+        logger.info(
+            "[popsim.sources.entd] explicit_round_trip_purposes=False has no effect on "
+            "the ENTD donor: its purposes come pre-mapped from data.hts.entd.cleaned and "
+            "carry no MiD W_ZWECK round-trip codes to revert (issue #241).")
     if escort_purpose:
         raise NotImplementedError(
             "[popsim.sources.entd] escort_purpose=True is not supported for the "

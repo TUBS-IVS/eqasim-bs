@@ -10,6 +10,14 @@ def configure(context):
 
     context.config("export_detailed_network", False)
 
+    # synpp scopes config per stage (issue #229): this stage's execute() calls
+    # pt2matsim.run(), which reads pt2matsim_version and the java.run options from
+    # THIS stage's context. Delegate to the helper's own configure() so the
+    # declares cannot drift from what it actually reads -- without this the run
+    # raises 'Config option pt2matsim_version is not requested' as soon as this
+    # stage's cache is devalidated (2026-08-20 night run, eqasim-java 2.3.0 bump).
+    pt2matsim.configure(context)
+
 def execute(context):
     osm_path = "%s/output.osm.gz" % context.path("data.osm.cleaned")
     crs = context.stage("data.spatial.iris").crs

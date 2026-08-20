@@ -408,6 +408,7 @@ class EntdSource:
         random_seed: int,
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
+        explicit_round_trip_purposes: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -422,6 +423,7 @@ class EntdSource:
             random_seed=random_seed,
             escort_purpose=escort_purpose,
             escort_passive_education=escort_passive_education,
+            explicit_round_trip_purposes=explicit_round_trip_purposes,
         )
 
 
