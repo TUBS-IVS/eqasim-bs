@@ -1811,7 +1811,7 @@ def main() -> None:
     # Task B6: the RegioStaR7 EV timeseries is a NEW, OPTIONAL raw input (a
     # national logging-only cross-check, never an IPF control) -- guard it
     # separately from the hard-required tuple above so main() still runs to
-    # completion (and the other 15 derived CSVs still regenerate) before the
+    # completion (and the other derived CSVs still regenerate) before the
     # raw file has been supplied.
     if EV_REGIOSTAR7_PATH.exists():
         _write(extract_ev_regiostar7(), "kba_ev_regiostar7.csv")

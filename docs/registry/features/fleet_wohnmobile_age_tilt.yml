@@ -1,0 +1,56 @@
+feature: fleet_wohnmobile_age_tilt
+title: Wohnmobile holder-age tilt (exact-marginal Bayes)
+area: fleet
+description: Tilts the per-car segment pmf's wohnmobile mass by the assigned owner's age
+  class against the KBA 2025-04-01 holder-age reference; a global calibration scalar keeps
+  the expected national wohnmobile share exact (issue #315, ADR-0093).
+stages:
+- braunschweig.synthesis.vehicles.cars.household
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - fleet_wohnmobile_age_tilt
+introduced:
+  issue: 315
+  pr: null
+  adr: ADR-0093
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/vehicles/wohnmobile_age.py
+- braunschweig/synthesis/vehicles/fleet_sampling_de.py
+evidence:
+  tests:
+  - tests/test_wohnmobile_age_tilt.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_wohnmobile_age_tilt.py::test_flag_off_never_consults_tilt
+    note: |
+      fleet_wohnmobile_age_tilt=False never consults the tilt (test_flag_off_never_consults_tilt) and the tilt consumes no RNG, so OFF is byte-identical by construction; the legacy consistency_v2=False block is untouched.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[wohnmobile_age]'
+    note: |
+      Per-batch primary/fallback/guard rate via WohnmobileHolderAgeTilt.log_fallback_rate(population_label); a batch without an owner_age column is a loud 100% fallback warning; guard hits are logged separately because each breaks the exactness claim for that car.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/kba/derived/kba_wohnmobile_holder_age.csv
+    note: |
+      Renormalised over the eight natural-person classes; raw transcription committed at eqasim-data/data/braunschweig/kba/raw/kba_wohnmobile_holder_age_20250401.csv (both KBA source URLs + Stichtag in its header).
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: |
+    Acceptance test asserts the +/-2pp composition band (MC-floored) and the 4-sigma preserved-aggregate band on a 60k synthetic frame; no production run recorded yet.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the first production run with the tilt active; realised holder-age composition to be recorded in a run manifest.
+  source: ADR-0093

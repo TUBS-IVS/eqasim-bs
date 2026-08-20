@@ -1,0 +1,50 @@
+dataset: kba_wohnmobile_holder_age
+title: KBA wohnmobile stock by holder age (hand-transcribed, Stichtag 2025-04-01)
+provider: Kraftfahrt-Bundesamt (infographic "Eine Million Wohnmobile" + PM 23/2025)
+vintage: '2025-04-01'
+geography: Germany (national)
+crs: null
+roles:
+- reference_table
+used_by:
+- braunschweig.synthesis.vehicles.cars.household
+acquisition:
+  method: committed
+  source: |
+    Hand transcription of the complete holder-age distribution published identically on
+      https://www.kba.de/DE/Statistik/Infografiken/Bestand_Wohnmobile/fz_news_bestand_wohnmobile_node.html
+      https://www.kba.de/DE/Presse/Pressemitteilungen/Allgemein/2025/pm23_2025_wohnmobile.html
+    (verified against both pages 2026-08-20; underlying series FZ 27). No downloadable
+    table exists behind these pages, so the raw CSV IS the source materialisation and is
+    committed -- unlike the other local-only kba/raw inputs. Regenerate the derived table:
+      python scripts/extract_kba_fleet.py
+    (or the extract_wohnmobile_holder_age function alone; the extractor asserts the
+    transcribed counts sum exactly to the published total stock).
+  script: scripts/extract_kba_fleet.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/kba/derived/kba_wohnmobile_holder_age.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values
+  restricted: false
+  redistribution: allowed
+limitations: |
+  The eight published classes cover 963,086 of 1,002,562 vehicles (96.06%); the remaining
+  39,476 (3.94%) are attributed to no age class on either source page and are recorded as
+  not_attributed -- never asserted to be commercial holders. ASSUMPTION (ADR-0093): the
+  unattributed residual carries the same age composition as the attributed stock
+  (share_of_attributed renormalises over the eight classes). Holder age is the REGISTERED
+  holder's age; the synthesis maps it to the assigned owner (licensed adult), so the
+  youngest class is populated by 18-20-year-old owners only.
+notes: |
+  Consumed by braunschweig.synthesis.vehicles.wohnmobile_age.WohnmobileHolderAgeTilt
+  (flag fleet_wohnmobile_age_tilt, default true; ADR-0093). Raw transcription committed at
+  eqasim-data/data/braunschweig/kba/raw/kba_wohnmobile_holder_age_20250401.csv with both
+  source URLs, Stichtag, press-release date and retrieval date in its comment header.

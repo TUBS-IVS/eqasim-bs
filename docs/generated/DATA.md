@@ -34,6 +34,7 @@ Restricted datasets are never committed or redistributed.
 | [kba_fe4_licences](../registry/data/kba_fe4_licences.yml) | reference_table | manual_download | `data/germany/fe4_2024.xlsx` | o/-/- | no |
 | [kba_fleet_derived](../registry/data/kba_fleet_derived.yml) | reference_table, calibration_target | committed (`scripts/extract_kba_fleet.py`) | `data/braunschweig/kba/derived/*.csv` | o/-/r | no |
 | [kba_fz_registrations](../registry/data/kba_fz_registrations.yml) | reference_table | manual_download (`scripts/extract_kba_fleet.py`) | `data/braunschweig/kba/{fz27_202501.xlsx,fz12_2025.xlsx,raw/}` | o/-/o | no |
+| [kba_wohnmobile_holder_age](../registry/data/kba_wohnmobile_holder_age.yml) | reference_table | committed (`scripts/extract_kba_fleet.py`) | `data/braunschweig/kba/derived/kba_wohnmobile_holder_age.csv` | o/-/r | no |
 | [lod2_heights](../registry/data/lod2_heights.yml) | spatial_input | manual_download (`scripts/preprocess_lod2_heights.py`) | `data/braunschweig/ (preprocessed into the buildings parquet)` | o/-/r | no |
 | [lsn_bbs_share_by_age](../registry/data/lsn_bbs_share_by_age.yml) | reference_table | committed | `data/braunschweig/nds_bbs_share_by_age.csv` | o/-/o | no |
 | [lsn_income_tax](../registry/data/lsn_income_tax.yml) | reference_table | auto_script (`scripts/extract_lsn_income_tax_kreis.py`) | `data/braunschweig/lsn/lsn2022_income_tax_by_kreis.csv` | -/-/- | no |

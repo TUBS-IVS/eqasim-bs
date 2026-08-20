@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 73 | stages: 115 | datasets: 54 | ADRs: 92 | run manifests: 25
+- Features: 74 | stages: 115 | datasets: 55 | ADRs: 93 | run manifests: 25
 
 ## Population synthesis
 
@@ -70,6 +70,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [HSN/TSN engine attrs (kW/ccm/fuel)](../registry/features/fleet_hsn_tsn_attributes.yml) | active | ON | A/A/- | unvalidated |  |
 | [Fleet realism upgrade (all-Kreise fuel/euro, EV-income tilt, Euro-6 substage, RS7 cross-check)](../registry/features/fleet_realism_upgrade.yml) | active | ON | A/A/- | unvalidated | [#277](https://github.com/TUBS-IVS/eqasim-bs/issues/277) |
 | [German fleet segment+brand mix](../registry/features/fleet_segment_brand_mix.yml) | active | ON | A/A/- | unvalidated |  |
+| [Wohnmobile holder-age tilt (exact-marginal Bayes)](../registry/features/fleet_wohnmobile_age_tilt.yml) | active | ON | A/A/- | unvalidated | [#315](https://github.com/TUBS-IVS/eqasim-bs/issues/315) |
 | [Household fleet (vs default car)](../registry/features/household_fleet.yml) | active | ON | A/A/A | unvalidated |  |
 
 ## Home locations
