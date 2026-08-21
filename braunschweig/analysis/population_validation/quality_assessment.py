@@ -30,8 +30,11 @@ CAUSE_HINTS = {
         "license fallback cannot represent the 'keine_angabe' category, so that "
         "target cell is scored against a structural 0."),
     "pt_ticket_type": (
-        "MiD P24.1 margins are rounded to integer percent and raked across "
-        "Kreis/sex/age -> a ~5pp least-squares compromise per cell is expected."),
+        "popsim_mid does not rake the nine-category composition; only the ticket "
+        "GROUP totals are controlled per Kreis (blended MiD x SrV target). "
+        "Within-group composition is steered only where a group control pins it "
+        "(never_pt since issue #329); 'no_answer' is excluded from scoring "
+        "(structurally unproducible)."),
     "employment": (
         "The synthetic employment rate is anchored to OFFICIAL statistics, not "
         "to MiD P9 (popsim_mid: Zensus 2022 kreis_erwerbsstatus levels + the "

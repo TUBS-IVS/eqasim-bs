@@ -130,11 +130,37 @@ def test_assess_carries_independence_and_rollup_separates_classes():
     assert (rollup["n_controls"] == 1).all()
 
 
+def test_pt_ticket_target_excludes_no_answer(tmp_path):
+    # issue #329: the synthesis can never produce "no_answer" (MiD code 99 is
+    # imputed pool-proportionally), so scoring against it compares a structural
+    # zero to survey nonresponse mass. pt_ticket_target must renormalize it out.
+    mid_dir = tmp_path / "braunschweig" / "mid"
+    mid_dir.mkdir(parents=True)
+    # PT_RAW_FIXTURE_OK -- this fixture intentionally mirrors the raw committed
+    # CSV headers; the German-literal guard test skips files carrying this marker.
+    (mid_dir / "mid2023_P24_1.csv").write_text(
+        "ars5,n_unweighted,einzelfahrschein,mehrfachkarte,deutschlandticket,"
+        "wochen_monat_ohne_abo,monat_abo_jahreskarte,jobticket_semesterticket,"
+        "anderes,fahre_nie,keine_angabe\n"
+        "03101,100,20,20,10,5,5,5,5,20,10\n"
+        "03ZGB,800,20,20,10,5,5,5,5,20,10\n",
+        encoding="utf-8",
+    )
+    target = C.pt_ticket_target(str(tmp_path))
+    assert "no_answer" not in set(target["category"]), (
+        "no_answer must be renormalized out of the pt_ticket_target frame")
+    # The 03101 shares must be the raw shares renormalized over the 8 producible
+    # categories: never_pt = 20 / 90 (100 - 10 no_answer).
+    never_pt = target[(target["geo_id"] == "03101") & (target["category"] == "never_pt")]
+    assert len(never_pt) == 1
+    assert never_pt["target_share"].iloc[0] == pytest.approx(20.0 / 90.0)
+
+
 def test_registry_labels_fit_checks(tmp_path):
     # Static expectation of the audited independence classes.
     expected = {
         "driving_license_type": "fit_check",
-        "pt_ticket_type": "fit_check",
+        "pt_ticket_type": "partially_independent",
         "cars_per_hh": "partially_independent",
         "bicycles_per_hh": "partially_independent",
         "household_size": "fit_check",
