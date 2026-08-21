@@ -625,10 +625,15 @@ def map_pt_subscription_type(
     must be IMPUTED from comparable adult respondents, not forced to ``"never_pt"``.
     They are therefore declared in ``impute_codes`` (treated as item non-response).
 
-    99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
-    pool within the same age group (``alter_gr1``) when present, else global pool;
-    categorical default ``PT_TICKET_NEVER`` = ``"never_pt"`` (conservative: unknown
-    PT use treated as never travelling by PT).
+    99 (keine Angabe, item non-response) and 202/206 are all IMPUTED from the valid
+    pool within the same age group (``alter_gr1``) when present, else the global valid
+    pool across all ages. The categorical default ``PT_TICKET_NEVER`` = ``"never_pt"``
+    is NOT the handler for 99/202/206 -- those always draw a donor value as long as
+    any valid respondent exists anywhere in the frame. The default only fires if the
+    global valid pool itself is empty (no respondent in the whole frame carries a
+    resolvable ``P_FKARTE`` code), which should never happen on real MiD data; a
+    non-zero default count there indicates a broken join or column, not real
+    missingness (see the WARNING logged below).
 
     The output category is constrained to ``PT_TICKET_CATEGORIES`` from
     ``braunschweig.data.mid.reference_tables`` (import validated at module load).
@@ -647,7 +652,38 @@ def map_pt_subscription_type(
         default=PT_TICKET_NEVER,
     )
     out = persons.copy()
-    out["pt_subscription_type"], _ = missing.resolve(out, spec, rng=rng)
+    out["pt_subscription_type"], report = missing.resolve(out, spec, rng=rng)
+    # never_pt is now BOTH a directly controlled category (#329's pt_ticket_group4) and the
+    # fallback bucket for an empty imputation pool, so the split between "really imputed"
+    # and "fell to the default" must be observable (CLAUDE.md fallback-transparency rule).
+    # missing.resolve draws every nonresponse row from a donor pool (the group-specific pool
+    # when the conditioning key has one, else the GLOBAL valid pool) and only falls through
+    # to spec.default when that final pool is empty. Per its implementation, the
+    # group-specific pool -- when found -- is never empty (grouped_pools only stores
+    # non-empty groups), so the default can only fire when the global valid pool itself is
+    # empty, i.e. report.n_valid == 0. MissingReport has no dedicated "n_default" field
+    # (default-on-empty-pool is a corner case, not a per-attribute-configurable count), so
+    # it is derived here from that invariant rather than guessed.
+    n_default = report.n_nonresponse if report.n_valid == 0 else 0
+    n_imputed = report.n_nonresponse - n_default
+    n = max(len(out), 1)
+    logger.info(
+        "[braunschweig.popsim.attributes] map_pt_subscription_type: valid %d (%.2f%%), "
+        "structural under-14 %d (%.2f%%), imputed nonresponse %d (%.2f%%), "
+        "default(empty-pool) %d (%.4f%%)",
+        report.n_valid, 100.0 * report.n_valid / n,
+        report.n_structural, 100.0 * report.n_structural / n,
+        n_imputed, 100.0 * n_imputed / n,
+        n_default, 100.0 * n_default / n,
+    )
+    if n_default:
+        logger.warning(
+            "[braunschweig.popsim.attributes] map_pt_subscription_type: %d persons fell "
+            "to the never_pt DEFAULT because the global P_FKARTE valid-value pool was "
+            "empty; on real MiD data an empty pool indicates a broken join or column, "
+            "not real missingness -- investigate before trusting the never_pt share.",
+            n_default,
+        )
     # Ensure the column contains only valid PT_TICKET_CATEGORIES values.
     invalid = ~out["pt_subscription_type"].isin(PT_TICKET_CATEGORIES)
     if invalid.any():

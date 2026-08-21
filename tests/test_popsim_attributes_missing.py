@@ -281,6 +281,31 @@ def test_pt_subscription_nonresponse_imputed():
     assert out["has_pt_subscription"].isna().sum() == 0
 
 
+def test_map_pt_subscription_type_logs_missing_report(caplog):
+    """Obligation 1 (#329): the imputation/default mass must be observable, never discarded.
+
+    ``never_pt`` is now both a directly controlled category (pt_ticket_group4) and the
+    fallback bucket for an empty imputation pool, so ``map_pt_subscription_type`` must log
+    the valid/structural/imputed/default split instead of throwing the MissingReport away
+    (the old ``..., _ = missing.resolve(...)``); a silently-100%-default run would otherwise
+    look identical to a healthy one (CLAUDE.md's no-silent-fallback rule).
+
+    Covers all four buckets: valid (1, 8), structural under-14 (402 with alter_gr1=1), and
+    nonresponse (99, 202) imputed from the valid pool in the same age group.
+    """
+    import logging
+
+    persons = pd.DataFrame({
+        "P_FKARTE": [1, 8, 99, 202, 402],
+        "alter_gr1": [3, 3, 3, 3, 1],
+    })
+    with caplog.at_level(logging.INFO):
+        a.map_pt_subscription_type(persons, rng=np.random.RandomState(0))
+    joined = " ".join(r.message for r in caplog.records)
+    assert "map_pt_subscription_type" in joined
+    assert "imputed" in joined and "default" in joined
+
+
 def test_pt_subscription_type_no_rng_backward_compatible():
     """Callers that omit rng must not raise.
 
