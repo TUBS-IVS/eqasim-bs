@@ -133,9 +133,14 @@ validation:
     instead of repeating the 2.5h simulation. A complete end-to-end 100% run is still owed:
     neither fix has been exercised against a live JVM yet, and the watchdog change devalidates
     matsim.runtime.java plus its 22 dependents (~1.5h of extra work, measured from this run''s
-    own stage durations). The java side is now deliverable: the fix reached a tag with the
-    v2.3.1 release of 2026-08-21 (it had landed after v2.3.0, which the pipeline builds from,
-    so until that release a run would still have executed the pre-fix jar).'
+    own stage durations). The java side is now deliverable, though NOT for the reason first
+    recorded here: the pipeline builds from eqasim_source_path and matsim.runtime.eqasim
+    validate() keys its cache on the newest source mtime, so pulling that tree is what
+    delivers a java fix and triggers the rebuild -- no release is involved. The v2.3.1 release
+    of 2026-08-21 carries no code at all (only version bumps); what it DID do is rename the
+    jar; that duplication is now gone (ADR-0098 reads the version from the pom). The server tree was pulled
+    to 83751682 on 2026-08-21 and the pipeline command was verified to build
+    braunschweig-2.3.1.jar (184.5 MB fat jar, exit guard present).'
 - metric: 'cordon validation: in-commuter gate volumes and cordon modal split'
   reference: 'braunschweig.synthesis.cordon_gates (BA SvB gravity expectation) and the
     configured cordon modal-split target'
