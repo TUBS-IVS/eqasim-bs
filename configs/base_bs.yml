@@ -325,6 +325,13 @@ config:
   # --- Parallel chainsolvers: auto-scale (0 -> cpu_count - 2) ---
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 0
+  # Executor generations for the shard set before the stage gives up (ADR-0097).
+  # A worker killed outright -- on 2026-08-20 the kernel OOM killer took one of 62
+  # while a second heavy run competed for memory -- used to make the stage wait
+  # forever; it now fails loudly and only the LOST shards are retried, so the cost
+  # is ~7 min instead of 7.6 h of completed work. 1 disables the retry. Retried
+  # shards keep their slice and seed, so the result stays bit-identical.
+  braunschweig.chainsolvers.shard_attempts: 3
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
   cordon_enabled: true
