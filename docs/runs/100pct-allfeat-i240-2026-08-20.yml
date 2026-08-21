@@ -115,12 +115,21 @@ validation:
     dashboards written, then hung with the JVM alive at about 0% CPU until it was killed at
     17:25. jstack proved the cause: SimWrapper dashboard generation reads CSV through
     tablesaw, whose univocity-parsers backend leaves a NON-DAEMON input reading thread parked
-    in FixedInstancePool.allocate, so DestroyJavaVM waits indefinitely. Fix implemented as
-    eqasim-java-bs PR #23 (explicit System.exit(0) after controller.run()).'
+    in FixedInstancePool.allocate, so DestroyJavaVM waits indefinitely. Root cause pinned and
+    minimally reproduced on 2026-08-21: tablesaw CsvReader.read skips parser.stopParsing()
+    whenever the CALLER supplied a Reader (the overload MATSim needs for .csv.gz), and only
+    stopReading() can unpark the loader; identical input and identical mid-file parse abort
+    exit cleanly from a File source but hang forever from a Reader source. Fixed on the Java side
+    by eqasim-java-bs PR #23 (explicit System.exit after controller.run(), on the failure path
+    too), merged 2026-08-20 as 03c1d680; guarded on the pipeline side by the CPU-accumulation
+    hang watchdog (ADR-0095), so any future non-daemon leak fails the run instead of stalling
+    it.'
   notes: 'Nothing was lost - no file in the MATSim cache is newer than 16:00. The four
     analysis stages do NOT depend on matsim.output, so they were re-launched separately
-    instead of repeating the 2.5h simulation. A complete end-to-end 100% run is owed once
-    PR #23 merges.'
+    instead of repeating the 2.5h simulation. A complete end-to-end 100% run is still owed:
+    neither fix has been exercised against a live JVM yet, and the watchdog change devalidates
+    matsim.runtime.java plus its 22 dependents (~1.5h of extra work, measured from this run''s
+    own stage durations).'
 features:
   note: 'First full-region execution of ownership_grid_1km (ADR-0092). The run also exposed
     two latent main-branch defects (fixed in PR #325) and one JVM-exit defect (#330) that no

@@ -91,7 +91,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [matsim.output](../registry/stages/matsim.output.yml) | matsim | extended | x | A/A/A | -- | matsim_output_archive |
 | [matsim.runtime.eqasim](../registry/stages/matsim.runtime.eqasim.yml) | infrastructure | extended | x | A/A/A | -- | eqasim_java_fork |
 | [matsim.runtime.git](../registry/stages/matsim.runtime.git.yml) | infrastructure | inherited | x | A/A/A | -- | -- |
-| [matsim.runtime.java](../registry/stages/matsim.runtime.java.yml) | infrastructure | configured | x | A/A/A | -- | -- |
+| [matsim.runtime.java](../registry/stages/matsim.runtime.java.yml) | infrastructure | extended | x | A/A/A | -- | -- |
 | [matsim.runtime.maven](../registry/stages/matsim.runtime.maven.yml) | infrastructure | inherited | x | A/A/A | -- | -- |
 | [matsim.runtime.pt2matsim](../registry/stages/matsim.runtime.pt2matsim.yml) | matsim | inherited | x | A/A/A | -- | -- |
 | [matsim.scenario.facilities](../registry/stages/matsim.scenario.facilities.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.facilities`<br>popsim_open: `braunschweig.matsim.scenario.facilities` | -- |
