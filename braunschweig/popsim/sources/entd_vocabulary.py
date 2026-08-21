@@ -174,8 +174,8 @@ from braunschweig.constants import ROUTED_DETOUR_FACTOR as ENTD_DETOUR_FACTOR  #
 
 # Subscribers -> a representative flatrate category (must be in PT_TICKET_FLATRATE
 # AND PT_TICKET_CATEGORIES). Non-subscribers -> never-uses.
-_PT_TYPE_SUBSCRIBER = "wochen_monat_ohne_abo"
-_PT_TYPE_NONE = "fahre_nie"
+_PT_TYPE_SUBSCRIBER = "weekly_monthly_no_subscription"
+_PT_TYPE_NONE = "never_pt"
 
 # Validate both constants at import time.
 _pt_cats = set(PT_TICKET_CATEGORIES)

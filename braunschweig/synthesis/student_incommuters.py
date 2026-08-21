@@ -70,7 +70,7 @@ _STUDENT_PERSON_DEFAULTS = dict(
     socioprofessional_class=8,  # SPC_STUDENT, braunschweig.ipf.attributed
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
-    has_pt_subscription=False, pt_subscription_type="fahre_nie",
+    has_pt_subscription=False, pt_subscription_type="never_pt",
     high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # See braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS for why
@@ -279,6 +279,10 @@ def _build_student_persons(ids, donors, modes):
     })
     for key, value in _STUDENT_PERSON_DEFAULTS.items():
         persons[key] = value
+    _log.info(
+        "[student_incommuters] pt_subscription_type: %d in-commuter persons hard-coded to "
+        "'never_pt' (control-external source; the 14+ resident Kreis control does not "
+        "see them -- ADR reference: never_pt group control, issue #329)", len(persons))
     return persons
 
 

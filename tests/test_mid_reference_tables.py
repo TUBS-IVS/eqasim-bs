@@ -489,7 +489,7 @@ def test_loader_constraint_includes_all_three_dimensions():
 # ZGB-aggregate (``03ZGB`` / Gesamt) probability vector.  It is NOT consumed
 # by the live categorical-IPF path in
 # ``braunschweig.synthesis.population.enriched`` (ineligible persons get
-# ``fahre_nie`` / ``nein`` deterministically, never the region vector).  The
+# ``never_pt`` / ``nein`` deterministically, never the region vector).  The
 # loaders used to fabricate ``region`` as a cross-Kreis average when the
 # ``03ZGB`` row was absent; that branch was dead code (the row is always
 # present) and was removed in favour of an explicit error.  These tests pin
@@ -592,6 +592,9 @@ def test_seed_script_idempotent(tmp_path):
 
 
 def test_pt_ticket_categories_are_english_with_raw_boundary():
+    # PT_RAW_FIXTURE_OK: this test deliberately pins the raw-CSV boundary
+    # mapping (P24_RAW_COLUMN_BY_CATEGORY), whose right-hand side is the
+    # codebook-German column headers of the committed raw CSVs (issue #329).
     from braunschweig.data.mid import reference_tables as rt
 
     assert rt.PT_TICKET_CATEGORIES == (

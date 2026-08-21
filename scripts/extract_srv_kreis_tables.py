@@ -618,8 +618,8 @@ def build_dticket_table(persons_valid: pd.DataFrame) -> pd.DataFrame:
 # E_OEV_FK code -> three-group collapse (SrV2023_Datenkodierung_SciUse.xlsx):
 #   50 Deutschland-Ticket           -> deutschlandticket
 #    3 Zeitkarte (ausser D-Ticket)  -> other_flatrate  (the unlimited-rides-within-
-#      validity concept, matching MiD P24.1's wochen_monat_ohne_abo +
-#      monat_abo_jahreskarte + jobticket_semesterticket)
+#      validity concept, matching MiD P24.1's weekly_monthly_no_subscription +
+#      monthly_or_annual_subscription + job_or_semester_ticket)
 #    1 Einzel-/Mehrfachfahrkarte    -> not_flatrate
 #    2 Tageskarte                   -> not_flatrate
 #   70 Sonstige Fahrkarte           -> not_flatrate

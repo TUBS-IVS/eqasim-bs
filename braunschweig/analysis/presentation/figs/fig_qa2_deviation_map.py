@@ -88,12 +88,15 @@ CONTROL_DE = {
     "age_group": "Alter",
     "sex": "Geschlecht",
 }
+# PT ticket category display labels (English category values, issue #329 --
+# only the PT-ticket taxonomy is anglicized; the surrounding *_DE maps below
+# stay German, out of scope for this rename).
 PT_CAT_DE = {
-    "fahre_nie": "fahre nie", "deutschlandticket": "D-Ticket",
-    "einzelfahrschein": "Einzelfahrschein", "mehrfachkarte": "Mehrfachkarte",
-    "monat_abo_jahreskarte": "Abo/Jahreskarte",
-    "wochen_monat_ohne_abo": "Wochen-/Monatskarte",
-    "jobticket_semesterticket": "Job-/Semesterticket", "anderes": "anderes",
+    "never_pt": "never uses PT", "deutschlandticket": "Deutschlandticket",
+    "single_ticket": "single ticket", "multi_ride_ticket": "multi-ride ticket",
+    "monthly_or_annual_subscription": "monthly/annual subscription",
+    "weekly_monthly_no_subscription": "weekly/monthly (no subscription)",
+    "job_or_semester_ticket": "job/semester ticket", "other_ticket": "other",
 }
 CARS_CAT_DE = {"0": "HH ohne Pkw", "1": "HH mit 1 Pkw",
                "2": "HH mit 2 Pkw", "3": "HH mit 3+ Pkw"}  # top bucket = ">= 3"

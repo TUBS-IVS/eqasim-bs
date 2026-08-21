@@ -853,7 +853,7 @@ def build_registry(data_path: str) -> list[Control]:
         # Synthesis rakes the licence flag to this very P17.1 table (enriched IPF).
         independence="fit_check"))
     # MiD P24.1 survey base is age 14+; restrict the realized distribution to
-    # match (persons <14 are deterministically assigned fahre_nie in synthesis).
+    # match (persons <14 are deterministically assigned never_pt in synthesis).
     reg.append(categorical_person_control(
         "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
         RT.PT_TICKET_CATEGORIES, pt_ticket_target, age_min=14,

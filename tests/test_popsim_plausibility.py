@@ -26,7 +26,7 @@ def _clean_persons() -> pd.DataFrame:
         "car_availability":     ["all", "some", "none", "none"],
         "household_size":       [2, 2, 1, 1],
         "has_pt_subscription":  [True, False, False, False],
-        "pt_subscription_type": ["monat_abo_jahreskarte", "fahre_nie", "fahre_nie", "fahre_nie"],
+        "pt_subscription_type": ["monthly_or_annual_subscription", "never_pt", "never_pt", "never_pt"],
     })
 
 
@@ -41,7 +41,7 @@ def test_each_hard_invariant_is_detected() -> None:
     persons.loc[0, "car_availability"] = "none"      # cars=1 but availability none
     persons.loc[1, "employed"] = True                 # employed child (age 10)
     persons.loc[1, "has_license"] = True              # licence at age 10
-    persons.loc[2, "has_pt_subscription"] = True      # subscription + fahre_nie
+    persons.loc[2, "has_pt_subscription"] = True      # subscription + never_pt
     report = pl.check_joint_plausibility(persons)
     checks = report["checks"]
     assert checks["car_availability_mismatch"]["n_violations"] == 1

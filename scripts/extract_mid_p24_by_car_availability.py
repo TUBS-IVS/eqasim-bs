@@ -77,6 +77,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from braunschweig.data.mid.reference_tables import (  # noqa: E402
+    P24_RAW_COLUMN_BY_CATEGORY,
     PT_TICKET_CATEGORIES,
 )
 
@@ -109,20 +110,20 @@ _CAR_AVAILABILITY_DROP_LEVELS = frozenset({"keine angabe"})
 # stripped). This stays an EXPLICIT one-to-one lookup (no fuzzy matching, no
 # silent column-order assumption) while tolerating the export's umlaut encoding.
 _FAHRKARTENART_LABEL_TO_KEY_RAW: dict[str, str] = {
-    "Einzelfahrsc hein, Tageskarte, Kurzstrecke": "einzelfahrschein",
+    "Einzelfahrsc hein, Tageskarte, Kurzstrecke": "single_ticket",
     "Mehrfachkar te, Streifenkart e oder digitaler Tarif nach Entfernung":
-        "mehrfachkarte",
+        "multi_ride_ticket",
     "Deutschlan dticket": "deutschlandticket",
-    "andere Wochen- oder Monatskarte ohne Abonnemen t": "wochen_monat_ohne_abo",
-    "andere Monatskarte im Abonnemen t oder Jahreskarte": "monat_abo_jahreskarte",
+    "andere Wochen- oder Monatskarte ohne Abonnemen t": "weekly_monthly_no_subscription",
+    "andere Monatskarte im Abonnemen t oder Jahreskarte": "monthly_or_annual_subscription",
     "regionales/ lokales Jobticket, Firmenabo, Semestertic ket oder vergleichbar e Angebote":
-        "jobticket_semesterticket",
-    "anderes": "anderes",
+        "job_or_semester_ticket",
+    "anderes": "other_ticket",
     # "fahre nie mit oeffentlichen Verkehrsmitteln in meiner Region"; the umlaut
     # in "oeffentlichen" is stripped by _label_key, so the literal here is the
     # ASCII-normalised form.
-    "fahre nie mit ffentlichen Verkehrsmit teln in meiner Region": "fahre_nie",
-    "keine Angabe": "keine_angabe",
+    "fahre nie mit ffentlichen Verkehrsmit teln in meiner Region": "never_pt",
+    "keine Angabe": "no_answer",
 }
 
 
@@ -339,7 +340,7 @@ def main() -> None:
         print(
             f"[extract_mid_p24_by_car_availability]   {row['car_availability']:>4}: "
             "deutschlandticket="
-            f"{row['deutschlandticket']:.1%}, fahre_nie={row['fahre_nie']:.1%}"
+            f"{row['deutschlandticket']:.1%}, never_pt={row['never_pt']:.1%}"
         )
 
     header = (
@@ -349,11 +350,20 @@ def main() -> None:
         "# Each row is P(ticket | car_availability) over PT_TICKET_CATEGORIES;\n"
         "# the 9 ticket columns sum to 1 per row. car_availability in\n"
         "# {none, some, all} (MiD jederzeit->all, gelegentlich->some,\n"
-        "# gar nicht->none; 'keine Angabe' dropped).\n"
+        "# gar nicht->none; 'keine Angabe' dropped). Ticket columns keep the\n"
+        "# codebook-German raw headers (see\n"
+        "# braunschweig.data.mid.reference_tables.P24_RAW_COLUMN_BY_CATEGORY),\n"
+        "# the single boundary translation to the PT_TICKET_CATEGORIES English\n"
+        "# names consumed downstream (issue #329).\n"
     )
+    # Translate the internal canonical (English PT_TICKET_CATEGORIES) columns to
+    # the raw codebook-German headers at the write boundary -- the read side
+    # (reference_tables.load_pt_subscription_by_car_availability) expects exactly
+    # this schema, mirroring the other committed P24.1 tables.
+    tidy_raw = tidy.rename(columns=P24_RAW_COLUMN_BY_CATEGORY)
     with open(out_csv, "w", encoding="utf-8", newline="") as handle:
         handle.write(header)
-        tidy.to_csv(handle, index=False)
+        tidy_raw.to_csv(handle, index=False)
     print(f"[extract_mid_p24_by_car_availability] wrote {out_csv}")
 
     if args.git_add:

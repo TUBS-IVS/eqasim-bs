@@ -26,6 +26,13 @@ Rows inside a section follow ``<label> <n_weighted> <n_unweighted> <pct ...>``
 with integer percentages; ``*`` marks cells suppressed for fallzahl < 30.
 The trailing ``Mittel`` column (present in P13, P17.1) carries a decimal
 separated by ``,`` which we normalise to ``.``.
+
+PT_RAW_FIXTURE_OK: the P24_1 ``TableSpec`` column list below is written verbatim
+as the RAW committed CSV column headers (``mid2023_P24_1*.csv``), matching the
+codebook-German boundary strings in
+``braunschweig.data.mid.reference_tables.P24_RAW_COLUMN_BY_CATEGORY`` (issue
+#329). Renaming them here would desynchronize this extractor from the raw
+files it (re)produces.
 """
 
 from __future__ import annotations

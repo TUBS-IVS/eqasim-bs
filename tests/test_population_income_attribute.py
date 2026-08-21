@@ -44,7 +44,7 @@ def _write_one_person(person_row, write_income_eur):
         "census_person_id": 1, "household_id": 1, "has_license": True,
         "has_pt_subscription": False, "hts_id": 1, "hts_household_id": 1,
         "age": 40, "employed": "yes", "sex": "male", "high_income": False,
-        "is_urban_resident": False, "pt_subscription_type": "fahre_nie",
+        "is_urban_resident": False, "pt_subscription_type": "never_pt",
         "household_income_eur": 4321.0,
     }
     defaults.update(person_row)
@@ -76,7 +76,7 @@ def _write_person_with_car_trip(has_car_vehicle, remode, car_availability="all")
         "census_person_id": 1, "household_id": 1, "has_license": True,
         "has_pt_subscription": False, "hts_id": 1, "hts_household_id": 1,
         "age": 40, "employed": "yes", "sex": "male", "high_income": False,
-        "is_urban_resident": False, "pt_subscription_type": "fahre_nie",
+        "is_urban_resident": False, "pt_subscription_type": "never_pt",
         "household_income_eur": 4321.0,
     }
     person = tuple(defaults[field] for field in pop.PERSON_FIELDS)

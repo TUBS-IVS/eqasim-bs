@@ -132,16 +132,17 @@ PT_SUBSCRIPTION_FKARTE = frozenset({3, 4, 5, 6})
 
 # MiD P_FKARTE code -> categorical ticket-type string (matches PT_TICKET_CATEGORIES
 # order in braunschweig.data.mid.reference_tables). Codes 1-8 are exhaustive;
-# code 8 (fahre nie) is the never-travels category used for structural missings.
+# code 8 (fahre nie / never travels) is the never-travels category used for
+# structural missings.
 FKARTE_TO_CATEGORY: dict[int, str] = {
-    1: "einzelfahrschein",       # single ticket
-    2: "mehrfachkarte",          # multi-ride card
-    3: "deutschlandticket",      # Deutschlandticket
-    4: "wochen_monat_ohne_abo",  # weekly/monthly without subscription
-    5: "monat_abo_jahreskarte",  # monthly subscription / annual pass
-    6: "jobticket_semesterticket",  # job ticket / semester ticket
-    7: "anderes",                # other
-    8: "fahre_nie",              # never travels by PT
+    1: "single_ticket",
+    2: "multi_ride_ticket",
+    3: "deutschlandticket",
+    4: "weekly_monthly_no_subscription",
+    5: "monthly_or_annual_subscription",
+    6: "job_or_semester_ticket",
+    7: "other_ticket",
+    8: "never_pt",
 }
 
 # --- Issue #321: the three-group PT ticket control -------------------------------------
@@ -168,7 +169,7 @@ PT_TICKET_GROUPS: tuple[str, ...] = (
 # (code 402, children under the MiD PT-subscription basis age, not interviewed)
 # and as the default for persons whose code cannot be resolved. Adult
 # interview-mode / proxy coverage codes (202/206) are imputed, not forced here.
-PT_TICKET_NEVER = "fahre_nie"
+PT_TICKET_NEVER = "never_pt"
 
 
 def imputation_group_cols(
@@ -604,23 +605,23 @@ def map_pt_subscription_type(
     """Add a categorical ``pt_subscription_type`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
     MiD codebook mapping (``FKARTE_TO_CATEGORY``):
-    1 -> ``einzelfahrschein``, 2 -> ``mehrfachkarte``, 3 -> ``deutschlandticket``,
-    4 -> ``wochen_monat_ohne_abo``, 5 -> ``monat_abo_jahreskarte``,
-    6 -> ``jobticket_semesterticket``, 7 -> ``anderes``, 8 -> ``fahre_nie``.
+    1 -> ``single_ticket``, 2 -> ``multi_ride_ticket``, 3 -> ``deutschlandticket``,
+    4 -> ``weekly_monthly_no_subscription``, 5 -> ``monthly_or_annual_subscription``,
+    6 -> ``job_or_semester_ticket``, 7 -> ``other_ticket``, 8 -> ``never_pt``.
 
     Structural design-missing codes: only 402 (Kind unter 14, nicht befragt) is the
-    legitimate deterministic ``"fahre_nie"`` -- the under-14 / PT-subscription basis-age
+    legitimate deterministic ``"never_pt"`` -- the under-14 / PT-subscription basis-age
     floor (mirrors the legacy ``braunschweig.minimum_age.pt_subscription`` rule).
     Children below the MiD PT-subscription basis age genuinely have no PT ticket of
     their own. The codes 202 (PAPI interview mode, form-dependent) and 206 (Erwachsener
     ab 14, Proxy/Stellvertreter) are first-digit-2 interview-mode / coverage
     design-missings on persons of subscription age; they are NOT "never travels" and
-    must be IMPUTED from comparable adult respondents, not forced to ``"fahre_nie"``.
+    must be IMPUTED from comparable adult respondents, not forced to ``"never_pt"``.
     They are therefore declared in ``impute_codes`` (treated as item non-response).
 
     99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
     pool within the same age group (``alter_gr1``) when present, else global pool;
-    categorical default ``PT_TICKET_NEVER`` = ``"fahre_nie"`` (conservative: unknown
+    categorical default ``PT_TICKET_NEVER`` = ``"never_pt"`` (conservative: unknown
     PT use treated as never travelling by PT).
 
     The output category is constrained to ``PT_TICKET_CATEGORIES`` from

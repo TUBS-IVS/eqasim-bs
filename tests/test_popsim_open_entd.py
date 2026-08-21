@@ -336,8 +336,8 @@ def test_popsim_open_economic_status_bridge_covers_full_mid_vocabulary():
 
 
 def test_entd_pt_subscription_type_defaults():
-    """pt_subscription_type default: has_pt_subscription True -> wochen_monat_ohne_abo;
-    False -> fahre_nie. Both must be in PT_TICKET_CATEGORIES."""
+    """pt_subscription_type default: has_pt_subscription True -> weekly_monthly_no_subscription;
+    False -> never_pt. Both must be in PT_TICKET_CATEGORIES."""
     from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
 
     src = EntdSource()
@@ -347,13 +347,13 @@ def test_entd_pt_subscription_type_defaults():
 
     # Persons with has_pt_subscription=True
     sub_true = result[result["has_pt_subscription"] == True]["pt_subscription_type"]
-    assert (sub_true == "wochen_monat_ohne_abo").all(), (
-        f"Expected wochen_monat_ohne_abo for subscribers, got: {sub_true.unique()}"
+    assert (sub_true == "weekly_monthly_no_subscription").all(), (
+        f"Expected weekly_monthly_no_subscription for subscribers, got: {sub_true.unique()}"
     )
     # Persons with has_pt_subscription=False
     sub_false = result[result["has_pt_subscription"] == False]["pt_subscription_type"]
-    assert (sub_false == "fahre_nie").all(), (
-        f"Expected fahre_nie for non-subscribers, got: {sub_false.unique()}"
+    assert (sub_false == "never_pt").all(), (
+        f"Expected never_pt for non-subscribers, got: {sub_false.unique()}"
     )
     # All values must be valid
     assert result["pt_subscription_type"].isin(PT_TICKET_CATEGORIES).all()

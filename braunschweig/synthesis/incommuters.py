@@ -19,6 +19,8 @@ Region-neutral; the synpp stage wires the data sources. See
 """
 from __future__ import annotations
 
+import logging
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -39,6 +41,9 @@ from braunschweig.data.cordon.plans import (
 # Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
 from braunschweig.data.mikrozensus.reference import bundesland_of_ars
+
+logger = logging.getLogger(__name__)
+
 # NOTE: braunschweig.data.cordon.pt_reachability imports RAIL_LIKE_MODES from this
 # module (incommuters), which creates a circular dependency if imported at module level.
 # weight_entry_stations and sample_pt_station_per_agent are therefore imported LOCALLY
@@ -67,7 +72,7 @@ _INCOMMUTER_PERSON_DEFAULTS = dict(
     studies=False, household_size=1, consumption_units=1.0,
     socioprofessional_class=6, number_of_bicycles=0, number_of_cars=1,
     bicycle_availability="all", license_type="ja", has_license=True,
-    has_pt_subscription=False, pt_subscription_type="fahre_nie",
+    has_pt_subscription=False, pt_subscription_type="never_pt",
     high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # In-commuters live outside the ZGB cordon, so the MiD-derived
@@ -872,6 +877,10 @@ def _build_persons(ids, donors, person_col, modes, income_eur):
     })
     for key, value in _INCOMMUTER_PERSON_DEFAULTS.items():
         persons[key] = value
+    logger.info(
+        "[incommuters] pt_subscription_type: %d in-commuter persons hard-coded to "
+        "'never_pt' (control-external source; the 14+ resident Kreis control does not "
+        "see them -- ADR reference: never_pt group control, issue #329)", len(persons))
     return persons
 
 

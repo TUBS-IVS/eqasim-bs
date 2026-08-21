@@ -261,11 +261,11 @@ def test_pt_under14_floor_kept_adult_coverage_imputed():
         "alter_gr1": [5, 5, 5, 1, 5],
     })
     out = attributes.map_pt_subscription_type(df, rng=np.random.RandomState(0))
-    assert out["pt_subscription_type"].iloc[3] == "fahre_nie"          # under-14 floor kept
+    assert out["pt_subscription_type"].iloc[3] == "never_pt"          # under-14 floor kept
     assert out["pt_subscription_type"].iloc[4] in attributes.FKARTE_TO_CATEGORY.values()  # imputed to a real category
     # With an all-deutschlandticket donor pool in the same age band, the adult coverage
     # code (206) must be imputed to that category -- not deterministically forced to
-    # "fahre_nie" (which the previous structural mapping would have done).
+    # "never_pt" (which the previous structural mapping would have done).
     assert out["pt_subscription_type"].iloc[4] == "deutschlandticket"
 
 
@@ -378,9 +378,9 @@ def test_pt_ticket_group_collapses_the_resolved_type_into_three_groups():
     committed survey).
     """
     persons = pd.DataFrame({"pt_subscription_type": [
-        "deutschlandticket", "monat_abo_jahreskarte", "jobticket_semesterticket",
-        "wochen_monat_ohne_abo", "einzelfahrschein", "fahre_nie", "anderes",
-        "mehrfachkarte"]})
+        "deutschlandticket", "monthly_or_annual_subscription", "job_or_semester_ticket",
+        "weekly_monthly_no_subscription", "single_ticket", "never_pt", "other_ticket",
+        "multi_ride_ticket"]})
     out = a.map_pt_ticket_group(persons)
     assert out["pt_ticket_group"].tolist() == [
         "deutschlandticket", "other_flatrate", "other_flatrate", "other_flatrate",

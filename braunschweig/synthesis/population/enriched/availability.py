@@ -22,7 +22,7 @@ def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
     """Apply the DATA-FREE logical PT-ticket constraints to the per-person
     probability matrix and re-normalise (A6).
 
-    The MiD P24.1 combined category ``jobticket_semesterticket`` (Jobticket =
+    The MiD P24.1 combined category ``job_or_semester_ticket`` (Jobticket =
     employer-subsidised pass, Semesterticket = student Solidarmodell pass) is a
     work/study-bound ticket: it can only be held by a person who is ``employed``
     OR ``studies`` (see ``PT_TICKET_WORK_STUDY_BOUND``; MiD reports the two as one
@@ -37,7 +37,7 @@ def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
 
     A defensive guard: if zeroing leaves an all-zero row (a degenerate vector
     whose mass sat entirely on the disallowed category), the person falls back to
-    ``fahre_nie`` deterministically rather than producing an un-normalisable row.
+    ``never_pt`` deterministically rather than producing an un-normalisable row.
     The fallback count is recorded in ``df_persons.attrs`` for traceability.
 
     Parameters
@@ -55,10 +55,11 @@ def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
         The conditioned, re-normalised probability matrix (a copy).
     """
     from braunschweig.data.mid.reference_tables import PT_TICKET_WORK_STUDY_BOUND
+    from braunschweig.popsim.attributes import PT_TICKET_NEVER
 
     out = pt_probs.copy()
     categories = list(pt_categories)
-    idx_fahre_nie = categories.index("fahre_nie")
+    idx_never_pt = categories.index(PT_TICKET_NEVER)
     work_study_idx = [categories.index(c) for c in PT_TICKET_WORK_STUDY_BOUND
                       if c in categories]
 
@@ -72,13 +73,13 @@ def _condition_pt_subscription_probs(pt_probs, df_persons, pt_categories):
         out[np.ix_(not_work_study, work_study_idx)] = 0.0
 
     # Re-normalise rows. Rows that became all-zero (mass had sat entirely on the
-    # disallowed category) fall back to fahre_nie deterministically.
+    # disallowed category) fall back to never_pt deterministically.
     row_sums = out.sum(axis=1)
     degenerate = row_sums <= 0.0
     fallback_count = int(np.count_nonzero(degenerate))
     if fallback_count > 0:
         out[degenerate, :] = 0.0
-        out[degenerate, idx_fahre_nie] = 1.0
+        out[degenerate, idx_never_pt] = 1.0
         row_sums = out.sum(axis=1)
     out = out / row_sums[:, None]
 

@@ -781,7 +781,7 @@ def _condition_pt_subscription_for_sampling(context, df_persons, pt_probs, PT_TI
         print(
             "[braunschweig.enriched] PT A6 conditioning: work/study ticket zeroed "
             f"for {df_persons.attrs.get('pt_subscription_workstudy_zeroed_count', 0)} "
-            "non-working/non-studying persons; degenerate->fahre_nie fallback "
+            "non-working/non-studying persons; degenerate->never_pt fallback "
             f"{df_persons.attrs.get('pt_subscription_degenerate_fallback_count', 0)}"
         )
 
@@ -867,6 +867,7 @@ def _step_sample_pt_subscription(context, df_persons):
         PT_TICKET_FLATRATE,
     )
     from braunschweig.data.mid.zones import ZONE_NAMES as _PT_ZONE_NAMES
+    from braunschweig.popsim.attributes import PT_TICKET_NEVER
 
     pt_data_path = context.config("data_path")
     pt_by_kreis, pt_region = load_pt_subscription_breakdown(pt_data_path)
@@ -877,11 +878,11 @@ def _step_sample_pt_subscription(context, df_persons):
     n_persons = len(df_persons)
     n_cats = len(PT_TICKET_CATEGORIES)
     pt_categories_arr = np.asarray(PT_TICKET_CATEGORIES)
-    idx_fahre_nie = PT_TICKET_CATEGORIES.index("fahre_nie")
+    idx_never_pt = PT_TICKET_CATEGORIES.index(PT_TICKET_NEVER)
 
     # Assign each person to a Kreis index, sex index and age-bin index.
     # Persons with no zone (external) or age below the MiD basis are
-    # excluded from the IPF and assigned ``fahre_nie`` deterministically.
+    # excluded from the IPF and assigned ``never_pt`` deterministically.
     ars5_list = list(pt_by_kreis.keys())
     ars5_to_idx = {ars: i for i, ars in enumerate(ars5_list)}
     person_kreis = np.full(n_persons, -1, dtype=np.int64)
@@ -994,11 +995,11 @@ def _step_sample_pt_subscription(context, df_persons):
         pt_probs[f_eligible] = P_cell[
             person_kreis[f_eligible], person_sex[f_eligible], person_age[f_eligible], :
         ]
-    # Persons not eligible (no Kreis / no sex / age below cutoff) → fahre_nie.
+    # Persons not eligible (no Kreis / no sex / age below cutoff) → never_pt.
     f_ineligible = ~f_eligible
     if f_ineligible.any():
         pt_probs[f_ineligible, :] = 0.0
-        pt_probs[f_ineligible, idx_fahre_nie] = 1.0
+        pt_probs[f_ineligible, idx_never_pt] = 1.0
 
     # Defensive renormalise.
     row_sums = pt_probs.sum(axis=1, keepdims=True)

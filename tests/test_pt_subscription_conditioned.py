@@ -4,7 +4,7 @@ With the ``pt_subscription_conditioned`` flag ON the PT-subscription IPF applies
 DATA-FREE logical constraints to each person's per-category probability vector
 BEFORE sampling:
 
-  * the combined MiD P24.1 category ``jobticket_semesterticket`` (jobticket =
+  * the combined MiD P24.1 category ``job_or_semester_ticket`` (jobticket =
     employer-subsidised pass, semesterticket = student Solidarmodell pass) is a
     work/study-bound ticket -- it requires the holder to be ``employed`` OR
     ``studies``. For a person who is neither, that category's probability is set
@@ -37,6 +37,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from braunschweig.data.mid.reference_tables import (  # noqa: E402
+    P24_RAW_COLUMN_BY_CATEGORY,
     PT_TICKET_CATEGORIES,
     PT_TICKET_FLATRATE,
     PT_TICKET_WORK_STUDY_BOUND,
@@ -48,8 +49,8 @@ from braunschweig.synthesis.population.enriched import (  # noqa: E402
 )
 
 
-_IDX_WORK_STUDY = PT_TICKET_CATEGORIES.index("jobticket_semesterticket")
-_IDX_FAHRE_NIE = PT_TICKET_CATEGORIES.index("fahre_nie")
+_IDX_WORK_STUDY = PT_TICKET_CATEGORIES.index("job_or_semester_ticket")
+_IDX_NEVER_PT = PT_TICKET_CATEGORIES.index("never_pt")
 _IDX_DEUTSCHLANDTICKET = PT_TICKET_CATEGORIES.index("deutschlandticket")
 _FLATRATE_IDX = [PT_TICKET_CATEGORIES.index(c) for c in PT_TICKET_FLATRATE]
 
@@ -112,16 +113,16 @@ def test_eligible_rows_are_unchanged():
     np.testing.assert_allclose(out[eligible], probs[eligible])
 
 
-def test_all_zero_row_falls_back_to_fahre_nie():
+def test_all_zero_row_falls_back_to_never_pt():
     """A degenerate vector with all its mass on the work/study category for a
     non-eligible person must not become an all-zero (un-normalisable) row: it
-    falls back deterministically to fahre_nie."""
+    falls back deterministically to never_pt."""
     df = pd.DataFrame({"employed": [False], "studies": [False]})
     probs = np.zeros((1, len(PT_TICKET_CATEGORIES)))
     probs[0, _IDX_WORK_STUDY] = 1.0
     out = _condition_pt_subscription_probs(probs, df, PT_TICKET_CATEGORIES)
     np.testing.assert_allclose(out.sum(axis=1), 1.0)
-    assert out[0, _IDX_FAHRE_NIE] == 1.0
+    assert out[0, _IDX_NEVER_PT] == 1.0
 
 
 def test_marginal_drift_is_small():
@@ -142,7 +143,7 @@ def test_marginal_drift_is_small():
 
 def test_constant_identifies_the_combined_category():
     """The gated category set is exactly the combined work/study ticket."""
-    assert PT_TICKET_WORK_STUDY_BOUND == frozenset({"jobticket_semesterticket"})
+    assert PT_TICKET_WORK_STUDY_BOUND == frozenset({"job_or_semester_ticket"})
 
 
 # ---------------------------------------------------------------------------
@@ -164,12 +165,17 @@ def test_car_availability_loader_returns_none_when_absent(tmp_path, caplog):
 
 def test_car_availability_loader_reads_present_csv(tmp_path):
     """When the cross-tab CSV is present with the expected schema it loads into a
-    {car_availability -> probability vector over PT_TICKET_CATEGORIES} map."""
+    {car_availability -> probability vector over PT_TICKET_CATEGORIES} map.
+
+    # PT_RAW_FIXTURE_OK: the fixture CSV below deliberately uses the raw
+    # codebook-German column headers (P24_RAW_COLUMN_BY_CATEGORY) -- exactly the
+    # schema the loader reads from the committed CSV (issue #329 raw boundary).
+    """
     import os
 
+    cols = [P24_RAW_COLUMN_BY_CATEGORY[c] for c in PT_TICKET_CATEGORIES]
     mid_dir = tmp_path / "braunschweig" / "mid"
     mid_dir.mkdir(parents=True)
-    cols = list(PT_TICKET_CATEGORIES)
     header = "car_availability," + ",".join(cols)
     # Two rows (none / all) with arbitrary but normalisable shares.
     none_row = "none," + ",".join(["1"] * len(cols))
@@ -197,8 +203,9 @@ def _parse_committed_cross_tab():
 
 def test_extract_csv_schema_and_rows_sum_to_one():
     """The committed cross-tab CSV has the canonical {none, some, all} row keys,
-    the 9 PT ticket columns, and each row is a probability vector summing to 1
-    (= P(ticket | car_availability))."""
+    the 9 PT ticket columns (raw codebook-German headers, the boundary the
+    committed CSVs keep -- issue #329), and each row is a probability vector
+    summing to 1 (= P(ticket | car_availability))."""
     import pandas as pd
 
     csv_path = (
@@ -208,14 +215,13 @@ def test_extract_csv_schema_and_rows_sum_to_one():
     assert csv_path.exists(), (
         "run scripts/extract_mid_p24_by_car_availability.py to seed the CSV"
     )
+    raw_cols = [P24_RAW_COLUMN_BY_CATEGORY[c] for c in PT_TICKET_CATEGORIES]
     df = pd.read_csv(csv_path, comment="#")
     assert "car_availability" in df.columns
-    assert list(PT_TICKET_CATEGORIES) == [
-        c for c in df.columns if c != "car_availability"
-    ]
+    assert raw_cols == [c for c in df.columns if c != "car_availability"]
     # keine Angabe dropped; the three informative car-availability rows remain.
     assert set(df["car_availability"]) == {"none", "some", "all"}
-    row_sums = df[list(PT_TICKET_CATEGORIES)].sum(axis=1)
+    row_sums = df[raw_cols].sum(axis=1)
     np.testing.assert_allclose(row_sums.to_numpy(), 1.0, rtol=0, atol=1e-9)
 
 
@@ -262,17 +268,17 @@ def test_committed_cross_tab_shows_carless_pt_coupling():
 
 def _synthetic_cross_tab():
     """A toy P(ticket | car_availability) with a strong carless tilt toward the
-    Deutschlandticket and a car tilt toward fahre_nie."""
+    Deutschlandticket and a car tilt toward never_pt."""
     n_cats = len(PT_TICKET_CATEGORIES)
     base = np.full(n_cats, 1.0 / n_cats)
 
     none = base.copy()
     none[_IDX_DEUTSCHLANDTICKET] += 0.30
-    none[_IDX_FAHRE_NIE] = max(none[_IDX_FAHRE_NIE] - 0.10, 0.0)
+    none[_IDX_NEVER_PT] = max(none[_IDX_NEVER_PT] - 0.10, 0.0)
     none = none / none.sum()
 
     allv = base.copy()
-    allv[_IDX_FAHRE_NIE] += 0.30
+    allv[_IDX_NEVER_PT] += 0.30
     allv[_IDX_DEUTSCHLANDTICKET] = max(allv[_IDX_DEUTSCHLANDTICKET] - 0.10, 0.0)
     allv = allv / allv.sum()
 
