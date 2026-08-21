@@ -315,6 +315,13 @@ config:
   enable_urban_parking: true
   remode_carless_car_legs: true
 
+  # --- Secondary chain solver (issue #337, ADR-0094) ---
+  # carla's sampling variant, replacing the deterministic "carla". Stated here
+  # explicitly (it was previously only a code default, invisible in the canonical
+  # config) because it materially changes secondary locations in every run.
+  # ADOPTED BUT UNVALIDATED in this model -- no A/B against "carla" yet.
+  braunschweig.chainsolvers.solver: carla_sample
+
   # --- Parallel chainsolvers: auto-scale (0 -> cpu_count - 2) ---
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 0

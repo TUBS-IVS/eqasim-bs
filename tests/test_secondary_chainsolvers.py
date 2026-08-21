@@ -9,6 +9,8 @@ column, and the trailing fixed-anchor leg is skipped.
 """
 from __future__ import annotations
 
+import inspect
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -1337,3 +1339,48 @@ def test_build_scorer_default_linear_byte_identical():
     from braunschweig.synthesis.locations.secondary_chainsolvers import build_scorer
     s = build_scorer(True, "combined", 1.0, 1.0)
     assert getattr(s, "attr_transform", "linear") in ("linear", "none")
+
+
+# ---------------------------------------------------------------------------
+# Default chain solver (issue #337)
+# ---------------------------------------------------------------------------
+# The solver name was previously the bare literal "carla" in three places (the
+# declared config default plus two `or "carla"` call-site fallbacks), so the
+# three could drift apart silently. They now route through ONE constant, and
+# these tests pin both its value and that every call site uses it.
+
+
+def test_default_chain_solver_is_carla_sample():
+    """#337: carla_sample replaces the deterministic carla everywhere.
+
+    Adopted on the CARLA author's recommendation (personal communication, paper
+    in preparation) and as the candidate fix for the measured desired-distance
+    inertness of the deterministic top_n path (#257 diagnostic). See ADR-0094.
+    """
+    assert sc.DEFAULT_CHAIN_SOLVER == "carla_sample"
+
+
+def test_default_chain_solver_is_registered_in_the_installed_package():
+    """The default must be a solver the installed chainsolvers actually offers.
+
+    Guards against a typo and against a package upgrade renaming or dropping the
+    sampler -- either would otherwise surface only as a runtime failure deep in a
+    multi-hour run.
+    """
+    cs = pytest.importorskip("chainsolvers")
+    import importlib
+    registry = getattr(importlib.import_module(cs.setup.__module__), "SOLVER_REGISTRY")
+    assert sc.DEFAULT_CHAIN_SOLVER in registry, (
+        f"{sc.DEFAULT_CHAIN_SOLVER!r} is not registered; available: {sorted(registry)}")
+
+
+def test_parallel_worker_falls_back_to_the_same_default():
+    """The worker's fallback must be the SAME constant, not its own literal.
+
+    A worker that silently solved with a different solver than the serial path
+    would make the parallel and serial results incomparable while both look fine.
+    """
+    from braunschweig.synthesis.locations.secondary_chainsolvers import parallel_solving
+    src = inspect.getsource(parallel_solving)
+    assert 'or "carla"' not in src, "worker still carries a hardcoded solver literal"
+    assert "DEFAULT_CHAIN_SOLVER" in src

@@ -1,8 +1,13 @@
 stage: synthesis.population.spatial.secondary.locations
 title: Secondary location choice
 layer: secondary
-description: 'Secondary location choice resolving to the carla chainsolvers (braunschweig.synthesis.locations.secondary_chainsolvers):
-  parallel per-chain solving, purpose-resolved distances, SrV location types, escort placement.'
+description: >-
+  Secondary location choice resolving to the carla chainsolvers
+  (braunschweig.synthesis.locations.secondary_chainsolvers): parallel per-chain solving,
+  purpose-resolved distances, SrV location types, escort placement. Since #337 / ADR-0094
+  the solver is carla's SAMPLING variant carla_sample (one constant,
+  solver_defaults.DEFAULT_CHAIN_SOLVER, also written explicitly into configs/base_bs.yml)
+  instead of the deterministic carla -- adopted but not yet A/B-validated in this model.
 lineage:
   type: overridden
   upstream: synthesis.population.spatial.secondary.locations
@@ -33,3 +38,4 @@ decisions:
 - ADR-0034
 - ADR-0075
 - ADR-0076
+- ADR-0094
