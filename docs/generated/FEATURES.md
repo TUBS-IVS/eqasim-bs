@@ -52,6 +52,7 @@ may only name run manifests (no run, no claim).
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 3 | -- | marker | none | unvalidated | pending |
+| [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |
 | [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
@@ -75,7 +76,7 @@ may only name run manifests (no run, no claim).
 | [shared_stage_cache](../registry/features/shared_stage_cache.yml) | infrastructure | active | ON | A/s/s | 3 | -- | marker | none | unvalidated | pending |
 | [simwrapper_export](../registry/features/simwrapper_export.yml) | analysis | active | ON | A/-/- | 5 | not claimed | marker | none | unvalidated | pending |
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 1 | not claimed | none | none | unvalidated | pending |
-| [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 5 | proven | none | committed | unvalidated | pending |
+| [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 6 | proven | none | committed | unvalidated | pending |
 | [student_incommuters](../registry/features/student_incommuters.yml) | cordon | active | ON | A/A/- | 3 | proven | none | none | unvalidated | pending |
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |

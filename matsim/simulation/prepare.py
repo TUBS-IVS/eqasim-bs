@@ -2,8 +2,17 @@ import shutil
 import os.path
 
 import matsim.runtime.eqasim as eqasim
+import matsim.runtime.java as java
 
 def configure(context):
+    # synpp scopes config per stage (issue #229): execute() calls eqasim.run() ->
+    # java.run(), which reads the java binary/memory options AND the hang-watchdog
+    # options (#330) from THIS stage's context. Delegate to java's own configure()
+    # so the declares cannot drift from what java.run actually reads. Required
+    # rather than optional for the watchdog keys: they are volatile, and synpp does
+    # not propagate volatile options to downstream stages.
+    java.configure(context)
+
     context.config("mode_choice", False)
     
     context.stage("matsim.scenario.population")
