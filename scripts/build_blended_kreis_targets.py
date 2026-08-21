@@ -193,7 +193,8 @@ def build_pt_ticket_group(data: Path, config: BlendConfig) -> pd.DataFrame:
     agreement above is the evidence. Using SrV as one half of a blend rather than as the
     target is the treatment every other per-Kreis target here gets.
     """
-    from braunschweig.data.mid.reference_tables import PT_TICKET_CATEGORIES
+    from braunschweig.data.mid.reference_tables import (
+        P24_RAW_COLUMN_BY_CATEGORY, PT_TICKET_CATEGORIES)
     from braunschweig.popsim.attributes import (
         PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_GROUPS, PT_TICKET_OTHER_FLATRATE)
 
@@ -203,17 +204,25 @@ def build_pt_ticket_group(data: Path, config: BlendConfig) -> pd.DataFrame:
     other = [c for c in p24_cats if c in PT_TICKET_OTHER_FLATRATE]
     rest = [c for c in p24_cats
             if c != PT_TICKET_DEUTSCHLANDTICKET and c not in PT_TICKET_OTHER_FLATRATE]
+    # mid2023_P24_1.csv keeps the codebook-German raw column headers (the
+    # raw-CSV boundary, see reference_tables.P24_RAW_COLUMN_BY_CATEGORY); every
+    # read of a P24_TICKET_CATEGORIES category from this frame must go through
+    # that mapping, never index the raw row by the English category directly
+    # (issue #329 -- this exact KeyError class was found twice elsewhere).
+    def _raw(row, category: str) -> float:
+        return float(row[P24_RAW_COLUMN_BY_CATEGORY[category]])
+
     mid_rows = []
     for _, r in mid_raw.iterrows():
-        total = float(sum(float(r[c]) for c in p24_cats))
+        total = float(sum(_raw(r, c) for c in p24_cats))
         if total <= 0:
             raise ValueError(f"build_pt_ticket_group: P24.1 row {r['ars5']} sums to {total}")
         mid_rows.append({
             "ars5": "Gesamt" if str(r["ars5"]) == "03ZGB" else str(r["ars5"]),
             "n_unweighted": int(r["n_unweighted"]),
-            PT_TICKET_DEUTSCHLANDTICKET: float(r[PT_TICKET_DEUTSCHLANDTICKET]) / total,
-            "other_flatrate": sum(float(r[c]) for c in other) / total,
-            "not_flatrate": sum(float(r[c]) for c in rest) / total,
+            PT_TICKET_DEUTSCHLANDTICKET: _raw(r, PT_TICKET_DEUTSCHLANDTICKET) / total,
+            "other_flatrate": sum(_raw(r, c) for c in other) / total,
+            "not_flatrate": sum(_raw(r, c) for c in rest) / total,
         })
     mid = pd.DataFrame(mid_rows)
 

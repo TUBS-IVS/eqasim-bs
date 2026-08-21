@@ -76,6 +76,25 @@ def _srv_path(data_path: Path, name: str) -> Path:
     return data_path / "braunschweig" / "srv" / name
 
 
+def _read_p24_wide(path: Path) -> pd.DataFrame:
+    """Read a committed P24.1 wide table and translate its raw codebook-German
+    ticket-type column headers to the English PT_TICKET_CATEGORIES names.
+
+    The committed ``mid2023_P24_1*.csv`` files keep the codebook-German raw
+    headers (the single raw-CSV boundary, see
+    ``braunschweig.data.mid.reference_tables.P24_RAW_COLUMN_BY_CATEGORY``); every
+    downstream computation in this script (row sums, flatrate aggregation,
+    per-category selection) assumes the English category names, so the
+    translation must happen HERE, at the read boundary, not by indexing the raw
+    frame with English keys directly (issue #329 -- this exact KeyError class was
+    found twice elsewhere: scripts/extract_mid_p24_by_car_availability.py and
+    tests/test_key_matching_leading_zeros.py).
+    """
+    df = pd.read_csv(path)
+    return df.rename(columns={raw: cat for cat, raw in
+                              RT.P24_RAW_COLUMN_BY_CATEGORY.items()})
+
+
 def load_persons_with_kreis(run_dir: Path, prefix: str) -> pd.DataFrame:
     """Load the person table and attach the home Kreis (ars5) and commune id.
 
@@ -236,7 +255,7 @@ def srv_dticket_reference(data_path: Path) -> pd.DataFrame:
 
 def mid_pt_reference(data_path: Path) -> pd.DataFrame:
     """MiD P24.1 per Kreis: the 9 ticket categories plus the flatrate aggregate."""
-    df = pd.read_csv(_mid_path(data_path, "mid2023_P24_1.csv"))
+    df = _read_p24_wide(_mid_path(data_path, "mid2023_P24_1.csv"))
     df["ars5"] = df["ars5"].astype(str)
     cats = list(RT.PT_TICKET_CATEGORIES)
     row_sum = df[cats].sum(axis=1)
@@ -395,7 +414,7 @@ def main() -> int:
     pt_types = pt_type_distribution(persons, mid_pt)
     pt_types.to_csv(out / "pt_type_by_kreis.csv", index=False)
 
-    pt_bands = pd.read_csv(_mid_path(data_path, "mid2023_P24_1_by_age.csv"))
+    pt_bands = _read_p24_wide(_mid_path(data_path, "mid2023_P24_1_by_age.csv"))
     flat_cols = [c for c in RT.PT_TICKET_CATEGORIES if c in RT.PT_TICKET_FLATRATE]
     pt_bands["flatrate"] = pt_bands[flat_cols].sum(axis=1)
     pt_bands["row_sum"] = pt_bands[list(RT.PT_TICKET_CATEGORIES)].sum(axis=1)
@@ -404,7 +423,7 @@ def main() -> int:
     pt_age["delta_pp"] = pt_age["realised_pct"] - pt_age["mid_flatrate_pct"]
     pt_age.to_csv(out / "pt_flatrate_by_age_band.csv", index=False)
 
-    pt_sex_ref = pd.read_csv(_mid_path(data_path, "mid2023_P24_1_by_sex.csv"))
+    pt_sex_ref = _read_p24_wide(_mid_path(data_path, "mid2023_P24_1_by_sex.csv"))
     pt_sex_ref["flatrate"] = pt_sex_ref[flat_cols].sum(axis=1)
     pt_sex_ref["row_sum"] = pt_sex_ref[list(RT.PT_TICKET_CATEGORIES)].sum(axis=1)
     pt_sex_ref["flatrate_pct"] = pt_sex_ref["flatrate"] / pt_sex_ref["row_sum"] * 100.0
