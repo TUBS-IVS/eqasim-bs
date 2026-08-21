@@ -104,3 +104,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0093](../decisions/ADR-0093-wohnmobile-holder-age-tilt-with-exact-marginal-calibration.md) | 2026-08-20 | active | Wohnmobile segment tilted by holder age, with an exact-marginal calibration scalar |
 | [ADR-0094](../decisions/ADR-0094-no-licence-pattern-control-like-for-like-references-instead.md) | 2026-08-20 | accepted | No driving-licence pattern control; commit the like-for-like sex x cohort references instead (issue #322) |
 | [ADR-0095](../decisions/ADR-0095-cpu-based-hang-watchdog-for-java-subprocesses.md) | 2026-08-20 | active | CPU-accumulation hang watchdog for the pipeline's Java subprocesses |
+| [ADR-0096](../decisions/ADR-0096-carla-sample-as-the-default-secondary-chain-solver.md) | 2026-08-21 | active | `carla_sample` as the default secondary chain solver |

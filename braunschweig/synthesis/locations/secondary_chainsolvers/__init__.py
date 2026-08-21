@@ -88,9 +88,11 @@ from . import (
     plans,
     reporting,
     results,
+    solver_defaults,
     srv_candidates,
     srv_location_types,
 )
+from .solver_defaults import DEFAULT_CHAIN_SOLVER  # noqa: F401  (re-export)
 from .reporting import (  # noqa: F401  (re-exports)
     DEFAULT_EXCURSION_CLIP_WARNING_SHARE,
     DEFAULT_FALLBACK_WARNING_SHARE,
@@ -260,6 +262,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     plans,
     reporting,
     results,
+    solver_defaults,
     srv_candidates,
     srv_location_types,
 )
@@ -296,8 +299,8 @@ def configure(context):
     DEFAULT_LEISURE_CORRECTION_FACTOR = 2.0
     context.config("leisure_correction_factor", DEFAULT_LEISURE_CORRECTION_FACTOR)
 
-    # chainsolvers tuning (defaults follow the package quickstart).
-    context.config("braunschweig.chainsolvers.solver", "carla")
+    # chainsolvers tuning.
+    context.config("braunschweig.chainsolvers.solver", DEFAULT_CHAIN_SOLVER)
     # Fallback strategy for problems carla cannot solve (unbounded
     # chains, sparse candidate regions, etc.):
     #   "rda"    — eqasim's GravityChainSolver / AngularTailSolver /
@@ -1066,7 +1069,7 @@ def execute(context):
         srv_location_types=srv_location_types_on,
     )
 
-    solver_name = context.config("braunschweig.chainsolvers.solver") or "carla"
+    solver_name = context.config("braunschweig.chainsolvers.solver") or DEFAULT_CHAIN_SOLVER
     # One base seed drawn from the deterministic RandomState. Drawing exactly
     # once here (as the legacy single cs.setup did) preserves the RNG stream for
     # the downstream fallback, so the serial path stays byte-identical.

@@ -25,6 +25,7 @@ import pandas as pd
 from braunschweig import parallelism
 
 from .candidates import build_scorer
+from .solver_defaults import DEFAULT_CHAIN_SOLVER
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +156,7 @@ def _solve_person_shard(task):
         cs_parameters = None
     ctx = cs.setup(
         locations_df=_WORKER_LOCATIONS_DF,
-        solver=_WORKER_SOLVER or "carla",
+        solver=_WORKER_SOLVER or DEFAULT_CHAIN_SOLVER,
         rng_seed=int(shard_seed),
         scorer=scorer,
         **({"parameters": cs_parameters} if cs_parameters is not None else {}),

@@ -34,11 +34,15 @@ classification:
 - validation
 status:
   execution: partial
-  notes: 'Population synthesis and MATSim completed; the four analysis stages did NOT
-    run inside this invocation because the MATSim stage never returned (see the run
-    incident entry below). They were started separately the same day with a
-    run-list-only overlay (felix:/home/felix/i240_analyses_only.yml, identical config)
-    and were still executing when this manifest was written.'
+  notes: 'Population synthesis and MATSim completed. The four analysis stages did NOT run
+    inside this invocation because the MATSim stage never returned (run incident below), so
+    they were pursued in separate invocations with run-list-only overlays over the identical
+    config. Two of the four completed and are recorded below: verbindungen_validation and
+    cordon_validation. The remaining two (analysis_suite, simwrapper_export) are NOT done -
+    they sit behind secondary_chainsolvers, which deadlocked at shard 61/62 after 7.6h in the
+    follow-up invocation (second run incident below). None of the missing pieces affects the
+    population evidence above, which was measured directly from the stage pickle and the
+    written outputs.'
 environment: server
 validation:
 - metric: control fit, all 10 registered controls (mean absolute delta in pp, SRMSE, grade)
@@ -130,6 +134,48 @@ validation:
     neither fix has been exercised against a live JVM yet, and the watchdog change devalidates
     matsim.runtime.java plus its 22 dependents (~1.5h of extra work, measured from this run''s
     own stage durations).'
+- metric: 'cordon validation: in-commuter gate volumes and cordon modal split'
+  reference: 'braunschweig.synthesis.cordon_gates (BA SvB gravity expectation) and the
+    configured cordon modal-split target'
+  result: '68,630 in-commuter records; gate volumes inbound 68,020 and outbound 60,705;
+    cordon modal split inbound car 84.9% against a 85.0% target (-0.1pp) and pt 15.1%
+    against 15.0% (+0.1pp); per-Kreis commuter counts match their targets exactly on the
+    inspected rows (abs_dev 0). Gate composition: real_origin/car 42,943, road_gate/car
+    15,342, real_origin/pt 10,267, rail_station/pt 78.'
+  artifact: 'felix:.../output_bs_100pct_allfeat_popsim_i240/analysis/cordon/ (summary.md,
+    gates.csv, gates.gpkg, gate_volumes.csv, gate_volumes.gpkg, commuter_validation.csv)'
+  notes: 'Fit check against the gravity expectation the stage itself builds, not an
+    independent external count. Ran in seconds once targeted alone, because its whole
+    dependency closure was already cached.'
+- metric: 'verbindungen validation: work-commute OD against the VerBindungen reference'
+  reference: 'braunschweig.data.verbindungen work_od / margins (Destatis/BMDV), reference
+    role: fit (the gravity model is anchored to this table)'
+  result: 'anchor join 100% primary (15,129/15,129 in-scope rows, 0 unmapped origins or
+    destinations), 205 of 239 target rows anchorable at min_observed_commuters=30, anchored
+    mass share 98.2%, lambda_max 8.09. Realised: weighted_tvd 0.108, margin_pearson_r 0.9975,
+    margin_srmse 0.117 over 41 origins, band_emd 0.115, intra-cell share 45.0% model vs 46.9%
+    reference, vintage_pearson_r 0.9984 with max share drift 0.0076. 12.83% of workers live
+    outside the ZGB cells and are excluded from the per-origin comparison.'
+  artifact: 'felix:.../output_bs_100pct_allfeat_popsim_i240/analysis/verbindungen/
+    (verbindungen_validation_summary.csv, margin_check, od_check, od_check_by_kreis_pair,
+    vintage_drift)'
+  notes: 'reference_role=fit: the distribution is anchored to this table, so agreement is
+    convergence on the anchor, NOT independent validation. No red flags.'
+- metric: 'run incident 2: secondary_chainsolvers deadlocked at shard 61/62'
+  reference: none (process diagnosis)
+  result: 'In the follow-up analyses invocation the chainsolver stalled after 7.6h with one
+    shard outstanding. Diagnosed by two-point CPU sampling: the workers accumulated ZERO cpu
+    time over 20s (identical TIME values) at load 0.02, i.e. no computation. /proc showed all
+    63 python processes in futex_wait_queue_me, the wrapper in do_wait, no zombies. py-spy
+    could not attach (ptrace_scope=1, no sudo) so no stack was obtainable. The same stage with
+    the SAME hash completed 62/62 in the overnight run, so the deadlock is non-deterministic.
+    No wall-clock guard exists on the stage, so it would have hung indefinitely.'
+  notes: 'Consequence: analysis_suite and simwrapper_export remain unexecuted for this run.
+    Killing the stall cost nothing recoverable - no cache exists for the current chainsolver
+    hash, so the 7.6h was already lost. Mitigation that worked: target the analysis stages
+    individually; cordon_validation then ran in seconds because its own closure was cached.
+    Worth a wall-clock guard plus a shard-level retry, which is also where the #281 tail
+    observation points.'
 features:
   note: 'First full-region execution of ownership_grid_1km (ADR-0092). The run also exposed
     two latent main-branch defects (fixed in PR #325) and one JVM-exit defect (#330) that no
@@ -138,6 +184,8 @@ features:
 artifacts:
 - 'felix:/home/felix/i240_100pct.log'
 - 'felix:/home/felix/i240_analyses.log'
+- 'felix:/home/felix/i240_cordon.log'
+- 'felix:/home/felix/i240_validation.log'
 - 'felix:/home/felix/i240_popmeasures.out'
 - 'felix:/home/felix/eqasim-bs/eqasim-data/output_bs_100pct_allfeat_popsim_i240/'
 - 'report Artifact: https://claude.ai/code/artifact/99751eba-6064-4b5a-8d8f-88f10fb6aa92'
