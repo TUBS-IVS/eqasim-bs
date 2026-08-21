@@ -165,6 +165,12 @@ PT_TICKET_OTHER_FLATRATE: frozenset[str] = frozenset(
 PT_TICKET_GROUPS: tuple[str, ...] = (
     PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "not_flatrate")
 
+# Four-group variant (issue #329): never_pt split out of not_flatrate so the
+# balancer cannot trade never-PT persons into the city. occasional_ticket =
+# single_ticket / multi_ride_ticket / other_ticket (has SOME ticket, no flatrate).
+PT_TICKET_GROUPS4: tuple[str, ...] = (
+    PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "never_pt", "occasional_ticket")
+
 # The never-travels category is used for the structural under-14 floor
 # (code 402, children under the MiD PT-subscription basis age, not interviewed)
 # and as the default for persons whose code cannot be resolved. Adult

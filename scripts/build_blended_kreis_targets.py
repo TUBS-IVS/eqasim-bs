@@ -21,6 +21,12 @@ Attributes built:
   in_ausbildung,nicht_erwerbstaetig}: MiD P9 x SrV V_ERW (feature #172); no arbiter
   -> disagreement shrinks MiD. Wolfsburg (03103, not covered by SrV) and Gesamt
   fall back to MiD automatically.
+- pt_ticket_group4 {deutschlandticket,other_flatrate,never_pt,occasional_ticket}:
+  four-group variant of pt_ticket_group (issue #329) that splits never_pt out of
+  not_flatrate so the population balancer cannot trade never-PT persons into the
+  city. MiD P24.1 x SrV E_OEV_FK on the matched 14+ universe, no arbiter ->
+  disagreement shrinks MiD; the MiD no_answer (keine_angabe) mass is renormalized
+  OUT of the blend inputs (structurally unproducible by the synthesis).
 
 Outputs (committed): eqasim-data/data/braunschweig/targets/target2026_*.csv
 with columns ars5,source,n_effective,<categories> (fractions, rows = 8 Kreise
@@ -233,6 +239,64 @@ def build_pt_ticket_group(data: Path, config: BlendConfig) -> pd.DataFrame:
                               cats, config=config)
 
 
+def build_pt_ticket_group4(data: Path, config: BlendConfig) -> pd.DataFrame:
+    """Four-group PT ticket target: MiD P24.1 x SrV E_OEV_FK, no arbiter (issue #329).
+
+    Same construction as ``build_pt_ticket_group`` with two differences: never_pt is
+    split out of not_flatrate on BOTH halves (MiD column fahre_nie; SrV code -8),
+    and the MiD no_answer (keine_angabe) mass is renormalized OUT -- the synthesis
+    imputes MiD code 99 pool-proportionally and can never produce the category, so
+    folding its mass into any group would fabricate bias. ASSUMPTION (recorded in
+    the ADR and the CSV header): MiD never_pt is a ticket-question answer, SrV -8
+    a usage-derived skip ("no PT use in the past 12 months") -- close constructs,
+    not identical; region-level corroboration: SrV weighted never_pt 28.6%
+    (unweighted respondent rate 33.1%) vs MiD 36%.
+    """
+    from braunschweig.data.mid.reference_tables import (
+        P24_RAW_COLUMN_BY_CATEGORY, PT_TICKET_CATEGORIES)
+    from braunschweig.popsim.attributes import (
+        PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_GROUPS4, PT_TICKET_OTHER_FLATRATE)
+
+    cats = list(PT_TICKET_GROUPS4)
+    mid_raw = read_csv(data / "mid" / "mid2023_P24_1.csv", dtype={"ars5": str})
+    p24_cats = list(PT_TICKET_CATEGORIES)
+    other_flat = [c for c in p24_cats if c in PT_TICKET_OTHER_FLATRATE]
+    occasional = [c for c in p24_cats
+                  if c != PT_TICKET_DEUTSCHLANDTICKET
+                  and c not in PT_TICKET_OTHER_FLATRATE
+                  and c not in ("never_pt", "no_answer")]
+    # mid2023_P24_1.csv keeps the codebook-German raw column headers (see
+    # build_pt_ticket_group's _raw helper above for the same rationale, issue #329).
+    def _raw(row, category: str) -> float:
+        return float(row[P24_RAW_COLUMN_BY_CATEGORY[category]])
+
+    mid_rows = []
+    for _, r in mid_raw.iterrows():
+        # Renormalize OUT the no_answer mass: the synthesis imputes MiD code 99
+        # (keine_angabe) pool-proportionally over the OTHER categories and can
+        # never itself produce this category, so it must not be blended in.
+        total = float(sum(_raw(r, c) for c in p24_cats if c != "no_answer"))
+        if total <= 0:
+            raise ValueError(
+                f"build_pt_ticket_group4: P24.1 row {r['ars5']} has zero mass "
+                f"outside no_answer")
+        mid_rows.append({
+            "ars5": "Gesamt" if str(r["ars5"]) == "03ZGB" else str(r["ars5"]),
+            "n_unweighted": int(r["n_unweighted"]),
+            PT_TICKET_DEUTSCHLANDTICKET: _raw(r, PT_TICKET_DEUTSCHLANDTICKET) / total,
+            "other_flatrate": sum(_raw(r, c) for c in other_flat) / total,
+            "never_pt": _raw(r, "never_pt") / total,
+            "occasional_ticket": sum(_raw(r, c) for c in occasional) / total,
+        })
+    mid = pd.DataFrame(mid_rows)
+
+    srv = srv_kreis_rows(
+        data / "srv" / "srv2023_ticket_groups4_14plus_by_kreis.csv", {})
+    return blend_kreis_target(mid[["ars5", "n_unweighted", *cats]],
+                              srv[["code", "n_unweighted", *cats]],
+                              cats, config=config)
+
+
 def write_target(df: pd.DataFrame, out_path: Path, config: BlendConfig,
                  ebike: bool = False, note: str = "") -> None:
     """Write one target table. ``note`` records a per-file exception to the common
@@ -282,6 +346,15 @@ def main(argv=None) -> int:
                        "table header"))
     write_target(build_employment_status(args.data, config),
                  args.out_dir / "target2026_employment_status_by_kreis.csv", config)
+    write_target(build_pt_ticket_group4(args.data, config),
+                 args.out_dir / "target2026_pt_ticket_group4_by_kreis.csv", config,
+                 note=("; NOTE this file: four-group variant of "
+                       "target2026_pt_ticket_group (issue #329). never_pt = MiD "
+                       "fahre_nie x SrV E_OEV_FK -8 (usage-derived skip; close but "
+                       "not identical constructs, see ADR); Freifahrtberechtigung "
+                       "(SrV 60) counts as occasional_ticket; MiD keine_angabe "
+                       "renormalized OUT (structurally unproducible by the "
+                       "synthesis). FINAL target - prior_n = 0."))
     return 0
 
 

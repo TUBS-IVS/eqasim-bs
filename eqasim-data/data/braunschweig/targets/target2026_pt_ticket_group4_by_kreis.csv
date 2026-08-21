@@ -1,0 +1,20 @@
+# Blended per-Kreis control target, built by scripts/build_blended_kreis_targets.py
+# from COMMITTED reference tables only (no raw microdata). Rules: two-survey
+# agreement (<= 5.0 pp per category) -> precision blend; disagreement with a
+# register arbiter -> rank-agreement pick; disagreement without arbiter ->
+# MiD shrunk toward Gesamt (lambda = 0.3); Wolfsburg (03103) and Gesamt
+# always MiD; NOTE this file: four-group variant of target2026_pt_ticket_group (issue #329). never_pt = MiD fahre_nie x SrV E_OEV_FK -8 (usage-derived skip; close but not identical constructs, see ADR); Freifahrtberechtigung (SrV 60) counts as occasional_ticket; MiD keine_angabe renormalized OUT (structurally unproducible by the synthesis). FINAL target - prior_n = 0.. Column `source` records the rule per row;
+# shares are fractions summing to 1.
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
+# ASSUMPTION (SrV side): stratified PSU design over selected municipalities;
+# per-Kreis SrV inputs are assumption-grade (see srv2023_* headers).
+ars5,source,n_effective,deutschlandticket,other_flatrate,never_pt,occasional_ticket
+Gesamt,mid,0,0.1,0.09,0.36,0.45
+03101,blend,5618,0.1088,0.1488,0.1232,0.6192
+03103,mid,819,0.0891,0.0891,0.3663,0.4554
+03102,mid_shrunk,1272,0.0854,0.1102,0.3229,0.4815
+03151,mid_shrunk,1187,0.086,0.083,0.409,0.422
+03157,mid_shrunk,1107,0.08,0.077,0.408,0.435
+03154,mid_shrunk,1078,0.1148,0.0765,0.3979,0.4108
+03158,mid_shrunk,815,0.072,0.083,0.36,0.485
+03153,mid_shrunk,1590,0.121,0.069,0.43,0.38

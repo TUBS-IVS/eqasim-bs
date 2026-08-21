@@ -10,7 +10,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from scripts.build_blended_kreis_targets import BlendConfig, build_pt_ticket_group  # noqa: E402
+from scripts.build_blended_kreis_targets import (  # noqa: E402
+    BlendConfig, build_pt_ticket_group, build_pt_ticket_group4)
 
 TARGETS = (Path(__file__).resolve().parents[1] / "eqasim-data" / "data"
            / "braunschweig" / "targets")
@@ -138,6 +139,50 @@ def test_build_pt_ticket_group_reads_the_raw_german_p24_1_headers(tmp_path):
     assert set(out.index) == {"Gesamt", "03101"}
     cats = ["deutschlandticket", "other_flatrate", "not_flatrate"]
     assert ((out[cats].sum(axis=1) - 1.0).abs() < 1e-6).all()
+
+
+def test_build_pt_ticket_group4_renormalizes_no_answer_and_splits(tmp_path):
+    # PT_RAW_FIXTURE_OK: same reason as
+    # test_build_pt_ticket_group_reads_the_raw_german_p24_1_headers above --
+    # this fixture reproduces the committed raw-CSV boundary (codebook-German
+    # column headers) hardcoded (not derived from P24_RAW_COLUMN_BY_CATEGORY)
+    # so a bug in that dict itself would also be caught (issue #329).
+    #
+    # MiD P24.1 fixture (raw German columns), Gesamt + one Kreis (Braunschweig)
+    # + Wolfsburg: integer percents 10 DT / 10 other-flatrate-total / 20 never /
+    # 50 occasional-total / 10 no-answer for Gesamt and Braunschweig (identical,
+    # so the SrV side can be built to agree exactly with Braunschweig). Expected
+    # after renormalization over the 8 producible categories (total 90): dt
+    # 10/90, other_flatrate 10/90, never_pt 20/90, occasional_ticket 50/90.
+    root = tmp_path / "braunschweig"
+    mid_dir = root / "mid"
+    srv_dir = root / "srv"
+    mid_dir.mkdir(parents=True)
+    srv_dir.mkdir(parents=True)
+    (mid_dir / "mid2023_P24_1.csv").write_text(
+        "kreis,ars5,n_weighted,n_unweighted,einzelfahrschein,mehrfachkarte,"
+        "deutschlandticket,wochen_monat_ohne_abo,monat_abo_jahreskarte,"
+        "jobticket_semesterticket,anderes,fahre_nie,keine_angabe\n"
+        "Gesamt,03ZGB,4719.0,9642.0,30.0,10.0,10.0,10.0,0.0,0.0,10.0,20.0,10.0\n"
+        "Braunschweig,03101,949.0,1774.0,30.0,10.0,10.0,10.0,0.0,0.0,10.0,20.0,10.0\n"
+        "Wolfsburg,03103,512.0,988.0,25.0,15.0,5.0,5.0,0.0,0.0,10.0,30.0,10.0\n",
+        encoding="utf-8",
+    )
+    (srv_dir / "srv2023_ticket_groups4_14plus_by_kreis.csv").write_text(
+        "level,code,name,n_unweighted,n_weighted,deutschlandticket,"
+        "other_flatrate,never_pt,occasional_ticket\n"
+        "kreis,03101,Braunschweig,1000,100000.0,0.1111,0.1111,0.2222,0.5556\n",
+        encoding="utf-8",
+    )
+    out = build_pt_ticket_group4(root, BlendConfig())
+    row = out[out["ars5"] == "03101"].iloc[0]
+    # SrV agrees exactly in this fixture -> precision blend keeps the shares.
+    assert abs(row["never_pt"] - 20.0 / 90.0) < 1e-3
+    assert abs(sum(row[c] for c in
+               ("deutschlandticket", "other_flatrate", "never_pt",
+                "occasional_ticket")) - 1.0) < 1e-6
+    # Wolfsburg (absent from SrV) must fall back to MiD-only.
+    assert out[out["ars5"] == "03103"]["source"].iloc[0].startswith("mid")
 
 
 def test_ebike_is_srv_with_wob_assumption():
