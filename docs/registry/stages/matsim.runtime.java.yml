@@ -1,14 +1,18 @@
 stage: matsim.runtime.java
 title: Java runtime probe
 layer: infrastructure
-description: Upstream Java runtime detection (JDK 25 via java_home for the eqasim-java fork).
+description: Upstream Java runtime detection (JDK 25 via java_home for the eqasim-java fork). Its
+  run() helper spawns every Java subprocess of the pipeline and guards it with the CPU-accumulation
+  hang watchdog (ADR-0095, issue #330).
 lineage:
-  type: configured
+  type: extended
   upstream: null
-  notes: Inherited eqasim stage; only its regional inputs/configuration differ from the Bavaria
-    baseline.
+  notes: Inherited eqasim stage; its regional inputs/configuration differ from the Bavaria
+    baseline, and the java.run helper was extended with the hang watchdog (ADR-0095) plus the
+    two volatile config keys it reads.
 code:
 - matsim/runtime/java.py
+- matsim/runtime/process_watchdog.py
 pipelines:
   popsim_mid: active
   popsim_open: active

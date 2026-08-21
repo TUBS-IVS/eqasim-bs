@@ -33,6 +33,7 @@ import xml.etree.ElementTree as ET
 import geopandas as gpd
 
 import matsim.runtime.eqasim as eqasim
+import matsim.runtime.java as java
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,14 @@ def configure(context):
     context.stage("data.spatial.municipalities")
     context.stage("matsim.runtime.java")
     context.stage("matsim.runtime.eqasim")
+
+    # synpp scopes config per stage (issue #229): execute() calls eqasim.run() ->
+    # java.run(), which reads the java binary/memory options AND the hang-watchdog
+    # options (#330) from THIS stage's context. Delegate to java's own configure()
+    # so the declares cannot drift from what java.run actually reads. Required
+    # rather than optional for the watchdog keys: they are volatile, and synpp does
+    # not propagate volatile options to downstream stages.
+    java.configure(context)
 
     context.config("cordon_enabled", False)
     context.config("cordon_network_buffer_fraction", 0.10)

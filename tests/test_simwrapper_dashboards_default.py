@@ -30,11 +30,16 @@ class _StubContext:
     def __init__(self):
         self.recorded: dict = {}
 
-    def config(self, option, default=None):
+    # ``volatile`` (and any future keyword synpp's ConfigurationContext.config
+    # accepts) must pass through: run.configure() delegates to
+    # matsim.runtime.java.configure(), which declares the hang-watchdog options
+    # volatile (#330). A narrower stub would raise TypeError here and report a
+    # stale test double as a defect in the code under test.
+    def config(self, option, default=None, **kwargs):
         self.recorded[option] = default
         return default
 
-    def stage(self, name, config=None):
+    def stage(self, name, config=None, **kwargs):
         return None
 
 

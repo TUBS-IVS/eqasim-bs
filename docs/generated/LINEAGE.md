@@ -18,8 +18,8 @@ ported from another eqasim project), `retired`.
 | Lineage | Stages |
 |---|---|
 | inherited | 22 |
-| configured | 9 |
-| extended | 6 |
+| configured | 8 |
+| extended | 7 |
 | overridden | 22 |
 | braunschweig_new | 56 |
 | upstream_port | 0 |
