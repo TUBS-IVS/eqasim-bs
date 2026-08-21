@@ -100,8 +100,22 @@ validation:
     held within 0.55pp of the blended target2026 tables, and within-city attainment against the
     re-derived per-parent targets showed a household-weighted mean |delta| of 1.72pp on the
     car-free share (corr 0.767). Control FIT against its own injected target, never independent
-    validation. Still owed: the full-region ON/OFF A/B against cars_per_hh / bicycles_per_hh,
-    recorded in a run manifest.'
+    validation.
+
+    Full region followed on 2026-08-20 (run 100pct-allfeat-i240-2026-08-20, 1,130,617 persons):
+    car-free realised within 0.35pp of the blended target in every Kreis -- the -3.6pp region
+    gap that opened issue #240 is closed -- bike-free within -0.37..-1.01pp, per-1km attainment
+    household-weighted mean |delta| 1.91pp with corr 0.758 over 2,233 parents, and the implicit
+    building coupling realised at 100m without a control (car-free 4.26% in EFH/ZFH vs 24.18% in
+    MFH). The cars_per_hh validation control moved from good to very good (0.98pp mean |delta|).
+
+    The ON/OFF A/B originally listed as owed was WAIVED when #240 was closed on 2026-08-20: the
+    anchors and the within-city structure are unambiguous, and an OFF arm would cost a further
+    full-region run whose only added information is attribution between features that are all
+    wanted. Two honest limits therefore stand: every August flag was ON together, so no per-flag
+    attribution exists, and household_size degraded from 1.56 to 1.82pp mean |delta| in the same
+    run -- plausibly displacement by the nine new controls, unattributable without that A/B and
+    tracked in #276.'
 assessment:
   status: pending
   by: null
