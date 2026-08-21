@@ -1,4 +1,4 @@
-# ADR-0094 · 2026-08-21 · `carla_sample` as the default secondary chain solver
+# ADR-0096 · 2026-08-21 · `carla_sample` as the default secondary chain solver
 
 - **Status:** active
 - **Context:** Secondary activity locations are placed by the `chainsolvers`

@@ -15,7 +15,7 @@ from __future__ import annotations
 #: chainsolvers package registers (``SOLVER_REGISTRY``); a test pins that.
 #:
 #: ``carla_sample`` is carla's sampling variant (issue #337), replacing the
-#: deterministic ``carla``. Two reasons, both recorded in ADR-0094:
+#: deterministic ``carla``. Two reasons, both recorded in ADR-0096:
 #:
 #: 1. The CARLA author recommends it (PERSONAL COMMUNICATION; a paper on the
 #:    sampling variant is in preparation -- this is explicitly NOT a citable

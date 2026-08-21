@@ -1355,7 +1355,7 @@ def test_default_chain_solver_is_carla_sample():
 
     Adopted on the CARLA author's recommendation (personal communication, paper
     in preparation) and as the candidate fix for the measured desired-distance
-    inertness of the deterministic top_n path (#257 diagnostic). See ADR-0094.
+    inertness of the deterministic top_n path (#257 diagnostic). See ADR-0096.
     """
     assert sc.DEFAULT_CHAIN_SOLVER == "carla_sample"
 

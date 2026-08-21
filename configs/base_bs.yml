@@ -315,7 +315,7 @@ config:
   enable_urban_parking: true
   remode_carless_car_legs: true
 
-  # --- Secondary chain solver (issue #337, ADR-0094) ---
+  # --- Secondary chain solver (issue #337, ADR-0096) ---
   # carla's sampling variant, replacing the deterministic "carla". Stated here
   # explicitly (it was previously only a code default, invisible in the canonical
   # config) because it materially changes secondary locations in every run.
