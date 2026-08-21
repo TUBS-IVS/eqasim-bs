@@ -305,9 +305,12 @@ def test_all_kreis_entries_default_on():
 
     active = active_kreis_entries(_FakeContext(), "mid")
     names = {c.name for c in active}
+    # pt_ticket_group appears as its four-group refinement pt_ticket_group4: with
+    # pt_ticket_never_group on (the default, issue #329) the finer entry REPLACES the
+    # three-group one (same marginal, never both).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group", "work_participation",
+        "trip_class", "employment_status", "pt_ticket_group4", "work_participation",
         "leisure_participation", "education_participation", "escort_participation",
     }
 

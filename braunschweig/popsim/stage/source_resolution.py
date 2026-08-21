@@ -74,6 +74,13 @@ def active_kreis_entries(context, source_name):
     declared once in :func:`configure` (``context.config(KEY, default)`` on the
     ConfigContext) and this function reads the RESOLVED value by key only.
 
+    One entry SUBSTITUTES another (issue #329): ``pt_ticket_group4`` is the four-group
+    refinement of ``pt_ticket_group`` (never_pt split out of not_flatrate). Both steer the
+    same PT-ticket marginal at different resolutions, so they must never run together -- when
+    both toggles are on, the three-group entry is dropped and only the four-group one stays
+    active. Its toggle being on while the base ``pt_ticket_kreis_control`` is off is a config
+    contradiction and raises (no silent activation of a refinement whose base is disabled).
+
     Returns the entries in REGISTRY order (economic_status first), so downstream
     catalog rendering and count-table merges are deterministic.
     """
@@ -89,4 +96,17 @@ def active_kreis_entries(context, source_name):
                 f"{entry.name!r}; add it to _KREIS_CONTROL_TOGGLE_KEY.")
         if str(context.config(toggle_key)).strip().lower() == "on":
             active.append(entry)
+    # pt_ticket_group4 REPLACES pt_ticket_group (issue #329): same marginal, finer
+    # resolution. Never both -- two controls on the same mass would double-constrain the
+    # flatrate total; and the refinement without its base is a config contradiction.
+    names = {e.name for e in active}
+    if "pt_ticket_group4" in names:
+        if "pt_ticket_group" not in names:
+            raise ValueError(
+                "active_kreis_entries: braunschweig.population.popsim."
+                "pt_ticket_never_group is 'on' but the base pt_ticket_kreis_control "
+                "is 'off'. The four-group control refines the three-group one; "
+                "either enable pt_ticket_kreis_control or turn "
+                "pt_ticket_never_group off.")
+        active = [e for e in active if e.name != "pt_ticket_group"]
     return active

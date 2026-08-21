@@ -458,6 +458,76 @@ def test_pt_ticket_group_rendered_control_carries_the_age_clause():
 
 
 # ---------------------------------------------------------------------------
+# Issue #329: the four-group PT ticket control seed column (never_pt split out)
+# ---------------------------------------------------------------------------
+
+
+def test_map_pt_ticket_group_emits_four_group_column():
+    """``pt_ticket_group4`` splits ``never_pt`` out of ``not_flatrate`` (issue #329).
+
+    The four-group control pins the never-PT share per Kreis so the balancer cannot
+    concentrate never-PT persons where PT supply is best. Both columns are emitted by the
+    same mapper and derived from the SAME resolved category, so the finer column collapses
+    onto the coarser one exactly (asserted below) -- a second resolution of the imputed
+    P_FKARTE codes is the defect ADR-0087 removed.
+    """
+    persons = pd.DataFrame({"pt_subscription_type": [
+        "deutschlandticket", "monthly_or_annual_subscription",
+        "never_pt", "single_ticket", "other_ticket"]})
+    out = a.map_pt_ticket_group(persons)
+    assert list(out["pt_ticket_group4"]) == [
+        "deutschlandticket", "other_flatrate",
+        "never_pt", "occasional_ticket", "occasional_ticket"]
+    # Consistency: group4 collapses onto the three-group column exactly.
+    collapse = out["pt_ticket_group4"].replace(
+        {"never_pt": "not_flatrate", "occasional_ticket": "not_flatrate"})
+    assert list(collapse) == list(out["pt_ticket_group"])
+
+
+def test_pt_ticket_group4_is_a_registered_soft_person_control_on_the_mid_14plus_base():
+    """The #329 entry mirrors pt_ticket_group's shape: person level, soft, 14+, 4 groups."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group4")
+    assert entry.level == "person"
+    assert entry.tier == "soft"
+    assert entry.min_age == 14
+    assert entry.seed_column == "pt_ticket_group4"
+    assert tuple(label for label, _ in entry.categories) == a.PT_TICKET_GROUPS4
+    assert entry.target_columns == a.PT_TICKET_GROUPS4
+    assert entry.target_csv_relpath.endswith("target2026_pt_ticket_group4_by_kreis.csv")
+
+
+def test_pt_ticket_group4_control_target_loads_and_partitions_every_kreis():
+    """The committed four-group target must load through the production loader for all 8
+    Kreise -- a missing or non-normalised row would only surface at run time otherwise."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group4")
+    target = kac.load_kreis_target(
+        "eqasim-data/data", entry,
+        expected_ars5=("03101", "03102", "03103", "03151", "03153", "03154",
+                       "03157", "03158"),
+        share_tolerance=1e-3)
+    assert set(target["ars5"]) == {"03101", "03102", "03103", "03151", "03153",
+                                   "03154", "03157", "03158", "Gesamt"}
+    assert list(target.columns) == ["ars5", *a.PT_TICKET_GROUPS4]
+
+
+def test_pt_ticket_group4_rendered_control_carries_the_age_clause():
+    """The four-group target is the same 14+ table, so the seed expression must restrict
+    the synthetic side identically (the #97 universe trap)."""
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = [c for c in kac.REGISTRY if c.name == "pt_ticket_group4"]
+    rendered = {c.name: c.seed_expressions["mid"] for c in cs.attribute_kreis_controls(entry)}
+    assert rendered["pt_ticket_group4_never_pt"] == (
+        "(persons.pt_ticket_group4 == 'never_pt') & (persons.HP_ALTER >= 14)")
+    assert set(rendered) == {f"pt_ticket_group4_{g}" for g in a.PT_TICKET_GROUPS4}
+
+
+# ---------------------------------------------------------------------------
 # license_underage (smoke finding 2026-08-19): the under-16 structural floor
 # ---------------------------------------------------------------------------
 

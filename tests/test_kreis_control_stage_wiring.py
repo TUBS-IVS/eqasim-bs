@@ -28,8 +28,8 @@ from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
 )
 
 
-def _all_kreis_entry_names() -> set:
-    """Every REGISTRY entry name.
+def _default_active_kreis_entry_names() -> set:
+    """The REGISTRY entry names ACTIVE under the declared default config (all toggles on).
 
     The per-toggle tests below assert "switching this entry off drops EXACTLY this entry",
     which is the behaviour under test; they derive the expected remainder from the registry
@@ -37,9 +37,14 @@ def _all_kreis_entry_names() -> set:
     require touching every one of them. The full default-on set stays pinned explicitly in
     tests/test_popsim_seed_kreis_columns.py::test_all_kreis_entries_default_on, so a
     silently vanishing entry is still caught.
+
+    ``pt_ticket_group`` is excluded because it is not merely registered but SUBSTITUTED:
+    with ``pt_ticket_never_group`` on (the default, issue #329) the four-group
+    ``pt_ticket_group4`` entry replaces it -- see
+    ``source_resolution.active_kreis_entries``.
     """
     from braunschweig.popsim import kreis_attribute_control as kac
-    return {c.name for c in kac.REGISTRY}
+    return {c.name for c in kac.REGISTRY} - {"pt_ticket_group"}
 
 
 def _entry(name):
@@ -225,12 +230,14 @@ def test_active_kreis_entries_all_default_on_for_mid():
     # employment_status (second person-level entry, 14+ universe) is feature #172 task 4;
     # work_participation / leisure_participation / education_participation (third,
     # fourth, fifth person-level entries) are feature #224 tasks 4-5; pt_ticket_group
-    # (sixth person-level entry, 14+ universe) is issue #321; escort_participation
+    # (sixth person-level entry, 14+ universe) is issue #321 -- and appears here as its
+    # four-group refinement pt_ticket_group4, which REPLACES it while
+    # pt_ticket_never_group is on (the default, issue #329); escort_participation
     # (seventh person-level entry) is issue #227.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "pt_ticket_group", "work_participation", "leisure_participation",
+        "employment_status", "pt_ticket_group4", "work_participation", "leisure_participation",
         "education_participation", "escort_participation",
     ]
 
@@ -253,6 +260,9 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_TRIPS_KREIS_CONTROL: "off",
         stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
         stage.KEY_PT_TICKET_KREIS_CONTROL: "off",
+        # The four-group refinement must be off too: "on" with the base control off is a
+        # config error (fail-fast), not an empty control set (issue #329).
+        stage.KEY_PT_TICKET_NEVER_GROUP: "off",
         stage.KEY_WORK_PARTICIPATION_CONTROL: "off",
         stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off",
         stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off",
@@ -271,7 +281,7 @@ def test_active_kreis_entries_individual_toggle():
     )
     names = [c.name for c in active]
     assert "number_of_cars" not in names
-    assert set(names) == _all_kreis_entry_names() - {"number_of_cars"}
+    assert set(names) == _default_active_kreis_entry_names() - {"number_of_cars"}
 
 
 def test_active_kreis_entries_has_ebike_can_be_turned_off():
@@ -294,7 +304,7 @@ def test_active_kreis_entries_trip_class_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "trip_class" not in names
-    assert names == _all_kreis_entry_names() - {"trip_class"}
+    assert names == _default_active_kreis_entry_names() - {"trip_class"}
 
 
 def test_active_kreis_entries_employment_status_can_be_turned_off():
@@ -307,7 +317,7 @@ def test_active_kreis_entries_employment_status_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "employment_status" not in names
-    assert names == _all_kreis_entry_names() - {"employment_status"}
+    assert names == _default_active_kreis_entry_names() - {"employment_status"}
 
 
 def test_active_kreis_entries_work_participation_can_be_turned_off():
@@ -320,7 +330,7 @@ def test_active_kreis_entries_work_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "work_participation" not in names
-    assert names == _all_kreis_entry_names() - {"work_participation"}
+    assert names == _default_active_kreis_entry_names() - {"work_participation"}
 
 
 def test_active_kreis_entries_leisure_participation_can_be_turned_off():
@@ -333,7 +343,7 @@ def test_active_kreis_entries_leisure_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "leisure_participation" not in names
-    assert names == _all_kreis_entry_names() - {"leisure_participation"}
+    assert names == _default_active_kreis_entry_names() - {"leisure_participation"}
 
 
 def test_active_kreis_entries_education_participation_can_be_turned_off():
@@ -346,7 +356,42 @@ def test_active_kreis_entries_education_participation_can_be_turned_off():
     )
     names = {c.name for c in active}
     assert "education_participation" not in names
-    assert names == _all_kreis_entry_names() - {"education_participation"}
+    assert names == _default_active_kreis_entry_names() - {"education_participation"}
+
+
+# --- issue #329: the four-group PT control REPLACES the three-group one ---
+
+
+def test_pt_ticket_group4_replaces_three_group_entry():
+    from braunschweig.popsim import stage
+
+    # All toggles "on" (the declared defaults) -> pt_ticket_group4 active, the three-group
+    # pt_ticket_group NOT: both steer the SAME marginal at different resolutions, so
+    # running them together would double-constrain the flatrate mass.
+    names = [e.name for e in stage.active_kreis_entries(_FakeContext({}), "mid")]
+    assert "pt_ticket_group4" in names
+    assert "pt_ticket_group" not in names
+
+
+def test_pt_ticket_group4_requires_base_control():
+    from braunschweig.popsim import stage
+
+    # never_group "on" + base pt_ticket_kreis_control "off" -> hard error (fail-fast): the
+    # four-group control REFINES the three-group one; silently activating it while the base
+    # control is off would hide a config contradiction.
+    ctx = _FakeContext({stage.KEY_PT_TICKET_KREIS_CONTROL: "off"})
+    with pytest.raises(ValueError, match="pt_ticket_never_group"):
+        stage.active_kreis_entries(ctx, "mid")
+
+
+def test_pt_ticket_never_group_off_restores_three_groups():
+    from braunschweig.popsim import stage
+
+    # "off" restores exactly the pre-#329 behaviour: the three-group entry, no group4.
+    ctx = _FakeContext({stage.KEY_PT_TICKET_NEVER_GROUP: "off"})
+    names = [e.name for e in stage.active_kreis_entries(ctx, "mid")]
+    assert "pt_ticket_group" in names
+    assert "pt_ticket_group4" not in names
 
 
 # --- OFF byte-identical: controls.csv unchanged from the pre-task default ---

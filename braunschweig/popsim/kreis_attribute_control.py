@@ -15,7 +15,8 @@ from typing import Mapping, Sequence, Union
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYMENT_STATUS_BY_P_BKAT, PT_TICKET_GROUPS
+from braunschweig.popsim.attributes import (
+    EMPLOYMENT_STATUS_BY_P_BKAT, PT_TICKET_GROUPS, PT_TICKET_GROUPS4)
 
 # Canonical low->high economic-status order (identical to
 # braunschweig.synthesis.population.enriched.ECONOMIC_STATUS_CATEGORIES).
@@ -269,6 +270,27 @@ REGISTRY: tuple = (
         categories=tuple((g, f"== '{g}'") for g in PT_TICKET_GROUPS),
         target_csv_relpath=f"{_TARGET_DIR}/target2026_pt_ticket_group_by_kreis.csv",
         target_columns=PT_TICKET_GROUPS,
+        tier="soft",
+        min_age=14,
+    ),
+    # pt_ticket_group4 x Kreis control (issue #329): the four-group variant.
+    # never_pt is split out of not_flatrate so the balancer cannot concentrate
+    # never-PT persons where PT supply is best (+16.17pp Braunschweig-Stadt in the
+    # 2026-08-20 100% run). REPLACES pt_ticket_group when its toggle is on (see
+    # source_resolution.active_kreis_entries) -- both control the same marginal at
+    # different resolutions and must never run together. Reference-fidelity fix:
+    # the within-not_flatrate split has NO simulation effect (ADR-0089's statement
+    # stands; only the hasPtSubscription boolean reaches the fare model). Blended
+    # MiD P24.1 x SrV E_OEV_FK target (no_answer renormalized out; SrV -8 = never,
+    # SrV 60 Freifahrtberechtigung = occasional). tier SOFT + min_age=14: mirrors
+    # pt_ticket_group's reasoning verbatim.
+    KreisAttributeControl(
+        name="pt_ticket_group4",
+        seed_column="pt_ticket_group4",
+        level="person",
+        categories=tuple((g, f"== '{g}'") for g in PT_TICKET_GROUPS4),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_pt_ticket_group4_by_kreis.csv",
+        target_columns=PT_TICKET_GROUPS4,
         tier="soft",
         min_age=14,
     ),

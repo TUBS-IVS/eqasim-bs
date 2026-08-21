@@ -207,7 +207,9 @@ def _read_seed_persons(
     # ticket category can be resolved + the 99/202/206 coverage codes imputed within
     # alter_gr1, then collapsed to the three control groups -- mirroring the
     # employment_status block above exactly. Dedup-safe (alter_gr1 may already be present).
-    if "pt_ticket_group" in active_kreis_entry_names:
+    # Either resolution of the control (three-group pt_ticket_group, issue #321, or its
+    # four-group refinement pt_ticket_group4, issue #329) reads the same two raw columns.
+    if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
         for _pt_col in ("P_FKARTE", "alter_gr1"):
             if _pt_col not in person_cols:
                 person_cols.append(_pt_col)
@@ -443,9 +445,14 @@ def _derive_pt_ticket_group_seed_column(
 ) -> pd.DataFrame:
     """Derive the person-level ``pt_ticket_group`` KREIS control seed column (issue #321).
 
+    Runs for EITHER resolution of the control -- the three-group ``pt_ticket_group`` entry or
+    its four-group refinement ``pt_ticket_group4`` (issue #329, which replaces it when
+    active): ``attributes.map_pt_ticket_group`` emits both columns in one pass, so no further
+    branching is needed and the two can never disagree.
+
     Two steps, in this order and only this order: resolve the ticket CATEGORY from the raw
     ``P_FKARTE`` via ``attributes.map_pt_subscription_type`` (imputing the coverage codes
-    99 / 202 / 206 within ``alter_gr1``), then collapse it onto the three control groups via
+    99 / 202 / 206 within ``alter_gr1``), then collapse it onto the control groups via
     ``attributes.map_pt_ticket_group``. Resolving the group directly from the raw code would
     be a SECOND independent draw over the same imputed codes -- the defect ADR-0087 removed,
     which would let the control steer a quantity that differs from the ``has_pt_subscription``
@@ -463,7 +470,7 @@ def _derive_pt_ticket_group_seed_column(
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
     """
-    if "pt_ticket_group" in active_kreis_entry_names:
+    if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
         persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
         persons = attributes.map_pt_ticket_group(persons)
     return persons

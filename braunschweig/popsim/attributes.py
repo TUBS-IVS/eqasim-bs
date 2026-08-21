@@ -665,14 +665,23 @@ def map_pt_subscription_type(
 def map_pt_ticket_group(
     persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
 ) -> pd.DataFrame:
-    """Add the three-group ``pt_ticket_group`` seed/control column (issue #321).
+    """Add the ``pt_ticket_group`` (three-group) and ``pt_ticket_group4`` seed/control columns.
 
     Collapses the resolved :data:`braunschweig.data.mid.reference_tables.PT_TICKET_CATEGORIES`
-    onto :data:`PT_TICKET_GROUPS`: ``deutschlandticket`` stays its own group, the remaining
-    flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
+    onto :data:`PT_TICKET_GROUPS` (issue #321): ``deutschlandticket`` stays its own group, the
+    remaining flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
 
-    Deriving the group from the already-resolved category (and NOT a second time from the raw
-    ``P_FKARTE``) is what keeps it consistent with ``has_pt_subscription``: a second
+    The four-group variant :data:`PT_TICKET_GROUPS4` (issue #329) is emitted alongside it in
+    the SAME pass: it splits ``not_flatrate`` into ``never_pt`` (the MiD "fahre nie" category
+    plus the structural under-14 floor) and ``occasional_ticket`` (has some ticket, no
+    flatrate). It exists because the balancer, free inside ``not_flatrate``, concentrated
+    never-PT persons where PT supply is best (+16.17pp Braunschweig-Stadt in the 2026-08-20
+    100% run). Emitting both columns unconditionally keeps them collapse-consistent by
+    construction (``never_pt`` + ``occasional_ticket`` == ``not_flatrate``), so whichever
+    control the config activates steers the same underlying quantity.
+
+    Deriving BOTH groups from the already-resolved category (and NOT a second time from the raw
+    ``P_FKARTE``) is what keeps them consistent with ``has_pt_subscription``: a second
     resolution of the imputed codes 99 / 202 / 206 is exactly the defect ADR-0087 removed.
 
     Raises
@@ -693,18 +702,33 @@ def map_pt_ticket_group(
         category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
         np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
                  "not_flatrate"))
+    # Four-group variant (issue #329): the not_flatrate mass split into never_pt and
+    # occasional_ticket. Derived from the SAME resolved category, so it collapses onto
+    # pt_ticket_group exactly (ADR-0087's rule: never re-resolve the raw P_FKARTE).
+    out["pt_ticket_group4"] = np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
+                          "occasional_ticket")))
     n = len(out)
     if n:
         counts = out["pt_ticket_group"].value_counts()
+        counts4 = out["pt_ticket_group4"].value_counts()
         logger.info(
             "[braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket "
-            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%)",
+            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%) "
+            "[four-group split of not_flatrate: never_pt %d (%.2f%%), occasional_ticket "
+            "%d (%.2f%%)]",
             int(counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0)),
             100.0 * counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0) / n,
             int(counts.get("other_flatrate", 0)),
             100.0 * counts.get("other_flatrate", 0) / n,
             int(counts.get("not_flatrate", 0)),
             100.0 * counts.get("not_flatrate", 0) / n,
+            int(counts4.get(PT_TICKET_NEVER, 0)),
+            100.0 * counts4.get(PT_TICKET_NEVER, 0) / n,
+            int(counts4.get("occasional_ticket", 0)),
+            100.0 * counts4.get("occasional_ticket", 0) / n,
         )
     return out
 

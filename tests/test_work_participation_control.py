@@ -124,9 +124,11 @@ def test_active_kreis_entries_includes_work_participation_by_default():
     # feature #224 task 5 adds two more default-on person-level entries
     # (leisure_participation / education_participation); the full active set now
     # includes them too (see tests/test_leisure_education_participation.py).
+    # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
+    # three-group entry while pt_ticket_never_group is on (the default, issue #329).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group", "work_participation",
+        "trip_class", "employment_status", "pt_ticket_group4", "work_participation",
         "leisure_participation", "education_participation", "escort_participation",
     }
 

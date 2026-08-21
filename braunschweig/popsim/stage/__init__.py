@@ -247,6 +247,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
     KEY_PT_TICKET_KREIS_CONTROL,
+    KEY_PT_TICKET_NEVER_GROUP,
     KEY_IMPORTANCE_PROFILE,
     KEY_INCOME_KC,
     KEY_INCOME_KC_HHSIZE,
@@ -714,6 +715,8 @@ def configure(context):
     # pt_ticket_group (issue #321): the three-group PT-subscription control. Default "on"
     # (project rule); its target is MiD P24.1 with SrV as a corridor check (ADR-0060).
     context.config(KEY_PT_TICKET_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["pt_ticket_group"])
+    # never_pt group split (issue #329): four-group refinement of pt_ticket_group.
+    context.config(KEY_PT_TICKET_NEVER_GROUP, _KREIS_CONTROL_DEFAULT["pt_ticket_group4"])
     # employment_status (second PERSON-level KREIS control, feature #172 task 4).
     # Default "on"; its committed MiD-P9 x SrV-V_ERW blended target lives under
     # data_path (declared below via the any()-gate). 14+ universe restriction (min_age)
@@ -745,6 +748,13 @@ def configure(context):
         (KEY_BIKES_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["number_of_bicycles"]),
         (KEY_EBIKE_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["has_ebike"]),
         (KEY_TRIPS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["trip_class"]),
+        # pt_ticket_group / pt_ticket_group4 (issues #321 / #329): both consume a
+        # committed target2026_* table under data_path, so both belong in this gate.
+        # (The three-group key was missing here; with every toggle default "on" the
+        # any() below was satisfied regardless, so adding it changes nothing except an
+        # all-other-controls-off configuration, where data_path really is needed.)
+        (KEY_PT_TICKET_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["pt_ticket_group"]),
+        (KEY_PT_TICKET_NEVER_GROUP, _KREIS_CONTROL_DEFAULT["pt_ticket_group4"]),
         (KEY_EMPLOYMENT_STATUS_KREIS_CONTROL, _KREIS_CONTROL_DEFAULT["employment_status"]),
         (KEY_WORK_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["work_participation"]),
         (KEY_LEISURE_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["leisure_participation"]),
