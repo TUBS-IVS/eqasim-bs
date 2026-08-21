@@ -2,7 +2,8 @@ feature: parallel_chainsolvers
 title: Parallel chainsolvers
 area: infrastructure
 description: Runs the secondary-location chainsolvers (carla) across worker processes (auto-scaled
-  to cpu_count - 2) instead of single-threaded.
+  to cpu_count - 2) instead of single-threaded. A worker killed outright (OOM) reports a broken
+  executor instead of hanging the stage, and its shard alone is retried (ADR-0097).
 stages:
 - synthesis.population.spatial.secondary.locations
 pipelines:
@@ -23,6 +24,7 @@ code_paths:
 - braunschweig/synthesis/locations/secondary_chainsolvers/
 evidence:
   tests:
+  - tests/test_chainsolver_worker_death.py
   - tests/test_chainsolvers_parallel.py
   - tests/test_secondary_chainsolvers.py
   - tests/test_secondary_chainsolvers_subtypes.py
@@ -48,5 +50,5 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    No ADR was found for this feature (searched docs/DECISIONS.md for "chainsolver" and "parallel"; all hits concern the unrelated scorer/pot_weight/version-pin topics). No owner verdict on realised parallel-vs-serial correctness/performance has been recorded.
+    No ADR was found for the parallelisation decision itself (searched docs/DECISIONS.md for "chainsolver" and "parallel"; all hits concern the unrelated scorer/pot_weight/version-pin topics). No owner verdict on realised parallel-vs-serial correctness/performance has been recorded. ADR-0097 covers only the killed-worker recovery added after the 2026-08-20 incident (issue #344), not the parallelisation itself, and no production run has exercised that recovery yet.
   source: null
