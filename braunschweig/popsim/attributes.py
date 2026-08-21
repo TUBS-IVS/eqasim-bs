@@ -717,8 +717,8 @@ def map_pt_ticket_group(
         logger.info(
             "[braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket "
             "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%) "
-            "[four-group split of not_flatrate: never_pt %d (%.2f%%), occasional_ticket "
-            "%d (%.2f%%)]",
+            "[four-group split of not_flatrate, percentages of all persons: never_pt "
+            "%d (%.2f%%), occasional_ticket %d (%.2f%%)]",
             int(counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0)),
             100.0 * counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0) / n,
             int(counts.get("other_flatrate", 0)),

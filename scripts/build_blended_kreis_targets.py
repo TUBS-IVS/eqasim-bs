@@ -243,7 +243,9 @@ def build_pt_ticket_group4(data: Path, config: BlendConfig) -> pd.DataFrame:
     """Four-group PT ticket target: MiD P24.1 x SrV E_OEV_FK, no arbiter (issue #329).
 
     Same construction as ``build_pt_ticket_group`` with two differences: never_pt is
-    split out of not_flatrate on BOTH halves (MiD column fahre_nie; SrV code -8),
+    split out of not_flatrate on BOTH halves (on the MiD side via the raw never-PT
+    codebook column, i.e. ``P24_RAW_COLUMN_BY_CATEGORY["never_pt"]`` -- the German
+    header stays at the raw-CSV boundary in ``reference_tables``; SrV code -8),
     and the MiD no_answer (keine_angabe) mass is renormalized OUT -- the synthesis
     imputes MiD code 99 pool-proportionally and can never produce the category, so
     folding its mass into any group would fabricate bias. ASSUMPTION (recorded in
@@ -349,12 +351,13 @@ def main(argv=None) -> int:
     write_target(build_pt_ticket_group4(args.data, config),
                  args.out_dir / "target2026_pt_ticket_group4_by_kreis.csv", config,
                  note=("; NOTE this file: four-group variant of "
-                       "target2026_pt_ticket_group (issue #329). never_pt = MiD "
-                       "fahre_nie x SrV E_OEV_FK -8 (usage-derived skip; close but "
-                       "not identical constructs, see ADR); Freifahrtberechtigung "
-                       "(SrV 60) counts as occasional_ticket; MiD keine_angabe "
-                       "renormalized OUT (structurally unproducible by the "
-                       "synthesis). FINAL target - prior_n = 0."))
+                       "target2026_pt_ticket_group (issue #329). never_pt = the raw "
+                       "MiD never-PT column of P24.1 (see reference_tables."
+                       "P24_RAW_COLUMN_BY_CATEGORY) x SrV E_OEV_FK -8 (usage-derived "
+                       "skip; close but not identical constructs, see ADR); "
+                       "Freifahrtberechtigung (SrV 60) counts as occasional_ticket; "
+                       "the MiD no_answer mass is renormalized OUT (structurally "
+                       "unproducible by the synthesis). FINAL target - prior_n = 0"))
     return 0
 
 

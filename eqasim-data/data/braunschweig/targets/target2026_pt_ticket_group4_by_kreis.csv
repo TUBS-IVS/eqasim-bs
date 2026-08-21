@@ -3,7 +3,7 @@
 # agreement (<= 5.0 pp per category) -> precision blend; disagreement with a
 # register arbiter -> rank-agreement pick; disagreement without arbiter ->
 # MiD shrunk toward Gesamt (lambda = 0.3); Wolfsburg (03103) and Gesamt
-# always MiD; NOTE this file: four-group variant of target2026_pt_ticket_group (issue #329). never_pt = MiD fahre_nie x SrV E_OEV_FK -8 (usage-derived skip; close but not identical constructs, see ADR); Freifahrtberechtigung (SrV 60) counts as occasional_ticket; MiD keine_angabe renormalized OUT (structurally unproducible by the synthesis). FINAL target - prior_n = 0.. Column `source` records the rule per row;
+# always MiD; NOTE this file: four-group variant of target2026_pt_ticket_group (issue #329). never_pt = the raw MiD never-PT column of P24.1 (see reference_tables.P24_RAW_COLUMN_BY_CATEGORY) x SrV E_OEV_FK -8 (usage-derived skip; close but not identical constructs, see ADR); Freifahrtberechtigung (SrV 60) counts as occasional_ticket; the MiD no_answer mass is renormalized OUT (structurally unproducible by the synthesis). FINAL target - prior_n = 0. Column `source` records the rule per row;
 # shares are fractions summing to 1.
 # CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0.
 # ASSUMPTION (SrV side): stratified PSU design over selected municipalities;

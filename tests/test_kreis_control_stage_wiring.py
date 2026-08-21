@@ -224,8 +224,9 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all eleven entries default "on" (project rule: new features default
-    # on), in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
+    # Empty config -> all twelve REGISTERED entries default "on" (project rule: new
+    # features default on), leaving eleven ACTIVE after the pt_ticket substitution below,
+    # in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
     # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on;
     # employment_status (second person-level entry, 14+ universe) is feature #172 task 4;
     # work_participation / leisure_participation / education_participation (third,
