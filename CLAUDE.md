@@ -240,6 +240,14 @@ PRs, and the Project board live on the fork only. The canonical feature workflow
 ties this together (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr`
 -> record) is documented in `CONTRIBUTING.md`.
 
+**Working hygiene (each rule cost real time once; reasoning in `docs/codebase/notes/git-working-hygiene.md`):**
+- **One worktree per TASK, not per session.** `git worktree add -b <branch> .claude/worktrees/<task> origin/main`. Reusing the warm worktree for a second task is what put a data script in the main checkout (it rewrote seven committed CSVs on the user's branch) and what lost track of `HEAD`.
+- **After any `git rebase`, check `git log --oneline -1` IS your commit before amending.** "Successfully rebased" also prints when your commit was DROPPED as already-upstream — then `HEAD` is someone else's commit, and `--amend` rewrites it.
+- **Stage explicit paths, never `git add -A` or a directory**, then verify with `git show --stat HEAD`. `eqasim-data/` is ignored by design; committed reference tables need a deliberate `git add -f` per the `.gitignore` allowlist.
+- **The `.git` is shared across worktrees**, so local branches are visible to the user and may already be pushed with a PR open. Check `git ls-remote --heads origin <branch>` and `gh pr list --head <branch> --state all` before assuming otherwise; never `git switch` in a directory you do not own.
+- **A worktree has no gitignored data.** Scripts reading raw inputs get explicit `--raw <main-checkout path>` and `--out-dir <scratch>`; copy only the intended file back and diff regenerated siblings to prove the change was additive.
+- **Merging a PR is the user's action**, not ours — the permission layer blocks `gh pr merge` deliberately.
+
 Keep commits focused. Commit messages must be in English and explain the change and its purpose: use clear messages (e.g. `Add validation for missing freight carrier capacities`), avoid unclear ones (e.g. `fix`, `update`, `changes`). Full example lists: [CONVENTIONS.md](docs/codebase/CONVENTIONS.md#commit-message-examples).
 
 ## Review checklist
