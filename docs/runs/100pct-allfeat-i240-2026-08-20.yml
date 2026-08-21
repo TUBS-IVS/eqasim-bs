@@ -39,7 +39,7 @@ status:
     they were pursued in separate invocations with run-list-only overlays over the identical
     config. Two of the four completed and are recorded below: verbindungen_validation and
     cordon_validation. The remaining two (analysis_suite, simwrapper_export) are NOT done -
-    they sit behind secondary_chainsolvers, which deadlocked at shard 61/62 after 7.6h in the
+    they sit behind secondary_chainsolvers, which hung at shard 61/62 after 7.6h in the
     follow-up invocation (second run incident below). None of the missing pieces affects the
     population evidence above, which was measured directly from the stage pickle and the
     written outputs.'
@@ -163,21 +163,39 @@ validation:
     vintage_drift)'
   notes: 'reference_role=fit: the distribution is anchored to this table, so agreement is
     convergence on the anchor, NOT independent validation. No red flags.'
-- metric: 'run incident 2: secondary_chainsolvers deadlocked at shard 61/62'
+- metric: 'run incident 2: secondary_chainsolvers hung at shard 61/62 after a worker was OOM-killed'
   reference: none (process diagnosis)
   result: 'In the follow-up analyses invocation the chainsolver stalled after 7.6h with one
     shard outstanding. Diagnosed by two-point CPU sampling: the workers accumulated ZERO cpu
     time over 20s (identical TIME values) at load 0.02, i.e. no computation. /proc showed all
     63 python processes in futex_wait_queue_me, the wrapper in do_wait, no zombies. py-spy
-    could not attach (ptrace_scope=1, no sudo) so no stack was obtainable. The same stage with
-    the SAME hash completed 62/62 in the overnight run, so the deadlock is non-deterministic.
-    No wall-clock guard exists on the stage, so it would have hung indefinitely.'
+    could not attach (ptrace_scope=1, no sudo) so no stack was obtainable.
+
+    CORRECTED 2026-08-21 (issue #344): this was NOT a deadlock and NOT non-deterministic. The
+    kernel OOM killer removed 7 processes between 23:20:22 and 23:26:54 (3x python ~20 GB, 4x
+    populationsim 20-30 GB anon-rss) on the 125 GB box, because a SECOND heavy run had started
+    at 22:35:54 in the worktree wt_i227_smoke (PopulationSim, num_workers 8) while this
+    62-worker stage was in flight; that run records the same event from its own side (exit code
+    137, "loaded 4/8 batch outputs (4 missing)"). One shard worker died with its task, and
+    multiprocessing.Pool.imap_unordered never notices that: it respawns the worker but never
+    re-queues the lost task, so the consuming loop waits forever. Reproduced on this server''s
+    interpreter -- 4 tasks, worker 0 SIGKILLed, 3 results delivered, then an indefinite hang,
+    while ProcessPoolExecutor raises BrokenProcessPool. The 63 parked processes were not
+    evidence of mutual waiting either: processes=len(tasks) means one worker per shard, so 61
+    of them were idle by design. The stage ran again at all only because a five-line COMMENT
+    change in escort.py (commit b04befac) altered the helper validate() token; the 13:19 stage
+    pickle from the earlier run is still in the cache dir, which keeps the same name because
+    only the module token changed.'
   notes: 'Consequence: analysis_suite and simwrapper_export remain unexecuted for this run.
     Killing the stall cost nothing recoverable - no cache exists for the current chainsolver
     hash, so the 7.6h was already lost. Mitigation that worked: target the analysis stages
     individually; cordon_validation then ran in seconds because its own closure was cached.
-    Worth a wall-clock guard plus a shard-level retry, which is also where the #281 tail
-    observation points.'
+    Fixed as ADR-0097 (issue #344): shards now run through ProcessPoolExecutor, which reports a
+    killed worker, and only the LOST shards are retried -- one dead worker costs ~7 min instead
+    of 7.6h. A wall-clock guard was deliberately NOT chosen (shard runtimes vary too much for a
+    safe threshold), and a memory cap on the pool was rejected because the shard count IS the
+    worker count. The trigger stays an operational rule: do not start a second heavy run while
+    a 100 % stage is in flight.'
 features:
   note: 'First full-region execution of ownership_grid_1km (ADR-0092). The run also exposed
     two latent main-branch defects (fixed in PR #325) and one JVM-exit defect (#330) that no
