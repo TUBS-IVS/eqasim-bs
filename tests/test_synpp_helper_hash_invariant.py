@@ -581,7 +581,7 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "eqasim_common.analysis.synthesis.statistics.monte_carlo": (
         "eqasim_common.analysis.synthesis.statistics.marginal",
     ),
-    # DELIBERATE and permanent, not debt to be paid off (#330 / ADR-0094): the hang
+    # DELIBERATE and permanent, not debt to be paid off (#330 / ADR-0095): the hang
     # watchdog is result-neutral operational machinery. matsim.runtime.java.execute()
     # produces no artifact, and process_watchdog only shapes how java.run WAITS on a
     # subprocess while other stages execute -- those stages import the current source

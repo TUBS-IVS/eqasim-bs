@@ -3,7 +3,7 @@ title: CPU-accumulation hang watchdog for the pipeline's Java subprocesses
 area: infrastructure
 description: Every Java subprocess the pipeline spawns is watched by CPU-time accumulation; a process
   that stays alive without accumulating CPU time is terminated so a hung JVM fails the run loudly
-  instead of stalling synpp for hours (ADR-0094).
+  instead of stalling synpp for hours (ADR-0095).
 stages:
 - matsim.runtime.java
 - matsim.runtime.pt2matsim
@@ -26,7 +26,7 @@ production:
 introduced:
   issue: 330
   pr: null
-  adr: ADR-0094
+  adr: ADR-0095
 detail_doc: null
 code_paths:
 - matsim/runtime/process_watchdog.py
@@ -73,6 +73,6 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    Recorded from ADR-0094 on the day the guard was written. No owner verdict yet, and no run
+    Recorded from ADR-0095 on the day the guard was written. No owner verdict yet, and no run
     has exercised the armed watchdog against a live JVM.
-  source: ADR-0094
+  source: ADR-0095

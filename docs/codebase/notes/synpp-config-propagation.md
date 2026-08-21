@@ -12,7 +12,7 @@ recommendation but a hard requirement (see below).
 `required_config` — and `required_config` is built by `ConfigurationContext` from
 what **that same stage's** `configure()` declared. Helper modules read options from
 the CALLING stage's context: `matsim.runtime.java.run` reads `java_binary` /
-`java_memory` (plus the hang-watchdog options, ADR-0094),
+`java_memory` (plus the hang-watchdog options, ADR-0095),
 `matsim.runtime.pt2matsim.run` additionally reads `pt2matsim_version`,
 `matsim.runtime.maven.run` reads `java_home`, and so on. So a stage that calls
 `eqasim.run` / `pt2matsim.run` / `java.run` reads options it never declared.
@@ -35,7 +35,7 @@ Two independent reasons:
    why `matsim.simulation.run`, `matsim.simulation.prepare` and
    `braunschweig.freight.extraction` now delegate to
    `matsim.runtime.java.configure(context)` — the hang-watchdog keys are volatile so
-   that changing a timeout cannot invalidate a cached stage (ADR-0094).
+   that changing a timeout cannot invalidate a cached stage (ADR-0095).
 2. **Propagation does not reach every consumer.** `matsim.scenario.supply.osm`
    declares `context.stage("matsim.runtime.pt2matsim")` and still died with
    `"Config option pt2matsim_version is not requested"` in the 100 % run of

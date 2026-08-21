@@ -1,4 +1,4 @@
-# ADR-0094 · 2026-08-20 · CPU-accumulation hang watchdog for the pipeline's Java subprocesses
+# ADR-0095 · 2026-08-20 · CPU-accumulation hang watchdog for the pipeline's Java subprocesses
 
 - **Status:** active
 - **Context:** The 100 % run of 2026-08-20
@@ -13,6 +13,23 @@
   `javap` on univocity-parsers 2.8.4 and 2.9.1 shows
   `new Thread(runnable, "unVocity-parsers input reading thread")` followed by
   `start()` with no `setDaemon(true)` in between.
+  The upstream defect was subsequently pinned down from the sources and
+  **reproduced minimally** (2026-08-21): `tech.tablesaw.io.csv.CsvReader.read`
+  skips `parser.stopParsing()` whenever the caller supplied a `Reader`
+  (`if (options.source().reader() == null)`, commented "let the client close it")
+  -- but the client never sees the parser, and on the partial-column-types path the
+  reader actually being parsed is tablesaw's own one over its `bytesCache`, not the
+  client's. `ConcurrentCharLoader.stopReading()` is the only thing that unparks the
+  loader (it interrupts the thread), while `FixedInstancePool.allocate()` loops
+  `wait(50)` for as long as the bucket pool is full, so an abandoned loader parks
+  forever. A/B on identical input with an identical mid-file parse abort, the only
+  difference being the source kind: `File` source -> JVM exits (code 0); `Reader`
+  source -> JVM never exits, `unVocity-parsers input reading thread` alive in
+  TIMED_WAITING. Closing the client's reader in try-with-resources does NOT help
+  (the thread waits on the bucket pool, not on the reader), so no fix is available
+  at the MATSim call site -- which is precisely why the pipeline needs a guard of
+  its own. Note the leak requires the parse to end while input is still unread: a
+  read that reaches EOF terminates the loader by itself.
   The Java side now terminates explicitly (`System.exit` in
   `org.eqasim.braunschweig.RunSimulation`, TUBS-IVS/eqasim-java-bs#23, merged as
   `03c1d680`), but that guard covers only our own entry point and only this one
@@ -88,9 +105,12 @@
     at the stage output directory and asks for a `jstack` capture before a retry.
     The guard makes the failure loud; it does not decide whether the partial work
     is usable.
-  - The upstream leak is untouched. Reporting it to the MATSim SimWrapper contrib
-    (close the reader, or mark the loader thread as a daemon) remains issue #330
-    follow-up 1.
+  - The upstream leak is untouched. Reporting it remains issue #330 follow-up 1,
+    and the proof above names the two places a real fix can live: tablesaw
+    (`stopParsing()` must be unconditional; only `reader.close()` belongs behind
+    the ownership check) and univocity (mark the loader thread as a daemon). The
+    MATSim analysis commands cannot fix it at the call site while they need the
+    `Reader` overload to read `.csv.gz`.
 - **Verification owed:** the watchdog's arming and its inert path are covered by
   unit tests (`tests/test_java_hang_watchdog.py`, deterministic clock and fake
   process); a real hang has NOT been re-provoked end to end. The pending 100 %
