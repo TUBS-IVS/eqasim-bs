@@ -728,6 +728,8 @@ def build_ticket_groups4_table(persons: pd.DataFrame) -> pd.DataFrame:
     for level, code, name, group in _iter_levels(universe):
         w = group["GEWICHT_P_ZENSUS"]
         total = float(w.sum())
+        if total <= 0:
+            raise RuntimeError(f"[ticket_groups4] {level} {code}: zero total weight")
         dt = float(w[group["E_OEV_FK"] == TICKET_GROUP_DEUTSCHLANDTICKET_CODE].sum())
         other = float(w[group["E_OEV_FK"].isin(TICKET_GROUP_OTHER_FLATRATE_CODES)].sum())
         never = float(w[group["E_OEV_FK"].isin(TICKET_GROUP4_NEVER_CODES)].sum())

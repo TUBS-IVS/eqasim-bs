@@ -24,16 +24,20 @@ from scripts.extract_srv_kreis_tables import build_ticket_groups4_table
 _OTHER_KREIS_CODES = ["03102", "03151", "03153", "03154", "03157", "03158"]
 
 
-def _filler_rows_for_other_kreise() -> pd.DataFrame:
-    n = len(_OTHER_KREIS_CODES)
+def _filler_rows_for_kreise(codes: list[str]) -> pd.DataFrame:
+    n = len(codes)
     return pd.DataFrame({
         "E_OEV_FK": [1] * n,
         "V_ALTER": [30] * n,
         "GEWICHT_P_ZENSUS": [1.0] * n,
         "ST_CODE": [173] * n,
         "ST_CODE_NAME": ["staedtisch"] * n,
-        "kreis": _OTHER_KREIS_CODES,
+        "kreis": codes,
     })
+
+
+def _filler_rows_for_other_kreise() -> pd.DataFrame:
+    return _filler_rows_for_kreise(_OTHER_KREIS_CODES)
 
 
 def test_build_ticket_groups4_table_splits_never_pt():
@@ -71,4 +75,36 @@ def test_build_ticket_groups4_table_raises_on_unmapped_code():
         "ST_CODE": [173], "ST_CODE_NAME": ["staedtisch"], "kreis": ["03101"],
     })
     with pytest.raises(RuntimeError):
+        build_ticket_groups4_table(persons)
+
+
+def test_build_ticket_groups4_table_raises_on_zero_total_weight_group():
+    """A Kreis whose only respondents are under 14 has zero total weight in the
+    universe (the age filter removes them before ``_iter_levels`` groups by
+    Kreis); this must raise RuntimeError naming the level and code, not divide
+    by zero (mirrors the guard in build_ticket_groups_table)."""
+    braunschweig = pd.DataFrame({
+        "E_OEV_FK": [50, 3, -8, 1, 60, 70],
+        "V_ALTER": [30] * 6,
+        "GEWICHT_P_ZENSUS": [1.0] * 6,
+        "ST_CODE": [173] * 6,
+        "ST_CODE_NAME": ["staedtisch"] * 6,
+        "kreis": ["03101"] * 6,
+    })
+    # Salzgitter (03102) has respondents, but all under 14 -> excluded from the
+    # universe entirely -> zero total weight for that Kreis's group.
+    salzgitter_under_14 = pd.DataFrame({
+        "E_OEV_FK": [1, 1],
+        "V_ALTER": [10, 12],
+        "GEWICHT_P_ZENSUS": [1.0, 1.0],
+        "ST_CODE": [100, 100],
+        "ST_CODE_NAME": ["regiopole"] * 2,
+        "kreis": ["03102", "03102"],
+    })
+    other_kreise = [c for c in _OTHER_KREIS_CODES if c != "03102"]
+    persons = pd.concat(
+        [braunschweig, salzgitter_under_14, _filler_rows_for_kreise(other_kreise)],
+        ignore_index=True)
+
+    with pytest.raises(RuntimeError, match=r"\[ticket_groups4\] kreis 03102: zero total weight"):
         build_ticket_groups4_table(persons)
