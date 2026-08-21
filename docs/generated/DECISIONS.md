@@ -102,4 +102,5 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0091](../decisions/ADR-0091-explicit-w-zweck-purposes-and-a-coverage-guard.md) | 2026-08-18 | active | Every documented W_ZWECK code is mapped explicitly, and an unknown one is reported (issue #241) |
 | [ADR-0092](../decisions/ADR-0092-1km-ownership-shape-controls-raked-to-blended-kreis-anchors.md) | 2026-08-19 | active | Car/bike ownership gets a 1 km MiD-shaped control, raked exactly to the blended Kreis anchors (issue #240) |
 | [ADR-0093](../decisions/ADR-0093-wohnmobile-holder-age-tilt-with-exact-marginal-calibration.md) | 2026-08-20 | active | Wohnmobile segment tilted by holder age, with an exact-marginal calibration scalar |
+| [ADR-0094](../decisions/ADR-0094-no-licence-pattern-control-like-for-like-references-instead.md) | 2026-08-20 | accepted | No driving-licence pattern control; commit the like-for-like sex x cohort references instead (issue #322) |
 | [ADR-0095](../decisions/ADR-0095-cpu-based-hang-watchdog-for-java-subprocesses.md) | 2026-08-20 | active | CPU-accumulation hang watchdog for the pipeline's Java subprocesses |
