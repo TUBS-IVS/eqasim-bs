@@ -1,9 +1,27 @@
 import subprocess as sp
 import os, shutil
 
+import matsim.runtime.process_watchdog as process_watchdog
+
+# Config keys of the hang watchdog (issue #330). Kept as constants so the stages
+# that must declare them cannot drift from what run() reads.
+KEY_HANG_TIMEOUT = "java_hang_timeout_s"
+KEY_HANG_MIN_CPU = "java_hang_min_cpu_seconds"
+
 def configure(context):
     context.config("java_binary", "java")
     context.config("java_memory", "50G")
+
+    # Hang watchdog for the spawned JVM: a process that stays alive without
+    # accumulating CPU time is terminated so a hung JVM fails the run loudly
+    # instead of stalling synpp for hours (issue #330; see process_watchdog for
+    # the 2026-08-20 evidence). Declared volatile because an operational guard
+    # has no influence on any result: keeping it out of the stage hash means
+    # changing the timeout never invalidates a cached stage.
+    context.config(KEY_HANG_TIMEOUT, process_watchdog.DEFAULT_HANG_TIMEOUT_S,
+                   volatile = True)
+    context.config(KEY_HANG_MIN_CPU, process_watchdog.DEFAULT_HANG_MIN_CPU_SECONDS,
+                   volatile = True)
 
 def run(context, entry_point, arguments = [], class_path = None, vm_arguments = [], cwd = None, memory = None, mode = "raise"):
     """
@@ -49,10 +67,20 @@ def run(context, entry_point, arguments = [], class_path = None, vm_arguments = 
     print("Executing java:", " ".join(command_line))
 
     if mode == "raise" or mode == "return_code":
-        return_code = sp.check_call(command_line, cwd = cwd)
+        # Guarded wait instead of a bare check_call: a JVM that stops accumulating
+        # CPU time is terminated so the stage fails loudly rather than stalling the
+        # pipeline indefinitely (issue #330). With the watchdog disabled
+        # (java_hang_timeout_s: 0) this is behaviourally identical to check_call --
+        # wait for the process, raise CalledProcessError on a non-zero return code.
+        process = sp.Popen(command_line, cwd = cwd)
+        return_code = process_watchdog.wait_with_hang_watchdog(
+            process,
+            hang_timeout_s = float(context.config(KEY_HANG_TIMEOUT)),
+            min_cpu_seconds = float(context.config(KEY_HANG_MIN_CPU))
+        )
 
         if not return_code == 0:
-            raise RuntimeError("Java return code: %d" % return_code)
+            raise sp.CalledProcessError(return_code, command_line)
 
         return return_code
     elif mode == "output":

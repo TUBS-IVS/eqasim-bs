@@ -581,6 +581,17 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "eqasim_common.analysis.synthesis.statistics.monte_carlo": (
         "eqasim_common.analysis.synthesis.statistics.marginal",
     ),
+    # DELIBERATE and permanent, not debt to be paid off (#330 / ADR-0095): the hang
+    # watchdog is result-neutral operational machinery. matsim.runtime.java.execute()
+    # produces no artifact, and process_watchdog only shapes how java.run WAITS on a
+    # subprocess while other stages execute -- those stages import the current source
+    # at run time, so a watchdog change takes effect on the next run regardless of any
+    # cache. Folding it into the module hash would buy nothing and cost a devalidation
+    # of matsim.runtime.java plus its 22 dependents (~1.5 h at 100 %) on every
+    # threshold tweak. Do NOT "close" this gap.
+    "matsim.runtime.java": (
+        "matsim.runtime.process_watchdog",
+    ),
     "synthesis.population.income.bhepop2": (
         "synthesis.population.income.utils",
     ),
