@@ -33,6 +33,7 @@ from braunschweig.analysis.population_validation import (
     controls as C,
     fleet_age_status as FAS,
     geo_export as GE,
+    participation_fit as PF,
     population_source as PS,
     quality_assessment as QA,
     trip_coherence as TC,
@@ -120,6 +121,40 @@ def _deviation_wide(long: pd.DataFrame, geography: str, id_name: str) -> pd.Data
     wide = sub.pivot_table(index="geo_id", columns="key", values="delta_pp",
                            aggfunc="first").reset_index()
     return wide.rename(columns={"geo_id": id_name})
+
+
+def _participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
+                              trips: pd.DataFrame, data_path: str) -> pd.DataFrame:
+    """Realised-vs-SrV participation fit per Kreis (issue #334 wiring).
+
+    The SrV participation controls (#224 work / leisure / education, #227 escort)
+    are input-only popsim seed columns: they steer the balancing but never reach
+    the assembled population, so :func:`controls.build_registry` -- which
+    validates columns of that population -- structurally cannot carry them.
+    :mod:`participation_fit` measures them from the realised TRIPS instead, which
+    is also the more meaningful signal (what the population does, not what the
+    donor flag said). It existed and was unit-tested but was called by nothing,
+    so no run ever produced its evidence; this helper is that call site.
+
+    ``persons`` carries no Kreis of its own -- ``ars5`` comes from the ``geo``
+    frame via ``household_id``, the same join
+    :func:`controls.categorical_person_control` uses. Persons whose household has
+    no geo row are DROPPED (``dropna``), never folded into some other Kreis (no
+    silent fallback).
+
+    HONESTY CAVEAT (reproduce wherever these numbers are reported): the SrV
+    targets STEER the raking, so this is a FIT CHECK measuring convergence toward
+    the target, not independent agreement with reality -- the same framing as
+    ``independence="fit_check"`` for driving_license_type / pt_ticket_type. See
+    the :mod:`participation_fit` module docstring.
+
+    Returns the ``ars5, purpose, realised_rate, target_rate, abs_error`` frame.
+    """
+    persons_kreis = persons[["person_id", "household_id"]].merge(
+        geo[["household_id", "ars5"]], on="household_id", how="left")
+    persons_kreis = persons_kreis.dropna(subset=["ars5"])[["person_id", "ars5"]]
+    targets_dir = Path(data_path) / "braunschweig" / "targets"
+    return PF.participation_fit(trips, persons_kreis, targets_dir)
 
 
 def _interpretation_markdown(quality: pd.DataFrame) -> str:
@@ -290,6 +325,37 @@ def run(ns) -> dict:
             "No %strips.csv at the source; trip-coherence check skipped "
             "(it needs donor activity chains).", frames.prefix)
 
+    # Per-Kreis SrV participation fit (issue #334). Deliberately its OWN
+    # top-level block rather than a nested try inside the trip-coherence one:
+    # the two analyses share only the trips frame, so an early trip-coherence
+    # failure must not also discard the participation evidence. This is the call
+    # site participation_fit.py never had -- without it the #224/#227
+    # participation controls produce no routine fit report at all.
+    participation_json = None
+    if frames.trips is not None:
+        try:
+            participation = _participation_fit_report(
+                frames.persons, geo, frames.trips, DATA_PATH)
+            participation.to_csv(out / "participation_fit.csv", index=False)
+            participation_json = participation.to_dict(orient="records")
+            worst = participation.sort_values("abs_error", ascending=False).head(1)
+            LOGGER.info(
+                "Participation fit (FIT CHECK against the steering SrV targets, "
+                "not independent validation): %d (Kreis, purpose) cells, mean "
+                "|error| %.2f pp, worst %s in %s at %.2f pp.",
+                len(participation), 100 * participation["abs_error"].mean(),
+                worst["purpose"].iloc[0] if not worst.empty else "n/a",
+                worst["ars5"].iloc[0] if not worst.empty else "n/a",
+                100 * worst["abs_error"].iloc[0] if not worst.empty else float("nan"))
+        except Exception:
+            LOGGER.exception(
+                "Participation fit failed; continuing without it.")
+            participation_json = None
+    else:
+        LOGGER.info(
+            "No %strips.csv at the source; participation fit skipped "
+            "(it is derived from the realised trips).", frames.prefix)
+
     # Feature B: vehicle age × economic-status validation panel.
     # Data-absent-safe: skips gracefully when vehicles is None or lacks columns.
     fleet_age_panel = FAS.build_panel(frames.vehicles, DATA_PATH)
@@ -359,6 +425,9 @@ def run(ns) -> dict:
         "family_scores": fam.to_dict(orient="records"),
         "quality": quality.to_dict(orient="records"),
         "trip_coherence": trip_json,
+        # Issue #334: FIT CHECK against the steering SrV targets (see
+        # _participation_fit_report), not independent validation.
+        "participation_fit": participation_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
         "fleet_evaluation": _fe_paths,
         "minor_employment": minor_emp,
