@@ -53,6 +53,7 @@ Writes (to ``--out-dir``, default ``eqasim-data/data/braunschweig/srv``):
     srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv
     srv2023_dticket_by_kreis.csv
     srv2023_ticket_groups_14plus_by_kreis.csv
+    srv2023_ticket_groups4_14plus_by_kreis.csv
     srv2023_covered_municipalities.csv
 
 Usage:
@@ -687,6 +688,63 @@ def build_ticket_groups_table(persons: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Four-group ticket table at 14+ by Kreis (E_OEV_FK) -- issue #329
+# ---------------------------------------------------------------------------
+
+# Four-group variant (issue #329): never_pt split out of not_flatrate.
+#   -8 Nicht erhoben (no PT use in the past 12 months) -> never_pt. This is a
+#      USAGE-derived skip, not a ticket answer; the semantic distance to MiD's
+#      "never rides PT" ticket answer is recorded as an ASSUMPTION in the ADR
+#      and in the blended target's header.
+#   60 Freifahrtberechtigung -> occasional_ticket: free-fare-entitled persons
+#      do ride PT, so they must not land in never_pt.
+TICKET_GROUP4_NEVER_CODES = (-8,)
+TICKET_GROUP4_OCCASIONAL_CODES = (1, 2, 70, 60)
+
+
+def build_ticket_groups4_table(persons: pd.DataFrame) -> pd.DataFrame:
+    """Four-group PT-ticket shares at 14+ by Kreis (issue #329).
+
+    Same universe as :func:`build_ticket_groups_table` (valid GEWICHT_P_ZENSUS,
+    E_OEV_FK != -10, age >= TICKET_GROUP_MIN_AGE); the not_flatrate group is
+    split into never_pt (code -8 only) and occasional_ticket (1, 2, 70, 60).
+    Unmapped codes raise (no silent fallback).
+    """
+    universe = persons[(persons["E_OEV_FK"] != -10)
+                       & (persons["V_ALTER"] >= TICKET_GROUP_MIN_AGE)].copy()
+    known = {TICKET_GROUP_DEUTSCHLANDTICKET_CODE, *TICKET_GROUP_OTHER_FLATRATE_CODES,
+             *TICKET_GROUP4_NEVER_CODES, *TICKET_GROUP4_OCCASIONAL_CODES}
+    unknown = set(universe["E_OEV_FK"].unique()) - known
+    if unknown:
+        raise RuntimeError(
+            f"[ticket_groups4] unmapped E_OEV_FK code(s) {sorted(unknown)} in the "
+            f"14+ universe; extend the four-group code sets deliberately")
+    n_never = int((universe["E_OEV_FK"].isin(TICKET_GROUP4_NEVER_CODES)).sum())
+    logger.info(
+        "[ticket_groups4] universe = %d persons aged >= %d; never_pt (E_OEV_FK -8) "
+        "%d (%.1f%%)", len(universe), TICKET_GROUP_MIN_AGE, n_never,
+        100.0 * n_never / max(len(universe), 1))
+    rows = []
+    for level, code, name, group in _iter_levels(universe):
+        w = group["GEWICHT_P_ZENSUS"]
+        total = float(w.sum())
+        dt = float(w[group["E_OEV_FK"] == TICKET_GROUP_DEUTSCHLANDTICKET_CODE].sum())
+        other = float(w[group["E_OEV_FK"].isin(TICKET_GROUP_OTHER_FLATRATE_CODES)].sum())
+        never = float(w[group["E_OEV_FK"].isin(TICKET_GROUP4_NEVER_CODES)].sum())
+        occasional = float(w[group["E_OEV_FK"].isin(TICKET_GROUP4_OCCASIONAL_CODES)].sum())
+        rows.append({
+            "level": level, "code": code, "name": name,
+            "n_unweighted": len(group),
+            "n_weighted": round(total, 2),
+            "deutschlandticket": round(dt / total, 4),
+            "other_flatrate": round(other / total, 4),
+            "never_pt": round(never / total, 4),
+            "occasional_ticket": round(occasional / total, 4),
+        })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Table 7: covered municipalities (household sample composition)
 # ---------------------------------------------------------------------------
 
@@ -794,6 +852,7 @@ def main(argv: list[str] | None = None) -> int:
     license_sex_cohort_df = build_license_by_sex_cohort_table(persons_valid)
     dticket_df = build_dticket_table(persons_valid)
     ticket_groups_df = build_ticket_groups_table(persons_valid)
+    ticket_groups4_df = build_ticket_groups4_table(persons_valid)
     municipalities_df = build_municipalities_table(households_valid)
 
     _assert_cross_checks(cars_df, ebike_household_df, license_df, dticket_df)
@@ -892,6 +951,24 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     write_csv(
+        ticket_groups4_df, args.out_dir / "srv2023_ticket_groups4_14plus_by_kreis.csv",
+        _provenance_header(
+            universe="persons aged >= 14 (V_ALTER) with a valid GEWICHT_P_ZENSUS weight "
+                     "and E_OEV_FK != -10 (Unplausibel); the 14+ restriction makes this "
+                     "table universe-compatible with MiD P24.1 ('ab 14 Jahre'). "
+                     "Four-group variant of srv2023_ticket_groups_14plus_by_kreis.csv "
+                     "(issue #329): the not_flatrate group is split into never_pt "
+                     "(E_OEV_FK == -8 'nicht erhoben' ONLY -- no PT use in the past 12 "
+                     "months, an ASSUMPTION-grade usage-derived skip, not a ticket "
+                     "answer, carrying roughly a third of the sample) and "
+                     "occasional_ticket (codes 1, 2, 70, 60). Code 60 "
+                     "(Freifahrtberechtigung) stays in occasional_ticket, not never_pt, "
+                     "because free-fare-entitled persons do ride PT",
+            weight_col="GEWICHT_P_ZENSUS",
+            missing_handling="only E_OEV_FK == -10 (Unplausibel) excluded",
+        ),
+    )
+    write_csv(
         municipalities_df, args.out_dir / "srv2023_covered_municipalities.csv",
         [
             "# Source: SrV 2023 Braunschweig + Regionalverband Grossraum Braunschweig",
@@ -907,7 +984,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
 
-    logger.info("[srv-extract] wrote 9 aggregate CSVs to %s", args.out_dir)
+    logger.info("[srv-extract] wrote 10 aggregate CSVs to %s", args.out_dir)
 
     print("\n=== srv2023_cars_by_kreis.csv (level=kreis) ===")
     print(cars_df[cars_df["level"] == "kreis"].to_string(index=False))
