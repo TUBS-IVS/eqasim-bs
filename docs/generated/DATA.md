@@ -58,6 +58,7 @@ variables.
 ` | o/-/r | YES |
 | [mid2023_bikes_by_rs7_haustyp](../registry/data/mid2023_bikes_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` | o/-/r | no |
 | [mid2023_cars_by_rs7_haustyp](../registry/data/mid2023_cars_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv` | o/-/r | no |
+| [mid2023_license_by_sex_cohort](../registry/data/mid2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_mid_license_by_sex_cohort.py`) | `data/braunschweig/mid/mid2023_license_by_sex_cohort.csv` | -/-/o | no |
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |
 | [mid2023_regional_report](../registry/data/mid2023_regional_report.yml) | validation_reference, calibration_target | restricted_delivery (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/ (source PDFs local-only)` | o/-/o | YES |
@@ -67,6 +68,7 @@ variables.
 | [osm_niedersachsen](../registry/data/osm_niedersachsen.yml) | spatial_input, network | manual_download (`scripts/preprocess_osm_pois.py`) | `data/osm/niedersachsen-latest.osm.pbf -> braunschweig/preprocessed/osm_pois.parquet` | r/r/r | no |
 | [regiostar](../registry/data/regiostar.yml) | spatial_input, reference_table | auto_script (`scripts/download_regiostar.py`) | `data/regiostar/regiostar_referenzdatei.xlsx` | r/-/r | no |
 | [rvb_visum_taz](../registry/data/rvb_visum_taz.yml) | spatial_input | restricted_delivery (`scripts/import_rvb_verkehrszellen.py`) | `data/braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet` | -/-/- | YES |
+| [srv2023_license_by_sex_cohort](../registry/data/srv2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv` | -/-/o | no |
 | [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/ (raw SUF local-only)` | -/-/o | YES |
 | [srv2023_reference_tables](../registry/data/srv2023_reference_tables.yml) | control, calibration_target, validation_reference | committed | `data/braunschweig/srv/srv2023_*.csv` | o/-/r | no |
 | [urbistat_gemeinde_age](../registry/data/urbistat_gemeinde_age.yml) | derived_input | scrape (`scripts/scrape_urbistat_bs.py`) | `data/braunschweig/urbistat_age_gemeinden.csv` | o/-/- | no |

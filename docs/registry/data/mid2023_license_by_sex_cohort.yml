@@ -1,0 +1,71 @@
+dataset: mid2023_license_by_sex_cohort
+title: MiD 2023 car-licence share by sex x age cohort (committed aggregate)
+inventory_id: E1.4
+provider: derived in-repo from MiD 2023 person + household microdata (BMDV / infas)
+vintage: 2023 survey year
+geography: Germany (national MiD sample), reported for three region readings that must not
+  be conflated - national, Niedersachsen (BLAND 3) and one row set per RegioStaR7 class
+  (71..77). The microdata carries NO Kreis or AGS key, so a Braunschweig-region (ZGB) cross
+  cannot be computed from it at all.
+crs: null
+roles:
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_license_by_sex_cohort.py [--raw-dir <dir>]
+    [--out-dir <dir>]. Reads MiD2023_Personen.csv (P_FSCHEIN, HP_ALTER, HP_SEX, P_GEW)
+    joined to MiD2023_Haushalte.csv (BLAND, RegioStaR7) on H_ID; both are server-local raw
+    and never committed. Standalone (pandas only), so it runs on the server where the raw
+    microdata lives.
+  script: scripts/extract_mid_license_by_sex_cohort.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_license_by_sex_cohort.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README derived-inputs
+    table: there is nothing for a contributor to download (the file ships committed) and
+    requirements.production is "optional" because no pipeline stage consumes it - it is a
+    validation/interpretation reference, not an input. This mirrors how the other committed
+    mid2023_* report tables that no stage reads are handled.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (derived from a restricted scientific-use source)
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: share of persons holding a car driving licence (P_FSCHEIN == 1), P_GEW-weighted,
+  per (region, sex, age cohort), cohorts split at age 65 into 18_64 and 65plus. Universe:
+  P_GEW > 0, HP_ALTER >= 18, P_FSCHEIN in {1 ja, 2 nein}, HP_SEX in {1, 2}; the 18+ base
+  matches the universe the synthesis assigns licences on, so no BF17 / minimum-age convention
+  enters the comparison. Excluded rates (missing licence answer, non-binary sex, and rows whose
+  H_ID is absent from the household file) are logged and written into the file header.
+  REGIONAL PROXIES, NOT ZGB VALUES. 'national' has the largest n but no regional targeting;
+  'bland_3' is the federal state the study region lies in; 'rs7_<code>' follows the repo's
+  established way of making national MiD regionally comparable (ADR-0092 uses
+  P(count | RegioStaR7 x haustyp) for the same reason). None of them is a Braunschweig value.
+  NOT A CONTROL TARGET, deliberately. ADR-0094 records why: the 65+ female cell disagrees with
+  the regional SrV survey by about 8pp (SrV 89.7% vs MiD Niedersachsen 81.8%), which is the
+  ADR-0079 licence-level identification problem localised to a single cell. Using either side
+  as a target would pick a winner between two surveys that this project has twice declined to
+  arbitrate.
+notes: |
+  Exists to make licence-structure comparisons like-for-like (issue #322). The committed MiD
+  reference tables mid2023_P17_1_by_sex.csv and mid2023_P17_1_by_age.csv are MARGINALS from the
+  infas report - each resolves one dimension only - and comparing a synthetic population's
+  overall male-female difference against the by-sex marginal produced a spurious "missing 8pp
+  gradient": the licence gap is concentrated in the 65+ cohort and nearly absent below it, so a
+  marginal comparison largely measures the age composition of the survey sample. Measured here,
+  MiD's own 18+ marginal gap is +3.7pp while the committed ZGB 14+ marginal reads +8pp.
+  Guarded by tests/test_license_sex_cohort_reference.py, which checks the committed file's cell
+  grid, share bounds and the cohort-concentration finding, and covers the extraction builder on
+  synthetic input (including that an empty region or cell raises instead of being dropped).
+  Companion table on the survey side: srv2023_license_by_sex_cohort (regional, has real Kreis
+  resolution but does not cover Wolfsburg).
