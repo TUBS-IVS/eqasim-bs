@@ -49,8 +49,39 @@ can never disagree about what an input is.
 - **HEAD, retried, then a ranged GET** before anything is called unreachable:
   several statistical portals answer GET but not HEAD, so a HEAD-only signal is
   never sufficient evidence that a source is dead.
+- **One probe per DISTINCT URL** (`probe_url` memoises by URL). The catalog is one
+  entry per *file*, which the file-presence mode needs, but many entries share one
+  source page: the six A3 ENTD files, both regionalstatistik tables, both
+  Pendleratlas exports, both INKAR entries — 21 checked inputs are only ~13
+  distinct URLs. Probing per input would hit one host up to six times with up to
+  four requests each and turn a single outage into six identical failure lines,
+  i.e. reproduce the noise this workflow was repurposed to stop. The summary
+  therefore reports **both** counts: `N inputs over M distinct sources`.
 - **Exit 1** if any non-optional public source is unreachable; an `optional=True`
   failure is a warning only. The exit reason is always printed.
+- **A transport failure and a dead URL get different remediation.** Only the
+  exception shape tells them apart, so the failure detail keeps a truncated
+  `str(exc)` next to the class name, and the exit block prints "the source likely
+  moved or was renamed — fix the URL here AND in `DOWNLOAD_CHECKLIST_BS.md`" only
+  for failures that actually returned an HTTP status. A failure that produced *no*
+  HTTP status is reported as a transport error (TLS/DNS/timeout) pointing back at
+  this note — telling someone to edit a URL that is perfectly fine is the wrong
+  action.
+
+### A3 / ENTD stays required (checked 2026-08-23)
+
+The six ENTD entries share one French URL, which raised the question of whether
+they should be `optional=True`. Per `DOWNLOAD_CHECKLIST_BS.md`'s own section A:
+
+> A3 is the upstream travel-pattern donor; the BS pipeline does not yet have a
+> German HTS replacement.
+
+The checklist states A1 and A2 "is required" in the same paragraph and does **not**
+label A3 reference-pipeline-only, so the flags were left alone: ENTD is documented
+as still in use, and downgrading it on inference would make the catalog *less*
+truthful. The amplification problem is solved by the per-URL dedupe above, which
+collapses the six entries onto one probe. If ENTD is genuinely retired from the
+production path, correct the checklist sentence and the flags together.
 
 ### Local runs can show false UNREACHABLE (verified 2026-08-23)
 

@@ -299,6 +299,14 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     # resolved pt_subscription_type category, so this single draw feeds every PT quantity;
     # leaving the entries out let map_pt_subscription_type's RandomState(0) default stand in
     # for the run's seeded rng whenever only a PT control was active.
+    #
+    # FOLLOW-UP: this list is hand-maintained, so a drawing entry added to the REGISTRY does
+    # NOT update it -- deriving it from the registry (e.g. a `draws_random` field on
+    # KreisAttributeControl) would make the coverage structural instead of remembered. That
+    # same follow-up should guard the post-expansion twin of this defect:
+    # braunschweig.popsim.assembly.build_persons applies its own
+    # `rng if rng is not None else RandomState(0)` before calling
+    # attributes.map_pt_subscription_type, and no guard covers that path.
     _rng_style_entries = _count_style_entries | (
         active_kreis_entry_names & (
             {"trip_class", "employment_status", "pt_ticket_group", "pt_ticket_group4"}

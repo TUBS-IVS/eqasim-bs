@@ -25,8 +25,11 @@ config:
   # identical to test_1pct so the shared popsim.stage hash / cache_share still match.
   braunschweig.population.popsim.max_cells: 750
   # Memory-bound, not core-bound: with the full donor pool each worker peaks at ~25-30 GB
-  # (the ~5 GB/batch that justified 16 was measured under a stratified pool), so 3 workers
-  # bound the peak to ~90 GB on the 128 GB box. 16 wedged a VM on 2026-08-10.
+  # (2026-07-10 OOM post-mortem, as cited in test_100pct.yml), so 3 workers bound the peak to
+  # ~90 GB on the 128 GB box. The previous 16 rested on a ~5 GB/batch figure that predates
+  # that post-mortem; it wedged a VM on 2026-08-10 (issue #281). Changing this value changes
+  # the popsim.stage hash, so this overlay's cached batches are recomputed once; parallelism
+  # only, no scientific output changes.
   braunschweig.population.popsim.num_workers: 3
   cache_share_export: true
   cache_share_recompute: []

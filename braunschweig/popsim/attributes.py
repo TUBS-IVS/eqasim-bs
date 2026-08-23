@@ -641,10 +641,14 @@ def map_pt_subscription_type(
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
     """
-    # Backward-compatibility default only. On the production (popsim seed) path it is now
-    # unreachable: mid.seed_loading._classify_rng_style_kreis_entries lists both PT entries,
-    # so an active PT control with kreis_seed_rng=None raises before this call instead of
-    # silently imputing 99/202/206 with a hardcoded seed 0.
+    # Backward-compatibility default only. On the popsim SEED path it is now unreachable:
+    # mid.seed_loading._classify_rng_style_kreis_entries lists both PT entries, so an active
+    # PT control with kreis_seed_rng=None raises before this call instead of silently
+    # imputing 99/202/206 with a hardcoded seed 0.
+    # NOT closed for PT imputation generally: the post-expansion assembly path
+    # (braunschweig.popsim.assembly.build_persons, which calls this function) applies the
+    # SAME `rng if rng is not None else RandomState(0)` default before passing rng down, and
+    # nothing guards that one -- an assembly caller omitting rng still imputes with seed 0.
     rng = rng if rng is not None else np.random.RandomState(0)
     spec = missing.AttributeSpec(
         name="pt_subscription_type",

@@ -59,11 +59,15 @@ config:
   braunschweig.population.popsim.max_cells: 750
   # Size the workers from AVAILABLE MEMORY (`free -g`), NEVER from the core count: with the
   # full donor pool (base_bs.yml sets stratify_regiostar: false) each PopulationSim worker
-  # peaks at ~25-30 GB, so memory -- not cores -- is the binding constraint. 4 workers bound
-  # the peak to ~100-120 GB on the 128 GB box. The previous value 8 (justified here as a
-  # speed lever on the 64-core box) demands 200-240 GB and only ever survived because batch
-  # peaks rarely coincide; it OOM-killed a batch on 2026-08-10, 2026-08-20 and 2026-08-21 --
-  # the last one on an otherwise IDLE box, which proves 8 is over the line unconditionally.
+  # peaks at ~25-30 GB (2026-07-10 OOM post-mortem, the same measurement test_100pct.yml
+  # cites), so memory -- not cores -- is the binding constraint. 4 workers bound the peak to
+  # ~100-120 GB on the 128 GB box. The previous value 8 carried NO justification in this
+  # file; it demands 200-240 GB and only ever survived because batch peaks rarely coincide.
+  # Per issue #281 it OOM-killed a batch on 2026-08-10, 2026-08-20 and 2026-08-21 -- the last
+  # one on an otherwise IDLE box, which is what proves 8 is over the line unconditionally.
+  # Changing this value changes the popsim.stage hash (it is a declared, non-volatile config
+  # key), so this overlay's previously cached batches are recomputed once; parallelism only,
+  # no scientific output changes.
   braunschweig.population.popsim.num_workers: 4
 
   matsim_last_iteration: 0
