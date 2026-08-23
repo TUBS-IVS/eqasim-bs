@@ -306,6 +306,35 @@ def test_map_pt_subscription_type_logs_missing_report(caplog):
     assert "imputed" in joined and "default" in joined
 
 
+def test_map_pt_subscription_type_warns_on_empty_valid_pool(caplog):
+    """Obligation 2 (#329 Item 7): the empty-pool DEFAULT branch must be observable at
+    WARNING level, not folded silently into the INFO summary
+    (``test_map_pt_subscription_type_logs_missing_report`` above only exercises a HEALTHY
+    valid pool, so it never drives this branch).
+
+    Every person here carries a P_FKARTE code that is either global nonresponse (99) or a
+    per-spec impute code (202) -- none is in ``FKARTE_TO_CATEGORY``'s valid codes (1-8), so
+    the GLOBAL valid pool is genuinely empty and every nonresponse row must fall through to
+    the ``never_pt`` DEFAULT (see the docstring of ``map_pt_subscription_type`` and
+    ``braunschweig.popsim.missing.resolve``: the default only fires when the pool itself,
+    not just the conditioning-group cell, has zero valid rows).
+    """
+    import logging
+
+    persons = pd.DataFrame({
+        "P_FKARTE": [99, 99, 202],
+        "alter_gr1": [3, 3, 3],
+    })
+    with caplog.at_level(logging.INFO):
+        out = a.map_pt_subscription_type(persons, rng=np.random.RandomState(0))
+    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings, "expected a WARNING when the empty-pool default fires"
+    joined = " ".join(warnings)
+    assert "map_pt_subscription_type" in joined
+    assert "DEFAULT" in joined
+    assert (out["pt_subscription_type"] == a.PT_TICKET_NEVER).all()
+
+
 def test_pt_subscription_type_no_rng_backward_compatible():
     """Callers that omit rng must not raise.
 

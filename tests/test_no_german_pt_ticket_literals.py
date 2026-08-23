@@ -25,11 +25,13 @@ SCAN_DIRS = ("braunschweig", "scripts", "matsim", "synthesis", "eqasim_common", 
 
 def test_no_german_pt_ticket_literals_outside_boundary():
     offenders = []
+    scanned = 0
     for top in SCAN_DIRS:
         base = REPO / top
         if not base.exists():
             continue
         for path in base.rglob("*.py"):
+            scanned += 1
             if path in ALLOWED_FILES:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -39,3 +41,11 @@ def test_no_german_pt_ticket_literals_outside_boundary():
             if hits:
                 offenders.append((str(path.relative_to(REPO)), hits))
     assert not offenders, f"German PT-ticket literals outside the boundary: {offenders}"
+    # Tripwire, not a coverage target: if REPO/SCAN_DIRS ever stop resolving
+    # (file moved, layout change) this guard must fail loudly instead of
+    # passing vacuously on an empty scan. 100 is far below the repo's actual
+    # Python file count (~1000+) and only guards against a silently empty scan.
+    assert scanned > 100, (
+        f"only scanned {scanned} files -- REPO/SCAN_DIRS may have stopped "
+        "resolving, which would make the assertion above pass vacuously"
+    )

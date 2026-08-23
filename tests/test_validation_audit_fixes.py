@@ -156,6 +156,27 @@ def test_pt_ticket_target_excludes_no_answer(tmp_path):
     assert never_pt["target_share"].iloc[0] == pytest.approx(20.0 / 90.0)
 
 
+def test_pt_ticket_target_raises_for_kreis_with_zero_mass_outside_no_answer(tmp_path):
+    # issue #329 Item 5: a Kreis row where the ENTIRE MiD P24.1 mass sits in
+    # 'keine_angabe' (nonresponse) leaves zero mass to renormalize over the 8
+    # producible categories. pt_ticket_target must fail fast with a ValueError
+    # naming the offending Kreis, not divide by zero silently.
+    mid_dir = tmp_path / "braunschweig" / "mid"
+    mid_dir.mkdir(parents=True)
+    # PT_RAW_FIXTURE_OK -- this fixture intentionally mirrors the raw committed
+    # CSV headers; the German-literal guard test skips files carrying this marker.
+    (mid_dir / "mid2023_P24_1.csv").write_text(
+        "ars5,n_unweighted,einzelfahrschein,mehrfachkarte,deutschlandticket,"
+        "wochen_monat_ohne_abo,monat_abo_jahreskarte,jobticket_semesterticket,"
+        "anderes,fahre_nie,keine_angabe\n"
+        "03101,100,0,0,0,0,0,0,0,0,100\n"
+        "03ZGB,800,20,20,10,5,5,5,5,20,10\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="03101"):
+        C.pt_ticket_target(str(tmp_path))
+
+
 def test_registry_labels_fit_checks(tmp_path):
     # Static expectation of the audited independence classes.
     expected = {

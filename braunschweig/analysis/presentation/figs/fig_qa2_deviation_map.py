@@ -90,8 +90,11 @@ CONTROL_DE = {
 }
 # PT ticket category display labels (English category values, issue #329 --
 # only the PT-ticket taxonomy is anglicized; the surrounding *_DE maps below
-# stay German, out of scope for this rename).
-PT_CAT_DE = {
+# (CONTROL_DE, CARS_CAT_DE, SEX_DE) stay German, out of scope for this rename.
+# This means the figure currently mixes languages (English PT-ticket labels
+# next to German labels for the other controls); unifying them is a separate
+# decision, not addressed here.
+PT_CAT_LABELS = {
     "never_pt": "never uses PT", "deutschlandticket": "Deutschlandticket",
     "single_ticket": "single ticket", "multi_ride_ticket": "multi-ride ticket",
     "monthly_or_annual_subscription": "monthly/annual subscription",
@@ -115,7 +118,7 @@ def worst_cell_label(controls, geo_id):
     if ctrl == "cars_per_hh":
         label = CARS_CAT_DE.get(cat, cat)
     elif ctrl == "pt_ticket_type":
-        label = f"ÖV '{PT_CAT_DE.get(cat, cat)}'"
+        label = f"ÖV '{PT_CAT_LABELS.get(cat, cat)}'"
     elif ctrl == "driving_license_type":
         label = f"Führerschein '{cat.replace('keine_angabe', 'k. A.')}'"
     elif ctrl == "age_group":

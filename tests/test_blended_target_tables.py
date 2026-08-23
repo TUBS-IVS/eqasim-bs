@@ -33,6 +33,8 @@ def load(name: str) -> pd.DataFrame:
      ["bikes_0", "bikes_1", "bikes_2", "bikes_3", "bikes_4plus"]),
     ("target2026_pt_ticket_group_by_kreis.csv",
      ["deutschlandticket", "other_flatrate", "not_flatrate"]),
+    ("target2026_pt_ticket_group4_by_kreis.csv",
+     ["deutschlandticket", "other_flatrate", "never_pt", "occasional_ticket"]),
 ])
 def test_structure(name, cats):
     t = load(name)

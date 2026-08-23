@@ -346,9 +346,10 @@ def load_pt_subscription_by_car_availability(
     the PT IPF picks up the extra margin automatically.
 
     Expected schema (one row per car-availability category, header order free).
-    The raw CSV keeps the codebook-German column headers (see
-    ``P24_RAW_COLUMN_BY_CATEGORY``); the ``PT_TICKET_CATEGORIES`` English names
-    below are shown for reference only::
+    The example below shows the raw codebook-German column headers, exactly as
+    the committed CSV carries them for provenance; they correspond 1:1 to
+    ``PT_TICKET_CATEGORIES`` through ``P24_RAW_COLUMN_BY_CATEGORY`` (the single
+    translation boundary), not to the English category names themselves::
 
         car_availability,einzelfahrschein,mehrfachkarte,deutschlandticket,
         wochen_monat_ohne_abo,monat_abo_jahreskarte,jobticket_semesterticket,
