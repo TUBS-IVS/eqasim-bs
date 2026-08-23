@@ -18,6 +18,34 @@ class Ctx:
         return default
 
 
+def test_build_student_persons_log_cites_never_pt_constant_and_adr(caplog):
+    """Drift pin for issue #329's controller ruling: braunschweig.synthesis must not
+    import from braunschweig.popsim (the one-way layering
+    braunschweig.popsim.sources.entd_attributes relies on), so the pt_subscription_type
+    log line in student_incommuters._build_student_persons spells out the 'never_pt'
+    literal instead of importing PT_TICKET_NEVER. Importing the constant HERE, in the
+    test, is fine (tests are not part of the layering) and gives drift protection
+    without the production import: if PT_TICKET_NEVER's value ever changes, this test
+    catches the stale literal.
+    """
+    import logging
+
+    from braunschweig.popsim.attributes import PT_TICKET_NEVER
+
+    ids = pd.DataFrame({"person_id": [100, 101], "household_id": [50, 51]})
+    donors = pd.DataFrame({"age": [20, 21], "sex": ["male", "female"], "person_id": [1, 2]})
+    modes = ["car", "pt"]
+    with caplog.at_level(logging.INFO, logger="braunschweig.synthesis.student_incommuters"):
+        si._build_student_persons(ids, donors, modes)
+    joined = " ".join(r.message for r in caplog.records)
+    assert "pt_subscription_type" in joined
+    assert f"'{PT_TICKET_NEVER}'" in joined, (
+        "log literal has drifted from braunschweig.popsim.attributes.PT_TICKET_NEVER "
+        "-- update the hard-coded string in student_incommuters._build_student_persons "
+        "to match")
+    assert "ADR-0099" in joined
+
+
 def test_disabled_when_cordon_off():
     frames = si.execute(Ctx({"cordon_enabled": False}))
     assert frames["persons"].empty

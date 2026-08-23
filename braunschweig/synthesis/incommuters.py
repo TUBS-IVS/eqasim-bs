@@ -41,11 +41,6 @@ from braunschweig.data.cordon.plans import (
 # Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
 from braunschweig.data.mikrozensus.reference import bundesland_of_ars
-# braunschweig.popsim.attributes only pulls in braunschweig.data.mid.reference_tables,
-# braunschweig.ipf.attributed and braunschweig.popsim.missing -- none of which import
-# back from braunschweig.synthesis.incommuters or .student_incommuters, so this is not
-# a circular import (verified empirically for issue #329 Item 4).
-from braunschweig.popsim.attributes import PT_TICKET_NEVER
 
 logger = logging.getLogger(__name__)
 
@@ -882,10 +877,16 @@ def _build_persons(ids, donors, person_col, modes, income_eur):
     })
     for key, value in _INCOMMUTER_PERSON_DEFAULTS.items():
         persons[key] = value
+    # The literal 'never_pt' below is braunschweig.popsim.attributes.PT_TICKET_NEVER,
+    # spelled out rather than imported: braunschweig.synthesis must not import from
+    # braunschweig.popsim (the one-way layering that
+    # braunschweig.popsim.sources.entd_attributes relies on to import safely FROM
+    # braunschweig.synthesis without a cycle). If PT_TICKET_NEVER's value ever changes,
+    # this literal must be updated to match.
     logger.info(
         "[incommuters] pt_subscription_type: %d in-commuter persons hard-coded to "
-        "'%s' (control-external source; the 14+ resident Kreis control does not "
-        "see them -- see ADR-0099 for the rationale, issue #329)", len(persons), PT_TICKET_NEVER)
+        "'never_pt' (control-external source; the 14+ resident Kreis control does not "
+        "see them -- see ADR-0099 for the rationale, issue #329)", len(persons))
     return persons
 
 
