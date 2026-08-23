@@ -105,3 +105,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0094](../decisions/ADR-0094-no-licence-pattern-control-like-for-like-references-instead.md) | 2026-08-20 | accepted | No driving-licence pattern control; commit the like-for-like sex x cohort references instead (issue #322) |
 | [ADR-0095](../decisions/ADR-0095-cpu-based-hang-watchdog-for-java-subprocesses.md) | 2026-08-20 | active | CPU-accumulation hang watchdog for the pipeline's Java subprocesses |
 | [ADR-0096](../decisions/ADR-0096-carla-sample-as-the-default-secondary-chain-solver.md) | 2026-08-21 | active | `carla_sample` as the default secondary chain solver |
+| [ADR-0099](../decisions/ADR-0099-never-pt-group-in-the-pt-ticket-kreis-control.md) | 2026-08-23 | active | `never_pt` becomes a fourth group in the PT-ticket per-Kreis control, and the ticket taxonomy turns English behind one raw-CSV boundary (issue #329) |

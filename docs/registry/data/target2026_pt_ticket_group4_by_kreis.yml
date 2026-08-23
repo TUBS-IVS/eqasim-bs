@@ -1,0 +1,71 @@
+dataset: target2026_pt_ticket_group4_by_kreis
+title: Blended per-Kreis FINAL target for the four-group PT-ticket control (MiD P24.1 x SrV,
+  14+)
+provider: derived in-repo from committed MiD P24.1 x SrV 2023 reference tables
+vintage: MiD 2023 (P24.1) x SrV 2023; target label 2026
+geography: the 8 ZGB Kreise plus a Gesamt row (ars5 keys); Wolfsburg (03103) has no SrV coverage
+  and is therefore a pure MiD row
+crs: null
+roles:
+- control
+- calibration_target
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/build_blended_kreis_targets.py, whose build_pt_ticket_group4
+    writes this table from COMMITTED reference tables only (no raw microdata): the MiD side from
+    mid2023_P24_1.csv via the raw-column mapping P24_RAW_COLUMN_BY_CATEGORY in
+    braunschweig/data/mid/reference_tables.py, the SrV side from
+    srv2023_ticket_groups4_14plus_by_kreis.csv.
+  script: scripts/build_blended_kreis_targets.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup tables:
+    the file ships committed, so a production run needs no acquisition step. requirements.production
+    is "optional" following the target2026_* family convention recorded in the umbrella record
+    blended_kreis_targets; the popsim stage does read it whenever
+    braunschweig.population.popsim.pt_ticket_never_group is on (the default), and
+    load_kreis_target fails fast on a missing file, a missing category column, or a row that does
+    not sum to 1. Committed-artefact grid guarded by tests/test_blended_target_tables.py.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived (source restrictions apply)
+  restricted: false
+  redistribution: restricted
+limitations: |
+  FINAL target - consume with kreis_attribute_control prior_n = 0 (stated in the file header).
+  Columns: ars5, source, n_effective, then the four shares deutschlandticket / other_flatrate /
+  never_pt / occasional_ticket summing to 1. The source column records which blend rule fired per
+  row: 03101 is a blend (n_effective 5618), Wolfsburg (03103) and Gesamt are pure MiD, the four
+  rural disagreement cases are mid_shrunk (MiD shrunk toward Gesamt, lambda 0.3) because there is
+  no register arbiter for this quantity.
+  Three decisions behind the numbers, all recorded in ADR-0099:
+  (1) The MiD no_answer mass (P24.1 code 99) is renormalized OUT, over the 8 producible categories:
+  the synthesis imputes nonresponse pool-proportionally and can never PRODUCE that category, so
+  folding its mass into another group would fabricate bias of unknown sign.
+  (2) never_pt joins MiD's ticket-question answer to SrV's usage-derived skip (E_OEV_FK == -8).
+  ASSUMPTION: close but not identical constructs; the only available corroboration is at region
+  level (SrV weighted 28.64% against the MiD Gesamt row's 36%).
+  (3) SrV code 60 (Freifahrtberechtigung) counts as occasional_ticket.
+  ASSUMPTION (SrV side, inherited from ADR-0089): the per-Kreis SrV inputs come from a stratified
+  PSU design over about 44 sampled municipalities and are ASSUMPTION-grade coverage estimates, and
+  the precision blend weights the two surveys by RAW sample size, which overstates SrV's effective
+  precision where a Kreis mixes strata.
+notes: |
+  Four-group variant of the three-group target2026_pt_ticket_group_by_kreis (issue #329), which
+  stays byte-identical so that the OFF path is unaffected. Steers the pt_ticket_group4 person-level
+  Kreis control (tier soft, min_age 14) that replaces the three-group entry when
+  braunschweig.population.popsim.pt_ticket_never_group is on. Hitting these shares is control FIT,
+  never behavioural validation: the 2026-08-21 03101 A/B smoke realised never_pt 12.17% against the
+  0.1232 target with the control on, versus 30.82% with it off (docs/runs/
+  smoke-pt-never-group-03101-{off,on}-2026-08-21.yml).
