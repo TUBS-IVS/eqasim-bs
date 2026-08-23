@@ -145,7 +145,7 @@ def _participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
     HONESTY CAVEAT (reproduce wherever these numbers are reported): the SrV
     targets STEER the raking, so this is a FIT CHECK measuring convergence toward
     the target, not independent agreement with reality -- the same framing as
-    ``independence="fit_check"`` for driving_license_type / pt_ticket_type. See
+    ``independence="fit_check"`` for driving_license_type. See
     the :mod:`participation_fit` module docstring.
 
     Returns the ``ars5, purpose, realised_rate, target_rate, abs_error`` frame.

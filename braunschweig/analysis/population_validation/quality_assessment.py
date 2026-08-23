@@ -34,7 +34,13 @@ CAUSE_HINTS = {
         "GROUP totals are controlled per Kreis (blended MiD x SrV target). "
         "Within-group composition is steered only where a group control pins it "
         "(never_pt since issue #329); 'no_answer' is excluded from scoring "
-        "(structurally unproducible)."),
+        "(structurally unproducible). NOTE the two tables are not the same "
+        "reference: the control is steered toward the blended MiD x SrV target "
+        "(target2026_pt_ticket_group4_by_kreis.csv, 03101 never_pt 12.32%) while "
+        "this metric scores against renormalized MiD P24.1 alone (03101 never_pt "
+        "14.00%), so a residual delta of roughly that 1.7pp gap on never_pt is "
+        "EXPECTED by construction -- it is neither an error nor drift, but the "
+        "distance between the blend and its MiD half (ADR-0099)."),
     "employment": (
         "The synthetic employment rate is anchored to OFFICIAL statistics, not "
         "to MiD P9 (popsim_mid: Zensus 2022 kreis_erwerbsstatus levels + the "

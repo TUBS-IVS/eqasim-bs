@@ -46,9 +46,20 @@ limitations: |
   FINAL target - consume with kreis_attribute_control prior_n = 0 (stated in the file header).
   Columns: ars5, source, n_effective, then the four shares deutschlandticket / other_flatrate /
   never_pt / occasional_ticket summing to 1. The source column records which blend rule fired per
-  row: 03101 is a blend (n_effective 5618), Wolfsburg (03103) and Gesamt are pure MiD, the four
-  rural disagreement cases are mid_shrunk (MiD shrunk toward Gesamt, lambda 0.3) because there is
-  no register arbiter for this quantity.
+  row: 03101 is a blend (n_effective 5618), Wolfsburg (03103) and Gesamt are pure MiD, and SIX rows
+  are mid_shrunk (MiD shrunk toward Gesamt, lambda 0.3) because there is no register arbiter for
+  this quantity: 03102, 03151, 03153, 03154, 03157, 03158. That is two more than the three-group
+  table's four (03102, 03151, 03153, 03154): 03157 (Peine) and 03158 (Wolfenbuettel) are blend rows
+  there and flip to mid_shrunk here, because the never/occasional split exposes a per-Kreis
+  MiD-vs-SrV disagreement above the 5pp tolerance that the collapse into not_flatrate averaged away
+  (their n_effective drops accordingly: 03157 3178 -> 1107, 03158 2437 -> 815). The set is NOT
+  describable as "rural" -- 03102 is Salzgitter, a kreisfreie Stadt.
+  CONSEQUENCE, because it is easy to assume otherwise: this table is not a pure re-partition of the
+  three-group one at an unchanged flatrate level. deutschlandticket + other_flatrate differs in four
+  of nine rows -- 03157 -0.26pp and 03158 -0.42pp (the blend-rule flip above), 03154 +0.13pp and
+  03153 +0.13pp (the no_answer renormalization of item 1, which changes the denominator in exactly
+  the two rows where mid2023_P24_1.csv keine_angabe is non-zero, both 1.0%). Per-Kreis delta table
+  and both mechanisms: ADR-0099, Consequences.
   Three decisions behind the numbers, all recorded in ADR-0099:
   (1) The MiD no_answer mass (P24.1 code 99) is renormalized OUT, over the 8 producible categories:
   the synthesis imputes nonresponse pool-proportionally and can never PRODUCE that category, so

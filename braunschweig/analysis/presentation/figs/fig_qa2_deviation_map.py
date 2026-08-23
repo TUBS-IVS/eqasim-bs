@@ -88,18 +88,23 @@ CONTROL_DE = {
     "age_group": "Alter",
     "sex": "Geschlecht",
 }
-# PT ticket category display labels (English category values, issue #329 --
-# only the PT-ticket taxonomy is anglicized; the surrounding *_DE maps below
-# (CONTROL_DE, CARS_CAT_DE, SEX_DE) stay German, out of scope for this rename.
-# This means the figure currently mixes languages (English PT-ticket labels
-# next to German labels for the other controls); unifying them is a separate
-# decision, not addressed here.
+# DISPLAY labels only, keyed by the English pt_subscription_type category values
+# (issue #329 anglicized the taxonomy itself, and the keys below are that
+# taxonomy). The values are German by deliberate choice: this figure is part of
+# a German-language deliverable, and its other label maps (CONTROL_DE,
+# CARS_CAT_DE, SEX_DE) are German too, so English strings here produced mixed
+# labels such as "OeV 'never uses PT'". CLAUDE.md's language policy allows
+# German in external text OUTPUT while identifiers, comments and the taxonomy
+# stay English -- that is exactly this split. The ticket names are space-spelled
+# rather than underscored so tests/test_no_german_pt_ticket_literals.py still
+# sees no German taxonomy literal here.
 PT_CAT_LABELS = {
-    "never_pt": "never uses PT", "deutschlandticket": "Deutschlandticket",
-    "single_ticket": "single ticket", "multi_ride_ticket": "multi-ride ticket",
-    "monthly_or_annual_subscription": "monthly/annual subscription",
-    "weekly_monthly_no_subscription": "weekly/monthly (no subscription)",
-    "job_or_semester_ticket": "job/semester ticket", "other_ticket": "other",
+    "never_pt": "fahre nie", "deutschlandticket": "Deutschlandticket",
+    "single_ticket": "Einzelfahrschein", "multi_ride_ticket": "Mehrfahrtenkarte",
+    "monthly_or_annual_subscription": "Monats-/Jahreskarte (Abo)",
+    "weekly_monthly_no_subscription": "Wochen-/Monatskarte (ohne Abo)",
+    "job_or_semester_ticket": "Job-/Semesterticket",
+    "other_ticket": "anderes Ticket",
 }
 CARS_CAT_DE = {"0": "HH ohne Pkw", "1": "HH mit 1 Pkw",
                "2": "HH mit 2 Pkw", "3": "HH mit 3+ Pkw"}  # top bucket = ">= 3"

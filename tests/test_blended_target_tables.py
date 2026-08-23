@@ -91,6 +91,34 @@ def test_pt_ticket_group_blends_mid_and_srv_on_a_matched_universe():
     assert t.loc["Gesamt", "source"] == "mid"
 
 
+def test_pt_ticket_group4_sources_differ_from_the_three_group_table():
+    """The four-group split moves TWO rows off the precision blend (issue #329).
+
+    Mirrors the three-group pin above, and pins the DIFFERENCE, which is the scientific
+    content: splitting not_flatrate into never_pt / occasional_ticket exposes a per-Kreis
+    MiD-vs-SrV disagreement above the 5pp tolerance that the collapse averaged away, so
+    Peine (03157) and Wolfenbuettel (03158) fall from `blend` to `mid_shrunk` -- SIX
+    mid_shrunk rows here against FOUR in the three-group table. Because that flip also
+    changes the flatrate level those rows carry (ADR-0099, Consequences), a silent
+    regeneration that moved rows between rules must fail here rather than pass unnoticed.
+    """
+    t = load("target2026_pt_ticket_group4_by_kreis.csv").set_index("ars5")
+    assert t.loc["03101", "source"] == "blend"
+    shrunk = {"03102", "03151", "03153", "03154", "03157", "03158"}
+    for ars5 in sorted(shrunk):
+        assert t.loc[ars5, "source"] == "mid_shrunk", ars5
+    # Wolfsburg has no SrV coverage and Gesamt is the shrinkage prior -> pure MiD.
+    assert t.loc["03103", "source"] == "mid"
+    assert t.loc["Gesamt", "source"] == "mid"
+    # Exactly six, so a NEW mid_shrunk row cannot slip in unnoticed either.
+    assert set(t.index[t["source"] == "mid_shrunk"]) == shrunk
+    # The two rows that FLIPPED must still be blend in the three-group table, or the
+    # documented difference between the two tables has silently disappeared.
+    three = load("target2026_pt_ticket_group_by_kreis.csv").set_index("ars5")
+    assert three.loc["03157", "source"] == "blend"
+    assert three.loc["03158", "source"] == "blend"
+
+
 def test_pt_ticket_group_flatrate_level_stays_between_the_two_surveys():
     """The blended flatrate share must lie between the two measured levels, not outside.
 

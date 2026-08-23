@@ -126,8 +126,10 @@ validation:
     contradictions over 252,045 persons. #329 (2026-08-21, OFF/ON A/B with only
     pt_ticket_never_group differing): realised never_pt 30.82% OFF (+18.50pp against the 12.32%
     target, reproducing the 100%-run defect measured at 30.17%) versus 12.17% ON (-0.15pp); the
-    flatrate aggregate, the only simulation-relevant quantity, is preserved at 25.57% -> 25.46%
-    (0.11pp); the integerizer stayed 96.8% OPTIMAL in BOTH arms (OFF 3892/4019, ON 4082/4217), so
+    realised flatrate aggregate moved only 25.57% -> 25.46% (0.11pp) IN 03101, which does not
+    generalise -- 03101 is one of the five rows where the two target tables carry an identical
+    flatrate sum, so this arm cannot show the target-table effect (ADR-0099, Consequences);
+    the integerizer stayed 96.8% OPTIMAL in BOTH arms (OFF 3892/4019, ON 4082/4217), so
     the fourth control column does not over-constrain. Still owed: the full-region one-flag-per-run
     A/B (deliberately deferred to the next 100% wave), the re-measured shares via
     scripts/measure_license_pt_shares.py in a run manifest, and the in-commuter never_pt count from
@@ -161,4 +163,13 @@ notes: 'Two records of history, both current: ADR-0089 established the three-gro
   codebook-German headers as the traceability link to the MiD instrument, guarded by
   tests/test_no_german_pt_ticket_literals.py). CONSEQUENCE for ablation configs: an overlay that
   sets braunschweig.population.popsim.pt_ticket_kreis_control to "off" must now ALSO set
-  braunschweig.population.popsim.pt_ticket_never_group to "off", or the stage fails fast.'
+  braunschweig.population.popsim.pt_ticket_never_group to "off", or the stage fails fast.
+  QUALIFICATION of the "flatrate-neutral" framing: the flag does not only re-partition
+  not_flatrate, it swaps the whole target TABLE, and the two tables do not carry the same
+  deutschlandticket + other_flatrate sum everywhere -- the simulation-relevant flatrate LEVEL moves
+  in four of eight Kreise (largest -0.42pp), by two independent mechanisms (a blend-rule flip where
+  the never/occasional split exposes a >5pp MiD-vs-SrV disagreement the three-group collapse hid,
+  and the no_answer renormalization changing the denominator where P24.1 keine_angabe is non-zero).
+  The mechanism claim is unaffected: no Java reader consumes the ticket-type string, the only Java
+  channel is the has_pt_subscription boolean. Per-Kreis delta table and both mechanisms: ADR-0099,
+  Consequences (one fact, one file -- not duplicated here).'

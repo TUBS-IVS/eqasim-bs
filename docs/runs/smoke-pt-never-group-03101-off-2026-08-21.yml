@@ -63,7 +63,17 @@ validation:
     monthly_or_annual_subscription 5.32, weekly_monthly_no_subscription 1.72. The
     flatrate aggregate (deutschlandticket + other_flatrate = 25.57%) is the only
     simulation-relevant quantity, since BraunschweigPtCostModel reads only the
-    hasPtSubscription boolean; it is preserved between arms (ON: 25.46%, -0.11pp).'
+    hasPtSubscription boolean; between the arms it moves only 0.11pp (ON: 25.46%).
+    SCOPE OF THAT RESULT (03101 ONLY, and this arm cannot show the effect): the
+    two target tables carry an IDENTICAL flatrate sum for 03101 (0.2576 in both
+    target2026_pt_ticket_group_by_kreis.csv and
+    target2026_pt_ticket_group4_by_kreis.csv, both source=blend), so a flatrate
+    difference between the arms is structurally impossible HERE and the 0.11pp is
+    balancer noise, not evidence. The general claim "the flag preserves the
+    flatrate level" is UNPROVEN by this smoke: at target level the flag moves
+    flatrate in four of eight Kreise (03157 -0.26pp, 03158 -0.42pp via a
+    blend-rule flip; 03154 +0.13pp, 03153 +0.13pp via the no_answer
+    renormalization). Per-Kreis table and mechanisms: ADR-0099, Consequences.'
   artifact: 'stage pickle braunschweig.popsim.stage__607c6bf20a06aea7a7d64e4b38bf4e6b.p'
   notes: 'The OFF arm deliberately reproduces the pre-change three-group behaviour
     (pt_ticket_never_group="off" is the pre-#329 default). The 2026-08-20 100% run

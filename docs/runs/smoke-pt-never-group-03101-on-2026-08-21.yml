@@ -57,7 +57,19 @@ validation:
     is recorded as operational input for the still-owed full-region 100% run
     (#240/#329 acceptance), which should budget headroom for this failure mode
     (e.g. fewer concurrent workers, or a lower per-batch cell count) rather than
-    assume the current settings are safe at full scale.'
+    assume the current settings are safe at full scale.
+    STALE AT HEAD (recorded rather than rewritten, because the run is history):
+    the phrase "the same batching configuration used across the current smoke
+    suite" was true when this run executed but is FALSE at the branch HEAD --
+    this same branch changed configs/overlays/smoke_kreis_control_fit.yml to
+    braunschweig.population.popsim.num_workers: 4 (#281, workers sized from
+    available memory instead of core count), which is itself the remedy this
+    incident called for. Consequence for reproduction: re-running from HEAD uses
+    4 workers, not 8, and therefore yields a DIFFERENT popsim stage hash than the
+    braunschweig.popsim.stage__cd6179f167a9c764fa2d39c367634f9.p cited above. The
+    difference is parallelism only (batch scheduling and peak memory); it changes
+    no scientific output, since num_workers does not enter any seed, target, or
+    control definition.'
 - metric: PopulationSim convergence and integerizer feasibility with
     pt_ticket_never_group set to "on" (four-group pt_ticket_group4 Kreis
     control active)
@@ -91,8 +103,17 @@ validation:
     weekly_monthly_no_subscription 1.65. The flatrate aggregate
     (deutschlandticket + other_flatrate = 25.46%) is the only
     simulation-relevant quantity, since BraunschweigPtCostModel reads only the
-    hasPtSubscription boolean; it is preserved between arms (OFF: 25.57%,
-    -0.11pp difference between arms).'
+    hasPtSubscription boolean; between the arms it moves only 0.11pp (OFF:
+    25.57%). SCOPE OF THAT RESULT (03101 ONLY, and this arm cannot show the
+    effect): the two target tables carry an IDENTICAL flatrate sum for 03101
+    (0.2576 in both target2026_pt_ticket_group_by_kreis.csv and
+    target2026_pt_ticket_group4_by_kreis.csv, both source=blend), so a flatrate
+    difference between the arms is structurally impossible HERE and the 0.11pp is
+    balancer noise, not evidence. The general claim "the flag preserves the
+    flatrate level" is UNPROVEN by this smoke: at target level the flag moves
+    flatrate in four of eight Kreise (03157 -0.26pp, 03158 -0.42pp via a
+    blend-rule flip; 03154 +0.13pp, 03153 +0.13pp via the no_answer
+    renormalization). Per-Kreis table and mechanisms: ADR-0099, Consequences.'
   artifact: 'stage pickle braunschweig.popsim.stage__cd6179f167a9c764fa2d39c367634f9.p'
   notes: 'Against the OFF arm''s never_pt of 30.82% (+18.50pp vs target, which
     reproduces the defect measured in the 2026-08-20 100% run,
