@@ -17,6 +17,8 @@ from __future__ import annotations
 import copy
 import multiprocessing as mp
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -212,8 +214,99 @@ def _solve_person_shard(task):
     return shard_index, result_df, failed_problem_idx
 
 
+#: How many executor generations a shard set may be run through before the stage
+#: gives up. 1 = no recovery (fail on the first lost worker). The default allows
+#: two retries, because the observed cause of a lost worker is transient memory
+#: pressure from a CONCURRENT workload (issue #344): the same shard usually
+#: succeeds once the competitor is gone.
+DEFAULT_SHARD_ATTEMPTS = 3
+
+
+def _run_shards_with_recovery(tasks, executor_kwargs, progress,
+                              executor_factory=ProcessPoolExecutor,
+                              max_attempts=DEFAULT_SHARD_ATTEMPTS,
+                              worker_function=None):
+    """Solve every shard, surviving worker processes that are killed outright.
+
+    Returns ``(results_by_shard_index, failed_problem_idx)``.
+
+    Why not ``multiprocessing.Pool.imap_unordered`` (what this replaces): Pool
+    never notices a worker killed mid-task. It respawns the worker to keep the
+    pool size, but the task that died with it is never re-queued and its result
+    never arrives, so the consuming loop waits for it forever. That is exactly
+    what happened on 2026-08-20: the kernel OOM killer removed one of 62 shard
+    workers (a second heavy run was competing for memory), 61 results were
+    delivered, and the stage then sat at zero CPU for four hours until it was
+    killed by hand -- losing 7.6 h of completed shard work with it.
+    ``ProcessPoolExecutor`` raises ``BrokenProcessPool`` on the same event
+    (verified by reproduction on the run server's interpreter), which turns the
+    silent stall into a recoverable failure.
+
+    Recovery keeps the shard definitions untouched, so it cannot change results:
+    shards, their person slices and their per-shard seeds are identical on a
+    retry, and results are still recombined in shard-index order. A retried
+    shard therefore reproduces bit-identical output.
+
+    Note that a broken pool fails EVERY future of that generation, including
+    shards that had not started; all of them are simply resubmitted. Only
+    ``BrokenProcessPool`` is recovered from -- an exception raised INSIDE a shard
+    is a real defect and propagates unchanged, so a retry loop can never mask it.
+    """
+    # Injectable only so a test can drive the real executor with a trivial,
+    # picklable task; production always solves shards.
+    worker_function = worker_function or _solve_person_shard
+
+    results_by_index: Dict[int, pd.DataFrame] = {}
+    failed_problem_idx: List[int] = []
+    pending = list(tasks)
+
+    for attempt in range(1, max_attempts + 1):
+        lost = []
+
+        with executor_factory(**executor_kwargs) as executor:
+            futures = {executor.submit(worker_function, task): task
+                       for task in pending}
+
+            for future in as_completed(futures):
+                try:
+                    shard_index, res_df, shard_failed = future.result()
+                except BrokenProcessPool:
+                    lost.append(futures[future])
+                    continue
+
+                results_by_index[shard_index] = res_df
+                failed_problem_idx.extend(shard_failed)
+                progress(len(results_by_index), len(tasks))
+
+        if not lost:
+            return results_by_index, failed_problem_idx
+
+        lost_indices = sorted(task[0] for task in lost)
+        # Make the recovery observable: a silently retried shard would hide the
+        # memory pressure that caused it (project rule on fallback transparency).
+        print(
+            f"[braunschweig.secondary_chainsolvers] WARNING! attempt {attempt}/"
+            f"{max_attempts}: {len(lost)} shard worker(s) died (shards "
+            f"{lost_indices}); {len(results_by_index)}/{len(tasks)} shards are "
+            "already done and are NOT recomputed. The usual cause is memory "
+            "pressure from a concurrent run (issue #344); retrying the lost "
+            "shards in a fresh executor.",
+            flush=True,
+        )
+        pending = lost
+
+    raise RuntimeError(
+        "secondary_chainsolvers: shard worker(s) died in every one of "
+        f"{max_attempts} attempts; shards {sorted(task[0] for task in pending)} "
+        "were never solved. The usual cause is memory exhaustion (check the "
+        "kernel log for oom-kill entries and whether a second heavy run was "
+        "active); see issue #344."
+    )
+
+
 def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
-                           base_seed, n_workers, t0, scorer_spec=None):
+                           base_seed, n_workers, t0, scorer_spec=None,
+                           shard_attempts=DEFAULT_SHARD_ATTEMPTS):
     """Solve all person chains across ``n_workers`` processes and recombine
     deterministically (results concatenated in shard-index order)."""
     shards = _make_person_shards(unique_persons, n_workers)
@@ -249,24 +342,27 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
         ))
         uid_pos += len(shard_uids)
 
-    results_by_index: Dict[int, pd.DataFrame] = {}
-    failed_problem_idx: List[int] = []
-    n_done = 0
-    pool_context = mp.get_context()  # platform default (fork on Linux)
-    with pool_context.Pool(
-        processes=len(tasks),
-        initializer=_init_chain_worker,
-        initargs=(locations_df, solver, scorer_spec),
-    ) as pool:
-        for shard_index, res_df, shard_failed in pool.imap_unordered(_solve_person_shard, tasks):
-            results_by_index[shard_index] = res_df
-            failed_problem_idx.extend(shard_failed)
-            n_done += 1
-            print(
-                f"[braunschweig.secondary_chainsolvers] shard {n_done}/{len(tasks)} "
-                f"done (elapsed={time.time() - t0:.0f}s)",
-                flush=True,
-            )
+    def report_progress(n_done, n_total):
+        print(
+            f"[braunschweig.secondary_chainsolvers] shard {n_done}/{n_total} "
+            f"done (elapsed={time.time() - t0:.0f}s)",
+            flush=True,
+        )
+
+    results_by_index, failed_problem_idx = _run_shards_with_recovery(
+        tasks,
+        executor_kwargs=dict(
+            max_workers=len(tasks),
+            # Platform default (fork on Linux), i.e. the same start method the
+            # previous multiprocessing.Pool used -- workers inherit the parent's
+            # pages copy-on-write instead of re-importing the world.
+            mp_context=mp.get_context(),
+            initializer=_init_chain_worker,
+            initargs=(locations_df, solver, scorer_spec),
+        ),
+        progress=report_progress,
+        max_attempts=shard_attempts,
+    )
 
     ordered = [
         results_by_index[i] for i in sorted(results_by_index)

@@ -116,6 +116,7 @@ from .reporting import (  # noqa: F401  (re-exports)
 from .parallel_solving import (  # noqa: F401  (re-exports)
     _CHAIN_CHUNK_SIZE,
     _CHAIN_RESULT_COLUMNS,
+    DEFAULT_SHARD_ATTEMPTS,
     _derive_shard_seed,
     _empty_chain_result_df,
     _init_chain_worker,
@@ -323,6 +324,16 @@ def configure(context):
     # parallel chain solve can use more cores than the (memory-bound) MATSim
     # mobsim without changing the MATSim thread count.
     context.config("braunschweig.chainsolvers.processes", None)
+    # How many executor generations the shard set may be run through before the
+    # stage gives up (issue #344). A worker killed outright -- the 2026-08-20 night
+    # run lost one of 62 to the kernel OOM killer while a second heavy run competed
+    # for memory -- used to make the stage wait forever; it now fails loudly and the
+    # LOST shards alone are retried in a fresh executor, so the cost is ~7 min
+    # instead of the 7.6 h of completed work that was thrown away. 1 disables the
+    # retry (fail on the first lost worker). Retried shards keep their slice and
+    # their per-shard seed, so the result stays bit-identical.
+    context.config("braunschweig.chainsolvers.shard_attempts",
+                   DEFAULT_SHARD_ATTEMPTS)
 
     # Building-potential scorer (flag-gated; default ON). When enabled, each
     # candidate's per-activity potential (retail / leisure / generic) is attached
@@ -1106,6 +1117,7 @@ def execute(context):
         result_df, failed_problem_idx = _solve_chains_parallel(
             plans_for_cs, unique_persons, locations_df, solver_name,
             base_seed, n_workers, t0, scorer_spec,
+            shard_attempts=int(context.config("braunschweig.chainsolvers.shard_attempts")),
         )
     else:
         # Serial path: a single shard over all persons seeded with base_seed, so
