@@ -272,7 +272,8 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     Count-style entries impute the 99 missing code (household level); the person-level
     trip_class entry imputes the 803/804 diary-nonresponse codes (within alter_gr1); the
     person-level employment_status entry imputes the P_BKAT code-9 (keine Angabe) cases
-    (also within alter_gr1). All are random processes that REQUIRE the seeded
+    (also within alter_gr1); both person-level PT entries impute the P_FKARTE coverage
+    codes (also within alter_gr1). All are random processes that REQUIRE the seeded
     kreis_seed_rng (no unseeded randomness).
 
     The caller raises the (caller-specific) ValueError when the returned set is
@@ -289,9 +290,18 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     # source of truth for the purpose set): every participation control imputes the
     # 803/804 diary-nonresponse codes within alter_gr1, so all of them draw random
     # numbers and must be gated on the seeded rng.
+    # Both PT entries (the three-group pt_ticket_group, issue #321, and its four-group
+    # refinement pt_ticket_group4, issue #329) draw: _derive_pt_ticket_group_seed_column
+    # calls attributes.map_pt_subscription_type, which IMPUTES the P_FKARTE coverage codes
+    # 99 (keine Angabe), 202 (PAPI interview mode) and 206 (Erwachsener ab 14, Proxy) from
+    # the valid pool within alter_gr1 x RegioStaR7 -- 6.18% of persons in a real run. The
+    # boolean has_pt_subscription AND both group columns are all derived from that one
+    # resolved pt_subscription_type category, so this single draw feeds every PT quantity;
+    # leaving the entries out let map_pt_subscription_type's RandomState(0) default stand in
+    # for the run's seeded rng whenever only a PT control was active.
     _rng_style_entries = _count_style_entries | (
         active_kreis_entry_names & (
-            {"trip_class", "employment_status"}
+            {"trip_class", "employment_status", "pt_ticket_group", "pt_ticket_group4"}
             | {f"{p}_participation" for p in PARTICIPATION_W_ZWECK}
         )
     )
