@@ -148,3 +148,7 @@ skills-lock.json
 # External data-source inventory deliverables (RVB): local-only, never public.
 # The committed source of truth for dataset provenance is docs/registry/data/.
 docs/data/*.xlsx
+
+# Report written by scripts/audit_test_data_dependencies.py (a local diagnostic run,
+# never a committed artifact; see docs/codebase/notes/test-data-dependencies.md).
+test_data_probe_audit.txt
