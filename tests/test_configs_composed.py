@@ -39,6 +39,10 @@ FEATURE_FLAGS_ON = [
     "escort_purpose", "escort_household_link", "escort_distance_by_type",
     "escort_passive_education",
     "secondary_srv_location_types",
+    # Run resource recorder (issue #350). Guarded here because a run without its
+    # resource series cannot answer afterwards what it peaked at -- the datum the
+    # 2026-08-24 run lost with its processes.
+    "monitoring_enabled",
 ]
 
 

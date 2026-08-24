@@ -1,0 +1,117 @@
+feature: run_resource_recorder
+title: Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)
+area: infrastructure
+description: 'Every pipeline invocation records its own resource time series (issue #350,
+  ADR-0100): scripts/run_synpp.py wraps the run in braunschweig.monitoring.recorder, which samples
+  the whole process tree of the launcher every monitoring_interval_seconds (default 30 s) and
+  appends one JSONL row per sample to <working_directory>/monitoring/resource_series_<timestamp>.jsonl,
+  plus a JSON and markdown summary written from a finally -- so a killed run keeps its measurement.
+  Per sample: whole-tree CPU seconds (a number no busy worker can fall outside of, unlike the
+  six-process `ps` sample that had a healthy secondary_chainsolvers stage killed as deadlocked on
+  2026-08-24), per-process VmHWM peak RSS and current RSS with a cmdline tag (the datum issue #281
+  needs and that dies with the process), thread total and process states, system RAM/swap/load,
+  free space per configured filesystem, /proc/diskstats IO bytes, dmesg OOM-kill and segfault
+  counts, and the size plus mtime age of the run log together with the stage synpp is currently
+  executing (read incrementally, so tagging costs the appended bytes rather than the file). The
+  summary reduces a series to peak per-worker RSS, per-stage wall/CPU/efficiency, disk high-water
+  mark and measured no-progress spans. The same whole-tree CPU reader is consumed by the Java hang
+  watchdog (ADR-0095), so "is this tree doing work" has exactly ONE definition.'
+stages: []
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - monitoring_enabled
+introduced:
+  issue: '#350'
+  pr: null
+  adr: ADR-0100
+detail_doc: docs/codebase/notes/run-resource-recorder.md
+code_paths:
+- braunschweig/monitoring/process_tree.py
+- braunschweig/monitoring/sampler.py
+- braunschweig/monitoring/recorder.py
+- braunschweig/monitoring/summary.py
+- scripts/monitor_run.py
+- scripts/run_synpp.py
+- matsim/runtime/process_watchdog.py
+evidence:
+  tests:
+  - tests/test_monitoring_process_tree.py
+  - tests/test_monitoring_sampler.py
+  - tests/test_monitoring_recorder.py
+  - tests/test_monitoring_summary.py
+  - tests/test_monitoring_pipeline_integration.py
+  - tests/test_monitor_run_cli.py
+  - tests/test_java_hang_watchdog.py
+  - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_monitoring_pipeline_integration.py::test_monitoring_switched_off_in_the_config_leaves_no_trace
+    note: |
+      With monitoring_enabled false, record_from_config returns contextlib.nullcontext: no thread
+      is started, no directory is created and no file is written, so the run is byte-identical to
+      one without this feature (pinned by the named test). With the feature ON the recorder still
+      cannot change a pipeline output: it only READS /proc plus shutil.disk_usage, writes
+      exclusively into <working_directory>/monitoring/, touches no RNG stream and no stage cache.
+      The one honest caveat is resource contention, not content: one /proc pass and one dmesg call
+      per interval share the machine with the run.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[monitoring] sampling failed'
+    note: |
+      Every sample names the mechanism that produced it in its own `source` field: "proc"
+      (primary), "psutil" (used only where /proc does not exist, i.e. Windows development
+      machines) or "unavailable:<reason>" (no_proc, no_psutil, psutil_unreadable,
+      no_readable_process); the kernel-event probe reports "dmesg" or
+      "unavailable:dmesg_unreadable" separately. Unreadable counters are null, never a measured
+      zero -- summarize reports cpu_accounting "unavailable" and cpu_seconds null for a series
+      with no CPU signal, and a step without a CPU signal is verdict "unmeasurable", explicitly
+      NOT a stall. A failing sample is counted, logged once at WARNING with its cause, and the
+      count is carried into the summary as failed_sample_count, so a thin series cannot be
+      mistaken for a quiet machine.
+  reference:
+    kind: none
+    note: |
+      Infrastructure feature: it measures the run, it does not model anything, so no external
+      reference value applies. The numbers it produces are measurements of this machine and this
+      run -- they are evidence FOR run manifests, not something validated against a target.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: |
+    Not yet exercised by a real server run. Covered by 74 unit/integration tests, including a
+    fake-/proc tree (tests/fake_proc.py) that pins the field offsets of proc(5), the
+    no-double-counting of threads, a pid disappearing mid-sample, VmHWM surviving a dropped
+    current RSS, and the watchdog equivalence for a childless process. An end-to-end smoke on the
+    Windows development machine (2026-08-24) recorded a real two-process tree through the CLI: 4
+    samples, 0 failed, source "psutil", tree CPU 0.20 -> 3.94 s with the busy child visible in the
+    total, the stage tag read from the log, and peak per-process RSS with its cmdline tag. That
+    smoke exercises the psutil path only. The /proc path -- the one the run server uses -- has no
+    live evidence yet; the first 100 % run with monitoring ON owes it, and that same run is what
+    turns the num_workers question of issue #281 into a measurement.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the first server run with monitoring ON: it must show that the /proc reader produces
+    a usable series at 100 % scale (source "proc" throughout, plausible per-worker VmHWM during
+    PopulationSim balancing, a per-stage wall/CPU split consistent with
+    braunschweig.analysis.runtime's log-derived durations) and that the sampling cost stays
+    negligible. Until then the feature is wired and tested but its production numbers are
+    unobserved.
+  source: ADR-0100
+notes: |
+  Deliberately not a live dashboard (ADR-0100): the retained series is what answers a question
+  asked hours later. scripts/monitor_run_health.sh keeps its role as the one-shot operational
+  snapshot, and the unmerged feature/runcontrol-gui branch has its own live vitals collector --
+  a different job, which can consume these primitives instead of duplicating them. Per-stage WALL
+  clock in the summary is measured between a stage's first and last SAMPLE and is therefore short
+  by up to one interval at each end; the exact per-stage durations remain
+  braunschweig.analysis.runtime's, parsed from the log timestamps.

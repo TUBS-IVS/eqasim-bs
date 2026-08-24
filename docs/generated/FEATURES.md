@@ -69,6 +69,7 @@ may only name run manifests (no run, no claim).
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 4 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
+| [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 8 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
 | [secondary_srv_location_types](../registry/features/secondary_srv_location_types.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | pending |
 | [sector_aware_attraction_tilt](../registry/features/sector_aware_attraction_tilt.yml) | work | parked | off | i/i/i | 1 | -- | none | none | measured_vs_reference (`sector-aware-ab-2026-07-15`) | pending |

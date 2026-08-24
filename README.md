@@ -282,6 +282,13 @@ gates `run_pipeline.sh` (skip with `EQASIM_SKIP_VERIFY=1`).
   SimWrapper bundle.
 - MATSim `simulation_output/` is archived into `<output_path>/matsim_output/`
   (run-named, survives cache wipes; ADR-0064).
+- `<working_directory>/monitoring/` — this run's own resource time series
+  (`resource_series_<timestamp>.jsonl`, one sample every 30 s) plus a JSON and
+  markdown summary: peak per-worker RSS, per-stage wall/CPU split, disk high-water
+  mark, kernel OOM/segfault counts (ADR-0100). Written for every run, including one
+  that fails; `monitoring_enabled: false` switches it off. Read it with
+  `python scripts/monitor_run.py summarize <series>.jsonl`, or attach to a run
+  already in flight with `python scripts/monitor_run.py record --pattern synpp`.
 - Every significant run gets a **run manifest** under
   [`docs/runs/`](docs/runs/) — the authoritative record of what ran and what it
   was validated against.

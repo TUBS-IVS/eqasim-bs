@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 75 | stages: 115 | datasets: 57 | ADRs: 97 | run manifests: 26
+- Features: 76 | stages: 115 | datasets: 57 | ADRs: 98 | run manifests: 26
 
 ## Population synthesis
 
@@ -183,6 +183,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
+| [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
 | [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated |  |
 | [Tier-A/B caching (32 stages + popsim)](../registry/features/tier_ab_caching.yml) | active | ON | A/s/s | unvalidated |  |
 
