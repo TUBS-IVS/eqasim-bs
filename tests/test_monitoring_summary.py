@@ -273,6 +273,18 @@ def test_the_rendered_markdown_states_the_fields_a_run_manifest_needs(tmp_path):
     assert "stage.a" in text
 
 
+def test_a_sub_gibibyte_peak_is_rendered_in_mib_not_as_zero(tmp_path):
+    """Found by the library smoke: a 21.8 MiB peak printed as "0.0 GiB", which reads
+    as "no memory" instead of "a small amount"."""
+    rows = [_row(0, 0.0, processes=[_process(100, 0.0, 22_304)]),
+            _row(1, 100.0, processes=[_process(100, 5.0, 22_304)])]
+
+    text = summary.render_markdown(summary.summarize(rows))
+
+    assert "21.8 MiB" in text
+    assert "0.0 GiB" not in text
+
+
 def test_a_truncated_last_line_of_a_killed_run_is_skipped(tmp_path):
     series = tmp_path / "series.jsonl"
     with series.open("w", encoding="utf-8") as handle:

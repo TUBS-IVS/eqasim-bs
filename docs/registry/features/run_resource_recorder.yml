@@ -36,7 +36,6 @@ code_paths:
 - braunschweig/monitoring/sampler.py
 - braunschweig/monitoring/recorder.py
 - braunschweig/monitoring/summary.py
-- scripts/monitor_run.py
 - scripts/run_synpp.py
 - matsim/runtime/process_watchdog.py
 evidence:
@@ -46,7 +45,6 @@ evidence:
   - tests/test_monitoring_recorder.py
   - tests/test_monitoring_summary.py
   - tests/test_monitoring_pipeline_integration.py
-  - tests/test_monitor_run_cli.py
   - tests/test_java_hang_watchdog.py
   - tests/test_configs_composed.py
   off_path_byte_identical:
@@ -85,14 +83,15 @@ validation:
   runs: []
   metric: null
   note: |
-    Not yet exercised by a real server run. Covered by 74 unit/integration tests, including a
+    Not yet exercised by a real server run. Covered by 67 unit/integration tests, including a
     fake-/proc tree (tests/fake_proc.py) that pins the field offsets of proc(5), the
     no-double-counting of threads, a pid disappearing mid-sample, VmHWM surviving a dropped
     current RSS, and the watchdog equivalence for a childless process. An end-to-end smoke on the
-    Windows development machine (2026-08-24) recorded a real two-process tree through the CLI: 4
-    samples, 0 failed, source "psutil", tree CPU 0.20 -> 3.94 s with the busy child visible in the
-    total, the stage tag read from the log, and peak per-process RSS with its cmdline tag. That
-    smoke exercises the psutil path only. The /proc path -- the one the run server uses -- has no
+    Windows development machine (2026-08-24) recorded a real two-process tree through the shipped
+    entry point (recorder.record_in_background): 8 samples, 0 failed, source "psutil", tree CPU
+    0.31 -> 8.77 s with the busy child's work visible in the tree total, per-pid CPU accounting,
+    the stage tag read from the run log, peak per-process RSS with its cmdline tag, and both
+    summary artifacts written. That smoke exercises the psutil path only. The /proc path -- the one the run server uses -- has no
     live evidence yet; the first 100 % run with monitoring ON owes it, and that same run is what
     turns the num_workers question of issue #281 into a measurement.
 assessment:

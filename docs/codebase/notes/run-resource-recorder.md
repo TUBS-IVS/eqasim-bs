@@ -13,9 +13,10 @@ Feature Registry record `run_resource_recorder`.
 | `recorder.py` | the JSONL file, the background thread, the config keys, the no-op when disabled | `sampler`, `summary` |
 | `summary.py` | reducing a finished series to manifest-ready fields and markdown | `braunschweig.progress` (duration formatting) |
 
-Consumers: `scripts/run_synpp.py` (every run, via `recorder.record_from_config`),
-`scripts/monitor_run.py` (attach to a run already in flight, or summarise a series),
-and `matsim/runtime/process_watchdog.py` (the CPU reader only).
+Consumers: `scripts/run_synpp.py` (every run, via `recorder.record_from_config`)
+and `matsim/runtime/process_watchdog.py` (the CPU reader only). There is deliberately
+no standalone entry point -- the launcher records every run, so there is none left to
+attach to; ADR-0100 records why the one issue #350 asked for was removed again.
 
 ## Rules that are not obvious from the code
 
@@ -45,8 +46,8 @@ and `matsim/runtime/process_watchdog.py` (the CPU reader only).
   write into the success path.
 - **`proc_root` is injectable everywhere.** That is what makes the `/proc` reader
   testable on Windows (`tests/fake_proc.py` builds a fake tree with realistic
-  proc(5) field offsets) and what lets `scripts/monitor_run.py --proc-root` point at
-  a container's `/proc`. Keep it threaded through new readers.
+  proc(5) field offsets) and what would let a caller point at a container's
+  `/proc`. Keep it threaded through new readers.
 - **Per-stage wall clock here is sample-bounded.** It is measured between a stage's
   first and last sample, so it is short by up to one interval at each end. The exact
   per-stage durations belong to `braunschweig.analysis.runtime`, which parses the log
@@ -64,11 +65,15 @@ long run), `monitoring_kernel_events` (true -- false skips the `dmesg` probe),
 
 ## Reading a run afterwards
 
-```
-python scripts/monitor_run.py summarize <working_directory>/monitoring/resource_series_<ts>.jsonl
-```
-
-prints the markdown block a run manifest wants (peak per-worker RSS with its pid and
+The run writes its own summary when it ends: `resource_series_<ts>.summary.md` next to
+the series is the block a run manifest wants -- peak per-worker RSS with its pid and
 cmdline tag, per-stage wall/CPU/efficiency, disk high-water mark, kernel events,
-measured no-progress spans) and writes it next to the series as `.summary.md` and
-`.summary.json`.
+measured no-progress spans -- with the same record as `.summary.json`.
+
+To re-summarise an existing series (for example with a different stall threshold),
+call the library directly:
+
+```python
+from braunschweig.monitoring import summary
+summary.write_summary("<working_directory>/monitoring/resource_series_<ts>.jsonl")
+```

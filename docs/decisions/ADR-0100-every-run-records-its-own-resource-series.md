@@ -64,6 +64,17 @@
     its own source (`proc` / `psutil` / `unavailable:<reason>`). The first
     end-to-end smoke found both of the first two defects, which is exactly the class
     of silent-zero this project forbids.
+  - **Rejected: a standalone entry point that attaches to a run already in flight.**
+    Issue #350 asked for exactly that (`scripts/monitor_run.py`, no pipeline
+    integration) and it was built and tested first, then deliberately removed: with
+    recording wired into the launcher there is no run left that is not already
+    recorded, and a second way in is a second thing to keep working, to document and
+    to keep honest. The cost is accepted and named: a run started before this feature
+    existed, or one launched by hand outside `run_synpp.py`, cannot be recorded
+    retrospectively -- for those, `scripts/monitor_run_health.sh` remains the
+    snapshot. Everything the entry point did is library API
+    (`recorder.record_in_background`, `summary.write_summary`), so restoring a CLI is
+    a thin wrapper if the need returns.
   - **Rejected: a live dashboard.** The value here is the RETAINED series, which
     answers questions asked hours later; a live view answers only the question being
     asked right now, and the operational snapshot

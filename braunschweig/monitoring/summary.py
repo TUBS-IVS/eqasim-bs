@@ -412,16 +412,28 @@ def summarize(rows, stall_min_seconds=DEFAULT_STALL_MIN_SECONDS,
     }
 
 
-def _gib_from_kb(value_kb):
-    return None if value_kb is None else value_kb / _KIB_PER_GIB
+def _format_memory_kb(value_kb):
+    """Render a ``/proc``-style kB value in binary units, or say it is unknown.
+
+    Binary units because ``/proc`` reports kB as 1024-byte units; naming a decimal
+    GB would introduce a 7 % error. Values below a gibibyte are rendered in MiB:
+    printing a 21.8 MiB peak as "0.0 GiB" reads as "no memory" rather than "a small
+    amount" (found by the library smoke).
+    """
+    if value_kb is None:
+        return "unknown"
+    if value_kb >= _KIB_PER_GIB:
+        return "%.1f GiB" % (value_kb / _KIB_PER_GIB)
+    return "%.1f MiB" % (value_kb / 1024.0)
 
 
-def _gib_from_bytes(value_bytes):
-    return None if value_bytes is None else value_bytes / _BYTES_PER_GIB
-
-
-def _format_gib(value):
-    return "unknown" if value is None else "%.1f GiB" % value
+def _format_bytes(value_bytes):
+    """Same unit rule for a byte-denominated value (disk space, IO volume)."""
+    if value_bytes is None:
+        return "unknown"
+    if value_bytes >= _BYTES_PER_GIB:
+        return "%.1f GiB" % (value_bytes / _BYTES_PER_GIB)
+    return "%.1f MiB" % (value_bytes / (1024.0 * 1024.0))
 
 
 def _format_count(value):
@@ -447,13 +459,13 @@ def render_markdown(record) -> str:
                  % (record["sample_count"], ", ".join(record["sources"]) or "unknown",
                     format_duration(record["wall_seconds"] or 0.0)))
     lines.append("- peak process RSS: %s (pid %s, `%s`)"
-                 % (_format_gib(_gib_from_kb(record["peak_process_rss_kb"])),
+                 % (_format_memory_kb(record["peak_process_rss_kb"]),
                     _format_count(record["peak_process_rss_pid"]),
                     record["peak_process_rss_tag"] or "unknown"))
     lines.append("- system memory: peak used %s, minimum available %s, peak swap used %s"
-                 % (_format_gib(_gib_from_kb(record["peak_memory_used_kb"])),
-                    _format_gib(_gib_from_kb(record["min_memory_available_kb"])),
-                    _format_gib(_gib_from_kb(record["peak_swap_used_kb"]))))
+                 % (_format_memory_kb(record["peak_memory_used_kb"]),
+                    _format_memory_kb(record["min_memory_available_kb"]),
+                    _format_memory_kb(record["peak_swap_used_kb"])))
     lines.append("- peak processes / threads: %s / %s"
                  % (_format_count(record["peak_process_count"]),
                     _format_count(record["peak_thread_count"])))
@@ -462,12 +474,12 @@ def render_markdown(record) -> str:
                                   else int(record["cpu_seconds"])),
                     record["cpu_accounting"], _format_ratio(record["cpu_efficiency"])))
     lines.append("- disk: read %s, written %s"
-                 % (_format_gib(_gib_from_bytes(record["disk_read_bytes"])),
-                    _format_gib(_gib_from_bytes(record["disk_write_bytes"]))))
+                 % (_format_bytes(record["disk_read_bytes"]),
+                    _format_bytes(record["disk_write_bytes"])))
     for filesystem in record["filesystems"]:
         lines.append("- minimum free space on `%s`: %s"
                      % (filesystem["path"],
-                        _format_gib(_gib_from_bytes(filesystem["min_free_bytes"]))))
+                        _format_bytes(filesystem["min_free_bytes"])))
     lines.append("- kernel events during the run: %s OOM kill(s), %s segfault(s)"
                  % (_format_count(record["oom_kill_count"]),
                     _format_count(record["segfault_count"])))
@@ -480,7 +492,7 @@ def render_markdown(record) -> str:
                         format_duration(stage["wall_seconds"] or 0.0),
                         int(stage["cpu_seconds"] or 0),
                         _format_ratio(stage["cpu_efficiency"]),
-                        _format_gib(_gib_from_kb(stage["peak_process_rss_kb"])),
+                        _format_memory_kb(stage["peak_process_rss_kb"]),
                         _format_count(stage["peak_process_count"]),
                         _format_count(stage["peak_thread_count"])))
 
