@@ -386,6 +386,7 @@ CANONICAL_TECHNOLOGY_VOCAB = set(fs.POWERTRAINS)
 CANONICAL_EURO_VOCAB = set(ft.EURO_CLASS_LABELS) | {hbefa.ELECTRIC_EURO}
 
 
+@_needs_hsn_tsn_lookup
 def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab():
     """The typed household fleet and the eqasim-core routing placeholder
     (``default_car``) coexist in the same ``df_vehicles`` frame with two
