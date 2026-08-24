@@ -82,6 +82,36 @@ def test_build_incommuter_frames_schema_and_counts():
     assert (persons["subpopulation"] == "incommuter").all()
 
 
+def test_incommuter_persons_log_cites_never_pt_constant_and_adr(caplog):
+    """Drift pin for issue #329's controller ruling: braunschweig.synthesis must not
+    import from braunschweig.popsim (the one-way layering
+    braunschweig.popsim.sources.entd_attributes relies on), so the pt_subscription_type
+    log line in incommuters._build_persons spells out the 'never_pt' literal instead of
+    importing PT_TICKET_NEVER. Importing the constant HERE, in the test, is fine (tests
+    are not part of the layering) and gives drift protection without the production
+    import: if PT_TICKET_NEVER's value ever changes, this test catches the stale literal.
+    """
+    import logging
+
+    from braunschweig.popsim.attributes import PT_TICKET_NEVER
+
+    gates, assignment, flows, zgb_work, hp, ht = _inputs()
+    rng = np.random.default_rng(7)
+    with caplog.at_level(logging.INFO, logger="braunschweig.synthesis.incommuters"):
+        build_incommuter_frames(
+            flows=flows, zgb_kreise={"03101"}, sampling_rate=0.01,
+            gates=gates, assignment=assignment, zgb_work=zgb_work,
+            mode_reference={">=10": {"car": 0.9, "pt": 0.1}}, band_edges=(10,),
+            hts_persons=hp, hts_trips=ht, person_col="person_id",
+            n_residents=100, n_resident_households=40, rng=rng, gate_speed_kmh=30.0)
+    joined = " ".join(r.message for r in caplog.records)
+    assert "pt_subscription_type" in joined
+    assert f"'{PT_TICKET_NEVER}'" in joined, (
+        "log literal has drifted from braunschweig.popsim.attributes.PT_TICKET_NEVER "
+        "-- update the hard-coded string in incommuters._build_persons to match")
+    assert "ADR-0099" in joined
+
+
 def test_walk_and_bike_are_never_assigned_to_incommuters():
     # Even a walk/bike-dominated reference (e.g. a short gate->work distance) must yield
     # only car/pt for cross-cordon commuters -- walk/bike over the cordon are unrealistic.

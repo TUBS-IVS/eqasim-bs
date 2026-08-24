@@ -132,16 +132,17 @@ PT_SUBSCRIPTION_FKARTE = frozenset({3, 4, 5, 6})
 
 # MiD P_FKARTE code -> categorical ticket-type string (matches PT_TICKET_CATEGORIES
 # order in braunschweig.data.mid.reference_tables). Codes 1-8 are exhaustive;
-# code 8 (fahre nie) is the never-travels category used for structural missings.
+# code 8 (fahre nie / never travels) is the never-travels category used for
+# structural missings.
 FKARTE_TO_CATEGORY: dict[int, str] = {
-    1: "einzelfahrschein",       # single ticket
-    2: "mehrfachkarte",          # multi-ride card
-    3: "deutschlandticket",      # Deutschlandticket
-    4: "wochen_monat_ohne_abo",  # weekly/monthly without subscription
-    5: "monat_abo_jahreskarte",  # monthly subscription / annual pass
-    6: "jobticket_semesterticket",  # job ticket / semester ticket
-    7: "anderes",                # other
-    8: "fahre_nie",              # never travels by PT
+    1: "single_ticket",
+    2: "multi_ride_ticket",
+    3: "deutschlandticket",
+    4: "weekly_monthly_no_subscription",
+    5: "monthly_or_annual_subscription",
+    6: "job_or_semester_ticket",
+    7: "other_ticket",
+    8: "never_pt",
 }
 
 # --- Issue #321: the three-group PT ticket control -------------------------------------
@@ -164,11 +165,17 @@ PT_TICKET_OTHER_FLATRATE: frozenset[str] = frozenset(
 PT_TICKET_GROUPS: tuple[str, ...] = (
     PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "not_flatrate")
 
+# Four-group variant (issue #329): never_pt split out of not_flatrate so the
+# balancer cannot trade never-PT persons into the city. occasional_ticket =
+# single_ticket / multi_ride_ticket / other_ticket (has SOME ticket, no flatrate).
+PT_TICKET_GROUPS4: tuple[str, ...] = (
+    PT_TICKET_DEUTSCHLANDTICKET, "other_flatrate", "never_pt", "occasional_ticket")
+
 # The never-travels category is used for the structural under-14 floor
 # (code 402, children under the MiD PT-subscription basis age, not interviewed)
 # and as the default for persons whose code cannot be resolved. Adult
 # interview-mode / proxy coverage codes (202/206) are imputed, not forced here.
-PT_TICKET_NEVER = "fahre_nie"
+PT_TICKET_NEVER = "never_pt"
 
 
 def imputation_group_cols(
@@ -604,24 +611,29 @@ def map_pt_subscription_type(
     """Add a categorical ``pt_subscription_type`` from MiD ``P_FKARTE`` via the uniform missing policy.
 
     MiD codebook mapping (``FKARTE_TO_CATEGORY``):
-    1 -> ``einzelfahrschein``, 2 -> ``mehrfachkarte``, 3 -> ``deutschlandticket``,
-    4 -> ``wochen_monat_ohne_abo``, 5 -> ``monat_abo_jahreskarte``,
-    6 -> ``jobticket_semesterticket``, 7 -> ``anderes``, 8 -> ``fahre_nie``.
+    1 -> ``single_ticket``, 2 -> ``multi_ride_ticket``, 3 -> ``deutschlandticket``,
+    4 -> ``weekly_monthly_no_subscription``, 5 -> ``monthly_or_annual_subscription``,
+    6 -> ``job_or_semester_ticket``, 7 -> ``other_ticket``, 8 -> ``never_pt``.
 
     Structural design-missing codes: only 402 (Kind unter 14, nicht befragt) is the
-    legitimate deterministic ``"fahre_nie"`` -- the under-14 / PT-subscription basis-age
+    legitimate deterministic ``"never_pt"`` -- the under-14 / PT-subscription basis-age
     floor (mirrors the legacy ``braunschweig.minimum_age.pt_subscription`` rule).
     Children below the MiD PT-subscription basis age genuinely have no PT ticket of
     their own. The codes 202 (PAPI interview mode, form-dependent) and 206 (Erwachsener
     ab 14, Proxy/Stellvertreter) are first-digit-2 interview-mode / coverage
     design-missings on persons of subscription age; they are NOT "never travels" and
-    must be IMPUTED from comparable adult respondents, not forced to ``"fahre_nie"``.
+    must be IMPUTED from comparable adult respondents, not forced to ``"never_pt"``.
     They are therefore declared in ``impute_codes`` (treated as item non-response).
 
-    99 (keine Angabe, item non-response) and 202/206 are all imputed from the valid
-    pool within the same age group (``alter_gr1``) when present, else global pool;
-    categorical default ``PT_TICKET_NEVER`` = ``"fahre_nie"`` (conservative: unknown
-    PT use treated as never travelling by PT).
+    99 (keine Angabe, item non-response) and 202/206 are all IMPUTED from the valid
+    pool within the same age group (``alter_gr1``) when present, else the global valid
+    pool across all ages. The categorical default ``PT_TICKET_NEVER`` = ``"never_pt"``
+    is NOT the handler for 99/202/206 -- those always draw a donor value as long as
+    any valid respondent exists anywhere in the frame. The default only fires if the
+    global valid pool itself is empty (no respondent in the whole frame carries a
+    resolvable ``P_FKARTE`` code), which should never happen on real MiD data; a
+    non-zero default count there indicates a broken join or column, not real
+    missingness (see the WARNING logged below).
 
     The output category is constrained to ``PT_TICKET_CATEGORIES`` from
     ``braunschweig.data.mid.reference_tables`` (import validated at module load).
@@ -629,6 +641,14 @@ def map_pt_subscription_type(
     ``rng`` defaults to ``np.random.RandomState(0)`` for backward compatibility;
     callers should pass the pipeline's seeded rng to ensure reproducibility.
     """
+    # Backward-compatibility default only. On the popsim SEED path it is now unreachable:
+    # mid.seed_loading._classify_rng_style_kreis_entries lists both PT entries, so an active
+    # PT control with kreis_seed_rng=None raises before this call instead of silently
+    # imputing 99/202/206 with a hardcoded seed 0.
+    # NOT closed for PT imputation generally: the post-expansion assembly path
+    # (braunschweig.popsim.assembly.build_persons, which calls this function) applies the
+    # SAME `rng if rng is not None else RandomState(0)` default before passing rng down, and
+    # nothing guards that one -- an assembly caller omitting rng still imputes with seed 0.
     rng = rng if rng is not None else np.random.RandomState(0)
     spec = missing.AttributeSpec(
         name="pt_subscription_type",
@@ -640,7 +660,38 @@ def map_pt_subscription_type(
         default=PT_TICKET_NEVER,
     )
     out = persons.copy()
-    out["pt_subscription_type"], _ = missing.resolve(out, spec, rng=rng)
+    out["pt_subscription_type"], report = missing.resolve(out, spec, rng=rng)
+    # never_pt is now BOTH a directly controlled category (#329's pt_ticket_group4) and the
+    # fallback bucket for an empty imputation pool, so the split between "really imputed"
+    # and "fell to the default" must be observable (CLAUDE.md fallback-transparency rule).
+    # missing.resolve draws every nonresponse row from a donor pool (the group-specific pool
+    # when the conditioning key has one, else the GLOBAL valid pool) and only falls through
+    # to spec.default when that final pool is empty. Per its implementation, the
+    # group-specific pool -- when found -- is never empty (grouped_pools only stores
+    # non-empty groups), so the default can only fire when the global valid pool itself is
+    # empty, i.e. report.n_valid == 0. MissingReport has no dedicated "n_default" field
+    # (default-on-empty-pool is a corner case, not a per-attribute-configurable count), so
+    # it is derived here from that invariant rather than guessed.
+    n_default = report.n_nonresponse if report.n_valid == 0 else 0
+    n_imputed = report.n_nonresponse - n_default
+    n = max(len(out), 1)
+    logger.info(
+        "[braunschweig.popsim.attributes] map_pt_subscription_type: valid %d (%.2f%%), "
+        "structural under-14 %d (%.2f%%), imputed nonresponse %d (%.2f%%), "
+        "default(empty-pool) %d (%.4f%%)",
+        report.n_valid, 100.0 * report.n_valid / n,
+        report.n_structural, 100.0 * report.n_structural / n,
+        n_imputed, 100.0 * n_imputed / n,
+        n_default, 100.0 * n_default / n,
+    )
+    if n_default:
+        logger.warning(
+            "[braunschweig.popsim.attributes] map_pt_subscription_type: %d persons fell "
+            "to the never_pt DEFAULT because the global P_FKARTE valid-value pool was "
+            "empty; on real MiD data an empty pool indicates a broken join or column, "
+            "not real missingness -- investigate before trusting the never_pt share.",
+            n_default,
+        )
     # Ensure the column contains only valid PT_TICKET_CATEGORIES values.
     invalid = ~out["pt_subscription_type"].isin(PT_TICKET_CATEGORIES)
     if invalid.any():
@@ -658,14 +709,23 @@ def map_pt_subscription_type(
 def map_pt_ticket_group(
     persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
 ) -> pd.DataFrame:
-    """Add the three-group ``pt_ticket_group`` seed/control column (issue #321).
+    """Add the ``pt_ticket_group`` (three-group) and ``pt_ticket_group4`` seed/control columns.
 
     Collapses the resolved :data:`braunschweig.data.mid.reference_tables.PT_TICKET_CATEGORIES`
-    onto :data:`PT_TICKET_GROUPS`: ``deutschlandticket`` stays its own group, the remaining
-    flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
+    onto :data:`PT_TICKET_GROUPS` (issue #321): ``deutschlandticket`` stays its own group, the
+    remaining flatrate categories become ``other_flatrate``, everything else ``not_flatrate``.
 
-    Deriving the group from the already-resolved category (and NOT a second time from the raw
-    ``P_FKARTE``) is what keeps it consistent with ``has_pt_subscription``: a second
+    The four-group variant :data:`PT_TICKET_GROUPS4` (issue #329) is emitted alongside it in
+    the SAME pass: it splits ``not_flatrate`` into ``never_pt`` (the MiD "fahre nie" category
+    plus the structural under-14 floor) and ``occasional_ticket`` (has some ticket, no
+    flatrate). It exists because the balancer, free inside ``not_flatrate``, concentrated
+    never-PT persons where PT supply is best (+16.17pp Braunschweig-Stadt in the 2026-08-20
+    100% run). Emitting both columns unconditionally keeps them collapse-consistent by
+    construction (``never_pt`` + ``occasional_ticket`` == ``not_flatrate``), so whichever
+    control the config activates steers the same underlying quantity.
+
+    Deriving BOTH groups from the already-resolved category (and NOT a second time from the raw
+    ``P_FKARTE``) is what keeps them consistent with ``has_pt_subscription``: a second
     resolution of the imputed codes 99 / 202 / 206 is exactly the defect ADR-0087 removed.
 
     Raises
@@ -686,18 +746,33 @@ def map_pt_ticket_group(
         category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
         np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
                  "not_flatrate"))
+    # Four-group variant (issue #329): the not_flatrate mass split into never_pt and
+    # occasional_ticket. Derived from the SAME resolved category, so it collapses onto
+    # pt_ticket_group exactly (ADR-0087's rule: never re-resolve the raw P_FKARTE).
+    out["pt_ticket_group4"] = np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
+                          "occasional_ticket")))
     n = len(out)
     if n:
         counts = out["pt_ticket_group"].value_counts()
+        counts4 = out["pt_ticket_group4"].value_counts()
         logger.info(
             "[braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket "
-            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%)",
+            "%d (%.2f%%), other_flatrate %d (%.2f%%), not_flatrate %d (%.2f%%) "
+            "[four-group split of not_flatrate, percentages of all persons: never_pt "
+            "%d (%.2f%%), occasional_ticket %d (%.2f%%)]",
             int(counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0)),
             100.0 * counts.get(PT_TICKET_DEUTSCHLANDTICKET, 0) / n,
             int(counts.get("other_flatrate", 0)),
             100.0 * counts.get("other_flatrate", 0) / n,
             int(counts.get("not_flatrate", 0)),
             100.0 * counts.get("not_flatrate", 0) / n,
+            int(counts4.get(PT_TICKET_NEVER, 0)),
+            100.0 * counts4.get(PT_TICKET_NEVER, 0) / n,
+            int(counts4.get("occasional_ticket", 0)),
+            100.0 * counts4.get("occasional_ticket", 0) / n,
         )
     return out
 

@@ -349,15 +349,15 @@ def test_license_control_respects_age_base():
 def test_pt_control_age_base_excludes_children():
     """pt_ticket_type categorical control with age_min=14 must exclude children.
 
-    The age-8 child has pt_subscription_type="fahre_nie"; the age-40 adult
+    The age-8 child has pt_subscription_type="never_pt"; the age-40 adult
     has "deutschlandticket".  With age_min=14 the child is excluded, so only
-    the adult's category is counted (deutschlandticket=1); fahre_nie=0.
+    the adult's category is counted (deutschlandticket=1); never_pt=0.
     """
     persons = pd.DataFrame({
         "person_id": [1, 2],
         "household_id": [10, 20],
         "age": [8, 40],
-        "pt_subscription_type": ["fahre_nie", "deutschlandticket"],
+        "pt_subscription_type": ["never_pt", "deutschlandticket"],
     })
     households = pd.DataFrame({"household_id": [10, 20]})
     frames = PopulationFrames(persons, households, None, None,
@@ -376,8 +376,8 @@ def test_pt_control_age_base_excludes_children():
     assert got.get("deutschlandticket", 0) == 1, (
         f"Expected deutschlandticket=1 (age-8 child excluded), got {got}"
     )
-    assert got.get("fahre_nie", 0) == 0, (
-        f"Expected fahre_nie=0 (age-8 child excluded from base), got {got}"
+    assert got.get("never_pt", 0) == 0, (
+        f"Expected never_pt=0 (age-8 child excluded from base), got {got}"
     )
 
 

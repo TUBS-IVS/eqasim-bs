@@ -261,11 +261,11 @@ def test_pt_under14_floor_kept_adult_coverage_imputed():
         "alter_gr1": [5, 5, 5, 1, 5],
     })
     out = attributes.map_pt_subscription_type(df, rng=np.random.RandomState(0))
-    assert out["pt_subscription_type"].iloc[3] == "fahre_nie"          # under-14 floor kept
+    assert out["pt_subscription_type"].iloc[3] == "never_pt"          # under-14 floor kept
     assert out["pt_subscription_type"].iloc[4] in attributes.FKARTE_TO_CATEGORY.values()  # imputed to a real category
     # With an all-deutschlandticket donor pool in the same age band, the adult coverage
     # code (206) must be imputed to that category -- not deterministically forced to
-    # "fahre_nie" (which the previous structural mapping would have done).
+    # "never_pt" (which the previous structural mapping would have done).
     assert out["pt_subscription_type"].iloc[4] == "deutschlandticket"
 
 
@@ -279,6 +279,60 @@ def test_pt_subscription_nonresponse_imputed():
         a.map_pt_subscription_type(persons, rng=np.random.RandomState(0)))
     assert out["has_pt_subscription"].iloc[2] in (True, False)
     assert out["has_pt_subscription"].isna().sum() == 0
+
+
+def test_map_pt_subscription_type_logs_missing_report(caplog):
+    """Obligation 1 (#329): the imputation/default mass must be observable, never discarded.
+
+    ``never_pt`` is now both a directly controlled category (pt_ticket_group4) and the
+    fallback bucket for an empty imputation pool, so ``map_pt_subscription_type`` must log
+    the valid/structural/imputed/default split instead of throwing the MissingReport away
+    (the old ``..., _ = missing.resolve(...)``); a silently-100%-default run would otherwise
+    look identical to a healthy one (CLAUDE.md's no-silent-fallback rule).
+
+    Covers all four buckets: valid (1, 8), structural under-14 (402 with alter_gr1=1), and
+    nonresponse (99, 202) imputed from the valid pool in the same age group.
+    """
+    import logging
+
+    persons = pd.DataFrame({
+        "P_FKARTE": [1, 8, 99, 202, 402],
+        "alter_gr1": [3, 3, 3, 3, 1],
+    })
+    with caplog.at_level(logging.INFO):
+        a.map_pt_subscription_type(persons, rng=np.random.RandomState(0))
+    joined = " ".join(r.message for r in caplog.records)
+    assert "map_pt_subscription_type" in joined
+    assert "imputed" in joined and "default" in joined
+
+
+def test_map_pt_subscription_type_warns_on_empty_valid_pool(caplog):
+    """Obligation 2 (#329 Item 7): the empty-pool DEFAULT branch must be observable at
+    WARNING level, not folded silently into the INFO summary
+    (``test_map_pt_subscription_type_logs_missing_report`` above only exercises a HEALTHY
+    valid pool, so it never drives this branch).
+
+    Every person here carries a P_FKARTE code that is either global nonresponse (99) or a
+    per-spec impute code (202) -- none is in ``FKARTE_TO_CATEGORY``'s valid codes (1-8), so
+    the GLOBAL valid pool is genuinely empty and every nonresponse row must fall through to
+    the ``never_pt`` DEFAULT (see the docstring of ``map_pt_subscription_type`` and
+    ``braunschweig.popsim.missing.resolve``: the default only fires when the pool itself,
+    not just the conditioning-group cell, has zero valid rows).
+    """
+    import logging
+
+    persons = pd.DataFrame({
+        "P_FKARTE": [99, 99, 202],
+        "alter_gr1": [3, 3, 3],
+    })
+    with caplog.at_level(logging.INFO):
+        out = a.map_pt_subscription_type(persons, rng=np.random.RandomState(0))
+    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings, "expected a WARNING when the empty-pool default fires"
+    joined = " ".join(warnings)
+    assert "map_pt_subscription_type" in joined
+    assert "DEFAULT" in joined
+    assert (out["pt_subscription_type"] == a.PT_TICKET_NEVER).all()
 
 
 def test_pt_subscription_type_no_rng_backward_compatible():
@@ -378,9 +432,9 @@ def test_pt_ticket_group_collapses_the_resolved_type_into_three_groups():
     committed survey).
     """
     persons = pd.DataFrame({"pt_subscription_type": [
-        "deutschlandticket", "monat_abo_jahreskarte", "jobticket_semesterticket",
-        "wochen_monat_ohne_abo", "einzelfahrschein", "fahre_nie", "anderes",
-        "mehrfachkarte"]})
+        "deutschlandticket", "monthly_or_annual_subscription", "job_or_semester_ticket",
+        "weekly_monthly_no_subscription", "single_ticket", "never_pt", "other_ticket",
+        "multi_ride_ticket"]})
     out = a.map_pt_ticket_group(persons)
     assert out["pt_ticket_group"].tolist() == [
         "deutschlandticket", "other_flatrate", "other_flatrate", "other_flatrate",
@@ -455,6 +509,76 @@ def test_pt_ticket_group_rendered_control_carries_the_age_clause():
     assert rendered["pt_ticket_group_deutschlandticket"] == (
         "(persons.pt_ticket_group == 'deutschlandticket') & (persons.HP_ALTER >= 14)")
     assert set(rendered) == {f"pt_ticket_group_{g}" for g in a.PT_TICKET_GROUPS}
+
+
+# ---------------------------------------------------------------------------
+# Issue #329: the four-group PT ticket control seed column (never_pt split out)
+# ---------------------------------------------------------------------------
+
+
+def test_map_pt_ticket_group_emits_four_group_column():
+    """``pt_ticket_group4`` splits ``never_pt`` out of ``not_flatrate`` (issue #329).
+
+    The four-group control pins the never-PT share per Kreis so the balancer cannot
+    concentrate never-PT persons where PT supply is best. Both columns are emitted by the
+    same mapper and derived from the SAME resolved category, so the finer column collapses
+    onto the coarser one exactly (asserted below) -- a second resolution of the imputed
+    P_FKARTE codes is the defect ADR-0087 removed.
+    """
+    persons = pd.DataFrame({"pt_subscription_type": [
+        "deutschlandticket", "monthly_or_annual_subscription",
+        "never_pt", "single_ticket", "other_ticket"]})
+    out = a.map_pt_ticket_group(persons)
+    assert list(out["pt_ticket_group4"]) == [
+        "deutschlandticket", "other_flatrate",
+        "never_pt", "occasional_ticket", "occasional_ticket"]
+    # Consistency: group4 collapses onto the three-group column exactly.
+    collapse = out["pt_ticket_group4"].replace(
+        {"never_pt": "not_flatrate", "occasional_ticket": "not_flatrate"})
+    assert list(collapse) == list(out["pt_ticket_group"])
+
+
+def test_pt_ticket_group4_is_a_registered_soft_person_control_on_the_mid_14plus_base():
+    """The #329 entry mirrors pt_ticket_group's shape: person level, soft, 14+, 4 groups."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group4")
+    assert entry.level == "person"
+    assert entry.tier == "soft"
+    assert entry.min_age == 14
+    assert entry.seed_column == "pt_ticket_group4"
+    assert tuple(label for label, _ in entry.categories) == a.PT_TICKET_GROUPS4
+    assert entry.target_columns == a.PT_TICKET_GROUPS4
+    assert entry.target_csv_relpath.endswith("target2026_pt_ticket_group4_by_kreis.csv")
+
+
+def test_pt_ticket_group4_control_target_loads_and_partitions_every_kreis():
+    """The committed four-group target must load through the production loader for all 8
+    Kreise -- a missing or non-normalised row would only surface at run time otherwise."""
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = next(c for c in kac.REGISTRY if c.name == "pt_ticket_group4")
+    target = kac.load_kreis_target(
+        "eqasim-data/data", entry,
+        expected_ars5=("03101", "03102", "03103", "03151", "03153", "03154",
+                       "03157", "03158"),
+        share_tolerance=1e-3)
+    assert set(target["ars5"]) == {"03101", "03102", "03103", "03151", "03153",
+                                   "03154", "03157", "03158", "Gesamt"}
+    assert list(target.columns) == ["ars5", *a.PT_TICKET_GROUPS4]
+
+
+def test_pt_ticket_group4_rendered_control_carries_the_age_clause():
+    """The four-group target is the same 14+ table, so the seed expression must restrict
+    the synthetic side identically (the #97 universe trap)."""
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    entry = [c for c in kac.REGISTRY if c.name == "pt_ticket_group4"]
+    rendered = {c.name: c.seed_expressions["mid"] for c in cs.attribute_kreis_controls(entry)}
+    assert rendered["pt_ticket_group4_never_pt"] == (
+        "(persons.pt_ticket_group4 == 'never_pt') & (persons.HP_ALTER >= 14)")
+    assert set(rendered) == {f"pt_ticket_group4_{g}" for g in a.PT_TICKET_GROUPS4}
 
 
 # ---------------------------------------------------------------------------

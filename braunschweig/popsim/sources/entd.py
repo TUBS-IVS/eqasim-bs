@@ -17,8 +17,9 @@ Differences from MiD (design notes)
   The cleaned ENTD stage already retains only reference-day weekday trips.
 - **No ticket-type field**: ENTD does not record *which* PT ticket type a
   subscriber holds.  ``pt_subscription_type`` is therefore defaulted:
-  subscribers -> ``"wochen_monat_ohne_abo"`` (a flatrate category, consistent
-  with ``has_pt_subscription = True``); non-subscribers -> ``"fahre_nie"``.
+  subscribers -> ``"weekly_monthly_no_subscription"`` (a flatrate category,
+  consistent with ``has_pt_subscription = True``); non-subscribers ->
+  ``"never_pt"``.
   Both values are in ``PT_TICKET_CATEGORIES`` (CLAUDE.md MANDATORY guard).
 - **income_class -> household_income label**: ENTD income_class is a 0..13
   integer band (French survey bands; see ``data/hts/entd/cleaned.py``

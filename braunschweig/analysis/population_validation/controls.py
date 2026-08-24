@@ -537,8 +537,22 @@ def license_target(data_path: str) -> pd.DataFrame:
 
 
 def pt_ticket_target(data_path: str) -> pd.DataFrame:
+    # The synthesis can never produce "no_answer" (FKARTE_TO_CATEGORY has no such
+    # value; MiD code 99 is imputed pool-proportionally), so scoring against it
+    # compares a structural zero to survey nonresponse mass. Renormalize it out
+    # (issue #329 obligation; same convention as the P36.1 mobility target).
     by_kreis, _ = RT.load_pt_subscription_breakdown(data_path)
-    return _kreis_categorical_target(by_kreis, RT.PT_TICKET_CATEGORIES)
+    cats = [c for c in RT.PT_TICKET_CATEGORIES if c != "no_answer"]
+    idx = [RT.PT_TICKET_CATEGORIES.index(c) for c in cats]
+    renorm = {}
+    for kreis, vec in by_kreis.items():
+        sub = vec[idx]
+        total = float(sub.sum())
+        if total <= 0:
+            raise ValueError(
+                f"pt_ticket_target: Kreis {kreis} has zero mass outside 'no_answer'")
+        renorm[kreis] = sub / total
+    return _kreis_categorical_target(renorm, cats)
 
 
 def _renormalized_by_kreis(by_kreis: dict, filename: str) -> dict:
@@ -853,12 +867,21 @@ def build_registry(data_path: str) -> list[Control]:
         # Synthesis rakes the licence flag to this very P17.1 table (enriched IPF).
         independence="fit_check"))
     # MiD P24.1 survey base is age 14+; restrict the realized distribution to
-    # match (persons <14 are deterministically assigned fahre_nie in synthesis).
+    # match (persons <14 are deterministically assigned never_pt in synthesis).
+    # The target and the control's own category list exclude "no_answer": the
+    # synthesis can never produce it (MiD code 99 is imputed pool-proportionally),
+    # so scoring it would compare a structural zero to survey nonresponse mass.
     reg.append(categorical_person_control(
         "pt_ticket_type", "mid_person", "kreis", "pt_subscription_type",
-        RT.PT_TICKET_CATEGORIES, pt_ticket_target, age_min=14,
-        # Synthesis rakes PT tickets to this very P24.1 table (enriched IPF).
-        independence="fit_check"))
+        [c for c in RT.PT_TICKET_CATEGORIES if c != "no_answer"], pt_ticket_target,
+        age_min=14,
+        # popsim_mid steers only the group collapse (3 or 4 groups, blended MiD x
+        # SrV target); the nine-category composition is NOT raked to this P24.1
+        # table, so this comparison is substantially independent for the
+        # within-group structure. (The old "enriched IPF rakes to this very
+        # table" claim described the legacy simple_ipf_open path, which
+        # popsim_mid never runs.)
+        independence="partially_independent"))
 
     _, _, car_vals = RT.load_kreis_share_table(data_path, "mid2023_H7_cars_by_kreis.csv")
     reg.append(bucket_household_control(

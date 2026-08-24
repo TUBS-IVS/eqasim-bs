@@ -1,0 +1,147 @@
+id: smoke-pt-never-group-03101-on-2026-08-21
+date: '2026-08-21'
+repository:
+  commit: 59fc685b
+  branch: feature/i329-pt-never-group
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/smoke_kreis_control_fit.yml
+  notes: 'ON arm of the #329 03101 control-fit A/B smoke (#282 pattern) for the
+    pt_ticket_never_group four-group Kreis control. On felix, worktree ~/wt-i329
+    (data parity with the main checkout via cp -rln), a per-arm overlay copy
+    ~/wt-i329/i329_smoke_on.yml duplicates configs/overlays/smoke_kreis_control_fit.yml
+    verbatim except for its own working_directory/output_path/output_prefix/work_dir
+    (cache_smoke_i329_on); no additional flag key is set, so
+    pt_ticket_never_group defaults to "on". This is the ONLY difference from the
+    OFF arm (docs/runs/smoke-pt-never-group-03101-off-2026-08-21.yml); nothing
+    else varies between the two runs.'
+sampling:
+  rate: 'balancing always covers the full population; the expanded result holds
+    252,256 persons (03101, all ages); the 14+ universe used by the
+    pt_ticket_group4 control fit is 227,263 persons'
+  scope: Kreis 03101 (Braunschweig) only
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- smoke
+status:
+  execution: completed
+  notes: 'First attempt reached 8/8 batches in 51:24 wall (nice -n 10, 8 workers,
+    max_cells 750), but batch_006 was OOM-killed mid-run (exit code 137; dmesg
+    2026-08-21 15:58:54 "Out of memory: Killed process 493035 (populationsim)
+    total-vm:32244580kB, anon-rss:29954352kB"), so the merge step failed
+    fail-fast with "PopulationSim batch run incomplete: 1/8 batches missing". The
+    pipeline was relaunched unchanged and resumed ONLY the missing batch,
+    completing 2026-08-21 17:03 with 0 errors. Stage pickle selected by this
+    run''s own logged hash: braunschweig.popsim.stage__cd6179f167a9c764fa2d39c367634f9.p
+    (differs from the OFF arm''s hash, confirming the flag changes the stage
+    signature).'
+environment: server
+validation:
+- metric: 'run incident: OOM kill of batch_006 during the first ON-arm attempt'
+  reference: none (operational incident, not a scientific reference)
+  result: 'The first attempt completed 8/8 batches in 51:24 wall but batch_006''s
+    populationsim process (PID 493035) was killed by the kernel OOM killer at
+    2026-08-21 15:58:54 (total-vm 32,244,580 kB, anon-rss 29,954,352 kB), exit
+    code 137. The merge step correctly failed fail-fast rather than merging an
+    incomplete batch set: "PopulationSim batch run incomplete: 1/8 batches
+    missing". A second, unmodified launch resumed only the missing batch and
+    the run completed cleanly at 17:03 with 0 errors.'
+  artifact: 'felix:/home/felix/i329_smoke_on.log (failed first attempt),
+    felix:/home/felix/i329_smoke_on2.log (resumed run to completion)'
+  notes: 'ASSUMPTION/operational note (not a scientific claim): this 03101-only
+    smoke ran at 8 workers / max_cells 750, the same batching configuration
+    used across the current smoke suite, and still hit a single-batch OOM. This
+    is recorded as operational input for the still-owed full-region 100% run
+    (#240/#329 acceptance), which should budget headroom for this failure mode
+    (e.g. fewer concurrent workers, or a lower per-batch cell count) rather than
+    assume the current settings are safe at full scale.
+    STALE AT HEAD (recorded rather than rewritten, because the run is history):
+    the phrase "the same batching configuration used across the current smoke
+    suite" was true when this run executed but is FALSE at the branch HEAD --
+    this same branch changed configs/overlays/smoke_kreis_control_fit.yml to
+    braunschweig.population.popsim.num_workers: 4 (#281, workers sized from
+    available memory instead of core count), which is itself the remedy this
+    incident called for. Consequence for reproduction: re-running from HEAD uses
+    4 workers, not 8, and therefore yields a DIFFERENT popsim stage hash than the
+    braunschweig.popsim.stage__cd6179f167a9c764fa2d39c367634f9.p cited above. The
+    difference is parallelism only (batch scheduling and peak memory); it changes
+    no scientific output, since num_workers does not enter any seed, target, or
+    control definition.'
+- metric: PopulationSim convergence and integerizer feasibility with
+    pt_ticket_never_group set to "on" (four-group pt_ticket_group4 Kreis
+    control active)
+  reference: 'the OFF arm on the same Kreis and overlay
+    (docs/runs/smoke-pt-never-group-03101-off-2026-08-21.yml): 3892/4019 zones
+    OPTIMAL (96.8%)'
+  result: '8/8 batches converged (after the resumed run), 0 error/traceback
+    signatures in the log. Integerizer: 4082/4217 zones OPTIMAL (96.8%) --
+    identical optimal rate to the OFF arm, so the fourth control column does
+    not over-constrain the integerizer (the differing zone counts reflect
+    per-arm batching, not infeasibility). The run log records: "KREIS attribute
+    control ON: pt_ticket_group4 (soft, person-level), 1 Kreise, prior_n=0.0,
+    total persons (age>=14)=223430".'
+  artifact: 'felix:/home/felix/i329_smoke_on2.log'
+- metric: realised pt_subscription_type shares (03101, age>=14) against the
+    committed pt_ticket_group4 blended target, aggregated to the four target
+    groups
+  reference: 'eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv,
+    row 03101 (source=blend, n_effective=5618): deutschlandticket 0.1088,
+    other_flatrate 0.1488, never_pt 0.1232, occasional_ticket 0.6192. This is a
+    control FIT reference (reference_role=fit) -- the synthesis is steered
+    toward it by this arm''s soft Kreis control -- NOT an independent
+    validation reference.'
+  result: 'ON-arm realised shares (%): never_pt 12.17 (delta -0.15pp vs target),
+    deutschlandticket 10.60 (-0.28pp), other_flatrate 14.86 (-0.02pp),
+    occasional_ticket 62.37 (+0.45pp) -- all four group4 deltas land within
+    ~0.5pp, comparable to the other soft Kreis controls in the pipeline. Per-type
+    breakdown behind the aggregates: never_pt 12.17, single_ticket 48.27,
+    multi_ride_ticket 9.49, other_ticket 4.61, deutschlandticket 10.60,
+    job_or_semester_ticket 7.74, monthly_or_annual_subscription 5.47,
+    weekly_monthly_no_subscription 1.65. The flatrate aggregate
+    (deutschlandticket + other_flatrate = 25.46%) is the only
+    simulation-relevant quantity, since BraunschweigPtCostModel reads only the
+    hasPtSubscription boolean; between the arms it moves only 0.11pp (OFF:
+    25.57%). SCOPE OF THAT RESULT (03101 ONLY, and this arm cannot show the
+    effect): the two target tables carry an IDENTICAL flatrate sum for 03101
+    (0.2576 in both target2026_pt_ticket_group_by_kreis.csv and
+    target2026_pt_ticket_group4_by_kreis.csv, both source=blend), so a flatrate
+    difference between the arms is structurally impossible HERE and the 0.11pp is
+    balancer noise, not evidence. The general claim "the flag preserves the
+    flatrate level" is UNPROVEN by this smoke: at target level the flag moves
+    flatrate in four of eight Kreise (03157 -0.26pp, 03158 -0.42pp via a
+    blend-rule flip; 03154 +0.13pp, 03153 +0.13pp via the no_answer
+    renormalization). Per-Kreis table and mechanisms: ADR-0099, Consequences.'
+  artifact: 'stage pickle braunschweig.popsim.stage__cd6179f167a9c764fa2d39c367634f9.p'
+  notes: 'Against the OFF arm''s never_pt of 30.82% (+18.50pp vs target, which
+    reproduces the defect measured in the 2026-08-20 100% run,
+    docs/runs/100pct-allfeat-i240-2026-08-20.yml: 30.17% realised vs 14.00% MiD
+    reading), the ON arm''s four-group Kreis control moves never_pt to 12.17%,
+    -0.15pp from the blended target -- a large reduction in the acceptance
+    criterion''s direction. This is a single-Kreis control-fit smoke, not an
+    independent validation and not a full-region A/B.'
+- metric: obligation-1 evidence -- pt_subscription_type imputation and default
+    rates (#329 obligation 1), identical mapping logic in both arms
+  reference: none (absence-of-fallback / mandatory fallback-rate check, CLAUDE.md)
+  result: 'map_pt_subscription_type valid 80.74%, structural under-14 13.08%,
+    imputed nonresponse 6.18%, default(empty-pool) 0 (0.0000%). No silent
+    default-pool fallback fired; identical to the OFF arm.'
+  artifact: 'felix:/home/felix/i329_smoke_on2.log'
+features:
+  note: 'First execution evidence for the ON (post-change) arm of the
+    pt_ticket_never_group four-group Kreis control (#329). One Kreis only; a
+    smoke is not a validation -- the realised never_pt improvement is a control
+    fit against a target the synthesis is steered toward, not independent
+    validation. The full-region ON/OFF A/B is deliberately deferred to the next
+    100% wave; this smoke also surfaced a real OOM failure mode at 03101 scale
+    that the 100% run must plan around (see the incident entry above).'
+artifacts:
+- 'felix:/home/felix/i329_smoke_on.log'
+- 'felix:/home/felix/i329_smoke_on2.log'
+- 'felix:/home/felix/wt-i329/eqasim-data/cache_smoke_i329_on/'
+issues:
+- '#329'
+- '#282'
+source: 'ON arm of the #329 03101 control-fit smoke, 2026-08-21'

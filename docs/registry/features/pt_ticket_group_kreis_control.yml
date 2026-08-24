@@ -1,16 +1,28 @@
 feature: pt_ticket_group_kreis_control
-title: PT-subscription per-Kreis control (three groups, MiD x SrV blend)
+title: PT-subscription per-Kreis control (four groups by default, three under the flag; MiD x SrV
+  blend)
 area: attributes
-description: 'Per-Kreis PopulationSim control on the three-group collapse of the PT ticket type
-  (deutschlandticket / other_flatrate / not_flatrate), person level, soft tier, 14+ universe.
+description: 'Per-Kreis PopulationSim control on a collapse of the PT ticket type, person level,
+  soft tier, 14+ universe, prior_n=0. TWO resolutions of the same marginal, mutually exclusive by
+  construction: the three-group collapse (deutschlandticket / other_flatrate / not_flatrate,
+  REGISTRY entry pt_ticket_group, ADR-0089) and, since issue #329 and by DEFAULT, the four-group
+  collapse that splits not_flatrate into never_pt and occasional_ticket (REGISTRY entry
+  pt_ticket_group4, ADR-0099). Which one the stage renders is decided by
+  braunschweig.population.popsim.pt_ticket_never_group ("on" by default): on renders
+  pt_ticket_group4 INSTEAD OF pt_ticket_group -- never both, since they control the same marginal
+  at different resolutions and would double-constrain it -- and on while the base
+  pt_ticket_kreis_control is off raises a ValueError naming both keys (no silent half-state).
   Three groups and not the nine MiD P24.1 categories because BraunschweigPtCostModel
   .calculateCost_MU zeroes the fare for every flatrate holder: the four flatrate types are
-  simulation-equivalent and the non-flatrate split has no simulation effect, so 9 x 8 Kreise
-  would spend 72 control columns on mostly simulation-neutral structure against 24 here. The
-  group is derived from the RESOLVED pt_subscription_type, so deutschlandticket +
-  other_flatrate equals has_pt_subscription by construction. Closes the open question of
-  ADR-0079 item 5 after issue #307 measured the realised share at +3.06pp (region) and
-  +4.18pp (Braunschweig) against MiD P24.1.'
+  simulation-equivalent and the non-flatrate split has no simulation effect, so 9 x 8 Kreise would
+  spend 72 control columns on mostly simulation-neutral structure against 24 (three groups) or 32
+  (four groups) here. The fourth group is therefore a REFERENCE-FIDELITY fix, not a results lever:
+  the 2026-08-20 100% run realised a spatial INVERSION inside the uncontrolled not_flatrate group
+  (03101 never-PT 30.17% against a 14.00% MiD reading, +16.17pp, while Goslar under-realised),
+  which is the within-group-freedom defect class of #320/#240. The group is derived from the
+  RESOLVED pt_subscription_type, so deutschlandticket + other_flatrate equals has_pt_subscription
+  by construction. Closes the open question of ADR-0079 item 5 after issue #307 measured the
+  realised share at +3.06pp (region) and +4.18pp (Braunschweig) against MiD P24.1.'
 stages:
 - data.census.filtered
 pipelines:
@@ -22,6 +34,7 @@ production:
   enabled: true
   flags:
   - braunschweig.population.popsim.pt_ticket_kreis_control
+  - braunschweig.population.popsim.pt_ticket_never_group
 introduced:
   issue: '#321'
   pr: null
@@ -30,6 +43,10 @@ code_paths:
 - braunschweig/popsim/attributes.py
 - braunschweig/popsim/kreis_attribute_control.py
 - braunschweig/popsim/mid/seed_loading.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/stage/source_resolution.py
+- braunschweig/data/mid/reference_tables.py
+- braunschweig/analysis/population_validation/controls.py
 - scripts/extract_srv_kreis_tables.py
 - scripts/build_blended_kreis_targets.py
 evidence:
@@ -38,57 +55,121 @@ evidence:
   - tests/test_blended_target_tables.py
   - tests/test_kreis_attribute_control.py
   - tests/test_kreis_control_stage_wiring.py
+  - tests/test_popsim_seed_kreis_columns.py
+  - tests/test_no_german_pt_ticket_literals.py
   off_path_byte_identical:
     claimed: false
     note: |
-      Not claimed and not tested: the entry is one of ten REGISTRY toggles and switching it off
-      removes its controls, which is asserted
+      Not claimed and not tested. pt_ticket_kreis_control is one of ten REGISTRY toggles and
+      switching it off removes its controls, which is asserted
       (tests/test_kreis_control_stage_wiring.py, registry-derived turn-off assertions), but no
-      byte-identity of the resulting population is claimed. Adding the seed column also
-      consumes rng draws for the imputed P_FKARTE coverage codes, so the OFF path is not
-      byte-identical to the pre-#321 state either.
+      byte-identity of the resulting population is claimed. Adding the seed column also consumes
+      rng draws for the imputed P_FKARTE coverage codes, so the OFF path is not byte-identical to
+      the pre-#321 state either. For the #329 flag specifically: pt_ticket_never_group off restores
+      the three-group control behaviour and renders no group4 column
+      (tests/test_kreis_control_stage_wiring.py, off-path assertion), but the population is not
+      byte-identical to the pre-#329 state either, because the same release renamed the nine ticket
+      categories to English (the population XML attribute ptSubscriptionType now carries English
+      values). That rename is simulation-neutral: a repo-wide grep of the eqasim-java-bs fork found
+      ZERO Java readers of the string, the only Java channel being the hasPtSubscription boolean
+      (BraunschweigPredictorUtils.hasSubscription -> BraunschweigPtCostModel.calculateCost_MU).
   fallback_rate:
     instrumented: true
     log_marker: '[braunschweig.popsim.attributes] map_pt_ticket_group'
     note: |
-      The mapper logs the realised group split. The SrV extractor logs the share of the 14+
-      universe carrying code -8 (no PT use in 12 months, counted as not_flatrate) -- 33.1% at
-      extraction time, an assumption over a third of the sample -- and raises on any unmapped
-      E_OEV_FK code rather than dropping it. load_kreis_target fails fast on a missing target
-      file, a missing category column or a row that does not sum to 1.
+      The mapper logs the realised group split for both resolutions in one line (three groups plus
+      the four-group split of not_flatrate). map_pt_subscription_type additionally logs the four
+      resolution classes of the underlying category -- valid / structural under-14 / imputed
+      nonresponse / default(empty-pool) -- and WARNs if the default ever fires, because a non-zero
+      default count means a broken join, not real missingness. Measured on the real donor
+      (n=420,979 MiD persons): valid 84.33%, structural (code 402) 9.60%, imputed nonresponse
+      (99+202+206) 6.07% -- 99 alone 0.24%, 206 5.84%, 202 0.00% -- default 0.00%. In the 2026-08-21
+      03101 smoke: valid 80.74%, structural 13.08%, imputed 6.18%, default 0.0000%. This corrects
+      an earlier claim that MiD code 99 ("keine Angabe") defaults to never_pt: nonresponse is
+      imputed pool-proportionally within age-group x RegioStaR7 (see ADR-0099).
+      The SrV extractor logs the share of the 14+ universe carrying code -8 (no PT use in 12
+      months) and raises on any unmapped E_OEV_FK code rather than dropping it; load_kreis_target
+      fails fast on a missing target file, a missing category column or a row that does not sum to
+      1.
+      CONTROL-EXTERNAL never_pt SOURCE (#329 obligation 2): regular in-commuters
+      (_INCOMMUTER_PERSON_DEFAULTS, braunschweig/synthesis/incommuters.py) and student in-commuters
+      (_STUDENT_PERSON_DEFAULTS, braunschweig/synthesis/student_incommuters.py) are hard-coded
+      pt_subscription_type "never_pt" with has_pt_subscription False. They live outside the ZGB
+      cordon and therefore outside the 14+ RESIDENT universe this control partitions, so no control
+      sees them and a full run's regional never_pt share is the controlled resident share PLUS
+      this injected mass. Each assignment site now emits one count log line so the mass is
+      observable; the count is unknown for the 03101 smoke, which stops at data.census.filtered,
+      upstream of in-commuter injection.
   reference:
     kind: committed
-    path: eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group_by_kreis.csv
-    note: 'Blended target: MiD P24.1 x SrV E_OEV_FK on a matched 14+ universe. Which blend rule
-      fired per Kreis is recorded in the source column (blend / mid_shrunk / mid) and pinned by
-      tests. The SrV half is srv2023_ticket_groups_14plus_by_kreis.csv, derived from the
-      local-only SciUse microdata by scripts/extract_srv_kreis_tables.py.'
+    path: eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv
+    note: 'Blended target for the DEFAULT four-group resolution: MiD P24.1 x SrV E_OEV_FK on a
+      matched 14+ universe, no arbiter, the MiD no_answer mass renormalized OUT because the
+      synthesis can never produce that category. The three-group resolution (flag off) reads the
+      unchanged target2026_pt_ticket_group_by_kreis.csv. Which blend rule fired per Kreis is
+      recorded in the source column (blend / mid_shrunk / mid) and pinned by tests. The SrV halves
+      are srv2023_ticket_groups4_14plus_by_kreis.csv and srv2023_ticket_groups_14plus_by_kreis.csv,
+      derived from the local-only SciUse microdata by scripts/extract_srv_kreis_tables.py. Hitting
+      these shares is control FIT, never behavioural validation.'
 validation:
   state: unvalidated
   runs:
   - smoke-control-fit-03101-2026-08-19
   - smoke-control-fit-03101-v2-2026-08-19
+  - smoke-pt-never-group-03101-off-2026-08-21
+  - smoke-pt-never-group-03101-on-2026-08-21
   metric: null
-  note: 'One-Kreis smoke (03101) ran 2026-08-19: balancer converged (8/8 batches, integerizer
-    96.6% OPTIMAL), realised group shares within 0.26pp of the blended target in the v2 re-run
-    (0.35pp in v1), flatrate total 25.57% vs 30.18% in the #307 baseline, ADR-0087 invariant 0 contradictions over 252,045
-    persons. Control FIT against its own steering target, never independent validation. Still
-    owed: the full-region one-flag-per-run A/B and the re-measured shares via
-    scripts/measure_license_pt_shares.py in a run manifest.'
+  note: 'Two one-Kreis smokes (03101), both control FIT against the control''s own steering target
+    and therefore never independent validation. #321 (2026-08-19): balancer converged (8/8 batches,
+    integerizer 96.6% OPTIMAL), realised three-group shares within 0.26pp of the blended target in
+    the v2 re-run, flatrate total 25.57% vs 30.18% in the #307 baseline, ADR-0087 invariant 0
+    contradictions over 252,045 persons. #329 (2026-08-21, OFF/ON A/B with only
+    pt_ticket_never_group differing): realised never_pt 30.82% OFF (+18.50pp against the 12.32%
+    target, reproducing the 100%-run defect measured at 30.17%) versus 12.17% ON (-0.15pp); the
+    realised flatrate aggregate moved only 25.57% -> 25.46% (0.11pp) IN 03101, which does not
+    generalise -- 03101 is one of the five rows where the two target tables carry an identical
+    flatrate sum, so this arm cannot show the target-table effect (ADR-0099, Consequences);
+    the integerizer stayed 96.8% OPTIMAL in BOTH arms (OFF 3892/4019, ON 4082/4217), so
+    the fourth control column does not over-constrain. Still owed: the full-region one-flag-per-run
+    A/B (deliberately deferred to the next 100% wave), the re-measured shares via
+    scripts/measure_license_pt_shares.py in a run manifest, and the in-commuter never_pt count from
+    a run that reaches the injection stages.'
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
-    Awaiting the first run. Two documented assumptions remain open to challenge: E_OEV_FK -8
-    (no PT use in 12 months, 33.1% of the SrV 14+ universe) counted as not_flatrate, and
-    E_OEV_FK 60 (Freifahrtberechtigung) likewise although those persons ride fare-free in
-    reality (+0.78pp on the regional flatrate share if counted as flatrate). The A/B must vary
-    one flag at a time, since the flatrate share is strongly age-graded and ADR-0088 changes
-    the age composition in the same release.
-  source: ADR-0089
-notes: 'Supersedes the MiD-only first draft of the target: the claim that SrV offers only one
-  category held for the committed all-ages aggregate, not for the microdata (E_OEV_FK code 3
-  "Zeitkarte ausser Deutschland-Ticket" maps onto other_flatrate), and the apparent
-  MiD-vs-SrV gap was largely a universe artefact -- on a matched 14+ base the flatrate
-  aggregate agrees to 1.63pp regionally and 0.35pp in Braunschweig.'
+    Awaiting the full-region run. Three documented assumptions remain open to challenge.
+    (1) E_OEV_FK -8 (no PT use in 12 months; weighted regional share 28.64%, unweighted respondent
+    rate 33.1%) is counted as not_flatrate by the three-group control and as the whole never_pt
+    group by the four-group one -- a usage-derived SKIP equated with MiD's ticket-question ANSWER,
+    corroborated only at region level (SrV 28.64% against MiD's 36% Gesamt row).
+    (2) E_OEV_FK 60 (Freifahrtberechtigung) counts as not_flatrate / occasional_ticket although
+    those persons ride fare-free in reality (+0.78pp on the regional flatrate share if counted as
+    flatrate instead).
+    (3) The per-Kreis SrV rows are ASSUMPTION-grade coverage estimates and the precision blend
+    weights the surveys by RAW sample size (ADR-0089).
+    The A/B must vary one flag at a time, since the flatrate share is strongly age-graded and
+    ADR-0088 changed the age composition in the same release.
+  source: ADR-0089, ADR-0099
+notes: 'Two records of history, both current: ADR-0089 established the three-group control and
+  supersedes the MiD-only first draft of its target (the claim that SrV offers only one category
+  held for the committed all-ages aggregate, not for the microdata, and the apparent MiD-vs-SrV gap
+  was largely a universe artefact -- on a matched 14+ base the flatrate aggregate agrees to 1.63pp
+  regionally and 0.35pp in Braunschweig). ADR-0099 added the fourth group, narrowed ADR-0060''s
+  usage-conditional objection for the never/occasional boundary only, and turned the nine ticket
+  categories English behind ONE raw-CSV boundary (P24_RAW_COLUMN_BY_CATEGORY in
+  braunschweig/data/mid/reference_tables.py; the committed reference CSVs deliberately keep their
+  codebook-German headers as the traceability link to the MiD instrument, guarded by
+  tests/test_no_german_pt_ticket_literals.py). CONSEQUENCE for ablation configs: an overlay that
+  sets braunschweig.population.popsim.pt_ticket_kreis_control to "off" must now ALSO set
+  braunschweig.population.popsim.pt_ticket_never_group to "off", or the stage fails fast.
+  QUALIFICATION of the "flatrate-neutral" framing: the flag does not only re-partition
+  not_flatrate, it swaps the whole target TABLE, and the two tables do not carry the same
+  deutschlandticket + other_flatrate sum everywhere -- the simulation-relevant flatrate LEVEL moves
+  in four of eight Kreise (largest -0.42pp), by two independent mechanisms (a blend-rule flip where
+  the never/occasional split exposes a >5pp MiD-vs-SrV disagreement the three-group collapse hid,
+  and the no_answer renormalization changing the denominator where P24.1 keine_angabe is non-zero).
+  The mechanism claim is unaffected: no Java reader consumes the ticket-type string, the only Java
+  channel is the has_pt_subscription boolean. Per-Kreis delta table and both mechanisms: ADR-0099,
+  Consequences (one fact, one file -- not duplicated here).'

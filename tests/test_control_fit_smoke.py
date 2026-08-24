@@ -42,6 +42,11 @@ def _seed_persons() -> pd.DataFrame:
         "pt_ticket_group": ["not_flatrate", "not_flatrate", "deutschlandticket",
                             "other_flatrate", "deutschlandticket", "other_flatrate",
                             "not_flatrate", "not_flatrate"],
+        # The four-group refinement (issue #329) collapses onto the three-group column
+        # above: never_pt + occasional_ticket == not_flatrate, row by row.
+        "pt_ticket_group4": ["never_pt", "occasional_ticket", "deutschlandticket",
+                             "other_flatrate", "deutschlandticket", "other_flatrate",
+                             "never_pt", "occasional_ticket"],
         "employment_status": ["nicht_erwerbstaetig", "nicht_erwerbstaetig", "in_ausbildung",
                               "in_ausbildung", "vollzeit", "teilzeit", "geringfuegig",
                               "sonstiges"],

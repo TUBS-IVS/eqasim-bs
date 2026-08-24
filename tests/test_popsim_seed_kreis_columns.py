@@ -305,11 +305,59 @@ def test_all_kreis_entries_default_on():
 
     active = active_kreis_entries(_FakeContext(), "mid")
     names = {c.name for c in active}
+    # pt_ticket_group appears as its four-group refinement pt_ticket_group4: with
+    # pt_ticket_never_group on (the default, issue #329) the finer entry REPLACES the
+    # three-group one (same marginal, never both).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group", "work_participation",
+        "trip_class", "employment_status", "pt_ticket_group4", "work_participation",
         "leisure_participation", "education_participation", "escort_participation",
     }
+
+
+# --- The seeded-RNG classification must cover EVERY drawing entry (silent-fallback guard) ---
+
+
+@pytest.mark.parametrize("entry_name", ["pt_ticket_group", "pt_ticket_group4"])
+def test_classify_rng_style_covers_the_pt_ticket_entries(entry_name):
+    """Both PT entries draw random numbers and must therefore demand the seeded rng.
+
+    ``_derive_pt_ticket_group_seed_column`` calls
+    ``attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)``, which IMPUTES the
+    MiD coverage codes 99 / 202 / 206 from the valid pool (6.18% of persons in a real run).
+    While the entries were absent from the classification, a run with only a PT control
+    active passed ``kreis_seed_rng=None`` through the guard and
+    ``map_pt_subscription_type``'s ``RandomState(0)`` backward-compatibility default
+    silently replaced the run's seeded rng -- a reproducibility defect of exactly the
+    silent-fallback class CLAUDE.md forbids.
+    """
+    from braunschweig.popsim.mid.seed_loading import _classify_rng_style_kreis_entries
+
+    assert _classify_rng_style_kreis_entries({entry_name}) == {entry_name}
+
+
+def test_classify_rng_style_covers_every_drawing_default_active_entry():
+    """Regression over the FULL default-active set, not a hand-picked entry.
+
+    The classification is a hand-maintained literal list, so a drawing entry added to the
+    REGISTRY does not update it (that structural weakness is why this assertion exists).
+    Pinned here against the default-active set that
+    ``test_all_kreis_entries_default_on`` locks, so a PT entry silently dropping out of
+    the classification again fails a test instead of degrading a run's reproducibility.
+    """
+    from braunschweig.popsim.mid.seed_loading import _classify_rng_style_kreis_entries
+    from braunschweig.popsim.stage import active_kreis_entries
+
+    active_names = {c.name for c in active_kreis_entries(_FakeContext(), "mid")}
+    rng_style = _classify_rng_style_kreis_entries(active_names)
+    # economic_status is a RAW oek_status pass-through (no draw), so it must NOT appear;
+    # every other default-active entry imputes a missing/nonresponse code.
+    assert rng_style == active_names - {"economic_status"}
+    assert {"pt_ticket_group4"} <= rng_style
+    # The three-group resolution draws identically, even though the default activates the
+    # four-group refinement instead.
+    assert "pt_ticket_group" in _classify_rng_style_kreis_entries(
+        active_names | {"pt_ticket_group"})
 
 
 # --- Task 2: person-level per-Kreis total helper (partitions the PERSON total) ---

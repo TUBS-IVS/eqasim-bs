@@ -489,7 +489,7 @@ def test_loader_constraint_includes_all_three_dimensions():
 # ZGB-aggregate (``03ZGB`` / Gesamt) probability vector.  It is NOT consumed
 # by the live categorical-IPF path in
 # ``braunschweig.synthesis.population.enriched`` (ineligible persons get
-# ``fahre_nie`` / ``nein`` deterministically, never the region vector).  The
+# ``never_pt`` / ``nein`` deterministically, never the region vector).  The
 # loaders used to fabricate ``region`` as a cross-Kreis average when the
 # ``03ZGB`` row was absent; that branch was dead code (the row is always
 # present) and was removed in favour of an explicit error.  These tests pin
@@ -532,7 +532,13 @@ def test_pt_breakdown_missing_03zgb_raises_no_averaged_fallback(tmp_path, monkey
     from braunschweig.data.mid import reference_tables
     mid_dir = tmp_path / reference_tables.MID_SUBDIR
     mid_dir.mkdir(parents=True)
-    cols = list(reference_tables.PT_TICKET_CATEGORIES)
+    # The raw CSV keeps the codebook-German column headers -- the loader
+    # translates through ``P24_RAW_COLUMN_BY_CATEGORY``, so the synthetic file
+    # must use the same raw headers as the committed CSVs.
+    cols = [
+        reference_tables.P24_RAW_COLUMN_BY_CATEGORY[c]
+        for c in reference_tables.PT_TICKET_CATEGORIES
+    ]
     n = len(cols)
     # Two Kreise, NO 03ZGB Gesamt row.
     _write_breakdown_csv(
@@ -583,3 +589,35 @@ def test_seed_script_idempotent(tmp_path):
     for fname, content in first.items():
         assert (tmp_path / fname).read_bytes() == content, \
             f"{fname} changed on rerun"
+
+
+def test_pt_ticket_categories_are_english_with_raw_boundary():
+    # PT_RAW_FIXTURE_OK: this test deliberately pins the raw-CSV boundary
+    # mapping (P24_RAW_COLUMN_BY_CATEGORY), whose right-hand side is the
+    # codebook-German column headers of the committed raw CSVs (issue #329).
+    from braunschweig.data.mid import reference_tables as rt
+
+    assert rt.PT_TICKET_CATEGORIES == (
+        "single_ticket",
+        "multi_ride_ticket",
+        "deutschlandticket",
+        "weekly_monthly_no_subscription",
+        "monthly_or_annual_subscription",
+        "job_or_semester_ticket",
+        "other_ticket",
+        "never_pt",
+        "no_answer",
+    )
+    # The boundary mapping covers exactly the nine categories and maps onto the
+    # committed codebook-German CSV headers.
+    assert set(rt.P24_RAW_COLUMN_BY_CATEGORY) == set(rt.PT_TICKET_CATEGORIES)
+    assert rt.P24_RAW_COLUMN_BY_CATEGORY["never_pt"] == "fahre_nie"
+    assert rt.P24_RAW_COLUMN_BY_CATEGORY["single_ticket"] == "einzelfahrschein"
+    assert rt.P24_RAW_COLUMN_BY_CATEGORY["deutschlandticket"] == "deutschlandticket"
+    assert rt.PT_TICKET_FLATRATE == frozenset({
+        "deutschlandticket",
+        "weekly_monthly_no_subscription",
+        "monthly_or_annual_subscription",
+        "job_or_semester_ticket",
+    })
+    assert rt.PT_TICKET_WORK_STUDY_BOUND == frozenset({"job_or_semester_ticket"})

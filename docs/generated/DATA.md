@@ -71,6 +71,8 @@ variables.
 | [srv2023_license_by_sex_cohort](../registry/data/srv2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv` | -/-/o | no |
 | [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/ (raw SUF local-only)` | -/-/o | YES |
 | [srv2023_reference_tables](../registry/data/srv2023_reference_tables.yml) | control, calibration_target, validation_reference | committed | `data/braunschweig/srv/srv2023_*.csv` | o/-/r | no |
+| [srv2023_ticket_groups4_14plus_by_kreis](../registry/data/srv2023_ticket_groups4_14plus_by_kreis.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_ticket_groups4_14plus_by_kreis.csv` | -/-/o | no |
+| [target2026_pt_ticket_group4_by_kreis](../registry/data/target2026_pt_ticket_group4_by_kreis.yml) | control, calibration_target | committed (`scripts/build_blended_kreis_targets.py`) | `data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv` | o/-/o | no |
 | [urbistat_gemeinde_age](../registry/data/urbistat_gemeinde_age.yml) | derived_input | scrape (`scripts/scrape_urbistat_bs.py`) | `data/braunschweig/urbistat_age_gemeinden.csv` | o/-/- | no |
 | [verbindungen](../registry/data/verbindungen.yml) | validation_reference, calibration_target, spatial_input | auto_script (`scripts/download_verbindungen.py`) | `data/verbindungen/` | r/-/r | no |
 | [vg250_ew](../registry/data/vg250_ew.yml) | spatial_input | manual_download | `data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` | r/r/r | no |

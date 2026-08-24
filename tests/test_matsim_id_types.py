@@ -111,7 +111,7 @@ def _write_person_xml(census_person_id, census_household_id,
         "hts_id": hts_id, "hts_household_id": hts_household_id,
         "age": 40, "employed": "yes", "sex": "male",
         "high_income": False, "is_urban_resident": False,
-        "pt_subscription_type": "fahre_nie",
+        "pt_subscription_type": "never_pt",
         "household_income_eur": 3000.0,
     }
     person = tuple(defaults[f] for f in pop.PERSON_FIELDS)

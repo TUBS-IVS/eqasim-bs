@@ -27,6 +27,8 @@ from typing import Callable, Optional
 
 import pandas as pd
 
+from braunschweig.popsim.attributes import PT_TICKET_NEVER
+
 logger = logging.getLogger(__name__)
 
 # Minimum age for a German Pkw driving licence (BF17 accompanied driving).
@@ -99,9 +101,9 @@ JOINT_CHECKS: tuple = (
         name="pt_never_contradiction",
         columns=("has_pt_subscription", "pt_subscription_type"),
         predicate=lambda df: df["has_pt_subscription"].astype(bool)
-        & (df["pt_subscription_type"].astype(str) == "fahre_nie"),
+        & (df["pt_subscription_type"].astype(str) == PT_TICKET_NEVER),
         description=(
-            "has_pt_subscription=True with pt_subscription_type='fahre_nie' "
+            f"has_pt_subscription=True with pt_subscription_type='{PT_TICKET_NEVER}' "
             "(both derive from P_FKARTE; contradiction = mapper regression)"
         ),
     ),

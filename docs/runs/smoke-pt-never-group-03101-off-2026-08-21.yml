@@ -1,0 +1,103 @@
+id: smoke-pt-never-group-03101-off-2026-08-21
+date: '2026-08-21'
+repository:
+  commit: 59fc685b
+  branch: feature/i329-pt-never-group
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/smoke_kreis_control_fit.yml
+  notes: 'OFF arm of the #329 03101 control-fit A/B smoke (#282 pattern) for the
+    pt_ticket_never_group four-group Kreis control. On felix, worktree ~/wt-i329
+    (data parity with the main checkout via cp -rln), a per-arm overlay copy
+    ~/wt-i329/i329_smoke_off.yml duplicates configs/overlays/smoke_kreis_control_fit.yml
+    verbatim except for its own working_directory/output_path/output_prefix/work_dir
+    (cache_smoke_i329_off) and one additional key:
+    braunschweig.population.popsim.pt_ticket_never_group: "off". This is the ONLY
+    difference from the ON arm (docs/runs/smoke-pt-never-group-03101-on-2026-08-21.yml);
+    nothing else varies between the two runs.'
+sampling:
+  rate: 'balancing always covers the full population; the expanded result holds
+    252,252 persons (03101, all ages); the 14+ universe used by the pt_ticket_type/
+    pt_ticket_group control fit is 227,210 persons'
+  scope: Kreis 03101 (Braunschweig) only
+pipeline:
+  targets:
+  - data.census.filtered
+classification:
+- smoke
+status:
+  execution: completed
+  notes: 'Completed 2026-08-21 15:18, ~50 min wall on felix (nice -n 10, 8 workers,
+    max_cells 750), 8/8 batches, 0 errors. Stage pickle selected by this run''s own
+    logged hash: braunschweig.popsim.stage__607c6bf20a06aea7a7d64e4b38bf4e6b.p (the
+    hash differs from the ON arm''s, which confirms the flag changes the stage
+    signature).'
+environment: server
+validation:
+- metric: PopulationSim convergence and integerizer feasibility with pt_ticket_never_group
+    set to "off" (three-group pt_ticket_group control, no fourth group)
+  reference: 'the ON arm on the same Kreis and overlay
+    (docs/runs/smoke-pt-never-group-03101-on-2026-08-21.yml): 4082/4217 zones
+    OPTIMAL (96.8%)'
+  result: '8/8 batches converged, 0 error/traceback signatures in the log.
+    Integerizer: 3892/4019 zones OPTIMAL (96.8%). The OFF arm renders no group4
+    control (three-group pt_ticket_group instead of the four-group
+    pt_ticket_group4), so zone counts differ from the ON arm only because
+    per-arm batching differs, not because of infeasibility.'
+  artifact: 'felix:/home/felix/i329_smoke_off.log'
+- metric: realised pt_subscription_type shares (03101, age>=14) against the
+    committed pt_ticket_group4 blended target, aggregated to the four target
+    groups
+  reference: 'eqasim-data/data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv,
+    row 03101 (source=blend, n_effective=5618): deutschlandticket 0.1088,
+    other_flatrate 0.1488, never_pt 0.1232, occasional_ticket 0.6192. This is a
+    control FIT reference (reference_role=fit) -- the synthesis is steered toward
+    it via the ON arm''s soft Kreis control -- NOT an independent validation
+    reference.'
+  result: 'OFF-arm realised shares (%): never_pt 30.82 (delta +18.50pp vs target),
+    deutschlandticket 10.61 (-0.27pp), other_flatrate 14.96 (+0.08pp),
+    occasional_ticket 43.62 (-18.30pp). Per-type breakdown behind the aggregates:
+    never_pt 30.82, single_ticket 33.21, multi_ride_ticket 6.96, other_ticket
+    3.45, deutschlandticket 10.61, job_or_semester_ticket 7.92,
+    monthly_or_annual_subscription 5.32, weekly_monthly_no_subscription 1.72. The
+    flatrate aggregate (deutschlandticket + other_flatrate = 25.57%) is the only
+    simulation-relevant quantity, since BraunschweigPtCostModel reads only the
+    hasPtSubscription boolean; between the arms it moves only 0.11pp (ON: 25.46%).
+    SCOPE OF THAT RESULT (03101 ONLY, and this arm cannot show the effect): the
+    two target tables carry an IDENTICAL flatrate sum for 03101 (0.2576 in both
+    target2026_pt_ticket_group_by_kreis.csv and
+    target2026_pt_ticket_group4_by_kreis.csv, both source=blend), so a flatrate
+    difference between the arms is structurally impossible HERE and the 0.11pp is
+    balancer noise, not evidence. The general claim "the flag preserves the
+    flatrate level" is UNPROVEN by this smoke: at target level the flag moves
+    flatrate in four of eight Kreise (03157 -0.26pp, 03158 -0.42pp via a
+    blend-rule flip; 03154 +0.13pp, 03153 +0.13pp via the no_answer
+    renormalization). Per-Kreis table and mechanisms: ADR-0099, Consequences.'
+  artifact: 'stage pickle braunschweig.popsim.stage__607c6bf20a06aea7a7d64e4b38bf4e6b.p'
+  notes: 'The OFF arm deliberately reproduces the pre-change three-group behaviour
+    (pt_ticket_never_group="off" is the pre-#329 default). The 2026-08-20 100% run
+    (docs/runs/100pct-allfeat-i240-2026-08-20.yml) measured 30.17% realised
+    never_pt in 03101 against a 14.00% MiD reading -- the OFF arm at 30.82% here
+    reproduces that same defect at Kreis-smoke scale, which is what makes the A/B
+    against the ON arm faithful (it is not comparing a fixed baseline to an
+    unrelated broken run).'
+- metric: obligation-1 evidence -- pt_subscription_type imputation and default
+    rates (#329 obligation 1), identical mapping logic in both arms
+  reference: none (absence-of-fallback / mandatory fallback-rate check, CLAUDE.md)
+  result: 'map_pt_subscription_type valid 80.74%, structural under-14 13.08%,
+    imputed nonresponse 6.18%, default(empty-pool) 0 (0.0000%). No silent
+    default-pool fallback fired.'
+  artifact: 'felix:/home/felix/i329_smoke_off.log'
+features:
+  note: 'First execution evidence for the OFF (pre-change) arm of the
+    pt_ticket_never_group four-group Kreis control (#329). One Kreis only; a
+    smoke is not a validation. The full-region ON/OFF A/B is deliberately deferred
+    to the next 100% wave (see status notes in the ON manifest).'
+artifacts:
+- 'felix:/home/felix/i329_smoke_off.log'
+- 'felix:/home/felix/wt-i329/eqasim-data/cache_smoke_i329_off/'
+issues:
+- '#329'
+- '#282'
+source: 'OFF arm of the #329 03101 control-fit smoke, 2026-08-21'

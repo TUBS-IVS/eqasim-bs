@@ -157,28 +157,47 @@ def load_class_midpoint_eur(data_path: str) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 # Order is significant: matches the column layout in the MiD PDF.
+# Values are ENGLISH (project language rule); the raw committed CSVs keep their
+# codebook-German column headers for provenance -- P24_RAW_COLUMN_BY_CATEGORY
+# below is the single translation boundary.
 PT_TICKET_CATEGORIES: tuple[str, ...] = (
-    "einzelfahrschein",
-    "mehrfachkarte",
+    "single_ticket",
+    "multi_ride_ticket",
     "deutschlandticket",
-    "wochen_monat_ohne_abo",
-    "monat_abo_jahreskarte",
-    "jobticket_semesterticket",
-    "anderes",
-    "fahre_nie",
-    "keine_angabe",
+    "weekly_monthly_no_subscription",
+    "monthly_or_annual_subscription",
+    "job_or_semester_ticket",
+    "other_ticket",
+    "never_pt",
+    "no_answer",
 )
 
+# English category -> raw column header in the committed mid2023_P24_1*.csv files
+# (MiD codebook German, PDF order). Renaming the committed columns would break
+# eyeball-traceability to the survey instrument, so the files stay as transcribed
+# and every loader translates HERE, nowhere else.
+P24_RAW_COLUMN_BY_CATEGORY: dict[str, str] = {
+    "single_ticket": "einzelfahrschein",
+    "multi_ride_ticket": "mehrfachkarte",
+    "deutschlandticket": "deutschlandticket",
+    "weekly_monthly_no_subscription": "wochen_monat_ohne_abo",
+    "monthly_or_annual_subscription": "monat_abo_jahreskarte",
+    "job_or_semester_ticket": "jobticket_semesterticket",
+    "other_ticket": "anderes",
+    "never_pt": "fahre_nie",
+    "no_answer": "keine_angabe",
+}
+
 # Subset of categories that grant unlimited rides on local PT and therefore
-# map to the legacy boolean ``has_pt_subscription = True``.  ``Wochen-/
-# Monatskarte ohne Abonnement`` is included because MiD asks "üblicherweise
-# genutzte Fahrkarte" — an unlimited weekly/monthly pass without auto-renew
-# is functionally a subscription within its validity period.
+# map to the legacy boolean ``has_pt_subscription = True``.
+# ``weekly_monthly_no_subscription`` is included because MiD asks "üblicherweise
+# genutzte Fahrkarte" (typically used ticket) — an unlimited weekly/monthly pass
+# without auto-renew is functionally a subscription within its validity period.
 PT_TICKET_FLATRATE: frozenset[str] = frozenset({
     "deutschlandticket",
-    "wochen_monat_ohne_abo",
-    "monat_abo_jahreskarte",
-    "jobticket_semesterticket",
+    "weekly_monthly_no_subscription",
+    "monthly_or_annual_subscription",
+    "job_or_semester_ticket",
 })
 
 # Categories that are logically bound to a work or study relationship (A6).
@@ -188,13 +207,13 @@ PT_TICKET_FLATRATE: frozenset[str] = frozenset({
 #   * the Jobticket is an employer-subsidised pass (requires employment);
 #   * the Semesterticket is a student Solidarmodell pass (requires enrolment).
 # Therefore the COMBINED category is gated on ``employed OR studies``: a person
-# who is neither employed nor a student cannot hold a Job-/Semesterticket and is
+# who is neither employed nor a student cannot hold a job/semester ticket and is
 # zeroed out of that category before sampling. The combined-column limitation
 # means we cannot enforce the stricter per-ticket rule (jobticket -> employed,
 # semesterticket -> studies) separately; ``employed OR studies`` is the tightest
 # defensible constraint on the data we have. Used by
 # ``braunschweig.synthesis.population.enriched._condition_pt_subscription_probs``.
-PT_TICKET_WORK_STUDY_BOUND: frozenset[str] = frozenset({"jobticket_semesterticket"})
+PT_TICKET_WORK_STUDY_BOUND: frozenset[str] = frozenset({"job_or_semester_ticket"})
 
 # Mapping Kreis name (as it appears in the MiD PDF) → AGS-5.  ``Gesamt``
 # rows are kept under the synthetic key ``"03ZGB"``.
@@ -234,7 +253,7 @@ def load_pt_subscription_breakdown(
     ----
     ``region`` is **not** consumed by the live categorical-IPF path in
     ``braunschweig.synthesis.population.enriched``: persons with no Kreis
-    (or below the MiD basis age) are assigned ``fahre_nie``
+    (or below the MiD basis age) are assigned ``never_pt``
     deterministically, not the region vector. It is retained as a
     documented regional reference (and for tests).
     """
@@ -244,7 +263,9 @@ def load_pt_subscription_breakdown(
     region: np.ndarray | None = None
     for _, row in df.iterrows():
         ars5 = str(row["ars5"])
-        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        vec = np.asarray(
+            [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
+        )
         if vec.sum() <= 0:
             # All zeros / missing — leave as uniform fallback.
             vec = np.ones(len(cols)) / len(cols)
@@ -280,14 +301,18 @@ def load_pt_subscription_margins(
     df_sex = _read_csv(_path(data_path, "mid2023_P24_1_by_sex.csv"))
     by_sex: dict[str, np.ndarray] = {}
     for _, row in df_sex.iterrows():
-        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        vec = np.asarray(
+            [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
+        )
         s = vec.sum()
         by_sex[str(row["sex"])] = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
 
     df_age = _read_csv(_path(data_path, "mid2023_P24_1_by_age.csv"))
     by_age: list[tuple[int, int, np.ndarray]] = []
     for _, row in df_age.iterrows():
-        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        vec = np.asarray(
+            [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
+        )
         s = vec.sum()
         norm = vec / s if s > 0 else np.ones(len(cols)) / len(cols)
         by_age.append((int(row["age_lo"]), int(row["age_hi"]), norm))
@@ -320,7 +345,11 @@ def load_pt_subscription_by_car_availability(
     at ``<data_path>/braunschweig/mid/mid2023_P24_1_by_car_availability.csv`` and
     the PT IPF picks up the extra margin automatically.
 
-    Expected schema (one row per car-availability category, header order free)::
+    Expected schema (one row per car-availability category, header order free).
+    The example below shows the raw codebook-German column headers, exactly as
+    the committed CSV carries them for provenance; they correspond 1:1 to
+    ``PT_TICKET_CATEGORIES`` through ``P24_RAW_COLUMN_BY_CATEGORY`` (the single
+    translation boundary), not to the English category names themselves::
 
         car_availability,einzelfahrschein,mehrfachkarte,deutschlandticket,
         wochen_monat_ohne_abo,monat_abo_jahreskarte,jobticket_semesterticket,
@@ -329,9 +358,9 @@ def load_pt_subscription_by_car_availability(
         all,<...9 integer percentages...>
 
     where ``car_availability`` is one of ``PT_BY_CAR_AVAILABILITY_KEYS`` and the
-    remaining 9 columns are the ``PT_TICKET_CATEGORIES`` ticket-type shares for
-    that car-availability group (integer percentages; each row is normalised to
-    sum to 1, mirroring the other P24.1 loaders).
+    remaining 9 columns are the ``PT_TICKET_CATEGORIES`` ticket-type shares
+    (integer percentages; each row is normalised to sum to 1, mirroring the
+    other P24.1 loaders).
 
     Returns
     -------
@@ -357,7 +386,7 @@ def load_pt_subscription_by_car_availability(
             f"(rows keyed by {sorted(PT_BY_CAR_AVAILABILITY_KEYS)})"
         )
     cols = list(PT_TICKET_CATEGORIES)
-    missing = set(cols) - set(df.columns)
+    missing = {P24_RAW_COLUMN_BY_CATEGORY[c] for c in cols} - set(df.columns)
     if missing:
         raise RuntimeError(
             f"{path}: missing PT ticket-type columns: {sorted(missing)}"
@@ -371,7 +400,9 @@ def load_pt_subscription_by_car_availability(
                 f"{path}: unexpected car_availability key {key!r}; "
                 f"expected one of {sorted(PT_BY_CAR_AVAILABILITY_KEYS)}"
             )
-        vec = np.asarray([float(row[c]) for c in cols], dtype=float)
+        vec = np.asarray(
+            [float(row[P24_RAW_COLUMN_BY_CATEGORY[c]]) for c in cols], dtype=float
+        )
         s = vec.sum()
         by_car_availability[key] = (
             vec / s if s > 0 else np.ones(len(cols)) / len(cols)

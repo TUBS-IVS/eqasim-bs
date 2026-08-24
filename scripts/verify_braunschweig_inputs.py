@@ -1,13 +1,23 @@
-"""Verify presence of all input files required to run the Braunschweig pipeline.
+"""Verify the input files required to run the Braunschweig pipeline.
 
-Usage:
-    python scripts/verify_braunschweig_inputs.py [--data-path eqasim-data/data] [--matsim]
+Two modes over the same ``INPUTS`` catalog:
 
-Prints a checklist of expected files with status (OK/MISSING) and download
-source URLs for each missing dataset. The grouping mirrors
-``eqasim-data/DOWNLOAD_CHECKLIST_BS.md``: federal datasets (A), Lower-Saxony
-statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and MATSim-only
-inputs (D, optional).
+*File presence* (default) --
+    ``python scripts/verify_braunschweig_inputs.py [--data-path eqasim-data/data] [--matsim]``
+
+    Prints a checklist of expected files with status (OK/MISSING) and download
+    source URLs for each missing dataset. The grouping mirrors
+    ``eqasim-data/DOWNLOAD_CHECKLIST_BS.md``: federal datasets (A), Lower-Saxony
+    statistical inputs (B), preprocessed ALKIS/ATKIS/OSM (C), and MATSim-only
+    inputs (D, optional).
+
+*Source reachability* (``--check-urls``) --
+    ``python scripts/verify_braunschweig_inputs.py --check-urls``
+
+    Checks whether the documented DOWNLOAD SOURCE URLs are still reachable, and
+    touches no local data at all. This is the CI-shaped question: file presence
+    cannot be asked on a runner that has no data, but "did a portal move or rename
+    our source" can. See ``docs/codebase/notes/ci-data-availability-checks.md``.
 
 Always update this file *and* ``DOWNLOAD_CHECKLIST_BS.md`` together when
 adding or replacing pipeline inputs.
@@ -17,7 +27,7 @@ import argparse
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -256,11 +266,228 @@ def check(inp: Input, data_path: str) -> dict:
     return {"input": inp, "status": "MISSING", "size_mb": 0.0, "detail": "file missing"}
 
 
+# --------------------------------------------------------------------------- #
+# --check-urls mode: is each documented DOWNLOAD SOURCE still reachable?
+#
+# Deliberately separate from the file-presence mode above: it touches no local
+# data, so it is the only one of the two questions a CI runner can answer.
+# --------------------------------------------------------------------------- #
+
+#: Several statistical portals reject the default python-requests agent outright.
+#: A browser agent is not evasion here -- these are public download pages whose
+#: files we are documented to fetch by hand.
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+)
+_URL_TIMEOUT_SECONDS = 30
+#: Attempts per HTTP method (so 2 = one retry). Kept small: the run is a weekly
+#: cron over ~20 hosts, and a source that needs more than one retry to answer is
+#: itself worth reporting.
+_URL_ATTEMPTS = 2
+
+
+def url_from_source(source: str) -> Optional[str]:
+    """Extract the download URL from an :class:`Input`'s ``source`` field, if any.
+
+    ``source`` is documentation prose in the general case. Three shapes occur:
+    a bare URL; a URL followed by a parenthesised hint (e.g. B11's
+    ``"https://... (run python scripts/download_regiostar.py)"``); and pure prose
+    with no URL at all (e.g. B10's ``"infas mobility report - provided by ZGB"``).
+
+    The first whitespace-delimited token is therefore tested rather than the whole
+    string: taking the whole string would classify every URL-plus-hint entry as
+    prose and silently shrink the check to a third of the catalog. Trailing
+    punctuation is stripped so a URL ending a sentence or a list item
+    (``"https://x.de, alternatively ..."``) still resolves. Returns ``None`` when
+    the leading token is not an ``http(s)`` URL, which the caller reports as an
+    explicit SKIPPED line (no silent omissions). A URL that merely appears LATER in
+    the prose (``"see https://x.de"``) is deliberately not extracted: the leading
+    token is the documented convention, and scanning prose for URLs would start
+    fetching whatever an unrelated sentence happens to mention.
+    """
+    tokens = source.split()
+    leading = tokens[0].rstrip(",;.") if tokens else ""
+    if leading.startswith("http://") or leading.startswith("https://"):
+        return leading
+    return None
+
+
+def probe_url(url: str, cache: dict) -> dict:
+    """Probe ONE distinct URL for reachability, memoised in ``cache`` by URL.
+
+    Deduplication is not an optimisation: several inputs legitimately share a
+    source page (the six A3 ENTD files, both regionalstatistik tables, both
+    Pendleratlas exports, both INKAR entries), so probing per INPUT would hit one
+    host up to six times with up to four requests each and turn a single outage
+    into six identical failure lines. The catalog stays one entry per FILE (the
+    file-presence mode needs that); only the network work is shared.
+
+    A non-2xx/3xx HEAD is never sufficient to declare a source dead: several
+    statistical portals answer GET but not HEAD (or rate-limit HEAD), so the check
+    retries and then falls back to a RANGED GET (one byte) before failing.
+
+    Returns ``{"ok", "detail", "saw_http_status"}``. ``saw_http_status`` is False
+    when NO attempt ever reached HTTP -- a TLS / DNS / timeout transport failure,
+    whose remediation is not "fix the URL" (see the caller).
+    """
+    if url in cache:
+        cached = dict(cache[url])
+        cached["detail"] = f"{cached['detail']} [reused for this URL]"
+        return cached
+
+    import requests   # imported lazily so the file-presence mode needs no dependency
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": _USER_AGENT})
+    attempts: List[str] = []
+    saw_http_status = False
+
+    def _try(method: str, **kwargs) -> bool:
+        """Run one method up to ``_URL_ATTEMPTS`` times; return True on success."""
+        nonlocal saw_http_status
+        for attempt in range(1, _URL_ATTEMPTS + 1):
+            try:
+                response = session.request(
+                    method, url, timeout=_URL_TIMEOUT_SECONDS,
+                    allow_redirects=True, **kwargs
+                )
+                saw_http_status = True
+                note = f"{method} {response.status_code}"
+                attempts.append(f"{note} (attempt {attempt})")
+                if response.status_code < 400:
+                    return True
+            except Exception as exc:                      # noqa: BLE001 - any transport error
+                # Keep the message, not just the class: SSLError(ASN1: NOT_ENOUGH_DATA)
+                # and SSLError(CERTIFICATE_VERIFY_FAILED) are different diagnoses, and
+                # the class name alone hides which one happened.
+                message = " ".join(str(exc).split())[:160]
+                attempts.append(f"{method} {type(exc).__name__}: {message} (attempt {attempt})")
+        return False
+
+    ok = _try("HEAD")
+    if not ok:
+        # Ranged GET: ask for a single byte so a large file is not downloaded just
+        # to prove the URL resolves.
+        ok = _try("GET", headers={"Range": "bytes=0-0"}, stream=True)
+    session.close()
+
+    result = {"ok": ok, "detail": "; ".join(attempts), "saw_http_status": saw_http_status}
+    cache[url] = result
+    return dict(result)
+
+
+def check_url(inp: Input, cache: Optional[dict] = None) -> dict:
+    """Resolve one input's download source to a reachability status.
+
+    Statuses: ``OK`` (the source answered), ``UNREACHABLE`` (it did not), or
+    ``SKIPPED`` (there is no public URL to check -- restricted delivery, locally
+    generated file, or a prose-only source). Every skip and every retry carries
+    its reason into ``detail`` so the run's output explains itself.
+    """
+    if inp.restricted:
+        return {"input": inp, "status": "SKIPPED", "url": "", "saw_http_status": False,
+                "detail": "restricted delivery (obtain via the usage agreement, no public URL)"}
+    if inp.generated:
+        return {"input": inp, "status": "SKIPPED", "url": "", "saw_http_status": False,
+                "detail": "generated locally by the listed script (no public URL)"}
+
+    url = url_from_source(inp.source)
+    if url is None:
+        return {"input": inp, "status": "SKIPPED", "url": "", "saw_http_status": False,
+                "detail": "not-a-URL (prose source; acquire by hand per DOWNLOAD_CHECKLIST_BS.md)"}
+
+    probe = probe_url(url, cache if cache is not None else {})
+    return {
+        "input": inp, "status": "OK" if probe["ok"] else "UNREACHABLE", "url": url,
+        "detail": probe["detail"], "saw_http_status": probe["saw_http_status"],
+    }
+
+
+def run_url_check() -> int:
+    """Check every input's download source and return the process exit code.
+
+    Exit 1 when any NON-optional public source is unreachable; an ``optional=True``
+    input's failure is a warning that does not fail the run (the pipeline runs
+    without it). MATSim-only sources are included unconditionally -- unlike the
+    file-presence mode, where group D is gated behind ``--matsim`` because the data
+    may legitimately be absent, an unreachable source URL is a documentation defect
+    at any scale.
+    """
+    print("Checking reachability of the documented Braunschweig download sources.")
+    print(f"(HEAD then ranged GET, {_URL_ATTEMPTS} attempts each, "
+          f"{_URL_TIMEOUT_SECONDS}s timeout, browser User-Agent)\n")
+
+    # One shared cache so a source page used by several inputs is probed ONCE.
+    cache: dict = {}
+    results = [check_url(inp, cache) for inp in INPUTS]
+    for r in results:
+        inp = r["input"]
+        tag = {"OK": "[OK]         ", "UNREACHABLE": "[UNREACHABLE]",
+               "SKIPPED": "[SKIPPED]    "}[r["status"]]
+        optional = " (optional)" if inp.optional else ""
+        print(f"  {tag} {inp.name:<55}{optional}")
+        if r["url"]:
+            print(f"                {r['url']}")
+        print(f"                {r['detail']}")
+
+    ok = [r for r in results if r["status"] == "OK"]
+    skipped = [r for r in results if r["status"] == "SKIPPED"]
+    dead_required = [r for r in results
+                     if r["status"] == "UNREACHABLE" and not r["input"].optional]
+    dead_optional = [r for r in results
+                     if r["status"] == "UNREACHABLE" and r["input"].optional]
+    # Both counts are reported: the catalog is one entry per FILE, so "18 reachable"
+    # over 13 distinct sources would otherwise overstate how much was actually probed.
+    n_distinct = len({r["url"] for r in results if r["url"]})
+
+    print(f"\nSummary: {len(results)} inputs over {n_distinct} distinct sources -- "
+          f"{len(ok)} reachable, "
+          f"{len(dead_required)} unreachable (required), "
+          f"{len(dead_optional)} unreachable (optional, warning only), "
+          f"{len(skipped)} skipped (no public URL).")
+
+    for r in dead_optional:
+        print(f"WARNING: optional source unreachable: {r['input'].name} -> {r['url']}")
+    if dead_required:
+        print("\n=== Unreachable REQUIRED sources ===")
+        for r in dead_required:
+            inp = r["input"]
+            print(f"\n[!] {inp.name}")
+            print(f"    URL:      {r['url']}")
+            print(f"    Attempts: {r['detail']}")
+            if inp.notes:
+                print(f"    Note:     {inp.notes}")
+        print(f"\nExit 1: {len(dead_required)} required download source(s) unreachable.")
+        # A moved/renamed source and a blocked/broken transport need OPPOSITE actions,
+        # and only the exception shape distinguishes them. Prescribing "fix the URL" for
+        # a TLS-intercepting proxy sends the reader to edit a URL that is perfectly fine.
+        if any(r["saw_http_status"] for r in dead_required):
+            print("Some failures returned an HTTP status: for those, the source likely moved "
+                  "or was renamed -- fix the URL here AND in "
+                  "eqasim-data/DOWNLOAD_CHECKLIST_BS.md.")
+        if any(not r["saw_http_status"] for r in dead_required):
+            print("Some failures produced NO HTTP status at all: transport error "
+                  "(TLS/DNS/timeout), not an HTTP 4xx/5xx -- see "
+                  "docs/codebase/notes/ci-data-availability-checks.md.")
+        return 1
+    print("Exit 0: every required Braunschweig download source is reachable.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-path", default="eqasim-data/data")
     parser.add_argument("--matsim", action="store_true", help="Also check MATSim-only inputs (group D)")
+    parser.add_argument(
+        "--check-urls", action="store_true",
+        help="Instead of local file presence, check that the documented download source "
+             "URLs are still reachable (needs network, touches no data; used by CI).",
+    )
     args = parser.parse_args()
+
+    if args.check_urls:
+        return run_url_check()
 
     data_path = os.path.abspath(args.data_path)
     print(f"Checking Braunschweig inputs in: {data_path}\n")

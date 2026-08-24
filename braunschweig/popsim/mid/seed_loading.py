@@ -207,7 +207,9 @@ def _read_seed_persons(
     # ticket category can be resolved + the 99/202/206 coverage codes imputed within
     # alter_gr1, then collapsed to the three control groups -- mirroring the
     # employment_status block above exactly. Dedup-safe (alter_gr1 may already be present).
-    if "pt_ticket_group" in active_kreis_entry_names:
+    # Either resolution of the control (three-group pt_ticket_group, issue #321, or its
+    # four-group refinement pt_ticket_group4, issue #329) reads the same two raw columns.
+    if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
         for _pt_col in ("P_FKARTE", "alter_gr1"):
             if _pt_col not in person_cols:
                 person_cols.append(_pt_col)
@@ -270,7 +272,8 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     Count-style entries impute the 99 missing code (household level); the person-level
     trip_class entry imputes the 803/804 diary-nonresponse codes (within alter_gr1); the
     person-level employment_status entry imputes the P_BKAT code-9 (keine Angabe) cases
-    (also within alter_gr1). All are random processes that REQUIRE the seeded
+    (also within alter_gr1); both person-level PT entries impute the P_FKARTE coverage
+    codes (also within alter_gr1). All are random processes that REQUIRE the seeded
     kreis_seed_rng (no unseeded randomness).
 
     The caller raises the (caller-specific) ValueError when the returned set is
@@ -287,9 +290,26 @@ def _classify_rng_style_kreis_entries(active_kreis_entry_names: set[str]) -> set
     # source of truth for the purpose set): every participation control imputes the
     # 803/804 diary-nonresponse codes within alter_gr1, so all of them draw random
     # numbers and must be gated on the seeded rng.
+    # Both PT entries (the three-group pt_ticket_group, issue #321, and its four-group
+    # refinement pt_ticket_group4, issue #329) draw: _derive_pt_ticket_group_seed_column
+    # calls attributes.map_pt_subscription_type, which IMPUTES the P_FKARTE coverage codes
+    # 99 (keine Angabe), 202 (PAPI interview mode) and 206 (Erwachsener ab 14, Proxy) from
+    # the valid pool within alter_gr1 x RegioStaR7 -- 6.18% of persons in a real run. The
+    # boolean has_pt_subscription AND both group columns are all derived from that one
+    # resolved pt_subscription_type category, so this single draw feeds every PT quantity;
+    # leaving the entries out let map_pt_subscription_type's RandomState(0) default stand in
+    # for the run's seeded rng whenever only a PT control was active.
+    #
+    # FOLLOW-UP: this list is hand-maintained, so a drawing entry added to the REGISTRY does
+    # NOT update it -- deriving it from the registry (e.g. a `draws_random` field on
+    # KreisAttributeControl) would make the coverage structural instead of remembered. That
+    # same follow-up should guard the post-expansion twin of this defect:
+    # braunschweig.popsim.assembly.build_persons applies its own
+    # `rng if rng is not None else RandomState(0)` before calling
+    # attributes.map_pt_subscription_type, and no guard covers that path.
     _rng_style_entries = _count_style_entries | (
         active_kreis_entry_names & (
-            {"trip_class", "employment_status"}
+            {"trip_class", "employment_status", "pt_ticket_group", "pt_ticket_group4"}
             | {f"{p}_participation" for p in PARTICIPATION_W_ZWECK}
         )
     )
@@ -443,9 +463,14 @@ def _derive_pt_ticket_group_seed_column(
 ) -> pd.DataFrame:
     """Derive the person-level ``pt_ticket_group`` KREIS control seed column (issue #321).
 
+    Runs for EITHER resolution of the control -- the three-group ``pt_ticket_group`` entry or
+    its four-group refinement ``pt_ticket_group4`` (issue #329, which replaces it when
+    active): ``attributes.map_pt_ticket_group`` emits both columns in one pass, so no further
+    branching is needed and the two can never disagree.
+
     Two steps, in this order and only this order: resolve the ticket CATEGORY from the raw
     ``P_FKARTE`` via ``attributes.map_pt_subscription_type`` (imputing the coverage codes
-    99 / 202 / 206 within ``alter_gr1``), then collapse it onto the three control groups via
+    99 / 202 / 206 within ``alter_gr1``), then collapse it onto the control groups via
     ``attributes.map_pt_ticket_group``. Resolving the group directly from the raw code would
     be a SECOND independent draw over the same imputed codes -- the defect ADR-0087 removed,
     which would let the control steer a quantity that differs from the ``has_pt_subscription``
@@ -463,7 +488,7 @@ def _derive_pt_ticket_group_seed_column(
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
     """
-    if "pt_ticket_group" in active_kreis_entry_names:
+    if active_kreis_entry_names & {"pt_ticket_group", "pt_ticket_group4"}:
         persons = attributes.map_pt_subscription_type(persons, rng=kreis_seed_rng)
         persons = attributes.map_pt_ticket_group(persons)
     return persons

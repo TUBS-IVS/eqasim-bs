@@ -287,7 +287,7 @@ def test_writer_emits_housing_tenure_only_when_present():
         row["is_urban_resident"] = False
         row["has_pt_subscription"] = False
         row["has_license"] = True
-        row["pt_subscription_type"] = "fahre_nie"
+        row["pt_subscription_type"] = "never_pt"
         row["household_income_eur"] = 3000.0
         if "housing_tenure" in fields:
             row["housing_tenure"] = "own"
@@ -396,7 +396,7 @@ def test_writer_writes_unknown_not_literal_nan_string(capsys):
         row["is_urban_resident"] = False
         row["has_pt_subscription"] = False
         row["has_license"] = True
-        row["pt_subscription_type"] = "fahre_nie"
+        row["pt_subscription_type"] = "never_pt"
         row["household_income_eur"] = 3000.0
         row["housing_tenure"] = tenure_value
         return tuple(row[f] for f in fields)

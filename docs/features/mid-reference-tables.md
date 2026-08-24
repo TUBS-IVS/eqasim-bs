@@ -77,9 +77,14 @@ The boolean `has_pt_subscription` is then derived as
 has_pt_subscription = pt_subscription_type ∈ PT_TICKET_FLATRATE
 ```
 
-with `PT_TICKET_FLATRATE = {deutschlandticket, monat_abo_jahreskarte,
-jobticket_semesterticket, wochen_monat_ohne_abo}` — i.e. all ticket types
-that grant unlimited rides on local PT during their validity. The set is
+with `PT_TICKET_FLATRATE = {deutschlandticket,
+monthly_or_annual_subscription, job_or_semester_ticket,
+weekly_monthly_no_subscription}` — i.e. all ticket types that grant unlimited
+rides on local PT during their validity. Since issue #329 the taxonomy is
+English; the committed reference CSVs deliberately keep their codebook-German
+column headers as the traceability link to the MiD instrument, translated once
+at the loader boundary by `P24_RAW_COLUMN_BY_CATEGORY` in the same module. The
+set is
 defined in `braunschweig.data.mid.reference_tables` and re-used by the
 MATSim person-attribute writer (`ptSubscriptionType` is written alongside
 `hasPtSubscription`). The flatrate sum per Kreis matches the legacy
@@ -100,7 +105,7 @@ After convergence (200 iterations) every person in cell `(k, s, a)` is
 assigned `P[k,s,a,:] = X[k,s,a,:] / Σ_c X[k,s,a,:]` and sampled
 categorically.  Persons below `braunschweig.minimum_age.pt_subscription`
 (default 0; effective floor is the MiD basis age 14) are deterministically
-assigned `fahre_nie`.  Convergence diagnostics (max |Δ| per margin) are
+assigned `never_pt`.  Convergence diagnostics (max |Δ| per margin) are
 printed by the `braunschweig.synthesis.population.enriched` stage — note
 that MiD's three margins are independently rounded to integer percent and
 therefore not internally consistent, so raking finds a least-squares
