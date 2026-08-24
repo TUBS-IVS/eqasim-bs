@@ -1,23 +1,39 @@
-name: Tests if open data is properly accessible
+name: Braunschweig input sources are still reachable
+
+# Weekly reachability check of the DOWNLOAD SOURCE URLs documented in
+# scripts/verify_braunschweig_inputs.py (and mirrored in
+# eqasim-data/DOWNLOAD_CHECKLIST_BS.md). It answers the only data question a
+# runner can answer: did a statistical portal move, rename or retire a source we
+# depend on. Local file presence -- the script's default mode -- cannot be checked
+# here because CI has no data.
+#
+# This workflow previously ran scripts/verify_data.py, the upstream
+# Ile-de-France verifier of 36 FRENCH open-data URLs with no Braunschweig
+# relevance. That script is upstream code and stays in the repository untouched;
+# only its SCHEDULING was the problem. See
+# docs/codebase/notes/ci-data-availability-checks.md.
 
 on:
   schedule:
   - cron: "0 10 * * 0" # every sunday 10am
+  workflow_dispatch:
 
 jobs:
-  build:
+  check-source-urls:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
-        activate-environment: "ile-de-france"
-        environment-file: environment.yml
         python-version: "3.10"
-        channels: conda-forge
 
-    - name: Verify availability of open data
-      shell: bash -el {0}
-      run: |
-        python scripts/verify_data.py
+    # The check needs requests and nothing else: verify_braunschweig_inputs.py
+    # imports only argparse / os / sys / dataclasses / typing at module level and
+    # requests lazily inside the --check-urls path. No conda environment, no
+    # geospatial stack.
+    - name: Install the only dependency the check needs
+      run: pip install requests
+
+    - name: Verify the documented Braunschweig download sources are reachable
+      run: python scripts/verify_braunschweig_inputs.py --check-urls

@@ -16,7 +16,7 @@ def _base_persons(**overrides):
         "household_income": ["3000_3600"], "high_income": [False],
         "car_availability": ["all"], "bicycle_availability": ["all"],
         "has_license": [True], "has_pt_subscription": [False],
-        "pt_subscription_type": ["fahre_nie"], "household_income_eur": [3300.0],
+        "pt_subscription_type": ["never_pt"], "household_income_eur": [3300.0],
         "is_urban_resident": [True], "age_range": ["higher_education"],
     }
     data.update(overrides)

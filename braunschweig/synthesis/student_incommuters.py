@@ -70,7 +70,7 @@ _STUDENT_PERSON_DEFAULTS = dict(
     socioprofessional_class=8,  # SPC_STUDENT, braunschweig.ipf.attributed
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
-    has_pt_subscription=False, pt_subscription_type="fahre_nie",
+    has_pt_subscription=False, pt_subscription_type="never_pt",
     high_income=False,
     is_bs_resident=False, is_urban_resident=False, age_range="higher_education",
     # See braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS for why
@@ -279,6 +279,16 @@ def _build_student_persons(ids, donors, modes):
     })
     for key, value in _STUDENT_PERSON_DEFAULTS.items():
         persons[key] = value
+    # The literal 'never_pt' below is braunschweig.popsim.attributes.PT_TICKET_NEVER,
+    # spelled out rather than imported: braunschweig.synthesis must not import from
+    # braunschweig.popsim (the one-way layering that
+    # braunschweig.popsim.sources.entd_attributes relies on to import safely FROM
+    # braunschweig.synthesis without a cycle). If PT_TICKET_NEVER's value ever changes,
+    # this literal must be updated to match.
+    _log.info(
+        "[student_incommuters] pt_subscription_type: %d in-commuter persons hard-coded to "
+        "'never_pt' (control-external source; the 14+ resident Kreis control does not "
+        "see them -- see ADR-0099 for the rationale, issue #329)", len(persons))
     return persons
 
 

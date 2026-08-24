@@ -107,3 +107,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0096](../decisions/ADR-0096-carla-sample-as-the-default-secondary-chain-solver.md) | 2026-08-21 | active | `carla_sample` as the default secondary chain solver |
 | [ADR-0097](../decisions/ADR-0097-chainsolver-shards-survive-a-killed-worker.md) | 2026-08-21 | active | Chainsolver shards run through an executor that reports a killed worker, and lost shards are retried |
 | [ADR-0098](../decisions/ADR-0098-the-java-pom-owns-the-jar-version-not-a-python-constant.md) | 2026-08-21 | active | The java project's pom owns the jar version; the pipeline reads it instead of pinning a copy |
+| [ADR-0099](../decisions/ADR-0099-never-pt-group-in-the-pt-ticket-kreis-control.md) | 2026-08-23 | active | `never_pt` becomes a fourth group in the PT-ticket per-Kreis control, and the ticket taxonomy turns English behind one raw-CSV boundary (issue #329) |

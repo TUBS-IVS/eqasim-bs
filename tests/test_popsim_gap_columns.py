@@ -238,7 +238,7 @@ def test_pt_subscription_type_is_valid_category():
 
 
 def test_pt_subscription_type_primary_codes_map_correctly():
-    """P_FKARTE 3 -> deutschlandticket; P_FKARTE 8 -> fahre_nie; P_FKARTE 1 -> einzelfahrschein.
+    """P_FKARTE 3 -> deutschlandticket; P_FKARTE 8 -> never_pt; P_FKARTE 1 -> single_ticket.
 
     source_household_id is now an integer surrogate: H_ID=1 -> 1, H_ID=2 -> 2.
     """
@@ -252,16 +252,16 @@ def test_pt_subscription_type_primary_codes_map_correctly():
         f"P_FKARTE=3 should map to deutschlandticket, got {row_dt['pt_subscription_type']}"
     )
 
-    # person P_ID=2 in H_ID=1 (surrogate 1), age=10: P_FKARTE=8 -> fahre_nie
+    # person P_ID=2 in H_ID=1 (surrogate 1), age=10: P_FKARTE=8 -> never_pt
     row_nie = persons[(persons["source_household_id"] == 1) & (persons["age"] == 10)].iloc[0]
-    assert row_nie["pt_subscription_type"] == "fahre_nie", (
-        f"P_FKARTE=8 should map to fahre_nie, got {row_nie['pt_subscription_type']}"
+    assert row_nie["pt_subscription_type"] == "never_pt", (
+        f"P_FKARTE=8 should map to never_pt, got {row_nie['pt_subscription_type']}"
     )
 
-    # person P_ID=1 in H_ID=2 (surrogate 2), age=25: P_FKARTE=1 -> einzelfahrschein
+    # person P_ID=1 in H_ID=2 (surrogate 2), age=25: P_FKARTE=1 -> single_ticket
     row_single = persons[(persons["source_household_id"] == 2) & (persons["age"] == 25)].iloc[0]
-    assert row_single["pt_subscription_type"] == "einzelfahrschein", (
-        f"P_FKARTE=1 should map to einzelfahrschein, got {row_single['pt_subscription_type']}"
+    assert row_single["pt_subscription_type"] == "single_ticket", (
+        f"P_FKARTE=1 should map to single_ticket, got {row_single['pt_subscription_type']}"
     )
 
 

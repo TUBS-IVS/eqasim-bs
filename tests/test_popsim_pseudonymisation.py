@@ -393,7 +393,7 @@ def _minimal_entd_mapper(source_id_100, source_id_200):
         )
         out["household_size"] = 1
         out["is_urban_resident"] = True
-        out["pt_subscription_type"] = pd.Series(["fahre_nie"] * len(out)).astype("string")
+        out["pt_subscription_type"] = pd.Series(["never_pt"] * len(out)).astype("string")
         out["socioprofessional_class"] = 3
         out["weight"] = 1.0
         # Schema requires these but schema.validate_person_columns checks columns only.

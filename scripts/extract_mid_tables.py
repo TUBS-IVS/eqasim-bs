@@ -26,6 +26,12 @@ Rows inside a section follow ``<label> <n_weighted> <n_unweighted> <pct ...>``
 with integer percentages; ``*`` marks cells suppressed for fallzahl < 30.
 The trailing ``Mittel`` column (present in P13, P17.1) carries a decimal
 separated by ``,`` which we normalise to ``.``.
+
+The P24_1 ``TableSpec`` column list below is derived from
+``braunschweig.data.mid.reference_tables.P24_RAW_COLUMN_BY_CATEGORY`` (issue
+#329) instead of being re-spelled by hand, so this extractor cannot drift from
+the raw-CSV boundary it (re)produces (``mid2023_P24_1*.csv`` keep the
+codebook-German column headers for provenance).
 """
 
 from __future__ import annotations
@@ -39,8 +45,11 @@ from pathlib import Path
 import pandas as pd
 import pdfplumber
 
-
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from braunschweig.data.mid.reference_tables import (  # noqa: E402
+    P24_RAW_COLUMN_BY_CATEGORY, PT_TICKET_CATEGORIES)
+
 PDF = REPO / "eqasim-data" / "data" / "braunschweig" / \
     "Ergebnistabellen_MiD2023_Version2_infas_7555_Großraum_Braunschweig.pdf"
 OUT_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
@@ -115,10 +124,7 @@ SPECS = [
     # produces additional ``_by_sex.csv`` / ``_by_age.csv`` consumed by the
     # categorical PT-ticket IPF in braunschweig.synthesis.population.enriched.
     TableSpec("P24_1", 105, 106,
-              ["einzelfahrschein", "mehrfachkarte",
-               "deutschlandticket", "wochen_monat_ohne_abo",
-               "monat_abo_jahreskarte", "jobticket_semesterticket",
-               "anderes", "fahre_nie", "keine_angabe"],
+              [P24_RAW_COLUMN_BY_CATEGORY[c] for c in PT_TICKET_CATEGORIES],
               extract_margins=True),
     # P36.1 Mobilität am Stichtag (Mobilitätsquote, Basis = alle Personen).
     TableSpec("P36_1", 195, 196,

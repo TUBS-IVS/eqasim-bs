@@ -280,7 +280,7 @@ def _build_simple_ipf_open_persons():
         "high_income":            [False, False, True],
         "household_size":         [2, 2, 1],
         "is_urban_resident":      [True, True, False],
-        "pt_subscription_type":   ["deutschlandticket", "fahre_nie", "fahre_nie"],
+        "pt_subscription_type":   ["deutschlandticket", "never_pt", "never_pt"],
         "socioprofessional_class":[6, 8, 7],
         # Optional MiD-rich extras (present in the enriched stage output)
         "household_income_eur":   [1750.0, 1750.0, 8000.0],

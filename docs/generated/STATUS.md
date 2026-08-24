@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 75 | stages: 115 | datasets: 57 | ADRs: 98 | run manifests: 26
+- Features: 75 | stages: 115 | datasets: 59 | ADRs: 99 | run manifests: 28
 
 ## Population synthesis
 
@@ -45,7 +45,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
 | [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
-| [PT-subscription per-Kreis control (three groups, MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |
+| [PT-subscription per-Kreis control (four groups by default, three under the flag; MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |
 | [Reactivated attrs (couple/studies/SPC)](../registry/features/reactivated_person_attributes.yml) | active | off | -/-/A | unvalidated |  |
 | [SrV participation controls (#224)](../registry/features/srv_participation_controls.yml) | active | ON | A/i/- | unvalidated | [#224](https://github.com/TUBS-IVS/eqasim-bs/issues/224) |
 | [Tier-3 Kreis controls](../registry/features/tier3_kreis_controls.yml) | active | ON | A/i/- | unvalidated |  |

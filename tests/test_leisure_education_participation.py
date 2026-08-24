@@ -146,9 +146,11 @@ def test_active_kreis_entries_includes_both_new_controls_by_default():
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     names = {c.name for c in active}
+    # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
+    # three-group entry while pt_ticket_never_group is on (the default, issue #329).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group",
+        "trip_class", "employment_status", "pt_ticket_group4",
         "work_participation", "leisure_participation", "education_participation",
         "escort_participation",
     }

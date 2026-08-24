@@ -94,7 +94,14 @@ def test_load_kreis_share_table_keeps_leading_zero(tmp_path):
 
 
 def test_load_pt_subscription_breakdown_keeps_leading_zero(tmp_path):
-    cols = ",".join(mid_reference_tables.PT_TICKET_CATEGORIES)
+    # PT_RAW_FIXTURE_OK: the loader reads the raw codebook-German column headers
+    # (P24_RAW_COLUMN_BY_CATEGORY), the single boundary translation to the
+    # PT_TICKET_CATEGORIES English names (issue #329) -- this fixture must match
+    # that raw schema, not the English category names.
+    cols = ",".join(
+        mid_reference_tables.P24_RAW_COLUMN_BY_CATEGORY[c]
+        for c in mid_reference_tables.PT_TICKET_CATEGORIES
+    )
     n = len(mid_reference_tables.PT_TICKET_CATEGORIES)
     row = ",".join(["1.0"] * n)
     (_mid_dir(tmp_path) / "mid2023_P24_1.csv").write_text(

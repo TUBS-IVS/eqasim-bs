@@ -269,7 +269,7 @@ def map_person_attributes(
 
     # --- pt_subscription_type (default: no ticket-type field in ENTD) ---
     # Subscribers get a representative flatrate ticket type;
-    # non-subscribers get "fahre_nie" (structurally absent from PT).
+    # non-subscribers get "never_pt" (structurally absent from PT).
     # Use pd.Series then cast to pandas StringDtype (np.astype("string")
     # is not supported in older NumPy versions).
     out["pt_subscription_type"] = pd.Series(

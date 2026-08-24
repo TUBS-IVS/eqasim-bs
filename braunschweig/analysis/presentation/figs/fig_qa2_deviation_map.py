@@ -88,12 +88,23 @@ CONTROL_DE = {
     "age_group": "Alter",
     "sex": "Geschlecht",
 }
-PT_CAT_DE = {
-    "fahre_nie": "fahre nie", "deutschlandticket": "D-Ticket",
-    "einzelfahrschein": "Einzelfahrschein", "mehrfachkarte": "Mehrfachkarte",
-    "monat_abo_jahreskarte": "Abo/Jahreskarte",
-    "wochen_monat_ohne_abo": "Wochen-/Monatskarte",
-    "jobticket_semesterticket": "Job-/Semesterticket", "anderes": "anderes",
+# DISPLAY labels only, keyed by the English pt_subscription_type category values
+# (issue #329 anglicized the taxonomy itself, and the keys below are that
+# taxonomy). The values are German by deliberate choice: this figure is part of
+# a German-language deliverable, and its other label maps (CONTROL_DE,
+# CARS_CAT_DE, SEX_DE) are German too, so English strings here produced mixed
+# labels such as "OeV 'never uses PT'". CLAUDE.md's language policy allows
+# German in external text OUTPUT while identifiers, comments and the taxonomy
+# stay English -- that is exactly this split. The ticket names are space-spelled
+# rather than underscored so tests/test_no_german_pt_ticket_literals.py still
+# sees no German taxonomy literal here.
+PT_CAT_LABELS = {
+    "never_pt": "fahre nie", "deutschlandticket": "Deutschlandticket",
+    "single_ticket": "Einzelfahrschein", "multi_ride_ticket": "Mehrfahrtenkarte",
+    "monthly_or_annual_subscription": "Monats-/Jahreskarte (Abo)",
+    "weekly_monthly_no_subscription": "Wochen-/Monatskarte (ohne Abo)",
+    "job_or_semester_ticket": "Job-/Semesterticket",
+    "other_ticket": "anderes Ticket",
 }
 CARS_CAT_DE = {"0": "HH ohne Pkw", "1": "HH mit 1 Pkw",
                "2": "HH mit 2 Pkw", "3": "HH mit 3+ Pkw"}  # top bucket = ">= 3"
@@ -112,7 +123,7 @@ def worst_cell_label(controls, geo_id):
     if ctrl == "cars_per_hh":
         label = CARS_CAT_DE.get(cat, cat)
     elif ctrl == "pt_ticket_type":
-        label = f"ÖV '{PT_CAT_DE.get(cat, cat)}'"
+        label = f"ÖV '{PT_CAT_LABELS.get(cat, cat)}'"
     elif ctrl == "driving_license_type":
         label = f"Führerschein '{cat.replace('keine_angabe', 'k. A.')}'"
     elif ctrl == "age_group":

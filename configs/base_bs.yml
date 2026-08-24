@@ -142,6 +142,14 @@ config:
   # measured at +3.06pp region / +4.18pp Braunschweig. 'on' QUOTED -- YAML 1.1 parses
   # bare on->True, but the stage compares against the string "on".
   braunschweig.population.popsim.pt_ticket_kreis_control: "on"
+  # never_pt group split (issue #329): "on" replaces the three-group PT control
+  # with the four-group variant (deutschlandticket / other_flatrate / never_pt /
+  # occasional_ticket), pinning the never-PT share per Kreis so the balancer
+  # cannot concentrate never-PT persons in the city (+16.17pp Braunschweig in the
+  # 2026-08-20 100% run). Reference-fidelity fix; no simulation channel reads the
+  # split (ADR-0089 stands). 'on' QUOTED -- YAML 1.1 parses bare on->True, but the
+  # stage compares against the string "on".
+  braunschweig.population.popsim.pt_ticket_never_group: "on"
 
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so

@@ -114,3 +114,9 @@
   toggle OFF. Hitting a committed margin is control FIT, not behavioural validation. The
   measurement will also be confounded with ADR-0088 (fine teen age bands) unless the A/B varies
   one flag at a time, since the flatrate share is strongly age-graded.
+
+## Amendments
+
+- 2026-08-23 (ADR-0099): `never_pt` is split out of `not_flatrate` as a fourth control group. The
+  "the split among the non-flatrate types has NO simulation effect" statement above **STANDS** and
+  is the reason the split is filed as a reference-fidelity fix, not a results lever (issue #329).
