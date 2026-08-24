@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 75 | stages: 115 | datasets: 59 | ADRs: 98 | run manifests: 28
+- Features: 75 | stages: 115 | datasets: 59 | ADRs: 99 | run manifests: 28
 
 ## Population synthesis
 
@@ -178,7 +178,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
-| [Own eqasim-java-bs fork (2.3.0, matsim.output e2e-green 2026-07-23 at 2.2.0)](../registry/features/eqasim_java_fork.yml) | active | ON | A/A/A | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) |  |
+| [Own eqasim-java-bs fork (2.3.1, matsim.output e2e-green 2026-07-23 at 2.2.0)](../registry/features/eqasim_java_fork.yml) | active | ON | A/A/A | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) |  |
 | [CPU-accumulation hang watchdog for the pipeline's Java subprocesses](../registry/features/java_hang_watchdog.yml) | active | ON | A/A/A | unvalidated | [#330](https://github.com/TUBS-IVS/eqasim-bs/issues/330) |
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |

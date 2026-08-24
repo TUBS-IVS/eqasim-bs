@@ -1,5 +1,5 @@
 feature: eqasim_java_fork
-title: Own eqasim-java-bs fork (2.3.0, matsim.output e2e-green 2026-07-23 at 2.2.0)
+title: Own eqasim-java-bs fork (2.3.1, matsim.output e2e-green 2026-07-23 at 2.2.0)
 area: infrastructure
 description: The MATSim/Java side builds from the project's own editable eqasim-java-bs fork (eqasim_source_path)
   rather than a released upstream jar (ADR-0038).
@@ -49,6 +49,19 @@ validation:
     module version drives the jar name (braunschweig-<version>.jar); nothing about the built
     code changed with the bump itself. The e2e proof above predates the release and does not
     cover the commits added to the fork since 2026-07-23.
+    v2.3.1 (2026-08-21, fork PR #24) is the same shape: a pure version bump labelling the tree
+    that already carried the SimWrapper JVM-exit fix (fork PR #23, issue #330). It renamed the
+    jar to braunschweig-2.3.1.jar, so DEFAULT_EQASIM_VERSION moved with it -- otherwise the
+    stage aborts with "braunschweig JAR not built from eqasim_source_path". A release is NOT
+    what delivers a java fix: the pipeline builds from eqasim_source_path and validate() keys
+    the cache on the newest source mtime, so a plain pull already delivers and rebuilds.
+    ADR-0098 removed the duplication that made this a recurring break: the version is now READ
+    from the built tree's braunschweig/pom.xml (eqasim_version defaults to None = derive, an
+    explicit value still overrides), so no fork release can rename the jar out from under the
+    stage again. Verified on the run
+    server 2026-08-21 with the pipeline's own maven command: braunschweig-2.3.1.jar, 184.5 MB,
+    5016 org/matsim classes (the shaded fat jar, not the 0.1 MB original-*.jar), and the exit
+    guard present twice in the compiled RunSimulation.
 assessment:
   status: pending
   by: null
