@@ -31,12 +31,25 @@ over the whole ``hang_timeout_s`` window is doing nothing and is declared hung.
 Even a single-threaded, I/O-bound writer accumulates far more than a second of
 CPU time over a 15-minute window, so the discrimination is wide.
 
+Why the whole process TREE
+--------------------------
+The CPU signal is read for the process AND all its descendants (issue #350). A
+process that forks helpers and then waits on them accumulates no CPU time itself,
+so a per-process reading would call a busy tree idle -- the same class of error
+that had a healthy ``secondary_chainsolvers`` stage killed as "deadlocked" on
+2026-08-24. The tree reader lives in
+``braunschweig.monitoring.process_tree.read_tree_cpu_seconds`` and is shared with
+the run resource recorder, so there is exactly ONE definition of "is this tree
+doing work". For a childless process (the ordinary JVM case) the tree total equals
+the process' own, so this widening cannot change an existing verdict.
+
 Fallback transparency (project rule): when the CPU signal cannot be read at all
-(``psutil`` missing, no permission, platform without support), the watchdog does
-NOT fall back to a wall-clock kill. It degrades to inert and says so once, so an
-unprotected run is visible in the log instead of silently pretending to be
-guarded.
+(no ``/proc`` and no ``psutil``, no permission, platform without support), the
+watchdog does NOT fall back to a wall-clock kill. It degrades to inert and says so
+once, so an unprotected run is visible in the log instead of silently pretending
+to be guarded.
 """
+import logging
 import subprocess as sp
 import time
 
@@ -68,27 +81,30 @@ STATE_IDLE = "idle"
 STATE_HUNG = "hung"
 
 
-def read_process_cpu_seconds(pid):
-    """Total CPU time (user + system, in seconds) consumed by ``pid`` so far.
+def read_tree_cpu_seconds(pid):
+    """Total CPU time (user + system, in seconds) of ``pid`` AND its descendants.
 
-    Returns ``None`` when the value cannot be determined -- an unreadable
-    counter, a missing ``psutil``, or a process that has already exited. Callers
-    must treat ``None`` as "no signal" and never as "no progress"; see the
-    fallback-transparency note in the module docstring.
+    Delegates to ``braunschweig.monitoring.process_tree``, which is the single
+    definition of this measurement in the repository (issue #350) and which itself
+    reads ``/proc`` where available and ``psutil`` otherwise. The import is done
+    here rather than at module level to keep the dependency direction of the
+    packages intact: ``braunschweig`` imports ``matsim``, not the other way round.
+
+    Returns ``None`` when the value cannot be determined -- an unreadable counter,
+    a process that has already exited, or the ``braunschweig`` package not being
+    importable next to this one. Callers must treat ``None`` as "no signal" and
+    never as "no progress"; see the fallback-transparency note in the module
+    docstring.
     """
     try:
-        import psutil
+        from braunschweig.monitoring.process_tree import read_tree_cpu_seconds as reader
     except ImportError:
+        logging.getLogger(__name__).warning(
+            "[watchdog] braunschweig.monitoring.process_tree is not importable; the "
+            "hang watchdog has no CPU signal and stays inert for this call.")
         return None
 
-    try:
-        cpu_times = psutil.Process(pid).cpu_times()
-    except Exception:
-        # psutil raises NoSuchProcess / AccessDenied / ZombieProcess here; none of
-        # them is a hang signal, so all of them mean "unmeasurable".
-        return None
-
-    return float(cpu_times.user) + float(cpu_times.system)
+    return reader(pid)
 
 
 class HangWatchdog:
@@ -108,7 +124,7 @@ class HangWatchdog:
 
     def __init__(self, pid, hang_timeout_s = DEFAULT_HANG_TIMEOUT_S,
                  min_cpu_seconds = DEFAULT_HANG_MIN_CPU_SECONDS,
-                 cpu_seconds_reader = read_process_cpu_seconds,
+                 cpu_seconds_reader = read_tree_cpu_seconds,
                  monotonic = time.monotonic):
         self.pid = pid
         self.hang_timeout_s = float(hang_timeout_s)
@@ -169,7 +185,7 @@ def wait_with_hang_watchdog(process, hang_timeout_s = DEFAULT_HANG_TIMEOUT_S,
                             min_cpu_seconds = DEFAULT_HANG_MIN_CPU_SECONDS,
                             sample_interval_s = DEFAULT_SAMPLE_INTERVAL_S,
                             terminate_grace_s = DEFAULT_TERMINATE_GRACE_S,
-                            cpu_seconds_reader = read_process_cpu_seconds,
+                            cpu_seconds_reader = read_tree_cpu_seconds,
                             monotonic = time.monotonic, log = print):
     """Wait for ``process``, terminating it if it stops accumulating CPU time.
 
