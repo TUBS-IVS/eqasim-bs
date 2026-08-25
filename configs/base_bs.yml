@@ -211,6 +211,23 @@ config:
   mode_choice: false
   matching_attributes: ["sex", "age_class", "employed", "has_license", "household_size_class", "urban_class"]
 
+  # --- Run resource recorder (issue #350) ---------------------------------
+  # scripts/run_synpp.py samples this run's whole process tree every
+  # monitoring_interval_seconds and appends one row per sample to
+  # <working_directory>/monitoring/resource_series_<timestamp>.jsonl, plus a summary
+  # (peak per-worker RSS, wall/CPU per stage, stalls) when the run ends -- also when
+  # it fails. This exists because both incidents of the 2026-08-23/24 run were
+  # measurement failures, not pipeline failures: a healthy stage was killed on a
+  # six-process `ps` sample, and the peak worker memory needed to tune num_workers
+  # (issue #281) was gone with the processes. Read-only /proc reads; the cost is one
+  # sample per interval. monitoring_include_process_rows false keeps aggregates only
+  # (smaller series); monitoring_kernel_events false skips the dmesg probe for
+  # OOM-kill / segfault counts.
+  monitoring_enabled: true
+  monitoring_interval_seconds: 30
+  monitoring_include_process_rows: true
+  monitoring_kernel_events: true
+
   # --- MATSim runtime (64-core box) ---
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5

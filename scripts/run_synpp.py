@@ -29,6 +29,7 @@ import synpp
 import yaml
 
 from braunschweig import cache_share
+from braunschweig.monitoring import recorder
 
 # Conservative default set of stages eligible for shared-cache priming: the freight
 # chain is sampling-independent, expensive (~3 h Java routing), and has a
@@ -137,15 +138,26 @@ def main(argv=None) -> int:
     # even a killed run is traceable (meta_output.py only writes on success).
     log_and_write_run_provenance(config_path)
     prime_from_config(config_path)
-    # synpp 1.6.2 (pinned) requires run_from_yaml(path, working_directory, run, overrides)
-    # -- four positional arguments, not one (issue #220). Passing None/[]/{} makes
-    # Synpp.build_from_yml read working_directory and run from the YAML, reproducing the
-    # old single-argument behaviour without overriding any config.
-    synpp.run_from_yaml(config_path, None, [], {})
-    # Export the shareable stage caches into the shared store ONLY after a successful
-    # run (run_from_yaml raises on failure, so a failed/partial run never seeds the
-    # store). Gated by cache_share_enabled + cache_share_export inside the helper.
-    export_to_store_from_config(config_path)
+    # Record this run's own resource time series next to its outputs (issue #350).
+    # The recorder samples the tree of THIS process, so every forked PopulationSim
+    # worker and chainsolver shard is included, and it writes its summary from a
+    # finally -- a run that dies keeps its measurement, which is the run whose
+    # resource record is wanted. Default ON; `monitoring_enabled: false` makes it a
+    # no-op. Kept around the cache export as well, so the disk footprint the export
+    # causes is part of the record.
+    with recorder.record_from_config(config_path, log_path=log_path,
+                                     root_pid=os.getpid()):
+        # synpp 1.6.2 (pinned) requires run_from_yaml(path, working_directory, run,
+        # overrides) -- four positional arguments, not one (issue #220). Passing
+        # None/[]/{} makes Synpp.build_from_yml read working_directory and run from the
+        # YAML, reproducing the old single-argument behaviour without overriding any
+        # config.
+        synpp.run_from_yaml(config_path, None, [], {})
+        # Export the shareable stage caches into the shared store ONLY after a
+        # successful run (run_from_yaml raises on failure, so a failed/partial run
+        # never seeds the store). Gated by cache_share_enabled + cache_share_export
+        # inside the helper.
+        export_to_store_from_config(config_path)
     return 0
 
 

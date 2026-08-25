@@ -39,6 +39,17 @@ from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 
 DATA_PATH = str(DATA)
 
+# Some assertions here are frozen against artifacts that were generated on a
+# data-carrying machine, i.e. with the local-only (gitignored) HSN/TSN lookup in
+# place. Without that file the fleet sampler takes a different path and the frozen
+# comparison is not meaningful -- it would compare against a distribution the code
+# no longer produces. Those tests therefore SKIP instead of reporting a false
+# regression; same guard as tests/test_run_fleet_stage.py.
+_needs_hsn_tsn_lookup = pytest.mark.skipif(
+    not (DATA / "braunschweig" / "kba" / "hsn_tsn_lookup.csv").exists(),
+    reason="local-only raw data absent: braunschweig/kba/hsn_tsn_lookup.csv",
+)
+
 
 def _load_golden(name: str) -> pd.DataFrame:
     path = FIXTURES / name
@@ -733,6 +744,7 @@ def test_income_age_gradient_in_output():
     )
 
 
+@_needs_hsn_tsn_lookup
 def test_age_income_off_unchanged():
     """age_income_coupling=False must produce age columns byte-identical to the
     committed golden fixture (``tests/fixtures/feature_b_age_off_golden.parquet``).
@@ -769,6 +781,11 @@ def test_age_income_off_unchanged():
         "
 
     The golden is committed to tests/fixtures/feature_b_age_off_golden.parquet.
+
+    Regenerate ONLY on a machine that has the local-only HSN/TSN lookup in place.
+    Without it the sampler takes a different path, so a golden written there would
+    freeze the no-lookup distribution as the reference -- pinning a fallback as
+    truth, which is exactly what this project forbids. Hence the skip marker.
 
     Refresh history: regenerated 2026-06-18 after the brand-feasibility merge
     (0d43aa5) and again 2026-07-16 after commit 0bcba37 (issue #92, reviewed)
