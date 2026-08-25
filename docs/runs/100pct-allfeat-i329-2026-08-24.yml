@@ -47,7 +47,7 @@ classification:
 - production_candidate
 - validation
 status:
-  execution: complete
+  execution: completed
   notes: 'Driver marker complete-soft-failures-0. Phase timings (from the driver''s status file):
     A started 2026-08-23 21:57, relaunched 2026-08-24 07:43 after a controller misdiagnosis (see
     the run-incident entry below), A exit 0 at 09:37:33; B exit 0 at 15:53:44; c_cordon exit 0 at
