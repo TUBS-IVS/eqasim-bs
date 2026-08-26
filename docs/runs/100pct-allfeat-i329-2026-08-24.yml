@@ -1,0 +1,344 @@
+id: 100pct-allfeat-i329-2026-08-24
+date: '2026-08-24'
+repository:
+  commit: b7eed9a5
+  branch: feature/i329-pt-never-group
+  notes: 'Launched from the feature branch, NOT main: PR #349 (this branch, closes #329) did
+    not merge into main until 2026-08-24 12:55, hours after phase A had already started, so the
+    run predates the merge and is recorded against the branch tip it actually ran (b7eed9a5).
+    PR #349 merged as a38ceb26. eqasim-java-bs pinned to 2.3.1 via the overlay escape hatch
+    `eqasim_version` (this checkout still carries DEFAULT_EQASIM_VERSION 2.3.0; PR #348, the
+    fix that reads the version from the pom, was open+mergeable but deliberately not merged by
+    this session -- issue #347). JDK 25 at the configured path. eqasim-java-bs PR #23 (System.exit
+    after controller.run(), closing the #330 JVM-exit hang) is in this tree.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/i329_phase_a.yml'
+  - 'felix:~/i329_phase_b.yml'
+  - 'felix:~/i329_phase_c_cordon.yml'
+  - 'felix:~/i329_phase_c_verbind.yml'
+  - 'felix:~/i329_phase_c_analysis.yml'
+  - 'felix:~/i329_phase_c_simwrapper.yml'
+  notes: 'Six overlays generated from one source (~/gen_i329_run_overlays.py), each a copy of
+    configs/overlays/test_100pct.yml with its own output_path/cache directory/popsim work_dir
+    (cache_bs_100pct_i329 / output_bs_100pct_i329 / popsim_work_i329, not the i240 run''s
+    directories) plus an explicit eqasim_version: "2.3.1" pin. PHASED targets (A synthesis.output,
+    B matsim.output, C the four analysis stages run as four separate invocations) instead of one
+    closure, repeating the 2026-08-20 mitigation for a wedged analysis stage; this run shows the
+    cost of that choice (see the performance-finding entry below). All feature flags at their
+    defaults, i.e. ownership_grid_1km (ADR-0092), fine_teen_age_bands (ADR-0088),
+    pt_ticket_group_kreis_control (ADR-0089), explicit_w_zweck_purposes (ADR-0091),
+    pt_ticket_never_group (ADR-0099, this run''s subject) all ON, plus the newly-defaulted
+    carla_sample secondary chain solver (ADR-0096) and the CPU-accumulation hang watchdog
+    (ADR-0095) both exercised for the first time end-to-end in a production run.'
+sampling:
+  rate: 100% (1,131,204 persons, 996,368 aged 14+ / 558,286 households)
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+  - matsim.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.verbindungen_validation
+  - braunschweig.analysis.analysis_suite
+  - braunschweig.analysis.simwrapper_export
+classification:
+- production_candidate
+- validation
+status:
+  execution: completed
+  notes: 'Driver marker complete-soft-failures-0. Phase timings (from the driver''s status file):
+    A started 2026-08-23 21:57, relaunched 2026-08-24 07:43 after a controller misdiagnosis (see
+    the run-incident entry below), A exit 0 at 09:37:33; B exit 0 at 15:53:44; c_cordon exit 0 at
+    16:13:59; c_verbind exit 0 at 16:51:31; c_analysis exit 0 at 21:49:55; c_simwrapper exit 0 on
+    2026-08-25 at 01:45:07. All six phases exit 0. After the driver''s CPU-stall watchdog was added
+    (following the 06:30 incident), zero further interventions and zero retries were needed across
+    the remaining phases. Output 16 GB in eqasim-data/output_bs_100pct_i329 on felix, worktree
+    ~/wt-i329. analysis_suite ran population_validation, mid_validation, household_composition,
+    popsim_validation, integerizer_quality and dashboard; it SKIPPED education_validation with the
+    reason "education cache incomplete (missing synthesis.population.spatial.home.locations
+    pickle)"; nothing FAILED.'
+environment: server
+validation:
+- metric: 'run incident: secondary_chainsolvers misdiagnosed as wedged and killed, then corrected'
+  reference: none (process diagnosis)
+  result: 'At ~06:30 on 2026-08-24 the controller killed phase A''s secondary_chainsolvers stage
+    after seeing "shard 61/62 done", zero CPU accumulation over 25s and 60s windows, 93 threads
+    parked on futexes, and only 3 python processes left, and interpreted this as a second, new
+    wedge mode distinct from ADR-0097. The log settles it as a MISDIAGNOSIS: the stage had started
+    06:54:06 (a typo-free re-read shows the earlier attempt actually began before the kill),
+    logged "shard 62/62 done (elapsed=2385s)" and "cs.solve() finished in 2389.3s; persons
+    solved=860,148, failed=126", wrote its cache at 07:40:41 and finished at 07:40:42 -- the kill at
+    ~07:42 landed about three minutes AFTER the stage had already completed successfully. There was
+    no deadlock. Root cause of the misdiagnosis, four parts: (1) `ps --sort=-rss | head -6` shows
+    the six biggest-RSS processes, and with 62 forked workers the still-computing ones fell outside
+    that window while the six sampled were finished-by-design idle workers with frozen CPU; (2) the
+    log file''s own growth was never checked (it was growing); (3) `futex_wait_queue_me` on idle
+    workers was misread as a deadlock signature although both ADR-0097 and the operator''s own prior
+    notes say verbatim that a worker which delivered its single shard is idle by design; (4) the
+    "only 3 python procs" reading was taken after the executor had already shut down normally. The
+    2026-08-20 OOM-worker hang remains correctly explained by ADR-0097; "61/62 done" in both logs is
+    just "one result outstanding", the normal state during the last minutes of a healthy run.'
+  notes: 'Cost: about 2 minutes of a downstream stage; the chainsolver cache had already been
+    written and survived, so the 07:43 relaunch reloaded it rather than recomputing. The proposed
+    issue for a "second wedge mode" was NOT filed once the log evidence retracted the diagnosis.
+    Kept: the driver''s CPU-stall watchdog (samples whole-tree utime+stime AND log growth, killing
+    a phase only after 2700s of both zero CPU and zero log growth) -- it measures exactly what the
+    manual diagnosis failed to check, and stayed armed with zero further interventions for the rest
+    of the run. Issue #350 (run resource recorder: whole-tree CPU, per-process peak RSS, system
+    RAM/swap/disk/IO and log growth into a per-run time series) was filed from this incident and is
+    now closed.'
+- metric: 'PHASE B: MATSim controler exit and the JVM-exit defect (#330) fix, first production
+    exercise of ADR-0095'
+  reference: none (process diagnosis / prior incident comparison)
+  result: 'The 2026-08-20 run hung for over an hour after the MATSim controler finished (a leaked
+    non-daemon univocity-parsers reader thread, root-caused and fixed as eqasim-java-bs PR #23,
+    guarded pipeline-side by the CPU-accumulation hang watchdog, ADR-0095). This run''s phase B
+    archived 94 files and exited cleanly (exit 0, 15:53:44). The watchdog armed 19 times across the
+    whole run and never fired (grep for watchdog lines excluding "armed for pid" returns nothing).
+    First production proof of both the eqasim-java-bs fix and the pipeline watchdog.'
+  notes: 'Diagnostic proof that the #330 fix holds at full scale under a live JVM, not a
+    behavioural validation metric.'
+- metric: 'MATSim modal split, iteration 0 only (modestats.csv, matsim.output)'
+  reference: none -- no committed modal-split reference exists in this repository
+  result: 'car 38.89 | walk 25.59 | car_passenger 12.08 | bicycle 11.22 | pt 6.39 | outside 4.34 |
+    truck 1.49 (percent of trips). Person-km: car 19.48M | car_passenger 5.68M | pt 4.29M |
+    walk 4.13M | bicycle 2.44M | truck 1.86M | outside 0.88M.'
+  notes: 'MANDATORY FRAMING, not optional context: configs/base_bs.yml sets `mode_choice: false`
+    (docs/registry/features/mode_choice.yml: "OFF in every committed config because no calibrated
+    modal-split reference exists"), and only iteration 0 ran, so these are the donor-inherited MiD
+    trip modes executed once on the network, not a behavioural equilibrium and not a model
+    prediction. A repository-wide search of eqasim-data found no committed modal-split reference
+    file, so comparing these shares to any remembered figure would violate the no-invented-reference
+    rule on top of comparing a donor-inheritance artefact to a behavioural target. Mode choice and
+    calibration remain the next frontier (#217, #23). A provenance discrepancy is flagged, not
+    resolved: the archived braunschweig_100pct_i329_config.xml carries lastIteration=1000 while the
+    overlay set matsim_last_iteration: 0 and modestats.csv holds only iteration 0 (consistent with
+    the ~6h phase-B runtime) -- the archived config appears to misdescribe the run it documents and
+    is worth one follow-up check.'
+- metric: 'issue #329 acceptance: never_pt realised vs the new pt_ticket_group4 per-Kreis control'
+  reference: 'the run''s own stage pickle (hash 0c6822f4, selected by the logged hash -- the two
+    other pickles in the same cache dir are the 03101 smoke imports and were not used), compared to
+    the committed group4 target table'
+  result: 'never_pt realised vs target, pp delta by Kreis: 03101 12.67 vs 12.32 (+0.35) | 03102
+    32.51 (+0.22) | 03103 36.74 (+0.11) | 03151 41.69 (+0.79) | 03153 43.86 (+0.86) | 03154 40.59
+    (+0.80) | 03157 41.50 (+0.70) | 03158 36.79 (+0.79) | Gesamt 33.29 vs 36 (-2.71, and Gesamt is
+    NOT itself a control -- the per-Kreis controls own the fit). The #329 defect is closed at full
+    scale: Braunschweig-Stadt was +16.17pp in the 2026-08-20 (i240) run, now +0.35pp. The spatial
+    INVERSION is gone (city 12.67% vs rural 32.5-43.9%, i.e. fewest never-PT people where PT supply
+    is best); Goslar (03153), previously -3.71pp under-realised, is now +0.86pp.'
+  notes: 'Every per-Kreis delta is POSITIVE (+0.11 to +0.86pp), a small systematic
+    over-realisation, flagged honestly as unexplained: candidates are the soft tier not fully
+    attaining, the 14+ age boundary, or the group4 column ordering; the hard-coded in-commuter
+    never_pt value is NOT a candidate here because the popsim frame holds residents only. Worth one
+    targeted measurement rather than a guess. A KREIS-as-int-vs-ARS-5-string key mismatch was found
+    and fixed during this measurement (it first produced NaN for every delta, which looked like
+    missing data rather than a wrong join key).'
+- metric: 'flatrate level (deutschlandticket + other_flatrate = has_pt_subscription), the only PT
+    quantity org.eqasim.braunschweig.mode_choice.BraunschweigPtCostModel reads'
+  reference: 'target shift measured on the committed t3 (three-group) vs t4 (group4) tables; fit
+    measured against t4'
+  result: 'target shift t4-t3: 03153 +0.13, 03154 +0.13, 03157 -0.26, 03158 -0.42pp, all other Kreise
+    exactly 0.00pp -- confirming empirically what the PR #349 final review derived from the CSVs.
+    Realised fit (realised - t4): between -0.77pp (03151, the worst) and +0.11pp across all eight
+    Kreise, Gesamt +0.09pp.'
+  notes: 'ADR-0099''s qualification -- that this is a reference-fidelity fix, not a results lever,
+    because the flatrate level moves by at most 0.42pp in 4 of 8 Kreise and the balancer tracks the
+    shifted target closely -- now has direct run evidence.'
+- metric: 'control fit, all ten registered population_validation controls (mean absolute delta pp)'
+  reference: committed control tables (census cells, MiD/SrV per-Kreis targets, DESTATIS)
+  result: 'Compared to the 2026-08-20 (i240) run on the same 10 controls (mean |delta| pp):
+    pt_ticket_type 2.17 -> 1.50 (this work''s target metric); bev_share 0.12=, sex 0.16=, age_group
+    0.78 -> 0.80, employment_status 0.99 -> 1.01, cars_per_hh 0.98 -> 1.04, bicycles_per_hh 1.15 ->
+    1.14, household_size 1.82 -> 1.84, driving_license_type 2.45 -> 2.41, employment 2.67 -> 2.71.
+    The nominal grade reads "3 very good / 7 good" against i240''s "5/5" ONLY because
+    employment_status and cars_per_hh crossed the 1.0pp threshold by hundredths of a point -- not a
+    regression. population_validation lists all ten controls under "Where are we good" and leaves
+    "What can be improved" EMPTY.'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/population_validation/'
+  notes: 'Control fit, NOT a behavioural validation. Employment''s cause_hint records why the
+    employment vs MiD P9 gap is expected (see the mid_validation entry below): the synthetic rate is
+    anchored to Zensus 2022 kreis_erwerbsstatus (ILO concept), not to MiD P9 (self-reported
+    employment extent), and P9''s per-Kreis rate is survey-noisy.'
+- metric: 'popsim_validation control-fit families (distinct from the ten population_validation
+    controls above)'
+  reference: committed control tables
+  result: 'popsim_backbone family: mean SRMSE 0.0353 / mean |delta| 0.312pp over 2 controls.
+    popsim_reference family: mean SRMSE 0.0256 / mean |delta| 0.748pp over 1 control. Named "very
+    good": age_male 0.30pp, age_female 0.32pp, seniorenstatus 0.75pp.'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/popsim_validation/'
+  notes: Control fit, not a behavioural validation.
+- metric: 'mid_validation: trip volume, driving licence level (P17.1) and employment (P9) vs the
+    synthetic population'
+  reference: 'eqasim-data/.../mid/mid2023_P17_1.csv and mid2023_P9.csv'
+  result: '3,392,698 trips, 2.9992 trips/person, 2 unassigned homes. Trip purpose mix over the
+    3,392,698 trips: home 40.73 | leisure 14.07 | work 13.70 | other 11.66 | shop 8.25 | education
+    6.88 | escort 4.71 (percent). Driving licence 14+ synthetic vs MiD P17.1 (pp delta): 03101 84.40
+    vs 82.00 (+2.40) | 03102 85.40 vs 87.00 (-1.60) | 03103 83.40 vs 74.00 (+9.40) | 03151 89.00 vs
+    94.00 (-5.00) | 03153 86.50 vs 83.00 (+3.50) | 03154 86.70 vs 84.00 (+2.70) | 03157 87.70 vs
+    89.00 (-1.30) | 03158 88.50 vs 92.00 (-3.50). The file itself notes the synthesis floor is
+    LICENSE_MIN_AGE 18 while P17.1''s base is 14+, structurally lowering the synthetic share by
+    about 1pp. Employment 15-74 vs MiD P9 (pp delta): 03101 64.30 vs 51.00 (+13.30) | 03102 59.60 vs
+    52.00 (+7.60) | 03103 58.90 vs 43.00 (+15.90) | 03151 67.20 vs 59.00 (+8.20).'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/mid_validation/'
+  notes: 'The employment gap is EXPECTED, not a defect: population_validation''s cause_hint states
+    the synthetic rate is anchored to Zensus 2022 kreis_erwerbsstatus (ILO employment concept), not
+    to MiD P9 (self-reported employment extent, and P9''s per-Kreis rate is survey-noisy). Control
+    fit against a stated reference, not an independent behavioural check.'
+- metric: household_composition plausibility (age-gap checks)
+  reference: none (internal plausibility check on the synthesised households)
+  result: '558,286 households; couple age-gap mean 8.89 / median 4.0 years; parent-child age-gap
+    mean 27.43 / median 29.0 years; implausible-household share 4.24%.'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/household_composition/'
+  notes: Internal plausibility check, not compared to an external reference.
+- metric: 'cordon validation: in-commuter gate volumes and cordon modal split'
+  reference: 'braunschweig.synthesis.cordon_gates (BA SvB gravity expectation) and the configured
+    cordon modal-split target'
+  result: 'c_cordon exit 0 in 20 minutes. Results BYTE-IDENTICAL to the 2026-08-20 (i240) run:
+    68,630 agents, real_origin 53,210 / road_gate 15,342 / rail_station 78; cordon modal split car
+    84.9% vs an 85.0% target, pt 15.1% vs a 15.0% target.'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/cordon/'
+  notes: 'Fit check against the gravity expectation the stage itself builds, not an independent
+    external count -- unchanged from i240 because this feature does not touch cordon demand.'
+- metric: 'verbindungen validation: work-commute OD against the VerBindungen reference'
+  reference: 'braunschweig.data.verbindungen work_od / margins (Destatis/BMDV); reference role: FIT
+    (the gravity model is anchored to this table, so agreement is convergence on the anchor, NOT
+    independent validation, exactly as the file itself states)'
+  result: 'c_verbind exit 0 in 38 minutes. weighted_tvd 0.1082 (i240: 0.108), margin_pearson_r
+    0.9969 (0.9975), margin_srmse 0.1263 (0.117), band_emd 0.1161 (0.115), intra-cell share
+    45.01%/46.87% model/reference (i240: 45.0/46.9), unassigned 12.84% (i240: 12.83%) -- stable
+    across the feature change. Origin-level margin check: 41 origins, mean |delta| 0.174pp, max
+    1.561pp (one Braunschweig Stadtteil, 13.60 vs 12.04), corr 0.9969. Absolute totals differ by
+    construction (model 265,749 vs reference 512,230, ratio 0.519) because the universes differ; the
+    file itself says shares only, never compare absolute counts.'
+  artifact: 'felix:.../output_bs_100pct_i329/analysis/verbindungen/'
+  notes: 'REFERENCE ROLE: FIT, no red flags.'
+- metric: 'commute distances (home to work), measured from the run''s own commutes.gpkg -- outside
+    the pipeline''s own analysis tooling'
+  reference: 'eqasim-data/.../mid/mid2023_P38_2_commute_distance_by_kreis.csv (Gesamt row)'
+  result: '304,727 commute lines, euclidean home-work distance in UTM32N: mean 25.13 km, median
+    9.11 km, p90 45.71 km, max 549.7 km. Realised bands (%): <5 34.74 | 5-10 17.62 | 10-20 18.30 |
+    20-30 11.93 | 30-50 8.27 | 50-100 4.58 | 100-200 1.95 | 200-300 1.40 | 300+ 1.20 (>=50 km total
+    9.14%). The committed reference, renormalised over the 87% of rows excluding the 13%
+    "unplausibel/keine Angabe", reads: <5 16.1 | 5-10 11.5 | 10-20 14.9 | 20-30 12.6 | 30-50 14.9 |
+    50-100 16.1 | 100-200 6.9 | 200-300 4.6 | 300+ 3.4; published mean 66.1 km. The model commutes
+    substantially SHORTER.'
+  notes: 'Stated as an open question, not a verdict, with three caveats that all push the reference
+    UP relative to the model: (1) euclidean vs MiD''s reported route distance (detour factor ~1.2-
+    1.4); (2) the model places work inside the region+cordon buffer (cordon_network_source_buffer_m
+    45 km), so the 100-300+ km commuters that carry 14.9% of MiD''s valid mass and dominate its mean
+    are structurally absent from this scope; (3) configs/base_bs.yml documents a known gap in its
+    own comment -- `taz_work_location_choice: false`, intended to fix intra-city commute distances
+    at sub-commune resolution, kept OFF because the required RVB VISUM Verkehrszellen data is
+    local-only and absent. Even on the median (9.11 km model vs an implied ~25-28 km from the MiD
+    bands) the gap survives the tail argument.'
+- metric: 'desired (MiD) vs realised distances per trip purpose -- the #257 question, answered at
+    100% scale; measured by pooling the cached distance_distributions stage (MiD sample + weights)
+    against euclidean consecutive-activity distances in activities.gpkg (UTM32N) -- outside the
+    pipeline''s own analysis tooling'
+  reference: 'the cached distance_distributions stage (MiD-derived desired-distance pools per
+    purpose x mode x travel-time bound)'
+  result: 'Over 3,392,698 legs, median / mean km (MiD vs realised, delta): work 4.99 / 5.02 (+0.02)
+    | 11.80 / 19.32 (+7.52); education 2.19 / 2.04 (-0.16) | 6.67 / 5.43 (-1.23); leisure 3.39 / 3.80
+    (+0.40) | 11.91 / 11.50 (-0.41); shop 1.51 / 2.38 (+0.87) | 3.77 / 5.94 (+2.18); other 2.92 / 3.97
+    (+1.05) | 9.61 / 10.38 (+0.77); escort 2.26 / 3.54 (+1.28) | 6.49 / 8.52 (+2.02). Band shares
+    (MiD/realised %): shop <1km 34.8/25.6 & >10km 8.1/13.6; other <1km 23.1/16.5 & >10km 19.4/24.2;
+    escort <1km 25.4/19.2 & >10km 15.0/21.1; leisure <1km 16.8/14.2 & >10km 21.4/25.0; work <1km
+    17.3/27.7 & >10km 31.9/36.4; education <1km 31.4/35.9 & >10km 12.5/16.0.'
+  notes: 'The gravity-modelled PRIMARY purposes (work, education) match almost exactly on the
+    median. The SECONDARY purposes (shop, other, escort) are systematically placed TOO FAR on the
+    median, with the same signature everywhere (too few legs under 1 km, too many beyond 10 km).
+    Both measurement caveats (euclidean vs route distance, MiD''s own mode mix in the pooled
+    reference) push the reference UP, so a realised distribution that comes out longer despite both
+    is a real signal, not an artefact -- this is the #257 theme measured at full scale with
+    carla_sample as the new default (ADR-0096). CAUTION: the two committed "work" references
+    disagree with each other because they measure different things (MiD Wege work-leg pooling: mean
+    11.80 km; mid2023_P38_2''s reported home-work commute question: mean 66.1 km); the model sits
+    between them (work legs 19.32 km mean; commute relations 25.13 km mean) and the two references
+    are not comparable to each other, so neither is picked as "the" target.'
+- metric: 'the participation/mobility deficit: donor-vs-instrument decomposition (deep-dive answer
+    to "should we add a control?"); measured on the raw MiD donor file
+    eqasim-data/.../popsim/mid2023_raw/MiD2023_Personen.csv (420,979 rows, comma-separated, dot
+    decimals) -- outside the pipeline''s own analysis tooling'
+  reference: 'the same raw MiD donor file the popsim participation/trip_class seed is drawn from,
+    and the configured SrV per-Kreis mobility target'
+  result: 'MiD donor mobility (anzwege1 > 0, code 803 excluded, as the pipeline does), P_GEW-
+    weighted: all reporting days 78.18% | Mon-Fri 80.54% | Mon-Fri no holiday 81.09% | Tue-Thu no
+    holiday 81.08% | weekend only 72.23%. MiD anzwege3 (wider trip definition) Mon-Fri no holiday:
+    84.16%, identical to MiD''s own `mobil` flag on the same universe. Cross-tab (Mon-Fri no holiday,
+    n=253,365, weighted): mobil=1 & anzwege1>0 81.09% | mobil=1 & anzwege1=0 3.07% (4,622 persons,
+    "mobile non-reporters") | mobil=0 & anzwege1>0 0.00% | mobil=0 & anzwege1=0 15.84%. Realised in
+    the synthetic population (03101): 79.2% vs an SrV target of 90.0% (10.8pp gap). Decomposition of
+    that gap: ~3.0pp a measurement artefact in the first (all-days) figure vs the workday-only SrV
+    universe; ~3.1pp MiD''s own "mobile non-reporters" (classed mobile, no trip diary to copy);
+    ~5.8pp genuine MiD-vs-SrV instrument difference (84.16% vs 90.0%); ~2.0pp the model (79.2%) below
+    its own weekday donor pool (81.09%), flagged as the one part that looks like a pipeline
+    question.'
+  notes: 'ANSWER: no participation control should be added. The four existing hard controls
+    (work/leisure/education/escort_participation, trip_class promoted soft->hard in #224 for
+    exactly this) already exist and the deficit persists despite them, because a donor-based
+    synthesis structurally cannot exceed its donor pool''s reported-trip rate -- MiD compensates for
+    non-reporters in the trip WEIGHT (Hebefaktor, docs/data/MID2023_HANDBOOK_REFERENCE.md Kap.
+    6.1-6.2), not by giving the person a trip chain to copy. HYPOTHESIS for the control-fit report
+    above: four hard controls chasing a level the donor pool cannot supply may be spending weight on
+    an infeasible constraint, a candidate explanation for cars_per_hh and employment_status slipping
+    just over the "very good" threshold in this run. OPTIONS recorded for the deep dive: (a)
+    reclassify the SrV participation rate as a corridor/reference and take the four controls back to
+    soft; (b) change the donor -- issue #226 (SrV as a regional HTS chain donor), the only route that
+    changes the ceiling; (c) synthesise additional trips for immobile persons, which would need its
+    own ADR. Two 2023 surveys of the same population disagreeing by ~12pp on mobility is itself a
+    research finding, not something a control should paper over.'
+- metric: 'performance finding: the phased-run design (chosen to isolate one wedged analysis stage,
+    the 2026-08-20 lesson) costs a devalidation cascade per invocation'
+  reference: none (log-derived, not a fit metric)
+  result: 'Chainsolver executions in this one run (grep "cs.solve() finished"): phase A a26f14ca
+    2389.3s + 9a510cd1 2306.9s | phase B e3528f78 2568.0s | phase C 9a510cd1 2334.9s = 9599s (2h40m)
+    of solve time. 9a510cd1 ran TWICE with the same hash (~39 min each): phase A executed it
+    08:44-09:29 and wrote its cache, but phase C re-executed it 17:45-18:30 anyway. Cause, from the
+    logs, not guessed: each phase start logs "Devalidating N stages" (44 at phase B''s start, 26 at
+    phase C''s), a cascade starting at low-level supply stages (data.gtfs.cleaned,
+    data.osm.cleaned) and propagating through the whole synthesis and matsim.scenario.* chain.
+    cache_share is NOT the trigger: phase C logs "prime: primed 0, already-present 38, forced 0,
+    missing-in-store 7". Phase C additionally re-ran matsim.simulation.run at 19:54:10 because
+    analysis_suite declares a dependency on it that it uses only to resolve a path (issue #354,
+    filed and agreed by the user).'
+  notes: 'Trade-off to carry into the next run design: robustness (one wedged analysis stage cannot
+    take the other three down) vs. this per-invocation devalidation cost. The driver''s CPU-stall
+    watchdog added mid-run now covers the risk that originally motivated phasing, so the next run
+    should consider either a single invocation or investigating why synpp devalidates identical-hash
+    stages across invocations. A separate provenance defect was also found: every phase logs
+    "eqasim_source_path ''../eqasim-java-bs'' does not exist relative to the config; recording
+    eqasim_java_commit=''unknown''" because the path is resolved relative to the merged config
+    written into the cache dir rather than the launch directory -- the jar built and ran correctly,
+    only the provenance record cannot say which Java commit produced these results. Worth an issue,
+    not yet filed.'
+features:
+  note: 'First full end-to-end production run to exercise, together: the #329 never_pt per-Kreis
+    control (ADR-0099), the carla_sample default secondary chain solver (ADR-0096, first production
+    run), and the CPU-accumulation hang watchdog on Java subprocesses (ADR-0095, first production
+    exercise -- armed 19 times, never fired). All feature flags at their production defaults, so
+    per-flag attribution beyond #329''s own before/after comparison to the 2026-08-20 (i240) run is
+    not possible from this run alone.'
+artifacts:
+- 'felix:~/i329_status.txt'
+- 'felix:~/i329_run_all.sh'
+- 'felix:~/i329_run_all.done'
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/'
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/'
+issues:
+- '#329'
+- '#226'
+- '#257'
+- '#281'
+- '#347'
+- '#350'
+- '#351'
+- '#354'
+decisions:
+- ADR-0099
+- ADR-0096
+- ADR-0095
+- ADR-0097
+source: 'the 2026-08-23/25 phased 100% overnight/multi-day run on felix (~/wt-i329) and its deep
+  analysis; ledger: .superpowers/sdd/2026-08-21-pt-never-group-control/progress.md'
