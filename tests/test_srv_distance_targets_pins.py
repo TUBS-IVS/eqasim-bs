@@ -39,6 +39,12 @@ def test_commute_rows_and_sources(commute):
     assert (commute["level_geo"] == "zgb").sum() == 1
 
 
+def test_commute_scope_counts_sum_to_total(commute):
+    # R16: n_persons_inter + n_persons_intra must reconstruct the all-scope n_persons
+    # for every commute row (Kreis, RS7 pool and ZGB alike).
+    assert (commute["n_persons_inter"] + commute["n_persons_intra"] == commute["n_persons"]).all()
+
+
 def test_commute_shares_sum_to_one(commute):
     for scope in ("all", "inter", "intra"):
         cols = [f"share_{scope}_{lbl}" for lbl in T.WORK_BAND_LABELS]

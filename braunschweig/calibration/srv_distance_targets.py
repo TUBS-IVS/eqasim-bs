@@ -497,9 +497,15 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
             rs7_shares[int(rs7)][s] = (raw, shrunk, n)
 
     def _row(level_geo, code, source, sub, pool_for_scope):
-        row = {"level_geo": level_geo, "code": code, "source": source, "n_persons": int(len(sub))}
+        # R16: n_persons_inter / n_persons_intra are the UNWEIGHTED person counts of the
+        # inter-/intra-Gemeinde scope subsets (n_persons stays the all-scope count), so
+        # the synthesis stage can pick the scope-matching reference count for `decide_layer`
+        # instead of reusing the all-scope n_persons for the inter/intra decisions.
+        intra_mask = sub["intra_gemeinde"].astype(bool)
+        row = {"level_geo": level_geo, "code": code, "source": source, "n_persons": int(len(sub)),
+              "n_persons_inter": int((~intra_mask).sum()), "n_persons_intra": int(intra_mask.sum())}
         row["mean_km"], row["median_km"] = _weighted_mean_median(sub["distance_km"].values, sub["weight"].values)
-        w_intra = sub.loc[sub["intra_gemeinde"].astype(bool), "weight"].sum()
+        w_intra = sub.loc[intra_mask, "weight"].sum()
         row["share_intra"] = float(w_intra / sub["weight"].sum()) if sub["weight"].sum() > 0 else float("nan")
         for s, m in scopes.items():
             part = sub if m is None else sub[m.loc[sub.index]]
