@@ -17,7 +17,11 @@ from pathlib import Path
 LOGGER = logging.getLogger("braunschweig.analysis.analysis_suite")
 
 KEY_ENABLED = "analysis_suite_enabled"
-KEY_INCLUDE_MATSIM = "simwrapper_include_matsim"  # reuse: signals the run has MATSim
+# Pure signal ("this run has MATSim outputs"), NEVER a stage dependency: the
+# sim outputs are read from the <output_path>/matsim_output archive written by
+# matsim.output, so an analysis-only invocation never recomputes the simulation
+# chain (issue #354; see braunschweig.analysis.matsim_archive).
+KEY_INCLUDE_MATSIM = "simwrapper_include_matsim"
 KEY_POPULATION_VALIDATION = "analysis_population_validation"
 KEY_MID_VALIDATION = "analysis_mid_validation"
 KEY_POPSIM_VALIDATION = "analysis_popsim_validation"
@@ -58,8 +62,6 @@ def configure(context):
     if not context.config(KEY_ENABLED):
         return
     context.stage("synthesis.output")
-    if context.config(KEY_INCLUDE_MATSIM):
-        context.stage("matsim.simulation.run")
 
 
 def _run(summary, name, enabled, ready, reason_if_not_ready, fn):
@@ -94,9 +96,21 @@ def execute(context):
             f"[analysis_suite] no *_persons.csv in {output_path}; run output malformed")
     prefix = PS._detect_prefix(output_path)
 
+    # MATSim outputs come from the <output_path>/matsim_output archive written
+    # by matsim.output (config-derived), never from a stage edge (#354). When
+    # the archive is absent, the MATSim-consuming sub-analyses skip LOUDLY with
+    # this named reason via the _run readiness contract below.
+    from braunschweig.analysis.matsim_archive import (
+        archive_missing_reason, resolve_matsim_archive)
     sim_cache = None
+    sim_missing_reason = "MATSim not included (simwrapper_include_matsim=False)"
     if context.config(KEY_INCLUDE_MATSIM):
-        sim_cache = str(Path(context.path("matsim.simulation.run")).parent)
+        archive = resolve_matsim_archive(output_path)
+        if archive is not None:
+            sim_cache = str(archive)
+        else:
+            sim_missing_reason = archive_missing_reason(output_path)
+            LOGGER.warning("[analysis_suite] %s", sim_missing_reason)
 
     method = context.config(KEY_METHOD)
     is_popsim = bool(method) and "popsim" in str(method)
@@ -193,7 +207,7 @@ def execute(context):
         finally:
             _sys.argv = old
     _run(summary, "dashboard",
-         context.config(KEY_DASHBOARD), bool(sim_cache), "no MATSim sim cache", _dash)
+         context.config(KEY_DASHBOARD), bool(sim_cache), sim_missing_reason, _dash)
 
     out_summary = output_path / "analysis" / "analysis_suite_summary.json"
     out_summary.parent.mkdir(parents=True, exist_ok=True)

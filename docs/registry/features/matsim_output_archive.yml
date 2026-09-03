@@ -2,7 +2,8 @@ feature: matsim_output_archive
 title: MATSim output archive (run-named durable copy)
 area: infrastructure
 description: Archives MATSim simulation_output/ into a stable run-named location that survives
-  a synpp cache wipe (ADR-0064).
+  a synpp cache wipe (ADR-0064). The analysis stages (analysis_suite, simwrapper_export) read
+  MATSim outputs from this archive instead of a matsim.simulation.run stage edge (ADR-0101).
 stages:
 - matsim.output
 pipelines:
@@ -21,6 +22,7 @@ introduced:
 detail_doc: docs/features/run-analysis.md
 code_paths:
 - matsim/output.py
+- braunschweig/analysis/matsim_archive.py
 evidence:
   tests:
   - tests/test_matsim_output_archive.py

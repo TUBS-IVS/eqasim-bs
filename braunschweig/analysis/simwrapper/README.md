@@ -21,9 +21,10 @@ python -m braunschweig.analysis.simwrapper.export `
 
 `--output-dir` and `--sim-cache` are required; `--label` is optional and
 defaults to the output-directory name. `<out>` is the eqasim CSV output
-directory; `<cache>` is the synpp cache folder containing
-`matsim.simulation.run__*.cache/simulation_output/`. The dashboard is
-written into `<out>/simwrapper/`.
+directory; `<cache>` is either the `<output_path>/matsim_output` archive
+written by `matsim.output` (preferred, ADR-0101) or a synpp cache folder
+containing `matsim.simulation.run__*.cache/simulation_output/`. The dashboard
+is written into `<out>/simwrapper/`.
 
 ### Dashboard tabs
 

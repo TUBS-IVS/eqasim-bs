@@ -17,7 +17,6 @@ preserved.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 LOGGER = logging.getLogger("braunschweig.analysis.simwrapper_export")
 
@@ -30,11 +29,10 @@ def configure(context):
     context.config("cordon_enabled", False)
     # Always need the synthesis output (persons/households/vehicles/homes CSVs+GPKG).
     context.stage("synthesis.output")
-    # Only depend on the MATSim run when this run includes MATSim. This is an
-    # explicit flag (NOT the global default-True run_matsim) so a synthesis-only
-    # pipeline never accidentally pulls in / forces a MATSim run.
-    if context.config("simwrapper_include_matsim"):
-        context.stage("matsim.simulation.run")
+    # simwrapper_include_matsim is a pure SIGNAL ("this run has MATSim
+    # outputs"), never a stage dependency: the sim outputs are read from the
+    # <output_path>/matsim_output archive written by matsim.output, so an
+    # analysis-only invocation never recomputes the simulation chain (#354).
     # Only depend on the student in-commuter stage when cordon is on (mirrors
     # braunschweig.matsim.scenario.population's conditional wiring of the same
     # stage), so an unrelated run's dependency graph is unaffected.
@@ -49,12 +47,19 @@ def execute(context):
     from braunschweig.analysis.simwrapper.export import export_all
 
     output_path = context.config("output_path")
+    # MATSim outputs come from the <output_path>/matsim_output archive written
+    # by matsim.output (config-derived, #354). When the archive is absent,
+    # export_all receives sim_cache=None and its MATSim tabs skip loudly.
+    from braunschweig.analysis.matsim_archive import (
+        archive_missing_reason, resolve_matsim_archive)
     sim_cache = None
     if context.config("simwrapper_include_matsim"):
-        # context.path("matsim.simulation.run") is the run stage's cache dir
-        # (matsim.simulation.run__<hash>.cache); its PARENT is the synpp cache
-        # root that export_all/_find_sim_output globs for simulation_output.
-        sim_cache = str(Path(context.path("matsim.simulation.run")).parent)
+        archive = resolve_matsim_archive(output_path)
+        if archive is not None:
+            sim_cache = str(archive)
+        else:
+            LOGGER.warning("[simwrapper_export] %s -- MATSim tabs will skip",
+                           archive_missing_reason(output_path))
 
     student_frames = None
     if context.config("cordon_enabled"):

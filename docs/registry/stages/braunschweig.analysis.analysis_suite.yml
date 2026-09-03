@@ -2,13 +2,15 @@ stage: braunschweig.analysis.analysis_suite
 title: Analysis suite
 layer: analysis
 description: 'Post-run analysis driver: dashboard, MiD validation, population validation; excludes
-  the freight subpopulation from person KPIs.'
+  the freight subpopulation from person KPIs. Reads MATSim outputs from the <output_path>/matsim_output
+  archive (config-derived, ADR-0101), never via a matsim.simulation.run stage edge.'
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/analysis/analysis_suite.py
+- braunschweig/analysis/matsim_archive.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -18,3 +20,4 @@ features:
 - freight_analysis_exclusion
 decisions:
 - ADR-0031
+- ADR-0101

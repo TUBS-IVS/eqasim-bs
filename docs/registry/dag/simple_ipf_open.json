@@ -389,6 +389,18 @@
    "matsim.runtime.pt2matsim"
   ],
   [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.gtfs"
+  ],
+  [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.osm"
+  ],
+  [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.processed"
+  ],
+  [
    "matsim.runtime.java",
    "matsim.runtime.eqasim"
   ],
@@ -423,6 +435,18 @@
   [
    "matsim.runtime.maven",
    "matsim.runtime.pt2matsim"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.gtfs"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.osm"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.processed"
   ],
   [
    "matsim.runtime.pt2matsim",
@@ -603,6 +627,10 @@
   [
    "synthesis.population.spatial.commute_distance",
    "synthesis.population.spatial.primary.locations"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "braunschweig.synthesis.vehicles.cars.household"
   ],
   [
    "synthesis.population.spatial.home.locations",

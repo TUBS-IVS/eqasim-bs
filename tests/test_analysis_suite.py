@@ -210,23 +210,81 @@ def test_dashboard_and_education_skip_without_inputs(tmp_path, monkeypatch):
     assert dash_calls == [] and edu_calls == []
     summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
     reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
-    assert reasons["dashboard"] == "no MATSim sim cache"
+    assert "simwrapper_include_matsim" in reasons["dashboard"]
     assert "working_directory" in reasons["education_validation"]
 
 
-def test_dashboard_runs_with_sim_cache(tmp_path, monkeypatch):
+def _write_matsim_archive(output_path):
+    """Stage a minimal <output_path>/matsim_output archive the way matsim.output
+    leaves it (the stage asserts output_events.xml.gz exists after archiving)."""
+    archive = output_path / "matsim_output"
+    archive.mkdir()
+    (archive / "output_events.xml.gz").write_bytes(b"")
+    return archive
+
+
+def test_configure_never_declares_matsim_run_stage(tmp_path):
+    """Issue #354: the suite consumed matsim.simulation.run ONLY to resolve a
+    directory; the stage edge forced analysis-only invocations to recompute the
+    whole simulation chain. The dependency must stay gone even when
+    simwrapper_include_matsim is True."""
+    configuration = FakeConfigurationContext(
+        _base_config(tmp_path, simwrapper_include_matsim=True))
+    AS.configure(configuration)
+    assert "matsim.simulation.run" not in configuration.declared_stages
+    assert "synthesis.output" in configuration.declared_stages
+
+
+def test_dashboard_runs_from_matsim_archive(tmp_path, monkeypatch):
+    """With simwrapper_include_matsim=True the sim outputs are resolved from the
+    <output_path>/matsim_output archive (config-derived), NOT from
+    context.path("matsim.simulation.run") -- paths stays empty on purpose."""
+    DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    archive = _write_matsim_archive(tmp_path)
+    dash_calls = []
+    monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
+    ctx = _execute_context(tmp_path, simwrapper_include_matsim=True)
+    AS.execute(ctx)
+    assert len(dash_calls) == 1
+    argv = dash_calls[0]
+    assert argv[argv.index("--sim-cache") + 1] == str(archive)
+
+
+def test_mid_validation_receives_archive_as_sim_cache(tmp_path, monkeypatch):
+    MID = pytest.importorskip("braunschweig.analysis.run_mid_validation")
+    DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
+    _write_min_output(tmp_path)
+    _install_pop_spy(monkeypatch, [])
+    archive = _write_matsim_archive(tmp_path)
+    mid_calls = []
+    monkeypatch.setattr(MID, "main", lambda argv: mid_calls.append(argv))
+    # The archive makes the dashboard ready too; stub it so the test never
+    # writes real run records into the repository's dashboard/runs/.
+    monkeypatch.setattr(DASH, "main", lambda: None)
+    ctx = _execute_context(tmp_path, simwrapper_include_matsim=True)
+    AS.execute(ctx)
+    assert len(mid_calls) == 1
+    argv = mid_calls[0]
+    assert argv[argv.index("--sim-cache") + 1] == str(archive)
+
+
+def test_matsim_panels_skip_loudly_when_archive_missing(tmp_path, monkeypatch):
+    """simwrapper_include_matsim=True but no archive on disk: the MATSim panels
+    must SKIP with a named reason (no silent fallback, no re-run, no failure)."""
     DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
     _write_min_output(tmp_path)
     _install_pop_spy(monkeypatch, [])
     dash_calls = []
     monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
-    run_cache = tmp_path / "matsim.simulation.run__abc.cache"; run_cache.mkdir()
-    ctx = _execute_context(
-        tmp_path, simwrapper_include_matsim=True,
-        paths={"matsim.simulation.run": str(run_cache)})
-    AS.execute(ctx)
-    assert len(dash_calls) == 1
-    assert "--sim-cache" in dash_calls[0]
+    ctx = _execute_context(tmp_path, simwrapper_include_matsim=True)
+    result = AS.execute(ctx)  # must not raise, must not touch context.path
+    assert result is not None
+    assert dash_calls == []
+    summary = json.loads((tmp_path / "analysis" / "analysis_suite_summary.json").read_text())
+    reasons = {s["analysis"]: s["reason"] for s in summary["skipped"]}
+    assert "no MATSim output archive" in reasons["dashboard"]
 
 
 def test_education_runs_when_working_dir_set(tmp_path, monkeypatch):

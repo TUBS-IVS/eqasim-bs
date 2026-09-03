@@ -133,10 +133,13 @@ def _parse_args(argv: list[str] | None) -> _Args:
         "--sim-cache",
         required=False,
         default=None,
-        help="synpp cache directory containing matsim.simulation.run__*.cache/"
-        "simulation_output/eqasim_trips.csv. When given, the all-trip modal "
-        "split is read from the MATSim simulation output (the eqasim pipeline "
-        "trips.csv carries no mode). Omitted -> the modal-split block is skipped.",
+        help="MATSim simulation output location: either a directory holding "
+        "eqasim_trips.csv directly (e.g. <output_path>/matsim_output written "
+        "by matsim.output) or a synpp cache directory containing "
+        "matsim.simulation.run__*.cache/simulation_output/. When given, the "
+        "all-trip modal split is read from the MATSim simulation output (the "
+        "eqasim pipeline trips.csv carries no mode). Omitted -> the "
+        "modal-split block is skipped.",
     )
     ap.add_argument(
         "--noise-bands",
@@ -273,23 +276,30 @@ def _find_sim_trips(sim_cache: Path | None) -> pd.DataFrame | None:
     """Load the MATSim simulation-output trips (mode + purpose), or None.
 
     The eqasim pipeline trips.csv has no realised mode; the mode is written by
-    the MATSim mobility simulation to ``matsim.simulation.run__*.cache/
-    simulation_output/eqasim_trips.csv``.  The lookup mirrors
+    the MATSim mobility simulation to ``eqasim_trips.csv``.  Two layouts are
+    accepted (#354): ``--sim-cache`` may point at a directory holding
+    ``eqasim_trips.csv`` directly (e.g. the ``<output_path>/matsim_output``
+    archive written by ``matsim.output``) or at a synpp cache root containing
+    ``matsim.simulation.run__*.cache/simulation_output/``.  The lookup mirrors
     ``braunschweig.analysis.dashboard.build_dashboard._find_sim_output`` so both
     analysis entry points resolve the same file.  Returns None (and the modal-
     split block is skipped) when no --sim-cache is given or the file is absent.
     """
     if sim_cache is None:
         return None
-    for cache_dir in sim_cache.glob("matsim.simulation.run__*.cache"):
-        trips_path = cache_dir / "simulation_output" / "eqasim_trips.csv"
+    candidates = [sim_cache / "eqasim_trips.csv"]
+    candidates += [cache_dir / "simulation_output" / "eqasim_trips.csv"
+                   for cache_dir in sim_cache.glob("matsim.simulation.run__*.cache")]
+    for trips_path in candidates:
         if trips_path.exists():
             LOGGER.info("Reading realised trip modes from %s", trips_path)
             df_trips = pd.read_csv(trips_path, sep=";")
             df_trips = drop_freight_agents(df_trips, label="mid_validation")
             return df_trips
     LOGGER.warning(
-        "No simulation_output/eqasim_trips.csv under %s; modal-split block skipped.",
+        "No eqasim_trips.csv under %s (neither directly nor via "
+        "matsim.simulation.run__*.cache/simulation_output/); "
+        "modal-split block skipped.",
         sim_cache,
     )
     return None

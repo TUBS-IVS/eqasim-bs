@@ -118,7 +118,10 @@ def main() -> None:
     ap.add_argument("--output-dir", required=False, default="eqasim-data/output_bs_25pct",
                     help="eqasim CSV output folder for the run.")
     ap.add_argument("--sim-cache", required=False, default="eqasim-data/cache_bs_25pct",
-                    help="Synpp cache folder containing matsim.simulation.run__*.cache/.")
+                    help="MATSim output location: either a directory holding the simulation "
+                         "output directly (e.g. <output_path>/matsim_output written by "
+                         "matsim.output) or a synpp cache folder containing "
+                         "matsim.simulation.run__*.cache/.")
     ap.add_argument("--label", required=False, default=None,
                     help="Friendly label for this run (defaults to <output_dir name>).")
     ap.add_argument("--notes", required=False, default="", help="Free-form notes.")

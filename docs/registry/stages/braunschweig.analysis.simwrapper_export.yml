@@ -1,13 +1,16 @@
 stage: braunschweig.analysis.simwrapper_export
 title: SimWrapper export
 layer: analysis
-description: Writes the multi-tab SimWrapper dashboard bundle from a run output (ADR-0033).
+description: Writes the multi-tab SimWrapper dashboard bundle from a run output (ADR-0033). Reads
+  MATSim outputs from the <output_path>/matsim_output archive (config-derived, ADR-0101), never
+  via a matsim.simulation.run stage edge.
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/analysis/simwrapper_export.py
+- braunschweig/analysis/matsim_archive.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -17,3 +20,4 @@ features:
 - simwrapper_export
 decisions:
 - ADR-0033
+- ADR-0101
