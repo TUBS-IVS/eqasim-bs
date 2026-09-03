@@ -94,7 +94,11 @@
   overstated by an unquantified amount**. The layer-1 work (#359) must quantify this before any
   parameter is pinned -- for instance by restricting or matching the comparison to SrV trips whose
   destination AGS lies outside the ZGB, which are inter on the reference side too. Until that is
-  done, the inter verdict should be read as "build and measure", not as a calibrated target.
+  done, the inter verdict should be read as "build and measure", not as a calibrated target. This
+  caveat is to be read together with ADR-0102 Assumption 2's tail finding: both point the same
+  way, that SrV may understate long distances (GIS-invalid work trips carry a heavier
+  long-distance tail than GIS-valid ones), so the model's inter-Gemeinde distribution is being
+  compared against a reference whose own long-distance tail is possibly short-biased.
   One methodological caveat on the run itself: three location stages
   (`synthesis.population.spatial.primary.candidates`,
   `braunschweig.synthesis.locations.education_gravity`,

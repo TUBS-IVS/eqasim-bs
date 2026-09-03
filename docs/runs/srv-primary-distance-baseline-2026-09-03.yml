@@ -97,7 +97,10 @@ validation:
     >= 200 SrV reference persons or the ZGB aggregate gaps. Wolfsburg (03103) is not surveyed by
     SrV 2023; its rows come from the RegioStaR-7 type-72 pool (column source = proxy_rs7_72) and
     are an ASSUMPTION, not an observation. This is a measurement against a reference, not a
-    validation of the model.'
+    validation of the model. The inter-Gemeinde gap verdict is to be read together with ADR-0102
+    Assumption 2''s GIS-validity tail finding: SrV may understate long distances (GIS-invalid
+    work trips carry a heavier long-distance tail than GIS-valid ones), so the model''s
+    inter-Gemeinde distribution is being compared against a possibly short-biased tail.'
 - metric: 'home->education distance band EMD per home Kreis and model age level vs SrV 2023'
   reference: eqasim-data/data/braunschweig/srv/srv2023_education_distance_by_kreis_level.csv
   result: 'Five comparable levels x (8 Kreise + the zgb aggregate); no cell lacked a reference.

@@ -338,17 +338,31 @@ def gis_validity_bias_check(trips: pd.DataFrame) -> dict:
     on the full candidate pool, not the already-selected sample.
 
     Compares the self-reported distance (``V_LAENGE``) between GIS-invalid and GIS-valid
-    candidate trips (median each); if GIS-invalid trips were systematically longer or
-    shorter, excluding them (per R6, when both directions of a person are GIS-invalid)
+    candidate trips (median AND mean each); if GIS-invalid trips were systematically longer
+    or shorter, excluding them (per R6, when both directions of a person are GIS-invalid)
     would bias the reference away from a plausible ASSUMPTION of missingness at random.
     Also reports the median of ``GIS_LAENGE / V_LAENGE`` over GIS-valid trips with
     ``V_LAENGE > 0``, a sanity check that the two distance measures broadly agree.
 
-    Returns a dict: ``n_gis_invalid``, ``n_gis_valid`` (candidate trips, both directions);
-    ``median_self_reported_km_gis_invalid``, ``median_self_reported_km_gis_valid`` (NaN if
-    the respective subset is empty); ``median_gis_over_self_reported`` (NaN if no GIS-valid
-    trip has ``V_LAENGE > 0``). This is a pure diagnostic: it does not feed the committed
-    target tables and has no synpp dependency.
+    Ruling R27 (controller, whole-branch review follow-up): ``V_LAENGE`` carries SrV missing-
+    data sentinel codes (e.g. -5 "weiss nicht", -10 "unplausibel") alongside real lengths, and
+    an earlier version of this function let those sentinels leak into the median/mean as
+    large-magnitude negative numbers, understating the GIS-invalid median. Every median/mean
+    below is computed over ``V_LAENGE > 0`` only (excluding both sentinel codes and genuine
+    zero-length trips); the share of GIS-invalid trips with NO usable self-reported length at
+    all is reported explicitly instead, so that exclusion is visible rather than silently
+    absorbed into a mis-stated "typical" distance.
+
+    Returns a dict: ``n_gis_invalid``, ``n_gis_valid`` (candidate trips, both directions, ALL
+    of them regardless of whether they have a usable self-reported length);
+    ``n_gis_invalid_without_self_reported`` (GIS-invalid trips with no ``V_LAENGE > 0`` value)
+    and ``share_gis_invalid_without_self_reported`` (that count over ``n_gis_invalid``, NaN if
+    ``n_gis_invalid`` is 0); ``median_self_reported_km_gis_invalid`` /
+    ``median_self_reported_km_gis_valid`` and ``mean_self_reported_km_gis_invalid`` /
+    ``mean_self_reported_km_gis_valid`` (each over the ``V_LAENGE > 0`` subset of its group,
+    NaN if that subset is empty); ``median_gis_over_self_reported`` (NaN if no GIS-valid trip
+    has ``V_LAENGE > 0``). This is a pure diagnostic: it does not feed the committed target
+    tables and has no synpp dependency.
     """
     t = trips.copy()
     outbound = (t["V_START_LAGE"] == START_AT_OWN_HOME) & (t["V_ZWECK"] == PURPOSE_WORK)
@@ -357,30 +371,48 @@ def gis_validity_bias_check(trips: pd.DataFrame) -> dict:
     cand["gis_valid"] = pd.to_numeric(cand["GIS_LAENGE_GUELTIG"], errors="coerce") > 0
     cand["self_reported_km"] = pd.to_numeric(cand["V_LAENGE"], errors="coerce")
     cand["gis_km"] = pd.to_numeric(cand["GIS_LAENGE"], errors="coerce")
+    # R27: a usable self-reported length excludes both SrV missing-data sentinel codes
+    # (negative) and a literal zero, none of which represent an actual reported distance.
+    cand["has_self_reported"] = cand["self_reported_km"] > 0
 
     invalid = cand[~cand["gis_valid"]]
     valid = cand[cand["gis_valid"]]
     n_invalid = int(len(invalid))
     n_valid = int(len(valid))
-    median_invalid = float(invalid["self_reported_km"].median()) if n_invalid else float("nan")
-    median_valid = float(valid["self_reported_km"].median()) if n_valid else float("nan")
 
-    ratio_subset = valid[valid["self_reported_km"] > 0]
-    median_ratio = (float((ratio_subset["gis_km"] / ratio_subset["self_reported_km"]).median())
-                    if len(ratio_subset) else float("nan"))
+    n_invalid_without_self_reported = int((~invalid["has_self_reported"]).sum())
+    share_invalid_without_self_reported = (
+        n_invalid_without_self_reported / n_invalid if n_invalid else float("nan"))
+
+    invalid_reported = invalid[invalid["has_self_reported"]]
+    valid_reported = valid[valid["has_self_reported"]]
+    median_invalid = float(invalid_reported["self_reported_km"].median()) if len(invalid_reported) else float("nan")
+    median_valid = float(valid_reported["self_reported_km"].median()) if len(valid_reported) else float("nan")
+    mean_invalid = float(invalid_reported["self_reported_km"].mean()) if len(invalid_reported) else float("nan")
+    mean_valid = float(valid_reported["self_reported_km"].mean()) if len(valid_reported) else float("nan")
+
+    median_ratio = (float((valid_reported["gis_km"] / valid_reported["self_reported_km"]).median())
+                    if len(valid_reported) else float("nan"))
 
     result = {
         "n_gis_invalid": n_invalid,
         "n_gis_valid": n_valid,
+        "n_gis_invalid_without_self_reported": n_invalid_without_self_reported,
+        "share_gis_invalid_without_self_reported": share_invalid_without_self_reported,
         "median_self_reported_km_gis_invalid": median_invalid,
         "median_self_reported_km_gis_valid": median_valid,
+        "mean_self_reported_km_gis_invalid": mean_invalid,
+        "mean_self_reported_km_gis_valid": mean_valid,
         "median_gis_over_self_reported": median_ratio,
     }
     logger.info(
         "[srv_distance_targets] GIS-validity bias check (home-based work candidate trips): "
-        "n_gis_invalid=%d, n_gis_valid=%d, median self-reported km gis_invalid=%.2f vs "
-        "gis_valid=%.2f, median GIS/self-reported ratio (gis_valid, V_LAENGE>0)=%.3f",
-        n_invalid, n_valid, median_invalid, median_valid, median_ratio)
+        "n_gis_invalid=%d (%d, %.1f%% with no usable self-reported length), n_gis_valid=%d, "
+        "median self-reported km (V_LAENGE>0) gis_invalid=%.2f vs gis_valid=%.2f, "
+        "mean self-reported km (V_LAENGE>0) gis_invalid=%.2f vs gis_valid=%.2f, "
+        "median GIS/self-reported ratio (gis_valid, V_LAENGE>0)=%.3f",
+        n_invalid, n_invalid_without_self_reported, 100.0 * share_invalid_without_self_reported,
+        n_valid, median_invalid, median_valid, mean_invalid, mean_valid, median_ratio)
     return result
 
 

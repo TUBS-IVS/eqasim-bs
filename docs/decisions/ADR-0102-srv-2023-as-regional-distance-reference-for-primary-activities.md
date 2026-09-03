@@ -65,15 +65,26 @@
      shrunk further), because there is no surveyed Wolfsburg cell to shrink toward.
   2. GIS-invalid trips (16.9% of 9,730 work candidate trips, 15.7% of 5,449 education candidate
      trips) fall back to the person's other direction; a person is excluded only when BOTH
-     directions are GIS-invalid (R6). ASSUMPTION: this is missing at random with respect to
-     distance (R13): the 2026-09-03 bias check found a self-reported median of 13 km for
-     GIS-invalid work trips versus 12 km for GIS-valid ones, GIS/self-reported ratio 0.99. This
-     is the SINGLE home of these bias-check numbers (do not restate them elsewhere without a
-     link back here); they are reproducible via
-     `scripts/extract_srv_primary_distance_targets.py --bias-check`
+     directions are GIS-invalid (R6). This is the SINGLE home of the GIS-validity bias-check
+     numbers (do not restate them elsewhere without a link back here); they are reproducible
+     via `scripts/extract_srv_primary_distance_targets.py --bias-check`
      (`braunschweig.calibration.srv_distance_targets.gis_validity_bias_check`), which computes
-     them from the committed selection logic rather than from a one-off, uncommitted script. A
-     direct consequence: the commute band `100_plus` is 0.0 in every row (no GIS-valid
+     them from the committed selection logic (home-based work candidate trips, both
+     directions) rather than from a one-off, uncommitted script. Ruling R27 (controller,
+     whole-branch review follow-up) recomputed the check excluding SrV missing-data sentinel
+     codes on `V_LAENGE` (e.g. -5 "weiss nicht", -10 "unplausibel"; 426 of the 1,643 GIS-invalid
+     trips, 25.9%, carry no usable self-reported length at all) from every median/mean:
+     self-reported median 13.00 km (GIS-invalid) versus 12.00 km (GIS-valid, n=8,087), mean
+     26.1 km versus 16.5 km, GIS/self-reported ratio 0.994 (both directions and outbound-only
+     give the same medians/ratio). ASSUMPTION: missing-at-random with respect to distance (R13)
+     holds at the CENTRE of the distribution (median 13 vs 12 km, a modest difference) but NOT
+     in the tail (mean 26.1 vs 16.5 km; 25.9% of GIS-invalid trips report no length at all):
+     GIS-invalid trips carry a heavier long-distance tail than GIS-valid ones, so excluding them
+     may understate the long-distance mass of the SrV targets -- consistent with the empty
+     `100_plus` band below. Layer 1 (#359) must consider a self-reported-length fallback or an
+     explicit tail correction before pinning friction factors, rather than treating the
+     `100_plus` band's emptiness as settled fact. A direct consequence already known independent
+     of this refinement: the commute band `100_plus` is 0.0 in every row (no GIS-valid
      home-based trip >= 100 km exists in this delivery), so that band cannot be calibrated from
      SrV at all; the OD anchors (BA Pendleratlas, VerBindungen) own that mass instead -- the same
      mass that MiD's Pendeldistanz tables show is non-trivial (P13 ~2%, P38.2 ~13% at >= 100 km).
