@@ -9,7 +9,6 @@ committed tables changed, not that the extraction is wrong.
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from braunschweig.calibration import srv_distance_targets as T
@@ -74,6 +73,7 @@ def test_education_levels_and_shares(education):
     assert set(education[~education["comparable"]]["education_level"]) == set(T.DESCRIPTIVE_ONLY_LEVELS)
     cols = [f"share_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
     nonempty = education[education["n_persons"] > 0]
+    assert len(nonempty) > 0
     assert np.allclose(nonempty[cols].sum(axis=1), 1.0, atol=1e-6)
     for level in T.COMPARABLE_LEVELS:
         rows = comp[(comp["education_level"] == level) & (comp["level_geo"] == "kreis")]
