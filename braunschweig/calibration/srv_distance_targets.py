@@ -4,8 +4,10 @@ Builders turn the local-only SrV 2023 "Braunschweig und RGB" scientific-use micr
 (trips + persons + households) into small committed aggregate tables per home Kreis:
 work and education distance band shares (with an intra/inter-Gemeinde split for work),
 and per-Kreis distance quantiles for the per-person commute-distance targets. Loaders
-read the committed tables back. This module has no synpp dependency and is not
-imported by any pipeline stage.
+read the committed tables back. This module has no synpp dependency. It is imported by
+the analysis reference stage ``braunschweig.analysis.reference.srv.commute_distance``
+(and by the extraction script), but by no synthesis stage, so editing it never
+devalidates a cached synthesis result.
 
 Conventions (spec docs/superpowers/specs/2026-09-03-srv-primary-distance-calibration-design.md):
 - observation unit = person: first home->purpose trip, else first purpose->home trip;

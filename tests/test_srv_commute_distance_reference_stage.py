@@ -1,4 +1,6 @@
 """Reference stage: loads the committed SrV distance tables (eqasim analysis/reference pattern)."""
+import os
+
 import pandas as pd
 import pytest
 
@@ -44,6 +46,10 @@ def test_execute_loads_tables(tmp_path):
     out = stage.execute(FakeContext({"data_path": str(tmp_path)}))
     assert set(out) == {"commute", "education", "quantiles", "srv_dir"}
     assert out["commute"]["code"].iloc[0] == "zgb"
+    assert "n_persons" in out["commute"].columns
+    assert "education_level" in out["education"].columns
+    assert "percentile" in out["quantiles"].columns
+    assert out["srv_dir"] == os.path.join(str(tmp_path), "braunschweig", "srv")
 
 
 def test_execute_fails_loudly_when_table_missing(tmp_path):

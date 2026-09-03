@@ -8,9 +8,12 @@ local-only data is needed at analysis time. Consumed by
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from braunschweig.calibration import srv_distance_targets as T
+
+logger = logging.getLogger(__name__)
 
 SRV_SUBDIR = ("braunschweig", "srv")
 
@@ -21,9 +24,19 @@ def configure(context):
 
 def execute(context):
     srv_dir = os.path.join(context.config("data_path"), *SRV_SUBDIR)
+    commute = T.load_commute_targets(srv_dir)
+    education = T.load_education_targets(srv_dir)
+    quantiles = T.load_commute_quantiles(srv_dir)
+    logger.info(
+        "[srv reference] loaded %d commute, %d education, %d quantile rows from %s",
+        len(commute),
+        len(education),
+        len(quantiles),
+        srv_dir,
+    )
     return dict(
-        commute=T.load_commute_targets(srv_dir),
-        education=T.load_education_targets(srv_dir),
-        quantiles=T.load_commute_quantiles(srv_dir),
+        commute=commute,
+        education=education,
+        quantiles=quantiles,
         srv_dir=srv_dir,
     )
