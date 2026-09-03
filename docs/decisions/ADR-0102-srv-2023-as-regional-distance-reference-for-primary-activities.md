@@ -1,9 +1,15 @@
 # ADR-0102 · 2026-09-03 · SrV 2023 as the regional distance reference for the primary activities
-- **Status:** accepted
+- **Status:** active
 - **Context:** The realised home->work / home->education distance distributions were only ever
-  checked against national MiD 2023 tables (P13 per RS7, T43 means), a Pendeldistanz universe
-  that carries roughly 13% of trips >= 100 km -- a band a regional day-trip survey cannot see and
-  a model calibrated against SrV should not be asked to hit either. The 2026-06-25 friction
+  checked against MiD 2023 Pendeldistanz tables: P13 (Tabelle A P13, page 77 -- the REGIONAL
+  "Grossraum Braunschweig" (infas 7555) evaluation of commute distance to the usual workplace
+  (Pendeldistanz), including non-daily commuters, n_unweighted 1,583, RegioStaR-7 type 71 absent
+  from this region) and P38.2 (Kreis-level commute-distance bands and means). Both already carry
+  long-distance mass that SrV structurally cannot see: P13's Gesamt row has ~2% of persons at
+  >= 100 km (`d_100p`), and P38.2's Gesamt row has ~13% (`d_100_200` 6% + `d_200_300` 4% +
+  `d_300km_plus` 3%), while SrV's realised Tuesday-Thursday day trips carry NO home-based trip
+  >= 100 km at all in this delivery -- a band a regional day-trip survey structurally cannot see
+  and a model calibrated against SrV should not be asked to hit. The 2026-06-25 friction
   measurement (ADR-0041) predates the VerBindungen inner anchor (#193) and the TAZ work, and the
   2026-08-20 100% run (`docs/runs/100pct-allfeat-i240-2026-08-20.yml`) recorded no distance
   validation at all. The regional SrV 2023 "Braunschweig und Regionalverband Grossraum
@@ -22,9 +28,10 @@
     definition; business trips (V_ZWECK 2) and "andere Bildungseinrichtung" (V_ZWECK 7) are
     excluded; reporting days are Tuesday-Thursday only.
   - Distance = `GIS_LAENGE` (GIS-routed km) where `GIS_LAENGE_GUELTIG > 0`. A GIS-invalid trip
-    falls back to the other direction (R5); if that direction is also GIS-invalid, or a negative
-    weight or an over-cap distance (> 300 km) lands on the selected trip, the person is excluded,
-    not substituted (R6). Pool-level negative-weight/over-cap counts are kept as diagnostics only.
+    falls back to the other direction (R5); if both directions are GIS-invalid, or a negative
+    weight or an over-cap distance (> 300 km) lands on the selected trip, the person is excluded
+    rather than substituted (R6; the missingness reasoning for both cases is in ASSUMPTIONS 2
+    and 3 below). Pool-level negative-weight/over-cap counts are kept as diagnostics only.
   - Weight = `GEWICHT_W_ZENSUS` (expansion to Zensus 2022); `GEWICHT_W_WERKTAG` is undefined in
     this delivery and is not used.
   - Kreis = first 5 digits of the household AGS. Work bands (routed km):
@@ -37,8 +44,10 @@
     (model age band +/- 1 year); sekundar_1 = V_ZWECK 5 at age 10-15; upper_secondary = V_ZWECK 5
     or 6 at age 16-19 (oberstufe and BBS pooled, because the model's education output carries no
     level and derives one from age alone); university = V_ZWECK 6 at age 20+. Persons outside
-    every band are excluded from the comparable levels and counted (2.6% of the education
-    selection in this delivery).
+    every band are excluded from the comparable levels and counted: 65 of the 2,503 selected
+    education persons (2.6%), i.e. the education table's `n_persons_selected=2503` header value
+    minus the five comparable-level ZGB rows (kindergarten 647 + grundschule 571 + sekundar_1
+    718 + upper_secondary 360 + university 142 = 2,438).
   - The band EMD reported as `emd_noise_95_*` is normalised to `[0, 1]` exactly like
     `braunschweig.calibration.metrics.emd_on_bands` (re-implemented locally in the extractor to
     avoid a pipeline import), so the SrV noise floor, the comparison stage and the project's
@@ -54,17 +63,27 @@
      (Braunschweig + Salzgitter, Zensus-weighted), `source = proxy_rs7_72`; per R11 that row
      carries the pool's raw shares/quantiles in BOTH the raw and shrunk columns (a pool is not
      shrunk further), because there is no surveyed Wolfsburg cell to shrink toward.
-  2. GIS-invalid exclusion (16.9% of 9,730 work candidate trips, 15.7% of 5,449 education
-     candidate trips) is missing at random with respect to distance (R13): the 2026-09-03 bias
-     check found a self-reported median of 13 km for GIS-invalid work trips versus 12 km for
-     GIS-valid ones, GIS/self-reported ratio 0.99. A direct consequence: the commute band
-     `100_plus` is 0.0 in every row (no GIS-valid home-based trip >= 100 km exists in this
-     delivery), so that band cannot be calibrated from SrV at all; the OD anchors (BA
-     Pendleratlas, VerBindungen) own that mass instead.
-  3. Per-Kreis rows extrapolate a stratified PSU design over roughly 44 selected municipalities
+  2. GIS-invalid trips (16.9% of 9,730 work candidate trips, 15.7% of 5,449 education candidate
+     trips) fall back to the person's other direction; a person is excluded only when BOTH
+     directions are GIS-invalid (R6). ASSUMPTION: this is missing at random with respect to
+     distance (R13): the 2026-09-03 bias check found a self-reported median of 13 km for
+     GIS-invalid work trips versus 12 km for GIS-valid ones, GIS/self-reported ratio 0.99. A
+     direct consequence: the commute band `100_plus` is 0.0 in every row (no GIS-valid
+     home-based trip >= 100 km exists in this delivery), so that band cannot be calibrated from
+     SrV at all; the OD anchors (BA Pendleratlas, VerBindungen) own that mass instead -- the same
+     mass that MiD's Pendeldistanz tables show is non-trivial (P13 ~2%, P38.2 ~13% at >= 100 km).
+  3. A negative weight or an over-cap distance (> 300 km) on the SELECTED trip excludes the
+     person rather than falling back to the other direction (R6) -- a missingness choice, not a
+     substitution, because a fallback direction with those same defects would be equally
+     unusable. In this delivery both counts are zero for both purposes
+     (`n_excluded_weight_negative=0, n_excluded_over_cap=0` in the committed CSV headers), so the
+     rule has not yet been exercised on the ZGB sample.
+  4. Per-Kreis rows extrapolate a stratified PSU design over roughly 44 selected municipalities
      to the full Kreis.
-- **Rationale:** SrV is regional, GIS-routed, and a Tuesday-Thursday day-trip universe -- the
-  apples-to-apples reference for a day-plan model, unlike MiD's national Pendeldistanz universe.
+- **Rationale:** SrV is regional, GIS-routed, and a Tuesday-Thursday realised day-trip universe --
+  the apples-to-apples reference for a day-plan model, distinct from MiD's Pendeldistanz universe
+  (commute distance to the usual workplace, including non-daily commuters), which carries
+  long-distance mass SrV structurally does not (P13 ~2%, P38.2 ~13% of persons at >= 100 km).
   Sample sizes support this as a per-Kreis reference: work n_persons per surveyed Kreis ranges
   387 (03102, Salzgitter, minimum) to 1,272 (03101, Braunschweig, maximum), ZGB total 4,543
   persons (Wolfsburg's proxy pool: 1,659). Education n_persons per surveyed Kreis (comparable
@@ -74,10 +93,17 @@
   The ZGB routed median work distance is 10.62 km. BBS/university cells are thin at Kreis
   granularity and are flagged by the module's own `emd_noise_95` column rather than hidden.
 - **Rejected alternatives:**
-  - MiD P13/T43 as the sole reference: national, not regional, and its Pendeldistanz universe
-    carries roughly 13% of trips >= 100 km that a regional day-trip survey structurally cannot
-    validate -- comparisons against it stay alongside (`run_mid_validation`) to expose where the
-    two references differ, but SrV is the calibration target.
+  - MiD P13/T43 as the sole reference, for three reasons: (a) universe -- Pendeldistanz (commute
+    distance to the usual workplace, including non-daily commuters) versus SrV's realised
+    Tuesday-Thursday day trips; (b) key -- P13 is reported per RegioStaR-7 class, not the model's
+    home-Kreis key (P38.2 does have Kreis means, but see the next bullet); (c) sample -- P13's
+    n_unweighted = 1,583 persons for the whole region versus SrV's 4,543. Note P13 is itself a
+    REGIONAL "Grossraum Braunschweig" (infas 7555) evaluation, not national (RegioStaR-7 type 71
+    is absent from its rows, consistent with the region it covers); T43 (school distances by
+    RegioStaR-7) may be national in scope, but that is UNVERIFIED in this repo -- the committed
+    `mid2023_T43_school_distance_by_rs7.csv` carries no source header stating its geography.
+    Comparisons against both stay alongside (`run_mid_validation`) to expose where the two
+    references differ, but SrV is the calibration target.
   - MiD P38.2 per-Kreis means as targets: the committed table shows Salzgitter 237.6 km and
     Wolfsburg 90.4 km mean commute distances -- both outlier-driven and unusable as a target or
     even as a Wolfsburg cross-check.
@@ -100,8 +126,13 @@
 - **Evidence:** the three committed tables under `eqasim-data/data/braunschweig/srv/`
   (`srv2023_commute_distance_by_kreis.csv`, `srv2023_education_distance_by_kreis_level.csv`,
   `srv2023_commute_distance_quantiles_by_kreis.csv`), generated by
-  `scripts/extract_srv_primary_distance_targets.py`; the Data Registry record
-  `srv2023_primary_distance_targets`; issue #358 (parent #357); the design spec
+  `scripts/extract_srv_primary_distance_targets.py`; the committed MiD tables
+  `eqasim-data/data/braunschweig/mid/mid2023_P13.csv`,
+  `mid2023_P13_commute_distance_by_rs7.csv` (source header: "MiD 2023 Grossraum Braunschweig
+  (infas 7555), Tabelle A P13") and `mid2023_P38_2_commute_distance_by_kreis.csv` (source
+  header: "MiD 2023 Grossraum Braunschweig (infas 7555), Tabelle A P38.2"), read directly for
+  the >= 100 km figures in this record; the Data Registry record `srv2023_primary_distance_targets`;
+  issue #358 (parent #357); the design spec
   `docs/superpowers/specs/2026-09-03-srv-primary-distance-calibration-design.md` (gitignored,
   per-instance design document, not a committed source -- cited for context only, not as the
   origin of any number stated above).

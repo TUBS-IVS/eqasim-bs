@@ -69,8 +69,8 @@ limitations: |
   PSU design over ~44 selected municipalities; per-Kreis rows extrapolate to the Kreis
   (ASSUMPTION-grade). Education levels follow the model's age banding (oberstufe and bbs pooled
   as upper_secondary); BBS and university cells are too thin for a per-Kreis decision
-  (pre-registered rule: braunschweig.calibration.decision; ADR to follow in the Phase 0 decision
-  record).
+  (pre-registered rule: braunschweig.calibration.decision; reference definitions: ADR-0102;
+  build/no-build decision: ADR-0103 (Task 12)).
 notes: |
   Reference for the SrV distance-distribution calibration of the primary activities (issue #357,
   Phase 0 #358). Compared against runs by braunschweig.analysis.synthesis.commute_distance_by_kreis.
