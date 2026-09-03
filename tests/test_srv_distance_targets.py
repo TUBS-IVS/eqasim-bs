@@ -351,5 +351,103 @@ def test_loaders_round_trip(tmp_path):
     T.build_quantile_table(obs).to_csv(tmp_path / T.QUANTILE_TABLE, index=False)
     c = T.load_commute_targets(tmp_path); e = T.load_education_targets(tmp_path); q = T.load_commute_quantiles(tmp_path)
     assert c["code"].dtype == object and "03101" in set(c["code"])
-    assert "kindergarten" in set(e["education_level"])
+    # A value that depends on the actual data, not merely on the level's presence: with
+    # purpose_code=3, age=4 every one of the 360 persons maps to "kindergarten", so the
+    # ZGB row for that level must carry all of them.
+    kg_zgb = e[(e["level_geo"] == "zgb") & (e["education_level"] == "kindergarten")]
+    assert len(kg_zgb) == 1 and int(kg_zgb.iloc[0]["n_persons"]) == 360
     assert len(q[q["code"] == "03101"]) == 99
+
+
+def test_loaders_raise_file_not_found_with_regeneration_hint(tmp_path):
+    for loader in (T.load_commute_targets, T.load_education_targets, T.load_commute_quantiles):
+        with pytest.raises(FileNotFoundError, match="extract_srv_primary_distance_targets"):
+            loader(tmp_path)
+
+
+def test_dominant_rs7_by_kreis_is_weight_modal():
+    obs = pd.DataFrame({
+        "kreis": ["03101"] * 5 + ["03101"] * 295,
+        "regiostar7": [71] * 5 + [72] * 295,
+        "weight": [1000.0] * 5 + [1.0] * 295,
+    })
+    assert T.dominant_rs7_by_kreis(obs)["03101"] == 71   # 5 persons @ w=1000 beats 295 @ w=1
+
+
+def test_weighted_mean_median_zero_weight_cell_does_not_crash():
+    """IMPORTANT-1: np.average raises ZeroDivisionError on an all-zero weight vector; a
+    non-empty subset can still have zero total weight (a zero weight passes the
+    ``weight >= 0`` upstream filter), so build_commute_table must not crash on it."""
+    obs = _obs()
+    obs.loc[obs["kreis"] == "03101", "weight"] = 0.0
+    table = T.build_commute_table(obs, n_bootstrap=10)  # must not raise
+    row = table[(table["level_geo"] == "kreis") & (table["code"] == "03101")].iloc[0]
+    assert row["n_persons"] == 300
+    assert pd.isna(row["mean_km"]) and pd.isna(row["median_km"]) and pd.isna(row["share_intra"])
+
+
+def test_build_commute_table_empty_kreis_contract():
+    """IMPORTANT-4a: a Kreis absent from the fixture (03102) gets a well-formed empty row
+    that shrinks to the ZGB pool (it has no persons at all, hence no RS7-modal pool)."""
+    table = T.build_commute_table(_obs(), n_bootstrap=50)
+    kreis_rows = table[table["level_geo"] == "kreis"].set_index("code")
+    row = kreis_rows.loc["03102"]
+    assert row["n_persons"] == 0
+    assert pd.isna(row["mean_km"]) and pd.isna(row["median_km"]) and pd.isna(row["share_intra"])
+    raw_cols = [f"share_all_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    assert (row[raw_cols].astype(float) == 0.0).all()
+    assert row["emd_noise_95_all"] == 0.0
+    # "03102" never appears in the fixture at all, so dominant_rs7_by_kreis has no entry
+    # for it and the ZGB pool (not an RS7 pool) is the expected fallback.
+    assert "03102" not in T.dominant_rs7_by_kreis(_obs())
+    zgb = table[table["level_geo"] == "zgb"].iloc[0]
+    shrunk_cols = [f"share_all_shrunk_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    np.testing.assert_allclose(row[shrunk_cols].values.astype(float), zgb[raw_cols].values.astype(float))
+
+
+def test_build_quantile_table_empty_kreis_uses_pool_quantiles_exactly():
+    """IMPORTANT-4b: 03102's raw quantiles are NaN and its shrunk quantiles equal the
+    fallback pool's (ZGB, since 03102 has no persons and thus no RS7-modal pool)."""
+    table = T.build_quantile_table(_obs())
+    row = table[(table["level_geo"] == "kreis") & (table["code"] == "03102")].sort_values("percentile")
+    assert (row["n_persons"] == 0).all()
+    assert row["distance_km_euclid_raw"].isna().all()
+    zgb = table[table["level_geo"] == "zgb"].sort_values("percentile")
+    np.testing.assert_allclose(
+        row["distance_km_euclid_shrunk"].values, zgb["distance_km_euclid_shrunk"].values)
+
+
+def test_build_education_table_wolfsburg_proxy_falls_back_to_zgb_when_rs7_72_absent(caplog):
+    """IMPORTANT-2: route all RS7-72 (BS) persons to "university" and all RS7-74 (GF)
+    persons to "sekundar_1", so "sekundar_1" has region-wide persons but none in RS7-72.
+    The Wolfsburg proxy row for "sekundar_1" must then use the ZGB pool (not an all-zero
+    raw/shrunk row), and the substitution must be logged by name."""
+    obs = _obs()
+    obs["purpose_code"] = np.where(obs["regiostar7"] == 72, 6, 5)
+    obs["age"] = np.where(obs["regiostar7"] == 72, 25, 12)
+    caplog.set_level("WARNING")
+    table = T.build_education_table(obs, n_bootstrap=10)
+    sek = table[table["education_level"] == "sekundar_1"]
+    wob = sek[(sek["level_geo"] == "kreis") & (sek["code"] == T.WOLFSBURG_KREIS)].iloc[0]
+    zgb = sek[sek["level_geo"] == "zgb"].iloc[0]
+    assert wob["n_persons"] == 0
+    assert zgb["n_persons"] > 0
+    cols = [f"share_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
+    shrunk_cols = [f"share_shrunk_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
+    np.testing.assert_allclose(wob[shrunk_cols].values.astype(float), zgb[cols].values.astype(float))
+    assert any("sekundar_1" in r.getMessage() and "ZGB pool used" in r.getMessage() for r in caplog.records)
+
+
+def test_builders_log_kreis_row_pool_provenance(caplog):
+    """IMPORTANT-3 (fallback transparency, CLAUDE.md MANDATORY): each builder must log
+    the own-pool / ZGB-fallback / proxy split of its Kreis rows, not just build silently."""
+    caplog.set_level("INFO")
+    T.build_commute_table(_obs(), n_bootstrap=10)
+    T.build_education_table(_obs(), n_bootstrap=10)
+    T.build_quantile_table(_obs())
+    messages = [r.getMessage() for r in caplog.records]
+    for table_name in ("commute table", "education table", "quantile table"):
+        assert any(
+            table_name in m and "own RS7 pool" in m and "ZGB fallback" in m and "proxy" in m
+            for m in messages
+        ), f"missing pool-provenance log line for {table_name}"

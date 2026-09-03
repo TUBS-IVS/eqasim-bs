@@ -414,14 +414,25 @@ def dominant_rs7_by_kreis(obs: pd.DataFrame) -> dict:
 
     Only covers Kreise that actually have persons in ``obs``; a Kreis absent from the
     data has no entry here and callers must fall back to the next-higher pool (ZGB).
+    Ties on summed weight are broken by ``regiostar7`` (ascending) for a deterministic
+    result regardless of input row order (``kind="stable"``).
     """
     g = obs.groupby(["kreis", "regiostar7"])["weight"].sum().reset_index()
-    g = g.sort_values(["kreis", "weight"], ascending=[True, False]).drop_duplicates("kreis")
+    g = g.sort_values(["kreis", "weight", "regiostar7"], ascending=[True, False, True], kind="stable")
+    g = g.drop_duplicates("kreis")
     return dict(zip(g["kreis"], g["regiostar7"].astype(int)))
 
 
 def _weighted_mean_median(d, w):
-    if len(d) == 0:
+    """Weighted mean/median; NaN for an empty subset or one whose total weight is <= 0.
+
+    ``np.average`` raises ZeroDivisionError on an all-zero weight vector (a non-empty
+    subset can still have zero total weight, since a zero weight passes the ``weight
+    >= 0`` filter upstream); guarding on the weight sum, not just the count, avoids
+    that crash instead of merely narrowing the len(d) == 0 case.
+    """
+    w = np.asarray(w, dtype=float)
+    if len(d) == 0 or w.sum() <= 0:
         return float("nan"), float("nan")
     return float(np.average(d, weights=w)), float(weighted_quantiles(d, w, [0.5])[0])
 
@@ -434,6 +445,22 @@ def _share_block(d, w, edges, labels, prefix):
 def _pool_shares(obs, edges, mask=None):
     sub = obs if mask is None else obs[mask]
     return weighted_band_shares(sub["distance_km"].values, sub["weight"].values, edges), int(len(sub))
+
+
+def _pool_for_kreis(kreis, rs7_of, pools_by_rs7, zgb_pool):
+    """The shrinkage pool for one Kreis: its dominant RS7 pool, or the ZGB pool as a
+    fallback when no RS7-modal pool is available for it (no persons at all, or none
+    within the RS7 group that has this Kreis's dominant type).
+
+    Returns ``(pool, used_fallback)`` so callers can count and log how often the ZGB
+    fallback fires per CLAUDE.md's fallback-transparency rule: a Kreis-code join bug
+    or an empty upstream extract would otherwise silently degrade every Kreis row to
+    the ZGB pool without anyone noticing.
+    """
+    rs7 = rs7_of.get(kreis)
+    if rs7 is not None and rs7 in pools_by_rs7:
+        return pools_by_rs7[rs7], False
+    return zgb_pool, True
 
 
 def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_bootstrap=500, seed=0):
@@ -488,6 +515,8 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
     if proxy_sub.empty:
         raise ValueError("No SrV persons with RegioStaR-7 == %d; cannot build the Wolfsburg proxy" % PROXY_RS7)
 
+    pools_by_rs7_and_scope = {s: {rs7: rs7_shares[rs7][s][1] for rs7 in rs7_shares} for s in scopes}
+    n_own_pool = n_fallback = 0
     for kreis in ZGB_KREISE:
         if kreis == WOLFSBURG_KREIS:
             # Wolfsburg proxy: the RS7-72 pool row (no further shrinkage; source flags
@@ -495,9 +524,13 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
             rows.append(_row("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
             continue
         sub = obs_work[obs_work["kreis"] == kreis]
-        rs7 = rs7_of.get(kreis)
-        pool = {s: rs7_shares[rs7][s][1] for s in scopes} if rs7 is not None \
-            else {s: zgb_shares[s][0] for s in scopes}
+        pool = {}
+        used_fallback = False
+        for s in scopes:
+            pool[s], fb = _pool_for_kreis(kreis, rs7_of, pools_by_rs7_and_scope[s], zgb_shares[s][0])
+            used_fallback = used_fallback or fb
+        n_fallback += int(used_fallback)
+        n_own_pool += int(not used_fallback)
         rows.append(_row("kreis", kreis, "srv", sub, pool))
 
     for rs7 in sorted(rs7_shares):
@@ -505,6 +538,11 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
                          {s: zgb_shares[s][0] for s in scopes}))
     rows.append(_row("zgb", "zgb", "srv", obs_work, None))
     table = pd.DataFrame(rows)
+    n_kreis = len(ZGB_KREISE)
+    logger.info(
+        "[srv_distance_targets] commute table: Kreis rows from own RS7 pool %d/%d, "
+        "ZGB fallback %d/%d, proxy 1/%d",
+        n_own_pool, n_kreis, n_fallback, n_kreis, n_kreis)
     logger.info("[srv_distance_targets] commute table: %d rows, %d persons total",
                 len(table), int(len(obs_work)))
     return table
@@ -532,10 +570,11 @@ def build_education_table(obs_edu, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boot
     obs = obs[obs["level"].notna()]
     rs7_of = dominant_rs7_by_kreis(obs)
     rows = []
+    pool_counts = {"own": 0, "fallback": 0, "proxy": 0}
 
     def _rows_for_level(level_col, level, comparable):
         sel = obs[obs[level_col] == level]
-        zgb_raw, zgb_n = _pool_shares(sel, edges)
+        zgb_raw, _ = _pool_shares(sel, edges)
         rs7_pool = {}
         for rs7 in sorted(sel["regiostar7"].unique()):
             raw, n = _pool_shares(sel, edges, sel["regiostar7"] == rs7)
@@ -557,10 +596,23 @@ def build_education_table(obs_edu, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boot
         for kreis in ZGB_KREISE:
             if kreis == WOLFSBURG_KREIS:
                 proxy_sub = sel[sel["regiostar7"] == PROXY_RS7]
-                out.append(_r("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
+                pool_counts["proxy"] += 1
+                if proxy_sub.empty:
+                    # This level has region-wide persons but none in RS7-72: copying an
+                    # empty proxy subset would silently give Wolfsburg an all-zero row
+                    # (raw AND shrunk, since pool=None means shrunk=raw); use the ZGB
+                    # pool instead so the row is a defensible (if coarser) estimate, and
+                    # say so loudly rather than letting the zero pass unnoticed.
+                    logger.warning(
+                        "[srv_distance_targets] education/%s: no RS7-72 persons for the "
+                        "Wolfsburg proxy, ZGB pool used", level)
+                    out.append(_r("kreis", kreis, PROXY_SOURCE, proxy_sub, zgb_raw))
+                else:
+                    out.append(_r("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
                 continue
             sub = sel[sel["kreis"] == kreis]
-            pool = rs7_pool.get(rs7_of.get(kreis, -1), zgb_raw)
+            pool, used_fallback = _pool_for_kreis(kreis, rs7_of, rs7_pool, zgb_raw)
+            pool_counts["fallback" if used_fallback else "own"] += 1
             out.append(_r("kreis", kreis, "srv", sub, pool))
         for rs7 in sorted(rs7_pool):
             out.append(_r("rs7", str(rs7), "srv", sel[sel["regiostar7"] == rs7], zgb_raw))
@@ -572,6 +624,12 @@ def build_education_table(obs_edu, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boot
     for level in DESCRIPTIVE_ONLY_LEVELS:
         rows.extend(_rows_for_level("level_descriptive", level, False))
     table = pd.DataFrame(rows)
+    n_kreis_rows = pool_counts["own"] + pool_counts["fallback"] + pool_counts["proxy"]
+    logger.info(
+        "[srv_distance_targets] education table: Kreis rows from own RS7 pool %d/%d, "
+        "ZGB fallback %d/%d, proxy %d/%d",
+        pool_counts["own"], n_kreis_rows, pool_counts["fallback"], n_kreis_rows,
+        pool_counts["proxy"], n_kreis_rows)
     logger.info("[srv_distance_targets] education table: %d rows, %d persons total",
                 len(table), int(len(obs)))
     return table
@@ -615,6 +673,8 @@ def build_quantile_table(obs_work, detour_factor=DEFAULT_DETOUR_FACTOR,
                          "percentile": int(round(p * 100)),
                          "distance_km_euclid_raw": float(r), "distance_km_euclid_shrunk": float(s)})
 
+    pools_by_rs7 = {rs7: rs7_q[rs7][1] for rs7 in rs7_q}
+    n_own_pool = n_fallback = 0
     for kreis in ZGB_KREISE:
         if kreis == WOLFSBURG_KREIS:
             raw, _, n = rs7_q[PROXY_RS7]
@@ -622,8 +682,9 @@ def build_quantile_table(obs_work, detour_factor=DEFAULT_DETOUR_FACTOR,
             continue
         sub = obs[obs["kreis"] == kreis]
         n = len(sub)
-        rs7 = rs7_of.get(kreis)
-        pool = rs7_q[rs7][1] if rs7 is not None else zgb_q
+        pool, used_fallback = _pool_for_kreis(kreis, rs7_of, pools_by_rs7, zgb_q)
+        n_fallback += int(used_fallback)
+        n_own_pool += int(not used_fallback)
         if n == 0:
             # Explicit n = 0 handling (see the docstring): the raw quantiles are NaN
             # (no observations to compute them from) and the shrunk quantiles are the
@@ -638,6 +699,11 @@ def build_quantile_table(obs_work, detour_factor=DEFAULT_DETOUR_FACTOR,
         _emit("rs7", str(rs7), "srv", n, raw, shrunk)
     _emit("zgb", "zgb", "srv", len(obs), zgb_q, zgb_q)
     table = pd.DataFrame(rows)
+    n_kreis = len(ZGB_KREISE)
+    logger.info(
+        "[srv_distance_targets] quantile table: Kreis rows from own RS7 pool %d/%d, "
+        "ZGB fallback %d/%d, proxy 1/%d",
+        n_own_pool, n_kreis, n_fallback, n_kreis, n_kreis)
     logger.info("[srv_distance_targets] quantile table: %d rows, %d persons total",
                 len(table), int(len(obs)))
     return table
