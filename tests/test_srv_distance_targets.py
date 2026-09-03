@@ -311,7 +311,23 @@ def test_build_education_table_levels_and_comparable_flag():
     comp = table[table["comparable"]]
     assert set(comp["education_level"]) <= set(T.COMPARABLE_LEVELS)
     cols = [f"share_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
-    assert np.allclose(comp[cols].sum(axis=1), 1.0)
+    shrunk_cols = [f"share_shrunk_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
+    # Raw shares sum to 1.0 only where the cell actually has persons: an empty Kreis x
+    # level cell carries all-zero raw shares by design (ruling R1), not a share vector.
+    populated = comp[comp["n_persons"] > 0]
+    assert np.allclose(populated[cols].sum(axis=1), 1.0)
+    # Shrunk shares sum to 1.0 for every row of a level that has any data at all: an
+    # empty Kreis cell's shrunk shares equal its pool, which itself sums to 1.0.
+    zgb_by_level = comp[comp["level_geo"] == "zgb"].set_index("education_level")
+    for level in set(comp["education_level"]):
+        if zgb_by_level.loc[level, "n_persons"] > 0:
+            level_rows = comp[comp["education_level"] == level]
+            assert np.allclose(level_rows[shrunk_cols].sum(axis=1), 1.0)
+    # Pin the R1 contract explicitly: an empty cell has all-zero raw shares and a zero
+    # bootstrap noise floor (there are no observations to resample).
+    empty = comp[comp["n_persons"] == 0]
+    assert (empty[cols] == 0.0).all(axis=None)
+    assert (empty["emd_noise_95"] == 0.0).all()
     assert set(table[table["level_geo"] == "kreis"]["code"]) == set(T.ZGB_KREISE)
 
 
