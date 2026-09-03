@@ -78,7 +78,7 @@ may only name run manifests (no run, no claim).
 | [simwrapper_export](../registry/features/simwrapper_export.yml) | analysis | active | ON | A/-/- | 5 | not claimed | marker | none | unvalidated | pending |
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 1 | not claimed | none | none | unvalidated | pending |
 | [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 6 | proven | none | committed | unvalidated | pending |
-| [srv_primary_distance_validation](../registry/features/srv_primary_distance_validation.yml) | validation | active | ON | A/s/s | 6 | -- | marker | committed | unvalidated | pending |
+| [srv_primary_distance_validation](../registry/features/srv_primary_distance_validation.yml) | validation | active | ON | A/s/s | 6 | -- | marker | committed | measured_vs_reference (`srv-primary-distance-baseline-2026-09-03`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-03 |
 | [student_incommuters](../registry/features/student_incommuters.yml) | cordon | active | ON | A/A/- | 3 | proven | none | none | unvalidated | pending |
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
