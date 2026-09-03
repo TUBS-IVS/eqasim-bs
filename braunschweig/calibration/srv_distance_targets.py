@@ -305,3 +305,65 @@ def select_person_observations(trips, persons, households, purpose_codes,
         100.0 * log["share_start_ags_equals_household_ags"], int(known_home_ags.sum()),
     )
     return obs, log
+
+
+def weighted_band_shares(distances_km, weights, edges) -> np.ndarray:
+    """Weighted share per distance band; all-zero vector for an empty input."""
+    d = np.asarray(distances_km, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    n_bands = len(edges) - 1
+    if d.size == 0 or w.sum() <= 0:
+        return np.zeros(n_bands)
+    inner = np.asarray(edges[1:-1], dtype=float)
+    idx = np.digitize(d, inner)
+    counts = np.bincount(idx, weights=w, minlength=n_bands)[:n_bands]
+    return counts / counts.sum()
+
+
+def weighted_quantiles(values, weights, probabilities) -> np.ndarray:
+    """Weighted empirical quantiles (linear interpolation on the weighted CDF midpoints)."""
+    v = np.asarray(values, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    order = np.argsort(v)
+    v, w = v[order], w[order]
+    cdf = np.cumsum(w) - 0.5 * w
+    cdf /= w.sum()
+    return np.interp(np.asarray(probabilities, dtype=float), cdf, v)
+
+
+def shrink_toward_pool(values, n, pool_values, prior_strength) -> np.ndarray:
+    """Empirical-Bayes style mix: weight n/(n+k) on the cell, k/(n+k) on the pool."""
+    values = np.asarray(values, dtype=float)
+    pool = np.asarray(pool_values, dtype=float)
+    n = float(n)
+    k = float(prior_strength)
+    lam = n / (n + k) if (n + k) > 0 else 0.0
+    return lam * values + (1.0 - lam) * pool
+
+
+def emd_on_shares(p, q) -> float:
+    """1-D earth mover's distance between two band-share vectors, in band units."""
+    p = np.asarray(p, dtype=float)
+    q = np.asarray(q, dtype=float)
+    return float(np.abs(np.cumsum(p) - np.cumsum(q)).sum())
+
+
+def bootstrap_emd_noise_floor(distances_km, weights, edges, n_bootstrap=500, seed=0,
+                              quantile=0.95) -> float:
+    """95th percentile of EMD(bootstrap band shares, full-sample band shares).
+
+    Persons are resampled with replacement (n = sample size) with their weights carried
+    along; the result is the EMD a model would reach against this reference by sampling
+    noise alone. Returns 0.0 for fewer than two observations.
+    """
+    d = np.asarray(distances_km, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    if d.size < 2:
+        return 0.0
+    base = weighted_band_shares(d, w, edges)
+    rng = np.random.default_rng(seed)
+    emds = np.empty(n_bootstrap)
+    for b in range(n_bootstrap):
+        idx = rng.integers(0, d.size, d.size)
+        emds[b] = emd_on_shares(weighted_band_shares(d[idx], w[idx], edges), base)
+    return float(np.quantile(emds, quantile))

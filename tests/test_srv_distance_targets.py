@@ -192,3 +192,44 @@ def test_select_person_observations_empty_candidates_returns_full_key_set():
     assert expected_keys <= set(log.keys())
     assert log["n_candidate_trips"] == 0 and log["n_persons_selected"] == 0
     assert pd.isna(log["share_start_ags_equals_household_ags"])
+
+
+def test_weighted_band_shares_sum_to_one_and_respect_weights():
+    d = np.array([1.0, 7.0, 7.5, 150.0])
+    w = np.array([1.0, 1.0, 2.0, 1.0])
+    shares = T.weighted_band_shares(d, w, T.WORK_BAND_EDGES_KM)
+    assert shares.shape == (7,)
+    assert shares.sum() == pytest.approx(1.0)
+    assert shares[0] == pytest.approx(0.2)   # 1.0 km
+    assert shares[1] == pytest.approx(0.6)   # 7.0 + 7.5 km weighted 3 of 5
+    assert shares[6] == pytest.approx(0.2)   # 150 km
+    assert T.weighted_band_shares(np.array([]), np.array([]), T.WORK_BAND_EDGES_KM).sum() == 0.0
+
+
+def test_weighted_quantiles_matches_unweighted_median_for_equal_weights():
+    v = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    q = T.weighted_quantiles(v, np.ones(5), np.array([0.5]))
+    assert q[0] == pytest.approx(3.0)
+    q2 = T.weighted_quantiles(np.array([1.0, 10.0]), np.array([3.0, 1.0]), np.array([0.5]))
+    assert 1.0 <= q2[0] < 10.0  # heavy weight on 1.0 pulls the median down
+    mono = T.weighted_quantiles(v, np.ones(5), np.linspace(0.01, 0.99, 99))
+    assert np.all(np.diff(mono) >= 0)
+
+
+def test_shrink_toward_pool_limits():
+    kreis = np.array([0.8, 0.2]); pool = np.array([0.4, 0.6])
+    np.testing.assert_allclose(T.shrink_toward_pool(kreis, 0, pool, 100.0), pool)
+    np.testing.assert_allclose(T.shrink_toward_pool(kreis, 100, pool, 100.0), [0.6, 0.4])
+    np.testing.assert_allclose(T.shrink_toward_pool(kreis, 1e9, pool, 100.0), kreis, atol=1e-6)
+
+
+def test_emd_on_shares_and_noise_floor():
+    p = np.array([1.0, 0, 0]); q = np.array([0, 0, 1.0])
+    assert T.emd_on_shares(p, q) == pytest.approx(2.0)   # two band widths apart
+    rng = np.random.default_rng(1)
+    d = rng.uniform(0, 60, 400); w = np.ones(400)
+    floor_small = T.bootstrap_emd_noise_floor(d[:40], w[:40], T.WORK_BAND_EDGES_KM, n_bootstrap=200, seed=0)
+    floor_large = T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=200, seed=0)
+    assert floor_large > 0 and floor_small > floor_large   # noise shrinks with n
+    assert T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=50, seed=0) == \
+        T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=50, seed=0)  # seeded
