@@ -75,8 +75,8 @@
      codes on `V_LAENGE` (e.g. -5 "weiss nicht", -10 "unplausibel"; 426 of the 1,643 GIS-invalid
      trips, 25.9%, carry no usable self-reported length at all) from every median/mean:
      self-reported median 13.00 km (GIS-invalid) versus 12.00 km (GIS-valid, n=8,087), mean
-     26.1 km versus 16.5 km, GIS/self-reported ratio 0.994 (both directions and outbound-only
-     give the same medians/ratio). ASSUMPTION: missing-at-random with respect to distance (R13)
+     26.1 km versus 16.5 km, GIS/self-reported ratio 0.994. ASSUMPTION: missing-at-random with
+     respect to distance (R13)
      holds at the CENTRE of the distribution (median 13 vs 12 km, a modest difference) but NOT
      in the tail (mean 26.1 vs 16.5 km; 25.9% of GIS-invalid trips report no length at all):
      GIS-invalid trips carry a heavier long-distance tail than GIS-valid ones, so excluding them
@@ -103,8 +103,8 @@
      Applying the SAME 0.08 threshold to the EDUCATION band grid (`EDUCATION_BAND_EDGES_KM`, 6
      bands, `[0, 1, 2, 5, 10, 20, inf]`) in `braunschweig.calibration.decision.decide_layer` is
      an ASSUMPTION: no committed derivation ties 0.08 to the education grid specifically. An
-     education-specific threshold derivation is tracked as a GitHub issue rather than assumed
-     away.
+     education-specific threshold derivation must be proposed as a GitHub issue before the
+     education verdicts are relied on (not yet opened at the time of this record).
 - **Rationale:** SrV is regional, GIS-routed, and a Tuesday-Thursday realised day-trip universe --
   the apples-to-apples reference for a day-plan model, distinct from MiD's Pendeldistanz universe
   (commute distance to the usual workplace, including non-daily commuters), which carries

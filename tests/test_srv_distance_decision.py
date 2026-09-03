@@ -125,7 +125,7 @@ def test_decide_layer_aggregate_exempt_from_min_persons_floor():
     # n_reference_persons >= min_persons`, so a thin aggregate (here n_reference_persons=142,
     # ADR-0103's university reference size) still decides "build" on its own gap. This is the
     # pre-registered rule as coded; the aggregate is exempt from the min_persons floor -- see
-    # ADR-0103, re-pre-registration tracked as an issue.
+    # ADR-0103, to be re-pre-registered via a GitHub issue before the next measurement (not yet opened).
     cells = _cells([("zgb", 142, 0.202, 0.083, True)])
     out = D.decide_layer(cells)
     assert out["build"] is True

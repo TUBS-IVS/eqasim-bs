@@ -77,7 +77,8 @@ def _gis_invalid_assumption_note(log: dict, include_100_plus_sentence: bool) -> 
         f"  {n_invalid_trips} trips) are treated as missing at random with respect to",
         "  distance. Bias check: see ADR-0102 Assumption 2 (reproducible with",
         "  scripts/extract_srv_primary_distance_targets.py --bias-check). A person drops out",
-        "  only when BOTH the selected direction AND the other direction are GIS-invalid",
+        "  when EVERY candidate trip of that person (in either direction) is GIS-invalid;",
+        "  persons observed in only one direction drop out when that trip is invalid",
         f"  ({log['n_persons_dropped_gis_invalid']} persons here; n_excluded_gis_invalid above",
         "  is the TRIP-level count of both directions, see the Exclusions units note).",
     ]

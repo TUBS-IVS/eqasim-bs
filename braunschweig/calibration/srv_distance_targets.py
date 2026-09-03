@@ -8,7 +8,8 @@ read the committed tables back. This module has no synpp dependency. It is impor
 the analysis stages ``braunschweig.analysis.reference.srv.commute_distance`` and
 ``braunschweig.analysis.synthesis.commute_distance_by_kreis`` (and the extraction
 script), but by no POPULATION-synthesis or location stage, so editing it never
-devalidates a cached synthesis result.
+devalidates a cached POPULATION-synthesis or location result (the two analysis stages
+above are re-executed, which is intended).
 
 Conventions (spec docs/superpowers/specs/2026-09-03-srv-primary-distance-calibration-design.md):
 - observation unit = person: first home->purpose trip, else first purpose->home trip;

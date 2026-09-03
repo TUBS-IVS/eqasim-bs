@@ -38,7 +38,8 @@
 #   854 trips) are treated as missing at random with respect to
 #   distance. Bias check: see ADR-0102 Assumption 2 (reproducible with
 #   scripts/extract_srv_primary_distance_targets.py --bias-check). A person drops out
-#   only when BOTH the selected direction AND the other direction are GIS-invalid
+#   when EVERY candidate trip of that person (in either direction) is GIS-invalid;
+#   persons observed in only one direction drop out when that trip is invalid
 #   (415 persons here; n_excluded_gis_invalid above
 #   is the TRIP-level count of both directions, see the Exclusions units note).
 # Exclusions: n_candidate_trips=5449, n_pool_weight_negative=0, n_pool_over_cap=0, n_excluded_gis_invalid=854, n_persons_dropped_gis_invalid=415, n_excluded_weight_negative=0, n_excluded_over_cap=0, n_excluded_no_kreis=0, n_missing_age=0, n_missing_regiostar7=0, n_missing_trip_ags=0, share_start_ags_equals_household_ags=1.0, n_persons_selected=2503 (units: n_candidate_trips, n_pool_weight_negative, n_pool_over_cap, n_excluded_gis_invalid are candidate TRIPS; n_persons_dropped_gis_invalid, n_excluded_weight_negative, n_excluded_over_cap, n_excluded_no_kreis, n_missing_* and n_persons_selected are PERSONS; share_start_ags_equals_household_ags is a share over persons with a known trip AGS)
