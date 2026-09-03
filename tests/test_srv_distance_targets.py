@@ -194,6 +194,44 @@ def test_select_person_observations_empty_candidates_returns_full_key_set():
     assert pd.isna(log["share_start_ags_equals_household_ags"])
 
 
+def test_gis_validity_bias_check_medians_and_ratio():
+    """Synthetic frame: 2 home-based work candidate trips are GIS-invalid, 3 are GIS-valid
+    (one of the valid trips has V_LAENGE == 0 and must be excluded from the ratio, per its
+    docstring); a work->home candidate trip is included via E_START_ZWECK, and non-work /
+    non-home-based trips are excluded from the candidate pool entirely."""
+    trips = pd.DataFrame({
+        "V_ZWECK":            [1,    1,    1,    1,    19,   5],
+        "E_START_ZWECK":      [19,   19,   19,   19,   1,    19],
+        "V_START_LAGE":       [1,    1,    1,    1,    3,    1],   # 1 = start at own home
+        "V_ZIEL_LAGE":        [4,    4,    4,    4,    1,    3],   # 1 = destination at own home
+        "V_LAENGE":           [10.0, 20.0, 5.0,  0.0,  8.0,  99.0],
+        "GIS_LAENGE":         [9.5,  100.0, 4.5, 3.0,  8.2,  1.0],
+        "GIS_LAENGE_GUELTIG": [9.5,  -1.0, 4.5,  3.0,  8.2,  1.0],
+    })
+    result = T.gis_validity_bias_check(trips)
+    # candidate pool = rows 0-3 (home->work) + row 4 (work->home, via E_START_ZWECK); row 5
+    # is a school trip (V_ZWECK 5) and must be excluded.
+    assert result["n_gis_invalid"] == 1     # row 1 only (GIS_LAENGE_GUELTIG <= 0)
+    assert result["n_gis_valid"] == 4       # rows 0, 2, 3, 4
+    assert result["median_self_reported_km_gis_invalid"] == pytest.approx(20.0)
+    # valid V_LAENGE values: 10.0, 5.0, 0.0, 8.0 -> sorted 0,5,8,10 -> median 6.5
+    assert result["median_self_reported_km_gis_valid"] == pytest.approx(6.5)
+    # ratio subset excludes V_LAENGE == 0 (row 3): 9.5/10.0=0.95, 4.5/5.0=0.9, 8.2/8.0=1.025
+    assert result["median_gis_over_self_reported"] == pytest.approx(0.95)
+
+
+def test_gis_validity_bias_check_empty_candidate_pool_is_all_nan():
+    trips = pd.DataFrame({
+        "V_ZWECK": [2], "E_START_ZWECK": [19], "V_START_LAGE": [1], "V_ZIEL_LAGE": [4],
+        "V_LAENGE": [5.0], "GIS_LAENGE": [5.0], "GIS_LAENGE_GUELTIG": [5.0],
+    })
+    result = T.gis_validity_bias_check(trips)
+    assert result["n_gis_invalid"] == 0 and result["n_gis_valid"] == 0
+    assert pd.isna(result["median_self_reported_km_gis_invalid"])
+    assert pd.isna(result["median_self_reported_km_gis_valid"])
+    assert pd.isna(result["median_gis_over_self_reported"])
+
+
 def test_weighted_band_shares_sum_to_one_and_respect_weights():
     d = np.array([1.0, 7.0, 7.5, 150.0])
     w = np.array([1.0, 1.0, 2.0, 1.0])

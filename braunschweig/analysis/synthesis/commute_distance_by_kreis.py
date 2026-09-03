@@ -119,8 +119,35 @@ def _check_home_match_rate(frame, cohort_label, meaninglessness_clause, max_unma
     if rate > max_unmatched_home_share:
         raise ValueError(
             f"{n_unmatched}/{n} ({100.0 * rate:.1f}%) {cohort_label} have no home Kreis/Gemeinde "
-            f"match; {meaninglessness_clause} -- check VG250 / RegioStaR inputs")
+            f"match; exceeds max_unmatched_home_share={max_unmatched_home_share} (config key "
+            f"{KEY_MAX_UNMATCHED_HOME_SHARE}); {meaninglessness_clause} -- check VG250 / "
+            f"RegioStaR inputs")
     return n_home_commune_missing
+
+
+def _check_no_home_geometry_rate(n_no_home, n_before_filter, cohort_label, max_unmatched_home_share):
+    """Raise if too many persons in ``cohort_label`` have no home geometry at all after the
+    person->home merge (household without a resolved home point).
+
+    Before this guard was added, the no-home-geometry drop in :func:`realised_work_frame` /
+    :func:`realised_education_frame` was the only UNGUARDED drop path in this module: a
+    household without a home geometry almost always signals a broken
+    ``synthesis.population.spatial.home.locations`` / ``household_id`` join rather than a
+    genuinely home-less household, and dropping it silently would make the downstream
+    comparison meaningless for a large share of the cohort -- per CLAUDE.md's fallback-
+    transparency rule this must never pass silently (mirrors :func:`_check_home_match_rate`,
+    which guards the Kreis/Gemeinde match on the SURVIVING rows one step later).
+    """
+    rate = n_no_home / n_before_filter if n_before_filter else 0.0
+    LOGGER.info(
+        "[srv_distance] %s: %d/%d (%.2f%%) with no home geometry after the person->home merge",
+        cohort_label, n_no_home, n_before_filter, 100.0 * rate)
+    if rate > max_unmatched_home_share:
+        raise ValueError(
+            f"{n_no_home}/{n_before_filter} ({100.0 * rate:.1f}%) {cohort_label} have no home "
+            f"geometry after the person->home merge; exceeds max_unmatched_home_share="
+            f"{max_unmatched_home_share} (config key {KEY_MAX_UNMATCHED_HOME_SHARE}) -- check "
+            f"the synthesis.population.spatial.home.locations / household_id join")
 
 
 def realised_work_frame(df_home_geo, df_work, df_persons, gemeinden,
@@ -140,9 +167,12 @@ def realised_work_frame(df_home_geo, df_work, df_persons, gemeinden,
     if the inputs actually differed).
 
     Per CLAUDE.md "Fallback transparency": persons without a home geometry are dropped and
-    counted (``n_no_home``); R17(b) raises if too many persons have no home Kreis/Gemeinde
-    match at all; persons whose resulting euclidean distance is NaN (e.g. a missing
-    destination geometry) are dropped and counted (``n_nan_distance``) -- BEFORE any band-
+    counted (``n_no_home``), and this is now a GUARDED drop -- above ``max_unmatched_home_share``
+    it raises (see ``_check_no_home_geometry_rate``), because a high rate almost always signals
+    a broken home-locations/household_id join rather than genuinely home-less households; R17(b)
+    raises if too many of the SURVIVING persons have no home Kreis/Gemeinde match at all; persons
+    whose resulting euclidean distance is NaN (e.g. a missing destination geometry) are dropped
+    and counted (``n_nan_distance``) -- BEFORE any band-
     share computation -- because ``srv_distance_targets.weighted_band_shares`` raises on a
     NaN distance rather than silently absorbing it into a band. ``stats``, if given a dict,
     is filled with these diagnostic counts (unfiltered by the class boundary above) so
@@ -158,7 +188,9 @@ def realised_work_frame(df_home_geo, df_work, df_persons, gemeinden,
     per_person = _home_per_person(df_home_geo, df_persons)
     work = df_work[["person_id", "geometry"]].rename(columns={"geometry": "dest_geometry"})
     frame = work.merge(per_person, on="person_id", how="left")
+    n_before_home_filter = len(frame)
     n_no_home = int(frame["home_geometry"].isna().sum())
+    _check_no_home_geometry_rate(n_no_home, n_before_home_filter, "workers", max_unmatched_home_share)
     frame = frame[frame["home_geometry"].notna()].copy()
 
     n_home_commune_missing = _check_home_match_rate(
@@ -221,11 +253,13 @@ def realised_education_frame(df_home_geo, df_education, df_persons,
     R18: ``df_home_geo`` and ``df_education`` must carry the same, non-None CRS.
 
     Per CLAUDE.md "Fallback transparency": persons without a home geometry are dropped and
-    counted; R17(b) raises if too many persons have no home Kreis/Gemeinde match; persons
-    whose age maps to no model education level, and persons whose resulting euclidean
-    distance is NaN, are each dropped and counted -- both rates share ONE denominator
-    (``n_input``, captured once after the home-geometry filter) per the R3 fix described in
-    :func:`realised_work_frame`. ``stats`` behaves as in :func:`realised_work_frame`.
+    counted, and this is a GUARDED drop -- above ``max_unmatched_home_share`` it raises (see
+    ``_check_no_home_geometry_rate``); R17(b) raises if too many of the SURVIVING persons have
+    no home Kreis/Gemeinde match; persons whose age maps to no model education level, and
+    persons whose resulting euclidean distance is NaN, are each dropped and counted -- both
+    rates share ONE denominator (``n_input``, captured once after the home-geometry filter) per
+    the R3 fix described in :func:`realised_work_frame`. ``stats`` behaves as in
+    :func:`realised_work_frame`.
     """
     home_crs, dest_crs = df_home_geo.crs, df_education.crs
     if home_crs is None or dest_crs is None or home_crs != dest_crs:
@@ -236,7 +270,9 @@ def realised_education_frame(df_home_geo, df_education, df_persons,
     per_person = _home_per_person(df_home_geo, df_persons)
     edu = df_education[["person_id", "geometry"]].rename(columns={"geometry": "dest_geometry"})
     frame = edu.merge(per_person, on="person_id", how="left")
+    n_before_home_filter = len(frame)
     n_no_home = int(frame["home_geometry"].isna().sum())
+    _check_no_home_geometry_rate(n_no_home, n_before_home_filter, "pupils/students", max_unmatched_home_share)
     frame = frame[frame["home_geometry"].notna()].copy()
 
     n_home_commune_missing = _check_home_match_rate(

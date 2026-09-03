@@ -16,6 +16,11 @@ Usage (eqasim env, from a worktree; point --raw at the main checkout's raw direc
     python scripts/extract_srv_primary_distance_targets.py \
         --raw C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/data/braunschweig/srv/srv2023_raw \
         --out-dir eqasim-data/data/braunschweig/srv
+
+Pass ``--bias-check`` (ruling R25) to instead compute and log the GIS-validity bias check
+(``braunschweig.calibration.srv_distance_targets.gis_validity_bias_check``) for home-based
+work candidate trips and exit 0 WITHOUT writing the three tables -- the numbers behind
+ADR-0102 Assumption 2 are reproduced this way, not hard-coded in this script.
 """
 from __future__ import annotations
 
@@ -37,34 +42,51 @@ RAW_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
 CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
 TRIP_COLUMNS = ["HHNR", "PNR", "WNR", "V_ZWECK", "E_START_ZWECK", "V_START_LAGE", "V_ZIEL_LAGE",
-                "V_START_AGS", "V_ZIEL_AGS", "GIS_LAENGE", "GIS_LAENGE_GUELTIG", "GEWICHT_W_ZENSUS",
-                "REGIOSTAR7", "STICHTAG_WTAG"]
+                "V_START_AGS", "V_ZIEL_AGS", "V_LAENGE", "GIS_LAENGE", "GIS_LAENGE_GUELTIG",
+                "GEWICHT_W_ZENSUS", "REGIOSTAR7", "STICHTAG_WTAG"]
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("extract_srv_primary_distance_targets")
 
-# Units of the twelve `select_person_observations` log-dict keys, written once into the
+# Units of the `select_person_observations` log-dict keys, written once into the
 # "Exclusions:" header line (IMPORTANT 2 -- the key names alone do not say whether a count
 # is over TRIPS or PERSONS, and mixing them silently invites a wrong ratio downstream).
 _EXCLUSIONS_UNITS_NOTE = (
     "(units: n_candidate_trips, n_pool_weight_negative, n_pool_over_cap, "
-    "n_excluded_gis_invalid are candidate TRIPS; n_excluded_weight_negative, "
-    "n_excluded_over_cap, n_excluded_no_kreis, n_missing_* and n_persons_selected are "
-    "PERSONS; share_start_ags_equals_household_ags is a share over persons with a known "
-    "trip AGS)"
+    "n_excluded_gis_invalid are candidate TRIPS; n_persons_dropped_gis_invalid, "
+    "n_excluded_weight_negative, n_excluded_over_cap, n_excluded_no_kreis, n_missing_* and "
+    "n_persons_selected are PERSONS; share_start_ags_equals_household_ags is a share over "
+    "persons with a known trip AGS)"
 )
 
-# Ruling R13 + Minor 9: the GIS-invalidity missingness assumption and the empty top work
-# band, shared verbatim by the commute and education tables (both are built from a
-# `select_person_observations` selection where this reasoning applies identically).
-_GIS_INVALID_ASSUMPTION_NOTE = [
-    "ASSUMPTION: GIS-invalid trips (~17% of candidate trips) are treated as missing at",
-    "  random with respect to distance (bias check 2026-09-03: self-reported median 13 km",
-    "  for GIS-invalid vs 12 km for GIS-valid work trips). The commute band 100_plus is 0.0",
-    "  in every row: no GIS-valid home-based trip >= 100 km exists in this delivery, so",
-    "  that band cannot be calibrated from SrV. A person whose selected direction AND the",
-    "  other direction are both GIS-invalid drops out and is counted in n_excluded_gis_invalid.",
-]
+
+def _gis_invalid_assumption_note(log: dict, include_100_plus_sentence: bool) -> list[str]:
+    """ASSUMPTION note shared by the commute and education table headers (ruling R13/R25).
+
+    The GIS-invalid TRIP rate is read from ``log`` (THIS table's own
+    ``select_person_observations`` result) rather than hard-coded, so work and education --
+    whose rates differ (16.9% vs 15.7%) -- each state their own number instead of a shared
+    "~17%" approximation. ``include_100_plus_sentence`` is True only for the commute (work)
+    table, the only one with a 100_plus band at all (Ruling R24 review comment).
+    """
+    n_candidate = log["n_candidate_trips"]
+    n_invalid_trips = log["n_excluded_gis_invalid"]
+    rate = 100.0 * n_invalid_trips / n_candidate if n_candidate else 0.0
+    lines = [
+        f"ASSUMPTION: GIS-invalid trips ({rate:.1f}% of {n_candidate} candidate trips,",
+        f"  {n_invalid_trips} trips) are treated as missing at random with respect to",
+        "  distance. Bias check: see ADR-0102 Assumption 2 (reproducible with",
+        "  scripts/extract_srv_primary_distance_targets.py --bias-check). A person drops out",
+        "  only when BOTH the selected direction AND the other direction are GIS-invalid",
+        f"  ({log['n_persons_dropped_gis_invalid']} persons here; n_excluded_gis_invalid above",
+        "  is the TRIP-level count of both directions, see the Exclusions units note).",
+    ]
+    if include_100_plus_sentence:
+        lines += [
+            "  The commute band 100_plus is 0.0 in every row: no GIS-valid home-based trip",
+            "  >= 100 km exists in this delivery, so that band cannot be calibrated from SrV.",
+        ]
+    return lines
 
 
 def _header(table_name: str, universe: str, extra: list[str], logs: dict, *,
@@ -160,6 +182,11 @@ def main(argv=None) -> int:
                          help="Number of bootstrap resamples for the EMD noise floor (>= 1)")
     parser.add_argument("--seed", type=int, default=0,
                          help="Random seed for the bootstrap noise floor (reproducibility)")
+    parser.add_argument("--bias-check", action="store_true",
+                         help="Ruling R25: compute and log the GIS-validity bias check "
+                              "(braunschweig.calibration.srv_distance_targets.gis_validity_bias_check) "
+                              "for home-based work candidate trips, then exit 0 WITHOUT writing "
+                              "the three committed target tables")
     args = parser.parse_args(argv)
 
     if args.prior_strength < 0:
@@ -182,6 +209,13 @@ def main(argv=None) -> int:
     if not set(weekdays) <= {2, 3, 4}:
         raise ValueError(f"Expected Tue-Thu reporting days only, found STICHTAG_WTAG codes {weekdays}")
 
+    if args.bias_check:
+        # Ruling R25: a pure diagnostic run -- logs the result and exits without touching
+        # the committed tables, so it can be re-run at any time to check whether ADR-0102
+        # Assumption 2's missing-at-random reasoning still holds on a refreshed extract.
+        T.gis_validity_bias_check(trips)
+        return 0
+
     obs_work, log_work = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,),
                                                       max_distance_km=args.max_distance_km)
     obs_edu, log_edu = T.select_person_observations(trips, persons, households, T.EDUCATION_PURPOSES,
@@ -200,7 +234,8 @@ def main(argv=None) -> int:
     _write(commute, out / T.COMMUTE_TABLE, _header(
         T.COMMUTE_TABLE, "persons with a home<->own-workplace trip (V_ZWECK 1)",
         [f"Bands (routed km): {list(T.WORK_BAND_EDGES_KM)} -> labels {list(T.WORK_BAND_LABELS)}; scopes all / inter / intra",
-         "(intra = start AGS == destination AGS, i.e. same Gemeinde)."] + _GIS_INVALID_ASSUMPTION_NOTE,
+         "(intra = start AGS == destination AGS, i.e. same Gemeinde)."]
+        + _gis_invalid_assumption_note(log_work, include_100_plus_sentence=True),
         log_work, n_bootstrap=args.n_bootstrap, seed=args.seed))
     education = T.build_education_table(obs_edu, prior_strength=args.prior_strength,
                                         n_bootstrap=args.n_bootstrap, seed=args.seed)
@@ -215,7 +250,8 @@ def main(argv=None) -> int:
          "produce map to no level and are excluded (rate logged, see the script's run log).",
          "Cells with n_persons < 3 carry a degenerate emd_noise_95 of 0.0 (a single observation",
          "  resamples to itself); their shrunk shares collapse to the pool, so they do not steer",
-         "  the Kreis targets."] + _GIS_INVALID_ASSUMPTION_NOTE,
+         "  the Kreis targets."]
+        + _gis_invalid_assumption_note(log_edu, include_100_plus_sentence=False),
         log_edu, n_bootstrap=args.n_bootstrap, seed=args.seed))
     quantiles = T.build_quantile_table(obs_work, detour_factor=args.detour_factor,
                                        prior_strength=args.prior_strength)

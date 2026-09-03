@@ -73,6 +73,16 @@ def test_commute_pinned_values(commute):
     assert k.loc["03103", "share_all_shrunk_0_5"] == pytest.approx(k.loc["03103", "share_all_0_5"], abs=1e-9)
 
 
+def test_commute_100_plus_band_is_always_zero(commute):
+    # ADR-0102 Assumption 2 relies on this fact: no GIS-valid home-based trip >= 100 km
+    # exists in this delivery, so the 100_plus band is exactly 0.0 in every row (raw and
+    # shrunk, every scope) -- a change here means the committed table changed, not that the
+    # extraction logic is wrong.
+    for scope in ("all", "inter", "intra"):
+        assert (commute[f"share_{scope}_100_plus"] == 0.0).all()
+        assert (commute[f"share_{scope}_shrunk_100_plus"] == 0.0).all()
+
+
 def test_education_levels_and_shares(education):
     comp = education[education["comparable"]]
     assert set(comp["education_level"]) == set(T.COMPARABLE_LEVELS)

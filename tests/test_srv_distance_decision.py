@@ -119,6 +119,19 @@ def test_decide_layer_zero_aggregate_rows():
         D.decide_layer(cells)
 
 
+def test_decide_layer_aggregate_exempt_from_min_persons_floor():
+    # Ruling R24 (whole-branch review): pins the CURRENT behaviour of decide_layer as coded
+    # -- the aggregate is exempt from the min_persons floor by `decisive = is_aggregate or
+    # n_reference_persons >= min_persons`, so a thin aggregate (here n_reference_persons=142,
+    # ADR-0103's university reference size) still decides "build" on its own gap. This is the
+    # pre-registered rule as coded; the aggregate is exempt from the min_persons floor -- see
+    # ADR-0103, re-pre-registration tracked as an issue.
+    cells = _cells([("zgb", 142, 0.202, 0.083, True)])
+    out = D.decide_layer(cells)
+    assert out["build"] is True
+    assert out["gap_codes"] == ["zgb"]
+
+
 def test_decide_layer_two_aggregate_rows():
     cells = _cells([("03101", 1200, 0.15, 0.03, True), ("zgb", 4300, 0.06, 0.02, True)])
     with pytest.raises(ValueError, match="Expected exactly 1 aggregate row, found 2"):

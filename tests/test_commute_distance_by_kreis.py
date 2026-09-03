@@ -244,6 +244,65 @@ def test_realised_education_frame_raises_when_home_commune_missing_rate_too_high
         S.realised_education_frame(homes, _education(), _persons())
 
 
+def _homes_no_geometry():
+    # both households in _homes() carry no home geometry at all (e.g. a broken
+    # home.locations / household_id join upstream) -- ars5/commune_id stay populated so
+    # this exercises ONLY the no-home-geometry guard, not the Kreis/Gemeinde-match guard.
+    homes = _homes().copy()
+    homes["geometry"] = [None, None]
+    return homes
+
+
+def test_realised_work_frame_raises_when_no_home_geometry_rate_too_high():
+    with pytest.raises(ValueError, match="no home geometry"):
+        S.realised_work_frame(_homes_no_geometry(), _work(), _persons(), _gemeinden())
+
+
+def test_realised_education_frame_raises_when_no_home_geometry_rate_too_high():
+    with pytest.raises(ValueError, match="no home geometry"):
+        S.realised_education_frame(_homes_no_geometry(), _education(), _persons())
+
+
+def _many_homes_with_one_missing_geometry(n):
+    ids = list(range(1, n + 1))
+    xs = np.linspace(500, 9_500, n)
+    geoms = [Point(x, 1_000) for x in xs[:-1]] + [None]
+    return gpd.GeoDataFrame(
+        {"household_id": ids, "ars5": ["03101"] * n, "commune_id": ["03101000"] * n},
+        geometry=geoms, crs="EPSG:25832")
+
+
+def test_realised_work_frame_single_missing_home_geometry_below_threshold_is_counted_and_logged(caplog):
+    n = 25  # 1/25 = 4% < the 5% default threshold -> no raise
+    homes = _many_homes_with_one_missing_geometry(n)
+    persons = _many_persons(n)
+    work = _many_work(n)
+    stats = {}
+    with caplog.at_level(logging.INFO, logger="braunschweig.analysis.synthesis.commute_distance_by_kreis"):
+        out = S.realised_work_frame(homes, work, persons, _gemeinden(), stats=stats)
+    missing_person_id = 1000 + n - 1
+    assert missing_person_id not in set(out["person_id"])
+    assert stats["n_no_home"] == 1
+    assert any("1/25" in r.message and "no home geometry" in r.message for r in caplog.records)
+
+
+def test_realised_education_frame_single_missing_home_geometry_below_threshold_is_counted_and_logged(caplog):
+    n = 25  # 1/25 = 4% < the 5% default threshold -> no raise
+    homes = _many_homes_with_one_missing_geometry(n)
+    persons = _many_persons(n)
+    education = gpd.GeoDataFrame(
+        {"person_id": list(range(1000, 1000 + n)), "commune_id": [""] * n,
+         "location_id": list(range(n))},
+        geometry=[Point(x, 2_000) for x in np.linspace(500, 9_500, n)], crs="EPSG:25832")
+    stats = {}
+    with caplog.at_level(logging.INFO, logger="braunschweig.analysis.synthesis.commute_distance_by_kreis"):
+        out = S.realised_education_frame(homes, education, persons, stats=stats)
+    missing_person_id = 1000 + n - 1
+    assert missing_person_id not in set(out["person_id"])
+    assert stats["n_no_home"] == 1
+    assert any("1/25" in r.message and "no home geometry" in r.message for r in caplog.records)
+
+
 def test_realised_education_frame_raises_on_crs_mismatch():
     mismatched_education = _education().to_crs("EPSG:4326")
     with pytest.raises(ValueError, match="CRS mismatch"):

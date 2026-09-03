@@ -5,8 +5,9 @@ Builders turn the local-only SrV 2023 "Braunschweig und RGB" scientific-use micr
 work and education distance band shares (with an intra/inter-Gemeinde split for work),
 and per-Kreis distance quantiles for the per-person commute-distance targets. Loaders
 read the committed tables back. This module has no synpp dependency. It is imported by
-the analysis reference stage ``braunschweig.analysis.reference.srv.commute_distance``
-(and by the extraction script), but by no synthesis stage, so editing it never
+the analysis stages ``braunschweig.analysis.reference.srv.commute_distance`` and
+``braunschweig.analysis.synthesis.commute_distance_by_kreis`` (and the extraction
+script), but by no POPULATION-synthesis or location stage, so editing it never
 devalidates a cached synthesis result.
 
 Conventions (spec docs/superpowers/specs/2026-09-03-srv-primary-distance-calibration-design.md):
@@ -179,17 +180,21 @@ def select_person_observations(trips, persons, households, purpose_codes,
     ``n_missing_trip_ags``).
 
     Exclusion/diagnostic log (unit noted per key): ``n_candidate_trips`` (trips, both
-    directions); ``n_excluded_gis_invalid`` (trips, both directions); ``n_pool_weight_negative``
-    / ``n_pool_over_cap`` (trips in the candidate pool, informational only, counted
-    BEFORE per-person selection -- do not sum these with the "excluded" keys below);
-    ``n_excluded_weight_negative`` / ``n_excluded_over_cap`` (persons, counted on the
-    SELECTED trip only, see the ASSUMPTION above); ``n_excluded_no_kreis`` (persons,
-    household AGS missing/sentinel); ``n_missing_trip_ags`` (persons, the selected
-    trip's own home-direction or away-direction AGS is missing/sentinel);
-    ``n_missing_age`` / ``n_missing_regiostar7`` (persons, kept in ``obs`` with NaN/-1
-    rather than excluded -- a downstream consumer decides); ``n_persons_selected``
-    (persons); ``share_start_ags_equals_household_ags`` (share, over persons with a
-    known trip-side AGS, whose home-direction AGS matches the household AGS).
+    directions); ``n_excluded_gis_invalid`` (trips, both directions -- see
+    ``n_persons_dropped_gis_invalid`` below for the matching PERSON count);
+    ``n_pool_weight_negative`` / ``n_pool_over_cap`` (trips in the candidate pool,
+    informational only, counted BEFORE per-person selection -- do not sum these with the
+    "excluded" keys below); ``n_persons_dropped_gis_invalid`` (persons: candidate persons
+    for whom EVERY candidate trip, both directions, was GIS-invalid, so no direction could
+    represent them at all -- R25/Minor 9, resolves the trip-vs-person unit contradiction of
+    ``n_excluded_gis_invalid`` above); ``n_excluded_weight_negative`` / ``n_excluded_over_cap``
+    (persons, counted on the SELECTED trip only, see the ASSUMPTION above);
+    ``n_excluded_no_kreis`` (persons, household AGS missing/sentinel); ``n_missing_trip_ags``
+    (persons, the selected trip's own home-direction or away-direction AGS is
+    missing/sentinel); ``n_missing_age`` / ``n_missing_regiostar7`` (persons, kept in
+    ``obs`` with NaN/-1 rather than excluded -- a downstream consumer decides);
+    ``n_persons_selected`` (persons); ``share_start_ags_equals_household_ags`` (share, over
+    persons with a known trip-side AGS, whose home-direction AGS matches the household AGS).
     """
     purpose_codes = tuple(int(c) for c in purpose_codes)
     # A fresh RangeIndex guarantees `outbound[cand.index]` below is a safe positional
@@ -219,6 +224,18 @@ def select_person_observations(trips, persons, households, purpose_codes,
     gis_valid_cand = cand[cand["gis_valid"]].sort_values(
         ["HHNR", "PNR", "direction_rank", "WNR"], kind="stable")
     first = gis_valid_cand.drop_duplicates(["HHNR", "PNR"], keep="first")
+
+    # R25/Minor 9 (unit contradiction fix): n_excluded_gis_invalid above is a TRIP count
+    # (both directions, see the Exclusions log docstring below); this is the matching
+    # PERSON count -- candidate persons with at least one candidate trip but NONE surviving
+    # the GIS-valid filter, i.e. every one of their candidate trip rows (both directions)
+    # was GIS-invalid. A one-line derivation from the same two frames, so it is added here
+    # rather than left undocumented.
+    candidate_persons = cand[["HHNR", "PNR"]].drop_duplicates()
+    surviving_persons = gis_valid_cand[["HHNR", "PNR"]].drop_duplicates()
+    n_persons_dropped_gis_invalid = len(candidate_persons) - len(
+        candidate_persons.merge(surviving_persons, on=["HHNR", "PNR"], how="inner"))
+    log["n_persons_dropped_gis_invalid"] = int(n_persons_dropped_gis_invalid)
 
     # Step 2: apply weight and distance-cap checks to the SELECTED observation only
     # (counted in PERSONS, not trips); a failure here drops the person, it does not
@@ -308,6 +325,63 @@ def select_person_observations(trips, persons, households, purpose_codes,
         100.0 * log["share_start_ags_equals_household_ags"], int(known_home_ags.sum()),
     )
     return obs, log
+
+
+def gis_validity_bias_check(trips: pd.DataFrame) -> dict:
+    """R25: is GIS-invalidity missing at random with respect to distance?
+
+    Selects the SAME home-based work candidate trips as :func:`select_person_observations`
+    would for ``purpose_codes=(PURPOSE_WORK,)`` (both directions: home->work with
+    ``V_START_LAGE == START_AT_OWN_HOME`` and ``V_ZWECK == PURPOSE_WORK``, or work->home with
+    ``V_ZIEL_LAGE == DEST_AT_OWN_HOME`` and ``E_START_ZWECK == PURPOSE_WORK``), BEFORE the
+    per-person pick and any weight/distance-cap filtering -- this checks GIS validity itself
+    on the full candidate pool, not the already-selected sample.
+
+    Compares the self-reported distance (``V_LAENGE``) between GIS-invalid and GIS-valid
+    candidate trips (median each); if GIS-invalid trips were systematically longer or
+    shorter, excluding them (per R6, when both directions of a person are GIS-invalid)
+    would bias the reference away from a plausible ASSUMPTION of missingness at random.
+    Also reports the median of ``GIS_LAENGE / V_LAENGE`` over GIS-valid trips with
+    ``V_LAENGE > 0``, a sanity check that the two distance measures broadly agree.
+
+    Returns a dict: ``n_gis_invalid``, ``n_gis_valid`` (candidate trips, both directions);
+    ``median_self_reported_km_gis_invalid``, ``median_self_reported_km_gis_valid`` (NaN if
+    the respective subset is empty); ``median_gis_over_self_reported`` (NaN if no GIS-valid
+    trip has ``V_LAENGE > 0``). This is a pure diagnostic: it does not feed the committed
+    target tables and has no synpp dependency.
+    """
+    t = trips.copy()
+    outbound = (t["V_START_LAGE"] == START_AT_OWN_HOME) & (t["V_ZWECK"] == PURPOSE_WORK)
+    inbound = (t["V_ZIEL_LAGE"] == DEST_AT_OWN_HOME) & (t["E_START_ZWECK"] == PURPOSE_WORK)
+    cand = t[outbound | inbound].copy()
+    cand["gis_valid"] = pd.to_numeric(cand["GIS_LAENGE_GUELTIG"], errors="coerce") > 0
+    cand["self_reported_km"] = pd.to_numeric(cand["V_LAENGE"], errors="coerce")
+    cand["gis_km"] = pd.to_numeric(cand["GIS_LAENGE"], errors="coerce")
+
+    invalid = cand[~cand["gis_valid"]]
+    valid = cand[cand["gis_valid"]]
+    n_invalid = int(len(invalid))
+    n_valid = int(len(valid))
+    median_invalid = float(invalid["self_reported_km"].median()) if n_invalid else float("nan")
+    median_valid = float(valid["self_reported_km"].median()) if n_valid else float("nan")
+
+    ratio_subset = valid[valid["self_reported_km"] > 0]
+    median_ratio = (float((ratio_subset["gis_km"] / ratio_subset["self_reported_km"]).median())
+                    if len(ratio_subset) else float("nan"))
+
+    result = {
+        "n_gis_invalid": n_invalid,
+        "n_gis_valid": n_valid,
+        "median_self_reported_km_gis_invalid": median_invalid,
+        "median_self_reported_km_gis_valid": median_valid,
+        "median_gis_over_self_reported": median_ratio,
+    }
+    logger.info(
+        "[srv_distance_targets] GIS-validity bias check (home-based work candidate trips): "
+        "n_gis_invalid=%d, n_gis_valid=%d, median self-reported km gis_invalid=%.2f vs "
+        "gis_valid=%.2f, median GIS/self-reported ratio (gis_valid, V_LAENGE>0)=%.3f",
+        n_invalid, n_valid, median_invalid, median_valid, median_ratio)
+    return result
 
 
 def weighted_band_shares(distances_km, weights, edges) -> np.ndarray:
