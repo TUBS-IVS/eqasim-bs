@@ -21,5 +21,12 @@ pipelines:
   popsim_open: supported
   simple_ipf_open: supported
 production: true
+inputs:
+- vg250_ew
 features:
 - srv_primary_distance_validation
+notes: 'Writes six files under <output_path>/analysis/srv_distance_validation/:
+  commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
+  decisions.json, provenance.json, summary.md. VG250-EW (vg250_ew) is read at run time via
+  braunschweig.analysis.spatial.load_gemeinden/assign_geographies to resolve home/destination
+  Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split.'

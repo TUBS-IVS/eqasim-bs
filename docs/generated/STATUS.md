@@ -163,7 +163,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Validation
 
-6 stage(s), 5 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `verbindungen`
+6 stage(s), 5 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `verbindungen`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

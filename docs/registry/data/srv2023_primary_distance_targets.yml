@@ -33,35 +33,44 @@ verification:
     1..99 of the euclidean-equivalent work distance, long format). Pin tests:
     tests/test_srv_distance_targets_pins.py.
 
-    Not listed in scripts/verify_braunschweig_inputs.py and not added as a new row in the
-    README derived-inputs table: the three files ship committed, and requirements.production
-    is "optional" because the only consumer (braunschweig.analysis.reference.srv.commute_distance)
-    feeds the validation/analysis stage braunschweig.analysis.synthesis.commute_distance_by_kreis
-    -- a production run's core deliverable (the synthetic population / MATSim scenario) does not
-    depend on this dataset, unlike e.g. the MiD B10a extracted CSVs which back an actual
-    synthesis stage. Same treatment as the sibling committed srv2023_* tables that no synthesis
-    stage reads (srv2023_license_by_sex_cohort, srv2023_ticket_groups4_14plus_by_kreis): the
-    README already covers regenerating "the committed braunschweig/srv/srv2023_*.csv aggregates"
-    generically (the SrV 2023 BS+RGB trip records row in the restricted-inputs table), and no
-    per-file table for committed SrV aggregates exists to extend.
+    verifier_entry stays null (ruling R19): scripts/verify_braunschweig_inputs.py lists no
+    srv2023_* committed aggregate at all (the precedent set by every sibling committed srv2023_*
+    table, e.g. srv2023_license_by_sex_cohort, and by the MiD-side analogue
+    mid2023_cars_by_rs7_haustyp, which also stays verifier_entry: null despite being
+    production: required) -- there is nothing external for a contributor to download or
+    verify presence of, since the three files ship committed with every clone of this repo. This
+    is now REQUIRED reading: braunschweig.analysis.reference.srv.commute_distance.load_commute_targets
+    /load_education_targets/load_commute_quantiles raise FileNotFoundError if the files are
+    absent, and that stage is on the production run list (configs/overlays/test_100pct.yml,
+    test_25pct.yml) via braunschweig.analysis.synthesis.commute_distance_by_kreis -- so unlike
+    the srv2023_license_by_sex_cohort/ticket_groups4 siblings (build-time-only, no registered
+    stage reads them, requirements.production stays "optional" for those), this dataset now
+    carries requirements.production: required, matching mid2023_cars_by_rs7_haustyp's and
+    verbindungen's "required" treatment for a committed table a registered production stage
+    depends on. Listed in the README derived-inputs table (the "SrV primary-distance targets
+    (committed)" row, "### Derived / preprocessed inputs" section) with the regeneration command,
+    which is what the D4 readme-data check now requires for a production-required dataset.
 requirements:
   synthesis: not_needed
   matsim: not_needed
-  production: optional
+  production: required
 licensing:
   license: aggregate values (data-protection reviewed); raw SciUse file restricted
   restricted: false
   redistribution: allowed
 limitations: |
   Observation unit is the person (first home->purpose trip, else first purpose->home trip),
-  GIS-routed length only (GIS-invalid persons excluded, 16-21% of home-based trips, no
-  length bias found: self-reported median 13 km vs 12 km), weight GEWICHT_W_ZENSUS. Wolfsburg
-  is not surveyed: its rows are the RegioStaR-7 type-72 pool (Braunschweig + Salzgitter),
-  source = proxy_rs7_72 -- an ASSUMPTION. Shrinkage n/(n+k), k = 100 persons, toward the
-  dominant RS7 pool then ZGB. Coverage caveat: stratified PSU design over ~44 selected
-  municipalities; per-Kreis rows extrapolate to the Kreis (ASSUMPTION-grade). Education levels
-  follow the model's age banding (oberstufe and bbs pooled as upper_secondary); BBS and
-  university cells are too thin for a per-Kreis decision (spec 2026-09-03 Section 5.4).
+  GIS-routed length only, weight GEWICHT_W_ZENSUS. GIS-invalid trips (~17% of candidate trips:
+  16.9% work, 15.7% education) fall back to the other direction; a person is excluded only when
+  both directions are GIS-invalid (ASSUMPTION: missing at random w.r.t. distance, bias check
+  self-reported median 13 vs 12 km). Wolfsburg is not surveyed: its rows are the RegioStaR-7
+  type-72 pool (Braunschweig + Salzgitter), source = proxy_rs7_72 -- an ASSUMPTION. Shrinkage
+  n/(n+k), k = 100 persons, toward the dominant RS7 pool then ZGB. Coverage caveat: stratified
+  PSU design over ~44 selected municipalities; per-Kreis rows extrapolate to the Kreis
+  (ASSUMPTION-grade). Education levels follow the model's age banding (oberstufe and bbs pooled
+  as upper_secondary); BBS and university cells are too thin for a per-Kreis decision
+  (pre-registered rule: braunschweig.calibration.decision; ADR to follow in the Phase 0 decision
+  record).
 notes: |
   Reference for the SrV distance-distribution calibration of the primary activities (issue #357,
   Phase 0 #358). Compared against runs by braunschweig.analysis.synthesis.commute_distance_by_kreis.
