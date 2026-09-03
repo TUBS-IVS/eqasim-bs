@@ -25,6 +25,8 @@ inputs:
 - vg250_ew
 features:
 - srv_primary_distance_validation
+decisions:
+- ADR-0102
 notes: 'Writes six files under <output_path>/analysis/srv_distance_validation/:
   commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
   decisions.json, provenance.json, summary.md. VG250-EW (vg250_ew) is read at run time via

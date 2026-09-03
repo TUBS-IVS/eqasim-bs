@@ -20,3 +20,5 @@ inputs:
 - srv2023_primary_distance_targets
 features:
 - srv_primary_distance_validation
+decisions:
+- ADR-0102

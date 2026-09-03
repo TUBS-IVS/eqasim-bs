@@ -18,7 +18,7 @@ production:
 introduced:
   issue: 358
   pr: null
-  adr: null
+  adr: ADR-0102
 code_paths:
 - braunschweig/analysis/reference/srv/commute_distance.py
 - braunschweig/analysis/synthesis/commute_distance_by_kreis.py
