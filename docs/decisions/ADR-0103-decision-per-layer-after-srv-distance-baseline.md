@@ -28,7 +28,11 @@
     observation) and Wolfenbuettel 03158 at 0.030 (floor 0.022), both still a factor 2.6-2.7 below
     the threshold. The model's within-Gemeinde commute-distance distribution already matches
     SrV 2023; issue #360 is to be closed with this ADR as the record rather than scheduled.
-  - **Education (#279), per comparable model level:**
+  - **Education (#279), per comparable model level:** every verdict below is classified against
+    the 0.08 EMD threshold applied to the EDUCATION band grid, which ADR-0102 Assumption 5
+    (ruling R26) records as an ASSUMPTION -- the threshold was derived for the WORK band grid,
+    not the education one -- so a level sitting close to 0.08 (notably `upper_secondary` at
+    0.074) could classify differently under an education-specific threshold.
     - `kindergarten`: **DO NOT BUILD** -- aggregate EMD 0.067 (floor 0.020, n_ref 647) classifies
       `ok`; four Kreise gap (03102, 03153, 03157, 03158) but each rests on only 53-94 SrV persons,
       far below the 200-person floor, so no cell is decisive.

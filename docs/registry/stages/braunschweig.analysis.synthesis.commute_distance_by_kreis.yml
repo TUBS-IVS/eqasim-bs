@@ -32,4 +32,9 @@ notes: 'Writes six files under <output_path>/analysis/srv_distance_validation/:
   commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
   decisions.json, provenance.json, summary.md. VG250-EW (vg250_ew) is read at run time via
   braunschweig.analysis.spatial.load_gemeinden/assign_geographies to resolve home/destination
-  Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split.'
+  Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split. By design, the
+  stage ABORTS the production run (raises ValueError) when more than 5% of homes (workers or
+  pupils/students, srv_distance_max_unmatched_home_share, default 0.05) cannot be matched to a
+  Kreis/Gemeinde -- e.g. a missing or stale VG250 archive or regiostar_referenzdatei.xlsx -- a
+  fail-early choice over silently degrading to an all-inter-Gemeinde split on a meaningless home
+  assignment.'

@@ -67,7 +67,12 @@
      trips) fall back to the person's other direction; a person is excluded only when BOTH
      directions are GIS-invalid (R6). ASSUMPTION: this is missing at random with respect to
      distance (R13): the 2026-09-03 bias check found a self-reported median of 13 km for
-     GIS-invalid work trips versus 12 km for GIS-valid ones, GIS/self-reported ratio 0.99. A
+     GIS-invalid work trips versus 12 km for GIS-valid ones, GIS/self-reported ratio 0.99. This
+     is the SINGLE home of these bias-check numbers (do not restate them elsewhere without a
+     link back here); they are reproducible via
+     `scripts/extract_srv_primary_distance_targets.py --bias-check`
+     (`braunschweig.calibration.srv_distance_targets.gis_validity_bias_check`), which computes
+     them from the committed selection logic rather than from a one-off, uncommitted script. A
      direct consequence: the commute band `100_plus` is 0.0 in every row (no GIS-valid
      home-based trip >= 100 km exists in this delivery), so that band cannot be calibrated from
      SrV at all; the OD anchors (BA Pendleratlas, VerBindungen) own that mass instead -- the same
@@ -80,6 +85,15 @@
      rule has not yet been exercised on the ZGB sample.
   4. Per-Kreis rows extrapolate a stratified PSU design over roughly 44 selected municipalities
      to the full Kreis.
+  5. Ruling R26 (whole-branch review): the pre-registered EMD threshold `0.08`
+     (`braunschweig.calibration.decision.DEFAULT_EMD_THRESHOLD`) was derived for the WORK
+     commute band grid (`WORK_BAND_EDGES_KM`, 7 bands, `[0, 5, 10, 20, 30, 50, 100, inf]`) via
+     the gravity-calibration-corner MiD P13 comparison (`docs/features/calibration-corner.md`).
+     Applying the SAME 0.08 threshold to the EDUCATION band grid (`EDUCATION_BAND_EDGES_KM`, 6
+     bands, `[0, 1, 2, 5, 10, 20, inf]`) in `braunschweig.calibration.decision.decide_layer` is
+     an ASSUMPTION: no committed derivation ties 0.08 to the education grid specifically. An
+     education-specific threshold derivation is tracked as a GitHub issue rather than assumed
+     away.
 - **Rationale:** SrV is regional, GIS-routed, and a Tuesday-Thursday realised day-trip universe --
   the apples-to-apples reference for a day-plan model, distinct from MiD's Pendeldistanz universe
   (commute distance to the usual workplace, including non-daily commuters), which carries
@@ -93,17 +107,22 @@
   The ZGB routed median work distance is 10.62 km. BBS/university cells are thin at Kreis
   granularity and are flagged by the module's own `emd_noise_95` column rather than hidden.
 - **Rejected alternatives:**
-  - MiD P13/T43 as the sole reference, for three reasons: (a) universe -- Pendeldistanz (commute
+  - MiD P13/T43 as the sole reference, for two reasons: (a) universe -- Pendeldistanz (commute
     distance to the usual workplace, including non-daily commuters) versus SrV's realised
-    Tuesday-Thursday day trips; (b) key -- P13 is reported per RegioStaR-7 class, not the model's
-    home-Kreis key (P38.2 does have Kreis means, but see the next bullet); (c) sample -- P13's
-    n_unweighted = 1,583 persons for the whole region versus SrV's 4,543. Note P13 is itself a
-    REGIONAL "Grossraum Braunschweig" (infas 7555) evaluation, not national (RegioStaR-7 type 71
-    is absent from its rows, consistent with the region it covers); T43 (school distances by
-    RegioStaR-7) may be national in scope, but that is UNVERIFIED in this repo -- the committed
-    `mid2023_T43_school_distance_by_rs7.csv` carries no source header stating its geography.
-    Comparisons against both stay alongside (`run_mid_validation`) to expose where the two
-    references differ, but SrV is the calibration target.
+    Tuesday-Thursday day trips; (b) sample -- P13's OWN per-Kreis table (`mid2023_P13.csv`,
+    keyed by `ars5`) has n_unweighted ranging 126 (Wolfsburg) to 356 (Braunschweig) persons per
+    Kreis, well below SrV's 387 (Salzgitter, minimum) to 1,272 (Braunschweig, maximum), and the
+    REGION-wide Gesamt row (n_unweighted 1,583) is itself smaller than SrV's ZGB total of 4,543;
+    the sibling `mid2023_P13_commute_distance_by_rs7.csv` is keyed by RegioStaR-7 CLASS, not
+    Kreis, and is used only for the descriptive RS7-POOLED classes, not as a per-Kreis
+    substitute -- an earlier version of this record wrongly described `mid2023_P13.csv` itself
+    as RS7-keyed only. Note P13 is itself a REGIONAL "Grossraum Braunschweig" (infas 7555)
+    evaluation, not national (RegioStaR-7 type 71 is absent from its rows, consistent with the
+    region it covers); T43 (school distances by RegioStaR-7) may be national in scope, but that
+    is UNVERIFIED in this repo -- the committed `mid2023_T43_school_distance_by_rs7.csv` carries
+    no source header stating its geography. Comparisons against both stay alongside
+    (`run_mid_validation`) to expose where the two references differ, but SrV is the calibration
+    target.
   - MiD P38.2 per-Kreis means as targets: the committed table shows Salzgitter 237.6 km and
     Wolfsburg 90.4 km mean commute distances -- both outlier-driven and unusable as a target or
     even as a Wolfsburg cross-check.

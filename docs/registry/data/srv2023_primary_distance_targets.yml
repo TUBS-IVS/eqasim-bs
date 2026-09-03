@@ -60,17 +60,18 @@ licensing:
   redistribution: allowed
 limitations: |
   Observation unit is the person (first home->purpose trip, else first purpose->home trip),
-  GIS-routed length only, weight GEWICHT_W_ZENSUS. GIS-invalid trips (~17% of candidate trips:
-  16.9% work, 15.7% education) fall back to the other direction; a person is excluded only when
-  both directions are GIS-invalid (ASSUMPTION: missing at random w.r.t. distance, bias check
-  self-reported median 13 vs 12 km). Wolfsburg is not surveyed: its rows are the RegioStaR-7
-  type-72 pool (Braunschweig + Salzgitter), source = proxy_rs7_72 -- an ASSUMPTION. Shrinkage
-  n/(n+k), k = 100 persons, toward the dominant RS7 pool then ZGB. Coverage caveat: stratified
-  PSU design over ~44 selected municipalities; per-Kreis rows extrapolate to the Kreis
-  (ASSUMPTION-grade). Education levels follow the model's age banding (oberstufe and bbs pooled
-  as upper_secondary); BBS and university cells are too thin for a per-Kreis decision
-  (pre-registered rule: braunschweig.calibration.decision; reference definitions: ADR-0102;
-  build/no-build decision: ADR-0103 (Task 12)).
+  GIS-routed length only, weight GEWICHT_W_ZENSUS. GIS-invalid trips (16.9% of work candidate
+  trips, 15.7% of education candidate trips) fall back to the other direction; a person is
+  excluded only when both directions are GIS-invalid (ASSUMPTION: missing at random w.r.t.
+  distance; bias-check numbers live SOLELY in ADR-0102 Assumption 2, reproducible via
+  `scripts/extract_srv_primary_distance_targets.py --bias-check`). Wolfsburg is not surveyed:
+  its rows are the RegioStaR-7 type-72 pool (Braunschweig + Salzgitter), source = proxy_rs7_72
+  -- an ASSUMPTION. Shrinkage n/(n+k), k = 100 persons, toward the dominant RS7 pool then ZGB.
+  Coverage caveat: stratified PSU design over ~44 selected municipalities; per-Kreis rows
+  extrapolate to the Kreis (ASSUMPTION-grade). Education levels follow the model's age banding
+  (oberstufe and bbs pooled as upper_secondary); BBS and university cells are too thin for a
+  per-Kreis decision (pre-registered rule: braunschweig.calibration.decision; reference
+  definitions: ADR-0102; build/no-build decision: ADR-0103).
 notes: |
   Reference for the SrV distance-distribution calibration of the primary activities (issue #357,
   Phase 0 #358). Compared against runs by braunschweig.analysis.synthesis.commute_distance_by_kreis.

@@ -3,7 +3,7 @@ date: '2026-09-03'
 repository:
   commit: f53694ca
   branch: feature/srv-primary-distance-targets
-  notes: 'Code = branch HEAD f53694ca; the branch''s 21 NEW files (the reference/analysis stages,
+  notes: 'Code = branch HEAD f53694ca; the branch''s 24 NEW files (the reference/analysis stages,
     braunschweig/calibration/{srv_distance_targets,decision}.py, the plot module, the registry
     records, the extractor and the six tests) were synced onto a DETACHED server worktree at
     b7eed9a5 (~/wt_srv_baseline) without a git push; the three committed SrV CSVs were copied into
@@ -153,6 +153,12 @@ artifacts:
 - 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/ (commute_by_kreis.csv,
   commute_quantiles_model.csv, education_by_kreis_level.csv, decisions.json, provenance.json,
   summary.md, work_all.png, work_inter.png, work_intra.png, education.png, run_log.txt)'
+- 'Plot reproduction commands (documentation.plots.srv_commute_distance, from the directory above,
+  D = "eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03"):
+  python -c "from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_all.png'', scope=''all'')";
+  python -c "from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_inter.png'', scope=''inter'')";
+  python -c "from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_intra.png'', scope=''intra'')";
+  python -c "from documentation.plots import srv_commute_distance as P; P.plot_education_bands(D + ''/education_by_kreis_level.csv'', D + ''/education.png'')"'
 issues:
 - '#357'
 - '#358'
