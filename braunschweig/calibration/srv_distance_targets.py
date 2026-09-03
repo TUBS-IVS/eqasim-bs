@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 import pandas as pd
 
 from braunschweig.gravity.friction import BAND_EDGES_KM
@@ -57,7 +56,7 @@ _MODEL_AGE_LEVELS = (
 
 def model_education_level(age) -> str | None:
     """Model-side education level from age alone (the education output carries no level)."""
-    if age is None or (isinstance(age, float) and np.isnan(age)) or pd.isna(age):
+    if pd.isna(age):
         return None
     a = int(age)
     for lower, upper, level in _MODEL_AGE_LEVELS:
@@ -69,19 +68,24 @@ def model_education_level(age) -> str | None:
 def education_level(purpose_code, age) -> str | None:
     """Comparable education level from the SrV purpose code and the person's age.
 
-    Purpose decides the institution type, age only splits the secondary-school and
+    Purpose decides the institution type; age also bounds the early childhood and
+    primary codes (Kita 0-6, Grundschule 5-10) and splits the secondary-school and
     tertiary codes into the model's age bands. Combinations that the model cannot
-    produce (e.g. secondary school at age 25) return None and are excluded upstream
-    with a logged rate.
+    produce (e.g. secondary school at age 25, Kita at age 40) return None and are
+    excluded upstream with a logged rate.
     """
     if pd.isna(age) or pd.isna(purpose_code):
         return None
     a = int(age)
     code = int(purpose_code)
     if code == PURPOSE_KITA:
-        return "kindergarten"
+        if 0 <= a <= 6:
+            return "kindergarten"
+        return None
     if code == PURPOSE_GRUNDSCHULE:
-        return "grundschule"
+        if 5 <= a <= 10:
+            return "grundschule"
+        return None
     if code == PURPOSE_SCHOOL_SECONDARY:
         if 10 <= a <= 15:
             return "sekundar_1"
