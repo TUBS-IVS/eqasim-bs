@@ -257,3 +257,83 @@ def test_emd_on_shares_and_noise_floor():
     # n_bootstrap < 1 -> raise ValueError
     with pytest.raises(ValueError, match="n_bootstrap must be >= 1"):
         T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=0, seed=0)
+
+
+def _obs(n_bs=300, n_gf=60, seed=3):
+    rng = np.random.default_rng(seed)
+    bs = pd.DataFrame({
+        "hhnr": np.arange(n_bs), "pnr": 1, "kreis": "03101", "regiostar7": 72,
+        "purpose_code": 1, "age": 40,
+        "distance_km": rng.gamma(2.0, 3.0, n_bs), "weight": 1.0,
+        "intra_gemeinde": rng.random(n_bs) < 0.6,
+    })
+    gf = pd.DataFrame({
+        "hhnr": 10000 + np.arange(n_gf), "pnr": 1, "kreis": "03151", "regiostar7": 74,
+        "purpose_code": 1, "age": 40,
+        "distance_km": rng.gamma(2.0, 9.0, n_gf), "weight": 1.0,
+        "intra_gemeinde": rng.random(n_gf) < 0.3,
+    })
+    return pd.concat([bs, gf], ignore_index=True)
+
+
+def test_build_commute_table_rows_shares_and_proxy():
+    table = T.build_commute_table(_obs(), n_bootstrap=50)
+    kreis_rows = table[table["level_geo"] == "kreis"].set_index("code")
+    assert set(kreis_rows.index) == set(T.ZGB_KREISE)           # all 8 incl. Wolfsburg proxy
+    assert kreis_rows.loc["03103", "source"] == "proxy_rs7_72"
+    assert kreis_rows.loc["03101", "source"] == "srv"
+    for scope in ("all", "inter", "intra"):
+        cols = [f"share_{scope}_{lbl}" for lbl in T.WORK_BAND_LABELS]
+        sums = kreis_rows.loc[["03101", "03151"], cols].sum(axis=1)
+        assert np.allclose(sums, 1.0)
+        shr = [f"share_{scope}_shrunk_{lbl}" for lbl in T.WORK_BAND_LABELS]
+        assert np.allclose(kreis_rows.loc[["03101", "03151"], shr].sum(axis=1), 1.0)
+    # proxy row equals the RS7-72 pool row (BS only in this fixture)
+    rs72 = table[(table["level_geo"] == "rs7") & (table["code"] == "72")].iloc[0]
+    assert kreis_rows.loc["03103", "share_all_0_5"] == pytest.approx(rs72["share_all_0_5"])
+    # shrinkage pulls the small Kreis (n=60) more than the large one (n=300)
+    zgb = table[table["level_geo"] == "zgb"].iloc[0]
+    gap_gf = abs(kreis_rows.loc["03151", "share_all_shrunk_0_5"] - kreis_rows.loc["03151", "share_all_0_5"])
+    gap_bs = abs(kreis_rows.loc["03101", "share_all_shrunk_0_5"] - kreis_rows.loc["03101", "share_all_0_5"])
+    assert gap_gf >= gap_bs
+    assert (kreis_rows["emd_noise_95_all"] >= 0).all()
+    assert 0.0 <= kreis_rows.loc["03101", "share_intra"] <= 1.0
+    assert zgb["n_persons"] == 360
+
+
+def test_build_education_table_levels_and_comparable_flag():
+    obs = _obs()
+    obs["purpose_code"] = np.where(obs.index % 2 == 0, 5, 6)
+    obs["age"] = np.where(obs.index % 4 == 0, 12, 17)
+    table = T.build_education_table(obs, n_bootstrap=20)
+    levels = set(table["education_level"])
+    assert {"sekundar_1", "upper_secondary", "oberstufe", "bbs"} <= levels
+    comp = table[table["comparable"]]
+    assert set(comp["education_level"]) <= set(T.COMPARABLE_LEVELS)
+    cols = [f"share_{lbl}" for lbl in T.EDUCATION_BAND_LABELS]
+    assert np.allclose(comp[cols].sum(axis=1), 1.0)
+    assert set(table[table["level_geo"] == "kreis"]["code"]) == set(T.ZGB_KREISE)
+
+
+def test_build_quantile_table_is_long_monotone_and_euclidean():
+    table = T.build_quantile_table(_obs(), detour_factor=1.3)
+    bs = table[(table["level_geo"] == "kreis") & (table["code"] == "03101")].sort_values("percentile")
+    assert list(bs["percentile"]) == list(range(1, 100))
+    assert np.all(np.diff(bs["distance_km_euclid_raw"]) >= 0)
+    assert np.all(np.diff(bs["distance_km_euclid_shrunk"]) >= 0)
+    # euclidean = routed / 1.3: the raw median must be below the routed median
+    obs = _obs(); routed_median = np.median(obs[obs["kreis"] == "03101"]["distance_km"])
+    assert bs[bs["percentile"] == 50]["distance_km_euclid_raw"].iloc[0] == pytest.approx(routed_median / 1.3, rel=0.05)
+    assert "03103" in set(table["code"])
+
+
+def test_loaders_round_trip(tmp_path):
+    obs = _obs()
+    T.build_commute_table(obs, n_bootstrap=10).to_csv(tmp_path / T.COMMUTE_TABLE, index=False)
+    obs_e = obs.assign(purpose_code=3, age=4)
+    T.build_education_table(obs_e, n_bootstrap=10).to_csv(tmp_path / T.EDUCATION_TABLE, index=False)
+    T.build_quantile_table(obs).to_csv(tmp_path / T.QUANTILE_TABLE, index=False)
+    c = T.load_commute_targets(tmp_path); e = T.load_education_targets(tmp_path); q = T.load_commute_quantiles(tmp_path)
+    assert c["code"].dtype == object and "03101" in set(c["code"])
+    assert "kindergarten" in set(e["education_level"])
+    assert len(q[q["code"] == "03101"]) == 99

@@ -18,6 +18,7 @@ Conventions (spec docs/superpowers/specs/2026-09-03-srv-primary-distance-calibra
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 import pandas as pd
@@ -393,3 +394,271 @@ def bootstrap_emd_noise_floor(distances_km, weights, edges, n_bootstrap=500, see
         idx = rng.integers(0, d.size, d.size)
         emds[b] = emd_on_shares(weighted_band_shares(d[idx], w[idx], edges), base)
     return float(np.quantile(emds, quantile))
+
+
+ZGB_KREISE = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
+WOLFSBURG_KREIS = "03103"
+PROXY_RS7 = 72
+PROXY_SOURCE = "proxy_rs7_%d" % PROXY_RS7
+DEFAULT_PRIOR_STRENGTH = 100.0
+DEFAULT_DETOUR_FACTOR = 1.3
+QUANTILE_PROBABILITIES = np.arange(1, 100) / 100.0
+
+COMMUTE_TABLE = "srv2023_commute_distance_by_kreis.csv"
+EDUCATION_TABLE = "srv2023_education_distance_by_kreis_level.csv"
+QUANTILE_TABLE = "srv2023_commute_distance_quantiles_by_kreis.csv"
+
+
+def dominant_rs7_by_kreis(obs: pd.DataFrame) -> dict:
+    """Weight-modal RegioStaR-7 type per Kreis (the pool a Kreis shrinks toward).
+
+    Only covers Kreise that actually have persons in ``obs``; a Kreis absent from the
+    data has no entry here and callers must fall back to the next-higher pool (ZGB).
+    """
+    g = obs.groupby(["kreis", "regiostar7"])["weight"].sum().reset_index()
+    g = g.sort_values(["kreis", "weight"], ascending=[True, False]).drop_duplicates("kreis")
+    return dict(zip(g["kreis"], g["regiostar7"].astype(int)))
+
+
+def _weighted_mean_median(d, w):
+    if len(d) == 0:
+        return float("nan"), float("nan")
+    return float(np.average(d, weights=w)), float(weighted_quantiles(d, w, [0.5])[0])
+
+
+def _share_block(d, w, edges, labels, prefix):
+    shares = weighted_band_shares(d, w, edges)
+    return {f"{prefix}_{lbl}": float(s) for lbl, s in zip(labels, shares)}, shares
+
+
+def _pool_shares(obs, edges, mask=None):
+    sub = obs if mask is None else obs[mask]
+    return weighted_band_shares(sub["distance_km"].values, sub["weight"].values, edges), int(len(sub))
+
+
+def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_bootstrap=500, seed=0):
+    """Per home Kreis (plus RS7 pools, ZGB, Wolfsburg proxy) work distance band shares.
+
+    Scopes: ``all`` (every person), ``inter`` (home Gemeinde != workplace Gemeinde),
+    ``intra`` (same Gemeinde). Shrinkage: Kreis -> its dominant RS7 pool -> ZGB with
+    weight n/(n+k). The Wolfsburg row copies the RS7-72 pool (ASSUMPTION, see the ADR).
+
+    Emits exactly one ``kreis`` row per code in :data:`ZGB_KREISE`, even when a Kreis
+    has zero persons in ``obs_work`` (n_persons = 0, raw shares all zero, shrunk shares
+    equal the pool -- the n/(n+k) limit at n = 0 -- mean/median/share_intra = NaN); a
+    Kreis without its own RS7-modal pool (because it has no persons at all) falls back
+    to the ZGB pool directly.
+    """
+    edges, labels = WORK_BAND_EDGES_KM, WORK_BAND_LABELS
+    scopes = {"all": None, "inter": ~obs_work["intra_gemeinde"].astype(bool),
+              "intra": obs_work["intra_gemeinde"].astype(bool)}
+    rs7_of = dominant_rs7_by_kreis(obs_work)
+    rows = []
+
+    zgb_shares = {s: _pool_shares(obs_work, edges, m) for s, m in scopes.items()}
+
+    rs7_shares = {}
+    for rs7 in sorted(obs_work["regiostar7"].unique()):
+        sel = obs_work["regiostar7"] == rs7
+        rs7_shares[int(rs7)] = {}
+        for s, m in scopes.items():
+            mask = sel if m is None else (sel & m)
+            raw, n = _pool_shares(obs_work, edges, mask)
+            shrunk = shrink_toward_pool(raw, n, zgb_shares[s][0], prior_strength)
+            rs7_shares[int(rs7)][s] = (raw, shrunk, n)
+
+    def _row(level_geo, code, source, sub, pool_for_scope):
+        row = {"level_geo": level_geo, "code": code, "source": source, "n_persons": int(len(sub))}
+        row["mean_km"], row["median_km"] = _weighted_mean_median(sub["distance_km"].values, sub["weight"].values)
+        w_intra = sub.loc[sub["intra_gemeinde"].astype(bool), "weight"].sum()
+        row["share_intra"] = float(w_intra / sub["weight"].sum()) if sub["weight"].sum() > 0 else float("nan")
+        for s, m in scopes.items():
+            part = sub if m is None else sub[m.loc[sub.index]]
+            block, raw = _share_block(part["distance_km"].values, part["weight"].values, edges, labels, f"share_{s}")
+            row.update(block)
+            shrunk = shrink_toward_pool(raw, len(part), pool_for_scope[s], prior_strength) if pool_for_scope else raw
+            row.update({f"share_{s}_shrunk_{lbl}": float(v) for lbl, v in zip(labels, shrunk)})
+            row[f"emd_noise_95_{s}"] = bootstrap_emd_noise_floor(
+                part["distance_km"].values, part["weight"].values, edges, n_bootstrap=n_bootstrap, seed=seed)
+        return row
+
+    # Wolfsburg's own RS7-72 pool must exist at all (a global data gap, not merely an
+    # empty Kreis) for the proxy row to be scientifically defensible; fail early.
+    proxy_sub = obs_work[obs_work["regiostar7"] == PROXY_RS7]
+    if proxy_sub.empty:
+        raise ValueError("No SrV persons with RegioStaR-7 == %d; cannot build the Wolfsburg proxy" % PROXY_RS7)
+
+    for kreis in ZGB_KREISE:
+        if kreis == WOLFSBURG_KREIS:
+            # Wolfsburg proxy: the RS7-72 pool row (no further shrinkage; source flags
+            # the assumption).
+            rows.append(_row("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
+            continue
+        sub = obs_work[obs_work["kreis"] == kreis]
+        rs7 = rs7_of.get(kreis)
+        pool = {s: rs7_shares[rs7][s][1] for s in scopes} if rs7 is not None \
+            else {s: zgb_shares[s][0] for s in scopes}
+        rows.append(_row("kreis", kreis, "srv", sub, pool))
+
+    for rs7 in sorted(rs7_shares):
+        rows.append(_row("rs7", str(rs7), "srv", obs_work[obs_work["regiostar7"] == rs7],
+                         {s: zgb_shares[s][0] for s in scopes}))
+    rows.append(_row("zgb", "zgb", "srv", obs_work, None))
+    table = pd.DataFrame(rows)
+    logger.info("[srv_distance_targets] commute table: %d rows, %d persons total",
+                len(table), int(len(obs_work)))
+    return table
+
+
+def build_education_table(obs_edu, prior_strength=DEFAULT_PRIOR_STRENGTH, n_bootstrap=500, seed=0):
+    """Per home Kreis x education level distance band shares (education band edges).
+
+    Comparable levels follow the model's age banding; ``oberstufe`` / ``bbs`` rows are
+    descriptive only (``comparable = False``). Persons whose (purpose, age) combination
+    maps to no level are excluded with a logged rate.
+
+    Emits one ``kreis`` row per code in :data:`ZGB_KREISE` x level, even when a Kreis
+    has zero persons for that level (n_persons = 0, raw shares zero, shrunk shares
+    equal the pool); a Kreis without its own RS7-modal pool for that level falls back
+    to the level's ZGB pool.
+    """
+    edges, labels = EDUCATION_BAND_EDGES_KM, EDUCATION_BAND_LABELS
+    obs = obs_edu.copy()
+    obs["level"] = [education_level(p, a) for p, a in zip(obs["purpose_code"], obs["age"])]
+    obs["level_descriptive"] = [education_level_descriptive(p, a) for p, a in zip(obs["purpose_code"], obs["age"])]
+    n_unmapped = int(obs["level"].isna().sum())
+    logger.info("[srv_distance_targets] education: %d/%d persons without a comparable level (%.1f%%) excluded",
+                n_unmapped, len(obs), 100.0 * n_unmapped / max(len(obs), 1))
+    obs = obs[obs["level"].notna()]
+    rs7_of = dominant_rs7_by_kreis(obs)
+    rows = []
+
+    def _rows_for_level(level_col, level, comparable):
+        sel = obs[obs[level_col] == level]
+        zgb_raw, zgb_n = _pool_shares(sel, edges)
+        rs7_pool = {}
+        for rs7 in sorted(sel["regiostar7"].unique()):
+            raw, n = _pool_shares(sel, edges, sel["regiostar7"] == rs7)
+            rs7_pool[int(rs7)] = shrink_toward_pool(raw, n, zgb_raw, prior_strength)
+
+        def _r(level_geo, code, source, sub, pool):
+            row = {"level_geo": level_geo, "code": code, "source": source,
+                   "education_level": level, "comparable": bool(comparable), "n_persons": int(len(sub))}
+            row["mean_km"], row["median_km"] = _weighted_mean_median(sub["distance_km"].values, sub["weight"].values)
+            block, raw = _share_block(sub["distance_km"].values, sub["weight"].values, edges, labels, "share")
+            row.update(block)
+            shrunk = shrink_toward_pool(raw, len(sub), pool, prior_strength) if pool is not None else raw
+            row.update({f"share_shrunk_{lbl}": float(v) for lbl, v in zip(labels, shrunk)})
+            row["emd_noise_95"] = bootstrap_emd_noise_floor(
+                sub["distance_km"].values, sub["weight"].values, edges, n_bootstrap=n_bootstrap, seed=seed)
+            return row
+
+        out = []
+        for kreis in ZGB_KREISE:
+            if kreis == WOLFSBURG_KREIS:
+                proxy_sub = sel[sel["regiostar7"] == PROXY_RS7]
+                out.append(_r("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
+                continue
+            sub = sel[sel["kreis"] == kreis]
+            pool = rs7_pool.get(rs7_of.get(kreis, -1), zgb_raw)
+            out.append(_r("kreis", kreis, "srv", sub, pool))
+        for rs7 in sorted(rs7_pool):
+            out.append(_r("rs7", str(rs7), "srv", sel[sel["regiostar7"] == rs7], zgb_raw))
+        out.append(_r("zgb", "zgb", "srv", sel, None))
+        return out
+
+    for level in COMPARABLE_LEVELS:
+        rows.extend(_rows_for_level("level", level, True))
+    for level in DESCRIPTIVE_ONLY_LEVELS:
+        rows.extend(_rows_for_level("level_descriptive", level, False))
+    table = pd.DataFrame(rows)
+    logger.info("[srv_distance_targets] education table: %d rows, %d persons total",
+                len(table), int(len(obs)))
+    return table
+
+
+def build_quantile_table(obs_work, detour_factor=DEFAULT_DETOUR_FACTOR,
+                         prior_strength=DEFAULT_PRIOR_STRENGTH):
+    """Per home Kreis the 1..99 percentiles of the EUCLIDEAN-equivalent work distance.
+
+    ``distance_km_euclid = GIS routed km / detour_factor`` matches the euclidean metres
+    convention of ``synthesis.population.spatial.commute_distance``. Shrinkage is
+    quantile-wise toward the dominant RS7 pool (itself shrunk toward ZGB), which keeps
+    the shrunk quantile function monotone (Wasserstein barycenter of the two).
+
+    Emits one ``kreis`` row (x 99 percentiles) per code in :data:`ZGB_KREISE`, even
+    when a Kreis has zero persons (n_persons = 0, raw quantiles NaN, shrunk quantiles
+    equal the pool). The n = 0 case is handled explicitly rather than through
+    ``shrink_toward_pool``, because the pool weight there is n/(n+k) = 0 at n = 0, and
+    ``0 * NaN`` is NaN, not 0 -- relying on that arithmetic would silently propagate NaN
+    into the shrunk column instead of yielding the pool.
+    """
+    probs = QUANTILE_PROBABILITIES
+    obs = obs_work.assign(euclid=obs_work["distance_km"] / float(detour_factor))
+    rs7_of = dominant_rs7_by_kreis(obs)
+    zgb_q = weighted_quantiles(obs["euclid"].values, obs["weight"].values, probs)
+    rs7_q = {}
+    for rs7 in sorted(obs["regiostar7"].unique()):
+        sub = obs[obs["regiostar7"] == rs7]
+        raw = weighted_quantiles(sub["euclid"].values, sub["weight"].values, probs)
+        rs7_q[int(rs7)] = (raw, shrink_toward_pool(raw, len(sub), zgb_q, prior_strength), int(len(sub)))
+
+    if PROXY_RS7 not in rs7_q:
+        raise ValueError(
+            "No SrV persons with RegioStaR-7 == %d; cannot build the Wolfsburg proxy quantiles" % PROXY_RS7)
+
+    rows = []
+
+    def _emit(level_geo, code, source, n, raw, shrunk):
+        for p, r, s in zip(probs, raw, shrunk):
+            rows.append({"level_geo": level_geo, "code": code, "source": source, "n_persons": int(n),
+                         "percentile": int(round(p * 100)),
+                         "distance_km_euclid_raw": float(r), "distance_km_euclid_shrunk": float(s)})
+
+    for kreis in ZGB_KREISE:
+        if kreis == WOLFSBURG_KREIS:
+            raw, _, n = rs7_q[PROXY_RS7]
+            _emit("kreis", kreis, PROXY_SOURCE, n, raw, raw)
+            continue
+        sub = obs[obs["kreis"] == kreis]
+        n = len(sub)
+        rs7 = rs7_of.get(kreis)
+        pool = rs7_q[rs7][1] if rs7 is not None else zgb_q
+        if n == 0:
+            # Explicit n = 0 handling (see the docstring): the raw quantiles are NaN
+            # (no observations to compute them from) and the shrunk quantiles are the
+            # pool verbatim, not an arithmetic mix that would propagate the NaN.
+            raw = np.full(len(probs), np.nan)
+            shrunk = np.asarray(pool, dtype=float).copy()
+        else:
+            raw = weighted_quantiles(sub["euclid"].values, sub["weight"].values, probs)
+            shrunk = shrink_toward_pool(raw, n, pool, prior_strength)
+        _emit("kreis", kreis, "srv", n, raw, shrunk)
+    for rs7, (raw, shrunk, n) in sorted(rs7_q.items()):
+        _emit("rs7", str(rs7), "srv", n, raw, shrunk)
+    _emit("zgb", "zgb", "srv", len(obs), zgb_q, zgb_q)
+    table = pd.DataFrame(rows)
+    logger.info("[srv_distance_targets] quantile table: %d rows, %d persons total",
+                len(table), int(len(obs)))
+    return table
+
+
+def _load(srv_dir, name):
+    path = os.path.join(str(srv_dir), name)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Committed SrV target table missing: {path}. Regenerate with "
+            "scripts/extract_srv_primary_distance_targets.py (needs the local-only SrV raw data).")
+    return pd.read_csv(path, comment="#", dtype={"code": str})
+
+
+def load_commute_targets(srv_dir):
+    return _load(srv_dir, COMMUTE_TABLE)
+
+
+def load_education_targets(srv_dir):
+    return _load(srv_dir, EDUCATION_TABLE)
+
+
+def load_commute_quantiles(srv_dir):
+    return _load(srv_dir, QUANTILE_TABLE)
