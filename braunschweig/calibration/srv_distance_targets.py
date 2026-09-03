@@ -22,7 +22,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.gravity.friction import BAND_EDGES_KM
+from braunschweig.gravity.friction import BAND_EDGES_KM, band_index
 
 logger = logging.getLogger(__name__)
 
@@ -308,31 +308,48 @@ def select_person_observations(trips, persons, households, purpose_codes,
 
 
 def weighted_band_shares(distances_km, weights, edges) -> np.ndarray:
-    """Weighted share per distance band; all-zero vector for an empty input."""
+    """Weighted share per distance band; all-zero vector for empty or zero-weight input.
+
+    Raises ValueError for NaN or negative distances (fail early).
+    """
     d = np.asarray(distances_km, dtype=float)
     w = np.asarray(weights, dtype=float)
     n_bands = len(edges) - 1
     if d.size == 0 or w.sum() <= 0:
         return np.zeros(n_bands)
-    inner = np.asarray(edges[1:-1], dtype=float)
-    idx = np.digitize(d, inner)
+    if np.any(np.isnan(d)) or np.any(d < 0):
+        raise ValueError("distances_km contains NaN or negative values")
+    idx = band_index(d, edges)
     counts = np.bincount(idx, weights=w, minlength=n_bands)[:n_bands]
     return counts / counts.sum()
 
 
 def weighted_quantiles(values, weights, probabilities) -> np.ndarray:
-    """Weighted empirical quantiles (linear interpolation on the weighted CDF midpoints)."""
+    """Weighted empirical quantiles (linear interpolation on the weighted CDF midpoints).
+
+    All-NaN for empty or zero-weight input; the table builders report n_persons = 0 beside it.
+    Raises ValueError if any value is NaN (fail early). Uses Hazen midpoint-CDF convention,
+    which differs from np.quantile away from the median by design.
+    """
     v = np.asarray(values, dtype=float)
     w = np.asarray(weights, dtype=float)
+    prob = np.asarray(probabilities, dtype=float)
+    if v.size == 0 or w.sum() <= 0:
+        return np.full(len(prob), np.nan)
+    if np.any(np.isnan(v)):
+        raise ValueError("values contains NaN")
     order = np.argsort(v)
     v, w = v[order], w[order]
     cdf = np.cumsum(w) - 0.5 * w
     cdf /= w.sum()
-    return np.interp(np.asarray(probabilities, dtype=float), cdf, v)
+    return np.interp(prob, cdf, v)
 
 
 def shrink_toward_pool(values, n, pool_values, prior_strength) -> np.ndarray:
-    """Empirical-Bayes style mix: weight n/(n+k) on the cell, k/(n+k) on the pool."""
+    """Empirical-Bayes style mix: weight n/(n+k) on the cell, k/(n+k) on the pool.
+
+    n = 0 returns the pool; prior_strength = 0 with n > 0 returns values unchanged.
+    """
     values = np.asarray(values, dtype=float)
     pool = np.asarray(pool_values, dtype=float)
     n = float(n)
@@ -342,20 +359,29 @@ def shrink_toward_pool(values, n, pool_values, prior_strength) -> np.ndarray:
 
 
 def emd_on_shares(p, q) -> float:
-    """1-D earth mover's distance between two band-share vectors, in band units."""
+    """1-D EMD between two band-share vectors, normalised to [0, 1] by (n_bands - 1).
+
+    Numerically identical to braunschweig.calibration.metrics.emd_on_bands
+    (re-implemented because that module is imported by pipeline stages).
+    Both inputs must sum to 1.
+    """
     p = np.asarray(p, dtype=float)
     q = np.asarray(q, dtype=float)
-    return float(np.abs(np.cumsum(p) - np.cumsum(q)).sum())
+    cdf_diff = np.cumsum(p) - np.cumsum(q)
+    return float(np.abs(cdf_diff[:-1]).sum() / (len(p) - 1))
 
 
 def bootstrap_emd_noise_floor(distances_km, weights, edges, n_bootstrap=500, seed=0,
                               quantile=0.95) -> float:
-    """95th percentile of EMD(bootstrap band shares, full-sample band shares).
+    """The `quantile`-th quantile (default 0.95) of EMD(bootstrap band shares, full-sample band shares).
 
     Persons are resampled with replacement (n = sample size) with their weights carried
     along; the result is the EMD a model would reach against this reference by sampling
     noise alone. Returns 0.0 for fewer than two observations.
+    Raises ValueError for n_bootstrap < 1.
     """
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1")
     d = np.asarray(distances_km, dtype=float)
     w = np.asarray(weights, dtype=float)
     if d.size < 2:

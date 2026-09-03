@@ -204,6 +204,18 @@ def test_weighted_band_shares_sum_to_one_and_respect_weights():
     assert shares[1] == pytest.approx(0.6)   # 7.0 + 7.5 km weighted 3 of 5
     assert shares[6] == pytest.approx(0.2)   # 150 km
     assert T.weighted_band_shares(np.array([]), np.array([]), T.WORK_BAND_EDGES_KM).sum() == 0.0
+    # Zero weights -> all zeros, correct shape
+    shares_zero = T.weighted_band_shares(np.array([1.0, 7.0]), np.zeros(2), T.WORK_BAND_EDGES_KM)
+    assert shares_zero.shape == (7,) and np.allclose(shares_zero, 0.0)
+    # Band-edge boundary conditions
+    b0 = T.weighted_band_shares(np.array([4.999]), np.array([1.0]), T.WORK_BAND_EDGES_KM); assert b0[0] == 1.0
+    b1 = T.weighted_band_shares(np.array([5.0]), np.array([1.0]), T.WORK_BAND_EDGES_KM); assert b1[1] == 1.0
+    b6 = T.weighted_band_shares(np.array([100.0]), np.array([1.0]), T.WORK_BAND_EDGES_KM); assert b6[6] == 1.0
+    # NaN and negative -> raise ValueError
+    with pytest.raises(ValueError, match="NaN or negative"):
+        T.weighted_band_shares(np.array([1.0, np.nan]), np.array([1.0, 1.0]), T.WORK_BAND_EDGES_KM)
+    with pytest.raises(ValueError, match="NaN or negative"):
+        T.weighted_band_shares(np.array([1.0, -5.0]), np.array([1.0, 1.0]), T.WORK_BAND_EDGES_KM)
 
 
 def test_weighted_quantiles_matches_unweighted_median_for_equal_weights():
@@ -212,8 +224,17 @@ def test_weighted_quantiles_matches_unweighted_median_for_equal_weights():
     assert q[0] == pytest.approx(3.0)
     q2 = T.weighted_quantiles(np.array([1.0, 10.0]), np.array([3.0, 1.0]), np.array([0.5]))
     assert 1.0 <= q2[0] < 10.0  # heavy weight on 1.0 pulls the median down
+    # Hazen midpoint-CDF convention differs from np.quantile away from the median by design
     mono = T.weighted_quantiles(v, np.ones(5), np.linspace(0.01, 0.99, 99))
     assert np.all(np.diff(mono) >= 0)
+    # Empty or zero-weight input -> all NaN
+    q_empty = T.weighted_quantiles(np.array([]), np.array([]), np.array([0.5, 0.95]))
+    assert np.all(np.isnan(q_empty)) and q_empty.shape == (2,)
+    q_zero = T.weighted_quantiles(np.array([1.0, 2.0]), np.zeros(2), np.array([0.5]))
+    assert np.all(np.isnan(q_zero))
+    # NaN in values -> raise ValueError
+    with pytest.raises(ValueError, match="NaN"):
+        T.weighted_quantiles(np.array([1.0, np.nan, 3.0]), np.array([1.0, 1.0, 1.0]), np.array([0.5]))
 
 
 def test_shrink_toward_pool_limits():
@@ -225,7 +246,7 @@ def test_shrink_toward_pool_limits():
 
 def test_emd_on_shares_and_noise_floor():
     p = np.array([1.0, 0, 0]); q = np.array([0, 0, 1.0])
-    assert T.emd_on_shares(p, q) == pytest.approx(2.0)   # two band widths apart
+    assert T.emd_on_shares(p, q) == pytest.approx(1.0)   # normalised to [0,1] by (n_bands-1)
     rng = np.random.default_rng(1)
     d = rng.uniform(0, 60, 400); w = np.ones(400)
     floor_small = T.bootstrap_emd_noise_floor(d[:40], w[:40], T.WORK_BAND_EDGES_KM, n_bootstrap=200, seed=0)
@@ -233,3 +254,6 @@ def test_emd_on_shares_and_noise_floor():
     assert floor_large > 0 and floor_small > floor_large   # noise shrinks with n
     assert T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=50, seed=0) == \
         T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=50, seed=0)  # seeded
+    # n_bootstrap < 1 -> raise ValueError
+    with pytest.raises(ValueError, match="n_bootstrap must be >= 1"):
+        T.bootstrap_emd_noise_floor(d, w, T.WORK_BAND_EDGES_KM, n_bootstrap=0, seed=0)
