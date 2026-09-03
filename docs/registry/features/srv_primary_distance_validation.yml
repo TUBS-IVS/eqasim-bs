@@ -58,13 +58,15 @@ validation:
   metric: band_emd_vs_srv
   note: |
     Baseline measured on the cached 100% population of 100pct-allfeat-i329-2026-08-24 (304,900
-    workers, 178,763 pupils/students), 2026-09-03. Work, per home Kreis + ZGB aggregate: scope
-    "all" 6 ok / 3 gap (aggregate ok, EMD 0.051 vs floor 0.012); scope "inter" 3 ok / 6 gap
-    INCLUDING the aggregate (EMD 0.085 vs floor 0.013), per-Kreis EMD 0.047-0.162; scope "intra"
-    9 ok / 0 gap (aggregate EMD 0.011 vs floor 0.008), per-Kreis EMD 0.010-0.031. Education, per
+    workers, 178,763 pupils/students), 2026-09-03. Work, counted per HOME KREIS (of 8) with the
+    ZGB aggregate stated separately: scope "all" 5 ok / 3 gap, aggregate ok (EMD 0.051 vs floor
+    0.012); scope "inter" 3 ok / 5 gap AND the aggregate gaps (EMD 0.085 vs floor 0.013) = the
+    decisive cell, per-Kreis EMD 0.047-0.162; scope "intra" 8 ok / 0 gap, aggregate ok (EMD 0.011
+    vs floor 0.008), per-Kreis EMD 0.010-0.031. Education, per
     comparable level (aggregate EMD vs floor): kindergarten 0.067/0.020 ok, grundschule
     0.116/0.021 GAP, sekundar_1 0.025/0.023 ok, upper_secondary 0.074/0.033 ok, university
-    0.202/0.083 gap but on only 142 SrV persons, i.e. not decidable. No cell lacked a reference;
+    0.202/0.083 gap but on only 142 SrV persons, i.e. not decidable (ADR-0103 does not act on it).
+    No cell lacked a reference;
     Wolfsburg (03103) used the proxy_rs7_72 rows (ASSUMPTION). Join diagnostics on the primary
     path: 1/304,900 workers and 0/178,763 pupils without a home Kreis/Gemeinde match, 0 NaN
     distances, 12.8% of work destinations outside every Gemeinde polygon (counted inter). This is
