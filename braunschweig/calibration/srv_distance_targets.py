@@ -116,9 +116,27 @@ DEST_AT_OWN_HOME = 1      # V_ZIEL_LAGE
 DEFAULT_MAX_DISTANCE_KM = 300.0
 
 
+def _ags8(series: pd.Series) -> pd.Series:
+    """8-digit, zero-padded AGS string; NaN for missing or non-positive (sentinel) values.
+
+    SrV "not applicable"/"missing" AGS values are encoded either as real NaN or as a
+    non-positive sentinel (e.g. ``-9``). Converting naively through pandas' nullable
+    ``Int64`` and then ``str`` turns those into plausible-looking garbage keys
+    (``pd.NA`` stringifies to ``"<NA>"``, ``-9`` to ``"-0000009"``), which then pass a
+    ``notna()`` filter and can even compare equal to another garbage key -- silently
+    fabricating a Kreis/Gemeinde match. This helper resolves missing/sentinel input to
+    a real ``NaN`` so downstream ``notna()``/``isna()`` filters and equality checks
+    behave correctly instead of treating garbage as a valid AGS.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    valid = numeric.notna() & (numeric > 0)
+    padded = numeric.fillna(0).astype("int64").astype(str).str.zfill(8)
+    return padded.where(valid, np.nan)
+
+
 def _kreis_from_ags(ags: pd.Series) -> pd.Series:
-    """5-digit Kreis key from an 8-digit AGS that pandas may carry as int (leading 0 lost)."""
-    return ags.astype("Int64").astype(str).str.zfill(8).str[:5]
+    """5-digit Kreis key from an 8-digit AGS; NaN propagates for missing/sentinel AGS values."""
+    return _ags8(ags).str[:5]
 
 
 def select_person_observations(trips, persons, households, purpose_codes,
@@ -140,9 +158,40 @@ def select_person_observations(trips, persons, households, purpose_codes,
     filters into a single upfront pass would silently swap in the other direction
     for a person whose preferred trip has a bad weight, understating the exclusion
     (caught by ``test_select_person_observations_drops_negative_weight_and_over_cap``).
+
+    ASSUMPTION: a negative expansion weight or an over-cap GIS distance on the
+    SELECTED trip is treated as a defect of that specific trip record (a corrupted
+    weight, or an implausible routed distance), not as evidence that the person has
+    no usable home<->purpose trip at all. This differs from a GIS-invalid distance,
+    which only means that ONE direction was never routed and the other direction can
+    still represent the person. There is no committed evidence that the other
+    direction's weight/distance would also be defective, so substituting it would be
+    an unjustified assumption; the person is excluded instead and the exclusion is
+    counted (``n_excluded_weight_negative`` / ``n_excluded_over_cap``).
+
+    Output columns (``obs``): ``hhnr``, ``pnr``, ``purpose_code``, ``regiostar7`` (all
+    int64); ``kreis`` (5-char str); ``age`` (float64; NaN when the person record has no
+    age, see ``n_missing_age``); ``distance_km``, ``weight`` (float64); ``intra_gemeinde``
+    (bool; False when either end of the selected trip has a missing/sentinel AGS, see
+    ``n_missing_trip_ags``).
+
+    Exclusion/diagnostic log (unit noted per key): ``n_candidate_trips`` (trips, both
+    directions); ``n_excluded_gis_invalid`` (trips, both directions); ``n_pool_weight_negative``
+    / ``n_pool_over_cap`` (trips in the candidate pool, informational only, counted
+    BEFORE per-person selection -- do not sum these with the "excluded" keys below);
+    ``n_excluded_weight_negative`` / ``n_excluded_over_cap`` (persons, counted on the
+    SELECTED trip only, see the ASSUMPTION above); ``n_excluded_no_kreis`` (persons,
+    household AGS missing/sentinel); ``n_missing_trip_ags`` (persons, the selected
+    trip's own home-direction or away-direction AGS is missing/sentinel);
+    ``n_missing_age`` / ``n_missing_regiostar7`` (persons, kept in ``obs`` with NaN/-1
+    rather than excluded -- a downstream consumer decides); ``n_persons_selected``
+    (persons); ``share_start_ags_equals_household_ags`` (share, over persons with a
+    known trip-side AGS, whose home-direction AGS matches the household AGS).
     """
     purpose_codes = tuple(int(c) for c in purpose_codes)
-    t = trips.copy()
+    # A fresh RangeIndex guarantees `outbound[cand.index]` below is a safe positional
+    # lookup even if the caller passed a frame with a non-unique or non-default index.
+    t = trips.copy().reset_index(drop=True)
     t["weight"] = pd.to_numeric(t["GEWICHT_W_ZENSUS"], errors="coerce")
     t["gis_valid"] = pd.to_numeric(t["GIS_LAENGE_GUELTIG"], errors="coerce") > 0
     t["distance_km"] = pd.to_numeric(t["GIS_LAENGE"], errors="coerce")
@@ -154,15 +203,23 @@ def select_person_observations(trips, persons, households, purpose_codes,
     cand["purpose_code"] = np.where(outbound[cand.index], cand["V_ZWECK"], cand["E_START_ZWECK"])
     log = {"n_candidate_trips": int(len(cand))}
 
-    # Step 1: GIS-invalid trips cannot represent a person at all; drop them from the
+    # Informational only (ruling R6): how many pool TRIPS (both directions, before
+    # per-person selection) would fail the weight/cap checks, regardless of whether
+    # they end up selected. Kept separate from the person-level exclusion counts below.
+    log["n_pool_weight_negative"] = int((cand["weight"] < 0).sum())
+    log["n_pool_over_cap"] = int((cand["distance_km"] > max_distance_km).sum())
+
+    # Step 1: GIS-invalid TRIPS cannot represent a person at all; drop them from the
     # pool, then pick the preferred-direction trip per person from what remains.
     n_gis = int((~cand["gis_valid"]).sum())
     log["n_excluded_gis_invalid"] = n_gis
-    gis_valid_cand = cand[cand["gis_valid"]].sort_values(["HHNR", "PNR", "direction_rank", "WNR"])
+    gis_valid_cand = cand[cand["gis_valid"]].sort_values(
+        ["HHNR", "PNR", "direction_rank", "WNR"], kind="stable")
     first = gis_valid_cand.drop_duplicates(["HHNR", "PNR"], keep="first")
 
-    # Step 2: apply weight and distance-cap checks to the SELECTED observation only;
-    # a failure here drops the person, it does not fall back to the other direction.
+    # Step 2: apply weight and distance-cap checks to the SELECTED observation only
+    # (counted in PERSONS, not trips); a failure here drops the person, it does not
+    # fall back to the other direction (see the ASSUMPTION above).
     n_neg = int((first["weight"] < 0).sum())
     first = first[first["weight"] >= 0]
     n_cap = int((first["distance_km"] > max_distance_km).sum())
@@ -171,37 +228,80 @@ def select_person_observations(trips, persons, households, purpose_codes,
 
     hh = households[["HHNR", "AGS"]].copy()
     hh["kreis"] = _kreis_from_ags(hh["AGS"])
-    hh["household_ags8"] = hh["AGS"].astype("Int64").astype(str).str.zfill(8)
-    first = first.merge(hh[["HHNR", "kreis", "household_ags8"]], on="HHNR", how="left")
-    first = first.merge(persons[["HHNR", "PNR", "V_ALTER"]], on=["HHNR", "PNR"], how="left")
+    hh["household_ags8"] = _ags8(hh["AGS"])
+    first = first.merge(hh[["HHNR", "kreis", "household_ags8"]], on="HHNR", how="left", validate="m:1")
+    first = first.merge(
+        persons[["HHNR", "PNR", "V_ALTER"]], on=["HHNR", "PNR"], how="left", validate="m:1")
 
     n_no_kreis = int(first["kreis"].isna().sum())
     first = first[first["kreis"].notna()]
     log["n_excluded_no_kreis"] = n_no_kreis
 
-    start_ags8 = first["V_START_AGS"].astype("Int64").astype(str).str.zfill(8)
-    dest_ags8 = first["V_ZIEL_AGS"].astype("Int64").astype(str).str.zfill(8)
-    home_ags8 = np.where(first["direction_rank"] == 0, start_ags8, dest_ags8)
-    away_ags8 = np.where(first["direction_rank"] == 0, dest_ags8, start_ags8)
-    agree = (pd.Series(home_ags8, index=first.index) == first["household_ags8"])
-    log["share_start_ags_equals_household_ags"] = float(agree.mean()) if len(first) else float("nan")
+    # Diagnostics only (ruling R6 / IMPORTANT-3): these rows are KEPT in `obs` with
+    # NaN age / -1 regiostar7 as before; a downstream consumer decides whether to
+    # exclude them. A high rate is still surfaced loudly per the no-silent-fallback rule.
+    n_missing_age = int(pd.to_numeric(first["V_ALTER"], errors="coerce").isna().sum())
+    n_missing_regiostar7 = int(pd.to_numeric(first["REGIOSTAR7"], errors="coerce").isna().sum())
+    log["n_missing_age"] = n_missing_age
+    log["n_missing_regiostar7"] = n_missing_regiostar7
+    if n_missing_age > 0:
+        logger.warning(
+            "[srv_distance_targets] purposes %s: %d/%d selected persons (%.1f%%) have a missing age",
+            purpose_codes, n_missing_age, len(first),
+            100.0 * n_missing_age / len(first) if len(first) else 0.0,
+        )
+    if n_missing_regiostar7 > 0:
+        logger.warning(
+            "[srv_distance_targets] purposes %s: %d/%d selected persons (%.1f%%) have a missing "
+            "REGIOSTAR7",
+            purpose_codes, n_missing_regiostar7, len(first),
+            100.0 * n_missing_regiostar7 / len(first) if len(first) else 0.0,
+        )
+
+    start_ags8 = _ags8(first["V_START_AGS"])
+    dest_ags8 = _ags8(first["V_ZIEL_AGS"])
+    is_outbound = (first["direction_rank"] == 0).values
+    home_ags8 = np.where(is_outbound, start_ags8, dest_ags8)
+    away_ags8 = np.where(is_outbound, dest_ags8, start_ags8)
+    home_missing = pd.isna(home_ags8)
+    away_missing = pd.isna(away_ags8)
+    log["n_missing_trip_ags"] = int((home_missing | away_missing).sum())
+
+    # A missing/sentinel AGS on either end cannot be evaluated for intra-Gemeinde,
+    # so it is reported as False rather than as a (possibly spurious) equality.
+    intra_gemeinde = np.where(home_missing | away_missing, False, home_ags8 == away_ags8)
+
+    # The household AGS is already guaranteed known here (rows with a missing/sentinel
+    # household AGS were dropped above via the Kreis filter); only the trip-side AGS
+    # can still be missing, so the agreement share is restricted to rows where it is known.
+    household_ags8 = first["household_ags8"].values
+    known_home_ags = ~home_missing
+    if known_home_ags.sum() > 0:
+        agree = home_ags8[known_home_ags] == household_ags8[known_home_ags]
+        log["share_start_ags_equals_household_ags"] = float(agree.mean())
+    else:
+        log["share_start_ags_equals_household_ags"] = float("nan")
 
     obs = pd.DataFrame({
-        "hhnr": first["HHNR"].astype(int).values,
-        "pnr": first["PNR"].astype(int).values,
+        "hhnr": first["HHNR"].astype("int64").values,
+        "pnr": first["PNR"].astype("int64").values,
         "kreis": first["kreis"].values,
-        "regiostar7": pd.to_numeric(first["REGIOSTAR7"], errors="coerce").fillna(-1).astype(int).values,
-        "purpose_code": first["purpose_code"].astype(int).values,
+        "regiostar7": pd.to_numeric(first["REGIOSTAR7"], errors="coerce").fillna(-1).astype("int64").values,
+        "purpose_code": first["purpose_code"].astype("int64").values,
         "age": pd.to_numeric(first["V_ALTER"], errors="coerce").values,
         "distance_km": first["distance_km"].astype(float).values,
         "weight": first["weight"].astype(float).values,
-        "intra_gemeinde": (pd.Series(home_ags8, index=first.index).values == away_ags8),
+        "intra_gemeinde": intra_gemeinde,
     })
     log["n_persons_selected"] = int(len(obs))
     logger.info(
-        "[srv_distance_targets] purposes %s: %d candidate trips -> %d persons; excluded "
-        "gis_invalid %d, weight<0 %d, >%.0f km %d, no Kreis %d; home AGS == household AGS %.1f%%",
-        purpose_codes, log["n_candidate_trips"], log["n_persons_selected"], n_gis, n_neg,
-        max_distance_km, n_cap, n_no_kreis, 100.0 * (log["share_start_ags_equals_household_ags"] or 0.0),
+        "[srv_distance_targets] purposes %s: %d candidate trips -> %d persons selected; "
+        "gis_invalid trips %d; pool weight<0 %d trips, pool >%.0f km %d trips; selected persons "
+        "dropped: weight<0 %d, >%.0f km %d, no Kreis %d, missing trip AGS %d; home AGS == "
+        "household AGS %.1f%% (of %d persons with known trip AGS)",
+        purpose_codes, log["n_candidate_trips"], log["n_persons_selected"], n_gis,
+        log["n_pool_weight_negative"], max_distance_km, log["n_pool_over_cap"],
+        n_neg, max_distance_km, n_cap, n_no_kreis, log["n_missing_trip_ags"],
+        100.0 * log["share_start_ags_equals_household_ags"], int(known_home_ags.sum()),
     )
     return obs, log

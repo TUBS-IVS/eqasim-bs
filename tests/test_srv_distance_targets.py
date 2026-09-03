@@ -106,6 +106,7 @@ def test_select_person_observations_education_marks_intra_and_excludes_gis_inval
     assert school["purpose_code"] == 5 and school["age"] == 17
     back = obs[(obs["hhnr"] == 2) & (obs["pnr"] == 1)].iloc[0]
     assert back["distance_km"] == pytest.approx(1.2)
+    assert back["purpose_code"] == T.PURPOSE_GRUNDSCHULE  # sourced from E_START_ZWECK, inbound leg
     assert log["n_excluded_gis_invalid"] == 1
 
 
@@ -124,3 +125,70 @@ def test_select_person_observations_reports_household_vs_start_ags_agreement():
     trips, persons, households = _raw_frames()
     _, log = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,))
     assert log["share_start_ags_equals_household_ags"] == pytest.approx(1.0)
+
+
+def test_select_person_observations_excludes_missing_household_ags():
+    """A household with NaN AGS must be excluded via the Kreis filter, not admitted as a
+    plausible-looking garbage key (CRITICAL-1: pd.NA used to stringify to "<NA>", which
+    passed notna() and produced a bogus Kreis)."""
+    households = pd.DataFrame({"HHNR": [1, 3], "AGS": [3101000, np.nan]})
+    persons = pd.DataFrame({"HHNR": [1, 3], "PNR": [1, 1], "V_ALTER": [40, 30]})
+    trips = pd.DataFrame({
+        "HHNR": [1, 3],
+        "PNR": [1, 1],
+        "WNR": [1, 1],
+        "V_ZWECK": [1, 1],
+        "E_START_ZWECK": [19, 19],
+        "V_START_LAGE": [1, 1],
+        "V_ZIEL_LAGE": [4, 4],
+        "V_START_AGS": [3101000, 3199999],
+        "V_ZIEL_AGS": [3151005, 3151005],
+        "GIS_LAENGE": [22.0, 15.0],
+        "GIS_LAENGE_GUELTIG": [22.0, 15.0],
+        "GEWICHT_W_ZENSUS": [10.0, 8.0],
+        "REGIOSTAR7": [72, 72],
+    })
+    obs, log = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,))
+    assert len(obs) == 1 and obs.iloc[0]["hhnr"] == 1
+    assert log["n_excluded_no_kreis"] == 1
+
+
+def test_select_person_observations_sentinel_trip_ags_marks_intra_false_and_excludes_from_share():
+    """A -9 (SrV missing-data sentinel) on the SELECTED trip's own AGS must not silently
+    stringify into a garbage key that compares equal to itself (CRITICAL-1: -9 used to
+    become "-0000009", which could match another garbage key and inflate intra/share)."""
+    trips, persons, households = _raw_frames()
+    trips.loc[0, "V_START_AGS"] = -9  # the home->work leg selected for person (1,1)
+    obs, log = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,))
+    assert len(obs) == 1
+    row = obs.iloc[0]
+    assert bool(row["intra_gemeinde"]) is False
+    assert log["n_missing_trip_ags"] == 1
+    assert pd.isna(log["share_start_ags_equals_household_ags"])
+
+
+def test_select_person_observations_gis_fallback_then_weight_exclusion_counted_once():
+    """HH2/PNR1's outbound leg is GIS-invalid (falls back to the inbound leg per the
+    fallback rule); once the inbound leg ALSO fails the weight check, the person is
+    excluded outright (no further fallback) and counted exactly once."""
+    trips, persons, households = _raw_frames()
+    trips.loc[5, "GEWICHT_W_ZENSUS"] = -3.0  # HH2/PNR1 inbound (fallback) leg now invalid too
+    obs, log = T.select_person_observations(trips, persons, households, T.EDUCATION_PURPOSES)
+    assert set(zip(obs["hhnr"], obs["pnr"])) == {(1, 2)}
+    assert log["n_excluded_weight_negative"] == 1
+    assert log["n_excluded_gis_invalid"] == 1
+
+
+def test_select_person_observations_empty_candidates_returns_full_key_set():
+    trips, persons, households = _raw_frames()
+    obs, log = T.select_person_observations(trips, persons, households, (99,))
+    assert obs.empty
+    expected_keys = {
+        "n_candidate_trips", "n_persons_selected", "n_excluded_gis_invalid",
+        "n_excluded_weight_negative", "n_excluded_over_cap", "n_excluded_no_kreis",
+        "n_pool_weight_negative", "n_pool_over_cap", "n_missing_trip_ags",
+        "n_missing_age", "n_missing_regiostar7", "share_start_ags_equals_household_ags",
+    }
+    assert expected_keys <= set(log.keys())
+    assert log["n_candidate_trips"] == 0 and log["n_persons_selected"] == 0
+    assert pd.isna(log["share_start_ags_equals_household_ags"])
