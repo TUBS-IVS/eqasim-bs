@@ -21,7 +21,7 @@ ported from another eqasim project), `retired`.
 | configured | 8 |
 | extended | 7 |
 | overridden | 22 |
-| braunschweig_new | 56 |
+| braunschweig_new | 58 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -66,5 +66,5 @@ ported from another eqasim project), `retired`.
 - **Population synthesis**: `braunschweig.data.census.household_size`, `braunschweig.data.census.households_size_age`, `braunschweig.data.census.households_type`, `braunschweig.data.census.population`, `braunschweig.data.hts.mid_donor`, `braunschweig.ipf.model`, `braunschweig.ipf.prepare`, `braunschweig.popsim.completed_donor`
 - **Secondary locations**: `braunschweig.data.bosserhof_location_category`, `braunschweig.data.bosserhof_purpose`, `braunschweig.data.external_secondary_points`, `braunschweig.data.locations`, `braunschweig.synthesis.locations.secondary_candidates`
 - **Spatial base data**: `braunschweig.data.alkis`, `braunschweig.data.bbsr.regiostar`, `braunschweig.data.landuse`, `braunschweig.data.osm`, `braunschweig.data.spatial.taz`, `braunschweig.data.verbindungen.zones`
-- **Validation**: `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.verbindungen_validation`, `braunschweig.data.mid.references`, `braunschweig.data.verbindungen.margins`
+- **Validation**: `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.reference.srv.commute_distance`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `braunschweig.data.mid.references`, `braunschweig.data.verbindungen.margins`
 - **Work locations**: `braunschweig.data.building_potentials`, `braunschweig.data.census.employees`, `braunschweig.data.external_workplaces`, `braunschweig.data.verbindungen.work_od`, `braunschweig.gravity.distance_matrix_taz`, `braunschweig.locations.work`

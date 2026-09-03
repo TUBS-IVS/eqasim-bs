@@ -1,0 +1,22 @@
+stage: braunschweig.analysis.reference.srv.commute_distance
+title: SrV primary-distance reference tables
+layer: validation
+description: 'Loads the committed SrV 2023 per-Kreis distance targets (work band shares with
+  intra/inter split, education by level, work quantiles) for the realised-distance comparison
+  (#358). Mirrors eqasim analysis/reference/hts/commute_distance.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/reference/hts/commute_distance builds the HTS CDF from raw
+    microdata; this stage reads committed aggregates so no local-only data is needed.
+code:
+- braunschweig/analysis/reference/srv/commute_distance.py
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+production: true
+inputs:
+- srv2023_primary_distance_targets
+features:
+- srv_primary_distance_validation

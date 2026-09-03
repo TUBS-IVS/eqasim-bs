@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 76 | stages: 115 | datasets: 59 | ADRs: 101 | run manifests: 29
+- Features: 77 | stages: 117 | datasets: 60 | ADRs: 101 | run manifests: 29
 
 ## Population synthesis
 
@@ -163,13 +163,14 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Validation
 
-4 stage(s), 3 in the production DAG. Datasets: `mid2023_reference_tables`, `verbindungen`
+6 stage(s), 5 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `verbindungen`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Education enrollment validation](../registry/features/education_enrollment_validation.yml) | active | ON | A/s/- | unvalidated |  |
 | [MiD validation report](../registry/features/mid_validation_report.yml) | active | ON | A/s/s | unvalidated |  |
 | [Population validation (controls/quality/geo)](../registry/features/population_validation.yml) | active | ON | A/s/s | unvalidated |  |
+| [SrV primary-distance validation per Kreis](../registry/features/srv_primary_distance_validation.yml) | active | ON | A/s/s | unvalidated | [#358](https://github.com/TUBS-IVS/eqasim-bs/issues/358) |
 | [VerBindungen sub-Kreis OD validation (#124)](../registry/features/verbindungen_od_validation.yml) | active | ON | A/-/- | measured_vs_reference (`verbindungen-ab-2026-07-16`) | [#124](https://github.com/TUBS-IVS/eqasim-bs/issues/124) |
 
 ## Infrastructure

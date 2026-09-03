@@ -1,0 +1,64 @@
+feature: srv_primary_distance_validation
+title: SrV primary-distance validation per Kreis
+area: validation
+description: Compares a run's realised home->work and home->education distance distributions per
+  home Kreis against the committed SrV 2023 targets with a pre-registered gap rule; the Phase 0
+  measurement of the SrV distance-distribution calibration (#357/#358).
+stages:
+- braunschweig.analysis.reference.srv.commute_distance
+- braunschweig.analysis.synthesis.commute_distance_by_kreis
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: 358
+  pr: null
+  adr: null
+code_paths:
+- braunschweig/analysis/reference/srv/commute_distance.py
+- braunschweig/analysis/synthesis/commute_distance_by_kreis.py
+- braunschweig/calibration/srv_distance_targets.py
+- braunschweig/calibration/decision.py
+- scripts/extract_srv_primary_distance_targets.py
+- documentation/plots/srv_commute_distance.py
+evidence:
+  tests:
+  - tests/test_srv_distance_targets.py
+  - tests/test_srv_distance_targets_pins.py
+  - tests/test_srv_distance_decision.py
+  - tests/test_srv_commute_distance_reference_stage.py
+  - tests/test_commute_distance_by_kreis.py
+  - tests/test_srv_commute_distance_plot.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: Analysis-only stages; they read cached synthesis stages and write a report, no pipeline output changes.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[srv_distance]'
+    note: The stage logs persons without home geometry, destinations outside every Gemeinde polygon
+      and pupils with an age outside every level, as explicit counts and rates (R17 in
+      commute_distance_by_kreis.py); it raises above srv_distance_max_unmatched_home_share and
+      warns above srv_distance_warn_unmatched_destination_share. The extractor separately logs
+      GIS-invalid, negative-weight, over-cap and no-Kreis exclusions.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv
+    note: SrV 2023 per-Kreis targets (see the data record srv2023_primary_distance_targets).
+      Wolfsburg is not surveyed; its rows are the RegioStaR-7 type-72 pool as an ASSUMPTION-grade
+      proxy (source proxy_rs7_72), documented in the data record's limitations.
+validation:
+  state: unvalidated
+  runs: []
+  metric: band_emd_vs_srv
+  note: Fill in after the baseline run (Task 12) with the run manifest id.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Baseline measurement not yet recorded.
+  source: null

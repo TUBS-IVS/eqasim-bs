@@ -1,0 +1,67 @@
+dataset: srv2023_primary_distance_targets
+title: SrV 2023 primary-activity distance-distribution targets per home Kreis (committed aggregates)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year (Tue-Thu reporting days)
+geography: Braunschweig + Regionalverband Grossraum Braunschweig; rows per home Kreis (8 ZGB Kreise,
+  Wolfsburg as RS7-72 proxy), per RegioStaR-7 pool and ZGB total. Covers 7 of 8 Kreise natively.
+crs: null
+roles:
+- calibration_target
+- validation_reference
+used_by:
+- braunschweig.analysis.reference.srv.commute_distance
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_primary_distance_targets.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv. Reads SrV2023_Wege.csv (V_ZWECK, E_START_ZWECK,
+    V_START_LAGE, V_ZIEL_LAGE, V_START_AGS, V_ZIEL_AGS, GIS_LAENGE, GIS_LAENGE_GUELTIG,
+    GEWICHT_W_ZENSUS, REGIOSTAR7), SrV2023_Personen.csv (V_ALTER), SrV2023_Haushalte.csv (AGS).
+    The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_primary_distance_targets.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Three committed files: srv2023_commute_distance_by_kreis.csv (work band shares, scopes
+    all/inter/intra-Gemeinde, raw + shrunk, unweighted n_persons/n_persons_inter/n_persons_intra,
+    bootstrap EMD noise floor), srv2023_education_distance_by_kreis_level.csv (education band
+    shares per model age level), srv2023_commute_distance_quantiles_by_kreis.csv (percentiles
+    1..99 of the euclidean-equivalent work distance, long format). Pin tests:
+    tests/test_srv_distance_targets_pins.py.
+
+    Not listed in scripts/verify_braunschweig_inputs.py and not added as a new row in the
+    README derived-inputs table: the three files ship committed, and requirements.production
+    is "optional" because the only consumer (braunschweig.analysis.reference.srv.commute_distance)
+    feeds the validation/analysis stage braunschweig.analysis.synthesis.commute_distance_by_kreis
+    -- a production run's core deliverable (the synthetic population / MATSim scenario) does not
+    depend on this dataset, unlike e.g. the MiD B10a extracted CSVs which back an actual
+    synthesis stage. Same treatment as the sibling committed srv2023_* tables that no synthesis
+    stage reads (srv2023_license_by_sex_cohort, srv2023_ticket_groups4_14plus_by_kreis): the
+    README already covers regenerating "the committed braunschweig/srv/srv2023_*.csv aggregates"
+    generically (the SrV 2023 BS+RGB trip records row in the restricted-inputs table), and no
+    per-file table for committed SrV aggregates exists to extend.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Observation unit is the person (first home->purpose trip, else first purpose->home trip),
+  GIS-routed length only (GIS-invalid persons excluded, 16-21% of home-based trips, no
+  length bias found: self-reported median 13 km vs 12 km), weight GEWICHT_W_ZENSUS. Wolfsburg
+  is not surveyed: its rows are the RegioStaR-7 type-72 pool (Braunschweig + Salzgitter),
+  source = proxy_rs7_72 -- an ASSUMPTION. Shrinkage n/(n+k), k = 100 persons, toward the
+  dominant RS7 pool then ZGB. Coverage caveat: stratified PSU design over ~44 selected
+  municipalities; per-Kreis rows extrapolate to the Kreis (ASSUMPTION-grade). Education levels
+  follow the model's age banding (oberstufe and bbs pooled as upper_secondary); BBS and
+  university cells are too thin for a per-Kreis decision (spec 2026-09-03 Section 5.4).
+notes: |
+  Reference for the SrV distance-distribution calibration of the primary activities (issue #357,
+  Phase 0 #358). Compared against runs by braunschweig.analysis.synthesis.commute_distance_by_kreis.
