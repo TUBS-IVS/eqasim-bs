@@ -109,3 +109,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0098](../decisions/ADR-0098-the-java-pom-owns-the-jar-version-not-a-python-constant.md) | 2026-08-21 | active | The java project's pom owns the jar version; the pipeline reads it instead of pinning a copy |
 | [ADR-0099](../decisions/ADR-0099-never-pt-group-in-the-pt-ticket-kreis-control.md) | 2026-08-23 | active | `never_pt` becomes a fourth group in the PT-ticket per-Kreis control, and the ticket taxonomy turns English behind one raw-CSV boundary (issue #329) |
 | [ADR-0100](../decisions/ADR-0100-every-run-records-its-own-resource-series.md) | 2026-08-24 | active | Every pipeline run records its own resource time series, and one shared definition decides whether a process tree is working |
+| [ADR-0101](../decisions/ADR-0101-analysis-stages-read-the-matsim-archive-not-the-run-stage.md) | 2026-09-03 | active | Analysis stages read the MATSim output archive, never the run stage |

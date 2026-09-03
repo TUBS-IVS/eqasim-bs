@@ -134,12 +134,14 @@ entirely inside ZGB; cross-cordon Einpendler are a separate injection.)
 
 **Automatic pipeline stage + two modes.** `braunschweig.analysis.simwrapper_export`
 is a synpp stage that writes `<output_path>/simwrapper/` on **every** run (add it
-to a config's `run:` list). It always depends on `synthesis.output`; it
-additionally depends on `matsim.simulation.run` ONLY when
-`simwrapper_include_matsim: true` (an explicit flag, NOT the global default-True
-`run_matsim`, so a synthesis-only pipeline never accidentally forces a MATSim
-run). Thus: a **synthesis-only** run writes all synthesis tabs (fleet, socio,
-commuters-from-synthesis, ...) and the MATSim tabs skip with a log; a **full**
+to a config's `run:` list). It always depends on `synthesis.output`; when
+`simwrapper_include_matsim: true` it reads the MATSim outputs from the
+`<output_path>/matsim_output` archive written by `matsim.output`
+(config-derived, never a `matsim.simulation.run` stage edge — ADR-0101 /
+issue #354, so an analysis-only invocation never recomputes the simulation).
+Thus: a **synthesis-only** run writes all synthesis tabs (fleet, socio,
+commuters-from-synthesis, ...) and the MATSim tabs skip with a log — as they
+do, loudly, when the flag is on but the archive is absent; a **full**
 run additionally writes all MATSim tabs. Flag-gated by `simwrapper_export_enabled`
 (default true); it only adds the `simwrapper/` subfolder, so existing run outputs
 stay byte-identical. The CLI / stage share one entry point

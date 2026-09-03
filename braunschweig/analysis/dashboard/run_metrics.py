@@ -48,7 +48,17 @@ from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day
 
 
 def _find_sim_output(cache_root: Path) -> Path | None:
-    """Locate `matsim.simulation.run__*.cache/simulation_output/`."""
+    """Locate the MATSim simulation output under ``cache_root``.
+
+    Accepts two layouts (#354): a directory that itself IS a simulation output
+    -- e.g. the ``<output_path>/matsim_output`` archive written by
+    ``matsim.output``, recognised by ``output_events.xml.gz`` or
+    ``eqasim_trips.csv`` -- or the historical synpp cache root containing
+    ``matsim.simulation.run__*.cache/simulation_output/``.
+    """
+    for sentinel in ("output_events.xml.gz", "eqasim_trips.csv"):
+        if (cache_root / sentinel).exists():
+            return cache_root
     for d in cache_root.glob("matsim.simulation.run__*.cache"):
         cand = d / "simulation_output"
         if cand.exists():

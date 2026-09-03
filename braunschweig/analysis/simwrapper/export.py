@@ -503,7 +503,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--output-dir", required=True,
                     help="eqasim CSV output folder for the run.")
     ap.add_argument("--sim-cache", required=False, default=None,
-                    help="Synpp cache folder with matsim.simulation.run__*.cache/. "
+                    help="MATSim output location: either a directory holding the simulation "
+                         "output directly (e.g. <output_path>/matsim_output written by "
+                         "matsim.output) or a synpp cache folder with "
+                         "matsim.simulation.run__*.cache/. "
                          "Omit for a synthesis-only export (MATSim tabs skip).")
     ap.add_argument("--label", default=None)
     ap.add_argument("--sample-rate", type=float, default=None)
@@ -533,8 +536,10 @@ def export_all(
 
     Args:
         output_dir: eqasim run output directory (holds the ``*_persons.csv`` etc.).
-        sim_cache: synpp cache directory containing
-            ``matsim.simulation.run__*.cache/``, or ``None`` for synthesis-only.
+        sim_cache: MATSim output location -- a directory holding the simulation
+            output directly (e.g. the ``<output_path>/matsim_output`` archive,
+            ADR-0101) or a synpp cache directory containing
+            ``matsim.simulation.run__*.cache/`` -- or ``None`` for synthesis-only.
         label: friendly run label (defaults to the output dir name).
         sample_rate: sampling rate (0.01 / 0.25 / 1.0); used for OD scaling.
         out_subdir: subfolder of ``output_dir`` to write into (default ``simwrapper``).

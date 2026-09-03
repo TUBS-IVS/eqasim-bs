@@ -63,17 +63,21 @@ def test_configure_matsim_absent_in_config_registers_synthesis_output_only():
 
 
 # ---------------------------------------------------------------------------
-# Test 2 — configure with MATSim: BOTH stages registered
+# Test 2 — configure with MATSim: still NO matsim.simulation.run edge (#354)
 # ---------------------------------------------------------------------------
 
-def test_configure_with_matsim_registers_both_stages():
+def test_configure_with_matsim_declares_no_run_stage_dependency():
+    """simwrapper_include_matsim is a SIGNAL ('this run has MATSim outputs'),
+    not a dependency: the sim outputs are read from the <output_path>/
+    matsim_output archive, so no invocation may pull in the simulation chain
+    just to render dashboards (issue #354)."""
     ctx = FakeContext({"simwrapper_include_matsim": True,
                        "simwrapper_export_enabled": True,
                        "output_path": "/tmp/out",
                        "sampling_rate": 0.25})
     stage.configure(ctx)
     assert "synthesis.output" in ctx.stages
-    assert "matsim.simulation.run" in ctx.stages
+    assert "matsim.simulation.run" not in ctx.stages
 
 
 # ---------------------------------------------------------------------------
@@ -179,41 +183,61 @@ def test_execute_cordon_on_threads_student_frames_through(monkeypatch, tmp_path)
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — execute with MATSim: sim_cache is parent of the run-cache dir
+# Test 5 — execute with MATSim: sim_cache is the matsim_output archive (#354)
 # ---------------------------------------------------------------------------
 
-def test_execute_with_matsim_passes_parent_of_run_cache_as_sim_cache(monkeypatch, tmp_path):
-    """context.path('matsim.simulation.run') is <synpp_root>/matsim.simulation.run__abc.cache.
-    export_all must receive sim_cache == str(<synpp_root>), i.e. the PARENT.
-    """
+def test_execute_with_matsim_passes_archive_as_sim_cache(monkeypatch, tmp_path):
+    """The sim outputs are resolved from the <output_path>/matsim_output
+    archive written by matsim.output -- config-derived, never via
+    context.path('matsim.simulation.run') (paths stays empty on purpose)."""
     captured: dict = {}
 
     def _fake_export_all(output_dir, sim_cache=None, label=None, sample_rate=None,
                          out_subdir="simwrapper", student_frames=None):
         captured["sim_cache"] = sim_cache
         captured["sample_rate"] = sample_rate
-        captured["student_frames"] = student_frames
         return [Path("z")]
 
     monkeypatch.setattr(_export_mod, "export_all", _fake_export_all)
 
-    # Simulate the cache layout: <tmp_path>/matsim.simulation.run__abc.cache
-    run_cache_dir = tmp_path / "matsim.simulation.run__abc.cache"
+    out = tmp_path / "output"
+    archive = out / "matsim_output"
+    archive.mkdir(parents=True)
+    # matsim.output asserts this file exists after archiving.
+    (archive / "output_events.xml.gz").write_bytes(b"")
 
-    out = str(tmp_path / "output")
     ctx = FakeContext(
         {"simwrapper_export_enabled": True,
          "simwrapper_include_matsim": True,
-         "output_path": out,
+         "output_path": str(out),
          "sampling_rate": 1.0},
-        paths={"matsim.simulation.run": str(run_cache_dir)},
     )
     result = stage.execute(ctx)
 
-    expected_sim_cache = str(tmp_path)  # parent of the run__*.cache dir
-    assert captured["sim_cache"] == expected_sim_cache, (
-        f"sim_cache should be the synpp cache ROOT (parent of run__*.cache), "
-        f"got {captured['sim_cache']!r}, expected {expected_sim_cache!r}"
-    )
+    assert captured["sim_cache"] == str(archive)
     assert captured["sample_rate"] == pytest.approx(1.0)
     assert result == ["z"]
+
+
+def test_execute_with_matsim_but_no_archive_skips_matsim_tabs(monkeypatch, tmp_path):
+    """simwrapper_include_matsim=True but no archive on disk: export_all must
+    receive sim_cache=None (its MATSim tabs then skip loudly) instead of the
+    stage failing or recomputing the simulation."""
+    captured: dict = {}
+
+    def _fake_export_all(output_dir, sim_cache=None, label=None, sample_rate=None,
+                         out_subdir="simwrapper", student_frames=None):
+        captured["sim_cache"] = sim_cache
+        return [Path("z")]
+
+    monkeypatch.setattr(_export_mod, "export_all", _fake_export_all)
+
+    ctx = FakeContext(
+        {"simwrapper_export_enabled": True,
+         "simwrapper_include_matsim": True,
+         "output_path": str(tmp_path / "output"),
+         "sampling_rate": 1.0},
+    )
+    stage.execute(ctx)
+
+    assert captured["sim_cache"] is None

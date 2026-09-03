@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 91 stages, 211 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 91 stages, 216 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -64,7 +64,6 @@ flowchart LR
     infrastructure --> analysis
     infrastructure --> freight
     infrastructure --> matsim
-    matsim --> analysis
     matsim --> cordon
     population --> attributes
     population --> behavior

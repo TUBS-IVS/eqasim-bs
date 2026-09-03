@@ -493,6 +493,18 @@
    "matsim.runtime.pt2matsim"
   ],
   [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.gtfs"
+  ],
+  [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.osm"
+  ],
+  [
+   "matsim.runtime.git",
+   "matsim.scenario.supply.processed"
+  ],
+  [
    "matsim.runtime.java",
    "braunschweig.freight.extraction"
   ],
@@ -531,6 +543,18 @@
   [
    "matsim.runtime.maven",
    "matsim.runtime.pt2matsim"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.gtfs"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.osm"
+  ],
+  [
+   "matsim.runtime.maven",
+   "matsim.scenario.supply.processed"
   ],
   [
    "matsim.runtime.pt2matsim",
@@ -591,14 +615,6 @@
   [
    "matsim.simulation.prepare",
    "matsim.simulation.run"
-  ],
-  [
-   "matsim.simulation.run",
-   "braunschweig.analysis.analysis_suite"
-  ],
-  [
-   "matsim.simulation.run",
-   "braunschweig.analysis.simwrapper_export"
   ],
   [
    "matsim.simulation.run",
@@ -731,6 +747,10 @@
   [
    "synthesis.population.spatial.home.locations",
    "braunschweig.synthesis.locations.education_gravity"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "braunschweig.synthesis.vehicles.cars.household"
   ],
   [
    "synthesis.population.spatial.home.locations",
