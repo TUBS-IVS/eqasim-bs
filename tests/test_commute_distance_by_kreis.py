@@ -569,7 +569,9 @@ def test_threshold_sensitivity_json_mirrors_the_frame():
     _, cells, _, ecells, _, scells, _ = _all_frames()
     frame = S.threshold_sensitivity(cells, ecells, scells, [0.06, 0.10], 200)
     nested = S.threshold_sensitivity_json(frame)
-    assert set(nested) == {"0.06", "0.10"}
+    # keys are repr(float(t)), which round-trips exactly -- 0.10 keys as "0.1"
+    assert set(nested) == {"0.06", "0.1"}
+    assert {float(k) for k in nested} == {0.06, 0.10}
     assert set(nested["0.06"]) == {"scope", "level", "variant"}
     row = frame[(frame["kind"] == "scope") & (frame["name"] == "all")
                 & (frame["threshold"] == 0.06)].iloc[0]
@@ -597,7 +599,7 @@ def test_write_outputs_writes_the_two_sensitivity_files_and_keeps_the_preregiste
     assert set(d["education"]) == set(T.COMPARABLE_LEVELS)
     assert set(d["sensitivity"]) == {"variants", "thresholds"}
     assert set(d["sensitivity"]["variants"]) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
-    assert set(d["sensitivity"]["thresholds"]) == {"0.06", "0.08", "0.10"}
+    assert {float(k) for k in d["sensitivity"]["thresholds"]} == {0.06, 0.08, 0.10}
     # commute_by_kreis.csv carries only the three pre-registered scopes, no variant rows
     written_work = pd.read_csv(tmp_path / "commute_by_kreis.csv", dtype={"code": str})
     assert set(written_work["scope"]) == {"all", "inter", "intra"}
@@ -619,3 +621,25 @@ def test_write_outputs_without_the_sensitivity_arguments_omits_the_section(tmp_p
     d = json.loads((tmp_path / "decisions.json").read_text(encoding="utf-8"))
     assert set(d) == {"work", "education"}
     assert "Sensitivity (not pre-registered)" not in (tmp_path / "summary.md").read_text(encoding="utf-8")
+
+
+def test_threshold_sensitivity_json_keys_do_not_collide_on_close_thresholds():
+    # A fixed-precision key such as "%.2f" would map 0.075 and 0.0751 to the same string and
+    # silently drop one of the two verdicts; repr(float(t)) round-trips exactly.
+    _, cells, _, ecells, _, scells, _ = _all_frames()
+    frame = S.threshold_sensitivity(cells, ecells, scells, [0.075, 0.0751], 200)
+    nested = S.threshold_sensitivity_json(frame)
+    assert len(nested) == 2
+    assert {float(k) for k in nested} == {0.075, 0.0751}
+
+
+def test_sensitivity_scope_masks_reuse_the_preregistered_all_and_inter_masks():
+    # MINOR (fix round 1): the *_gis_fallback variants must compare against exactly the arrays
+    # compare_work uses, so a second definition cannot drift from the pre-registered one.
+    realised = _realised_for_scopes()
+    preregistered = S.work_scope_masks(realised)
+    sensitivity = S.sensitivity_scope_masks(realised)
+    assert (sensitivity["all"] == preregistered["all"]).all()
+    assert (sensitivity["inter"] == preregistered["inter"]).all()
+    # inter_zgb is strictly narrower than inter, never wider
+    assert (sensitivity["inter_zgb"] <= sensitivity["inter"]).all()

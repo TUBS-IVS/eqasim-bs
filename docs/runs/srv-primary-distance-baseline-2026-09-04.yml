@@ -46,8 +46,11 @@ sampling:
     2026-09-03. Cohorts measured: 304,900 workers with a work destination and 178,763
     pupils/students -- identical to the 09-03 run, as are commute_by_kreis.csv,
     education_by_kreis_level.csv and commute_quantiles_model.csv, which are BYTE-IDENTICAL to
-    their 09-03 counterparts (verified with cmp). The measurement did not move; only the decision
-    rule and the added sensitivity section did.'
+    their 09-03 counterparts (verified with cmp) -- and consequently so are all four PNGs
+    (work_all, work_inter, work_intra, education), which are re-rendered from those identical
+    CSVs and were likewise verified byte-identical to the 09-03 files. They are committed under
+    the 09-04 directory for self-containment, not because they show anything new. The measurement
+    did not move; only the decision rule and the added sensitivity section did.'
 pipeline:
   targets:
   - braunschweig.analysis.synthesis.commute_distance_by_kreis
@@ -113,33 +116,65 @@ validation:
     all_gis_fallback and inter_gis_fallback (GIS length where valid, else the self-reported
     length)'
   reference: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_sensitivity_by_kreis.csv
-  result: 'inter_zgb -> DO NOT BUILD. Model scope inter_zgb keeps 122,654 of the 161,805
-    inter-Gemeinde workers (75.8%); excluded are the 39,150 whose destination lies outside every
-    ZGB Gemeinde polygon and the 1 with an unresolved home Gemeinde. ALL nine cells are "ok":
-    zgb EMD 0.021 vs noise floor 0.013 on n_ref 2,301, per-Kreis EMD 0.014-0.057 (worst 03158
-    0.057/0.023, then 03153 0.054/0.029), 7 of 8 Kreise decisive (03102 has n_ref 135 < 200 and is
-    therefore not decisive). This is the sharpest result of the run: the pre-registered inter
-    scope''s BUILD verdict (aggregate EMD 0.085) does NOT survive restricting both universes to
-    ZGB-internal commutes -- the aggregate EMD drops by a factor of four, which is consistent with
-    the polygon-external caveat of the 09-03 manifest and quantifies it for the first time.
+  result: 'inter_zgb -> DO NOT BUILD, and it is the most consequential AND the most ambiguous
+    result of this run. ALL nine cells are "ok": zgb EMD 0.021 vs noise floor 0.013 on n_ref
+    2,301, per-Kreis EMD 0.014-0.057 (worst 03158 0.057/0.023, then 03153 0.054/0.029), 7 of 8
+    Kreise decisive (03102 has n_ref 135 < 200 and is therefore not decisive). The pre-registered
+    inter scope''s BUILD verdict (aggregate EMD 0.085) does not survive restricting both universes
+    to ZGB-internal commutes: the aggregate EMD falls by a factor of four.
+    THE NARROWING IS ASYMMETRIC, and that asymmetry is the reason the result cannot be read as a
+    clean acquittal. Model side: 122,654 of 161,805 inter-Gemeinde workers kept = 75.8%, i.e.
+    24.2% dropped as polygon-external (plus the 1 person with an unresolved home Gemeinde).
+    Reference side: 2,301 of 2,593 inter SrV persons kept = 88.7%, i.e. only 11.3% dropped for a
+    destination outside the ZGB (the extractor''s header records n_missing_trip_ags = 1 for the
+    GIS-only selection feeding this variant, so essentially the entire SrV drop IS out-of-ZGB
+    destinations, not unknown ones). The same rule therefore removes roughly TWICE the share from
+    the model that it removes from the survey. CAVEAT on that comparison: the model share is a
+    plain person count while the SrV n_persons behind the weighted band shares is unweighted too,
+    but the shares the EMD is computed on are GEWICHT_W_ZENSUS-weighted -- the 75.8% vs 88.7%
+    contrast is therefore INDICATIVE of the asymmetry, not an exact like-for-like rate.
     all_gis_fallback -> BUILD, gap in 03153 (0.100/0.026), 03157 (0.088/0.026), 03158
     (0.093/0.033); aggregate ok, zgb EMD 0.045 vs floor 0.012 on n_ref 5,174. Same three gapping
     Kreise as the pre-registered "all" scope (whose EMDs were 0.104/0.097/0.100), i.e. recovering
     the GIS-invalid tail via the self-reported length moves the "all" verdict hardly at all.
     inter_gis_fallback -> BUILD, gap in 03103 (0.106/0.021, proxy), 03153 (0.154/0.028), 03157
     (0.106/0.023), 03158 (0.084/0.028) and the decisive zgb aggregate (EMD 0.080 vs floor 0.012 on
-    n_ref 2,969); 03101 drops out of the gap list (0.078 vs 0.081 pre-registered). The
-    pre-registered inter verdict is therefore robust to the GIS-invalid tail but NOT to the
-    polygon-external destinations.'
+    n_ref 2,969; the margin over the 0.08 threshold is 0.000282, i.e. a fifth-decimal call);
+    03101 drops out of the gap list (0.078 vs 0.081 pre-registered). The pre-registered inter
+    verdict is therefore robust to the GIS-invalid tail but NOT to the polygon-external
+    destinations.'
   artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/sensitivity_cells.csv'
-  notes: 'These variants are DIAGNOSTICS, never calibration targets: decisions.json keeps them
-    strictly under ["sensitivity"]["variants"], apart from the pre-registered ["work"] and
-    ["education"]. Each variant is decided on its OWN n_persons (a variant is a strictly smaller
-    sample than the corresponding pre-registered scope). The *_gis_fallback references mix
-    GIS-routed km with self-reported km WITHOUT rescaling (ASSUMPTION, ADR-0102 Assumption 2), and
-    their shrinkage pools are recomputed per variant, so a share_shrunk value is not comparable
-    across tables. The model side of the *_gis_fallback variants is the unchanged all / inter
-    scope -- the model has no GIS-validity notion, so only the reference moves there.'
+  notes: 'BOTH READINGS OF inter_zgb ARE ADMISSIBLE ON THIS EVIDENCE and the record states both
+    rather than picking the flattering one (controller ruling R31).
+    READING (a): within-ZGB destination choice already matches SrV, and the pre-registered inter
+    gap is carried entirely by the polygon-external destinations -- i.e. the gap is about WHICH
+    external workplaces the model picks and how many, not about how far ZGB-internal commuters
+    travel. This is the reading the 09-03 manifest and ADR-0103 anticipated as the
+    "polygon-external caveat".
+    READING (b): the model may simply OVER-PRODUCE out-of-ZGB workplaces relative to the survey
+    (24.2% of its inter cohort against the survey''s 11.3%), in which case removing them removes
+    the very persons carrying the gap and the good inter_zgb fit is partly an artefact of
+    dropping the mismatched mass. This reading is possibly COMPOUNDED, not refuted, by SrV
+    under-capturing long/external trips: ADR-0102 Assumption 2 records that GIS-invalid work
+    trips carry a heavier long-distance tail than GIS-valid ones, and a one-day survey universe
+    systematically under-observes irregular long-distance commuting -- so part of the 11.3% vs
+    24.2% gap may be survey-side under-capture rather than model-side over-production.
+    RESOLUTION PATH (not decided here): the model''s external commuter mass is NOT free -- it is
+    anchored to the BA Pendleratlas out-commuter counts by
+    braunschweig.gravity.model._append_outbound_flows (register data, stage
+    braunschweig.data.census.pendler). Layer 1 (#359) must therefore FIRST compare the realised
+    external commuter share per Kreis against the BA register AND against SrV, and only then
+    touch any friction parameter: if the realised share matches BA, reading (a) is supported and
+    the survey/register discrepancy is the thing to explain; if it exceeds BA, reading (b) is
+    supported and the outbound anchoring, not the distance friction, is the defect.
+    General provisos: these variants are DIAGNOSTICS, never calibration targets -- decisions.json
+    keeps them strictly under ["sensitivity"]["variants"], apart from the pre-registered ["work"]
+    and ["education"]. Each variant is decided on its OWN n_persons (a variant is a strictly
+    smaller sample than the corresponding pre-registered scope). The *_gis_fallback references
+    mix GIS-routed km with self-reported km WITHOUT rescaling (ASSUMPTION, ADR-0102 Assumption 2),
+    and their shrinkage pools are recomputed per variant, so a share_shrunk value is not
+    comparable across tables. The model side of the *_gis_fallback variants is the unchanged all /
+    inter scope -- the model has no GIS-validity notion, so only the reference moves there.'
 - metric: 'SENSITIVITY (not pre-registered): every pre-registered scope/level and every variant
     re-decided at EMD thresholds 0.06, 0.08 and 0.10'
   reference: none (the same cells, re-decided; 0.08 is the pre-registered threshold)
@@ -150,7 +185,7 @@ validation:
     levels turn to BUILD that are DO NOT BUILD at 0.08: kindergarten (aggregate EMD 0.067, gap
     code zgb) and upper_secondary (aggregate EMD 0.074, gap code zgb). At 0.10 the sensitivity
     variant all_gis_fallback turns from BUILD to DO NOT BUILD (its worst decisive Kreis EMD is
-    0.100 for 03153, exactly at the threshold). No pre-registered WORK verdict and no
+    0.0995 for 03153, just below the 0.10 threshold rather than exactly at it). No pre-registered WORK verdict and no
     pre-registered EDUCATION verdict other than those two flips anywhere in 0.06-0.10; the gap
     LISTS do shrink with the threshold (work all: 03103, 03153, 03157, 03158 at 0.06 -> 03153,
     03157, 03158 at 0.08 -> 03153 alone at 0.10; work inter: six codes at 0.06 and 0.08 -> 03103,
@@ -158,7 +193,13 @@ validation:
   artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/sensitivity.csv'
   notes: 'The sweep is exact rather than approximate: cell EMDs and noise floors do not depend on
     the threshold, only the gap classification does, so decide_layer is simply re-run on the
-    already computed cells. The 0.08 rows reproduce the pre-registered verdicts identically, which
+    already computed cells. KEY FORMAT: the committed decisions.json was written by the code
+    state that ran, which formatted the threshold keys of ["sensitivity"]["thresholds"] as
+    "%.2f" ("0.06"/"0.08"/"0.10"); a review-round fix changed that to repr(float(t)) so two close
+    configured thresholds cannot collide into one key, which renders 0.10 as "0.1". The artifact
+    is left exactly as the run wrote it -- the difference is the key STRING only, no verdict and
+    no CSV row changes, and sensitivity.csv (the authoritative table) carries the thresholds as
+    numbers either way. The 0.08 rows reproduce the pre-registered verdicts identically, which
     is what makes the sweep auditable. The two education flips at 0.06 rest on aggregates of 647
     (kindergarten) and 360 (upper_secondary) SrV persons with noise floors of 0.020 and 0.033.'
 - metric: 'join and coverage diagnostics of the analysis stage (fallback transparency)'

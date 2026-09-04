@@ -42,8 +42,12 @@ notes: 'Writes eight files under <output_path>/analysis/srv_distance_validation/
   for the inter_zgb / all_gis_fallback / inter_gis_fallback reference variants, same cell
   columns as commute_by_kreis.csv plus a variant column) and sensitivity.csv (the EMD
   threshold sweep: kind/name/threshold/build/undecidable/gap_codes). decisions.json keeps
-  ["work"] and ["education"] exactly as the pre-registered rule produced them and carries the
-  diagnostics under a separate ["sensitivity"] key. VG250-EW (vg250_ew) is read at run time via
+  ["work"] and ["education"] untouched by the sensitivity path and carries the diagnostics under
+  a separate ["sensitivity"] key. A MISSING OR STALE sensitivity table aborts the stage by
+  design: the reference stage raises FileNotFoundError when the committed CSV is absent, and
+  compare_sensitivity raises ValueError naming the variant(s) the table does not contain -- a
+  fail-loud choice over reporting a variant as "no reference in every cell", which would look
+  like a measured result rather than a missing input (CLAUDE.md fallback transparency). VG250-EW (vg250_ew) is read at run time via
   braunschweig.analysis.spatial.load_gemeinden/assign_geographies to resolve home/destination
   Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split. By design, the
   stage ABORTS the production run (raises ValueError) when more than 5% of homes (workers or

@@ -24,8 +24,10 @@ SENSITIVITY (addendum Task 16, item 2/3 -- NOT part of the pre-registered decisi
 the pre-registered comparison the stage measures how far the verdict could move if the two
 documented caveats of the reference were resolved differently, and how sensitive it is to the
 EMD threshold itself. Both live strictly beside the pre-registered result -- ``decisions.json``
-keeps ``["work"]`` / ``["education"]`` byte-for-byte as the pre-registered rule produced them
-and adds a separate ``["sensitivity"]`` section; ``summary.md`` gets a clearly labelled
+keeps ``["work"]`` / ``["education"]`` unchanged by the sensitivity path (they still move with
+the pre-registered rule itself: the university level became ``undecidable`` under the
+2026-09-04 amendment, see :mod:`braunschweig.calibration.decision`) and adds a separate
+``["sensitivity"]`` section; ``summary.md`` gets a clearly labelled
 "Sensitivity (not pre-registered)" section. Nothing in the sensitivity path can change a
 pre-registered verdict.
 """
@@ -436,6 +438,19 @@ def _cell(code, scope, model_km_routed, target_row, shrunk_prefix, noise_col, n_
     return row
 
 
+def work_scope_masks(realised):
+    """The three pre-registered work scopes as boolean per-person masks.
+
+    Shared by :func:`compare_work` and :func:`sensitivity_scope_masks` so the ``all`` and
+    ``inter`` universes of a ``*_gis_fallback`` sensitivity variant are the SAME arrays the
+    pre-registered comparison uses, and cannot drift from them through a second definition.
+    ``inter`` follows :func:`realised_work_frame`'s documented convention that a destination
+    outside every Gemeinde polygon counts as inter-Gemeinde.
+    """
+    intra = realised["intra_gemeinde"].astype(bool).values
+    return {"all": np.ones(len(realised), dtype=bool), "inter": ~intra, "intra": intra}
+
+
 def compare_work(realised, targets, detour_factor, emd_threshold, min_persons,
                  aggregate_requires_min_persons=D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS):
     """One row per (code, scope); decisions per scope via the pre-registered rule.
@@ -453,8 +468,8 @@ def compare_work(realised, targets, detour_factor, emd_threshold, min_persons,
     2026-09-04, ADR-0103, in that module's docstring).
     """
     routed = realised["distance_km_euclid"].values * float(detour_factor)
-    intra = realised["intra_gemeinde"].astype(bool).values
-    scopes = {"all": np.ones(len(realised), dtype=bool), "inter": ~intra, "intra": intra}
+    scopes = work_scope_masks(realised)
+    intra = scopes["intra"]
     n_reference_col = {"all": "n_persons", "inter": "n_persons_inter", "intra": "n_persons_intra"}
     rows = []
     for scope, mask in scopes.items():
@@ -538,11 +553,22 @@ def sensitivity_scope_masks(realised):
       so keeping them would put persons of unknown intra/inter status into a scope whose whole
       point is that both universes are restricted the same way.
 
+    SAME RULE, DIFFERENT MAGNITUDE (controller ruling R31, disclosed in the run manifest
+    ``docs/runs/srv-primary-distance-baseline-2026-09-04.yml``): restricting both sides to
+    ZGB-internal destinations is the same criterion on both, but it does not remove the same
+    SHARE from each -- on the 2026-09-04 100% measurement the model lost 24.2% of its
+    inter-Gemeinde cohort and the SrV reference only 11.3% of its inter persons, i.e. roughly a
+    factor of two. The residual asymmetry is itself a finding and admits two readings (the model
+    over-producing out-of-ZGB workplaces, or the survey under-capturing long/external trips); it
+    must NOT be read as "the comparison is now like-for-like in every respect". The manifest
+    states both readings and the resolution path (compare the realised external share against the
+    BA Pendleratlas register the model is anchored to).
+
     Every exclusion is counted and logged (CLAUDE.md "Fallback transparency"): a narrowing this
     aggressive must be visible in the run log, not inferred from a row count.
     """
-    intra = realised["intra_gemeinde"].astype(bool).values
-    inter = ~intra
+    scopes = work_scope_masks(realised)
+    inter = scopes["inter"]
     has_dest = realised["dest_commune_id"].notna().values
     has_home = realised["home_commune_id"].notna().values
     inter_zgb = inter & has_dest & has_home
@@ -553,7 +579,7 @@ def sensitivity_scope_masks(realised):
         "Gemeinde polygon and %d with an unresolved home Gemeinde",
         int(inter_zgb.sum()), n_inter, 100.0 * inter_zgb.sum() / n_inter if n_inter else 0.0,
         int((inter & ~has_dest).sum()), int((inter & has_dest & ~has_home).sum()))
-    return {"all": np.ones(len(realised), dtype=bool), "inter": inter, "inter_zgb": inter_zgb}
+    return {"all": scopes["all"], "inter": inter, "inter_zgb": inter_zgb}
 
 
 def compare_sensitivity(realised, sensitivity_targets, detour_factor, emd_threshold, min_persons,
@@ -649,11 +675,14 @@ def threshold_sensitivity_json(frame):
     ``decisions.json["sensitivity"]["thresholds"]``: threshold -> kind -> name -> verdict.
 
     Same content as the CSV (one fact, one home); the JSON shape exists only so a reader can
-    look up a single verdict without re-filtering the table.
+    look up a single verdict without re-filtering the table. The key is ``repr(float(t))``, which
+    round-trips exactly through :func:`float`; a fixed-precision format such as ``"%.2f"`` would
+    silently collide two distinct configured thresholds (e.g. 0.075 and 0.0751) into one key and
+    drop one of the two verdicts.
     """
     out = {}
     for row in frame.itertuples(index=False):
-        threshold = out.setdefault("%.2f" % row.threshold, {})
+        threshold = out.setdefault(repr(float(row.threshold)), {})
         threshold.setdefault(row.kind, {})[row.name] = {
             "build": bool(row.build), "undecidable": bool(row.undecidable),
             "gap_codes": [c for c in str(row.gap_codes).split(";") if c],
@@ -949,4 +978,6 @@ def execute(context):
     return dict(commute=cells_work, education=cells_edu, quantiles=quantiles,
                 sensitivity=cells_sensitivity, thresholds=thresholds_frame,
                 decisions={"work": dec_work, "education": dec_edu,
-                           "sensitivity": {"variants": dec_sensitivity}})
+                           "sensitivity": {
+                               "variants": dec_sensitivity,
+                               "thresholds": threshold_sensitivity_json(thresholds_frame)}})
