@@ -1,0 +1,32 @@
+{
+  "assigned_class_csv": "eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/assigned_class_by_person.csv",
+  "generated_on": "2026-09-05",
+  "join_rate_assigned_to_persons": 1.0,
+  "join_rate_hts_to_pseudonym_map": 1.0,
+  "join_rate_pseudonym_map_to_mid": 1.0,
+  "min_join_rate": 0.99,
+  "n_assigned_class_missing": 0,
+  "n_assigned_eq_donor": 49273,
+  "n_assigned_gt_donor": 14806,
+  "n_assigned_gt_donor_by_assigned_class": {
+    "100_200": 944,
+    "10_25": 3639,
+    "25_50": 5104,
+    "50_100": 2626,
+    "gt200": 2493
+  },
+  "n_assigned_lt_donor": 16776,
+  "n_comparable": 80855,
+  "n_donor_at_home": 1260,
+  "n_donor_at_workplace": 74305,
+  "n_donor_did_not_work_on_day": 1190,
+  "n_donor_distance_missing": 224045,
+  "n_donor_rows": 24194,
+  "n_donor_worked_on_day": 171334,
+  "n_matched_donor": 304900,
+  "n_pseudonym_map_rows": 24194,
+  "n_workers": 304900,
+  "persons_csv": "eqasim-data/output_bs_100pct_i329/braunschweig_100pct_i329_persons.csv",
+  "share_assigned_gt_donor": 0.18311792715354647,
+  "source_commit": "b7563ec3"
+}

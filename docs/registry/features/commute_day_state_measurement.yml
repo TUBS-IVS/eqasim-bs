@@ -61,17 +61,22 @@ evidence:
       has no day state; the SrV home-office and neither shares are carried through for context
       and never differenced.
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - commute-day-state-phase-a-2026-09-05
   metric: share_work_trip_delta_pp
   note: |
-    No run has executed this stage yet. The measurement is implemented and covered by synthetic-
-    frame unit tests only (the implementing worktree has no eqasim-data inputs: no VG250, no
-    cache); the first real measurement runs on the 100% cached population on the run server
-    (Phase A Task 6) and will be recorded as a run manifest, at which point this record moves to
-    measured_vs_reference. Nothing about the model's agreement with the SrV or MiD references is
-    claimed until then.
+    Measured once, on the cached i329 100% population (run manifest
+    commute-day-state-phase-a-2026-09-05). ZGB share_work_trip 0.4944 against the SrV 2023
+    reference 0.6511, delta -15.67 pp; the model is below the reference in all seven surveyed
+    Kreise (-12.27 pp to -20.55 pp), and Wolfsburg (03103) keeps a NaN delta because SrV does not
+    survey it. No guard fired (unmatched homes 1/540,426 and 1/304,900, unresolved destinations
+    0/304,900, all far below the 5% raise thresholds). This is a measurement against a committed
+    reference, not a validation against observed behaviour: no target is set, no threshold is
+    attached, and nothing is decided in Phase A.
 assessment:
   status: pending
-  pending_reason: Awaiting the server-side Phase A run (Task 6); the measurement outputs and the
-    donor-vs-assigned class mismatch have not been read yet.
+  pending_reason: The Phase A measurement has run and is recorded, but the day-state model it
+    informs is a later phase; the record stays pending until that phase reviews what the
+    measurement implies (in particular the 73.48% of workers whose MiD donor carries no usable
+    commute distance).
