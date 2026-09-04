@@ -249,23 +249,63 @@ def test_realised_work_frame_counts_workers_without_a_workplace_row(caplog):
     locations = locations[locations["location_id"] != "work_1"]
     stats = {}
     with caplog.at_level(logging.WARNING, logger=S.LOGGER.name):
-        out = S.realised_work_frame(_home_points(), _work_points(), locations,
-                                    _work_persons(), stats=stats).set_index("person_id")
+        out = S.realised_work_frame(_home_points(), _work_points(), locations, _work_persons(),
+                                    max_unresolved_destination_share=0.6,
+                                    stats=stats).set_index("person_id")
     assert stats["n_no_workplace_row"] == 1
+    assert stats["n_no_workplace_row_kept"] == 1
+    assert stats["n_malformed_destination_commune"] == 0
+    assert stats["unresolved_destination_rate"] == pytest.approx(0.5)
     assert out.loc[1, "destination_ars5"] == ""
     assert bool(out.loc[1, "destination_is_external"]) is False
+    assert bool(out.loc[1, "destination_resolved"]) is False
     assert any("no row in" in record.message for record in caplog.records)
+
+
+def test_realised_work_frame_raises_above_the_unresolved_destination_threshold():
+    locations = _work_locations()
+    locations = locations[locations["location_id"] != "work_1"]  # 1 of 2 workers
+    with pytest.raises(ValueError, match="cds_max_unresolved_destination_share"):
+        S.realised_work_frame(_home_points(), _work_points(), locations, _work_persons(),
+                              max_unresolved_destination_share=0.05)
+
+
+def test_realised_work_frame_counts_a_malformed_workplace_commune_separately():
+    """A present but unparseable workplace commune_id is a DIFFERENT defect from a missing row."""
+    locations = _work_locations().copy()
+    locations.loc[locations["location_id"] == "work_1", "commune_id"] = "EXTnope"
+    stats = {}
+    out = S.realised_work_frame(_home_points(), _work_points(), locations, _work_persons(),
+                                max_unresolved_destination_share=0.6,
+                                stats=stats).set_index("person_id")
+    assert stats["n_no_workplace_row_kept"] == 0
+    assert stats["n_malformed_destination_commune"] == 1
+    assert stats["n_no_destination_kreis"] == 1
+    assert out.loc[1, "destination_ars5"] == ""
+    # It IS flagged external (the prefix is there); only the Kreis could not be parsed.
+    assert bool(out.loc[1, "destination_is_external"]) is True
+    assert bool(out.loc[1, "destination_resolved"]) is True
+
+
+def test_realised_work_frame_passes_below_the_unresolved_destination_threshold():
+    stats = {}
+    S.realised_work_frame(_home_points(), _work_points(), _work_locations(), _work_persons(),
+                          max_unresolved_destination_share=0.0, stats=stats)
+    assert stats["n_no_destination_kreis"] == 0
+    assert stats["unresolved_destination_rate"] == pytest.approx(0.0)
 
 
 # --------------------------------------------------------------------------- distance classes
 
 def _realised():
+    """Five workers; person 2's workplace row was not found, so their scope is "unresolved"."""
     return pd.DataFrame({
         "person_id": [1, 2, 3, 4, 5],
         "home_ars5": ["03101", "03101", "03101", "03151", "03151"],
         "distance_km": [5.0, 30.0, 130.0, 8.0, 12.0],
         "distance_class": ["lt10", "25_50", "100_200", "lt10", "10_25"],
         "destination_is_external": [False, False, True, False, True],
+        "destination_resolved": [True, False, True, True, True],
     })
 
 
@@ -281,8 +321,23 @@ def test_assigned_distance_classes_shares_per_kreis_and_scope():
     assert external_zgb.loc["100_200", "n_workers"] == 1
     assert external_zgb.loc["10_25", "n_workers"] == 1
     assert external_zgb["share"].sum() == pytest.approx(1.0)
+    # internal == a workplace row was found AND it is not flagged external: person 2, whose
+    # workplace row is missing, must NOT be folded in here.
     internal_zgb = out[(out["code"] == "zgb") & (out["scope"] == "internal")]
-    assert internal_zgb["n_workers"].sum() == 3
+    assert internal_zgb["n_workers"].sum() == 2
+    unresolved_zgb = out[(out["code"] == "zgb") & (out["scope"] == "unresolved")].set_index(
+        "distance_class")
+    assert unresolved_zgb["n_workers"].sum() == 1
+    assert unresolved_zgb.loc["25_50", "n_workers"] == 1
+
+
+def test_assigned_distance_classes_scopes_partition_the_workers():
+    out = S.assigned_distance_classes(_realised())
+    zgb = out[out["code"] == "zgb"]
+    total_all = int(zgb[zgb["scope"] == "all"]["n_workers"].sum())
+    parts = sum(int(zgb[zgb["scope"] == scope]["n_workers"].sum())
+                for scope in ("external", "internal", "unresolved"))
+    assert total_all == parts == 5
 
 
 def test_assigned_distance_classes_emits_every_class_for_every_code_and_scope():
@@ -442,7 +497,8 @@ def test_summary_markdown_reports_the_headline_numbers():
     classes = S.assigned_distance_classes(_realised())
     ext = S.ext_destination_distances(_ext_workers(), _centroids(), _ba_flows(), detour_factor=1.0)
     text = S.summary_markdown(participation, classes, ext, near_edge_share=0.25,
-                              provenance={"parameters": {"detour_factor": 1.3}})
+                              provenance={"parameters": {"detour_factor": 1.3}},
+                              sampling_rate=0.25)
     assert "0.250" in text or "25.0%" in text
     # The ZGB model share (0.800) and the SrV reference share (0.650) must both be visible.
     assert "0.800" in text and "0.650" in text
@@ -505,6 +561,8 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert recorder.config_keys[S.KEY_DETOUR] == S.DEFAULT_DETOUR_FACTOR
     assert recorder.config_keys[S.KEY_SUBDIR] == S.DEFAULT_SUBDIR
     assert recorder.config_keys[S.KEY_MAX_UNMATCHED_HOME_SHARE] == S.DEFAULT_MAX_UNMATCHED_HOME_SHARE
+    assert (recorder.config_keys[S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE]
+            == S.DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     assert recorder.config_keys[S.KEY_EDGE_TOLERANCE_KM] == S.DEFAULT_EDGE_TOLERANCE_KM
 
 
@@ -549,7 +607,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
         config={
             "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
             S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
-            S.KEY_EDGE_TOLERANCE_KM: 5.0,
+            S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
         })
 
     result = S.execute(context)
@@ -579,3 +637,127 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     assert bool(row["destination_is_external"]) is True
     assert set(result) == {"participation", "distance_classes", "ext_destinations",
                            "near_class_edge_share", "counts"}
+
+
+# --------------------------------------------------------------------------- Kreis centroids
+
+class _StubSpatial:
+    """Stands in for braunschweig.analysis.spatial's VG250 access in the centroid helper."""
+
+    def __init__(self, layer):
+        self._layer = layer
+
+    def load_vg250_layer(self, layer, strict=True):
+        assert layer == "vg250_krs" and strict is True
+        return self._layer
+
+
+def _krs_layer(keys, geometries=None, column="ARS"):
+    from shapely.geometry import box
+    if geometries is None:
+        geometries = [box(i * 10_000, 0, i * 10_000 + 10_000, 10_000)
+                      for i in range(len(keys))]
+    return gpd.GeoDataFrame({column: keys}, geometry=geometries, crs="EPSG:25832")
+
+
+def test_kreis_ars5_five_digit_and_leading_zero_lost():
+    assert list(S.kreis_ars5(["03101", "3101", " 03151 "])) == ["03101", "03101", "03151"]
+
+
+def test_kreis_ars5_twelve_digit_key_and_the_eleven_digit_leading_zero_case():
+    """The regression this rule exists for: zfill(5)[:5] on "31015401004" gives "31015"."""
+    assert list(S.kreis_ars5(["031015401004", "31015401004"])) == ["03101", "03101"]
+    assert "31015401004".zfill(5)[:5] == "31015"  # the wrong answer the naive rule would give
+
+
+def test_kreis_ars5_rejects_a_non_numeric_key():
+    with pytest.raises(ValueError, match="non-numeric"):
+        S.kreis_ars5(["03101", "DE123"])
+
+
+def test_kreis_ars5_rejects_an_over_long_key():
+    with pytest.raises(ValueError, match="longer than the 12-digit ARS"):
+        S.kreis_ars5(["0310154010045"])
+
+
+def test_kreis_centroids_from_vg250_resolves_an_eleven_digit_key():
+    out = S.kreis_centroids_from_vg250(_StubSpatial(_krs_layer(["31015401004"])), "EPSG:25832")
+    assert list(out["ars5"]) == ["03101"]
+    assert out.loc[0, "centroid_x"] == pytest.approx(5_000.0)
+
+
+def test_kreis_centroids_from_vg250_dissolves_a_multi_part_kreis():
+    from shapely.geometry import box
+    layer = _krs_layer(["03101", "03101"],
+                       geometries=[box(0, 0, 10_000, 10_000), box(20_000, 0, 30_000, 10_000)])
+    out = S.kreis_centroids_from_vg250(_StubSpatial(layer), "EPSG:25832")
+    assert list(out["ars5"]) == ["03101"], "the two parts must dissolve to ONE Kreis row"
+    assert out.loc[0, "centroid_x"] == pytest.approx(15_000.0)
+
+
+def test_kreis_centroids_from_vg250_accepts_an_ags_column():
+    out = S.kreis_centroids_from_vg250(_StubSpatial(_krs_layer(["03101"], column="AGS")),
+                                       "EPSG:25832")
+    assert list(out["ars5"]) == ["03101"]
+
+
+def test_kreis_centroids_from_vg250_raises_without_an_ars_or_ags_column():
+    layer = _krs_layer(["03101"]).rename(columns={"ARS": "SOMETHING_ELSE"})
+    with pytest.raises(ValueError, match="neither an 'ARS' nor an 'AGS'"):
+        S.kreis_centroids_from_vg250(_StubSpatial(layer), "EPSG:25832")
+
+
+def test_kreis_centroids_from_vg250_raises_on_a_non_numeric_key():
+    with pytest.raises(ValueError, match="non-numeric"):
+        S.kreis_centroids_from_vg250(_StubSpatial(_krs_layer(["DE1"])), "EPSG:25832")
+
+
+def test_kreis_centroids_from_vg250_refuses_a_geographic_target_crs():
+    with pytest.raises(ValueError, match="projected"):
+        S.kreis_centroids_from_vg250(_StubSpatial(_krs_layer(["03101"])), "EPSG:4326")
+
+
+# --------------------------------------------------------------------------- report details
+
+def test_json_safe_maps_nan_and_infinity_to_null():
+    payload = S.json_safe({"a": float("nan"), "b": float("inf"), "c": {"d": [np.nan, 1.5]},
+                           "e": np.int64(3), "f": np.bool_(True)})
+    assert payload == {"a": None, "b": None, "c": {"d": [None, 1.5]}, "e": 3, "f": True}
+    assert json.dumps(payload, allow_nan=False)  # strict JSON round trip
+
+
+def test_provenance_json_is_strict_json(tmp_path):
+    participation = S.compare_participation(_model_participation(), _srv_table())
+    classes = S.assigned_distance_classes(_realised())
+    ext = S.ext_destination_distances(_ext_workers(), _centroids(), _ba_flows(), detour_factor=1.0)
+    per_person = S.per_person_frame(_realised().assign(destination_ars5="03241"))
+    directory = str(tmp_path / "out")
+    S.write_outputs(directory, participation, classes, ext, per_person,
+                    {"results": {"near_class_edge_share": float("nan")}},
+                    near_edge_share=float("nan"), sampling_rate=1.0)
+    raw = open(os.path.join(directory, "provenance.json"), encoding="utf-8").read()
+    assert "NaN" not in raw and "Infinity" not in raw
+
+    def _reject(constant):
+        raise AssertionError(f"non-strict JSON constant {constant!r} in provenance.json")
+
+    payload = json.loads(raw, parse_constant=_reject)
+    assert payload["results"]["near_class_edge_share"] is None
+
+
+def test_summary_states_that_counts_are_sample_counts_at_the_sampling_rate():
+    participation = S.compare_participation(_model_participation(), _srv_table())
+    classes = S.assigned_distance_classes(_realised())
+    ext = S.ext_destination_distances(_ext_workers(), _centroids(), _ba_flows(), detour_factor=1.0)
+    text = S.summary_markdown(participation, classes, ext, near_edge_share=0.25,
+                              sampling_rate=0.25)
+    assert "SAMPLE counts at sampling_rate = 0.2500" in text
+    assert "NOT expanded to the full population" in text
+
+
+def test_summary_never_guesses_a_sampling_rate():
+    participation = S.compare_participation(_model_participation(), _srv_table())
+    classes = S.assigned_distance_classes(_realised())
+    ext = S.ext_destination_distances(_ext_workers(), _centroids(), _ba_flows(), detour_factor=1.0)
+    text = S.summary_markdown(participation, classes, ext, near_edge_share=0.25)
+    assert "sampling_rate = unknown" in text

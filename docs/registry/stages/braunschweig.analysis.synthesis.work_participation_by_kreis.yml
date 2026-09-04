@@ -15,8 +15,13 @@ description: 'Phase A measurement of the commute-day-state model (spec 2026-09-0
   cds_detour_factor (default 1.3, euclidean -> routed conversion, same convention as
   srv_distance_detour_factor), cds_output_subdir (default analysis/commute_day_state_phase_a),
   cds_max_unmatched_home_share (default 0.05, RAISES above -- both the employed-persons and the
-  workers cohort), cds_edge_tolerance_km (default 5.0, half-width of the band around a commute-
-  distance class edge inside which a worker counts as near an edge).'
+  workers cohort), cds_max_unresolved_destination_share (default 0.05, RAISES above -- the share
+  of workers whose DESTINATION Kreis cannot be resolved, i.e. no workplace row for their
+  location_id plus a workplace commune_id that yields no 5-digit Kreis, counted without overlap;
+  a broken location_id join or malformed EXT ids must fail the stage rather than yield an empty
+  external-destination section that reads like a measured result), cds_edge_tolerance_km (default
+  5.0, half-width of the band around a commute-distance class edge inside which a worker counts as
+  near an edge).'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -43,15 +48,23 @@ notes: 'Writes six files under <output_path>/<cds_output_subdir>/ (default
   srv_share_home_office_day, srv_share_neither, delta_work_trip_pp; one row per ZGB Kreis code
   plus a zgb row that is exactly the union of those Kreise), assigned_distance_classes.csv
   (code, scope, distance_class, n_workers, share -- the destination split lives in the scope
-  column with values all/external/internal, NOT in extra columns, so the table stays long-format
-  and directly groupable; the full cross product of codes x scopes x classes is emitted, so a
-  class no worker reached is an explicit n_workers = 0 row rather than an absent one),
+  column, NOT in extra columns, so the table stays long-format and directly groupable; the full
+  cross product of codes x scopes x classes is emitted, so a class no worker reached is an
+  explicit n_workers = 0 row rather than an absent one. Scope values: external = the workplace
+  commune_id carries the EXT prefix; internal = a workplace row was found and is NOT flagged
+  external, i.e. the complement of external among RESOLVED destinations rather than a positive
+  "inside the ZGB" test; unresolved = no workplace row was found for the worker''s location_id, a
+  scope of its own so those workers are never folded into internal, which would assert something
+  unknown about them; all = the exact union of the other three),
   ext_destination_distances.csv (home_ars5, dest_ars5, n_model, model_km_median, model_km_p10,
   model_km_p90, centroid_km, class_model_median, class_centroid, same_class, ba_flow),
   assigned_class_by_person.csv (person_id, assigned_distance_class, distance_km,
   destination_is_external, home_ars5, destination_ars5 -- controller ruling R1: Task 6 joins it
   with the donor MiD commute distance on the run server, where the raw microdata lives),
-  summary.md and provenance.json. Only share_work_trip is comparable between model and SrV: the
+  summary.md (its header states that every n_* count is a SAMPLE count at the run''s
+  sampling_rate, printed, and never expanded to the full population) and provenance.json (strict
+  JSON: NaN and infinity are written as null, so a non-Python reader can parse the file while a
+  missing measurement stays distinguishable from a number). Only share_work_trip is comparable between model and SrV: the
   model has no day state, so its share_no_work_trip corresponds to the SUM of the SrV
   share_home_office_day and share_neither columns, which are carried through for context and
   never differenced. Wolfsburg (03103) is not surveyed by SrV (n_persons = 0, NaN shares); its
@@ -69,7 +82,12 @@ notes: 'Writes six files under <output_path>/<cds_output_subdir>/ (default
   is its destination Kreis. VG250-EW (vg250_ew) is read at run time twice: via
   braunschweig.analysis.spatial.assign_geographies for the home Kreis, and via the FULL
   vg250_krs layer for the Kreis centroids (the external destinations reach far beyond the eight
-  ZGB Kreise that load_kreise is restricted to). By design the stage ABORTS the run (raises
+  ZGB Kreise that load_kreise is restricted to). The Kreis key is derived by branching on the
+  RAW key length (<= 5 digits: zero-pad to 5; 6..12: zero-pad to 12 then take the first 5;
+  anything longer, or a non-numeric result: raise naming the offending values) -- a plain
+  zfill(5)[:5] would turn an 11-digit ARS that lost its leading zero ("31015401004") into the
+  well-formed but WRONG Kreis "31015". The geometry CRS of homes and workplaces is validated, and
+  the centroid target CRS is asserted to be projected, BEFORE the VG250 dissolve/centroid runs. By design the stage ABORTS the run (raises
   ValueError) when more than cds_max_unmatched_home_share of employed persons or of workers
   cannot be matched to a home Kreis -- a fail-early choice over a per-Kreis comparison that
   would be meaningless for that share of the cohort; a missing committed SrV table likewise

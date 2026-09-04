@@ -16,7 +16,7 @@ It answers three questions on a finished synthetic population:
 2. **Assigned commute-distance classes.** How do the realised home->work distances (euclidean
    x detour factor) distribute over the commute-distance classes of
    ``braunschweig.calibration.commute_day_state_reference`` (``lt10`` ... ``gt200``), per Kreis,
-   split by whether the destination is external (outside the ZGB) or internal?
+   split by destination scope (``external`` / ``internal`` / ``unresolved``, see :data:`SCOPES`)?
 3. **External-destination geometry.** External workplaces are synthetic points fabricated by
    ``braunschweig.data.external_workplaces`` (``commune_id = "EXT" + <8-digit AGS>``). For each
    (home Kreis, destination Kreis) pair the stage compares the realised model distance against
@@ -30,12 +30,16 @@ Outputs go under ``<output_path>/<cds_output_subdir>/`` (default
 :data:`PER_PERSON_COLUMNS` for the schemas.
 
 Per CLAUDE.md "Fallback transparency" every exclusion path is counted, logged with its rate
-under the ``[commute_day_state]`` marker, and recorded in ``provenance.json``; the two home-match
-paths RAISE above ``cds_max_unmatched_home_share`` rather than degrading silently, because a
-high unmatched rate almost always signals a broken VG250/household join and would make the
-per-Kreis comparison meaningless. No number in the outputs is invented: the only reference is
-the committed SrV table, and a Kreis without a reference row keeps ``NaN`` rather than a
-substituted value.
+under the ``[commute_day_state]`` marker, and recorded in ``provenance.json``. Three of them
+RAISE rather than degrading silently: the two home-match paths above
+``cds_max_unmatched_home_share`` (a high unmatched rate almost always signals a broken
+VG250/household join and would make the per-Kreis comparison meaningless), and the
+destination-resolution rate above ``cds_max_unresolved_destination_share`` (a broken
+``location_id`` join or malformed ``EXT`` ids would otherwise yield an empty
+external-destination section that reads like a measured result). No number in the outputs is
+invented: the only reference is the committed SrV table, and a Kreis without a reference row
+keeps ``NaN`` rather than a substituted value. Every ``n_*`` count is a SAMPLE count at the
+run's ``sampling_rate``, never expanded -- ``summary.md`` says so in its header.
 
 This stage is measurement only. It states a difference against a reference; it does NOT
 validate the model against observed behaviour, and it decides nothing (no pre-registered rule
@@ -67,6 +71,7 @@ _LOG_TAG = "[commute_day_state]"
 KEY_DETOUR = "cds_detour_factor"
 KEY_SUBDIR = "cds_output_subdir"
 KEY_MAX_UNMATCHED_HOME_SHARE = "cds_max_unmatched_home_share"
+KEY_MAX_UNRESOLVED_DESTINATION_SHARE = "cds_max_unresolved_destination_share"
 KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 
 #: Euclidean -> routed conversion, same convention (and default) as
@@ -77,6 +82,11 @@ DEFAULT_SUBDIR = "analysis/commute_day_state_phase_a"
 #: Above this share of persons without a home Kreis match the stage raises (see the module
 #: docstring); 5% mirrors ``srv_distance_max_unmatched_home_share``.
 DEFAULT_MAX_UNMATCHED_HOME_SHARE = 0.05
+#: Above this share of workers whose DESTINATION Kreis cannot be resolved (no workplace row for
+#: their ``location_id``, or a workplace ``commune_id`` that yields no 5-digit Kreis) the stage
+#: raises: a broken location_id join or a malformed EXT id must fail the stage, not silently
+#: produce an empty external-destination section that reads like a measured result.
+DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE = 0.05
 #: Half-width (km) of the band around a class edge inside which a worker counts as "near an
 #: edge", i.e. a worker whose assigned class would flip under a small distance change.
 DEFAULT_EDGE_TOLERANCE_KM = 5.0
@@ -89,7 +99,12 @@ EXTERNAL_PREFIX = "EXT"
 
 ZGB_ROW_CODE = "zgb"
 #: Destination scopes of the distance-class table (see :func:`assigned_distance_classes`).
-SCOPES = ("all", "external", "internal")
+#: ``all`` is the exact union of the other three, which partition the workers: ``external`` =
+#: the workplace ``commune_id`` carries the :data:`EXTERNAL_PREFIX`; ``internal`` = a workplace
+#: row was found and is NOT flagged external (it is the complement of ``external`` among
+#: RESOLVED destinations, not a positive "inside the ZGB" test); ``unresolved`` = no workplace
+#: row was found for the worker's ``location_id``, so neither statement can be made.
+SCOPES = ("all", "external", "internal", "unresolved")
 
 PARTICIPATION_COLUMNS = (
     "code", "n_employed", "n_with_work_trip", "share_work_trip", "share_no_work_trip",
@@ -134,6 +149,7 @@ def configure(context):
     context.config(KEY_DETOUR, DEFAULT_DETOUR_FACTOR)
     context.config(KEY_SUBDIR, DEFAULT_SUBDIR)
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
+    context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE, DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     context.config(KEY_EDGE_TOLERANCE_KM, DEFAULT_EDGE_TOLERANCE_KM)
 
 
@@ -372,6 +388,7 @@ def _destination_ars5(commune_id, is_external):
 def realised_work_frame(homes, df_work, work_locations, persons,
                         detour_factor=DEFAULT_DETOUR_FACTOR,
                         max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
+                        max_unresolved_destination_share=DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE,
                         known_commune_ids=None, stats=None):
     """Per worker: home Kreis, destination commune/Kreis, routed distance and distance class.
 
@@ -394,10 +411,19 @@ def realised_work_frame(homes, df_work, work_locations, persons,
     ``distance_km`` is the euclidean home->workplace distance in kilometres multiplied by
     ``detour_factor``, matching the routed distances the reference classes are defined on;
     ``distance_class`` applies ``commute_day_state_reference.classify_commute_distance`` to it.
+    ``destination_resolved`` records whether a workplace row was found at all for the worker's
+    ``location_id``; it is what separates the ``internal`` from the ``unresolved`` scope in
+    :func:`assigned_distance_classes` (``destination_is_external`` alone cannot: a worker with no
+    workplace row is not external, but calling them internal would assert something unknown).
 
     Every drop is counted and logged with its rate: workers without a home geometry/Kreis
     (guarded -- raises above ``max_unmatched_home_share``), workers whose ``location_id`` has no
-    workplace row, and workers with a NaN distance. ``stats``, if a dict, receives the counts.
+    workplace row, workers whose workplace ``commune_id`` yields no 5-digit Kreis, and workers
+    with a NaN distance. The destination-resolution failures (the first two together, counted
+    without overlap) are GUARDED: above ``max_unresolved_destination_share`` the function raises,
+    because a broken ``location_id`` join or malformed EXT ids would otherwise yield an empty
+    external-destination section that reads like a measured result rather than a defect.
+    ``stats``, if a dict, receives the counts.
     """
     _require_columns(homes, ("household_id", "geometry", "ars5"), "the home-geography frame")
     _require_columns(df_work, ("person_id", "location_id", "geometry"),
@@ -444,6 +470,7 @@ def realised_work_frame(homes, df_work, work_locations, persons,
             _LOG_TAG, n_no_workplace_row, n_input, 100.0 * _rate(n_no_workplace_row, n_input))
 
     commune = frame["destination_commune_id"].astype("string")
+    frame["destination_resolved"] = commune.notna()
     frame["destination_is_external"] = commune.str.startswith(EXTERNAL_PREFIX).fillna(False)
     frame["destination_ars5"] = [
         _destination_ars5(value, bool(flag))
@@ -463,11 +490,20 @@ def realised_work_frame(homes, df_work, work_locations, persons,
     frame = frame[frame["distance_km"].notna()].copy()
     frame["distance_class"] = [R.classify_commute_distance(km) for km in frame["distance_km"]]
 
+    n_workers = len(frame)
     n_external = int(frame["destination_is_external"].sum())
-    n_no_dest_kreis = int((frame["destination_ars5"] == "").sum())
+    # The two destination-resolution failure modes are counted WITHOUT overlap: a worker with no
+    # workplace row also has an empty destination_ars5, so adding the two raw counts would
+    # double-count them and inflate the guarded rate below.
+    n_unresolved_destination = int((frame["destination_ars5"] == "").sum())
+    n_malformed_commune = int(((frame["destination_ars5"] == "")
+                               & frame["destination_resolved"]).sum())
+    n_no_workplace_row_kept = n_unresolved_destination - n_malformed_commune
+
     n_internal_commune_unknown = 0
     if known_commune_ids is not None:
-        internal = frame.loc[~frame["destination_is_external"], "destination_commune_id"]
+        internal = frame.loc[frame["destination_resolved"] & ~frame["destination_is_external"],
+                             "destination_commune_id"]
         n_internal_commune_unknown = int((~internal.astype("string").isin(
             {str(value) for value in known_commune_ids})).sum())
         if n_internal_commune_unknown:
@@ -479,22 +515,39 @@ def realised_work_frame(homes, df_work, work_locations, persons,
     LOGGER.info(
         "%s realised work: %d workers input, %d without home geometry dropped, %d without a "
         "home Kreis, %d without a workplace row, %d with a NaN distance dropped, %d kept; "
-        "external destinations %d (%.2f%%), destinations without a resolvable Kreis %d (%.2f%%)",
+        "external destinations %d (%.2f%%), destinations without a resolvable Kreis %d (%.2f%%: "
+        "%d with no workplace row, %d with a malformed workplace commune_id)",
         _LOG_TAG, n_workers_input, n_no_home_geometry, n_home_kreis_unmatched,
-        n_no_workplace_row, n_nan_distance, len(frame), n_external,
-        100.0 * _rate(n_external, len(frame)), n_no_dest_kreis,
-        100.0 * _rate(n_no_dest_kreis, len(frame)))
+        n_no_workplace_row, n_nan_distance, n_workers, n_external,
+        100.0 * _rate(n_external, n_workers), n_unresolved_destination,
+        100.0 * _rate(n_unresolved_destination, n_workers), n_no_workplace_row_kept,
+        n_malformed_commune)
+
+    unresolved_rate = _rate(n_unresolved_destination, n_workers)
+    if unresolved_rate > max_unresolved_destination_share:
+        raise ValueError(
+            f"{n_unresolved_destination}/{n_workers} ({100.0 * unresolved_rate:.1f}%) workers "
+            f"have no resolvable destination Kreis ({n_no_workplace_row_kept} with no workplace "
+            f"row for their location_id, {n_malformed_commune} with a workplace commune_id that "
+            f"yields no 5-digit Kreis); exceeds {KEY_MAX_UNRESOLVED_DESTINATION_SHARE}="
+            f"{max_unresolved_destination_share} -- the external-destination measurement would be "
+            f"empty or unrepresentative; check the braunschweig.locations.work location_id join "
+            f"and the '{EXTERNAL_PREFIX}' + 8-digit AGS ids of braunschweig.data.external_workplaces")
 
     if stats is not None:
         stats.update(n_workers_input=n_workers_input, n_no_home_geometry=n_no_home_geometry,
                      n_home_kreis_unmatched=n_home_kreis_unmatched,
                      n_no_workplace_row=n_no_workplace_row, n_nan_distance=n_nan_distance,
-                     n_workers=int(len(frame)), n_external=n_external,
-                     n_no_destination_kreis=n_no_dest_kreis,
+                     n_workers=n_workers, n_external=n_external,
+                     n_no_destination_kreis=n_unresolved_destination,
+                     n_no_workplace_row_kept=n_no_workplace_row_kept,
+                     n_malformed_destination_commune=n_malformed_commune,
+                     unresolved_destination_rate=unresolved_rate,
                      n_internal_commune_unknown=n_internal_commune_unknown)
 
-    return frame[["person_id", "home_ars5", "destination_commune_id", "destination_is_external",
-                  "destination_ars5", "distance_km", "distance_class"]].reset_index(drop=True)
+    return frame[["person_id", "home_ars5", "destination_commune_id", "destination_resolved",
+                  "destination_is_external", "destination_ars5", "distance_km",
+                  "distance_class"]].reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- distance classes
@@ -502,18 +555,30 @@ def realised_work_frame(homes, df_work, work_locations, persons,
 def assigned_distance_classes(realised_work, stats=None):
     """Worker counts and shares per (home Kreis, destination scope, commute-distance class).
 
-    ``realised_work`` must carry ``home_ars5, distance_class, destination_is_external``.
-    Emits the full cross product of ``ZGB_KREISE + ["zgb"]``, :data:`SCOPES` (``all`` /
-    ``external`` / ``internal``) and ``commute_day_state_reference.COMMUTE_CLASS_LABELS``, so a
-    class that no worker reached is an explicit ``n_workers == 0`` row rather than an absent one
-    a reader could mistake for missing data. ``share`` is within its (code, scope) cell and is
-    ``NaN`` when that cell has no worker at all.
+    ``realised_work`` must carry ``home_ars5, distance_class, destination_is_external,
+    destination_resolved``. Emits the full cross product of ``ZGB_KREISE + ["zgb"]``,
+    :data:`SCOPES` and ``commute_day_state_reference.COMMUTE_CLASS_LABELS``, so a class that no
+    worker reached is an explicit ``n_workers == 0`` row rather than an absent one a reader could
+    mistake for missing data. ``share`` is within its (code, scope) cell and is ``NaN`` when that
+    cell has no worker at all.
+
+    Scope semantics -- ``external`` / ``internal`` / ``unresolved`` partition the workers and
+    ``all`` is their exact union:
+
+    * ``external`` -- the workplace ``commune_id`` carries the ``EXT`` prefix.
+    * ``internal`` -- a workplace row was found and is NOT flagged external. It is the
+      complement of ``external`` among RESOLVED destinations, not a positive "the workplace lies
+      inside the ZGB" test.
+    * ``unresolved`` -- no workplace row was found for the worker's ``location_id``, so neither
+      statement can be made. These workers get their OWN scope instead of being folded into
+      ``internal``, which would silently assert something unknown about them. Their number is
+      bounded by ``max_unresolved_destination_share`` in :func:`realised_work_frame`.
 
     Workers whose ``distance_class`` is missing (a NaN or non-positive distance) are excluded
     from every count and reported once as an explicit rate.
     """
-    _require_columns(realised_work, ("home_ars5", "distance_class", "destination_is_external"),
-                     "the realised work frame")
+    _require_columns(realised_work, ("home_ars5", "distance_class", "destination_is_external",
+                                     "destination_resolved"), "the realised work frame")
     n_input = len(realised_work)
     classified = realised_work[realised_work["distance_class"].notna()]
     n_unclassified = n_input - len(classified)
@@ -528,11 +593,15 @@ def assigned_distance_classes(realised_work, stats=None):
     rows = []
     for code in list(ZGB_KREISE) + [ZGB_ROW_CODE]:
         in_code = classified if code == ZGB_ROW_CODE else classified[classified["home_ars5"] == code]
+        resolved = in_code["destination_resolved"].astype(bool)
+        external = in_code["destination_is_external"].astype(bool)
         for scope in SCOPES:
             if scope == "external":
-                subset = in_code[in_code["destination_is_external"].astype(bool)]
+                subset = in_code[external]
             elif scope == "internal":
-                subset = in_code[~in_code["destination_is_external"].astype(bool)]
+                subset = in_code[resolved & ~external]
+            elif scope == "unresolved":
+                subset = in_code[~resolved]
             else:
                 subset = in_code
             counts = subset["distance_class"].value_counts()
@@ -720,12 +789,30 @@ def _provenance_lines(provenance):
     return lines
 
 
+def _sample_count_line(sampling_rate):
+    """The one header line that stops every person count below from being read as a population.
+
+    All ``n_*`` numbers in the report are SAMPLE counts at the run's ``sampling_rate`` -- they are
+    never divided by it and never expanded to the full population. Shares are unaffected. The rate
+    is printed so a reader can do the expansion deliberately; ``unknown`` (never a guessed 1.0) is
+    printed when the caller did not pass one.
+    """
+    if sampling_rate is None:
+        rate_text = "unknown (the caller passed no sampling_rate)"
+    else:
+        rate_text = f"{float(sampling_rate):.4f}"
+    return ("All person and worker counts below (every n_* column) are SAMPLE counts at "
+            f"sampling_rate = {rate_text}; they are NOT expanded to the full population. Shares "
+            "and deltas are unaffected by the sampling rate.")
+
+
 def summary_markdown(participation, distance_classes, ext_table, near_edge_share,
-                     provenance=None):
+                     provenance=None, sampling_rate=None):
     """Headline numbers of the Phase A measurement (see the module docstring for the caveats)."""
     lines = ["# Commute day state -- Phase A measurement", ""] + _provenance_lines(provenance) + [
         "Measurement only: the model is compared to a committed reference, which is NOT a",
         "validation against observed behaviour and decides nothing.", "",
+        _sample_count_line(sampling_rate), "",
         "## Work participation of employed persons (model vs SrV 2023)", "",
         "Comparable quantity: share_work_trip. The model has no day state, so its",
         "share_no_work_trip corresponds to the SUM of the SrV home-office and neither shares.",
@@ -758,20 +845,49 @@ def summary_markdown(participation, distance_classes, ext_table, near_edge_share
     return "\n".join(lines) + "\n"
 
 
+def json_safe(value):
+    """Recursively map a provenance value to something STRICT JSON can represent.
+
+    ``json.dump`` writes ``NaN`` / ``Infinity`` literals by default, which are valid JavaScript
+    but not valid JSON: a strict parser (``json.loads`` with ``parse_constant`` raising, jq, most
+    non-Python readers) rejects the file. Since a missing measurement is exactly what this stage
+    represents as ``NaN`` (an unmeasurable share, an absent reference), those values must survive
+    the round trip -- they become ``null``, which every JSON reader understands as "no value",
+    rather than being dropped or replaced by a number. Numpy scalars are unwrapped to their
+    Python equivalents on the way.
+    """
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        value = float(value)
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
+
+
 def write_outputs(directory, participation, distance_classes, ext_table, per_person,
-                  provenance=None, near_edge_share=float("nan")):
+                  provenance=None, near_edge_share=float("nan"), sampling_rate=None):
     """Write the Phase A report artifacts into ``directory``.
 
     Files: ``work_participation_by_kreis.csv`` (:data:`PARTICIPATION_COLUMNS`),
     ``assigned_distance_classes.csv`` (:data:`DISTANCE_CLASS_COLUMNS`; the destination split
-    lives in the ``scope`` column, values ``all`` / ``external`` / ``internal``, NOT in extra
-    columns, so the table stays long-format and directly groupable),
+    lives in the ``scope`` column, values ``all`` / ``external`` / ``internal`` / ``unresolved``,
+    NOT in extra columns, so the table stays long-format and directly groupable),
     ``ext_destination_distances.csv`` (:data:`EXT_DISTANCE_COLUMNS`),
     ``assigned_class_by_person.csv`` (:data:`PER_PERSON_COLUMNS`, controller ruling R1 -- Task 6
     joins it with the donor's MiD commute distance on the server), ``summary.md`` and
-    ``provenance.json``. The CSVs carry no comment header so downstream code can read them with
-    plain ``pandas.read_csv``; the parameter block lives in ``provenance.json`` and at the top
-    of ``summary.md``.
+    ``provenance.json`` (strict JSON: NaN/infinity become ``null``, see :func:`json_safe`). The
+    CSVs carry no comment header so downstream code can read them with plain
+    ``pandas.read_csv``; the parameter block lives in ``provenance.json`` and at the top of
+    ``summary.md``, together with the sample-count disclaimer.
     """
     provenance = provenance or {}
     os.makedirs(directory, exist_ok=True)
@@ -780,26 +896,71 @@ def write_outputs(directory, participation, distance_classes, ext_table, per_per
     ext_table.to_csv(os.path.join(directory, "ext_destination_distances.csv"), index=False)
     per_person.to_csv(os.path.join(directory, "assigned_class_by_person.csv"), index=False)
     with open(os.path.join(directory, "provenance.json"), "w", encoding="utf-8") as handle:
-        json.dump(provenance, handle, indent=2, default=str)
+        json.dump(json_safe(provenance), handle, indent=2, allow_nan=False)
     with open(os.path.join(directory, "summary.md"), "w", encoding="utf-8") as handle:
         handle.write(summary_markdown(participation, distance_classes, ext_table,
-                                      near_edge_share, provenance))
+                                      near_edge_share, provenance, sampling_rate))
     LOGGER.info("%s wrote 6 report files to %s", _LOG_TAG, directory)
 
 
 # --------------------------------------------------------------------------- stage
+
+def kreis_ars5(raw_keys):
+    """5-digit Kreis key (``ars5``) from a VG250 ARS/AGS column, without guessing.
+
+    The rule branches on the RAW length of each key, which is what makes it safe against the two
+    shapes the same column can have and against an integer round trip that dropped a leading
+    zero. A plain ``zfill(5)[:5]`` is NOT safe: applied to an 11-digit key that lost its leading
+    zero ("31015401004", i.e. ARS 031015401004) it returns "31015" -- a well-formed 5-digit
+    string that passes any digit check but names the WRONG Kreis.
+
+    * length <= 5 -- already a Kreis key (VG250's ``vg250_krs`` layer), zero-padded to 5:
+      "3101" and "03101" both give "03101".
+    * length 6..12 -- a longer ARS (the 12-digit Gemeinde-level key of ``vg250_gem``, possibly
+      with leading zeros lost); zero-padded to 12 FIRST, then the first 5 digits: "31015401004"
+      gives "03101", matching ``braunschweig.analysis.spatial.load_kreise``.
+    * anything else, or a non-numeric result -- raise naming the offending sample values.
+    """
+    keys = pd.Series(list(raw_keys), dtype="object").astype(str).str.strip()
+    lengths = keys.str.len()
+    too_long = lengths > 12
+    if bool(too_long.any()):
+        raise ValueError(
+            f"{int(too_long.sum())} VG250 Kreis key(s) are longer than the 12-digit ARS (e.g. "
+            f"{keys[too_long].head(3).tolist()}); refusing to guess which digits are the Kreis")
+    padded = keys.where(lengths > 5, keys.str.zfill(5))
+    padded = padded.where(lengths <= 5, keys.str.zfill(12))
+    ars5 = padded.str[:5]
+    invalid = ~ars5.str.fullmatch(r"\d{5}")
+    if bool(invalid.any()):
+        raise ValueError(
+            f"{int(invalid.sum())} VG250 Kreis key(s) yield a non-numeric 5-digit Kreis key "
+            f"(raw e.g. {keys[invalid].head(3).tolist()} -> {ars5[invalid].head(3).tolist()}); "
+            f"refusing to guess the key")
+    return ars5
+
 
 def kreis_centroids_from_vg250(spatial, target_crs):
     """Centroids of ALL German Kreise (VG250 ``vg250_krs``), keyed by 5-digit ARS.
 
     The external destinations reach far beyond the ZGB, so this uses the FULL Kreis layer, not
     ``braunschweig.analysis.spatial.load_kreise`` (which is deliberately restricted to the eight
-    ZGB Kreise). ``ars5`` is derived exactly as ``load_kreise`` does it -- the layer's ARS as a
-    string, its first five digits -- with a ``zfill(5)`` first so a Kreis code that lost its
-    leading zero on an integer round trip ("3101") still resolves to "03101". The geometries are
-    dissolved by ``ars5`` (a no-op on a well-formed layer, a safety net on a multi-part one) and
-    reprojected to ``target_crs`` BEFORE the centroid is taken, so the centroid is metric.
+    ZGB Kreise). ``ars5`` comes from :func:`kreis_ars5`, whose length-branching rule is
+    documented there; the layer must carry an ``ARS`` or an ``AGS`` column, and the function
+    raises rather than guessing when it does not. The geometries are dissolved by ``ars5`` (a
+    no-op on a well-formed layer, a safety net on a multi-part Kreis) and reprojected to
+    ``target_crs`` BEFORE the centroid is taken, so the centroid is metric. ``target_crs`` must
+    be projected -- a centroid in degrees would silently produce meaningless distances.
     """
+    if target_crs is None:
+        raise ValueError("kreis_centroids_from_vg250 needs an explicit target CRS, got None")
+    # Normalised through an empty GeoSeries so a CRS given as a string ("EPSG:25832") and one
+    # given as a pyproj CRS object (what ``GeoDataFrame.crs`` returns) are checked identically,
+    # without importing pyproj directly.
+    if not gpd.GeoSeries([], dtype="geometry", crs=target_crs).crs.is_projected:
+        raise ValueError(
+            f"Kreis centroids requested in the geographic CRS {target_crs}; the centroid-to-"
+            f"centroid distance requires a projected CRS (the pipeline uses EPSG:25832)")
     layer = spatial.load_vg250_layer("vg250_krs", strict=True)
     column = next((name for name in ("ARS", "AGS") if name in layer.columns), None)
     if column is None:
@@ -807,13 +968,7 @@ def kreis_centroids_from_vg250(spatial, target_crs):
             "The VG250 vg250_krs layer carries neither an 'ARS' nor an 'AGS' column (found: "
             f"{sorted(layer.columns)}); the Kreis key cannot be derived without guessing")
     layer = layer.copy()
-    layer["ars5"] = layer[column].astype(str).str.strip().str.zfill(5).str[:5]
-    invalid = ~layer["ars5"].str.fullmatch(r"\d{5}")
-    if bool(invalid.any()):
-        raise ValueError(
-            f"{int(invalid.sum())}/{len(layer)} rows of the VG250 vg250_krs layer yield a "
-            f"non-numeric 5-digit Kreis key from column '{column}' (e.g. "
-            f"{layer.loc[invalid, 'ars5'].head(3).tolist()}); refusing to guess the key")
+    layer["ars5"] = kreis_ars5(layer[column]).values
     dissolved = layer[["ars5", "geometry"]].dissolve(by="ars5", as_index=False).to_crs(target_crs)
     centroids = dissolved.geometry.centroid
     LOGGER.info("%s Kreis centroids: %d Kreise from VG250 vg250_krs (column '%s'), reprojected "
@@ -837,6 +992,7 @@ def execute(context):
 
     detour_factor = float(context.config(KEY_DETOUR))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
+    max_unresolved_destination_share = float(context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE))
     edge_tolerance_km = float(context.config(KEY_EDGE_TOLERANCE_KM))
     sampling_rate = float(context.config("sampling_rate"))
     data_path = context.config("data_path")
@@ -844,17 +1000,25 @@ def execute(context):
 
     LOGGER.info(
         "%s parameters: detour_factor=%.3f, max_unmatched_home_share=%.3f, "
-        "edge_tolerance_km=%.2f, sampling_rate=%.4f; writing to %s",
-        _LOG_TAG, detour_factor, max_unmatched_home_share, edge_tolerance_km, sampling_rate,
-        out_dir)
+        "max_unresolved_destination_share=%.3f, edge_tolerance_km=%.2f, sampling_rate=%.4f; "
+        "writing to %s",
+        _LOG_TAG, detour_factor, max_unmatched_home_share, max_unresolved_destination_share,
+        edge_tolerance_km, sampling_rate, out_dir)
 
     srv_dir = os.path.join(data_path, "braunschweig", "srv")
     srv_table = load_srv_work_participation(srv_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
+    # Validate the geometry CRS BEFORE any spatial work: the VG250 dissolve/centroid below is the
+    # most expensive step of the stage, and a centroid taken in a geographic CRS is meaningless,
+    # not merely slow -- so the mismatch must surface before it, not inside realised_work_frame
+    # afterwards.
+    _validate_geometry_crs(homes, df_work)
     kreis_centroids = kreis_centroids_from_vg250(spatial, homes.crs)
-    known_commune_ids = set(df_municipalities["commune_id"].astype(str)) \
-        if "commune_id" in df_municipalities.columns else None
+    # data.spatial.municipalities always carries commune_id; if it ever did not, the destination-
+    # commune diagnostic would silently disappear, so this fails loudly instead of disabling it.
+    _require_columns(df_municipalities, ("commune_id",), "data.spatial.municipalities")
+    known_commune_ids = set(df_municipalities["commune_id"].astype(str))
 
     participation_stats, work_stats, class_stats, ext_stats = {}, {}, {}, {}
     model_participation = work_participation_by_kreis(
@@ -865,6 +1029,7 @@ def execute(context):
     realised = realised_work_frame(
         homes, df_work, df_work_locations, df_persons, detour_factor=detour_factor,
         max_unmatched_home_share=max_unmatched_home_share,
+        max_unresolved_destination_share=max_unresolved_destination_share,
         known_commune_ids=known_commune_ids, stats=work_stats)
 
     distance_classes = assigned_distance_classes(realised, stats=class_stats)
@@ -884,6 +1049,7 @@ def execute(context):
         "parameters": {
             "detour_factor": detour_factor,
             "max_unmatched_home_share": max_unmatched_home_share,
+            "max_unresolved_destination_share": max_unresolved_destination_share,
             "edge_tolerance_km": edge_tolerance_km,
             "sampling_rate": sampling_rate,
             "output_subdir": context.config(KEY_SUBDIR),
@@ -912,10 +1078,11 @@ def execute(context):
         "results": {
             "near_class_edge_share": near_edge_share,
             "ext_class_agreement_share": ext_class_agreement_share(ext_table),
+            "unresolved_destination_rate": work_stats.get("unresolved_destination_rate"),
         },
     }
     write_outputs(out_dir, participation, distance_classes, ext_table, per_person, provenance,
-                  near_edge_share)
+                  near_edge_share, sampling_rate)
 
     zgb_row = participation[participation["code"] == ZGB_ROW_CODE].iloc[0]
     LOGGER.info(
