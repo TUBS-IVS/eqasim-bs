@@ -1,0 +1,85 @@
+dataset: srv2023_work_participation
+title: SrV 2023 work-participation shares per Kreis (home office / work trip / neither, committed aggregate)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); rows per home Kreis (8
+  ZGB Kreise) plus one zgb total. Covers 7 of 8 Kreise natively; Wolfsburg (03103) is not
+  surveyed and its row carries n_persons = 0 with NaN shares.
+crs: null
+roles:
+- validation_reference
+used_by:
+- braunschweig.calibration.srv_work_participation (module, not a stage; no stage consumer in
+  Phase A)
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_work_participation.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>. Reads
+    SrV2023_Personen.csv (V_WOHNUNG_HO, GEWICHT_P_ZENSUS, MITTL_WERKTAG), SrV2023_Wege.csv
+    (V_ZWECK), SrV2023_Haushalte.csv (AGS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_work_participation.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file: srv2023_work_participation_by_kreis.csv (weighted share of employed
+    persons with a full home-office day, with a work trip, or neither, per home Kreis plus a
+    zgb total). Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external
+    for a contributor to download or verify presence of, since the file ships committed with
+    every clone of this repo (mirrors the sibling committed SrV/MiD tables, e.g.
+    srv2023_primary_distance_targets, mid2023_workday_location). requirements.production is
+    "optional": no registered synthesis/population stage reads this file in Phase A (roles:
+    validation_reference only, same treatment as mid2023_workday_location). Pin tests:
+    tests/test_srv_work_participation.py (synthetic-frame tests plus a pin-test section at the
+    bottom of the same file, per the task brief).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe (measured on the 2026-09-04 extraction, 18,223 total SrV persons): MITTL_WERKTAG == 1
+  (average weekday; 0/18,223 dropped -- every person in the delivered file already carries this
+  code, the filter is applied explicitly regardless per the module docstring) AND V_WOHNUNG_HO
+  in (1, 2) (employed persons who were asked the home-office question on the reporting day;
+  10,176 persons with V_WOHNUNG_HO == -8 "not asked/not employed" and 31 with -10 "no answer"
+  are excluded) AND a valid, non-negative GEWICHT_P_ZENSUS weight (0 rows dropped in this
+  delivery; the guard is kept for a future delivery that may not stay that way). Universe =
+  8,016 persons.
+
+  Definitions: share_home_office_day = weighted share with V_WOHNUNG_HO == 1 (worked the WHOLE
+  reporting day from home); share_work_trip = weighted share with V_WOHNUNG_HO != 1 AND at
+  least one trip with V_ZWECK == 1 ("Arbeit", own workplace); share_neither = the remainder.
+  The three shares sum to 1.0 for n_persons > 0. Priority rule: a person satisfying BOTH
+  V_WOHNUNG_HO == 1 and a work trip is classed home_office (share_home_office_day takes
+  priority) -- measured 0/8,016 such persons in this delivery, so the rule is untested on real
+  SrV data so far but is checked and logged on every regeneration (no silent fallback).
+
+  Weight: GEWICHT_P_ZENSUS (expansion to Zensus 2022; the stratum-internal GEWICHT_P must not be
+  used across strata, same convention as srv2023_primary_distance_targets). Kreis: first 5
+  digits of the household AGS. Wolfsburg-absent caveat: Wolfsburg (03103) is NOT surveyed by
+  SrV; its row is still emitted (one row per ZGB Kreis code, never dropped or backfilled) with
+  n_persons = 0 and NaN shares -- a consumer comparing this table against the model compares 7
+  Kreise + zgb, not 8 Kreise + zgb. Coverage caveat: stratified PSU design over ~44 selected
+  municipalities; per-Kreis rows represent the covered municipalities only (ASSUMPTION-grade
+  for the full Kreis).
+
+  Measured 2026-09-04 (zgb row, n_persons = 8,016): share_home_office_day = 0.1418,
+  share_work_trip = 0.6511, share_neither = 0.2071. Per-Kreis shares range from 0.059
+  (Salzgitter, 03102) to 0.179 (Wolfenbuettel, 03151) for share_home_office_day.
+notes: |
+  Reference for the SrV-side (regional) validation of the commute-day-state model (far/weekly
+  commuters; issue #244, spec docs/superpowers/specs/2026-09-04-commute-day-state-design.md
+  Phase A Task 4). Complements the MiD-side (national) mid2023_workday_location dataset -- the
+  two are not directly comparable (different universes and question wording) but both bound the
+  plausible home-office/work-trip participation rate the model should reproduce. Not a control
+  target: no registered synthesis or population stage reads this file in Phase A (roles:
+  validation_reference only). requirements.production will need to flip to required (and the
+  README derived-inputs table gain a row) once a later phase wires a stage to consume it.
