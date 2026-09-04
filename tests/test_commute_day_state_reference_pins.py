@@ -35,10 +35,12 @@ def test_pinned_values(table):
     # Pinned from the committed table (server extraction, 2026-09-04).
     assert t.loc["lt10", "share_at_workplace"] == pytest.approx(0.591, abs=0.005)
     assert t.loc["lt10", "share_at_home"] == pytest.approx(0.082, abs=0.005)
+    assert t.loc["lt10", "share_did_not_work"] == pytest.approx(0.261, abs=0.005)
     assert t.loc["100_200", "share_at_home"] == pytest.approx(0.329, abs=0.005)
     assert t.loc["100_200", "share_at_workplace"] == pytest.approx(0.314, abs=0.005)
     assert t.loc["100_200", "n_unweighted"] == 783
     assert t.loc["all", "n_unweighted"] == 49527
+    assert t.loc["all", "n_missing_distance"] == 4635
 
 
 def test_pool_totals(pool):
@@ -47,3 +49,24 @@ def test_pool_totals(pool):
     far = pool[(pool["distance_class"] == "100_200") & (pool["has_children"] == "all")].iloc[0]
     assert far["n_donors"] == 276
     assert 0 < far["n_donors"] < total["n_donors"]
+    # Thinnest cross-classified cells (children AND active escort), pinned from the committed
+    # table -- see the Data Registry record's limitations for why these are too thin on their own.
+    # has_children/has_active_escort are loaded as strings ("all"/"True"/"False") because the
+    # column also carries the "all" total marker, so pandas cannot infer a bool dtype for it.
+    thin_50_100 = pool[(pool["distance_class"] == "50_100") & (pool["has_children"] == "True")
+                        & (pool["has_active_escort"] == "True")].iloc[0]
+    assert thin_50_100["n_donors"] == 76
+    thin_100_200 = pool[(pool["distance_class"] == "100_200") & (pool["has_children"] == "True")
+                         & (pool["has_active_escort"] == "True")].iloc[0]
+    assert thin_100_200["n_donors"] == 30
+
+
+def test_committed_header_discloses_universe_and_bin_convention():
+    """Ruling R6/R7: the committed CSV's own comment header must state the universe definition
+    and the left-inclusive bin convention verbatim, since the header -- not this test file, not a
+    session artifact -- is the durable, traceable home for how the committed rows were derived."""
+    path = MID_DIR / R.WORKDAY_LOCATION_TABLE
+    header_text = "\n".join(line for line in path.read_text(encoding="utf-8").splitlines()
+                             if line.startswith("#"))
+    assert "P_STARB1 in (1, 2, 9)" in header_text
+    assert "left-inclusive" in header_text.lower()
