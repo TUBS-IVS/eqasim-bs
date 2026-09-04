@@ -27,12 +27,14 @@ code_paths:
 - braunschweig/calibration/srv_work_participation.py
 - scripts/extract_srv_work_participation.py
 - scripts/extract_mid_workday_location.py
+- scripts/measure_donor_distance_mismatch.py
 evidence:
   tests:
   - tests/test_work_participation_by_kreis.py
   - tests/test_srv_work_participation.py
   - tests/test_commute_day_state_reference.py
   - tests/test_commute_day_state_reference_pins.py
+  - tests/test_measure_donor_distance_mismatch.py
   off_path_byte_identical:
     claimed: not_applicable
     note: Analysis-only. The stage reads cached synthesis stages and writes a report; the two

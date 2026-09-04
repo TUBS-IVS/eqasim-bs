@@ -563,7 +563,7 @@ WARNING: [building-potential-attach:kita] primary 523/741 (70.6%), fallback 218 
 01:19:13 │ INFO    │ braunschweig     │ [cache_share] auto-export: exported 0, already-in-store 39, not-in-cache ['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
 Codeplan
 
-===== scripts/measure_donor_distance_mismatch.py (separate invocation, ~/cds_phase_a_mismatch.log) =====
+===== scripts/measure_donor_distance_mismatch.py, FIRST invocation 2026-09-05 01:22 (~/cds_phase_a_mismatch.log); its two outputs were SUPERSEDED by the fix-round invocation below and are not the committed ones =====
 INFO measure_donor_distance_mismatch: read eqasim-data/output_bs_100pct_i329/braunschweig_100pct_i329_persons.csv (1131204 rows, columns ['person_id', 'hts_id'])
 INFO measure_donor_distance_mismatch: read eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/assigned_class_by_person.csv (304900 rows, columns ['person_id', 'assigned_distance_class'])
 INFO measure_donor_distance_mismatch: read eqasim-data/popsim_work_i329/pseudonym_map.csv (24194 rows, columns ['source_person_id', 'H_ID', 'P_ID'])
@@ -576,3 +576,27 @@ INFO braunschweig.calibration.commute_day_state_reference: [commute day state re
 INFO measure_donor_distance_mismatch: wrote eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/donor_vs_assigned_class.csv (8 rows)
 INFO measure_donor_distance_mismatch: wrote eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/donor_vs_assigned_diagnostics.json
 INFO measure_donor_distance_mismatch: HEADLINE: 14806/80855 comparable workers have an assigned class above their donor's (18.31%); donor distance missing for 224045 of 304900 matched workers
+
+===== scripts/measure_donor_distance_mismatch.py, FIX-ROUND invocation (~/cds_phase_a_mismatch_2.log, source-commit da650dd6); THIS invocation produced the committed donor_vs_assigned_* files =====
+INFO measure_donor_distance_mismatch: read eqasim-data/output_bs_100pct_i329/braunschweig_100pct_i329_persons.csv (1131204 rows, columns ['person_id', 'hts_id'])
+INFO measure_donor_distance_mismatch: read eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/assigned_class_by_person.csv (304900 rows, columns ['person_id', 'assigned_distance_class'])
+INFO measure_donor_distance_mismatch: read eqasim-data/popsim_work_i329/pseudonym_map.csv (24194 rows, columns ['source_person_id', 'H_ID', 'P_ID'])
+INFO measure_donor_distance_mismatch: read /home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Personen.csv (420979 rows, columns ['H_ID', 'P_ID', 'P_ARB_ENTF', 'P_STARB1', 'starb2', 'M_HOFF', 'arbwo', 'ST_WOTAG'])
+INFO measure_donor_distance_mismatch: read /home/felix/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Wege.csv (1087393 rows, columns ['H_ID', 'P_ID', 'W_ZWECK', 'wegkm'])
+INFO measure_donor_distance_mismatch: join rate assigned_class_by_person.csv -> persons.csv (person_id): 304900/304900 matched (100.0000%)
+INFO measure_donor_distance_mismatch: join rate pseudonym_map.csv -> MiD2023_Personen.csv (H_ID, P_ID): 24194/24194 matched (100.0000%)
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] work-trip lengths: 76436/1087393 trips qualify (W_ZWECK == 1, 0 < wegkm < 1000); 70947 distinct persons keep their first qualifying trip
+INFO measure_donor_distance_mismatch: join rate workers (hts_id) -> pseudonym_map.source_person_id: 304900/304900 matched (100.0000%)
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor-vs-assigned class: 304900/304900 workers matched a donor (100.00%); donor distance missing for 224045 (73.48% of matched), assigned class missing for 0
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor-vs-assigned class: 14806/80855 comparable workers have an assigned class ABOVE the donor class (18.31%); below 16776, equal 49273
+WARNING braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor-vs-assigned class: 224045/304900 matched workers (73.48%) have NO usable donor distance, above the 50.00% warning threshold. share_assigned_gt_donor (0.1831) therefore describes only the 80855 comparable workers, and that subset is NOT necessarily representative of the whole cohort -- do not read it as a property of all 304900 workers
+INFO measure_donor_distance_mismatch: join rate workers -> donor rows (composed chain): 304900/304900 matched (100.0000%)
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor-vs-assigned class: 304900/304900 workers matched a donor (100.00%); donor distance missing for 41480 (13.60% of matched), assigned class missing for 0
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor-vs-assigned class: 57177/263420 comparable workers have an assigned class ABOVE the donor class (21.71%); below 24383, equal 181860
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor universe over 304900 workers: 151571 donors in the home-office module (P_ARB_ENTF valid for 53.34% of them) and 153329 outside it (valid for 0.00%); overall distance validity 26.52%
+INFO braunschweig.calibration.commute_day_state_reference: [commute day state reference] donor reporting day over 304900 workers: arbwo {'1': 304900}, ST_WOTAG {'1': 61744, '2': 73096, '3': 60817, '4': 56617, '5': 52626} (raw MiD codes)
+INFO measure_donor_distance_mismatch: wrote eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/donor_vs_assigned_class.csv (8 rows)
+INFO measure_donor_distance_mismatch: wrote eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/donor_vs_assigned_class_trip_length.csv (8 rows)
+INFO measure_donor_distance_mismatch: wrote eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/donor_vs_assigned_diagnostics.json
+INFO measure_donor_distance_mismatch: HEADLINE P_ARB_ENTF: 14806/80855 comparable workers have an assigned class above their donor's (18.31%); no donor distance for 224045 of 304900 matched workers (73.48%)
+INFO measure_donor_distance_mismatch: HEADLINE work-trip length: 57177/263420 comparable workers have an assigned class above their donor's (21.71%); no work trip for 41480 of 304900 matched workers (13.60%)

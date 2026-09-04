@@ -17,7 +17,14 @@ repository:
     additionally copied into /home/felix/wt-i329/eqasim-data/data/braunschweig/{srv,mid}/ because
     the symlinked data tree does not carry them yet, and were REMOVED again at cleanup (they will
     arrive there through git once the branch is merged). The stage''s provenance.json therefore
-    records git_commit "b7eed9a5+dirty" -- the detached base plus the tar overlay -- not b7563ec3.'
+    records git_commit "b7eed9a5+dirty" -- the detached base plus the tar overlay -- not b7563ec3.
+    FIX ROUND 1 (same day) extended only the measurement SCRIPT and its helpers and re-ran the
+    script alone, from an identically built and again removed detached worktree carrying the seven
+    changed files under braunschweig/ and scripts/ at branch commit da650dd6; the committed
+    donor_vs_assigned_* files carry that commit in their headers. No pipeline stage was executed a
+    second time, and the stage outputs (work_participation_by_kreis.csv,
+    assigned_distance_classes.csv, ext_destination_distances.csv, summary.md, provenance.json) are
+    untouched from the b7563ec3 run.'
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -72,10 +79,14 @@ pipeline:
     braunschweig.locations.synthesis.replacement_education_gravity, which is one of the
     re-executed stages (01:13:47 -> 01:18:48). The work destinations this measurement reads were
     therefore RE-DRAWN by this run under the b7eed9a5 code state with random_seed 1234, not read
-    from the pickle the i329 run itself wrote. Evidence that the redraw reproduces the state the
-    SrV baselines measured: the worker cohort (304,900) and the external-destination count
-    (39,150 / 12.84%) match srv-primary-distance-baseline-2026-09-04 exactly. Whether every
-    individual assignment is identical was NOT verified: unknown.'
+    from the pickle the i329 run itself wrote. The redraw is BYTE-IDENTICAL to the i329-era cache
+    entry, verified read-only with cmp on felix (fix round 1): the pickle this run wrote
+    (braunschweig.locations.synthesis.replacement_education_gravity__5ed9...) equals the one the
+    2026-09-03 SrV baseline wrote (__a3a9...) and equals the 2026-08-24 i329-era entry (__4517...),
+    and braunschweig.gravity.model__3e35... equals its 08-24 sibling __8aff.... Per-person
+    identity of the measured work destinations is therefore KNOWN, not assumed: they are the i329
+    assignments. Consistently, the worker cohort (304,900) and the external-destination count
+    (39,150 / 12.84%) match srv-primary-distance-baseline-2026-09-04 exactly.'
 classification:
 - validation
 status:
@@ -86,20 +97,34 @@ status:
     twice from the same worktree (the second invocation only to capture its log to a file); both
     produced BYTE-IDENTICAL outputs, verified with md5sum before and after
     (donor_vs_assigned_class.csv 8d39bae99bf8a198a06fb9ff0d98decf, diagnostics
-    8b3fc9a7c9116b1bd1047111d5ced39f). CACHE STATE: this run again reset the i329 stage-hash
-    bookkeeping ("Successfully reset meta data") and rewrote the fourteen stage caches listed
-    above, adding
+    8b3fc9a7c9116b1bd1047111d5ced39f). Those two files were later SUPERSEDED: fix round 1 extended
+    the script (a second donor distance source and the donor-universe diagnostics) and re-ran it
+    ONLY -- no pipeline stage was executed again -- from a freshly created and again removed
+    detached worktree at b7eed9a5 with the same inputs, under source-commit da650dd6; the
+    committed donor_vs_assigned_* files are the ones that invocation wrote, and run_log.txt
+    carries both invocations under explicit marker lines. CACHE STATE: this run reset the i329
+    stage-hash bookkeeping ("Successfully reset meta data") and wrote the fourteen stage caches
+    listed above. The controller verified read-only on felix how they landed: NINE were
+    overwritten IN PLACE under an unchanged stage hash, so no prior copy of their payload survives
+    and their before/after equality is not checkable -- stated as a limit, not glossed over --
+    while braunschweig.locations.synthesis.replacement_education_gravity,
+    synthesis.population.spatial.primary.candidates and braunschweig.gravity.model were written
+    under NEW hashes, leaving their 2026-08-24 siblings in place and thus comparable (see the
+    byte-identity result under pipeline.notes).
     braunschweig.analysis.synthesis.work_participation_by_kreis__e7f4d6171274d4814ba40f655eac6007
-    as a new entry; .merged_config.yml was rewritten and run_provenance_20260904T230603Z.json
-    added. The shared cache store gained nothing (auto-export: exported 0, already-in-store 39).
+    was added as a new entry; .merged_config.yml was rewritten and
+    run_provenance_20260904T230603Z.json added. The shared cache store gained nothing (auto-export: exported 0, already-in-store 39).
     The i329 OUTPUT tree gained one new folder, analysis/commute_day_state_phase_a/, with eight
     files. Shared-checkout invariants on felix, verified before and after: ~/eqasim-bs HEAD
     2714b857 with 26 porcelain entries, worktree list 19 entries. Cleanup performed: the three
     copied reference CSVs removed from /home/felix/wt-i329/eqasim-data/data/braunschweig/{srv,mid}/
     (absence verified with ls), the eqasim-data symlink and eqasim-data._tracked removed,
     ~/wt_cds_phase_a removed with git worktree remove --force + prune, /tmp/cds6.tgz and
-    /tmp/cds_run_log.txt deleted. Left in place as documentation of the run:
-    ~/cds_phase_a_100pct.yml, ~/cds_phase_a_100pct.log and ~/cds_phase_a_mismatch.log.'
+    /tmp/cds_run_log.txt deleted; the fix-round worktree of the same name was cleaned up the same
+    way afterwards, with the invariants re-verified (HEAD 2714b857, 26 porcelain entries, 19
+    worktrees, no /tmp/cds6*.tgz left). Left in place as documentation of the run:
+    ~/cds_phase_a_100pct.yml, ~/cds_phase_a_100pct.log, ~/cds_phase_a_mismatch.log and
+    ~/cds_phase_a_mismatch_2.log.'
 environment: server
 validation:
 - metric: 'share of employed persons with a home->work trip on the simulated day, per home Kreis
@@ -120,7 +145,15 @@ validation:
     (ZGB 0.5056) is the sum of the two SrV remainder states (home-office day 0.1418 + neither
     0.2071) and is never differenced against either of them individually. This is a measurement
     against a committed reference, NOT a validation against observed behaviour, and it decides
-    nothing: no target is set and no threshold is attached in Phase A.'
+    nothing: no target is set and no threshold is attached in Phase A.
+    NOT INDEPENDENT OF EXISTING MACHINERY, and deliberately not decomposed here: the synthesis
+    already applies hard SrV participation controls (feature record
+    docs/registry/features/srv_participation_controls.yml, whose work_participation target is
+    defined over ALL persons, not over the employed), and the i329 run manifest
+    docs/runs/100pct-allfeat-i329-2026-08-24.yml documents a donor-bound participation deficit.
+    How much of this -15.67 pp is that documented deficit, how much is the different universe
+    (employed persons here vs all persons there), and how much is a genuine day-state gap is
+    UNKNOWN from this run: no decomposition was measured, and none is claimed.'
 - metric: 'workers per assigned commute-distance class (euclidean home->work distance x detour
     factor 1.3), ZGB total, split by destination scope'
   reference: none (model-internal distribution; the class edges are those of
@@ -132,8 +165,9 @@ validation:
     5,192 (0.1326), gt200 10,959 (0.2799). Scope internal (265,750 workers): lt10 141,325
     (0.5318), 10_25 70,839 (0.2666), 25_50 47,728 (0.1796), 50_100 5,815 (0.0219), 100_200 43,
     gt200 0. Scope unresolved: 0 workers in every class. The two long classes the day-state model
-    would act on therefore hold 21,515 workers (50_100) and 16,194 workers (100_200 plus gt200),
-    and 27,110 of those 37,709 sit in the external scope.'
+    would act on therefore hold 21,515 workers (50_100) and 16,194 workers (100_200 plus gt200) =
+    37,709 in total, of which 31,851 sit in the external scope (15,700 + 5,192 + 10,959) and 5,858
+    in the internal one (5,815 + 43 + 0).'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/assigned_distance_classes.csv'
   notes: 'Model distances are straight-line distances scaled by the configured detour factor 1.3,
     not routed distances. gt200 exists only in the external scope by construction (no ZGB-internal
@@ -158,26 +192,75 @@ validation:
     class is strictly higher than the class of the MiD donor their attributes came from'
   reference: 'raw MiD 2023 P_ARB_ENTF of the matched donor (server-only microdata), cleaned with
     clean_mid_commute_distance_km'
-  result: 'All three joins matched at 100.0000%: assigned_class_by_person.csv -> persons.csv
+  result: 'All four join rates are 100.0000%: assigned_class_by_person.csv -> persons.csv
     304,900/304,900; pseudonym_map.csv -> MiD2023_Personen.csv 24,194/24,194; workers (hts_id) ->
-    pseudonym_map.source_person_id 304,900/304,900. Of the 304,900 matched workers, 224,045
-    (73.48%) have a donor whose P_ARB_ENTF is missing or a MiD filter/skip code, so their donor
-    class is "missing" and they are NOT comparable. Among the 80,855 comparable workers: 14,806
-    (share_assigned_gt_donor 0.1831) have an assigned class strictly ABOVE the donor class, 16,776
-    strictly below, and 49,273 equal. The 14,806 by ASSIGNED class: 10_25 3,639, 25_50 5,104,
-    50_100 2,626, 100_200 944, gt200 2,493 (lt10 cannot occur by construction). Donor reporting-day
-    states over all 304,900 matched workers: 171,334 donors worked on the reporting day, 1,190 did
-    not, and of those who worked 74,305 were at their usual workplace and 1,260 at home.'
+    pseudonym_map.source_person_id 304,900/304,900; and the composed chain workers -> donor rows
+    304,900/304,900. Of the 304,900 matched workers, 224,045 (73.48%) have a donor whose
+    P_ARB_ENTF is missing or a MiD filter/skip code, so their donor class is "missing" and they
+    are NOT comparable. Among the 80,855 comparable workers: 14,806 (share_assigned_gt_donor
+    0.1831) have an assigned class strictly ABOVE the donor class, 16,776 strictly below, and
+    49,273 equal. The 14,806 by ASSIGNED class: 10_25 3,639, 25_50 5,104, 50_100 2,626, 100_200
+    944, gt200 2,493 (lt10 cannot occur by construction). Donor reporting-day states over all
+    304,900 matched workers: 171,334 donors worked on the reporting day and 1,190 did not; of
+    those who worked, 74,305 were at their usual workplace and 1,260 at home. The residual
+    304,900 - 171,334 - 1,190 = 132,376 workers have a donor whose P_STARB1 is outside (1, 2),
+    i.e. the question was not asked of them or was not answered -- they are neither "worked" nor
+    "did not work".'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/donor_vs_assigned_class.csv'
-  notes: 'The 73.48% missing-donor-distance rate is the dominant caveat of this measurement and is
-    NOT interpreted here: it means the MiD donor of three quarters of the synthetic workers carries
-    no usable commute distance, so the comparable base is 80,855 rather than 304,900, and the
-    0.1831 share is a share OF THE COMPARABLE SUBSET only. Whether the missing-distance donors
-    differ systematically from the comparable ones (they include donors outside the MiD home-office
-    module and donors for whom P_ARB_ENTF was a filter/skip code) was not measured: unknown. The
-    cross-tab and the diagnostics contain aggregates only -- the script asserts that no person,
-    household or MiD identifier reaches an output file, and the per-person
-    assigned_class_by_person.csv (304,900 rows) was deliberately left on the server.'
+  notes: 'The 73.48% missing-donor-distance rate is the dominant caveat of this table: the 0.1831
+    share is a share OF THE COMPARABLE SUBSET (80,855 workers), not of the cohort, and the script
+    logs a WARNING to that effect whenever the non-comparable share exceeds the configurable
+    warn_missing_share (0.5 here). The reason is measured in the next two entries and is
+    STRUCTURAL, not a data-quality accident: P_ARB_ENTF is a question of the MiD home-office
+    module. Consequence for the spec: the commute-day-state design foresees the donor''s WORK-TRIP
+    LENGTH as the FALLBACK for a missing P_ARB_ENTF -- on this population that fallback is the
+    MAIN path for the ~73% of workers this table cannot compare, and it was NOT applied inside
+    this table. It is measured separately, on the same workers, in the entry below (fix round 1);
+    the two tables are reported side by side and are never merged into one distance. Whether the
+    missing-P_ARB_ENTF workers differ systematically from the comparable ones in ways beyond the
+    module flag is UNKNOWN. Privacy: the cross-tab and the diagnostics contain aggregates only --
+    the script asserts that no person, household or MiD identifier reaches an output file, over
+    both the table columns and the JSON keys, and the per-person assigned_class_by_person.csv
+    (304,900 rows) was deliberately left on the server.'
+- metric: 'donor-vs-assigned commute-distance class with the donor''s FIRST valid WORK-TRIP LENGTH
+    as the donor distance (the spec''s fallback source, measured in fix round 1)'
+  reference: 'raw MiD 2023 MiD2023_Wege.csv (server-only microdata): wegkm of a W_ZWECK == 1 trip
+    with 0 < wegkm < 1000, first qualifying trip per person in file order'
+  result: '76,436 of the 1,087,393 raw MiD trips qualify, giving 70,947 distinct MiD persons a
+    work-trip length. Over the same 304,900 workers: 41,480 (13.60%) have no such length -- their
+    donor made no qualifying work trip on the reporting day -- against 224,045 (73.48%) without a
+    P_ARB_ENTF, so this source covers 263,420 comparable workers instead of 80,855. Among them:
+    57,177 (share_assigned_gt_donor 0.2171) have an assigned class strictly ABOVE the donor class,
+    24,383 strictly below, 181,860 equal. The 57,177 by ASSIGNED class: 10_25 17,639, 25_50
+    21,565, 50_100 7,815, 100_200 2,465, gt200 7,693.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/donor_vs_assigned_class_trip_length.csv'
+  notes: 'The two sources are NOT interchangeable and this record does not treat them as one
+    number: P_ARB_ENTF is the respondent''s USUAL commute distance, while a work-trip length is a
+    property of the REPORTING DAY (a donor who worked from home or did not work that day has no
+    length, which is exactly the state the day-state model wants to represent -- so using it as a
+    commute-distance proxy is itself an assumption the later phase must justify). The 13.60%
+    without a length and the 73.48% without a P_ARB_ENTF are not nested in an obvious way; no
+    combined "either source" coverage is stated here because it was not measured.'
+- metric: 'the donors behind the synthetic workers: home-office-module membership, P_ARB_ENTF
+    validity by module flag, and the donors reporting-day codes (fix round 1)'
+  reference: none (structure of the donor pool the population inherited)
+  result: 'Of the 304,900 workers, 151,571 (49.71%) have a donor inside the MiD home-office module
+    (M_HOFF == 1) and 153,329 outside it; no worker has an unmapped module flag. P_ARB_ENTF is
+    valid for 80,855 of the in-module donors (53.34%) and for 0 of the 153,329 out-of-module
+    donors (0.00%), i.e. 26.52% overall -- so the 73.48% missing rate of the entry above is
+    explained by the module structure plus a 46.66% item-non-response inside the module, not by a
+    broken join. Reporting day: ALL 304,900 workers have a donor with arbwo == 1 (reporting day is
+    a weekday); the raw ST_WOTAG codes are 1: 61,744, 2: 73,096, 3: 60,817, 4: 56,617, 5: 52,626,
+    with codes 6 and 7 absent entirely.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/donor_vs_assigned_diagnostics.json'
+  notes: 'Counts are per WORKER, not per donor person: a donor used by many workers is counted once
+    per worker, which is the quantity that matters when asking what the synthetic population
+    inherited. This record asserts NO mapping from a ST_WOTAG code to a named weekday -- the
+    repository carries no committed statement of that coding -- so the codes are reported raw; that
+    only five of the seven codes occur, together with arbwo == 1 for every worker, is the measured
+    fact. The 46.66% in-module item-non-response and the 0.00% out-of-module validity are measured
+    here for the first time; the earlier ad-hoc figures that motivated the check are deliberately
+    NOT carried into this manifest.'
 - metric: 'join and coverage diagnostics of the analysis stage (fallback transparency)'
   reference: none (internal consistency of the stage)
   result: 'Employed persons: 540,426 input, 1 (0.00%) without a home Kreis (ars5) match, 0 outside
@@ -189,18 +272,22 @@ validation:
     (cds_max_unmatched_home_share, cds_max_unresolved_destination_share), so no guard fired.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/provenance.json'
   notes: 'The single home-unmatched person is the same one the SrV baselines report. The mismatch
-    script enforces its own floor of 99% on all three joins and would have failed the measurement
-    below it; all three came in at 100%.'
+    script enforces its own floor of 99% on FOUR rates -- the three individual joins and, since fix
+    round 1, the composed workers -> donor rows rate, so a worker whose donor is lost anywhere in
+    the chain cannot silently leave the cross-tab without any single join rate falling below the
+    floor -- and would have failed the measurement below it; all four came in at 100%.'
 artifacts:
-- 'felix:~/cds_phase_a_100pct.log (13 min pipeline log) and felix:~/cds_phase_a_mismatch.log,
-  concatenated verbatim under a marker line into the committed run_log.txt (73,293 bytes)'
+- 'felix:~/cds_phase_a_100pct.log (13 min pipeline log), felix:~/cds_phase_a_mismatch.log (first,
+  superseded script invocation) and felix:~/cds_phase_a_mismatch_2.log (the fix-round invocation
+  that produced the committed donor tables), concatenated verbatim under marker lines into the
+  committed run_log.txt (78,080 bytes)'
 - 'felix:~/cds_phase_a_100pct.yml (server-local overlay, not committed)'
-- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/ (eight
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/ (nine
   files; assigned_class_by_person.csv, 304,900 per-person rows, stays there and is NOT committed)'
 - 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/
   (work_participation_by_kreis.csv, assigned_distance_classes.csv, ext_destination_distances.csv,
-  donor_vs_assigned_class.csv, donor_vs_assigned_diagnostics.json, summary.md, provenance.json,
-  run_log.txt)'
+  donor_vs_assigned_class.csv, donor_vs_assigned_class_trip_length.csv,
+  donor_vs_assigned_diagnostics.json, summary.md, provenance.json, run_log.txt)'
 issues:
 - '#244'
 decisions: []
