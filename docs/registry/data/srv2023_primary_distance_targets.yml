@@ -57,8 +57,10 @@ verification:
     carries requirements.production: required, matching mid2023_cars_by_rs7_haustyp's and
     verbindungen's "required" treatment for a committed table a registered production stage
     depends on. The sensitivity table is a diagnostic-only fourth file with its own loader
-    (load_commute_sensitivity) and no production stage reads it yet (addendum Task 16 wires the
-    model-side comparison). Listed in the README derived-inputs table (the "SrV primary-distance
+    (load_commute_sensitivity); since addendum Task 16 it IS read in production, by
+    braunschweig.analysis.reference.srv.commute_distance, but strictly for the
+    sensitivity section of the validation stage -- it never enters the pre-registered
+    decision. Listed in the README derived-inputs table (the "SrV primary-distance
     targets (committed)" row, "### Derived / preprocessed inputs" section) with the regeneration
     command, which is what the D4 readme-data check now requires for a production-required
     dataset.

@@ -19,6 +19,15 @@ persons. On the committed 100% baseline run this affects exactly one worker, so
 ``sum(kreis n_model) == aggregate n_model - 1`` for the work "all" scope; this is expected
 given the home-match-rate contract above, not a join bug, and is repeated as a footer
 line in ``summary.md`` so a reader does not mistake the discrepancy for a defect.
+
+SENSITIVITY (addendum Task 16, item 2/3 -- NOT part of the pre-registered decision): besides
+the pre-registered comparison the stage measures how far the verdict could move if the two
+documented caveats of the reference were resolved differently, and how sensitive it is to the
+EMD threshold itself. Both live strictly beside the pre-registered result -- ``decisions.json``
+keeps ``["work"]`` / ``["education"]`` byte-for-byte as the pre-registered rule produced them
+and adds a separate ``["sensitivity"]`` section; ``summary.md`` gets a clearly labelled
+"Sensitivity (not pre-registered)" section. Nothing in the sensitivity path can change a
+pre-registered verdict.
 """
 from __future__ import annotations
 
@@ -43,6 +52,7 @@ KEY_AGGREGATE_REQUIRES_MIN_PERSONS = "srv_distance_aggregate_requires_min_person
 KEY_SUBDIR = "srv_distance_output_subdir"
 KEY_MAX_UNMATCHED_HOME_SHARE = "srv_distance_max_unmatched_home_share"
 KEY_WARN_UNMATCHED_DESTINATION_SHARE = "srv_distance_warn_unmatched_destination_share"
+KEY_SENSITIVITY_THRESHOLDS = "srv_distance_sensitivity_thresholds"
 # Minor: a plain literal -- os.path.join(output_path, DEFAULT_SUBDIR) happens once, at use.
 DEFAULT_SUBDIR = "analysis/srv_distance_validation"
 EQASIM_CDF_PROBABILITIES = np.linspace(0.0, 1.0, 20)
@@ -60,6 +70,42 @@ DEFAULT_MAX_UNMATCHED_HOME_SHARE = 0.05
 # cordon-adjacent model for a real (if unusual) share of destinations to fall outside ZGB.
 DEFAULT_WARN_UNMATCHED_DESTINATION_SHARE = 0.30
 
+# Addendum Task 16 (item 2): the EMD thresholds at which every pre-registered scope/level and
+# every sensitivity variant is re-decided, so the run itself reports which verdicts survive a
+# looser/stricter threshold instead of leaving 0.08 an unexamined convention. The middle value
+# IS the pre-registered threshold (D.DEFAULT_EMD_THRESHOLD), so the sweep always contains the
+# actual decision as its own reference row. Configurable via KEY_SENSITIVITY_THRESHOLDS; a list
+# default is fine for synpp's ConfigurationContext.config(name, default).
+DEFAULT_SENSITIVITY_THRESHOLDS = [0.06, 0.08, 0.10]
+
+# Addendum Task 16 (item 3): which MODEL scope each SENSITIVITY VARIANT of the reference table
+# is compared against. The variants are diagnostics, never calibration targets, and never enter
+# decisions.json["work"] / ["education"].
+#   inter_zgb          -- reference: inter-Gemeinde SrV persons whose destination Kreis is one of
+#                         the 8 ZGB Kreise; model: the "inter_zgb" scope below (inter-Gemeinde
+#                         AND destination inside a ZGB Gemeinde polygon), so both universes are
+#                         restricted to commutes that stay inside the surveyed polygon.
+#   all_gis_fallback   -- reference: all SrV persons with GIS length where valid else the
+#                         self-reported length; model: the unchanged "all" scope (the model has
+#                         no GIS-validity notion, so only the REFERENCE side moves).
+#   inter_gis_fallback -- the same fallback reference restricted to inter-Gemeinde; model: the
+#                         unchanged "inter" scope.
+SENSITIVITY_VARIANT_MODEL_SCOPES = {
+    "inter_zgb": "inter_zgb",
+    "all_gis_fallback": "all",
+    "inter_gis_fallback": "inter",
+}
+# The sensitivity table's cell columns are UNSUFFIXED (one scope per variant row) where the
+# main commute table suffixes them per scope ("share_inter_shrunk_<label>",
+# "emd_noise_95_inter", "n_persons_inter"). This mapping is what lets the SAME :func:`_cell`
+# helper consume both tables instead of a second, drifting copy of the comparison logic.
+SENSITIVITY_SHRUNK_PREFIX = "share_shrunk"
+SENSITIVITY_NOISE_COLUMN = "emd_noise_95"
+SENSITIVITY_N_REFERENCE_COLUMN = "n_persons"
+# The columns decide_layer requires; named once so the pre-registered and the sensitivity call
+# sites cannot drift apart.
+DECISION_COLUMNS = ["code", "n_reference_persons", "emd", "noise_floor", "is_aggregate"]
+
 
 def configure(context):
     context.stage("synthesis.population.spatial.home.locations")
@@ -75,6 +121,7 @@ def configure(context):
     context.config(KEY_SUBDIR, DEFAULT_SUBDIR)
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_WARN_UNMATCHED_DESTINATION_SHARE, DEFAULT_WARN_UNMATCHED_DESTINATION_SHARE)
+    context.config(KEY_SENSITIVITY_THRESHOLDS, DEFAULT_SENSITIVITY_THRESHOLDS)
 
 
 # --------------------------------------------------------------------------- pure helpers
@@ -428,7 +475,7 @@ def compare_work(realised, targets, detour_factor, emd_threshold, min_persons,
     cells = pd.DataFrame(rows)
     decisions = {}
     for scope in scopes:
-        sub = cells[cells["scope"] == scope][["code", "n_reference_persons", "emd", "noise_floor", "is_aggregate"]]
+        sub = cells[cells["scope"] == scope][DECISION_COLUMNS]
         decisions[scope] = D.decide_layer(sub, emd_threshold, min_persons, aggregate_requires_min_persons)
     return cells, decisions
 
@@ -463,9 +510,155 @@ def compare_education(realised, targets, detour_factor, emd_threshold, min_perso
         rows.extend(level_rows)
         cells_level = pd.DataFrame(level_rows)
         decisions[level] = D.decide_layer(
-            cells_level[["code", "n_reference_persons", "emd", "noise_floor", "is_aggregate"]],
-            emd_threshold, min_persons, aggregate_requires_min_persons)
+            cells_level[DECISION_COLUMNS], emd_threshold, min_persons, aggregate_requires_min_persons)
     return pd.DataFrame(rows), decisions
+
+
+def sensitivity_scope_masks(realised):
+    """Boolean model-person masks for the three scopes the SENSITIVITY variants compare against.
+
+    ``all`` and ``inter`` are the SAME masks the pre-registered :func:`compare_work` uses, so a
+    ``*_gis_fallback`` variant differs from its pre-registered counterpart on the REFERENCE side
+    only (the model has no GIS-validity notion; only the reference can recover a GIS-invalid
+    tail from the self-reported length).
+
+    ``inter_zgb`` is a NEW, narrower model scope built specifically for the ``inter_zgb``
+    variant, and it is deliberately NOT the plain ``inter`` scope: :func:`realised_work_frame`
+    counts a destination outside every Gemeinde polygon as inter-Gemeinde by documented
+    convention, so ``inter`` mixes ZGB-internal commutes with polygon-external ones, while the
+    ``inter_zgb`` REFERENCE contains only SrV commutes whose destination Kreis lies inside the
+    ZGB. ``inter_zgb`` therefore requires all three of:
+
+    * ``intra_gemeinde == False``    -- inter-Gemeinde, as in the ``inter`` scope;
+    * ``dest_commune_id`` present    -- the destination lies inside a ZGB Gemeinde polygon
+      (this is the restriction the plain ``inter`` scope does not make);
+    * ``home_commune_id`` present    -- persons whose home Gemeinde could not be resolved are
+      excluded, because their ``intra_gemeinde`` is False purely by construction (a missing home
+      commune can never equal a known destination commune, see :func:`_check_home_match_rate`),
+      so keeping them would put persons of unknown intra/inter status into a scope whose whole
+      point is that both universes are restricted the same way.
+
+    Every exclusion is counted and logged (CLAUDE.md "Fallback transparency"): a narrowing this
+    aggressive must be visible in the run log, not inferred from a row count.
+    """
+    intra = realised["intra_gemeinde"].astype(bool).values
+    inter = ~intra
+    has_dest = realised["dest_commune_id"].notna().values
+    has_home = realised["home_commune_id"].notna().values
+    inter_zgb = inter & has_dest & has_home
+    n_inter = int(inter.sum())
+    LOGGER.info(
+        "[srv_distance] sensitivity scope inter_zgb: %d/%d inter-Gemeinde workers kept "
+        "(%.1f%% of the inter scope); excluded %d with a destination outside every ZGB "
+        "Gemeinde polygon and %d with an unresolved home Gemeinde",
+        int(inter_zgb.sum()), n_inter, 100.0 * inter_zgb.sum() / n_inter if n_inter else 0.0,
+        int((inter & ~has_dest).sum()), int((inter & has_dest & ~has_home).sum()))
+    return {"all": np.ones(len(realised), dtype=bool), "inter": inter, "inter_zgb": inter_zgb}
+
+
+def compare_sensitivity(realised, sensitivity_targets, detour_factor, emd_threshold, min_persons,
+                        aggregate_requires_min_persons=D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS):
+    """SENSITIVITY comparison (addendum Task 16, item 3) -- NOT the pre-registered decision.
+
+    One row per (variant, code) against the committed SrV sensitivity table
+    (``srv_distance_targets.build_commute_sensitivity_table``), plus one
+    :func:`braunschweig.calibration.decision.decide_layer` verdict per variant. The verdicts
+    are reported separately (``decisions.json["sensitivity"]["variants"]``) and never merged
+    into ``decisions.json["work"]``.
+
+    The decisiveness gate uses the VARIANT's own ``n_persons`` (a variant is a strictly smaller
+    sample than the corresponding pre-registered scope -- e.g. the ``inter_zgb`` reference for
+    Kreis 03102 has 135 persons, below the 200-person floor -- so borrowing the pre-registered
+    scope's count would call a cell decisive on a sample that does not back it).
+
+    Raises ``ValueError`` if a variant declared in :data:`SENSITIVITY_VARIANT_MODEL_SCOPES` is
+    absent from the table: that means a stale committed table, and quietly reporting the variant
+    as "no reference everywhere" would hide it (CLAUDE.md "Fallback transparency").
+    """
+    routed = realised["distance_km_euclid"].values * float(detour_factor)
+    masks = sensitivity_scope_masks(realised)
+    available = set(sensitivity_targets["variant"].unique()) if len(sensitivity_targets) else set()
+    missing = sorted(set(SENSITIVITY_VARIANT_MODEL_SCOPES) - available)
+    if missing:
+        raise ValueError(
+            f"SrV sensitivity table is missing the variant(s) {missing} (present: "
+            f"{sorted(available)}); regenerate it with "
+            f"scripts/extract_srv_primary_distance_targets.py")
+
+    rows = []
+    decisions = {}
+    for variant, scope in SENSITIVITY_VARIANT_MODEL_SCOPES.items():
+        variant_targets = sensitivity_targets[sensitivity_targets["variant"] == variant]
+        mask = masks[scope]
+        variant_rows = []
+        for code in list(ZGB_CODES) + ["zgb"]:
+            sel = mask if code == "zgb" else (mask & (realised["ars5"].values == code))
+            cell = _cell(code, scope, routed[sel], _target_row(variant_targets, code),
+                         SENSITIVITY_SHRUNK_PREFIX, SENSITIVITY_NOISE_COLUMN,
+                         SENSITIVITY_N_REFERENCE_COLUMN, T.WORK_BAND_EDGES_KM,
+                         T.WORK_BAND_LABELS, emd_threshold, code == "zgb")
+            cell["variant"] = variant
+            variant_rows.append(cell)
+        rows.extend(variant_rows)
+        decisions[variant] = D.decide_layer(
+            pd.DataFrame(variant_rows)[DECISION_COLUMNS], emd_threshold, min_persons,
+            aggregate_requires_min_persons)
+        LOGGER.info("[srv_distance] sensitivity/%s (model scope %s): %s",
+                    variant, scope, decisions[variant]["reason"])
+    return pd.DataFrame(rows), decisions
+
+
+def threshold_sensitivity(cells_work, cells_edu, cells_sensitivity, thresholds, min_persons,
+                          aggregate_requires_min_persons=D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS):
+    """Re-decide every pre-registered scope/level AND every sensitivity variant at each of
+    ``thresholds`` (addendum Task 16, item 2) -- NOT the pre-registered decision.
+
+    The cell EMDs and noise floors do not depend on the threshold (only the gap CLASSIFICATION
+    does), so re-running :func:`braunschweig.calibration.decision.decide_layer` on the already
+    computed cells is exact, not an approximation. This makes the report state which verdicts
+    are robust to the 0.08 convention and which flip -- a claim ADR-0103 could otherwise only
+    assert.
+
+    Returns a frame with one row per (kind, name, threshold): ``kind`` is ``"scope"`` (work),
+    ``"level"`` (education) or ``"variant"`` (sensitivity), ``gap_codes`` is ";"-joined.
+    """
+    groups = [("scope", cells_work, "scope"), ("level", cells_edu, "education_level"),
+              ("variant", cells_sensitivity, "variant")]
+    rows = []
+    for threshold in thresholds:
+        for kind, cells, column in groups:
+            if cells is None or not len(cells):
+                continue
+            for name in cells[column].drop_duplicates():
+                sub = cells[cells[column] == name][DECISION_COLUMNS]
+                verdict = D.decide_layer(sub, float(threshold), min_persons,
+                                         aggregate_requires_min_persons)
+                rows.append({"kind": kind, "name": str(name), "threshold": float(threshold),
+                             "build": bool(verdict["build"]),
+                             "undecidable": bool(verdict["undecidable"]),
+                             "gap_codes": ";".join(verdict["gap_codes"])})
+    frame = pd.DataFrame(rows, columns=["kind", "name", "threshold", "build", "undecidable",
+                                        "gap_codes"])
+    LOGGER.info("[srv_distance] threshold sensitivity: %d rows over thresholds %s",
+                len(frame), [float(t) for t in thresholds])
+    return frame
+
+
+def threshold_sensitivity_json(frame):
+    """``sensitivity.csv`` as the nested mapping stored in
+    ``decisions.json["sensitivity"]["thresholds"]``: threshold -> kind -> name -> verdict.
+
+    Same content as the CSV (one fact, one home); the JSON shape exists only so a reader can
+    look up a single verdict without re-filtering the table.
+    """
+    out = {}
+    for row in frame.itertuples(index=False):
+        threshold = out.setdefault("%.2f" % row.threshold, {})
+        threshold.setdefault(row.kind, {})[row.name] = {
+            "build": bool(row.build), "undecidable": bool(row.undecidable),
+            "gap_codes": [c for c in str(row.gap_codes).split(";") if c],
+        }
+    return out
 
 
 def model_quantiles(realised_work, probabilities=EQASIM_CDF_PROBABILITIES):
@@ -525,7 +718,46 @@ def _build_label(decision):
     return str(decision["build"])
 
 
-def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None):
+def _sensitivity_markdown(cells_sensitivity, dec_sensitivity, thresholds_frame):
+    """The "Sensitivity (not pre-registered)" section of ``summary.md`` (addendum Task 16).
+
+    Kept as one clearly labelled block AFTER the pre-registered result and prefixed with an
+    explicit disclaimer, so no reader can mistake a variant verdict or a threshold sweep row
+    for the pre-registered decision (CLAUDE.md "Research reporting").
+    """
+    if dec_sensitivity is None and thresholds_frame is None:
+        return []
+    lines = ["", "## Sensitivity (not pre-registered)", "",
+             "The verdicts below are DIAGNOSTICS, not the pre-registered decision: they measure",
+             "how far the result could move if the reference's two documented caveats "
+             "(polygon-external",
+             "destinations, GIS-invalid tail) were resolved differently, and how sensitive it is "
+             "to the",
+             "EMD threshold. The pre-registered verdicts are the ones in the two sections above."]
+    if dec_sensitivity:
+        lines += ["", "### Reference variants", ""]
+        for variant, d in dec_sensitivity.items():
+            scope = SENSITIVITY_VARIANT_MODEL_SCOPES[variant]
+            lines.append(f"- **{variant}** (model scope `{scope}`): build = {_build_label(d)} "
+                         f"-- {d['reason']}")
+        if cells_sensitivity is not None and len(cells_sensitivity):
+            lines += ["", "| variant | code | n_model | n_ref | EMD | noise floor | class |",
+                      "|---|---|---|---|---|---|---|"]
+            for r in cells_sensitivity.itertuples(index=False):
+                lines.append(f"| {r.variant} | {r.code} | {r.n_model} | {r.n_reference_persons} "
+                             f"| {_fmt3(r.emd)} | {_fmt3(r.noise_floor)} | {r.classification} |")
+    if thresholds_frame is not None and len(thresholds_frame):
+        lines += ["", "### EMD threshold sweep", "",
+                  "| kind | name | threshold | build | undecidable | gap codes |",
+                  "|---|---|---|---|---|---|"]
+        for r in thresholds_frame.itertuples(index=False):
+            lines.append(f"| {r.kind} | {r.name} | {r.threshold:.2f} | {r.build} | "
+                         f"{r.undecidable} | {r.gap_codes or '-'} |")
+    return lines
+
+
+def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None,
+                      cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None):
     lines = ["# SrV primary-distance baseline", ""] + _provenance_lines(provenance) + [
              "Model = realised euclidean home->activity distance x detour factor; reference = SrV 2023",
              "(GIS routed, person-level, GEWICHT_W_ZENSUS, shrunk shares). Classification per the",
@@ -541,6 +773,7 @@ def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None)
     lines += ["", "| level | code | n_model | n_ref | EMD | noise floor | class |", "|---|---|---|---|---|---|---|"]
     for r in cells_edu.itertuples(index=False):
         lines.append(f"| {r.education_level} | {r.code} | {r.n_model} | {r.n_reference_persons} | {_fmt3(r.emd)} | {_fmt3(r.noise_floor)} | {r.classification} |")
+    lines += _sensitivity_markdown(cells_sensitivity, dec_sensitivity, thresholds_frame)
     lines += ["", "Known quirk: the ZGB aggregate row's n_model includes persons whose home Kreis "
                   "could not be resolved (see the module docstring); on the committed 100% baseline "
                   "this is exactly one worker, so sum(kreis n_model) == aggregate n_model - 1 for "
@@ -548,25 +781,46 @@ def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None)
     return "\n".join(lines) + "\n"
 
 
-def write_outputs(directory, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance=None):
-    """Write the five report artifacts. ``provenance`` (IMPORTANT 7) is optional so the pure-
-    helper tests can exercise this function without building a full stage-execute context;
-    ``execute`` always passes the real parameter/reference/model-count block. The CSVs stay
+def write_outputs(directory, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance=None,
+                  cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None):
+    """Write the report artifacts. ``provenance`` (IMPORTANT 7) and the three sensitivity
+    arguments are optional so the pure-helper tests can exercise this function without building
+    a full stage-execute context; ``execute`` always passes all of them. The CSVs stay
     header-free (no provenance comment lines) because Task 9's plot reads them with plain
     ``pandas.read_csv``; the parameter block instead lives in ``provenance.json`` and at the
     top of ``summary.md``.
+
+    Files: ``commute_by_kreis.csv``, ``education_by_kreis_level.csv``,
+    ``commute_quantiles_model.csv``, ``decisions.json``, ``provenance.json``, ``summary.md``,
+    plus -- when the sensitivity arguments are given (addendum Task 16) --
+    ``sensitivity_cells.csv`` (the per-variant comparison cells) and ``sensitivity.csv`` (the
+    EMD-threshold sweep). ``decisions.json`` keeps ``["work"]`` and ``["education"]`` exactly as
+    the pre-registered rule produced them and carries the diagnostics under a separate
+    ``["sensitivity"]`` key.
     """
     provenance = provenance or {}
     os.makedirs(directory, exist_ok=True)
     cells_work.to_csv(os.path.join(directory, "commute_by_kreis.csv"), index=False)
     cells_edu.to_csv(os.path.join(directory, "education_by_kreis_level.csv"), index=False)
     quantiles.to_csv(os.path.join(directory, "commute_quantiles_model.csv"), index=False)
+    decisions = {"work": dec_work, "education": dec_edu}
+    if cells_sensitivity is not None:
+        cells_sensitivity.to_csv(os.path.join(directory, "sensitivity_cells.csv"), index=False)
+    if thresholds_frame is not None:
+        thresholds_frame.to_csv(os.path.join(directory, "sensitivity.csv"), index=False)
+    if dec_sensitivity is not None or thresholds_frame is not None:
+        decisions["sensitivity"] = {
+            "variants": dec_sensitivity or {},
+            "thresholds": threshold_sensitivity_json(thresholds_frame)
+            if thresholds_frame is not None else {},
+        }
     with open(os.path.join(directory, "decisions.json"), "w", encoding="utf-8") as fh:
-        json.dump({"work": dec_work, "education": dec_edu}, fh, indent=2)
+        json.dump(decisions, fh, indent=2)
     with open(os.path.join(directory, "provenance.json"), "w", encoding="utf-8") as fh:
         json.dump(provenance, fh, indent=2)
     with open(os.path.join(directory, "summary.md"), "w", encoding="utf-8") as fh:
-        fh.write(_summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance))
+        fh.write(_summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance,
+                                   cells_sensitivity, dec_sensitivity, thresholds_frame))
 
 
 # --------------------------------------------------------------------------- stage
@@ -616,6 +870,7 @@ def execute(context):
     aggregate_requires_min_persons = bool(context.config(KEY_AGGREGATE_REQUIRES_MIN_PERSONS))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     warn_unmatched_destination_share = float(context.config(KEY_WARN_UNMATCHED_DESTINATION_SHARE))
+    sensitivity_thresholds = [float(t) for t in context.config(KEY_SENSITIVITY_THRESHOLDS)]
     sampling_rate = float(context.config("sampling_rate"))
     out_dir = os.path.join(context.config("output_path"), context.config(KEY_SUBDIR))
 
@@ -625,9 +880,11 @@ def execute(context):
     LOGGER.info(
         "[srv_distance] parameters: detour_factor=%.3f, emd_threshold=%.3f, min_persons=%d, "
         "aggregate_requires_min_persons=%s, max_unmatched_home_share=%.3f, "
-        "warn_unmatched_destination_share=%.3f, sampling_rate=%.4f; writing to %s",
+        "warn_unmatched_destination_share=%.3f, sensitivity_thresholds=%s, "
+        "sampling_rate=%.4f; writing to %s",
         detour, emd_threshold, min_persons, aggregate_requires_min_persons,
-        max_unmatched_home_share, warn_unmatched_destination_share, sampling_rate, out_dir)
+        max_unmatched_home_share, warn_unmatched_destination_share, sensitivity_thresholds,
+        sampling_rate, out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
     work_stats, edu_stats = {}, {}
@@ -644,6 +901,13 @@ def execute(context):
     cells_edu, dec_edu = compare_education(realised_edu, reference["education"], detour, emd_threshold, min_persons,
                                            aggregate_requires_min_persons)
     quantiles = model_quantiles(realised_work)
+    # Diagnostics only -- these never feed dec_work / dec_edu (see the module docstring).
+    cells_sensitivity, dec_sensitivity = compare_sensitivity(
+        realised_work, reference["sensitivity"], detour, emd_threshold, min_persons,
+        aggregate_requires_min_persons)
+    thresholds_frame = threshold_sensitivity(
+        cells_work, cells_edu, cells_sensitivity, sensitivity_thresholds, min_persons,
+        aggregate_requires_min_persons)
 
     provenance = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -652,6 +916,7 @@ def execute(context):
             "aggregate_requires_min_persons": aggregate_requires_min_persons,
             "max_unmatched_home_share": max_unmatched_home_share,
             "warn_unmatched_destination_share": warn_unmatched_destination_share,
+            "sensitivity_thresholds": sensitivity_thresholds,
             "sampling_rate": sampling_rate,
         },
         "reference": {
@@ -659,6 +924,8 @@ def execute(context):
             "n_commute_rows": int(len(reference["commute"])),
             "n_education_rows": int(len(reference["education"])),
             "n_quantile_rows": int(len(reference["quantiles"])),
+            "n_sensitivity_rows": int(len(reference["sensitivity"])),
+            "sensitivity_variants": sorted(reference["sensitivity"]["variant"].unique().tolist()),
         },
         "model": {
             "n_workers": work_stats.get("n_workers"),
@@ -673,10 +940,13 @@ def execute(context):
             "n_ages_unmapped": edu_stats.get("n_unmapped"),
         },
     }
-    write_outputs(out_dir, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance)
+    write_outputs(out_dir, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance,
+                  cells_sensitivity, dec_sensitivity, thresholds_frame)
     for scope, d in dec_work.items():
         LOGGER.info("[srv_distance] work/%s: %s", scope, d["reason"])
     for level, d in dec_edu.items():
         LOGGER.info("[srv_distance] education/%s: %s", level, d["reason"])
     return dict(commute=cells_work, education=cells_edu, quantiles=quantiles,
-                decisions={"work": dec_work, "education": dec_edu})
+                sensitivity=cells_sensitivity, thresholds=thresholds_frame,
+                decisions={"work": dec_work, "education": dec_edu,
+                           "sensitivity": {"variants": dec_sensitivity}})

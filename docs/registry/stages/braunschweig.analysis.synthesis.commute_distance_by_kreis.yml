@@ -12,7 +12,10 @@ description: 'Per home Kreis, compares the realised euclidean home->work / home-
   to count as decisive; false restores the original 2026-09-03 unconditional aggregate
   exemption), srv_distance_output_subdir (default analysis/srv_distance_validation),
   srv_distance_max_unmatched_home_share (default 0.05, raises above),
-  srv_distance_warn_unmatched_destination_share (default 0.30, warns above).'
+  srv_distance_warn_unmatched_destination_share (default 0.30, warns above),
+  srv_distance_sensitivity_thresholds (default [0.06, 0.08, 0.10] -- the EMD thresholds at
+  which every scope/level/variant is re-decided for the threshold sweep; the middle value is
+  the pre-registered threshold, so the sweep always contains the actual decision).'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -32,9 +35,15 @@ features:
 decisions:
 - ADR-0102
 - ADR-0103
-notes: 'Writes six files under <output_path>/analysis/srv_distance_validation/:
+notes: 'Writes eight files under <output_path>/analysis/srv_distance_validation/:
   commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
-  decisions.json, provenance.json, summary.md. VG250-EW (vg250_ew) is read at run time via
+  decisions.json, provenance.json, summary.md, plus (addendum Task 16, SENSITIVITY only --
+  never the pre-registered decision) sensitivity_cells.csv (the per-variant comparison cells
+  for the inter_zgb / all_gis_fallback / inter_gis_fallback reference variants, same cell
+  columns as commute_by_kreis.csv plus a variant column) and sensitivity.csv (the EMD
+  threshold sweep: kind/name/threshold/build/undecidable/gap_codes). decisions.json keeps
+  ["work"] and ["education"] exactly as the pre-registered rule produced them and carries the
+  diagnostics under a separate ["sensitivity"] key. VG250-EW (vg250_ew) is read at run time via
   braunschweig.analysis.spatial.load_gemeinden/assign_geographies to resolve home/destination
   Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split. By design, the
   stage ABORTS the production run (raises ValueError) when more than 5% of homes (workers or

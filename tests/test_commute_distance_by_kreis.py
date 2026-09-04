@@ -423,3 +423,199 @@ def test_write_outputs_content_columns_decisions_and_nan_rendering(tmp_path):
     # at least one no_reference cell has a NaN emd; it must render as "n/a", never raise.
     assert "n/a" in summary
     assert "detour_factor=1.3" in summary
+
+
+# ------------------------------------------------------------------ sensitivity (Task 16)
+
+def _sensitivity_targets(n_persons=500, n_persons_by=None):
+    """The committed SrV SENSITIVITY table's shape: UNSUFFIXED share_<label> /
+    share_shrunk_<label> / emd_noise_95 / n_persons, keyed by (variant, level_geo, code)."""
+    n_persons_by = n_persons_by or {}
+    shares = [0.5, 0.3, 0.2, 0, 0, 0, 0]
+    rows = []
+    for variant in S.SENSITIVITY_VARIANT_MODEL_SCOPES:
+        for code in list(T.ZGB_KREISE) + ["zgb"]:
+            row = {"variant": variant, "level_geo": "zgb" if code == "zgb" else "kreis",
+                   "code": code, "source": "srv",
+                   "n_persons": int(n_persons_by.get((variant, code), n_persons)),
+                   "emd_noise_95": 0.02}
+            row.update({f"share_{lbl}": s for lbl, s in zip(T.WORK_BAND_LABELS, shares)})
+            row.update({f"share_shrunk_{lbl}": s for lbl, s in zip(T.WORK_BAND_LABELS, shares)})
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _homes_for_scopes():
+    """Three households: 1 and 3 in Gemeinde A (Kreis 03101), 2 in C (Kreis 03151); household
+    3's home Gemeinde is unresolved (as a failed VG250 Gemeinde sjoin would leave it)."""
+    return gpd.GeoDataFrame(
+        {"household_id": [1, 2, 3], "ars5": ["03101", "03151", "03101"],
+         "commune_id": ["03101000", "03151005", pd.NA]},
+        geometry=[Point(1_000, 1_000), Point(41_000, 1_000), Point(2_000, 1_000)],
+        crs="EPSG:25832")
+
+
+def _persons_for_scopes():
+    return pd.DataFrame({"person_id": [10, 20, 30], "household_id": [1, 2, 3], "age": [40, 40, 40]})
+
+
+def _work_for_scopes():
+    # 10: Gemeinde A -> B, inter, destination inside a ZGB polygon        -> inter_zgb
+    # 20: Gemeinde C -> (25 km, 1 km), outside every polygon, inter by
+    #     the documented convention but NOT ZGB-internal                  -> excluded
+    # 30: home Gemeinde unresolved, destination inside B, inter only by
+    #     construction                                                    -> excluded
+    return gpd.GeoDataFrame(
+        {"person_id": [10, 20, 30], "commune_id": ["", "", ""], "location_id": [1, 2, 3]},
+        geometry=[Point(13_000, 1_000), Point(25_000, 1_000), Point(13_000, 1_000)],
+        crs="EPSG:25832")
+
+
+def _realised_for_scopes():
+    # 1/3 of the households has no home Gemeinde, well above the 5% production guard, so the
+    # guard is relaxed for this deliberately degenerate fixture.
+    return S.realised_work_frame(_homes_for_scopes(), _work_for_scopes(), _persons_for_scopes(),
+                                 _gemeinden(), max_unmatched_home_share=0.5)
+
+
+def test_sensitivity_scope_inter_zgb_excludes_polygon_external_and_missing_home_persons(caplog):
+    realised = _realised_for_scopes()
+    with caplog.at_level(logging.INFO, logger="braunschweig.analysis.synthesis.commute_distance_by_kreis"):
+        masks = S.sensitivity_scope_masks(realised)
+    by_person = dict(zip(realised["person_id"], masks["inter_zgb"]))
+    # all three are inter-Gemeinde by the stage's convention ...
+    assert all(masks["inter"])
+    # ... but only person 10 stays inside the ZGB polygon with a resolved home Gemeinde.
+    assert by_person[10] and not by_person[20] and not by_person[30]
+    assert masks["all"].sum() == 3
+    message = next(r.getMessage() for r in caplog.records if "inter_zgb" in r.getMessage())
+    assert "1/3 inter-Gemeinde workers kept" in message
+    assert "excluded 1 with a destination outside" in message
+    assert "and 1 with an unresolved home Gemeinde" in message
+
+
+def test_compare_sensitivity_maps_the_unsuffixed_variant_columns_onto_the_cell_columns():
+    realised = _realised_for_scopes()
+    # inter_zgb for 03102 is below the 200-person floor in the real committed table; pin the
+    # same situation here so the decisiveness gate is exercised on the VARIANT's own n_persons.
+    cells, decisions = S.compare_sensitivity(
+        realised, _sensitivity_targets(n_persons_by={("inter_zgb", "03102"): 135}),
+        detour_factor=1.3, emd_threshold=0.08, min_persons=200)
+    assert set(cells["variant"]) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
+    required = {"code", "scope", "variant", "n_model", "n_reference_persons", "emd",
+                "noise_floor", "classification", "is_aggregate", "source"}
+    required |= {f"model_share_{lbl}" for lbl in T.WORK_BAND_LABELS}
+    required |= {f"target_share_{lbl}" for lbl in T.WORK_BAND_LABELS}
+    required |= {f"target_share_raw_{lbl}" for lbl in T.WORK_BAND_LABELS}
+    assert required.issubset(set(cells.columns))
+    # the model scope each variant was compared against is recorded in the scope column
+    assert set(cells[cells["variant"] == "inter_zgb"]["scope"]) == {"inter_zgb"}
+    assert set(cells[cells["variant"] == "all_gis_fallback"]["scope"]) == {"all"}
+    assert set(cells[cells["variant"] == "inter_gis_fallback"]["scope"]) == {"inter"}
+    # the unsuffixed share_shrunk_<label> / emd_noise_95 / n_persons columns were read
+    row = cells[(cells["variant"] == "inter_zgb") & (cells["code"] == "03101")].iloc[0]
+    assert row["n_model"] == 1 and row["n_reference_persons"] == 500
+    assert row["target_share_0_5"] == pytest.approx(0.5)
+    assert row["noise_floor"] == pytest.approx(0.02)
+    # 12 km * 1.3 = 15.6 km -> band 10_20 against a target concentrated in 0_5 -> a gap
+    assert row["emd"] > 0.08 and row["classification"] == "gap"
+    # the variant's own n_persons drives decisiveness: 03102 (n=135) is a gap-free no_model
+    # cell here, but the point is that the count came from the VARIANT row, not from the
+    # pre-registered scope's count.
+    assert cells[(cells["variant"] == "inter_zgb") & (cells["code"] == "03102")].iloc[0][
+        "n_reference_persons"] == 135
+    assert set(decisions) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
+    assert decisions["inter_zgb"]["build"] is True
+    assert "03101" in decisions["inter_zgb"]["gap_codes"]
+
+
+def test_compare_sensitivity_raises_when_a_variant_is_missing_from_the_table():
+    realised = _realised_for_scopes()
+    targets = _sensitivity_targets()
+    targets = targets[targets["variant"] != "inter_zgb"].reset_index(drop=True)
+    with pytest.raises(ValueError, match="missing the variant"):
+        S.compare_sensitivity(realised, targets, 1.3, 0.08, 200)
+
+
+def _all_frames():
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    cells, decision = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
+    edu = S.realised_education_frame(_homes(), _education(), _persons())
+    ecells, edecision = S.compare_education(edu, _education_targets(), 1.3, 0.08, 200)
+    scells, sdecision = S.compare_sensitivity(realised, _sensitivity_targets(), 1.3, 0.08, 200)
+    return realised, cells, decision, ecells, edecision, scells, sdecision
+
+
+def test_threshold_sensitivity_covers_every_scope_level_and_variant_at_every_threshold():
+    _, cells, _, ecells, _, scells, _ = _all_frames()
+    frame = S.threshold_sensitivity(cells, ecells, scells, S.DEFAULT_SENSITIVITY_THRESHOLDS, 200)
+    assert list(frame.columns) == ["kind", "name", "threshold", "build", "undecidable", "gap_codes"]
+    assert sorted(frame["threshold"].unique()) == [0.06, 0.08, 0.10]
+    for threshold in S.DEFAULT_SENSITIVITY_THRESHOLDS:
+        at = frame[frame["threshold"] == threshold]
+        assert set(at[at["kind"] == "scope"]["name"]) == {"all", "inter", "intra"}
+        assert set(at[at["kind"] == "level"]["name"]) == set(T.COMPARABLE_LEVELS)
+        assert set(at[at["kind"] == "variant"]["name"]) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
+    # the pre-registered threshold is part of the sweep, so its row must reproduce the
+    # pre-registered verdict exactly rather than being an independent recomputation.
+    _, _, decision, _, _, _, _ = _all_frames()
+    row = frame[(frame["kind"] == "scope") & (frame["name"] == "all")
+                & (frame["threshold"] == 0.08)].iloc[0]
+    assert bool(row["build"]) is bool(decision["all"]["build"])
+    assert row["gap_codes"] == ";".join(decision["all"]["gap_codes"])
+
+
+def test_threshold_sensitivity_json_mirrors_the_frame():
+    _, cells, _, ecells, _, scells, _ = _all_frames()
+    frame = S.threshold_sensitivity(cells, ecells, scells, [0.06, 0.10], 200)
+    nested = S.threshold_sensitivity_json(frame)
+    assert set(nested) == {"0.06", "0.10"}
+    assert set(nested["0.06"]) == {"scope", "level", "variant"}
+    row = frame[(frame["kind"] == "scope") & (frame["name"] == "all")
+                & (frame["threshold"] == 0.06)].iloc[0]
+    entry = nested["0.06"]["scope"]["all"]
+    assert entry["build"] is bool(row["build"])
+    assert entry["gap_codes"] == [c for c in row["gap_codes"].split(";") if c]
+
+
+def test_write_outputs_writes_the_two_sensitivity_files_and_keeps_the_preregistered_keys(tmp_path):
+    realised, cells, decision, ecells, edecision, scells, sdecision = _all_frames()
+    frame = S.threshold_sensitivity(cells, ecells, scells, S.DEFAULT_SENSITIVITY_THRESHOLDS, 200)
+    S.write_outputs(tmp_path, cells, decision, ecells, edecision, S.model_quantiles(realised),
+                    None, scells, sdecision, frame)
+    assert (tmp_path / "sensitivity_cells.csv").exists()
+    assert (tmp_path / "sensitivity.csv").exists()
+    written_cells = pd.read_csv(tmp_path / "sensitivity_cells.csv", dtype={"code": str})
+    assert "variant" in written_cells.columns
+    assert set(written_cells["variant"]) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
+    written_sweep = pd.read_csv(tmp_path / "sensitivity.csv")
+    assert sorted(written_sweep["threshold"].unique()) == [0.06, 0.08, 0.10]
+
+    d = json.loads((tmp_path / "decisions.json").read_text(encoding="utf-8"))
+    # the PRE-REGISTERED decision keys are untouched by the sensitivity section
+    assert set(d["work"]) == {"all", "inter", "intra"}
+    assert set(d["education"]) == set(T.COMPARABLE_LEVELS)
+    assert set(d["sensitivity"]) == {"variants", "thresholds"}
+    assert set(d["sensitivity"]["variants"]) == set(S.SENSITIVITY_VARIANT_MODEL_SCOPES)
+    assert set(d["sensitivity"]["thresholds"]) == {"0.06", "0.08", "0.10"}
+    # commute_by_kreis.csv carries only the three pre-registered scopes, no variant rows
+    written_work = pd.read_csv(tmp_path / "commute_by_kreis.csv", dtype={"code": str})
+    assert set(written_work["scope"]) == {"all", "inter", "intra"}
+    assert "variant" not in written_work.columns
+
+    summary = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "## Sensitivity (not pre-registered)" in summary
+    assert "### Reference variants" in summary
+    assert "### EMD threshold sweep" in summary
+
+
+def test_write_outputs_without_the_sensitivity_arguments_omits_the_section(tmp_path):
+    # The pure-helper call path (no sensitivity arguments) must stay valid and must NOT write
+    # an empty sensitivity section that a reader could mistake for a measured result.
+    realised, cells, decision, ecells, edecision, _, _ = _all_frames()
+    S.write_outputs(tmp_path, cells, decision, ecells, edecision, S.model_quantiles(realised))
+    assert not (tmp_path / "sensitivity_cells.csv").exists()
+    assert not (tmp_path / "sensitivity.csv").exists()
+    d = json.loads((tmp_path / "decisions.json").read_text(encoding="utf-8"))
+    assert set(d) == {"work", "education"}
+    assert "Sensitivity (not pre-registered)" not in (tmp_path / "summary.md").read_text(encoding="utf-8")
