@@ -46,3 +46,34 @@ def test_build_mid_workday_location_table_missing_distance_row():
     assert t.loc["all", "n_missing_distance"] == 1
     assert t.loc["all", "share_missing"] == 0.0
     assert "lt10" in t.index and t.loc["lt10", "n_unweighted"] == 3
+
+
+def _mid_pool_persons():
+    return pd.DataFrame({
+        "HP_ID":   [1, 2, 3, 4, 5],
+        "H_ID":    [10, 10, 20, 30, 30],
+        "P_GEW":   [1.0] * 5,
+        "arbwo":   [1, 1, 1, 1, 1],
+        "M_HOFF":  [1, 0, 1, 1, 1],
+        "P_STARB1":[1, 2, 1, 1, 1],
+        "starb2":  [1, 409, 1, 2, 1],
+        "P_ARB_ENTF": [8.0, 0.0, 150.0, 30.0, 996.0],
+        "HP_ALTER":[40, 6, 35, 50, 45],
+        "HP_SEX":  [2, 1, 1, 1, 2],
+    })
+
+
+def _mid_pool_trips():
+    return pd.DataFrame({"HP_ID": [1, 1, 1, 3, 3], "W_ZWECK": [6, 4, 8, 7, 8]})
+
+
+def test_build_mid_home_office_donor_pool_cells():
+    pool = R.build_mid_home_office_donor_pool(_mid_pool_persons(), _mid_pool_trips())
+    total = pool[(pool["distance_class"] == "all") & (pool["has_children"] == "all")].iloc[0]
+    assert total["n_donors"] == 3            # HP 1 (8 km, escort, child in hh), HP 3 (150 km), HP 5 (missing distance)
+    lt10 = pool[(pool["distance_class"] == "lt10") & (pool["has_children"] == True) & (pool["has_active_escort"] == True)].iloc[0]  # noqa: E712
+    assert lt10["n_donors"] == 1 and lt10["n_mobile"] == 1 and lt10["mean_trips_mobile"] == pytest.approx(3.0)
+    far = pool[(pool["distance_class"] == "100_200") & (pool["has_children"] == False) & (pool["has_active_escort"] == False)].iloc[0]  # noqa: E712
+    assert far["n_donors"] == 1 and far["share_female"] == pytest.approx(0.0)
+    missing = pool[(pool["distance_class"] == "missing") & (pool["has_children"] == "all")].iloc[0]
+    assert missing["n_donors"] == 1 and missing["n_mobile"] == 0

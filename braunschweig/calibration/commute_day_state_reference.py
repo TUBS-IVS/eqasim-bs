@@ -7,7 +7,9 @@ committed aggregates. Not imported by any population-synthesis or location stage
 MiD 2023 variables (SUF B1): ``M_HOFF`` (home-office module asked), ``arbwo`` (reporting day is a
 weekday), ``P_STARB1`` (worked on the reporting day: 1 yes), ``starb2`` (work location on the day:
 1 at home, 2 usual workplace, 3/4/5/96 other places, 409 did not work), ``P_ARB_ENTF`` (distance to
-the usual workplace in km, top-coded at 200; 996/999 missing), ``P_GEW`` (person weight).
+the usual workplace in km, top-coded at 200; 996/999 missing), ``P_GEW`` (person weight),
+``W_ZWECK`` (trip purpose code on the Wege/trip file; 6 = escort/bring-fetch someone), ``HP_ALTER``
+(household-member age), ``HP_SEX`` (household-member sex; 2 = female).
 """
 from __future__ import annotations
 
@@ -31,6 +33,8 @@ MID_OTHER_PLACE = (3, 4, 5, 96)
 MID_DID_NOT_WORK = 409
 MID_DISTANCE_MISSING = (996.0, 999.0)
 MID_DISTANCE_TOPCODE_KM = 200.0
+MID_ESCORT_ACTIVE = 6
+MID_CHILD_MAX_AGE = 13
 
 WORKDAY_LOCATION_TABLE = "mid2023_workday_location_by_commute_distance.csv"
 HOME_OFFICE_DONOR_POOL_TABLE = "mid2023_home_office_donor_pool.csv"
@@ -137,6 +141,70 @@ def build_mid_workday_location_table(persons: pd.DataFrame) -> pd.DataFrame:
     table = pd.DataFrame(rows)
     logger.info("[mid workday location] %d weekday module persons, %d without a valid distance (%.1f%%)",
                 len(sel), n_missing_distance, 100.0 * n_missing_distance / max(len(sel), 1))
+    return table
+
+
+def build_mid_home_office_donor_pool(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
+    """Cell sizes of the MiD home-office-day donor pool (weekday, worked, at home).
+
+    The donor pool is weekday module persons (see ``_mid_weekday_module``) who worked on the
+    reporting day (``P_STARB1 == 1``) at home (``starb2 == 1``). Each donor is cross-classified by
+    ``distance_class`` (``COMMUTE_CLASS_LABELS`` plus ``"missing"`` for an invalid/absent
+    ``P_ARB_ENTF``), ``has_children`` (any household member, from ``persons`` regardless of module
+    participation, with ``HP_ALTER <= MID_CHILD_MAX_AGE`` sharing the donor's ``H_ID``), and
+    ``has_active_escort`` (at least one trip in ``trips`` with ``W_ZWECK == MID_ESCORT_ACTIVE``).
+    For every distance class an additional ``has_children == "all"`` / ``has_active_escort ==
+    "all"`` row totals across the two boolean dimensions; the overall ``distance_class == "all"``
+    row totals across distance classes too.
+
+    Diagnostics per cell (unweighted counts, ``P_GEW``-weighted share): ``n_donors``, ``n_mobile``
+    (donors with at least one trip in ``trips``), ``mean_trips_mobile`` (mean trip count among the
+    mobile donors; ``NaN`` if the cell has no mobile donor), ``share_female`` (weighted by
+    ``P_GEW``; ``NaN`` if the cell's total weight is zero).
+    """
+    module = _mid_weekday_module(persons)
+    pool = module[(module["P_STARB1"] == MID_WORKED_ON_DAY) & (module["starb2"] == MID_AT_HOME)].copy()
+    pool["distance_class"] = pool["distance_class"].fillna("missing")
+
+    children_by_household = persons.loc[persons["HP_ALTER"] <= MID_CHILD_MAX_AGE, "H_ID"].value_counts()
+    pool["has_children"] = pool["H_ID"].map(children_by_household).fillna(0).gt(0)
+
+    trip_count_by_person = trips.groupby("HP_ID").size()
+    escort_trip_count_by_person = trips.loc[trips["W_ZWECK"] == MID_ESCORT_ACTIVE, "HP_ID"].value_counts()
+    pool["n_trips"] = pool["HP_ID"].map(trip_count_by_person).fillna(0).astype(int)
+    pool["has_active_escort"] = pool["HP_ID"].map(escort_trip_count_by_person).fillna(0).gt(0)
+
+    def _cell(distance_label, has_children_label, has_escort_label, sub):
+        weight = sub["P_GEW"].astype(float)
+        total_weight = weight.sum()
+        mobile = sub[sub["n_trips"] > 0]
+        return {
+            "distance_class": distance_label,
+            "has_children": has_children_label,
+            "has_active_escort": has_escort_label,
+            "n_donors": int(len(sub)),
+            "n_mobile": int(len(mobile)),
+            "mean_trips_mobile": float(mobile["n_trips"].mean()) if len(mobile) else float("nan"),
+            "share_female": float(weight[sub["HP_SEX"] == 2].sum() / total_weight) if total_weight > 0 else float("nan"),
+        }
+
+    rows = []
+    distance_labels_with_totals = list(COMMUTE_CLASS_LABELS) + ["missing", "all"]
+    for distance_label in distance_labels_with_totals:
+        sub_for_distance = pool if distance_label == "all" else pool[pool["distance_class"] == distance_label]
+        rows.append(_cell(distance_label, "all", "all", sub_for_distance))
+        for has_children in (False, True):
+            for has_active_escort in (False, True):
+                sub = sub_for_distance[(sub_for_distance["has_children"] == has_children)
+                                        & (sub_for_distance["has_active_escort"] == has_active_escort)]
+                rows.append(_cell(distance_label, has_children, has_active_escort, sub))
+    table = pd.DataFrame(rows)
+    logger.info("[mid home-office donor pool] %d donors; %.1f%% with an active escort trip, %.1f%% with "
+                "children in the household, %d with a missing/invalid distance",
+                len(pool),
+                100.0 * pool["has_active_escort"].mean() if len(pool) else 0.0,
+                100.0 * pool["has_children"].mean() if len(pool) else 0.0,
+                int((pool["distance_class"] == "missing").sum()))
     return table
 
 
