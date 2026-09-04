@@ -198,6 +198,23 @@ def test_feature_invalid_assessment_status_is_rejected():
         schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
 
 
+def test_feature_missing_assessment_status_is_a_missing_key_error():
+    # Fix round 1 (#358): a missing status must raise the module's usual "missing
+    # required key(s)" style, not an enum error on the stringified None.
+    doc = minimal_feature(assessment={"by": None, "date": None, "pending_reason": None,
+                                      "source": None})
+    with pytest.raises(schema.SchemaError, match="missing required key"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
+def test_feature_null_assessment_status_is_a_missing_key_error():
+    # An explicit `status: null` in the YAML is treated the same as an absent key.
+    doc = minimal_feature(assessment={"status": None, "by": None, "date": None,
+                                      "pending_reason": None, "source": None})
+    with pytest.raises(schema.SchemaError, match="missing required key"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
 def test_feature_assessed_status_round_trips():
     # Task 14 (#358): "assessed" is a valid assessment.status value, added alongside
     # "pending" and "reviewed" (the two already in use across the registry).

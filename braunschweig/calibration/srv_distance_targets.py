@@ -680,12 +680,15 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
     rows.append(_row("zgb", "zgb", "srv", obs_work, None))
     table = pd.DataFrame(rows)
     n_kreis = len(ZGB_KREISE)
+    # Fix round 1 (#358): build the per-scope portion of the log line from the `scopes`
+    # dict's own keys rather than hardcoding "all"/"inter"/"intra" -- so the message
+    # cannot silently drift out of sync if the set of scopes ever changes.
+    own_pool_str = ", ".join(f"{s} {n_own_pool[s]}/{n_kreis}" for s in scopes)
+    fallback_str = ", ".join(f"{s} {n_fallback[s]}/{n_kreis}" for s in scopes)
     logger.info(
         "[srv_distance_targets] commute table: Kreis rows from own RS7 pool per scope: "
-        "all %d/%d, inter %d/%d, intra %d/%d; ZGB fallback per scope: all %d/%d, "
-        "inter %d/%d, intra %d/%d; proxy 1/%d",
-        n_own_pool["all"], n_kreis, n_own_pool["inter"], n_kreis, n_own_pool["intra"], n_kreis,
-        n_fallback["all"], n_kreis, n_fallback["inter"], n_kreis, n_fallback["intra"], n_kreis, n_kreis)
+        "%s; ZGB fallback per scope: %s; proxy 1/%d",
+        own_pool_str, fallback_str, n_kreis)
     logger.info("[srv_distance_targets] commute table: %d rows, %d persons total",
                 len(table), int(len(obs_work)))
     return table

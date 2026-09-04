@@ -355,23 +355,34 @@ def test_build_commute_table_rows_shares_and_proxy():
 
 
 def test_rs7_pool_shares_feeds_both_kreis_pool_and_rs7_row():
-    """Task 14 minor: `_rs7_pool_shares` is the single computation shared by the per-Kreis
-    shrinkage pool and the "rs7" summary row's own shares (previously the same quantity
-    was computed twice, independently, which risked silent divergence). Pins that the
-    "rs7" row's shrunk shares equal the pool that a Kreis of that RS7 type shrinks toward
-    -- NOT by regenerating the committed tables, but by reproducing the pool computation
-    directly on this fixture."""
+    """Task 14 minor, made self-standing in fix round 1 (#358): `_rs7_pool_shares` is the
+    single computation shared by the per-Kreis shrinkage pool and the "rs7" summary
+    row's own shares (previously the same quantity was computed twice, independently,
+    which risked silent divergence).
+
+    This test does NOT call `_rs7_pool_shares` (the function under test) to build its
+    expectation -- that would just re-run the code being tested against itself. Instead
+    it reproduces the RS7-72 pool from lower-level primitives only (`_pool_shares` +
+    `shrink_toward_pool`) and checks it against the "rs7" row (code "72") in the built
+    table. Kreis 03101 in this fixture is entirely RS7-72 (asserted below via
+    `dominant_rs7_by_kreis`), so that "rs7" row IS exactly the shrinkage pool
+    `_pool_for_kreis` hands to 03101 -- it is NOT the same as 03101's own final shrunk
+    share (which is a further shrink ON TOP of this pool, i.e.
+    shrink_toward_pool(kreis_raw, kreis_n, THIS_POOL, k), not equal to this pool itself)."""
     obs = _obs()
     edges = T.WORK_BAND_EDGES_KM
     scopes = {"all": None, "inter": ~obs["intra_gemeinde"].astype(bool),
              "intra": obs["intra_gemeinde"].astype(bool)}
-    zgb_shares = {s: T._pool_shares(obs, edges, m) for s, m in scopes.items()}
-    pool = T._rs7_pool_shares(obs, 72, scopes, zgb_shares, T.DEFAULT_PRIOR_STRENGTH, edges)
 
     table = T.build_commute_table(obs, n_bootstrap=20)
     rs72_row = table[(table["level_geo"] == "rs7") & (table["code"] == "72")].iloc[0]
-    for scope in scopes:
-        for lbl, v in zip(T.WORK_BAND_LABELS, pool[scope][1]):
+
+    for scope, mask in scopes.items():
+        zgb_raw, _ = T._pool_shares(obs, edges, mask)
+        rs7_mask = (obs["regiostar7"] == 72) if mask is None else ((obs["regiostar7"] == 72) & mask)
+        raw_rs7, n_rs7 = T._pool_shares(obs, edges, rs7_mask)
+        expected = T.shrink_toward_pool(raw_rs7, n_rs7, zgb_raw, T.DEFAULT_PRIOR_STRENGTH)
+        for lbl, v in zip(T.WORK_BAND_LABELS, expected):
             assert rs72_row[f"share_{scope}_shrunk_{lbl}"] == pytest.approx(float(v))
 
     # 03101 is entirely RS7-72 in this fixture, so RS7-72 is its dominant (own) pool --

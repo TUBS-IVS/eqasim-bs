@@ -6,9 +6,13 @@ description: 'Per home Kreis, compares the realised euclidean home->work / home-
   intra/inter-Gemeinde split for work, education by model age level, and the pre-registered gap
   rule (#358). Writes <output_path>/analysis/srv_distance_validation/. Config keys:
   srv_distance_detour_factor (default 1.3), srv_distance_emd_threshold (default 0.08),
-  srv_distance_min_persons (default 200), srv_distance_output_subdir (default
-  analysis/srv_distance_validation), srv_distance_max_unmatched_home_share (default 0.05, raises
-  above), srv_distance_warn_unmatched_destination_share (default 0.30, warns above).'
+  srv_distance_min_persons (default 200), srv_distance_aggregate_requires_min_persons (default
+  true -- the 2026-09-04 amendment of the pre-registered rule, ADR-0103 section "Amendment
+  2026-09-04": the ZGB aggregate cell needs the same srv_distance_min_persons floor as any Kreis
+  to count as decisive; false restores the original 2026-09-03 unconditional aggregate
+  exemption), srv_distance_output_subdir (default analysis/srv_distance_validation),
+  srv_distance_max_unmatched_home_share (default 0.05, raises above),
+  srv_distance_warn_unmatched_destination_share (default 0.30, warns above).'
 lineage:
   type: braunschweig_new
   upstream: null

@@ -514,19 +514,30 @@ def _provenance_lines(provenance):
     return lines
 
 
+def _build_label(decision):
+    """Render one decision's "build" verdict for the summary: ``"UNDECIDABLE"`` when
+    ``decision["undecidable"]`` is True (fix round 1, #358) -- printing the literal
+    ``build = False`` there would misreport an undecidable verdict (no cell in the frame
+    was decisive) as a certain "do not build", when the rule in fact could not check
+    anything decisive at all."""
+    if decision.get("undecidable"):
+        return "UNDECIDABLE"
+    return str(decision["build"])
+
+
 def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None):
     lines = ["# SrV primary-distance baseline", ""] + _provenance_lines(provenance) + [
              "Model = realised euclidean home->activity distance x detour factor; reference = SrV 2023",
              "(GIS routed, person-level, GEWICHT_W_ZENSUS, shrunk shares). Classification per the",
              "pre-registered rule (braunschweig.calibration.decision).", "", "## Work (per scope)"]
     for scope, d in dec_work.items():
-        lines.append(f"- **{scope}**: build = {d['build']} -- {d['reason']}")
+        lines.append(f"- **{scope}**: build = {_build_label(d)} -- {d['reason']}")
     lines += ["", "| scope | code | n_model | n_ref | EMD | noise floor | class |", "|---|---|---|---|---|---|---|"]
     for r in cells_work.itertuples(index=False):
         lines.append(f"| {r.scope} | {r.code} | {r.n_model} | {r.n_reference_persons} | {_fmt3(r.emd)} | {_fmt3(r.noise_floor)} | {r.classification} |")
     lines += ["", "## Education (per level)"]
     for level, d in dec_edu.items():
-        lines.append(f"- **{level}**: build = {d['build']} -- {d['reason']}")
+        lines.append(f"- **{level}**: build = {_build_label(d)} -- {d['reason']}")
     lines += ["", "| level | code | n_model | n_ref | EMD | noise floor | class |", "|---|---|---|---|---|---|---|"]
     for r in cells_edu.itertuples(index=False):
         lines.append(f"| {r.education_level} | {r.code} | {r.n_model} | {r.n_reference_persons} | {_fmt3(r.emd)} | {_fmt3(r.noise_floor)} | {r.classification} |")

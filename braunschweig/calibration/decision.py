@@ -19,10 +19,14 @@ rule via the new ``aggregate_requires_min_persons`` parameter of :func:`decide_l
 with it True (the new default) the aggregate is decisive under the SAME
 ``n_reference_persons >= min_persons`` floor as every other cell; passing False restores
 the original 2026-09-03 behaviour (kept only for the exemption-pinning regression test).
-When the aggregate is a gap but not decisive under the new floor, and no other decisive
-cell is a gap either, the rule cannot certify either verdict -- this is reported
-explicitly via the new ``"undecidable"`` result key rather than silently resolving to
-``build=False``.
+More generally (fix round 1, whole-branch review of #358): whenever NO cell in the frame
+is decisive at all -- not merely when the aggregate itself is a gap -- the rule has
+nothing decisive to check and cannot certify "do not build" either; this is reported via
+the ``"undecidable"`` result key rather than silently resolving to ``build=False``. A
+"do not build" verdict is only asserted when at least one cell WAS actually decisive
+(and none of the decisive cells was a gap); the reason string then names how many Kreise
+were decisive and whether the aggregate itself was decisive, rather than blanket-
+asserting "nor in the aggregate" when the aggregate was never actually checked.
 """
 from __future__ import annotations
 
@@ -112,11 +116,12 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
         Keys:
         - "build" (bool): True if any decisive cell is a gap.
         - "undecidable" (bool): True if the rule could not certify either verdict --
-          no decisive cell is a gap, but the aggregate itself IS a gap and is
-          non-decisive only because ``aggregate_requires_min_persons`` is True and its
-          own reference is below ``min_persons`` (the aggregate reference is too small
-          to decide). Always False when ``aggregate_requires_min_persons`` is False,
-          since the aggregate is then always decisive and this situation cannot arise.
+          NO cell in the frame is decisive at all (regardless of whether any
+          non-decisive cell happens to be a gap), so there is nothing decisive to
+          check and neither "build" nor "do not build" is defensible. Always False
+          whenever at least one cell is decisive (including when
+          ``aggregate_requires_min_persons`` is False, since the aggregate is then
+          always decisive).
         - "reason" (str): Explanation of the decision and decision parameters.
         - "gap_codes" (list of str): Codes of cells classified as gap and decisive.
         - "classification" (dict): {code -> label} for all cells (labels unchanged by
@@ -149,8 +154,9 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
     gap_codes = []
     label_counts = {"ok": 0, "gap": 0, "within_noise": 0, "no_reference": 0}
     no_ref_codes = []
-    aggregate_gap_undecided = None   # (code, n_reference_persons) if the aggregate is a
-                                      # gap but non-decisive under the sharpened floor.
+    n_decisive_kreis = 0        # decisive NON-aggregate cells (Kreise with >= min_persons)
+    aggregate_n = None
+    aggregate_decisive = False
 
     for row in cells.itertuples(index=False):
         label = classify_cell(row.emd, row.noise_floor, row.n_reference_persons, emd_threshold)
@@ -162,29 +168,32 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
         is_aggregate = bool(row.is_aggregate)
         decisive = (row.n_reference_persons >= min_persons) or (
             is_aggregate and not aggregate_requires_min_persons)
+        if is_aggregate:
+            aggregate_n = int(row.n_reference_persons)
+            aggregate_decisive = decisive
+        elif decisive:
+            n_decisive_kreis += 1
         if label == "gap" and decisive:
             gap_codes.append(str(row.code))
-        elif label == "gap" and is_aggregate and not decisive:
-            # Can only happen when aggregate_requires_min_persons is True (otherwise the
-            # aggregate is always decisive) -- see the AMENDMENT in the module docstring.
-            aggregate_gap_undecided = (str(row.code), int(row.n_reference_persons))
 
-    # The rule cannot certify either verdict when the aggregate is the only gap
-    # candidate and it falls below the min_persons floor: neither "build" (the
-    # aggregate is non-decisive) nor "do not build" (it IS a gap) is defensible.
-    undecidable = (not gap_codes) and (aggregate_gap_undecided is not None)
+    # Fix round 1 (whole-branch review of #358): the rule is undecidable whenever NO
+    # cell in the frame is decisive at all, regardless of whether a non-decisive cell
+    # happens to be a gap -- there being a non-decisive gap does not by itself make the
+    # verdict undecidable if some OTHER cell was actually decisive and gap-free.
+    any_decisive = aggregate_decisive or n_decisive_kreis > 0
+    undecidable = (not gap_codes) and (not any_decisive)
 
     # Build reason string.
     if gap_codes:
         reason = (f"build: gap (EMD > {emd_threshold} and > noise floor) in decisive cell(s) "
                   f"{gap_codes} (Kreis with >= {min_persons} reference persons, or the aggregate)")
     elif undecidable:
-        agg_code, agg_n = aggregate_gap_undecided
-        reason = (f"not decidable: aggregate reference has {agg_n} < {min_persons} persons and "
-                  f"no Kreis with >= {min_persons} persons gaps")
+        reason = (f"not decidable: no cell reaches the >= {min_persons}-person floor "
+                  f"(aggregate n={aggregate_n}) and no decisive gap exists")
     else:
-        reason = (f"do not build: no gap in any Kreis with >= {min_persons} reference persons "
-                  f"nor in the aggregate (EMD threshold {emd_threshold}, noise floor respected)")
+        aggregate_word = "decisive" if aggregate_decisive else "non-decisive"
+        reason = (f"do not build: no gap in any decisive cell ({n_decisive_kreis} Kreise with "
+                  f">= {min_persons} persons; aggregate {aggregate_word} with n={aggregate_n})")
 
     if no_ref_codes:
         reason += f"; {len(no_ref_codes)} cell(s) without a usable reference: {no_ref_codes}"

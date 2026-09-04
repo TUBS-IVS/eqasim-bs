@@ -349,6 +349,30 @@ def test_compare_education_decisions_one_per_level_and_no_gap_when_matching():
     assert grund_zgb["classification"] == "ok"
 
 
+def test_summary_markdown_renders_undecidable_build_label():
+    # Fix round 1 (whole-branch review of #358): decide_layer can now return
+    # undecidable=True (no cell in the frame was decisive); the summary must render
+    # "build = UNDECIDABLE" for that scope, never the misleading "build = False".
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    cells, decision = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
+    edu = S.realised_education_frame(_homes(), _education(), _persons())
+    ecells, edecision = S.compare_education(edu, _education_targets(), 1.3, 0.08, 200)
+    decision["intra"] = {
+        "build": False, "undecidable": True,
+        "reason": "not decidable: no cell reaches the >= 200-person floor (aggregate n=142) "
+                  "and no decisive gap exists",
+        "gap_codes": [], "classification": decision["intra"]["classification"],
+    }
+    summary = S._summary_markdown(cells, decision, ecells, edecision)
+    intra_line = next(line for line in summary.splitlines() if line.startswith("- **intra**"))
+    assert "build = UNDECIDABLE" in intra_line
+    assert "build = False" not in intra_line
+    # Every OTHER scope/level in this fixture is decisive, so their labels stay
+    # ordinary booleans, not "UNDECIDABLE".
+    all_line = next(line for line in summary.splitlines() if line.startswith("- **all**"))
+    assert "build = UNDECIDABLE" not in all_line
+
+
 def test_write_outputs_creates_files(tmp_path):
     realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
     cells, decision = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)

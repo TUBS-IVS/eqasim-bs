@@ -160,13 +160,42 @@ def test_decide_layer_default_aggregate_at_or_above_min_persons_still_decides_bu
 
 def test_decide_layer_default_decisive_kreis_gap_with_thin_aggregate_is_not_undecidable():
     # A decisive Kreis gap (n=300 >= 200) settles "build=True" outright, even though the
-    # aggregate is also thin (n=142) -- undecidable only applies when the aggregate is
-    # the SOLE gap candidate and no other decisive cell resolves the verdict.
+    # aggregate is also thin (n=142) -- undecidable applies only when NO cell in the
+    # frame is decisive at all; here 03101 IS decisive, so the verdict is certain.
     cells = _cells([("03101", 300, 0.15, 0.03, False), ("zgb", 142, 0.05, 0.03, True)])
     out = D.decide_layer(cells)
     assert out["build"] is True
     assert out["gap_codes"] == ["03101"]
     assert out["undecidable"] is False
+
+
+def test_decide_layer_non_decisive_kreis_gap_and_non_gap_thin_aggregate_is_undecidable():
+    # Fix round 1 (whole-branch review of #358), reviewer's reproduction: a Kreis gap
+    # that is NOT decisive (n=50 < 200) and a thin aggregate (n=142 < 200) that is NOT
+    # itself a gap (emd=0.01 is "ok"). No cell in the frame is decisive at all, so the
+    # rule cannot certify "do not build" just because the one gap it saw was
+    # non-decisive -- it is undecidable, not silently "do not build".
+    cells = _cells([("03101", 50, 0.30, 0.03, False), ("zgb", 142, 0.01, 0.03, True)])
+    out = D.decide_layer(cells)
+    assert out["classification"]["03101"] == "gap"
+    assert out["classification"]["zgb"] == "ok"
+    assert out["build"] is False
+    assert out["undecidable"] is True
+    assert "not decidable" in out["reason"]
+
+
+def test_decide_layer_decisive_ok_aggregate_no_gaps_names_decisive_aggregate_in_reason():
+    # A decisive aggregate (n=4300 >= 200) with no gap anywhere settles "do not build"
+    # outright (undecidable False), and the reason must name that the aggregate WAS
+    # actually checked (decisive), not blanket-assert "nor in the aggregate" as if it
+    # had been checked regardless of decisiveness.
+    cells = _cells([("zgb", 4300, 0.03, 0.02, True)])
+    out = D.decide_layer(cells)
+    assert out["build"] is False
+    assert out["undecidable"] is False
+    assert "do not build" in out["reason"]
+    assert "aggregate decisive" in out["reason"]
+    assert "n=4300" in out["reason"]
 
 
 def test_decide_layer_two_aggregate_rows():
