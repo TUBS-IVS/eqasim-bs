@@ -17,6 +17,7 @@ may only name run manifests (no run, no claim).
 | [building_potentials_work](../registry/features/building_potentials_work.yml) | work | active | ON | A/i/i | 2 | not claimed | none | none | unvalidated | pending |
 | [carless_routing_remode](../registry/features/carless_routing_remode.yml) | matsim | active | ON | A/A/s | 1 | -- | none | none | unvalidated | pending |
 | [cell_accurate_homes](../registry/features/cell_accurate_homes.yml) | home | active | ON | A/A/- | 2 | -- | marker | none | unvalidated | pending |
+| [commute_day_state_measurement](../registry/features/commute_day_state_measurement.yml) | validation | active | ON | A/s/s | 4 | -- | marker | committed | unvalidated | pending |
 | [consistent_car_availability](../registry/features/consistent_car_availability.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [cordon_gates](../registry/features/cordon_gates.yml) | cordon | active | ON | A/A/- | 5 | -- | marker | none | unvalidated | pending |
 | [cordon_mode_balancer](../registry/features/cordon_mode_balancer.yml) | cordon | active | ON | A/A/- | 2 | -- | marker | committed | unvalidated | pending |

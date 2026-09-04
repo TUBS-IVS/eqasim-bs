@@ -1,0 +1,77 @@
+feature: commute_day_state_measurement
+title: Commute day state -- Phase A measurement
+area: validation
+description: 'Measures, on a finished synthetic population, how the model''s work participation
+  and its assigned commute-distance classes compare to the committed regional (SrV 2023) and
+  national (MiD 2023) references, and how far the fabricated external (EXT) workplace points sit
+  from the BA Kreis centroids. Phase A of the far/weekly-commuter (commute-day-state) work,
+  spec 2026-09-04, issue #244. Measurement only -- it changes no model behaviour, sets no
+  target and decides nothing; the day-state model itself is a later phase.'
+stages:
+- braunschweig.analysis.synthesis.work_participation_by_kreis
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: 244
+  pr: null
+  adr: null
+code_paths:
+- braunschweig/analysis/synthesis/work_participation_by_kreis.py
+- braunschweig/calibration/commute_day_state_reference.py
+- braunschweig/calibration/srv_work_participation.py
+- scripts/extract_srv_work_participation.py
+- scripts/extract_mid_workday_location.py
+evidence:
+  tests:
+  - tests/test_work_participation_by_kreis.py
+  - tests/test_srv_work_participation.py
+  - tests/test_commute_day_state_reference.py
+  - tests/test_commute_day_state_reference_pins.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: Analysis-only. The stage reads cached synthesis stages and writes a report; the two
+      calibration modules are pure builders over already-loaded survey frames and are imported
+      by no population-synthesis or location stage. No pipeline output changes, so there is no
+      OFF path to compare.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[commute_day_state]'
+    note: Every exclusion path is counted and logged with its rate and mirrored into
+      provenance.json -- persons with a missing employed flag, employed persons and workers
+      without a home Kreis match, workers without a home geometry, workers whose location_id has
+      no workplace row, workers with a NaN distance, workers with no distance class, internal
+      destinations outside the data.spatial.municipalities commune universe, Kreis pairs without
+      a VG250 centroid and Kreis pairs without a BA Pendler flow. The two home-match paths RAISE
+      above cds_max_unmatched_home_share (default 0.05) instead of degrading silently. The
+      committed-table loaders raise FileNotFoundError naming the missing file and its
+      regeneration script.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+    note: SrV 2023 work-participation shares per home Kreis (data record
+      srv2023_work_participation). Wolfsburg (03103) is not surveyed by SrV -- its row carries
+      n_persons = 0 and NaN shares, and the stage keeps a NaN delta for it rather than reading
+      the absent reference as a zero gap. Only share_work_trip is comparable to the model, which
+      has no day state; the SrV home-office and neither shares are carried through for context
+      and never differenced.
+validation:
+  state: unvalidated
+  runs: []
+  metric: share_work_trip_delta_pp
+  note: |
+    No run has executed this stage yet. The measurement is implemented and covered by synthetic-
+    frame unit tests only (the implementing worktree has no eqasim-data inputs: no VG250, no
+    cache); the first real measurement runs on the 100% cached population on the run server
+    (Phase A Task 6) and will be recorded as a run manifest, at which point this record moves to
+    measured_vs_reference. Nothing about the model's agreement with the SrV or MiD references is
+    claimed until then.
+assessment:
+  status: pending
+  pending_reason: Awaiting the server-side Phase A run (Task 6); the measurement outputs and the
+    donor-vs-assigned class mismatch have not been read yet.

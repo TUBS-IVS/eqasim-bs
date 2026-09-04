@@ -6,8 +6,7 @@ geography: Germany (national MiD sample); no regional breakdown
 crs: null
 roles:
 - validation_reference
-used_by:
-- braunschweig.calibration.commute_day_state_reference (module, not a stage; no stage consumer in Phase A)
+used_by: []
 acquisition:
   method: committed
   source: |
@@ -90,6 +89,9 @@ limitations: |
   work-location state (and the home-office donor-pool composition) is assumed to transfer to
   the Braunschweig/ZGB study area; there is no regional MiD sample to check this against.
 notes: |
+  No stage reads these files in Phase A, so `used_by` is empty; the access path is the module
+  braunschweig.calibration.commute_day_state_reference (a module, not a synpp stage, and
+  therefore not a `used_by` entry -- that field resolves against the stage registry).
   Reference for the commute-day-state model (far/weekly commuters; issue #244). The universe,
   state, and distance-cleaning definitions are recorded durably in this record's own
   `limitations` field and in the module docstrings of

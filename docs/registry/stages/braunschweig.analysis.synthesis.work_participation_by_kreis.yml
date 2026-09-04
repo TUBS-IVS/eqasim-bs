@@ -1,0 +1,80 @@
+stage: braunschweig.analysis.synthesis.work_participation_by_kreis
+title: Work participation and assigned commute-distance classes per Kreis
+layer: validation
+description: 'Phase A measurement of the commute-day-state model (spec 2026-09-04, #244).
+  Purely diagnostic: reads cached synthesis stages and writes a report; no model behaviour and
+  no pipeline output changes. Measures (a) the share of persons the model calls employed who
+  actually make a home->work trip, per home Kreis and for the ZGB total, against the committed
+  SrV 2023 work-participation reference; (b) the distribution of the realised home->work
+  distances (euclidean x detour factor) over the commute-distance classes of
+  braunschweig.calibration.commute_day_state_reference, per Kreis and split by whether the
+  destination is external (EXT, outside the ZGB) or internal; (c) for every (home Kreis,
+  external destination Kreis) pair, the realised model distances against the plain Kreis-
+  centroid-to-Kreis-centroid distance (VG250 vg250_krs, same detour factor), alongside the BA
+  Pendleratlas flow of that pair. Writes <output_path>/<cds_output_subdir>/. Config keys:
+  cds_detour_factor (default 1.3, euclidean -> routed conversion, same convention as
+  srv_distance_detour_factor), cds_output_subdir (default analysis/commute_day_state_phase_a),
+  cds_max_unmatched_home_share (default 0.05, RAISES above -- both the employed-persons and the
+  workers cohort), cds_edge_tolerance_km (default 5.0, half-width of the band around a commute-
+  distance class edge inside which a worker counts as near an edge).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent. Structure (configure/execute split, home matching via
+    braunschweig.analysis.spatial.assign_geographies with a guarded unmatched-share threshold,
+    CRS validation, provenance.json + summary.md) follows
+    braunschweig.analysis.synthesis.commute_distance_by_kreis.
+code:
+- braunschweig/analysis/synthesis/work_participation_by_kreis.py
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+production: true
+inputs:
+- srv2023_work_participation
+- vg250_ew
+features:
+- commute_day_state_measurement
+decisions: []
+notes: 'Writes six files under <output_path>/<cds_output_subdir>/ (default
+  analysis/commute_day_state_phase_a): work_participation_by_kreis.csv (code, n_employed,
+  n_with_work_trip, share_work_trip, share_no_work_trip, srv_n_persons, srv_share_work_trip,
+  srv_share_home_office_day, srv_share_neither, delta_work_trip_pp; one row per ZGB Kreis code
+  plus a zgb row that is exactly the union of those Kreise), assigned_distance_classes.csv
+  (code, scope, distance_class, n_workers, share -- the destination split lives in the scope
+  column with values all/external/internal, NOT in extra columns, so the table stays long-format
+  and directly groupable; the full cross product of codes x scopes x classes is emitted, so a
+  class no worker reached is an explicit n_workers = 0 row rather than an absent one),
+  ext_destination_distances.csv (home_ars5, dest_ars5, n_model, model_km_median, model_km_p10,
+  model_km_p90, centroid_km, class_model_median, class_centroid, same_class, ba_flow),
+  assigned_class_by_person.csv (person_id, assigned_distance_class, distance_km,
+  destination_is_external, home_ars5, destination_ars5 -- controller ruling R1: Task 6 joins it
+  with the donor MiD commute distance on the run server, where the raw microdata lives),
+  summary.md and provenance.json. Only share_work_trip is comparable between model and SrV: the
+  model has no day state, so its share_no_work_trip corresponds to the SUM of the SrV
+  share_home_office_day and share_neither columns, which are carried through for context and
+  never differenced. Wolfsburg (03103) is not surveyed by SrV (n_persons = 0, NaN shares); its
+  delta stays NaN rather than being read as a zero gap. The workplace pool is declared under its
+  CONCRETE name braunschweig.locations.work rather than under the synthesis.locations.work alias
+  seam (the same choice braunschweig.synthesis.incommuters makes): every committed config
+  aliases that seam to this module, but a NEW declaration of the seam name flips how synpp
+  labels the single resulting node in the production DAG snapshot, renaming a node four other
+  stages already depend on; the concrete name keeps this stage purely additive to the graph. The
+  workplace commune_id is joined from that pool via location_id rather than taken from
+  synthesis.population.spatial.primary.locations, because the latter names its destination-zone
+  column commune_id only while taz_work_location_choice is OFF (work_taz_id when ON), whereas
+  the location_id join is correct under both settings; an external workplace carries
+  commune_id = "EXT" + 8-digit AGS (braunschweig.data.external_workplaces), so commune_id[3:8]
+  is its destination Kreis. VG250-EW (vg250_ew) is read at run time twice: via
+  braunschweig.analysis.spatial.assign_geographies for the home Kreis, and via the FULL
+  vg250_krs layer for the Kreis centroids (the external destinations reach far beyond the eight
+  ZGB Kreise that load_kreise is restricted to). By design the stage ABORTS the run (raises
+  ValueError) when more than cds_max_unmatched_home_share of employed persons or of workers
+  cannot be matched to a home Kreis -- a fail-early choice over a per-Kreis comparison that
+  would be meaningless for that share of the cohort; a missing committed SrV table likewise
+  raises (load_srv_work_participation), and a Kreis pair without a VG250 centroid or without a
+  BA flow keeps NaN rather than an approximated value (the BA export suppresses small cells, so
+  an absent flow is unknown, not zero). The measurement states a difference against a reference;
+  it is not a validation against observed behaviour and decides nothing (no pre-registered rule
+  is attached in Phase A).'

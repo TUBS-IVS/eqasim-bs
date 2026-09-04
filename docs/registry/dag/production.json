@@ -74,6 +74,10 @@
   ],
   [
    "braunschweig.data.census.pendler",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "braunschweig.data.census.pendler",
    "braunschweig.analysis.verbindungen_validation"
   ],
   [
@@ -207,6 +211,10 @@
   [
    "braunschweig.freight.trips",
    "matsim.simulation.prepare"
+  ],
+  [
+   "braunschweig.locations.work",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
    "braunschweig.locations.work",
@@ -363,6 +371,10 @@
   [
    "data.spatial.iris",
    "synthesis.population.spatial.locations"
+  ],
+  [
+   "data.spatial.municipalities",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
    "data.spatial.municipalities",
@@ -682,6 +694,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.synthesis.incommuters"
   ],
   [
@@ -754,6 +770,10 @@
   ],
   [
    "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
    "braunschweig.analysis.verbindungen_validation"
   ],
   [
@@ -814,6 +834,10 @@
   ],
   [
    "synthesis.population.spatial.primary.locations",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "synthesis.population.spatial.primary.locations",
    "braunschweig.analysis.verbindungen_validation"
   ],
   [
@@ -843,6 +867,10 @@
   [
    "synthesis.population.spatial.secondary.locations",
    "synthesis.population.spatial.locations"
+  ],
+  [
+   "synthesis.population.trips",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
    "synthesis.population.trips",
@@ -891,6 +919,7 @@
   "braunschweig.analysis.reference.srv.commute_distance",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "braunschweig.data.alkis",
   "braunschweig.data.bbsr.regiostar",
@@ -985,6 +1014,7 @@
   "braunschweig.analysis.cordon_validation",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "matsim.output",
   "synthesis.output"
