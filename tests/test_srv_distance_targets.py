@@ -354,6 +354,31 @@ def test_build_commute_table_rows_shares_and_proxy():
     assert zgb["n_persons"] == 360
 
 
+def test_rs7_pool_shares_feeds_both_kreis_pool_and_rs7_row():
+    """Task 14 minor: `_rs7_pool_shares` is the single computation shared by the per-Kreis
+    shrinkage pool and the "rs7" summary row's own shares (previously the same quantity
+    was computed twice, independently, which risked silent divergence). Pins that the
+    "rs7" row's shrunk shares equal the pool that a Kreis of that RS7 type shrinks toward
+    -- NOT by regenerating the committed tables, but by reproducing the pool computation
+    directly on this fixture."""
+    obs = _obs()
+    edges = T.WORK_BAND_EDGES_KM
+    scopes = {"all": None, "inter": ~obs["intra_gemeinde"].astype(bool),
+             "intra": obs["intra_gemeinde"].astype(bool)}
+    zgb_shares = {s: T._pool_shares(obs, edges, m) for s, m in scopes.items()}
+    pool = T._rs7_pool_shares(obs, 72, scopes, zgb_shares, T.DEFAULT_PRIOR_STRENGTH, edges)
+
+    table = T.build_commute_table(obs, n_bootstrap=20)
+    rs72_row = table[(table["level_geo"] == "rs7") & (table["code"] == "72")].iloc[0]
+    for scope in scopes:
+        for lbl, v in zip(T.WORK_BAND_LABELS, pool[scope][1]):
+            assert rs72_row[f"share_{scope}_shrunk_{lbl}"] == pytest.approx(float(v))
+
+    # 03101 is entirely RS7-72 in this fixture, so RS7-72 is its dominant (own) pool --
+    # the same pool the rs7 row above reports.
+    assert T.dominant_rs7_by_kreis(obs)["03101"] == 72
+
+
 def test_build_education_table_levels_and_comparable_flag():
     obs = _obs()
     obs["purpose_code"] = np.where(obs.index % 2 == 0, 5, 6)

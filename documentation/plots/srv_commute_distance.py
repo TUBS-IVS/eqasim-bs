@@ -36,14 +36,20 @@ def _format_band_label(label):
 def _panel_title(value, row):
     """One panel's title: the group value (Kreis code or education level), the source
     when it is not the direct SrV survey (CRITICAL 1: e.g. Wolfsburg's RS7-72 proxy, or
-    ``source == "none"`` when the cell has no usable reference at all), the model and
+    ``(no reference)`` when ``source == "none"`` -- the cell has no usable reference at
+    all), a ``(no model)`` marker when ``classification == "no_model"`` (Task 14 minor:
+    a real reference exists but zero model persons landed in this cell), the model and
     reference person counts, and the EMD/classification (NaN EMD renders as "n/a")."""
     label = str(value)
     if row is None:
         return f"{label}\n(no data)"
     source = str(row.get("source", "srv"))
-    if source != "srv":
+    if source == "none":
+        label += " (no reference)"
+    elif source != "srv":
         label += f" (proxy: {source})"
+    if str(row.get("classification", "")) == "no_model":
+        label += " (no model)"
     emd = row["emd"]
     emd_str = "n/a" if pd.isna(emd) else f"{emd:.3f}"
     n_model = int(row["n_model"])

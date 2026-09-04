@@ -115,7 +115,6 @@ def education_level_descriptive(purpose_code, age) -> str | None:
     return level
 
 
-HOME_CODE = 19            # V_ZWECK / E_START_ZWECK "Eigene Wohnung"
 START_AT_OWN_HOME = 1     # V_START_LAGE
 DEST_AT_OWN_HOME = 1      # V_ZIEL_LAGE
 DEFAULT_MAX_DISTANCE_KM = 300.0
@@ -572,6 +571,27 @@ def _pool_for_kreis(kreis, rs7_of, pools_by_rs7, zgb_pool):
     return zgb_pool, True
 
 
+def _rs7_pool_shares(obs, rs7, scopes, zgb_shares, prior_strength, edges):
+    """Raw and ZGB-pool-shrunk band shares for one RS7 type, per scope.
+
+    Returns ``{scope: (raw, shrunk, n)}``. Shared by :func:`build_commute_table` for two
+    purposes that must never silently drift apart (Task 14 minor): the per-Kreis
+    shrinkage pool (the ``shrunk`` values, keyed by scope) and the "rs7" summary row's
+    OWN raw/shrunk shares. Before this helper existed, the same computation was done
+    twice -- once here to build the pools, and again inside the row-building closure
+    when emitting the "rs7" rows -- which risked the two silently diverging under a
+    future edit even though they are mathematically the same quantity.
+    """
+    sel = obs["regiostar7"] == rs7
+    result = {}
+    for s, m in scopes.items():
+        mask = sel if m is None else (sel & m)
+        raw, n = _pool_shares(obs, edges, mask)
+        shrunk = shrink_toward_pool(raw, n, zgb_shares[s][0], prior_strength)
+        result[s] = (raw, shrunk, n)
+    return result
+
+
 def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_bootstrap=500, seed=0):
     """Per home Kreis (plus RS7 pools, ZGB, Wolfsburg proxy) work distance band shares.
 
@@ -593,21 +613,18 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
 
     zgb_shares = {s: _pool_shares(obs_work, edges, m) for s, m in scopes.items()}
 
-    rs7_shares = {}
-    for rs7 in sorted(obs_work["regiostar7"].unique()):
-        sel = obs_work["regiostar7"] == rs7
-        rs7_shares[int(rs7)] = {}
-        for s, m in scopes.items():
-            mask = sel if m is None else (sel & m)
-            raw, n = _pool_shares(obs_work, edges, mask)
-            shrunk = shrink_toward_pool(raw, n, zgb_shares[s][0], prior_strength)
-            rs7_shares[int(rs7)][s] = (raw, shrunk, n)
+    rs7_shares = {int(rs7): _rs7_pool_shares(obs_work, rs7, scopes, zgb_shares, prior_strength, edges)
+                 for rs7 in sorted(obs_work["regiostar7"].unique())}
 
-    def _row(level_geo, code, source, sub, pool_for_scope):
+    def _row(level_geo, code, source, sub, pool_for_scope, precomputed_shares=None):
         # R16: n_persons_inter / n_persons_intra are the UNWEIGHTED person counts of the
         # inter-/intra-Gemeinde scope subsets (n_persons stays the all-scope count), so
         # the synthesis stage can pick the scope-matching reference count for `decide_layer`
         # instead of reusing the all-scope n_persons for the inter/intra decisions.
+        #
+        # ``precomputed_shares`` (Task 14 minor), when given, is ``{scope: (raw, shrunk)}``
+        # from :func:`_rs7_pool_shares` -- used ONLY for the "rs7" summary rows below, so
+        # their shares are not recomputed a second time from the same underlying subset.
         intra_mask = sub["intra_gemeinde"].astype(bool)
         row = {"level_geo": level_geo, "code": code, "source": source, "n_persons": int(len(sub)),
               "n_persons_inter": int((~intra_mask).sum()), "n_persons_intra": int(intra_mask.sum())}
@@ -616,9 +633,12 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
         row["share_intra"] = float(w_intra / sub["weight"].sum()) if sub["weight"].sum() > 0 else float("nan")
         for s, m in scopes.items():
             part = sub if m is None else sub[m.loc[sub.index]]
-            block, raw = _share_block(part["distance_km"].values, part["weight"].values, edges, labels, f"share_{s}")
-            row.update(block)
-            shrunk = shrink_toward_pool(raw, len(part), pool_for_scope[s], prior_strength) if pool_for_scope else raw
+            if precomputed_shares is not None:
+                raw, shrunk = precomputed_shares[s]
+            else:
+                _, raw = _share_block(part["distance_km"].values, part["weight"].values, edges, labels, f"share_{s}")
+                shrunk = shrink_toward_pool(raw, len(part), pool_for_scope[s], prior_strength) if pool_for_scope else raw
+            row.update({f"share_{s}_{lbl}": float(v) for lbl, v in zip(labels, raw)})
             row.update({f"share_{s}_shrunk_{lbl}": float(v) for lbl, v in zip(labels, shrunk)})
             row[f"emd_noise_95_{s}"] = bootstrap_emd_noise_floor(
                 part["distance_km"].values, part["weight"].values, edges, n_bootstrap=n_bootstrap, seed=seed)
@@ -631,7 +651,8 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
         raise ValueError("No SrV persons with RegioStaR-7 == %d; cannot build the Wolfsburg proxy" % PROXY_RS7)
 
     pools_by_rs7_and_scope = {s: {rs7: rs7_shares[rs7][s][1] for rs7 in rs7_shares} for s in scopes}
-    n_own_pool = n_fallback = 0
+    n_own_pool = {s: 0 for s in scopes}
+    n_fallback = {s: 0 for s in scopes}
     for kreis in ZGB_KREISE:
         if kreis == WOLFSBURG_KREIS:
             # Wolfsburg proxy: the RS7-72 pool row (no further shrinkage; source flags
@@ -640,24 +661,31 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
             continue
         sub = obs_work[obs_work["kreis"] == kreis]
         pool = {}
-        used_fallback = False
         for s in scopes:
             pool[s], fb = _pool_for_kreis(kreis, rs7_of, pools_by_rs7_and_scope[s], zgb_shares[s][0])
-            used_fallback = used_fallback or fb
-        n_fallback += int(used_fallback)
-        n_own_pool += int(not used_fallback)
+            # Task 14 minor: counted PER SCOPE rather than OR-ed into one combined flag,
+            # so a Kreis whose "all" scope has its own RS7 pool but whose "inter"/"intra"
+            # scope fell back to ZGB no longer hides that partial fallback behind a
+            # single boolean.
+            if fb:
+                n_fallback[s] += 1
+            else:
+                n_own_pool[s] += 1
         rows.append(_row("kreis", kreis, "srv", sub, pool))
 
     for rs7 in sorted(rs7_shares):
+        precomputed = {s: rs7_shares[rs7][s][:2] for s in scopes}
         rows.append(_row("rs7", str(rs7), "srv", obs_work[obs_work["regiostar7"] == rs7],
-                         {s: zgb_shares[s][0] for s in scopes}))
+                         None, precomputed_shares=precomputed))
     rows.append(_row("zgb", "zgb", "srv", obs_work, None))
     table = pd.DataFrame(rows)
     n_kreis = len(ZGB_KREISE)
     logger.info(
-        "[srv_distance_targets] commute table: Kreis rows from own RS7 pool %d/%d, "
-        "ZGB fallback %d/%d, proxy 1/%d",
-        n_own_pool, n_kreis, n_fallback, n_kreis, n_kreis)
+        "[srv_distance_targets] commute table: Kreis rows from own RS7 pool per scope: "
+        "all %d/%d, inter %d/%d, intra %d/%d; ZGB fallback per scope: all %d/%d, "
+        "inter %d/%d, intra %d/%d; proxy 1/%d",
+        n_own_pool["all"], n_kreis, n_own_pool["inter"], n_kreis, n_own_pool["intra"], n_kreis,
+        n_fallback["all"], n_kreis, n_fallback["inter"], n_kreis, n_fallback["intra"], n_kreis, n_kreis)
     logger.info("[srv_distance_targets] commute table: %d rows, %d persons total",
                 len(table), int(len(obs_work)))
     return table

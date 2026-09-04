@@ -113,15 +113,18 @@ def test_compare_work_reports_realised_intra_share_on_all_scope():
     assert row["target_share_intra"] == pytest.approx(0.5)
 
 
-def test_compare_work_zero_model_persons_with_target_is_no_reference():
+def test_compare_work_zero_model_persons_with_target_is_no_model():
     # code 03151 scope "inter": person 20 (the only 03151 worker) is intra, not inter, so
-    # this cell has zero MODEL persons even though a target row exists.
+    # this cell has zero MODEL persons even though a real target row (n_reference_persons
+    # > 0) exists. Task 14 minor: this is now "no_model", not "no_reference" -- the
+    # REFERENCE side is fine here, it is the MODEL side that has nothing to compare.
     realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
     cells, _ = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
     row = cells[(cells["code"] == "03151") & (cells["scope"] == "inter")].iloc[0]
     assert row["n_model"] == 0
+    assert row["n_reference_persons"] > 0
     assert pd.isna(row["emd"])
-    assert row["classification"] == "no_reference"
+    assert row["classification"] == "no_model"
 
 
 def test_compare_work_missing_target_row_is_no_reference_source_none():

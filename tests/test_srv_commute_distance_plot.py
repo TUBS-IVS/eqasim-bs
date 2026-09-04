@@ -57,6 +57,25 @@ def _education_cells(tmp_path):
     return path
 
 
+def test_panel_title_no_reference_and_no_model_labels():
+    """Task 14 minor: `(proxy: none)` was misleading (source "none" is not a proxy); it
+    is now `(no reference)`, and a `(no model)` marker appears for the new "no_model"
+    classification (real target, zero model persons)."""
+    no_reference_row = _work_row("03158", "all", source="none", classification="no_reference")
+    title = P._panel_title("03158", no_reference_row)
+    assert "(no reference)" in title
+    assert "(proxy: none)" not in title
+
+    no_model_row = _work_row("03151", "inter", source="srv", classification="no_model", n_model=0)
+    title = P._panel_title("03151", no_model_row)
+    assert "(no model)" in title
+
+    proxy_row = _work_row("03103", "all", source="proxy_rs7_72")
+    title = P._panel_title("03103", proxy_row)
+    assert "(proxy: proxy_rs7_72)" in title
+    assert "(no model)" not in title and "(no reference)" not in title
+
+
 def test_plot_work_bands_writes_png(tmp_path):
     out = P.plot_work_bands(_work_cells(tmp_path), tmp_path / "work.png", scope="all")
     png = tmp_path / "work.png"

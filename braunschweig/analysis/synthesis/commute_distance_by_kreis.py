@@ -9,6 +9,16 @@ education by the model's age levels. Compares in ROUTED km: euclidean * detour f
 
 Outputs go under ``<output_path>/analysis/srv_distance_validation/``. This stage reads
 cached synthesis stages only (no MATSim), so it runs in minutes on a cached 100% run.
+
+KNOWN QUIRK (n_model off-by-one, disclosed rather than silently left to be rediscovered):
+the ZGB aggregate row's ``n_model`` counts every scope-matching person in the realised
+work/education frame, INCLUDING persons whose home Kreis (``ars5``) could not be resolved
+(:func:`_check_home_match_rate` logs and bounds that rate, but does not drop the rows);
+the 8 per-Kreis rows filter on ``ars5 == code`` and therefore can never include those
+persons. On the committed 100% baseline run this affects exactly one worker, so
+``sum(kreis n_model) == aggregate n_model - 1`` for the work "all" scope; this is expected
+given the home-match-rate contract above, not a join bug, and is repeated as a footer
+line in ``summary.md`` so a reader does not mistake the discrepancy for a defect.
 """
 from __future__ import annotations
 
@@ -29,6 +39,7 @@ LOGGER = logging.getLogger("braunschweig.analysis.synthesis.commute_distance_by_
 KEY_DETOUR = "srv_distance_detour_factor"
 KEY_EMD_THRESHOLD = "srv_distance_emd_threshold"
 KEY_MIN_PERSONS = "srv_distance_min_persons"
+KEY_AGGREGATE_REQUIRES_MIN_PERSONS = "srv_distance_aggregate_requires_min_persons"
 KEY_SUBDIR = "srv_distance_output_subdir"
 KEY_MAX_UNMATCHED_HOME_SHARE = "srv_distance_max_unmatched_home_share"
 KEY_WARN_UNMATCHED_DESTINATION_SHARE = "srv_distance_warn_unmatched_destination_share"
@@ -60,6 +71,7 @@ def configure(context):
     context.config(KEY_DETOUR, T.DEFAULT_DETOUR_FACTOR)
     context.config(KEY_EMD_THRESHOLD, D.DEFAULT_EMD_THRESHOLD)
     context.config(KEY_MIN_PERSONS, D.DEFAULT_MIN_PERSONS)
+    context.config(KEY_AGGREGATE_REQUIRES_MIN_PERSONS, D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS)
     context.config(KEY_SUBDIR, DEFAULT_SUBDIR)
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_WARN_UNMATCHED_DESTINATION_SHARE, DEFAULT_WARN_UNMATCHED_DESTINATION_SHARE)
@@ -332,7 +344,15 @@ def _cell(code, scope, model_km_routed, target_row, shrunk_prefix, noise_col, n_
     has zero reference persons IN THIS SCOPE keeps ITS OWN ``source`` (e.g. the Wolfsburg
     proxy source) so the report can still say which pool the cell would have compared
     against. A target present with model_km_routed empty (zero MODEL persons) also yields
-    ``emd = NaN`` for the same "no gap without an actual comparison" reason.
+    ``emd = NaN`` for the same "no gap without an actual comparison" reason, but its
+    ``classification`` is OVERRIDDEN from ``classify_cell``'s "no_reference" to
+    ``"no_model"`` (Task 14 minor): "no_reference" means the REFERENCE side has no usable
+    target, which is misleading here since a real target with ``n_reference_persons > 0``
+    exists -- the comparison is impossible because the MODEL side is empty instead. This
+    override is presentation only: :func:`braunschweig.calibration.decision.decide_layer`
+    still classifies the cell internally from the (unchanged) NaN ``emd``, so it already
+    treats a "no_model" cell exactly like "no_reference" (never decisive, never a gap)
+    without needing to know the new label.
 
     ``target_share_<label>`` is the SHRUNK target share used for the EMD/gap decision;
     ``target_share_raw_<label>`` is the matching un-shrunk (raw survey) share, read from the
@@ -364,10 +384,13 @@ def _cell(code, scope, model_km_routed, target_row, shrunk_prefix, noise_col, n_
             row.update({f"target_share_{lbl}": float(t) for lbl, t in zip(labels, target)})
             row.update({f"target_share_raw_{lbl}": float(t) for lbl, t in zip(labels, target_raw)})
     row["classification"] = D.classify_cell(row["emd"], row["noise_floor"], row["n_reference_persons"], emd_threshold)
+    if row["n_model"] == 0 and row["n_reference_persons"] > 0:
+        row["classification"] = "no_model"
     return row
 
 
-def compare_work(realised, targets, detour_factor, emd_threshold, min_persons):
+def compare_work(realised, targets, detour_factor, emd_threshold, min_persons,
+                 aggregate_requires_min_persons=D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS):
     """One row per (code, scope); decisions per scope via the pre-registered rule.
 
     R16 ASSUMPTION: the reference-person count used both for classification context and
@@ -377,6 +400,10 @@ def compare_work(realised, targets, detour_factor, emd_threshold, min_persons):
     an inter/intra cell would let a Kreis look "decisive" purely because its ALL-scope
     sample is large, even when the inter- or intra-specific reference sample backing that
     particular comparison is far too small to be scientifically meaningful.
+
+    ``aggregate_requires_min_persons`` is passed through to
+    :func:`braunschweig.calibration.decision.decide_layer` unchanged (see the AMENDMENT,
+    2026-09-04, ADR-0103, in that module's docstring).
     """
     routed = realised["distance_km_euclid"].values * float(detour_factor)
     intra = realised["intra_gemeinde"].astype(bool).values
@@ -402,16 +429,21 @@ def compare_work(realised, targets, detour_factor, emd_threshold, min_persons):
     decisions = {}
     for scope in scopes:
         sub = cells[cells["scope"] == scope][["code", "n_reference_persons", "emd", "noise_floor", "is_aggregate"]]
-        decisions[scope] = D.decide_layer(sub, emd_threshold, min_persons)
+        decisions[scope] = D.decide_layer(sub, emd_threshold, min_persons, aggregate_requires_min_persons)
     return cells, decisions
 
 
-def compare_education(realised, targets, detour_factor, emd_threshold, min_persons):
+def compare_education(realised, targets, detour_factor, emd_threshold, min_persons,
+                      aggregate_requires_min_persons=D.DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS):
     """One row per (code, education level); decisions per level via the pre-registered rule.
 
     Cells carry ``scope = "education"`` uniformly (there is no inter/intra split for
     education) alongside ``education_level`` for the specific level being compared, so the
     column stays meaningful across both the commute and education output tables.
+
+    ``aggregate_requires_min_persons`` is passed through to
+    :func:`braunschweig.calibration.decision.decide_layer` unchanged (see
+    :func:`compare_work`).
     """
     routed = realised["distance_km_euclid"].values * float(detour_factor)
     comparable = targets[targets["comparable"].astype(bool)]
@@ -432,7 +464,7 @@ def compare_education(realised, targets, detour_factor, emd_threshold, min_perso
         cells_level = pd.DataFrame(level_rows)
         decisions[level] = D.decide_layer(
             cells_level[["code", "n_reference_persons", "emd", "noise_floor", "is_aggregate"]],
-            emd_threshold, min_persons)
+            emd_threshold, min_persons, aggregate_requires_min_persons)
     return pd.DataFrame(rows), decisions
 
 
@@ -498,6 +530,10 @@ def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None)
     lines += ["", "| level | code | n_model | n_ref | EMD | noise floor | class |", "|---|---|---|---|---|---|---|"]
     for r in cells_edu.itertuples(index=False):
         lines.append(f"| {r.education_level} | {r.code} | {r.n_model} | {r.n_reference_persons} | {_fmt3(r.emd)} | {_fmt3(r.noise_floor)} | {r.classification} |")
+    lines += ["", "Known quirk: the ZGB aggregate row's n_model includes persons whose home Kreis "
+                  "could not be resolved (see the module docstring); on the committed 100% baseline "
+                  "this is exactly one worker, so sum(kreis n_model) == aggregate n_model - 1 for "
+                  "the work 'all' scope -- expected, not a join defect."]
     return "\n".join(lines) + "\n"
 
 
@@ -566,6 +602,7 @@ def execute(context):
     detour = float(context.config(KEY_DETOUR))
     emd_threshold = float(context.config(KEY_EMD_THRESHOLD))
     min_persons = int(context.config(KEY_MIN_PERSONS))
+    aggregate_requires_min_persons = bool(context.config(KEY_AGGREGATE_REQUIRES_MIN_PERSONS))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     warn_unmatched_destination_share = float(context.config(KEY_WARN_UNMATCHED_DESTINATION_SHARE))
     sampling_rate = float(context.config("sampling_rate"))
@@ -576,10 +613,10 @@ def execute(context):
 
     LOGGER.info(
         "[srv_distance] parameters: detour_factor=%.3f, emd_threshold=%.3f, min_persons=%d, "
-        "max_unmatched_home_share=%.3f, warn_unmatched_destination_share=%.3f, "
-        "sampling_rate=%.4f; writing to %s",
-        detour, emd_threshold, min_persons, max_unmatched_home_share,
-        warn_unmatched_destination_share, sampling_rate, out_dir)
+        "aggregate_requires_min_persons=%s, max_unmatched_home_share=%.3f, "
+        "warn_unmatched_destination_share=%.3f, sampling_rate=%.4f; writing to %s",
+        detour, emd_threshold, min_persons, aggregate_requires_min_persons,
+        max_unmatched_home_share, warn_unmatched_destination_share, sampling_rate, out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
     work_stats, edu_stats = {}, {}
@@ -591,14 +628,17 @@ def execute(context):
                                             max_unmatched_home_share=max_unmatched_home_share,
                                             stats=edu_stats)
 
-    cells_work, dec_work = compare_work(realised_work, reference["commute"], detour, emd_threshold, min_persons)
-    cells_edu, dec_edu = compare_education(realised_edu, reference["education"], detour, emd_threshold, min_persons)
+    cells_work, dec_work = compare_work(realised_work, reference["commute"], detour, emd_threshold, min_persons,
+                                        aggregate_requires_min_persons)
+    cells_edu, dec_edu = compare_education(realised_edu, reference["education"], detour, emd_threshold, min_persons,
+                                           aggregate_requires_min_persons)
     quantiles = model_quantiles(realised_work)
 
     provenance = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "parameters": {
             "detour_factor": detour, "emd_threshold": emd_threshold, "min_persons": min_persons,
+            "aggregate_requires_min_persons": aggregate_requires_min_persons,
             "max_unmatched_home_share": max_unmatched_home_share,
             "warn_unmatched_destination_share": warn_unmatched_destination_share,
             "sampling_rate": sampling_rate,
