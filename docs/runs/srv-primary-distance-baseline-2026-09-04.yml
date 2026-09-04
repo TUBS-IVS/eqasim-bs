@@ -161,7 +161,8 @@ validation:
     24.2% gap may be survey-side under-capture rather than model-side over-production.
     RESOLUTION PATH (not decided here): the model''s external commuter mass is NOT free -- it is
     anchored to the BA Pendleratlas out-commuter counts by
-    braunschweig.gravity.model._append_outbound_flows (register data, stage
+    braunschweig.gravity.kreis_calibration._append_outbound_flows (imported by
+    braunschweig.gravity.model; register data, stage
     braunschweig.data.census.pendler). Layer 1 (#359) must therefore FIRST compare the realised
     external commuter share per Kreis against the BA register AND against SrV, and only then
     touch any friction parameter: if the realised share matches BA, reading (a) is supported and

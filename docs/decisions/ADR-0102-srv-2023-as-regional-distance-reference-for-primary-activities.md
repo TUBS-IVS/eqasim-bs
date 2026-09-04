@@ -88,6 +88,15 @@
      home-based trip >= 100 km exists in this delivery), so that band cannot be calibrated from
      SrV at all; the OD anchors (BA Pendleratlas, VerBindungen) own that mass instead -- the same
      mass that MiD's Pendeldistanz tables show is non-trivial (P13 ~2%, P38.2 ~13% at >= 100 km).
+     The 2026-09-04 sensitivity table `srv2023_commute_distance_sensitivity_by_kreis.csv`
+     (run `srv-primary-distance-baseline-2026-09-04`) measures the model against a variant of
+     this reference that recovers the GIS-invalid tail via the self-reported length instead of
+     excluding it (`*_gis_fallback`, GIS length where valid, else self-reported): the `all` scope
+     stays `ok` in aggregate (zgb EMD 0.045) with three Kreise still gapping (03153, 03157,
+     03158), and the `inter` scope's aggregate becomes a gap by a margin of 0.0003 over the 0.08
+     threshold (zgb EMD 0.0803) -- i.e. recovering the tail barely moves either verdict, so the
+     R6 exclusion is not, by itself, the dominant driver of the pre-registered gaps (full readout
+     in ADR-0103, section "Amendment 2026-09-04").
   3. A negative weight or an over-cap distance (> 300 km) on the SELECTED trip excludes the
      person rather than falling back to the other direction (R6) -- a missingness choice, not a
      substitution, because a fallback direction with those same defects would be equally
@@ -96,15 +105,27 @@
      rule has not yet been exercised on the ZGB sample.
   4. Per-Kreis rows extrapolate a stratified PSU design over roughly 44 selected municipalities
      to the full Kreis.
-  5. Ruling R26 (whole-branch review): the pre-registered EMD threshold `0.08`
+  5. Ruling R26 (whole-branch review), refined 2026-09-04 (ADR-0103, section
+     "Amendment 2026-09-04"): the pre-registered EMD threshold `0.08`
      (`braunschweig.calibration.decision.DEFAULT_EMD_THRESHOLD`) was derived for the WORK
      commute band grid (`WORK_BAND_EDGES_KM`, 7 bands, `[0, 5, 10, 20, 30, 50, 100, inf]`) via
      the gravity-calibration-corner MiD P13 comparison (`docs/features/calibration-corner.md`).
-     Applying the SAME 0.08 threshold to the EDUCATION band grid (`EDUCATION_BAND_EDGES_KM`, 6
-     bands, `[0, 1, 2, 5, 10, 20, inf]`) in `braunschweig.calibration.decision.decide_layer` is
-     an ASSUMPTION: no committed derivation ties 0.08 to the education grid specifically. An
-     education-specific threshold derivation must be proposed as a GitHub issue before the
-     education verdicts are relied on (not yet opened at the time of this record).
+     The normalised band EMD (`braunschweig.calibration.metrics.emd_on_bands`) is the MEAN
+     absolute CDF gap over the inner band edges, in share units, so 0.08 means an average CDF
+     misplacement of 8 percentage points across the band boundaries -- a definition that is
+     independent of how many bands the grid has. Applying the SAME 0.08 threshold to the
+     EDUCATION band grid (`EDUCATION_BAND_EDGES_KM`, 6 bands, `[0, 1, 2, 5, 10, 20, inf]`) in
+     `braunschweig.calibration.decision.decide_layer` is therefore a STRICTER test in kilometres
+     than on the coarser work grid, because the same percentage-point misplacement is packed into
+     narrower distance intervals -- appropriate given that school trips are shorter than commute
+     trips. This remains an ASSUMPTION: no committed derivation ties 0.08 specifically to either
+     grid. The 2026-09-04 re-measurement (`srv-primary-distance-baseline-2026-09-04`) swept the
+     threshold over 0.06/0.08/0.10 and found two education verdicts sensitive to it --
+     `kindergarten` (aggregate EMD 0.067) and `upper_secondary` (aggregate EMD 0.074) both flip to
+     BUILD at 0.06 -- while every work scope and every other education level is stable across that
+     range; see ADR-0103 "Amendment 2026-09-04" for the full sweep. An education-specific
+     threshold derivation must still be proposed as a GitHub issue before the education verdicts
+     are relied on beyond this robustness check (not yet opened at the time of this record).
 - **Rationale:** SrV is regional, GIS-routed, and a Tuesday-Thursday realised day-trip universe --
   the apples-to-apples reference for a day-plan model, distinct from MiD's Pendeldistanz universe
   (commute distance to the usual workplace, including non-daily commuters), which carries

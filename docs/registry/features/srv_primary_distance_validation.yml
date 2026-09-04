@@ -72,9 +72,13 @@ validation:
     path: 1/304,900 workers and 0/178,763 pupils without a home Kreis/Gemeinde match, 0 NaN
     distances, 12.8% of work destinations outside every Gemeinde polygon (counted inter). This is
     a measurement against a reference, NOT a validation of the model against observed behaviour.
-    Per-layer verdicts are in ADR-0103.
+    Per-layer verdicts are in ADR-0103. Re-measured 2026-09-04 on the byte-identical cells under a
+    sharpened decision rule (aggregate_requires_min_persons; only the university verdict moves,
+    BUILD -> UNDECIDABLE) plus three NOT-pre-registered sensitivity variants (inter_zgb,
+    all_gis_fallback, inter_gis_fallback) and an EMD threshold sweep (0.06/0.08/0.10); see ADR-0103
+    section "Amendment 2026-09-04" for the full readout.
 assessment:
   status: reviewed
   by: Lasse Bienzeisler with Claude (Fable 5.1)
-  date: '2026-09-03'
+  date: '2026-09-04'
   source: ADR-0103

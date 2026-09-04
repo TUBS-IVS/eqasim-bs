@@ -48,7 +48,10 @@
       levels are derived from age alone, so `upper_secondary` at ZGB level pools 12,694 `oberstufe`
       and 5,427 `bbs` pupils into its 18,121 modelled persons, and the SrV side pools its own
       descriptive `oberstufe` and `bbs` rows into the same comparable level.
-    - `university`: the rule reports **BUILD** on the aggregate alone (EMD 0.202, floor 0.083),
+    - `university`: the rule AS PRE-REGISTERED on 2026-09-03 reported **BUILD** on the aggregate
+      alone (EMD 0.202, floor 0.083) -- **superseded by the amendment below** (section
+      "Amendment 2026-09-04"), which re-derives this verdict as UNDECIDABLE on the same
+      byte-identical cells.
       and every per-Kreis cell either gaps (six -- 03101, 03102, 03103, 03151, 03154, 03157, up to
       0.482 for the proxy Kreis Wolfsburg 03103) or is `within_noise` (03153, 03158, whose noise
       floors of 0.279 and 0.220 exceed their EMDs). **This decision is NOT acted on as a
@@ -131,3 +134,87 @@
   every number quoted above is read from `summary.md` / `decisions.json` / `provenance.json` in
   that directory; ADR-0102 (the reference and its limitations); the measured run
   `docs/runs/100pct-allfeat-i329-2026-08-24.yml`; issues #357, #358.
+
+## Amendment 2026-09-04
+
+- **Rule amendment.** `braunschweig.calibration.decision.decide_layer` gained a new parameter,
+  `aggregate_requires_min_persons` (module constant `DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS =
+  True`), AFTER this baseline was measured. This is disclosed here as a POST-HOC SHARPENING of the
+  pre-registered rule, not a silent change: before the amendment the ZGB aggregate was exempt from
+  the `min_persons` floor unconditionally, so a thin aggregate (e.g. n=142 for `university`) could
+  force `build=True` on its own; with the amendment the aggregate is decisive under the SAME
+  `n_reference_persons >= min_persons` floor as every other cell, and a frame with NO decisive cell
+  now reports `undecidable` instead of silently resolving to "do not build". The rule was
+  re-derived on the byte-identical cells of the run `srv-primary-distance-baseline-2026-09-04`
+  (the measured distances did not move -- `commute_by_kreis.csv`, `education_by_kreis_level.csv`,
+  `commute_quantiles_model.csv` and all four band plots are byte-identical to the 09-03 baseline;
+  only the verdict computation and the added sensitivity section are new). The ONLY verdict that
+  changes is `university`: BUILD -> UNDECIDABLE (`"not decidable: no cell reaches the >= 200-person
+  floor (aggregate n=142) and no decisive gap exists"`), which now matches the manual override this
+  record already applied above (the "university" bullet under Decision, "NOT acted on as a
+  calibration mandate"). Every other verdict is unchanged: work `all` BUILD, `inter` BUILD, `intra`
+  DO NOT BUILD; education `kindergarten` DO NOT BUILD, `grundschule` BUILD, `sekundar_1` DO NOT
+  BUILD, `upper_secondary` DO NOT BUILD.
+- **Threshold derivation (ADR-0102 Assumption 5).** The normalised band EMD
+  (`braunschweig.calibration.metrics.emd_on_bands`) is the MEAN absolute CDF gap over the inner
+  band edges, in share units: `sum(abs(cumsum(p) - cumsum(q))[:-1]) / (n_bands - 1)`. A value of
+  0.08 therefore means an average CDF misplacement of 8 percentage points across the band
+  boundaries, independent of how many bands the grid has. Applied to the finer EDUCATION grid
+  (6 bands, `[0, 1, 2, 5, 10, 20, inf]` km) the same 0.08 is a STRICTER test in kilometres than on
+  the coarser WORK grid (7 bands, `[0, 5, 10, 20, 30, 50, 100, inf]` km), because the same
+  percentage-point misplacement is packed into narrower distance intervals -- appropriate given
+  that school trips are shorter than commute trips. This remains an ASSUMPTION: no committed
+  derivation ties 0.08 specifically to either grid (ADR-0102 Assumption 5 still applies; only its
+  wording is refined here, see the update to that record). The measured threshold sweep
+  (`sensitivity.csv` of the 09-04 baseline, thresholds 0.06/0.08/0.10) shows which verdicts sit
+  close to this boundary: at 0.06, `kindergarten` (aggregate EMD 0.067) and `upper_secondary`
+  (aggregate EMD 0.074) flip to BUILD; at 0.10, the sensitivity variant `all_gis_fallback` flips to
+  DO NOT BUILD (its worst decisive Kreis EMD, 03153, is 0.0995, just under 0.10). No other scope,
+  level or variant changes across 0.06-0.10. This is ROBUSTNESS information about how close a
+  verdict sits to the boundary, not a change to the pre-registered 0.08 decision.
+- **Sensitivity variants (NOT pre-registered).** `inter_zgb` (both universes restricted to
+  inter-Gemeinde commutes that stay inside the 8 ZGB Kreise): zgb EMD 0.021 against a noise floor
+  of 0.013 on n_ref 2,301, all nine cells `ok` -> DO NOT BUILD. The pre-registered `inter` gap
+  (aggregate EMD 0.085) therefore does not survive restricting both sides to ZGB-internal
+  destinations; it is carried by the polygon-external destinations, which the two sides drop at
+  very different rates. BOTH readings stay open on this evidence: (a) within-ZGB destination
+  choice already matches SrV, and the gap is entirely about WHICH external workplaces the model
+  assigns, not about how far ZGB-internal commuters travel; (b) the model may OVER-PRODUCE
+  out-of-ZGB workplaces relative to the survey -- the model excludes 24.2% of the 161,805-person
+  inter cohort as polygon-external (39,150 workers) versus SrV excluding only 11.3% of its
+  2,593 inter persons for a destination outside the ZGB (unweighted person counts on both sides;
+  INDICATIVE of the asymmetry, not an exact like-for-like rate, since the EMDs themselves are
+  computed on GEWICHT_W_ZENSUS-weighted shares). Reading (b) is possibly COMPOUNDED, not refuted,
+  by SrV under-capturing long/external trips (ADR-0102 Assumption 2: GIS-invalid work trips carry
+  a heavier long-distance tail than GIS-valid ones, and a one-day survey universe under-observes
+  irregular long-distance commuting). `all_gis_fallback` (GIS length where valid, else the
+  self-reported length): zgb EMD 0.045, `ok`, but three Kreise remain decisive gaps (03153 0.0995,
+  03157 0.088, 03158 0.093) so the scope-level verdict is still BUILD -- recovering the GIS-invalid
+  tail barely moves the "all" verdict. `inter_gis_fallback`: zgb EMD 0.0803, a GAP by a margin of
+  0.0003 over the 0.08 threshold, with decisive gaps at 03103, 03153, 03157, 03158 and zgb ->
+  BUILD; the pre-registered `inter` verdict is therefore robust to the GIS-invalid tail but not to
+  the polygon-external destinations.
+- **Consequence for layer 1 (#359).** The verdict BUILD stands, but the lever it points at is
+  RE-TARGETED. Per-Kreis friction inside the destination Kreis is NOT indicated by this evidence
+  (`inter_zgb` is `ok` everywhere); the gap sits in WHICH Kreis/point a commuter is sent to, not in
+  the distance distribution once a destination Kreis is fixed. Layer 1 must therefore start by
+  (1) comparing the realised out-of-ZGB commuter share per Kreis against the BA Pendleratlas
+  register counts (stage `braunschweig.data.census.pendler`, consumed by
+  `braunschweig.gravity.kreis_calibration._append_outbound_flows`, imported by
+  `braunschweig.gravity.model`) and against SrV, and (2) characterising the distance distribution
+  of the model's polygon-external ("EXT") destination points against SrV's own external trips
+  (including the GIS-invalid tail, ADR-0102 Assumption 2), before deciding whether, and what, to
+  calibrate.
+- **Education under the amendment.** `grundschule` BUILD stands unchanged (decisive cell = the ZGB
+  aggregate, EMD 0.116 vs floor 0.021, n_ref 571). `university` is UNDECIDABLE, not "BUILD" (see
+  the rule-amendment bullet above). `kindergarten` and `upper_secondary` remain DO NOT BUILD at the
+  pre-registered 0.08 threshold but both flip to BUILD at 0.06 (aggregate EMD 0.067 and 0.074
+  respectively, both close to the threshold on samples of 647 and 360 SrV persons) -- this is
+  recorded here as FRAGILE, not as a reason to change the verdict.
+- **Evidence.** Both run manifests, `docs/runs/srv-primary-distance-baseline-2026-09-03.yml` and
+  `docs/runs/srv-primary-distance-baseline-2026-09-04.yml`; both committed measurement directories,
+  `eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/` and
+  `eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/` (the latter
+  additionally carrying `sensitivity.csv` and `sensitivity_cells.csv`); ADR-0102 (the reference
+  definition, and its Assumption 2 GIS-invalid tail finding referenced above);
+  `braunschweig.calibration.decision` (the amended rule); issues #357, #358, #359.
