@@ -8,6 +8,21 @@ one home Kreis with >= ``min_persons`` reference persons is a gap, or the aggreg
 EMD values are NORMALISED band EMDs in [0, 1] (same unit as
 `braunschweig.calibration.metrics.emd_on_bands`); the threshold 0.08 and the noise
 floors are on that scale.
+
+AMENDMENT (2026-09-04, disclosed in ADR-0103, section "Amendment 2026-09-04"): the
+2026-09-03 pre-registered rule above exempted the aggregate row from the
+``min_persons`` floor UNCONDITIONALLY (``decisive = is_aggregate or n_reference_persons
+>= min_persons``), so a thin aggregate reference (e.g. n=142 for the university level)
+could single-handedly force ``build=True`` on a reference too small to be scientifically
+decisive. This amendment, made AFTER the 2026-09-03 baseline measurement, sharpens the
+rule via the new ``aggregate_requires_min_persons`` parameter of :func:`decide_layer`:
+with it True (the new default) the aggregate is decisive under the SAME
+``n_reference_persons >= min_persons`` floor as every other cell; passing False restores
+the original 2026-09-03 behaviour (kept only for the exemption-pinning regression test).
+When the aggregate is a gap but not decisive under the new floor, and no other decisive
+cell is a gap either, the rule cannot certify either verdict -- this is reported
+explicitly via the new ``"undecidable"`` result key rather than silently resolving to
+``build=False``.
 """
 from __future__ import annotations
 
@@ -19,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMD_THRESHOLD = 0.08   # project convention (docs/features/calibration-corner.md)
 DEFAULT_MIN_PERSONS = 200
+#: AMENDMENT (2026-09-04, ADR-0103): see the module docstring. True sharpens the
+#: pre-registered rule so the aggregate row needs the same min_persons floor as any
+#: other cell; False restores the original 2026-09-03 unconditional exemption.
+DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS = True
 
 
 def classify_cell(emd, noise_floor, n_reference_persons, emd_threshold=DEFAULT_EMD_THRESHOLD) -> str:
@@ -60,8 +79,14 @@ def classify_cell(emd, noise_floor, n_reference_persons, emd_threshold=DEFAULT_E
 
 
 def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
-                 min_persons=DEFAULT_MIN_PERSONS) -> dict:
+                 min_persons=DEFAULT_MIN_PERSONS,
+                 aggregate_requires_min_persons=DEFAULT_AGGREGATE_REQUIRES_MIN_PERSONS) -> dict:
     """Decide whether to build a calibration layer based on gap detection in decisive cells.
+
+    A cell is decisive iff ``n_reference_persons >= min_persons``, OR (``is_aggregate``
+    and NOT ``aggregate_requires_min_persons``) -- see the AMENDMENT (2026-09-04,
+    ADR-0103) in the module docstring for why the aggregate no longer gets an
+    unconditional exemption by default.
 
     Parameters
     ----------
@@ -73,16 +98,29 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
     emd_threshold : float
         Threshold for classifying a cell as gap; default 0.08 (pre-registered).
     min_persons : int
-        Minimum reference persons to make a non-aggregate cell decisive; default 200.
+        Minimum reference persons to make a cell decisive; default 200.
+    aggregate_requires_min_persons : bool
+        AMENDMENT (2026-09-04, ADR-0103): if True (default), the aggregate row is
+        decisive only when it too satisfies ``n_reference_persons >= min_persons``,
+        like any other cell. If False, the aggregate is unconditionally decisive, as
+        in the original 2026-09-03 pre-registered rule (kept only so the exemption
+        can still be pinned by a regression test).
 
     Returns
     -------
     dict
         Keys:
         - "build" (bool): True if any decisive cell is a gap.
+        - "undecidable" (bool): True if the rule could not certify either verdict --
+          no decisive cell is a gap, but the aggregate itself IS a gap and is
+          non-decisive only because ``aggregate_requires_min_persons`` is True and its
+          own reference is below ``min_persons`` (the aggregate reference is too small
+          to decide). Always False when ``aggregate_requires_min_persons`` is False,
+          since the aggregate is then always decisive and this situation cannot arise.
         - "reason" (str): Explanation of the decision and decision parameters.
         - "gap_codes" (list of str): Codes of cells classified as gap and decisive.
-        - "classification" (dict): {code -> label} for all cells.
+        - "classification" (dict): {code -> label} for all cells (labels unchanged by
+          the amendment: "ok", "gap", "within_noise", "no_reference").
 
     Raises
     ------
@@ -111,6 +149,8 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
     gap_codes = []
     label_counts = {"ok": 0, "gap": 0, "within_noise": 0, "no_reference": 0}
     no_ref_codes = []
+    aggregate_gap_undecided = None   # (code, n_reference_persons) if the aggregate is a
+                                      # gap but non-decisive under the sharpened floor.
 
     for row in cells.itertuples(index=False):
         label = classify_cell(row.emd, row.noise_floor, row.n_reference_persons, emd_threshold)
@@ -119,14 +159,29 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
         if label == "no_reference":
             no_ref_codes.append(str(row.code))
 
-        decisive = bool(row.is_aggregate) or row.n_reference_persons >= min_persons
+        is_aggregate = bool(row.is_aggregate)
+        decisive = (row.n_reference_persons >= min_persons) or (
+            is_aggregate and not aggregate_requires_min_persons)
         if label == "gap" and decisive:
             gap_codes.append(str(row.code))
+        elif label == "gap" and is_aggregate and not decisive:
+            # Can only happen when aggregate_requires_min_persons is True (otherwise the
+            # aggregate is always decisive) -- see the AMENDMENT in the module docstring.
+            aggregate_gap_undecided = (str(row.code), int(row.n_reference_persons))
+
+    # The rule cannot certify either verdict when the aggregate is the only gap
+    # candidate and it falls below the min_persons floor: neither "build" (the
+    # aggregate is non-decisive) nor "do not build" (it IS a gap) is defensible.
+    undecidable = (not gap_codes) and (aggregate_gap_undecided is not None)
 
     # Build reason string.
     if gap_codes:
         reason = (f"build: gap (EMD > {emd_threshold} and > noise floor) in decisive cell(s) "
                   f"{gap_codes} (Kreis with >= {min_persons} reference persons, or the aggregate)")
+    elif undecidable:
+        agg_code, agg_n = aggregate_gap_undecided
+        reason = (f"not decidable: aggregate reference has {agg_n} < {min_persons} persons and "
+                  f"no Kreis with >= {min_persons} persons gaps")
     else:
         reason = (f"do not build: no gap in any Kreis with >= {min_persons} reference persons "
                   f"nor in the aggregate (EMD threshold {emd_threshold}, noise floor respected)")
@@ -138,8 +193,9 @@ def decide_layer(cells: pd.DataFrame, emd_threshold=DEFAULT_EMD_THRESHOLD,
     logger.info(
         f"decide_layer: {len(cells)} cells, labels: ok={label_counts['ok']}, "
         f"gap={label_counts['gap']}, within_noise={label_counts['within_noise']}, "
-        f"no_reference={label_counts['no_reference']}; build={bool(gap_codes)}"
+        f"no_reference={label_counts['no_reference']}; build={bool(gap_codes)}, "
+        f"undecidable={undecidable}"
     )
 
-    return {"build": bool(gap_codes), "reason": reason, "gap_codes": gap_codes,
-            "classification": classification}
+    return {"build": bool(gap_codes), "undecidable": undecidable, "reason": reason,
+            "gap_codes": gap_codes, "classification": classification}

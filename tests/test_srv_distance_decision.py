@@ -120,16 +120,53 @@ def test_decide_layer_zero_aggregate_rows():
 
 
 def test_decide_layer_aggregate_exempt_from_min_persons_floor():
-    # Ruling R24 (whole-branch review): pins the CURRENT behaviour of decide_layer as coded
-    # -- the aggregate is exempt from the min_persons floor by `decisive = is_aggregate or
-    # n_reference_persons >= min_persons`, so a thin aggregate (here n_reference_persons=142,
-    # ADR-0103's university reference size) still decides "build" on its own gap. This is the
-    # pre-registered rule as coded; the aggregate is exempt from the min_persons floor -- see
-    # ADR-0103, to be re-pre-registered via a GitHub issue before the next measurement (not yet opened).
+    # Ruling R24 (whole-branch review): pins the ORIGINAL 2026-09-03 pre-registered
+    # behaviour -- the aggregate is exempt from the min_persons floor by `decisive =
+    # is_aggregate or n_reference_persons >= min_persons`, so a thin aggregate (here
+    # n_reference_persons=142, ADR-0103's university reference size) still decides
+    # "build" on its own gap. AMENDMENT (2026-09-04, ADR-0103): this behaviour is no
+    # longer the DEFAULT (see test_decide_layer_default_aggregate_below_min_persons_is_
+    # undecidable below); it is retained only via the explicit
+    # aggregate_requires_min_persons=False flag, for regression pinning.
     cells = _cells([("zgb", 142, 0.202, 0.083, True)])
+    out = D.decide_layer(cells, aggregate_requires_min_persons=False)
+    assert out["build"] is True
+    assert out["gap_codes"] == ["zgb"]
+    assert out["undecidable"] is False
+
+
+def test_decide_layer_default_aggregate_below_min_persons_is_undecidable():
+    # AMENDMENT (2026-09-04, ADR-0103): with the new default
+    # (aggregate_requires_min_persons=True), a thin aggregate gap (n=142 < 200) is no
+    # longer decisive, and since it is the only gap candidate the rule cannot certify
+    # either verdict -- reported as "undecidable", not silently as "do not build".
+    cells = _cells([("zgb", 142, 0.202, 0.083, True)])
+    out = D.decide_layer(cells)
+    assert out["build"] is False
+    assert out["undecidable"] is True
+    assert "not decidable" in out["reason"]
+    assert "142" in out["reason"] and "200" in out["reason"]
+
+
+def test_decide_layer_default_aggregate_at_or_above_min_persons_still_decides_build():
+    # A large aggregate gap (n=4300 >= 200) stays decisive under the sharpened rule --
+    # the amendment only changes the THIN-aggregate case.
+    cells = _cells([("zgb", 4300, 0.20, 0.03, True)])
     out = D.decide_layer(cells)
     assert out["build"] is True
     assert out["gap_codes"] == ["zgb"]
+    assert out["undecidable"] is False
+
+
+def test_decide_layer_default_decisive_kreis_gap_with_thin_aggregate_is_not_undecidable():
+    # A decisive Kreis gap (n=300 >= 200) settles "build=True" outright, even though the
+    # aggregate is also thin (n=142) -- undecidable only applies when the aggregate is
+    # the SOLE gap candidate and no other decisive cell resolves the verdict.
+    cells = _cells([("03101", 300, 0.15, 0.03, False), ("zgb", 142, 0.05, 0.03, True)])
+    out = D.decide_layer(cells)
+    assert out["build"] is True
+    assert out["gap_codes"] == ["03101"]
+    assert out["undecidable"] is False
 
 
 def test_decide_layer_two_aggregate_rows():
