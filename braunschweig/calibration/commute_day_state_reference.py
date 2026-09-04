@@ -322,3 +322,144 @@ def load_workday_location_table(mid_dir):
 def load_home_office_donor_pool(mid_dir):
     """Load the committed MiD home-office donor-pool cell-size table (see ``HOME_OFFICE_DONOR_POOL_TABLE``)."""
     return _load(mid_dir, HOME_OFFICE_DONOR_POOL_TABLE)
+
+
+DONOR_CLASS_MISSING = "missing"
+DONOR_CLASS_TOTAL = "all"
+#: Columns ``donor_vs_assigned_class`` expects on its ``workers`` / ``donors`` frames.
+DONOR_WORKER_COLUMNS = ("person_id", "hts_id", "assigned_distance_class")
+DONOR_COLUMNS = ("hts_id", "donor_distance_km", "donor_worked_on_day", "donor_starb2")
+
+
+def _require_frame_columns(frame: pd.DataFrame, columns, what: str) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"{what} is missing the required column(s) {missing} "
+                         f"(present: {sorted(frame.columns)})")
+
+
+def _normalised_class(values) -> pd.Series:
+    """Map a commute-class column to ``COMMUTE_CLASS_LABELS`` or :data:`DONOR_CLASS_MISSING`.
+
+    Anything that is not one of the six labels (``NaN``, an empty string, an ``unresolved``
+    marker) becomes ``missing`` -- the helper never guesses a class it was not given.
+    """
+    series = pd.Series(values).astype("object")
+    known = series.isin(COMMUTE_CLASS_LABELS)
+    return series.where(known, DONOR_CLASS_MISSING)
+
+
+def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Cross-tabulate each synthetic worker's ASSIGNED commute-distance class against the class
+    of the MiD donor the worker's attributes came from.
+
+    Phase A measurement for the commute-day-state model (spec 2026-09-04, issue #244): the MiD
+    workday-location table (:func:`build_mid_workday_location_table`) is indexed by the DONOR's
+    commute-distance class, while the model would apply it to the worker's ASSIGNED (synthesised)
+    distance. Where the two classes disagree -- and in particular where the assigned class is
+    strictly HIGHER than the donor's -- a state drawn from the donor's own reporting day would be
+    taken from the wrong row of that table. This function measures the size of that population;
+    it decides nothing.
+
+    ``workers`` carries :data:`DONOR_WORKER_COLUMNS` (``person_id``, ``hts_id``,
+    ``assigned_distance_class``); ``donors`` carries :data:`DONOR_COLUMNS` (``hts_id``,
+    ``donor_distance_km`` -- already cleaned with :func:`clean_mid_commute_distance_km`, ``NaN``
+    allowed --, ``donor_worked_on_day`` = MiD ``P_STARB1`` and ``donor_starb2`` = MiD ``starb2``).
+    ``donors`` must be unique on ``hts_id``; workers whose ``hts_id`` has no donor row are
+    excluded from the cross-tab and reported as ``n_workers - n_matched_donor``.
+
+    Returns ``(cross_tab, diagnostics)``:
+
+    * ``cross_tab`` has one row per donor class (``COMMUTE_CLASS_LABELS``, then
+      :data:`DONOR_CLASS_MISSING` for donors without a usable distance, then
+      :data:`DONOR_CLASS_TOTAL`), with ``n_donor_total``, one ``n_<assigned class>`` count column
+      per assigned class (the six labels plus ``missing``) and the matching ``share_<assigned
+      class>`` row shares. Every row and column is emitted even when empty, so the table shape is
+      stable across runs. It carries COUNTS only -- no person, household or MiD identifier.
+    * ``diagnostics`` (all counts unweighted sample counts): ``n_workers``, ``n_matched_donor``,
+      ``n_donor_distance_missing`` (matched workers whose donor class is ``missing``),
+      ``n_assigned_class_missing``, ``n_comparable`` (matched workers where BOTH classes are
+      known), ``n_assigned_gt_donor`` / ``n_assigned_lt_donor`` / ``n_assigned_eq_donor``
+      (strictly higher / lower / equal in ``COMMUTE_CLASS_LABELS`` order),
+      ``share_assigned_gt_donor`` (of ``n_comparable``),
+      ``n_assigned_gt_donor_by_assigned_class`` (dict, assigned class -> count) and the donor
+      reporting-day state counts over the matched workers (``n_donor_worked_on_day``,
+      ``n_donor_did_not_work_on_day``, ``n_donor_at_home``, ``n_donor_at_workplace``).
+    """
+    _require_frame_columns(workers, DONOR_WORKER_COLUMNS, "workers frame")
+    _require_frame_columns(donors, DONOR_COLUMNS, "donors frame")
+    if donors["hts_id"].duplicated().any():
+        n_duplicated = int(donors["hts_id"].duplicated().sum())
+        raise ValueError(f"donors frame must be unique on hts_id, but {n_duplicated} duplicate "
+                         "hts_id value(s) are present; a duplicated donor would multiply workers "
+                         "in the cross-tab")
+
+    n_workers = int(len(workers))
+    merged = workers.merge(donors, on="hts_id", how="inner", validate="many_to_one")
+    n_matched_donor = int(len(merged))
+
+    donor_class = _normalised_class([classify_commute_distance(km) for km in merged["donor_distance_km"]])
+    assigned_class = _normalised_class(merged["assigned_distance_class"])
+
+    class_rank = {label: rank for rank, label in enumerate(COMMUTE_CLASS_LABELS)}
+    donor_rank = donor_class.map(class_rank)
+    assigned_rank = assigned_class.map(class_rank)
+    comparable = donor_rank.notna() & assigned_rank.notna()
+    assigned_gt_donor = comparable & (assigned_rank > donor_rank)
+    assigned_lt_donor = comparable & (assigned_rank < donor_rank)
+    assigned_eq_donor = comparable & (assigned_rank == donor_rank)
+
+    class_labels = list(COMMUTE_CLASS_LABELS) + [DONOR_CLASS_MISSING]
+    counts = pd.crosstab(donor_class, assigned_class)
+    counts = counts.reindex(index=class_labels, columns=class_labels, fill_value=0).astype(int)
+
+    rows = []
+    for label in class_labels + [DONOR_CLASS_TOTAL]:
+        row_counts = counts.sum(axis=0) if label == DONOR_CLASS_TOTAL else counts.loc[label]
+        n_donor_total = int(row_counts.sum())
+        row = {"donor_distance_class": label, "n_donor_total": n_donor_total}
+        for assigned_label in class_labels:
+            row[f"n_{assigned_label}"] = int(row_counts[assigned_label])
+        for assigned_label in class_labels:
+            row[f"share_{assigned_label}"] = (float(row_counts[assigned_label]) / n_donor_total
+                                              if n_donor_total > 0 else float("nan"))
+        rows.append(row)
+    cross_tab = pd.DataFrame(rows)
+
+    n_comparable = int(comparable.sum())
+    n_assigned_gt_donor = int(assigned_gt_donor.sum())
+    by_assigned_class = assigned_class[assigned_gt_donor].value_counts()
+    share_assigned_gt_donor = (float(n_assigned_gt_donor) / n_comparable
+                               if n_comparable > 0 else float("nan"))
+    diagnostics = {
+        "n_workers": n_workers,
+        "n_matched_donor": n_matched_donor,
+        "n_donor_distance_missing": int((donor_class == DONOR_CLASS_MISSING).sum()),
+        "n_assigned_class_missing": int((assigned_class == DONOR_CLASS_MISSING).sum()),
+        "n_comparable": n_comparable,
+        "n_assigned_gt_donor": n_assigned_gt_donor,
+        "n_assigned_lt_donor": int(assigned_lt_donor.sum()),
+        "n_assigned_eq_donor": int(assigned_eq_donor.sum()),
+        "share_assigned_gt_donor": share_assigned_gt_donor,
+        "n_assigned_gt_donor_by_assigned_class": {str(label): int(count)
+                                                  for label, count in by_assigned_class.items()},
+        "n_donor_worked_on_day": int((merged["donor_worked_on_day"] == MID_WORKED_ON_DAY).sum()),
+        "n_donor_did_not_work_on_day": int((merged["donor_worked_on_day"] == MID_DID_NOT_WORK_ON_DAY).sum()),
+        "n_donor_at_home": int(((merged["donor_worked_on_day"] == MID_WORKED_ON_DAY)
+                                & (merged["donor_starb2"] == MID_AT_HOME)).sum()),
+        "n_donor_at_workplace": int(((merged["donor_worked_on_day"] == MID_WORKED_ON_DAY)
+                                     & (merged["donor_starb2"] == MID_AT_WORKPLACE)).sum()),
+    }
+
+    logger.info("%s donor-vs-assigned class: %d/%d workers matched a donor (%.2f%%); donor distance "
+                "missing for %d (%.2f%% of matched), assigned class missing for %d",
+                _LOG_TAG, n_matched_donor, n_workers,
+                100.0 * n_matched_donor / max(n_workers, 1),
+                diagnostics["n_donor_distance_missing"],
+                100.0 * diagnostics["n_donor_distance_missing"] / max(n_matched_donor, 1),
+                diagnostics["n_assigned_class_missing"])
+    logger.info("%s donor-vs-assigned class: %d/%d comparable workers have an assigned class ABOVE "
+                "the donor class (%.2f%%); below %d, equal %d",
+                _LOG_TAG, n_assigned_gt_donor, n_comparable, 100.0 * share_assigned_gt_donor,
+                diagnostics["n_assigned_lt_donor"], diagnostics["n_assigned_eq_donor"])
+    return cross_tab, diagnostics

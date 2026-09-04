@@ -126,3 +126,79 @@ def test_build_mid_home_office_donor_pool_cells():
     assert far["n_donors"] == 1 and far["share_female"] == pytest.approx(0.0)
     missing = pool[(pool["distance_class"] == "missing") & (pool["has_children"] == "all")].iloc[0]
     assert missing["n_donors"] == 1 and missing["n_mobile"] == 0
+
+
+def _donor_workers():
+    """Six synthetic workers: 2 equal classes, 2 assigned-above-donor, 1 assigned-below, 1 donor
+    distance missing (see ``_donor_donors`` for the matching donor distances)."""
+    return pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5, 6],
+        "hts_id": ["a", "b", "c", "d", "e", "f"],
+        "assigned_distance_class": ["lt10", "25_50", "25_50", "100_200", "10_25", "50_100"],
+    })
+
+
+def _donor_donors():
+    return pd.DataFrame({
+        "hts_id": ["a", "b", "c", "d", "e", "f"],
+        # a 5 km -> lt10 (equal), b 30 km -> 25_50 (equal), c 5 km -> lt10 (assigned above),
+        # d 12 km -> 10_25 (assigned above), e 60 km -> 50_100 (assigned below), f NaN -> missing.
+        "donor_distance_km": [5.0, 30.0, 5.0, 12.0, 60.0, np.nan],
+        "donor_worked_on_day": [1, 1, 2, 1, 1, 9],
+        "donor_starb2": [2, 1, 409, 2, 3, 99],
+    })
+
+
+def test_donor_vs_assigned_class_counts():
+    cross_tab, diagnostics = R.donor_vs_assigned_class(_donor_workers(), _donor_donors())
+
+    assert diagnostics["n_workers"] == 6
+    assert diagnostics["n_matched_donor"] == 6
+    assert diagnostics["n_donor_distance_missing"] == 1
+    assert diagnostics["n_assigned_class_missing"] == 0
+    assert diagnostics["n_comparable"] == 5
+    assert diagnostics["n_assigned_gt_donor"] == 2
+    assert diagnostics["n_assigned_lt_donor"] == 1
+    assert diagnostics["n_assigned_eq_donor"] == 2
+    assert diagnostics["share_assigned_gt_donor"] == pytest.approx(2 / 5)
+    assert diagnostics["n_assigned_gt_donor_by_assigned_class"] == {"25_50": 1, "100_200": 1}
+    # Donor reporting-day states over the matched workers: 4 worked (a, b, d, e), 1 did not (c),
+    # 1 no answer (f); of the workers, a and d were at the workplace and b at home.
+    assert diagnostics["n_donor_worked_on_day"] == 4
+    assert diagnostics["n_donor_did_not_work_on_day"] == 1
+    assert diagnostics["n_donor_at_home"] == 1
+    assert diagnostics["n_donor_at_workplace"] == 2
+
+    indexed = cross_tab.set_index("donor_distance_class")
+    assert indexed.loc["lt10", "n_donor_total"] == 2
+    assert indexed.loc["lt10", "n_lt10"] == 1 and indexed.loc["lt10", "n_25_50"] == 1
+    assert indexed.loc["lt10", "share_lt10"] == pytest.approx(0.5)
+    assert indexed.loc["10_25", "n_100_200"] == 1
+    assert indexed.loc["25_50", "n_25_50"] == 1
+    assert indexed.loc["50_100", "n_10_25"] == 1
+    assert indexed.loc["missing", "n_donor_total"] == 1
+    assert indexed.loc["missing", "n_50_100"] == 1
+    assert indexed.loc["all", "n_donor_total"] == 6
+    # Every class row and column is emitted, also the empty ones (stable table shape).
+    assert list(indexed.index) == list(R.COMMUTE_CLASS_LABELS) + ["missing", "all"]
+    assert indexed.loc["gt200", "n_donor_total"] == 0
+
+
+def test_donor_vs_assigned_class_unmatched_workers_are_excluded_and_counted():
+    workers = _donor_workers()
+    workers.loc[len(workers)] = [7, "no-such-donor", "lt10"]
+    cross_tab, diagnostics = R.donor_vs_assigned_class(workers, _donor_donors())
+    assert diagnostics["n_workers"] == 7 and diagnostics["n_matched_donor"] == 6
+    assert cross_tab.set_index("donor_distance_class").loc["all", "n_donor_total"] == 6
+
+
+def test_donor_vs_assigned_class_rejects_duplicate_donors():
+    donors = pd.concat([_donor_donors(), _donor_donors().head(1)], ignore_index=True)
+    with pytest.raises(ValueError, match="unique on hts_id"):
+        R.donor_vs_assigned_class(_donor_workers(), donors)
+
+
+def test_donor_vs_assigned_class_requires_columns():
+    with pytest.raises(ValueError, match="assigned_distance_class"):
+        R.donor_vs_assigned_class(_donor_workers().drop(columns=["assigned_distance_class"]),
+                                  _donor_donors())
