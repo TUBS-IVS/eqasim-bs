@@ -12,8 +12,9 @@ repository:
     decisive reports undecidable rather than a false "do not build". (2) Three SENSITIVITY
     reference variants (inter_zgb, all_gis_fallback, inter_gis_fallback) are now measured beside
     the pre-registered comparison, and (3) every scope/level/variant is re-decided at EMD
-    thresholds 0.06 / 0.08 / 0.10. Code = branch HEAD 7ac21e2d; its files under
-    braunschweig/analysis, braunschweig/calibration/{srv_distance_targets,decision}.py,
+    thresholds 0.06 / 0.08 / 0.10. Code = branch commit 7ac21e2d (the branch continued to
+    dd5229e5 with documentation-only changes and the disclosed threshold-key format change); its
+    files under braunschweig/analysis, braunschweig/calibration/{srv_distance_targets,decision}.py,
     documentation/plots and scripts/extract_srv_primary_distance_targets.py (10 files, new and
     changed relative to origin/main 379223f2) were synced onto a DETACHED server worktree at
     b7eed9a5 (~/wt_srv_baseline) without a git push, exactly as for the 09-03 run; the four
@@ -133,7 +134,7 @@ validation:
     plain person count while the SrV n_persons behind the weighted band shares is unweighted too,
     but the shares the EMD is computed on are GEWICHT_W_ZENSUS-weighted -- the 75.8% vs 88.7%
     contrast is therefore INDICATIVE of the asymmetry, not an exact like-for-like rate.
-    all_gis_fallback -> BUILD, gap in 03153 (0.100/0.026), 03157 (0.088/0.026), 03158
+    all_gis_fallback -> BUILD, gap in 03153 (0.0995/0.026), 03157 (0.088/0.026), 03158
     (0.093/0.033); aggregate ok, zgb EMD 0.045 vs floor 0.012 on n_ref 5,174. Same three gapping
     Kreise as the pre-registered "all" scope (whose EMDs were 0.104/0.097/0.100), i.e. recovering
     the GIS-invalid tail via the self-reported length moves the "all" verdict hardly at all.

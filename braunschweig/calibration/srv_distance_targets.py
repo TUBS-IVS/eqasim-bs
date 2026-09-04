@@ -844,7 +844,7 @@ def build_commute_sensitivity_table(obs_gis, obs_fallback, prior_strength=DEFAUL
       that stay WITHIN the surveyed ZGB polygon. Quantifies how much the main table's
       ``inter`` scope is diluted by commutes leaving the polygon (the "polygon-external
       destinations" caveat). Persons with an unknown destination AGS are excluded from
-      both the numerator and denominator (logged).
+      the band shares (numerator and denominator); the logged exclusion rate is relative to all inter persons.
     - ``all_gis_fallback``: every person of ``obs_fallback`` (expected to come from
       :func:`select_person_observations` with ``distance_source="gis_or_self_reported"``) --
       quantifies how much the ``all`` scope target would shift if the GIS-invalid tail were

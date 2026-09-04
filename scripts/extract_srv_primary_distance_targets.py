@@ -22,7 +22,7 @@ Usage (eqasim env, from a worktree; point --raw at the main checkout's raw direc
 
 Pass ``--bias-check`` (ruling R25) to instead compute and log the GIS-validity bias check
 (``braunschweig.calibration.srv_distance_targets.gis_validity_bias_check``) for home-based
-work candidate trips and exit 0 WITHOUT writing the three tables -- the numbers behind
+work candidate trips and exit 0 WITHOUT writing any of the four tables -- the numbers behind
 ADR-0102 Assumption 2 are reproduced this way, not hard-coded in this script.
 """
 from __future__ import annotations
@@ -184,7 +184,8 @@ def _sensitivity_header(log_work_gis: dict, log_work_fallback: dict, *,
         "#     the commute table's `inter` scope: the gap between the two measures how much",
         "#     `inter` is diluted by destinations leaving the polygon (the 'polygon-external",
         "#     destinations' caveat). Persons with an unknown destination AGS are excluded from",
-        "#     both the numerator and denominator of this variant (see the run log).",
+        "#     the band shares (numerator and denominator); the logged exclusion rate is relative",
+        "#     to all inter persons (see the run log).",
         "#   all_gis_fallback: every person of the gis_or_self_reported selection (distance =",
         "#     GIS_LAENGE where GIS_LAENGE_GUELTIG > 0, else the self-reported V_LAENGE where",
         "#     V_LAENGE > 0; a trip with neither is excluded, n_excluded_no_length below). This",
@@ -267,8 +268,7 @@ def main(argv=None) -> int:
     parser.add_argument("--bias-check", action="store_true",
                          help="Ruling R25: compute and log the GIS-validity bias check "
                               "(braunschweig.calibration.srv_distance_targets.gis_validity_bias_check) "
-                              "for home-based work candidate trips, then exit 0 WITHOUT writing "
-                              "the three committed target tables")
+                              "for home-based work candidate trips only; writes none of the four tables")
     args = parser.parse_args(argv)
 
     if args.prior_strength < 0:

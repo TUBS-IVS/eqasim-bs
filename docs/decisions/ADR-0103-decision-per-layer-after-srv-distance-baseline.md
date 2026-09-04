@@ -52,17 +52,17 @@
       alone (EMD 0.202, floor 0.083) -- **superseded by the amendment below** (section
       "Amendment 2026-09-04"), which re-derives this verdict as UNDECIDABLE on the same
       byte-identical cells.
-      and every per-Kreis cell either gaps (six -- 03101, 03102, 03103, 03151, 03154, 03157, up to
+      Every per-Kreis cell either gaps (six -- 03101, 03102, 03103, 03151, 03154, 03157, up to
       0.482 for the proxy Kreis Wolfsburg 03103) or is `within_noise` (03153, 03158, whose noise
       floors of 0.279 and 0.220 exceed their EMDs). **This decision is NOT acted on as a
       calibration mandate**: the whole university reference is 142 SrV persons at ZGB level and
-      7-84 per Kreis, so NO
-      university cell reaches the 200-person floor and the "build" verdict rests entirely on the
-      aggregate, which the pre-registered rule exempts from that floor. On this evidence the
-      level is *not decidable on SrV*; the university slopes stay on the T43/Mikrozensus basis
-      and the discrepancy is recorded as an open question for a reference with adequate n. The
-      rule is left as pre-registered -- it is not retro-fitted to this outcome -- but its
-      aggregate exemption is recorded here as a limitation (see Consequences).
+      7-84 per Kreis, so no university cell reaches the 200-person floor and the "build" verdict
+      rests entirely on the aggregate, which the pre-registered rule exempts from that floor. On
+      this evidence the level is *not decidable on SrV*; the university slopes stay on the
+      T43/Mikrozensus basis and the discrepancy is recorded as an open question for a reference
+      with adequate n. The rule is left as pre-registered -- it is not retro-fitted to this
+      outcome -- but its aggregate exemption is recorded here as a limitation (see Consequences)
+      -- this was done on 2026-09-04, disclosed as post-hoc: see section 'Amendment 2026-09-04' below.
     - The model's `bbs` cohort is NOT excluded from the comparison: it is measured inside
       `upper_secondary` (see that entry). What has no comparable counterpart is the SrV-side
       `oberstufe`/`bbs` SPLIT -- both are carried in the reference table as descriptive rows with
@@ -122,6 +122,7 @@
     it let a 142-person reference produce a "build" verdict. Any future revision of
     `braunschweig.calibration.decision` should require a minimum n for the aggregate too; this is
     recorded, not silently changed, because the rule was pre-registered for this measurement.
+    Done in section 'Amendment 2026-09-04' below (post-hoc, disclosed; only the university verdict changes).
   - `docs/registry/features/srv_primary_distance_validation.yml` moves to
     `validation.state: measured_vs_reference` and cites the run manifest.
   - The baseline is the comparison point for every later run of the same stage; re-running it on a

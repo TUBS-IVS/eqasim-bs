@@ -401,7 +401,8 @@ def _cell(code, scope, model_km_routed, target_row, shrunk_prefix, noise_col, n_
     override is presentation only: :func:`braunschweig.calibration.decision.decide_layer`
     still classifies the cell internally from the (unchanged) NaN ``emd``, so it already
     treats a "no_model" cell exactly like "no_reference" (never decisive, never a gap)
-    without needing to know the new label.
+    without needing to know the new label. `decisions.json`'s classification map re-derives labels
+    from the EMD and therefore shows such a cell as `no_reference`; the CSVs show `no_model`.
 
     ``target_share_<label>`` is the SHRUNK target share used for the EMD/gap decision;
     ``target_share_raw_<label>`` is the matching un-shrunk (raw survey) share, read from the
