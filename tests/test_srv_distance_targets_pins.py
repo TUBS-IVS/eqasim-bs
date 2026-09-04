@@ -154,8 +154,11 @@ def test_sensitivity_inter_zgb_never_exceeds_main_inter_per_kreis(sensitivity, c
 
 
 def test_sensitivity_all_gis_fallback_never_below_main_per_kreis(sensitivity, commute):
-    """all_gis_fallback recovers persons the main (GIS-only) selection drops, so its
-    per-Kreis person count can only be greater than or equal to the main table's."""
+    """all_gis_fallback recovers persons the main (GIS-only) selection drops. Unlike
+    inter_zgb (a strict filter on the SAME selection, hence a logical subset), the
+    gis_or_self_reported selection RE-RUNS the direction pick, so a per-Kreis person
+    count >= the main table's is not a guaranteed subset relationship -- it is measured
+    to be >= on this dataset (pinned below), not proven to be so by construction."""
     main_kreis = commute[commute["level_geo"] == "kreis"].set_index("code")
     sens_kreis = sensitivity[
         (sensitivity["level_geo"] == "kreis") & (sensitivity["variant"] == "all_gis_fallback")

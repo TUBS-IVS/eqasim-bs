@@ -151,13 +151,19 @@ def _header(table_name: str, universe: str, extra: list[str], logs: dict, *,
     return lines
 
 
-def _sensitivity_header(log_work_gis: dict, log_work_fallback: dict) -> list[str]:
+def _sensitivity_header(log_work_gis: dict, log_work_fallback: dict, *,
+                        n_bootstrap: int, seed: int) -> list[str]:
     """Provenance header for the SENSITIVITY table (addendum Task 15, item 3) -- NOT a
     calibration target. Documents each variant precisely and carries BOTH selection-log
     dicts (the GIS-only selection that feeds ``inter_zgb``, and the
     ``gis_or_self_reported`` selection that feeds ``all_gis_fallback`` /
     ``inter_gis_fallback``) so exclusion counts for either underlying selection can be
-    audited without re-running the extraction.
+    audited without re-running the extraction. ``n_bootstrap``/``seed`` are the ACTUAL
+    values passed to :func:`build_commute_sensitivity_table` (fix round 1, #358 -- an
+    earlier version hardcoded "n_bootstrap=500, seed=0" in the header text, which would
+    silently go stale the moment ``main`` was invoked with different ``--n-bootstrap``/
+    ``--seed`` values, exactly as ``_header`` above already guards against for the other
+    three tables).
     """
     lines = [
         "# Source: SrV 2023 Braunschweig + Regionalverband Grossraum Braunschweig scientific-use",
@@ -181,20 +187,34 @@ def _sensitivity_header(log_work_gis: dict, log_work_fallback: dict) -> list[str
         "#     both the numerator and denominator of this variant (see the run log).",
         "#   all_gis_fallback: every person of the gis_or_self_reported selection (distance =",
         "#     GIS_LAENGE where GIS_LAENGE_GUELTIG > 0, else the self-reported V_LAENGE where",
-        "#     V_LAENGE > 0; a trip with neither is excluded, n_excluded_no_length below).",
+        "#     V_LAENGE > 0; a trip with neither is excluded, n_excluded_no_length below). This",
+        "#     selection RE-RUNS the home<->purpose direction pick (Step 1 of",
+        "#     select_person_observations), it does not merely add the GIS-only selection's",
+        "#     dropped persons back in -- a person whose preferred direction was GIS-invalid but",
+        "#     whose OTHER direction is both GIS-valid AND was already the GIS-only selection's",
+        "#     pick may now instead select a different (e.g. self-reported) leg if it ranks",
+        "#     higher in the direction preference order, so all_gis_fallback / inter_gis_fallback",
+        "#     are NOT simply 'the main selection plus recovered persons'.",
         "#     Compare against the commute table's `all` scope: the gap measures how much",
         "#     recovering the GIS-invalid tail via the self-reported length would move the target",
         "#     (the 'GIS-invalid tail' caveat).",
         "#   inter_gis_fallback: the gis_or_self_reported selection restricted to inter-Gemeinde",
         "#     persons; compare against the commute table's `inter` scope.",
+        "# ASSUMPTION (fix round 1, #358): the *_gis_fallback variants mix GIS-routed km",
+        "#   (GIS-valid trips) with self-reported km (GIS-invalid trips) WITHOUT rescaling --",
+        "#   justified by the measured GIS/self-reported ratio recorded in ADR-0102 Assumption 2",
+        "#   (not restated here; reproduce with --bias-check).",
         f"# Bands (routed km): {list(T.WORK_BAND_EDGES_KM)} -> labels {list(T.WORK_BAND_LABELS)}.",
         "# Shrinkage: share_shrunk = n/(n+k) * Kreis + k/(n+k) * pool, pool = dominant RS7 type",
         f"#   (itself shrunk toward ZGB), k = {T.DEFAULT_PRIOR_STRENGTH:.0f} persons -- computed",
         "#   SEPARATELY per variant (a Kreis's dominant RS7 type can differ between the GIS-only",
-        "#   and the gis_or_self_reported selection).",
-        "# Noise floor: emd_noise_95 is the 95th percentile of the bootstrap EMD (n_bootstrap=500,",
-        "#   seed=0), normalised to [0, 1] exactly like braunschweig.calibration.metrics.emd_on_bands",
-        "#   (same formula, re-implemented locally to avoid a pipeline import).",
+        "#   and the gis_or_self_reported selection, AND between two variants of this table --",
+        "#   see the build_commute_sensitivity_table docstring on comparing shrunk shares across",
+        "#   tables).",
+        f"# Noise floor: emd_noise_95 is the 95th percentile of the bootstrap EMD (n_bootstrap="
+        f"{n_bootstrap}, seed={seed}), normalised to [0, 1] exactly like",
+        "#   braunschweig.calibration.metrics.emd_on_bands (same formula, re-implemented locally",
+        "#   to avoid a pipeline import).",
         "# Exclusions, GIS-only selection (feeds inter_zgb; this selection has no self-reported",
         "#   fallback at all, so n_persons_self_reported_distance is omitted below by construction): "
         + ", ".join(f"{k}={v}" for k, v in log_work_gis.items()),
@@ -232,7 +252,7 @@ def main(argv=None) -> int:
                          help="SrV raw directory (local-only; must contain SrV2023_Wege.csv, "
                               "SrV2023_Personen.csv, SrV2023_Haushalte.csv)")
     parser.add_argument("--out-dir", default=str(OUT_DEFAULT),
-                         help="Directory to write the three committed tables into")
+                         help="Directory to write the four committed tables into")
     parser.add_argument("--prior-strength", type=float, default=T.DEFAULT_PRIOR_STRENGTH,
                          help="Shrinkage strength k in n/(n+k) toward the pool, in persons (>= 0)")
     parser.add_argument("--max-distance-km", type=float, default=T.DEFAULT_MAX_DISTANCE_KM,
@@ -340,7 +360,8 @@ def main(argv=None) -> int:
         obs_work, obs_work_fallback, prior_strength=args.prior_strength,
         n_bootstrap=args.n_bootstrap, seed=args.seed)
     _write(sensitivity, out / T.SENSITIVITY_TABLE,
-          _sensitivity_header(log_work, log_work_fallback))
+          _sensitivity_header(log_work, log_work_fallback,
+                              n_bootstrap=args.n_bootstrap, seed=args.seed))
     return 0
 
 

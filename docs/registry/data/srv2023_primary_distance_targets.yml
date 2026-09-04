@@ -15,9 +15,11 @@ acquisition:
   source: |
     Regenerate with: python scripts/extract_srv_primary_distance_targets.py --raw <srv2023_raw dir>
     --out-dir eqasim-data/data/braunschweig/srv. Reads SrV2023_Wege.csv (V_ZWECK, E_START_ZWECK,
-    V_START_LAGE, V_ZIEL_LAGE, V_START_AGS, V_ZIEL_AGS, GIS_LAENGE, GIS_LAENGE_GUELTIG,
+    V_START_LAGE, V_ZIEL_LAGE, V_START_AGS, V_ZIEL_AGS, GIS_LAENGE, GIS_LAENGE_GUELTIG, V_LAENGE,
     GEWICHT_W_ZENSUS, REGIOSTAR7), SrV2023_Personen.csv (V_ALTER), SrV2023_Haushalte.csv (AGS).
-    The raw microdata is local-only and never committed.
+    V_LAENGE (self-reported trip length) feeds only the fourth file's gis_or_self_reported
+    sensitivity variants, not the three GIS-only target tables. The raw microdata is local-only
+    and never committed.
   script: scripts/extract_srv_primary_distance_targets.py
 storage:
   expected_path: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv

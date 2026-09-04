@@ -19,20 +19,33 @@
 #     both the numerator and denominator of this variant (see the run log).
 #   all_gis_fallback: every person of the gis_or_self_reported selection (distance =
 #     GIS_LAENGE where GIS_LAENGE_GUELTIG > 0, else the self-reported V_LAENGE where
-#     V_LAENGE > 0; a trip with neither is excluded, n_excluded_no_length below).
+#     V_LAENGE > 0; a trip with neither is excluded, n_excluded_no_length below). This
+#     selection RE-RUNS the home<->purpose direction pick (Step 1 of
+#     select_person_observations), it does not merely add the GIS-only selection's
+#     dropped persons back in -- a person whose preferred direction was GIS-invalid but
+#     whose OTHER direction is both GIS-valid AND was already the GIS-only selection's
+#     pick may now instead select a different (e.g. self-reported) leg if it ranks
+#     higher in the direction preference order, so all_gis_fallback / inter_gis_fallback
+#     are NOT simply 'the main selection plus recovered persons'.
 #     Compare against the commute table's `all` scope: the gap measures how much
 #     recovering the GIS-invalid tail via the self-reported length would move the target
 #     (the 'GIS-invalid tail' caveat).
 #   inter_gis_fallback: the gis_or_self_reported selection restricted to inter-Gemeinde
 #     persons; compare against the commute table's `inter` scope.
+# ASSUMPTION (fix round 1, #358): the *_gis_fallback variants mix GIS-routed km
+#   (GIS-valid trips) with self-reported km (GIS-invalid trips) WITHOUT rescaling --
+#   justified by the measured GIS/self-reported ratio recorded in ADR-0102 Assumption 2
+#   (not restated here; reproduce with --bias-check).
 # Bands (routed km): [0.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0, inf] -> labels ['0_5', '5_10', '10_20', '20_30', '30_50', '50_100', '100_plus'].
 # Shrinkage: share_shrunk = n/(n+k) * Kreis + k/(n+k) * pool, pool = dominant RS7 type
 #   (itself shrunk toward ZGB), k = 100 persons -- computed
 #   SEPARATELY per variant (a Kreis's dominant RS7 type can differ between the GIS-only
-#   and the gis_or_self_reported selection).
-# Noise floor: emd_noise_95 is the 95th percentile of the bootstrap EMD (n_bootstrap=500,
-#   seed=0), normalised to [0, 1] exactly like braunschweig.calibration.metrics.emd_on_bands
-#   (same formula, re-implemented locally to avoid a pipeline import).
+#   and the gis_or_self_reported selection, AND between two variants of this table --
+#   see the build_commute_sensitivity_table docstring on comparing shrunk shares across
+#   tables).
+# Noise floor: emd_noise_95 is the 95th percentile of the bootstrap EMD (n_bootstrap=500, seed=0), normalised to [0, 1] exactly like
+#   braunschweig.calibration.metrics.emd_on_bands (same formula, re-implemented locally
+#   to avoid a pipeline import).
 # Exclusions, GIS-only selection (feeds inter_zgb; this selection has no self-reported
 #   fallback at all, so n_persons_self_reported_distance is omitted below by construction): n_candidate_trips=9730, n_pool_weight_negative=0, n_pool_over_cap=8, n_excluded_gis_invalid=1643, n_persons_dropped_gis_invalid=835, n_excluded_weight_negative=0, n_excluded_over_cap=0, n_excluded_no_kreis=0, n_missing_age=0, n_missing_regiostar7=0, n_missing_trip_ags=1, share_start_ags_equals_household_ags=1.0, n_persons_selected=4543
 # Exclusions, gis_or_self_reported selection (feeds all_gis_fallback / inter_gis_fallback;

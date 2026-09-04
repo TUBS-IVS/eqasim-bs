@@ -849,13 +849,31 @@ def build_commute_sensitivity_table(obs_gis, obs_fallback, prior_strength=DEFAUL
       :func:`select_person_observations` with ``distance_source="gis_or_self_reported"``) --
       quantifies how much the ``all`` scope target would shift if the GIS-invalid tail were
       recovered via the self-reported length instead of excluded (the "GIS-invalid tail"
-      caveat).
+      caveat). ``obs_fallback`` RE-RUNS the home<->purpose direction pick with the
+      "gis_or_self_reported" source (it is not the GIS-only selection plus the persons it
+      dropped): a person whose preferred direction was GIS-invalid but whose other
+      direction is both GIS-valid and was already the GIS-only pick may instead select a
+      DIFFERENT leg here if it ranks higher in the direction preference order, so
+      ``all_gis_fallback`` / ``inter_gis_fallback`` are not simply "the main selection plus
+      recovered persons".
     - ``inter_gis_fallback``: ``obs_fallback`` restricted to ``intra_gemeinde == False``.
+
+    ASSUMPTION (fix round 1, #358): the ``*_gis_fallback`` variants mix GIS-routed km
+    (GIS-valid trips) with self-reported km (GIS-invalid trips) WITHOUT rescaling --
+    justified by the measured GIS/self-reported ratio recorded in ADR-0102 Assumption 2
+    (not restated here; reproduce with
+    ``scripts/extract_srv_primary_distance_targets.py --bias-check``).
 
     Shrinkage hierarchy is identical to :func:`build_commute_table` (Kreis -> its dominant
     RS7 pool -> ZGB, weight n/(n+k)), computed SEPARATELY per variant -- a Kreis's dominant
     RS7 pool can differ between ``obs_gis`` and ``obs_fallback`` if the extra self-reported
     persons shift the weight-modal type, so reusing one pool across variants would be wrong.
+    :func:`dominant_rs7_by_kreis` is likewise recomputed on EACH variant's own filtered
+    subset (e.g. ``inter_zgb`` only sees inter-Gemeinde, polygon-internal persons), so a
+    given Kreis's dominant RS7 pool -- and therefore its shrunk shares -- can differ between
+    variants of THIS table, and between this table and :func:`build_commute_table`'s own
+    pools for the same Kreis. Keep that in mind before comparing two ``share_shrunk_*``
+    values across tables/variants: the shrinkage target itself may not be the same pool.
 
     Columns: ``variant``, ``level_geo``, ``code``, ``source``, ``n_persons``,
     ``share_<label>`` / ``share_shrunk_<label>`` (work bands), ``emd_noise_95``.
