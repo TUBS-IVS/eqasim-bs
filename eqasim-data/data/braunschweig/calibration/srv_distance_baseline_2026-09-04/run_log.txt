@@ -1,0 +1,111 @@
+08:22:18 │ INFO    │ braunschweig     │ Run log: logs/run_20260904T082218.log
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] working_directory: (added) eqasim-data/cache_bs_100pct_i329
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] run: (added) ['braunschweig.analysis.synthesis.commute_distance_by_kreis']
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.sampling_rate: (added) 1.0
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.output_path: (added) eqasim-data/output_bs_100pct_i329
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.analysis_working_directory: (added) eqasim-data/cache_bs_100pct_i329
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.output_prefix: (added) braunschweig_100pct_i329_
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.matsim_last_iteration: (added) 0
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.work_dir: (added) eqasim-data/popsim_work_i329
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_export: (added) True
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_recompute: (added) []
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] config.eqasim_version: (added) 2.3.1
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] composed configs/base_bs.yml + /home/felix/srv_baseline_100pct.yml: 0 overridden, 14 added
+08:22:18 │ INFO    │ braunschweig     │ [config-merge] merged config written to eqasim-data/cache_bs_100pct_i329/.merged_config.yml
+08:22:18 │ WARNING │ provenance       │ [provenance] eqasim_source_path '../eqasim-java-bs' does not exist relative to the config; recording eqasim_java_commit='unknown'.
+08:22:18 │ INFO    │ provenance       │ [provenance] pipeline_commit=b7eed9a5+dirty eqasim_java_commit=unknown config=/home/felix/wt_srv_baseline/eqasim-data/cache_bs_100pct_i329/.merged_config.yml sampling_rate=1.0 hts=entd random_seed=1234 population.method=popsim_mid python=3.10.10
+08:22:18 │ INFO    │ provenance       │ [provenance] record written to eqasim-data/cache_bs_100pct_i329/run_provenance_20260904T062218Z.json
+08:22:18 │ INFO    │ cache_share      │ [cache_share] prime: primed 0, already-present 39, forced 0, missing-in-store 7 (store=eqasim-data/cache_shared) missing=['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
+08:22:18 │ INFO    │ numexpr.utils    │ Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+08:22:18 │ INFO    │ numexpr.utils    │ NumExpr defaulting to 16 threads.
+08:22:19 │ INFO    │ synpp            │ Found 38 stages
+08:22:19 │ INFO    │ synpp            │ Found pipeline metadata in /home/felix/wt-i329/eqasim-data/cache_bs_100pct_i329/pipeline.json
+08:22:19 │ INFO    │ synpp            │ Devalidating 2 stages:
+08:22:19 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.commute_distance_by_kreis__c00735bfbf46dd8d0db48e9172ea5bc9
+08:22:19 │ INFO    │ synpp            │ - braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7
+08:22:19 │ INFO    │ synpp            │ Successfully reset meta data
+08:22:19 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7 ...
+08:22:19 │ INFO    │ analysis.reference.srv.commute_distance │ [srv reference] loaded 15 commute, 103 education, 1485 quantile, 45 sensitivity (variants: all_gis_fallback, inter_gis_fallback, inter_zgb; NOT a calibration target) rows from eqasim-data/data/braunschweig/srv
+08:22:19 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7
+08:22:19 │ INFO    │ synpp            │ Finished running braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7.
+08:22:19 │ INFO    │ synpp            │ Pipeline progress: 1/2 (50.00%)
+08:22:19 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.synthesis.commute_distance_by_kreis__c00735bfbf46dd8d0db48e9172ea5bc9 ...
+08:22:19 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.home_cell__d31209a48b4829793a4f7dcb2b0e77ea ...
+08:22:20 │ INFO    │ synpp            │ Loading cache for braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805 ...
+08:22:21 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.enriched_adapter ...
+08:22:23 │ INFO    │ synpp            │ Loading cache for braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7 ...
+08:22:24 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] parameters: detour_factor=1.300, emd_threshold=0.080, min_persons=200, aggregate_requires_min_persons=True, max_unmatched_home_share=0.050, warn_unmatched_destination_share=0.300, sensitivity_thresholds=[0.06, 0.08, 0.1], sampling_rate=1.0000; writing to eqasim-data/output_bs_100pct_i329/analysis/srv_distance_validation
+08:22:28 │ INFO    │ analysis.spatial │ assign_geographies: 558286 homes; Kreis matched 558284 (100.00%), unmatched 2; Gemeinde unmatched 2
+08:22:29 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] workers: 0/304900 (0.00%) with no home geometry after the person->home merge
+08:22:29 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] workers: 1/304900 (0.00%) with no home Kreis/Gemeinde match (1 with a missing home Gemeinde specifically)
+08:22:30 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work: 304900 persons input; 0 without home geometry dropped; 39150 destinations outside every Gemeinde polygon (12.8% of input, counted inter-Gemeinde); 0 with a NaN distance (0.0% of input) dropped; 1 with a missing home Gemeinde
+08:22:31 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] pupils/students: 0/178763 (0.00%) with no home geometry after the person->home merge
+08:22:31 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] pupils/students: 0/178763 (0.00%) with no home Kreis/Gemeinde match (0 with a missing home Gemeinde specifically)
+08:22:31 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education: 178763 persons input; 0 without home geometry dropped; 0 with an age outside every level (0.0% of input) excluded; 0 with a NaN distance (0.0% of input) dropped; 0 with a missing home Gemeinde
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=2, gap=7, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=7, gap=2, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=4, gap=5, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=0, gap=7, within_noise=2, no_reference=0; build=False, undecidable=True
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] sensitivity scope inter_zgb: 122654/161805 inter-Gemeinde workers kept (75.8% of the inter scope); excluded 39150 with a destination outside every ZGB Gemeinde polygon and 1 with an unresolved home Gemeinde
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] sensitivity/inter_zgb (model scope inter_zgb): do not build: no gap in any decisive cell (7 Kreise with >= 200 persons; aggregate decisive with n=2301)
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] sensitivity/all_gis_fallback (model scope all): build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03153', '03157', '03158'] (Kreis with >= 200 reference persons, or the aggregate)
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=4, gap=5, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] sensitivity/inter_gis_fallback (model scope inter): build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03103', '03153', '03157', '03158', 'zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=1, gap=8, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=2, within_noise=1, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=2, gap=7, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=0, gap=7, within_noise=2, no_reference=0; build=False, undecidable=True
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=2, gap=7, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=7, gap=2, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=4, gap=5, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=0, gap=7, within_noise=2, no_reference=0; build=False, undecidable=True
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=4, gap=5, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=8, gap=1, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=7, gap=2, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=0, gap=7, within_noise=2, no_reference=0; build=False, undecidable=True
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False, undecidable=False
+08:22:32 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True, undecidable=False
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] threshold sensitivity: 33 rows over thresholds [0.06, 0.08, 0.1]
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/all: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03153', '03157', '03158'] (Kreis with >= 200 reference persons, or the aggregate)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/inter: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03101', '03103', '03153', '03157', '03158', 'zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/intra: do not build: no gap in any decisive cell (4 Kreise with >= 200 persons; aggregate decisive with n=1950)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/kindergarten: do not build: no gap in any decisive cell (1 Kreise with >= 200 persons; aggregate decisive with n=647)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/grundschule: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/sekundar_1: do not build: no gap in any decisive cell (2 Kreise with >= 200 persons; aggregate decisive with n=718)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/upper_secondary: do not build: no gap in any decisive cell (0 Kreise with >= 200 persons; aggregate decisive with n=360)
+08:22:32 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/university: not decidable: no cell reaches the >= 200-person floor (aggregate n=142) and no decisive gap exists
+08:22:32 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.synthesis.commute_distance_by_kreis__c00735bfbf46dd8d0db48e9172ea5bc9
+08:22:32 │ INFO    │ synpp            │ Finished running braunschweig.analysis.synthesis.commute_distance_by_kreis__c00735bfbf46dd8d0db48e9172ea5bc9.
+08:22:32 │ INFO    │ synpp            │ Pipeline progress: 2/2 (100.00%)
+08:22:32 │ INFO    │ cache_share      │ [cache_share] export: 0 entr(ies) for 36 module(s) -> eqasim-data/cache_shared; already-in-store 39; skipped (no cache present) 7 ['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
+08:22:32 │ INFO    │ braunschweig     │ [cache_share] auto-export: exported 0, already-in-store 39, not-in-cache ['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
+WARNING! osmconvert of at least version 0.8.x is recommended!
+Codeplan

@@ -55,6 +55,7 @@ validation:
   state: measured_vs_reference
   runs:
   - srv-primary-distance-baseline-2026-09-03
+  - srv-primary-distance-baseline-2026-09-04
   metric: band_emd_vs_srv
   note: |
     Baseline measured on the cached 100% population of 100pct-allfeat-i329-2026-08-24 (304,900

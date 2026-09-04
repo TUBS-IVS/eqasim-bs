@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-09-04T06:22:32.607417+00:00",
+  "parameters": {
+    "detour_factor": 1.3,
+    "emd_threshold": 0.08,
+    "min_persons": 200,
+    "aggregate_requires_min_persons": true,
+    "max_unmatched_home_share": 0.05,
+    "warn_unmatched_destination_share": 0.3,
+    "sensitivity_thresholds": [
+      0.06,
+      0.08,
+      0.1
+    ],
+    "sampling_rate": 1.0
+  },
+  "reference": {
+    "srv_dir": "eqasim-data/data/braunschweig/srv",
+    "n_commute_rows": 15,
+    "n_education_rows": 103,
+    "n_quantile_rows": 1485,
+    "n_sensitivity_rows": 45,
+    "sensitivity_variants": [
+      "all_gis_fallback",
+      "inter_gis_fallback",
+      "inter_zgb"
+    ]
+  },
+  "model": {
+    "n_workers": 304900,
+    "n_pupils": 178763,
+    "n_home_unmatched_workers": 0,
+    "n_home_unmatched_pupils": 0,
+    "n_home_commune_missing_workers": 1,
+    "n_home_commune_missing_pupils": 0,
+    "n_dest_outside": 39150,
+    "n_nan_distance_workers": 0,
+    "n_nan_distance_pupils": 0,
+    "n_ages_unmapped": 0
+  }
+}
