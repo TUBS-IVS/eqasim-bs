@@ -71,9 +71,22 @@ limitations: |
   municipalities; per-Kreis rows represent the covered municipalities only (ASSUMPTION-grade
   for the full Kreis).
 
+  Kreis-code-to-name mapping (canonical: braunschweig.analysis.spatial.ZGB8): 03101
+  Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154
+  Helmstedt, 03157 Peine, 03158 Wolfenbuettel.
+
+  Household-to-Kreis resolution (fix round 1, ruling R8): a person whose HHNR has no matching
+  household row at all (n_no_household) is counted separately from one whose household AGS is
+  present but missing/sentinel (n_invalid_ags); a resolved Kreis outside the 8 ZGB Kreise
+  (n_outside_zgb) is excluded from both the per-Kreis rows and the zgb row, so
+  sum(kreis n_persons) == zgb n_persons always holds. None of these three fired on the 2026-09-04
+  delivery (all zero). All exclusion counts (including these) are written into the committed
+  CSV's own "# Exclusions:" header line by the builder (ruling R9) -- they are not only in a run
+  log outside the file.
+
   Measured 2026-09-04 (zgb row, n_persons = 8,016): share_home_office_day = 0.1418,
   share_work_trip = 0.6511, share_neither = 0.2071. Per-Kreis shares range from 0.059
-  (Salzgitter, 03102) to 0.179 (Wolfenbuettel, 03151) for share_home_office_day.
+  (Salzgitter, 03102) to 0.179 (Gifhorn, 03151) for share_home_office_day.
 notes: |
   Reference for the SrV-side (regional) validation of the commute-day-state model (far/weekly
   commuters; issue #244, spec docs/superpowers/specs/2026-09-04-commute-day-state-design.md

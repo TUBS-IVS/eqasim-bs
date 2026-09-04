@@ -27,12 +27,24 @@ SrV 2023 variables (codebook ``SrV2023_Datenkodierung_SciUse.xlsx``):
   is applied explicitly regardless, so the assumption is documented and its (here zero) drop
   rate is logged rather than silently assumed.
 - Household ``AGS`` (Haushalte file) -> Kreis: first 5 digits of the household's 8-digit,
-  zero-padded AGS, joined to each person via ``HHNR``. Mirrors
-  ``braunschweig.calibration.srv_distance_targets._kreis_from_ags`` (re-implemented locally,
-  see ``_kreis_from_household_ags``, so this module stays a self-contained pure builder with
-  no cross-module private-symbol dependency). ``ZGB_KREISE``/``WOLFSBURG_KREIS`` themselves ARE
-  imported from ``srv_distance_targets`` (the single source of truth for the 8 ZGB Kreis codes,
-  already reused the same way by ``braunschweig.analysis.synthesis.commute_distance_by_kreis``).
+  zero-padded AGS, joined to each person via ``HHNR``. Uses
+  ``braunschweig.calibration.srv_distance_targets.kreis_from_ags`` directly (ruling R8: the
+  same helper is not re-implemented here a second time). ``ZGB_KREISE``/``WOLFSBURG_KREIS`` are
+  likewise imported from ``srv_distance_targets`` (the single source of truth for the 8 ZGB
+  Kreis codes, already reused the same way by
+  ``braunschweig.analysis.synthesis.commute_distance_by_kreis``). Canonical Kreis-code-to-name
+  mapping: ``braunschweig.analysis.spatial.ZGB8`` (03101 Braunschweig, 03102 Salzgitter, 03103
+  Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154 Helmstedt, 03157 Peine, 03158 Wolfenbuettel).
+  A household whose ``HHNR`` has no matching row in ``households`` at all is a DIFFERENT
+  exclusion reason (``n_no_household``) from one whose AGS is present but invalid/sentinel
+  (``n_invalid_ags``, from ``kreis_from_ags`` returning ``NaN``); both are counted separately
+  (see :func:`build_srv_work_participation`) even though neither is expected to fire on the
+  delivered file (every household there carries a valid AGS).
+- A resolved Kreis code outside ``ZGB_KREISE`` (``n_outside_zgb``) is excluded from BOTH the
+  per-Kreis rows and the ``zgb`` row, so ``sum(kreis n_persons) == zgb n_persons`` always holds
+  by construction; not expected to fire (every household AGS in the delivered file resolves to
+  one of the 8 surveyed ZGB Kreise), but checked and logged (warning if non-zero) rather than
+  assumed.
 
 Classification (a person cannot be both -- ``share_home_office_day`` takes priority): measured
 on the 2026-09-04 raw extract, 0 universe persons report BOTH ``V_WOHNUNG_HO == 1`` and a work
@@ -57,7 +69,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_KREISE
+from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_KREISE, kreis_from_ags
 
 logger = logging.getLogger(__name__)
 
@@ -76,24 +88,8 @@ STATE_NEITHER = "neither"
 WORK_PARTICIPATION_TABLE = "srv2023_work_participation_by_kreis.csv"
 
 
-def _kreis_from_household_ags(ags: pd.Series) -> pd.Series:
-    """5-digit Kreis key from the household AGS; ``NaN`` for missing/non-positive input.
-
-    Same SrV missing/sentinel-AGS convention as
-    ``braunschweig.calibration.srv_distance_targets._kreis_from_ags``: a naive pandas
-    ``Int64``-then-``str`` conversion turns a missing or non-positive sentinel AGS into a
-    plausible-looking garbage key (``pd.NA`` -> ``"<NA>"``, ``-9`` -> ``"-0000009"``), which
-    would then silently pass a ``notna()`` filter downstream. Resolving to a real ``NaN``
-    first keeps that filter correct.
-    """
-    numeric = pd.to_numeric(ags, errors="coerce")
-    valid = numeric.notna() & (numeric > 0)
-    padded = numeric.fillna(0).astype("int64").astype(str).str.zfill(8)
-    return padded.where(valid, np.nan).str[:5]
-
-
-def build_srv_work_participation_table(persons: pd.DataFrame, trips: pd.DataFrame,
-                                        households: pd.DataFrame) -> pd.DataFrame:
+def build_srv_work_participation(persons: pd.DataFrame, trips: pd.DataFrame,
+                                  households: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Weighted work-participation state (home office / work trip / neither) per home Kreis.
 
     ``persons`` must carry ``HHNR, PNR, V_WOHNUNG_HO, GEWICHT_P_ZENSUS, MITTL_WERKTAG``;
@@ -107,34 +103,48 @@ def build_srv_work_participation_table(persons: pd.DataFrame, trips: pd.DataFram
        question; drops -8 "not asked/not employed" and -10 "no answer" separately).
     3. ``GEWICHT_P_ZENSUS`` valid (non-missing, non-negative) -- defensive guard; the delivered
        SrV file has no such row, but a future delivery is not assumed to stay that way.
-    4. Household AGS resolves to a Kreis (drops a missing/sentinel household AGS, logged; not
-       expected to fire on the delivered file since every household carries a valid AGS).
+    4. Household resolves to a Kreis: a person whose ``HHNR`` has no matching household row at
+       all (``n_no_household``) is a different exclusion reason from one whose household AGS is
+       present but missing/sentinel (``n_invalid_ags``, ``kreis_from_ags`` returns ``NaN``);
+       neither expected to fire on the delivered file.
+    5. Resolved Kreis inside ``ZGB_KREISE`` (``n_outside_zgb``; not expected to fire since every
+       surveyed household AGS resolves to one of the 8 ZGB Kreise, but not assumed).
 
-    Returns one row per code in ``ZGB_KREISE`` (``level == "kreis"``, even for Wolfsburg
-    (``WOLFSBURG_KREIS``), which has zero SrV persons and gets ``n_persons == 0`` with ``NaN``
-    shares -- SrV does not survey Wolfsburg) plus one ``level == "zgb"`` row over every universe
-    person. Columns: ``level, code, n_persons`` (unweighted person count) ``,
-    share_home_office_day, share_work_trip, share_neither`` (weighted shares, summing to 1.0
-    for ``n_persons > 0``; ``NaN`` for an empty Kreis).
+    Returns ``(table, diagnostics)``. ``table`` has one row per code in ``ZGB_KREISE`` (``level
+    == "kreis"``, even for Wolfsburg (``WOLFSBURG_KREIS``), which has zero SrV persons and gets
+    ``n_persons == 0`` with ``NaN`` shares -- SrV does not survey Wolfsburg) plus one ``level ==
+    "zgb"`` row over every universe person surviving ALL filters above (including the
+    inside-ZGB filter, step 5), so ``sum(kreis n_persons) == zgb n_persons`` always holds.
+    Columns: ``level, code, n_persons`` (unweighted person count) ``, share_home_office_day,
+    share_work_trip, share_neither`` (weighted shares, summing to 1.0 for ``n_persons > 0``;
+    ``NaN`` for an empty Kreis).
+
+    ``diagnostics`` is a dict of exclusion/diagnostic counts, meant to be written verbatim into
+    the committed CSV's provenance header (ruling R9: exclusion counts must live IN the
+    committed file, not only in a run log that is not part of it): ``n_persons_total`` (input
+    persons), ``n_not_average_weekday``, ``n_not_asked_minus8``, ``n_no_answer_minus10``,
+    ``n_invalid_weight``, ``n_no_household``, ``n_invalid_ags``, ``n_outside_zgb``,
+    ``n_universe`` (final person count feeding the table, i.e. the ``zgb`` row's
+    ``n_persons``), ``n_both_home_office_and_work_trip`` (see the classification rule above).
     """
-    n_input = len(persons)
+    n_persons_total = len(persons)
     working = persons.copy()
     working["_weekday_ok"] = pd.to_numeric(working["MITTL_WERKTAG"], errors="coerce") == AVERAGE_WEEKDAY
     n_not_average_weekday = int((~working["_weekday_ok"]).sum())
-    _log_or_warn(n_not_average_weekday, n_input,
+    _log_or_warn(n_not_average_weekday, n_persons_total,
                  "average-weekday filter (MITTL_WERKTAG == %d)" % AVERAGE_WEEKDAY)
     working = working[working["_weekday_ok"]].copy()
 
     ho_code = pd.to_numeric(working["V_WOHNUNG_HO"], errors="coerce")
-    n_not_asked = int((ho_code == -8).sum())
-    n_no_answer = int((ho_code == -10).sum())
+    n_not_asked_minus8 = int((ho_code == -8).sum())
+    n_no_answer_minus10 = int((ho_code == -10).sum())
     n_before_universe = len(working)
     universe = working[ho_code.isin(V_WOHNUNG_HO_ASKED)].copy()
     logger.info(
         "%s universe filter (V_WOHNUNG_HO in %s): %d/%d employed-and-asked persons kept "
         "(%d not asked/not employed [-8], %d no answer [-10], %d other/unmapped)",
-        _LOG_TAG, V_WOHNUNG_HO_ASKED, len(universe), n_before_universe, n_not_asked, n_no_answer,
-        n_before_universe - len(universe) - n_not_asked - n_no_answer,
+        _LOG_TAG, V_WOHNUNG_HO_ASKED, len(universe), n_before_universe, n_not_asked_minus8,
+        n_no_answer_minus10, n_before_universe - len(universe) - n_not_asked_minus8 - n_no_answer_minus10,
     )
 
     weight = pd.to_numeric(universe["GEWICHT_P_ZENSUS"], errors="coerce")
@@ -149,15 +159,32 @@ def build_srv_work_participation_table(persons: pd.DataFrame, trips: pd.DataFram
     ].drop_duplicates()
     universe = universe.merge(
         work_trip_persons.assign(_has_work_trip=True), on=["HHNR", "PNR"], how="left")
-    universe["_has_work_trip"] = universe["_has_work_trip"].fillna(False)
+    universe["_has_work_trip"] = universe["_has_work_trip"].fillna(False).astype(bool)
 
     hh = households[["HHNR", "AGS"]].copy()
-    hh["kreis"] = _kreis_from_household_ags(hh["AGS"])
+    hh["kreis"] = kreis_from_ags(hh["AGS"])
+    household_hhnrs = set(hh["HHNR"])
     n_before_kreis = len(universe)
     universe = universe.merge(hh[["HHNR", "kreis"]], on="HHNR", how="left", validate="m:1")
-    n_no_kreis = int(universe["kreis"].isna().sum())
-    _log_or_warn(n_no_kreis, n_before_kreis, "household-AGS-to-Kreis resolution")
+    has_household = universe["HHNR"].isin(household_hhnrs)
+    n_no_household = int((~has_household).sum())
+    n_invalid_ags = int((has_household & universe["kreis"].isna()).sum())
+    _log_or_warn(n_no_household + n_invalid_ags, n_before_kreis,
+                 "household-to-Kreis resolution (no_household=%d, invalid_ags=%d)"
+                 % (n_no_household, n_invalid_ags))
     universe = universe[universe["kreis"].notna()].copy()
+
+    n_before_zgb_filter = len(universe)
+    in_zgb = universe["kreis"].isin(ZGB_KREISE)
+    n_outside_zgb = int((~in_zgb).sum())
+    if n_outside_zgb > 0:
+        logger.warning(
+            "%s %d/%d universe persons have a Kreis outside the 8 ZGB Kreise; excluded from "
+            "both the per-Kreis rows and the zgb row", _LOG_TAG, n_outside_zgb, n_before_zgb_filter)
+    else:
+        logger.info("%s all %d universe persons with a resolved Kreis are inside the 8 ZGB "
+                    "Kreise", _LOG_TAG, n_before_zgb_filter)
+    universe = universe[in_zgb].copy()
 
     is_home_office = pd.to_numeric(universe["V_WOHNUNG_HO"], errors="coerce") == HOME_OFFICE_DAY
     n_both = int((is_home_office & universe["_has_work_trip"]).sum())
@@ -185,6 +212,28 @@ def build_srv_work_participation_table(persons: pd.DataFrame, trips: pd.DataFram
                     "SrV; row emitted with n_persons=0 and NaN shares", _LOG_TAG, WOLFSBURG_KREIS)
     logger.info("%s work-participation table: %d rows (%d Kreis + 1 zgb), %d persons total",
                 _LOG_TAG, len(table), len(ZGB_KREISE), len(universe))
+
+    diagnostics = {
+        "n_persons_total": n_persons_total,
+        "n_not_average_weekday": n_not_average_weekday,
+        "n_not_asked_minus8": n_not_asked_minus8,
+        "n_no_answer_minus10": n_no_answer_minus10,
+        "n_invalid_weight": n_invalid_weight,
+        "n_no_household": n_no_household,
+        "n_invalid_ags": n_invalid_ags,
+        "n_outside_zgb": n_outside_zgb,
+        "n_universe": int(len(universe)),
+        "n_both_home_office_and_work_trip": n_both,
+    }
+    return table, diagnostics
+
+
+def build_srv_work_participation_table(persons: pd.DataFrame, trips: pd.DataFrame,
+                                        households: pd.DataFrame) -> pd.DataFrame:
+    """DataFrame-only wrapper around :func:`build_srv_work_participation` for callers that do
+    not need the diagnostics dict (see that function's docstring for the full universe-filter
+    and column definitions)."""
+    table, _ = build_srv_work_participation(persons, trips, households)
     return table
 
 

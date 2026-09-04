@@ -20,16 +20,17 @@ from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_K
 
 SRV_DIR = Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "srv"
 
-# Kreis codes used by the synthetic fixture below (Braunschweig and Wolfenbuettel).
+# Kreis codes used by the synthetic fixture below (Braunschweig and Gifhorn; canonical
+# code-to-name mapping: braunschweig.analysis.spatial.ZGB8 -- 03101 Braunschweig, 03151 Gifhorn).
 BRAUNSCHWEIG_KREIS = "03101"
-WOLFENBUETTEL_KREIS = "03151"
+GIFHORN_KREIS = "03151"
 BRAUNSCHWEIG_AGS = "03101015"
-WOLFENBUETTEL_AGS = "03151001"
+GIFHORN_AGS = "03151001"
 
 
 def _two_kreis_fixture():
     """4 employed persons in Braunschweig (1 home-office day, 2 with a work trip, 1 neither),
-    2 employed persons in Wolfenbuettel (1 work trip, 1 neither), plus five persons who must
+    2 employed persons in Gifhorn (1 work trip, 1 neither), plus five persons who must
     each be excluded from the universe for a different reason:
 
     - HHNR 7: ``V_WOHNUNG_HO == -8`` (not asked / not employed).
@@ -59,7 +60,7 @@ def _two_kreis_fixture():
     })
     households = pd.DataFrame({
         "HHNR": [1, 2, 3, 4, 7, 8, 9, 10, 11, 5, 6],
-        "AGS": [BRAUNSCHWEIG_AGS] * 9 + [WOLFENBUETTEL_AGS] * 2,
+        "AGS": [BRAUNSCHWEIG_AGS] * 9 + [GIFHORN_AGS] * 2,
     })
     return persons, trips, households
 
@@ -75,11 +76,11 @@ def test_braunschweig_kreis_shares_and_n_persons():
     assert row["share_neither"] == pytest.approx(0.25)
 
 
-def test_wolfenbuettel_kreis_shares_and_n_persons():
+def test_gifhorn_kreis_shares_and_n_persons():
     persons, trips, households = _two_kreis_fixture()
     table = T.build_srv_work_participation_table(persons, trips, households)
 
-    row = table[(table["level"] == "kreis") & (table["code"] == WOLFENBUETTEL_KREIS)].iloc[0]
+    row = table[(table["level"] == "kreis") & (table["code"] == GIFHORN_KREIS)].iloc[0]
     assert row["n_persons"] == 2
     assert row["share_home_office_day"] == pytest.approx(0.0)
     assert row["share_work_trip"] == pytest.approx(0.5)
@@ -125,6 +126,63 @@ def test_shares_sum_to_one_for_every_nonempty_row():
     nonempty = table[table["n_persons"] > 0]
     totals = nonempty["share_home_office_day"] + nonempty["share_work_trip"] + nonempty["share_neither"]
     assert np.allclose(totals, 1.0, atol=1e-9)
+
+
+def test_diagnostics_dict_on_two_kreis_fixture():
+    """build_srv_work_participation (the tuple-returning function) must report the exact
+    exclusion counts of the fixture: 11 input persons, 1 dropped for not being an
+    average-weekday person (HHNR 9), 1 for -8 (HHNR 7), 1 for -10 (HHNR 8), 2 for an
+    invalid weight (HHNR 10 negative, HHNR 11 NaN), 0 household-resolution or outside-ZGB
+    drops (all households in this fixture carry a valid, in-ZGB AGS), leaving n_universe == 6
+    -- the same 4 + 2 persons the table-level tests above already pin."""
+    persons, trips, households = _two_kreis_fixture()
+    table, diagnostics = T.build_srv_work_participation(persons, trips, households)
+
+    assert diagnostics["n_persons_total"] == 11
+    assert diagnostics["n_not_average_weekday"] == 1
+    assert diagnostics["n_not_asked_minus8"] == 1
+    assert diagnostics["n_no_answer_minus10"] == 1
+    assert diagnostics["n_invalid_weight"] == 2
+    assert diagnostics["n_no_household"] == 0
+    assert diagnostics["n_invalid_ags"] == 0
+    assert diagnostics["n_outside_zgb"] == 0
+    assert diagnostics["n_universe"] == 6
+    assert diagnostics["n_both_home_office_and_work_trip"] == 0
+    assert len(table) == len(ZGB_KREISE) + 1
+
+
+def test_table_only_wrapper_matches_tuple_function():
+    persons, trips, households = _two_kreis_fixture()
+    table_only = T.build_srv_work_participation_table(persons, trips, households)
+    table_tuple, _ = T.build_srv_work_participation(persons, trips, households)
+    pd.testing.assert_frame_equal(table_only, table_tuple)
+
+
+def test_household_resolution_exclusions_are_counted_separately():
+    """A sentinel/invalid household AGS (n_invalid_ags) and a person whose HHNR has NO
+    matching row in the households frame at all (n_no_household) are different exclusion
+    reasons (ruling R8 fix round) and must be counted separately, not conflated into one
+    dropped count."""
+    persons = pd.DataFrame({
+        "HHNR": [1, 2, 20, 21],
+        "PNR": [1, 1, 1, 1],
+        "V_WOHNUNG_HO": [2, 2, 2, 2],
+        "GEWICHT_P_ZENSUS": [1.0, 1.0, 1.0, 1.0],
+        "MITTL_WERKTAG": [1, 1, 1, 1],
+    })
+    trips = pd.DataFrame({"HHNR": [999], "PNR": [1], "V_ZWECK": [1]})  # no trips for these persons
+    households = pd.DataFrame({
+        "HHNR": [1, 2, 20],  # HHNR 21 has NO matching household row at all -> n_no_household
+        "AGS": [BRAUNSCHWEIG_AGS, BRAUNSCHWEIG_AGS, "-9"],  # HHNR 20's AGS is a sentinel value
+    })
+
+    table, diagnostics = T.build_srv_work_participation(persons, trips, households)
+    assert diagnostics["n_no_household"] == 1
+    assert diagnostics["n_invalid_ags"] == 1
+    assert diagnostics["n_universe"] == 2  # only HHNR 1, 2 survive
+
+    row = table[(table["level"] == "kreis") & (table["code"] == BRAUNSCHWEIG_KREIS)].iloc[0]
+    assert row["n_persons"] == 2
 
 
 def test_home_office_day_with_a_work_trip_is_classed_as_home_office():
