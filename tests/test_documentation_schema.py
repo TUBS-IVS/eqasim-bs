@@ -191,6 +191,22 @@ def test_feature_pending_assessment_requires_reason():
         schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
 
 
+def test_feature_invalid_assessment_status_is_rejected():
+    doc = minimal_feature(assessment={"status": "not_a_real_status", "by": None,
+                                      "date": None, "pending_reason": None, "source": None})
+    with pytest.raises(schema.SchemaError, match="not one of"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
+def test_feature_assessed_status_round_trips():
+    # Task 14 (#358): "assessed" is a valid assessment.status value, added alongside
+    # "pending" and "reviewed" (the two already in use across the registry).
+    doc = minimal_feature(assessment={"status": "assessed", "by": "Test", "date": "2026-09-04",
+                                      "source": "ADR-0103"})
+    record = schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+    assert record["assessment"]["status"] == "assessed"
+
+
 # --------------------------------------------------------------------------- #
 # stage records
 # --------------------------------------------------------------------------- #
