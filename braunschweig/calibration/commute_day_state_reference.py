@@ -13,9 +13,11 @@ sets ``starb2 == 409`` as a companion "did not work" code whenever ``P_STARB1 ==
 ``P_ARB_ENTF`` (distance to the usual workplace in km; raw codes 996/999 are missing and every
 code >= 1000, e.g. 2202/2206/4402/4404/4407, is a MiD filter/skip code -- see
 ``clean_mid_commute_distance_km``; 200.0 is a legitimate top-coded distance, not missing),
-``P_GEW`` (person weight), ``W_ZWECK`` (trip purpose code on the Wege/trip file; 6 = escort/
-bring-fetch someone), ``HP_ALTER`` (household-member age), ``HP_SEX`` (household-member sex;
-codes 1/2/3/9, 2 = female).
+``P_GEW`` (person weight), ``W_ZWECK`` (trip purpose code on the Wege/trip file; 1 = trip to work,
+6 = escort/bring-fetch someone -- purpose mapping per ``braunschweig.popsim.trips.
+PURPOSE_BY_W_ZWECK``), ``wegkm`` (trip length in km on the Wege file), ``ST_WOTAG`` (reporting
+day of the week, raw code; this module asserts no mapping from that code to a named weekday),
+``HP_ALTER`` (household-member age), ``HP_SEX`` (household-member sex; codes 1/2/3/9, 2 = female).
 """
 from __future__ import annotations
 
@@ -329,6 +331,13 @@ DONOR_CLASS_TOTAL = "all"
 #: Columns ``donor_vs_assigned_class`` expects on its ``workers`` / ``donors`` frames.
 DONOR_WORKER_COLUMNS = ("person_id", "hts_id", "assigned_distance_class")
 DONOR_COLUMNS = ("hts_id", "donor_distance_km", "donor_worked_on_day", "donor_starb2")
+#: Columns ``donor_universe_diagnostics`` expects (one row per WORKER, donor attributes joined on).
+DONOR_UNIVERSE_COLUMNS = ("donor_distance_km", "donor_in_home_office_module",
+                          "donor_reporting_day_weekday", "donor_reporting_day_of_week")
+#: Above this share of non-comparable rows (donor distance missing) ``donor_vs_assigned_class``
+#: warns: the mismatch share it returns then describes a minority of the cohort, and reading it as
+#: a property of the whole population would be wrong (CLAUDE.md "Fallback transparency").
+DEFAULT_WARN_MISSING_SHARE = 0.5
 
 
 def _require_frame_columns(frame: pd.DataFrame, columns, what: str) -> None:
@@ -338,18 +347,55 @@ def _require_frame_columns(frame: pd.DataFrame, columns, what: str) -> None:
                          f"(present: {sorted(frame.columns)})")
 
 
-def _normalised_class(values) -> pd.Series:
+def _normalised_class(values, index=None) -> pd.Series:
     """Map a commute-class column to ``COMMUTE_CLASS_LABELS`` or :data:`DONOR_CLASS_MISSING`.
 
     Anything that is not one of the six labels (``NaN``, an empty string, an ``unresolved``
-    marker) becomes ``missing`` -- the helper never guesses a class it was not given.
+    marker) becomes ``missing`` -- the helper never guesses a class it was not given. ``index``
+    must be passed whenever ``values`` is a plain sequence built from a frame, so the result
+    aligns with that frame's index instead of a fresh ``RangeIndex``.
     """
-    series = pd.Series(values).astype("object")
+    series = pd.Series(values, index=index).astype("object")
     known = series.isin(COMMUTE_CLASS_LABELS)
     return series.where(known, DONOR_CLASS_MISSING)
 
 
-def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def _share(numerator: int, denominator: int) -> float:
+    """``numerator / denominator`` as a float, or ``NaN`` for an empty denominator."""
+    return float(numerator) / denominator if denominator else float("nan")
+
+
+def _code_key(code) -> str:
+    """Render one raw MiD code as a stable dictionary key.
+
+    An integral code is rendered without a decimal point even when pandas widened its column to
+    float (which happens as soon as a single value is missing), so the emitted keys do not depend
+    on the dtype the reader happened to produce.
+    """
+    if isinstance(code, float) and float(code).is_integer():
+        return str(int(code))
+    return str(code)
+
+
+def _code_histogram(values) -> dict:
+    """Count occurrences of each raw code in ``values``, keyed by the code as a string.
+
+    Missing values are counted under the key ``"missing"``. No code is translated into a label:
+    the caller documents the MiD coding, this helper only counts what the data contains.
+    """
+    series = pd.Series(values)
+    histogram = {}
+    for code, count in series.value_counts(dropna=True).items():
+        histogram[_code_key(code)] = histogram.get(_code_key(code), 0) + int(count)
+    n_missing = int(series.isna().sum())
+    if n_missing:
+        histogram[DONOR_CLASS_MISSING] = n_missing
+    return dict(sorted(histogram.items()))
+
+
+def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame, *,
+                            warn_missing_share: float = DEFAULT_WARN_MISSING_SHARE
+                            ) -> tuple[pd.DataFrame, dict]:
     """Cross-tabulate each synthetic worker's ASSIGNED commute-distance class against the class
     of the MiD donor the worker's attributes came from.
 
@@ -385,6 +431,11 @@ def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame) -> tupl
       ``n_assigned_gt_donor_by_assigned_class`` (dict, assigned class -> count) and the donor
       reporting-day state counts over the matched workers (``n_donor_worked_on_day``,
       ``n_donor_did_not_work_on_day``, ``n_donor_at_home``, ``n_donor_at_workplace``).
+
+    When the share of matched workers whose donor class is ``missing`` exceeds
+    ``warn_missing_share`` the function logs a WARNING: ``share_assigned_gt_donor`` is then a
+    property of a minority subset, and that subset is not necessarily representative of the whole
+    cohort.
     """
     _require_frame_columns(workers, DONOR_WORKER_COLUMNS, "workers frame")
     _require_frame_columns(donors, DONOR_COLUMNS, "donors frame")
@@ -398,8 +449,9 @@ def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame) -> tupl
     merged = workers.merge(donors, on="hts_id", how="inner", validate="many_to_one")
     n_matched_donor = int(len(merged))
 
-    donor_class = _normalised_class([classify_commute_distance(km) for km in merged["donor_distance_km"]])
-    assigned_class = _normalised_class(merged["assigned_distance_class"])
+    donor_class = _normalised_class([classify_commute_distance(km) for km in merged["donor_distance_km"]],
+                                    index=merged.index)
+    assigned_class = _normalised_class(merged["assigned_distance_class"], index=merged.index)
 
     class_rank = {label: rank for rank, label in enumerate(COMMUTE_CLASS_LABELS)}
     donor_rank = donor_class.map(class_rank)
@@ -462,4 +514,125 @@ def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame) -> tupl
                 "the donor class (%.2f%%); below %d, equal %d",
                 _LOG_TAG, n_assigned_gt_donor, n_comparable, 100.0 * share_assigned_gt_donor,
                 diagnostics["n_assigned_lt_donor"], diagnostics["n_assigned_eq_donor"])
+    share_missing = _share(diagnostics["n_donor_distance_missing"], n_matched_donor)
+    diagnostics["share_donor_distance_missing"] = share_missing
+    diagnostics["warn_missing_share"] = float(warn_missing_share)
+    if share_missing > warn_missing_share:
+        logger.warning("%s donor-vs-assigned class: %d/%d matched workers (%.2f%%) have NO usable "
+                       "donor distance, above the %.2f%% warning threshold. share_assigned_gt_donor "
+                       "(%.4f) therefore describes only the %d comparable workers, and that subset "
+                       "is NOT necessarily representative of the whole cohort -- do not read it as "
+                       "a property of all %d workers",
+                       _LOG_TAG, diagnostics["n_donor_distance_missing"], n_matched_donor,
+                       100.0 * share_missing, 100.0 * warn_missing_share,
+                       share_assigned_gt_donor, n_comparable, n_workers)
     return cross_tab, diagnostics
+
+
+def donor_universe_diagnostics(worker_donors: pd.DataFrame) -> dict:
+    """Aggregate-only description of the MiD donors behind a synthetic worker cohort.
+
+    ``worker_donors`` is one row PER WORKER with the donor's attributes already joined on
+    (:data:`DONOR_UNIVERSE_COLUMNS`): ``donor_distance_km`` (already cleaned with
+    :func:`clean_mid_commute_distance_km`), ``donor_in_home_office_module`` (MiD ``M_HOFF``),
+    ``donor_reporting_day_weekday`` (MiD ``arbwo``) and ``donor_reporting_day_of_week``
+    (MiD ``ST_WOTAG``). Counts are therefore worker counts, not donor-person counts: a donor
+    used by many workers is counted once per worker, which is the quantity that matters when
+    asking what the SYNTHETIC POPULATION inherited.
+
+    Why this exists (spec 2026-09-04, issue #244): ``P_ARB_ENTF`` is a question of the MiD
+    home-office module, so it can only be valid for donors with ``M_HOFF == MID_MODULE``. Whether
+    a missing donor distance means "not asked" or "asked and refused" is answerable only by
+    splitting the validity rate by that module flag, and whether the donors' reporting days are
+    weekdays at all is answerable only from ``arbwo`` / ``ST_WOTAG``. Both are measured here
+    rather than asserted.
+
+    Returns a dict of counts and shares: ``n_workers``, ``n_in_home_office_module``,
+    ``n_not_in_home_office_module``, ``n_module_flag_other``, ``n_distance_valid``,
+    ``share_distance_valid``, the same valid counts/shares split by module flag
+    (``*_in_module`` / ``*_not_in_module``), and two raw code histograms
+    ``n_by_reporting_day_weekday`` (``arbwo``) and ``n_by_reporting_day_of_week``
+    (``ST_WOTAG``). The code histograms are keyed by the MiD code as a string; this function
+    asserts NO mapping from a ``ST_WOTAG`` code to a named weekday, because the repository
+    carries no committed statement of that coding.
+    """
+    _require_frame_columns(worker_donors, DONOR_UNIVERSE_COLUMNS, "worker_donors frame")
+    n_workers = int(len(worker_donors))
+    in_module = worker_donors["donor_in_home_office_module"] == MID_MODULE
+    not_in_module = (worker_donors["donor_in_home_office_module"].notna()
+                     & (worker_donors["donor_in_home_office_module"] != MID_MODULE))
+    distance_valid = worker_donors["donor_distance_km"].notna() & (worker_donors["donor_distance_km"] > 0)
+
+    n_in_module = int(in_module.sum())
+    n_not_in_module = int(not_in_module.sum())
+    diagnostics = {
+        "n_workers": n_workers,
+        "n_in_home_office_module": n_in_module,
+        "n_not_in_home_office_module": n_not_in_module,
+        "n_module_flag_other": n_workers - n_in_module - n_not_in_module,
+        "n_distance_valid": int(distance_valid.sum()),
+        "share_distance_valid": _share(int(distance_valid.sum()), n_workers),
+        "n_distance_valid_in_module": int((distance_valid & in_module).sum()),
+        "share_distance_valid_in_module": _share(int((distance_valid & in_module).sum()), n_in_module),
+        "n_distance_valid_not_in_module": int((distance_valid & not_in_module).sum()),
+        "share_distance_valid_not_in_module": _share(int((distance_valid & not_in_module).sum()),
+                                                     n_not_in_module),
+        "n_by_reporting_day_weekday": _code_histogram(worker_donors["donor_reporting_day_weekday"]),
+        "n_by_reporting_day_of_week": _code_histogram(worker_donors["donor_reporting_day_of_week"]),
+    }
+    logger.info("%s donor universe over %d workers: %d donors in the home-office module "
+                "(P_ARB_ENTF valid for %.2f%% of them) and %d outside it (valid for %.2f%%); "
+                "overall distance validity %.2f%%",
+                _LOG_TAG, n_workers, n_in_module,
+                100.0 * diagnostics["share_distance_valid_in_module"], n_not_in_module,
+                100.0 * diagnostics["share_distance_valid_not_in_module"],
+                100.0 * diagnostics["share_distance_valid"])
+    logger.info("%s donor reporting day over %d workers: arbwo %s, ST_WOTAG %s (raw MiD codes)",
+                _LOG_TAG, n_workers, diagnostics["n_by_reporting_day_weekday"],
+                diagnostics["n_by_reporting_day_of_week"])
+    return diagnostics
+
+
+#: MiD ``W_ZWECK`` code of a trip to work. Committed source of the purpose mapping:
+#: ``braunschweig.popsim.trips.PURPOSE_BY_W_ZWECK`` (1 -> "work"). Code 2 ("business trip") is
+#: deliberately EXCLUDED here: this helper reconstructs the HOME->WORKPLACE commute length that
+#: ``P_ARB_ENTF`` would otherwise state, and a business trip is not that commute.
+MID_WORK_TRIP_PURPOSE = 1
+#: Trip lengths at or above this value are MiD filter/missing codes (the same >= 1000 convention
+#: as ``MID_DISTANCE_FILTER_CODE_MIN_KM`` for ``P_ARB_ENTF``), never a real commute length.
+MID_TRIP_LENGTH_MAX_KM = 1000.0
+#: Column the trip-length fallback writes; see :func:`first_work_trip_length_km`.
+WORK_TRIP_LENGTH_COLUMN = "work_trip_length_km"
+
+
+def first_work_trip_length_km(trips: pd.DataFrame) -> pd.DataFrame:
+    """First valid work-trip length in km per MiD person, from the raw trip file.
+
+    The commute-day-state spec (2026-09-04) foresees the donor's WORK-TRIP LENGTH as the
+    commute-distance source whenever ``P_ARB_ENTF`` is missing. ``P_ARB_ENTF`` is a question of
+    the home-office module, so for donors outside that module it is missing by construction and
+    this is not a rare fallback but the main path -- which is exactly why it is measured rather
+    than assumed (see :func:`donor_universe_diagnostics`).
+
+    ``trips`` needs the columns ``H_ID``, ``P_ID``, ``W_ZWECK`` and ``wegkm``. A row qualifies
+    when ``W_ZWECK == MID_WORK_TRIP_PURPOSE`` and ``0 < wegkm < MID_TRIP_LENGTH_MAX_KM``; per
+    person the FIRST qualifying row in file order is kept (a reporting day can hold several work
+    trips, e.g. an outbound and a return leg, and averaging them would invent a distance the
+    respondent never reported).
+
+    Returns a frame with one row per person that has such a trip, columns ``H_ID``, ``P_ID`` and
+    :data:`WORK_TRIP_LENGTH_COLUMN`. Persons without a qualifying trip are simply absent; the
+    caller decides what a missing length means.
+    """
+    _require_frame_columns(trips, ("H_ID", "P_ID", "W_ZWECK", "wegkm"), "trips frame")
+    length_km = pd.to_numeric(trips["wegkm"], errors="coerce")
+    qualifies = ((trips["W_ZWECK"] == MID_WORK_TRIP_PURPOSE) & length_km.notna()
+                 & (length_km > 0) & (length_km < MID_TRIP_LENGTH_MAX_KM))
+    selected = trips.loc[qualifies, ["H_ID", "P_ID"]].copy()
+    selected[WORK_TRIP_LENGTH_COLUMN] = length_km[qualifies].to_numpy()
+    first = selected.drop_duplicates(subset=["H_ID", "P_ID"], keep="first").reset_index(drop=True)
+    logger.info("%s work-trip lengths: %d/%d trips qualify (W_ZWECK == %d, 0 < wegkm < %.0f); "
+                "%d distinct persons keep their first qualifying trip",
+                _LOG_TAG, int(qualifies.sum()), len(trips), MID_WORK_TRIP_PURPOSE,
+                MID_TRIP_LENGTH_MAX_KM, len(first))
+    return first

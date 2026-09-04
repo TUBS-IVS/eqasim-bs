@@ -202,3 +202,98 @@ def test_donor_vs_assigned_class_requires_columns():
     with pytest.raises(ValueError, match="assigned_distance_class"):
         R.donor_vs_assigned_class(_donor_workers().drop(columns=["assigned_distance_class"]),
                                   _donor_donors())
+
+
+def test_donor_vs_assigned_class_warns_above_missing_share(caplog):
+    # Four of six donors lose their distance -> 4/6 = 0.667 > the 0.5 default threshold.
+    donors = _donor_donors()
+    donors.loc[[0, 1, 2], "donor_distance_km"] = np.nan
+    with caplog.at_level(logging.WARNING):
+        _, diagnostics = R.donor_vs_assigned_class(_donor_workers(), donors)
+    assert diagnostics["n_donor_distance_missing"] == 4
+    assert diagnostics["share_donor_distance_missing"] == pytest.approx(4 / 6)
+    assert diagnostics["warn_missing_share"] == pytest.approx(0.5)
+    assert any("NOT necessarily representative" in message for message in caplog.messages)
+
+
+def test_donor_vs_assigned_class_does_not_warn_below_missing_share(caplog):
+    with caplog.at_level(logging.WARNING):
+        _, diagnostics = R.donor_vs_assigned_class(_donor_workers(), _donor_donors())
+    assert diagnostics["share_donor_distance_missing"] == pytest.approx(1 / 6)
+    assert caplog.messages == []
+
+
+def test_donor_vs_assigned_class_warn_threshold_is_configurable(caplog):
+    with caplog.at_level(logging.WARNING):
+        R.donor_vs_assigned_class(_donor_workers(), _donor_donors(), warn_missing_share=0.1)
+    assert any("NOT necessarily representative" in message for message in caplog.messages)
+
+
+def test_donor_vs_assigned_class_survives_a_non_default_worker_index():
+    # Ruling: the class series must be built on the merged frame's index, not a fresh RangeIndex.
+    workers = _donor_workers()
+    workers.index = [100, 101, 102, 103, 104, 105]
+    _, diagnostics = R.donor_vs_assigned_class(workers, _donor_donors())
+    assert diagnostics["n_assigned_gt_donor"] == 2 and diagnostics["n_comparable"] == 5
+
+
+def _worker_donors():
+    """Five workers with their donor's module flag, distance and reporting-day codes joined on."""
+    return pd.DataFrame({
+        "donor_distance_km": [5.0, 30.0, np.nan, np.nan, 12.0],
+        "donor_in_home_office_module": [1, 1, 1, 0, 0],
+        "donor_reporting_day_weekday": [1, 1, 2, 1, np.nan],
+        "donor_reporting_day_of_week": [1, 3, 6, 5, 5],
+    })
+
+
+def test_donor_universe_diagnostics_counts():
+    universe = R.donor_universe_diagnostics(_worker_donors())
+    assert universe["n_workers"] == 5
+    assert universe["n_in_home_office_module"] == 3
+    assert universe["n_not_in_home_office_module"] == 2
+    assert universe["n_module_flag_other"] == 0
+    assert universe["n_distance_valid"] == 3
+    assert universe["share_distance_valid"] == pytest.approx(3 / 5)
+    # P_ARB_ENTF can only be valid inside the module -- but the helper MEASURES that rather than
+    # assuming it, so this fixture deliberately gives one out-of-module donor a distance.
+    assert universe["n_distance_valid_in_module"] == 2
+    assert universe["share_distance_valid_in_module"] == pytest.approx(2 / 3)
+    assert universe["n_distance_valid_not_in_module"] == 1
+    assert universe["share_distance_valid_not_in_module"] == pytest.approx(0.5)
+    assert universe["n_by_reporting_day_weekday"] == {"1": 3, "2": 1, "missing": 1}
+    assert universe["n_by_reporting_day_of_week"] == {"1": 1, "3": 1, "5": 2, "6": 1}
+
+
+def test_donor_universe_diagnostics_requires_columns():
+    with pytest.raises(ValueError, match="donor_in_home_office_module"):
+        R.donor_universe_diagnostics(_worker_donors().drop(columns=["donor_in_home_office_module"]))
+
+
+def _mid_trips_for_length():
+    return pd.DataFrame({
+        "H_ID":    [1, 1, 1, 2, 2, 3, 4, 4],
+        "P_ID":    [1, 1, 2, 1, 1, 1, 1, 1],
+        # H1/P1: a non-work trip, then two work trips -> the FIRST work trip (12.5 km) wins.
+        # H1/P2: work trip with a filter-coded length (>= 1000) -> no length.
+        # H2/P1: a zero-length work trip then a valid one -> the zero is skipped.
+        # H3/P1: only a business trip (W_ZWECK 2) -> no length, business is not the commute.
+        # H4/P1: two work trips, first 4.0 km.
+        "W_ZWECK": [7, 1, 1, 1, 1, 2, 1, 1],
+        "wegkm":   [3.0, 12.5, 9999.0, 0.0, 8.0, 40.0, 4.0, 44.0],
+    })
+
+
+def test_first_work_trip_length_km_keeps_the_first_valid_work_trip():
+    lengths = R.first_work_trip_length_km(_mid_trips_for_length())
+    assert len(lengths) == 3
+    indexed = lengths.set_index(["H_ID", "P_ID"])[R.WORK_TRIP_LENGTH_COLUMN]
+    assert indexed.loc[(1, 1)] == pytest.approx(12.5)
+    assert indexed.loc[(2, 1)] == pytest.approx(8.0)
+    assert indexed.loc[(4, 1)] == pytest.approx(4.0)
+    assert (1, 2) not in indexed.index and (3, 1) not in indexed.index
+
+
+def test_first_work_trip_length_km_requires_columns():
+    with pytest.raises(ValueError, match="wegkm"):
+        R.first_work_trip_length_km(_mid_trips_for_length().drop(columns=["wegkm"]))
