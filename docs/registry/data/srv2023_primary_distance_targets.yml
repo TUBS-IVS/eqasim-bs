@@ -26,11 +26,18 @@ storage:
 verification:
   verifier_entry: null
   notes: |
-    Three committed files: srv2023_commute_distance_by_kreis.csv (work band shares, scopes
+    Four committed files: srv2023_commute_distance_by_kreis.csv (work band shares, scopes
     all/inter/intra-Gemeinde, raw + shrunk, unweighted n_persons/n_persons_inter/n_persons_intra,
     bootstrap EMD noise floor), srv2023_education_distance_by_kreis_level.csv (education band
     shares per model age level), srv2023_commute_distance_quantiles_by_kreis.csv (percentiles
-    1..99 of the euclidean-equivalent work distance, long format). Pin tests:
+    1..99 of the euclidean-equivalent work distance, long format), and (addendum Task 15, item 3)
+    srv2023_commute_distance_sensitivity_by_kreis.csv -- a SENSITIVITY measurement, NOT a
+    calibration target: three work band-share variants (inter_zgb: inter-Gemeinde persons whose
+    destination Kreis stays within the 8 ZGB Kreise, quantifying the polygon-external-destination
+    caveat against the commute table's `inter` scope; all_gis_fallback / inter_gis_fallback:
+    the same selection with distance = GIS length where valid else the self-reported V_LAENGE,
+    quantifying the GIS-invalid-tail caveat against the `all`/`inter` scopes), same shrinkage
+    hierarchy and noise floor as the commute table. Pin tests:
     tests/test_srv_distance_targets_pins.py.
 
     verifier_entry stays null (ruling R19): scripts/verify_braunschweig_inputs.py lists no
@@ -38,7 +45,7 @@ verification:
     table, e.g. srv2023_license_by_sex_cohort, and by the MiD-side analogue
     mid2023_cars_by_rs7_haustyp, which also stays verifier_entry: null despite being
     production: required) -- there is nothing external for a contributor to download or
-    verify presence of, since the three files ship committed with every clone of this repo. This
+    verify presence of, since the four files ship committed with every clone of this repo. This
     is now REQUIRED reading: braunschweig.analysis.reference.srv.commute_distance.load_commute_targets
     /load_education_targets/load_commute_quantiles raise FileNotFoundError if the files are
     absent, and that stage is on the production run list (configs/overlays/test_100pct.yml,
@@ -47,9 +54,12 @@ verification:
     stage reads them, requirements.production stays "optional" for those), this dataset now
     carries requirements.production: required, matching mid2023_cars_by_rs7_haustyp's and
     verbindungen's "required" treatment for a committed table a registered production stage
-    depends on. Listed in the README derived-inputs table (the "SrV primary-distance targets
-    (committed)" row, "### Derived / preprocessed inputs" section) with the regeneration command,
-    which is what the D4 readme-data check now requires for a production-required dataset.
+    depends on. The sensitivity table is a diagnostic-only fourth file with its own loader
+    (load_commute_sensitivity) and no production stage reads it yet (addendum Task 16 wires the
+    model-side comparison). Listed in the README derived-inputs table (the "SrV primary-distance
+    targets (committed)" row, "### Derived / preprocessed inputs" section) with the regeneration
+    command, which is what the D4 readme-data check now requires for a production-required
+    dataset.
 requirements:
   synthesis: not_needed
   matsim: not_needed
@@ -72,6 +82,14 @@ limitations: |
   (oberstufe and bbs pooled as upper_secondary); BBS and university cells are too thin for a
   per-Kreis decision (pre-registered rule: braunschweig.calibration.decision; reference
   definitions: ADR-0102; build/no-build decision: ADR-0103).
+  Two caveats of the commute table are quantified, not just stated, by the fourth file
+  (srv2023_commute_distance_sensitivity_by_kreis.csv, addendum Task 15): (1) the `inter` scope
+  mixes destinations inside and outside the 8-Kreis ZGB polygon -- variant `inter_zgb` restricts
+  to polygon-internal destinations only; (2) the `all`/`inter` scopes exclude GIS-invalid trips
+  entirely -- variants `all_gis_fallback`/`inter_gis_fallback` instead recover them via the
+  self-reported V_LAENGE where usable. These variants are SENSITIVITY measurements, not
+  alternative targets: the committed calibration target stays the GIS-only, whole-polygon
+  definition in srv2023_commute_distance_by_kreis.csv.
 notes: |
   Reference for the SrV distance-distribution calibration of the primary activities (issue #357,
   Phase 0 #358). Compared against runs by braunschweig.analysis.synthesis.commute_distance_by_kreis.

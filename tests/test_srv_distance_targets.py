@@ -179,6 +179,81 @@ def test_select_person_observations_gis_fallback_then_weight_exclusion_counted_o
     assert log["n_excluded_gis_invalid"] == 1
 
 
+def test_select_person_observations_adds_dest_ags8_and_distance_source_columns():
+    """Additive columns for the default "gis" source (Task 15): distance_source is always
+    "gis" and dest_ags8 is the AGS of the purpose/away-direction location, not the trip's
+    literal V_ZIEL_AGS (which for an inbound leg would be the HOME location)."""
+    trips, persons, households = _raw_frames()
+    obs, log = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,))
+    assert list(obs["distance_source"]) == ["gis"]
+    assert obs.iloc[0]["dest_ags8"] == "03151005"  # person (1,1)'s V_ZIEL_AGS (outbound leg)
+    # The default "gis" source omits the self-reported-fallback keys entirely (rather than
+    # reporting a constant 0/0.0%), so the committed "gis"-mode header stays byte-identical
+    # across regenerations (Task 15 requirement, see the docstring).
+    assert "n_persons_self_reported_distance" not in log
+    assert "share_persons_self_reported_distance" not in log
+
+
+def _fallback_frames():
+    """One household/person with a single home->work trip that is GIS-invalid, for the
+    "gis_or_self_reported" sensitivity source (Task 15)."""
+    households = pd.DataFrame({"HHNR": [1], "AGS": [3101000]})
+    persons = pd.DataFrame({"HHNR": [1], "PNR": [1], "V_ALTER": [40]})
+    trips = pd.DataFrame({
+        "HHNR": [1], "PNR": [1], "WNR": [1],
+        "V_ZWECK": [1], "E_START_ZWECK": [19],
+        "V_START_LAGE": [1], "V_ZIEL_LAGE": [4],
+        "V_START_AGS": [3101000], "V_ZIEL_AGS": [3151005],
+        "GIS_LAENGE": [-1.0], "GIS_LAENGE_GUELTIG": [-1.0],
+        "V_LAENGE": [9.0],
+        "GEWICHT_W_ZENSUS": [10.0], "REGIOSTAR7": [72],
+    })
+    return trips, persons, households
+
+
+def test_select_person_observations_gis_or_self_reported_uses_self_reported_length():
+    trips, persons, households = _fallback_frames()
+    obs, log = T.select_person_observations(
+        trips, persons, households, (T.PURPOSE_WORK,), distance_source="gis_or_self_reported")
+    assert len(obs) == 1
+    row = obs.iloc[0]
+    assert row["distance_km"] == pytest.approx(9.0)
+    assert row["distance_source"] == "self_reported"
+    assert log["n_excluded_no_length"] == 0
+    assert log["n_persons_self_reported_distance"] == 1
+    assert log["share_persons_self_reported_distance"] == pytest.approx(1.0)
+
+
+def test_select_person_observations_gis_or_self_reported_excludes_when_neither_valid():
+    """V_LAENGE = -5 is the SrV "weiss nicht" missing-data sentinel, not a usable length:
+    with no GIS-valid distance either, the trip (and its only candidate person) must be
+    excluded and counted in n_excluded_no_length, not silently kept with a garbage distance."""
+    trips, persons, households = _fallback_frames()
+    trips.loc[0, "V_LAENGE"] = -5.0
+    obs, log = T.select_person_observations(
+        trips, persons, households, (T.PURPOSE_WORK,), distance_source="gis_or_self_reported")
+    assert obs.empty
+    assert log["n_excluded_no_length"] == 1
+    assert log["n_persons_dropped_no_length"] == 1
+    assert log["n_persons_self_reported_distance"] == 0
+
+
+def test_select_person_observations_default_source_ignores_self_reported_length():
+    """The default "gis" source must not be affected by a usable self-reported length at
+    all -- it still excludes the GIS-invalid trip (default behaviour preserved)."""
+    trips, persons, households = _fallback_frames()
+    obs, log = T.select_person_observations(trips, persons, households, (T.PURPOSE_WORK,))
+    assert obs.empty
+    assert log["n_excluded_gis_invalid"] == 1
+
+
+def test_select_person_observations_invalid_distance_source_raises():
+    trips, persons, households = _raw_frames()
+    with pytest.raises(ValueError, match="distance_source"):
+        T.select_person_observations(
+            trips, persons, households, (T.PURPOSE_WORK,), distance_source="bogus")
+
+
 def test_select_person_observations_empty_candidates_returns_full_key_set():
     trips, persons, households = _raw_frames()
     obs, log = T.select_person_observations(trips, persons, households, (99,))
@@ -388,6 +463,69 @@ def test_rs7_pool_shares_feeds_both_kreis_pool_and_rs7_row():
     # 03101 is entirely RS7-72 in this fixture, so RS7-72 is its dominant (own) pool --
     # the same pool the rs7 row above reports.
     assert T.dominant_rs7_by_kreis(obs)["03101"] == 72
+
+
+def _obs_with_dest_and_source(n_bs=300, n_gf=60, seed=3):
+    """Extends `_obs()` (Task 15) with the `dest_ags8` / `distance_source` columns that
+    `select_person_observations` now always adds, so `build_commute_sensitivity_table`
+    can be exercised on a synthetic fixture without a full extraction run.
+
+    Deterministic destination assignment: BS (03101) persons commute to GF (03151, both
+    inside ZGB_KREISE) except the FIRST BS person, whose destination is forced outside
+    every ZGB prefix (05111000, a Duesseldorf-style AGS) and forced inter-Gemeinde -- the
+    fixture's one "polygon-external" observation for the inter_zgb exclusion test.
+    """
+    obs = _obs(n_bs=n_bs, n_gf=n_gf, seed=seed).copy()
+    is_bs = (obs["kreis"] == "03101").values
+    dest = np.where(is_bs, "03151005", "03101000")
+    first_bs_idx = np.flatnonzero(is_bs)[0]
+    dest[first_bs_idx] = "05111000"
+    obs = obs.assign(dest_ags8=dest, distance_source="gis")
+    obs.iloc[first_bs_idx, obs.columns.get_loc("intra_gemeinde")] = False
+    return obs
+
+
+def test_build_commute_sensitivity_table_variants_present_and_shares_sum_to_one():
+    obs = _obs_with_dest_and_source()
+    table = T.build_commute_sensitivity_table(obs, obs, n_bootstrap=20)
+    assert set(table["variant"]) == {"inter_zgb", "all_gis_fallback", "inter_gis_fallback"}
+    assert set(table["level_geo"]) == {"kreis", "rs7", "zgb"}
+    for variant in table["variant"].unique():
+        sub = table[table["variant"] == variant]
+        assert set(sub[sub["level_geo"] == "kreis"]["code"]) == set(T.ZGB_KREISE)
+    cols = [f"share_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    shr = [f"share_shrunk_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    nonempty = table[table["n_persons"] > 0]
+    assert len(nonempty) > 0
+    assert np.allclose(nonempty[cols].sum(axis=1), 1.0, atol=1e-6)
+    assert np.allclose(table[shr].sum(axis=1), 1.0, atol=1e-6)
+    assert (table["emd_noise_95"] >= 0).all()
+
+
+def test_build_commute_sensitivity_table_inter_zgb_excludes_external_destination():
+    obs = _obs_with_dest_and_source()
+    table = T.build_commute_sensitivity_table(obs, obs, n_bootstrap=20)
+    n_inter = int((~obs["intra_gemeinde"].astype(bool)).sum())
+    zgb_inter_zgb = table[(table["variant"] == "inter_zgb") & (table["level_geo"] == "zgb")].iloc[0]
+    # The one forced polygon-external inter-Gemeinde person is excluded from inter_zgb.
+    assert zgb_inter_zgb["n_persons"] == n_inter - 1
+
+
+def test_build_commute_sensitivity_table_fallback_variant_counts_self_reported_persons():
+    obs = _obs_with_dest_and_source()
+    obs_fallback = obs.copy()
+    # Mark a handful of persons as recovered via the self-reported fallback, as
+    # select_person_observations(distance_source="gis_or_self_reported") would produce
+    # for GIS-invalid trips with a usable V_LAENGE -- the fallback variant must include
+    # them in its person count rather than silently dropping them.
+    obs_fallback.iloc[:5, obs_fallback.columns.get_loc("distance_source")] = "self_reported"
+    table = T.build_commute_sensitivity_table(obs, obs_fallback, n_bootstrap=20)
+    zgb_all = table[(table["variant"] == "all_gis_fallback") & (table["level_geo"] == "zgb")].iloc[0]
+    assert zgb_all["n_persons"] == len(obs_fallback)
+    n_inter_fallback = int((~obs_fallback["intra_gemeinde"].astype(bool)).sum())
+    zgb_inter_fallback = table[
+        (table["variant"] == "inter_gis_fallback") & (table["level_geo"] == "zgb")].iloc[0]
+    assert zgb_inter_fallback["n_persons"] == n_inter_fallback
 
 
 def test_build_education_table_levels_and_comparable_flag():

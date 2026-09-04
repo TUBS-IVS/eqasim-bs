@@ -3,8 +3,11 @@
 Builders turn the local-only SrV 2023 "Braunschweig und RGB" scientific-use microdata
 (trips + persons + households) into small committed aggregate tables per home Kreis:
 work and education distance band shares (with an intra/inter-Gemeinde split for work),
-and per-Kreis distance quantiles for the per-person commute-distance targets. Loaders
-read the committed tables back. This module has no synpp dependency. It is imported by
+per-Kreis distance quantiles for the per-person commute-distance targets, and (addendum
+Task 15) a SENSITIVITY table -- NOT a target -- measuring two known caveats of the work
+table (destinations outside the surveyed ZGB polygon, and the GIS-invalid tail) as
+measured band-share variants. Loaders read the committed tables back. This module has
+no synpp dependency. It is imported by
 the analysis stages ``braunschweig.analysis.reference.srv.commute_distance`` and
 ``braunschweig.analysis.synthesis.commute_distance_by_kreis`` (and the extraction
 script), but by no POPULATION-synthesis or location stage, so editing it never
@@ -144,17 +147,28 @@ def _kreis_from_ags(ags: pd.Series) -> pd.Series:
 
 
 def select_person_observations(trips, persons, households, purpose_codes,
-                               max_distance_km=DEFAULT_MAX_DISTANCE_KM):
+                               max_distance_km=DEFAULT_MAX_DISTANCE_KM,
+                               distance_source="gis"):
     """One home<->purpose distance observation per person for the given purpose codes.
 
     Selection mirrors eqasim's ``data.hts.commute_distance``: per person the FIRST
     home->purpose trip (start at own home, destination purpose in ``purpose_codes``);
-    if that direction has no GIS-valid distance, the FIRST purpose->home trip (start
-    purpose in ``purpose_codes``, destination at own home).
+    if that direction has no valid distance (see ``distance_source`` below), the FIRST
+    purpose->home trip (start purpose in ``purpose_codes``, destination at own home).
 
-    GIS validity is resolved BEFORE the per-person pick, because it decides which
+    ``distance_source`` (Task 15, sensitivity variant, item 3 of the addendum plan):
+    ``"gis"`` (default) is the calibration-target definition used everywhere else in
+    this module -- distance = ``GIS_LAENGE`` where ``GIS_LAENGE_GUELTIG > 0``, GIS-invalid
+    trips excluded. ``"gis_or_self_reported"`` is a SENSITIVITY variant only (never used
+    for the committed target tables): distance = ``GIS_LAENGE`` where GIS-valid, else the
+    self-reported ``V_LAENGE`` where ``V_LAENGE > 0``; a trip with neither is excluded and
+    counted in ``n_excluded_no_length``. Every selected observation carries the resolved
+    ``distance_source`` ("gis" or "self_reported") as an output column; under the default
+    "gis" source it is always "gis" (additive column, default behaviour unchanged).
+
+    GIS/length validity is resolved BEFORE the per-person pick, because it decides which
     DIRECTION represents the person (a data-quality substitution): the fallback
-    direction is only used when the preferred one carries no routed distance at all.
+    direction is only used when the preferred one carries no usable distance at all.
     Negative weight and over-``max_distance_km`` are resolved AFTER the per-person
     pick and are terminal exclusions of that person's selected observation (no
     fallback to the other direction), because they flag the specific selected trip
@@ -177,7 +191,10 @@ def select_person_observations(trips, persons, households, purpose_codes,
     int64); ``kreis`` (5-char str); ``age`` (float64; NaN when the person record has no
     age, see ``n_missing_age``); ``distance_km``, ``weight`` (float64); ``intra_gemeinde``
     (bool; False when either end of the selected trip has a missing/sentinel AGS, see
-    ``n_missing_trip_ags``).
+    ``n_missing_trip_ags``); ``distance_source`` (str, "gis" or "self_reported"; always
+    "gis" under the default ``distance_source="gis"``); ``dest_ags8`` (8-char str, the
+    purpose/away-direction location's AGS -- NaN when missing/sentinel -- so a caller can
+    filter observations by destination Kreis, e.g. the ZGB sensitivity variant).
 
     Exclusion/diagnostic log (unit noted per key): ``n_candidate_trips`` (trips, both
     directions); ``n_excluded_gis_invalid`` (trips, both directions -- see
@@ -195,14 +212,42 @@ def select_person_observations(trips, persons, households, purpose_codes,
     ``obs`` with NaN/-1 rather than excluded -- a downstream consumer decides);
     ``n_persons_selected`` (persons); ``share_start_ags_equals_household_ags`` (share, over
     persons with a known trip-side AGS, whose home-direction AGS matches the household AGS).
+    Under ``distance_source="gis_or_self_reported"`` only: ``n_excluded_no_length`` (trips,
+    both directions -- neither GIS-valid nor a usable self-reported length, the fallback-mode
+    analogue of ``n_excluded_gis_invalid``); ``n_persons_dropped_no_length`` (persons, the
+    matching person-level count, analogous to ``n_persons_dropped_gis_invalid``);
+    ``n_persons_self_reported_distance`` / ``share_persons_self_reported_distance`` (persons /
+    share of ``n_persons_selected`` whose selected observation used the self-reported
+    fallback rather than a GIS-routed length -- the fallback rate, logged at INFO per the
+    no-silent-fallback rule). Under the default "gis" source this rate is trivially zero by
+    construction (every surviving trip IS GIS-valid) and these two keys are omitted from
+    ``log`` entirely, so the three "gis"-mode target tables' committed provenance header
+    stays byte-identical across a regeneration (Task 15 requirement).
     """
+    if distance_source not in ("gis", "gis_or_self_reported"):
+        raise ValueError(
+            f"Unknown distance_source {distance_source!r}; expected 'gis' or 'gis_or_self_reported'")
     purpose_codes = tuple(int(c) for c in purpose_codes)
     # A fresh RangeIndex guarantees `outbound[cand.index]` below is a safe positional
     # lookup even if the caller passed a frame with a non-unique or non-default index.
     t = trips.copy().reset_index(drop=True)
     t["weight"] = pd.to_numeric(t["GEWICHT_W_ZENSUS"], errors="coerce")
     t["gis_valid"] = pd.to_numeric(t["GIS_LAENGE_GUELTIG"], errors="coerce") > 0
-    t["distance_km"] = pd.to_numeric(t["GIS_LAENGE"], errors="coerce")
+    t["gis_km"] = pd.to_numeric(t["GIS_LAENGE"], errors="coerce")
+    if distance_source == "gis_or_self_reported":
+        # Sensitivity variant only (Task 15): a self-reported length is only trusted when
+        # positive -- SrV missing-data sentinel codes (e.g. -5 "weiss nicht") are negative
+        # and must not leak in as a plausible-looking distance (mirrors the ruling R27
+        # convention already used by `gis_validity_bias_check`).
+        t["self_reported_km"] = pd.to_numeric(t["V_LAENGE"], errors="coerce")
+        t["self_reported_valid"] = t["self_reported_km"] > 0
+        t["length_valid"] = t["gis_valid"] | t["self_reported_valid"]
+        t["distance_km"] = np.where(t["gis_valid"], t["gis_km"], t["self_reported_km"])
+        t["distance_source_label"] = np.where(t["gis_valid"], "gis", "self_reported")
+    else:
+        t["length_valid"] = t["gis_valid"]
+        t["distance_km"] = t["gis_km"]
+        t["distance_source_label"] = "gis"
 
     outbound = (t["V_START_LAGE"] == START_AT_OWN_HOME) & t["V_ZWECK"].isin(purpose_codes)
     inbound = (t["V_ZIEL_LAGE"] == DEST_AT_OWN_HOME) & t["E_START_ZWECK"].isin(purpose_codes)
@@ -217,25 +262,31 @@ def select_person_observations(trips, persons, households, purpose_codes,
     log["n_pool_weight_negative"] = int((cand["weight"] < 0).sum())
     log["n_pool_over_cap"] = int((cand["distance_km"] > max_distance_km).sum())
 
-    # Step 1: GIS-invalid TRIPS cannot represent a person at all; drop them from the
-    # pool, then pick the preferred-direction trip per person from what remains.
-    n_gis = int((~cand["gis_valid"]).sum())
-    log["n_excluded_gis_invalid"] = n_gis
-    gis_valid_cand = cand[cand["gis_valid"]].sort_values(
+    # Step 1: TRIPS with no usable length (GIS-invalid, or under the fallback source also
+    # lacking a usable self-reported length) cannot represent a person at all; drop them
+    # from the pool, then pick the preferred-direction trip per person from what remains.
+    n_invalid_trips = int((~cand["length_valid"]).sum())
+    valid_cand = cand[cand["length_valid"]].sort_values(
         ["HHNR", "PNR", "direction_rank", "WNR"], kind="stable")
-    first = gis_valid_cand.drop_duplicates(["HHNR", "PNR"], keep="first")
+    first = valid_cand.drop_duplicates(["HHNR", "PNR"], keep="first")
 
-    # R25/Minor 9 (unit contradiction fix): n_excluded_gis_invalid above is a TRIP count
-    # (both directions, see the Exclusions log docstring below); this is the matching
-    # PERSON count -- candidate persons with at least one candidate trip but NONE surviving
-    # the GIS-valid filter, i.e. every one of their candidate trip rows (both directions)
-    # was GIS-invalid. A one-line derivation from the same two frames, so it is added here
-    # rather than left undocumented.
+    # R25/Minor 9 (unit contradiction fix): n_invalid_trips above is a TRIP count (both
+    # directions, see the Exclusions log docstring below); this is the matching PERSON
+    # count -- candidate persons with at least one candidate trip but NONE surviving the
+    # length-valid filter, i.e. every one of their candidate trip rows (both directions)
+    # had no usable length. A one-line derivation from the same two frames, so it is added
+    # here rather than left undocumented.
     candidate_persons = cand[["HHNR", "PNR"]].drop_duplicates()
-    surviving_persons = gis_valid_cand[["HHNR", "PNR"]].drop_duplicates()
-    n_persons_dropped_gis_invalid = len(candidate_persons) - len(
+    surviving_persons = valid_cand[["HHNR", "PNR"]].drop_duplicates()
+    n_persons_dropped_no_length = len(candidate_persons) - len(
         candidate_persons.merge(surviving_persons, on=["HHNR", "PNR"], how="inner"))
-    log["n_persons_dropped_gis_invalid"] = int(n_persons_dropped_gis_invalid)
+    if distance_source == "gis_or_self_reported":
+        log["n_excluded_no_length"] = n_invalid_trips
+        log["n_persons_dropped_no_length"] = int(n_persons_dropped_no_length)
+    else:
+        # Default source: identical computation, original key names (behaviour unchanged).
+        log["n_excluded_gis_invalid"] = n_invalid_trips
+        log["n_persons_dropped_gis_invalid"] = int(n_persons_dropped_no_length)
 
     # Step 2: apply weight and distance-cap checks to the SELECTED observation only
     # (counted in PERSONS, not trips); a failure here drops the person, it does not
@@ -279,10 +330,15 @@ def select_person_observations(trips, persons, households, purpose_codes,
         )
 
     start_ags8 = _ags8(first["V_START_AGS"])
-    dest_ags8 = _ags8(first["V_ZIEL_AGS"])
+    trip_ziel_ags8 = _ags8(first["V_ZIEL_AGS"])
     is_outbound = (first["direction_rank"] == 0).values
-    home_ags8 = np.where(is_outbound, start_ags8, dest_ags8)
-    away_ags8 = np.where(is_outbound, dest_ags8, start_ags8)
+    home_ags8 = np.where(is_outbound, start_ags8, trip_ziel_ags8)
+    # `away_ags8` is the AGS of the PURPOSE/activity location regardless of which
+    # direction was selected (outbound: the trip's own V_ZIEL_AGS; inbound: the trip's
+    # own V_START_AGS, since the person is travelling FROM the purpose location home) --
+    # exposed below as the `dest_ags8` output column so callers can filter observations
+    # by destination Kreis (e.g. the `inter_zgb` sensitivity variant, Task 15).
+    away_ags8 = np.where(is_outbound, trip_ziel_ags8, start_ags8)
     home_missing = pd.isna(home_ags8)
     away_missing = pd.isna(away_ags8)
     log["n_missing_trip_ags"] = int((home_missing | away_missing).sum())
@@ -312,18 +368,38 @@ def select_person_observations(trips, persons, households, purpose_codes,
         "distance_km": first["distance_km"].astype(float).values,
         "weight": first["weight"].astype(float).values,
         "intra_gemeinde": intra_gemeinde,
+        "distance_source": first["distance_source_label"].values,
+        "dest_ags8": away_ags8,
     })
     log["n_persons_selected"] = int(len(obs))
     logger.info(
-        "[srv_distance_targets] purposes %s: %d candidate trips -> %d persons selected; "
-        "gis_invalid trips %d; pool weight<0 %d trips, pool >%.0f km %d trips; selected persons "
-        "dropped: weight<0 %d, >%.0f km %d, no Kreis %d, missing trip AGS %d; home AGS == "
-        "household AGS %.1f%% (of %d persons with known trip AGS)",
-        purpose_codes, log["n_candidate_trips"], log["n_persons_selected"], n_gis,
-        log["n_pool_weight_negative"], max_distance_km, log["n_pool_over_cap"],
+        "[srv_distance_targets] purposes %s: distance_source=%s: %d candidate trips -> %d persons "
+        "selected; length-invalid trips %d; pool weight<0 %d trips, pool >%.0f km %d trips; "
+        "selected persons dropped: weight<0 %d, >%.0f km %d, no Kreis %d, missing trip AGS %d; "
+        "home AGS == household AGS %.1f%% (of %d persons with known trip AGS)",
+        purpose_codes, distance_source, log["n_candidate_trips"], log["n_persons_selected"],
+        n_invalid_trips, log["n_pool_weight_negative"], max_distance_km, log["n_pool_over_cap"],
         n_neg, max_distance_km, n_cap, n_no_kreis, log["n_missing_trip_ags"],
         100.0 * log["share_start_ags_equals_household_ags"], int(known_home_ags.sum()),
     )
+    # No-silent-fallback rule (CLAUDE.md, MANDATORY), gated to the "gis_or_self_reported"
+    # source only: under the default "gis" source this rate is trivially 0/0.0% by
+    # construction (every surviving trip IS GIS-valid, see the pool filter above), and
+    # adding a constant key/value pair to `log` here would needlessly change the committed
+    # header of the three "gis"-mode target tables on every regeneration (Task 15 requires
+    # those to stay byte-identical except for the header date line).
+    if distance_source == "gis_or_self_reported":
+        n_self_reported = int((obs["distance_source"] == "self_reported").sum())
+        share_self_reported = n_self_reported / len(obs) if len(obs) else float("nan")
+        log["n_persons_self_reported_distance"] = n_self_reported
+        log["share_persons_self_reported_distance"] = share_self_reported
+        logger.info(
+            "[srv_distance_targets] purposes %s: distance_source=%s: primary (GIS) %d/%d (%.1f%%), "
+            "self-reported fallback %d/%d (%.1f%%)",
+            purpose_codes, distance_source, len(obs) - n_self_reported, len(obs),
+            100.0 * (1.0 - share_self_reported) if len(obs) else 0.0,
+            n_self_reported, len(obs), 100.0 * share_self_reported if len(obs) else 0.0,
+        )
     return obs, log
 
 
@@ -515,6 +591,7 @@ QUANTILE_PROBABILITIES = np.arange(1, 100) / 100.0
 COMMUTE_TABLE = "srv2023_commute_distance_by_kreis.csv"
 EDUCATION_TABLE = "srv2023_education_distance_by_kreis_level.csv"
 QUANTILE_TABLE = "srv2023_commute_distance_quantiles_by_kreis.csv"
+SENSITIVITY_TABLE = "srv2023_commute_distance_sensitivity_by_kreis.csv"
 
 
 def dominant_rs7_by_kreis(obs: pd.DataFrame) -> dict:
@@ -691,6 +768,132 @@ def build_commute_table(obs_work, prior_strength=DEFAULT_PRIOR_STRENGTH, n_boots
         own_pool_str, fallback_str, n_kreis)
     logger.info("[srv_distance_targets] commute table: %d rows, %d persons total",
                 len(table), int(len(obs_work)))
+    return table
+
+
+def _commute_sensitivity_variant_rows(variant, obs, edges, labels, prior_strength, n_bootstrap, seed):
+    """Kreis/RS7/ZGB rows (a single scope, unlike :func:`build_commute_table`'s all/inter/
+    intra scopes) for one sensitivity variant's observation subset, sharing the same
+    shrinkage hierarchy and pool-provenance logging discipline as the other builders.
+
+    Unlike :func:`build_commute_table`, an empty Wolfsburg-proxy subset does not raise --
+    this table is a diagnostic SENSITIVITY measurement, not a calibration target, and a
+    variant (e.g. ``inter_zgb`` on a small sample) can plausibly have zero RS7-72 persons;
+    it falls back to the ZGB pool with a logged warning, exactly like
+    :func:`build_education_table` does for the same situation.
+    """
+    zgb_raw, _ = _pool_shares(obs, edges)
+    rs7_of = dominant_rs7_by_kreis(obs)
+    rs7_pool = {}
+    for rs7 in sorted(obs["regiostar7"].unique()):
+        raw, n = _pool_shares(obs, edges, obs["regiostar7"] == rs7)
+        rs7_pool[int(rs7)] = shrink_toward_pool(raw, n, zgb_raw, prior_strength)
+
+    def _row(level_geo, code, source, sub, pool):
+        row = {"variant": variant, "level_geo": level_geo, "code": code, "source": source,
+              "n_persons": int(len(sub))}
+        _, raw = _share_block(sub["distance_km"].values, sub["weight"].values, edges, labels, "share")
+        row.update({f"share_{lbl}": float(v) for lbl, v in zip(labels, raw)})
+        shrunk = shrink_toward_pool(raw, len(sub), pool, prior_strength) if pool is not None else raw
+        row.update({f"share_shrunk_{lbl}": float(v) for lbl, v in zip(labels, shrunk)})
+        row["emd_noise_95"] = bootstrap_emd_noise_floor(
+            sub["distance_km"].values, sub["weight"].values, edges, n_bootstrap=n_bootstrap, seed=seed)
+        return row
+
+    rows = []
+    n_own_pool = n_fallback = 0
+    for kreis in ZGB_KREISE:
+        if kreis == WOLFSBURG_KREIS:
+            proxy_sub = obs[obs["regiostar7"] == PROXY_RS7]
+            if proxy_sub.empty:
+                logger.warning(
+                    "[srv_distance_targets] commute sensitivity/%s: no RS7-72 persons for the "
+                    "Wolfsburg proxy, ZGB pool used", variant)
+                rows.append(_row("kreis", kreis, PROXY_SOURCE, proxy_sub, zgb_raw))
+            else:
+                rows.append(_row("kreis", kreis, PROXY_SOURCE, proxy_sub, None))
+            continue
+        sub = obs[obs["kreis"] == kreis]
+        pool, used_fallback = _pool_for_kreis(kreis, rs7_of, rs7_pool, zgb_raw)
+        n_fallback += int(used_fallback)
+        n_own_pool += int(not used_fallback)
+        rows.append(_row("kreis", kreis, "srv", sub, pool))
+    for rs7 in sorted(rs7_pool):
+        rows.append(_row("rs7", str(rs7), "srv", obs[obs["regiostar7"] == rs7], zgb_raw))
+    rows.append(_row("zgb", "zgb", "srv", obs, None))
+    n_kreis = len(ZGB_KREISE) - 1  # Wolfsburg is a proxy row, not an own/fallback Kreis
+    logger.info(
+        "[srv_distance_targets] commute sensitivity/%s: Kreis rows from own RS7 pool %d/%d, "
+        "ZGB fallback %d/%d, proxy 1/%d; %d persons total",
+        variant, n_own_pool, n_kreis, n_fallback, n_kreis, len(ZGB_KREISE), int(len(obs)))
+    return rows
+
+
+def build_commute_sensitivity_table(obs_gis, obs_fallback, prior_strength=DEFAULT_PRIOR_STRENGTH,
+                                    n_bootstrap=500, seed=0):
+    """SENSITIVITY variants of the work distance-band shares (addendum Task 15, item 3) --
+
+    these are NOT calibration targets; they quantify how much the two known caveats of
+    :func:`build_commute_table` move the reference if resolved differently. Same geographic
+    rows as :func:`build_commute_table` (kreis x 8 ZGB Kreise incl. the Wolfsburg proxy, rs7
+    pools, zgb), one row per (variant, level_geo, code):
+
+    - ``inter_zgb``: from ``obs_gis`` (the calibration-target GIS-only observations),
+      inter-Gemeinde persons (``intra_gemeinde == False``) whose destination Kreis (first 5
+      digits of ``dest_ags8``) is one of the 8 ZGB Kreise -- i.e. inter-Gemeinde commutes
+      that stay WITHIN the surveyed ZGB polygon. Quantifies how much the main table's
+      ``inter`` scope is diluted by commutes leaving the polygon (the "polygon-external
+      destinations" caveat). Persons with an unknown destination AGS are excluded from
+      both the numerator and denominator (logged).
+    - ``all_gis_fallback``: every person of ``obs_fallback`` (expected to come from
+      :func:`select_person_observations` with ``distance_source="gis_or_self_reported"``) --
+      quantifies how much the ``all`` scope target would shift if the GIS-invalid tail were
+      recovered via the self-reported length instead of excluded (the "GIS-invalid tail"
+      caveat).
+    - ``inter_gis_fallback``: ``obs_fallback`` restricted to ``intra_gemeinde == False``.
+
+    Shrinkage hierarchy is identical to :func:`build_commute_table` (Kreis -> its dominant
+    RS7 pool -> ZGB, weight n/(n+k)), computed SEPARATELY per variant -- a Kreis's dominant
+    RS7 pool can differ between ``obs_gis`` and ``obs_fallback`` if the extra self-reported
+    persons shift the weight-modal type, so reusing one pool across variants would be wrong.
+
+    Columns: ``variant``, ``level_geo``, ``code``, ``source``, ``n_persons``,
+    ``share_<label>`` / ``share_shrunk_<label>`` (work bands), ``emd_noise_95``.
+    """
+    edges, labels = WORK_BAND_EDGES_KM, WORK_BAND_LABELS
+
+    inter_gis = obs_gis[~obs_gis["intra_gemeinde"].astype(bool)]
+    dest_kreis = inter_gis["dest_ags8"].str[:5]
+    n_dest_unknown = int(dest_kreis.isna().sum())
+    inter_zgb = inter_gis[dest_kreis.isin(ZGB_KREISE)]
+    logger.info(
+        "[srv_distance_targets] commute sensitivity inter_zgb: %d/%d inter-Gemeinde persons "
+        "have a destination within the 8 ZGB Kreise (%d with an unknown destination AGS "
+        "excluded from both the numerator and denominator, %.1f%% of inter-Gemeinde persons)",
+        len(inter_zgb), len(inter_gis), n_dest_unknown,
+        100.0 * n_dest_unknown / len(inter_gis) if len(inter_gis) else 0.0,
+    )
+
+    n_self_reported = int((obs_fallback["distance_source"] == "self_reported").sum())
+    logger.info(
+        "[srv_distance_targets] commute sensitivity gis_fallback variants: %d/%d persons in "
+        "obs_fallback used the self-reported fallback length (%.1f%%)",
+        n_self_reported, len(obs_fallback),
+        100.0 * n_self_reported / len(obs_fallback) if len(obs_fallback) else 0.0,
+    )
+
+    variants = {
+        "inter_zgb": inter_zgb,
+        "all_gis_fallback": obs_fallback,
+        "inter_gis_fallback": obs_fallback[~obs_fallback["intra_gemeinde"].astype(bool)],
+    }
+    rows = []
+    for variant, obs in variants.items():
+        rows.extend(_commute_sensitivity_variant_rows(
+            variant, obs, edges, labels, prior_strength, n_bootstrap, seed))
+    table = pd.DataFrame(rows)
+    logger.info("[srv_distance_targets] commute sensitivity table: %d rows, variants %s",
+                len(table), sorted(variants))
     return table
 
 
@@ -874,3 +1077,7 @@ def load_education_targets(srv_dir):
 
 def load_commute_quantiles(srv_dir):
     return _load(srv_dir, QUANTILE_TABLE)
+
+
+def load_commute_sensitivity(srv_dir):
+    return _load(srv_dir, SENSITIVITY_TABLE)

@@ -31,6 +31,11 @@ def quantiles():
     return T.load_commute_quantiles(SRV_DIR)
 
 
+@pytest.fixture(scope="module")
+def sensitivity():
+    return T.load_commute_sensitivity(SRV_DIR)
+
+
 def test_commute_rows_and_sources(commute):
     kreis = commute[commute["level_geo"] == "kreis"].set_index("code")
     assert set(kreis.index) == set(T.ZGB_KREISE)
@@ -119,6 +124,55 @@ def test_quantiles_long_monotone(quantiles):
         assert list(g["percentile"]) == list(range(1, 100))
         assert np.all(np.diff(g["distance_km_euclid_raw"]) >= -1e-9)
         assert np.all(np.diff(g["distance_km_euclid_shrunk"]) >= -1e-9)
+
+
+def test_sensitivity_variants_present_and_shares_sum_to_one(sensitivity):
+    assert set(sensitivity["variant"]) == {"inter_zgb", "all_gis_fallback", "inter_gis_fallback"}
+    assert set(sensitivity["level_geo"]) == {"kreis", "rs7", "zgb"}
+    for variant in sensitivity["variant"].unique():
+        sub = sensitivity[sensitivity["variant"] == variant]
+        assert set(sub[sub["level_geo"] == "kreis"]["code"]) == set(T.ZGB_KREISE)
+    cols = [f"share_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    nonempty = sensitivity[sensitivity["n_persons"] > 0]
+    assert len(nonempty) > 0
+    assert np.allclose(nonempty[cols].sum(axis=1), 1.0, atol=1e-6)
+    shr = [f"share_shrunk_{lbl}" for lbl in T.WORK_BAND_LABELS]
+    assert np.allclose(sensitivity[shr].sum(axis=1), 1.0, atol=1e-6)
+    assert (sensitivity["emd_noise_95"] >= 0).all()
+
+
+def test_sensitivity_inter_zgb_never_exceeds_main_inter_per_kreis(sensitivity, commute):
+    """inter_zgb (destinations WITHIN the ZGB polygon only) is a subset of the main table's
+    `inter` scope (any destination outside the home Gemeinde) for every Kreis: it can only
+    be smaller or equal, never larger."""
+    main_kreis = commute[commute["level_geo"] == "kreis"].set_index("code")
+    sens_kreis = sensitivity[
+        (sensitivity["level_geo"] == "kreis") & (sensitivity["variant"] == "inter_zgb")
+    ].set_index("code")
+    for code in T.ZGB_KREISE:
+        assert sens_kreis.loc[code, "n_persons"] <= main_kreis.loc[code, "n_persons_inter"]
+
+
+def test_sensitivity_all_gis_fallback_never_below_main_per_kreis(sensitivity, commute):
+    """all_gis_fallback recovers persons the main (GIS-only) selection drops, so its
+    per-Kreis person count can only be greater than or equal to the main table's."""
+    main_kreis = commute[commute["level_geo"] == "kreis"].set_index("code")
+    sens_kreis = sensitivity[
+        (sensitivity["level_geo"] == "kreis") & (sensitivity["variant"] == "all_gis_fallback")
+    ].set_index("code")
+    for code in T.ZGB_KREISE:
+        assert sens_kreis.loc[code, "n_persons"] >= main_kreis.loc[code, "n_persons"]
+
+
+def test_sensitivity_pinned_values(sensitivity):
+    zgb = sensitivity[sensitivity["level_geo"] == "zgb"].set_index("variant")
+    assert zgb.loc["inter_zgb", "n_persons"] == 2301
+    assert zgb.loc["all_gis_fallback", "n_persons"] == 5174
+    assert zgb.loc["inter_gis_fallback", "n_persons"] == 2969
+    # Unlike the main table's `inter` scope (100_plus is always exactly 0.0, ADR-0102), the
+    # gis_or_self_reported fallback recovers a small share of >=100 km trips via the
+    # self-reported length -- a measured, non-zero number.
+    assert zgb.loc["all_gis_fallback", "share_100_plus"] == pytest.approx(0.0055, abs=0.001)
 
 
 def test_quantiles_pinned_values(quantiles):
