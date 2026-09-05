@@ -393,8 +393,9 @@ def test_donor_without_an_education_leg_matches_anybody():
     row = matches.set_index("person_id").loc["p1"]
     assert row["donor_id"] == "d1" and row["coarsening_level"] == 0
     assert diagnostics["n_donors_with_education_leg"] == 0
-    # The person is still counted as restricted -- the restriction simply excluded no donor.
-    assert diagnostics["n_persons_education_restricted"] == 1
+    # The rule was evaluated for this person but removed no donor, so it is NOT counted: the
+    # diagnostic reports the rule's EFFECT, not how often it was checked.
+    assert diagnostics["n_persons_education_restricted"] == 0
 
 
 def test_education_columns_are_required_on_both_frames():

@@ -221,6 +221,14 @@
      `at_workplace`. The assigned-workplace measurement is kept beside it as
      `commute_by_kreis_all_assigned.csv` and is not deleted: it remains the right universe for
      questions about the workplace ASSIGNMENT, and keeping both makes the change auditable.
+     **The two halves of check 2 are therefore read from DIFFERENT tables, and this is the
+     binding instruction for every future evaluation of it:** the `100_plus < 3 %` bound is read
+     from the reporting-day table `commute_by_kreis.csv`, because it is a statement about the
+     commutes actually travelled; the "no deterioration of the bands up to 50 km against the
+     2026-09-04 baseline EMD" half is read from `commute_by_kreis_all_assigned.csv`, because the
+     baseline it compares against was measured on the assigned-workplace universe and a
+     comparison across two different universes would attribute a universe change to a model
+     change.
   2. **Check 1's guard distinguishes a join failure from a universe difference** (ruling R6). The
      guard fired at 12.37 % on a residual in which every person_id matched a population row: those
      37,706 workers have an assigned workplace but are not flagged `employed` by

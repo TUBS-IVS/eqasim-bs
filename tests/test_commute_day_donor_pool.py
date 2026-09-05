@@ -336,6 +336,9 @@ def test_build_home_office_donor_pool_carries_n_trips_and_the_fixed_purpose_flag
 
     by_donor = attributes.set_index("donor_id")
     assert by_donor.loc["2_3", "n_trips"] == 0            # immobile, NOT a missing donor
+    assert bool(by_donor.loc["2_3", "is_immobile"]) is True
+    assert not by_donor.loc[["1_1", "2_1", "2_2"], "is_immobile"].any()
+    assert diagnostics["n_immobile"] == int(by_donor["is_immobile"].sum())
     assert by_donor.loc["2_1", "n_trips"] == len(trips[trips["donor_id"] == "2_1"])
     assert by_donor["n_trips"].sum() == len(trips)
     assert not by_donor["has_education_leg"].any()
@@ -365,15 +368,36 @@ def test_donor_with_an_education_trip_is_flagged_has_education_leg():
 
 def test_attach_trip_derived_attributes_counts_both_trip_ends():
     """An education activity is evidence at EITHER end of a leg (arrival and departure)."""
-    attributes = pd.DataFrame({"donor_id": ["d1", "d2", "d3"]})
+    attributes = pd.DataFrame({"donor_id": ["d1", "d2", "d3"], "H_ID": [1, 2, 3],
+                               "P_ID": [1, 1, 1]})
     trips = pd.DataFrame({
         "donor_id":          ["d1", "d2"],
         "preceding_purpose": ["education", "home"],
         "following_purpose": ["home", "work"],
     })
-    out = donor_pool.attach_trip_derived_attributes(attributes, trips).set_index("donor_id")
+    wege = pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 1]})
+    out = donor_pool.attach_trip_derived_attributes(attributes, trips, wege).set_index("donor_id")
     assert list(out["n_trips"]) == [1, 1, 0]
     assert bool(out.loc["d1", "has_education_leg"]) is True
     assert bool(out.loc["d2", "has_education_leg"]) is False
     assert bool(out.loc["d2", "has_work_leg"]) is True
     assert bool(out.loc["d3", "has_work_leg"]) is False
+
+
+def test_attach_trip_derived_attributes_separates_immobile_from_a_dropped_chain():
+    """Fix round 1: ``is_immobile`` comes from the RAW wege file, not from ``n_trips == 0``.
+
+    Donor "d3" has no wege row at all (immobile); donor "d2" HAS one but no surviving built trip
+    (its chain was dropped by the repair/resample cascade) -- both have ``n_trips == 0``, and only
+    the first may be read as a valid trip-less day.
+    """
+    attributes = pd.DataFrame({"donor_id": ["d1", "d2", "d3"], "H_ID": [1, 2, 3],
+                               "P_ID": [1, 1, 1]})
+    trips = pd.DataFrame({"donor_id": ["d1"], "preceding_purpose": ["home"],
+                          "following_purpose": ["work"]})
+    wege = pd.DataFrame({"H_ID": [1, 2], "P_ID": [1, 1]})
+
+    out = donor_pool.attach_trip_derived_attributes(attributes, trips, wege).set_index("donor_id")
+    assert list(out["n_trips"]) == [1, 0, 0]
+    assert bool(out.loc["d2", "is_immobile"]) is False    # had a wege row, chain dropped
+    assert bool(out.loc["d3", "is_immobile"]) is True     # no wege row at all

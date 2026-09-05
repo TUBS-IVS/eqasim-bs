@@ -245,7 +245,7 @@ def test_donor_missing_from_donor_trips_is_counted_and_warned(caplog):
 
     assert diagnostics["n_donors_without_trips"] == 1
     assert "p2" not in set(day_trips["person_id"])  # matched but zero rows: legitimately empty.
-    assert any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+    assert any("donor_id key/dtype mismatch" in message for message in caplog.messages)
 
 
 def test_duplicate_person_id_in_matches_raises_value_error():
@@ -265,9 +265,18 @@ def test_duplicate_person_id_in_matches_raises_value_error():
 # Ruling R9: an immobile donor is not a join failure
 # ---------------------------------------------------------------------------
 
-def _donor_attributes_fixture(n_trips_by_donor):
-    return pd.DataFrame({"donor_id": list(n_trips_by_donor),
-                         "n_trips": list(n_trips_by_donor.values())})
+def _donor_attributes_fixture(immobile_by_donor):
+    """The two donor-pool columns build_day_trips reads: the decider is ``is_immobile``.
+
+    ``n_trips`` is carried alongside because the real attributes frame has it, and to make the
+    point that it is NOT the decider: a donor with ``n_trips == 0`` and ``is_immobile == False``
+    is a chain the resample dropped, which must keep the warning semantics.
+    """
+    return pd.DataFrame({
+        "donor_id": list(immobile_by_donor),
+        "is_immobile": list(immobile_by_donor.values()),
+        "n_trips": [0 if immobile else 4 for immobile in immobile_by_donor.values()],
+    })
 
 
 def _matches_to(donor_id):
@@ -275,13 +284,13 @@ def _matches_to(donor_id):
 
 
 def test_immobile_donor_is_counted_as_immobile_not_as_a_join_failure(caplog):
-    """``n_trips == 0``: a trip-less home-office day is the CORRECT outcome, not a defect."""
+    """``is_immobile``: a trip-less home-office day is the CORRECT outcome, not a defect."""
     with caplog.at_level("WARNING",
                          logger="braunschweig.synthesis.commute_day.plan_replacement"):
         day_trips, diagnostics = plan_replacement.build_day_trips(
             _trips_fixture(), _states_fixture(), _matches_to("d_immobile"),
             _donor_trips_fixture(), random_seed=RANDOM_SEED,
-            donor_attributes=_donor_attributes_fixture({"d1": 3, "d_immobile": 0}))
+            donor_attributes=_donor_attributes_fixture({"d1": False, "d_immobile": True}))
 
     assert diagnostics["n_donors_immobile"] == 1
     assert diagnostics["n_donors_without_trips"] == 0
@@ -290,18 +299,39 @@ def test_immobile_donor_is_counted_as_immobile_not_as_a_join_failure(caplog):
     assert not any("donor_id key or dtype mismatch" in message for message in caplog.messages)
 
 
-def test_donor_with_trips_but_no_rows_still_warns(caplog):
-    """``n_trips > 0`` and yet no rows: the join-failure symptom keeps its warning."""
+def test_donor_that_did_travel_but_has_no_rows_still_warns(caplog):
+    """``is_immobile == False`` and yet no rows: the suspicious symptom keeps its warning."""
     with caplog.at_level("WARNING",
                          logger="braunschweig.synthesis.commute_day.plan_replacement"):
         _day_trips, diagnostics = plan_replacement.build_day_trips(
             _trips_fixture(), _states_fixture(), _matches_to("d_lost"), _donor_trips_fixture(),
             random_seed=RANDOM_SEED,
-            donor_attributes=_donor_attributes_fixture({"d1": 3, "d_lost": 4}))
+            donor_attributes=_donor_attributes_fixture({"d1": False, "d_lost": False}))
 
     assert diagnostics["n_donors_without_trips"] == 1
     assert diagnostics["n_donors_immobile"] == 0
-    assert any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+    assert any("donor_id key/dtype mismatch" in message for message in caplog.messages)
+
+
+def test_chain_dropped_by_the_resample_is_not_excused_as_immobile(caplog):
+    """Fix round 1: ``n_trips == 0`` alone must NOT count as immobile.
+
+    A donor whose chain the repair/resample cascade dropped has no trips either, but that is a
+    resample gap rather than real behaviour (the donor pool counts it as
+    n_chain_dropped_by_resample), so it must keep the warning semantics.
+    """
+    attributes = pd.DataFrame({"donor_id": ["d1", "d_dropped"],
+                               "is_immobile": [False, False],
+                               "n_trips": [3, 0]})
+    with caplog.at_level("WARNING",
+                         logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        _day_trips, diagnostics = plan_replacement.build_day_trips(
+            _trips_fixture(), _states_fixture(), _matches_to("d_dropped"),
+            _donor_trips_fixture(), random_seed=RANDOM_SEED, donor_attributes=attributes)
+
+    assert diagnostics["n_donors_without_trips"] == 1
+    assert diagnostics["n_donors_immobile"] == 0
+    assert any("donor_id key/dtype mismatch" in message for message in caplog.messages)
 
 
 def test_donor_absent_from_the_attributes_is_treated_as_suspicious_not_immobile(caplog):
@@ -311,15 +341,15 @@ def test_donor_absent_from_the_attributes_is_treated_as_suspicious_not_immobile(
         _day_trips, diagnostics = plan_replacement.build_day_trips(
             _trips_fixture(), _states_fixture(), _matches_to("d_unknown"),
             _donor_trips_fixture(), random_seed=RANDOM_SEED,
-            donor_attributes=_donor_attributes_fixture({"d1": 3}))
+            donor_attributes=_donor_attributes_fixture({"d1": False}))
 
     assert diagnostics["n_donors_unknown_trip_count"] == 1
     assert diagnostics["n_donors_without_trips"] == 1
     assert diagnostics["n_donors_immobile"] == 0
 
 
-def test_donor_attributes_require_the_trip_count_column():
-    with pytest.raises(ValueError, match="n_trips"):
+def test_donor_attributes_require_the_immobility_flag():
+    with pytest.raises(ValueError, match="is_immobile"):
         plan_replacement.build_day_trips(
             _trips_fixture(), _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
             random_seed=RANDOM_SEED,

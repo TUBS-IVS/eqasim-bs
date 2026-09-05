@@ -691,6 +691,15 @@ def test_reporting_day_workers_counts_and_excludes_a_worker_without_a_state(capl
     assert "NO row in the commute-day state frame" in caplog.text
 
 
+def test_reporting_day_workers_rejects_a_duplicated_person_id():
+    """One row per worker is the state stage's own assertion; a duplicate is the wrong frame."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    duplicated = pd.DataFrame({"person_id": [10, 10, 20],
+                               S.STATE_COLUMN: ["at_workplace", "home", "at_workplace"]})
+    with pytest.raises(ValueError, match="EXACTLY one row per worker"):
+        S.reporting_day_workers(realised, duplicated)
+
+
 def test_reporting_day_workers_raises_when_the_join_matches_nothing():
     realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
     with pytest.raises(ValueError, match="broken person_id join"):

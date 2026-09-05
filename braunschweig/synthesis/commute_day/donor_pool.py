@@ -442,18 +442,24 @@ def _donors_with_purpose(trips: pd.DataFrame, purpose: str) -> set:
     return ids
 
 
-def attach_trip_derived_attributes(attributes: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
-    """Add ``n_trips``, ``has_education_leg`` and ``has_work_leg`` to the donor attributes.
+def attach_trip_derived_attributes(attributes: pd.DataFrame, trips: pd.DataFrame,
+                                   wege: pd.DataFrame) -> pd.DataFrame:
+    """Add ``n_trips``, ``is_immobile``, ``has_education_leg`` and ``has_work_leg``.
 
-    These three columns cannot be produced by :func:`donor_attributes`, which never sees the
-    BUILT trip table; they are attached here, by :func:`build_home_office_donor_pool`, once that
-    table exists. All three are read from the built chains (never from the raw MiD codes), so
-    they follow the same purpose mapping the donor's day was built with.
+    These four columns cannot be produced by :func:`donor_attributes`, which never sees the BUILT
+    trip table; they are attached here, by :func:`build_home_office_donor_pool`, once that table
+    exists. The three trip-derived ones are read from the built chains (never from the raw MiD
+    codes), so they follow the same purpose mapping the donor's day was built with; ``is_immobile``
+    is read from the RAW ``wege`` file instead, for the reason given below.
 
-    * ``n_trips`` -- rows the donor has in ``trips``; ``0`` for an immobile home-office day.
-      Ruling R9: a donor with ZERO trips is a VALID (trip-less) day, and the plan-replacement
-      step needs this column to tell that expected case apart from a ``donor_id`` join failure,
-      which produces the identical "no rows for this donor" symptom.
+    * ``n_trips`` -- rows the donor has in ``trips``; ``0`` both for an immobile day and for a
+      chain the repair/resample cascade dropped.
+    * ``is_immobile`` -- the donor has NO row at all in the raw ``wege`` file (needs ``H_ID`` and
+      ``P_ID`` on both frames). Ruling R9, fix round 1: ``n_trips == 0`` alone does NOT mean
+      "immobile" -- :func:`build_home_office_donor_pool` keeps ``n_immobile`` and
+      ``n_chain_dropped_by_resample`` apart precisely because a dropped chain is a resample gap,
+      not real behaviour, and the plan-replacement step must not read one as the other. This flag
+      is the pool's own statement of which of the two a trip-less donor is.
     * ``has_education_leg`` -- the chain contains an ``education`` activity. Ruling R7: such a
       donor is only eligible for a receiving person who HAS an education location, because the
       transplanted activity would otherwise have nowhere to be anchored and the secondary
@@ -462,11 +468,21 @@ def attach_trip_derived_attributes(attributes: pd.DataFrame, trips: pd.DataFrame
       only, never used as a matching criterion: every receiving person is a worker with an
       assigned workplace by construction, so a work leg can always be anchored.
     """
-    _require_columns(attributes, ("donor_id",), "attributes frame")
+    _require_columns(attributes, ("donor_id", "H_ID", "P_ID"), "attributes frame")
+    _require_columns(wege, ("H_ID", "P_ID"), "wege frame")
     attributes = attributes.copy()
     trip_counts = trips["donor_id"].value_counts() if len(trips) else pd.Series(dtype=int)
     attributes["n_trips"] = (attributes["donor_id"].map(trip_counts)
                              .fillna(0).astype(int))
+
+    # Computed from the RAW Wege file, independently of the built trips, so "immobile" and
+    # "chain dropped by the resample" can never collapse into one another.
+    donor_wege_pairs = set(
+        map(tuple, wege[["H_ID", "P_ID"]].drop_duplicates().itertuples(index=False, name=None)))
+    attributes["is_immobile"] = pd.Series(
+        [(h, p) not in donor_wege_pairs for h, p in zip(attributes["H_ID"], attributes["P_ID"])],
+        index=attributes.index)
+
     education_donors = _donors_with_purpose(trips, EDUCATION_PURPOSE)
     work_donors = _donors_with_purpose(trips, WORK_PURPOSE)
     attributes["has_education_leg"] = attributes["donor_id"].isin(education_donors)
@@ -486,12 +502,12 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     contribution is the diagnostics summary.
 
     Returns ``(attributes, trips, diagnostics)``. ``attributes`` carries
-    :func:`donor_attributes`' columns PLUS the three trip-derived ones
-    :func:`attach_trip_derived_attributes` adds (``n_trips``, ``has_education_leg``,
-    ``has_work_leg``). ``diagnostics``:
+    :func:`donor_attributes`' columns PLUS the four :func:`attach_trip_derived_attributes` adds
+    (``n_trips``, ``is_immobile``, ``has_education_leg``, ``has_work_leg``). ``diagnostics``:
 
     * ``n_donors`` -- rows in ``attributes`` (every selected donor, mobile or immobile).
-    * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day).
+    * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day);
+      the ``is_immobile`` column of ``attributes`` is the per-donor form of this count.
     * ``n_chain_dropped_by_resample`` -- donors that DID have Wege rows, but ended up with no
       surviving trip in ``trips`` anyway (their chain could not be repaired, and no
       attribute-matched donor could replace it -- see :func:`donor_trips`). Distinct from
@@ -521,25 +537,20 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
     )
-    # n_trips / has_education_leg / has_work_leg can only be read once the chains exist (rulings
-    # R7 and R9); donor_attributes never sees them.
-    attributes = attach_trip_derived_attributes(attributes, trips)
+    # n_trips / is_immobile / has_education_leg / has_work_leg can only be read once the chains
+    # exist (rulings R7 and R9); donor_attributes never sees them.
+    attributes = attach_trip_derived_attributes(attributes, trips, wege)
 
     n_donors = len(attributes)
-    mobile_donor_ids = set(trips["donor_id"].unique()) if len(trips) else set()
-    is_mobile = attributes["donor_id"].isin(mobile_donor_ids)
-
     # A donor with ANY row in the raw Wege file at all is not immobile -- even if that chain was
-    # later dropped by the repair/resample cascade (see donor_trips' docstring). Computed
-    # independently of the trips output so the two failure modes never get conflated.
-    donor_wege_pairs = set(
-        map(tuple, wege[["H_ID", "P_ID"]].drop_duplicates().itertuples(index=False, name=None)))
-    has_any_wege_row = pd.Series(
-        [(h, p) in donor_wege_pairs for h, p in zip(attributes["H_ID"], attributes["P_ID"])],
-        index=attributes.index)
+    # later dropped by the repair/resample cascade (see donor_trips' docstring). Both counts read
+    # the SAME is_immobile column the attributes frame now carries, so the diagnostics here and
+    # the plan-replacement step downstream can never disagree about which donor is which.
+    is_immobile = attributes["is_immobile"].astype(bool)
+    has_no_trips = attributes["n_trips"] == 0
 
-    n_immobile = int((~has_any_wege_row).sum())
-    n_chain_dropped_by_resample = int((has_any_wege_row & ~is_mobile).sum())
+    n_immobile = int(is_immobile.sum())
+    n_chain_dropped_by_resample = int((~is_immobile & has_no_trips).sum())
     n_missing_distance = int((attributes["distance_source"] == DISTANCE_SOURCE_UNKNOWN).sum())
     n_sex_unknown = int(attributes["sex"].isna().sum())
     n_donors_with_education_leg = int(attributes["has_education_leg"].sum())

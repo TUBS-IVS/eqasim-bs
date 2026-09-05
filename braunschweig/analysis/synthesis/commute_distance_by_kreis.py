@@ -370,6 +370,17 @@ def reporting_day_workers(realised_work, states, stats=None):
             f"the commute-day state frame is missing the required column(s) {missing} (present: "
             f"{sorted(states.columns)[:20]}); the reporting-day worker universe cannot be built")
 
+    # The state stage asserts EXACTLY one row per worker, so a duplicate here means the wrong
+    # frame was passed; without this check the reindex below raises pandas' own
+    # InvalidIndexError, which names neither the stage nor the offending ids.
+    duplicated = states.loc[states["person_id"].duplicated(), "person_id"].unique()
+    if len(duplicated):
+        raise ValueError(
+            f"the commute-day state frame must carry EXACTLY one row per worker, but "
+            f"{len(duplicated)} person_id(s) are duplicated (e.g. {sorted(duplicated)[:10]}); "
+            "braunschweig.synthesis.commute_day.state_stage asserts this, so a duplicate means "
+            "the wrong frame reached this stage")
+
     n_assigned = len(realised_work)
     state_by_person = states.set_index("person_id")[STATE_COLUMN]
     worker_state = realised_work["person_id"].map(state_by_person)

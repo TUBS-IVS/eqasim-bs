@@ -185,9 +185,14 @@ validation:
     MEASURED ANYWAY, and NOT a substitute for check 1 because the denominator differs from the
     SrV one: over the 304,900 WORKERS the realised states are at_workplace 296,599 (0.9728),
     home 5,086 (0.0167), absent 3,215 (0.0105). Over the EMPLOYED universe the model''s work
-    participation is 267,194/540,425 = 0.4944 with the flag OFF (delta -15.67 pp against the SrV
-    0.6511) and 260,082/540,425 = 0.4813 with the flag ON (delta -16.99 pp): the day-state model
-    moves this share FURTHER DOWN by 1.32 pp, which ADR-0104 predicted and explicitly declined to
+    participation is 267,194/540,425 = 0.4944146 with the flag OFF (delta -15.67 pp) and
+    260,082/540,425 = 0.4812546 with the flag ON (delta -16.99 pp). Both deltas are against the
+    COMMITTED SrV zgb share_work_trip = 0.6511223931
+    (eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv, zgb row,
+    n_persons 8,016), quoted here at its full precision so the arithmetic is reproducible:
+    0.4812546 - 0.6511223931 = -0.1698678 and 0.4944146 - 0.6511223931 = -0.1567078. The
+    day-state model moves this share FURTHER DOWN by 1.32 pp (0.4944146 - 0.4812546 = 0.0131600),
+    which ADR-0104 predicted and explicitly declined to
     treat as this model''s fit criterion. The ON figure is read from the run log; the ON table
     was not written because the raise came after it was computed.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-05/off/work_participation_by_kreis.csv

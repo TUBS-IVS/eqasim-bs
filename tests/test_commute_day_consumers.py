@@ -524,11 +524,13 @@ def test_commute_day_state_shares_divides_by_the_employed_universe():
     assert zgb["share_at_workplace"] == pytest.approx(0.25)
     assert zgb["delta_no_work_trip_pp"] == pytest.approx(100.0 * (0.35 - (0.1418 + 0.2071)))
 
-    # Person 9 has a state but is not employed: outside the universe, counted, not silently
-    # inflating a share above 1.
+    # Person 9 is in the population but NOT employed; here it carries no state at all, so both
+    # residuals are empty. (Its own branch -- a not-employed person WITH a state -- is covered by
+    # test_commute_day_state_shares_counts_not_employed_workers_without_raising.)
     assert stats["n_states"] == 4
     assert stats["n_workers_in_employed_universe"] == 4
     assert stats["n_states_outside_employed_universe"] == 0
+    assert stats["n_workers_not_employed"] == 0
 
     # A Kreis without employed persons keeps NaN shares rather than a substituted zero.
     empty = table[table["code"] == "03102"].iloc[0]

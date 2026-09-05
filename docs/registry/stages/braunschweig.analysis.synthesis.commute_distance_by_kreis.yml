@@ -47,12 +47,19 @@ notes: 'WORKER UNIVERSE (ADR-0104 ruling R5, fix wave A after the 2026-09-05 pro
   reporting day) -- and a NINTH file, commute_by_kreis_all_assigned.csv, carries the same
   comparison over every worker with an ASSIGNED workplace (the universe measured before the
   ruling; its decisions are not pre-registered and are not written). summary.md names which of
-  the two commute_by_kreis.csv holds. The assigned-workplace universe alone cannot move under
+  the two commute_by_kreis.csv holds. WHICH TABLE ANSWERS WHICH HALF OF ADR-0104 CHECK 2: the
+  100_plus < 3 % bound is read from commute_by_kreis.csv (the reporting-day commutes actually
+  travelled); the "no deterioration up to 50 km against the 2026-09-04 baseline EMD" half is read
+  from commute_by_kreis_all_assigned.csv, whose universe is the assigned-workplace one that
+  baseline was itself measured on -- comparing across two universes would attribute a universe
+  change to a model change. The assigned-workplace universe alone cannot move under
   the day-state model, which changes WHO TRAVELS and not WHERE anyone works: the ON and OFF
   primary-location frames of the 2026-09-05 proof run were byte-identical, and so was every band
-  share. With the flag false the two universes coincide, the ninth file is not written and
-  summary.md has no universe section.
-  Writes eight files under <output_path>/analysis/srv_distance_validation/:
+  share. With the flag false the two universes coincide, the ninth file is not written, summary.md
+  has no universe section, and every CSV, decisions.json and summary.md are unchanged (only
+  provenance.json differs, by the added commute_day_state_enabled parameter and universe block --
+  it carries a generated_at timestamp and is never byte-comparable between runs anyway).
+  Writes eight files (NINE with the model on) under <output_path>/analysis/srv_distance_validation/:
   commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
   decisions.json, provenance.json, summary.md, plus (addendum Task 16, SENSITIVITY only --
   never the pre-registered decision) sensitivity_cells.csv (the per-variant comparison cells

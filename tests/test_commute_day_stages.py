@@ -181,8 +181,9 @@ def _donor_attributes(has_car=True, has_education_leg=False):
     ``has_car=False`` breaks the ``has_car`` HARD criterion for the whole (car-owning) worker
     population, which is what the not-replaceable guard test needs. ``has_education_leg=True``
     does the same through the ruling-R7 criterion for every worker without an education location.
-    ``n_trips`` matches :func:`_donor_trips` (two trips each), so the plan replacement can tell an
-    immobile donor from a join failure (ruling R9).
+    ``n_trips`` matches :func:`_donor_trips` (two trips each) and ``is_immobile`` is False for
+    every donor, so the plan replacement can tell an immobile donor from a join failure
+    (ruling R9).
     """
     return pd.DataFrame({
         "donor_id": ["d1", "d2", "d3", "d4"],
@@ -198,6 +199,7 @@ def _donor_attributes(has_car=True, has_education_leg=False):
         "distance_km": [5.0, 60.0, 250.0, np.nan],
         "employed": [True, True, True, True],
         "n_trips": [2, 2, 2, 2],
+        "is_immobile": [False, False, False, False],
         "has_education_leg": [has_education_leg] * 4,
         "has_work_leg": [False, False, False, False],
     })
@@ -700,12 +702,12 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
     """Ruling R9 wiring: the stage must hand the donor ATTRIBUTES to the replacement.
 
     Donor "d4" is matched but has no rows in ``donor_trips`` because its own day is immobile
-    (``n_trips == 0``). Without the attributes the replacement cannot know that and warns about a
+    (``is_immobile``). Without the attributes the replacement cannot know that and warns about a
     donor_id key/dtype mismatch for 100 % of the replaced persons -- which is exactly the
     unreadable 27.3 % signal of the 2026-09-05 proof run.
     """
     attributes = _donor_attributes()
-    attributes.loc[attributes["donor_id"] == "d4", "n_trips"] = 0
+    attributes.loc[attributes["donor_id"] == "d4", ["n_trips", "is_immobile"]] = [0, True]
     donor_trips = _donor_trips()
     donor_trips = donor_trips[donor_trips["donor_id"] != "d4"].reset_index(drop=True)
     states = _states_frame([
@@ -722,7 +724,7 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
         day_trips = TRIPS.execute(context)
 
     assert len(day_trips[day_trips["person_id"] == 1]) == 0   # a valid trip-less home day
-    assert not any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+    assert not any("donor_id key/dtype mismatch" in message for message in caplog.messages)
 
 
 def test_matches_from_states_keeps_only_home_persons_with_a_donor():

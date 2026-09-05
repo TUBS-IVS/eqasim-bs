@@ -153,8 +153,10 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     :data:`HARD_CRITERIA` -- such a person can never match any donor, since ``NaN`` never equals
     a donor's exact value, and would otherwise vanish into ``n_not_replaceable`` unexplained),
     ``n_donors_with_education_leg`` and ``n_persons_without_education_location`` (the two sides of
-    the ruling-R7 criterion) and ``n_persons_education_restricted`` (persons for whom the
-    education-leg donors were therefore excluded, i.e. the product of the two).
+    the ruling-R7 criterion) and ``n_persons_education_restricted`` (persons for whom that
+    exclusion actually removed at least one donor they would otherwise have been eligible for --
+    NOT merely the persons the rule was evaluated for, a number that would grow with the cohort
+    and say nothing about the rule's effect).
     """
     _require_columns(persons_home, ("person_id", "assigned_distance_class", "sex", "age_class",
                                     "household_size", "has_active_escort", "has_children_u14",
@@ -255,10 +257,15 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
                     & (donor_car == person.has_car))
         # Ruling R7, a hard criterion at EVERY coarsening level: a person without an education
         # location can never anchor a transplanted education activity, so every donor carrying
-        # one is excluded for them (a donor without one stays eligible for everybody).
+        # one is excluded for them (a donor without one stays eligible for everybody). Counted
+        # only when the exclusion actually removed a donor this person could otherwise have had:
+        # a count of "persons the rule was evaluated for" would rise with the cohort size and say
+        # nothing about the rule's effect.
         if not getattr(person, PERSON_EDUCATION_LOCATION_COLUMN):
-            hard_mask &= ~donor_education_leg
-            n_persons_education_restricted += 1
+            n_excluded = int((hard_mask & donor_education_leg).sum())
+            if n_excluded > 0:
+                hard_mask &= ~donor_education_leg
+                n_persons_education_restricted += 1
 
         chosen_donor = None
         chosen_level = None

@@ -54,9 +54,9 @@ _LOG_TAG = "[commute day plan replacement]"
 _DONOR_EXTRA_COLUMNS = ("euclidean_distance", "trip_key")
 
 #: Share of matched donors with zero rows in ``donor_trips`` -- EXCLUDING the donors the donor
-#: attributes report as immobile (``n_trips == 0``, ruling R9) -- above which the replacement
-#: warns: what remains after that split can no longer be explained by the donor pool's own
-#: immobility and points at a ``donor_id`` key/dtype mismatch.
+#: pool flags ``is_immobile`` (ruling R9) -- above which the replacement warns: what remains after
+#: that split can no longer be explained by the donor pool's own immobility and points at a
+#: dropped chain or a ``donor_id`` key/dtype mismatch.
 WARN_DONORS_WITHOUT_TRIPS_SHARE = 0.01
 
 STATE_ABSENT = "absent"
@@ -121,9 +121,9 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     ``donor_id`` (one row per REPLACEABLE ``home`` person; an unreplaceable one is simply
     absent). ``donor_trips`` -- :func:`donor_pool.donor_trips` output: needs ``donor_id`` plus
     the CONTRACT columns (minus ``person_id``) and ``euclidean_distance`` / ``trip_key``.
-    ``donor_attributes`` -- the donor pool's attributes frame (``donor_id``, ``n_trips``); OPTIONAL
-    only so the pure-helper tests can call this function without one, and always passed by
-    ``trips_day_stage``. Without it every donor absent from ``donor_trips`` is counted as
+    ``donor_attributes`` -- the donor pool's attributes frame (``donor_id``, ``is_immobile``);
+    OPTIONAL only so the pure-helper tests can call this function without one, and always passed
+    by ``trips_day_stage``. Without it every donor absent from ``donor_trips`` is counted as
     ``n_donors_without_trips``, as before ruling R9.
 
     Returns ``(day_trips, diagnostics)``. ``diagnostics``: ``n_persons_replaced`` (``home``
@@ -135,13 +135,16 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     nulled on replaced rows, see the module docstring), and -- ruling R9 -- the SPLIT of the
     matched persons whose ``donor_id`` has no rows at all in ``donor_trips``:
 
-    * ``n_donors_immobile`` / ``share_donors_immobile`` -- the donor's own ``n_trips`` is 0, an
-      immobile home-office day. EXPECTED (the MiD donor pool is 32.5 % immobile by construction),
-      reported at info level, and the person's trip-less day is the correct outcome.
-    * ``n_donors_without_trips`` / ``share_donors_without_trips`` -- the donor HAS trips (or is
-      absent from ``donor_attributes``, i.e. unknown) yet none of them arrived here. That is the
-      symptom of a ``donor_id`` key/dtype mismatch between ``matches`` and ``donor_trips``, which
-      silently wipes every affected person's day, so this rate -- and only this one -- warns above
+    * ``n_donors_immobile`` / ``share_donors_immobile`` -- the donor pool flags the donor
+      ``is_immobile`` (no row in the raw MiD Wege file at all), an immobile home-office day.
+      EXPECTED (the MiD donor pool is 32.5 % immobile by construction), reported at info level,
+      and the person's trip-less day is the correct outcome.
+    * ``n_donors_without_trips`` / ``share_donors_without_trips`` -- the donor DID travel (or is
+      absent from ``donor_attributes``, i.e. unknown) yet none of its trips arrived here. Two
+      causes, neither of them benign: the donor's chain was dropped by the repair/resample cascade
+      (the pool's own ``n_chain_dropped_by_resample``, a resample gap rather than real behaviour)
+      or a ``donor_id`` key/dtype mismatch between ``matches`` and ``donor_trips`` silently wiped
+      it. This rate -- and only this one -- warns above
       :data:`WARN_DONORS_WITHOUT_TRIPS_SHARE`.
     * ``n_donors_unknown_trip_count`` -- how many of the latter were the "absent from
       ``donor_attributes``" case (always 0 when no attributes frame is given).
@@ -188,15 +191,17 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     donor_groups = {donor_id: group.sort_values("trip_index").reset_index(drop=True)
                     for donor_id, group in donor_trips.groupby("donor_id", sort=False)}
 
-    # Ruling R9: an absent donor is only an ERROR when that donor actually has trips. The donor
-    # attributes carry n_trips (0 for an immobile home-office day, see
-    # donor_pool.attach_trip_derived_attributes), so the two cases can be told apart instead of
-    # being conflated into one warning -- the pool is 32.5 % immobile BY CONSTRUCTION, which made
-    # the conflated rate (27.3 % on the 2026-09-05 proof run) unreadable as a defect signal.
-    donor_trip_counts = None
+    # Ruling R9: an absent donor is only an ERROR when that donor is not IMMOBILE. The decider is
+    # the donor pool's own is_immobile flag (no row in the raw MiD Wege file at all, see
+    # donor_pool.attach_trip_derived_attributes) and NOT n_trips == 0, which is also true of a
+    # donor whose chain the repair/resample cascade dropped -- a resample gap, not real behaviour,
+    # that the pool counts separately as n_chain_dropped_by_resample and that must not be excused
+    # here. The pool is 32.5 % immobile BY CONSTRUCTION, which made the conflated rate (27.3 % on
+    # the 2026-09-05 proof run) unreadable as a defect signal.
+    donor_is_immobile = None
     if donor_attributes is not None:
-        _require_columns(donor_attributes, ("donor_id", "n_trips"), "donor_attributes frame")
-        donor_trip_counts = donor_attributes.set_index("donor_id")["n_trips"]
+        _require_columns(donor_attributes, ("donor_id", "is_immobile"), "donor_attributes frame")
+        donor_is_immobile = donor_attributes.set_index("donor_id")["is_immobile"]
 
     donor_blocks = []
     replaced_person_ids = []
@@ -208,20 +213,20 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         donor_rows = donor_groups.get(donor_id)
         if donor_rows is None:
             # The donor has no rows at all in donor_trips. With the donor attributes at hand this
-            # splits into the EXPECTED case (n_trips == 0: a fully immobile home-office day, so
-            # the person legitimately gets a trip-less day) and the SUSPICIOUS one (n_trips > 0:
-            # the donor has trips that did not arrive here, exactly what a donor_id key/dtype
-            # mismatch between matches and donor_trips produces). A donor missing from the
+            # splits into the EXPECTED case (is_immobile: a fully immobile home-office day, so the
+            # person legitimately gets a trip-less day) and the SUSPICIOUS one (the donor DID
+            # travel, so either its chain was dropped by the resample or a donor_id key/dtype
+            # mismatch between matches and donor_trips wiped it). A donor missing from the
             # attributes frame entirely is counted as unknown and treated as suspicious -- an
             # unknown must never be read as the benign case.
-            n_trips_of_donor = None
-            if donor_trip_counts is not None:
-                raw_n_trips = donor_trip_counts.get(donor_id)
-                if raw_n_trips is None or pd.isna(raw_n_trips):
+            is_immobile = None
+            if donor_is_immobile is not None:
+                raw_is_immobile = donor_is_immobile.get(donor_id)
+                if raw_is_immobile is None or pd.isna(raw_is_immobile):
                     n_donors_unknown_trip_count += 1
                 else:
-                    n_trips_of_donor = int(raw_n_trips)
-            if n_trips_of_donor == 0:
+                    is_immobile = bool(raw_is_immobile)
+            if is_immobile:
                 n_donors_immobile += 1
             else:
                 n_donors_without_trips += 1
@@ -270,8 +275,8 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
 
     logger.info(
         "%s reporting-day trips built: %d persons replaced (+%d/-%d trips), %d/%d matched donors "
-        "were IMMOBILE (%.1f%%, n_trips == 0, an expected trip-less home-office day) and %d/%d "
-        "(%.1f%%) had zero rows although their donor has trips; %d persons absent (0 rows), %d "
+        "were IMMOBILE (%.1f%%, is_immobile, an expected trip-less home-office day) and %d/%d "
+        "(%.1f%%) had zero rows although their donor did travel; %d persons absent (0 rows), %d "
         "home persons unmatched (kept unchanged, %d extra column(s) nulled on replaced rows)",
         _LOG_TAG, n_matched, n_trips_added, n_trips_removed,
         n_donors_immobile, n_matched, 100.0 * share_donors_immobile,
@@ -290,11 +295,12 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
             _LOG_TAG, n_home_unmatched)
     if share_donors_without_trips > WARN_DONORS_WITHOUT_TRIPS_SHARE:
         logger.warning(
-            "%s %d/%d matched donors (%.1f%%) have ZERO rows in donor_trips although their donor "
-            "attributes report trips (or are missing altogether) -- above %.0f%%, which usually "
-            "signals a donor_id key or dtype mismatch between matches and donor_trips (silently "
-            "wiping every affected replaced person's day). Donors that are genuinely immobile "
-            "(n_trips == 0) are NOT counted here; they are reported as n_donors_immobile.",
+            "%s %d/%d matched donors (%.1f%%) have ZERO rows in donor_trips although the donor "
+            "pool does NOT flag them immobile (or their attributes are missing altogether) -- "
+            "above %.0f%%, which signals either a chain dropped by the repair/resample cascade or "
+            "a donor_id key/dtype mismatch between matches and donor_trips (silently wiping every "
+            "affected replaced person's day). Genuinely immobile donors are NOT counted here; "
+            "they are reported as n_donors_immobile.",
             _LOG_TAG, n_donors_without_trips, n_matched, 100.0 * share_donors_without_trips,
             100.0 * WARN_DONORS_WITHOUT_TRIPS_SHARE)
 

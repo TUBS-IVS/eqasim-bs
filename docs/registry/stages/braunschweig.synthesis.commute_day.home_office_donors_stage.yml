@@ -51,14 +51,21 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   has_car (household H_ANZAUTO > 0; NaN, never defaulted false, when the household join misses --
   counted as n_household_unmatched), has_active_escort (any W_ZWECK == escort-active leg),
   household_size (unbinned -- the matching module bins both donor and worker sides identically,
-  ruling R1), distance_km / distance_class / distance_source, and -- read from the BUILT chain,
-  so they follow the same purpose mapping the donor day itself was built with, including
-  escort_passive_education -- n_trips (0 for an immobile donor day; ruling R9, it is what lets
-  plan_replacement tell an expected trip-less day apart from a donor_id join failure),
-  has_education_leg and has_work_leg (ruling R7: a donor whose chain contains an education
-  activity may only be matched to a person who HAS an education location, since the receiving
-  person could otherwise not anchor it; a work leg needs no such restriction because every
-  receiving person is a worker with an assigned workplace). Fallback chain for the donor''s own
+  ruling R1), distance_km / distance_class / distance_source, and four columns
+  attach_trip_derived_attributes adds once the chains exist: n_trips (rows in the built trip
+  table), is_immobile (NO row in the raw Wege file at all), has_education_leg and has_work_leg.
+  The last three purpose flags are read from the BUILT chain, so they follow the same purpose
+  mapping the donor day itself was built with, including escort_passive_education; is_immobile is
+  read from the RAW Wege file instead, deliberately: n_trips == 0 is ALSO true of a donor whose
+  chain the repair/resample cascade dropped (n_chain_dropped_by_resample, a resample gap rather
+  than real behaviour), so is_immobile -- not n_trips -- is the pool''s statement of which of the
+  two a trip-less donor is, and it is what plan_replacement reads to tell an expected trip-less
+  day apart from a lost chain or a donor_id join failure (ruling R9). has_education_leg carries
+  ruling R7: a donor whose chain contains an education activity may only be matched to a person
+  who HAS an education location, since the receiving person could otherwise not anchor it; a work
+  leg needs no such restriction because every receiving person is a worker with an assigned
+  workplace. n_immobile and n_chain_dropped_by_resample below are computed from these same two
+  columns, so the pool diagnostics and the plan replacement can never disagree about a donor. Fallback chain for the donor''s own
   commute distance, in order and each rate logged: (1) P_ARB_ENTF cleaned and classified with the
   MiD 200 km top-code (distance_source = "P_ARB_ENTF"); (2) the donor''s first valid work-trip
   length from the raw Wege file, classified WITHOUT a top-code since a raw trip length was never

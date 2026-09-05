@@ -92,12 +92,13 @@ HOUSEHOLD_COLUMNS = ("H_ID", "H_GR", "H_ANZAUTO")
 # --------------------------------------------------------------------------- output schema
 
 #: Columns of the ``attributes`` frame: ``donor_pool.donor_attributes``' own columns plus the
-#: three ``donor_pool.attach_trip_derived_attributes`` reads from the BUILT chains (``n_trips``,
-#: ``has_education_leg``, ``has_work_leg``; rulings R7 and R9).
+#: four ``donor_pool.attach_trip_derived_attributes`` adds -- ``n_trips``, ``has_education_leg``
+#: and ``has_work_leg`` from the BUILT chains, ``is_immobile`` from the RAW Wege file (rulings R7
+#: and R9; see that function for why the last one cannot be derived from ``n_trips == 0``).
 ATTRIBUTE_COLUMNS = ("donor_id", "H_ID", "P_ID", "sex", "age", "age_class", "employed",
                      "has_children_u14", "has_car", "has_active_escort", "household_size",
                      "distance_km", "distance_class", "distance_source",
-                     "n_trips", "has_education_leg", "has_work_leg")
+                     "n_trips", "is_immobile", "has_education_leg", "has_work_leg")
 #: Columns of the ``trips`` frame (``donor_pool.donor_trips``): the ``synthesis.population.trips``
 #: CONTRACT with ``person_id`` renamed to ``donor_id``, plus the two documented extras.
 TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column in CONTRACT) \
