@@ -102,6 +102,12 @@ def extract(repo_root: str, base: str, overlay: Optional[str] = None) -> dict:
             item = key
         definitions.append({"descriptor": item, "config": parameters})
 
+    from braunschweig import synpp_deterministic
+
+    # The name-level graph does not depend on stage hashes, but install the same
+    # deterministic propagation the production entry point uses so that a dryrun
+    # exercises exactly the code path of a real run.
+    synpp_deterministic.install()
     previous_directory = os.getcwd()
     os.chdir(repo_root)  # relative paths inside configure() resolve like a real run
     try:

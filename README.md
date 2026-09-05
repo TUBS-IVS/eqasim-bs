@@ -265,8 +265,14 @@ python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml
 
 ```powershell
 python scripts/run_synpp.py configs/fixtures/config_local_braunschweig.yml     # 1 % IPF
-python -m synpp configs/fixtures/config_smoke_popsim_open_mini.yml             # popsim_open mini
+python scripts/run_synpp.py configs/fixtures/config_smoke_popsim_open_mini.yml # popsim_open mini
 ```
+
+Always launch the pipeline through `scripts/run_synpp.py`. Besides logging, provenance and
+cache priming it installs the deterministic stage-hash patch (`braunschweig/synpp_deterministic.py`,
+ADR-0105) before synpp builds the stage graph; a plain `python -m synpp` run names cache
+entries nondeterministically (synpp 1.6.2 propagates implicit config keys in a
+`PYTHONHASHSEED`-dependent order) and therefore misses caches at random.
 
 A 0.1 % CI dry run is `configs/fixtures/config_dryrun_braunschweig.yml`. The
 random seed is fixed at `1234` and the gravity slope at `-0.065` across all
