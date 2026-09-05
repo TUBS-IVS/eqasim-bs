@@ -112,15 +112,23 @@ evidence:
     log_marker: '[commute day state]'
     note: 'log_marker names the central marker (state.py and state_stage.py, verified present in
       source); the fallback/guard rates below are actually spread across every module''s own tag,
-      each independently grep-able: [commute day donors] and [commute day donors stage]
-      (donor_pool.py / home_office_donors_stage.py -- distance-source fallback,
-      immobile/chain-dropped counts), [commute day state] (state.py / state_stage.py -- the draw
-      itself, donor-distance PRIMARY-source coverage, the not-replaceable downgrade and its
-      RAISE), [commute day matching] (matching.py -- the coarsening cascade),
-      [commute day trips] (trips_day_stage.py -- donors-without-trips), [commute day activities]
-      (activities_day_stage.py), [commute day locations] (spatial_locations_day.py),
-      [commute day output] (output_day.py -- the join-coverage RAISE),
-      [commute day population] (braunschweig/matsim/scenario/population.py) and
+      each independently grep-able (verified exhaustively with
+      `grep -oh "\[commute day[^]]*\]" braunschweig/synthesis/commute_day/*.py
+      braunschweig/analysis/synthesis/work_participation_by_kreis.py
+      braunschweig/analysis/cordon_validation.py braunschweig/matsim/scenario/population.py |
+      sort -u`, ten tags, listed here in full -- no others exist): [commute day donors] and
+      [commute day donors stage] (donor_pool.py / home_office_donors_stage.py --
+      distance-source fallback, immobile/chain-dropped counts), [commute day state] (state.py /
+      state_stage.py -- the draw itself, donor-distance PRIMARY-source coverage, the
+      not-replaceable downgrade and its RAISE), [commute day matching] (matching.py -- the
+      coarsening cascade), [commute day plan replacement] (plan_replacement.py --
+      n_home_unmatched, n_donors_without_trips and its >1% warning: the pure builder that
+      actually performs the splice and owns these two guards), [commute day trips]
+      (trips_day_stage.py -- the synpp-stage wrapper around plan_replacement.build_day_trips;
+      logs the finished diagnostics dict but does not itself compute any of the rates above),
+      [commute day activities] (activities_day_stage.py), [commute day locations]
+      (spatial_locations_day.py), [commute day output] (output_day.py -- the join-coverage
+      RAISE), [commute day population] (braunschweig/matsim/scenario/population.py) and
       [braunschweig.analysis.cordon_validation] (cordon_validation.py). The SEPARATE analysis-only
       tag [commute_day_state] (underscored, braunschweig/analysis/synthesis/
       work_participation_by_kreis.py) belongs to the Phase A measurement feature
