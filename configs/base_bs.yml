@@ -450,6 +450,10 @@ aliases:
   # false both are pass-throughs of the pre-assignment views.
   synthesis.population.trips.final: braunschweig.synthesis.commute_day.trips_day_stage
   synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
+  # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
+  synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day
+  # The eqasim output writer, run on the reporting-day trips/activities; also exports commute_day_state in persons.csv.
+  synthesis.output: braunschweig.synthesis.commute_day.output_day
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   matsim.scenario.population: braunschweig.matsim.scenario.population
   matsim.scenario.households: braunschweig.matsim.scenario.households

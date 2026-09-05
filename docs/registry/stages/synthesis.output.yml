@@ -1,16 +1,27 @@
 stage: synthesis.output
 title: Synthesis output writer
 layer: infrastructure
-description: Writes the unified population/trips/locations output (CSV/parquet + meta); the terminal
-  synthesis stage.
+description: 'Writes the unified population/trips/locations output (CSV/parquet + meta); the terminal
+  synthesis stage. In the production config it resolves to
+  braunschweig.synthesis.commute_day.output_day (ADR-0104, issue #244), which runs the SAME
+  vendored writer on the REPORTING-DAY trips/activities (.final) and merges the drawn
+  commute_day_state into the persons frame so it is exported through the existing optional-column
+  mechanism (PERSON_OPTIONAL_OUTPUT_COLUMNS, appended last; empty for persons without an assigned
+  workplace). With commute_day_state_enabled false the enriched frame is passed through untouched
+  and the column set stays byte-identical.'
 lineage:
   type: extended
   upstream: null
   notes: null
 code:
 - synthesis/output.py
+- braunschweig/synthesis/commute_day/output_day.py
 pipelines:
   popsim_mid: active
   popsim_open: active
   simple_ipf_open: active
 production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.output_day
+decisions:
+- ADR-0104

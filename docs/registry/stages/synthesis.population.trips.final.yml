@@ -1,0 +1,32 @@
+stage: synthesis.population.trips.final
+title: Reporting-day trips
+layer: behavior
+description: 'Reporting-day view of the population''s day (ADR-0104, issue #244): the
+  pre-assignment synthesis.population.trips with the day of every worker drawn to
+  ''home'' replaced by a matched MiD home-office donor''s day and the trips of every
+  worker drawn to ''absent'' removed. The pre-assignment view itself stays untouched and
+  keeps feeding the commute distances and the primary location assignment, which is what
+  keeps the day state -- it depends on the assigned distance -- out of a dependency cycle
+  with the location assignment. Everything that needs the FINISHED day reads this stage:
+  the secondary chainsolvers, synthesis.population.activities.final, synthesis.output, the
+  MATSim population and the two commute analyses. With commute_day_state_enabled false the
+  stage returns the pre-assignment frame itself, so the alias is a pure pass-through. MINIMAL
+  RECORD (Phase B Task 5): completed by Task 6 with the realised diagnostics.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent; a second, terminal view of the trips table introduced by
+    ADR-0104. Only the configs/base_bs.yml production config resolves it to the model; every
+    configs/fixtures/* config aliases it to its own pre-assignment trips stage instead.
+code:
+- braunschweig/synthesis/commute_day/trips_day_stage.py
+- braunschweig/synthesis/commute_day/plan_replacement.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.trips_day_stage
+decisions:
+- ADR-0104

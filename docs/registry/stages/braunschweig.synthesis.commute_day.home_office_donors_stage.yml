@@ -1,0 +1,29 @@
+stage: braunschweig.synthesis.commute_day.home_office_donors_stage
+title: MiD home-office donor pool
+layer: behavior
+description: 'Builds the donor pool for the reporting-day state model (ADR-0104, issue #244)
+  from the raw MiD 2023 delivery (MiD2023_Personen.csv / _Wege.csv / _Haushalte.csv under
+  braunschweig.population.popsim.mid_dir): the persons who reported a full home-office day, with
+  the matching attributes and their whole travel-day trip chain. Returns (attributes, trips,
+  diagnostics). The donor day is built by the IDENTICAL rules as the synthetic population''s day
+  (the same escort_purpose / escort_passive_education / explicit_round_trip_purposes flags and
+  the same trip-table builder), so a replaced day cannot follow a different purpose or mode
+  vocabulary than the one it replaces. With commute_day_state_enabled false the stage reads
+  nothing and returns two EMPTY frames with the ON-path columns. MINIMAL RECORD (Phase B
+  Task 5): completed by Task 6 with the realised pool diagnostics.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent. The pure builder lives in
+    braunschweig/synthesis/commute_day/donor_pool.py; this stage owns the raw-MiD I/O, the
+    validation token over the raw file sizes plus the builder sources, and the synpp plumbing.
+code:
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+decisions:
+- ADR-0104

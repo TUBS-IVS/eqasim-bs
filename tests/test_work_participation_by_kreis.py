@@ -79,6 +79,13 @@ def _work_persons():
     return pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2]})
 
 
+def _states():
+    """The state frame of braunschweig.synthesis.commute_day.state_stage: one row per worker."""
+    return pd.DataFrame({"person_id": [1, 3],
+                         "commute_day_state": ["at_workplace", "home"],
+                         "reason": ["kept", "redrawn"]})
+
+
 def _srv_table():
     """Shape of the committed SrV table, incl. the Wolfsburg row (n_persons 0, NaN shares)."""
     rows = []
@@ -612,6 +619,11 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert (recorder.config_keys[S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE]
             == S.DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     assert recorder.config_keys[S.KEY_EDGE_TOLERANCE_KM] == S.DEFAULT_EDGE_TOLERANCE_KM
+    # Phase B (ADR-0104): the finished day and the drawn states.
+    assert "synthesis.population.trips.final" in recorder.stages
+    assert "braunschweig.synthesis.commute_day.state_stage" in recorder.stages
+    assert (recorder.config_keys[S.KEY_COMMUTE_DAY_STATE_ENABLED]
+            == S.DEFAULT_COMMUTE_DAY_STATE_ENABLED)
 
 
 def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path, monkeypatch):
@@ -647,7 +659,8 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             "synthesis.population.spatial.home.locations": home_locations,
             "synthesis.population.spatial.primary.locations": (_work_points(), None),
             "synthesis.population.enriched": persons,
-            "synthesis.population.trips": _trips(),
+            "synthesis.population.trips.final": _trips(),
+            "braunschweig.synthesis.commute_day.state_stage": {"states": _states()},
             "braunschweig.locations.work": _work_locations(),
             "data.spatial.municipalities": pd.DataFrame({"commune_id": ["03101000"]}),
             "braunschweig.data.census.pendler": _ba_flows(),
@@ -656,6 +669,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
             S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
             S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
+            S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
         })
 
     result = S.execute(context)
@@ -663,8 +677,20 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     out_dir = tmp_path / "analysis" / "cds"
     for name in ("work_participation_by_kreis.csv", "assigned_distance_classes.csv",
                  "ext_destination_distances.csv", "assigned_class_by_person.csv",
-                 "summary.md", "provenance.json"):
+                 "summary.md", "provenance.json", "commute_day_state_shares.csv"):
         assert (out_dir / name).exists(), name
+
+    # ADR-0104 check 1: the state table and its summary section (both persons are workers;
+    # person 1 is at_workplace, person 3 home -> 0.5 / 0.5 / 0.0 over the two ZGB Kreise).
+    state_shares = pd.read_csv(out_dir / "commute_day_state_shares.csv", dtype={"code": str})
+    assert list(state_shares.columns) == list(S.STATE_SHARE_COLUMNS)
+    zgb_states = state_shares[state_shares["code"] == "zgb"].iloc[0]
+    assert zgb_states["n_workers"] == 2
+    assert zgb_states["share_at_workplace"] == pytest.approx(0.5)
+    assert zgb_states["share_home"] == pytest.approx(0.5)
+    assert zgb_states["share_absent"] == pytest.approx(0.0)
+    summary = (out_dir / "summary.md").read_text(encoding="utf-8")
+    assert "Check 1 (ADR-0104)" in summary and "never gated" in summary
 
     participation = pd.read_csv(out_dir / "work_participation_by_kreis.csv", dtype={"code": str})
     assert list(participation.columns) == list(S.PARTICIPATION_COLUMNS)
@@ -684,7 +710,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     assert row["destination_ars5"] == "03241"
     assert bool(row["destination_is_external"]) is True
     assert set(result) == {"participation", "distance_classes", "ext_destinations",
-                           "near_class_edge_share", "counts"}
+                           "near_class_edge_share", "commute_day_state_shares", "counts"}
 
 
 # --------------------------------------------------------------------------- Kreis centroids

@@ -1,0 +1,34 @@
+stage: braunschweig.synthesis.commute_day.state_stage
+title: Reporting-day commute state draw
+layer: behavior
+description: 'Draws every worker''s reporting-day state -- at_workplace / home / absent --
+  from the committed MiD workday-location table, conditioned on the ASSIGNED commute-distance
+  class, and matches a MiD home-office donor to every worker drawn to ''home'' (ADR-0104,
+  issue #244). Universe: every person with an assigned WORK location. Output
+  {"states": DataFrame(person_id, commute_day_state, p_keep, redraw_eligible, reason, donor_id,
+  coarsening_level, assigned_distance_class, donor_distance_class, distance_km), "diagnostics":
+  dict} with EXACTLY one row per worker. A ''home'' worker for whom the donor pool holds no day
+  at any coarsening level is downgraded to at_workplace with reason home_not_replaceable and
+  counted; above commute_day_max_not_replaceable_share the stage RAISES. Config keys:
+  commute_day_state_enabled, commute_day_far_threshold_km, commute_day_absent_share_far,
+  commute_day_max_not_replaceable_share, cds_detour_factor. With the flag false every worker is
+  at_workplace with reason "disabled". MINIMAL RECORD (Phase B Task 5): completed by Task 6 with
+  the realised draw diagnostics.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent. Every rule lives in the pure modules of the package
+    (state.py, matching.py); the stage owns only the synpp plumbing and the guards.
+code:
+- braunschweig/synthesis/commute_day/state_stage.py
+- braunschweig/synthesis/commute_day/state.py
+- braunschweig/synthesis/commute_day/matching.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- mid2023_workday_location
+decisions:
+- ADR-0104

@@ -1,0 +1,30 @@
+stage: synthesis.population.activities.final
+title: Reporting-day activities
+layer: behavior
+description: 'Reporting-day activity table (ADR-0104, issue #244): the same eqasim
+  trips->activities transform as synthesis.population.activities, applied to
+  synthesis.population.trips.final instead of the pre-assignment trips. The transform is NOT
+  re-implemented -- the stage calls synthesis.population.activities.execute through a shim
+  context, so the vendored activity logic cannot drift from a second copy. Read by the eqasim
+  location join (synthesis.population.spatial.locations) and by synthesis.output and the MATSim
+  population, all of which must see the finished day. With commute_day_state_enabled false the
+  upstream .final trips are a pass-through, so this frame equals the pre-assignment activities.
+  MINIMAL RECORD (Phase B Task 5): completed by Task 6.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent; a second, terminal view of the activities table introduced by
+    ADR-0104, computed by the vendored eqasim stage through a shim context. Only
+    configs/base_bs.yml resolves it to the model; every configs/fixtures/* config aliases it
+    to the vendored synthesis.population.activities instead.
+code:
+- braunschweig/synthesis/commute_day/activities_day_stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.activities_day_stage
+decisions:
+- ADR-0104

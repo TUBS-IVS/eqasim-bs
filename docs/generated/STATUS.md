@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 78 | stages: 118 | datasets: 62 | ADRs: 104 | run manifests: 32
+- Features: 78 | stages: 122 | datasets: 62 | ADRs: 104 | run manifests: 32
 
 ## Population synthesis
 
@@ -52,7 +52,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-11 stage(s), 4 in the production DAG. Datasets: `entd_2008`, `mid2023_reference_tables`
+15 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_reference_tables`, `mid2023_workday_location`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

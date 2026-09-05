@@ -86,6 +86,7 @@ PERSON_FIELDS = [
 # PERSON_FIELDS.index(...) lookups for the mandatory fields are unaffected.
 OPTIONAL_PERSON_FIELDS = [
     "housing_tenure",  # Braunschweig completeness attribute (not consumed by the sim)
+    "commute_day_state",  # Braunschweig reporting-day state (ADR-0104; written as commuteDayState)
 ]
 
 
@@ -186,6 +187,19 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _housing_tenure is None or pd.isna(_housing_tenure):
             _housing_tenure = "unknown"
         writer.add_attribute("housingTenure", "java.lang.String", str(_housing_tenure))
+
+    # Braunschweig reporting-day commute state {at_workplace, home, absent} drawn by
+    # braunschweig.synthesis.commute_day.state_stage (ADR-0104, issue #244), merged into the
+    # person frame by braunschweig.matsim.scenario.population. ADDITIVE and emitted only when
+    # the column is present AND the person actually has a state: persons without an assigned
+    # workplace (children, non-workers) and injected in-commuters carry NaN here, and an
+    # absent state is written as NO attribute rather than as the string "nan"/"unknown", so a
+    # Java consumer can distinguish "no workplace" from a drawn value. Output is byte-identical
+    # when commute_day_state_enabled is off (the column is then never merged in).
+    if "commute_day_state" in person_fields:
+        _commute_day_state = person[person_fields.index("commute_day_state")]
+        if _commute_day_state is not None and not pd.isna(_commute_day_state):
+            writer.add_attribute("commuteDayState", "java.lang.String", str(_commute_day_state))
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])

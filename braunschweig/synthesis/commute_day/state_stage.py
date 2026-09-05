@@ -32,6 +32,8 @@ readable by its consumers without a branch of their own.
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
 import os
 
@@ -42,6 +44,8 @@ from braunschweig.calibration.commute_day_state_reference import MID_CHILD_MAX_A
 from braunschweig.calibration.commute_day_state_reference import load_workday_location_table
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
 from braunschweig.popsim.chain_matching import derive_age_class
+from braunschweig.synthesis.commute_day import matching as _matching
+from braunschweig.synthesis.commute_day import state as _state
 from braunschweig.synthesis.commute_day.matching import match_home_office_donors
 from braunschweig.synthesis.commute_day.state import (
     COMMUTE_DAY_SEED_OFFSET,
@@ -53,6 +57,11 @@ from braunschweig.synthesis.commute_day.state import (
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[commute day state]"
+
+#: Pure modules whose sources this stage's cache token must cover (see :func:`validate`); the
+#: donor pool's own rules are covered by ``home_office_donors_stage``'s token, which this stage
+#: consumes as an input.
+_HELPER_MODULES = (_state, _matching)
 
 # --------------------------------------------------------------------------- config keys
 
@@ -102,6 +111,21 @@ REASON_DISABLED = "disabled"
 #: workers can never be re-drawn at all, which is a broken join far more often than a real
 #: property of the population.
 WARN_PRIMARY_DONOR_SOURCE_SHARE = 0.5
+
+
+def validate(context):
+    """synpp validation token: md5 over the pure helper modules' sources.
+
+    synpp hashes only THIS module's source, so an edit to a helper module it imports would
+    otherwise leave the cached stage output in place although the rules that produced it
+    changed. The token folds those sources in, so a helper edit devalidates the stage exactly
+    like an edit here (same mechanism as
+    ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):

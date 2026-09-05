@@ -4,6 +4,12 @@ Phase A measurement for the commute-day-state model (spec 2026-09-04, issue #244
 is PURELY DIAGNOSTIC -- it reads cached synthesis stages and writes a report; it changes no
 model behaviour and no pipeline output.
 
+Since Phase B (ADR-0104) the trips it reads are the REPORTING-DAY view
+(``synthesis.population.trips.final``): "employed persons with a work trip today" is a
+statement about the day the simulation runs, and a ``home`` or ``absent`` worker has no work
+trip on it. With ``commute_day_state_enabled`` false that alias is a pass-through of the
+pre-assignment trips, so the Phase A numbers are reproduced unchanged.
+
 It answers three questions on a finished synthetic population:
 
 1. **Work participation.** Of the persons the model calls ``employed``, what share actually
@@ -41,9 +47,17 @@ invented: the only reference is the committed SrV table, and a Kreis without a r
 keeps ``NaN`` rather than a substituted value. Every ``n_*`` count is a SAMPLE count at the
 run's ``sampling_rate``, never expanded -- ``summary.md`` says so in its header.
 
-This stage is measurement only. It states a difference against a reference; it does NOT
-validate the model against observed behaviour, and it decides nothing (no pre-registered rule
-is attached in Phase A).
+Beside the three Phase A measurements the stage reports **ADR-0104 check 1** when the
+reporting-day state model is enabled: the realised ``at_workplace`` / ``home`` / ``absent``
+shares among workers and the share of employed persons without a work trip, per home Kreis and
+regionally, against the same committed SrV reference (``commute_day_state_shares.csv`` and the
+check-1 section of ``summary.md``, see :func:`commute_day_state_shares`). The pre-registered
++/- 3 pp tolerance is an ASSUMPTION recorded in ADR-0104 and applies to the REGIONAL aggregate
+ONLY; the per-Kreis rows are reported, never gated.
+
+Everything else in this stage is measurement only. It states a difference against a reference;
+it does NOT validate the model against observed behaviour, and no Phase A number decides
+anything.
 """
 
 from __future__ import annotations
@@ -73,6 +87,11 @@ KEY_SUBDIR = "cds_output_subdir"
 KEY_MAX_UNMATCHED_HOME_SHARE = "cds_max_unmatched_home_share"
 KEY_MAX_UNRESOLVED_DESTINATION_SHARE = "cds_max_unresolved_destination_share"
 KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
+#: Whether the reporting-day state model is active. OFF -> the state frame carries the same
+#: placeholder state for every worker and the check-1 table would state nothing, so it is not
+#: written at all (rather than written as a table of constants).
+KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
+DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
 
 #: Euclidean -> routed conversion, same convention (and default) as
 #: ``braunschweig.analysis.synthesis.commute_distance_by_kreis``; the SrV/MiD distance classes
@@ -91,7 +110,7 @@ DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE = 0.05
 #: edge", i.e. a worker whose assigned class would flip under a small distance change.
 DEFAULT_EDGE_TOLERANCE_KM = 5.0
 
-#: eqasim trip purpose marking a home->work leg (``synthesis.population.trips``).
+#: eqasim trip purpose marking a home->work leg (``synthesis.population.trips.final``).
 WORK_PURPOSE = "work"
 #: Prefix that ``braunschweig.data.external_workplaces`` puts in front of the 8-digit AGS of a
 #: fabricated out-of-region workplace, so ``commune_id[3:8]`` is the destination Kreis ARS5.
@@ -121,6 +140,19 @@ PER_PERSON_COLUMNS = (
     "home_ars5", "destination_ars5",
 )
 
+#: The three reporting-day states ``braunschweig.synthesis.commute_day.state_stage`` draws.
+COMMUTE_DAY_STATES = ("at_workplace", "home", "absent")
+STATE_SHARE_COLUMNS = (
+    "code", "n_workers", "share_at_workplace", "share_home", "share_absent",
+    "n_employed", "share_employed_no_work_trip", "srv_share_home_office_day",
+    "srv_share_work_trip", "srv_share_neither", "delta_no_work_trip_pp",
+)
+#: Pre-registered tolerance of ADR-0104 check 1, in PERCENTAGE POINTS, applied to the REGIONAL
+#: aggregate only. ASSUMPTION: chosen a priori in the 2026-09-04 design and recorded in
+#: ADR-0104; it is NOT derived from any committed source, and the per-Kreis SrV cells (663-2,268
+#: persons under a stratified PSU design) are explicitly not treated as gate-worthy.
+CHECK_1_TOLERANCE_PP = 3.0
+
 _MODEL_PARTICIPATION_COLUMNS = (
     "code", "n_employed", "n_with_work_trip", "share_work_trip", "share_no_work_trip",
 )
@@ -128,7 +160,12 @@ _MODEL_PARTICIPATION_COLUMNS = (
 
 def configure(context):
     context.stage("synthesis.population.enriched")
-    context.stage("synthesis.population.trips")
+    # The REPORTING-DAY trips (ADR-0104): "employed persons with a work trip today" is a
+    # statement about the day the simulation runs, so it must be measured on the finished day.
+    # With commute_day_state_enabled false the alias is a pass-through of the pre-assignment
+    # trips, so the Phase A numbers are reproduced unchanged.
+    context.stage("synthesis.population.trips.final")
+    context.stage("braunschweig.synthesis.commute_day.state_stage")
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("synthesis.population.spatial.primary.locations")
     # The workplace pool is declared under its CONCRETE name, not under the
@@ -151,6 +188,7 @@ def configure(context):
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE, DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     context.config(KEY_EDGE_TOLERANCE_KM, DEFAULT_EDGE_TOLERANCE_KM)
+    context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -235,7 +273,8 @@ def work_participation_by_kreis(persons, trips, homes_with_ars5,
     """
     _require_columns(persons, ("person_id", "household_id", "employed"),
                      "synthesis.population.enriched")
-    _require_columns(trips, ("person_id", "following_purpose"), "synthesis.population.trips")
+    _require_columns(trips, ("person_id", "following_purpose"),
+                     "synthesis.population.trips.final")
     _require_columns(homes_with_ars5, ("household_id", "ars5"), "the home-geography frame")
 
     frame = persons[["person_id", "household_id", "employed"]].merge(
@@ -340,6 +379,115 @@ def compare_participation(model, srv_table):
 
     out["delta_work_trip_pp"] = 100.0 * (out["share_work_trip"] - out["srv_share_work_trip"])
     return out[list(PARTICIPATION_COLUMNS)]
+
+
+# ------------------------------------------------------------------ reporting-day states (check 1)
+
+def _state_share_row(code, subset):
+    """One row of the state-share table: the three state shares among ``subset``'s workers."""
+    n_workers = int(len(subset))
+    row = {"code": code, "n_workers": n_workers}
+    for state in COMMUTE_DAY_STATES:
+        # No worker: a share is undefined, not zero (same convention as _participation_row).
+        row[f"share_{state}"] = (float((subset["commute_day_state"] == state).mean())
+                                 if n_workers else float("nan"))
+    return row
+
+
+def commute_day_state_shares(states, persons, homes_with_ars5, participation,
+                             max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
+                             stats=None):
+    """ADR-0104 check 1: realised reporting-day state shares per home Kreis, against SrV 2023.
+
+    ``states`` is the ``states`` frame of ``braunschweig.synthesis.commute_day.state_stage``
+    (EXACTLY one row per worker, columns ``person_id, commute_day_state``); ``persons`` supplies
+    the ``person_id -> household_id`` link and ``homes_with_ars5`` the ``household_id -> ars5``
+    one, so the home Kreis is derived by the SAME matching logic as every other table of this
+    stage; ``participation`` is :func:`compare_participation`'s output, from which the employed
+    denominator, the model's ``share_no_work_trip`` and the three SrV reference shares are
+    carried over unchanged (they are never recomputed here, so the two tables cannot disagree).
+
+    Rows are the eight ``ZGB_KREISE`` codes plus a ``zgb`` row over exactly their union; columns
+    are :data:`STATE_SHARE_COLUMNS`. ``delta_no_work_trip_pp`` compares the model's share of
+    employed persons WITHOUT a work trip against the sum of the two SrV remainder shares
+    (``srv_share_home_office_day + srv_share_neither``), which is the only decomposition the two
+    universes share.
+
+    ASSUMPTION (stated in ``summary.md`` as well): the model states map onto the SrV workday
+    locations as ``at_workplace`` -> ``share_work_trip``, ``home`` -> ``share_home_office_day``,
+    ``absent`` -> ``share_neither``. SrV's "neither" is a residual category (employed, no work
+    trip, no full home-office day), so the correspondence with a modelled "away from the region"
+    state is an interpretation, not a definitional identity.
+
+    Workers whose home resolves to no Kreis, or to a Kreis outside the ZGB, are excluded from
+    both the per-Kreis rows and the ``zgb`` row and counted; the unmatched-home rate is guarded
+    exactly as in :func:`work_participation_by_kreis`. ``stats``, if a dict, receives the counts.
+    """
+    _require_columns(states, ("person_id", "commute_day_state"), "the commute-day state frame")
+    _require_columns(persons, ("person_id", "household_id"), "synthesis.population.enriched")
+    _require_columns(homes_with_ars5, ("household_id", "ars5"), "the home-geography frame")
+    _require_columns(participation, PARTICIPATION_COLUMNS, "the participation table")
+
+    unknown = sorted(set(states["commute_day_state"].dropna().unique()) - set(COMMUTE_DAY_STATES))
+    if unknown:
+        raise ValueError(
+            f"the commute-day state frame carries the unknown state(s) {unknown}; the shares "
+            f"below would then not sum to 1 over {list(COMMUTE_DAY_STATES)}. Either the state "
+            "stage gained a state or the wrong column was passed")
+
+    frame = states[["person_id", "commute_day_state"]].merge(
+        persons[["person_id", "household_id"]], on="person_id", how="left", validate="1:1")
+    n_workers_total = len(frame)
+    n_person_unmatched = int(frame["household_id"].isna().sum())
+    if n_person_unmatched:
+        raise ValueError(
+            f"{n_person_unmatched}/{n_workers_total} workers in the state frame have no row in "
+            "synthesis.population.enriched; the state frame and the population must describe "
+            "the same persons -- check the person_id join")
+
+    frame = frame.merge(_dedupe_homes(homes_with_ars5, ("household_id", "ars5")),
+                        on="household_id", how="left", validate="m:1")
+    n_home_unmatched = int(frame["ars5"].isna().sum())
+    _guard_unmatched_home_share(n_home_unmatched, n_workers_total,
+                                "workers (reporting-day states)", max_unmatched_home_share)
+
+    in_zgb = frame["ars5"].isin(ZGB_KREISE)
+    n_outside_zgb = int((frame["ars5"].notna() & ~in_zgb).sum())
+    if n_outside_zgb:
+        LOGGER.warning(
+            "%s %d/%d workers have a home Kreis outside the 8 ZGB Kreise; excluded from both "
+            "the per-Kreis rows and the zgb row", _LOG_TAG, n_outside_zgb, n_workers_total)
+    frame = frame[in_zgb].copy()
+
+    rows = [_state_share_row(code, frame[frame["ars5"] == code]) for code in ZGB_KREISE]
+    rows.append(_state_share_row(ZGB_ROW_CODE, frame))
+    table = pd.DataFrame(rows, columns=["code", "n_workers"]
+                         + [f"share_{state}" for state in COMMUTE_DAY_STATES])
+
+    reference = participation[["code", "n_employed", "share_no_work_trip",
+                               "srv_share_home_office_day", "srv_share_work_trip",
+                               "srv_share_neither"]].rename(
+        columns={"share_no_work_trip": "share_employed_no_work_trip"})
+    out = table.merge(reference, on="code", how="left", validate="1:1")
+    out["delta_no_work_trip_pp"] = 100.0 * (
+        out["share_employed_no_work_trip"]
+        - (out["srv_share_home_office_day"] + out["srv_share_neither"]))
+
+    zgb_row = out[out["code"] == ZGB_ROW_CODE].iloc[0]
+    LOGGER.info(
+        "%s reporting-day states over %d ZGB workers: at_workplace %s / home %s / absent %s "
+        "(SrV work_trip %s / home_office_day %s / neither %s); employed without a work trip %s "
+        "vs SrV remainder, delta %s pp (tolerance +/- %.1f pp, regional aggregate only)",
+        _LOG_TAG, int(zgb_row["n_workers"]), _fmt(zgb_row["share_at_workplace"]),
+        _fmt(zgb_row["share_home"]), _fmt(zgb_row["share_absent"]),
+        _fmt(zgb_row["srv_share_work_trip"]), _fmt(zgb_row["srv_share_home_office_day"]),
+        _fmt(zgb_row["srv_share_neither"]), _fmt(zgb_row["share_employed_no_work_trip"]),
+        _fmt(zgb_row["delta_no_work_trip_pp"], 2), CHECK_1_TOLERANCE_PP)
+
+    if stats is not None:
+        stats.update(n_workers_total=n_workers_total, n_home_unmatched=n_home_unmatched,
+                     n_outside_zgb=n_outside_zgb, n_workers_in_zgb=int(len(frame)))
+    return out[list(STATE_SHARE_COLUMNS)]
 
 
 # --------------------------------------------------------------------------- realised work
@@ -822,9 +970,72 @@ def _sample_count_line(sampling_rate):
             "and deltas are unaffected by the sampling rate.")
 
 
+def _check_1_verdict(delta_pp):
+    """``within`` / ``outside`` the pre-registered band, or ``n/a`` when the delta is missing."""
+    if delta_pp is None or (isinstance(delta_pp, float) and math.isnan(delta_pp)):
+        return "n/a"
+    return "within" if abs(float(delta_pp)) <= CHECK_1_TOLERANCE_PP else "outside"
+
+
+def _state_shares_section(state_shares):
+    """The ADR-0104 check-1 section of ``summary.md``; empty when no state table was produced.
+
+    Reports the REGIONAL aggregate against the SrV reference and applies the pre-registered
+    +/- 3 pp band to it alone. The per-Kreis rows live in ``commute_day_state_shares.csv`` and
+    are reported, never gated -- ADR-0104 records why (the per-Kreis SrV cells rest on
+    663-2,268 persons under a stratified PSU design over ~44 selected municipalities and are
+    assumption-grade for a full Kreis).
+    """
+    if state_shares is None or len(state_shares) == 0:
+        return []
+    row = state_shares[state_shares["code"] == ZGB_ROW_CODE].iloc[0]
+    # (label, model share, SrV share) -- the mapping is an ASSUMPTION, stated below.
+    pairs = (
+        ("at_workplace vs SrV work trip", row["share_at_workplace"], row["srv_share_work_trip"]),
+        ("home vs SrV full home-office day", row["share_home"],
+         row["srv_share_home_office_day"]),
+        ("absent vs SrV neither", row["share_absent"], row["srv_share_neither"]),
+    )
+    lines = ["", "## Check 1 (ADR-0104): reporting-day states vs SrV -- tolerance +/- 3 pp on "
+             "the regional aggregate only (ASSUMPTION, pre-registered)", "",
+             "The +/- 3 pp band was chosen a priori in the 2026-09-04 design and recorded in "
+             "ADR-0104; it is NOT",
+             "derived from any committed source. It is applied to the ZGB aggregate ONLY. The "
+             "per-Kreis rows of",
+             "commute_day_state_shares.csv are REPORTED, never gated: the per-Kreis SrV cells "
+             "rest on 663-2,268",
+             "persons under a stratified PSU design and are assumption-grade for a full Kreis.",
+             "",
+             "ASSUMPTION -- state correspondence: at_workplace <-> SrV work trip, home <-> SrV "
+             "full home-office day,",
+             "absent <-> SrV neither. SrV's \"neither\" is a residual category (employed, no "
+             "work trip, no full",
+             "home-office day), so its correspondence with a modelled away-from-the-region "
+             "state is an",
+             "interpretation, not a definitional identity.", "",
+             f"ZGB workers with a state: {int(row['n_workers'])} (sample count)", "",
+             "| quantity | model | SrV 2023 | delta (pp) | +/- 3 pp |", "|---|---|---|---|---|"]
+    for label, model_share, srv_share in pairs:
+        delta = 100.0 * (float(model_share) - float(srv_share))
+        lines.append(f"| {label} | {_fmt(model_share)} | {_fmt(srv_share)} | "
+                     f"{_fmt(delta, 2)} | {_check_1_verdict(delta)} |")
+    srv_remainder = float(row["srv_share_home_office_day"]) + float(row["srv_share_neither"])
+    lines.append(
+        f"| employed without a work trip vs SrV remainder | "
+        f"{_fmt(row['share_employed_no_work_trip'])} | {_fmt(srv_remainder)} | "
+        f"{_fmt(row['delta_no_work_trip_pp'], 2)} | "
+        f"{_check_1_verdict(row['delta_no_work_trip_pp'])} |")
+    return lines
+
+
 def summary_markdown(participation, distance_classes, ext_table, near_edge_share,
-                     provenance=None, sampling_rate=None):
-    """Headline numbers of the Phase A measurement (see the module docstring for the caveats)."""
+                     provenance=None, sampling_rate=None, state_shares=None):
+    """Headline numbers of the Phase A measurement (see the module docstring for the caveats).
+
+    ``state_shares`` is :func:`commute_day_state_shares`' table when the reporting-day state
+    model is enabled and ``None`` otherwise; passing ``None`` omits the check-1 section entirely,
+    so the report of a run without the model is unchanged.
+    """
     lines = ["# Commute day state -- Phase A measurement", ""] + _provenance_lines(provenance) + [
         "Measurement only: the model is compared to a committed reference, which is NOT a",
         "validation against observed behaviour and decides nothing.", "",
@@ -858,6 +1069,7 @@ def summary_markdown(participation, distance_classes, ext_table, near_edge_share
               "", "## Class-edge fragility", "",
               f"- Share of workers whose distance lies within the configured tolerance of a "
               f"commute-distance class edge: {_fmt(near_edge_share)}"]
+    lines += _state_shares_section(state_shares)
     return "\n".join(lines) + "\n"
 
 
@@ -890,7 +1102,8 @@ def json_safe(value):
 
 
 def write_outputs(directory, participation, distance_classes, ext_table, per_person,
-                  provenance=None, near_edge_share=float("nan"), sampling_rate=None):
+                  provenance=None, near_edge_share=float("nan"), sampling_rate=None,
+                  state_shares=None):
     """Write the Phase A report artifacts into ``directory``.
 
     Files: ``work_participation_by_kreis.csv`` (:data:`PARTICIPATION_COLUMNS`),
@@ -904,6 +1117,11 @@ def write_outputs(directory, participation, distance_classes, ext_table, per_per
     CSVs carry no comment header so downstream code can read them with plain
     ``pandas.read_csv``; the parameter block lives in ``provenance.json`` and at the top of
     ``summary.md``, together with the sample-count disclaimer.
+
+    ``state_shares`` (:func:`commute_day_state_shares`, ADR-0104 check 1) adds a SEVENTH file,
+    ``commute_day_state_shares.csv`` (:data:`STATE_SHARE_COLUMNS`), and the check-1 section of
+    ``summary.md``. It is ``None`` -- and neither the file nor the section is produced -- when
+    the reporting-day state model is off, so a run without the model keeps the six-file set.
     """
     provenance = provenance or {}
     os.makedirs(directory, exist_ok=True)
@@ -911,12 +1129,17 @@ def write_outputs(directory, participation, distance_classes, ext_table, per_per
     distance_classes.to_csv(os.path.join(directory, "assigned_distance_classes.csv"), index=False)
     ext_table.to_csv(os.path.join(directory, "ext_destination_distances.csv"), index=False)
     per_person.to_csv(os.path.join(directory, "assigned_class_by_person.csv"), index=False)
+    n_files = 6
+    if state_shares is not None:
+        state_shares.to_csv(os.path.join(directory, "commute_day_state_shares.csv"), index=False)
+        n_files += 1
     with open(os.path.join(directory, "provenance.json"), "w", encoding="utf-8") as handle:
         json.dump(json_safe(provenance), handle, indent=2, allow_nan=False)
     with open(os.path.join(directory, "summary.md"), "w", encoding="utf-8") as handle:
         handle.write(summary_markdown(participation, distance_classes, ext_table,
-                                      near_edge_share, provenance, sampling_rate))
-    LOGGER.info("%s wrote 6 report files to %s", _LOG_TAG, directory)
+                                      near_edge_share, provenance, sampling_rate,
+                                      state_shares=state_shares))
+    LOGGER.info("%s wrote %d report files to %s", _LOG_TAG, n_files, directory)
 
 
 # --------------------------------------------------------------------------- stage
@@ -1001,7 +1224,9 @@ def execute(context):
     df_home = context.stage("synthesis.population.spatial.home.locations")
     df_work, _df_education = context.stage("synthesis.population.spatial.primary.locations")
     df_persons = context.stage("synthesis.population.enriched")
-    df_trips = context.stage("synthesis.population.trips")
+    df_trips = context.stage("synthesis.population.trips.final")
+    df_states = context.stage("braunschweig.synthesis.commute_day.state_stage")["states"]
+    commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
     df_work_locations = context.stage("braunschweig.locations.work")
     df_municipalities = context.stage("data.spatial.municipalities")
     df_ba_flows = context.stage("braunschweig.data.census.pendler")
@@ -1042,6 +1267,19 @@ def execute(context):
         stats=participation_stats)
     participation = compare_participation(model_participation, srv_table)
 
+    # ADR-0104 check 1. OFF: every worker carries the same placeholder state, so a table of
+    # constants would only look like a measurement -- it is not written at all.
+    state_stats = {}
+    state_shares = None
+    if commute_day_state_enabled:
+        state_shares = commute_day_state_shares(
+            df_states, df_persons, homes, participation,
+            max_unmatched_home_share=max_unmatched_home_share, stats=state_stats)
+    else:
+        LOGGER.info("%s %s is false -- no reporting-day state table is written (every worker "
+                    "carries the same placeholder state)", _LOG_TAG,
+                    KEY_COMMUTE_DAY_STATE_ENABLED)
+
     realised = realised_work_frame(
         homes, df_work, df_work_locations, df_persons, detour_factor=detour_factor,
         max_unmatched_home_share=max_unmatched_home_share,
@@ -1069,6 +1307,8 @@ def execute(context):
             "edge_tolerance_km": edge_tolerance_km,
             "sampling_rate": sampling_rate,
             "output_subdir": context.config(KEY_SUBDIR),
+            "commute_day_state_enabled": commute_day_state_enabled,
+            "check_1_tolerance_pp": CHECK_1_TOLERANCE_PP,
         },
         "inputs": {
             "srv_work_participation": os.path.join(
@@ -1078,7 +1318,8 @@ def execute(context):
             "n_kreis_centroids": int(len(kreis_centroids)),
             "n_ba_flow_pairs": int(len(df_ba_flows)),
             "stages": [
-                "synthesis.population.enriched", "synthesis.population.trips",
+                "synthesis.population.enriched", "synthesis.population.trips.final",
+                "braunschweig.synthesis.commute_day.state_stage",
                 "synthesis.population.spatial.home.locations",
                 "synthesis.population.spatial.primary.locations",
                 "braunschweig.locations.work", "data.spatial.municipalities",
@@ -1090,6 +1331,7 @@ def execute(context):
             "work": work_stats,
             "distance_classes": class_stats,
             "external_destinations": ext_stats,
+            "commute_day_states": state_stats,
         },
         "results": {
             "near_class_edge_share": near_edge_share,
@@ -1098,7 +1340,7 @@ def execute(context):
         },
     }
     write_outputs(out_dir, participation, distance_classes, ext_table, per_person, provenance,
-                  near_edge_share, sampling_rate)
+                  near_edge_share, sampling_rate, state_shares=state_shares)
 
     zgb_row = participation[participation["code"] == ZGB_ROW_CODE].iloc[0]
     LOGGER.info(
@@ -1113,4 +1355,4 @@ def execute(context):
     # would bloat the cache for no consumer.
     return dict(participation=participation, distance_classes=distance_classes,
                 ext_destinations=ext_table, near_class_edge_share=near_edge_share,
-                counts=provenance["counts"])
+                commute_day_state_shares=state_shares, counts=provenance["counts"])
