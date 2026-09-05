@@ -7,6 +7,8 @@ FIRST trip: 1 home, 2 elsewhere, 809 = not asked from the 2nd trip on). Both
 flags are OFF by default so every existing caller stays byte-identical.
 """
 
+import logging
+
 import pandas as pd
 
 from braunschweig.popsim import trips as T
@@ -40,7 +42,8 @@ def test_default_keeps_every_leg():
 
 
 def test_exclude_rbw_legs_drops_them_and_empties_only_rbw_person(caplog):
-    out = T.expand_persons_to_trips(_persons(), _wege(), exclude_rbw_legs=True)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        out = T.expand_persons_to_trips(_persons(), _wege(), exclude_rbw_legs=True)
     assert len(out) == 4 and set(out["person_id"]) == {0, 1}
     assert "rbW legs dropped: 3/7" in caplog.text
 
@@ -48,7 +51,7 @@ def test_exclude_rbw_legs_drops_them_and_empties_only_rbw_person(caplog):
 def test_drop_leading_arrive_home_leg_only_when_first_leg_arrives_home():
     out = T.expand_persons_to_trips(_persons(), _wege(), drop_leading_arrive_home_leg=True)
     p1 = out[out["person_id"] == 1]
-    assert len(p1) == 1 and p1["following_purpose"].iloc[0] == "shop"
+    assert len(p1) == 1 and p1["purpose"].iloc[0] == "shop"
     assert len(out[out["person_id"] == 0]) == 4
 
 
