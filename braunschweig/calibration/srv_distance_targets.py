@@ -141,9 +141,14 @@ def _ags8(series: pd.Series) -> pd.Series:
     return padded.where(valid, np.nan)
 
 
-def _kreis_from_ags(ags: pd.Series) -> pd.Series:
+def kreis_from_ags(ags: pd.Series) -> pd.Series:
     """5-digit Kreis key from an 8-digit AGS; NaN propagates for missing/sentinel AGS values."""
     return _ags8(ags).str[:5]
+
+
+# Public alias (ruling R8, fix round 1 of the SrV work-participation task): kept so any
+# existing caller of the original private name keeps working unchanged (no behaviour change).
+_kreis_from_ags = kreis_from_ags
 
 
 def select_person_observations(trips, persons, households, purpose_codes,

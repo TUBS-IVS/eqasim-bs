@@ -1,0 +1,125 @@
+dataset: mid2023_workday_location
+title: MiD 2023 reporting-day work-location and home-office donor-pool references (committed aggregates)
+provider: derived in-repo from MiD 2023 scientific-use microdata (SUF B1, infas/DLR/IVT/infas 360)
+vintage: 2023 survey year
+geography: Germany (national MiD sample); no regional breakdown
+crs: null
+roles:
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate on the run server with: python scripts/extract_mid_workday_location.py
+    --raw eqasim-data/data/braunschweig/popsim/mid2023_raw
+    --out-dir eqasim-data/data/braunschweig/mid
+    --source-commit <short sha of the eqasim-bs checkout running the script>
+    The script REQUIRES --source-commit (ruling R7): it is recorded verbatim in both output
+    files' provenance header so a committed CSV is always traceable to an exact code state.
+    Reads MiD2023_Personen.csv (HP_ID, H_ID, P_GEW, arbwo, M_HOFF, P_STARB1, starb2, P_ARB_ENTF,
+    HP_ALTER, HP_SEX) and MiD2023_Wege.csv (HP_ID, W_ZWECK). The raw microdata is server-local
+    only and never committed.
+  script: scripts/extract_mid_workday_location.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_workday_location_by_commute_distance.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external for a
+    contributor to download or verify presence of, since both files ship committed with the repo
+    checkout (mirrors the sibling committed MiD tables, e.g. mid2023_cars_by_rs7_haustyp, which
+    are handled the same way for the same reason). requirements.production is "optional" in
+    Phase A (no registered stage reads either file yet; see requirements below), so the README
+    D4 readme-data check does not require a derived-inputs row until a stage starts depending on
+    it.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (derived from a restricted scientific-use source)
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Two committed files: mid2023_workday_location_by_commute_distance.csv (weighted reporting-day
+  work-location shares by commute-distance class) and mid2023_home_office_donor_pool.csv
+  (home-office-day donor-pool cell sizes, cross-classified by distance class, has_children, and
+  has_active_escort).
+
+  Universe (ruling R4): arbwo == 1 (reporting day is a weekday) AND M_HOFF == 1 (asked the
+  home-office module) AND P_STARB1 in (1, 2, 9) (worked / did not work / no answer); every other
+  P_STARB1 code (e.g. 202, 206, 402, 404, 407, meaning "not employed"/"not asked") is dropped.
+  The module/weekday filter alone still keeps roughly 100k not-applicable, filter-coded persons
+  (from the 2026-09-04 extraction log: 151,466 after module/weekday, 49,527 after the P_STARB1
+  filter, out of 420,979 total MiD persons) -- the P_STARB1 filter is what removes them.
+  States: did_not_work = P_STARB1 == 2; missing = P_STARB1 == 9 (no answer) or an unmapped
+  starb2 code (e.g. 99) among P_STARB1 == 1 workers; at_workplace/at_home/other_place from
+  starb2 (2/1/{3,4,5,96}) only when P_STARB1 == 1. Distance: P_ARB_ENTF cleaned by
+  clean_mid_commute_distance_km (codes 996, 999, and every value >= 1000 -- MiD filter/skip
+  codes -- become missing; 200.0 is a legitimate top-code, classed 100_200). 4,635/49,527
+  (9.4%) universe persons have a missing/invalid distance and are counted only in the "all" row.
+
+  Bin convention and self-report heaping (ruling R6, measured on the 2026-09-05 extraction,
+  commit 43f74008): distance classes are LEFT-INCLUSIVE [a, b) (e.g. 10_25 is [10, 25)), chosen
+  by convention (spec wording, continuous model distances) and applied IDENTICALLY on the donor
+  and the model side. MiD self-reported P_ARB_ENTF heaps heavily on round numbers: 36.2% of
+  valid distances are multiples of 5 km, with 2,159 persons reporting exactly 10 km, 133
+  reporting exactly 100 km, and 202 reporting exactly the 200 km top-code. BOTH unweighted class
+  COUNTS and P_GEW-weighted STATE SHARES are convention-sensitive as a result -- counts strongly:
+  the lt10 class would contain 21,259 persons under a right-inclusive (a, b] convention instead
+  of the 19,100 committed here, and 100_200 would drop from 783 to 650 (both figures MEASURED by
+  rebuilding the table a second time with
+  `commute_day_state_reference.measure_bin_convention_deviation`, not carried over from an
+  earlier ad-hoc scan; they reproduce the magnitudes an earlier, uncommitted controller scan had
+  estimated); shares by up to the measured maximum absolute deviation across the five share
+  columns and every distance class, AS MEASURED on this extraction, of **0.0237** (2.37
+  percentage points) -- NOT the "stay robust ... within 0.005" claim an earlier draft of this
+  record asserted without deriving it (CLAUDE.md "No invented reference values": that number and
+  its framing were corrected once actually measured, rather than edited to match the old claim).
+  The measured value is recorded verbatim in the committed CSV's own header ("Bin-convention
+  deviation" line), which is the traceable source for this figure. The 200 km top-code alone
+  (202 persons) is therefore a substantial part of the already-thin 100_200 class (783 persons):
+  that class mixes 100-200 km commutes with arbitrarily long ones, and any consumer treating
+  100_200 as a narrow band should be aware of this composition.
+
+  National (not regional) sample -- there is no ZGB- or Kreis-level breakdown; the table is used
+  as a national reference for the commute-day-state model, not a regional calibration target.
+  Weekday-only universe (arbwo == 1): weekend reporting days are out of scope by construction.
+  200 km top-code: distances at or above 200 km are indistinguishable in MiD and are pooled into
+  the 100_200 class.
+
+  Donor-pool cell-size diagnostics (server extraction, 2026-09-04, n_donors total = 8,026,
+  has_active_escort share 13.4%, has_children share 23.1%): the thinnest cross-classified cells
+  are 50_100 with children AND active escort (n_donors = 76) and 100_200 with children AND
+  active escort (n_donors = 30) -- both too thin for a stable per-cell donor draw on their own;
+  any donor-matching design that conditions on this full cross (distance class x has_children x
+  has_active_escort) must pool across a coarser dimension for these cells or document the
+  resulting sampling noise.
+
+  ASSUMPTION: the national MiD relationship between commute distance and reporting-day
+  work-location state (and the home-office donor-pool composition) is assumed to transfer to
+  the Braunschweig/ZGB study area; there is no regional MiD sample to check this against.
+  This transfer assumption, the 200 km top-code as the far threshold, and the left-inclusive
+  bin convention with its heaping sensitivity are all carried as named assumptions of the
+  decision that consumes this table: ADR-0104 (register vs reporting-day universe of
+  out-commuters).
+notes: |
+  No stage reads these files in Phase A, so `used_by` is empty; the access path is the module
+  braunschweig.calibration.commute_day_state_reference (a module, not a synpp stage, and
+  therefore not a `used_by` entry -- that field resolves against the stage registry).
+  Reference for the commute-day-state model (far/weekly commuters; issue #244). The universe,
+  state, and distance-cleaning definitions are recorded durably in this record's own
+  `limitations` field and in the module docstrings of
+  braunschweig/calibration/commute_day_state_reference.py -- not in any gitignored session
+  artifact. Not a control target: no registered synthesis or population stage reads either
+  file in Phase A (roles: validation_reference only). Becomes production-relevant once the
+  commute-day-state model lands and starts consuming these tables via
+  braunschweig.calibration.commute_day_state_reference.load_workday_location_table /
+  load_home_office_donor_pool. Pin tests: tests/test_commute_day_state_reference_pins.py.
+  Decision record: ADR-0104 (register vs reporting-day universe of out-commuters) -- it adopts
+  the day-state model on this table's evidence and states which of its numbers the model uses
+  (the workplace/home substitution by distance class as the keep-probability ratio; the
+  home-office-day donor pool as the replacement plan source). Measured against the model in the
+  run manifest docs/runs/commute-day-state-phase-a-2026-09-05.yml.

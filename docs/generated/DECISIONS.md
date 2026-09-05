@@ -112,4 +112,5 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0101](../decisions/ADR-0101-analysis-stages-read-the-matsim-archive-not-the-run-stage.md) | 2026-09-03 | active | Analysis stages read the MATSim output archive, never the run stage |
 | [ADR-0102](../decisions/ADR-0102-srv-2023-as-regional-distance-reference-for-primary-activities.md) | 2026-09-03 | active | SrV 2023 as the regional distance reference for the primary activities |
 | [ADR-0103](../decisions/ADR-0103-decision-per-layer-after-srv-distance-baseline.md) | 2026-09-03 | active | Decision per calibration layer after the SrV distance baseline |
+| [ADR-0104](../decisions/ADR-0104-register-vs-reporting-day-universe-of-out-commuters.md) | 2026-09-05 | active | Register vs reporting-day universe of out-commuters |
 | [ADR-0105](../decisions/ADR-0105-deterministic-synpp-stage-hashes.md) | 2026-09-05 | active | Deterministic synpp stage hashes (patch of the implicit-config propagation) |

@@ -80,5 +80,8 @@ validation:
 assessment:
   status: reviewed
   by: Lasse Bienzeisler with Claude (Fable 5.1)
-  date: '2026-09-04'
+  date: '2026-09-05'
   source: ADR-0103
+  note: |
+    2026-09-05: srv_distance_targets.kreis_from_ags made public (alias kept), no behaviour
+    change; assessment unchanged.

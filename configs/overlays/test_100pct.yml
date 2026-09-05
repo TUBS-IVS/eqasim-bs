@@ -11,6 +11,7 @@ run:
   - braunschweig.analysis.analysis_suite
   - braunschweig.analysis.verbindungen_validation
   - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
 
 config:
   sampling_rate: 1.0

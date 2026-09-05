@@ -17,6 +17,7 @@ may only name run manifests (no run, no claim).
 | [building_potentials_work](../registry/features/building_potentials_work.yml) | work | active | ON | A/i/i | 2 | not claimed | none | none | unvalidated | pending |
 | [carless_routing_remode](../registry/features/carless_routing_remode.yml) | matsim | active | ON | A/A/s | 1 | -- | none | none | unvalidated | pending |
 | [cell_accurate_homes](../registry/features/cell_accurate_homes.yml) | home | active | ON | A/A/- | 2 | -- | marker | none | unvalidated | pending |
+| [commute_day_state_measurement](../registry/features/commute_day_state_measurement.yml) | validation | active | ON | A/s/s | 5 | -- | marker | committed | measured_vs_reference (`commute-day-state-phase-a-2026-09-05`) | pending |
 | [consistent_car_availability](../registry/features/consistent_car_availability.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [cordon_gates](../registry/features/cordon_gates.yml) | cordon | active | ON | A/A/- | 5 | -- | marker | none | unvalidated | pending |
 | [cordon_mode_balancer](../registry/features/cordon_mode_balancer.yml) | cordon | active | ON | A/A/- | 2 | -- | marker | committed | unvalidated | pending |
@@ -78,7 +79,7 @@ may only name run manifests (no run, no claim).
 | [simwrapper_export](../registry/features/simwrapper_export.yml) | analysis | active | ON | A/-/- | 5 | not claimed | marker | none | unvalidated | pending |
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 1 | not claimed | none | none | unvalidated | pending |
 | [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 6 | proven | none | committed | unvalidated | pending |
-| [srv_primary_distance_validation](../registry/features/srv_primary_distance_validation.yml) | validation | active | ON | A/s/s | 6 | -- | marker | committed | measured_vs_reference (`srv-primary-distance-baseline-2026-09-03`, `srv-primary-distance-baseline-2026-09-04`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-04 |
+| [srv_primary_distance_validation](../registry/features/srv_primary_distance_validation.yml) | validation | active | ON | A/s/s | 6 | -- | marker | committed | measured_vs_reference (`srv-primary-distance-baseline-2026-09-03`, `srv-primary-distance-baseline-2026-09-04`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-05 |
 | [student_incommuters](../registry/features/student_incommuters.yml) | cordon | active | ON | A/A/- | 3 | proven | none | none | unvalidated | pending |
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
