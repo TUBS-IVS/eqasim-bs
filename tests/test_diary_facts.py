@@ -41,6 +41,12 @@ def test_compute_diary_facts_requires_columns():
         df_mod.compute_diary_facts(_wege().drop(columns=["W_RBW"]))
 
 
+@pytest.mark.parametrize("column", ["H_ID", "P_ID", "W_ID", "W_ZWECK", "W_SO1", "wegkm_imp"])
+def test_compute_diary_facts_requires_each_column(column):
+    with pytest.raises(KeyError, match=column):
+        df_mod.compute_diary_facts(_wege().drop(columns=[column]))
+
+
 def test_attach_plan_source_facts_uses_source_keys_and_fills_missing():
     facts = df_mod.compute_diary_facts(_wege())
     persons = pd.DataFrame({

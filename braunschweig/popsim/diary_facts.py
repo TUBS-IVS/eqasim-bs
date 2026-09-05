@@ -65,7 +65,12 @@ def compute_diary_facts(wege, *, household_id="H_ID", person_id="P_ID", trip_id=
     })
     rb = rbw.groupby(keys, sort=True).agg(n_rbw_legs=("km", "size"), rbw_distance_km=("km", "sum"))
     facts = facts.join(rb, how="outer")
+    # ends_at_home / starts_arriving_home are computed from the (now-filled, int-cast)
+    # numeric columns below, so they are excluded here: filling them with the _FILL
+    # placeholder first would only be immediately overwritten and never observed.
     for col, value in _FILL.items():
+        if col in ("ends_at_home", "starts_arriving_home"):
+            continue
         if col in facts.columns:
             facts[col] = facts[col].fillna(value)
         else:
@@ -79,14 +84,23 @@ def compute_diary_facts(wege, *, household_id="H_ID", person_id="P_ID", trip_id=
     facts["starts_arriving_home"] = (facts["first_so1"] == 2) & facts["first_direct_zweck"].isin(HOME_ZWECK)
     facts = facts[list(FACT_COLUMNS)]
     n = len(facts)
+    n_denom = max(n, 1)  # guard against ZeroDivisionError / NaN% on an empty frame
+    n_rbw_legs_total = int(facts["n_rbw_legs"].sum())
+    n_rbw_legs_denom = max(n_rbw_legs_total, 1)
+    n_rbw_carriers = int((facts["n_rbw_legs"] > 0).sum())
+    n_not_home = int((~facts["ends_at_home"]).sum())
+    n_start_home = int(facts["starts_arriving_home"].sum())
+    n_only_rbw = int((facts["n_direct_legs"] == 0).sum())
     logger.info(
-        "[diary_facts] %d donor persons with Wege: %d (%.1f%%) carry rbW legs (%d legs, %d coded km set to 0), "
-        "%d (%.1f%%) do not end at home, %d (%.1f%%) start by arriving home, %d (%.1f%%) have only rbW legs",
-        n, int((facts["n_rbw_legs"] > 0).sum()), 100.0 * (facts["n_rbw_legs"] > 0).mean(),
-        int(facts["n_rbw_legs"].sum()), n_coded_rbw,
-        int((~facts["ends_at_home"]).sum()), 100.0 * (~facts["ends_at_home"]).mean(),
-        int(facts["starts_arriving_home"].sum()), 100.0 * facts["starts_arriving_home"].mean(),
-        int((facts["n_direct_legs"] == 0).sum()), 100.0 * (facts["n_direct_legs"] == 0).mean())
+        "[diary_facts] %d donor persons with Wege: %d/%d (%.1f%%) carry rbW legs "
+        "(%d legs, %d/%d (%.1f%%) coded km set to 0), %d/%d (%.1f%%) do not end at home, "
+        "%d/%d (%.1f%%) start by arriving home, %d/%d (%.1f%%) have only rbW legs",
+        n,
+        n_rbw_carriers, n, 100.0 * n_rbw_carriers / n_denom,
+        n_rbw_legs_total, n_coded_rbw, n_rbw_legs_total, 100.0 * n_coded_rbw / n_rbw_legs_denom,
+        n_not_home, n, 100.0 * n_not_home / n_denom,
+        n_start_home, n, 100.0 * n_start_home / n_denom,
+        n_only_rbw, n, 100.0 * n_only_rbw / n_denom)
     return facts
 
 
