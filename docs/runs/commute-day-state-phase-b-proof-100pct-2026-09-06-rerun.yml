@@ -1,0 +1,378 @@
+id: commute-day-state-phase-b-proof-100pct-2026-09-06-rerun
+date: '2026-09-06'
+repository:
+  commit: 0be490ad
+  branch: feature/commute-day-state-phase-b
+  notes: 'The branch was NOT pushed. The 84 files it changes relative to origin/main c9b841d9
+    were tarred and extracted onto a DETACHED server worktree at c9b841d9 (~/wt_cds_b), the same
+    procedure as the 2026-09-05 first proof run and as Phase A. Unlike that run, NO code was
+    changed while this one executed: the code state of all three runs is exactly 0be490ad, which
+    is c9b841d9 plus the branch plus fix wave A (rulings R5-R9 of the 2026-09-05 review, commits
+    bada38ed and 8a8d0a56) and the vacuous-assertion fix 0be490ad. Fix wave A is what this run
+    re-measures: R5 moved check 2 to the reporting-day worker universe and added the second
+    table commute_by_kreis_all_assigned.csv; R6 split check 1''s guard so that a universe
+    difference (workers not flagged employed) is counted and warned about instead of aborting
+    the stage; R7 added the education anchor as a fourth hard matching criterion; R8 removed the
+    per-column inserts from the plan replacement; R9 separated an immobile donor from a missing
+    one. NO THRESHOLD WAS MOVED by any of them, and none was moved here.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/cds_b2_off.yml (run A, commute_day_state_enabled false, analysis stages only)'
+  - 'felix:~/cds_b2_on.yml (run B, flag true, full line down to synthesis.output)'
+  - 'felix:~/cds_b2_sens.yml (run C, flag true, commute_day_absent_share_far 0.6)'
+  notes: 'The three overlays are byte-for-byte the 2026-09-05 overlays ~/cds_b_{off,on,sens}.yml
+    with ONLY output_path and output_prefix changed (to
+    eqasim-data/output_bs_100pct_cds2_{off,on,sens} and braunschweig_100pct_cds2_{off,on,sens}_)
+    and, for run A, the run list narrowed to the two analysis stages. Those in turn are the i329
+    production config block (docs/runs/100pct-allfeat-i329-2026-08-24.yml) with
+    working_directory eqasim-data/cache_bs_100pct_i329. Everything else is the i329 block
+    verbatim: sampling_rate 1.0, random_seed 1234, popsim work_dir eqasim-data/popsim_work_i329,
+    max_cells 750, num_workers 3, importance_profile optimized_2026_06_30,
+    cache_share_enabled/export true, eqasim_version 2.3.1, matsim_last_iteration 0. The
+    commute-day stages ran at their base_bs.yml values: commute_day_state_enabled true (run A:
+    false), commute_day_far_threshold_km 200.0, commute_day_absent_share_far 1.0 (run C: 0.6),
+    commute_day_max_not_replaceable_share 0.5; the analysis stages at their defaults
+    (cds_detour_factor 1.3, cds_output_subdir analysis/commute_day_state_phase_a,
+    cds_max_unmatched_home_share 0.05, cds_max_unresolved_destination_share 0.05,
+    cds_edge_tolerance_km 5.0, cds_max_states_outside_employed_share 0.05, and the new
+    cds_check_1_tolerance_pp 3.0 that only reports the pre-registered band). Launched with
+    "python scripts/run_synpp.py configs/base_bs.yml <overlay>" (the wrapper installs the
+    ADR-0105 deterministic-hash patch). Three reference CSVs
+    (mid2023_workday_location_by_commute_distance.csv, mid2023_home_office_donor_pool.csv,
+    srv2023_work_participation_by_kreis.csv) were copied into the wt-i329 data tree for the run
+    and removed again afterwards (verified, see status.notes).'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'No population was synthesised: the persons, households and home locations are the i329
+    ones (manifest 100pct-allfeat-i329-2026-08-24), reached through the same cache as the SrV
+    baselines of 2026-09-03/04, the Phase A measurement and the 2026-09-05 first proof run.
+    braunschweig.popsim.stage, braunschweig.popsim.completed_donor,
+    braunschweig.popsim.enriched_adapter and braunschweig.popsim.trips_stage were CACHE HITS in
+    every run (0 "Executing stage" lines against 8 / 10 / 7 "Loading cache" lines in the three
+    logs, cmp_results.txt section 5) -- the escalation criterion of the task (a popsim stage
+    starting to execute) never fired. Cohorts, identical to Phase A, to
+    srv-primary-distance-baseline-2026-09-04 and to the first proof run: 1,131,204 persons,
+    540,426 flagged employed (540,425 after excluding the one person without a home Kreis
+    match), 304,900 workers with an assigned workplace, of which 39,150 (12.84 %) have a
+    fabricated external destination. Every n_* count is a SAMPLE count at sampling_rate 1.0 and
+    is never expanded. The worker cohort and the employed cohort still do NOT coincide: 267,194
+    of the 304,900 workers (87.63 %) are also flagged employed and 37,705 with a ZGB home Kreis
+    are not (37,706 including the one worker without a home Kreis match). Ruling R6 turned that
+    residual from an abort into the reported column n_workers_not_employed; it does NOT explain
+    it, and the gap remains open (issue #244 / srv_participation_controls).'
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.cordon_validation
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  - braunschweig.synthesis.commute_day.state_stage
+  notes: 'CONTROLLER RULING R4 still applies and is repeated here because it substitutes a
+    pre-registered wording: ADR-0104 check 6 asks for "a 25 % proof run first and a 100 % proof
+    in the next scheduled production run". The server 25 % cache
+    (cache_bs_25pct_allfeat_popsim) dates from 2026-06-24 and would have rebuilt PopulationSim
+    from scratch, so this proof, like the first, ran at 100 % ON THE CACHED i329 POPULATION,
+    where popsim is a cache hit. A 25 % run remains available and was not executed; the 100 %
+    proof inside a scheduled production run is still outstanding.
+    THREE synpp invocations, all COMPLETED without an abort (all times CEST):
+    (A) 2026-09-05 22:31:14-22:39:54 (8 min 40 s), OFF, run list = the two analysis stages only.
+    synpp found 42 stages and devalidated 8; all 8 executed (home_office_donors_stage,
+    primary.candidates, education_gravity, replacement_education_gravity,
+    commute_distance_by_kreis, state_stage, trips_day_stage, work_participation_by_kreis --
+    the six commute_day/location stages are devalidated by the fix-wave-A code change and
+    pass through with the flag false). 8/8, exit without error.
+    (B) 2026-09-05 22:42:49-23:57:12 (1 h 14 min 23 s), ON, the pre-registered run list. 14
+    stages devalidated, all 14 executed: home_office_donors_stage, primary.candidates,
+    education_gravity, replacement_education_gravity, state_stage, cordon_validation,
+    commute_distance_by_kreis, trips_day_stage, work_participation_by_kreis,
+    activities_day_stage, secondary_chainsolvers (56 min, 62 shards, success rate 0.9998 over
+    858,788 problems), spatial_locations_day, meta_output, output_day. 14/14, exit without
+    error -- the education-anchor AttributeError that stopped the 2026-09-05 ON line inside
+    find_assignment_problems did NOT recur, and the ON population was written in full.
+    (C) 2026-09-06 00:01:39-00:11:57 (10 min 18 s), sensitivity 0.6. 6 stages devalidated, all 6
+    executed (primary.candidates, education_gravity, replacement_education_gravity, state_stage,
+    trips_day_stage, work_participation_by_kreis). 6/6, exit without error -- the SrV-referenced
+    share table for this variant, which the first run could not produce, exists.
+    CACHE EFFECT, disclosed: every run reset the i329 stage-hash bookkeeping ("Successfully
+    reset meta data") and wrote new cache entries into the SHARED i329 cache, the same hazard
+    ADR-0104 records for Phase A and the first proof run. Verified read-only afterwards
+    (cmp_results.txt section 5): the ON and the OFF entries of
+    braunschweig.locations.synthesis.replacement_education_gravity are BYTE-IDENTICAL
+    (23,666,794 B) and so are the two synthesis.population.spatial.primary.candidates entries
+    (26,792,652 B), and the sensitivity run''s education entry equals the ON one -- the work and
+    education assignments all three runs measured are the same per-person assignments, so every
+    ON/OFF difference below is the flag''s own effect.
+    R8 CONFIRMED IN PRODUCTION: the ON log contains ZERO pandas PerformanceWarning lines and is
+    99,519 B; the 2026-09-05 ON log carried 657,888 of them and was 254 MB.'
+classification:
+- validation
+status:
+  execution: completed
+  notes: 'COMPLETE: all three runs finished, and for the first time every one of the six
+    pre-registered checks was actually evaluated on a committed artefact. Both stops of the
+    2026-09-05 run are gone -- check 1''s guard no longer aborts (ruling R6 counts the
+    not-employed workers instead of treating them as a join failure) and the secondary
+    chainsolver no longer raises (ruling R7 keeps education-leg donor chains away from persons
+    without an education location), so the ON population exists.
+    OUTCOME OF THE CHECKS, without interpretation: check 1 FAILS at the pre-registered +/- 3 pp
+    band on all three state shares, check 2 FAILS its 100_plus < 3 % half and PASSES its
+    no-deterioration half, checks 3, 4, 5 and 6 pass. Failing is what the pre-registration is
+    for: the numbers are recorded as measured and no threshold was relaxed anywhere.
+    ONE PRE-EXISTING CLAIM CORRECTED. The fix wave A report states that with the flag OFF
+    "summary.md, every CSV and decisions.json are byte-identical to before". Measured (run A
+    against the 2026-09-05 OFF outputs, cmp_results.txt section 1): every CSV and decisions.json
+    ARE byte-identical, but BOTH summary.md files differ -- besides their "Generated at"
+    timestamp, which was never comparable, the srv_distance_validation one now ends its
+    parameter line with "commute_day_state_enabled=False", because R5 added that key to the
+    stage''s configure(). No number changed; the OFF path is unchanged in substance, and the
+    claim is narrowed to "every CSV and decisions.json" here.
+    STILL OPEN, unchanged by this run: (a) why the model assigns workplaces to 37,705 persons
+    the enriched population does not flag employed (ADR-0104 Phase B amendment 2 records it as
+    open); (b) the -16.99 pp work-participation gap, which ADR-0104 explicitly declines to treat
+    as this model''s fit criterion; (c) the fourth check-4 diagnostic, pool size per matching
+    cell, which the diagnostics dict still does not record.
+    SERVER STATE. Left in place as run evidence: the three output directories
+    /home/felix/wt-i329/eqasim-data/output_bs_100pct_cds2_{off,on,sens} (15 M / 2.1 G / 15 M),
+    the three overlays ~/cds_b2_{off,on,sens}.yml, the three logs ~/cds_b2_off.log,
+    ~/cds_b2_on.log.gz, ~/cds_b2_sens.log and ~/cds_b2_artifacts (the aggregates committed
+    below). The 2026-09-05 evidence (output_bs_100pct_cds_{off,on,sens}, its overlays and logs)
+    is untouched. Cleanup performed and verified: the three reference CSVs copied into
+    /home/felix/wt-i329/eqasim-data/data/braunschweig/{mid,srv}/ were removed (absence verified
+    with ls), the eqasim-data symlink was removed BEFORE anything else and eqasim-data._tracked
+    deleted, ~/wt_cds_b removed with git worktree remove --force + prune, /tmp/cds_b2.tgz and
+    /tmp/cds_b2_files.txt deleted. Shared-checkout invariants on felix, identical before and
+    after: ~/eqasim-bs with 26 porcelain entries and 19 worktrees; nothing under
+    ~/wt-i329/eqasim-data/output_bs_100pct_i329 or any cache_* directory was deleted. Disk
+    after: 482 G used of 786 G.'
+environment: server
+validation:
+- metric: 'ADR-0104 check 1 -- realised at_workplace / home / absent shares and the share of
+    employed persons without a work trip, regionally against the SrV 2023 reference
+    0.1418 / 0.6511 / 0.2071, at the pre-registered tolerance of +/- 3 pp on the REGIONAL
+    aggregate only'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+  result: 'VERDICT fail (the check RAN this time; the guard did not fire and no threshold was
+    moved). Denominator, as ADR-0104 defines it: the 540,425 employed persons with a ZGB home
+    Kreis -- not the model''s workers. Over that universe the model realises at_workplace
+    0.4810362, home 0.0082472, absent 0.0051311 and no_workplace 0.5055854 (the employed persons
+    for whom no state is drawn at all because they have no assigned workplace); the four sum to
+    1. Against the committed SrV zgb row (share_work_trip 0.6511223931, share_home_office_day
+    0.1417722931, share_neither 0.2071053138, n_persons 8,016) the deltas are: at_workplace
+    0.4810362 - 0.6511224 = -0.1700862 (-17.01 pp, OUTSIDE), home 0.0082472 - 0.1417723 =
+    -0.1335251 (-13.35 pp, OUTSIDE), absent 0.0051311 - 0.2071053 = -0.2019742 (-20.20 pp,
+    OUTSIDE), employed without a work trip 0.5187565 - 0.3488776 = +0.1698789 (+16.99 pp,
+    OUTSIDE). All three state shares are outside the +/- 3 pp band, so the check fails on the
+    regional aggregate. Per-Kreis rows are in commute_day_state_shares.csv and are REPORTED,
+    never gated (delta_no_work_trip_pp from +13.45 pp for 03101 to +21.60 pp for 03153; 03103
+    Wolfsburg has no SrV row and keeps NaN).
+    RULING R6, the reason this now produces a number at all: 37,705 workers with a ZGB home
+    Kreis have an assigned workplace but are NOT flagged employed by
+    synthesis.population.enriched. On 2026-09-05 that residual (12.37 % of the drawn states)
+    tripped cds_max_states_outside_employed_share = 0.05 and aborted the stage. It is a UNIVERSE
+    DIFFERENCE, not a join failure -- every one of those person_ids matches a population row --
+    so it is now counted per Kreis in the column n_workers_not_employed, warned about above
+    WARN_WORKERS_NOT_EMPLOYED_SHARE = 0.05, and excluded from every share above; the fatal guard
+    now governs only states that resolve to no employed-universe row at all, and it did not
+    fire.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/commute_day_state_shares.csv
+    (all nine rows incl. n_workers_not_employed), .../on/phase_a_summary.md (the check-1
+    section), .../on/work_participation_by_kreis.csv'
+  notes: 'The +/- 3 pp band is an ASSUMPTION recorded in ADR-0104, chosen a priori and derived
+    from no committed source. The dominant arithmetic driver of the failure is visible in the
+    table and is NOT a day-state effect: 0.5055854 of the employed universe has no assigned
+    workplace at all, so the model can place at most 0.4944146 of it at a workplace before the
+    day state removes anyone. How much of the failure is that documented participation deficit,
+    how much the universe difference above and how much a genuine day-state gap remains UNKNOWN
+    -- no decomposition was measured. ASSUMPTION carried from ADR-0104: at_workplace <-> SrV
+    work trip, home <-> SrV full home-office day, absent <-> SrV neither; SrV''s "neither" is a
+    residual category, so its correspondence with a modelled away-from-the-region state is an
+    interpretation, not a definitional identity.'
+- metric: 'ADR-0104 check 2 (as amended by ruling R5) -- inter-Gemeinde work distance bands: the
+    100_plus band below 3 % read from the REPORTING-DAY table commute_by_kreis.csv, and no
+    deterioration of the bands up to 50 km against the 2026-09-04 baseline EMD read from the
+    ASSIGNED-workplace table commute_by_kreis_all_assigned.csv'
+  reference: eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/commute_by_kreis.csv
+  result: 'VERDICT fail on the 100_plus bound, pass on the no-deterioration half.
+    100_PLUS HALF, reporting-day universe (the 296,599 of 304,900 workers, 97.28 %, whose drawn
+    state is at_workplace; 0 workers have no state row): ZGB inter model_share_100_plus
+    0.0737401 (7.37 %) against the pre-registered bound of 3 % -> FAIL. EMD 0.0693952 with noise
+    floor 0.0129150 over n_ref 2,593, classification "ok" (below the 0.08 gap threshold). ZGB
+    all: 100_plus 0.0381896, EMD 0.0366951, floor 0.0122684, "ok". ZGB intra: 100_plus 0.0, EMD
+    0.0110859, floor 0.0078273, "ok". Per-Kreis decisions on the reporting-day universe:
+    work.all build=true, gap in 03157 and 03158; work.inter build=true, gap in 03153, 03157,
+    03158; work.intra build=false, no gap in any decisive cell.
+    MOVEMENT AGAINST THE FIRST RUN, which measured the same quantity on the ASSIGNED universe:
+    inter 100_plus 0.1000834 -> 0.0737401 (-2.63 pp) and inter EMD 0.0851935 -> 0.0693952, i.e.
+    the ZGB inter aggregate moves from "gap" to "ok". That is the R5 universe change, not a
+    model improvement: restricting to at_workplace persons removes long-distance workers drawn
+    to home or absent.
+    NO-DETERIORATION HALF, assigned universe: commute_by_kreis_all_assigned.csv from the ON run
+    is BYTE-IDENTICAL to srv_distance_baseline_2026-09-04/commute_by_kreis.csv and to run A''s
+    OFF commute_by_kreis.csv (cmp_results.txt section 2). The bands up to 50 km therefore did
+    not deteriorate; they did not move at all. MECHANISM, measured not interpreted: the stage
+    reads synthesis.population.spatial.primary.locations -- WHERE people work -- and the ON and
+    OFF location caches are byte-identical (23,666,794 B), so the assigned-workplace bands
+    cannot be moved by this model, which changes only WHO TRAVELS on the simulated day.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/commute_by_kreis.csv
+    (reporting day), .../on/commute_by_kreis_all_assigned.csv (assigned workplaces),
+    .../on/decisions.json, .../on/srv_distance_summary.md (its universe section names both
+    cohort sizes), .../cmp_results.txt'
+  notes: 'The 3 % bound is an ASSUMPTION recorded in ADR-0104: a chosen operating bound with NO
+    reference behind it, because every 100_plus column of the committed SrV table is exactly 0.0
+    in all 15 rows (a structural survey blind spot, ADR-0102 Assumption 2), so a 0 % bound would
+    assert that blind spot as truth. The "fail" above is therefore a failure against an unsourced
+    operating bound, not against an observed value. Which table answers which half is fixed by
+    the ADR-0104 R5 amendment and was applied here as written; reading the 100_plus bound off
+    the assigned table instead would have given 0.1000834, and reading the no-deterioration half
+    off the reporting-day table would have compared two different universes.'
+- metric: 'ADR-0104 check 3 -- cordon out-commuter gate volumes before/after, against an
+    expectation restricted to at_workplace persons'
+  reference: none (the expectation is derived from the BA Pendleratlas register the model is
+    itself anchored to; ADR-0104 records that this makes it self-referential for out-commuters,
+    which is why it is restricted to at_workplace persons before use)
+  result: 'VERDICT pass (the pre-registered artefact was produced with complete joins), and
+    numerically identical to the first proof run. commute_day_state_scaling.json records 304,900
+    workers, 39,150 of them with an external destination, 33,143 of those in state at_workplace
+    -> share 0.8465645. Applied to the register expectation, the outbound cordon volume falls
+    from 60,705 SvB to 51,393 SvB, i.e. -9,312 (-15.34 %). Every join is complete:
+    n_workplace_unresolved 0, n_states_without_work_location 0, n_work_locations_without_state
+    0.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/commute_day_state_scaling.json,
+    .../on/gate_volumes_scaled.csv, .../on/cordon_summary.md'
+  notes: 'This is a before/after of the EXPECTATION, not of simulated gate counts: no MATSim
+    iteration was run (matsim_last_iteration 0 and no matsim.* stage was in any run list), so
+    nothing here states that the simulated flows across the cordon changed. The 15.34 %
+    reduction is arithmetic on the drawn states.'
+- metric: 'ADR-0104 check 4 -- donor matching diagnostics: coarsening rate per step,
+    not-replaceable share, missing-donor-distance share, pool size per cell'
+  reference: none (model-internal diagnostics; the guards are
+    commute_day_max_not_replaceable_share 0.5, the 50 % warn bound on the primary donor-distance
+    source and WARN_DONORS_WITHOUT_TRIPS_SHARE 0.01)
+  result: 'VERDICT pass for three of the four listed diagnostics; the fourth is still not
+    produced. Over 304,900 workers with the flag ON: 60,970 (20.00 %) eligible for re-draw, 0
+    with a missing donor class. DONOR-DISTANCE SOURCE (ADR-0104 Amendment 1): the PRIMARY source
+    (the donor''s first valid work-trip length) covers 100.0 % of workers in EVERY assigned class
+    (lt10 141,352, 10_25 71,528, 25_50 54,311, 50_100 21,515, 100_200 5,235, gt200 10,959;
+    share_donor_source_primary 1.0), so the 50 % warn bound never fired. NOT-REPLACEABLE: 0 of
+    the 5,086 persons drawn to home (0.00 %), far below commute_day_max_not_replaceable_share
+    0.5. COARSENING over those 5,086: level 0 3,786 (74.4 %), 1 0, 2 352 (6.9 %), 3 391 (7.7 %),
+    4 23 (0.5 %), 5 534 (10.5 %), 6 0 -- the R7 criterion moved four persons from level 0 to
+    level 2 relative to the first run (3,790/348) and changed nothing else. Soft criteria used:
+    distance_class, sex, age_class, household_size_class; has_license SKIPPED and logged because
+    MiD donors carry no such column. n_persons_hard_criteria_missing 0,
+    n_donors_hard_excluded_has_car_unknown 0, n_workers_without_home_geometry 0, 523 persons
+    escort-protected from absent. POOL SIZE PER CELL is still UNKNOWN: the diagnostics dict
+    records the level a person was matched at, not the number of donors available per cell.
+    RULING R7, newly measured: 49 of the 8,026 donors (0.6 %) carry an education activity in
+    their chain and 382 (4.8 %) a work activity; 4,954 of the 5,086 home persons have NO
+    education location, and 4,911 of them actually lost at least one donor to the new criterion
+    (n_persons_education_restricted). Despite that, not-replaceable stayed at 0.00 % -- the
+    criterion did not exhaust any matching cell.
+    RULING R9 SETTLES THE OPEN 27.3 % OF THE FIRST RUN: of the 5,086 matched donors, 1,435
+    (28.2 %) are flagged is_immobile in the raw MiD Wege file and therefore correctly give the
+    receiving person a trip-less home-office day; n_donors_without_trips is 0 (0.00 %) and
+    n_donors_unknown_trip_count 0. None of the zero-row rate is a donor_id key or dtype
+    mismatch, which the first run could not distinguish and recorded as unknown. DONOR POOL:
+    8,026 donors from 420,979 MiD persons (1.91 % unweighted, 1.64 % P_GEW-weighted), 18,564
+    trips for 5,421 of them, 2,605 immobile (32.5 %), 0 chains dropped by the resample, 1,780
+    (22.2 %) with no usable commute distance, 12 with sex outside {1, 2}.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/state_diagnostics.json
+    (read from the state-stage cache entry named inside it), .../run_log_excerpts.txt'
+  notes: 'The 22.2 % of donors with no usable commute distance is a property of the DONOR POOL
+    (they neither answered P_ARB_ENTF usably nor made a work trip on their reporting day --
+    which is exactly the state being modelled); it is not the rate at which the MODEL falls
+    back, which is 0.0 % above. The 28.2 % immobile-donor rate is likewise a property of the
+    pool (32.5 % of it is immobile by construction) and not a defect rate.'
+- metric: 'ADR-0104 check 5 -- sensitivity of commute_day_absent_share_far, 1.0 vs 0.6'
+  reference: none (a parameter sensitivity; ADR-0104 Assumption 2 records 1.0 as the single
+    largest uncertainty of the design)
+  result: 'VERDICT pass (both variants executed on the same population and the same seed, and
+    this time BOTH produced the SrV-referenced share table the first run could not).
+    Over 304,900 workers: at commute_day_absent_share_far 1.0 -> at_workplace 296,599 (97.28 %),
+    home 5,086 (1.67 %), absent 3,215 (1.05 %); at 0.6 -> at_workplace 296,599 (97.28 %), home
+    6,345 (2.08 %), absent 1,956 (0.64 %). The at_workplace count is IDENTICAL in both and the
+    change is confined entirely to the gt200 class, where absent falls 3,215 -> 1,956 and home
+    rises 523 -> 1,782; home + absent is 8,301 in both variants, and the 523 escort-protected
+    persons are home in both by construction. The coarsening cascade absorbs the extra home
+    persons at its loosest level: level 5 rises 534 -> 1,793, with not-replaceable still 0 of
+    6,345 (0.00 %); n_persons_education_restricted rises 4,911 -> 6,142 in step with the larger
+    home cohort. Over the EMPLOYED universe (check 1''s denominator) the 0.6 variant realises
+    at_workplace 0.4810362 (unchanged, -17.01 pp against SrV), home 0.0102530 (-13.15 pp) and
+    absent 0.0031253 (-20.40 pp): moving the parameter shifts 1,259 persons between two shares
+    that are each ~13-20 pp below their reference, so it does not move check 1 across its band.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/sens_0.6/state_diagnostics.json
+    and .../sens_0.6/commute_day_state_shares.csv (0.6), .../on/state_diagnostics.json and
+    .../on/commute_day_state_shares.csv (1.0)'
+  notes: 'Both variants use random_seed 1234 + the commute-day offset 7301 and the same cached
+    trips and donor pool, so the difference is the parameter''s own effect and nothing else.
+    Neither value is observed: 1.0 and 0.6 are both ASSUMPTIONS recorded in ADR-0104.'
+- metric: 'ADR-0104 check 6 -- OFF-path byte identity of the written population, and the proof
+    run itself'
+  reference: 'eqasim-data/output_bs_100pct_i329/ on felix (the i329 production output, manifest
+    100pct-allfeat-i329-2026-08-24), reached through the 2026-09-05 OFF population
+    output_bs_100pct_cds_off/ which was proved byte-identical to it'
+  result: 'VERDICT pass, and complete for the first time -- the ON population was written in
+    full (run B, 14/14).
+    OFF HALF: the OFF population was NOT re-written by this re-run (run A''s run list held the
+    two analysis stages only), so the byte identity of the six written tables stands as measured
+    on 2026-09-05 and is NOT re-measured here. What IS re-measured is the OFF ANALYSIS path
+    under the fix-wave-A code: every CSV of both OFF analysis directories and
+    decisions.json are BYTE-IDENTICAL to the 2026-09-05 OFF outputs, including
+    work_participation_by_kreis.csv, assigned_distance_classes.csv, ext_destination_distances.csv,
+    commute_by_kreis.csv, commute_quantiles_model.csv, sensitivity.csv, sensitivity_cells.csv and
+    education_by_kreis_level.csv; the two summary.md files differ only by their timestamp and by
+    "commute_day_state_enabled=False" now appearing in the srv_distance parameter line, and the
+    two provenance.json files by that flag plus the new universe block (status.notes).
+    ON-vs-OFF, per person: households.csv (32,105,146 B), vehicles.csv (385,317,779 B) and
+    vehicle_types.csv (9,534 B) are BYTE-IDENTICAL between the ON population and the OFF one;
+    persons.csv is byte-identical after removing the single appended column commute_day_state;
+    trips.csv and activities.csv differ for EXACTLY 8,301 persons -- the 5,086 drawn to home plus
+    the 3,215 drawn to absent -- with 862,163 trip blocks and 1,122,903 activity blocks
+    byte-identical and no person appearing only in the ON file. Row counts: trips 3,369,427 for
+    865,814 persons ON against 3,392,698 for 870,464 OFF (-23,271 rows, -0.686 %; 4,650 persons
+    lose every trip), activities 4,500,631 against 4,523,902 for all 1,131,204 persons in both
+    (an absent person keeps a home activity).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/cmp_results.txt
+    (sections 1, 3 and 4), and for the OFF byte identity itself the 2026-09-05 manifest
+    commute-day-state-phase-b-proof-100pct-2026-09-05, validation entry 6'
+  notes: 'Check 6 as written asks for "a 25 % proof run first and a 100 % proof in the next
+    scheduled production run". Ruling R4 substituted a 100 % proof on the CACHED i329 population
+    for the 25 % run (pipeline.notes); the 100 % proof in a scheduled production run is still
+    outstanding. The per-person comparison above is a stronger statement than the row counts
+    alone: it shows the flag touches ONLY the 8,301 persons whose state is not at_workplace and
+    leaves every other person''s plan byte-for-byte unchanged.'
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/
+  (off/: work_participation_by_kreis.csv, assigned_distance_classes.csv,
+  ext_destination_distances.csv, commute_by_kreis.csv, decisions.json, sensitivity.csv,
+  phase_a_summary.md, phase_a_provenance.json, srv_distance_summary.md,
+  srv_distance_provenance.json; on/: state_diagnostics.json, commute_day_state_shares.csv,
+  work_participation_by_kreis.csv, assigned_distance_classes.csv, commute_by_kreis.csv,
+  commute_by_kreis_all_assigned.csv, decisions.json, sensitivity.csv, commute_day_state_scaling.json,
+  gate_volumes_scaled.csv, phase_a_summary.md, phase_a_provenance.json, srv_distance_summary.md,
+  srv_distance_provenance.json, cordon_summary.md; sens_0.6/: state_diagnostics.json,
+  commute_day_state_shares.csv, work_participation_by_kreis.csv, phase_a_summary.md,
+  phase_a_provenance.json; plus cmp_results.txt and run_log_excerpts.txt) -- aggregates only, no
+  per-person file was brought back'
+- 'felix:/home/felix/wt-i329/eqasim-data/output_bs_100pct_cds2_on/ (2.1 G, the complete ON
+  population and its three analysis directories), .../output_bs_100pct_cds2_off/ (15 M, run A''s
+  two analysis directories), .../output_bs_100pct_cds2_sens/ (15 M, run C''s analysis directory)'
+- 'felix:~/cds_b2_off.yml, ~/cds_b2_on.yml, ~/cds_b2_sens.yml (server-local overlays, not
+  committed) and the three run logs ~/cds_b2_off.log, ~/cds_b2_on.log.gz, ~/cds_b2_sens.log'
+issues:
+- '#244'
+decisions:
+- ADR-0104
+- ADR-0105
+notes: 'SUPERSEDES commute-day-state-phase-b-proof-100pct-2026-09-05 (the run manifest schema
+  has no supersedes field, so the relation is recorded here and in that manifest''s
+  status.notes). The 2026-09-05 manifest stays as the historical record of the first attempt and
+  of the three defects it found; every check verdict for the commute_day_state feature is taken
+  from THIS manifest, because the code it describes (fix wave A) is the code on the branch.'
+source: 'Phase B proof RE-RUN of the commute-day-state (far/weekly commuters) model at 100 % on
+  the cached i329 population, after fix wave A: the OFF analysis re-check, the complete ON line
+  down to the written population with its donor diagnostics, cordon scaling and commute-distance
+  re-measurement, and the commute_day_absent_share_far 1.0-vs-0.6 sensitivity, against the six
+  checks ADR-0104 pre-registered (wave B of the Phase B plan, issue #244)'

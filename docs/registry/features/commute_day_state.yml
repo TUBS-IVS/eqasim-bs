@@ -161,28 +161,41 @@ evidence:
 validation:
   state: measured_vs_reference
   runs:
+  - commute-day-state-phase-b-proof-100pct-2026-09-06-rerun
   - commute-day-state-phase-b-proof-100pct-2026-09-05
-  metric: 'ADR-0104 checks 1-6, measured at 100 % on the cached i329 population on 2026-09-05
-    (run manifest commute-day-state-phase-b-proof-100pct-2026-09-05, which carries every number
-    and the per-check verdict). Verdicts: (1) not_run -- BLOCKED by the pre-registered guard
-    cds_max_states_outside_employed_share, because 37,706 of 304,900 drawn states (12.37 %) fall
-    outside the employed universe the SrV reference is defined on; the threshold was not
-    relaxed. Measured over the WORKER universe instead (a different denominator, NOT a check-1
-    verdict): at_workplace 0.9728, home 0.0167, absent 0.0105; the model''s work participation
-    over the employed moves from 0.4944 (flag OFF) to 0.4813 (flag ON) against the SrV 0.6511.
-    (2) fail on the 100_plus bound -- ZGB inter model_share_100_plus 0.100083 against the
-    pre-registered 3 %, EMD 0.085194; pass on the no-deterioration half, the whole
-    commute_by_kreis.csv being byte-identical to the 2026-09-04 baseline because the stage reads
-    the ASSIGNED workplaces, which this model does not change. (3) pass -- the at_workplace share
-    of external workers is 0.846564 (33,143 of 39,150) and scales the outbound cordon expectation
-    from 60,705 to 51,393 SvB, all joins complete. (4) pass for three of its four items --
-    donor-distance PRIMARY source 100.0 % in every assigned class, not-replaceable 0 of 5,086
-    (0.00 %), coarsening levels 0/2/3/4/5 = 3,790/348/391/23/534; pool size per CELL is not
-    recorded and stays unknown. (5) pass -- absent_share_far 1.0 gives home 5,086 / absent 3,215,
-    0.6 gives home 6,345 / absent 1,956, with at_workplace identical and the change confined to
-    the gt200 class. (6) pass for the OFF byte identity -- all six written tables byte-identical
-    to the i329 production output although trips_stage and the secondary chainsolver
-    re-executed; the ON population write did NOT complete.'
+  metric: 'ADR-0104 checks 1-6, measured at 100 % on the cached i329 population. The CURRENT
+    verdicts are those of the RE-RUN after fix wave A, run manifest
+    commute-day-state-phase-b-proof-100pct-2026-09-06-rerun, which carries every number; the
+    2026-09-05 manifest is the superseded first attempt and its verdicts must not be quoted as
+    this feature''s state. All three runs completed, so every check was evaluated on a committed
+    artefact for the first time. Verdicts: (1) FAIL at the pre-registered +/- 3 pp band on the
+    ZGB aggregate. Over the 540,425 employed persons with a ZGB home Kreis the model realises
+    at_workplace 0.4810 (SrV 0.6511, -17.01 pp), home 0.0082 (SrV 0.1418, -13.35 pp), absent
+    0.0051 (SrV 0.2071, -20.20 pp) and no_workplace 0.5056; 37,705 workers with an assigned
+    workplace are not flagged employed and are reported as n_workers_not_employed rather than
+    aborting the stage (ruling R6). The dominant arithmetic driver is that 50.6 % of the employed
+    universe has no assigned workplace at all -- a participation deficit, not a day-state effect;
+    no decomposition was measured. (2) FAIL on the 100_plus bound, pass on the no-deterioration
+    half. Reporting-day universe (296,599 at_workplace workers, ruling R5): ZGB inter
+    model_share_100_plus 0.0737 against the pre-registered 3 %, EMD 0.0694 (noise floor 0.0129,
+    classification ok); the assigned-workplace table commute_by_kreis_all_assigned.csv is
+    byte-identical to the 2026-09-04 baseline, so nothing up to 50 km deteriorated. (3) pass --
+    the at_workplace share of external workers is 0.846564 (33,143 of 39,150) and scales the
+    outbound cordon expectation from 60,705 to 51,393 SvB, all joins complete. (4) pass for three
+    of its four items -- donor-distance PRIMARY source 100.0 % in every assigned class,
+    not-replaceable 0 of 5,086 (0.00 %), coarsening levels 0/2/3/4/5 = 3,786/352/391/23/534;
+    pool size per CELL is still not recorded and stays unknown. Ruling R9 settled the first
+    run''s open 27.3 %: 1,435 of 5,086 matched donors (28.2 %) are genuinely immobile and
+    n_donors_without_trips is 0, i.e. none of it was a donor_id key mismatch. (5) pass --
+    absent_share_far 1.0 gives home 5,086 / absent 3,215, 0.6 gives home 6,345 / absent 1,956,
+    with at_workplace identical and the change confined to the gt200 class; both variants now
+    also produced the SrV-referenced share table. (6) pass -- the ON population was written in
+    full and differs from the OFF one for EXACTLY the 8,301 persons drawn to home or absent
+    (households, vehicles and vehicle_types byte-identical, persons.csv byte-identical bar the
+    appended commute_day_state column, 862,163 trip blocks and 1,122,903 activity blocks
+    byte-identical). The OFF population itself was not re-written by the re-run; its byte
+    identity to the i329 output stands from the 2026-09-05 manifest, and the OFF analysis path
+    re-ran byte-identically under the fix-wave-A code.'
   note: 'ADR-0104 fixes SIX pre-registered checks BEFORE the model exists, which Phase B is held
     to and which are NOT to be retro-fitted to the outcome (the design spec of 2026-09-04 is only
     where they were first drafted; this ADR is the durable record): (1) realised
@@ -204,38 +217,51 @@ validation:
     and a 100% proof in the next scheduled production run. The six were measured against a live
     population for the first time on 2026-09-05, at 100% on the cached i329 population instead of
     at 25% (controller ruling R4: the server 25% cache is from June 2026 and would have rebuilt
-    PopulationSim; the substitution is disclosed in the manifest''s pipeline.notes). The per-check
-    outcome is in validation.metric above and every number in the manifest. This record is
-    therefore measured_vs_reference and NOT behaviourally_validated: check 1, the only one that
-    compares the realised three-way state split against an observed reference, was BLOCKED and did
-    not run, and the ON population line did not complete. Convergence of a MATSim run is not
+    PopulationSim; the substitution is disclosed in the manifest''s pipeline.notes), and RE-RUN
+    on 2026-09-05/06 after fix wave A. The per-check outcome is in validation.metric above and
+    every number in the re-run manifest. This record is measured_vs_reference and NOT
+    behaviourally_validated: checks 1 and 2 now have verdicts and BOTH are failures against their
+    pre-registered (and explicitly unsourced) bounds, so no claim is made that the realised
+    three-way state split matches observed behaviour. Convergence of a MATSim run is not
     validation and is not claimed here.
-    That run found five things to fix, all fixed in code in this branch and NONE of them yet
-    re-measured: (a) an 8-digit AGS assumption in the Phase A analysis stage that rejected all
-    265,750 in-region destinations and (b) a NaN/str sex column that killed the donor-pool
-    resample, both fixed during the run itself; then, in fix wave A, (c) ruling R5 -- check 2
-    measured ASSIGNED workplaces, which this model never changes, so the work comparison now runs
-    over the reporting-day commuters and keeps the assigned-workplace view as a second table;
-    (d) ruling R6 -- check 1''s guard conflated a person_id join failure with the universe
-    difference between the model''s workers and the enriched population''s employed flag, and now
-    counts the latter separately instead of aborting on it; (e) ruling R7 -- 36 of the 5,086
-    persons drawn to "home" (0.71%) received a donor chain with an EDUCATION activity they have
-    no location for, which made the secondary chainsolver raise; such a donor is now ineligible
-    for a person without an education location (a hard matching criterion). Two further fixes are
-    diagnostic only: the plan replacement no longer emits a pandas PerformanceWarning per replaced
-    column (657,888 of them made the ON run''s log 254 MB), and an immobile donor (n_trips == 0,
-    32.5% of the pool by construction) is no longer counted as a possible donor_id join failure.
-    Until the ON line is re-run with these fixes, nothing about their effect on any check is
-    claimed here.'
+    The first attempt found five things to fix; all five are in this branch and ALL have now been
+    re-measured by the re-run: (a) an 8-digit AGS assumption in the Phase A analysis stage that
+    rejected all 265,750 in-region destinations and (b) a NaN/str sex column that killed the
+    donor-pool resample, both fixed during the first run itself; then, in fix wave A, (c) ruling
+    R5 -- check 2 measured ASSIGNED workplaces, which this model never changes, so the work
+    comparison now runs over the reporting-day commuters (296,599 workers) and keeps the
+    assigned-workplace view as commute_by_kreis_all_assigned.csv, which the re-run confirmed is
+    byte-identical to the 2026-09-04 baseline; (d) ruling R6 -- check 1''s guard conflated a
+    person_id join failure with the universe difference between the model''s workers and the
+    enriched population''s employed flag, and the re-run produced check 1''s table with the
+    37,705 not-employed workers reported in their own column instead of aborting; (e) ruling R7
+    -- 36 of the 5,086 persons drawn to "home" (0.71%) received a donor chain with an EDUCATION
+    activity they have no location for, which made the secondary chainsolver raise; such a donor
+    is now ineligible for a person without an education location, and the re-run''s secondary
+    chainsolver completed (49 of 8,026 donors carry an education leg; 4,911 persons lost at least
+    one donor to the criterion; not-replaceable stayed at 0.00%). Two further fixes are
+    diagnostic only and were both confirmed in production: the plan replacement emitted ZERO
+    pandas PerformanceWarnings (657,888 of them had made the first ON run''s log 254 MB, the
+    re-run''s is 99,519 B), and separating an immobile donor from a missing one showed that all
+    1,435 zero-row donors (28.2%) are genuinely immobile and none is a donor_id key mismatch.'
 assessment:
   status: pending
-  pending_reason: 'The 2026-09-05 proof run measured checks 2-6 but check 1 was blocked by its own
-    guard (the model''s worker universe and the enriched population''s employed universe differ by
-    12.37%) and the ON population line aborted on the education-anchor defect. Fix wave A resolved
-    both in code (rulings R6 and R7) and corrected check 2''s universe (ruling R5), but the ON line
-    has NOT been re-run: no check has been re-measured, so check 1 still has no verdict and no
-    owner verdict on realised commute-day-state behaviour exists yet. The assessment stays pending
-    until the re-run is recorded in a run manifest.'
+  by: null
+  date: '2026-09-06'
+  pending_reason: 'The re-run of 2026-09-05/06 (manifest
+    commute-day-state-phase-b-proof-100pct-2026-09-06-rerun) completed all three lines and every
+    one of the six pre-registered checks now has a verdict measured on a committed artefact, so
+    the blockers of the first attempt are gone. The assessment nevertheless stays pending,
+    because two of those verdicts are FAILURES that need an owner decision and not a further
+    measurement: check 1 misses the +/- 3 pp band on all three state shares (-17.01 / -13.35 /
+    -20.20 pp), which is dominated by the pre-existing fact that 50.6% of the employed universe
+    has no assigned workplace at all, and check 2 misses its 100_plus < 3% operating bound at
+    7.37% on the reporting-day universe (both bounds are ASSUMPTIONS with no committed source
+    behind them, per ADR-0104). Whether the model is accepted, re-parameterised, or held until
+    the participation deficit (issue #244 / srv_participation_controls) is addressed is a
+    maintainer judgement that nobody has recorded yet. Two smaller items remain open and are
+    NOT blockers: pool size per matching cell is still not recorded (the fourth check-4
+    diagnostic), and the 37,705 workers who are not flagged employed are counted but unexplained.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
   MiD reference table (data record mid2023_workday_location) for the keep-probability ratio.

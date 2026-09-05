@@ -1,0 +1,140 @@
+run log excerpts -- commute-day-state Phase B proof RE-RUN after fix wave A
+Server felix, worktree ~/wt_cds_b (detached c9b841d9 + the branch tar), 2026-09-05/06 CEST.
+Full logs: ~/cds_b2_off.log, ~/cds_b2_on.log, ~/cds_b2_sens.log
+
+############ RUN A -- OFF re-check (analysis only) ############
+22:31:16 │ INFO    │ synpp            │ Found 42 stages
+22:31:16 │ INFO    │ synpp            │ Devalidating 8 stages:
+22:39:53 │ INFO    │ synpp            │ Pipeline progress: 8/8 (100.00%)
+22:31:16 │ INFO    │ synpp            │ Devalidating 8 stages:
+22:31:16 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.state_stage__fddc3be7e6a8c880b2fac4d3654a396f
+22:31:16 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.commute_distance_by_kreis__6101a85b5e37d252516f23a9ebbd390e
+22:31:16 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.home_office_donors_stage__14dc0bcde693ef9c76498d3de3569510
+22:31:16 │ INFO    │ synpp            │ - braunschweig.locations.synthesis.replacement_education_gravity__d3017deb88dda3e456ded30545e85e91
+22:31:16 │ INFO    │ synpp            │ - synthesis.population.spatial.primary.candidates__44cad5cc9da6fd2a71036e90474504e7
+22:31:16 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.trips_day_stage__fddc3be7e6a8c880b2fac4d3654a396f
+22:31:16 │ INFO    │ synpp            │ - braunschweig.synthesis.locations.education_gravity__70334b9ebafb2b6e378a0563a1b0fe7f
+22:31:16 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.work_participation_by_kreis__487767abcd4f02a422ce3a833e43b69c
+22:31:16 │ INFO    │ synpp            │ Successfully reset meta data
+22:39:44 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] Kreis centroids: 400 Kreise from VG250 vg250_krs (column 'ARS'), reprojected to {"$schema": "https://proj.org/schemas/v0.7/projjson.schema.json", "type": "ProjectedCRS", "name": "ETRS89 / UTM zone 32N", "base_crs": {"name": "ETRS89", "datum_ensemble": {"name": "European Terrestrial Reference System 1989 ensemble", "members": [{"name": "European Terrestrial Reference Frame 1989"}, {"name": "European Terrestrial Reference Frame 1990"}, {"name": "European Terrestrial Reference Frame 1991"}, {"name": "European Terrestrial Reference Frame 1992"}, {"name": "European Terrestrial Reference Frame 1993"}, {"name": "European Terrestrial Reference Frame 1994"}, {"name": "European Terrestrial Reference Frame 1996"}, {"name": "European Terrestrial Reference Frame 1997"}, {"name": "European Terrestrial Reference Frame 2000"}, {"name": "European Terrestrial Reference Frame 2005"}, {"name": "European Terrestrial Reference Frame 2014"}, {"name": "European Terrestrial Reference Frame 2020"}], "ellipsoid": {"name": "GRS 1980", "semi_major_axis": 6378137, "inverse_flattening": 298.257222101}, "accuracy": "0.1", "id": {"authority": "EPSG", "code": 6258}}, "coordinate_system": {"subtype": "ellipsoidal", "axis": [{"name": "Geodetic latitude", "abbreviation": "Lat", "direction": "north", "unit": "degree"}, {"name": "Geodetic longitude", "abbreviation": "Lon", "direction": "east", "unit": "degree"}]}, "id": {"authority": "EPSG", "code": 4258}}, "conversion": {"name": "UTM zone 32N", "method": {"name": "Transverse Mercator", "id": {"authority": "EPSG", "code": 9807}}, "parameters": [{"name": "Latitude of natural origin", "value": 0, "unit": "degree", "id": {"authority": "EPSG", "code": 8801}}, {"name": "Longitude of natural origin", "value": 9, "unit": "degree", "id": {"authority": "EPSG", "code": 8802}}, {"name": "Scale factor at natural origin", "value": 0.9996, "unit": "unity", "id": {"authority": "EPSG", "code": 8805}}, {"name": "False easting", "value": 500000, "unit": "metre", "id": {"authority": "EPSG", "code": 8806}}, {"name": "False northing", "value": 0, "unit": "metre", "id": {"authority": "EPSG", "code": 8807}}]}, "coordinate_system": {"subtype": "Cartesian", "axis": [{"name": "Easting", "abbreviation": "E", "direction": "east", "unit": "metre"}, {"name": "Northing", "abbreviation": "N", "direction": "north", "unit": "metre"}]}, "usages": [{"scope": "Engineering survey, topographic mapping.", "area": "Europe between 6\u00b0E and 12\u00b0E: Austria; Denmark - onshore and offshore; Germany - onshore and offshore; Italy - onshore and offshore; Norway including Svalbard - onshore and offshore; Spain - offshore.", "bbox": {"south_latitude": 36.53, "west_longitude": 6, "north_latitude": 84.01, "east_longitude": 12.01}}, {"scope": "Pan-European conformal mapping at scales larger than 1:500,000.", "area": "Europe between 6\u00b0E and 12\u00b0E and approximately 36\u00b030'N to 84\u00b0N.", "bbox": {"south_latitude": 36.53, "west_longitude": 6, "north_latitude": 84.01, "east_longitude": 12.01}}], "id": {"authority": "EPSG", "code": 25832}}
+22:39:45 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] employed persons: 1/540426 (0.00%) with no home Kreis (ars5) match
+22:39:45 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] work participation: 540425 employed persons in the ZGB, 267194 with a work trip (49.44%). The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and counted once by _employed_with_home_kreis and recorded in provenance.json
+22:39:45 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] 1 code(s) have a SrV reference row with n_persons == 0 (not surveyed) and therefore a NaN delta: ['03103']
+22:39:45 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] commute_day_state_enabled is false -- no reporting-day state table is written (every worker carries the same placeholder state)
+22:39:47 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers (no home geometry): 0/304900 (0.00%) with no home Kreis (ars5) match
+22:39:47 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers: 1/304900 (0.00%) with no home Kreis (ars5) match
+22:39:50 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] realised work: 304900 workers input, 0 without home geometry dropped, 1 without a home Kreis, 0 without a workplace row, 0 with a NaN distance dropped, 304900 kept; external destinations 39150 (12.84%), destinations without a resolvable Kreis 0 (0.00%: 0 with no workplace row, 0 with a malformed workplace commune_id)
+22:39:51 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] EXT destinations: 39150 workers over 646 (home, destination) Kreis pairs; 1 pair(s) have no BA Pendler flow (the BA export suppresses small cells, so the flow is unknown, not zero); 0 pair(s) have no Kreis centroid
+22:39:51 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] near-class-edge share: 129906/304900 workers (42.61%) lie within 5.0 km of a class edge [10.0, 25.0, 50.0, 100.0, 200.0]
+22:39:52 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] wrote 6 report files to eqasim-data/output_bs_100pct_cds2_off/analysis/commute_day_state_phase_a
+22:39:52 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 540425 employed persons, share_work_trip 0.494 vs SrV 0.651 (delta -15.67 pp); near-class-edge share 0.426; EXT class agreement 0.826
+
+############ RUN B -- ON, full line ############
+22:42:51 │ INFO    │ synpp            │ Devalidating 14 stages:
+22:42:51 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.commute_distance_by_kreis__7759020584305dc525b63c45e25b4870
+22:42:51 │ INFO    │ synpp            │ - synthesis.population.spatial.primary.candidates__585972854cded89b5a36a200083ab2b3
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.locations.education_gravity__a0069474a6527601600ee8884b6bf505
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.activities_day_stage__0792463ae8329ee6819daad6b865e34a
+22:42:51 │ INFO    │ synpp            │ - braunschweig.locations.synthesis.replacement_education_gravity__4376239c0c7d6df382d3c95697f9a199
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.locations.secondary_chainsolvers__82eafff86ff2118e5cce6cf0d7c68971
+22:42:51 │ INFO    │ synpp            │ - documentation.meta_output__66c2ef0f4e18d5828fca694df57d3f05
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.home_office_donors_stage__f9cfaa4c7416208acf6493ce9611e422
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.state_stage__0792463ae8329ee6819daad6b865e34a
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.output_day__ca9461e400d76ade0e1e822f6eb99d66
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.trips_day_stage__0792463ae8329ee6819daad6b865e34a
+22:42:51 │ INFO    │ synpp            │ - braunschweig.analysis.cordon_validation__85ba8a2bd3dfbf8940d546cb5063415b
+22:42:51 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.work_participation_by_kreis__056f091eac0fbc6aa71cbff992fda376
+22:42:51 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.spatial_locations_day__82eafff86ff2118e5cce6cf0d7c68971
+22:42:51 │ INFO    │ synpp            │ Successfully reset meta data
+--- donor pool (R7 education-leg attributes, R9 immobility) ---
+22:42:51 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] reading the raw MiD delivery from eqasim-data/data/braunschweig/popsim/mid2023_raw
+22:43:04 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] read 420979 persons, 1087393 trips, 218101 households
+22:43:04 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] home-office-day donor filter: 8026/420979 persons kept (1.9%)
+22:43:04 │ WARNING │ synthesis.commute_day.donor_pool │ [commute day donors] sex: 12/8026 donors have an HP_SEX code outside {1, 2} (diverse/no answer) and get sex=NaN
+22:43:05 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] active escort: 1079/8026 donors (13.4%) have an active-escort trip (W_ZWECK == 6)
+22:43:05 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] work-trip-length fallback: 70947 distinct persons keep their first (by W_ID) qualifying work trip
+22:43:05 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] distance source over 8026 donors: {'P_ARB_ENTF': 6238, 'unknown': 1780, 'trip_length': 8} (1780, 22.2%, have no usable commute distance)
+22:43:05 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] trip-table resample: 12/8026 donors (0.15%) have sex=NaN and enter the stage-B matching as the explicit 'unknown' stratum (the attributes frame keeps NaN).
+22:43:15 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor trip table built: 18564 trips for 5421/8026 donors (valid=True)
+22:43:16 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor mobility: 2605/8026 donors immobile (no Wege rows, 32.5%), 0/8026 had Wege rows but no surviving trip chain after repair/resample (0.0%, a resample gap, not real behaviour)
+22:43:16 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor pool built: 8026 donors, 1780 missing distance (22.2%), 12 sex unknown, 0 not in home-office module, 0 household-unmatched
+22:43:16 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] fixed-purpose legs in the donor chains: 49/8026 donors (0.6%) carry an 'education' activity (only matchable to persons WITH an education location, ruling R7), 382/8026 (4.8%) carry a 'work' activity (matchable to anyone -- every receiving person has a workplace)
+22:43:16 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] donor pool: 8026 donors from 420979 MiD persons (1.91% unweighted, 1.64% P_GEW-weighted), 18564 donor trips; builder diagnostics: {'n_donors': 8026, 'n_immobile': 2605, 'n_chain_dropped_by_resample': 0, 'n_missing_distance': 1780, 'n_sex_unknown': 12, 'n_donors_with_education_leg': 49, 'n_donors_with_work_leg': 382, 'n_not_in_module': 0, 'n_household_unmatched': 0, 'distance_source_counts': {'P_ARB_ENTF': 6238, 'unknown': 1780, 'trip_length': 8}, 'enabled': True, 'n_mid_persons': 420979, 'n_mid_trips': 1087393, 'n_mid_households': 218101, 'donor_share_unweighted': 0.019065084006565647, 'donor_share_weighted': 0.016358937525551443}
+--- state stage (R7 matching, donor source, coarsening) ---
+22:43:05 │ INFO    │ calibration.commute_day_state_reference │ [commute day state reference] work-trip lengths: 76436/1087393 trips qualify (W_ZWECK == 1, 0 < wegkm < 1000); 70947 distinct persons keep their first qualifying trip
+22:50:45 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] parameters: detour_factor=1.300, far_threshold_km=200.0, absent_share_far=1.000, max_not_replaceable_share=0.500, random_seed=1234 (+7301 offset)
+22:50:46 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] escort duty: 100784/870464 persons with a trip (11.6%) have an 'escort' leg on their pre-assignment day
+22:50:46 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance column: 'wegkm_imp' (first of ('wegkm_imp', 'wegkm') present on the trips frame)
+22:50:52 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance class: 304900/870464 persons (35.0%) have a usable donor work-trip length; 565564 (65.0%) have no valid work trip and are counted with donor_distance_class=None (no re-draw for them, see keep_probability)
+22:50:55 │ INFO    │ synthesis.commute_day.state │ [commute day state] assigned distance class: 304900 workers classified (detour factor 1.30)
+22:50:55 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] donor-distance source (ADR-0104 Amendment 1) per assigned class: {'100_200': '5235/5235 (100.0%)', '10_25': '71528/71528 (100.0%)', '25_50': '54311/54311 (100.0%)', '50_100': '21515/21515 (100.0%)', 'gt200': '10959/10959 (100.0%)', 'lt10': '141352/141352 (100.0%)'}
+22:50:56 │ INFO    │ synthesis.commute_day.state │ [commute day state] state draw: 304900 workers, 60970 eligible for re-draw (20.0%), 0 donor class missing (0.0%)
+22:50:56 │ INFO    │ synthesis.commute_day.state │ [commute day state] state shares: at_workplace 97.3%, home 1.7%, absent 1.1% (of which escort-protected from absent: 523)
+22:50:56 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] education anchors: 178763 persons have an assigned education location (304900 workers in total)
+22:50:56 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] has_license: not present on both frames (MiD donors carry no has_license column) -- skipped as a soft criterion rather than invented.
+22:50:56 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] ruling R7 (education anchor): 49/8026 donors carry an education leg; 4954/5086 persons have NO education location and can therefore never receive one of them
+22:50:59 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] matched 5086/5086 persons (0.0% not replaceable); by coarsening level (rate of matched persons): {0: '3786/5086 (74.4%)', 2: '352/5086 (6.9%)', 3: '391/5086 (7.7%)', 4: '23/5086 (0.5%)', 5: '534/5086 (10.5%)'}
+22:50:59 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] final states over 304900 workers (304900 of them drawn): {'absent': '3215 (1.1%)', 'at_workplace': '296599 (97.3%)', 'home': '5086 (1.7%)'}; re-draw eligible 20.0% of the drawn, 0/5086 home persons not replaceable (0.0%), coarsening levels used {0: 3786, 2: 352, 3: 391, 4: 23, 5: 534}
+--- plan replacement / reporting-day trips (R8 fragmentation, R9 immobile vs without-trips) ---
+22:52:17 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] reporting-day trips built: 5086 persons replaced (+13544/-36815 trips), 1435/5086 matched donors were IMMOBILE (28.2%, is_immobile, an expected trip-less home-office day) and 0/5086 (0.0%) had zero rows although their donor did travel; 3215 persons absent (0 rows), 0 home persons unmatched (kept unchanged, 271 extra column(s) nulled on replaced rows)
+22:52:18 │ INFO    │ synthesis.commute_day.trips_day_stage │ [commute day trips] reporting-day trips: 3369427 rows for 865814 persons (from 3392698 rows for 870464 persons); diagnostics: {'n_persons_replaced': 5086, 'n_persons_absent': 3215, 'n_trips_removed': 36815, 'n_trips_added': 13544, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 271, 'n_donors_without_trips': 0, 'n_donors_immobile': 1435, 'n_donors_unknown_trip_count': 0, 'share_donors_without_trips': 0.0, 'share_donors_immobile': 0.282147070389304}
+23:51:23 │ INFO    │ synthesis.commute_day.output_day │ [commute day output] 304900/1131204 persons (27.0%) carry a reporting-day state: {'absent': 3215, 'at_workplace': 296599, 'home': 5086}; the remainder have no assigned workplace and keep an empty field
+--- R8 proof: PerformanceWarning count in the whole ON log ---
+grep -c PerformanceWarning ~/cds_b2_on.log = 0; log size = 99519 B (the 2026-09-05 ON log was 254 MB)
+--- check 1 (work participation, now produced) ---
+22:52:55 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] work participation: 540425 employed persons in the ZGB, 260076 with a work trip (48.12%). The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and counted once by _employed_with_home_kreis and recorded in provenance.json
+22:52:55 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] reporting-day states joined onto the employed universe: 267194/304900 workers matched (87.63%); 37705 (12.37%) have a person in the population that is NOT flagged employed (a universe difference, reported as n_workers_not_employed); 1 (0.00%) resolve to no employed-universe row at all (no population row, or a home Kreis outside the ZGB). All of them are excluded from every share below
+22:52:55 │ WARNING │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] 37705/304900 workers (12.37%) have an assigned workplace but are NOT flagged employed by synthesis.population.enriched, above 5.0%. This is a UNIVERSE DIFFERENCE between the model's worker cohort and the employed cohort the SrV reference is defined on, not a join failure -- every one of these person_ids matches a population row. It is reported (n_workers_not_employed) and never raised on; the check-1 shares below describe the employed cohort only
+22:53:02 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 540425 employed persons, share_work_trip 0.481 vs SrV 0.651 (delta -16.99 pp); near-class-edge share 0.426; EXT class agreement 0.826
+--- cordon (check 3) ---
+22:51:00 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.cordon_validation__85ba8a2bd3dfbf8940d546cb5063415b ...
+22:51:01 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.cordon_gates__66d69eb5a8cf2c10e8065c451958fffc ...
+22:51:03 │ INFO    │ analysis.cordon_validation │ [braunschweig.analysis.cordon_validation] reporting-day out-commuters: 33143/39150 external workers (84.66%) are at_workplace; 0/304900 workers have no resolvable workplace
+22:51:03 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.cordon_validation__85ba8a2bd3dfbf8940d546cb5063415b
+22:51:03 │ INFO    │ synpp            │ Finished running braunschweig.analysis.cordon_validation__85ba8a2bd3dfbf8940d546cb5063415b.
+[braunschweig.analysis.cordon_validation] 68630 in-commuter records -> eqasim-data/output_bs_100pct_cds2_on/analysis/cordon
+[braunschweig.analysis.cordon_validation] gate volumes (BA SvB gravity expectation): inbound (ein) 68,020 | outbound (aus) 60,705
+[braunschweig.analysis.cordon_validation] reporting-day outbound expectation (ADR-0104 check 3): 51,393 of the 60,705 register out-commuters (at_workplace share of external workers 0.8466) -> eqasim-data/output_bs_100pct_cds2_on/analysis/cordon/gate_volumes_scaled.csv
+--- secondary chainsolvers: no education-anchor AttributeError this time ---
+[braunschweig.secondary_chainsolvers] running cs.solve() (parallel, 62 workers; 858,313 persons)...
+[braunschweig.secondary_chainsolvers] success rate: 0.9998 (858616/858788 problems fully placed)
+--- stage timings ---
+22:43:16 │ INFO    │ synpp            │ Pipeline progress: 1/14 (7.14%)
+22:43:16 │ INFO    │ synpp            │ Pipeline progress: 2/14 (14.29%)
+22:45:20 │ INFO    │ synpp            │ Pipeline progress: 3/14 (21.43%)
+22:45:31 │ INFO    │ synpp            │ Pipeline progress: 4/14 (28.57%)
+22:50:35 │ INFO    │ synpp            │ Pipeline progress: 5/14 (35.71%)
+22:51:00 │ INFO    │ synpp            │ Pipeline progress: 6/14 (42.86%)
+22:51:03 │ INFO    │ synpp            │ Pipeline progress: 7/14 (50.00%)
+22:51:15 │ INFO    │ synpp            │ Pipeline progress: 8/14 (57.14%)
+22:52:38 │ INFO    │ synpp            │ Pipeline progress: 9/14 (64.29%)
+22:53:02 │ INFO    │ synpp            │ Pipeline progress: 10/14 (71.43%)
+22:53:53 │ INFO    │ synpp            │ Pipeline progress: 11/14 (78.57%)
+23:50:12 │ INFO    │ synpp            │ Pipeline progress: 12/14 (85.71%)
+23:51:02 │ INFO    │ synpp            │ Pipeline progress: 13/14 (92.86%)
+23:57:10 │ INFO    │ synpp            │ Pipeline progress: 14/14 (100.00%)
+
+############ RUN C -- sensitivity commute_day_absent_share_far 0.6 ############
+00:01:41 │ INFO    │ synpp            │ Devalidating 6 stages:
+00:01:41 │ INFO    │ synpp            │ - braunschweig.synthesis.locations.education_gravity__dba6f98511df32e11ef3a42c1a52f30c
+00:01:41 │ INFO    │ synpp            │ - braunschweig.locations.synthesis.replacement_education_gravity__653558977841ca47ba973adf3d36a1a9
+00:01:41 │ INFO    │ synpp            │ - synthesis.population.spatial.primary.candidates__795eab63d9f4055bcd683eaa36badf97
+00:01:41 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.work_participation_by_kreis__f3655012af6e40e7a0fa68c7010ba7ff
+00:01:41 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.state_stage__2d76d3e5ca03d39e7b20786f3cd5f592
+00:01:41 │ INFO    │ synpp            │ - braunschweig.synthesis.commute_day.trips_day_stage__2d76d3e5ca03d39e7b20786f3cd5f592
+00:01:41 │ INFO    │ synpp            │ Successfully reset meta data
+00:09:35 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] parameters: detour_factor=1.300, far_threshold_km=200.0, absent_share_far=0.600, max_not_replaceable_share=0.500, random_seed=1234 (+7301 offset)
+00:09:36 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] escort duty: 100784/870464 persons with a trip (11.6%) have an 'escort' leg on their pre-assignment day
+00:09:36 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance column: 'wegkm_imp' (first of ('wegkm_imp', 'wegkm') present on the trips frame)
+00:09:42 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance class: 304900/870464 persons (35.0%) have a usable donor work-trip length; 565564 (65.0%) have no valid work trip and are counted with donor_distance_class=None (no re-draw for them, see keep_probability)
+00:09:45 │ INFO    │ synthesis.commute_day.state │ [commute day state] assigned distance class: 304900 workers classified (detour factor 1.30)
+00:09:45 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] donor-distance source (ADR-0104 Amendment 1) per assigned class: {'100_200': '5235/5235 (100.0%)', '10_25': '71528/71528 (100.0%)', '25_50': '54311/54311 (100.0%)', '50_100': '21515/21515 (100.0%)', 'gt200': '10959/10959 (100.0%)', 'lt10': '141352/141352 (100.0%)'}
+00:09:46 │ INFO    │ synthesis.commute_day.state │ [commute day state] state draw: 304900 workers, 60970 eligible for re-draw (20.0%), 0 donor class missing (0.0%)
+00:09:46 │ INFO    │ synthesis.commute_day.state │ [commute day state] state shares: at_workplace 97.3%, home 2.1%, absent 0.6% (of which escort-protected from absent: 523)
+00:09:46 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] education anchors: 178763 persons have an assigned education location (304900 workers in total)
+00:09:46 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] has_license: not present on both frames (MiD donors carry no has_license column) -- skipped as a soft criterion rather than invented.
+00:09:46 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] ruling R7 (education anchor): 49/8026 donors carry an education leg; 6185/6345 persons have NO education location and can therefore never receive one of them
+00:09:51 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] matched 6345/6345 persons (0.0% not replaceable); by coarsening level (rate of matched persons): {0: '3786/6345 (59.7%)', 2: '352/6345 (5.5%)', 3: '391/6345 (6.2%)', 4: '23/6345 (0.4%)', 5: '1793/6345 (28.3%)'}
+00:09:51 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] final states over 304900 workers (304900 of them drawn): {'absent': '1956 (0.6%)', 'at_workplace': '296599 (97.3%)', 'home': '6345 (2.1%)'}; re-draw eligible 20.0% of the drawn, 0/6345 home persons not replaceable (0.0%), coarsening levels used {0: 3786, 2: 352, 3: 391, 4: 23, 5: 1793}
+00:11:02 │ INFO    │ synthesis.commute_day.trips_day_stage │ [commute day trips] reporting-day trips: 3371739 rows for 866609 persons (from 3392698 rows for 870464 persons); diagnostics: {'n_persons_replaced': 6345, 'n_persons_absent': 1956, 'n_trips_removed': 36815, 'n_trips_added': 15856, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 271, 'n_donors_without_trips': 0, 'n_donors_immobile': 1899, 'n_donors_unknown_trip_count': 0, 'share_donors_without_trips': 0.0, 'share_donors_immobile': 0.29929078014184396}
+00:11:55 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 540425 employed persons, share_work_trip 0.481 vs SrV 0.651 (delta -16.97 pp); near-class-edge share 0.426; EXT class agreement 0.826

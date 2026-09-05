@@ -131,7 +131,11 @@ classification:
 - validation
 status:
   execution: partial
-  notes: 'PARTIAL, deliberately: the OFF line and the sensitivity line completed, the ON line
+  notes: 'SUPERSEDED BY commute-day-state-phase-b-proof-100pct-2026-09-06-rerun, which re-ran the
+    same three lines after fix wave A and evaluated all six checks; this manifest stays as the
+    historical record of the first attempt and of the three defects it found, and its check
+    verdicts must not be quoted as the feature''s current state.
+    PARTIAL, deliberately: the OFF line and the sensitivity line completed, the ON line
     produced its state draw and two of its three analysis outputs and then hit two stops.
     THE THREE DEFECTS THIS PROOF RUN FOUND, in the order they fired:
     (1) 12-digit AGS -- FIXED in this branch, see repository.notes. Evidence that the fix

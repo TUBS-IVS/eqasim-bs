@@ -1,0 +1,117 @@
+{
+  "_source_cache_entry": "braunschweig.synthesis.commute_day.state_stage__0792463ae8329ee6819daad6b865e34a.p",
+  "by_assigned_class": {
+    "100_200": {
+      "absent": 0,
+      "at_workplace": 4106,
+      "home": 1129
+    },
+    "10_25": {
+      "absent": 0,
+      "at_workplace": 70794,
+      "home": 734
+    },
+    "25_50": {
+      "absent": 0,
+      "at_workplace": 53092,
+      "home": 1219
+    },
+    "50_100": {
+      "absent": 0,
+      "at_workplace": 20034,
+      "home": 1481
+    },
+    "gt200": {
+      "absent": 3215,
+      "at_workplace": 7221,
+      "home": 523
+    },
+    "lt10": {
+      "absent": 0,
+      "at_workplace": 141352,
+      "home": 0
+    }
+  },
+  "donor_source_by_assigned_class": {
+    "100_200": {
+      "n_donor_from_trip_length": 5235,
+      "n_donor_missing": 0,
+      "n_workers": 5235,
+      "share_primary": 1.0
+    },
+    "10_25": {
+      "n_donor_from_trip_length": 71528,
+      "n_donor_missing": 0,
+      "n_workers": 71528,
+      "share_primary": 1.0
+    },
+    "25_50": {
+      "n_donor_from_trip_length": 54311,
+      "n_donor_missing": 0,
+      "n_workers": 54311,
+      "share_primary": 1.0
+    },
+    "50_100": {
+      "n_donor_from_trip_length": 21515,
+      "n_donor_missing": 0,
+      "n_workers": 21515,
+      "share_primary": 1.0
+    },
+    "gt200": {
+      "n_donor_from_trip_length": 10959,
+      "n_donor_missing": 0,
+      "n_workers": 10959,
+      "share_primary": 1.0
+    },
+    "lt10": {
+      "n_donor_from_trip_length": 141352,
+      "n_donor_missing": 0,
+      "n_workers": 141352,
+      "share_primary": 1.0
+    }
+  },
+  "enabled": true,
+  "final_state_counts": {
+    "absent": 3215,
+    "at_workplace": 296599,
+    "home": 5086
+  },
+  "matching": {
+    "matched_by_level": {
+      "0": 3786,
+      "1": 0,
+      "2": 352,
+      "3": 391,
+      "4": 23,
+      "5": 534,
+      "6": 0
+    },
+    "n_donors_hard_excluded_has_car_unknown": 0,
+    "n_donors_with_education_leg": 49,
+    "n_not_replaceable": 0,
+    "n_persons": 5086,
+    "n_persons_education_restricted": 4911,
+    "n_persons_hard_criteria_missing": 0,
+    "n_persons_without_education_location": 4954,
+    "share_not_replaceable": 0.0,
+    "soft_criteria_used": [
+      "distance_class",
+      "sex",
+      "age_class",
+      "household_size_class"
+    ]
+  },
+  "n_absent": 3215,
+  "n_at_workplace": 296599,
+  "n_donor_class_missing": 0,
+  "n_escort_protected": 523,
+  "n_home": 5086,
+  "n_home_drawn": 5086,
+  "n_home_matched": 5086,
+  "n_home_not_replaceable": 0,
+  "n_redraw_eligible": 60970,
+  "n_workers": 304900,
+  "n_workers_without_home_geometry": 0,
+  "share_donor_source_primary": 1.0,
+  "share_home_not_replaceable": 0.0
+}
