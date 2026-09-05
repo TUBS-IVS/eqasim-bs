@@ -62,5 +62,5 @@ national grid to ZGB. The MiD path is required ONLY for `popsim_mid` (validated 
 ## Run the stage standalone
 
 ```powershell
-python -m synpp <config-with-population.method=popsim_mid>.yml   # run target: braunschweig.popsim.stage
+python scripts/run_synpp.py <config-with-population.method=popsim_mid>.yml   # run target: braunschweig.popsim.stage
 ```

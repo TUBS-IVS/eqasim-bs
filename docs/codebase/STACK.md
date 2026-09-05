@@ -23,8 +23,9 @@ external, cached toolchain (see "Java / MATSim side" below).
   CI workflow activates `ile-de-france`, but README/AGENTS.md/CLAUDE.md instruct
   contributors to use the env named `eqasim`. See CONCERNS.md. `[ASK USER]`
   whether the canonical local env name is `eqasim` or `ile-de-france`.
-- Pipeline entry point: `python -m synpp <config>.yml` (README §4; AGENTS.md
-  "Day-to-day commands").
+- Pipeline entry point: `python scripts/run_synpp.py <config>.yml [<overlay>.yml]`, which installs
+  the deterministic stage-hash patch (ADR-0105) before synpp builds the stage graph; a plain
+  `python -m synpp` run is unsupported (README §4; AGENTS.md "Day-to-day commands").
 
 ## Pipeline framework
 

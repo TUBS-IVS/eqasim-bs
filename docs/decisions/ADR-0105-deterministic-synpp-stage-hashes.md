@@ -4,26 +4,30 @@
   (checked across all local and remote refs on 2026-09-05); 0105 is the next free number.
 - **Context:** Analysis-only re-runs against the shared 100 % cache `cache_bs_100pct_i329` on the
   run server devalidated and re-executed blocks of untargeted data/location/gravity stages three
-  times (2026-09-03: 4 stages; 2026-09-04: 2; 2026-09-05: 14, recorded in
-  `docs/runs/commute-day-state-phase-a-2026-09-05.yml`) although code, config and input files were
-  identical to the runs that had written the cache. The systematic investigation
-  (`superpowers:systematic-debugging`, 2026-09-05) excluded the module hash (md5 of the stage
-  source: identical across `b7eed9a5`, `main` and the branch heads for every affected module), the
-  validation tokens (input file sizes unchanged since June) and the config values (the two
-  overlays differ only in the run list). The synpp metadata (`pipeline.json`) showed the actual
-  difference: the SAME stage carried different sets of *implicit* config keys in different runs
-  (e.g. `synthesis.population.spatial.primary.candidates` had all `braunschweig.population.popsim.*`
-  keys on 2026-09-03 and none on 2026-09-05; `replacement_education_gravity` exists in five hash
-  variants with byte-identical payloads, `braunschweig.popsim.stage` in nine).
+  times (2026-09-03: 4 stages; 2026-09-04: 2; 2026-09-05: 14), recorded in the run manifest
+  `commute-day-state-phase-a-2026-09-05` of branch `feature/commute-day-state-phase-a` (not yet
+  merged at the time of writing), although code, config and input files were identical to the runs
+  that had written the cache. The systematic investigation (`superpowers:systematic-debugging`,
+  2026-09-05) excluded the module hash (md5 of the stage source: identical across `b7eed9a5`,
+  `main` and the branch heads for every affected module), the validation tokens (input file sizes
+  unchanged since June) and the config values (the two overlays differ only in the run list). The
+  synpp metadata (`pipeline.json`) showed the actual difference: the SAME stage carried different
+  sets of *implicit* config keys in different runs (e.g.
+  `synthesis.population.spatial.primary.candidates` had all `braunschweig.population.popsim.*`
+  keys on 2026-09-03 and none on 2026-09-05); the shared cache held nine hash variants of
+  `braunschweig.popsim.stage` and five of `replacement_education_gravity` with byte-identical
+  payloads (recorded in the same run manifest).
   Root cause in synpp 1.6.2 (`synpp/pipeline.py`, `process_stages`, block "Update configuration
   requirements based dependencies"): the pass that copies upstream config keys into downstream
   stages starts from `list(set_of_source_hashes)` and re-enqueues only `stage["downstream"][0]`.
   The propagated key set therefore depends on the iteration order of a set of md5 strings -- on
   Python's per-process string-hash randomisation (`PYTHONHASHSEED`) -- and on which downstream
   path is walked. Since that set enters `hash_name(...)`, the cache entry name is nondeterministic.
-  Reproduced locally on `configs/base_bs.yml` + `configs/overlays/test_25pct.yml`: with
-  `PYTHONHASHSEED` 1, 2 and 3 five of 91 stages changed hash (`replacement_education_gravity`
-  119 vs 70 propagated keys, `home_cell` 58/10/60, `verbindungen_validation` 124/75/124).
+  Reproduced locally on `configs/base_bs.yml` + `configs/overlays/test_25pct.yml`: under
+  `PYTHONHASHSEED` 1, 2 and 3 the unpatched build yields three different stage registries (the SET
+  of stages that change and their propagated key counts vary with the code state), while the
+  patched build is identical across seeds -- reproduced by
+  `tests/test_synpp_deterministic.py::test_real_pipeline_hashes_are_identical_across_hash_seeds`.
   The same defect is the uncharacterised "propagation does not reach every consumer" of
   `docs/codebase/notes/synpp-config-propagation.md` (the `pt2matsim_version` crash of the
   2026-08-20 run).
@@ -75,6 +79,7 @@
     patches accumulate.
 - **Evidence:** `tests/test_synpp_deterministic.py` (order-independence on a diamond graph,
   conflict/cycle errors, version guard, and the real production graph hashing identically under
-  two `PYTHONHASHSEED` values); server metadata and `cmp` results recorded in
-  `docs/runs/commute-day-state-phase-a-2026-09-05.yml` (`status.notes`); this ADR's measured
-  hit/miss table reproduced by `scripts/report_stage_hash_impact.py`.
+  two `PYTHONHASHSEED` values); server metadata and `cmp` results recorded in the run manifest
+  `commute-day-state-phase-a-2026-09-05` of branch `feature/commute-day-state-phase-a` (not yet
+  merged at the time of writing) (`status.notes`); this ADR's measured hit/miss table reproduced
+  by `scripts/report_stage_hash_impact.py`.

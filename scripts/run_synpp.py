@@ -1,10 +1,12 @@
 """Run the synpp pipeline with timestamped logging.
 
 Equivalent to ``python -m synpp <config.yml>`` but installs a logging format that
-prefixes every synpp log line with an ISO timestamp (asctime). This lets
-``braunschweig.analysis.runtime`` compute per-stage wall-clock durations from the
-run log, so the slowest stages (secondary locations / location choice, gravity,
-...) are visible and settings can be tuned with evidence.
+prefixes every synpp log line with an ISO timestamp (asctime), and installs the
+deterministic stage-hash patch (ADR-0105, ``braunschweig.synpp_deterministic``)
+before synpp builds the stage graph. This lets ``braunschweig.analysis.runtime``
+compute per-stage wall-clock durations from the run log, so the slowest stages
+(secondary locations / location choice, gravity, ...) are visible and settings
+can be tuned with evidence.
 
 Used by ``scripts/run_pipeline.sh`` in place of ``python -m synpp``. MATSim's Java
 stdout keeps its own timestamps; braunschweig ``print()`` diagnostics are

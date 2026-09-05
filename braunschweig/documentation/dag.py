@@ -71,6 +71,12 @@ def extract(repo_root: str, base: str, overlay: Optional[str] = None) -> dict:
     sorted ``edges`` (``[dependency, dependent]``), the ``targets`` (the ``run``
     list) and the source config identity. Raises with a clear message when synpp
     or the stage modules are not importable in this environment.
+
+    Installing the deterministic stage-hash patch (ADR-0105) is best-effort here:
+    the name-level graph this function returns (nodes/edges/targets) does not
+    depend on stage hashes at all, so an environment running an unpinned synpp
+    version (``synpp_deterministic.UnsupportedSynppVersion``) still gets a valid
+    DAG snapshot -- only a warning is logged, not a failure.
     """
     import sys
 
@@ -106,8 +112,18 @@ def extract(repo_root: str, base: str, overlay: Optional[str] = None) -> dict:
 
     # The name-level graph does not depend on stage hashes, but install the same
     # deterministic propagation the production entry point uses so that a dryrun
-    # exercises exactly the code path of a real run.
-    synpp_deterministic.install()
+    # exercises exactly the code path of a real run. The version guard inside
+    # install() protects the hash patch itself, not this DAG extraction, so a
+    # mismatched synpp version here must not fail the DAG snapshot -- it only
+    # means the dryrun exercises synpp's own (order-dependent) propagation
+    # instead, which still yields the same name-level graph.
+    try:
+        synpp_deterministic.install()
+    except synpp_deterministic.UnsupportedSynppVersion as error:
+        logger.warning(
+            "[documentation] deterministic stage-hash patch not installed for DAG "
+            "extraction (%s); continuing with synpp's own propagation -- the "
+            "name-level graph does not depend on stage hashes.", error)
     previous_directory = os.getcwd()
     os.chdir(repo_root)  # relative paths inside configure() resolve like a real run
     try:

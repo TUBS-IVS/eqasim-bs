@@ -56,18 +56,21 @@ several downstream paths happens to be walked. Two consequences: (1) a consumer 
 not receive an option (the `pt2matsim_version` crash above), and (2) the propagated set
 enters the stage hash that names the cache entry, so the SAME code with the SAME config
 yields different `<stage>__<hash>` names in different processes -- a spurious cache miss.
-Measured on `configs/base_bs.yml` + `configs/overlays/test_25pct.yml`: five stages changed
-hash between `PYTHONHASHSEED` 1, 2 and 3 (`replacement_education_gravity` carried 119 vs
-70 propagated keys); the shared 100 % cache on the run server held nine hash variants of
-`braunschweig.popsim.stage` and five of `replacement_education_gravity` with byte-identical
-payloads.
+The reproduction and the measured counts are recorded in ADR-0105, not restated here
+(one fact, one file).
 
 `braunschweig/synpp_deterministic.py` replaces the pass with a topological, all-edges
 propagation (upstream complete before downstream, sorted tie-breaks, conflicts raise) and
 is installed by `scripts/run_synpp.py` and `braunschweig.documentation.dag` before synpp
-builds the graph. Consequence (1) is thereby fixed for non-volatile options -- the rule at
-the top of this note nevertheless stands, because volatile options are still excluded by
-design and because a plain `python -m synpp` run does not install the patch. Consequence
+builds the graph. Consequence (1) is thereby fixed for non-volatile options -- with one
+qualification preserved from synpp's own rule: `explicit_config_keys` is computed as the
+union of the `passed-parameters` across ALL callers of an upstream stage, not per caller, so
+a config key that ONE caller passes explicitly (`context.stage(descriptor, config={...})`)
+is withheld from implicit propagation to EVERY OTHER caller of that same upstream stage too.
+This is inert on the production graph (no caller currently depends on receiving a key another
+caller passes explicitly) but is a real limitation should a future stage graph rely on it. The
+rule at the top of this note nevertheless stands, because volatile options are still excluded
+by design and because a plain `python -m synpp` run does not install the patch. Consequence
 (2) is fixed at the price of a one-time re-hash: `scripts/report_stage_hash_impact.py`
 lists which cache entries a config would hit or miss under the deterministic hashes before
 the first patched run.

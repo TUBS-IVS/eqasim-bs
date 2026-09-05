@@ -59,10 +59,19 @@ def build_registry(base: str, overlay: str | None, patched: bool) -> dict:
 
 
 def read_listing(path: str | None) -> set[str]:
+    """Read one cache basename per line, normalising synpp's on-disk suffixes.
+
+    A raw ``ls <working_directory>`` listing contains both the pickled payload
+    (``<stage>__<hash>.p``) and its companion directory (``<stage>__<hash>.cache``)
+    for every cache entry, so counting lines verbatim double-counts each variant.
+    Lines ending in ``.cache`` are dropped (the ``.p`` sibling is authoritative) and
+    a trailing ``.p`` is stripped, leaving exactly one basename per stored variant.
+    """
     if path is None:
         return set()
     with open(path, encoding="utf-8") as fh:
-        return {line.strip() for line in fh if line.strip() and not line.startswith("-")}
+        lines = (line.strip() for line in fh if line.strip() and not line.startswith("-"))
+        return {line[:-2] if line.endswith(".p") else line for line in lines if not line.endswith(".cache")}
 
 
 def main(argv=None) -> int:
@@ -87,7 +96,11 @@ def main(argv=None) -> int:
         digest = stage_hash.rsplit("__", 1)[1] if "__" in stage_hash else ""
         variants = present_by_stage.get(name, [])
         status = "-" if not listing else ("HIT" if digest in variants or (not digest and name in listing) else "MISS")
-        rows.append((name, digest[:12], len(stage["config"]), status, len(variants)))
+        # Volatile keys never enter the stage hash (they are excluded from propagation and
+        # from hash_name), so counting them here would overstate how many keys actually
+        # devalidate this cache entry.
+        n_cfg = len(set(stage["config"]) - set(stage["volatile_config"]))
+        rows.append((name, digest[:12], n_cfg, status, len(variants)))
 
     mode = "unpatched (order-dependent, PYTHONHASHSEED=%s)" % os.environ.get("PYTHONHASHSEED", "random") \
         if args.unpatched else "deterministic"

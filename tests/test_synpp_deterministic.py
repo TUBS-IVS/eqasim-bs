@@ -93,6 +93,7 @@ def test_install_is_idempotent_and_patches_synpp():
     import synpp.pipeline as pipeline
 
     original = D.original_process_stages()
+    assert callable(original)
     D.install()
     assert pipeline.process_stages is D.process_stages
     D.install()
@@ -113,6 +114,7 @@ from braunschweig import synpp_deterministic as D
 from braunschweig import config_compose
 D.install()
 from synpp.pipeline import process_stages
+assert process_stages is D.process_stages
 settings = config_compose.compose(sys.argv[1], sys.argv[2])
 definitions = []
 for item in settings["run"]:
