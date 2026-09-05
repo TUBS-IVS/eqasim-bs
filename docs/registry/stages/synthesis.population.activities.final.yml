@@ -25,14 +25,17 @@ pipelines:
 production: true
 resolves_to:
   popsim_mid: braunschweig.synthesis.commute_day.activities_day_stage
+features:
+- commute_day_state
 decisions:
 - ADR-0104
 notes: 'The shim (_ActivitiesShimContext) answers ONLY the two stage names
   synthesis.population.activities.execute reads: it maps "synthesis.population.trips" onto a COPY
-  of the reporting-day trips (synthesis.population.trips.final execute() MUTATES the trips frame
-  it is handed -- adds trip_count, purpose, start_time, ... columns in place -- and the reporting-
-  day trips frame is a cached synpp output other stages read afterwards, so mutating the original
-  would corrupt them) and passes "synthesis.population.enriched" through unchanged; any OTHER
+  of the reporting-day trips (the VENDORED synthesis.population.activities.execute itself MUTATES
+  the trips frame it is handed -- adds trip_count, purpose, start_time, ... columns in place -- and
+  the reporting-day trips frame (synthesis.population.trips.final) is a cached synpp output other
+  stages read afterwards, so handing it the original rather than a copy would corrupt them) and
+  passes "synthesis.population.enriched" through unchanged; any OTHER
   stage name the vendored module might request in a future eqasim version raises a KeyError naming
   it, rather than silently returning None, so a new upstream dependency is noticed here rather
   than producing a stage that silently ignores it.

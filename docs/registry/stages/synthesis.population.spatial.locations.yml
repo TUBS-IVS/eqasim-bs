@@ -9,9 +9,11 @@ description: 'Upstream join of persons to their chosen activity locations. In th
   home or absent worker and splices a donor day in its place. With commute_day_state_enabled
   false the .final alias is a pass-through, so the output is byte-identical.'
 lineage:
-  type: inherited
-  upstream: null
-  notes: null
+  type: overridden
+  upstream: synthesis.population.spatial.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to), the same pattern as
+    synthesis.population.spatial.primary.locations.
 code:
 - synthesis/population/spatial/locations.py
 - braunschweig/synthesis/commute_day/spatial_locations_day.py
@@ -22,5 +24,9 @@ pipelines:
 production: true
 resolves_to:
   popsim_mid: braunschweig.synthesis.commute_day.spatial_locations_day
+  popsim_open: synthesis.population.spatial.locations
+  simple_ipf_open: synthesis.population.spatial.locations
+features:
+- commute_day_state
 decisions:
 - ADR-0104

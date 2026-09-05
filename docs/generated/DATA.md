@@ -58,7 +58,7 @@ variables.
 ` | o/-/r | YES |
 | [mid2023_bikes_by_rs7_haustyp](../registry/data/mid2023_bikes_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` | o/-/r | no |
 | [mid2023_cars_by_rs7_haustyp](../registry/data/mid2023_cars_by_rs7_haustyp.yml) | control, assumption_basis | committed (`scripts/extract_mid_ownership_by_rs7_haustyp.py`) | `data/braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv` | o/-/r | no |
-| [mid2023_home_office_day_donors](../registry/data/mid2023_home_office_day_donors.yml) | donor | derived | `(no file -- synpp working_directory stage-cache only, see notes)` | r/-/r | YES |
+| [mid2023_home_office_day_donors](../registry/data/mid2023_home_office_day_donors.yml) | donor | derived | `<synpp cache of braunschweig.synthesis.commute_day.home_office_donors_stage; no file>` | r/-/r | YES |
 | [mid2023_license_by_sex_cohort](../registry/data/mid2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_mid_license_by_sex_cohort.py`) | `data/braunschweig/mid/mid2023_license_by_sex_cohort.csv` | -/-/o | no |
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |

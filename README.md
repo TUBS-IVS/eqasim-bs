@@ -217,7 +217,7 @@ tables keep all reference comparisons working.
 | MiD ownership cross tables (committed) | `python scripts/extract_mid_ownership_by_rs7_haustyp.py` (accepts `--raw` / `--out-dir`) | `braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv`, `braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv` |
 | SrV primary-distance targets (committed) | `python scripts/extract_srv_primary_distance_targets.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_commute_distance_by_kreis.csv`, `braunschweig/srv/srv2023_education_distance_by_kreis_level.csv`, `braunschweig/srv/srv2023_commute_distance_quantiles_by_kreis.csv`, `braunschweig/srv/srv2023_commute_distance_sensitivity_by_kreis.csv` (sensitivity variants, not a target) |
 | SrV work-participation reference (committed) | `python scripts/extract_srv_work_participation.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_work_participation_by_kreis.csv` |
-| MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below) | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
+| MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below). The model's own run-time donor pool (data record `mid2023_home_office_day_donors`) has no separate file: it is rebuilt fresh from the raw MiD delivery on every run. | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
 
 Two diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):
@@ -279,10 +279,12 @@ gates `run_pipeline.sh` (skip with `EQASIM_SKIP_VERIFY=1`).
 ### Commute-day-state model
 
 `python scripts/run_synpp.py` remains the single entry point; the model itself is governed
-by five keys in `configs/base_bs.yml` (ADR-0104, issue #244) that give every employed person
-with an assigned workplace a reporting-day state in `{at_workplace, home, absent}` — a person
-drawn to `home` receives a matched MiD home-office-day donor's own trip chain, and a person
-drawn to `absent` makes no trip that day:
+by four keys in `configs/base_bs.yml` plus one analysis-stage default
+(`cds_max_states_outside_employed_share`, not set in `configs/base_bs.yml` — see below)
+(ADR-0104, issue #244) that give every employed person with an assigned workplace a
+reporting-day state in `{at_workplace, home, absent}` — a person drawn to `home` receives a
+matched MiD home-office-day donor's own trip chain, and a person drawn to `absent` makes no
+trip that day:
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -290,7 +292,7 @@ drawn to `absent` makes no trip that day:
 | `commute_day_far_threshold_km` | `200.0` (km, routed) | Assigned commute distance above which a not-kept worker may become `absent`. **ASSUMPTION**: the MiD `P_ARB_ENTF` top-code — the survey resolves nothing above it, so this is where the reference stops, not where behaviour is known to change. |
 | `commute_day_absent_share_far` | `1.0` (share, `0`–`1`) | Share of not-kept far workers that become `absent` rather than `home`. **ASSUMPTION**: no observed rate exists; the pre-registered sensitivity check (ADR-0104) also runs this at `0.6`. |
 | `commute_day_max_not_replaceable_share` | `0.5` (share, `0`–`1`) | Guard: above this share of the `home` cohort without any donor at any coarsening level, the model raises rather than silently reporting a home share governed by donor-pool gaps. |
-| `cds_max_states_outside_employed_share` | `0.05` (share, `0`–`1`) | Diagnostic guard on `braunschweig.analysis.synthesis.work_participation_by_kreis`'s Check 1: raises above this share of drawn states falling outside the employed universe (an id-join defect, not a measurement). |
+| `cds_max_states_outside_employed_share` | `0.05` (share, `0`–`1`; code default of the analysis stage, not set in `configs/base_bs.yml`) | Diagnostic guard on `braunschweig.analysis.synthesis.work_participation_by_kreis`'s Check 1: raises above this share of drawn states falling outside the employed universe (an id-join defect, not a measurement). |
 
 The drawn state is exported as the `commute_day_state` column of `persons.csv` (empty for a
 person without an assigned workplace) and, in the MATSim population, as the person attribute

@@ -30,6 +30,8 @@ production: true
 inputs:
 - mid2023_workday_location
 - mid2023_home_office_day_donors
+features:
+- commute_day_state
 decisions:
 - ADR-0104
 notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_far_threshold_km

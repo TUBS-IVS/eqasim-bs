@@ -98,19 +98,39 @@ vendored module.
   stage's own; `output_day` additionally never emits a `commute_day_state`
   column, so `select_person_output_columns` returns the legacy list and
   `persons.csv` keeps its pre-model column set exactly.
-- `matsim.scenario.population` never even declares the state stage
-  (`context.stage(...)` is called ONLY when the flag is on), so a workflow
-  running with the model off never carries the donor/state chain in its DAG
-  at all for an attribute it never writes.
+- Four consumers -- `output_day`, `matsim.scenario.population`,
+  `braunschweig.analysis.synthesis.work_participation_by_kreis` and
+  `braunschweig.analysis.cordon_validation` -- gate their OWN dependency on
+  `state_stage` at `configure()` time (`context.stage(STATE_STAGE)` is called
+  only when `context.config(KEY_ENABLED)` is true), so a workflow running the
+  model off never asks `state_stage` for its output through these four paths.
 
-`popsim_open` and `simple_ipf_open` do not merely default to OFF: their
-committed fixtures
-(`configs/fixtures/config_popsim_open_braunschweig.yml`,
-`configs/fixtures/config_local_braunschweig_25pct.yml`) set
-`commute_day_state_enabled: false` explicitly, and neither fixture's synpp
-DAG snapshot (`docs/registry/dag/{popsim_open,simple_ipf_open}.json`) contains
-a single `commute_day` stage node — checked directly against the committed
-DAG, not inferred from the flag alone.
+**This does NOT remove `home_office_donors_stage` / `state_stage` /
+`trips_day_stage` / `activities_day_stage` from the DAG.** Under
+`configs/base_bs.yml` the alias table wires
+`synthesis.population.trips.final -> trips_day_stage` (and the sibling
+aliases) unconditionally, at the CONFIG level, independent of the runtime
+flag value; and `trips_day_stage.configure()` itself declares BOTH
+`state_stage` and `home_office_donors_stage` as dependencies unconditionally
+(it does not gate on `context.config(KEY_ENABLED)` the way the four consumers
+above do). So flipping `commute_day_state_enabled` to `false` while still
+running `configs/base_bs.yml` keeps every commute-day stage node in the DAG —
+they simply produce their OFF-path output (empty frames, `at_workplace`,
+pass-through), never removed nodes. The only way these stages leave the DAG
+entirely is to not wire the alias table at all, which is what the
+`popsim_open` and `simple_ipf_open` **fixture configs** do: neither
+`configs/fixtures/config_popsim_open_braunschweig.yml` nor
+`configs/fixtures/config_local_braunschweig_25pct.yml` aliases
+`synthesis.population.trips.final` / `...activities.final` /
+`synthesis.population.spatial.locations` / `synthesis.output` to any
+commute-day module at all (they keep the vendored eqasim stages directly), so
+their committed synpp DAG snapshots
+(`docs/registry/dag/{popsim_open,simple_ipf_open}.json`) contain zero
+`commute_day` stage nodes — checked directly against the committed DAG, not
+inferred from the flag alone. Both fixtures additionally set
+`commute_day_state_enabled: false` for good measure, but that setting is
+redundant there: the DAG wiring, not the flag, is what keeps those two
+pipelines out of the model entirely.
 
 ## Helper-hash tokens (cache invalidation across the pure/stage split)
 

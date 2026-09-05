@@ -26,12 +26,15 @@ pipelines:
 production: true
 inputs:
 - mid2023_b1
+features:
+- commute_day_state
 decisions:
 - ADR-0104
 notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
   other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
   directory braunschweig.popsim.trips_stage reads, so both stages can never point at different
-  MiD extracts), escort_purpose (default false), escort_passive_education (default false),
+  MiD extracts), escort_purpose (code default false; configs/base_bs.yml: true),
+  escort_passive_education (code default false; configs/base_bs.yml: true),
   explicit_round_trip_purposes (default true) -- the donor trip table is built with EXACTLY the
   keyword arguments trips_stage.run passes for the SAME reason those flags exist there (ruling
   R2): a replaced day must not follow a different purpose/mode vocabulary than the day it

@@ -24,7 +24,7 @@ acquisition:
     plan_replacement, keyed by the RECEIVING person, never by the donor).
   script: null
 storage:
-  expected_path: (no file -- synpp working_directory stage-cache only, see notes)
+  expected_path: <synpp cache of braunschweig.synthesis.commute_day.home_office_donors_stage; no file>
   committed: false
   local_only: true
   notes: |

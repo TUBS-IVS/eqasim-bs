@@ -10,9 +10,11 @@ description: 'Writes the unified population/trips/locations output (CSV/parquet 
   workplace). With commute_day_state_enabled false the enriched frame is passed through untouched
   and the column set stays byte-identical.'
 lineage:
-  type: extended
-  upstream: null
-  notes: null
+  type: overridden
+  upstream: synthesis.output
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to), the same pattern as
+    synthesis.population.spatial.primary.locations.
 code:
 - synthesis/output.py
 - braunschweig/synthesis/commute_day/output_day.py
@@ -23,5 +25,9 @@ pipelines:
 production: true
 resolves_to:
   popsim_mid: braunschweig.synthesis.commute_day.output_day
+  popsim_open: synthesis.output
+  simple_ipf_open: synthesis.output
+features:
+- commute_day_state
 decisions:
 - ADR-0104

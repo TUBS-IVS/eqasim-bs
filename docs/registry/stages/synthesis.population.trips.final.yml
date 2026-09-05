@@ -29,6 +29,8 @@ resolves_to:
   popsim_mid: braunschweig.synthesis.commute_day.trips_day_stage
 inputs:
 - mid2023_home_office_day_donors
+features:
+- commute_day_state
 decisions:
 - ADR-0104
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
