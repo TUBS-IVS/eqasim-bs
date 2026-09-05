@@ -547,12 +547,9 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.ipf.joint_age_size",
     ),
     "braunschweig.popsim.completed_donor": (
-        "braunschweig.popsim.diary_facts",
-        "braunschweig.popsim.diary_plan_match",
         "braunschweig.popsim.mid",
         "braunschweig.popsim.seed",
         "braunschweig.popsim.stage",
-        "braunschweig.popsim.weekend_plan_match",
     ),
     "braunschweig.popsim.distance_distributions": (
         "braunschweig.popsim.mid",

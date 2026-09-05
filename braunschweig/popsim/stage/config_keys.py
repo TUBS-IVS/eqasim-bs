@@ -184,25 +184,33 @@ KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 # holiday), remap its source_H_ID/source_P_ID to a matched weekday donor with
 # a realisable diary (braunschweig.popsim.diary_plan_match.
 # reassign_diaryless_plan_sources). Default ON (project rule: new features
-# default on). OFF is byte-identical in source_H_ID/source_P_ID to today (no
-# remap); the src_* plan-source fact columns are attached regardless -- they
-# are facts about the plan source's diary, not behaviour.
+# default on). NOTE: the completed_donor stage ALWAYS reads MiD2023_Wege.csv
+# and attaches the src_* plan-source diary fact columns, regardless of this
+# flag (or the three below) -- they are facts about the plan source's diary,
+# not behaviour. "OFF is byte-identical" below refers to source_H_ID/
+# source_P_ID (and the downstream plans built from them), NOT to the input
+# file set read.
 KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
 # Exclude public-holiday-reported diaries (feiertag == 1) from the realisable
 # plan-source pool and remap persons sourced from one: SrV reference days
 # exclude public holidays, so a holiday-reported diary is not a realisable
-# weekday plan. Default ON. Read only when diary_plan_match is ON.
+# weekday plan. Default ON. Read only when diary_plan_match is ON (see the
+# note on that key re: the Wege table + src_* facts being read/attached
+# regardless of this flag).
 KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holiday_plan_sources"
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
-# sourced from one. Default ON. Read only when diary_plan_match is ON.
+# sourced from one. Default ON. Read only when diary_plan_match is ON (see the
+# note on that key re: the Wege table + src_* facts being read/attached
+# regardless of this flag).
 KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
 # Treat a diary that starts by arriving home (first_so1 == 2, i.e. the
 # reporting day begins mid-trip and the first RECORDED leg only arrives home)
 # as having that leading leg dropped when counting direct legs, and remap a
 # plan source whose diary becomes empty after the drop. Default ON. Read only
-# when diary_plan_match is ON.
+# when diary_plan_match is ON (see the note on that key re: the Wege table +
+# src_* facts being read/attached regardless of this flag).
 KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws

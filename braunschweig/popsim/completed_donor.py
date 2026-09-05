@@ -28,6 +28,9 @@ byte-identical only in ``source_H_ID``/``source_P_ID``.
 """
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +56,25 @@ COMPLETION_RNG_OFFSET = 74513
 WEEKEND_TRACE_FILE = "weekend_plan_match_trace.parquet"
 # Filename of the diary-plan-match trace persisted into this stage's cache dir.
 DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
+
+# synpp hashes only THIS file's own source; every own-package sibling helper that
+# shapes the donor build must therefore be folded into validate()'s token, or
+# editing the sibling silently reuses this stage's stale cached output (same
+# hazard documented in braunschweig.popsim.trips_stage.validate(), whose pattern
+# this mirrors). diary_facts / diary_plan_match / weekend_plan_match are already
+# bound module-level names in this file; member_completion and mid.donor are
+# reached only transitively (via mid.load_completed_donor -> member_completion.
+# complete_members, and via mid.load_mid_wege internally) and are not imported
+# here directly, so they are named and imported lazily inside validate().
+_HELPER_MODULES = (
+    diary_facts,
+    diary_plan_match,
+    weekend_plan_match,
+)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.donor",
+)
 
 
 @dataclass
@@ -112,9 +134,12 @@ def build_completed_donor(
         When True (default), remap the plan source of any person whose source has
         no realisable MiD diary to a matched weekday donor with one
         (``diary_plan_match.reassign_diaryless_plan_sources``). REQUIRES the MiD
-        person columns ``mobil``, ``mobil_diff``, ``feiertag`` to be present (fails
-        fast, see below). OFF is byte-identical in ``source_H_ID``/``source_P_ID``
-        to today; the ``src_*`` fact columns are still attached (see below).
+        person column ``mobil`` always, and ``feiertag`` additionally when
+        ``exclude_holiday_plan_sources`` is True (fails fast BEFORE the Wege table
+        is loaded, see below; ``mobil_diff`` is an optional diagnostic column that
+        diary_plan_match never reads, so it is NOT required). OFF is byte-identical
+        in ``source_H_ID``/``source_P_ID`` to today; the ``src_*`` fact columns are
+        still attached (see below).
     exclude_holiday_plan_sources:
         When True (default) and ``diary_plan_match_on``, treat a plan source
         reported on a public holiday (``feiertag == 1``) as not realisable and
@@ -141,8 +166,13 @@ def build_completed_donor(
     columns (``diary_facts.FACT_COLUMNS`` prefixed ``src_``) are attached to
     ``persons`` ALWAYS -- they are facts about the plan source's diary, not
     behaviour, so the OFF path stays byte-identical only in ``source_H_ID`` /
-    ``source_P_ID``. On the real MiD delivery, loading the full Wege table takes
-    roughly a minute and ~2 GB; acceptable for a once-per-run shared stage.
+    ``source_P_ID`` (and downstream plans), not in the input files read. On the
+    real MiD delivery, loading the full Wege table takes roughly a minute and
+    ~2 GB; acceptable for a once-per-run shared stage. The ``mobil``/``feiertag``
+    presence check therefore runs BEFORE this load (fail fast, not after paying
+    for it). The eight ``src_*`` columns propagate unchanged into the synthetic
+    persons frame downstream (``assembly.build_persons``); this is intentional --
+    later tasks consume them there.
     """
     # ONE seeded RNG, shared by member completion, weekend match AND the diary plan
     # match (byte-identity).
@@ -174,6 +204,22 @@ def build_completed_donor(
         completeness_report.completeness_rate,
     )
 
+    # Fail fast BEFORE the ~1 min / ~2 GB Wege load below (R9): mobil is required
+    # whenever the diary plan match runs; feiertag is required ONLY when holiday
+    # exclusion is active (that is the only consumer of it, diary_plan_match.
+    # classify_plan_sources). mobil_diff is an optional diagnostic column that
+    # diary_plan_match never reads, so it is deliberately NOT required here.
+    if diary_plan_match_on:
+        required_mobility_cols = ["mobil"] + (["feiertag"] if exclude_holiday_plan_sources else [])
+        missing_mobility_cols = [c for c in required_mobility_cols if c not in persons.columns]
+        if missing_mobility_cols:
+            raise KeyError(
+                f"[completed_donor] diary_plan_match requires MiD person column(s) {missing_mobility_cols} "
+                "(see mid.donor.MID_PERSON_OPTIONAL_COLS); the MiD delivery in "
+                f"{mid_dir} lacks them -- set braunschweig.population.popsim.diary_plan_match: false "
+                "to run without the diary plan match."
+            )
+
     # Diary facts are derived from the MiD Wege table UNCONDITIONALLY (needed both
     # for the diary plan match below AND for the src_* fact columns attached
     # unconditionally further down -- see the docstring Notes).
@@ -182,14 +228,6 @@ def build_completed_donor(
 
     diary_report = None
     if diary_plan_match_on:
-        missing_mobility_cols = [c for c in ("mobil", "mobil_diff", "feiertag") if c not in persons.columns]
-        if missing_mobility_cols:
-            raise KeyError(
-                f"[completed_donor] diary_plan_match requires MiD person column(s) {missing_mobility_cols} "
-                "(see mid.donor.MID_PERSON_OPTIONAL_COLS); the MiD delivery in "
-                f"{mid_dir} lacks them -- set braunschweig.population.popsim.diary_plan_match: false "
-                "to run without the diary plan match."
-            )
         # completion_rng is DELIBERATELY shared with member completion + weekend
         # match above: all three draws form ONE entangled seeded stream -- do NOT
         # reseed it.
@@ -214,6 +252,37 @@ def build_completed_donor(
         weekend_report=weekend_report,
         diary_report=diary_report,
     )
+
+
+def validate(context):
+    """synpp validation token: md5 over the own-package + transitive helper modules.
+
+    Same mechanism and boundary semantics as ``braunschweig.popsim.trips_stage.
+    validate()`` (the pattern this mirrors): synpp's ``get_stage_hash`` hashes only
+    THIS file's own source, so editing a sibling helper this stage's build actually
+    depends on -- ``diary_facts``, ``diary_plan_match``, ``weekend_plan_match``
+    (own-package siblings imported directly above), plus ``member_completion`` and
+    ``mid.donor`` (reached only transitively, via ``mid.load_completed_donor`` /
+    ``mid.load_mid_wege``) -- would otherwise silently reuse this stage's stale
+    cached output on a partial rerun. A deferred module that fails to import
+    raises rather than being skipped -- skipping it would keep the stale cache
+    alive exactly when the code is broken.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"completed_donor validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):

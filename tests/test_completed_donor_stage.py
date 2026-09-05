@@ -74,11 +74,17 @@ def _write_mid_attribute_fixture(tmp_path):
     (tmp_path / "MiD2023_Wege.csv").write_text("\n".join(_wege_rows) + "\n", encoding="utf-8")
 
 
-def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on):
-    """The CURRENT inline sequence from stage.execute (the reference to match), extended
-    with the diary plan match + plan-source fact attachment (Task 3, issue #365). Both
-    run with their default flags (ON), continuing the SAME completion_rng as member
-    completion + weekend match -- mirrors build_completed_donor's default path exactly."""
+def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on, diary_plan_match_on):
+    """The reference sequence to match, at two possible stopping points.
+
+    With ``diary_plan_match_on=False`` this STOPS after member completion + weekend
+    match -- the exact pre-Task-3 pipeline (``mid.load_completed_donor`` +
+    ``weekend_plan_match.reassign_weekend_plan_sources``, sharing ONE completion_rng,
+    and nothing else): this is the real OFF byte-identity contract (fix round 1,
+    Important-1). With ``diary_plan_match_on=True`` it CONTINUES with the diary plan
+    match + plan-source fact attachment (Task 3, issue #365), with their default
+    flags (ON), continuing the SAME completion_rng -- mirrors
+    build_completed_donor's default ON path exactly."""
     completion_rng = np.random.RandomState(random_seed + 74513)
     day_filter = seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else None
     households, persons, completeness_report, completion_report = mid.load_completed_donor(
@@ -88,6 +94,8 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on):
         persons, _trace, _report = weekend_plan_match.reassign_weekend_plan_sources(
             households, persons, rng=completion_rng,
         )
+    if not diary_plan_match_on:
+        return households, persons
     wege = mid.load_mid_wege(mid_dir)
     facts = diary_facts.compute_diary_facts(wege)
     persons, _diary_trace, _diary_report = diary_plan_match.reassign_diaryless_plan_sources(
@@ -101,7 +109,7 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on):
 def test_build_completed_donor_matches_inline_with_weekend_match(tmp_path):
     _write_mid_attribute_fixture(tmp_path)
     ref_hh, ref_persons = _inline_reference(
-        tmp_path, random_seed=1234, weekend_plan_match_on=True,
+        tmp_path, random_seed=1234, weekend_plan_match_on=True, diary_plan_match_on=True,
     )
     result = cd.build_completed_donor(
         tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=True,
@@ -113,13 +121,36 @@ def test_build_completed_donor_matches_inline_with_weekend_match(tmp_path):
 def test_build_completed_donor_matches_inline_without_weekend_match(tmp_path):
     _write_mid_attribute_fixture(tmp_path)
     ref_hh, ref_persons = _inline_reference(
-        tmp_path, random_seed=1234, weekend_plan_match_on=False,
+        tmp_path, random_seed=1234, weekend_plan_match_on=False, diary_plan_match_on=True,
     )
     result = cd.build_completed_donor(
         tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=False,
     )
     pd.testing.assert_frame_equal(result.households, ref_hh)
     pd.testing.assert_frame_equal(result.persons, ref_persons)
+
+
+def test_build_completed_donor_off_matches_pre_task_inline_pipeline(tmp_path):
+    """REAL OFF byte-identity contract (fix round 1, Important-1): with
+    diary_plan_match_on=False, build_completed_donor's persons frame must match an
+    inline reference that runs ONLY member completion + weekend match (the
+    pre-Task-3 pipeline) and STOPS there -- no Wege load, no diary match, no fact
+    attachment. Only source_H_ID/source_P_ID (plus the natural H_ID/P_ID keys) are
+    compared: the result ALSO carries the src_* fact columns (attached
+    unconditionally, R8/Task 3), which the stopped-early reference never computes."""
+    _write_mid_attribute_fixture(tmp_path)
+    ref_hh, ref_persons = _inline_reference(
+        tmp_path, random_seed=1234, weekend_plan_match_on=True, diary_plan_match_on=False,
+    )
+    result = cd.build_completed_donor(
+        tmp_path, random_seed=1234, seed_day_filter=None, weekend_plan_match_on=True,
+        diary_plan_match_on=False,
+    )
+    pd.testing.assert_frame_equal(result.households, ref_hh)
+    pd.testing.assert_frame_equal(
+        result.persons[["H_ID", "P_ID", "source_H_ID", "source_P_ID"]],
+        ref_persons[["H_ID", "P_ID", "source_H_ID", "source_P_ID"]],
+    )
 
 
 def test_build_completed_donor_is_deterministic(tmp_path):
@@ -191,17 +222,14 @@ class _RecordingConfigureContext:
     Unlike _FakeContext (an ExecuteContext stand-in backed by a value dict), this
     mirrors the CONFIGURE phase: every context.config(key, default) call is recorded
     with the default the stage declared, so a test can assert what a stage registers
-    without depending on config values (there are none yet during configure)."""
+    without depending on config values (there are none yet during configure). No
+    ``stage()`` method: completed_donor.configure() never calls context.stage()."""
     def __init__(self):
         self.calls = {}
-        self.staged = []
 
     def config(self, key, default=None):
         self.calls[key] = default
         return default
-
-    def stage(self, name, alias=None):
-        self.staged.append(name)
 
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():

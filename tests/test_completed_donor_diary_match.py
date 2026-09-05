@@ -6,7 +6,6 @@ wiring itself -- a person whose plan source has no realisable MiD diary (anzwege
 "Person ohne Wegeerfassung" WITH mobil == 1) gets remapped to a matched weekday donor, and
 every person carries the eight src_* plan-source fact columns regardless.
 """
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -48,8 +47,12 @@ def test_diary_match_off_is_byte_identical_in_sources(tmp_path):
 
 
 def test_diary_match_requires_mobility_columns(tmp_path):
+    """Pins the completed_donor guard itself (not some downstream library KeyError):
+    the match string is the config-key hint from completed_donor's own error message,
+    not just the column name "mobil" (which could also come from inside
+    diary_plan_match's own, differently-worded checks)."""
     _write_mid_attribute_fixture(tmp_path)
     p = pd.read_csv(tmp_path / "MiD2023_Personen.csv").drop(columns=["mobil", "mobil_diff", "feiertag"])
     p.to_csv(tmp_path / "MiD2023_Personen.csv", index=False)
-    with pytest.raises(KeyError, match="mobil"):
+    with pytest.raises(KeyError, match="diary_plan_match: false"):
         cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None, weekend_plan_match_on=True)
