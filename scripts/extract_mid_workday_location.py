@@ -188,9 +188,9 @@ def main(argv=None) -> int:
         f"with right-inclusive (a, b] bins -- see measure_bin_convention_deviation in the module): "
         f"BOTH counts and shares are convention-sensitive. Right-inclusive class counts are lt10 "
         f"{right_lt10} (committed, left-inclusive: {n_lt10}), 100_200 {right_100_200} (committed: "
-        f"{n_100_200}) -- a strong, material shift. The weighted state shares move less but are NOT "
-        f"robust: the maximum absolute deviation of any share column between the two conventions on "
-        f"THIS extraction is {bin_deviation['max_abs_share_deviation']:.4f}.",
+        f"{n_100_200}) -- a strong, material shift. The weighted state shares move by a smaller but "
+        f"non-negligible amount: the maximum absolute deviation of any share column between the two "
+        f"conventions on THIS extraction is {bin_deviation['max_abs_share_deviation']:.4f}.",
     ]
     _write(table, out / R.WORKDAY_LOCATION_TABLE, _header(R.WORKDAY_LOCATION_TABLE, args.source_commit, workday_extra))
 
