@@ -1,10 +1,12 @@
 """Run the synpp pipeline with timestamped logging.
 
 Equivalent to ``python -m synpp <config.yml>`` but installs a logging format that
-prefixes every synpp log line with an ISO timestamp (asctime). This lets
-``braunschweig.analysis.runtime`` compute per-stage wall-clock durations from the
-run log, so the slowest stages (secondary locations / location choice, gravity,
-...) are visible and settings can be tuned with evidence.
+prefixes every synpp log line with an ISO timestamp (asctime), and installs the
+deterministic stage-hash patch (ADR-0105, ``braunschweig.synpp_deterministic``)
+before synpp builds the stage graph. This lets ``braunschweig.analysis.runtime``
+compute per-stage wall-clock durations from the run log, so the slowest stages
+(secondary locations / location choice, gravity, ...) are visible and settings
+can be tuned with evidence.
 
 Used by ``scripts/run_pipeline.sh`` in place of ``python -m synpp``. MATSim's Java
 stdout keeps its own timestamps; braunschweig ``print()`` diagnostics are
@@ -152,6 +154,12 @@ def main(argv=None) -> int:
         # None/[]/{} makes Synpp.build_from_yml read working_directory and run from the
         # YAML, reproducing the old single-argument behaviour without overriding any
         # config.
+        # Deterministic stage hashes: synpp 1.6.2 propagates implicit config keys in a
+        # set-iteration order that depends on PYTHONHASHSEED, so identical code + config
+        # produced different cache hashes per process (ADR-0105). Must be installed BEFORE
+        # synpp starts building the stage graph; see braunschweig/synpp_deterministic.py.
+        from braunschweig import synpp_deterministic
+        synpp_deterministic.install()
         synpp.run_from_yaml(config_path, None, [], {})
         # Export the shareable stage caches into the shared store ONLY after a
         # successful run (run_from_yaml raises on failure, so a failed/partial run

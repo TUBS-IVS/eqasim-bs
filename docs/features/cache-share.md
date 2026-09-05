@@ -32,8 +32,9 @@ silent fallback). The store is gitignored and travels via the existing
 `scripts/sync_data_to_server.ps1`. **Exclusion:** stages whose hash depends on
 machine-variable config (e.g. an auto worker count `num_workers: 0` ->
 `cpu_count - 2`) will not hit across machines -- pin a fixed integer there if you need
-cross-machine reuse. `cache_share_enabled: false` makes the launcher a pure no-op
-(byte-identical to plain `python -m synpp`). Design:
+cross-machine reuse. `cache_share_enabled: false` makes the launcher a pure no-op for cache
+sharing: the run still goes through `scripts/run_synpp.py`, so the deterministic stage-hash
+patch (ADR-0105) stays installed, unlike a plain, unsupported `python -m synpp` run. Design:
 `docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md`. Tests:
 `tests/test_cache_share.py`, `tests/test_cache_share_cli.py`,
 `tests/test_run_synpp_prime.py`.
