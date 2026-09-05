@@ -78,9 +78,11 @@ MID_PERSON_ATTR_COLS = (
     # PopulationSim seed from ONE member-completion pass.
     "P_GEW", "kernwo",
 )
-# Tier-3 education control inputs: present in the real MiD person table, absent in some
-# small test fixtures -> loaded only when present (load_mid_attributes / load_mid_seed).
-MID_PERSON_OPTIONAL_COLS = ("bildung1", "bildung2")
+# Tier-3 education control inputs + diary plan match inputs: present in the real MiD person
+# table, absent in some small test fixtures -> loaded only when present (load_mid_attributes /
+# load_mid_seed). Optional because small fixtures lack them; the diary plan match REQUIRES
+# them and fails fast when absent (Task 2).
+MID_PERSON_OPTIONAL_COLS = ("bildung1", "bildung2", "mobil", "mobil_diff", "feiertag")
 MID_HOUSEHOLD_ATTR_COLS = (
     "H_ID", "oek_status", "hheink_gr1", "H_ANZAUTO", "H_ANZRAD",
     # anzpedrad: MiD-provided combined bicycle count INCLUDING pedelecs/e-bikes
@@ -120,6 +122,11 @@ MID_WEGE_REQUIRED_COLS = (
     # (braunschweig.popsim.time_imputation) — never use raw wegmin, which
     # carries the code 70701 on those rows.
     "wegmin_imp1",
+    # W_RBW (rbW flag: 1 = "regelmaessige berufliche Wege" -- a regular-commuter summary
+    # record standing in for the diary leg, see time_imputation.py's module docstring for
+    # the audited rbW background) and W_SO1 (first-trip start location code) feed
+    # diary_facts.compute_diary_facts; both exist in the MiD 2023 B1 Wege file.
+    "W_RBW", "W_SO1",
 )
 
 
