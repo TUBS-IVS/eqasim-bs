@@ -150,6 +150,48 @@ def test_donor_trips_immobile_donor_yields_no_rows_but_others_get_contract_colum
     assert "hvm_imp" not in trips.columns
 
 
+def test_donor_trips_hands_the_resample_a_sex_column_without_mixed_types(monkeypatch):
+    """Regression: a `sex` column mixing NaN with "male"/"female" kills the whole donor build.
+
+    Stage B of ``braunschweig.popsim.trips``'s resample cascade matches on ``sex``, and eqasim's
+    ``statistical_matching`` sorts the union of each matching column's distinct values -- so
+    NaN next to strings raises ``TypeError: '<' not supported between instances of 'float' and
+    'str'``. MEASURED on the real MiD delivery (2026-09-05): 12 of 8,026 home-office-day donors
+    carry an HP_SEX code outside {1, 2}, which aborted the first 100 % ON proof run. The tiny
+    fixtures never reach stage B, so the invariant is pinned at the seam instead: the persons
+    frame handed to the trip-table builder must carry an explicit label, while the ATTRIBUTES
+    frame keeps NaN for every other consumer.
+    """
+    captured = {}
+    real_builder = donor_pool.build_validated_trip_table
+
+    def capturing_builder(persons, wege, **kwargs):
+        captured["persons"] = persons.copy()
+        return real_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_builder)
+
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(),
+                                             _wege_fixture())
+    assert attributes["sex"].isna().any(), "the fixture must contain a donor with unknown sex"
+
+    donor_pool.donor_trips(
+        donors, attributes, _wege_fixture(), random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+
+    sex = captured["persons"]["sex"]
+    assert sex.notna().all()
+    assert donor_pool.SEX_LABEL_UNKNOWN in set(sex.unique())
+    # The union of the distinct values must be sortable -- exactly what statistical_matching does.
+    sorted(set(sex.unique()))
+    # The attributes frame is NOT rewritten: NaN stays the documented value there.
+    assert attributes["sex"].isna().any()
+
+
 def test_build_home_office_donor_pool_diagnostics_and_shapes():
     persons = _persons_fixture()
     wege = _wege_fixture()

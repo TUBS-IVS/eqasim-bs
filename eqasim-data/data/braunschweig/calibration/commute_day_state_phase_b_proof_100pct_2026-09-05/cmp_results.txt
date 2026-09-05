@@ -1,0 +1,43 @@
+# cmp results, commute-day-state Phase B proof run, 2026-09-05 (server felix, read-only cmp)
+
+## ADR-0104 check 6 -- OFF-path byte identity against the i329 production output
+IDENTICAL  persons.csv  (107221539 B)
+IDENTICAL  households.csv  (32105146 B)
+IDENTICAL  trips.csv  (178103236 B)
+IDENTICAL  activities.csv  (226610983 B)
+IDENTICAL  vehicles.csv  (385317779 B)
+IDENTICAL  vehicle_types.csv  (9534 B)
+
+## OFF analysis outputs vs the committed Phase A measurement (2026-09-05)
+IDENTICAL  work_participation_by_kreis.csv
+IDENTICAL  assigned_distance_classes.csv
+IDENTICAL  ext_destination_distances.csv
+
+## ADR-0104 check 2 -- ON commute-distance outputs vs OFF and vs the committed 2026-09-04 baseline
+IDENTICAL ON vs OFF   commute_by_kreis.csv
+IDENTICAL ON vs 09-04 commute_by_kreis.csv
+IDENTICAL ON vs OFF   commute_quantiles_model.csv
+IDENTICAL ON vs 09-04 commute_quantiles_model.csv
+IDENTICAL ON vs OFF   sensitivity.csv
+IDENTICAL ON vs 09-04 sensitivity.csv
+IDENTICAL ON vs OFF   decisions.json
+DIFFERS   ON vs 09-04 decisions.json
+  (decisions.json ON vs 09-04: the ONLY difference is a JSON key spelling, sensitivity.thresholds 0.10 -> 0.1; no numeric value differs -- verified with a structural diff.)
+
+## ADR-0104 check 3 -- cordon gate volumes
+IDENTICAL ON vs OFF   gate_volumes.csv (the UNSCALED register expectation, unchanged by design)
+  gate_volumes_scaled.csv exists only in the ON run (the OFF run writes no scaling).
+
+## Work/education assignment identity between the ON and the OFF run
+IDENTICAL  synthesis.population.spatial.primary.locations pickle (ON 50816214 vs OFF 9dba1a37, 23,666,794 B)
+
+## Reporting-day trips, ON vs OFF (measured from the cached trips_day_stage frames)
+OFF  3,392,698 trips, 870,464 persons with at least one trip
+ON   3,369,358 trips, 865,859 persons with at least one trip  (-23,340 trips = -0.69 %, -4,605 persons)
+
+## Blocking defect behind the aborted ON output line (measured on the cached ON frames)
+36 of the 5,086 persons drawn to home (0.71 %) receive a MiD home-office-day donor whose
+chain contains an education activity while the person has NO education location; every one
+of the 296,727 persons with a work activity and all other 178,600 with an education activity
+do have theirs. find_assignment_problems then builds a problem with origin/destination None
+and the secondary chainsolver raises AttributeError.

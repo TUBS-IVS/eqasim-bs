@@ -66,6 +66,12 @@ _LOG_TAG = "[commute day donors]"
 # module. Codes 3 (diverse) and 9 (no answer) map to NaN -- counted, never guessed.
 MID_SEX_MALE = 1
 SEX_LABEL_BY_HP_SEX = {MID_SEX_MALE: "male", MID_SEX_FEMALE: "female"}
+#: Label substituted for a NaN ``sex`` ONLY on the persons frame handed to the trip-table
+#: resample (see :func:`donor_trips`). The attributes frame keeps NaN, which is what every other
+#: consumer sees; this label exists because eqasim's ``statistical_matching`` sorts the union of
+#: the distinct values of each matching column, and sorting a column that mixes ``float('nan')``
+#: with strings raises ``TypeError: '<' not supported between instances of 'float' and 'str'``.
+SEX_LABEL_UNKNOWN = "unknown"
 
 #: Values of ``distance_source`` on the attributes frame (see :func:`donor_attributes`).
 DISTANCE_SOURCE_P_ARB_ENTF = "P_ARB_ENTF"
@@ -360,6 +366,25 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         columns={"donor_id": "person_id"})
     donor_persons = donor_persons.merge(attribute_extras, on="person_id", how="left",
                                         validate="one_to_one")
+    # Stage B of the resample cascade matches on `sex`, and eqasim's statistical_matching sorts
+    # the union of that column's distinct values. A column mixing NaN with "male"/"female"
+    # therefore raises TypeError ('<' not supported between float and str) and kills the whole
+    # donor build -- MEASURED on the real MiD delivery: 12 of 8,026 home-office-day donors carry
+    # an HP_SEX code outside {1, 2} (diverse / no answer). Those donors are given an EXPLICIT
+    # SEX_LABEL_UNKNOWN stratum here rather than being dropped or silently guessed as male or
+    # female: they stay in the pool, they form their own matching stratum (too small to serve as
+    # a donor pool, so a same-stratum target is left trip-less and counted by _match_unfixable's
+    # own feasibility log), and the substitution is counted and logged. The ATTRIBUTES frame is
+    # untouched -- it keeps NaN, which is what donor_attributes documents and what every other
+    # consumer sees.
+    n_sex_unknown_persons = int(donor_persons["sex"].isna().sum())
+    if n_sex_unknown_persons > 0:
+        donor_persons["sex"] = donor_persons["sex"].fillna(SEX_LABEL_UNKNOWN)
+        logger.info(
+            "%s trip-table resample: %d/%d donors (%.2f%%) have sex=NaN and enter the stage-B "
+            "matching as the explicit %r stratum (the attributes frame keeps NaN).",
+            _LOG_TAG, n_sex_unknown_persons, len(donor_persons),
+            100.0 * n_sex_unknown_persons / max(len(donor_persons), 1), SEX_LABEL_UNKNOWN)
     table, report = build_validated_trip_table(
         donor_persons, wege,
         resample=True,

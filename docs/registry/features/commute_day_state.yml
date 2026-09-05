@@ -159,9 +159,30 @@ evidence:
       target of pre-registered check 1 (validation.note below), not an input the model reads at
       run time.
 validation:
-  state: unvalidated
-  runs: []
-  metric: null
+  state: measured_vs_reference
+  runs:
+  - commute-day-state-phase-b-proof-100pct-2026-09-05
+  metric: 'ADR-0104 checks 1-6, measured at 100 % on the cached i329 population on 2026-09-05
+    (run manifest commute-day-state-phase-b-proof-100pct-2026-09-05, which carries every number
+    and the per-check verdict). Verdicts: (1) not_run -- BLOCKED by the pre-registered guard
+    cds_max_states_outside_employed_share, because 37,706 of 304,900 drawn states (12.37 %) fall
+    outside the employed universe the SrV reference is defined on; the threshold was not
+    relaxed. Measured over the WORKER universe instead (a different denominator, NOT a check-1
+    verdict): at_workplace 0.9728, home 0.0167, absent 0.0105; the model''s work participation
+    over the employed moves from 0.4944 (flag OFF) to 0.4813 (flag ON) against the SrV 0.6511.
+    (2) fail on the 100_plus bound -- ZGB inter model_share_100_plus 0.100083 against the
+    pre-registered 3 %, EMD 0.085194; pass on the no-deterioration half, the whole
+    commute_by_kreis.csv being byte-identical to the 2026-09-04 baseline because the stage reads
+    the ASSIGNED workplaces, which this model does not change. (3) pass -- the at_workplace share
+    of external workers is 0.846564 (33,143 of 39,150) and scales the outbound cordon expectation
+    from 60,705 to 51,393 SvB, all joins complete. (4) pass for three of its four items --
+    donor-distance PRIMARY source 100.0 % in every assigned class, not-replaceable 0 of 5,086
+    (0.00 %), coarsening levels 0/2/3/4/5 = 3,790/348/391/23/534; pool size per CELL is not
+    recorded and stays unknown. (5) pass -- absent_share_far 1.0 gives home 5,086 / absent 3,215,
+    0.6 gives home 6,345 / absent 1,956, with at_workplace identical and the change confined to
+    the gt200 class. (6) pass for the OFF byte identity -- all six written tables byte-identical
+    to the i329 production output although trips_stage and the secondary chainsolver
+    re-executed; the ON population write did NOT complete.'
   note: 'ADR-0104 fixes SIX pre-registered checks BEFORE the model exists, which Phase B is held
     to and which are NOT to be retro-fitted to the outcome (the design spec of 2026-09-04 is only
     where they were first drafted; this ADR is the durable record): (1) realised
@@ -185,13 +206,28 @@ validation:
     comparison is recorded in a run manifest, this record stays "unvalidated": the model is wired,
     tested on synthetic frames, and its fallback rates are instrumented, but it has not yet been
     measured against any of its own pre-registered checks. Convergence of a MATSim run is not
-    validation and is not claimed here.'
+    validation and is not claimed here.
+    UPDATE 2026-09-05: that proof run has now happened, at 100% on the cached i329 population
+    instead of at 25% (controller ruling R4: the server 25% cache is from June 2026 and would
+    have rebuilt PopulationSim; the substitution is disclosed in the manifest''s pipeline.notes).
+    The per-check outcome is in validation.metric above and every number in the manifest. This
+    record is therefore measured_vs_reference and NOT behaviourally_validated: check 1, the only
+    one that compares the realised three-way state split against an observed reference, was
+    BLOCKED and did not run, and the ON population line did not complete. The run also found
+    three defects on real data -- two fixed in this branch (an 8-digit AGS assumption in the
+    Phase A analysis stage that rejected all 265,750 in-region destinations, and a NaN/str sex
+    column that killed the donor-pool resample) and one left open for a maintainer decision: 36
+    of the 5,086 persons drawn to "home" (0.71%) receive a donor chain with an EDUCATION activity
+    they have no location for, which makes the secondary chainsolver raise. Until that is
+    resolved, the flag cannot be run to a written population at 100%.'
 assessment:
   status: pending
-  pending_reason: Phase B Task 7 runs the 25% proof against the six pre-registered checks recorded
-    in ADR-0104 and in this record's validation.note; the assessment stays pending until that run
-    is recorded in a manifest and the six checks are read off it. No owner verdict on realised
-    commute-day-state behaviour exists yet.
+  pending_reason: 'The 2026-09-05 proof run measured checks 2-6 but check 1 was blocked by its own
+    guard (the model''s worker universe and the enriched population''s employed universe differ by
+    12.37%, a maintainer decision ADR-0104 does not settle), and the ON population line aborted on
+    the education-anchor defect above. The assessment stays pending until those two are resolved
+    and check 1 is actually measured; no owner verdict on realised commute-day-state behaviour
+    exists yet.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
   MiD reference table (data record mid2023_workday_location) for the keep-probability ratio.

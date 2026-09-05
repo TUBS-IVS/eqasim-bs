@@ -311,7 +311,7 @@ def test_realised_work_frame_counts_a_malformed_workplace_commune_separately():
     assert bool(out.loc[1, "destination_resolved"]) is True
 
 
-def test_destination_ars5_internal_requires_the_full_8_digit_ags():
+def test_destination_ars5_internal_requires_a_complete_ags():
     """A 7-digit (one-digit-short) internal AGS must NOT yield a well-formed WRONG Kreis.
 
     A naive ``text[:5]`` would happily return "0310" + the next digit for a 7-digit id, a
@@ -319,7 +319,23 @@ def test_destination_ars5_internal_requires_the_full_8_digit_ags():
     """
     assert S._destination_ars5("0310100", False) == ""   # 7 digits: one short of a real AGS
     assert S._destination_ars5("031010001", False) == ""  # 9 digits: one too many
-    assert S._destination_ars5("03101000", False) == "03101"  # the real, 8-digit AGS
+    assert S._destination_ars5("03101000", False) == "03101"  # the 8-digit Gemeinde AGS
+
+
+def test_destination_ars5_internal_accepts_the_12_digit_ags_the_pipeline_actually_writes():
+    """The PRODUCTION format: braunschweig.locations.work writes the 12-digit AGS.
+
+    Measured on the i329 100 % population (2026-09-05): all 237,939 in-region workplaces carry a
+    12-digit Regionalschluessel such as "031010000000", none the 8-digit form. Pinning the
+    internal branch to 8 digits alone therefore made EVERY in-region destination unresolvable
+    (265,750 of 304,900 workers) and tripped cds_max_unresolved_destination_share -- a
+    regression the synthetic 8-digit fixtures above cannot see, which is why this test pins the
+    real format explicitly.
+    """
+    assert S._destination_ars5("031010000000", False) == "03101"
+    assert S._destination_ars5("031540000000", False) == "03154"
+    assert S._destination_ars5("0310100000000", False) == ""  # 13 digits: not an AGS length
+    assert S._destination_ars5("03101000000x", False) == ""   # 12 chars but not all digits
 
 
 def test_destination_ars5_external_requires_the_full_8_digit_ags_after_the_prefix():
