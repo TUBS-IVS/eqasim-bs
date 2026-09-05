@@ -296,7 +296,7 @@ def test_immobile_donor_is_counted_as_immobile_not_as_a_join_failure(caplog):
     assert diagnostics["n_donors_without_trips"] == 0
     assert diagnostics["share_donors_immobile"] == pytest.approx(1.0)
     assert "p2" not in set(day_trips["person_id"])   # trip-less day, as intended
-    assert not any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+    assert not any("donor_id key/dtype mismatch" in message for message in caplog.messages)
 
 
 def test_donor_that_did_travel_but_has_no_rows_still_warns(caplog):
