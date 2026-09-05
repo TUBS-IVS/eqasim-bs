@@ -1,0 +1,246 @@
+id: srv-primary-distance-baseline-2026-09-04
+date: '2026-09-04'
+repository:
+  commit: 7ac21e2d
+  branch: feature/srv-primary-distance-targets
+  notes: 'RE-MEASUREMENT of srv-primary-distance-baseline-2026-09-03 on the same cached 100%
+    population, with two additions and one rule change; it supersedes nothing -- the 09-03
+    manifest remains the record of the PRE-REGISTERED measurement. (1) The decision rule was
+    sharpened after that baseline (ADR-0103 section "Amendment 2026-09-04",
+    braunschweig.calibration.decision): the ZGB aggregate now needs the same
+    srv_distance_min_persons floor as any Kreis to be decisive, and a frame in which NO cell is
+    decisive reports undecidable rather than a false "do not build". (2) Three SENSITIVITY
+    reference variants (inter_zgb, all_gis_fallback, inter_gis_fallback) are now measured beside
+    the pre-registered comparison, and (3) every scope/level/variant is re-decided at EMD
+    thresholds 0.06 / 0.08 / 0.10. Code = branch commit 7ac21e2d (the branch continued to
+    dd5229e5 with documentation-only changes and the disclosed threshold-key format change); its
+    files under braunschweig/analysis, braunschweig/calibration/{srv_distance_targets,decision}.py,
+    documentation/plots and scripts/extract_srv_primary_distance_targets.py (10 files, new and
+    changed relative to origin/main 379223f2) were synced onto a DETACHED server worktree at
+    b7eed9a5 (~/wt_srv_baseline) without a git push, exactly as for the 09-03 run; the four
+    committed SrV CSVs (commute, quantiles, education, sensitivity) were copied into the data
+    trees separately. b7eed9a5 is deliberately the commit of 100pct-allfeat-i329-2026-08-24, so
+    the analysis executes against the i329 cache under the identical code state. Files that
+    changed between b7eed9a5 and 379223f2 in those paths (analysis_suite, dashboard,
+    matsim_archive, run_mid_validation, simwrapper) were deliberately NOT synced: none is in this
+    stage''s import closure, and syncing them would have moved the code state away from i329.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/srv_baseline_100pct.yml'
+  notes: 'The overlay is byte-identical to the one used on 2026-09-03 (unchanged file, mtime
+    2026-09-03 23:31, 1,789 bytes): working_directory eqasim-data/cache_bs_100pct_i329,
+    output_path eqasim-data/output_bs_100pct_i329, output_prefix braunschweig_100pct_i329_,
+    popsim work_dir / max_cells 750 / num_workers 3 / importance_profile optimized_2026_06_30,
+    cache_share_export, eqasim_version 2.3.1, run: the single stage
+    braunschweig.analysis.synthesis.commute_distance_by_kreis. Merge log: "0 overridden, 14
+    added", identical to the 09-03 run. The stage''s own parameters again ran at their defaults,
+    now including the two new ones: srv_distance_detour_factor 1.3, srv_distance_emd_threshold
+    0.08, srv_distance_min_persons 200, srv_distance_aggregate_requires_min_persons true,
+    srv_distance_max_unmatched_home_share 0.05, srv_distance_warn_unmatched_destination_share
+    0.3, srv_distance_sensitivity_thresholds [0.06, 0.08, 0.1].'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'No population was synthesised by this run; the measured population is the one the i329
+    run wrote (manifest 100pct-allfeat-i329-2026-08-24), reached through the same cache as on
+    2026-09-03. Cohorts measured: 304,900 workers with a work destination and 178,763
+    pupils/students -- identical to the 09-03 run, as are commute_by_kreis.csv,
+    education_by_kreis_level.csv and commute_quantiles_model.csv, which are BYTE-IDENTICAL to
+    their 09-03 counterparts (verified with cmp) -- and consequently so are all four PNGs
+    (work_all, work_inter, work_intra, education), which are re-rendered from those identical
+    CSVs and were likewise verified byte-identical to the 09-03 files. They are committed under
+    the 09-04 directory for self-containment, not because they show anything new. The measurement
+    did not move; only the decision rule and the added sensitivity section did.'
+pipeline:
+  targets:
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  notes: 'synpp resolved a 2-stage plan and devalidated exactly those two:
+    braunschweig.analysis.reference.srv.commute_distance (__dbe8ad3b, re-executed because its
+    cached payload predates the sensitivity table) and the target stage, whose hash moved from
+    __5080c980 to __c00735bf with the new srv_distance_sensitivity_thresholds config key. Both
+    executed; EVERY other stage loaded from the i329 cache. Abort-criterion check (grep over the
+    log for "Executing stage"): no braunschweig.data.*, braunschweig.popsim.*,
+    braunschweig.gravity.*, data.*, synthesis.population.spatial.home.* or matsim.* stage
+    executed, and -- unlike the 09-03 run -- neither did
+    synthesis.population.spatial.primary.candidates or the two education-gravity stages, because
+    the 09-03 run had already rewritten those pickles consistently under b7eed9a5.'
+classification:
+- validation
+status:
+  execution: completed
+  notes: 'Ran 2026-09-04 08:22:18 -> 08:22:32 CEST (14 s wall for the two stages, pipeline
+    progress 2/2), exit without error, no ERROR line and no traceback in the log. CACHE STATE:
+    this run again reset the i329 stage-hash bookkeeping ("Successfully reset meta data",
+    pipeline.json rewritten 08:22, pipeline.json.bk kept), but it recomputed NOTHING outside the
+    two analysis stages -- the location and education-gravity pickles the 09-03 run had rewritten
+    were reused unchanged, so no further drift of the i329 cache away from the i329 run occurred
+    beyond what the 09-03 manifest already records. Cache side effects of THIS run:
+    braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b.p overwritten (same hash, new
+    payload: the dict now carries the sensitivity table);
+    braunschweig.analysis.synthesis.commute_distance_by_kreis__c00735bf.{p,cache} added as NEW
+    entries, leaving the 09-03 entry __5080c980 in place but orphaned; .merged_config.yml
+    rewritten and run_provenance_20260904T062218Z.json added. The i329 OUTPUT tree gained only the
+    two new files inside the existing analysis/srv_distance_validation/ subfolder (the other six
+    were overwritten with identical or extended content). Shared-checkout invariants on felix:
+    ~/eqasim-bs porcelain 26 entries and HEAD 2714b857 before and after; ~/wt-i329 intact at
+    b7eed9a5; the detached worktree ~/wt_srv_baseline was removed afterwards (worktree list back
+    to the 19 pre-existing entries) together with its eqasim-data symlink, the eqasim-data._tracked
+    directory and the transfer staging files.'
+environment: server
+validation:
+- metric: 'PRE-REGISTERED decision under the sharpened rule: home->work and home->education
+    distance band EMD per home Kreis vs SrV 2023, decided with
+    srv_distance_aggregate_requires_min_persons = true'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv
+  result: 'The measured cells are byte-identical to the 09-03 baseline, so every EMD, noise floor
+    and per-cell classification quoted in srv-primary-distance-baseline-2026-09-03 still holds.
+    Exactly ONE verdict changed under the sharpened rule. Work: scope all BUILD (gap in 03153,
+    03157, 03158), scope inter BUILD (gap in 03101, 03103, 03153, 03157, 03158 and the decisive
+    zgb aggregate), scope intra DO NOT BUILD (aggregate decisive with n_ref 1,950; 4 Kreise
+    decisive) -- all three unchanged. Education: kindergarten DO NOT BUILD (aggregate decisive,
+    n_ref 647), grundschule BUILD (decisive cell = the zgb aggregate, n_ref 571), sekundar_1 DO
+    NOT BUILD (aggregate decisive, n_ref 718), upper_secondary DO NOT BUILD (aggregate decisive
+    with n_ref 360; NO Kreis reaches the 200-person floor), and university is now UNDECIDABLE:
+    "not decidable: no cell reaches the >= 200-person floor (aggregate n=142) and no decisive gap
+    exists". On 2026-09-03 the same cells produced BUILD for university purely through the
+    aggregate''s unconditional exemption from the floor -- a verdict ADR-0103 already declined to
+    act on. The sharpened rule now says so in the machine-readable output instead of in prose.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/decisions.json'
+  notes: 'This is a measurement against a reference, NOT a validation of the model against
+    observed behaviour. The rule change is an AMENDMENT made AFTER the pre-registered baseline and
+    is disclosed as such (ADR-0103, section "Amendment 2026-09-04"); it is recorded here so the
+    before/after is auditable rather than silently re-stated. Wolfsburg (03103) remains an
+    ASSUMPTION-grade proxy (source proxy_rs7_72), not an observation.'
+- metric: 'SENSITIVITY (not pre-registered): the same comparison against three variant references
+    -- inter_zgb (inter-Gemeinde commutes that stay inside the 8 ZGB Kreise, both sides),
+    all_gis_fallback and inter_gis_fallback (GIS length where valid, else the self-reported
+    length)'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_sensitivity_by_kreis.csv
+  result: 'inter_zgb -> DO NOT BUILD, and it is the most consequential AND the most ambiguous
+    result of this run. ALL nine cells are "ok": zgb EMD 0.021 vs noise floor 0.013 on n_ref
+    2,301, per-Kreis EMD 0.014-0.057 (worst 03158 0.057/0.023, then 03153 0.054/0.029), 7 of 8
+    Kreise decisive (03102 has n_ref 135 < 200 and is therefore not decisive). The pre-registered
+    inter scope''s BUILD verdict (aggregate EMD 0.085) does not survive restricting both universes
+    to ZGB-internal commutes: the aggregate EMD falls by a factor of four.
+    THE NARROWING IS ASYMMETRIC, and that asymmetry is the reason the result cannot be read as a
+    clean acquittal. Model side: 122,654 of 161,805 inter-Gemeinde workers kept = 75.8%, i.e.
+    24.2% dropped as polygon-external (plus the 1 person with an unresolved home Gemeinde).
+    Reference side: 2,301 of 2,593 inter SrV persons kept = 88.7%, i.e. only 11.3% dropped for a
+    destination outside the ZGB (the extractor''s header records n_missing_trip_ags = 1 for the
+    GIS-only selection feeding this variant, so essentially the entire SrV drop IS out-of-ZGB
+    destinations, not unknown ones). The same rule therefore removes roughly TWICE the share from
+    the model that it removes from the survey. CAVEAT on that comparison: the model share is a
+    plain person count while the SrV n_persons behind the weighted band shares is unweighted too,
+    but the shares the EMD is computed on are GEWICHT_W_ZENSUS-weighted -- the 75.8% vs 88.7%
+    contrast is therefore INDICATIVE of the asymmetry, not an exact like-for-like rate.
+    all_gis_fallback -> BUILD, gap in 03153 (0.0995/0.026), 03157 (0.088/0.026), 03158
+    (0.093/0.033); aggregate ok, zgb EMD 0.045 vs floor 0.012 on n_ref 5,174. Same three gapping
+    Kreise as the pre-registered "all" scope (whose EMDs were 0.104/0.097/0.100), i.e. recovering
+    the GIS-invalid tail via the self-reported length moves the "all" verdict hardly at all.
+    inter_gis_fallback -> BUILD, gap in 03103 (0.106/0.021, proxy), 03153 (0.154/0.028), 03157
+    (0.106/0.023), 03158 (0.084/0.028) and the decisive zgb aggregate (EMD 0.080 vs floor 0.012 on
+    n_ref 2,969; the margin over the 0.08 threshold is 0.000282, i.e. a fifth-decimal call);
+    03101 drops out of the gap list (0.078 vs 0.081 pre-registered). The pre-registered inter
+    verdict is therefore robust to the GIS-invalid tail but NOT to the polygon-external
+    destinations.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/sensitivity_cells.csv'
+  notes: 'BOTH READINGS OF inter_zgb ARE ADMISSIBLE ON THIS EVIDENCE and the record states both
+    rather than picking the flattering one (controller ruling R31).
+    READING (a): within-ZGB destination choice already matches SrV, and the pre-registered inter
+    gap is carried entirely by the polygon-external destinations -- i.e. the gap is about WHICH
+    external workplaces the model picks and how many, not about how far ZGB-internal commuters
+    travel. This is the reading the 09-03 manifest and ADR-0103 anticipated as the
+    "polygon-external caveat".
+    READING (b): the model may simply OVER-PRODUCE out-of-ZGB workplaces relative to the survey
+    (24.2% of its inter cohort against the survey''s 11.3%), in which case removing them removes
+    the very persons carrying the gap and the good inter_zgb fit is partly an artefact of
+    dropping the mismatched mass. This reading is possibly COMPOUNDED, not refuted, by SrV
+    under-capturing long/external trips: ADR-0102 Assumption 2 records that GIS-invalid work
+    trips carry a heavier long-distance tail than GIS-valid ones, and a one-day survey universe
+    systematically under-observes irregular long-distance commuting -- so part of the 11.3% vs
+    24.2% gap may be survey-side under-capture rather than model-side over-production.
+    RESOLUTION PATH (not decided here): the model''s external commuter mass is NOT free -- it is
+    anchored to the BA Pendleratlas out-commuter counts by
+    braunschweig.gravity.kreis_calibration._append_outbound_flows (imported by
+    braunschweig.gravity.model; register data, stage
+    braunschweig.data.census.pendler). Layer 1 (#359) must therefore FIRST compare the realised
+    external commuter share per Kreis against the BA register AND against SrV, and only then
+    touch any friction parameter: if the realised share matches BA, reading (a) is supported and
+    the survey/register discrepancy is the thing to explain; if it exceeds BA, reading (b) is
+    supported and the outbound anchoring, not the distance friction, is the defect.
+    General provisos: these variants are DIAGNOSTICS, never calibration targets -- decisions.json
+    keeps them strictly under ["sensitivity"]["variants"], apart from the pre-registered ["work"]
+    and ["education"]. Each variant is decided on its OWN n_persons (a variant is a strictly
+    smaller sample than the corresponding pre-registered scope). The *_gis_fallback references
+    mix GIS-routed km with self-reported km WITHOUT rescaling (ASSUMPTION, ADR-0102 Assumption 2),
+    and their shrinkage pools are recomputed per variant, so a share_shrunk value is not
+    comparable across tables. The model side of the *_gis_fallback variants is the unchanged all /
+    inter scope -- the model has no GIS-validity notion, so only the reference moves there.'
+- metric: 'SENSITIVITY (not pre-registered): every pre-registered scope/level and every variant
+    re-decided at EMD thresholds 0.06, 0.08 and 0.10'
+  reference: none (the same cells, re-decided; 0.08 is the pre-registered threshold)
+  result: 'Of the eleven decided units, EIGHT give the same verdict at all three thresholds:
+    work all BUILD / inter BUILD / intra DO NOT BUILD, grundschule BUILD, sekundar_1 DO NOT BUILD,
+    university UNDECIDABLE (at every threshold -- the floor, not the threshold, is what blocks
+    it), inter_zgb DO NOT BUILD and inter_gis_fallback BUILD. THREE flip. At 0.06 two education
+    levels turn to BUILD that are DO NOT BUILD at 0.08: kindergarten (aggregate EMD 0.067, gap
+    code zgb) and upper_secondary (aggregate EMD 0.074, gap code zgb). At 0.10 the sensitivity
+    variant all_gis_fallback turns from BUILD to DO NOT BUILD (its worst decisive Kreis EMD is
+    0.0995 for 03153, just below the 0.10 threshold rather than exactly at it). No pre-registered WORK verdict and no
+    pre-registered EDUCATION verdict other than those two flips anywhere in 0.06-0.10; the gap
+    LISTS do shrink with the threshold (work all: 03103, 03153, 03157, 03158 at 0.06 -> 03153,
+    03157, 03158 at 0.08 -> 03153 alone at 0.10; work inter: six codes at 0.06 and 0.08 -> 03103,
+    03153, 03157 at 0.10, the zgb aggregate ceasing to be a gap at 0.10 since its EMD is 0.085).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/sensitivity.csv'
+  notes: 'The sweep is exact rather than approximate: cell EMDs and noise floors do not depend on
+    the threshold, only the gap classification does, so decide_layer is simply re-run on the
+    already computed cells. KEY FORMAT: the committed decisions.json was written by the code
+    state that ran, which formatted the threshold keys of ["sensitivity"]["thresholds"] as
+    "%.2f" ("0.06"/"0.08"/"0.10"); a review-round fix changed that to repr(float(t)) so two close
+    configured thresholds cannot collide into one key, which renders 0.10 as "0.1". The artifact
+    is left exactly as the run wrote it -- the difference is the key STRING only, no verdict and
+    no CSV row changes, and sensitivity.csv (the authoritative table) carries the thresholds as
+    numbers either way. The 0.08 rows reproduce the pre-registered verdicts identically, which
+    is what makes the sweep auditable. The two education flips at 0.06 rest on aggregates of 647
+    (kindergarten) and 360 (upper_secondary) SrV persons with noise floors of 0.020 and 0.033.'
+- metric: 'join and coverage diagnostics of the analysis stage (fallback transparency)'
+  reference: none (internal consistency of the stage)
+  result: 'Identical to the 09-03 run, as expected from the byte-identical cells. Workers: 304,900
+    input, 0 dropped for a missing home geometry, 1 (0.00%) without a home Kreis/Gemeinde match,
+    0 NaN distances, 39,150 destinations (12.8% of input, 24.2% of the 161,805-person inter
+    cohort) outside every Gemeinde polygon and counted as inter-Gemeinde. Pupils/students: 178,763
+    input, 0 without a home match, 0 ages unmapped, 0 NaN distances. Both unmatched-home rates are
+    far below the 5% raise threshold and the destination-outside rate below the 30% warn
+    threshold. NEW in this run: the inter_zgb scope narrowing is itself logged as a rate --
+    "122654/161805 inter-Gemeinde workers kept (75.8% of the inter scope); excluded 39150 with a
+    destination outside every ZGB Gemeinde polygon and 1 with an unresolved home Gemeinde".'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/provenance.json'
+  notes: 'provenance.json now also records the sensitivity thresholds [0.06, 0.08, 0.1], the
+    sensitivity table row count (45) and its three variant names, so the diagnostics can be traced
+    to the exact reference table that produced them.'
+artifacts:
+- 'felix:~/srv_baseline_2.log (copied into the baseline directory as run_log.txt VERBATIM,
+  18,481 bytes; unlike the 09-03 copy nothing was trimmed, so the two trailing non-synpp lines
+  the shell appended after the last pipeline line ("WARNING! osmconvert ..." and "Codeplan") are
+  present in the committed file)'
+- 'felix:~/srv_baseline_100pct.yml (server-local overlay, unchanged since 2026-09-03, not
+  committed)'
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/srv_distance_validation/'
+- 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/ (commute_by_kreis.csv,
+  commute_quantiles_model.csv, education_by_kreis_level.csv, sensitivity_cells.csv,
+  sensitivity.csv, decisions.json, provenance.json, summary.md, work_all.png, work_inter.png,
+  work_intra.png, education.png, run_log.txt)'
+- 'Plot reproduction commands (documentation.plots.srv_commute_distance, run from repository root):
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_all.png'', scope=''all'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_inter.png'', scope=''inter'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_intra.png'', scope=''intra'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04''; from documentation.plots import srv_commute_distance as P; P.plot_education_bands(D + ''/education_by_kreis_level.csv'', D + ''/education.png'')"'
+issues:
+- '#357'
+- '#358'
+decisions:
+- ADR-0102
+- ADR-0103
+source: 'SrV primary-distance re-measurement under the sharpened rule, with the sensitivity
+  variants and the EMD threshold sweep (addendum Task 16 of Phase 0, #357/#358)'

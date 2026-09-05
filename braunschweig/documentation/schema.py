@@ -87,6 +87,15 @@ RUN_CLASSIFICATIONS = (
 
 RUN_EXECUTION_STATES = ("completed", "partial", "killed", "running", "unknown")
 
+#: Review status of a feature's `assessment` block (whole-branch/whole-feature review
+#: workflow, distinct from `validation.state`, which is about matching observed
+#: reality). "assessed" was added by Task 14 (#358) for a feature record whose
+#: assessment has been fully completed and closed out, alongside the two values
+#: already in use across docs/registry/features/*.yml at the time this enum was
+#: introduced ("pending", "reviewed") -- every value in use was grepped first so no
+#: existing record would be broken by adding this enum check.
+ASSESSMENT_STATUSES = ("pending", "reviewed", "assessed")
+
 
 class SchemaError(ValueError):
     """A record is structurally invalid (missing/unknown key, bad enum value)."""
@@ -230,7 +239,15 @@ def parse_feature(doc: Any, source_file: str) -> dict:
 
     if "assessment" in doc and doc["assessment"] is not None:
         assessment = _require_mapping(doc["assessment"], f"{source_file}: assessment")
-        if str(assessment.get("status", "")).strip() == "pending" and not assessment.get("pending_reason"):
+        # Fix round 1 (#358): a MISSING status is a missing-key error (the same style as
+        # every other required-key check in this module), not an enum error on the
+        # stringified None -- `_check_enum(None, ...)` would otherwise raise "'None' is
+        # not one of [...]", which reads like a bad VALUE rather than an absent KEY.
+        if "status" not in assessment or assessment["status"] is None:
+            raise SchemaError(f"{source_file}: assessment: missing required key(s) ['status']")
+        status = _check_enum(assessment["status"], ASSESSMENT_STATUSES,
+                             f"{source_file}: assessment.status")
+        if status == "pending" and not assessment.get("pending_reason"):
             raise SchemaError(
                 f"{source_file}: assessment.status is 'pending' and therefore requires a "
                 "'pending_reason'")

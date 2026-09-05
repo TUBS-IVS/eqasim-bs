@@ -1,0 +1,84 @@
+feature: srv_primary_distance_validation
+title: SrV primary-distance validation per Kreis
+area: validation
+description: Compares a run's realised home->work and home->education distance distributions per
+  home Kreis against the committed SrV 2023 targets with a pre-registered gap rule; the Phase 0
+  measurement of the SrV distance-distribution calibration (#357/#358).
+stages:
+- braunschweig.analysis.reference.srv.commute_distance
+- braunschweig.analysis.synthesis.commute_distance_by_kreis
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags: []
+introduced:
+  issue: 358
+  pr: null
+  adr: ADR-0102
+code_paths:
+- braunschweig/analysis/reference/srv/commute_distance.py
+- braunschweig/analysis/synthesis/commute_distance_by_kreis.py
+- braunschweig/calibration/srv_distance_targets.py
+- braunschweig/calibration/decision.py
+- scripts/extract_srv_primary_distance_targets.py
+- documentation/plots/srv_commute_distance.py
+evidence:
+  tests:
+  - tests/test_srv_distance_targets.py
+  - tests/test_srv_distance_targets_pins.py
+  - tests/test_srv_distance_decision.py
+  - tests/test_srv_commute_distance_reference_stage.py
+  - tests/test_commute_distance_by_kreis.py
+  - tests/test_srv_commute_distance_plot.py
+  off_path_byte_identical:
+    claimed: not_applicable
+    note: Analysis-only stages; they read cached synthesis stages and write a report, no pipeline output changes.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[srv_distance]'
+    note: The stage logs persons without home geometry, destinations outside every Gemeinde polygon
+      and pupils with an age outside every level, as explicit counts and rates (R17 in
+      commute_distance_by_kreis.py); it raises above srv_distance_max_unmatched_home_share and
+      warns above srv_distance_warn_unmatched_destination_share. The extractor separately logs
+      GIS-invalid, negative-weight, over-cap and no-Kreis exclusions.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv
+    note: SrV 2023 per-Kreis targets (see the data record srv2023_primary_distance_targets).
+      Wolfsburg is not surveyed; its rows are the RegioStaR-7 type-72 pool as an ASSUMPTION-grade
+      proxy (source proxy_rs7_72), documented in the data record's limitations.
+validation:
+  state: measured_vs_reference
+  runs:
+  - srv-primary-distance-baseline-2026-09-03
+  - srv-primary-distance-baseline-2026-09-04
+  metric: band_emd_vs_srv
+  note: |
+    Baseline measured on the cached 100% population of 100pct-allfeat-i329-2026-08-24 (304,900
+    workers, 178,763 pupils/students), 2026-09-03. Work, counted per HOME KREIS (of 8) with the
+    ZGB aggregate stated separately: scope "all" 5 ok / 3 gap, aggregate ok (EMD 0.051 vs floor
+    0.012); scope "inter" 3 ok / 5 gap AND the aggregate gaps (EMD 0.085 vs floor 0.013) = the
+    decisive cell, per-Kreis EMD 0.047-0.162; scope "intra" 8 ok / 0 gap, aggregate ok (EMD 0.011
+    vs floor 0.008), per-Kreis EMD 0.010-0.031. Education, per
+    comparable level (aggregate EMD vs floor): kindergarten 0.067/0.020 ok, grundschule
+    0.116/0.021 GAP, sekundar_1 0.025/0.023 ok, upper_secondary 0.074/0.033 ok, university
+    0.202/0.083 gap but on only 142 SrV persons, i.e. not decidable (ADR-0103 does not act on it).
+    No cell lacked a reference;
+    Wolfsburg (03103) used the proxy_rs7_72 rows (ASSUMPTION). Join diagnostics on the primary
+    path: 1/304,900 workers and 0/178,763 pupils without a home Kreis/Gemeinde match, 0 NaN
+    distances, 12.8% of work destinations outside every Gemeinde polygon (counted inter). This is
+    a measurement against a reference, NOT a validation of the model against observed behaviour.
+    Per-layer verdicts are in ADR-0103. Re-measured 2026-09-04 on the byte-identical cells under a
+    sharpened decision rule (aggregate_requires_min_persons; only the university verdict moves,
+    BUILD -> UNDECIDABLE) plus three NOT-pre-registered sensitivity variants (inter_zgb,
+    all_gis_fallback, inter_gis_fallback) and an EMD threshold sweep (0.06/0.08/0.10); see ADR-0103
+    section "Amendment 2026-09-04" for the full readout.
+assessment:
+  status: reviewed
+  by: Lasse Bienzeisler with Claude (Fable 5.1)
+  date: '2026-09-04'
+  source: ADR-0103

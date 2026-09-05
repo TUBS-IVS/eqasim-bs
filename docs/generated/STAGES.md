@@ -11,7 +11,9 @@ the DAG node names; aliased seams list their per-workflow resolution).
 |---|---|---|---|---|---|---|
 | [braunschweig.analysis.analysis_suite](../registry/stages/braunschweig.analysis.analysis_suite.yml) | analysis | braunschweig_new | x | A/-/- | -- | freight_analysis_exclusion |
 | [braunschweig.analysis.cordon_validation](../registry/stages/braunschweig.analysis.cordon_validation.yml) | validation | braunschweig_new | x | A/-/- | -- | -- |
+| [braunschweig.analysis.reference.srv.commute_distance](../registry/stages/braunschweig.analysis.reference.srv.commute_distance.yml) | validation | braunschweig_new | x | A/s/s | -- | srv_primary_distance_validation |
 | [braunschweig.analysis.simwrapper_export](../registry/stages/braunschweig.analysis.simwrapper_export.yml) | analysis | braunschweig_new | x | A/-/- | -- | simwrapper_export |
+| [braunschweig.analysis.synthesis.commute_distance_by_kreis](../registry/stages/braunschweig.analysis.synthesis.commute_distance_by_kreis.yml) | validation | braunschweig_new | x | A/s/s | -- | srv_primary_distance_validation |
 | [braunschweig.analysis.verbindungen_validation](../registry/stages/braunschweig.analysis.verbindungen_validation.yml) | validation | braunschweig_new | x | A/-/- | -- | verbindungen_od_validation |
 | [braunschweig.data.alkis](../registry/stages/braunschweig.data.alkis.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.bbsr.regiostar](../registry/stages/braunschweig.data.bbsr.regiostar.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |

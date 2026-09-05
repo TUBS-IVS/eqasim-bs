@@ -191,6 +191,39 @@ def test_feature_pending_assessment_requires_reason():
         schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
 
 
+def test_feature_invalid_assessment_status_is_rejected():
+    doc = minimal_feature(assessment={"status": "not_a_real_status", "by": None,
+                                      "date": None, "pending_reason": None, "source": None})
+    with pytest.raises(schema.SchemaError, match="not one of"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
+def test_feature_missing_assessment_status_is_a_missing_key_error():
+    # Fix round 1 (#358): a missing status must raise the module's usual "missing
+    # required key(s)" style, not an enum error on the stringified None.
+    doc = minimal_feature(assessment={"by": None, "date": None, "pending_reason": None,
+                                      "source": None})
+    with pytest.raises(schema.SchemaError, match="missing required key"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
+def test_feature_null_assessment_status_is_a_missing_key_error():
+    # An explicit `status: null` in the YAML is treated the same as an absent key.
+    doc = minimal_feature(assessment={"status": None, "by": None, "date": None,
+                                      "pending_reason": None, "source": None})
+    with pytest.raises(schema.SchemaError, match="missing required key"):
+        schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+
+
+def test_feature_assessed_status_round_trips():
+    # Task 14 (#358): "assessed" is a valid assessment.status value, added alongside
+    # "pending" and "reviewed" (the two already in use across the registry).
+    doc = minimal_feature(assessment={"status": "assessed", "by": "Test", "date": "2026-09-04",
+                                      "source": "ADR-0103"})
+    record = schema.parse_feature(doc, "docs/registry/features/demo_feature.yml")
+    assert record["assessment"]["status"] == "assessed"
+
+
 # --------------------------------------------------------------------------- #
 # stage records
 # --------------------------------------------------------------------------- #

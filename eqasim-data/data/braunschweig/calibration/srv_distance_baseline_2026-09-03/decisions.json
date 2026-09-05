@@ -1,0 +1,149 @@
+{
+  "work": {
+    "all": {
+      "build": true,
+      "reason": "build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03153', '03157', '03158'] (Kreis with >= 200 reference persons, or the aggregate)",
+      "gap_codes": [
+        "03153",
+        "03157",
+        "03158"
+      ],
+      "classification": {
+        "03101": "ok",
+        "03102": "ok",
+        "03103": "ok",
+        "03151": "ok",
+        "03153": "gap",
+        "03154": "ok",
+        "03157": "gap",
+        "03158": "gap",
+        "zgb": "ok"
+      }
+    },
+    "inter": {
+      "build": true,
+      "reason": "build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03101', '03103', '03153', '03157', '03158', 'zgb'] (Kreis with >= 200 reference persons, or the aggregate)",
+      "gap_codes": [
+        "03101",
+        "03103",
+        "03153",
+        "03157",
+        "03158",
+        "zgb"
+      ],
+      "classification": {
+        "03101": "gap",
+        "03102": "ok",
+        "03103": "gap",
+        "03151": "ok",
+        "03153": "gap",
+        "03154": "ok",
+        "03157": "gap",
+        "03158": "gap",
+        "zgb": "gap"
+      }
+    },
+    "intra": {
+      "build": false,
+      "reason": "do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)",
+      "gap_codes": [],
+      "classification": {
+        "03101": "ok",
+        "03102": "ok",
+        "03103": "ok",
+        "03151": "ok",
+        "03153": "ok",
+        "03154": "ok",
+        "03157": "ok",
+        "03158": "ok",
+        "zgb": "ok"
+      }
+    }
+  },
+  "education": {
+    "kindergarten": {
+      "build": false,
+      "reason": "do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)",
+      "gap_codes": [],
+      "classification": {
+        "03101": "ok",
+        "03102": "gap",
+        "03103": "ok",
+        "03151": "ok",
+        "03153": "gap",
+        "03154": "ok",
+        "03157": "gap",
+        "03158": "gap",
+        "zgb": "ok"
+      }
+    },
+    "grundschule": {
+      "build": true,
+      "reason": "build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['zgb'] (Kreis with >= 200 reference persons, or the aggregate)",
+      "gap_codes": [
+        "zgb"
+      ],
+      "classification": {
+        "03101": "gap",
+        "03102": "ok",
+        "03103": "ok",
+        "03151": "gap",
+        "03153": "gap",
+        "03154": "gap",
+        "03157": "gap",
+        "03158": "gap",
+        "zgb": "gap"
+      }
+    },
+    "sekundar_1": {
+      "build": false,
+      "reason": "do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)",
+      "gap_codes": [],
+      "classification": {
+        "03101": "ok",
+        "03102": "ok",
+        "03103": "ok",
+        "03151": "ok",
+        "03153": "gap",
+        "03154": "ok",
+        "03157": "ok",
+        "03158": "gap",
+        "zgb": "ok"
+      }
+    },
+    "upper_secondary": {
+      "build": false,
+      "reason": "do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)",
+      "gap_codes": [],
+      "classification": {
+        "03101": "ok",
+        "03102": "gap",
+        "03103": "ok",
+        "03151": "ok",
+        "03153": "gap",
+        "03154": "gap",
+        "03157": "gap",
+        "03158": "gap",
+        "zgb": "ok"
+      }
+    },
+    "university": {
+      "build": true,
+      "reason": "build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['zgb'] (Kreis with >= 200 reference persons, or the aggregate)",
+      "gap_codes": [
+        "zgb"
+      ],
+      "classification": {
+        "03101": "gap",
+        "03102": "gap",
+        "03103": "gap",
+        "03151": "gap",
+        "03153": "within_noise",
+        "03154": "gap",
+        "03157": "gap",
+        "03158": "within_noise",
+        "zgb": "gap"
+      }
+    }
+  }
+}

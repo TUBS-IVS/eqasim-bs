@@ -1,0 +1,57 @@
+stage: braunschweig.analysis.synthesis.commute_distance_by_kreis
+title: Realised primary distances per Kreis vs SrV
+layer: validation
+description: 'Per home Kreis, compares the realised euclidean home->work / home->education
+  distances (x detour factor) against the SrV 2023 band shares: EMD, SrV bootstrap noise floor,
+  intra/inter-Gemeinde split for work, education by model age level, and the pre-registered gap
+  rule (#358). Writes <output_path>/analysis/srv_distance_validation/. Config keys:
+  srv_distance_detour_factor (default 1.3), srv_distance_emd_threshold (default 0.08),
+  srv_distance_min_persons (default 200), srv_distance_aggregate_requires_min_persons (default
+  true -- the 2026-09-04 amendment of the pre-registered rule, ADR-0103 section "Amendment
+  2026-09-04": the ZGB aggregate cell needs the same srv_distance_min_persons floor as any Kreis
+  to count as decisive; false restores the original 2026-09-03 unconditional aggregate
+  exemption), srv_distance_output_subdir (default analysis/srv_distance_validation),
+  srv_distance_max_unmatched_home_share (default 0.05, raises above),
+  srv_distance_warn_unmatched_destination_share (default 0.30, warns above),
+  srv_distance_sensitivity_thresholds (default [0.06, 0.08, 0.10] -- the EMD thresholds at
+  which every scope/level/variant is re-decided for the threshold sweep; the middle value is
+  the pre-registered threshold, so the sweep always contains the actual decision).'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/commute_distance (realised euclidean distance,
+    20-point quantile curve) extended by per-Kreis band EMD and the decision rule.
+code:
+- braunschweig/analysis/synthesis/commute_distance_by_kreis.py
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+production: true
+inputs:
+- vg250_ew
+features:
+- srv_primary_distance_validation
+decisions:
+- ADR-0102
+- ADR-0103
+notes: 'Writes eight files under <output_path>/analysis/srv_distance_validation/:
+  commute_by_kreis.csv, education_by_kreis_level.csv, commute_quantiles_model.csv,
+  decisions.json, provenance.json, summary.md, plus (addendum Task 16, SENSITIVITY only --
+  never the pre-registered decision) sensitivity_cells.csv (the per-variant comparison cells
+  for the inter_zgb / all_gis_fallback / inter_gis_fallback reference variants, same cell
+  columns as commute_by_kreis.csv plus a variant column) and sensitivity.csv (the EMD
+  threshold sweep: kind/name/threshold/build/undecidable/gap_codes). decisions.json keeps
+  ["work"] and ["education"] untouched by the sensitivity path and carries the diagnostics under
+  a separate ["sensitivity"] key. A MISSING OR STALE sensitivity table aborts the stage by
+  design: the reference stage raises FileNotFoundError when the committed CSV is absent, and
+  compare_sensitivity raises ValueError naming the variant(s) the table does not contain -- a
+  fail-loud choice over reporting a variant as "no reference in every cell", which would look
+  like a measured result rather than a missing input (CLAUDE.md fallback transparency). VG250-EW (vg250_ew) is read at run time via
+  braunschweig.analysis.spatial.load_gemeinden/assign_geographies to resolve home/destination
+  Kreis and Gemeinde for the euclidean distance and intra/inter-Gemeinde split. By design, the
+  stage ABORTS the production run (raises ValueError) when more than 5% of homes (workers or
+  pupils/students, srv_distance_max_unmatched_home_share, default 0.05) cannot be matched to a
+  Kreis/Gemeinde -- e.g. a missing or stale VG250 archive or regiostar_referenzdatei.xlsx -- a
+  fail-early choice over silently degrading to an all-inter-Gemeinde split on a meaningless home
+  assignment.'

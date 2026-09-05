@@ -5,6 +5,10 @@
  },
  "edges": [
   [
+   "braunschweig.analysis.reference.srv.commute_distance",
+   "braunschweig.analysis.synthesis.commute_distance_by_kreis"
+  ],
+  [
    "braunschweig.data.alkis",
    "braunschweig.data.buildings"
   ],
@@ -674,6 +678,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.commute_distance_by_kreis"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.synthesis.incommuters"
   ],
   [
@@ -742,6 +750,10 @@
   ],
   [
    "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.commute_distance_by_kreis"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
    "braunschweig.analysis.verbindungen_validation"
   ],
   [
@@ -795,6 +807,10 @@
   [
    "synthesis.population.spatial.primary.candidates",
    "synthesis.population.spatial.primary.locations"
+  ],
+  [
+   "synthesis.population.spatial.primary.locations",
+   "braunschweig.analysis.synthesis.commute_distance_by_kreis"
   ],
   [
    "synthesis.population.spatial.primary.locations",
@@ -872,7 +888,9 @@
  "nodes": [
   "braunschweig.analysis.analysis_suite",
   "braunschweig.analysis.cordon_validation",
+  "braunschweig.analysis.reference.srv.commute_distance",
   "braunschweig.analysis.simwrapper_export",
+  "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "braunschweig.data.alkis",
   "braunschweig.data.bbsr.regiostar",
@@ -966,6 +984,7 @@
   "braunschweig.analysis.analysis_suite",
   "braunschweig.analysis.cordon_validation",
   "braunschweig.analysis.simwrapper_export",
+  "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "matsim.output",
   "synthesis.output"

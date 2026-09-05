@@ -1,0 +1,170 @@
+id: srv-primary-distance-baseline-2026-09-03
+date: '2026-09-03'
+repository:
+  commit: f53694ca
+  branch: feature/srv-primary-distance-targets
+  notes: 'Code = branch HEAD f53694ca; the branch''s 24 NEW files (the reference/analysis stages,
+    braunschweig/calibration/{srv_distance_targets,decision}.py, the plot module, the registry
+    records, the extractor and the six tests) were synced onto a DETACHED server worktree at
+    b7eed9a5 (~/wt_srv_baseline) without a git push; the three committed SrV CSVs were copied into
+    the data tree separately. b7eed9a5 is deliberately the commit of the measured run
+    100pct-allfeat-i329-2026-08-24, so the analysis executes against the i329 cache under the
+    identical code state (an earlier attempt off origin/main 379223f2 was aborted, see
+    status.notes). The branch''s MODIFIED files (README, the two scale overlays, the generated
+    views, the DAG snapshot) were NOT synced -- they do not affect this stage, and the run used a
+    server-local overlay rather than configs/overlays/test_100pct.yml.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/srv_baseline_100pct.yml'
+  notes: 'The overlay is a byte-copy of the i329 run''s own phase-A overlay felix:~/i329_phase_a.yml
+    with EXACTLY ONE line changed (verified by diff: 1 hunk, `run:` becomes
+    braunschweig.analysis.synthesis.commute_distance_by_kreis). Every config VALUE is the i329
+    run''s: working_directory eqasim-data/cache_bs_100pct_i329, output_path
+    eqasim-data/output_bs_100pct_i329, output_prefix braunschweig_100pct_i329_, popsim work_dir /
+    max_cells 750 / num_workers 3 / importance_profile optimized_2026_06_30, cache_share_export,
+    eqasim_version 2.3.1. Changing any value would alter an upstream stage hash and force a
+    re-synthesis. Merge log: "0 overridden, 14 added". The stage''s own parameters ran at their
+    defaults: srv_distance_detour_factor 1.3, srv_distance_emd_threshold 0.08,
+    srv_distance_min_persons 200, srv_distance_max_unmatched_home_share 0.05,
+    srv_distance_warn_unmatched_destination_share 0.3.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'No population was synthesised by this run; the measured population is the one the i329
+    run wrote (manifest 100pct-allfeat-i329-2026-08-24). Cohorts actually measured:
+    304,900 workers with a work destination and 178,763 pupils/students.'
+pipeline:
+  targets:
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  notes: 'synpp resolved a 4-stage plan. Executed: synthesis.population.spatial.primary.candidates
+    (__63fbca2b), braunschweig.synthesis.locations.education_gravity (__555d20db),
+    braunschweig.locations.synthesis.replacement_education_gravity (__a3a9fe3f) and the target
+    stage (__5080c980). braunschweig.analysis.reference.srv.commute_distance (__dbe8ad3b) was
+    already cached from the aborted first attempt. Every other upstream stage LOADED from the i329
+    cache -- no braunschweig.data.*, braunschweig.popsim.*, braunschweig.gravity.*, data.*,
+    synthesis.population.spatial.home.* or matsim.* stage executed (verified in the log).'
+classification:
+- validation
+status:
+  execution: completed
+  notes: 'Attempt 2 (the recorded one) ran 2026-09-03 23:42:31 -> 23:49:52 CEST, 7 min 21 s, exit
+    without error, pipeline progress 4/4. NOT "every upstream stage loaded from cache": three
+    location stages were re-executed, so the measured work and education destinations are a
+    same-seed RE-DRAW of synthesis.population.spatial.primary.candidates and the two education
+    gravity stages on the cached i329 inputs, not the pickles the i329 run itself wrote. Under
+    b7eed9a5 the candidates hash resolved to __63fbca2bea34d9ebcbf56afafe49bdad, which IS one of
+    the two variants the i329 run had written, so the code state and the declared inputs match
+    i329; the re-execution was forced because attempt 1 had already reset the cache metadata (see
+    below), not by a code or config difference. This is a real caveat and is repeated in ADR-0103.
+    ATTEMPT 1 (aborted, 23:31:52-23:34, PID 2332835) ran the same overlay from a worktree at
+    origin/main 379223f2: there the candidates stage resolved to a hash NOT present in the i329
+    cache (__0fadab07dde537c475bef74e74443a9b), which triggered the pre-registered abort criterion
+    and the run was killed after ~2.5 min. First re-executed stage:
+    synthesis.population.spatial.primary.candidates__0fadab07dde537c475bef74e74443a9b. No
+    popsim/data/MATSim stage ran in either attempt. CACHE SIDE EFFECTS of attempt 1 on
+    ~/wt-i329/eqasim-data/cache_bs_100pct_i329, recorded for traceability: pipeline.json was
+    rewritten ("Successfully reset meta data") so the i329 run''s stage-hash bookkeeping is gone;
+    braunschweig.synthesis.locations.education_gravity__555d20db was recomputed under the same hash
+    (overwriting the 2026-08-24 pickle); braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3f
+    was left with a reset .cache directory next to its untouched 2026-08-24 .p until attempt 2
+    rewrote it; new ADDITIVE entries appeared for
+    braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b and for the (now orphaned)
+    candidates variant __0fadab07. The i329 OUTPUT tree was not modified apart from the new,
+    additive analysis/srv_distance_validation/ subfolder. Shared-checkout invariant on felix:
+    ~/eqasim-bs porcelain 26 entries (4 modified + 22 untracked, all pre-existing from another
+    session) before and after; HEAD 2714b857 unchanged; the earlier controller note of "3 files"
+    was a truncated listing.'
+environment: server
+validation:
+- metric: 'home->work distance band EMD per home Kreis vs SrV 2023 (scopes all / inter-Gemeinde /
+    intra-Gemeinde), model = realised euclidean distance x 1.3 detour factor'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv
+  result: 'All three scopes cover the 8 home Kreise plus the ZGB aggregate; no cell lacked a
+    reference. Counts below are per KREIS (of 8), with the aggregate stated separately.
+    scope all: 5 ok, 3 gap (03153 Goslar EMD 0.104 / noise floor 0.024; 03158 Wolfenbuettel
+    0.100 / 0.029; 03157 Peine 0.097 / 0.027), aggregate zgb ok (EMD 0.051, floor 0.012);
+    per-Kreis EMD range 0.022-0.104; rule = BUILD. scope inter: 3 ok, 5 gap (03101 Braunschweig
+    0.081/0.025, 03103 Wolfsburg 0.106/0.022 [proxy], 03153 0.162/0.028, 03157 0.114/0.024,
+    03158 0.091/0.029) AND the aggregate zgb gaps (0.085/0.013) -- the decisive cell; per-Kreis
+    EMD range 0.047-0.162; rule = BUILD. scope intra: 8 ok, 0 gap, aggregate zgb ok (EMD 0.011,
+    floor 0.008); per-Kreis EMD range 0.010-0.031, the two worst being 03103 Wolfsburg 0.031
+    (proxy) and 03158 0.030; rule = DO NOT BUILD. Reference sizes: 4,543 SrV persons at ZGB level
+    (2,593 inter, 1,950 intra), 387-1,659 per Kreis.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/commute_by_kreis.csv'
+  notes: 'Pre-registered rule (braunschweig.calibration.decision): a cell is a gap when EMD > 0.08
+    AND the EMD exceeds the SrV bootstrap noise floor; a layer is built iff a home Kreis with
+    >= 200 SrV reference persons or the ZGB aggregate gaps. Wolfsburg (03103) is not surveyed by
+    SrV 2023; its rows come from the RegioStaR-7 type-72 pool (column source = proxy_rs7_72) and
+    are an ASSUMPTION, not an observation. This is a measurement against a reference, not a
+    validation of the model. The inter-Gemeinde gap verdict is to be read together with ADR-0102
+    Assumption 2''s GIS-validity tail finding: SrV may understate long distances (GIS-invalid
+    work trips carry a heavier long-distance tail than GIS-valid ones), so the model''s
+    inter-Gemeinde distribution is being compared against a possibly short-biased tail.'
+- metric: 'home->education distance band EMD per home Kreis and model age level vs SrV 2023'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_education_distance_by_kreis_level.csv
+  result: 'Five comparable levels x (8 Kreise + the zgb aggregate); no cell lacked a reference.
+    Counts below are per KREIS (of 8), with the aggregate stated separately.
+    kindergarten: 4 ok / 4 gap, aggregate zgb ok (EMD 0.067, floor 0.020, n_ref 647) -> DO NOT
+    BUILD; per-Kreis EMD range 0.011-0.177, the four gapping Kreise resting on only 53-94 SrV
+    persons. grundschule: 2 ok / 6 gap (03101, 03151, 03153, 03154, 03157, 03158), aggregate zgb
+    GAP (EMD 0.116, floor 0.021, n_ref 571) = the decisive cell -> BUILD; per-Kreis EMD range
+    0.026-0.225 (worst 03158 0.225, 03154 0.211), no gapping Kreis reaching 200 SrV persons.
+    sekundar_1: 6 ok / 2 gap (03153 0.086 on 70 persons, 03158 0.093 on 71), aggregate zgb ok
+    (EMD 0.025, floor 0.023, n_ref 718) -> DO NOT BUILD; range 0.016-0.093. upper_secondary:
+    3 ok / 5 gap (03102, 03153, 03154, 03157, 03158, each on only 26-57 SrV persons), aggregate
+    zgb ok (EMD 0.074, floor 0.033, n_ref 360) -> DO NOT BUILD; range 0.060-0.176. university:
+    0 ok, 6 gap (03101, 03102, 03103, 03151, 03154, 03157) and 2 within_noise (03153, 03158),
+    aggregate zgb GAP (EMD 0.202, floor 0.083) -> rule says BUILD; range 0.123-0.482 (worst 03103
+    Wolfsburg 0.482, proxy). CAVEAT: the university reference is thin -- 142 SrV persons at ZGB
+    level and 7-84 per Kreis, i.e. NO university cell reaches the 200-person floor; the decision
+    rests entirely on the aggregate, which the pre-registered rule exempts from that floor, and
+    ADR-0103 therefore does not act on it.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/education_by_kreis_level.csv'
+  notes: 'Levels compared are the model''s five comparable age levels (kindergarten, grundschule,
+    sekundar_1, upper_secondary, university). The model''s bbs pupils ARE measured -- inside
+    upper_secondary, because model levels are derived from age alone: at ZGB level that level pools
+    12,694 oberstufe and 5,427 bbs pupils into its 18,121 modelled persons (run_log.txt). The SrV
+    reference table likewise carries descriptive oberstufe and bbs rows with comparable = False
+    (1,082 and 118 SrV persons) that are pooled into the comparable upper_secondary level; it is
+    the oberstufe/bbs SPLIT, not the bbs cohort, that has no comparable counterpart. As for work,
+    Wolfsburg uses the proxy_rs7_72 rows (ASSUMPTION).'
+- metric: 'join and coverage diagnostics of the analysis stage (fallback transparency)'
+  reference: none (internal consistency of the stage)
+  result: 'Workers: 304,900 input, 1 (0.00%) without a home Kreis/Gemeinde match, 0 dropped for a
+    missing home geometry, 0 with a NaN distance, 39,150 destinations (12.8%) outside every
+    Gemeinde polygon and therefore counted as inter-Gemeinde. Pupils/students: 178,763 input, 0
+    (0.00%) without a home match, 0 with an age outside every level, 0 NaN distances. Both
+    unmatched-home rates are far below the 5% raise threshold and the destination-outside rate is
+    below the 30% warn threshold, so the VG250/RegioStaR home join is confirmed to have worked on
+    the primary path.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/provenance.json'
+  notes: 'The 39,150 work destinations outside every Gemeinde polygon are cordon-external,
+    long-distance workplaces; counting them as inter-Gemeinde is the stage''s documented
+    conservative default. They are 12.8% of all 304,900 workers but 24.2% of the 161,805-person
+    inter cohort, so they push mass into the inter scope''s long bands and the inter EMD
+    (aggregate 0.085 against a 0.08 threshold) may be overstated by an unquantified amount. Layer 1
+    (#359) must quantify this before pinning any parameter -- e.g. by matching the comparison to
+    SrV trips whose destination AGS lies outside the ZGB, which are inter on the reference side
+    too. See ADR-0103.'
+artifacts:
+- 'felix:~/srv_baseline.log (copied into the baseline directory as run_log.txt; the committed copy
+  drops one stray trailing token "Codeplan" that the shell appended after the last synpp line and
+  that no code in this repository prints -- 41,506 -> 41,497 bytes, no logged line altered)'
+- 'felix:~/srv_baseline_100pct.yml (server-local overlay, not committed)'
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/srv_distance_validation/'
+- 'eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03/ (commute_by_kreis.csv,
+  commute_quantiles_model.csv, education_by_kreis_level.csv, decisions.json, provenance.json,
+  summary.md, work_all.png, work_inter.png, work_intra.png, education.png, run_log.txt)'
+- 'Plot reproduction commands (documentation.plots.srv_commute_distance, run from repository root):
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_all.png'', scope=''all'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_inter.png'', scope=''inter'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03''; from documentation.plots import srv_commute_distance as P; P.plot_work_bands(D + ''/commute_by_kreis.csv'', D + ''/work_intra.png'', scope=''intra'')";
+  python -c "import sys; sys.path.insert(0, ''.''); D=''eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-03''; from documentation.plots import srv_commute_distance as P; P.plot_education_bands(D + ''/education_by_kreis_level.csv'', D + ''/education.png'')"'
+issues:
+- '#357'
+- '#358'
+decisions:
+- ADR-0102
+- ADR-0103
+source: 'SrV primary-distance baseline measurement, Phase 0 of #357 (measure before calibrating)'

@@ -1,0 +1,303 @@
+23:42:31 │ INFO    │ braunschweig     │ Run log: logs/run_20260903T234231.log
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] working_directory: (added) eqasim-data/cache_bs_100pct_i329
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] run: (added) ['braunschweig.analysis.synthesis.commute_distance_by_kreis']
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.sampling_rate: (added) 1.0
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.output_path: (added) eqasim-data/output_bs_100pct_i329
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.analysis_working_directory: (added) eqasim-data/cache_bs_100pct_i329
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.output_prefix: (added) braunschweig_100pct_i329_
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.matsim_last_iteration: (added) 0
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.work_dir: (added) eqasim-data/popsim_work_i329
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.num_workers: (added) 3
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.braunschweig.population.popsim.importance_profile: (added) optimized_2026_06_30
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_export: (added) True
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.cache_share_recompute: (added) []
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] config.eqasim_version: (added) 2.3.1
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] composed configs/base_bs.yml + /home/felix/srv_baseline_100pct.yml: 0 overridden, 14 added
+23:42:31 │ INFO    │ braunschweig     │ [config-merge] merged config written to eqasim-data/cache_bs_100pct_i329/.merged_config.yml
+23:42:31 │ WARNING │ provenance       │ [provenance] eqasim_source_path '../eqasim-java-bs' does not exist relative to the config; recording eqasim_java_commit='unknown'.
+23:42:31 │ INFO    │ provenance       │ [provenance] pipeline_commit=b7eed9a5+dirty eqasim_java_commit=unknown config=/home/felix/wt_srv_baseline/eqasim-data/cache_bs_100pct_i329/.merged_config.yml sampling_rate=1.0 hts=entd random_seed=1234 population.method=popsim_mid python=3.10.10
+23:42:31 │ INFO    │ provenance       │ [provenance] record written to eqasim-data/cache_bs_100pct_i329/run_provenance_20260903T214231Z.json
+23:42:31 │ INFO    │ cache_share      │ [cache_share] prime: primed 0, already-present 39, forced 0, missing-in-store 7 (store=eqasim-data/cache_shared) missing=['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
+23:42:32 │ INFO    │ numexpr.utils    │ Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+23:42:32 │ INFO    │ numexpr.utils    │ NumExpr defaulting to 16 threads.
+23:42:32 │ INFO    │ synpp            │ Found 38 stages
+23:42:32 │ INFO    │ synpp            │ Found pipeline metadata in /home/felix/wt-i329/eqasim-data/cache_bs_100pct_i329/pipeline.json
+23:42:32 │ INFO    │ synpp            │ Devalidating 4 stages:
+23:42:32 │ INFO    │ synpp            │ - synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad
+23:42:32 │ INFO    │ synpp            │ - braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805
+23:42:32 │ INFO    │ synpp            │ - braunschweig.synthesis.locations.education_gravity__555d20db64452c978f514f6a02a4cdd5
+23:42:32 │ INFO    │ synpp            │ - braunschweig.analysis.synthesis.commute_distance_by_kreis__5080c9801643b32921ff76972ab5d648
+23:42:32 │ INFO    │ synpp            │ Successfully reset meta data
+23:42:32 │ INFO    │ synpp            │ Executing stage synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad ...
+23:42:32 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.enriched_adapter ...
+23:42:34 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__f952b7e6f10e3479484bcadfc3e4891e ...
+23:42:47 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.spatial.home_zones ...
+23:42:47 │ INFO    │ synpp            │ Loading cache for braunschweig.gravity.model__8aff18e375e54e1afb7f20336ac60d5f ...
+23:42:47 │ INFO    │ synpp            │ Loading cache for braunschweig.locations.work__a1ae65924aa85e0c9752f5d2e089c69e ...
+WARNING! osmconvert of at least version 0.8.x is recommended!
+23:43:07 │ INFO    │ synpp            │ Sampling work municipalities 1/118 (0.85%) [19.75s/it] RT 19s ETA 38:31
+23:43:07 │ INFO    │ synpp            │ Sampling work municipalities 118/118 (100.00%) [5.95it/s] RT 19s ETA 0s
+23:43:54 │ INFO    │ synpp            │ Loading cache for eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f ...
+23:44:13 │ INFO    │ synpp            │ Sampling education municipalities 1/117 (0.85%) [19.25s/it] RT 19s ETA 37:13
+23:44:13 │ INFO    │ synpp            │ Sampling education municipalities 117/117 (100.00%) [6.06it/s] RT 19s ETA 0s
+23:44:35 │ INFO    │ synpp            │ Writing cache for synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad
+23:44:35 │ INFO    │ synpp            │ Finished running synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad.
+23:44:35 │ INFO    │ synpp            │ Pipeline progress: 1/4 (25.00%)
+23:44:35 │ INFO    │ synpp            │ Executing stage braunschweig.synthesis.locations.education_gravity__555d20db64452c978f514f6a02a4cdd5 ...
+23:44:36 │ INFO    │ synpp            │ Loading cache for synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad ...
+23:44:36 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.enriched_adapter ...
+23:44:37 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.home_cell__d31209a48b4829793a4f7dcb2b0e77ea ...
+23:44:38 │ INFO    │ synpp            │ Loading cache for braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea ...
+23:44:38 │ INFO    │ synpp            │ Loading cache for braunschweig.data.schools.university_facilities__9db726bdca9f891adfa4ec592ecd17cd ...
+23:44:38 │ INFO    │ synpp            │ Loading cache for braunschweig.data.schools.kita_facilities__1bf2d5d4246d8289731f244165199389 ...
+23:44:38 │ INFO    │ synpp            │ Loading cache for data.spatial.municipalities ...
+23:44:38 │ INFO    │ synpp            │ Loading cache for braunschweig.data.bbsr.regiostar__b53dadbacbf2f5c7d78fc063265e835d ...
+23:44:44 │ INFO    │ synpp            │ Writing cache for braunschweig.synthesis.locations.education_gravity__555d20db64452c978f514f6a02a4cdd5
+23:44:44 │ INFO    │ synpp            │ Finished running braunschweig.synthesis.locations.education_gravity__555d20db64452c978f514f6a02a4cdd5.
+23:44:44 │ INFO    │ synpp            │ Pipeline progress: 2/4 (50.00%)
+23:44:44 │ INFO    │ synpp            │ Executing stage braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805 ...
+23:44:44 │ INFO    │ synpp            │ Loading cache for synthesis.population.spatial.primary.candidates__63fbca2bea34d9ebcbf56afafe49bdad ...
+23:44:44 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.home_cell__d31209a48b4829793a4f7dcb2b0e77ea ...
+23:44:45 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.commute_distance__8996dfe7cfba148f9a0ae435a70cf94c ...
+23:44:45 │ INFO    │ synpp            │ Loading cache for braunschweig.locations.work__a1ae65924aa85e0c9752f5d2e089c69e ...
+23:44:46 │ INFO    │ synpp            │ Loading cache for eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f ...
+[schools.bbs_share] loaded age-resolved BBS shares from eqasim-data/data/braunschweig/schools/nds_bbs_share_by_age.csv: 16: 0.121, 17: 0.282, 18: 0.418, 19: 0.719
+[education:grundschule] slope: primary 39569/39569 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:grundschule] 39569 pupils, 221 schools: Furness residual row=0.0922 col=3.98e-12
+[education:grundschule] primary 39569/39569 (100.0%), nearest-school fallback 0 (0.0%)
+[education:sekundar_1] slope: primary 45664/45664 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:sekundar_1] 45664 pupils, 162 schools: Furness residual row=0.00845 col=1.76e-11
+[education:sekundar_1] primary 45664/45664 (100.0%), nearest-school fallback 0 (0.0%)
+[education:oberstufe] slope: primary 12694/12694 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:oberstufe] 12694 pupils, 60 schools: Furness residual row=0.144 col=3.18e-12
+[education:oberstufe] primary 12694/12694 (100.0%), nearest-school fallback 0 (0.0%)
+[education:bbs] slope: primary 5427/5427 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:bbs] 5427 pupils, 34 schools: Furness residual row=0.000811 col=4.77e-12
+[education:bbs] primary 5427/5427 (100.0%), nearest-school fallback 0 (0.0%)
+[education:kindergarten] slope: primary 37997/37997 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:kindergarten] 37997 pupils, 741 schools: Furness residual row=1.34 col=7.16e-12
+[education:kindergarten] primary 37915/37997 (99.8%), nearest-school fallback 82 (0.2%)
+[education:university] primary 37412/37412 (100.0%), nearest-campus fallback 0 (0.0%)
+23:45:49 │ INFO    │ synpp            │ Distributing work destinations 1/304900 (0.00%) [63.44s/it] RT 01:03 ETA 5372:45:49
+23:45:50 │ INFO    │ synpp            │ Distributing work destinations 73345/304900 (24.06%) [1138.24it/s] RT 01:04 ETA 03:23
+23:45:51 │ INFO    │ synpp            │ Distributing work destinations 126657/304900 (41.54%) [1935.55it/s] RT 01:05 ETA 01:32
+23:45:52 │ INFO    │ synpp            │ Distributing work destinations 139129/304900 (45.63%) [2094.12it/s] RT 01:06 ETA 01:19
+23:45:53 │ INFO    │ synpp            │ Distributing work destinations 148507/304900 (48.71%) [2202.12it/s] RT 01:07 ETA 01:11
+23:45:54 │ INFO    │ synpp            │ Distributing work destinations 159813/304900 (52.41%) [2335.11it/s] RT 01:08 ETA 01:02
+23:45:55 │ INFO    │ synpp            │ Distributing work destinations 169385/304900 (55.55%) [2439.32it/s] RT 01:09 ETA 55s
+23:45:56 │ INFO    │ synpp            │ Distributing work destinations 177204/304900 (58.12%) [2515.66it/s] RT 01:10 ETA 50s
+23:45:57 │ INFO    │ synpp            │ Distributing work destinations 181556/304900 (59.55%) [2541.32it/s] RT 01:11 ETA 48s
+23:45:58 │ INFO    │ synpp            │ Distributing work destinations 186909/304900 (61.30%) [2580.12it/s] RT 01:12 ETA 45s
+23:45:59 │ INFO    │ synpp            │ Distributing work destinations 188900/304900 (61.95%) [2572.06it/s] RT 01:13 ETA 45s
+23:46:00 │ INFO    │ synpp            │ Distributing work destinations 190937/304900 (62.62%) [2564.84it/s] RT 01:14 ETA 44s
+23:46:01 │ INFO    │ synpp            │ Distributing work destinations 192998/304900 (63.30%) [2558.12it/s] RT 01:15 ETA 43s
+23:46:02 │ INFO    │ synpp            │ Distributing work destinations 195104/304900 (63.99%) [2552.18it/s] RT 01:16 ETA 43s
+23:46:03 │ INFO    │ synpp            │ Distributing work destinations 197260/304900 (64.70%) [2547.04it/s] RT 01:17 ETA 42s
+23:46:04 │ INFO    │ synpp            │ Distributing work destinations 199457/304900 (65.42%) [2542.57it/s] RT 01:18 ETA 41s
+23:46:05 │ INFO    │ synpp            │ Distributing work destinations 201741/304900 (66.17%) [2539.28it/s] RT 01:19 ETA 40s
+23:46:06 │ INFO    │ synpp            │ Distributing work destinations 204115/304900 (66.94%) [2537.19it/s] RT 01:20 ETA 39s
+23:46:07 │ INFO    │ synpp            │ Distributing work destinations 206600/304900 (67.76%) [2536.52it/s] RT 01:21 ETA 38s
+23:46:08 │ INFO    │ synpp            │ Distributing work destinations 209225/304900 (68.62%) [2537.59it/s] RT 01:22 ETA 37s
+23:46:09 │ INFO    │ synpp            │ Distributing work destinations 212050/304900 (69.55%) [2541.03it/s] RT 01:23 ETA 36s
+23:46:10 │ INFO    │ synpp            │ Distributing work destinations 215194/304900 (70.58%) [2548.16it/s] RT 01:24 ETA 35s
+23:46:11 │ INFO    │ synpp            │ Distributing work destinations 219089/304900 (71.86%) [2563.91it/s] RT 01:25 ETA 33s
+23:46:12 │ INFO    │ synpp            │ Distributing work destinations 222456/304900 (72.96%) [2573.20it/s] RT 01:26 ETA 32s
+23:46:13 │ INFO    │ synpp            │ Distributing work destinations 223743/304900 (73.38%) [2558.48it/s] RT 01:27 ETA 31s
+23:46:14 │ INFO    │ synpp            │ Distributing work destinations 225071/304900 (73.82%) [2544.55it/s] RT 01:28 ETA 31s
+23:46:15 │ INFO    │ synpp            │ Distributing work destinations 226431/304900 (74.26%) [2531.27it/s] RT 01:29 ETA 30s
+23:46:16 │ INFO    │ synpp            │ Distributing work destinations 227827/304900 (74.72%) [2518.70it/s] RT 01:30 ETA 30s
+23:46:17 │ INFO    │ synpp            │ Distributing work destinations 229281/304900 (75.20%) [2507.02it/s] RT 01:31 ETA 30s
+23:46:18 │ INFO    │ synpp            │ Distributing work destinations 230801/304900 (75.70%) [2496.33it/s] RT 01:32 ETA 29s
+23:46:19 │ INFO    │ synpp            │ Distributing work destinations 232416/304900 (76.23%) [2486.88it/s] RT 01:33 ETA 29s
+23:46:20 │ INFO    │ synpp            │ Distributing work destinations 234161/304900 (76.80%) [2478.99it/s] RT 01:34 ETA 28s
+23:46:21 │ INFO    │ synpp            │ Distributing work destinations 236100/304900 (77.44%) [2473.31it/s] RT 01:35 ETA 27s
+23:46:22 │ INFO    │ synpp            │ Distributing work destinations 238349/304900 (78.17%) [2470.97it/s] RT 01:36 ETA 26s
+23:46:23 │ INFO    │ synpp            │ Distributing work destinations 241232/304900 (79.12%) [2475.19it/s] RT 01:37 ETA 25s
+23:46:24 │ INFO    │ synpp            │ Distributing work destinations 243935/304900 (80.00%) [2477.50it/s] RT 01:38 ETA 24s
+23:46:25 │ INFO    │ synpp            │ Distributing work destinations 244312/304900 (80.13%) [2456.37it/s] RT 01:39 ETA 24s
+23:46:26 │ INFO    │ synpp            │ Distributing work destinations 244690/304900 (80.25%) [2435.66it/s] RT 01:40 ETA 24s
+23:46:27 │ INFO    │ synpp            │ Distributing work destinations 245068/304900 (80.38%) [2415.38it/s] RT 01:41 ETA 24s
+23:46:28 │ INFO    │ synpp            │ Distributing work destinations 245448/304900 (80.50%) [2395.51it/s] RT 01:42 ETA 24s
+23:46:29 │ INFO    │ synpp            │ Distributing work destinations 245830/304900 (80.63%) [2376.01it/s] RT 01:43 ETA 24s
+23:46:30 │ INFO    │ synpp            │ Distributing work destinations 246213/304900 (80.75%) [2356.88it/s] RT 01:44 ETA 24s
+23:46:31 │ INFO    │ synpp            │ Distributing work destinations 246593/304900 (80.88%) [2338.12it/s] RT 01:45 ETA 24s
+23:46:32 │ INFO    │ synpp            │ Distributing work destinations 246978/304900 (81.00%) [2319.77it/s] RT 01:46 ETA 24s
+23:46:33 │ INFO    │ synpp            │ Distributing work destinations 247363/304900 (81.13%) [2301.73it/s] RT 01:47 ETA 24s
+23:46:34 │ INFO    │ synpp            │ Distributing work destinations 247747/304900 (81.26%) [2284.03it/s] RT 01:48 ETA 25s
+23:46:35 │ INFO    │ synpp            │ Distributing work destinations 248126/304900 (81.38%) [2266.60it/s] RT 01:49 ETA 25s
+23:46:36 │ INFO    │ synpp            │ Distributing work destinations 248514/304900 (81.51%) [2249.56it/s] RT 01:50 ETA 25s
+23:46:37 │ INFO    │ synpp            │ Distributing work destinations 248903/304900 (81.63%) [2232.83it/s] RT 01:51 ETA 25s
+23:46:38 │ INFO    │ synpp            │ Distributing work destinations 249293/304900 (81.76%) [2216.41it/s] RT 01:52 ETA 25s
+23:46:39 │ INFO    │ synpp            │ Distributing work destinations 249684/304900 (81.89%) [2200.28it/s] RT 01:53 ETA 25s
+23:46:40 │ INFO    │ synpp            │ Distributing work destinations 250076/304900 (82.02%) [2184.46it/s] RT 01:54 ETA 25s
+23:46:41 │ INFO    │ synpp            │ Distributing work destinations 250470/304900 (82.15%) [2168.95it/s] RT 01:55 ETA 25s
+23:46:42 │ INFO    │ synpp            │ Distributing work destinations 250863/304900 (82.28%) [2153.67it/s] RT 01:56 ETA 25s
+23:46:43 │ INFO    │ synpp            │ Distributing work destinations 251248/304900 (82.40%) [2138.57it/s] RT 01:57 ETA 25s
+23:46:44 │ INFO    │ synpp            │ Distributing work destinations 251635/304900 (82.53%) [2123.75it/s] RT 01:58 ETA 25s
+23:46:45 │ INFO    │ synpp            │ Distributing work destinations 252023/304900 (82.66%) [2109.20it/s] RT 01:59 ETA 25s
+23:46:46 │ INFO    │ synpp            │ Distributing work destinations 252413/304900 (82.79%) [2094.88it/s] RT 02:00 ETA 25s
+23:46:47 │ INFO    │ synpp            │ Distributing work destinations 252805/304900 (82.91%) [2080.86it/s] RT 02:01 ETA 25s
+23:46:48 │ INFO    │ synpp            │ Distributing work destinations 253198/304900 (83.04%) [2067.05it/s] RT 02:02 ETA 25s
+23:46:49 │ INFO    │ synpp            │ Distributing work destinations 253593/304900 (83.17%) [2053.50it/s] RT 02:03 ETA 24s
+23:46:50 │ INFO    │ synpp            │ Distributing work destinations 253989/304900 (83.30%) [2040.15it/s] RT 02:04 ETA 24s
+23:46:51 │ INFO    │ synpp            │ Distributing work destinations 254387/304900 (83.43%) [2027.04it/s] RT 02:05 ETA 24s
+23:46:52 │ INFO    │ synpp            │ Distributing work destinations 254785/304900 (83.56%) [2014.16it/s] RT 02:06 ETA 24s
+23:46:53 │ INFO    │ synpp            │ Distributing work destinations 255186/304900 (83.69%) [2001.49it/s] RT 02:07 ETA 24s
+23:46:54 │ INFO    │ synpp            │ Distributing work destinations 255589/304900 (83.83%) [1989.01it/s] RT 02:08 ETA 24s
+23:46:55 │ INFO    │ synpp            │ Distributing work destinations 255993/304900 (83.96%) [1976.76it/s] RT 02:09 ETA 24s
+23:46:56 │ INFO    │ synpp            │ Distributing work destinations 256400/304900 (84.09%) [1964.71it/s] RT 02:10 ETA 24s
+23:46:57 │ INFO    │ synpp            │ Distributing work destinations 256810/304900 (84.23%) [1952.85it/s] RT 02:11 ETA 24s
+23:46:58 │ INFO    │ synpp            │ Distributing work destinations 257221/304900 (84.36%) [1941.20it/s] RT 02:12 ETA 24s
+23:46:59 │ INFO    │ synpp            │ Distributing work destinations 257633/304900 (84.50%) [1929.74it/s] RT 02:13 ETA 24s
+23:47:00 │ INFO    │ synpp            │ Distributing work destinations 258057/304900 (84.64%) [1918.53it/s] RT 02:14 ETA 24s
+23:47:01 │ INFO    │ synpp            │ Distributing work destinations 258482/304900 (84.78%) [1907.50it/s] RT 02:15 ETA 24s
+23:47:02 │ INFO    │ synpp            │ Distributing work destinations 258913/304900 (84.92%) [1896.66it/s] RT 02:16 ETA 24s
+23:47:03 │ INFO    │ synpp            │ Distributing work destinations 259345/304900 (85.06%) [1885.99it/s] RT 02:17 ETA 24s
+23:47:04 │ INFO    │ synpp            │ Distributing work destinations 259781/304900 (85.20%) [1875.50it/s] RT 02:18 ETA 24s
+23:47:05 │ INFO    │ synpp            │ Distributing work destinations 260218/304900 (85.35%) [1865.18it/s] RT 02:19 ETA 23s
+23:47:06 │ INFO    │ synpp            │ Distributing work destinations 260659/304900 (85.49%) [1855.03it/s] RT 02:20 ETA 23s
+23:47:07 │ INFO    │ synpp            │ Distributing work destinations 261104/304900 (85.64%) [1845.04it/s] RT 02:21 ETA 23s
+23:47:08 │ INFO    │ synpp            │ Distributing work destinations 261552/304900 (85.78%) [1835.21it/s] RT 02:22 ETA 23s
+23:47:09 │ INFO    │ synpp            │ Distributing work destinations 262002/304900 (85.93%) [1825.55it/s] RT 02:23 ETA 23s
+23:47:10 │ INFO    │ synpp            │ Distributing work destinations 262453/304900 (86.08%) [1816.01it/s] RT 02:24 ETA 23s
+23:47:11 │ INFO    │ synpp            │ Distributing work destinations 262908/304900 (86.23%) [1806.65it/s] RT 02:25 ETA 23s
+23:47:12 │ INFO    │ synpp            │ Distributing work destinations 263366/304900 (86.38%) [1797.42it/s] RT 02:26 ETA 23s
+23:47:13 │ INFO    │ synpp            │ Distributing work destinations 263828/304900 (86.53%) [1788.35it/s] RT 02:27 ETA 22s
+23:47:14 │ INFO    │ synpp            │ Distributing work destinations 264296/304900 (86.68%) [1779.43it/s] RT 02:28 ETA 22s
+23:47:15 │ INFO    │ synpp            │ Distributing work destinations 264768/304900 (86.84%) [1770.66it/s] RT 02:29 ETA 22s
+23:47:16 │ INFO    │ synpp            │ Distributing work destinations 265243/304900 (86.99%) [1762.04it/s] RT 02:30 ETA 22s
+23:47:17 │ INFO    │ synpp            │ Distributing work destinations 265722/304900 (87.15%) [1753.57it/s] RT 02:31 ETA 22s
+23:47:18 │ INFO    │ synpp            │ Distributing work destinations 266204/304900 (87.31%) [1745.23it/s] RT 02:32 ETA 22s
+23:47:19 │ INFO    │ synpp            │ Distributing work destinations 266690/304900 (87.47%) [1737.01it/s] RT 02:33 ETA 21s
+23:47:20 │ INFO    │ synpp            │ Distributing work destinations 267180/304900 (87.63%) [1728.92it/s] RT 02:34 ETA 21s
+23:47:21 │ INFO    │ synpp            │ Distributing work destinations 267674/304900 (87.79%) [1720.96it/s] RT 02:35 ETA 21s
+23:47:22 │ INFO    │ synpp            │ Distributing work destinations 268172/304900 (87.95%) [1713.12it/s] RT 02:36 ETA 21s
+23:47:23 │ INFO    │ synpp            │ Distributing work destinations 268674/304900 (88.12%) [1705.42it/s] RT 02:37 ETA 21s
+23:47:24 │ INFO    │ synpp            │ Distributing work destinations 269180/304900 (88.28%) [1697.84it/s] RT 02:38 ETA 21s
+23:47:25 │ INFO    │ synpp            │ Distributing work destinations 269690/304900 (88.45%) [1690.39it/s] RT 02:39 ETA 20s
+23:47:26 │ INFO    │ synpp            │ Distributing work destinations 270204/304900 (88.62%) [1683.05it/s] RT 02:40 ETA 20s
+23:47:27 │ INFO    │ synpp            │ Distributing work destinations 270724/304900 (88.79%) [1675.84it/s] RT 02:41 ETA 20s
+23:47:28 │ INFO    │ synpp            │ Distributing work destinations 271247/304900 (88.96%) [1668.74it/s] RT 02:42 ETA 20s
+23:47:29 │ INFO    │ synpp            │ Distributing work destinations 271775/304900 (89.14%) [1661.76it/s] RT 02:43 ETA 19s
+23:47:30 │ INFO    │ synpp            │ Distributing work destinations 272308/304900 (89.31%) [1654.89it/s] RT 02:44 ETA 19s
+23:47:31 │ INFO    │ synpp            │ Distributing work destinations 272847/304900 (89.49%) [1648.13it/s] RT 02:45 ETA 19s
+23:47:32 │ INFO    │ synpp            │ Distributing work destinations 273391/304900 (89.67%) [1641.48it/s] RT 02:46 ETA 19s
+23:47:33 │ INFO    │ synpp            │ Distributing work destinations 273936/304900 (89.84%) [1634.92it/s] RT 02:47 ETA 18s
+23:47:34 │ INFO    │ synpp            │ Distributing work destinations 274490/304900 (90.03%) [1628.49it/s] RT 02:48 ETA 18s
+23:47:35 │ INFO    │ synpp            │ Distributing work destinations 275050/304900 (90.21%) [1622.18it/s] RT 02:49 ETA 18s
+23:47:36 │ INFO    │ synpp            │ Distributing work destinations 275614/304900 (90.39%) [1615.97it/s] RT 02:50 ETA 18s
+23:47:37 │ INFO    │ synpp            │ Distributing work destinations 276187/304900 (90.58%) [1609.88it/s] RT 02:51 ETA 17s
+23:47:38 │ INFO    │ synpp            │ Distributing work destinations 276768/304900 (90.77%) [1603.89it/s] RT 02:52 ETA 17s
+23:47:39 │ INFO    │ synpp            │ Distributing work destinations 277354/304900 (90.97%) [1598.03it/s] RT 02:53 ETA 17s
+23:47:40 │ INFO    │ synpp            │ Distributing work destinations 277947/304900 (91.16%) [1592.27it/s] RT 02:54 ETA 16s
+23:47:41 │ INFO    │ synpp            │ Distributing work destinations 278545/304900 (91.36%) [1586.60it/s] RT 02:55 ETA 16s
+23:47:42 │ INFO    │ synpp            │ Distributing work destinations 279150/304900 (91.55%) [1581.03it/s] RT 02:56 ETA 16s
+23:47:43 │ INFO    │ synpp            │ Distributing work destinations 279763/304900 (91.76%) [1575.56it/s] RT 02:57 ETA 15s
+23:47:44 │ INFO    │ synpp            │ Distributing work destinations 280395/304900 (91.96%) [1570.28it/s] RT 02:58 ETA 15s
+23:47:45 │ INFO    │ synpp            │ Distributing work destinations 281041/304900 (92.17%) [1565.13it/s] RT 02:59 ETA 15s
+23:47:46 │ INFO    │ synpp            │ Distributing work destinations 281699/304900 (92.39%) [1560.10it/s] RT 03:00 ETA 14s
+23:47:47 │ INFO    │ synpp            │ Distributing work destinations 282370/304900 (92.61%) [1555.20it/s] RT 03:01 ETA 14s
+23:47:48 │ INFO    │ synpp            │ Distributing work destinations 283055/304900 (92.84%) [1550.42it/s] RT 03:02 ETA 14s
+23:47:49 │ INFO    │ synpp            │ Distributing work destinations 283757/304900 (93.07%) [1545.80it/s] RT 03:03 ETA 13s
+23:47:50 │ INFO    │ synpp            │ Distributing work destinations 284476/304900 (93.30%) [1541.31it/s] RT 03:04 ETA 13s
+23:47:51 │ INFO    │ synpp            │ Distributing work destinations 285217/304900 (93.54%) [1537.00it/s] RT 03:05 ETA 12s
+23:47:52 │ INFO    │ synpp            │ Distributing work destinations 285966/304900 (93.79%) [1532.77it/s] RT 03:06 ETA 12s
+23:47:53 │ INFO    │ synpp            │ Distributing work destinations 286749/304900 (94.05%) [1528.78it/s] RT 03:07 ETA 11s
+23:47:54 │ INFO    │ synpp            │ Distributing work destinations 287560/304900 (94.31%) [1524.96it/s] RT 03:08 ETA 11s
+23:47:55 │ INFO    │ synpp            │ Distributing work destinations 288404/304900 (94.59%) [1521.36it/s] RT 03:09 ETA 10s
+23:47:56 │ INFO    │ synpp            │ Distributing work destinations 289290/304900 (94.88%) [1518.02it/s] RT 03:10 ETA 10s
+23:47:57 │ INFO    │ synpp            │ Distributing work destinations 290216/304900 (95.18%) [1514.92it/s] RT 03:11 ETA 9s
+23:47:58 │ INFO    │ synpp            │ Distributing work destinations 291186/304900 (95.50%) [1512.09it/s] RT 03:12 ETA 9s
+23:47:59 │ INFO    │ synpp            │ Distributing work destinations 292204/304900 (95.84%) [1509.53it/s] RT 03:13 ETA 8s
+23:48:00 │ INFO    │ synpp            │ Distributing work destinations 293285/304900 (96.19%) [1507.33it/s] RT 03:14 ETA 7s
+23:48:01 │ INFO    │ synpp            │ Distributing work destinations 294444/304900 (96.57%) [1505.54it/s] RT 03:15 ETA 6s
+23:48:02 │ INFO    │ synpp            │ Distributing work destinations 295709/304900 (96.99%) [1504.31it/s] RT 03:16 ETA 6s
+23:48:03 │ INFO    │ synpp            │ Distributing work destinations 297105/304900 (97.44%) [1503.76it/s] RT 03:17 ETA 5s
+23:48:04 │ INFO    │ synpp            │ Distributing work destinations 298699/304900 (97.97%) [1504.21it/s] RT 03:18 ETA 4s
+23:48:05 │ INFO    │ synpp            │ Distributing work destinations 300644/304900 (98.60%) [1506.41it/s] RT 03:19 ETA 2s
+23:48:06 │ INFO    │ synpp            │ Distributing work destinations 303244/304900 (99.46%) [1511.86it/s] RT 03:20 ETA 1s
+23:48:07 │ INFO    │ synpp            │ Distributing work destinations 304900/304900 (100.00%) [1516.26it/s] RT 03:21 ETA 0s
+23:48:53 │ INFO    │ synpp            │ Distributing education destinations 1/178763 (0.00%) [43.59s/it] RT 43s ETA 2164:23:41
+23:48:54 │ INFO    │ synpp            │ Distributing education destinations 76431/178763 (42.76%) [1714.17it/s] RT 44s ETA 59s
+23:48:55 │ INFO    │ synpp            │ Distributing education destinations 94411/178763 (52.81%) [2070.96it/s] RT 45s ETA 40s
+23:48:56 │ INFO    │ synpp            │ Distributing education destinations 105027/178763 (58.75%) [2254.38it/s] RT 46s ETA 32s
+23:48:57 │ INFO    │ synpp            │ Distributing education destinations 111596/178763 (62.43%) [2345.01it/s] RT 47s ETA 28s
+23:48:58 │ INFO    │ synpp            │ Distributing education destinations 114716/178763 (64.17%) [2360.95it/s] RT 48s ETA 27s
+23:48:59 │ INFO    │ synpp            │ Distributing education destinations 117949/178763 (65.98%) [2378.48it/s] RT 49s ETA 25s
+23:49:00 │ INFO    │ synpp            │ Distributing education destinations 121354/178763 (67.89%) [2398.75it/s] RT 50s ETA 23s
+23:49:01 │ INFO    │ synpp            │ Distributing education destinations 125039/178763 (69.95%) [2423.66it/s] RT 51s ETA 22s
+23:49:02 │ INFO    │ synpp            │ Distributing education destinations 129100/178763 (72.22%) [2454.79it/s] RT 52s ETA 20s
+23:49:03 │ INFO    │ synpp            │ Distributing education destinations 134679/178763 (75.34%) [2513.05it/s] RT 53s ETA 17s
+23:49:04 │ INFO    │ synpp            │ Distributing education destinations 137995/178763 (77.19%) [2527.72it/s] RT 54s ETA 16s
+23:49:05 │ INFO    │ synpp            │ Distributing education destinations 140458/178763 (78.57%) [2526.53it/s] RT 55s ETA 15s
+23:49:06 │ INFO    │ synpp            │ Distributing education destinations 143463/178763 (80.25%) [2534.96it/s] RT 56s ETA 13s
+23:49:07 │ INFO    │ synpp            │ Distributing education destinations 146972/178763 (82.22%) [2551.79it/s] RT 57s ETA 12s
+23:49:08 │ INFO    │ synpp            │ Distributing education destinations 147637/178763 (82.59%) [2519.55it/s] RT 58s ETA 12s
+23:49:09 │ INFO    │ synpp            │ Distributing education destinations 148307/178763 (82.96%) [2488.52it/s] RT 59s ETA 12s
+23:49:10 │ INFO    │ synpp            │ Distributing education destinations 148982/178763 (83.34%) [2458.57it/s] RT 01:00 ETA 12s
+23:49:11 │ INFO    │ synpp            │ Distributing education destinations 149658/178763 (83.72%) [2429.62it/s] RT 01:01 ETA 11s
+23:49:12 │ INFO    │ synpp            │ Distributing education destinations 150346/178763 (84.10%) [2401.80it/s] RT 01:02 ETA 11s
+23:49:13 │ INFO    │ synpp            │ Distributing education destinations 151038/178763 (84.49%) [2374.87it/s] RT 01:03 ETA 11s
+23:49:14 │ INFO    │ synpp            │ Distributing education destinations 151723/178763 (84.87%) [2348.71it/s] RT 01:04 ETA 11s
+23:49:15 │ INFO    │ synpp            │ Distributing education destinations 152429/178763 (85.27%) [2323.64it/s] RT 01:05 ETA 11s
+23:49:16 │ INFO    │ synpp            │ Distributing education destinations 153144/178763 (85.67%) [2299.44it/s] RT 01:06 ETA 11s
+23:49:17 │ INFO    │ synpp            │ Distributing education destinations 153870/178763 (86.07%) [2276.16it/s] RT 01:07 ETA 10s
+23:49:18 │ INFO    │ synpp            │ Distributing education destinations 154603/178763 (86.48%) [2253.67it/s] RT 01:08 ETA 10s
+23:49:19 │ INFO    │ synpp            │ Distributing education destinations 155343/178763 (86.90%) [2231.91it/s] RT 01:09 ETA 10s
+23:49:20 │ INFO    │ synpp            │ Distributing education destinations 156094/178763 (87.32%) [2210.93it/s] RT 01:10 ETA 10s
+23:49:21 │ INFO    │ synpp            │ Distributing education destinations 156855/178763 (87.74%) [2190.65it/s] RT 01:11 ETA 10s
+23:49:22 │ INFO    │ synpp            │ Distributing education destinations 157631/178763 (88.18%) [2171.14it/s] RT 01:12 ETA 9s
+23:49:23 │ INFO    │ synpp            │ Distributing education destinations 158416/178763 (88.62%) [2152.30it/s] RT 01:13 ETA 9s
+23:49:24 │ INFO    │ synpp            │ Distributing education destinations 159211/178763 (89.06%) [2134.10it/s] RT 01:14 ETA 9s
+23:49:25 │ INFO    │ synpp            │ Distributing education destinations 160044/178763 (89.53%) [2116.87it/s] RT 01:15 ETA 8s
+23:49:26 │ INFO    │ synpp            │ Distributing education destinations 160895/178763 (90.00%) [2100.33it/s] RT 01:16 ETA 8s
+23:49:27 │ INFO    │ synpp            │ Distributing education destinations 161773/178763 (90.50%) [2084.57it/s] RT 01:17 ETA 8s
+23:49:28 │ INFO    │ synpp            │ Distributing education destinations 162684/178763 (91.01%) [2069.61it/s] RT 01:18 ETA 7s
+23:49:29 │ INFO    │ synpp            │ Distributing education destinations 163635/178763 (91.54%) [2055.55it/s] RT 01:19 ETA 7s
+23:49:30 │ INFO    │ synpp            │ Distributing education destinations 164624/178763 (92.09%) [2042.29it/s] RT 01:20 ETA 6s
+23:49:31 │ INFO    │ synpp            │ Distributing education destinations 165665/178763 (92.67%) [2030.00it/s] RT 01:21 ETA 6s
+23:49:32 │ INFO    │ synpp            │ Distributing education destinations 166764/178763 (93.29%) [2018.71it/s] RT 01:22 ETA 5s
+23:49:33 │ INFO    │ synpp            │ Distributing education destinations 167944/178763 (93.95%) [2008.68it/s] RT 01:23 ETA 5s
+23:49:34 │ INFO    │ synpp            │ Distributing education destinations 169189/178763 (94.64%) [1999.64it/s] RT 01:24 ETA 4s
+23:49:35 │ INFO    │ synpp            │ Distributing education destinations 170582/178763 (95.42%) [1992.53it/s] RT 01:25 ETA 4s
+23:49:36 │ INFO    │ synpp            │ Distributing education destinations 172155/178763 (96.30%) [1987.67it/s] RT 01:26 ETA 3s
+23:49:37 │ INFO    │ synpp            │ Distributing education destinations 174004/178763 (97.34%) [1986.09it/s] RT 01:27 ETA 2s
+23:49:38 │ INFO    │ synpp            │ Distributing education destinations 176394/178763 (98.67%) [1990.64it/s] RT 01:28 ETA 1s
+23:49:39 │ INFO    │ synpp            │ Distributing education destinations 178763/178763 (100.00%) [2003.90it/s] RT 01:29 ETA 0s
+23:49:39 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.education_gravity__555d20db64452c978f514f6a02a4cdd5 ...
+23:49:39 │ INFO    │ synpp            │ Writing cache for braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805
+23:49:40 │ INFO    │ synpp            │ Finished running braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805.
+23:49:40 │ INFO    │ synpp            │ Pipeline progress: 3/4 (75.00%)
+23:49:40 │ INFO    │ synpp            │ Executing stage braunschweig.analysis.synthesis.commute_distance_by_kreis__5080c9801643b32921ff76972ab5d648 ...
+23:49:40 │ INFO    │ synpp            │ Loading cache for braunschweig.synthesis.locations.home_cell__d31209a48b4829793a4f7dcb2b0e77ea ...
+23:49:41 │ INFO    │ synpp            │ Loading cache for braunschweig.locations.synthesis.replacement_education_gravity__a3a9fe3fbaff20fc12dde28845494805 ...
+23:49:41 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.enriched_adapter ...
+23:49:43 │ INFO    │ synpp            │ Loading cache for braunschweig.analysis.reference.srv.commute_distance__dbe8ad3b1a93732a85d97be8a80264f7 ...
+23:49:44 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] parameters: detour_factor=1.300, emd_threshold=0.080, min_persons=200, max_unmatched_home_share=0.050, warn_unmatched_destination_share=0.300, sampling_rate=1.0000; writing to eqasim-data/output_bs_100pct_i329/analysis/srv_distance_validation
+23:49:48 │ INFO    │ analysis.spatial │ assign_geographies: 558286 homes; Kreis matched 558284 (100.00%), unmatched 2; Gemeinde unmatched 2
+23:49:49 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] workers: 1/304900 (0.00%) with no home Kreis/Gemeinde match (1 with a missing home Gemeinde specifically)
+23:49:50 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work: 304900 persons input; 0 without home geometry dropped; 39150 destinations outside every Gemeinde polygon (12.8% of input, counted inter-Gemeinde); 0 with a NaN distance (0.0% of input) dropped; 1 with a missing home Gemeinde
+23:49:51 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] pupils/students: 0/178763 (0.00%) with no home Kreis/Gemeinde match (0 with a missing home Gemeinde specifically)
+23:49:51 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education: 178763 persons input; 0 without home geometry dropped; 0 with an age outside every level (0.0% of input) excluded; 0 with a NaN distance (0.0% of input) dropped; 0 with a missing home Gemeinde
+23:49:51 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=6, gap=3, within_noise=0, no_reference=0; build=True
+23:49:51 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=3, gap=6, within_noise=0, no_reference=0; build=True
+23:49:51 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=9, gap=0, within_noise=0, no_reference=0; build=False
+23:49:52 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=5, gap=4, within_noise=0, no_reference=0; build=False
+23:49:52 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=2, gap=7, within_noise=0, no_reference=0; build=True
+23:49:52 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=7, gap=2, within_noise=0, no_reference=0; build=False
+23:49:52 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=4, gap=5, within_noise=0, no_reference=0; build=False
+23:49:52 │ INFO    │ calibration.decision │ decide_layer: 9 cells, labels: ok=0, gap=7, within_noise=2, no_reference=0; build=True
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/all: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03153', '03157', '03158'] (Kreis with >= 200 reference persons, or the aggregate)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/inter: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['03101', '03103', '03153', '03157', '03158', 'zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] work/intra: do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/kindergarten: do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/grundschule: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/sekundar_1: do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/upper_secondary: do not build: no gap in any Kreis with >= 200 reference persons nor in the aggregate (EMD threshold 0.08, noise floor respected)
+23:49:52 │ INFO    │ analysis.synthesis.commute_distance_by_kreis │ [srv_distance] education/university: build: gap (EMD > 0.08 and > noise floor) in decisive cell(s) ['zgb'] (Kreis with >= 200 reference persons, or the aggregate)
+23:49:52 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.synthesis.commute_distance_by_kreis__5080c9801643b32921ff76972ab5d648
+23:49:52 │ INFO    │ synpp            │ Finished running braunschweig.analysis.synthesis.commute_distance_by_kreis__5080c9801643b32921ff76972ab5d648.
+23:49:52 │ INFO    │ synpp            │ Pipeline progress: 4/4 (100.00%)
+23:49:52 │ INFO    │ cache_share      │ [cache_share] export: 0 entr(ies) for 36 module(s) -> eqasim-data/cache_shared; already-in-store 39; skipped (no cache present) 7 ['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
+23:49:52 │ INFO    │ braunschweig     │ [cache_share] auto-export: exported 0, already-in-store 39, not-in-cache ['braunschweig.data.mid.zones', 'data.hts.entd.filtered', 'data.hts.entd.reweighted', 'data.hts.selected', 'data.spatial.departments', 'eqasim_common.gravity.distance_matrix', 'eqasim_common.spatial.codes']
