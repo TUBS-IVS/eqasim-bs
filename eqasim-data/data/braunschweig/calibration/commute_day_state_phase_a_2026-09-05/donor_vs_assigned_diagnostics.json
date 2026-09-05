@@ -68,7 +68,7 @@
   "persons_csv": "eqasim-data/output_bs_100pct_i329/braunschweig_100pct_i329_persons.csv",
   "share_assigned_gt_donor": 0.18311792715354647,
   "share_donor_distance_missing": 0.7348146933420794,
-  "source_commit": "da650dd6",
+  "source_commit": "43f74008",
   "trip_length": {
     "donor_distance_source": "first valid work-trip length (MiD2023_Wege.csv: W_ZWECK == 1, 0 < wegkm < 1000)",
     "n_assigned_class_missing": 0,

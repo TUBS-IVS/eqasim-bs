@@ -70,3 +70,7 @@ def test_committed_header_discloses_universe_and_bin_convention():
                              if line.startswith("#"))
     assert "P_STARB1 in (1, 2, 9)" in header_text
     assert "left-inclusive" in header_text.lower()
+    # Finding 2 (whole-branch review): the header must state a MEASURED bin-convention deviation,
+    # not a hand-typed "0.005" carried over from an earlier, uncommitted scan.
+    assert "bin-convention deviation" in header_text.lower()
+    assert "within 0.005" not in header_text.lower()

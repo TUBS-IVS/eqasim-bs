@@ -42,9 +42,15 @@
     only in the `all` row. Two caveats stated in the same header: classes are LEFT-INCLUSIVE
     `[a, b)` and self-reported `P_ARB_ENTF` heaps on round numbers (36.2 % of valid distances are
     multiples of 5 km; 2,159 persons report exactly 10 km, 133 exactly 100 km), so class COUNTS
-    are convention-sensitive while the weighted STATE SHARES agree within 0.005 between
-    conventions; and the **200 km top-code** (202 of the 783 persons in the thin `100_200` class)
-    means MiD cannot resolve anything beyond 200 km at all.
+    are convention-sensitive while the weighted STATE SHARES agree within **0.0237** (2.37 pp)
+    between conventions -- MEASURED on the 2026-09-05 extraction (commit `43f74008`) by
+    `commute_day_state_reference.measure_bin_convention_deviation`, which rebuilds the table a
+    second time with right-inclusive bins; the figure is recorded verbatim in the committed CSV's
+    own header. (An earlier draft of this finding asserted "within 0.005" without deriving it;
+    the corrected, measured value is roughly 4.7x larger and is what is quoted throughout this
+    record -- CLAUDE.md "No invented reference values" forbids carrying the old, unmeasured
+    figure forward once a real measurement exists.) And the **200 km top-code** (202 of the 783
+    persons in the thin `100_200` class) means MiD cannot resolve anything beyond 200 km at all.
   - **Home-office-day donor pool**
     (`eqasim-data/data/braunschweig/mid/mid2023_home_office_donor_pool.csv`): **8,026** weekday
     module donors who worked at home (`P_STARB1 == 1`, `starb2 == 1`), by distance class `lt10`
@@ -87,7 +93,13 @@
     in-module and for **0.00 %** of the 153,329 whose donor is not. With the donor's first valid
     **work-trip length** (`MiD2023_Wege.csv`, `W_ZWECK == 1`, `0 < wegkm < 1000`) the comparable
     base is **263,420** workers (**86.40 %** coverage; 41,480 = 13.60 % have no such length) and
-    `share_assigned_gt_donor` is **0.2171** (57,177 workers). Donor universe: ALL 304,900 workers
+    `share_assigned_gt_donor` is **0.2171** (57,177 workers). Finding 5 of the whole-branch review
+    (final fix wave, commit `43f74008`) corrected a latent defect in this figure: `wegkm` is a raw
+    trip length, never subject to the MiD `P_ARB_ENTF` 200 km top-code, so the top-code special
+    case must be disabled for it (`classify_commute_distance(..., topcode_km=None)`); re-measured
+    on felix with the fix applied, `donor_vs_assigned_class_trip_length.csv` is BYTE-IDENTICAL to
+    the pre-fix version -- no donor's work-trip length in this population is exactly 200.0 km, so
+    the numbers above are unchanged by the correction. Donor universe: ALL 304,900 workers
     have a donor with `arbwo == 1`, with raw `ST_WOTAG` codes 1-5 occurring and 6/7 absent
     entirely (no code-to-weekday mapping is asserted -- the repository carries no committed
     statement of that coding).
@@ -177,8 +189,9 @@
   2. **The class boundary convention is fixed as LEFT-INCLUSIVE `[a, b)`**, matching the committed
      MiD tables, with the heaping sensitivity disclosed rather than removed: under a
      right-inclusive convention `lt10` would hold 21,259 instead of 19,100 MiD persons and
-     `100_200` 650 instead of 783, while the weighted state shares move by less than 0.005. The
-     model side is fragile in the same place for a different reason: **0.4261** of workers sit
+     `100_200` 650 instead of 783, while the weighted state shares move by at most **0.0237**
+     (measured, not the earlier unmeasured "0.005" claim -- see the Measured evidence section
+     above). The model side is fragile in the same place for a different reason: **0.4261** of workers sit
      within 5 km of a class edge.
   3. **The -15.67 pp work-participation gap is a separate open question, not a target of this
      model.** It is recorded here and in the manifest as measured-and-undecomposed, linked to

@@ -21,10 +21,24 @@ repository:
     FIX ROUND 1 (same day) extended only the measurement SCRIPT and its helpers and re-ran the
     script alone, from an identically built and again removed detached worktree carrying the seven
     changed files under braunschweig/ and scripts/ at branch commit da650dd6; the committed
-    donor_vs_assigned_* files carry that commit in their headers. No pipeline stage was executed a
-    second time, and the stage outputs (work_participation_by_kreis.csv,
-    assigned_distance_classes.csv, ext_destination_distances.csv, summary.md, provenance.json) are
-    untouched from the b7563ec3 run.'
+    donor_vs_assigned_* files carried that commit in their headers.
+    FINAL FIX WAVE (2026-09-05, whole-branch review findings 2 and 5) re-ran BOTH server scripts
+    once more, script-only again, from identically built and removed detached worktrees at commit
+    43f74008: (1) scripts/extract_mid_workday_location.py now measures the left- vs
+    right-inclusive bin-convention deviation instead of quoting a hand-typed "0.005" figure (see
+    the data record docs/registry/data/mid2023_workday_location.yml and ADR-0104); the regenerated
+    mid2023_workday_location_by_commute_distance.csv and mid2023_home_office_donor_pool.csv are
+    BYTE-IDENTICAL to the c9cd2fb0-era committed versions (diff of non-comment lines empty),
+    header text only changed. (2) scripts/measure_donor_distance_mismatch.py now passes
+    topcode_km=None for the trip-length source (see validation entry 5 below); the regenerated
+    donor_vs_assigned_class.csv, donor_vs_assigned_class_trip_length.csv and
+    donor_vs_assigned_diagnostics.json are likewise byte-identical to the da650dd6-era versions
+    except for the source_commit field. The committed donor_vs_assigned_* files now carry commit
+    43f74008 in their headers/JSON; run_log.txt has both script invocations appended under
+    explicit marker lines, keeping the b7563ec3/da650dd6 invocations for the record. No pipeline
+    stage was executed a second, third or fourth time, and the stage outputs
+    (work_participation_by_kreis.csv, assigned_distance_classes.csv, ext_destination_distances.csv,
+    summary.md, provenance.json) remain untouched from the original b7563ec3 pipeline run.'
 configuration:
   base: configs/base_bs.yml
   overlays:
@@ -289,7 +303,20 @@ validation:
     length, which is exactly the state the day-state model wants to represent -- so using it as a
     commute-distance proxy is itself an assumption the later phase must justify). The 13.60%
     without a length and the 73.48% without a P_ARB_ENTF are not nested in an obvious way; no
-    combined "either source" coverage is stated here because it was not measured.'
+    combined "either source" coverage is stated here because it was not measured.
+    FINAL FIX WAVE (2026-09-05, finding 5 of the whole-branch review, commit 43f74008): wegkm is
+    a raw trip length, never subject to the MiD P_ARB_ENTF 200 km top-code, so applying that
+    special case to it (as the da650dd6 fix-round invocation did) was a latent defect --
+    classify_commute_distance now accepts topcode_km, and this script passes topcode_km=None for
+    this table. Re-run on felix (inputs unchanged: assigned_class_by_person.csv verified present
+    before running) with --source-commit 43f74008; the regenerated
+    donor_vs_assigned_class_trip_length.csv is BYTE-IDENTICAL to the da650dd6 version (diff of
+    non-comment lines empty) and donor_vs_assigned_diagnostics.json differs ONLY in the
+    source_commit field -- i.e. no donor''s work-trip length in this population is exactly
+    200.0 km, so every number stated above (57,177 / 0.2171 / 24,383 / 181,860 and the by-class
+    breakdown) is UNCHANGED by the fix. The P_ARB_ENTF-based donor_vs_assigned_class.csv (entry
+    above) is unaffected by this change (topcode_km keeps its default there) and is likewise
+    byte-identical.'
 - metric: 'the donors behind the synthetic workers: home-office-module membership, P_ARB_ENTF
     validity by module flag, and the donors reporting-day codes (fix round 1)'
   reference: none (structure of the donor pool the population inherited)
@@ -327,9 +354,10 @@ validation:
     floor -- and would have failed the measurement below it; all four came in at 100%.'
 artifacts:
 - 'felix:~/cds_phase_a_100pct.log (13 min pipeline log), felix:~/cds_phase_a_mismatch.log (first,
-  superseded script invocation) and felix:~/cds_phase_a_mismatch_2.log (the fix-round invocation
-  that produced the committed donor tables), concatenated verbatim under marker lines into the
-  committed run_log.txt (78,080 bytes)'
+  superseded script invocation), felix:~/cds_phase_a_mismatch_2.log (the da650dd6 fix-round
+  invocation) and the final fix wave''s 43f74008 invocation (superseding da650dd6, topcode_km=None
+  for the trip-length source), concatenated verbatim under marker lines into the committed
+  run_log.txt (82,886 bytes)'
 - 'felix:~/cds_phase_a_100pct.yml (server-local overlay, not committed)'
 - 'felix:~/wt-i329/eqasim-data/output_bs_100pct_i329/analysis/commute_day_state_phase_a/ (nine
   files; assigned_class_by_person.csv, 304,900 per-person rows, stays there and is NOT committed)'
