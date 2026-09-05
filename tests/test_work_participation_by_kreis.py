@@ -287,6 +287,37 @@ def test_realised_work_frame_counts_a_malformed_workplace_commune_separately():
     assert bool(out.loc[1, "destination_resolved"]) is True
 
 
+def test_destination_ars5_internal_requires_the_full_8_digit_ags():
+    """A 7-digit (one-digit-short) internal AGS must NOT yield a well-formed WRONG Kreis.
+
+    A naive ``text[:5]`` would happily return "0310" + the next digit for a 7-digit id, a
+    5-digit string that passes ``isdigit()`` but names a Kreis the id never actually carried.
+    """
+    assert S._destination_ars5("0310100", False) == ""   # 7 digits: one short of a real AGS
+    assert S._destination_ars5("031010001", False) == ""  # 9 digits: one too many
+    assert S._destination_ars5("03101000", False) == "03101"  # the real, 8-digit AGS
+
+
+def test_destination_ars5_external_requires_the_full_8_digit_ags_after_the_prefix():
+    assert S._destination_ars5("EXT0324100", True) == ""   # 7 digits after the prefix
+    assert S._destination_ars5("EXT032410011", True) == ""  # 9 digits after the prefix
+    assert S._destination_ars5("EXT03241001", True) == "03241"  # the real, 8-digit AGS
+
+
+def test_realised_work_frame_counts_a_one_digit_short_internal_commune_as_malformed():
+    """The integration path: a 7-digit internal commune_id must be COUNTED as malformed, never
+    silently resolved to a wrong Kreis."""
+    locations = _work_locations().copy()
+    locations.loc[locations["location_id"] == "work_2", "commune_id"] = "0310100"  # 7 digits
+    stats = {}
+    out = S.realised_work_frame(_home_points(), _work_points(), locations, _work_persons(),
+                                max_unresolved_destination_share=0.6,
+                                stats=stats).set_index("person_id")
+    assert stats["n_malformed_destination_commune"] == 1
+    assert out.loc[3, "destination_ars5"] == ""
+    assert bool(out.loc[3, "destination_resolved"]) is True
+
+
 def test_realised_work_frame_passes_below_the_unresolved_destination_threshold():
     stats = {}
     S.realised_work_frame(_home_points(), _work_points(), _work_locations(), _work_persons(),

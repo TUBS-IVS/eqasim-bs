@@ -152,25 +152,41 @@ def main(argv=None) -> int:
                 "[commute day state reference]", heaping["n_valid"], heaping["n_exact"],
                 100.0 * heaping["share_multiple_of_5"])
 
+    # Finding 2 (whole-branch review): the earlier "weighted state shares agree within 0.005
+    # between the two binning conventions" claim was hand-typed from an ad-hoc scan, not
+    # reproducible from any committed file. R.measure_bin_convention_deviation recomputes the
+    # workday-location table a SECOND time with right-inclusive bins on THIS extraction and
+    # returns the actually measured maximum deviation plus both conventions' class counts, so the
+    # header states a number this script itself just derived (CLAUDE.md "No invented reference
+    # values").
+    bin_deviation = R.measure_bin_convention_deviation(persons)
+    logger.info("%s bin-convention deviation: max abs share deviation %.4f", "[commute day state reference]",
+                bin_deviation["max_abs_share_deviation"])
+
     out = Path(args.out_dir)
 
     table = R.build_mid_workday_location_table(persons)
     n_missing_distance_all = int(table.loc[table["distance_class"] == "all", "n_missing_distance"].iloc[0])
     n_lt10 = int(table.loc[table["distance_class"] == "lt10", "n_unweighted"].iloc[0])
     n_100_200 = int(table.loc[table["distance_class"] == "100_200", "n_unweighted"].iloc[0])
+    right_n = bin_deviation["right_inclusive_n_unweighted"]
+    right_lt10 = int(right_n.get("lt10", 0))
+    right_100_200 = int(right_n.get("100_200", 0))
     workday_extra = [
         "Columns: distance_class, n_unweighted, n_missing_distance (all row only), share_at_workplace,",
         "share_at_home, share_did_not_work, share_other_place, share_missing (weighted row shares, sum 1).",
         "Invalid/absent P_ARB_ENTF distances are counted in n_missing_distance (all row only, "
         f"{n_missing_distance_all} persons in this extraction) and excluded from the per-class rows.",
-        f"Heaping (measured on this extraction): {heaping['n_exact'][10.0]} persons report exactly 10 km "
-        f"(would move lt10 from {n_lt10} to {n_lt10 + heaping['n_exact'][10.0]} under a right-inclusive "
-        f"(a, b] convention), {heaping['n_exact'][100.0]} report exactly 100 km (100_200 would drop from "
-        f"{n_100_200} to {n_100_200 - heaping['n_exact'][100.0]}), {heaping['n_exact'][200.0]} report "
-        f"exactly the 200 km top-code (a substantial part of the thin 100_200 class, {n_100_200} persons "
-        f"here); {100.0 * heaping['share_multiple_of_5']:.1f}% of valid distances are multiples of 5. "
-        "Weighted state shares agree within 0.005 between the two binning conventions; only the "
-        "unweighted class counts are convention-sensitive.",
+        f"Heaping (measured on this extraction): {heaping['n_exact'][10.0]} persons report exactly 10 km, "
+        f"{heaping['n_exact'][100.0]} report exactly 100 km, {heaping['n_exact'][200.0]} report exactly "
+        f"the 200 km top-code (a substantial part of the thin 100_200 class, {n_100_200} persons here); "
+        f"{100.0 * heaping['share_multiple_of_5']:.1f}% of valid distances are multiples of 5.",
+        f"Bin-convention deviation (measured on this extraction by rebuilding this table a second time "
+        f"with right-inclusive (a, b] bins -- see measure_bin_convention_deviation in the module): "
+        f"right-inclusive class counts are lt10 {right_lt10} (committed, left-inclusive: {n_lt10}), "
+        f"100_200 {right_100_200} (committed: {n_100_200}); weighted state shares agree within "
+        f"{bin_deviation['max_abs_share_deviation']:.4f} between the two conventions on THIS "
+        "extraction; only the unweighted class counts are convention-sensitive.",
     ]
     _write(table, out / R.WORKDAY_LOCATION_TABLE, _header(R.WORKDAY_LOCATION_TABLE, args.source_commit, workday_extra))
 

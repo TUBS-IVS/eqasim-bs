@@ -102,15 +102,21 @@ def clean_mid_commute_distance_km(values) -> pd.Series:
     return numeric.where(~is_missing_code)
 
 
-def classify_commute_distance(km) -> str | None:
+def classify_commute_distance(km, topcode_km: float | None = MID_DISTANCE_TOPCODE_KM) -> str | None:
     """Commute-distance class label for a distance in kilometres.
 
     Generic over any commute-distance source (MiD, model output, ...): returns ``None`` for
     missing (``NaN``) or non-positive distances, and classifies everything else using
-    ``COMMUTE_CLASS_EDGES_KM``. A distance of exactly ``200.0`` is classified as ``"100_200"``
-    rather than ``"gt200"``, matching the MiD top-code convention ("200 km or more, reported as
-    200"); distances strictly greater than 200 are a legitimate ``"gt200"`` (e.g. for model
-    distances that were never MiD top-coded).
+    ``COMMUTE_CLASS_EDGES_KM``. A distance exactly equal to ``topcode_km`` is classified as
+    ``"100_200"`` rather than ``"gt200"``, matching the MiD top-code convention ("200 km or more,
+    reported as 200"); distances strictly greater than ``topcode_km`` are a legitimate
+    ``"gt200"`` (e.g. for model distances that were never MiD top-coded).
+
+    ``topcode_km`` defaults to ``MID_DISTANCE_TOPCODE_KM`` (200.0), preserving today's behaviour
+    for every existing caller. Pass ``topcode_km=None`` to disable the special case entirely --
+    e.g. for a source that was never subject to the MiD top-code, such as a raw trip length
+    (``wegkm``): a value of exactly 200.0 then classifies as ``"gt200"`` like any other distance
+    above 200, instead of being silently folded into ``"100_200"``.
 
     Raw MiD ``P_ARB_ENTF`` values must be cleaned with ``clean_mid_commute_distance_km`` first --
     this function does not recognise the MiD missing-value codes (996, 999) or filter/skip codes
@@ -118,13 +124,33 @@ def classify_commute_distance(km) -> str | None:
     """
     if km is None or pd.isna(km) or km <= 0:
         return None
-    if km == MID_DISTANCE_TOPCODE_KM:
+    if topcode_km is not None and km == topcode_km:
         return "100_200"
     idx = int(np.digitize([km], COMMUTE_CLASS_EDGES_KM[1:-1])[0])
     return COMMUTE_CLASS_LABELS[idx]
 
 
-def _mid_universe(persons: pd.DataFrame) -> pd.DataFrame:
+def classify_commute_distance_right_inclusive(km) -> str | None:
+    """RIGHT-inclusive ``(a, b]`` variant of :func:`classify_commute_distance`.
+
+    Exists ONLY to MEASURE the sensitivity of the committed MiD workday-location table to the
+    choice of bin convention (ruling R6; see :func:`measure_bin_convention_deviation`) -- it is
+    never used to classify a distance for any production output. The production convention
+    (:func:`classify_commute_distance`) is LEFT-inclusive ``[a, b)``; this mirrors it with
+    ``numpy.digitize(..., right=True)`` instead of the default ``right=False``. The MiD 200 km
+    top-code is classed ``"100_200"`` under both conventions (200.0 is a legitimate value that
+    both bin definitions place at the class's upper edge), so only 10/25/50/100 km are actually
+    convention-sensitive.
+    """
+    if km is None or pd.isna(km) or km <= 0:
+        return None
+    if km == MID_DISTANCE_TOPCODE_KM:
+        return "100_200"
+    idx = int(np.digitize([km], COMMUTE_CLASS_EDGES_KM[1:-1], right=True)[0])
+    return COMMUTE_CLASS_LABELS[idx]
+
+
+def _mid_universe(persons: pd.DataFrame, classify_distance=classify_commute_distance) -> pd.DataFrame:
     """Restrict ``persons`` to the commute-day-state universe and attach ``distance_class``.
 
     Two filter steps are applied and logged separately (see ``_log_filter_step``) so a collapsed
@@ -136,8 +162,12 @@ def _mid_universe(persons: pd.DataFrame) -> pd.DataFrame:
 
     Adds a cleaned ``distance_class`` column (one of ``COMMUTE_CLASS_LABELS`` or ``NaN`` when
     ``P_ARB_ENTF`` is missing/a filter code, via ``clean_mid_commute_distance_km`` then
-    ``classify_commute_distance``). The count of universe persons with a missing/invalid distance
-    is logged once here; callers must not repeat that count in their own logging.
+    ``classify_distance``). ``classify_distance`` defaults to ``classify_commute_distance`` (the
+    production, LEFT-inclusive convention); :func:`measure_bin_convention_deviation` passes
+    ``classify_commute_distance_right_inclusive`` instead to MEASURE the sensitivity of the
+    resulting table to the bin convention, never to change what is committed. The count of
+    universe persons with a missing/invalid distance is logged once here; callers must not repeat
+    that count in their own logging.
     """
     n_input = len(persons)
     module_weekday = persons[(persons["M_HOFF"] == MID_MODULE) & (persons["arbwo"] == MID_WEEKDAY)].copy()
@@ -147,7 +177,7 @@ def _mid_universe(persons: pd.DataFrame) -> pd.DataFrame:
     _log_filter_step("P_STARB1 filter (worked/did not work/no answer)", len(module_weekday), len(sel))
 
     distance = clean_mid_commute_distance_km(sel["P_ARB_ENTF"])
-    sel["distance_class"] = [classify_commute_distance(d) for d in distance]
+    sel["distance_class"] = [classify_distance(d) for d in distance]
     n_missing_distance = int(sel["distance_class"].isna().sum())
     logger.info("%s distance cleaning: %d/%d universe persons have a missing/invalid distance (%.1f%%)",
                 _LOG_TAG, n_missing_distance, len(sel), 100.0 * n_missing_distance / max(len(sel), 1))
@@ -196,12 +226,15 @@ def _person_state(persons: pd.DataFrame) -> pd.Series:
     )
 
 
-def build_mid_workday_location_table(persons: pd.DataFrame) -> pd.DataFrame:
+def build_mid_workday_location_table(persons: pd.DataFrame,
+                                     classify_distance=classify_commute_distance) -> pd.DataFrame:
     """Weighted reporting-day work location by commute-distance class (weekdays, module persons).
 
     Restricts ``persons`` to the commute-day-state universe (see ``_mid_universe``: home-office
     module, reporting weekday, codeable P_STARB1), then classifies each person by commute-distance
-    class and by reporting-day work-location STATE (see ``_person_state``): ``did_not_work``
+    class (``classify_distance``, default :func:`classify_commute_distance`; see
+    :func:`measure_bin_convention_deviation` for the only other caller) and by reporting-day
+    work-location STATE (see ``_person_state``): ``did_not_work``
     (``P_STARB1 == MID_DID_NOT_WORK_ON_DAY``), else ``at_home``/``at_workplace``/``other_place``
     from ``starb2`` when ``P_STARB1 == MID_WORKED_ON_DAY``, else ``missing`` (``P_STARB1 ==
     MID_STARB1_MISSING`` or an unmapped ``starb2`` -- i.e. the state itself is undetermined, not
@@ -219,7 +252,7 @@ def build_mid_workday_location_table(persons: pd.DataFrame) -> pd.DataFrame:
     plus one ``all`` row, with columns ``distance_class, n_unweighted, n_missing_distance,
     share_at_workplace, share_at_home, share_did_not_work, share_other_place, share_missing``.
     """
-    sel = _mid_universe(persons)
+    sel = _mid_universe(persons, classify_distance=classify_distance)
     sel["state"] = _person_state(sel)
     rows = []
 
@@ -242,6 +275,65 @@ def build_mid_workday_location_table(persons: pd.DataFrame) -> pd.DataFrame:
     table = pd.DataFrame(rows)
     logger.info("%s workday-location table: %d rows, %d persons total", _LOG_TAG, len(table), len(sel))
     return table
+
+
+def measure_bin_convention_deviation(persons: pd.DataFrame) -> dict:
+    """Measure how much the LEFT- vs RIGHT-inclusive bin convention moves the workday-location
+    table (ruling R6).
+
+    ``classify_commute_distance`` (production) uses LEFT-inclusive bins ``[a, b)``; an earlier
+    ad-hoc scan used RIGHT-inclusive bins ``(a, b]`` and produced materially different per-class
+    unweighted counts on the same population (CLAUDE.md "No invented reference values": a claim
+    that the two conventions' weighted state shares "agree within 0.005" is only defensible if it
+    is measured on the SAME extraction it accompanies, not carried over from that earlier scan).
+    This function builds :func:`build_mid_workday_location_table` a second time with
+    :func:`classify_commute_distance_right_inclusive` and compares it against the standard
+    (left-inclusive) table.
+
+    Returns a dict:
+
+    * ``max_abs_share_deviation`` -- the largest absolute difference of any of the five
+      ``SHARE_COLUMNS`` between the two conventions, over every distance class present in EITHER
+      table (a class present in only one convention contributes nothing -- there is no matching
+      row to difference against).
+    * ``left_inclusive_n_unweighted`` / ``right_inclusive_n_unweighted`` -- dict, distance class
+      (incl. ``"all"``) -> unweighted person count under that convention. A class absent from a
+      dict simply had zero persons under that convention (``build_mid_workday_location_table``
+      never emits an empty row).
+
+    This is a MEASUREMENT helper only: it changes nothing about which table is committed
+    (:func:`build_mid_workday_location_table`'s default, left-inclusive convention is unaffected)
+    and is called only to populate the committed table's own provenance header.
+    """
+    left_table = build_mid_workday_location_table(persons).set_index("distance_class")
+    right_table = build_mid_workday_location_table(
+        persons, classify_distance=classify_commute_distance_right_inclusive
+    ).set_index("distance_class")
+
+    max_abs_share_deviation = 0.0
+    for label in set(left_table.index) | set(right_table.index):
+        if label not in left_table.index or label not in right_table.index:
+            continue
+        for column in SHARE_COLUMNS:
+            left_value = left_table.loc[label, column]
+            right_value = right_table.loc[label, column]
+            if pd.notna(left_value) and pd.notna(right_value):
+                max_abs_share_deviation = max(max_abs_share_deviation,
+                                              abs(float(left_value) - float(right_value)))
+
+    left_inclusive_n_unweighted = {label: int(left_table.loc[label, "n_unweighted"])
+                                   for label in left_table.index}
+    right_inclusive_n_unweighted = {label: int(right_table.loc[label, "n_unweighted"])
+                                    for label in right_table.index}
+    logger.info("%s bin-convention deviation: max abs share deviation %.4f between left- and "
+                "right-inclusive bins; left n_unweighted %s, right n_unweighted %s",
+                _LOG_TAG, max_abs_share_deviation, left_inclusive_n_unweighted,
+                right_inclusive_n_unweighted)
+    return {
+        "max_abs_share_deviation": max_abs_share_deviation,
+        "left_inclusive_n_unweighted": left_inclusive_n_unweighted,
+        "right_inclusive_n_unweighted": right_inclusive_n_unweighted,
+    }
 
 
 def build_mid_home_office_donor_pool(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
@@ -394,7 +486,8 @@ def _code_histogram(values) -> dict:
 
 
 def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame, *,
-                            warn_missing_share: float = DEFAULT_WARN_MISSING_SHARE
+                            warn_missing_share: float = DEFAULT_WARN_MISSING_SHARE,
+                            topcode_km: float | None = MID_DISTANCE_TOPCODE_KM
                             ) -> tuple[pd.DataFrame, dict]:
     """Cross-tabulate each synthetic worker's ASSIGNED commute-distance class against the class
     of the MiD donor the worker's attributes came from.
@@ -436,6 +529,14 @@ def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame, *,
     ``warn_missing_share`` the function logs a WARNING: ``share_assigned_gt_donor`` is then a
     property of a minority subset, and that subset is not necessarily representative of the whole
     cohort.
+
+    ``topcode_km`` is forwarded to :func:`classify_commute_distance` when classifying
+    ``donor_distance_km`` (it never affects ``assigned_distance_class``, which the caller already
+    classified). It defaults to ``MID_DISTANCE_TOPCODE_KM``, correct for a ``P_ARB_ENTF`` donor
+    distance (the MiD 200 km top-code). Pass ``topcode_km=None`` when ``donor_distance_km`` comes
+    from a source that was never MiD top-coded -- e.g. a raw trip length (``wegkm``) -- so a value
+    of exactly 200.0 there classifies as ``gt200`` instead of being silently folded into
+    ``100_200``.
     """
     _require_frame_columns(workers, DONOR_WORKER_COLUMNS, "workers frame")
     _require_frame_columns(donors, DONOR_COLUMNS, "donors frame")
@@ -449,8 +550,9 @@ def donor_vs_assigned_class(workers: pd.DataFrame, donors: pd.DataFrame, *,
     merged = workers.merge(donors, on="hts_id", how="inner", validate="many_to_one")
     n_matched_donor = int(len(merged))
 
-    donor_class = _normalised_class([classify_commute_distance(km) for km in merged["donor_distance_km"]],
-                                    index=merged.index)
+    donor_class = _normalised_class(
+        [classify_commute_distance(km, topcode_km=topcode_km) for km in merged["donor_distance_km"]],
+        index=merged.index)
     assigned_class = _normalised_class(merged["assigned_distance_class"], index=merged.index)
 
     class_rank = {label: rank for rank, label in enumerate(COMMUTE_CLASS_LABELS)}

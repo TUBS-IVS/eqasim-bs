@@ -143,6 +143,37 @@ def test_main_writes_both_cross_tabs_and_the_diagnostics(tmp_path):
     assert not (set(diagnostics) & set(measure.FORBIDDEN_OUTPUT_COLUMNS))
 
 
+def test_trip_length_source_disables_the_200km_topcode(tmp_path):
+    """Finding 5 (whole-branch review): wegkm is never MiD top-coded, so an exact 200 km donor
+    work-trip length must classify as gt200 in the trip-length cross-tab, never 100_200 -- unlike
+    a donor P_ARB_ENTF of exactly 200.0, which IS the legitimate MiD top-code and stays 100_200."""
+    persons = pd.DataFrame({"person_id": [1], "household_id": [1], "hts_id": [101]})
+    assigned = pd.DataFrame({"person_id": [1], "assigned_distance_class": ["gt200"],
+                             "distance_km": [250.0]})
+    pseudonym_map = pd.DataFrame({"source_person_id": [101], "source_household_id": [9001],
+                                  "H_ID": [1], "P_ID": [1]})
+    mid_persons = pd.DataFrame({
+        "H_ID": [1], "P_ID": [1], "P_ARB_ENTF": [999.0], "P_STARB1": [1], "starb2": [2],
+        "M_HOFF": [1], "arbwo": [1], "ST_WOTAG": [1],
+    })
+    mid_trips = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ZWECK": [1], "wegkm": [200.0]})
+    raw = _write_inputs(tmp_path, persons=persons, assigned=assigned, pseudonym_map=pseudonym_map,
+                        mid_persons=mid_persons, mid_trips=mid_trips)
+    out_dir = tmp_path / "out"
+    assert measure.main(_argv(tmp_path, raw, out_dir)) == 0
+
+    diagnostics = json.loads((out_dir / measure.DIAGNOSTICS_FILE).read_text(encoding="utf-8"))
+    assert diagnostics["trip_length"]["n_assigned_eq_donor"] == 1  # gt200 (assigned) == gt200 (donor)
+    trip_cross_tab = _read_cross_tab(out_dir / measure.TRIP_LENGTH_CROSS_TAB_FILE)
+    assert trip_cross_tab.loc["gt200", "n_gt200"] == 1
+    assert trip_cross_tab.loc["100_200", "n_donor_total"] == 0
+
+    header_text = "\n".join(line for line in
+                            (out_dir / measure.TRIP_LENGTH_CROSS_TAB_FILE).read_text(
+                                encoding="utf-8").splitlines() if line.startswith("#"))
+    assert "topcode_km=None" in header_text
+
+
 def test_assert_no_identifiers_rejects_a_raw_mid_id_column():
     frame = pd.DataFrame({"donor_distance_class": ["lt10"], "H_ID": [1]})
     with pytest.raises(ValueError, match="H_ID"):

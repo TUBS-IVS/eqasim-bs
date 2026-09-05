@@ -51,7 +51,17 @@ sampling:
     flagged employed (540,425 after excluding the single person without a home Kreis match), and
     304,900 workers with a work destination -- the worker count and the external-destination
     count (39,150, 12.84%) are identical to those of srv-primary-distance-baseline-2026-09-04.
-    Every n_* count is a SAMPLE count at sampling_rate 1.0 and is never expanded.'
+    Every n_* count is a SAMPLE count at sampling_rate 1.0 and is never expanded. UNMEASURED
+    relation, stated explicitly rather than left implicit: whether every one of the 304,900
+    workers with an assigned workplace is also counted among the 540,425 employed persons is
+    NOT measured by this run (`unknown`) -- the two counts come from independent stage fields
+    (the enriched-population `employed` flag vs having a work-destination row) and no join
+    between them was computed. Likewise, the 37,706 = 304,900 - 267,194 workers who have an
+    assigned workplace but no home->work trip counted by
+    `braunschweig.analysis.synthesis.work_participation_by_kreis` (entry 1 below) is an ARITHMETIC
+    observation on two independently-produced counts, not a measured cohort: no per-person join
+    was made to confirm that these are the same 37,706 people in both tables, only that the totals
+    are consistent.'
 pipeline:
   targets:
   - braunschweig.analysis.synthesis.work_participation_by_kreis
@@ -144,7 +154,7 @@ status:
     braunschweig.analysis.synthesis.work_participation_by_kreis__e7f4d6171274d4814ba40f655eac6007
     was added as a new entry; .merged_config.yml was rewritten and
     run_provenance_20260904T230603Z.json added. The shared cache store gained nothing (auto-export: exported 0, already-in-store 39).
-    The i329 OUTPUT tree gained one new folder, analysis/commute_day_state_phase_a/, with eight
+    The i329 OUTPUT tree gained one new folder, analysis/commute_day_state_phase_a/, with nine
     files. Shared-checkout invariants on felix, verified before and after: ~/eqasim-bs HEAD
     2714b857 with 26 porcelain entries, worktree list 19 entries. Cleanup performed: the three
     copied reference CSVs removed from /home/felix/wt-i329/eqasim-data/data/braunschweig/{srv,mid}/

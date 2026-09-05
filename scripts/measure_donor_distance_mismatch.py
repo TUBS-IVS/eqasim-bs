@@ -246,6 +246,10 @@ def _distance_source_lines(table: str, source: str, section: dict) -> list[str]:
             "#   beside the P_ARB_ENTF table, not merged with it. A donor who made no work trip on",
             "#   the reporting day has no length here, which is a property of the DAY, not of the",
             "#   respondent's commute.",
+            "# Top-code (finding 5, whole-branch review): wegkm is NOT subject to the MiD P_ARB_ENTF",
+            "#   200 km top-code, so donor_vs_assigned_class is called with topcode_km=None here -- a",
+            "#   trip length of exactly 200 km classifies as gt200, not 100_200 (the classification of",
+            "#   assigned_distance_class, computed upstream by the analysis stage, is unaffected).",
         ]
     return [f"# Table: {table}"] + definition + [
         f"# Coverage: {section['n_matched_donor']} matched workers, of which "
@@ -367,8 +371,14 @@ def main(argv=None) -> int:
 
     trip_donor_frame = donor_frame.drop(columns=["donor_distance_km"]).rename(
         columns={"donor_trip_length_km": "donor_distance_km"})
+    # Finding 5 (whole-branch review): wegkm is a raw trip length, never subject to the MiD
+    # P_ARB_ENTF 200 km top-code, so the special case that classifies exactly-200.0 as "100_200"
+    # must be DISABLED for this source (topcode_km=None) -- a 200 km trip length classifies as
+    # "gt200" here, like any other distance above 200, rather than being silently folded into
+    # "100_200" as if it were a top-coded value.
     trip_cross_tab, trip_diagnostics = R.donor_vs_assigned_class(
-        workers[worker_columns], trip_donor_frame, warn_missing_share=args.warn_missing_share)
+        workers[worker_columns], trip_donor_frame, warn_missing_share=args.warn_missing_share,
+        topcode_km=None)
 
     worker_donors = workers[worker_columns].merge(donor_frame, on="hts_id", how="inner",
                                                   validate="many_to_one")

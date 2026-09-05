@@ -16,6 +16,26 @@ def test_classify_commute_distance(km, label):
     assert R.classify_commute_distance(km) == label
 
 
+def test_classify_commute_distance_topcode_km_none_disables_the_special_case():
+    # Finding 5: the MiD 200 km top-code special case must be OPT-OUT-able for a distance source
+    # (e.g. a raw trip length, wegkm) that was never subject to MiD top-coding.
+    assert R.classify_commute_distance(200.0, topcode_km=None) == "gt200"
+    # The default keeps today's behaviour unchanged for every existing caller.
+    assert R.classify_commute_distance(200.0) == "100_200"
+    assert R.classify_commute_distance(200.0, topcode_km=R.MID_DISTANCE_TOPCODE_KM) == "100_200"
+    # Distances away from the top-code boundary are unaffected by the parameter either way.
+    assert R.classify_commute_distance(150.0, topcode_km=None) == "100_200"
+
+
+@pytest.mark.parametrize("km, label", [
+    (3.0, "lt10"), (10.0, "lt10"), (10.1, "10_25"), (25.0, "10_25"), (25.1, "25_50"),
+    (50.0, "25_50"), (100.0, "50_100"), (100.1, "100_200"), (200.0, "100_200"), (250.0, "gt200"),
+    (0.0, None), (-1.0, None), (np.nan, None),
+])
+def test_classify_commute_distance_right_inclusive(km, label):
+    assert R.classify_commute_distance_right_inclusive(km) == label
+
+
 @pytest.mark.parametrize("raw_km, cleaned_km", [
     (996.0, None), (999.0, None), (2202.0, None), (200.0, 200.0), (15.5, 15.5),
 ])
@@ -85,6 +105,55 @@ def test_inconsistent_starb1_starb2_pair_logs_warning(caplog):
 def test_load_workday_location_table_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         R.load_workday_location_table(tmp_path)
+
+
+def _boundary_persons():
+    """Four universe persons whose commute distances straddle class boundaries (finding 2): A/D
+    sit exactly on a boundary and swap classes between the two bin conventions, while C (100 km,
+    a class boundary too) moves out of the class it shares with nobody else under the other
+    convention. Distinct states per person make a nonzero share deviation checkable directly."""
+    return pd.DataFrame({
+        "P_GEW":     [1.0, 1.0, 1.0, 1.0],
+        "arbwo":     [1,   1,   1,   1],
+        "M_HOFF":    [1,   1,   1,   1],
+        "P_STARB1":  [1,   1,   1,   2],
+        "starb2":    [2,   1,   3,   409],
+        "P_ARB_ENTF":[10.0, 15.0, 100.0, 5.0],
+    })
+
+
+def test_measure_bin_convention_deviation_counts_and_max_deviation():
+    deviation = R.measure_bin_convention_deviation(_boundary_persons())
+
+    # Left-inclusive [a, b) (production, classify_commute_distance): A(10)->10_25, B(15)->10_25,
+    # C(100)->100_200, D(5)->lt10.
+    left = deviation["left_inclusive_n_unweighted"]
+    assert left["lt10"] == 1 and left["10_25"] == 2 and left.get("100_200", 0) == 1
+    assert left["all"] == 4
+
+    # Right-inclusive (a, b] (classify_commute_distance_right_inclusive): A(10)->lt10 (moves in
+    # with D), B(15)->10_25 (stays), C(100)->50_100 (moves out of 100_200 entirely).
+    right = deviation["right_inclusive_n_unweighted"]
+    assert right["lt10"] == 2 and right["10_25"] == 1 and right.get("50_100", 0) == 1
+    assert right.get("100_200", 0) == 0  # absent: build_mid_workday_location_table never emits
+                                         # an empty row, so C's departure leaves no 100_200 row.
+    assert right["all"] == 4
+
+    # The "10_25" class holds a DIFFERENT population under each convention (left: A+B, right:
+    # B only) with different reporting-day states, so its weighted shares genuinely differ --
+    # this is a MEASURED, not hand-typed, deviation.
+    assert deviation["max_abs_share_deviation"] == pytest.approx(0.5)
+
+
+def test_measure_bin_convention_deviation_is_zero_when_bins_do_not_move_membership():
+    # A single-person universe: the "all" row is the only row present under both conventions and
+    # its own shares cannot depend on which OTHER class the person's distance falls into.
+    persons = pd.DataFrame({
+        "P_GEW": [1.0], "arbwo": [1], "M_HOFF": [1], "P_STARB1": [1], "starb2": [2],
+        "P_ARB_ENTF": [50.0],
+    })
+    deviation = R.measure_bin_convention_deviation(persons)
+    assert deviation["max_abs_share_deviation"] == pytest.approx(0.0)
 
 
 def _mid_pool_persons():
@@ -182,6 +251,26 @@ def test_donor_vs_assigned_class_counts():
     # Every class row and column is emitted, also the empty ones (stable table shape).
     assert list(indexed.index) == list(R.COMMUTE_CLASS_LABELS) + ["missing", "all"]
     assert indexed.loc["gt200", "n_donor_total"] == 0
+
+
+def test_donor_vs_assigned_class_forwards_topcode_km_to_the_donor_classification():
+    # Finding 5: a donor distance of exactly 200.0 km from a source that was never MiD top-coded
+    # (e.g. a trip length) must classify as "gt200", not "100_200", when topcode_km=None; the
+    # default keeps today's behaviour ("100_200") unchanged.
+    workers = pd.DataFrame({
+        "person_id": [1], "hts_id": ["a"], "assigned_distance_class": ["gt200"],
+    })
+    donors = pd.DataFrame({
+        "hts_id": ["a"], "donor_distance_km": [200.0],
+        "donor_worked_on_day": [1], "donor_starb2": [2],
+    })
+    _, default_diag = R.donor_vs_assigned_class(workers, donors)
+    assert default_diag["n_assigned_eq_donor"] == 0
+    assert default_diag["n_assigned_gt_donor"] == 1  # gt200 (assigned) > 100_200 (donor, default)
+
+    _, none_diag = R.donor_vs_assigned_class(workers, donors, topcode_km=None)
+    assert none_diag["n_assigned_eq_donor"] == 1  # gt200 (assigned) == gt200 (donor, topcode_km=None)
+    assert none_diag["n_assigned_gt_donor"] == 0
 
 
 def test_donor_vs_assigned_class_unmatched_workers_are_excluded_and_counted():

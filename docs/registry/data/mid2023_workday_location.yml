@@ -13,6 +13,9 @@ acquisition:
     Regenerate on the run server with: python scripts/extract_mid_workday_location.py
     --raw eqasim-data/data/braunschweig/popsim/mid2023_raw
     --out-dir eqasim-data/data/braunschweig/mid
+    --source-commit <short sha of the eqasim-bs checkout running the script>
+    The script REQUIRES --source-commit (ruling R7): it is recorded verbatim in both output
+    files' provenance header so a committed CSV is always traceable to an exact code state.
     Reads MiD2023_Personen.csv (HP_ID, H_ID, P_GEW, arbwo, M_HOFF, P_STARB1, starb2, P_ARB_ENTF,
     HP_ALTER, HP_SEX) and MiD2023_Wege.csv (HP_ID, W_ZWECK). The raw microdata is server-local
     only and never committed.
