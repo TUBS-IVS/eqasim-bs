@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 
 import matsim.scenario.population as base
+from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
 from braunschweig.synthesis.incommuter_merge._base import (assert_unique_ids,
                                                             concat_frame)
 
@@ -41,6 +42,11 @@ _LOG_TAG = "[commute day population]"
 DAY_TRIPS_STAGE = "synthesis.population.trips.final"
 DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
+
+#: The two stage names the VENDORED ``matsim.scenario.population.load_raw`` reads and that the
+#: shim answers with the reporting-day frames instead.
+BASE_TRIPS_STAGE = "synthesis.population.trips"
+BASE_ACTIVITIES_STAGE = "synthesis.population.activities"
 
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
 DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
@@ -100,12 +106,16 @@ def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
     write_income_eur = bool(context.config("write_income_eur"))
-    raw = base.load_raw(context)
-
-    # The finished day replaces the pre-assignment one BEFORE the in-commuter injection below,
-    # so the injected frames are aligned against the same schema either way.
-    raw["trips"] = context.stage(DAY_TRIPS_STAGE)
-    raw["activities"] = context.stage(DAY_ACTIVITIES_STAGE)
+    # The vendored load_raw reads the PRE-ASSIGNMENT trips/activities by name; the shim answers
+    # those two names with the reporting-day frames instead, so the finished day reaches the
+    # writer without the pre-assignment pickles ever being unpickled and dropped (both are full
+    # population-sized frames on a 100 % run). Every other stage name it reads goes to the real
+    # context unchanged. This happens BEFORE the in-commuter injection below, so the injected
+    # frames are aligned against the same schema either way.
+    raw = base.load_raw(StageOverrideContext(context, {
+        BASE_TRIPS_STAGE: context.stage(DAY_TRIPS_STAGE),
+        BASE_ACTIVITIES_STAGE: context.stage(DAY_ACTIVITIES_STAGE),
+    }))
     if bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED)):
         raw["persons"] = attach_commute_day_state(
             raw["persons"], context.stage(STATE_STAGE)["states"])

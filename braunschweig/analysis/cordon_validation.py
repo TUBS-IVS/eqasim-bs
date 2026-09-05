@@ -103,6 +103,21 @@ def external_at_workplace_share(states, work_locations, workplaces, stats=None):
 
     frame = states[["person_id", "commute_day_state"]].merge(
         work_locations[["person_id", "location_id"]], on="person_id", how="inner")
+    # The inner join silently drops both sides' non-matches, so both drops are reported: a state
+    # row without a work location means the state stage and the primary-location assignment
+    # disagree about who works, and a work location without a state means a worker the state
+    # stage never saw. Either is a person_id join defect, not a rounding detail (CLAUDE.md
+    # "Fallback transparency").
+    n_states_dropped = len(states) - len(frame)
+    n_work_rows_dropped = len(work_locations) - len(frame)
+    if n_states_dropped or n_work_rows_dropped:
+        LOGGER.warning(
+            "%s the state/work-location join kept %d row(s): %d of the %d state row(s) have no "
+            "assigned work location and %d of the %d work-location row(s) have no drawn state; "
+            "both sides should describe the same workers -- check the person_id join",
+            _LOG_TAG, len(frame), n_states_dropped, len(states), n_work_rows_dropped,
+            len(work_locations))
+
     frame = frame.merge(workplaces[["location_id", "commune_id"]].drop_duplicates("location_id"),
                         on="location_id", how="left")
 
@@ -128,7 +143,9 @@ def external_at_workplace_share(states, work_locations, workplaces, stats=None):
     if stats is not None:
         stats.update(n_workers=n_workers, n_external=n_external,
                      n_external_at_workplace=n_at_workplace,
-                     n_workplace_unresolved=n_unresolved, share=float(share))
+                     n_workplace_unresolved=n_unresolved,
+                     n_states_without_work_location=n_states_dropped,
+                     n_work_locations_without_state=n_work_rows_dropped, share=float(share))
     return float(share)
 
 
@@ -140,7 +157,10 @@ def scaled_gate_volumes(assignment, at_workplace_share):
     :func:`braunschweig.data.cordon.gate_assignment.gate_volume_summary` that
     ``gate_volumes.csv`` uses, so the two files' unscaled columns are identical by construction.
 
-    ``outbound_at_workplace`` is ``outbound * at_workplace_share``, rounded to whole commuters;
+    ``outbound_at_workplace`` is ``outbound * at_workplace_share``, rounded to whole commuters
+    by ``pandas.Series.round`` -- banker's rounding (half-to-even), so an exact .5 goes to the
+    nearest EVEN integer rather than always up; the per-gate difference is at most one commuter
+    and does not accumulate in one direction across gates;
     ``outbound`` (the register expectation) and ``at_workplace_share_external`` are kept in the
     same row, so the scaled number can never be read without the factor that produced it.
     Columns are :data:`SCALED_GATE_COLUMNS`. INBOUND is deliberately NOT scaled: the in-commuter

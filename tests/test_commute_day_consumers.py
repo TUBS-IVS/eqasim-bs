@@ -304,6 +304,36 @@ def test_matsim_population_declares_the_day_view_and_the_state_stage():
     assert POP.DAY_TRIPS_STAGE in disabled.stages
 
 
+def test_matsim_population_load_raw_never_reads_the_pre_assignment_frames():
+    """The reporting-day frames reach the vendored ``load_raw`` through the shim.
+
+    Loading the pre-assignment trips/activities only to overwrite them would unpickle two
+    full population-sized frames for nothing on a 100 % run, so the shim answers those two
+    names directly; every other name still goes to the real context.
+    """
+    from braunschweig.matsim.scenario import population as POP
+
+    requested = []
+
+    class _RecordingContext:
+        def stage(self, name, *_args, **_kwargs):
+            requested.append(name)
+            if name == "synthesis.vehicles.vehicles":
+                return (None, "VEHICLES")
+            return f"<{name}>"
+
+    raw = POP.base.load_raw(POP.StageOverrideContext(_RecordingContext(), {
+        POP.BASE_TRIPS_STAGE: "DAY_TRIPS",
+        POP.BASE_ACTIVITIES_STAGE: "DAY_ACTIVITIES",
+    }))
+    assert raw["trips"] == "DAY_TRIPS"
+    assert raw["activities"] == "DAY_ACTIVITIES"
+    assert raw["persons"] == "<synthesis.population.enriched>"
+    assert raw["vehicles"] == "VEHICLES"
+    assert POP.BASE_TRIPS_STAGE not in requested
+    assert POP.BASE_ACTIVITIES_STAGE not in requested
+
+
 def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
     """``commuteDayState`` is additive: absent column -> no attribute, NaN -> no attribute."""
     from matsim.scenario import population as pop
@@ -389,14 +419,55 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
 
 
 # --------------------------------------------------------------------------- check 1 arithmetic
+#
+# The denominator is the point of these tests (fix round 1): ADR-0104 check 1 compares against
+# SrV shares of EMPLOYED persons, so the model's state shares must divide by n_employed, NOT by
+# the model's workers. The fixture below therefore has MORE employed persons than workers, so
+# every share assertion here fails under the old worker-based denominator.
 
-def _participation_table(share_no_work_trip):
-    """Compared-participation rows for the two Kreise used below plus the zgb row."""
+#: 8 employed persons in Kreis 03101, of which only 4 have an assigned workplace and therefore a
+#: drawn state (2 at_workplace, 1 home, 1 absent); person 9 carries a state but is NOT employed.
+_EMPLOYED_IDS = (1, 2, 3, 4, 5, 6, 7, 8)
+_WORKER_STATES = {1: "at_workplace", 2: "at_workplace", 3: "home", 4: "absent"}
+
+
+def _check_1_persons(employed_ids=_EMPLOYED_IDS, extra_not_employed=(9,)):
+    person_ids = list(employed_ids) + list(extra_not_employed)
+    return pd.DataFrame({
+        "person_id": person_ids,
+        "household_id": person_ids,
+        "employed": [pid in set(employed_ids) for pid in person_ids],
+    })
+
+
+def _check_1_homes(persons, ars5="03101", overrides=None):
+    overrides = overrides or {}
+    return pd.DataFrame({
+        "household_id": persons["household_id"],
+        "ars5": [overrides.get(hid, ars5) for hid in persons["household_id"]],
+    })
+
+
+def _check_1_states(states=None):
+    states = _WORKER_STATES if states is None else states
+    return pd.DataFrame({"person_id": list(states),
+                         "commute_day_state": list(states.values())})
+
+
+def _participation_table(persons, homes, share_no_work_trip):
+    """Compared-participation rows whose ``n_employed`` matches the fixture, per code.
+
+    ``commute_day_state_shares`` cross-checks its recomputed denominator against this column,
+    so the fixture builds it from the SAME employed-and-in-ZGB rule the stage uses.
+    """
+    employed = persons[persons["employed"]].merge(homes, on="household_id", how="left")
+    employed = employed[employed["ars5"].isin(WP.ZGB_KREISE)]
     rows = []
     for code in WP.ZGB_KREISE + (WP.ZGB_ROW_CODE,):
+        subset = employed if code == WP.ZGB_ROW_CODE else employed[employed["ars5"] == code]
         rows.append({
-            "code": code, "n_employed": 10, "n_with_work_trip": 6,
-            "share_work_trip": 0.6, "share_no_work_trip": share_no_work_trip,
+            "code": code, "n_employed": len(subset), "n_with_work_trip": 0,
+            "share_work_trip": float("nan"), "share_no_work_trip": share_no_work_trip,
             "srv_n_persons": 1000, "srv_share_work_trip": 0.6511,
             "srv_share_home_office_day": 0.1418, "srv_share_neither": 0.2071,
             "delta_work_trip_pp": float("nan"),
@@ -404,70 +475,122 @@ def _participation_table(share_no_work_trip):
     return pd.DataFrame(rows, columns=list(WP.PARTICIPATION_COLUMNS))
 
 
-def test_commute_day_state_shares_computes_shares_and_the_srv_delta():
-    # Four workers in Kreis 03101: 2 at_workplace, 1 home, 1 absent.
-    states = pd.DataFrame({
-        "person_id": [1, 2, 3, 4],
-        "commute_day_state": ["at_workplace", "at_workplace", "home", "absent"],
-    })
-    persons = pd.DataFrame({"person_id": [1, 2, 3, 4], "household_id": [1, 2, 3, 4]})
-    homes = pd.DataFrame({"household_id": [1, 2, 3, 4], "ars5": ["03101"] * 4})
+def test_commute_day_state_shares_divides_by_the_employed_universe():
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
     # Model: 35 % of the employed make no work trip; SrV remainder = 0.1418 + 0.2071 = 0.3489.
-    participation = _participation_table(share_no_work_trip=0.35)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
 
-    table = WP.commute_day_state_shares(states, persons, homes, participation)
+    stats = {}
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                        stats=stats)
     assert list(table.columns) == list(WP.STATE_SHARE_COLUMNS)
     assert len(table) == len(WP.ZGB_KREISE) + 1
 
     kreis = table[table["code"] == "03101"].iloc[0]
-    assert kreis["n_workers"] == 4
-    assert kreis["share_at_workplace"] == pytest.approx(0.5)
-    assert kreis["share_home"] == pytest.approx(0.25)
-    assert kreis["share_absent"] == pytest.approx(0.25)
-    # The zgb row is exactly the union of the Kreise -- here that is the same four workers.
+    assert kreis["n_employed"] == 8            # the denominator
+    assert kreis["n_workers"] == 4             # a count, never the denominator
+    # 2/8, 1/8, 1/8 -- the worker-based denominator would give 0.5 / 0.25 / 0.25.
+    assert kreis["share_at_workplace"] == pytest.approx(0.25)
+    assert kreis["share_home"] == pytest.approx(0.125)
+    assert kreis["share_absent"] == pytest.approx(0.125)
+    # The employed remainder without an assigned workplace closes the partition.
+    assert kreis[WP.NO_WORKPLACE_SHARE] == pytest.approx(0.5)
+    assert (kreis["share_at_workplace"] + kreis["share_home"] + kreis["share_absent"]
+            + kreis[WP.NO_WORKPLACE_SHARE]) == pytest.approx(1.0)
+
+    # The zgb row is exactly the union of the Kreise -- here the same eight employed persons.
     zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
-    assert zgb["n_workers"] == 4
-    assert zgb["share_at_workplace"] == pytest.approx(0.5)
+    assert zgb["n_employed"] == 8 and zgb["n_workers"] == 4
+    assert zgb["share_at_workplace"] == pytest.approx(0.25)
     assert zgb["delta_no_work_trip_pp"] == pytest.approx(100.0 * (0.35 - (0.1418 + 0.2071)))
-    # A Kreis without workers keeps NaN shares rather than a substituted zero.
+
+    # Person 9 has a state but is not employed: outside the universe, counted, not silently
+    # inflating a share above 1.
+    assert stats["n_states"] == 4
+    assert stats["n_workers_in_employed_universe"] == 4
+    assert stats["n_states_outside_employed_universe"] == 0
+
+    # A Kreis without employed persons keeps NaN shares rather than a substituted zero.
     empty = table[table["code"] == "03102"].iloc[0]
-    assert empty["n_workers"] == 0
-    assert np.isnan(empty["share_home"])
+    assert empty["n_employed"] == 0 and empty["n_workers"] == 0
+    assert np.isnan(empty["share_home"]) and np.isnan(empty[WP.NO_WORKPLACE_SHARE])
 
 
-def test_commute_day_state_shares_excludes_workers_outside_the_zgb():
-    states = pd.DataFrame({"person_id": [1, 2],
-                           "commute_day_state": ["at_workplace", "home"]})
-    persons = pd.DataFrame({"person_id": [1, 2], "household_id": [1, 2]})
-    homes = pd.DataFrame({"household_id": [1, 2], "ars5": ["03101", "09162"]})
+def test_commute_day_state_shares_counts_workers_outside_the_employed_universe():
+    """A worker who is not flagged employed cannot enter an employed-based share."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    states = _check_1_states({**_WORKER_STATES, 9: "at_workplace"})  # 9 is NOT employed
     stats = {}
     table = WP.commute_day_state_shares(states, persons, homes,
-                                        _participation_table(0.35), stats=stats)
+                                        _participation_table(persons, homes, 0.35), stats=stats)
+    assert stats["n_states"] == 5
+    assert stats["n_workers_in_employed_universe"] == 4
+    assert stats["n_states_outside_employed_universe"] == 1
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["n_employed"] == 8 and zgb["n_workers"] == 4
+    assert zgb["share_at_workplace"] == pytest.approx(0.25)
+
+
+def test_commute_day_state_shares_excludes_persons_outside_the_zgb():
+    persons = _check_1_persons(employed_ids=(1, 2), extra_not_employed=())
+    homes = _check_1_homes(persons, overrides={2: "09162"})
+    states = _check_1_states({1: "at_workplace", 2: "home"})
+    stats = {}
+    table = WP.commute_day_state_shares(states, persons, homes,
+                                        _participation_table(persons, homes, 0.35), stats=stats)
     assert stats["n_outside_zgb"] == 1
-    assert table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]["n_workers"] == 1
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["n_employed"] == 1 and zgb["n_workers"] == 1
+    assert zgb["share_at_workplace"] == pytest.approx(1.0)
+
+
+def test_commute_day_state_shares_raises_when_the_denominator_disagrees():
+    """The participation table and the state table must describe ONE universe."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, 0.35)
+    participation.loc[participation["code"] == "03101", "n_employed"] = 4  # the worker count
+    with pytest.raises(ValueError, match="employed denominator disagrees"):
+        WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
 
 
 def test_commute_day_state_shares_rejects_an_unknown_state():
-    states = pd.DataFrame({"person_id": [1], "commute_day_state": ["teleporting"]})
-    persons = pd.DataFrame({"person_id": [1], "household_id": [1]})
-    homes = pd.DataFrame({"household_id": [1], "ars5": ["03101"]})
+    persons = _check_1_persons(employed_ids=(1,), extra_not_employed=())
+    homes = _check_1_homes(persons)
+    states = _check_1_states({1: "teleporting"})
     with pytest.raises(ValueError, match="unknown state"):
-        WP.commute_day_state_shares(states, persons, homes, _participation_table(0.35))
+        WP.commute_day_state_shares(states, persons, homes,
+                                    _participation_table(persons, homes, 0.35))
 
 
-def test_check_1_section_reports_the_regional_row_and_the_pre_registered_band():
-    states = pd.DataFrame({
-        "person_id": [1, 2, 3, 4],
-        "commute_day_state": ["at_workplace", "at_workplace", "home", "absent"]})
-    persons = pd.DataFrame({"person_id": [1, 2, 3, 4], "household_id": [1, 2, 3, 4]})
-    homes = pd.DataFrame({"household_id": [1, 2, 3, 4], "ars5": ["03101"] * 4})
-    table = WP.commute_day_state_shares(states, persons, homes, _participation_table(0.35))
+def test_commute_day_state_shares_rejects_a_duplicated_worker():
+    persons = _check_1_persons(employed_ids=(1,), extra_not_employed=())
+    homes = _check_1_homes(persons)
+    states = pd.DataFrame({"person_id": [1, 1], "commute_day_state": ["home", "at_workplace"]})
+    with pytest.raises(ValueError, match="EXACTLY one row per worker"):
+        WP.commute_day_state_shares(states, persons, homes,
+                                    _participation_table(persons, homes, 0.35))
+
+
+def test_check_1_section_names_the_denominator_and_the_pre_registered_band():
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes,
+                                        _participation_table(persons, homes, 0.35))
 
     section = "\n".join(WP._state_shares_section(table))
     assert "Check 1 (ADR-0104)" in section
     assert "+/- 3 pp on the regional aggregate only" in section
     assert "ASSUMPTION" in section
     assert "never gated" in section
+    # The denominator must be stated, not left to be inferred.
+    assert "DENOMINATOR" in section
+    assert "share of EMPLOYED" in section
+    assert "share of employed persons" in section
+    assert "ZGB employed persons: 8" in section and "4 with an assigned workplace" in section
+    assert "no_workplace" in section
     # 0.35 vs 0.3489 -> 0.11 pp, inside the pre-registered band.
     assert "within" in section
     # No section at all when the model produced no table (OFF path).

@@ -104,14 +104,23 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   are reproduced unchanged. With the model on the stage additionally reads
   braunschweig.synthesis.commute_day.state_stage and writes a SEVENTH file,
   commute_day_state_shares.csv (code, n_workers, share_at_workplace, share_home, share_absent,
-  n_employed, share_employed_no_work_trip, srv_share_home_office_day, srv_share_work_trip,
-  srv_share_neither, delta_no_work_trip_pp; one row per ZGB Kreis code plus a zgb row over
-  exactly their union), plus a "Check 1 (ADR-0104)" section in summary.md that reports the
+  share_no_workplace, n_employed, share_employed_no_work_trip, srv_share_home_office_day,
+  srv_share_work_trip, srv_share_neither, delta_no_work_trip_pp; one row per ZGB Kreis code plus
+  a zgb row over exactly their union), plus a "Check 1 (ADR-0104)" section in summary.md that
+  reports the
   REGIONAL aggregate against the SrV reference and applies the pre-registered +/- 3 pp band to
   it alone -- the per-Kreis rows are reported, never gated, because the per-Kreis SrV cells rest
   on 663-2,268 persons under a stratified PSU design and are assumption-grade for a full Kreis.
-  The +/- 3 pp band itself is an ASSUMPTION chosen a priori in the 2026-09-04 design and recorded
-  in ADR-0104, not derived from any committed source. The state-to-SrV correspondence
+  DENOMINATOR: every state share is a share of the EMPLOYED persons of the row (n_employed),
+  the universe the SrV reference is defined on -- NOT of the model''s workers. The employed
+  universe is built by the same internal helper the participation table uses, so the two tables''
+  n_employed agree by construction (a disagreement raises); the employed persons WITHOUT an
+  assigned workplace, for whom the model draws no state at all, are reported as
+  share_no_workplace, so the four model shares sum to 1 over the employed, and n_workers is a
+  COUNT beside them, never a denominator. Workers outside that universe (not flagged employed, or
+  a home Kreis outside the ZGB) are excluded, counted and logged. The +/- 3 pp band itself is an
+  ASSUMPTION chosen a priori in the 2026-09-04 design and recorded in ADR-0104, not derived from
+  any committed source. The state-to-SrV correspondence
   (at_workplace <-> work trip, home <-> full home-office day, absent <-> neither) is likewise an
   ASSUMPTION stated in summary.md: SrV''s "neither" is a residual category, so its
   correspondence with a modelled away-from-the-region state is an interpretation, not a

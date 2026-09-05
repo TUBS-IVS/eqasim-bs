@@ -54,9 +54,12 @@ DEFAULT_ENABLED = True
 #: ``synthesis.output.PERSON_OPTIONAL_OUTPUT_COLUMNS`` for the vendored writer to pick it up.
 STATE_COLUMN = "commute_day_state"
 
-#: Pure module whose source this stage's cache token must cover (see :func:`validate`): the
-#: shim decides WHICH frames the vendored writer sees, so an edit to it changes this output.
-_HELPER_MODULES = (_day_view,)
+#: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shim
+#: decides WHICH frames the vendored writer sees, and the VENDORED writer itself is what
+#: produces the output -- synpp hashes only this thin module, so an edit to synthesis/output.py
+#: (this very task added a column to its PERSON_OPTIONAL_OUTPUT_COLUMNS) would otherwise leave
+#: a stale CSV set in the cache.
+_HELPER_MODULES = (_day_view, base)
 
 
 def validate(context):
@@ -76,8 +79,14 @@ def validate(context):
 
 def configure(context):
     base.configure(ConfigureDayViewContext(context))
-    context.stage(STATE_STAGE)
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
+    # Declared only when the model is on -- the same gate every other consumer of the state
+    # stage uses (braunschweig.matsim.scenario.population,
+    # braunschweig.analysis.synthesis.work_participation_by_kreis,
+    # braunschweig.analysis.cordon_validation), so a workflow running with the model off never
+    # carries the donor/state chain in its DAG for a column it never writes.
+    if context.config(KEY_ENABLED):
+        context.stage(STATE_STAGE)
 
 
 def attach_commute_day_state(persons, states):

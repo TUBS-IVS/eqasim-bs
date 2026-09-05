@@ -562,17 +562,29 @@ def test_summary_markdown_reports_the_headline_numbers():
 # --------------------------------------------------------------------------- stage wiring
 
 class _ConfigureRecorder:
-    """Records what ``configure`` declares, with synpp's two-argument config() signature."""
+    """Records what ``configure`` declares, with synpp's two-argument config() signature.
 
-    def __init__(self):
+    ``config()`` also RETURNS the effective value (the declared default, or an override passed
+    to the constructor), because ``configure`` branches on ``commute_day_state_enabled`` before
+    declaring the state stage -- the ``context.config(key, default)`` then
+    ``if context.config(key):`` pattern synpp's ConfigurationContext supports. A recorder
+    returning ``None`` there would make that branch look disabled and hide the declaration.
+    """
+
+    def __init__(self, config=None):
         self.stages = []
         self.config_keys = {}
+        self._config = config or {}
 
     def stage(self, name, **_kwargs):
         self.stages.append(name)
 
     def config(self, name, default=None):
-        self.config_keys[name] = default
+        if name not in self.config_keys:
+            self.config_keys[name] = default
+        if name in self._config:
+            return self._config[name]
+        return self.config_keys[name]
 
 
 class _StubExecuteContext:
@@ -685,10 +697,15 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     state_shares = pd.read_csv(out_dir / "commute_day_state_shares.csv", dtype={"code": str})
     assert list(state_shares.columns) == list(S.STATE_SHARE_COLUMNS)
     zgb_states = state_shares[state_shares["code"] == "zgb"].iloc[0]
+    # The denominator is n_employed (both employed persons here also have a workplace, so the
+    # employed remainder is empty); n_workers is a count beside it. See
+    # tests/test_commute_day_consumers.py for the case that discriminates the two denominators.
+    assert zgb_states["n_employed"] == 2
     assert zgb_states["n_workers"] == 2
     assert zgb_states["share_at_workplace"] == pytest.approx(0.5)
     assert zgb_states["share_home"] == pytest.approx(0.5)
     assert zgb_states["share_absent"] == pytest.approx(0.0)
+    assert zgb_states["share_no_workplace"] == pytest.approx(0.0)
     summary = (out_dir / "summary.md").read_text(encoding="utf-8")
     assert "Check 1 (ADR-0104)" in summary and "never gated" in summary
 

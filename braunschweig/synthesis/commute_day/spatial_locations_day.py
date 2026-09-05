@@ -37,9 +37,12 @@ DAY_ACTIVITIES_STAGE = "synthesis.population.activities.final"
 #: Only the activities name is substituted here; the vendored stage reads no trips frame.
 _STAGE_MAP = {ACTIVITIES_STAGE: DAY_ACTIVITIES_STAGE}
 
-#: Pure module whose source this stage's cache token must cover (see :func:`validate`): the
-#: shim decides WHICH frame the vendored stage sees, so an edit to it changes this output.
-_HELPER_MODULES = (_day_view,)
+#: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shim
+#: decides WHICH frame the vendored stage sees, and the VENDORED join itself is what produces
+#: the output -- synpp hashes only this thin module, so an edit to
+#: synthesis/population/spatial/locations.py would otherwise leave a stale location frame in
+#: the cache.
+_HELPER_MODULES = (_day_view, base)
 
 
 def validate(context):

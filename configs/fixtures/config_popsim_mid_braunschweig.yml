@@ -22,11 +22,14 @@ run:
   - braunschweig.analysis.verbindungen_validation
 
 config:
-  # Reporting-day commute-day-state model (ADR-0104, issue #244): OFF for this workflow. Its
-  # donor pool is built from the raw MiD 2023 delivery and is specific to the MiD/production
-  # workflow (configs/base_bs.yml), and the two reporting-day aliases below are pass-throughs
-  # of the pre-assignment stages here -- drawing states without replacing the day would write a
-  # commuteDayState attribute that contradicts the plan it is attached to.
+  # Reporting-day commute-day-state model (ADR-0104, issue #244): OFF for this FIXTURE. The
+  # model is wired and validated in the PRODUCTION config (configs/base_bs.yml) only; this file
+  # is a smoke/dev configuration whose DAG and outputs are meant to stay stable, and enabling
+  # the model here would add the donor + state stages to it and make it depend on the raw MiD
+  # 2023 delivery under braunschweig.population.popsim.mid_dir that the donor pool reads. The
+  # two reporting-day aliases below are pass-throughs of the pre-assignment stages accordingly
+  # -- drawing states without replacing the day would write a commuteDayState attribute that
+  # contradicts the plan it is attached to.
   commute_day_state_enabled: false
   processes: 8
 

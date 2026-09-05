@@ -142,11 +142,22 @@ PER_PERSON_COLUMNS = (
 
 #: The three reporting-day states ``braunschweig.synthesis.commute_day.state_stage`` draws.
 COMMUTE_DAY_STATES = ("at_workplace", "home", "absent")
+#: Column carrying the drawn state in the state frame.
+STATE_COLUMN = "commute_day_state"
+#: Columns of ``commute_day_state_shares.csv``. EVERY share is over the EMPLOYED persons of
+#: the row (``n_employed``), the universe the SrV reference is defined on -- NOT over the
+#: model's workers. ``share_at_workplace + share_home + share_absent + share_no_workplace == 1``
+#: by construction: the first three cover the employed persons that HAVE an assigned workplace
+#: (``n_workers`` of them, a count, not a denominator) and the fourth the employed remainder
+#: without one, for whom the model draws no state at all.
 STATE_SHARE_COLUMNS = (
     "code", "n_workers", "share_at_workplace", "share_home", "share_absent",
-    "n_employed", "share_employed_no_work_trip", "srv_share_home_office_day",
-    "srv_share_work_trip", "srv_share_neither", "delta_no_work_trip_pp",
+    "share_no_workplace", "n_employed", "share_employed_no_work_trip",
+    "srv_share_home_office_day", "srv_share_work_trip", "srv_share_neither",
+    "delta_no_work_trip_pp",
 )
+#: Share column for employed persons without an assigned workplace (no drawn state).
+NO_WORKPLACE_SHARE = "share_no_workplace"
 #: Pre-registered tolerance of ADR-0104 check 1, in PERCENTAGE POINTS, applied to the REGIONAL
 #: aggregate only. ASSUMPTION: chosen a priori in the 2026-09-04 design and recorded in
 #: ADR-0104; it is NOT derived from any committed source, and the per-Kreis SrV cells (663-2,268
@@ -165,7 +176,14 @@ def configure(context):
     # With commute_day_state_enabled false the alias is a pass-through of the pre-assignment
     # trips, so the Phase A numbers are reproduced unchanged.
     context.stage("synthesis.population.trips.final")
-    context.stage("braunschweig.synthesis.commute_day.state_stage")
+    # Declared only when the model is on -- the same gate the other three consumers of the state
+    # stage use (braunschweig.matsim.scenario.population,
+    # braunschweig.synthesis.commute_day.output_day, braunschweig.analysis.cordon_validation),
+    # so a workflow running with the model off never carries the donor/state chain in its DAG
+    # for a table this stage would not write anyway.
+    context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
+    if context.config(KEY_COMMUTE_DAY_STATE_ENABLED):
+        context.stage("braunschweig.synthesis.commute_day.state_stage")
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("synthesis.population.spatial.primary.locations")
     # The workplace pool is declared under its CONCRETE name, not under the
@@ -188,7 +206,7 @@ def configure(context):
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE, DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     context.config(KEY_EDGE_TOLERANCE_KM, DEFAULT_EDGE_TOLERANCE_KM)
-    context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
+    # KEY_COMMUTE_DAY_STATE_ENABLED is declared above, where the state stage is gated on it.
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -246,35 +264,27 @@ def _dedupe_homes(homes, columns):
 
 # --------------------------------------------------------------------------- participation
 
-def work_participation_by_kreis(persons, trips, homes_with_ars5,
-                                max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
-                                stats=None):
-    """Share of employed persons who make a home->work trip, per home Kreis + the ZGB total.
+def _employed_with_home_kreis(persons, homes_with_ars5,
+                              max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
+                              stats=None):
+    """The DENOMINATOR universe of this stage: employed persons with a ZGB home Kreis.
+
+    Both :func:`work_participation_by_kreis` and :func:`commute_day_state_shares` build their
+    per-Kreis denominators from this ONE function, so ``n_employed`` cannot differ between the
+    two tables -- a difference would put two incompatible universes side by side in the same
+    report, which is precisely what ADR-0104 check 1 must not do (its SrV reference shares
+    0.1418 / 0.6511 / 0.2071 are over EMPLOYED persons, not over the model's workers).
 
     ``persons`` must carry ``person_id, household_id, employed`` (the ``employed`` flag of
     ``synthesis.population.enriched``; it is absent when ``reactivate_person_attributes`` is
-    OFF, which this function reports as a hard error rather than assuming a value), ``trips``
-    must carry ``person_id, following_purpose`` (eqasim schema), and ``homes_with_ars5`` must
-    carry ``household_id, ars5`` as produced by
-    ``braunschweig.analysis.spatial.assign_geographies``.
-
-    A person counts as making a work trip when at least one of their trips has
-    ``following_purpose == "work"``. Only ``employed`` persons enter the denominator, so the
-    result is directly comparable to the SrV universe (persons who were asked the home-office
-    question, i.e. the employed).
-
-    Emits one row per code in ``ZGB_KREISE`` -- including Kreise with zero employed persons,
-    whose shares are ``NaN`` rather than 0 (never a substituted value) -- plus one ``zgb`` row
-    over exactly the union of those Kreise, so ``sum(kreis n_employed) == zgb n_employed``
-    holds by construction (same convention as the SrV reference table). Persons whose home
-    resolves to no Kreis, or to a Kreis outside the ZGB, are excluded from both and counted;
-    the unmatched-home rate raises above ``max_unmatched_home_share``. ``stats``, if a dict, is
-    filled with the diagnostic counts for ``provenance.json``.
+    OFF, which is a hard error here rather than an assumed value) and ``homes_with_ars5``
+    ``household_id, ars5``. A missing ``employed`` flag counts as NOT employed and is reported;
+    persons whose home resolves to no Kreis (guarded -- raises above
+    ``max_unmatched_home_share``) or to a Kreis outside the ZGB are excluded and counted.
+    Returns the filtered frame; ``stats``, if a dict, receives the counts.
     """
     _require_columns(persons, ("person_id", "household_id", "employed"),
                      "synthesis.population.enriched")
-    _require_columns(trips, ("person_id", "following_purpose"),
-                     "synthesis.population.trips.final")
     _require_columns(homes_with_ars5, ("household_id", "ars5"), "the home-geography frame")
 
     frame = persons[["person_id", "household_id", "employed"]].merge(
@@ -303,6 +313,46 @@ def work_participation_by_kreis(persons, trips, homes_with_ars5,
             _LOG_TAG, n_outside_zgb, n_employed_total)
     employed = employed[in_zgb].copy()
 
+    if stats is not None:
+        stats.update(n_persons_total=int(len(frame)), n_employed_total=n_employed_total,
+                     n_employed_missing_flag=n_employed_missing,
+                     n_home_unmatched=n_home_unmatched, n_outside_zgb=n_outside_zgb,
+                     n_employed_in_zgb=int(len(employed)))
+    return employed
+
+
+def work_participation_by_kreis(persons, trips, homes_with_ars5,
+                                max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
+                                stats=None):
+    """Share of employed persons who make a home->work trip, per home Kreis + the ZGB total.
+
+    ``persons`` must carry ``person_id, household_id, employed`` (the ``employed`` flag of
+    ``synthesis.population.enriched``; it is absent when ``reactivate_person_attributes`` is
+    OFF, which this function reports as a hard error rather than assuming a value), ``trips``
+    must carry ``person_id, following_purpose`` (eqasim schema), and ``homes_with_ars5`` must
+    carry ``household_id, ars5`` as produced by
+    ``braunschweig.analysis.spatial.assign_geographies``.
+
+    A person counts as making a work trip when at least one of their trips has
+    ``following_purpose == "work"``. Only ``employed`` persons enter the denominator, so the
+    result is directly comparable to the SrV universe (persons who were asked the home-office
+    question, i.e. the employed).
+
+    Emits one row per code in ``ZGB_KREISE`` -- including Kreise with zero employed persons,
+    whose shares are ``NaN`` rather than 0 (never a substituted value) -- plus one ``zgb`` row
+    over exactly the union of those Kreise, so ``sum(kreis n_employed) == zgb n_employed``
+    holds by construction (same convention as the SrV reference table). Persons whose home
+    resolves to no Kreis, or to a Kreis outside the ZGB, are excluded from both and counted;
+    the unmatched-home rate raises above ``max_unmatched_home_share``. ``stats``, if a dict, is
+    filled with the diagnostic counts for ``provenance.json``.
+    """
+    _require_columns(trips, ("person_id", "following_purpose"),
+                     "synthesis.population.trips.final")
+
+    counts = {}
+    employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
+                                         stats=counts)
+
     work_trip_persons = trips.loc[trips["following_purpose"] == WORK_PURPOSE, "person_id"]
     employed["has_work_trip"] = employed["person_id"].isin(set(work_trip_persons))
 
@@ -316,14 +366,12 @@ def work_participation_by_kreis(persons, trips, homes_with_ars5,
         "employed flag",
         _LOG_TAG, len(employed), int(employed["has_work_trip"].sum()),
         100.0 * _rate(int(employed["has_work_trip"].sum()), len(employed)),
-        n_home_unmatched, n_outside_zgb, n_employed_missing)
+        counts["n_home_unmatched"], counts["n_outside_zgb"],
+        counts["n_employed_missing_flag"])
 
     if stats is not None:
-        stats.update(n_persons_total=int(len(frame)), n_employed_total=n_employed_total,
-                     n_employed_missing_flag=n_employed_missing,
-                     n_home_unmatched=n_home_unmatched, n_outside_zgb=n_outside_zgb,
-                     n_employed_in_zgb=int(len(employed)),
-                     n_with_work_trip=int(employed["has_work_trip"].sum()))
+        stats.update(counts)
+        stats.update(n_with_work_trip=int(employed["has_work_trip"].sum()))
     return table
 
 
@@ -384,13 +432,24 @@ def compare_participation(model, srv_table):
 # ------------------------------------------------------------------ reporting-day states (check 1)
 
 def _state_share_row(code, subset):
-    """One row of the state-share table: the three state shares among ``subset``'s workers."""
-    n_workers = int(len(subset))
-    row = {"code": code, "n_workers": n_workers}
+    """One row of the state-share table, over ``subset``'s EMPLOYED persons.
+
+    ``subset`` is the employed cohort of one code (see :func:`_employed_with_home_kreis`) with a
+    ``commute_day_state`` column that is missing for every employed person WITHOUT an assigned
+    workplace. Each of the three state shares and :data:`NO_WORKPLACE_SHARE` therefore divides
+    by ``len(subset)`` = ``n_employed``, the universe the SrV reference is defined on, and the
+    four sum to 1. ``n_workers`` is reported as a COUNT beside them, never as a denominator.
+    """
+    n_employed = int(len(subset))
+    n_workers = int(subset["commute_day_state"].notna().sum())
+    row = {"code": code, "n_workers": n_workers, "n_employed": n_employed}
     for state in COMMUTE_DAY_STATES:
-        # No worker: a share is undefined, not zero (same convention as _participation_row).
-        row[f"share_{state}"] = (float((subset["commute_day_state"] == state).mean())
-                                 if n_workers else float("nan"))
+        # No employed person: a share is undefined, not zero (same convention as
+        # _participation_row -- never substitute a value for an absent measurement).
+        row[f"share_{state}"] = (float((subset["commute_day_state"] == state).sum() / n_employed)
+                                 if n_employed else float("nan"))
+    row[NO_WORKPLACE_SHARE] = (float((n_employed - n_workers) / n_employed)
+                               if n_employed else float("nan"))
     return row
 
 
@@ -399,18 +458,29 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
                              stats=None):
     """ADR-0104 check 1: realised reporting-day state shares per home Kreis, against SrV 2023.
 
+    **Denominator (the defect this function exists to avoid re-introducing).** Every share is
+    over the EMPLOYED persons of the row, NOT over the model's workers: the committed SrV
+    shares 0.1418 / 0.6511 / 0.2071 are shares of the persons SrV asked the home-office
+    question, i.e. the employed. The employed universe is built by
+    :func:`_employed_with_home_kreis`, the SAME function :func:`work_participation_by_kreis`
+    uses, so the two tables' ``n_employed`` agree by construction; the drawn state is joined
+    onto it, and an employed person WITHOUT an assigned workplace -- for whom the model draws
+    no state at all -- lands in :data:`NO_WORKPLACE_SHARE`. The four shares therefore sum to 1,
+    and ``n_workers`` is a COUNT of the employed persons that do have an assigned workplace.
+
     ``states`` is the ``states`` frame of ``braunschweig.synthesis.commute_day.state_stage``
-    (EXACTLY one row per worker, columns ``person_id, commute_day_state``); ``persons`` supplies
-    the ``person_id -> household_id`` link and ``homes_with_ars5`` the ``household_id -> ars5``
-    one, so the home Kreis is derived by the SAME matching logic as every other table of this
-    stage; ``participation`` is :func:`compare_participation`'s output, from which the employed
-    denominator, the model's ``share_no_work_trip`` and the three SrV reference shares are
-    carried over unchanged (they are never recomputed here, so the two tables cannot disagree).
+    (EXACTLY one row per worker, columns ``person_id, commute_day_state``); ``persons`` is the
+    enriched population (``person_id, household_id, employed``) and ``homes_with_ars5`` the
+    ``household_id -> ars5`` frame of ``braunschweig.analysis.spatial.assign_geographies``;
+    ``participation`` is :func:`compare_participation`'s output, from which the model's
+    ``share_no_work_trip`` and the three SrV reference shares are carried over unchanged (never
+    recomputed here, so the two tables cannot disagree) and whose ``n_employed`` is
+    cross-checked against the recomputed one.
 
     Rows are the eight ``ZGB_KREISE`` codes plus a ``zgb`` row over exactly their union; columns
     are :data:`STATE_SHARE_COLUMNS`. ``delta_no_work_trip_pp`` compares the model's share of
     employed persons WITHOUT a work trip against the sum of the two SrV remainder shares
-    (``srv_share_home_office_day + srv_share_neither``), which is the only decomposition the two
+    (``srv_share_home_office_day + srv_share_neither``), the only decomposition the two
     universes share.
 
     ASSUMPTION (stated in ``summary.md`` as well): the model states map onto the SrV workday
@@ -419,74 +489,92 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     trip, no full home-office day), so the correspondence with a modelled "away from the region"
     state is an interpretation, not a definitional identity.
 
-    Workers whose home resolves to no Kreis, or to a Kreis outside the ZGB, are excluded from
-    both the per-Kreis rows and the ``zgb`` row and counted; the unmatched-home rate is guarded
-    exactly as in :func:`work_participation_by_kreis`. ``stats``, if a dict, receives the counts.
+    Workers whose home resolves to no Kreis, to a Kreis outside the ZGB, or who are not flagged
+    ``employed`` at all are outside the employed universe: they are excluded, counted and logged
+    (CLAUDE.md "Fallback transparency") rather than silently inflating a share above 1.
+    ``stats``, if a dict, receives the counts.
     """
     _require_columns(states, ("person_id", "commute_day_state"), "the commute-day state frame")
-    _require_columns(persons, ("person_id", "household_id"), "synthesis.population.enriched")
-    _require_columns(homes_with_ars5, ("household_id", "ars5"), "the home-geography frame")
     _require_columns(participation, PARTICIPATION_COLUMNS, "the participation table")
 
     unknown = sorted(set(states["commute_day_state"].dropna().unique()) - set(COMMUTE_DAY_STATES))
     if unknown:
         raise ValueError(
             f"the commute-day state frame carries the unknown state(s) {unknown}; the shares "
-            f"below would then not sum to 1 over {list(COMMUTE_DAY_STATES)}. Either the state "
-            "stage gained a state or the wrong column was passed")
-
-    frame = states[["person_id", "commute_day_state"]].merge(
-        persons[["person_id", "household_id"]], on="person_id", how="left", validate="1:1")
-    n_workers_total = len(frame)
-    n_person_unmatched = int(frame["household_id"].isna().sum())
-    if n_person_unmatched:
+            f"below would then not sum to 1 over {list(COMMUTE_DAY_STATES)} plus "
+            f"{NO_WORKPLACE_SHARE!r}. Either the state stage gained a state or the wrong column "
+            "was passed")
+    duplicated = states.loc[states["person_id"].duplicated(), "person_id"].unique()
+    if len(duplicated):
         raise ValueError(
-            f"{n_person_unmatched}/{n_workers_total} workers in the state frame have no row in "
-            "synthesis.population.enriched; the state frame and the population must describe "
-            "the same persons -- check the person_id join")
+            f"the commute-day state frame must carry EXACTLY one row per worker, but "
+            f"{len(duplicated)} person_id(s) are duplicated (e.g. {sorted(duplicated)[:10]}); "
+            "the state stage asserts this, so a duplicate here means the wrong frame was passed")
 
-    frame = frame.merge(_dedupe_homes(homes_with_ars5, ("household_id", "ars5")),
-                        on="household_id", how="left", validate="m:1")
-    n_home_unmatched = int(frame["ars5"].isna().sum())
-    _guard_unmatched_home_share(n_home_unmatched, n_workers_total,
-                                "workers (reporting-day states)", max_unmatched_home_share)
+    counts = {}
+    employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
+                                         stats=counts)
+    employed[STATE_COLUMN] = employed["person_id"].map(
+        states.set_index("person_id")["commute_day_state"])
 
-    in_zgb = frame["ars5"].isin(ZGB_KREISE)
-    n_outside_zgb = int((frame["ars5"].notna() & ~in_zgb).sum())
-    if n_outside_zgb:
-        LOGGER.warning(
-            "%s %d/%d workers have a home Kreis outside the 8 ZGB Kreise; excluded from both "
-            "the per-Kreis rows and the zgb row", _LOG_TAG, n_outside_zgb, n_workers_total)
-    frame = frame[in_zgb].copy()
+    # Workers OUTSIDE the employed universe (not flagged employed, no home Kreis, or a home
+    # outside the ZGB). They cannot enter an employed-based share, so they are dropped here --
+    # loudly: a large residual would mean the model assigns workplaces to persons the population
+    # does not call employed, which is a finding about the model, not a rounding detail.
+    n_states = int(len(states))
+    n_workers_in_universe = int(employed[STATE_COLUMN].notna().sum())
+    n_states_outside = n_states - n_workers_in_universe
+    LOGGER.info(
+        "%s reporting-day states joined onto the employed universe: %d/%d workers matched "
+        "(%.2f%%); %d worker(s) are outside it (not flagged employed, or a home Kreis outside "
+        "the ZGB) and are excluded from every share below",
+        _LOG_TAG, n_workers_in_universe, n_states, 100.0 * _rate(n_workers_in_universe, n_states),
+        n_states_outside)
 
-    rows = [_state_share_row(code, frame[frame["ars5"] == code]) for code in ZGB_KREISE]
-    rows.append(_state_share_row(ZGB_ROW_CODE, frame))
-    table = pd.DataFrame(rows, columns=["code", "n_workers"]
-                         + [f"share_{state}" for state in COMMUTE_DAY_STATES])
+    rows = [_state_share_row(code, employed[employed["ars5"] == code]) for code in ZGB_KREISE]
+    rows.append(_state_share_row(ZGB_ROW_CODE, employed))
+    table = pd.DataFrame(rows, columns=["code", "n_workers", "n_employed"]
+                         + [f"share_{state}" for state in COMMUTE_DAY_STATES]
+                         + [NO_WORKPLACE_SHARE])
 
     reference = participation[["code", "n_employed", "share_no_work_trip",
                                "srv_share_home_office_day", "srv_share_work_trip",
                                "srv_share_neither"]].rename(
-        columns={"share_no_work_trip": "share_employed_no_work_trip"})
+        columns={"n_employed": "n_employed_participation",
+                 "share_no_work_trip": "share_employed_no_work_trip"})
     out = table.merge(reference, on="code", how="left", validate="1:1")
+
+    # Both tables must describe the same universe; they are built from the same helper, so a
+    # mismatch can only mean the caller passed a participation frame from different inputs.
+    disagreeing = out.loc[out["n_employed"] != out["n_employed_participation"], "code"].tolist()
+    if disagreeing:
+        raise ValueError(
+            f"the employed denominator disagrees with the participation table for the code(s) "
+            f"{disagreeing}; both must come from the same persons/homes frames, otherwise the "
+            "state shares and the participation shares describe different universes")
+    out = out.drop(columns=["n_employed_participation"])
+
     out["delta_no_work_trip_pp"] = 100.0 * (
         out["share_employed_no_work_trip"]
         - (out["srv_share_home_office_day"] + out["srv_share_neither"]))
 
     zgb_row = out[out["code"] == ZGB_ROW_CODE].iloc[0]
     LOGGER.info(
-        "%s reporting-day states over %d ZGB workers: at_workplace %s / home %s / absent %s "
-        "(SrV work_trip %s / home_office_day %s / neither %s); employed without a work trip %s "
-        "vs SrV remainder, delta %s pp (tolerance +/- %.1f pp, regional aggregate only)",
-        _LOG_TAG, int(zgb_row["n_workers"]), _fmt(zgb_row["share_at_workplace"]),
-        _fmt(zgb_row["share_home"]), _fmt(zgb_row["share_absent"]),
+        "%s reporting-day states over %d ZGB EMPLOYED persons (%d with an assigned workplace): "
+        "at_workplace %s / home %s / absent %s / no_workplace %s (SrV work_trip %s / "
+        "home_office_day %s / neither %s); employed without a work trip %s vs SrV remainder, "
+        "delta %s pp (tolerance +/- %.1f pp, regional aggregate only)",
+        _LOG_TAG, int(zgb_row["n_employed"]), int(zgb_row["n_workers"]),
+        _fmt(zgb_row["share_at_workplace"]), _fmt(zgb_row["share_home"]),
+        _fmt(zgb_row["share_absent"]), _fmt(zgb_row[NO_WORKPLACE_SHARE]),
         _fmt(zgb_row["srv_share_work_trip"]), _fmt(zgb_row["srv_share_home_office_day"]),
         _fmt(zgb_row["srv_share_neither"]), _fmt(zgb_row["share_employed_no_work_trip"]),
         _fmt(zgb_row["delta_no_work_trip_pp"], 2), CHECK_1_TOLERANCE_PP)
 
     if stats is not None:
-        stats.update(n_workers_total=n_workers_total, n_home_unmatched=n_home_unmatched,
-                     n_outside_zgb=n_outside_zgb, n_workers_in_zgb=int(len(frame)))
+        stats.update(counts)
+        stats.update(n_states=n_states, n_workers_in_employed_universe=n_workers_in_universe,
+                     n_states_outside_employed_universe=n_states_outside)
     return out[list(STATE_SHARE_COLUMNS)]
 
 
@@ -984,20 +1072,35 @@ def _state_shares_section(state_shares):
     +/- 3 pp band to it alone. The per-Kreis rows live in ``commute_day_state_shares.csv`` and
     are reported, never gated -- ADR-0104 records why (the per-Kreis SrV cells rest on
     663-2,268 persons under a stratified PSU design over ~44 selected municipalities and are
-    assumption-grade for a full Kreis).
+    assumption-grade for a full Kreis). The section names the denominator of every number it
+    prints: both sides are shares of EMPLOYED persons, which is the whole point of check 1 and
+    the one thing a reader must not have to infer.
     """
     if state_shares is None or len(state_shares) == 0:
         return []
     row = state_shares[state_shares["code"] == ZGB_ROW_CODE].iloc[0]
-    # (label, model share, SrV share) -- the mapping is an ASSUMPTION, stated below.
+    # (label, model share, SrV share) -- the state correspondence is an ASSUMPTION, stated below.
     pairs = (
         ("at_workplace vs SrV work trip", row["share_at_workplace"], row["srv_share_work_trip"]),
         ("home vs SrV full home-office day", row["share_home"],
          row["srv_share_home_office_day"]),
         ("absent vs SrV neither", row["share_absent"], row["srv_share_neither"]),
     )
+    n_employed = int(row["n_employed"])
+    n_workers = int(row["n_workers"])
     lines = ["", "## Check 1 (ADR-0104): reporting-day states vs SrV -- tolerance +/- 3 pp on "
              "the regional aggregate only (ASSUMPTION, pre-registered)", "",
+             "DENOMINATOR: every model share below, and every SrV share it is compared to, is a "
+             "share of EMPLOYED",
+             "persons with a ZGB home Kreis -- the universe SrV asked the home-office question "
+             "in. It is NOT a share",
+             "of the model's workers. The employed persons WITHOUT an assigned workplace, for "
+             "whom the model draws no",
+             "state at all, are reported as share_no_workplace, so the four model shares sum "
+             "to 1 over the employed;",
+             "n_workers is a COUNT of the employed persons that do have an assigned workplace, "
+             "never a denominator.",
+             "",
              "The +/- 3 pp band was chosen a priori in the 2026-09-04 design and recorded in "
              "ADR-0104; it is NOT",
              "derived from any committed source. It is applied to the ZGB aggregate ONLY. The "
@@ -1013,8 +1116,10 @@ def _state_shares_section(state_shares):
              "home-office day), so its correspondence with a modelled away-from-the-region "
              "state is an",
              "interpretation, not a definitional identity.", "",
-             f"ZGB workers with a state: {int(row['n_workers'])} (sample count)", "",
-             "| quantity | model | SrV 2023 | delta (pp) | +/- 3 pp |", "|---|---|---|---|---|"]
+             f"ZGB employed persons: {n_employed} (sample count); of them {n_workers} with an "
+             f"assigned workplace and therefore a drawn state.", "",
+             "| quantity (share of employed persons) | model | SrV 2023 | delta (pp) | "
+             "+/- 3 pp |", "|---|---|---|---|---|"]
     for label, model_share, srv_share in pairs:
         delta = 100.0 * (float(model_share) - float(srv_share))
         lines.append(f"| {label} | {_fmt(model_share)} | {_fmt(srv_share)} | "
@@ -1025,6 +1130,14 @@ def _state_shares_section(state_shares):
         f"{_fmt(row['share_employed_no_work_trip'])} | {_fmt(srv_remainder)} | "
         f"{_fmt(row['delta_no_work_trip_pp'], 2)} | "
         f"{_check_1_verdict(row['delta_no_work_trip_pp'])} |")
+    lines.append(
+        f"| no_workplace (employed, no assigned workplace) | "
+        f"{_fmt(row[NO_WORKPLACE_SHARE])} | n/a | n/a | not compared |")
+    lines += ["",
+              "The no_workplace row has NO SrV counterpart: it is part of the model's own "
+              "remainder, reported so the",
+              "four model shares can be read as the partition of the employed universe that "
+              "they are."]
     return lines
 
 
@@ -1225,8 +1338,11 @@ def execute(context):
     df_work, _df_education = context.stage("synthesis.population.spatial.primary.locations")
     df_persons = context.stage("synthesis.population.enriched")
     df_trips = context.stage("synthesis.population.trips.final")
-    df_states = context.stage("braunschweig.synthesis.commute_day.state_stage")["states"]
+    # Read only when declared: configure() gates the state stage on the same flag, so reading it
+    # unconditionally would fail on a workflow that runs with the model off.
     commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
+    df_states = (context.stage("braunschweig.synthesis.commute_day.state_stage")["states"]
+                 if commute_day_state_enabled else None)
     df_work_locations = context.stage("braunschweig.locations.work")
     df_municipalities = context.stage("data.spatial.municipalities")
     df_ba_flows = context.stage("braunschweig.data.census.pendler")
