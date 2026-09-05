@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 77 | stages: 117 | datasets: 60 | ADRs: 103 | run manifests: 31
+- Features: 78 | stages: 118 | datasets: 62 | ADRs: 104 | run manifests: 32
 
 ## Population synthesis
 
@@ -163,10 +163,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Validation
 
-6 stage(s), 5 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `verbindungen`, `vg250_ew`
+7 stage(s), 6 in the production DAG. Datasets: `mid2023_reference_tables`, `srv2023_primary_distance_targets`, `srv2023_work_participation`, `verbindungen`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
+| [Commute day state -- Phase A measurement](../registry/features/commute_day_state_measurement.yml) | active | ON | A/s/s | measured_vs_reference (`commute-day-state-phase-a-2026-09-05`) | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
 | [Education enrollment validation](../registry/features/education_enrollment_validation.yml) | active | ON | A/s/- | unvalidated |  |
 | [MiD validation report](../registry/features/mid_validation_report.yml) | active | ON | A/s/s | unvalidated |  |
 | [Population validation (controls/quality/geo)](../registry/features/population_validation.yml) | active | ON | A/s/s | unvalidated |  |
