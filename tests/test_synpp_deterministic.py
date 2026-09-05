@@ -130,8 +130,8 @@ print(json.dumps(sorted(registry.keys())))
 def test_real_pipeline_hashes_are_identical_across_hash_seeds(tmp_path):
     """The production graph (base + 25 % overlay) must hash identically under two PYTHONHASHSEEDs.
 
-    Without the patch synpp 1.6.2 produced different hashes for several stages between seeds
-    (measured 2026-09-05: e.g. replacement_education_gravity with 119 vs 70 propagated keys).
+    Without the patch synpp 1.6.2 yields a different stage registry per PYTHONHASHSEED (which
+    stages change, and by how many propagated keys, varies with the code state; ADR-0105).
     """
     script = tmp_path / "repro.py"
     script.write_text(REPRO, encoding="utf-8")
