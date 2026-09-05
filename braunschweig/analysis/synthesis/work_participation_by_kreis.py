@@ -96,6 +96,17 @@ WORK_PURPOSE = "work"
 #: Prefix that ``braunschweig.data.external_workplaces`` puts in front of the 8-digit AGS of a
 #: fabricated out-of-region workplace, so ``commune_id[3:8]`` is the destination Kreis ARS5.
 EXTERNAL_PREFIX = "EXT"
+#: Number of digits an EXTERNAL workplace carries after :data:`EXTERNAL_PREFIX`
+#: (``braunschweig.data.external_workplaces`` writes the 8-digit Gemeinde AGS).
+EXTERNAL_AGS_DIGITS = 8
+#: Digit counts a REAL (in-region) workplace ``commune_id`` may have. MEASURED on the i329
+#: 100 % population (2026-09-05, cache entry braunschweig.locations.work__1a0249bd...):
+#: all 237,939 in-region workplaces carry the 12-digit Regionalschluessel/AGS
+#: (e.g. "031010000000"), never the 8-digit form; the 8-digit form is kept accepted because the
+#: ZGB Gemeinde tables elsewhere in the pipeline use it. Both start with the same 5-digit Kreis
+#: prefix, so ``text[:5]`` is the Kreis ARS5 either way, while a 7- or 9-digit id is still
+#: rejected (it would yield a well-formed but WRONG Kreis).
+INTERNAL_AGS_DIGITS = (8, 12)
 
 ZGB_ROW_CODE = "zgb"
 #: Destination scopes of the distance-class table (see :func:`assigned_distance_classes`).
@@ -372,27 +383,34 @@ def _destination_ars5(commune_id, is_external):
 
     External workplaces carry ``"EXT" + <8-digit AGS>`` (see
     ``braunschweig.data.external_workplaces``), so their Kreis is ``commune_id[3:8]``; a real
-    ZGB workplace carries the plain 8-digit AGS, whose Kreis is the first 5 digits. Both branches
-    require the FULL AGS to be exactly 8 digits before taking a 5-digit prefix of it: a naive
-    ``text[:5]`` (internal) or ``text[3:8]`` (external) would happily return a well-formed
-    5-digit string for a MALFORMED, e.g. 7-digit, id too -- one digit short, that string still
-    passes ``isdigit()`` but names the WRONG Kreis (the same "well-formed but wrong" hazard
-    ``kreis_ars5`` below guards against for VG250 keys). Anything that is not a plain 8-digit
-    AGS (internal) or ``EXT`` + 8 digits (external) returns ``""`` -- the caller counts those
-    rather than guessing a Kreis.
+    in-region workplace carries the plain AGS written by ``braunschweig.locations.work``, whose
+    Kreis is the first 5 digits. Both branches require the FULL AGS to have one of its VALID
+    digit counts (:data:`EXTERNAL_AGS_DIGITS` / :data:`INTERNAL_AGS_DIGITS`) before taking a
+    5-digit prefix of it: a naive ``text[:5]`` (internal) or ``text[3:8]`` (external) would
+    happily return a well-formed 5-digit string for a MALFORMED, e.g. 7-digit, id too -- one
+    digit short, that string still passes ``isdigit()`` but names the WRONG Kreis (the same
+    "well-formed but wrong" hazard ``kreis_ars5`` below guards against for VG250 keys). Anything
+    with another digit count, or a non-digit, returns ``""`` -- the caller counts those rather
+    than guessing a Kreis.
+
+    The internal branch accepts BOTH the 8-digit and the 12-digit AGS because the production
+    stage writes the 12-digit Regionalschluessel: pinning it to 8 digits alone made every
+    in-region workplace unresolvable on the real population (measured 2026-09-05: 265,750 of
+    304,900 workers, tripping ``cds_max_unresolved_destination_share``), a regression the
+    synthetic 8-digit test fixtures could not see. See :data:`INTERNAL_AGS_DIGITS`.
     """
     if commune_id is None or (isinstance(commune_id, float) and math.isnan(commune_id)):
         return ""
     text = str(commune_id)
     if is_external:
         ags = text[len(EXTERNAL_PREFIX):]
-        if len(ags) != 8 or not ags.isdigit():
+        if len(ags) != EXTERNAL_AGS_DIGITS or not ags.isdigit():
             return ""
-        candidate = ags[:5]
     else:
-        if len(text) != 8 or not text.isdigit():
+        ags = text
+        if len(ags) not in INTERNAL_AGS_DIGITS or not ags.isdigit():
             return ""
-        candidate = text[:5]
+    candidate = ags[:5]
     return candidate if len(candidate) == 5 and candidate.isdigit() else ""
 
 
