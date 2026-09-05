@@ -196,3 +196,66 @@ def test_jitter_is_applied_to_replaced_rows_only():
     u2 = (day_trips_2[day_trips_2["person_id"].isin(untouched_ids)]
           .sort_values(["person_id", "trip_index"]).reset_index(drop=True))
     assert u1[trips.columns].equals(u2[trips.columns])
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (issue #244 review)
+# ---------------------------------------------------------------------------
+
+def test_zero_matches_preserves_input_dtypes_and_equals_input():
+    # Nothing to replace or drop at all (every person at_workplace, none absent, no matches):
+    # the output must equal the input exactly, dtypes included -- concatenating with an empty
+    # placeholder frame would otherwise upcast every CONTRACT column to object.
+    trips = _trips_fixture()
+    states = pd.DataFrame({
+        "person_id":         ["p1", "p2", "p3", "p4"],
+        "commute_day_state": ["at_workplace", "at_workplace", "at_workplace", "at_workplace"],
+        "p_keep":            [1.0, 1.0, 1.0, 1.0],
+        "redraw_eligible":   [False, False, False, False],
+        "reason":            ["not_eligible", "not_eligible", "not_eligible", "not_eligible"],
+    })
+    empty_matches = pd.DataFrame(columns=["person_id", "donor_id", "coarsening_level"])
+
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, states, empty_matches, _donor_trips_fixture(), random_seed=RANDOM_SEED)
+
+    expected = trips.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
+    actual = day_trips[trips.columns].sort_values(["person_id", "trip_index"]).reset_index(drop=True)
+    assert actual.equals(expected)
+    for column in trips.columns:
+        assert day_trips[column].dtype == trips[column].dtype, column
+    assert diagnostics["n_persons_replaced"] == 0
+    assert diagnostics["n_trips_added"] == 0
+    assert diagnostics["n_trips_removed"] == 0
+
+
+def test_donor_missing_from_donor_trips_is_counted_and_warned(caplog):
+    # p2 is matched to "d_missing", a donor_id that does not appear in donor_trips at all -- the
+    # kind of silent-corruption path a donor_id key/dtype mismatch would produce for every
+    # replaced person.
+    trips = _trips_fixture()
+    matches = pd.DataFrame({
+        "person_id":        ["p2"],
+        "donor_id":         ["d_missing"],
+        "coarsening_level": [0],
+    })
+    with caplog.at_level("WARNING", logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        day_trips, diagnostics = plan_replacement.build_day_trips(
+            trips, _states_fixture(), matches, _donor_trips_fixture(), random_seed=RANDOM_SEED)
+
+    assert diagnostics["n_donors_without_trips"] == 1
+    assert "p2" not in set(day_trips["person_id"])  # matched but zero rows: legitimately empty.
+    assert any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+
+
+def test_duplicate_person_id_in_matches_raises_value_error():
+    trips = _trips_fixture()
+    duplicated_matches = pd.DataFrame({
+        "person_id":        ["p2", "p2"],
+        "donor_id":         ["d1", "d1"],
+        "coarsening_level": [0, 0],
+    })
+    with pytest.raises(ValueError, match="duplicate person_id"):
+        plan_replacement.build_day_trips(
+            trips, _states_fixture(), duplicated_matches, _donor_trips_fixture(),
+            random_seed=RANDOM_SEED)

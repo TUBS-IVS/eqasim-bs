@@ -12,7 +12,12 @@ Per person, by ``commute_day_state``:
 * ``home`` WITH a donor match -- every one of the person's original trip rows is dropped and
   replaced by the donor's own trip chain (:func:`donor_pool.donor_trips`), with ``person_id`` set
   to the RECEIVING person, ``trip_index`` renumbered ``0..n-1`` in the donor's own order, and
-  ``is_first_trip`` / ``is_last_trip`` recomputed from that renumbering. Any column the input
+  ``is_first_trip`` / ``is_last_trip`` recomputed from that renumbering. ``trip_key`` is copied
+  VERBATIM from the donor's own row: it therefore still names the DONOR, not the receiving
+  person, and is no longer unique once a donor is reused across several persons -- it remains
+  useful purely for tracing a replaced row back to its donor trip, never as a per-row identifier;
+  no downstream code in this pipeline relies on it for anything but within-person ordering
+  (``trip_index`` is authoritative for that). Any column the input
   ``trips`` table carries beyond the CONTRACT plus ``euclidean_distance`` and ``trip_key`` (raw
   MiD extras the donor pool intentionally does not carry, see ``donor_pool.donor_trips``) is set
   to ``NaN`` on the replaced rows -- there is no donor-side value to copy, and inventing one would
@@ -79,13 +84,27 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     correct outcome, not an error), ``n_persons_absent``, ``n_trips_removed`` (original rows
     dropped, for both replaced and absent persons), ``n_trips_added`` (donor rows spliced in),
     ``n_home_unmatched``, ``n_extra_columns_nulled`` (count of DISTINCT extra input columns
-    nulled on replaced rows, see the module docstring).
+    nulled on replaced rows, see the module docstring), ``n_donors_without_trips`` (matched
+    persons whose ``donor_id`` has NO rows at all in ``donor_trips`` -- legitimately a fully
+    immobile donor day in the common case, but ALSO the symptom a ``donor_id`` key/dtype mismatch
+    between ``matches`` and ``donor_trips`` would produce, silently wiping every replaced person;
+    logged as a rate and raised to a warning above 1% of replaced persons for exactly that
+    reason).
+
+    Raises ``ValueError`` if ``matches["person_id"]`` contains duplicates -- each person can have
+    at most one donor match; a duplicate would make the replacement for that person ambiguous.
     """
     _require_columns(trips, ("person_id", "trip_index"), "trips frame")
     _require_columns(states, ("person_id", "commute_day_state"), "states frame")
     _require_columns(matches, ("person_id", "donor_id"), "matches frame")
     _require_columns(donor_trips, ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id"),
                      "donor_trips frame")
+    n_duplicated_matches = int(matches["person_id"].duplicated().sum())
+    if n_duplicated_matches > 0:
+        raise ValueError(
+            f"{_LOG_TAG} matches frame has {n_duplicated_matches} duplicate person_id value(s); "
+            "each person must have at most one donor match "
+            f"(duplicated: {sorted(matches.loc[matches['person_id'].duplicated(), 'person_id'].unique())}).")
 
     state_by_person = states.set_index("person_id")["commute_day_state"]
     donor_by_person = matches.set_index("person_id")["donor_id"]
@@ -115,12 +134,17 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
                     for donor_id, group in donor_trips.groupby("donor_id", sort=False)}
 
     replaced_frames = []
+    n_donors_without_trips = 0
     for person_id in sorted(matched_home_persons):
         donor_id = donor_by_person.loc[person_id]
         donor_rows = donor_groups.get(donor_id)
         if donor_rows is None:
-            # The donor has no rows at all in donor_trips (a fully immobile home-office day, see
-            # donor_pool.donor_trips); the person legitimately ends up with zero trip rows too.
+            # The donor has no rows at all in donor_trips -- legitimately a fully immobile
+            # home-office day in the common case (see donor_pool.donor_trips), but this is also
+            # exactly what a donor_id key/dtype mismatch between matches and donor_trips would
+            # produce for EVERY replaced person, so it is counted and rate-checked below rather
+            # than silently accepted.
+            n_donors_without_trips += 1
             continue
         new_rows = donor_rows.copy()
         new_rows["person_id"] = person_id
@@ -142,13 +166,19 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         # only, keyed by the RECEIVING person_id -- never on the donor's own chain (donor_pool
         # deliberately omits it) and never on untouched rows.
         replaced = apply_per_person_jitter(replaced, random_seed)
+        result = pd.concat([kept_rows, replaced], ignore_index=True, sort=False)
     else:
-        replaced = pd.DataFrame(columns=output_columns)
+        # No rows to splice in at all (no home persons, no matches, or every matched donor was
+        # trip-less) -- concatenating with an empty pd.DataFrame(columns=...) placeholder would
+        # upcast every CONTRACT column (trip_index, is_first_trip, is_last_trip, trip_duration,
+        # ...) to object, silently corrupting the dtypes of every UNTOUCHED row as a side effect.
+        # kept_rows alone already carries every row and every original dtype, so it is used as-is.
+        result = kept_rows
 
-    result = pd.concat([kept_rows, replaced], ignore_index=True, sort=False)
     result = result[output_columns]
     result = result.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
 
+    share_donors_without_trips = n_donors_without_trips / max(len(matched_home_persons), 1)
     diagnostics = {
         "n_persons_replaced": len(matched_home_persons),
         "n_persons_absent": n_persons_absent,
@@ -156,17 +186,28 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         "n_trips_added": n_trips_added,
         "n_home_unmatched": n_home_unmatched,
         "n_extra_columns_nulled": n_extra_columns_nulled,
+        "n_donors_without_trips": n_donors_without_trips,
     }
 
     logger.info(
-        "%s reporting-day trips built: %d persons replaced (+%d/-%d trips), %d persons absent "
-        "(0 rows), %d home persons unmatched (kept unchanged, %d extra column(s) nulled on "
-        "replaced rows)", _LOG_TAG, diagnostics["n_persons_replaced"], n_trips_added,
-        n_trips_removed, n_persons_absent, n_home_unmatched, n_extra_columns_nulled)
+        "%s reporting-day trips built: %d persons replaced (+%d/-%d trips, %d/%d matched "
+        "donors had zero trips, %.1f%%), %d persons absent (0 rows), %d home persons unmatched "
+        "(kept unchanged, %d extra column(s) nulled on replaced rows)", _LOG_TAG,
+        diagnostics["n_persons_replaced"], n_trips_added, n_trips_removed,
+        n_donors_without_trips, len(matched_home_persons), 100.0 * share_donors_without_trips,
+        n_persons_absent, n_home_unmatched, n_extra_columns_nulled)
     if n_home_unmatched > 0:
         logger.warning(
             "%s %d home person(s) had no donor match and keep their ORIGINAL (pre-home-office) "
             "day unchanged -- the state stage is expected to downgrade these to at_workplace.",
             _LOG_TAG, n_home_unmatched)
+    if share_donors_without_trips > 0.01:
+        logger.warning(
+            "%s %d/%d matched donors (%.1f%%) have ZERO rows in donor_trips -- above 1%%, which "
+            "usually signals a donor_id key or dtype mismatch between matches and donor_trips "
+            "(silently wiping every affected replaced person's day) rather than a genuinely "
+            "immobile home-office day for that many donors.",
+            _LOG_TAG, n_donors_without_trips, len(matched_home_persons),
+            100.0 * share_donors_without_trips)
 
     return result, diagnostics

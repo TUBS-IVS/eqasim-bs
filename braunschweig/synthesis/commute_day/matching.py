@@ -57,7 +57,6 @@ import pandas as pd
 from braunschweig.calibration.commute_day_state_reference import COMMUTE_CLASS_LABELS
 from braunschweig.synthesis.commute_day.donor_pool import DISTANCE_CLASS_UNKNOWN
 from braunschweig.synthesis.commute_day.state import CLASS_RANK
-from synthesis.population.matched import household_size_class
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,19 @@ def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
 
 
 def _widened_distance_labels(assigned_class: str) -> set:
-    """Distance classes within one rank of ``assigned_class`` (inclusive), for coarsening level 5."""
+    """Distance classes within one rank of ``assigned_class`` (inclusive), for coarsening level 5.
+
+    Raises ``ValueError`` (naming the offending value) if ``assigned_class`` is not one of the
+    known :data:`braunschweig.calibration.commute_day_state_reference.COMMUTE_CLASS_LABELS` --
+    a person's ``assigned_distance_class`` must always be a real class (see
+    ``state.assigned_distance_class``), so an unresolvable value here signals a caller defect,
+    not a legitimate "no class" case, and should fail loudly rather than raise a bare ``KeyError``.
+    """
+    if assigned_class not in CLASS_RANK:
+        raise ValueError(
+            f"{_LOG_TAG} assigned_distance_class {assigned_class!r} is not one of the known "
+            f"commute-distance classes {list(COMMUTE_CLASS_LABELS)}; cannot widen it for "
+            "coarsening level 5.")
     rank = CLASS_RANK[assigned_class]
     lo = max(rank - 1, 0)
     hi = min(rank + 1, len(COMMUTE_CLASS_LABELS) - 1)
@@ -114,9 +125,12 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     ``diagnostics``: ``n_persons``, ``matched_by_level`` (dict, level -> count, dense over
     ``0..MAX_COARSENING_LEVEL``), ``n_not_replaceable``, ``share_not_replaceable``,
     ``soft_criteria_used`` (the subset of :data:`SOFT_CRITERIA` actually applied --
-    ``has_license`` excluded when not carried by both frames), and
+    ``has_license`` excluded when not carried by both frames),
     ``n_donors_hard_excluded_has_car_unknown`` (donors with ``has_car`` NaN, excluded from the
-    ENTIRE pass up front -- see the module docstring).
+    ENTIRE pass up front -- see the module docstring), and
+    ``n_persons_hard_criteria_missing`` (``persons_home`` rows with a ``NaN`` in ANY of
+    :data:`HARD_CRITERIA` -- such a person can never match any donor, since ``NaN`` never equals
+    a donor's exact value, and would otherwise vanish into ``n_not_replaceable`` unexplained).
     """
     _require_columns(persons_home, ("person_id", "assigned_distance_class", "sex", "age_class",
                                     "household_size", "has_active_escort", "has_children_u14",
@@ -124,9 +138,15 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     _require_columns(donors, ("donor_id", "distance_class", "sex", "age_class", "household_size",
                               "has_active_escort", "has_children_u14", "has_car"), "donors frame")
 
+    # Imported here, not at module level: synthesis.population.matched is a synpp stage module
+    # with heavy top-level imports, and this pure module must stay importable without them.
+    from synthesis.population.matched import household_size_class
+
     persons_home = persons_home.sort_values("person_id").reset_index(drop=True)
-    persons_home = persons_home.copy()
-    donors = donors.copy()
+    # Sorted by donor_id (not merely copied) so that a caller-reordered donor frame always
+    # yields the identical eligible_donors array order, and therefore identical draws under an
+    # identically-seeded rng (fix round 1 item 5).
+    donors = donors.sort_values("donor_id").reset_index(drop=True)
     # Ruling R1: bind household size to the same class on both sides, HERE, from the raw
     # (unbinned) household_size column each frame carries.
     persons_home["household_size_class"] = household_size_class(persons_home["household_size"])
@@ -138,6 +158,19 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         logger.info(
             "%s has_license: not present on both frames (MiD donors carry no has_license "
             "column) -- skipped as a soft criterion rather than invented.", _LOG_TAG)
+
+    # A person with a NaN hard-criteria value can never match any donor (NaN never equals a
+    # donor's exact value at any coarsening level, since the hard criteria are never coarsened);
+    # counted separately so such persons do not vanish into n_not_replaceable unexplained (fix
+    # round 1 item 4).
+    person_hard_missing_mask = persons_home[list(HARD_CRITERIA)].isna().any(axis=1)
+    n_persons_hard_criteria_missing = int(person_hard_missing_mask.sum())
+    if n_persons_hard_criteria_missing > 0:
+        logger.warning(
+            "%s %d/%d persons_home rows have a NaN value in a hard-criteria column %s -- these "
+            "can never match any donor and will show up in n_not_replaceable; check the upstream "
+            "attribute source.", _LOG_TAG, n_persons_hard_criteria_missing, len(persons_home),
+            HARD_CRITERIA)
 
     # A donor with an unresolved has_car can never satisfy the has_car HARD criterion for anyone
     # (CLAUDE.md fallback transparency: excluded loudly, up front, not silently per-person).
@@ -217,6 +250,7 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         "share_not_replaceable": share_not_replaceable,
         "soft_criteria_used": soft_criteria_used,
         "n_donors_hard_excluded_has_car_unknown": n_donors_hard_excluded_has_car_unknown,
+        "n_persons_hard_criteria_missing": n_persons_hard_criteria_missing,
     }
 
     logger.info(

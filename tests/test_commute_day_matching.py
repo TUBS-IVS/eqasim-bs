@@ -231,3 +231,77 @@ def test_minimum_cell_requires_more_donors_than_available():
         persons_home, donors, rng, minimum_cell=2)
     assert len(matches) == 0
     assert diagnostics["n_not_replaceable"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (issue #244 review)
+# ---------------------------------------------------------------------------
+
+def test_invalid_assigned_distance_class_raises_value_error_naming_it():
+    # No donor satisfies the (irrelevant) hard criteria at all, so the coarsening loop reaches
+    # level 5 for this person regardless -- where the invalid "bogus" class must be rejected
+    # loudly (a module-style ValueError naming it) rather than raising a bare KeyError.
+    persons_home = pd.DataFrame({
+        "person_id":            ["p1"],
+        "assigned_distance_class": ["bogus"],
+        "sex":                  ["male"],
+        "age_class":            [2],
+        "household_size":       [2],
+        "has_active_escort":    [True],
+        "has_children_u14":     [False],
+        "has_car":              [True],
+    })
+    donors = pd.DataFrame({
+        "donor_id":             ["d1"],
+        "distance_class":       ["lt10"],
+        "sex":                  ["male"],
+        "age_class":            [2],
+        "household_size":       [2],
+        "has_active_escort":    [False],  # hard mismatch -- never a candidate at any level.
+        "has_children_u14":     [False],
+        "has_car":              [True],
+    })
+    rng = np.random.RandomState(0)
+    with pytest.raises(ValueError, match="bogus"):
+        matching.match_home_office_donors(persons_home, donors, rng)
+
+
+def test_person_with_nan_hard_criterion_is_counted_and_not_replaceable():
+    persons_home = _persons_home_fixture()
+    persons_home.loc[persons_home["person_id"] == "p1", "has_car"] = np.nan
+    donors = _donors_fixture()
+    rng = np.random.RandomState(0)
+    matches, diagnostics = matching.match_home_office_donors(persons_home, donors, rng)
+
+    assert "p1" not in set(matches["person_id"])
+    assert diagnostics["n_persons_hard_criteria_missing"] == 1
+
+
+def test_donor_row_order_does_not_change_the_draw():
+    persons_home = pd.DataFrame({
+        "person_id":            ["p1"],
+        "assigned_distance_class": ["lt10"],
+        "sex":                  ["male"],
+        "age_class":            [2],
+        "household_size":       [2],
+        "has_active_escort":    [False],
+        "has_children_u14":     [False],
+        "has_car":              [True],
+    })
+    donors = pd.DataFrame({
+        "donor_id":             ["d1", "d2"],
+        "distance_class":       ["lt10", "lt10"],
+        "sex":                  ["male", "male"],
+        "age_class":            [2, 2],
+        "household_size":       [2, 2],
+        "has_active_escort":    [False, False],
+        "has_children_u14":     [False, False],
+        "has_car":              [True, True],
+    })
+    donors_shuffled = donors.iloc[::-1].reset_index(drop=True)
+
+    matches_a, _ = matching.match_home_office_donors(
+        persons_home, donors, np.random.RandomState(3))
+    matches_b, _ = matching.match_home_office_donors(
+        persons_home, donors_shuffled, np.random.RandomState(3))
+    assert matches_a.equals(matches_b)
