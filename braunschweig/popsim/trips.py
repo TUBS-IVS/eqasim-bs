@@ -533,7 +533,11 @@ def expand_persons_to_trips(
         elsewhere (``W_SO1 == 2``): such a leg is not the diary's actual first
         trip (which starts at home by the diary-starts-at-home convention),
         it is a leftover "arrive home" record from before the observed diary
-        window. Applied AFTER ``exclude_rbw_legs``. Default False keeps every
+        window. Applied AFTER ``exclude_rbw_legs``. A donor person whose Wege
+        become empty as a result (their only leg WAS the dropped leading
+        arrive-home leg) is dropped from the table and COUNTED the same way
+        as ``exclude_rbw_legs``; if that count is > 0 a warning is logged
+        with the same diary-plan-match hint. Default False keeps every
         existing caller byte-identical.
 
     Raises
@@ -552,11 +556,8 @@ def expand_persons_to_trips(
         wege_in = wege_in[~is_rbw]
         persons_after = wege_in[[household_col, person_col]].drop_duplicates()
         n_emptied = len(persons_before) - len(persons_after)
-        # Logged at WARNING (not INFO): this is the fallback-transparency rate
-        # for a behaviour-changing flag (CLAUDE.md "no silent fallbacks") and
-        # must be visible without callers opting into a raised log level.
-        logger.warning("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); donor persons emptied by the drop: %d",
-                       int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1), n_emptied)
+        logger.info("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); donor persons emptied by the drop: %d",
+                    int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1), n_emptied)
         if n_emptied:
             logger.warning("[popsim.trips] %d donor persons have ONLY rbW legs and become trip-less; with "
                            "braunschweig.population.popsim.diary_plan_match on they should have been remapped "
@@ -567,9 +568,18 @@ def expand_persons_to_trips(
         ordered = wege_in.sort_values([household_col, person_col, trip_col])
         first = ordered.groupby([household_col, person_col], sort=False).head(1)
         drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
+        persons_before_arrive_home = wege_in[[household_col, person_col]].drop_duplicates()
         wege_in = wege_in.drop(index=drop_idx)
-        logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege)",
-                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1))
+        persons_after_arrive_home = wege_in[[household_col, person_col]].drop_duplicates()
+        n_emptied_arrive_home = len(persons_before_arrive_home) - len(persons_after_arrive_home)
+        logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege); "
+                    "donor persons emptied by the drop: %d",
+                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1), n_emptied_arrive_home)
+        if n_emptied_arrive_home:
+            logger.warning("[popsim.trips] %d donor persons have ONLY a leading arrive-home leg and become "
+                           "trip-less; with braunschweig.population.popsim.diary_plan_match on they should have "
+                           "been remapped upstream (completed_donor) -- check the flags are consistent",
+                           n_emptied_arrive_home)
     wege = map_mode(map_purpose(
         wege_in, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
@@ -581,12 +591,6 @@ def expand_persons_to_trips(
     merged["trip_id"] = (
         merged["person_id"].astype(str) + "_" + merged[trip_col].astype(str)
     )
-    # following_purpose is a plain alias of purpose (build_trip_table repeats this
-    # exact assignment after sorting/first-last computation); exposing it here too
-    # lets callers that only need the raw expand_persons_to_trips output (e.g. the
-    # rbW/leading-arrive-home flag tests) use the same eqasim-schema column name
-    # without requiring the full build_trip_table pipeline.
-    merged["following_purpose"] = merged["purpose"]
 
     # Instrument the inner join: persons whose donor (H_ID, P_ID) has no Wege
     # row are silently dropped (they become trip-less home-only persons). A
@@ -627,6 +631,7 @@ def build_validated_trip_table(
     escort_passive_education: bool = False,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    dwell_model=None,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -704,6 +709,12 @@ def build_validated_trip_table(
         If True, drop a donor person's leading "arrive home from elsewhere"
         leg (forwarded to ``build_trip_table`` / ``expand_persons_to_trips``).
         Default False keeps the OFF path byte-identical.
+    dwell_model:
+        Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
+        to ``PlanValidator.repair_trips`` so the synthetic return-home trip's
+        dwell time is drawn from observed donor activity durations instead of
+        the constant ``HOME_CLOSURE_DWELL_S``. Default ``None`` keeps the
+        constant-dwell behaviour.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -741,7 +752,7 @@ def build_validated_trip_table(
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None
     if repair:
-        table, repair_report = validator.repair_trips(table)
+        table, repair_report = validator.repair_trips(table, dwell_model=dwell_model)
 
     # Cascade stage A: time imputation for coded-time (nan_times) persons with a
     # complete own wegmin_imp1.  Runs AFTER the first repair (the nan_times

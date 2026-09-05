@@ -101,14 +101,19 @@ def _eqasim_fix_trip_times(df_trips: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _append_return_home(df_trips: pd.DataFrame, dwell_s: float) -> pd.DataFrame:
+def _append_return_home(
+    df_trips: pd.DataFrame, dwell_s: float, *, dwell_model=None
+) -> pd.DataFrame:
     """Append a synthetic return-home trip for each person whose day does not end at home.
 
     For each person whose last trip (by departure_time order) has
     ``following_purpose != "home"``, one row is appended with:
 
-    - ``departure_time = last.arrival_time + dwell_s``
-      (assumed minimum dwell at the last activity before returning home)
+    - ``departure_time = last.arrival_time + dwell``, where ``dwell`` is
+      ``dwell_model.draw(last.following_purpose, last.arrival_time)`` when a
+      :class:`~braunschweig.popsim.closure_dwell.ClosureDwellModel` is given
+      (drawn from what MiD donors actually report for the same purpose and
+      arrival band), else the constant ``dwell_s``.
     - ``arrival_time = departure_time + travel_time``
       where ``travel_time = last.arrival_time - last.departure_time`` (symmetric
       assumption: the return trip takes the same time as the outbound leg; if
@@ -120,13 +125,28 @@ def _append_return_home(df_trips: pd.DataFrame, dwell_s: float) -> pd.DataFrame:
       by resampling so the default is rarely load-bearing)
     - ``is_first_trip = False``, ``is_last_trip = True``; the old last trip's
       ``is_last_trip`` is flipped to ``False``
+    - ``is_synthetic_closure = True`` (new column, ``False`` on every original
+      row) so downstream processing can identify synthetic rows without
+      inspecting timing heuristics.
+    - ``trip_key = f"{person_id}_closure"`` when the ``trip_key`` column exists
+      on the input frame.
 
-    All other columns are set to ``NaN`` / their dtype default so downstream
-    processing can identify synthetic rows.  The caller must re-run
-    ``hts.compute_activity_duration`` to keep ``activity_duration`` consistent.
+    All other columns are set to ``NaN`` / their dtype default. The caller must
+    re-run ``hts.compute_activity_duration`` to keep ``activity_duration``
+    consistent.
+
+    Args:
+        df_trips: Trip table (see module docstring for required columns).
+        dwell_s: Constant dwell (seconds) used when ``dwell_model`` is ``None``.
+        dwell_model: Optional ``ClosureDwellModel`` supplying an empirically
+            drawn dwell time per (purpose, arrival time) instead of the constant.
     """
     df = df_trips.copy()
     df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
+
+    # The column must exist on every path (including the early-return below) so
+    # callers can rely on it regardless of whether any closure was appended.
+    df["is_synthetic_closure"] = False
 
     # Identify the index of each person's last trip.
     last_idx = df.groupby("person_id", sort=False)["departure_time"].idxmax()
@@ -147,7 +167,12 @@ def _append_return_home(df_trips: pd.DataFrame, dwell_s: float) -> pd.DataFrame:
         else:
             travel_time = max(0.0, float(last["arrival_time"]) - float(last["departure_time"]))
 
-        dep = float(last["arrival_time"]) + dwell_s
+        if dwell_model is not None:
+            dwell = dwell_model.draw(last["following_purpose"], float(last["arrival_time"]))
+        else:
+            dwell = dwell_s
+
+        dep = float(last["arrival_time"]) + dwell
         arr = dep + travel_time
 
         mode = last["mode"] if "mode" in df.columns and not pd.isna(last.get("mode")) else "car"
@@ -162,7 +187,10 @@ def _append_return_home(df_trips: pd.DataFrame, dwell_s: float) -> pd.DataFrame:
             "mode": mode,
             "is_first_trip": False,
             "is_last_trip": True,
+            "is_synthetic_closure": True,
         })
+        if "trip_key" in df.columns:
+            new_row["trip_key"] = f"{person_id}_closure"
         # Carry over trip_id as a placeholder so sort remains stable; will be
         # re-derived by compute_first_last after appending.
         if "trip_id" in df.columns:
@@ -268,7 +296,8 @@ class PlanValidator:
         return out
 
     def repair_trips(
-        self, df_trips: pd.DataFrame, *, dwell_s: float = HOME_CLOSURE_DWELL_S
+        self, df_trips: pd.DataFrame, *, dwell_s: float = HOME_CLOSURE_DWELL_S,
+        dwell_model=None,
     ) -> tuple[pd.DataFrame, RepairReport]:
         """Enforce home-END closure (when require_home_closure) and classify per person.
 
@@ -286,6 +315,10 @@ class PlanValidator:
 
         Returns (fixed_df, RepairReport).  Never filters the donor pool (preserves
         H_GEW weighting).  The unfixable set is what Task 7 (resample) replaces.
+        The returned frame always carries an ``is_synthetic_closure`` column
+        (``True`` on appended return-home rows, ``False`` everywhere else,
+        including when no closure at all was appended or ``require_home_closure``
+        is disabled).
 
         Args:
             df_trips: Trip table with at least ``person_id``, ``departure_time``,
@@ -293,6 +326,11 @@ class PlanValidator:
                 ``is_first_trip``, ``is_last_trip``.
             dwell_s: Dwell time (seconds) added after the last arrival before the
                 synthetic return-home trip departs (default ``HOME_CLOSURE_DWELL_S``).
+                Ignored when ``dwell_model`` is given.
+            dwell_model: Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel``
+                that draws the dwell time from observed donor activity durations
+                (per following purpose and arrival band) instead of using the
+                constant ``dwell_s``.
 
         Returns:
             Tuple of (repaired DataFrame, RepairReport).
@@ -335,14 +373,24 @@ class PlanValidator:
         n_closure_appended = 0
         if self.require_home_closure:
             closable = fixed[~fixed["person_id"].isin(closure_excluded_persons)]
-            excluded = fixed[fixed["person_id"].isin(closure_excluded_persons)]
+            excluded = fixed[fixed["person_id"].isin(closure_excluded_persons)].copy()
             # Count persons that need closure before appending.
             df_sorted = closable.sort_values(["person_id", "departure_time"])
             last_rows = df_sorted.groupby("person_id", sort=False).last()
             needs_closure = (last_rows["following_purpose"] != "home").sum()
             n_closure_appended = int(needs_closure)
-            closable = _append_return_home(closable, dwell_s)
+            closable = _append_return_home(closable, dwell_s, dwell_model=dwell_model)
+            # The excluded (NaN-time / out-of-bound) rows never go through
+            # _append_return_home, so they lack the column entirely; every
+            # original row is False (only appended closure rows are True).
+            excluded["is_synthetic_closure"] = False
             fixed = pd.concat([closable, excluded], ignore_index=True)
+        else:
+            # No closure repair at all (require_home_closure=False): the
+            # column must still exist on every returned frame, so callers can
+            # rely on it unconditionally.
+            fixed = fixed.copy()
+            fixed["is_synthetic_closure"] = False
 
         # --- Step 4: recompute trip_id / trip_index / trip_duration / activity_duration ----
         # After _append_return_home the appended row has NaN trip_index and trip_duration,
@@ -396,6 +444,9 @@ class PlanValidator:
             100.0 * len(bound_persons) / n_persons if n_persons > 0 else 0.0,
             self.max_plan_time_seconds / 3600.0,
         )
+
+        if dwell_model is not None:
+            logger.info("[popsim.plan_validation] closure dwell model report: %s", dwell_model.report)
 
         report = RepairReport(
             n_persons=n_persons,

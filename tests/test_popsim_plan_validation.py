@@ -472,6 +472,34 @@ def test_times_exceeding_bound_flagged_and_unfixable():
     assert 2 not in rep.unfixable_persons
 
 
+# ---------------------------------------------------------------------------
+# Task 5: empirical closure dwell + marked synthetic closure rows
+# ---------------------------------------------------------------------------
+
+def _open_trips():
+    return pd.DataFrame({
+        "person_id": ["p"], "departure_time": [8 * 3600], "arrival_time": [8 * 3600 + 1800],
+        "preceding_purpose": ["home"], "following_purpose": ["work"],
+        "is_first_trip": [True], "is_last_trip": [True], "trip_key": ["p_1"],
+    })
+
+
+def test_repair_marks_synthetic_closure_and_uses_dwell_model():
+    from braunschweig.popsim.closure_dwell import ClosureDwellModel
+    fixed, _ = pv.PlanValidator().repair_trips(_open_trips())
+    assert fixed["is_synthetic_closure"].tolist() == [False, True]
+    assert fixed.loc[1, "trip_key"] == "p_closure"
+    assert fixed.loc[1, "departure_time"] == 8 * 3600 + 1800 + pv.HOME_CLOSURE_DWELL_S
+    model = ClosureDwellModel.fixed(2 * 3600.0)
+    fixed2, _ = pv.PlanValidator().repair_trips(_open_trips(), dwell_model=model)
+    assert fixed2.loc[1, "departure_time"] == 8 * 3600 + 1800 + 2 * 3600
+
+
+def test_repair_without_open_end_has_no_synthetic_rows():
+    fixed, _ = pv.PlanValidator().repair_trips(_good_trips())
+    assert not fixed["is_synthetic_closure"].any()
+
+
 def test_resample_chains_raises_on_mismatched_weight_length():
     """IMPORTANT-5: mismatched donor_weights length must raise ValueError."""
     import numpy as np
