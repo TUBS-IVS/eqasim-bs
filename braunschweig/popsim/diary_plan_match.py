@@ -26,8 +26,16 @@ NO_DIARY_CODES = (803, 804)
 REASON_KEEP = "realisable"
 REASON_KEEP_IMMOBILE = "nodiary_immobile_keep"
 REASONS_REMAP = ("nodiary_mobile", "nodiary_unknown", "only_rbw", "holiday", "emptied_by_arrive_home_drop")
+#: Ruling R5 (2026-09-05, plan-structure-fix review): only-rbW sources are detected from the
+#: diary facts (n_direct_legs == 0 & n_rbw_legs > 0), which carries the same information as MiD
+#: mobil_diff == 2 but derived from the Wege the pipeline actually uses. mobil_diff is therefore
+#: NOT required or read here; it stays an optional MiD column loaded for diagnostics elsewhere.
 REQUIRED_DONOR_COLUMNS = ("H_ID", "P_ID", "anzwege1", "mobil", "kernwo", "P_GEW",
                           "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE")
+#: Columns match_person() reads from its target row (persons frame), validated up front so a
+#: missing column fails here with a named message instead of a raw KeyError inside
+#: weekend_plan_match._person_keys.
+PERSON_MATCH_COLUMNS = ("H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE", "P_GEW")
 #: Expected band of the remapped share on the real MiD (2026-09-05 measurement: 14.1 % no-diary
 #: + 5.2 % holiday + 1.6 % only-rbW, overlapping); outside it the build WARNS.
 EXPECTED_SHARE_REMAPPED = (0.05, 0.30)
@@ -65,9 +73,10 @@ def _own_diary_reason(donors, facts, *, exclude_rbw_legs, exclude_holidays, drop
     reason[emptied] = "emptied_by_arrive_home_drop"
     if exclude_rbw_legs:
         reason[only_rbw] = "only_rbw"
-    reason[anz == 804] = "nodiary_unknown"
-    reason[(anz == 803) & (mobil == 1)] = "nodiary_mobile"
-    reason[(anz == 803) & (mobil != 1)] = REASON_KEEP_IMMOBILE
+    anzwege1_not_collected, anzwege1_unknown = NO_DIARY_CODES  # 803, 804
+    reason[anz == anzwege1_unknown] = "nodiary_unknown"
+    reason[(anz == anzwege1_not_collected) & (mobil == 1)] = "nodiary_mobile"
+    reason[(anz == anzwege1_not_collected) & (mobil != 1)] = REASON_KEEP_IMMOBILE
     if exclude_holidays:
         reason[holiday] = "holiday"
     return pd.Series(reason, index=donors.index)
@@ -117,6 +126,10 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                                     exclude_holidays, drop_leading_arrive_home_leg):
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
+    # match_person() is called below on rows of `persons` (not `donor_persons`); validate its
+    # required columns on `persons` up front so a missing one fails fast with a named message
+    # here instead of a raw KeyError surfacing from inside weekend_plan_match._person_keys.
+    _require(persons, PERSON_MATCH_COLUMNS, "persons frame")
     reasons = classify_plan_sources(persons, donor_persons, facts, **flags)
     pools = {m: build_realisable_pool(donor_persons, facts, mobility=m, **flags) for m in ("mobile", "any")}
     for name, pool in pools.items():
@@ -129,6 +142,10 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     # Build the source-anzwege1 lookup ONCE before the loop (not per row) -- same
     # behaviour as a per-row set_index/get, but O(n_donors) instead of O(n_remap x n_donors).
     donor_anzwege1 = donor_persons.set_index(["H_ID", "P_ID"])["anzwege1"]
+    # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
+    # sequence independent of row order on its own, which matters here because the
+    # completed-donor frame this consumes is built in a fixed order upstream
+    # (member_completion / seed) that this function must not rely on for reproducibility.
     for ridx in sorted(to_remap.tolist()):
         reason = reasons.loc[ridx]
         pool = pools["mobile"] if reason in for_mobile else pools["any"]

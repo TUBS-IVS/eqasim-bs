@@ -84,3 +84,16 @@ def test_reassign_requires_mobility_columns():
     donors = _donors().drop(columns=["mobil"]); facts = dfm.compute_diary_facts(_wege())
     with pytest.raises(KeyError, match="mobil"):
         dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(0), **FLAGS)
+    donors_no_holiday_flag = _donors().drop(columns=["feiertag"])
+    with pytest.raises(KeyError, match="feiertag"):
+        dpm.reassign_diaryless_plan_sources(donors_no_holiday_flag, donors_no_holiday_flag, facts,
+                                            rng=np.random.RandomState(0), **FLAGS)  # exclude_holidays=True
+
+
+def test_reassign_requires_person_match_columns():
+    # donor_persons is complete; only the `persons` frame (match_person's target rows) is
+    # missing a column match_person reads -- must fail here, not inside weekend_plan_match.
+    donors = _donors(); facts = dfm.compute_diary_facts(_wege())
+    persons = donors.drop(columns=["HP_ALTER"])
+    with pytest.raises(KeyError, match="HP_ALTER"):
+        dpm.reassign_diaryless_plan_sources(persons, donors, facts, rng=np.random.RandomState(0), **FLAGS)
