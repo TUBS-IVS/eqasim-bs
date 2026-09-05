@@ -88,6 +88,10 @@ limitations: |
   ASSUMPTION: the national MiD relationship between commute distance and reporting-day
   work-location state (and the home-office donor-pool composition) is assumed to transfer to
   the Braunschweig/ZGB study area; there is no regional MiD sample to check this against.
+  This transfer assumption, the 200 km top-code as the far threshold, and the left-inclusive
+  bin convention with its heaping sensitivity are all carried as named assumptions of the
+  decision that consumes this table: ADR-0104 (register vs reporting-day universe of
+  out-commuters).
 notes: |
   No stage reads these files in Phase A, so `used_by` is empty; the access path is the module
   braunschweig.calibration.commute_day_state_reference (a module, not a synpp stage, and
@@ -101,3 +105,8 @@ notes: |
   commute-day-state model lands and starts consuming these tables via
   braunschweig.calibration.commute_day_state_reference.load_workday_location_table /
   load_home_office_donor_pool. Pin tests: tests/test_commute_day_state_reference_pins.py.
+  Decision record: ADR-0104 (register vs reporting-day universe of out-commuters) -- it adopts
+  the day-state model on this table's evidence and states which of its numbers the model uses
+  (the workplace/home substitution by distance class as the keep-probability ratio; the
+  home-office-day donor pool as the replacement plan source). Measured against the model in the
+  run manifest docs/runs/commute-day-state-phase-a-2026-09-05.yml.

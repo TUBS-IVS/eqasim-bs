@@ -101,3 +101,10 @@ notes: |
   compares a finished synthetic population against it and changes no model behaviour. Because
   that stage is in the production run list, requirements.production is "required" and the README
   derived-inputs table carries a row for this file.
+  Decision record: ADR-0104 (register vs reporting-day universe of out-commuters). It records the
+  first measurement against this table (run manifest
+  docs/runs/commute-day-state-phase-a-2026-09-05.yml: model share_work_trip 0.4944 vs the 0.6511
+  here, -15.67 pp, the model below the reference in all seven surveyed Kreise) and holds that
+  delta as a separate, UNDECOMPOSED open question (#244) rather than as a target of the
+  commute-day-state model; the table's three-way split is instead the pre-registered Phase B
+  check, at a +/- 3 pp tolerance on the regional aggregate only.

@@ -104,13 +104,30 @@ status:
     committed donor_vs_assigned_* files are the ones that invocation wrote, and run_log.txt
     carries both invocations under explicit marker lines. CACHE STATE: this run reset the i329
     stage-hash bookkeeping ("Successfully reset meta data") and wrote the fourteen stage caches
-    listed above. The controller verified read-only on felix how they landed: NINE were
-    overwritten IN PLACE under an unchanged stage hash, so no prior copy of their payload survives
-    and their before/after equality is not checkable -- stated as a limit, not glossed over --
-    while braunschweig.locations.synthesis.replacement_education_gravity,
-    synthesis.population.spatial.primary.candidates and braunschweig.gravity.model were written
-    under NEW hashes, leaving their 2026-08-24 siblings in place and thus comparable (see the
-    byte-identity result under pipeline.notes).
+    listed above. The account below covers ALL THIRTEEN non-target stages, in the execution order
+    of run_log.txt: braunschweig.data.building_potentials, braunschweig.data.verbindungen.zones,
+    eqasim_common.data.osm.chunked, braunschweig.locations.work,
+    braunschweig.data.verbindungen.work_od, eqasim_common.data.osm.locations,
+    braunschweig.gravity.model, eqasim_common.locations.education,
+    synthesis.population.spatial.primary.candidates,
+    braunschweig.data.schools.university_facilities, braunschweig.data.schools.kita_facilities,
+    braunschweig.synthesis.locations.education_gravity and
+    braunschweig.locations.synthesis.replacement_education_gravity. THREE of them --
+    braunschweig.gravity.model, synthesis.population.spatial.primary.candidates and
+    braunschweig.locations.synthesis.replacement_education_gravity -- were written under NEW
+    hashes, leaving their 2026-08-24 siblings in place and thus COMPARABLE. Of those three, only
+    braunschweig.locations.synthesis.replacement_education_gravity and braunschweig.gravity.model
+    were actually cmp''d (result under pipeline.notes); the candidates stage
+    (synthesis.population.spatial.primary.candidates) was comparable but was NOT cmp''d, so its
+    byte-identity is UNKNOWN rather than established -- it is an input to
+    replacement_education_gravity, whose output was proven
+    byte-identical, which is consistent with an unchanged candidates payload but does not prove
+    one. The REMAINING TEN were overwritten IN PLACE under an unchanged stage hash, so no prior
+    copy of their payload survives and their before/after equality is not checkable -- stated as
+    a limit, not glossed over. (An earlier wording of this note said NINE and left one of the
+    thirteen unaccounted; the count is corrected here by enumerating the thirteen against
+    run_log.txt and subtracting the three new-hash entries. No new server observation was made
+    for the correction, and the read-only observation itself is unchanged.)
     braunschweig.analysis.synthesis.work_participation_by_kreis__e7f4d6171274d4814ba40f655eac6007
     was added as a new entry; .merged_config.yml was rewritten and
     run_provenance_20260904T230603Z.json added. The shared cache store gained nothing (auto-export: exported 0, already-in-store 39).
@@ -205,7 +222,16 @@ validation:
     those who worked, 74,305 were at their usual workplace and 1,260 at home. The residual
     304,900 - 171,334 - 1,190 = 132,376 workers have a donor whose P_STARB1 is outside (1, 2),
     i.e. the question was not asked of them or was not answered -- they are neither "worked" nor
-    "did not work".'
+    "did not work". A SECOND residual sits INSIDE the 171,334 who worked and is named here so
+    that account closes too: 171,334 - 74,305 - 1,260 = 95,769 workers have a donor who worked
+    but whose starb2 is neither 2 (usual workplace) nor 1 (at home), i.e. an "other place" code
+    (3, 4, 5, 96) or an unmapped / no-answer one (e.g. 99). All four counts are read from
+    donor_vs_assigned_diagnostics.json (n_donor_worked_on_day, n_donor_at_workplace,
+    n_donor_at_home, n_donor_did_not_work_on_day); the SPLIT of those 95,769 across the remaining
+    starb2 codes was NOT measured by this run and no distribution over them is claimed. The
+    committed MiD reference table mid2023_workday_location_by_commute_distance.csv does carry the
+    full state taxonomy (its other_place and missing columns), but on the MiD universe rather than
+    on this worker cohort, so it is not a substitute for the unmeasured split.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_a_2026-09-05/donor_vs_assigned_class.csv'
   notes: 'The 73.48% missing-donor-distance rate is the dominant caveat of this table: the 0.1831
     share is a share OF THE COMPARABLE SUBSET (80,855 workers), not of the cohort, and the script
@@ -290,7 +316,8 @@ artifacts:
   donor_vs_assigned_diagnostics.json, summary.md, provenance.json, run_log.txt)'
 issues:
 - '#244'
-decisions: []
+decisions:
+- ADR-0104
 source: 'Phase A measurement of the commute-day-state (far/weekly commuters) model on the cached
   i329 100% population: work participation vs SrV 2023, assigned commute-distance classes, EXT
   destination geometry vs BA Kreis centroids, and the donor-vs-assigned class mismatch (Task 6 of

@@ -20,7 +20,7 @@ production:
 introduced:
   issue: 244
   pr: null
-  adr: null
+  adr: ADR-0104
 code_paths:
 - braunschweig/analysis/synthesis/work_participation_by_kreis.py
 - braunschweig/calibration/commute_day_state_reference.py
@@ -81,4 +81,9 @@ assessment:
   pending_reason: The Phase A measurement has run and is recorded, but the day-state model it
     informs is a later phase; the record stays pending until that phase reviews what the
     measurement implies (in particular the 73.48% of workers whose MiD donor carries no usable
-    commute distance).
+    commute distance). What the measurement decided is recorded in ADR-0104 (register vs
+    reporting-day universe of out-commuters), which adopts the day-state model and amends the
+    design in three places -- the donor distance source flips to the work-trip length (86.40%
+    coverage instead of 26.52%), the class bins are fixed left-inclusive with the heaping
+    sensitivity disclosed, and the -15.67 pp work-participation gap is held as a separate,
+    undecomposed open question rather than as this model's fit criterion.

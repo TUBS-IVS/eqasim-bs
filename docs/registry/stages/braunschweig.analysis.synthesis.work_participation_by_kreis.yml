@@ -41,7 +41,8 @@ inputs:
 - vg250_ew
 features:
 - commute_day_state_measurement
-decisions: []
+decisions:
+- ADR-0104
 notes: 'Writes six files under <output_path>/<cds_output_subdir>/ (default
   analysis/commute_day_state_phase_a): work_participation_by_kreis.csv (code, n_employed,
   n_with_work_trip, share_work_trip, share_no_work_trip, srv_n_persons, srv_share_work_trip,
