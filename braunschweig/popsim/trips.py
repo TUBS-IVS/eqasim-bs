@@ -306,12 +306,20 @@ def build_trip_table(
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
     Mirrors ``data/hts/entd/cleaned.py`` exactly, reusing the shared helpers from
     ``data/hts/hts.py`` in the same order as the ENTD path:
 
+    0a. (optional, ``exclude_rbw_legs``) Drop rbW legs (``W_RBW == 1``) before
+        the join; a donor person left with no legs is dropped (and counted).
+    0b. (optional, ``drop_leading_arrive_home_leg``) Drop a donor person's first
+        leg when it both arrives home and started elsewhere (``W_SO1 == 2``),
+        applied after step 0a. Both steps run inside
+        ``expand_persons_to_trips``, before the purpose/mode mapping.
     1. ``expand_persons_to_trips`` — join donor Wege onto synthetic persons, map
        purpose and mode, produce a string ``trip_key`` (``<person_id>_<W_ID>``) for
        traceability.
@@ -371,6 +379,16 @@ def build_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to ``map_purpose``
         via ``expand_persons_to_trips``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    exclude_rbw_legs:
+        If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
+        ``expand_persons_to_trips``); see that function's docstring for the
+        rationale and the emptied-persons handling. Default False keeps the
+        OFF path byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop a donor person's leading "arrive home from elsewhere"
+        leg (forwarded to ``expand_persons_to_trips``); see that function's
+        docstring for the rationale. Default False keeps the OFF path
+        byte-identical.
 
     Returns
     -------
@@ -408,6 +426,8 @@ def build_trip_table(
         trip_col=trip_col,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -481,6 +501,8 @@ def expand_persons_to_trips(
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -495,9 +517,61 @@ def expand_persons_to_trips(
         Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``.
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.
+    exclude_rbw_legs:
+        If True, drop legs with ``W_RBW == 1`` (regelmaessiger beruflicher Weg --
+        a regular-commuter summary record standing in for the diary leg, see
+        ``time_imputation.py``'s module docstring) BEFORE the purpose/mode
+        mapping. A donor person whose Wege become empty as a result is dropped
+        from the table (same as a donor without Wege today) and COUNTED; if
+        that count is > 0 a warning is logged with the hint that
+        ``braunschweig.population.popsim.diary_plan_match`` should have
+        remapped those persons upstream. Default False keeps every existing
+        caller byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop each donor person's FIRST leg (by ``trip_col`` order)
+        when it both arrives home (``W_ZWECK`` in {8, 9}) and started from
+        elsewhere (``W_SO1 == 2``): such a leg is not the diary's actual first
+        trip (which starts at home by the diary-starts-at-home convention),
+        it is a leftover "arrive home" record from before the observed diary
+        window. Applied AFTER ``exclude_rbw_legs``. Default False keeps every
+        existing caller byte-identical.
+
+    Raises
+    ------
+    KeyError
+        If ``exclude_rbw_legs`` is True and ``mid_wege`` lacks ``W_RBW``, or if
+        ``drop_leading_arrive_home_leg`` is True and ``mid_wege`` lacks ``W_SO1``.
     """
+    total = len(mid_wege)
+    wege_in = mid_wege
+    if exclude_rbw_legs:
+        if "W_RBW" not in wege_in.columns:
+            raise KeyError("[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column 'W_RBW'")
+        is_rbw = wege_in["W_RBW"] == 1
+        persons_before = wege_in[[household_col, person_col]].drop_duplicates()
+        wege_in = wege_in[~is_rbw]
+        persons_after = wege_in[[household_col, person_col]].drop_duplicates()
+        n_emptied = len(persons_before) - len(persons_after)
+        # Logged at WARNING (not INFO): this is the fallback-transparency rate
+        # for a behaviour-changing flag (CLAUDE.md "no silent fallbacks") and
+        # must be visible without callers opting into a raised log level.
+        logger.warning("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); donor persons emptied by the drop: %d",
+                       int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1), n_emptied)
+        if n_emptied:
+            logger.warning("[popsim.trips] %d donor persons have ONLY rbW legs and become trip-less; with "
+                           "braunschweig.population.popsim.diary_plan_match on they should have been remapped "
+                           "upstream (completed_donor) -- check the flags are consistent", n_emptied)
+    if drop_leading_arrive_home_leg:
+        if "W_SO1" not in wege_in.columns:
+            raise KeyError("[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column 'W_SO1'")
+        ordered = wege_in.sort_values([household_col, person_col, trip_col])
+        first = ordered.groupby([household_col, person_col], sort=False).head(1)
+        drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
+        wege_in = wege_in.drop(index=drop_idx)
+        logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege)",
+                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1))
     wege = map_mode(map_purpose(
-        mid_wege, escort_purpose=escort_purpose,
+        wege_in, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
     ))
@@ -507,6 +581,12 @@ def expand_persons_to_trips(
     merged["trip_id"] = (
         merged["person_id"].astype(str) + "_" + merged[trip_col].astype(str)
     )
+    # following_purpose is a plain alias of purpose (build_trip_table repeats this
+    # exact assignment after sorting/first-last computation); exposing it here too
+    # lets callers that only need the raw expand_persons_to_trips output (e.g. the
+    # rbW/leading-arrive-home flag tests) use the same eqasim-schema column name
+    # without requiring the full build_trip_table pipeline.
+    merged["following_purpose"] = merged["purpose"]
 
     # Instrument the inner join: persons whose donor (H_ID, P_ID) has no Wege
     # row are silently dropped (they become trip-less home-only persons). A
@@ -545,6 +625,8 @@ def build_validated_trip_table(
     random_seed: int | None = None,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -614,6 +696,14 @@ def build_validated_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to
         ``build_trip_table`` / ``map_purpose``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    exclude_rbw_legs:
+        If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
+        ``build_trip_table`` / ``expand_persons_to_trips``). Default False
+        keeps the OFF path byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop a donor person's leading "arrive home from elsewhere"
+        leg (forwarded to ``build_trip_table`` / ``expand_persons_to_trips``).
+        Default False keeps the OFF path byte-identical.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -644,7 +734,9 @@ def build_validated_trip_table(
 
     table = build_trip_table(
         persons, mid_wege, escort_purpose=escort_purpose,
-        escort_passive_education=escort_passive_education, **kwargs,
+        escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg, **kwargs,
     )
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None
