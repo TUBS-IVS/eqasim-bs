@@ -85,7 +85,7 @@ def test_donor_attributes_child_flag_from_non_donor_household_member():
     assert row["household_size"] == 2
     assert row["sex"] == "male"
     assert row["age"] == 40
-    assert row["employed"] is True or row["employed"] == True  # noqa: E712
+    assert bool(row["employed"]) is True
 
 
 def test_donor_attributes_distance_precedence_p_arb_entf_before_trip_length():
@@ -111,18 +111,24 @@ def test_donor_attributes_distance_precedence_p_arb_entf_before_trip_length():
     assert row_2_2["distance_source"] == "trip_length"
     assert pd.isna(row_2_2["sex"])
 
-    # "2_3": immobile, no valid P_ARB_ENTF and no work trip at all -> unknown.
+    # "2_3": immobile, no valid P_ARB_ENTF and no work trip at all -> the LITERAL string
+    # "unknown" (never None/NaN -- the later matching module treats "unknown" as "matches any
+    # class", which a null value would not).
     row_2_3 = by_id.loc["2_3"]
-    assert pd.isna(row_2_3["distance_class"])
+    assert row_2_3["distance_class"] == donor_pool.DISTANCE_CLASS_UNKNOWN
     assert row_2_3["distance_source"] == "unknown"
     assert pd.isna(row_2_3["distance_km"])
+
+    # distance_class must never be null for ANY donor, mobile or not.
+    assert attributes["distance_class"].notna().all()
 
 
 def test_donor_trips_immobile_donor_yields_no_rows_but_others_get_contract_columns():
     persons = _persons_fixture()
     donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(), _wege_fixture())
     trips = donor_pool.donor_trips(
-        donors, _wege_fixture(), random_seed=0,
+        donors, attributes, _wege_fixture(), random_seed=0,
         escort_purpose=False, escort_passive_education=False,
         explicit_round_trip_purposes=True,
     )
@@ -161,9 +167,11 @@ def test_build_home_office_donor_pool_diagnostics_and_shapes():
 
     assert diagnostics["n_donors"] == 4
     assert diagnostics["n_immobile"] == 1
+    assert diagnostics["n_chain_dropped_by_resample"] == 0
     assert diagnostics["n_missing_distance"] == 1
     assert diagnostics["n_sex_unknown"] == 1
     assert diagnostics["n_not_in_module"] == 1
+    assert diagnostics["n_household_unmatched"] == 0
     assert diagnostics["distance_source_counts"] == {
         "P_ARB_ENTF": 2, "trip_length": 1, "unknown": 1,
     }
@@ -173,4 +181,97 @@ def test_build_home_office_donor_pool_diagnostics_and_shapes():
     assert cells[("10_25", True, True)] == 1
     assert cells[("100_200", False, False)] == 1
     assert cells[("gt200", False, False)] == 1
-    assert cells[(None, False, False)] == 1
+    assert cells[("unknown", False, False)] == 1
+    assert None not in {key[0] for key in cells}
+
+
+def test_donor_attributes_warns_and_nans_has_car_when_household_missing():
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    # Only household 1's row is present -- every household-2 donor ("2_1", "2_2", "2_3") has an
+    # H_ID absent from the households frame.
+    households_missing_h2 = _households_fixture().loc[lambda df: df["H_ID"] == 1]
+    attributes = donor_pool.donor_attributes(donors, persons, households_missing_h2, _wege_fixture())
+    by_id = attributes.set_index("donor_id")
+
+    assert bool(by_id.loc["1_1", "has_car"]) is True
+    for donor_id in ("2_1", "2_2", "2_3"):
+        assert pd.isna(by_id.loc[donor_id, "has_car"])
+
+
+def test_build_home_office_donor_pool_reports_household_unmatched_count():
+    persons = _persons_fixture()
+    wege = _wege_fixture()
+    households_missing_h2 = _households_fixture().loc[lambda df: df["H_ID"] == 1]
+
+    _attributes, _trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        persons, wege, households_missing_h2, random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+    assert diagnostics["n_household_unmatched"] == 3
+
+
+def test_donor_attributes_works_with_a_shuffled_non_range_index():
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    # A subset/reorder that leaves a non-contiguous, shuffled index (e.g. after a boolean mask
+    # elsewhere in a caller's pipeline) must not break row alignment.
+    shuffled_donors = donors.sample(frac=1.0, random_state=1)
+    assert not shuffled_donors.index.equals(pd.RangeIndex(len(shuffled_donors)))
+
+    attributes = donor_pool.donor_attributes(
+        shuffled_donors, persons, _households_fixture(), _wege_fixture())
+    row = attributes.set_index("donor_id").loc["1_1"]
+    assert bool(row["has_children_u14"]) is True
+    assert bool(row["has_car"]) is True
+    assert bool(row["has_active_escort"]) is True
+    assert row["distance_class"] == "10_25"
+
+
+def test_build_home_office_donor_pool_distinguishes_chain_dropped_from_immobile():
+    """A donor with real Wege rows whose chain cannot be repaired or attribute-matched must be
+    counted as n_chain_dropped_by_resample, never as n_immobile (fix round 1 item 2)."""
+    persons = pd.DataFrame({
+        "H_ID":        [20, 21],
+        "P_ID":        [1, 1],
+        "HP_ID":       ["20_1", "21_1"],
+        "HP_SEX":      [1, 2],   # different sex -> stage B's first (never-relaxed) matching key
+        "HP_ALTER":    [40, 45],  # is infeasible for "21_1", so it is guaranteed to be dropped,
+        "arbwo":       [1, 1],    # never repaired into a valid chain by chance.
+        "P_STARB1":    [1, 1],
+        "starb2":      [1, 1],
+        "M_HOFF":      [1, 1],
+        "P_ARB_ENTF":  [15.0, 20.0],
+    })
+    households = pd.DataFrame({"H_ID": [20, 21], "H_ANZAUTO": [1, 1], "H_GR": [1, 1]})
+    wege = pd.DataFrame({
+        "H_ID":      [20, 20, 21, 21],
+        "P_ID":      [1, 1, 1, 1],
+        "W_ID":      [1, 2, 1, 2],
+        "W_ZWECK":   [1, 8, 1, 8],
+        "hvm_imp":   [4, 4, 4, 4],
+        # Donor "21_1" has BOTH trips carrying the MiD "keine Angabe" coded time (99) in every
+        # time field -> mid_time_seconds NaNs both departure and arrival -> PlanValidator's
+        # "nan_times" issue -> unfixable. No wegmin_imp1 column at all, so stage A (time
+        # imputation) is skipped; stage B (attribute-matched chain replacement) then tries to
+        # match "21_1" (sex "female") against the only other donor, "20_1" (sex "male") -- the
+        # never-relaxed first key -- and fails deterministically.
+        "W_SZS":     [8, 17, 99, 99],
+        "W_SZM":     [0, 0, 99, 99],
+        "W_AZS":     [8, 17, 99, 99],
+        "W_AZM":     [30, 30, 99, 99],
+        "wegkm":     [5.0, 5.0, 5.0, 5.0],
+        "wegkm_imp": [5.0, 5.0, 5.0, 5.0],
+    })
+
+    attributes, trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        persons, wege, households, random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+
+    assert len(attributes) == 2
+    assert "21_1" not in set(trips["donor_id"].unique())
+    assert diagnostics["n_immobile"] == 0
+    assert diagnostics["n_chain_dropped_by_resample"] == 1

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.calibration.commute_day_state_reference import (
@@ -42,12 +43,12 @@ from braunschweig.calibration.commute_day_state_reference import (
     MID_ESCORT_ACTIVE,
     MID_MODULE,
     MID_SEX_FEMALE,
-    MID_TRIP_LENGTH_MAX_KM,
     MID_WEEKDAY,
-    MID_WORK_TRIP_PURPOSE,
     MID_WORKED_ON_DAY,
+    WORK_TRIP_LENGTH_COLUMN,
     classify_commute_distance,
     clean_mid_commute_distance_km,
+    first_work_trip_length_km,
 )
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 from braunschweig.popsim.chain_matching import derive_age_class
@@ -71,6 +72,13 @@ DISTANCE_SOURCE_P_ARB_ENTF = "P_ARB_ENTF"
 DISTANCE_SOURCE_TRIP_LENGTH = "trip_length"
 DISTANCE_SOURCE_UNKNOWN = "unknown"
 
+#: ``distance_class`` value for a donor with neither a valid ``P_ARB_ENTF`` nor a usable work
+#: trip. A LITERAL string, never ``None``/``NaN``: the later matching module (and
+#: :mod:`braunschweig.synthesis.commute_day.state`, which already keys its own unknown class this
+#: way) treats ``"unknown"`` as "matches any class" -- a ``None``/``NaN`` key would instead be
+#: silently dropped by any ``groupby``/``merge`` the matching module performs on this column.
+DISTANCE_CLASS_UNKNOWN = "unknown"
+
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
@@ -90,6 +98,16 @@ def _count_not_in_module(donors: pd.DataFrame) -> int:
     if "M_HOFF" not in donors.columns:
         return 0
     return int((donors["M_HOFF"] != MID_MODULE).sum())
+
+
+def _count_household_unmatched(donor_h_ids: pd.Series, households: pd.DataFrame) -> int:
+    """Count donors whose ``H_ID`` has no matching row in ``households``.
+
+    Shared between :func:`donor_attributes` (which warns and NaNs ``has_car`` for them) and
+    :func:`build_home_office_donor_pool` (which reports the same count as
+    ``n_household_unmatched``), so both read the identical definition.
+    """
+    return int((~donor_h_ids.isin(set(households["H_ID"]))).sum())
 
 
 def select_home_office_day_donors(persons: pd.DataFrame) -> pd.DataFrame:
@@ -121,32 +139,25 @@ def select_home_office_day_donors(persons: pd.DataFrame) -> pd.DataFrame:
     return donors
 
 
-def _first_work_trip_km(wege: pd.DataFrame) -> pd.DataFrame:
+def _work_trip_length_km(wege: pd.DataFrame) -> pd.DataFrame:
     """First valid work-trip length in km per ``(H_ID, P_ID)``, sorted by ``W_ID``.
 
-    Same qualifying condition as
-    :func:`braunschweig.calibration.commute_day_state_reference.first_work_trip_length_km``
-    (``W_ZWECK == MID_WORK_TRIP_PURPOSE`` and ``0 < wegkm < MID_TRIP_LENGTH_MAX_KM``), but sorts
-    explicitly by ``W_ID`` before keeping the first qualifying row per person (ruling R2): this
-    fallback distance source must be reproducible independent of the caller's row order, whereas
-    the reference helper only guarantees "first in file order".
+    Delegates the qualifying condition (``W_ZWECK == MID_WORK_TRIP_PURPOSE``, ``0 < wegkm <
+    MID_TRIP_LENGTH_MAX_KM``) to the single committed implementation,
+    :func:`braunschweig.calibration.commute_day_state_reference.first_work_trip_length_km`
+    (fix round 1 item 3: one definition of the fallback, not two) -- ``wege`` is sorted by
+    ``(H_ID, P_ID, W_ID)`` first so that helper's "first in file order" resolves to "first by
+    W_ID" deterministically (ruling R2), independent of the caller's row order.
 
     Returns one row per ``(H_ID, P_ID)`` with a qualifying trip, columns ``H_ID``, ``P_ID``,
-    ``work_trip_length_km``. Persons without a qualifying trip are simply absent.
+    :data:`braunschweig.calibration.commute_day_state_reference.WORK_TRIP_LENGTH_COLUMN`. Persons
+    without a qualifying trip are simply absent.
     """
-    _require_columns(wege, ("H_ID", "P_ID", "W_ID", "W_ZWECK", "wegkm"), "wege frame")
-    length_km = pd.to_numeric(wege["wegkm"], errors="coerce")
-    qualifies = ((wege["W_ZWECK"] == MID_WORK_TRIP_PURPOSE) & length_km.notna()
-                 & (length_km > 0) & (length_km < MID_TRIP_LENGTH_MAX_KM))
-    selected = wege.loc[qualifies, ["H_ID", "P_ID", "W_ID"]].copy()
-    selected["work_trip_length_km"] = length_km[qualifies].to_numpy()
-    first = (selected.sort_values(["H_ID", "P_ID", "W_ID"])
-             .drop_duplicates(subset=["H_ID", "P_ID"], keep="first")
-             .reset_index(drop=True))
-    logger.info("%s work-trip-length fallback: %d/%d Wege rows qualify; %d distinct persons keep "
-                "their first (by W_ID) qualifying trip", _LOG_TAG, int(qualifies.sum()), len(wege),
-                len(first))
-    return first[["H_ID", "P_ID", "work_trip_length_km"]]
+    sorted_wege = wege.sort_values(["H_ID", "P_ID", "W_ID"])
+    first = first_work_trip_length_km(sorted_wege)
+    logger.info("%s work-trip-length fallback: %d distinct persons keep their first (by W_ID) "
+                "qualifying work trip", _LOG_TAG, len(first))
+    return first
 
 
 def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households: pd.DataFrame,
@@ -170,7 +181,10 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
       construction).
     * ``has_children_u14`` -- any member of the donor's ``H_ID`` (in ``persons_all``, i.e.
       including non-donor household members) with ``HP_ALTER <= MID_CHILD_MAX_AGE``.
-    * ``has_car`` -- ``H_ANZAUTO > 0`` from ``households``, joined on ``H_ID``.
+    * ``has_car`` -- ``H_ANZAUTO > 0`` from ``households``, joined on ``H_ID``. A donor whose
+      ``H_ID`` has no matching row in ``households`` at all gets ``has_car = NaN`` (never
+      silently defaulted to ``False``) and is counted (see ``n_household_unmatched`` on
+      :func:`build_home_office_donor_pool`'s diagnostics).
     * ``has_active_escort`` -- any ``wege`` row for the donor's ``(H_ID, P_ID)`` with ``W_ZWECK
       == MID_ESCORT_ACTIVE``.
     * ``household_size`` -- ``H_GR`` from ``households``, joined on ``H_ID``, UNBINNED (ruling
@@ -179,13 +193,16 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     * ``distance_km`` / ``distance_class`` / ``distance_source`` -- ``P_ARB_ENTF`` cleaned with
       :func:`clean_mid_commute_distance_km` and classified with the default MiD top-code when
       valid (``distance_source == "P_ARB_ENTF"``); else the donor's first work-trip length in km
-      (see :func:`_first_work_trip_km`), classified with ``topcode_km=None`` -- a raw trip length
-      was never subject to the MiD ``P_ARB_ENTF`` 200 km top-code (``distance_source ==
-      "trip_length"``); else ``distance_class = NaN`` and ``distance_source == "unknown"``
-      (counted -- CLAUDE.md fallback transparency).
+      (see :func:`_work_trip_length_km`), classified with ``topcode_km=None`` -- a raw trip
+      length was never subject to the MiD ``P_ARB_ENTF`` 200 km top-code (``distance_source ==
+      "trip_length"``); else ``distance_class = DISTANCE_CLASS_UNKNOWN`` (the literal string
+      ``"unknown"``, never ``NaN`` -- the later matching module treats it as "matches any class")
+      and ``distance_source == "unknown"`` (counted -- CLAUDE.md fallback transparency).
 
     Donors without any qualifying trip (e.g. an immobile home-office day) still get a row here;
-    :func:`donor_trips` is what determines whether they have ``n_trips == 0``.
+    :func:`donor_trips` yields no rows for them, and :func:`build_home_office_donor_pool` is what
+    turns that absence into its ``n_immobile`` / ``n_chain_dropped_by_resample`` diagnostics --
+    there is no ``n_trips`` column on this frame.
     """
     _require_columns(donors, ("HP_ID", "H_ID", "P_ID", "HP_SEX", "HP_ALTER", "P_ARB_ENTF"),
                      "donors frame")
@@ -193,7 +210,7 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     _require_columns(households, ("H_ID", "H_ANZAUTO", "H_GR"), "households frame")
 
     attributes = donors[["HP_ID", "H_ID", "P_ID", "HP_SEX", "HP_ALTER", "P_ARB_ENTF"]].copy()
-    attributes = attributes.rename(columns={"HP_ID": "donor_id"})
+    attributes = attributes.rename(columns={"HP_ID": "donor_id"}).reset_index(drop=True)
 
     sex = attributes["HP_SEX"].map(SEX_LABEL_BY_HP_SEX)
     n_sex_unknown = int(sex.isna().sum())
@@ -212,7 +229,15 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     attributes["has_children_u14"] = attributes["H_ID"].map(children_by_household).fillna(0).gt(0)
 
     household_lookup = households.set_index("H_ID")
-    attributes["has_car"] = attributes["H_ID"].map(household_lookup["H_ANZAUTO"]).gt(0)
+    n_household_unmatched = _count_household_unmatched(attributes["H_ID"], households)
+    if n_household_unmatched > 0:
+        logger.warning(
+            "%s households: %d/%d donors have an H_ID absent from the households frame; "
+            "has_car is NaN for them (never silently defaulted to False) -- check the "
+            "households/persons H_ID join.", _LOG_TAG, n_household_unmatched, len(attributes))
+    household_matched = attributes["H_ID"].isin(set(households["H_ID"]))
+    h_anzauto = attributes["H_ID"].map(household_lookup["H_ANZAUTO"])
+    attributes["has_car"] = np.where(household_matched, h_anzauto.gt(0), np.nan)
     attributes["household_size"] = attributes["H_ID"].map(household_lookup["H_GR"])
 
     escort_pairs = set(
@@ -230,15 +255,22 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
         [classify_commute_distance(km) for km in cleaned_p_arb_entf], index=attributes.index)
     has_p_arb_entf = class_from_p_arb_entf.notna()
 
-    work_trip = _first_work_trip_km(wege)
+    work_trip = _work_trip_length_km(wege)
     attributes = attributes.merge(work_trip, on=["H_ID", "P_ID"], how="left")
     class_from_trip_length = pd.Series(
-        [classify_commute_distance(km, topcode_km=None) for km in attributes["work_trip_length_km"]],
+        [classify_commute_distance(km, topcode_km=None)
+         for km in attributes[WORK_TRIP_LENGTH_COLUMN]],
         index=attributes.index)
     has_trip_length = class_from_trip_length.notna()
 
-    distance_km = cleaned_p_arb_entf.where(has_p_arb_entf, attributes["work_trip_length_km"])
-    distance_class = class_from_p_arb_entf.where(has_p_arb_entf, class_from_trip_length)
+    distance_km = cleaned_p_arb_entf.where(has_p_arb_entf, attributes[WORK_TRIP_LENGTH_COLUMN])
+    # DISTANCE_CLASS_UNKNOWN (the literal string "unknown"), never None/NaN -- see the module
+    # docstring for why: a None-keyed cells entry would be silently dropped by any
+    # groupby/merge the later matching module performs on this column.
+    distance_class = (
+        class_from_p_arb_entf.where(has_p_arb_entf, class_from_trip_length)
+        .fillna(DISTANCE_CLASS_UNKNOWN)
+    )
     distance_source = pd.Series(DISTANCE_SOURCE_UNKNOWN, index=attributes.index, dtype=object)
     distance_source[has_p_arb_entf] = DISTANCE_SOURCE_P_ARB_ENTF
     distance_source[(~has_p_arb_entf) & has_trip_length] = DISTANCE_SOURCE_TRIP_LENGTH
@@ -246,8 +278,12 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     attributes["distance_class"] = distance_class
     attributes["distance_source"] = distance_source
 
+    assert attributes["distance_class"].notna().all(), (
+        f"{_LOG_TAG} distance_class must never be null -- the unmatched case must fall back to "
+        f"the literal DISTANCE_CLASS_UNKNOWN ({DISTANCE_CLASS_UNKNOWN!r}), not None/NaN.")
+
     source_counts = attributes["distance_source"].value_counts().to_dict()
-    n_missing_distance = int(attributes["distance_class"].isna().sum())
+    n_missing_distance = int((attributes["distance_source"] == DISTANCE_SOURCE_UNKNOWN).sum())
     logger.info(
         "%s distance source over %d donors: %s (%d, %.1f%%, have no usable commute distance)",
         _LOG_TAG, len(attributes), source_counts, n_missing_distance,
@@ -269,8 +305,8 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     ]].reset_index(drop=True)
 
 
-def donor_trips(donors: pd.DataFrame, wege: pd.DataFrame, *, random_seed: int,
-                escort_purpose: bool, escort_passive_education: bool,
+def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFrame, *,
+                random_seed: int, escort_purpose: bool, escort_passive_education: bool,
                 explicit_round_trip_purposes: bool) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
@@ -284,11 +320,26 @@ def donor_trips(donors: pd.DataFrame, wege: pd.DataFrame, *, random_seed: int,
     ``resample_cell_col`` is fixed to ``None``: the legacy same-cell resample fallback needs a
     synthetic-population cell column (e.g. ``ZENSUS100m``) that MiD donors do not carry.
 
-    ``donors`` needs ``HP_ID`` (must be unique -- raises otherwise), ``H_ID``, ``P_ID``. Donors
-    without any MiD trip yield NO rows here (an immobile home-office day): the inner join inside
-    ``build_validated_trip_table`` drops persons whose donor key matches no Wege row. They still
-    appear in :func:`donor_attributes` with ``n_trips == 0`` (computed by the caller from the
-    absence of rows here, see :func:`build_home_office_donor_pool`).
+    The persons frame handed to ``build_validated_trip_table`` carries ``sex``, ``age`` and
+    ``employed`` from ``attributes`` (:func:`donor_attributes`'s output) IN ADDITION to
+    ``person_id``/``H_ID``/``P_ID`` (fix round 1 item 2): stage B of the resample cascade
+    (``braunschweig.popsim.trips._match_unfixable``) only performs its attribute-matched chain
+    replacement when the persons frame carries a ``sex`` column -- without it, EVERY unfixable
+    donor falls back to the legacy same-cell resample, which with ``resample_cell_col=None``
+    (see above) silently drops every one of them to a trip-less (home-only) day. Carrying the
+    same attributes ``trips_stage.run`` carries for the SYNTHETIC persons lets an unfixable donor
+    (e.g. one with MiD coded times) be replaced by a behaviourally similar donor from the same
+    pool instead, exactly as the real pipeline does for synthetic workers.
+
+    ``donors`` needs ``HP_ID`` (must be unique -- raises otherwise), ``H_ID``, ``P_ID``.
+    ``attributes`` needs ``donor_id``, ``sex``, ``age``, ``employed`` (one row per donor,
+    matching ``donors`` 1:1). Donors without any MiD trip yield NO rows here (an immobile
+    home-office day): the inner join inside ``build_validated_trip_table`` drops persons whose
+    donor key matches no Wege row at all. A donor that DOES have Wege rows but whose chain cannot
+    be repaired or attribute-matched to a valid donor ALSO ends up with no rows here (dropped by
+    the resample, not immobile) -- :func:`build_home_office_donor_pool` distinguishes the two
+    cases (``n_immobile`` vs ``n_chain_dropped_by_resample``) since neither this frame nor
+    :func:`donor_attributes` carries an ``n_trips`` column of its own.
 
     Returns one row per (donor, trip): the ``trips_stage.CONTRACT`` columns (``person_id``
     renamed to ``donor_id``) plus ``euclidean_distance`` (metres, from MiD ``wegkm_imp`` * 1000 /
@@ -298,12 +349,17 @@ def donor_trips(donors: pd.DataFrame, wege: pd.DataFrame, *, random_seed: int,
     that intentional narrowing.
     """
     _require_columns(donors, ("HP_ID", "H_ID", "P_ID"), "donors frame")
+    _require_columns(attributes, ("donor_id", "sex", "age", "employed"), "attributes frame")
     if donors["HP_ID"].duplicated().any():
         n_duplicated = int(donors["HP_ID"].duplicated().sum())
         raise ValueError(f"{_LOG_TAG} donors frame has {n_duplicated} duplicate HP_ID value(s); "
                          "HP_ID must be unique per donor.")
 
     donor_persons = donors[["HP_ID", "H_ID", "P_ID"]].rename(columns={"HP_ID": "person_id"})
+    attribute_extras = attributes[["donor_id", "sex", "age", "employed"]].rename(
+        columns={"donor_id": "person_id"})
+    donor_persons = donor_persons.merge(attribute_extras, on="person_id", how="left",
+                                        validate="one_to_one")
     table, report = build_validated_trip_table(
         donor_persons, wege,
         resample=True,
@@ -348,30 +404,51 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     Returns ``(attributes, trips, diagnostics)``. ``diagnostics``:
 
     * ``n_donors`` -- rows in ``attributes`` (every selected donor, mobile or immobile).
-    * ``n_immobile`` -- donors with no row in ``trips`` (an immobile home-office day).
-    * ``n_missing_distance`` -- donors with ``distance_class`` unknown (neither ``P_ARB_ENTF``
-      nor a work trip).
+    * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day).
+    * ``n_chain_dropped_by_resample`` -- donors that DID have Wege rows, but ended up with no
+      surviving trip in ``trips`` anyway (their chain could not be repaired, and no
+      attribute-matched donor could replace it -- see :func:`donor_trips`). Distinct from
+      ``n_immobile``: a non-zero rate here is a resample/matching gap, not a real behaviour.
+    * ``n_missing_distance`` -- donors with ``distance_source == "unknown"`` (neither
+      ``P_ARB_ENTF`` nor a work trip; ``distance_class`` itself is always the literal
+      ``DISTANCE_CLASS_UNKNOWN`` in that case, never null).
     * ``n_sex_unknown`` -- donors with ``sex`` unknown (``HP_SEX`` outside {1, 2}).
     * ``n_not_in_module`` -- selected donors with ``M_HOFF != MID_MODULE`` (see
       :func:`select_home_office_day_donors`).
+    * ``n_household_unmatched`` -- donors whose ``H_ID`` has no row in ``households`` (``has_car``
+      is ``NaN`` for them, see :func:`donor_attributes`).
     * ``distance_source_counts`` -- dict, ``distance_source`` value -> donor count.
     * ``cells`` -- dict, ``(distance_class, has_children_u14, has_active_escort)`` -> donor
-      count (one entry per donor; ``distance_class`` is ``None`` for the unknown-distance cell).
+      count (one entry per donor; ``distance_class`` is never ``None`` -- the unknown-distance
+      cell uses the literal ``DISTANCE_CLASS_UNKNOWN``).
     """
     donors = select_home_office_day_donors(persons)
     attributes = donor_attributes(donors, persons, households, wege)
     trips = donor_trips(
-        donors, wege, random_seed=random_seed, escort_purpose=escort_purpose,
+        donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
     )
 
     n_donors = len(attributes)
     mobile_donor_ids = set(trips["donor_id"].unique()) if len(trips) else set()
-    n_immobile = int((~attributes["donor_id"].isin(mobile_donor_ids)).sum())
-    n_missing_distance = int(attributes["distance_class"].isna().sum())
+    is_mobile = attributes["donor_id"].isin(mobile_donor_ids)
+
+    # A donor with ANY row in the raw Wege file at all is not immobile -- even if that chain was
+    # later dropped by the repair/resample cascade (see donor_trips' docstring). Computed
+    # independently of the trips output so the two failure modes never get conflated.
+    donor_wege_pairs = set(
+        map(tuple, wege[["H_ID", "P_ID"]].drop_duplicates().itertuples(index=False, name=None)))
+    has_any_wege_row = pd.Series(
+        [(h, p) in donor_wege_pairs for h, p in zip(attributes["H_ID"], attributes["P_ID"])],
+        index=attributes.index)
+
+    n_immobile = int((~has_any_wege_row).sum())
+    n_chain_dropped_by_resample = int((has_any_wege_row & ~is_mobile).sum())
+    n_missing_distance = int((attributes["distance_source"] == DISTANCE_SOURCE_UNKNOWN).sum())
     n_sex_unknown = int(attributes["sex"].isna().sum())
     n_not_in_module = _count_not_in_module(donors)
+    n_household_unmatched = _count_household_unmatched(attributes["H_ID"], households)
     distance_source_counts = attributes["distance_source"].value_counts().to_dict()
 
     cells: dict = {}
@@ -384,17 +461,25 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     diagnostics = {
         "n_donors": n_donors,
         "n_immobile": n_immobile,
+        "n_chain_dropped_by_resample": n_chain_dropped_by_resample,
         "n_missing_distance": n_missing_distance,
         "n_sex_unknown": n_sex_unknown,
         "n_not_in_module": n_not_in_module,
+        "n_household_unmatched": n_household_unmatched,
         "distance_source_counts": distance_source_counts,
         "cells": cells,
     }
+    log_mobility = logger.warning if n_chain_dropped_by_resample > 0 else logger.info
+    log_mobility(
+        "%s donor mobility: %d/%d donors immobile (no Wege rows, %.1f%%), %d/%d had Wege rows but "
+        "no surviving trip chain after repair/resample (%.1f%%, a resample gap, not real "
+        "behaviour)", _LOG_TAG, n_immobile, n_donors, 100.0 * n_immobile / max(n_donors, 1),
+        n_chain_dropped_by_resample, n_donors, 100.0 * n_chain_dropped_by_resample / max(n_donors, 1),
+    )
     logger.info(
-        "%s donor pool built: %d donors, %d immobile (%.1f%%), %d missing distance (%.1f%%), "
-        "%d sex unknown, %d not in home-office module",
-        _LOG_TAG, n_donors, n_immobile, 100.0 * n_immobile / max(n_donors, 1),
-        n_missing_distance, 100.0 * n_missing_distance / max(n_donors, 1), n_sex_unknown,
-        n_not_in_module,
+        "%s donor pool built: %d donors, %d missing distance (%.1f%%), %d sex unknown, %d not in "
+        "home-office module, %d household-unmatched",
+        _LOG_TAG, n_donors, n_missing_distance, 100.0 * n_missing_distance / max(n_donors, 1),
+        n_sex_unknown, n_not_in_module, n_household_unmatched,
     )
     return attributes, trips, diagnostics
