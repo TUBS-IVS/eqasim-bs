@@ -18,13 +18,12 @@ location assignment that produces that distance:
   reporting-day view) feed everything that needs the finished day: secondary chainsolvers, the
   MATSim population, and synthesis output.
 
-Stage modules planned for this package (see the Phase B plan,
-``docs/superpowers/plans/2026-09-05-commute-day-state-phase-b.md``, and ADR-0104):
+Stage modules planned for this package (see ADR-0104 "Decision" and "Consequences"):
 ``home_office_donors_stage`` (MiD home-office-day donor pool from the raw MiD delivery),
 ``state_stage`` (the state draw itself), ``trips_day_stage`` / ``activities_day_stage`` (the
 reporting-day trips/activities aliased above), ``spatial_locations_day`` / ``output_day``
-(consumers reading the ``.final`` view). This module (Task 1 of the Phase B plan) provides only
-the pure state-model core in :mod:`state`: distance classes, keep probability, and the seeded
-state draw; the stage modules and the donor pool / matching / plan-replacement logic are added
-by later tasks.
+(consumers reading the ``.final`` view). This module (Task 1 of the Phase B implementation)
+provides only the pure state-model core in :mod:`state`: distance classes, keep probability, and
+the seeded state draw; the stage modules and the donor pool / matching / plan-replacement logic
+are added by later tasks.
 """

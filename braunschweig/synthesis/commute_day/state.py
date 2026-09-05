@@ -34,6 +34,7 @@ import pandas as pd
 
 from braunschweig.calibration.commute_day_state_reference import (
     COMMUTE_CLASS_LABELS,
+    MID_TRIP_LENGTH_MAX_KM,
     classify_commute_distance,
 )
 
@@ -57,11 +58,6 @@ CLASS_RANK = {label: rank for rank, label in enumerate(COMMUTE_CLASS_LABELS)}
 #: MiD ``W_ZWECK`` purpose mapped onto the eqasim trip schema (``braunschweig.popsim.trips``):
 #: the ``following_purpose`` value of a trip to work.
 WORK_FOLLOWING_PURPOSE = "work"
-
-#: A donor work-trip length must lie strictly between 0 and this bound to be usable; at or above
-#: it the value is a MiD filter/missing code, never a real trip length (the same convention as
-#: ``commute_day_state_reference.MID_TRIP_LENGTH_MAX_KM``).
-MAX_DONOR_TRIP_LENGTH_KM = 1000.0
 
 #: The MiD workday-location table (``share_at_workplace`` column) carries no ``gt200`` row --
 #: MiD top-codes ``P_ARB_ENTF`` at 200 km, so the survey cannot resolve anything beyond it. A
@@ -89,7 +85,9 @@ def donor_distance_class_from_trips(trips: pd.DataFrame, *,
     ``trips`` (columns are never mixed row by row: if ``wegkm_imp`` exists, every row uses
     ``wegkm_imp``, even where that particular value is ``NaN``, and ``wegkm`` is never consulted
     as a per-row fallback) on the first trip -- sorted by ``trip_index`` -- with
-    ``following_purpose == "work"`` and ``0 < km < MAX_DONOR_TRIP_LENGTH_KM``. Classified with
+    ``following_purpose == "work"`` and ``0 < km < MID_TRIP_LENGTH_MAX_KM`` (imported from
+    ``commute_day_state_reference``: a value at or above it is a MiD filter/missing code, never a
+    real trip length). Classified with
     :func:`classify_commute_distance` using ``topcode_km=None`` (ADR-0104: a raw trip length was
     never subject to the MiD ``P_ARB_ENTF`` 200 km top-code, so an exact 200.0 km trip
     classifies as ``gt200`` rather than being folded into ``100_200``).
@@ -118,7 +116,7 @@ def donor_distance_class_from_trips(trips: pd.DataFrame, *,
 
     work_trips = trips.loc[trips["following_purpose"] == WORK_FOLLOWING_PURPOSE].copy()
     distance_km = pd.to_numeric(work_trips[distance_column], errors="coerce")
-    is_valid = distance_km.notna() & (distance_km > 0) & (distance_km < MAX_DONOR_TRIP_LENGTH_KM)
+    is_valid = distance_km.notna() & (distance_km > 0) & (distance_km < MID_TRIP_LENGTH_MAX_KM)
 
     valid_trips = work_trips.loc[is_valid, ["person_id", "trip_index"]].copy()
     valid_trips["donor_distance_km"] = distance_km[is_valid].to_numpy()
@@ -248,24 +246,38 @@ def _build_share_at_workplace_lookup(table: pd.DataFrame, classes_needed) -> dic
     return lookup
 
 
+def _clipped_keep_ratio(assigned_share, donor_share):
+    """``assigned_share / donor_share`` clipped to ``[0, 1]``.
+
+    Shared between :func:`keep_probability` (scalar) and :func:`draw_states` (vectorised over a
+    ``pandas.Series`` of shares) so the two can never compute the ratio differently -- both call
+    this single implementation of the formula, never a re-typed copy of it.
+    """
+    return np.clip(assigned_share / donor_share, 0.0, 1.0)
+
+
 def keep_probability(assigned_class: str, donor_class, table: pd.DataFrame) -> float:
     """``P(keep)`` for a worker re-drawn from a donor class to an assigned class.
 
     ``P(keep) = share_at_workplace(assigned_class) / share_at_workplace(donor_class)``, both read
     from ``table`` (see :func:`_build_share_at_workplace_lookup`; an assigned OR donor class of
-    ``gt200`` reads the ``100_200`` row, MiD has no ``gt200`` row). Clipped to ``[0, 1]``: the
-    ratio is a probability, and the MiD shares are not required to be monotonically ordered
-    outside the substitution the model acts on.
+    ``gt200`` reads the ``100_200`` row, MiD has no ``gt200`` row), clipped to ``[0, 1]`` by
+    :func:`_clipped_keep_ratio` -- the ratio is a probability, and the MiD shares are not
+    required to be monotonically ordered outside the substitution the model acts on.
 
     ``donor_class`` of ``None`` (or ``NaN``) means the person has no usable donor distance --
     :func:`donor_distance_class_from_trips` returns ``None`` for such persons -- and ALWAYS
     returns ``1.0`` (no re-draw at all; the donor's own day is used unchanged).
+
+    :func:`draw_states` computes the same quantity for a whole population via
+    :func:`_clipped_keep_ratio` directly (vectorised over the population's shares) rather than
+    calling this scalar function in a per-row loop; both paths share the identical ratio/clip
+    formula so the two cannot drift apart.
     """
     if pd.isna(donor_class):
         return 1.0
     lookup = _build_share_at_workplace_lookup(table, (assigned_class, donor_class))
-    ratio = lookup[assigned_class] / lookup[donor_class]
-    return float(np.clip(ratio, 0.0, 1.0))
+    return float(_clipped_keep_ratio(lookup[assigned_class], lookup[donor_class]))
 
 
 def draw_states(workers: pd.DataFrame, table: pd.DataFrame, rng: np.random.RandomState, *,
@@ -285,7 +297,7 @@ def draw_states(workers: pd.DataFrame, table: pd.DataFrame, rng: np.random.Rando
        caller's row order. Two draws are then taken from ``rng`` for the WHOLE population at
        once, ``u`` (the keep draw) then ``u2`` (the far/absent draw) -- both length ``n``.
     2. Re-draw eligibility: ``CLASS_RANK[assigned] > CLASS_RANK[donor]`` (donor class known).
-       Not eligible -> ``at_workplace``, ``p_keep = 1.0``, ``redrawn = False``; reason
+       Not eligible -> ``at_workplace``, ``p_keep = 1.0``, ``redraw_eligible = False``; reason
        ``"donor_class_missing"`` when the donor class itself is unknown, else ``"not_eligible"``.
     3. Eligible: ``p_keep = keep_probability(assigned, donor, table)``. ``u < p_keep`` ->
        ``at_workplace``, reason ``"kept"``.
@@ -296,11 +308,16 @@ def draw_states(workers: pd.DataFrame, table: pd.DataFrame, rng: np.random.Rando
        gets ``"home"``, reason ``"home_redraw"``.
 
     Returns ``(frame, diagnostics)``. ``frame`` columns: ``person_id``, ``commute_day_state``,
-    ``p_keep``, ``redrawn`` (bool), ``reason``. ``diagnostics``: ``n_workers``,
+    ``p_keep``, ``redraw_eligible`` (bool -- True whenever ``CLASS_RANK[assigned] >
+    CLASS_RANK[donor]``, i.e. the person WAS RE-DRAWN AT ALL, regardless of whether the draw
+    changed their state: an eligible person who is kept still has ``redraw_eligible = True`` and
+    ``commute_day_state == "at_workplace"``), ``reason``. ``diagnostics``: ``n_workers``,
     ``n_redraw_eligible``, ``n_donor_class_missing``, ``n_at_workplace``, ``n_home``,
     ``n_absent``, ``n_escort_protected`` (far, escort-protected, not-kept persons -- i.e. where
     escort protection changed the outcome from what would otherwise have been ``absent``), and
-    ``by_assigned_class`` (dict, assigned class -> ``{"at_workplace": n, "home": n, "absent": n}``).
+    ``by_assigned_class`` (dict, assigned class -> ``{"at_workplace": n, "home": n, "absent":
+    n}``; an assigned class of ``None``/``NaN`` is keyed as the literal string ``"unknown"`` so
+    the diagnostics can always be serialised to JSON without a null key).
     """
     _require_columns(workers, ("person_id", "distance_km", "assigned_distance_class",
                               "donor_distance_class"), "workers frame")
@@ -320,7 +337,9 @@ def draw_states(workers: pd.DataFrame, table: pd.DataFrame, rng: np.random.Rando
 
     assigned_share = assigned_class.map(share_lookup)
     donor_share = donor_class.map(share_lookup)
-    ratio = (assigned_share / donor_share).clip(lower=0.0, upper=1.0)
+    # Same formula as keep_probability, evaluated for the whole population at once instead of
+    # calling the scalar function in a per-row loop (see _clipped_keep_ratio's docstring).
+    ratio = _clipped_keep_ratio(assigned_share, donor_share)
     p_keep = pd.Series(1.0, index=workers.index).where(~pd.Series(eligible, index=workers.index), ratio)
 
     u = rng.random_sample(n)
@@ -352,13 +371,16 @@ def draw_states(workers: pd.DataFrame, table: pd.DataFrame, rng: np.random.Rando
         "person_id": workers["person_id"].to_numpy(),
         "commute_day_state": state_values,
         "p_keep": p_keep.to_numpy(),
-        "redrawn": eligible,
+        "redraw_eligible": eligible,
         "reason": reason_values,
     })
 
     by_assigned_class: dict = {}
     for label, state_value in zip(assigned_class, state_values):
-        cell = by_assigned_class.setdefault(label, {s: 0 for s in STATES})
+        # An assigned class of None/NaN cannot be used as a dict key in the diagnostics without
+        # becoming a null key once serialised to JSON, so it is keyed as the literal "unknown".
+        class_key = "unknown" if pd.isna(label) else label
+        cell = by_assigned_class.setdefault(class_key, {s: 0 for s in STATES})
         cell[state_value] += 1
 
     n_at_workplace = int((state_values == "at_workplace").sum())
