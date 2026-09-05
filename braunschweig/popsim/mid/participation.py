@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 # Participation
 # --------------------------------------------------------------------------- #
 
-def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID"):
+def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID",
+                            counts_closure: bool = False, forbid_no_diary_sources: bool = False):
     """Derive the ``trip_class`` control seed from each person's REALISED weekday plan.
 
     A synthetic person executes the MiD plan identified by ``(source_H_ID, source_P_ID)``.
@@ -59,9 +60,39 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
     own ``anzwege1``; the path taken is logged (no silent fallback). The 803/804 diary
     non-response codes on the resolved trip count are imputed within the PERSON's own
     ``alter_gr1`` age band, exactly as before.
+
+    Args:
+        counts_closure: when True, count the CLOSED day (plan-structure-fix Task 7,
+            issue #367): a plan source whose diary does not end at home
+            (``src_ends_at_home == False``, attached by
+            ``diary_facts.attach_plan_source_facts``, Task 3) but does carry at
+            least one direct leg (``src_n_direct_legs > 0``) gets its resolved
+            ``anzwege1`` incremented by one BEFORE classing -- the synthetic
+            return-home trip the completed-donor plan will carry after trip-chain
+            closure (spec 2026-09-05-plan-structure-fix-design.md). The 803/804
+            diary non-response codes are left untouched (still imputed as before);
+            a source with zero direct legs (e.g. an unresolved 803/804 code) never
+            qualifies. Requires the ``src_ends_at_home`` / ``src_n_direct_legs``
+            columns on ``persons`` (raises ``KeyError`` naming the missing column
+            otherwise -- no silent no-op). Default False (byte-identical to the
+            pre-Task-7 behaviour).
+        forbid_no_diary_sources: when True, raise ``ValueError`` if any resolved
+            plan-source ``anzwege1`` is still 803/804 (issue #365 guard): when
+            ``diary_plan_match`` is on, the completed_donor build is expected to
+            have remapped every no-diary source to a realisable weekday donor, so
+            a surviving 803/804 code here means that remap did not actually run
+            (a flag-wiring defect) -- this must fail loudly rather than silently
+            impute a code that should not exist. Default False (no guard; the
+            code is imputed as before, matching the legacy / diary-match-off
+            behaviour).
     """
     has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
     if not has_source:
+        if counts_closure:
+            logger.info(
+                "[popsim.mid] trip_class seed: counts_closure requested but ignored -- no "
+                "plan-source columns are present, so the seed is already derived from the "
+                "person's own (already weekday-filtered) anzwege1.")
         logger.info(
             "[popsim.mid] trip_class seed: derived from each person's own anzwege1 "
             "(no plan-source columns present -> seed is weekday-filtered).")
@@ -82,6 +113,34 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
             f"derive_trip_class_seed: {n_unresolved} person(s) have a plan source "
             f"(source_H_ID, source_P_ID) absent from the donor frame; cannot derive "
             "trip_class from the realised plan (upstream donor/source corruption).")
+
+    codes = mapped.isin((803, 804))
+    if forbid_no_diary_sources and codes.any():
+        # No silent fallback (issue #365): with diary_plan_match on, the completed_donor
+        # build must have already remapped every no-diary source to a realisable weekday
+        # donor -- a surviving 803/804 code here means that remap did not run.
+        raise ValueError(
+            f"derive_trip_class_seed: {int(codes.sum())} plan source(s) carry anzwege1 803/804 "
+            "although diary_plan_match is on; the completed_donor build did not remap them "
+            "(check the flag wiring)")
+    if counts_closure:
+        for col in ("src_ends_at_home", "src_n_direct_legs"):
+            if col not in persons.columns:
+                raise KeyError(
+                    f"derive_trip_class_seed(counts_closure=True) requires {col!r} from "
+                    "diary_facts.attach_plan_source_facts (Task 3); absent from the person "
+                    f"frame (has {list(persons.columns)}).")
+        # Count the closed day: a source whose diary does not end at home gets a
+        # synthetic return-home trip added by trip-chain closure, so the seed trip
+        # count must include it. 803/804 codes (~codes already False for a resolved
+        # count) and sources with zero direct legs never qualify.
+        open_end = (~persons["src_ends_at_home"].astype(bool)) & (persons["src_n_direct_legs"] > 0) & ~codes
+        mapped = mapped.where(~open_end, mapped + 1)
+        logger.info(
+            "[popsim.mid] trip_class seed counts the closed day: %d/%d (%.1f%%) sources get "
+            "+1 for the synthetic return-home trip.",
+            int(open_end.sum()), len(persons), 100.0 * open_end.mean())
+
     persons = persons.copy()
     persons["_plan_source_anzwege1"] = mapped.to_numpy()
     logger.info(

@@ -390,6 +390,8 @@ def _derive_trip_class_seed_column(
     *,
     active_kreis_entry_names: set[str],
     kreis_seed_rng,
+    trip_class_counts_closure: bool = False,
+    forbid_no_diary_sources: bool = False,
 ) -> pd.DataFrame:
     """Derive the person-level ``trip_class`` KREIS control seed column.
 
@@ -400,7 +402,11 @@ def _derive_trip_class_seed_column(
     MID_PERSON_ATTR_COLS). The caller's rng guard ensures kreis_seed_rng is set. The
     class is seeded from the person's REALISED weekday plan source (not their own
     reporting-day diary) so the control matches the SrV weekday target universe --
-    see derive_trip_class_seed (audit 2026-07-09).
+    see derive_trip_class_seed (audit 2026-07-09). ``load_mid_seed`` never has the
+    Task 3 ``src_*`` plan-source diary facts (its persons frame is read directly from
+    the raw MiD CSVs), so this call always keeps ``trip_class_counts_closure`` and
+    ``forbid_no_diary_sources`` at their False default -- byte-identical to before
+    Task 7.
 
     In ``project_completed_seed``: derive trip_class from each person's REALISED
     weekday plan source, not their own reporting-day diary: after
@@ -408,7 +414,10 @@ def _derive_trip_class_seed_column(
     weekday donors, so the source's anzwege1 is both the SrV Di-Do target universe
     and the trips the synthetic person executes. See derive_trip_class_seed (audit
     2026-07-09; ~29% weekend reporters otherwise carried a weekend diary count into
-    the weekday-anchored control).
+    the weekday-anchored control). ``trip_class_counts_closure`` /
+    ``forbid_no_diary_sources`` are threaded through from ``popsim.stage`` (issue
+    #367 / #365, plan-structure-fix Task 7) -- see ``derive_trip_class_seed`` for
+    the full semantics.
 
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
@@ -416,7 +425,9 @@ def _derive_trip_class_seed_column(
     if "trip_class" in active_kreis_entry_names:
         persons = derive_trip_class_seed(
             persons, rng=kreis_seed_rng,
-            household_id=columns.person_household_id, person_id=columns.person_id)
+            household_id=columns.person_household_id, person_id=columns.person_id,
+            counts_closure=trip_class_counts_closure,
+            forbid_no_diary_sources=forbid_no_diary_sources)
     return persons
 
 
@@ -825,6 +836,8 @@ def project_completed_seed(
     ebike_seed_column: Optional[str] = None,
     include_status_seed_col: bool = False,
     mid_dir: Union[str, Path, None] = None,
+    trip_class_counts_closure: bool = False,
+    forbid_no_diary_sources: bool = False,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -876,6 +889,20 @@ def project_completed_seed(
             the full MiD Wege table (mid.load_mid_wege), which the completed-donor
             frames do not carry. ``None`` (default) is a no-op when no participation
             control is active (no silent fallback if one is).
+        trip_class_counts_closure: threaded from ``popsim.stage`` (issue #367,
+            plan-structure-fix Task 7; config key
+            ``braunschweig.population.popsim.trip_class_seed_counts_closure``,
+            default True). See ``derive_trip_class_seed``'s ``counts_closure``
+            argument for the full semantics -- requires the ``src_ends_at_home``
+            / ``src_n_direct_legs`` diary facts the ``completed_donor`` stage
+            always attaches (Task 3). Default False here (byte-identical to the
+            pre-Task-7 behaviour) so direct callers/tests are unaffected; the
+            stage always passes its configured value explicitly.
+        forbid_no_diary_sources: threaded from ``popsim.stage`` (issue #365,
+            plan-structure-fix Task 7; equals ``diary_plan_match`` -- config key
+            ``braunschweig.population.popsim.diary_plan_match``, default True).
+            See ``derive_trip_class_seed``'s ``forbid_no_diary_sources`` argument.
+            Default False here for the same reason as above.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -905,6 +932,8 @@ def project_completed_seed(
         persons, columns,
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
+        trip_class_counts_closure=trip_class_counts_closure,
+        forbid_no_diary_sources=forbid_no_diary_sources,
     )
     persons = _derive_pt_ticket_group_seed_column(
         persons,
