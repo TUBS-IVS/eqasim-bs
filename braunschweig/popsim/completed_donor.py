@@ -11,6 +11,20 @@ Byte-identity is mandatory: member completion (``mid.load_completed_donor``) and
 weekend-plan match (``weekend_plan_match.reassign_weekend_plan_sources``) share
 ONE seeded RNG instance ``np.random.RandomState(random_seed + 74513)`` and MUST be
 called in this exact order with that exact instance.
+
+The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issue
+#365, plan-structure-fix Task 3) and the plan-source diary fact attachment
+(``diary_facts.attach_plan_source_facts``) run AFTER member completion + weekend
+match, in that order, CONTINUING the same seeded RNG instance -- they are new
+steps appended to the byte-identity contract above, never inserted before or
+between the existing two. The stage now also depends on the MiD Wege (trip)
+table (``mid.load_mid_wege``) and four additional flags (diary_plan_match,
+exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg);
+it remains sampling- and controls-independent, so it is still shareable across
+runs via the cache_share store. The eight ``src_*`` plan-source fact columns are
+attached to ``persons`` ALWAYS (even with diary_plan_match OFF) -- they are
+facts about the plan source's diary, not behaviour, so the OFF path stays
+byte-identical only in ``source_H_ID``/``source_P_ID``.
 """
 from __future__ import annotations
 
@@ -22,19 +36,23 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim import diary_facts, diary_plan_match
 from braunschweig.popsim import mid
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import weekend_plan_match
 
 logger = logging.getLogger(__name__)
 
-# RNG offset shared by member completion and weekend-plan match. Kept disjoint from
-# the +74511 attribute-imputation stream in popsim.stage.build_persons. Must NOT
-# change: it defines the donor draw (byte-identity contract).
+# RNG offset shared by member completion, weekend-plan match AND the diary plan
+# match. Kept disjoint from the +74511 attribute-imputation stream in
+# popsim.stage.build_persons. Must NOT change: it defines the donor draw
+# (byte-identity contract).
 COMPLETION_RNG_OFFSET = 74513
 
 # Filename of the weekend-plan-match trace persisted into this stage's cache dir.
 WEEKEND_TRACE_FILE = "weekend_plan_match_trace.parquet"
+# Filename of the diary-plan-match trace persisted into this stage's cache dir.
+DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 
 
 @dataclass
@@ -52,6 +70,7 @@ class CompletedDonor:
     completeness_report: seedmod.CompletenessReport
     completion_report: object
     weekend_report: Optional[object]
+    diary_report: Optional[object] = None
 
 
 def build_completed_donor(
@@ -61,13 +80,20 @@ def build_completed_donor(
     seed_day_filter: Optional[Sequence[int]],
     weekend_plan_match_on: bool,
     trace_path: Optional[Union[str, Path]] = None,
+    diary_plan_match_on: bool = True,
+    exclude_holiday_plan_sources: bool = True,
+    exclude_rbw_legs: bool = True,
+    drop_leading_arrive_home_leg: bool = True,
+    diary_trace_path: Optional[Union[str, Path]] = None,
 ) -> CompletedDonor:
-    """Build the completed MiD donor frames (member completion + weekend match).
+    """Build the completed MiD donor frames (member completion + weekend match +
+    diary plan match), and attach the plan-source diary facts.
 
     Parameters
     ----------
     mid_dir:
-        Directory with ``MiD2023_Haushalte.csv`` / ``MiD2023_Personen.csv``.
+        Directory with ``MiD2023_Haushalte.csv`` / ``MiD2023_Personen.csv`` /
+        ``MiD2023_Wege.csv``.
     random_seed:
         Pipeline random seed. The single completion RNG is seeded with
         ``random_seed + COMPLETION_RNG_OFFSET``.
@@ -82,8 +108,44 @@ def build_completed_donor(
     trace_path:
         Where to write the weekend-plan-match trace parquet (only when matching is
         on and a path is given). ``None`` -> trace not persisted (e.g. unit tests).
+    diary_plan_match_on:
+        When True (default), remap the plan source of any person whose source has
+        no realisable MiD diary to a matched weekday donor with one
+        (``diary_plan_match.reassign_diaryless_plan_sources``). REQUIRES the MiD
+        person columns ``mobil``, ``mobil_diff``, ``feiertag`` to be present (fails
+        fast, see below). OFF is byte-identical in ``source_H_ID``/``source_P_ID``
+        to today; the ``src_*`` fact columns are still attached (see below).
+    exclude_holiday_plan_sources:
+        When True (default) and ``diary_plan_match_on``, treat a plan source
+        reported on a public holiday (``feiertag == 1``) as not realisable and
+        remap it (SrV reference days exclude public holidays). Ignored when
+        ``diary_plan_match_on`` is False.
+    exclude_rbw_legs:
+        When True (default) and ``diary_plan_match_on``, treat a plan source whose
+        diary consists only of rbW summary legs as not realisable and remap it.
+        Ignored when ``diary_plan_match_on`` is False.
+    drop_leading_arrive_home_leg:
+        When True (default) and ``diary_plan_match_on``, drop a diary's leading
+        arrive-home leg when counting direct legs, and remap a plan source whose
+        diary becomes empty after the drop. Ignored when ``diary_plan_match_on``
+        is False.
+    diary_trace_path:
+        Where to write the diary-plan-match trace parquet (only when matching is
+        on and a path is given). ``None`` -> trace not persisted (e.g. unit tests).
+
+    Notes
+    -----
+    The MiD Wege (trip) table is loaded (``mid.load_mid_wege``) and its per-person
+    diary facts (``diary_facts.compute_diary_facts``) computed UNCONDITIONALLY,
+    regardless of ``diary_plan_match_on``: the eight ``src_*`` plan-source fact
+    columns (``diary_facts.FACT_COLUMNS`` prefixed ``src_``) are attached to
+    ``persons`` ALWAYS -- they are facts about the plan source's diary, not
+    behaviour, so the OFF path stays byte-identical only in ``source_H_ID`` /
+    ``source_P_ID``. On the real MiD delivery, loading the full Wege table takes
+    roughly a minute and ~2 GB; acceptable for a once-per-run shared stage.
     """
-    # ONE seeded RNG, shared by member completion and weekend match (byte-identity).
+    # ONE seeded RNG, shared by member completion, weekend match AND the diary plan
+    # match (byte-identity).
     completion_rng = np.random.RandomState(random_seed + COMPLETION_RNG_OFFSET)
     # Weekend-plan match needs weekend reporters in the donor, so it forces ALL kernwo
     # days, overriding seed_day_filter (mirrors stage.execute exactly).
@@ -111,12 +173,46 @@ def build_completed_donor(
         completion_report.n_households_filled, completion_report.n_persons_added,
         completeness_report.completeness_rate,
     )
+
+    # Diary facts are derived from the MiD Wege table UNCONDITIONALLY (needed both
+    # for the diary plan match below AND for the src_* fact columns attached
+    # unconditionally further down -- see the docstring Notes).
+    wege = mid.load_mid_wege(mid_dir)
+    facts = diary_facts.compute_diary_facts(wege)
+
+    diary_report = None
+    if diary_plan_match_on:
+        missing_mobility_cols = [c for c in ("mobil", "mobil_diff", "feiertag") if c not in persons.columns]
+        if missing_mobility_cols:
+            raise KeyError(
+                f"[completed_donor] diary_plan_match requires MiD person column(s) {missing_mobility_cols} "
+                "(see mid.donor.MID_PERSON_OPTIONAL_COLS); the MiD delivery in "
+                f"{mid_dir} lacks them -- set braunschweig.population.popsim.diary_plan_match: false "
+                "to run without the diary plan match."
+            )
+        # completion_rng is DELIBERATELY shared with member completion + weekend
+        # match above: all three draws form ONE entangled seeded stream -- do NOT
+        # reseed it.
+        persons, diary_trace, diary_report = diary_plan_match.reassign_diaryless_plan_sources(
+            persons, persons, facts, rng=completion_rng,
+            exclude_rbw_legs=exclude_rbw_legs,
+            exclude_holidays=exclude_holiday_plan_sources,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        )
+        if diary_trace_path is not None:
+            diary_trace.to_parquet(diary_trace_path)
+        logger.info("[completed_donor] diary_plan_match: %s", diary_report)
+
+    # src_* plan-source fact columns are attached ALWAYS (facts, not behaviour).
+    persons = diary_facts.attach_plan_source_facts(persons, facts)
+
     return CompletedDonor(
         households=households,
         persons=persons,
         completeness_report=completeness_report,
         completion_report=completion_report,
         weekend_report=weekend_report,
+        diary_report=diary_report,
     )
 
 
@@ -124,27 +220,36 @@ def configure(context):
     """Declare the completed-donor config dependencies.
 
     This stage depends ONLY on the MiD donor data, the random seed, the seed
-    day-filter, and the weekend-plan-match flag -- NOT on controls, sampling, or
-    work_dir. That narrow dependency set is what makes it shareable across ALL runs
-    (incl. control-tier changes) via the cache_share store.
+    day-filter, the weekend-plan-match flag, and the diary-plan-match flags --
+    NOT on controls, sampling, or work_dir. That narrow dependency set is what
+    makes it shareable across ALL runs (incl. control-tier changes) via the
+    cache_share store.
     """
     from braunschweig.popsim.stage import (
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
         KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     context.config(KEY_MID)
     context.config("random_seed")
     context.config(KEY_SEED_DAY_FILTER, "default")
     context.config(KEY_WEEKEND_PLAN_MATCH, True)
+    context.config(KEY_DIARY_PLAN_MATCH, True)
+    context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, True)
+    context.config(KEY_EXCLUDE_RBW_LEGS, True)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
 
 
 def execute(context) -> CompletedDonor:
-    """Run the MiD completed-donor build and persist the weekend trace.
+    """Run the MiD completed-donor build and persist the weekend + diary traces.
 
     Returns a :class:`CompletedDonor`; ``popsim.stage`` consumes it via
     ``context.stage("completed_donor")`` and reuses the frames for BOTH the
     PopulationSim seed and the expansion donor tables.
     """
     from braunschweig.popsim.stage import (
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
         KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     mid_dir = context.config(KEY_MID)
@@ -154,6 +259,10 @@ def execute(context) -> CompletedDonor:
     _day_filter_cfg = str(context.config(KEY_SEED_DAY_FILTER)).strip().lower()
     seed_day_filter = () if _day_filter_cfg in ("off", "all", "none", "") else None
     weekend_plan_match_on = bool(context.config(KEY_WEEKEND_PLAN_MATCH))
+    diary_plan_match_on = bool(context.config(KEY_DIARY_PLAN_MATCH))
+    exclude_holiday_plan_sources = bool(context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES))
+    exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
 
     result = build_completed_donor(
         mid_dir,
@@ -161,6 +270,11 @@ def execute(context) -> CompletedDonor:
         seed_day_filter=seed_day_filter,
         weekend_plan_match_on=weekend_plan_match_on,
         trace_path=Path(context.path()) / WEEKEND_TRACE_FILE if weekend_plan_match_on else None,
+        diary_plan_match_on=diary_plan_match_on,
+        exclude_holiday_plan_sources=exclude_holiday_plan_sources,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
     )
 
     # Surface the build reports as run info (also set on the consumer in popsim.stage
@@ -168,4 +282,7 @@ def execute(context) -> CompletedDonor:
     context.set_info("member_completion_filled", result.completion_report.n_households_filled)
     context.set_info("member_completion_persons_added", result.completion_report.n_persons_added)
     context.set_info("seed_completeness_rate", result.completeness_report.completeness_rate)
+    if result.diary_report is not None:
+        context.set_info("diary_plan_match_remapped", result.diary_report.n_remapped)
+        context.set_info("diary_plan_match_share", result.diary_report.share_remapped)
     return result
