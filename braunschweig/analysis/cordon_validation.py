@@ -9,6 +9,9 @@ Writes, into ``<output_path>/analysis/cordon/`` on every cordon run:
   - gate_volumes_scaled.csv  : the same expectation with the OUTBOUND direction restricted to
     the workers who actually commute on the reporting day (ADR-0104 check 3; written only when
     the reporting-day state model is enabled)
+  - commute_day_state_scaling.json : the counts behind that scaling factor -- how many external
+    workers there are, how many are at_workplace, and both drops of the state/work-location
+    join -- as strict JSON (NaN becomes null), so the evidence for check 3 survives the run log
 
 So "how many in-commuters enter where" AND "how many out-commuters leave where"
 (gravity expectation, not realized agents) are visible + mappable on every run.
@@ -27,9 +30,15 @@ stays exactly as it was.
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
 import os
 
+from braunschweig.analysis import json_output as _json_output
+from braunschweig.analysis.json_output import write_json
+from braunschweig.data.cordon import gate_assignment as _gate_assignment
+from braunschweig.data.cordon import validation_output as _validation_output
 from braunschweig.data.cordon.gate_assignment import gate_volume_summary
 from braunschweig.data.cordon.validation_output import (
     write_cordon_validation,
@@ -53,6 +62,29 @@ EXTERNAL_PREFIX = "EXT"
 
 SCALED_GATE_COLUMNS = ("gate_id", "inbound", "outbound", "outbound_at_workplace",
                        "at_workplace_share_external", "n_kreise")
+
+#: Side-car holding the counts behind the scaling factor. The factor itself appears in every row
+#: of gate_volumes_scaled.csv, but the counts that produced it (and the two join drops) would
+#: otherwise live only in the run log, which is not an artifact anybody can re-read later.
+SCALING_JSON_NAME = "commute_day_state_scaling.json"
+
+#: Modules whose sources this stage's cache token must cover (see :func:`validate`): every file
+#: this stage writes is produced by one of them, so an edit to a writer must devalidate the
+#: cached outputs exactly like an edit here.
+_HELPER_MODULES = (_validation_output, _gate_assignment, _json_output)
+
+
+def validate(context):
+    """synpp validation token: md5 over the helper modules that shape this stage's output.
+
+    synpp hashes only THIS module's source, so an edit to a helper it writes its files through
+    would otherwise leave the cached outputs in place although their content or format changed
+    (same mechanism as ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):
@@ -218,11 +250,16 @@ def execute(context):
         states = context.stage(STATE_STAGE)["states"]
         df_work, _df_education = context.stage("synthesis.population.spatial.primary.locations")
         workplaces = context.stage("braunschweig.locations.work")
-        share = external_at_workplace_share(states, df_work, workplaces)
+        scaling_stats = {}
+        share = external_at_workplace_share(states, df_work, workplaces, stats=scaling_stats)
         scaled = scaled_gate_volumes(gate_volume["assignment"], share)
         scaled_path = os.path.join(out_dir, "gate_volumes_scaled.csv")
         scaled.to_csv(scaled_path, index=False)
         paths["gate_volumes_scaled_csv"] = scaled_path
+        scaling_stats["outbound_register"] = int(scaled["outbound"].sum())
+        scaling_stats["outbound_at_workplace"] = int(scaled["outbound_at_workplace"].sum())
+        paths["commute_day_state_scaling_json"] = write_json(
+            os.path.join(out_dir, SCALING_JSON_NAME), scaling_stats)
         # Both totals are taken from the SAME per-gate table, so the comparison is not
         # blurred by the per-gate integer rounding gate_volume_summary applies.
         total_outbound_register = int(scaled["outbound"].sum())

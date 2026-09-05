@@ -21,7 +21,12 @@ description: 'Phase A measurement of the commute-day-state model (spec 2026-09-0
   a broken location_id join or malformed EXT ids must fail the stage rather than yield an empty
   external-destination section that reads like a measured result), cds_edge_tolerance_km (default
   5.0, half-width of the band around a commute-distance class edge inside which a worker counts as
-  near an edge).'
+  near an edge), cds_max_states_outside_employed_share (default 0.05, RAISES above -- the share of
+  the drawn reporting-day states that falls OUTSIDE the employed universe; the state-to-person
+  join is a plain person_id match, so an id dtype drift between the state stage and
+  synthesis.population.enriched would match nothing and yield a check-1 table of 0 / 0 / 0 with
+  share_no_workplace = 1.0 that reads like a measurement, and a non-empty employed universe with
+  no matched worker at all raises regardless of the threshold).'
 lineage:
   type: braunschweig_new
   upstream: null

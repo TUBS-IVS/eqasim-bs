@@ -63,6 +63,8 @@ anything.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import inspect
 import json
 import logging
 import math
@@ -72,6 +74,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.analysis import json_output as _json_output
+from braunschweig.analysis.json_output import json_safe as _json_safe
 from braunschweig.calibration import commute_day_state_reference as R
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
 from braunschweig.calibration.srv_work_participation import load_srv_work_participation
@@ -92,6 +96,14 @@ KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 #: written at all (rather than written as a table of constants).
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
 DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
+#: Above this share of the state frame that falls OUTSIDE the employed universe the check-1
+#: table RAISES. The join from the drawn states onto the employed persons is a plain person_id
+#: match, so a dtype drift between the state stage and synthesis.population.enriched would match
+#: NOTHING and produce a table of 0 / 0 / 0 with share_no_workplace = 1.0 that reads like a
+#: measurement (CLAUDE.md "Fallback transparency": a fallback that fires for everyone is a
+#: broken primary method, not a result). 5 % mirrors cds_max_unmatched_home_share.
+KEY_MAX_STATES_OUTSIDE_SHARE = "cds_max_states_outside_employed_share"
+DEFAULT_MAX_STATES_OUTSIDE_SHARE = 0.05
 
 #: Euclidean -> routed conversion, same convention (and default) as
 #: ``braunschweig.analysis.synthesis.commute_distance_by_kreis``; the SrV/MiD distance classes
@@ -169,6 +181,19 @@ _MODEL_PARTICIPATION_COLUMNS = (
 )
 
 
+def validate(context):
+    """synpp validation token: md5 over the helper modules that shape this stage's output.
+
+    synpp hashes only THIS module's source, so an edit to a helper it writes its files through
+    would otherwise leave the cached outputs in place although their content or format changed
+    (same mechanism as ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def configure(context):
     context.stage("synthesis.population.enriched")
     # The REPORTING-DAY trips (ADR-0104): "employed persons with a work trip today" is a
@@ -206,6 +231,7 @@ def configure(context):
     context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE, DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     context.config(KEY_EDGE_TOLERANCE_KM, DEFAULT_EDGE_TOLERANCE_KM)
+    context.config(KEY_MAX_STATES_OUTSIDE_SHARE, DEFAULT_MAX_STATES_OUTSIDE_SHARE)
     # KEY_COMMUTE_DAY_STATE_ENABLED is declared above, where the state stage is gated on it.
 
 
@@ -323,7 +349,7 @@ def _employed_with_home_kreis(persons, homes_with_ars5,
 
 def work_participation_by_kreis(persons, trips, homes_with_ars5,
                                 max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
-                                stats=None):
+                                stats=None, employed=None):
     """Share of employed persons who make a home->work trip, per home Kreis + the ZGB total.
 
     ``persons`` must carry ``person_id, household_id, employed`` (the ``employed`` flag of
@@ -350,8 +376,12 @@ def work_participation_by_kreis(persons, trips, homes_with_ars5,
                      "synthesis.population.trips.final")
 
     counts = {}
-    employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
-                                         stats=counts)
+    if employed is None:
+        employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
+                                             stats=counts)
+    else:
+        counts["n_employed_in_zgb"] = int(len(employed))
+    employed = employed.copy()
 
     work_trip_persons = trips.loc[trips["following_purpose"] == WORK_PURPOSE, "person_id"]
     employed["has_work_trip"] = employed["person_id"].isin(set(work_trip_persons))
@@ -361,13 +391,11 @@ def work_participation_by_kreis(persons, trips, homes_with_ars5,
     table = pd.DataFrame(rows, columns=list(_MODEL_PARTICIPATION_COLUMNS))
 
     LOGGER.info(
-        "%s work participation: %d employed persons in the ZGB, %d with a work trip (%.2f%%); "
-        "%d excluded without a home Kreis, %d excluded outside the ZGB, %d with a missing "
-        "employed flag",
+        "%s work participation: %d employed persons in the ZGB, %d with a work trip (%.2f%%). "
+        "The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and "
+        "counted once by _employed_with_home_kreis and recorded in provenance.json",
         _LOG_TAG, len(employed), int(employed["has_work_trip"].sum()),
-        100.0 * _rate(int(employed["has_work_trip"].sum()), len(employed)),
-        counts["n_home_unmatched"], counts["n_outside_zgb"],
-        counts["n_employed_missing_flag"])
+        100.0 * _rate(int(employed["has_work_trip"].sum()), len(employed)))
 
     if stats is not None:
         stats.update(counts)
@@ -441,12 +469,12 @@ def _state_share_row(code, subset):
     four sum to 1. ``n_workers`` is reported as a COUNT beside them, never as a denominator.
     """
     n_employed = int(len(subset))
-    n_workers = int(subset["commute_day_state"].notna().sum())
+    n_workers = int(subset[STATE_COLUMN].notna().sum())
     row = {"code": code, "n_workers": n_workers, "n_employed": n_employed}
     for state in COMMUTE_DAY_STATES:
         # No employed person: a share is undefined, not zero (same convention as
         # _participation_row -- never substitute a value for an absent measurement).
-        row[f"share_{state}"] = (float((subset["commute_day_state"] == state).sum() / n_employed)
+        row[f"share_{state}"] = (float((subset[STATE_COLUMN] == state).sum() / n_employed)
                                  if n_employed else float("nan"))
     row[NO_WORKPLACE_SHARE] = (float((n_employed - n_workers) / n_employed)
                                if n_employed else float("nan"))
@@ -455,7 +483,8 @@ def _state_share_row(code, subset):
 
 def commute_day_state_shares(states, persons, homes_with_ars5, participation,
                              max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
-                             stats=None):
+                             max_states_outside_employed_share=DEFAULT_MAX_STATES_OUTSIDE_SHARE,
+                             stats=None, employed=None):
     """ADR-0104 check 1: realised reporting-day state shares per home Kreis, against SrV 2023.
 
     **Denominator (the defect this function exists to avoid re-introducing).** Every share is
@@ -491,7 +520,18 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
 
     Workers whose home resolves to no Kreis, to a Kreis outside the ZGB, or who are not flagged
     ``employed`` at all are outside the employed universe: they are excluded, counted and logged
-    (CLAUDE.md "Fallback transparency") rather than silently inflating a share above 1.
+    (CLAUDE.md "Fallback transparency") rather than silently inflating a share above 1. That
+    residual is also GUARDED: the join from the drawn states onto the employed persons is a
+    plain ``person_id`` match, so a dtype drift between the state stage and
+    ``synthesis.population.enriched`` would match NOTHING and produce a table of 0 / 0 / 0 with
+    ``share_no_workplace`` = 1.0 that reads exactly like a measured result. Above
+    ``max_states_outside_employed_share`` -- and whenever a NON-EMPTY employed universe ends up
+    with no matched worker at all -- the function raises ``RuntimeError`` instead of returning
+    that table. The rate is logged either way.
+
+    ``employed``, when given, is the already-computed universe from
+    :func:`_employed_with_home_kreis` (the stage computes it ONCE per run and hands the same
+    frame to both tables); when ``None`` it is computed here from ``persons`` / ``homes_with_ars5``.
     ``stats``, if a dict, receives the counts.
     """
     _require_columns(states, ("person_id", "commute_day_state"), "the commute-day state frame")
@@ -512,10 +552,14 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
             "the state stage asserts this, so a duplicate here means the wrong frame was passed")
 
     counts = {}
-    employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
-                                         stats=counts)
+    if employed is None:
+        employed = _employed_with_home_kreis(persons, homes_with_ars5, max_unmatched_home_share,
+                                             stats=counts)
+    else:
+        counts["n_employed_in_zgb"] = int(len(employed))
+    employed = employed.copy()
     employed[STATE_COLUMN] = employed["person_id"].map(
-        states.set_index("person_id")["commute_day_state"])
+        states.set_index("person_id")[STATE_COLUMN])
 
     # Workers OUTSIDE the employed universe (not flagged employed, no home Kreis, or a home
     # outside the ZGB). They cannot enter an employed-based share, so they are dropped here --
@@ -524,12 +568,29 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     n_states = int(len(states))
     n_workers_in_universe = int(employed[STATE_COLUMN].notna().sum())
     n_states_outside = n_states - n_workers_in_universe
+    share_outside = _rate(n_states_outside, n_states)
     LOGGER.info(
         "%s reporting-day states joined onto the employed universe: %d/%d workers matched "
-        "(%.2f%%); %d worker(s) are outside it (not flagged employed, or a home Kreis outside "
-        "the ZGB) and are excluded from every share below",
+        "(%.2f%%); %d worker(s) (%.2f%%) are outside it (not flagged employed, or a home Kreis "
+        "outside the ZGB) and are excluded from every share below",
         _LOG_TAG, n_workers_in_universe, n_states, 100.0 * _rate(n_workers_in_universe, n_states),
-        n_states_outside)
+        n_states_outside, 100.0 * share_outside)
+    if len(employed) > 0 and n_workers_in_universe == 0:
+        raise RuntimeError(
+            f"not one of the {n_states} drawn state(s) matched any of the {len(employed)} "
+            "employed persons of the ZGB. Every share below would then be 0 and "
+            f"{NO_WORKPLACE_SHARE} would be 1.0, which reads like a measured result -- this is a "
+            "broken person_id join between braunschweig.synthesis.commute_day.state_stage and "
+            "synthesis.population.enriched (check the id dtypes on both sides), not a population "
+            "in which nobody works")
+    if share_outside > max_states_outside_employed_share:
+        raise RuntimeError(
+            f"{n_states_outside}/{n_states} drawn state(s) ({100.0 * share_outside:.1f}%) fall "
+            f"outside the employed universe, above the configured "
+            f"{KEY_MAX_STATES_OUTSIDE_SHARE} = {max_states_outside_employed_share:.3f}. The "
+            "check-1 shares would then describe a cohort the state model largely does not "
+            "cover; check the person_id join and whether the model assigns workplaces to "
+            "persons the population does not call employed before raising the threshold")
 
     rows = [_state_share_row(code, employed[employed["ars5"] == code]) for code in ZGB_KREISE]
     rows.append(_state_share_row(ZGB_ROW_CODE, employed))
@@ -574,7 +635,8 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     if stats is not None:
         stats.update(counts)
         stats.update(n_states=n_states, n_workers_in_employed_universe=n_workers_in_universe,
-                     n_states_outside_employed_universe=n_states_outside)
+                     n_states_outside_employed_universe=n_states_outside,
+                     share_states_outside_employed_universe=float(share_outside))
     return out[list(STATE_SHARE_COLUMNS)]
 
 
@@ -1186,32 +1248,16 @@ def summary_markdown(participation, distance_classes, ext_table, near_edge_share
     return "\n".join(lines) + "\n"
 
 
-def json_safe(value):
-    """Recursively map a provenance value to something STRICT JSON can represent.
+#: Strict-JSON conversion for ``provenance.json`` (NaN / infinity -> ``null``). Defined ONCE in
+#: :mod:`braunschweig.analysis.json_output` and re-exported here, because
+#: ``braunschweig.analysis.cordon_validation`` writes its own strict-JSON side-car with the same
+#: rule and two copies would drift.
+json_safe = _json_safe
 
-    ``json.dump`` writes ``NaN`` / ``Infinity`` literals by default, which are valid JavaScript
-    but not valid JSON: a strict parser (``json.loads`` with ``parse_constant`` raising, jq, most
-    non-Python readers) rejects the file. Since a missing measurement is exactly what this stage
-    represents as ``NaN`` (an unmeasurable share, an absent reference), those values must survive
-    the round trip -- they become ``null``, which every JSON reader understands as "no value",
-    rather than being dropped or replaced by a number. Numpy scalars are unwrapped to their
-    Python equivalents on the way.
-    """
-    if isinstance(value, dict):
-        return {str(key): json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_safe(item) for item in value]
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating,)):
-        value = float(value)
-    if isinstance(value, (np.bool_,)):
-        return bool(value)
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    return str(value)
+#: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shared
+#: strict-JSON writer decides how provenance.json represents a missing measurement, which is
+#: part of this stage's output and is no longer visible in this module's own source.
+_HELPER_MODULES = (_json_output,)
 
 
 def write_outputs(directory, participation, distance_classes, ext_table, per_person,
@@ -1351,6 +1397,7 @@ def execute(context):
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     max_unresolved_destination_share = float(context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE))
     edge_tolerance_km = float(context.config(KEY_EDGE_TOLERANCE_KM))
+    max_states_outside_employed_share = float(context.config(KEY_MAX_STATES_OUTSIDE_SHARE))
     sampling_rate = float(context.config("sampling_rate"))
     data_path = context.config("data_path")
     out_dir = os.path.join(context.config("output_path"), context.config(KEY_SUBDIR))
@@ -1377,20 +1424,30 @@ def execute(context):
     _require_columns(df_municipalities, ("commune_id",), "data.spatial.municipalities")
     known_commune_ids = set(df_municipalities["commune_id"].astype(str))
 
-    participation_stats, work_stats, class_stats, ext_stats = {}, {}, {}, {}
+    # The employed universe is built ONCE and handed to both tables: its guard and its
+    # exclusion warnings would otherwise run twice over a population-sized frame, and the two
+    # tables would compute the same denominator independently instead of sharing it.
+    employed_counts = {}
+    employed = _employed_with_home_kreis(df_persons, homes, max_unmatched_home_share,
+                                         stats=employed_counts)
+
+    participation_stats = dict(employed_counts)
+    work_stats, class_stats, ext_stats = {}, {}, {}
     model_participation = work_participation_by_kreis(
         df_persons, df_trips, homes, max_unmatched_home_share=max_unmatched_home_share,
-        stats=participation_stats)
+        stats=participation_stats, employed=employed)
     participation = compare_participation(model_participation, srv_table)
 
     # ADR-0104 check 1. OFF: every worker carries the same placeholder state, so a table of
     # constants would only look like a measurement -- it is not written at all.
-    state_stats = {}
+    state_stats = dict(employed_counts)
     state_shares = None
     if commute_day_state_enabled:
         state_shares = commute_day_state_shares(
             df_states, df_persons, homes, participation,
-            max_unmatched_home_share=max_unmatched_home_share, stats=state_stats)
+            max_unmatched_home_share=max_unmatched_home_share,
+            max_states_outside_employed_share=max_states_outside_employed_share,
+            stats=state_stats, employed=employed)
     else:
         LOGGER.info("%s %s is false -- no reporting-day state table is written (every worker "
                     "carries the same placeholder state)", _LOG_TAG,
@@ -1425,6 +1482,7 @@ def execute(context):
             "output_subdir": context.config(KEY_SUBDIR),
             "commute_day_state_enabled": commute_day_state_enabled,
             "check_1_tolerance_pp": CHECK_1_TOLERANCE_PP,
+            "max_states_outside_employed_share": max_states_outside_employed_share,
         },
         "inputs": {
             "srv_work_participation": os.path.join(

@@ -631,6 +631,8 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert (recorder.config_keys[S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE]
             == S.DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     assert recorder.config_keys[S.KEY_EDGE_TOLERANCE_KM] == S.DEFAULT_EDGE_TOLERANCE_KM
+    assert (recorder.config_keys[S.KEY_MAX_STATES_OUTSIDE_SHARE]
+            == S.DEFAULT_MAX_STATES_OUTSIDE_SHARE)
     # Phase B (ADR-0104): the finished day and the drawn states.
     assert "synthesis.population.trips.final" in recorder.stages
     assert "braunschweig.synthesis.commute_day.state_stage" in recorder.stages
@@ -682,6 +684,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
             S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
             S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
+            S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
         })
 
     result = S.execute(context)

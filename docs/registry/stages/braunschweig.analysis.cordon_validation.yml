@@ -11,7 +11,11 @@ description: 'Per-gate validation outputs (CSV/GPKG) for the injected cordon dem
   trip. INBOUND is deliberately not scaled (the injected in-commuters carry no reporting-day
   state). The unscaled gate_volumes.csv is unchanged, and with the flag off no scaled file is
   written at all. A population without a single external worker RAISES rather than being
-  scaled by a factor no worker supports.'
+  scaled by a factor no worker supports. The counts behind the factor -- external workers, of
+  them at_workplace, workers with an unresolvable workplace, and BOTH drops of the state /
+  work-location join -- are persisted beside it as commute_day_state_scaling.json (strict JSON,
+  NaN written as null), so the evidence for check 3 survives the run log rather than living only
+  in it.'
 lineage:
   type: braunschweig_new
   upstream: null

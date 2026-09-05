@@ -24,6 +24,7 @@ What is covered here, and why in this shape:
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -418,6 +419,24 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
     assert "commuteDayState" not in writer_off.attributes
 
 
+def test_overrides_hash_the_vendored_base_module():
+    """Regression pin: the cache token must cover the VENDORED writer/join, not only the shim.
+
+    synpp hashes a stage module's own source only. Both overrides are thin -- the frames they
+    produce come from ``synthesis.output`` / ``synthesis.population.spatial.locations`` -- so an
+    edit there (Task 5 itself edited ``synthesis/output.py``) would leave a stale cached output
+    behind unless the vendored module is part of the token.
+    """
+    for module in (OUTPUT, LOCATIONS):
+        assert module.base in module._HELPER_MODULES, (
+            f"{module.__name__} must hash its vendored base module {module.base.__name__} in "
+            "_HELPER_MODULES, otherwise an edit to the vendored writer/join leaves a stale "
+            "cached stage output")
+        # validate() must actually fold those sources in, not just declare them.
+        assert module.validate(None) == module.validate(None)
+        assert len(module.validate(None)) == 32          # md5 hexdigest
+
+
 # --------------------------------------------------------------------------- check 1 arithmetic
 #
 # The denominator is the point of these tests (fix round 1): ADR-0104 check 1 compares against
@@ -523,8 +542,11 @@ def test_commute_day_state_shares_counts_workers_outside_the_employed_universe()
     homes = _check_1_homes(persons)
     states = _check_1_states({**_WORKER_STATES, 9: "at_workplace"})  # 9 is NOT employed
     stats = {}
+    # The bound is relaxed here because this fixture is 20 % outside on purpose; the bound
+    # itself is covered by test_commute_day_state_shares_raises_above_the_outside_universe_bound.
     table = WP.commute_day_state_shares(states, persons, homes,
-                                        _participation_table(persons, homes, 0.35), stats=stats)
+                                        _participation_table(persons, homes, 0.35),
+                                        max_states_outside_employed_share=1.0, stats=stats)
     assert stats["n_states"] == 5
     assert stats["n_workers_in_employed_universe"] == 4
     assert stats["n_states_outside_employed_universe"] == 1
@@ -538,8 +560,11 @@ def test_commute_day_state_shares_excludes_persons_outside_the_zgb():
     homes = _check_1_homes(persons, overrides={2: "09162"})
     states = _check_1_states({1: "at_workplace", 2: "home"})
     stats = {}
+    # Person 2 lives outside the ZGB, so half the state frame is outside the universe here; the
+    # bound is relaxed for the same reason as above.
     table = WP.commute_day_state_shares(states, persons, homes,
-                                        _participation_table(persons, homes, 0.35), stats=stats)
+                                        _participation_table(persons, homes, 0.35),
+                                        max_states_outside_employed_share=1.0, stats=stats)
     assert stats["n_outside_zgb"] == 1
     zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
     assert zgb["n_employed"] == 1 and zgb["n_workers"] == 1
@@ -554,6 +579,66 @@ def test_commute_day_state_shares_raises_when_the_denominator_disagrees():
     participation.loc[participation["code"] == "03101", "n_employed"] = 4  # the worker count
     with pytest.raises(ValueError, match="employed denominator disagrees"):
         WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+
+
+def test_commute_day_state_shares_raises_when_no_state_matches_an_employed_person():
+    """A total join failure (id dtype drift) must NOT be reported as 0/0/0 + no_workplace 1.0."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    orphans = _check_1_states({901: "at_workplace", 902: "home", 903: "absent", 904: "home"})
+    with pytest.raises(RuntimeError, match="broken person_id join"):
+        WP.commute_day_state_shares(orphans, persons, homes,
+                                    _participation_table(persons, homes, 0.35))
+
+
+def test_commute_day_state_shares_raises_above_the_outside_universe_bound():
+    """Most states outside the employed universe means the cohort is not the one measured."""
+    # 8 employed persons; 4 matching states plus 4 that match nobody -> 50 % outside.
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    states = _check_1_states({**_WORKER_STATES, 901: "home", 902: "home", 903: "home",
+                              904: "home"})
+    with pytest.raises(RuntimeError, match="outside the employed universe"):
+        WP.commute_day_state_shares(states, persons, homes,
+                                    _participation_table(persons, homes, 0.35))
+
+
+def test_commute_day_state_shares_tolerates_a_one_percent_mismatch(caplog):
+    """A 1 % residual stays below the default bound, is logged, and lands in ``stats``."""
+    employed_ids = tuple(range(1, 101))
+    persons = _check_1_persons(employed_ids=employed_ids, extra_not_employed=())
+    homes = _check_1_homes(persons)
+    drawn = {pid: "at_workplace" for pid in employed_ids[:99]}
+    drawn[901] = "home"                                   # 1 of 100 matches nobody
+    states = _check_1_states(drawn)
+
+    stats = {}
+    with caplog.at_level("INFO"):
+        table = WP.commute_day_state_shares(states, persons, homes,
+                                            _participation_table(persons, homes, 0.35),
+                                            stats=stats)
+    assert stats["n_states"] == 100
+    assert stats["n_states_outside_employed_universe"] == 1
+    assert stats["share_states_outside_employed_universe"] == pytest.approx(0.01)
+    assert "outside it" in caplog.text
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["n_employed"] == 100 and zgb["n_workers"] == 99
+    assert zgb["share_at_workplace"] == pytest.approx(0.99)
+
+
+def test_commute_day_state_shares_accepts_a_precomputed_employed_universe():
+    """The stage computes the universe once per run and hands the same frame to both tables."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    employed = WP._employed_with_home_kreis(persons, homes)
+    shared = WP.commute_day_state_shares(_check_1_states(), persons, homes,
+                                         _participation_table(persons, homes, 0.35),
+                                         employed=employed)
+    recomputed = WP.commute_day_state_shares(_check_1_states(), persons, homes,
+                                             _participation_table(persons, homes, 0.35))
+    pd.testing.assert_frame_equal(shared, recomputed)
+    # The shared frame must not be mutated by either call (the state column is added on a copy).
+    assert WP.STATE_COLUMN not in employed.columns
 
 
 def test_commute_day_state_shares_rejects_an_unknown_state():
@@ -664,6 +749,41 @@ def test_scaled_gate_volumes_rejects_a_share_outside_the_unit_interval():
                                "inbound": [10], "outbound": [10]})
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         CORDON.scaled_gate_volumes(assignment, 1.5)
+
+
+def test_external_at_workplace_share_reports_both_join_drops():
+    """Both sides of the inner join are counted, so a person_id defect cannot hide in it."""
+    states, work_locations, workplaces = _cordon_frames()
+    states = pd.concat([states, pd.DataFrame({"person_id": [77],
+                                              "commute_day_state": ["home"]})],
+                       ignore_index=True)                       # a state without a work row
+    work_locations = pd.concat([work_locations,
+                                pd.DataFrame({"person_id": [88], "location_id": [188]})],
+                               ignore_index=True)               # a work row without a state
+    stats = {}
+    CORDON.external_at_workplace_share(states, work_locations, workplaces, stats=stats)
+    assert stats["n_states_without_work_location"] == 1
+    assert stats["n_work_locations_without_state"] == 1
+
+
+def test_scaling_side_car_is_strict_json(tmp_path):
+    """The counts behind the check-3 factor are persisted, not log-only, and parse strictly."""
+    from braunschweig.analysis.json_output import write_json
+
+    states, work_locations, workplaces = _cordon_frames()
+    stats = {}
+    share = CORDON.external_at_workplace_share(states, work_locations, workplaces, stats=stats)
+    stats["unmeasurable"] = float("nan")                        # must survive as null
+    path = write_json(str(tmp_path / CORDON.SCALING_JSON_NAME), stats)
+
+    def _reject(constant):
+        raise AssertionError(f"non-strict JSON constant {constant!r} in the side-car")
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"), parse_constant=_reject)
+    assert payload["share"] == pytest.approx(share)
+    assert payload["n_external"] == 4 and payload["n_external_at_workplace"] == 3
+    assert payload["n_states_without_work_location"] == 0
+    assert payload["unmeasurable"] is None
 
 
 def test_cordon_validation_declares_the_state_stage_only_on_a_cordon_run():
