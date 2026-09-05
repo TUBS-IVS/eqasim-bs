@@ -1,0 +1,184 @@
+feature: commute_day_state
+title: Commute-day-state model (far/weekly out-commuters)
+area: behavior
+description: 'Splits the model''s WORK plan (the BA Pendleratlas register OD, which carries every
+  employed person''s workplace but no commuting FREQUENCY at all) from the DAY the simulation
+  actually runs, because the references the model is judged against -- SrV 2023 and MiD 2023 --
+  are reporting-day surveys, and nothing in the pipeline previously converted the register
+  universe into the reporting-day one (ADR-0104, issue #244). Every employed person with an
+  assigned workplace receives a commute_day_state person attribute in exactly three values:
+  at_workplace (the register day, unchanged), home (a matched MiD home-office-day donor''s
+  COMPLETE trip chain is spliced in -- purposes, modes, times, order -- never chain surgery on
+  the person''s own day, so the substitution is a real, observed day rather than a hybrid nobody
+  lives), or absent (no trips at all that day -- a weekly/far commuter who is simply not in the
+  region on the simulated weekday).
+
+  The state is RE-DRAWN ONLY WHEN the person''s ASSIGNED commute-distance class (from the
+  synthesised home/workplace geometry) is STRICTLY HIGHER than their MiD DONOR''s own class (from
+  the donor''s first valid work-trip length): otherwise the donor''s own day already encodes that
+  class''s not-working and home-office behaviour and is passed through unchanged, which avoids
+  double-counting the survey''s own home-office mass. When a re-draw does happen, the keep
+  probability is read BY COLUMN NAME from the committed MiD reporting-day table (never typed from
+  a report): P(keep) = share_at_workplace(assigned class) / share_at_workplace(donor class), which
+  is exactly the workplace/home substitution the MiD data shows rising monotonically with
+  distance while not-working stays flat. Above commute_day_far_threshold_km (200 km -- the MiD
+  P_ARB_ENTF top-code, ASSUMPTION) a not-kept worker becomes absent with probability
+  commute_day_absent_share_far (1.0, ASSUMPTION; the pre-registered sensitivity check re-runs this
+  at 0.6), except a person with an active-escort leg on their own day, who may become home but
+  never absent (escort duty evidences presence at home). A home worker for whom the donor pool
+  holds no day at any coarsening level (three HARD criteria -- active escort, children under 14,
+  car ownership -- never coarsened, five SOFT criteria coarsened in a fixed order) is downgraded
+  to at_workplace and counted, rather than silently reported as a "home" day nobody actually
+  received.
+
+  Two-view trips architecture (what keeps this out of a dependency cycle with location
+  assignment): the PRE-ASSIGNMENT view (synthesis.population.trips / ...activities) stays
+  untouched and keeps feeding the commute distances, the primary candidates and the primary
+  location assignment the day state itself depends on; a REPORTING-DAY view
+  (synthesis.population.trips.final / ...activities.final) carries the finished day and feeds
+  everything that needs it -- secondary location choice, the eqasim location join, the synthesis
+  output writer, and the MATSim population. With commute_day_state_enabled false every worker
+  stays at_workplace and every .final stage is a byte-identical pass-through of the pre-assignment
+  view (proven by an explicit test, per the project''s default-ON convention).'
+stages:
+- braunschweig.synthesis.commute_day.home_office_donors_stage
+- braunschweig.synthesis.commute_day.state_stage
+- synthesis.population.trips.final
+- synthesis.population.activities.final
+- synthesis.population.spatial.locations
+- synthesis.output
+- synthesis.population.spatial.secondary.locations
+- matsim.scenario.population
+- braunschweig.analysis.synthesis.work_participation_by_kreis
+- braunschweig.analysis.cordon_validation
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - commute_day_state_enabled
+introduced:
+  issue: 244
+  pr: null
+  adr: ADR-0104
+code_paths:
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/commute_day/state_stage.py
+- braunschweig/synthesis/commute_day/state.py
+- braunschweig/synthesis/commute_day/matching.py
+- braunschweig/synthesis/commute_day/trips_day_stage.py
+- braunschweig/synthesis/commute_day/plan_replacement.py
+- braunschweig/synthesis/commute_day/activities_day_stage.py
+- braunschweig/synthesis/commute_day/spatial_locations_day.py
+- braunschweig/synthesis/commute_day/output_day.py
+- braunschweig/synthesis/commute_day/day_view.py
+- braunschweig/calibration/commute_day_state_reference.py
+- braunschweig/matsim/scenario/population.py
+- braunschweig/analysis/synthesis/work_participation_by_kreis.py
+- braunschweig/analysis/cordon_validation.py
+evidence:
+  tests:
+  - tests/test_commute_day_donor_pool.py
+  - tests/test_commute_day_matching.py
+  - tests/test_commute_day_plan_replacement.py
+  - tests/test_commute_day_state.py
+  - tests/test_commute_day_state_reference.py
+  - tests/test_commute_day_state_reference_pins.py
+  - tests/test_commute_day_stages.py
+  - tests/test_commute_day_consumers.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_commute_day_stages.py::test_trips_day_stage_off_returns_the_identical_object
+    note: 'commute_day_state_enabled defaults true in configs/base_bs.yml; every OFF-path claim is
+      proven by a dedicated test, not merely asserted: the donor-pool stage returns two empty
+      frames without reading any raw MiD file
+      (test_donor_stage_off_returns_empty_frames_with_the_on_path_columns), the state stage marks
+      every worker at_workplace/reason=disabled (test_state_stage_off_marks_every_worker_at_workplace),
+      the reporting-day trips stage returns the pre-assignment frame BY IDENTITY, not merely by
+      equal values (test_trips_day_stage_off_returns_the_identical_object), the output writer keeps
+      the legacy persons.csv column set
+      (test_output_day_off_hands_the_enriched_frame_through_untouched), and the MATSim writer never
+      reads the pre-assignment frames on the day-view path
+      (test_matsim_population_load_raw_never_reads_the_pre_assignment_frames). popsim_open and
+      simple_ipf_open additionally set the flag false in their own committed fixtures and never
+      reach any commute_day stage in their synpp DAG at all (checked directly against the committed
+      DAG snapshots, not merely against the flag).'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[commute day state]'
+    note: 'Every substitution/exclusion path is counted, logged as an explicit rate and, where a
+      collapsed rate would make the drawn shares meaningless, guarded: the donor pool''s commute-
+      distance source falls back P_ARB_ENTF -> first valid work-trip length -> the literal
+      "unknown" (warned above 50% unknown); the state stage''s own donor-distance PRIMARY-source
+      coverage (donor_source_by_assigned_class) is warned below 50% overall
+      (ADR-0104 Amendment 1: a donor who worked at home or did not work that day has no work-trip
+      length, which is exactly the residual this rate must not hide); the donor-matching coarsening
+      cascade counts every level (0-6) it had to fall back to, per person; a home worker the donor
+      pool cannot serve at any level is downgraded to at_workplace and counted, and the stage
+      RAISES above commute_day_max_not_replaceable_share (default 0.5) rather than reporting a home
+      share the model did not actually produce; the reporting-day trips stage warns above 1% of
+      matched donors having zero rows in donor_trips (a donor_id key/dtype mismatch symptom, not a
+      genuinely immobile donor at that rate); the output writer raises if not one person in the
+      enriched population matches the state frame at all (a broken join, not "no worker works
+      today").'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_workday_location_by_commute_distance.csv
+    note: The MiD 2023 reporting-day work-location shares by commute-distance class (data record
+      mid2023_workday_location), read by column name for the keep-probability ratio -- never typed
+      from a report PDF. The regional SrV 2023 work-participation reference
+      (srv2023_work_participation_by_kreis.csv, data record srv2023_work_participation) is the
+      target of pre-registered check 1 (validation.note below), not an input the model reads at
+      run time.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: 'ADR-0104 fixes SIX pre-registered checks BEFORE the model exists, which Phase B is held
+    to and which are NOT to be retro-fitted to the outcome (the design spec of 2026-09-04 is only
+    where they were first drafted; this ADR is the durable record): (1) realised
+    at_workplace/home/absent shares and the share of employed persons without a work trip,
+    regionally against SrV 0.1418 / 0.6511 / 0.2071, tolerance +/- 3 pp on the REGIONAL aggregate
+    only (per-Kreis values reported, never gated) -- ASSUMPTION: the band is a pre-registered
+    tolerance chosen a priori, not derived from any committed source, because the SrV per-Kreis
+    cells rest on 663-2,268 persons under a stratified PSU design and are assumption-grade for a
+    full Kreis. (2) Inter-Gemeinde work bands re-measured with the Phase 0 stages: the 100_plus
+    band below 3%, no deterioration up to 50 km against the 2026-09-04 baseline EMD --
+    ASSUMPTION: the 3% bound is a chosen operating bound with NO reference behind it (every
+    100_plus column of the committed SrV table is exactly 0.0, a structural survey blind spot per
+    ADR-0102 Assumption 2, so a 0% bound would assert that blind spot as truth). (3) Cordon
+    out-commuter gate volumes before/after, against an expectation restricted to at_workplace
+    persons (braunschweig.analysis.cordon_validation''s gate_volumes_scaled.csv /
+    commute_day_state_scaling.json). (4) Donor-matching diagnostics: coarsening rate per step,
+    not-replaceable share, missing-donor-distance share, pool size per cell. (5) Sensitivity of
+    commute_day_absent_share_far, 1.0 vs 0.6. (6) OFF-path byte identity, a 25% proof run first
+    and a 100% proof in the next scheduled production run. None of these six has been run against
+    a live population yet -- Task 7 of this Phase B plan runs the 25% proof; until that
+    comparison is recorded in a run manifest, this record stays "unvalidated": the model is wired,
+    tested on synthetic frames, and its fallback rates are instrumented, but it has not yet been
+    measured against any of its own pre-registered checks. Convergence of a MATSim run is not
+    validation and is not claimed here.'
+assessment:
+  status: pending
+  pending_reason: Phase B Task 7 runs the 25% proof against the six pre-registered checks recorded
+    in ADR-0104 and in this record's validation.note; the assessment stays pending until that run
+    is recorded in a manifest and the six checks are read off it. No owner verdict on realised
+    commute-day-state behaviour exists yet.
+notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
+  via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
+  MiD reference table (data record mid2023_workday_location) for the keep-probability ratio.
+  popsim_open and simple_ipf_open are not_used, not merely inactive-by-default: their committed
+  fixtures (configs/fixtures/config_popsim_open_braunschweig.yml,
+  configs/fixtures/config_local_braunschweig_25pct.yml) set commute_day_state_enabled: false AND
+  neither fixture''s synpp DAG snapshot contains a single commute_day stage node -- checked
+  directly against docs/registry/dag/{popsim_open,simple_ipf_open}.json, not inferred from the
+  flag alone. Phase A (measurement only, no model behaviour) is the separate feature record
+  commute_day_state_measurement, which this feature consumes the evidence of (ADR-0104''s
+  "Amendments to the design" section records the three corrections Phase A forced on the design
+  before this feature was built). Cache cost, deliberate (ADR-0104 Consequences): the .final alias
+  switch devalidates secondary locations and everything downstream ONCE, even with the flag OFF,
+  on the order of hours at 100% scale.'

@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 78 | stages: 122 | datasets: 62 | ADRs: 104 | run manifests: 32
+- Features: 79 | stages: 122 | datasets: 63 | ADRs: 104 | run manifests: 32
 
 ## Population synthesis
 
@@ -52,10 +52,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-15 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_reference_tables`, `mid2023_workday_location`
+15 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
+| [Commute-day-state model (far/weekly out-commuters)](../registry/features/commute_day_state.yml) | active | ON | A/-/- | unvalidated | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
 

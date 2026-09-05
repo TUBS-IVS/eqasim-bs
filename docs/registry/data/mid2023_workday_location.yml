@@ -6,7 +6,9 @@ geography: Germany (national MiD sample); no regional breakdown
 crs: null
 roles:
 - validation_reference
-used_by: []
+- reference_table
+used_by:
+- braunschweig.synthesis.commute_day.state_stage
 acquisition:
   method: committed
   source: |
@@ -30,14 +32,11 @@ verification:
     Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external for a
     contributor to download or verify presence of, since both files ship committed with the repo
     checkout (mirrors the sibling committed MiD tables, e.g. mid2023_cars_by_rs7_haustyp, which
-    are handled the same way for the same reason). requirements.production is "optional" in
-    Phase A (no registered stage reads either file yet; see requirements below), so the README
-    D4 readme-data check does not require a derived-inputs row until a stage starts depending on
-    it.
+    are handled the same way for the same reason).
 requirements:
-  synthesis: not_needed
+  synthesis: required
   matsim: not_needed
-  production: optional
+  production: required
 licensing:
   license: aggregate values (derived from a restricted scientific-use source)
   restricted: false
@@ -106,18 +105,23 @@ limitations: |
   decision that consumes this table: ADR-0104 (register vs reporting-day universe of
   out-commuters).
 notes: |
-  No stage reads these files in Phase A, so `used_by` is empty; the access path is the module
-  braunschweig.calibration.commute_day_state_reference (a module, not a synpp stage, and
-  therefore not a `used_by` entry -- that field resolves against the stage registry).
-  Reference for the commute-day-state model (far/weekly commuters; issue #244). The universe,
-  state, and distance-cleaning definitions are recorded durably in this record's own
-  `limitations` field and in the module docstrings of
+  Phase B (ADR-0104, issue #244): braunschweig.synthesis.commute_day.state_stage reads
+  mid2023_workday_location_by_commute_distance.csv at run time via
+  braunschweig.calibration.commute_day_state_reference.load_workday_location_table, keyed by its
+  share_at_workplace column, to compute the keep-probability ratio for every worker (`used_by`
+  above). With commute_day_state_enabled the default-true flag, this makes the table
+  production-required rather than optional (requirements above). The SIBLING file,
+  mid2023_home_office_donor_pool.csv (donor-pool CELL-SIZE diagnostics), is NOT read by any
+  registered stage: it fed only the Phase A thin-cell finding (ADR-0104's measured-evidence
+  section, e.g. the 76/30-donor cross-classified cells cited there) and the ADR-0104 decision
+  text; the model's actual donor pool is built fresh at run time by
+  braunschweig.synthesis.commute_day.home_office_donors_stage from the raw MiD delivery (data
+  record mid2023_home_office_day_donors), not from this committed aggregate.
+
+  The universe, state, and distance-cleaning definitions are recorded durably in this record's
+  own `limitations` field and in the module docstrings of
   braunschweig/calibration/commute_day_state_reference.py -- not in any gitignored session
-  artifact. Not a control target: no registered synthesis or population stage reads either
-  file in Phase A (roles: validation_reference only). Becomes production-relevant once the
-  commute-day-state model lands and starts consuming these tables via
-  braunschweig.calibration.commute_day_state_reference.load_workday_location_table /
-  load_home_office_donor_pool. Pin tests: tests/test_commute_day_state_reference_pins.py.
+  artifact. Pin tests: tests/test_commute_day_state_reference_pins.py.
   Decision record: ADR-0104 (register vs reporting-day universe of out-commuters) -- it adopts
   the day-state model on this table's evidence and states which of its numbers the model uses
   (the workplace/home substitution by distance class as the keep-probability ratio; the

@@ -12,8 +12,7 @@ description: 'Draws every worker''s reporting-day state -- at_workplace / home /
   counted; above commute_day_max_not_replaceable_share the stage RAISES. Config keys:
   commute_day_state_enabled, commute_day_far_threshold_km, commute_day_absent_share_far,
   commute_day_max_not_replaceable_share, cds_detour_factor. With the flag false every worker is
-  at_workplace with reason "disabled". MINIMAL RECORD (Phase B Task 5): completed by Task 6 with
-  the realised draw diagnostics.'
+  at_workplace with reason "disabled".'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -30,5 +29,81 @@ pipelines:
 production: true
 inputs:
 - mid2023_workday_location
+- mid2023_home_office_day_donors
 decisions:
 - ADR-0104
+notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_far_threshold_km
+  (200.0 km -- ASSUMPTION, the MiD P_ARB_ENTF top-code, so the survey resolves nothing beyond it
+  and no evidence for a different threshold exists), commute_day_absent_share_far (1.0 --
+  ASSUMPTION, a >200 km commuter is away the whole reporting day; the ADR-0104 pre-registered
+  sensitivity check runs this at 0.6 too), commute_day_max_not_replaceable_share (0.5, the RAISE
+  guard on the "home" cohort), cds_detour_factor (the same ROUTED_DETOUR_FACTOR convention/default
+  as braunschweig.analysis.synthesis.work_participation_by_kreis, so the measured and the modelled
+  assigned classes share one euclidean-to-routed conversion).
+
+  Two commute-distance classes feed the draw and must never be confused (ADR-0104 Amendment 1):
+  the DONOR class (state.donor_distance_class_from_trips) comes from the donor''s own PRE-
+  ASSIGNMENT trips -- the first valid work-trip length on their reporting day, classified WITHOUT
+  the MiD 200 km top-code, since a raw trip length was never subject to it; P_ARB_ENTF is a home-
+  office-module question and is used only as a cross-check elsewhere, never merged in here. The
+  ASSIGNED class (state.assigned_distance_class) comes from the synthesised home/workplace
+  geometry (euclidean distance x cds_detour_factor); both geometry inputs must carry the identical
+  projected CRS (raises otherwise). Workers whose household has no home geometry are recorded as
+  at_workplace with reason no_home_geometry rather than dropped, so a consumer joining on
+  person_id always finds a commute_day_state.
+
+  Draw rule (state.draw_states): re-drawn ONLY when CLASS_RANK[assigned] > CLASS_RANK[donor]
+  (redraw_eligible); not eligible -> at_workplace, reason "donor_class_missing" (donor class
+  unknown) or "not_eligible". Eligible: p_keep = share_at_workplace(assigned) /
+  share_at_workplace(donor), both read from the committed MiD table BY COLUMN NAME (never typed
+  from a report), clipped to [0, 1]; kept (u < p_keep) -> at_workplace, reason "kept". Eligible and
+  NOT kept: distance_km > commute_day_far_threshold_km AND the person carries no escort leg on
+  their own pre-assignment day AND a second draw < commute_day_absent_share_far -> absent, reason
+  "absent_far"; the same far, escort-carrying person instead gets home, reason
+  "home_escort_protected" (ADR-0104 Assumption 4: an escort leg evidences presence at home, so
+  such a person may become home but never absent); every other not-kept eligible person gets home,
+  reason "home_redraw". A distance class of gt200 reads the workday-location table''s 100_200 row
+  (MiD carries no gt200 row at all -- it cannot resolve anything past its own top-code).
+
+  Guards and fallback rates, all logged and instrumented: donor-distance PRIMARY-source coverage
+  is reported per assigned class (donor_source_by_assigned_class, ADR-0104 Amendment 1 duty --
+  the donor class needs a work-trip length, which a donor who worked at home or did not work that
+  day simply lacks) and warned below 50% overall (WARN_PRIMARY_DONOR_SOURCE_SHARE), since a
+  majority without a donor class means most workers can never be re-drawn at all; a zero escort-
+  duty share alongside a donor pool that DOES carry escorting donors is warned as usually meaning
+  escort_purpose is OFF for the synthetic trips while the donor pool was built with it ON (the
+  hard has_active_escort matching criterion would otherwise silently exclude every escorting donor
+  for everyone). The not-replaceable share (states downgraded from home to at_workplace) RAISES
+  above commute_day_max_not_replaceable_share -- a donor pool that cannot serve most of the "home"
+  cohort would make the drawn state shares governed by the pool''s gaps rather than by the model,
+  which CLAUDE.md''s fallback-transparency rule treats as a failure signal, not a fallback to
+  quietly accept.
+
+  Diagnostics: every key of state.draw_states (n_workers -- the DRAWN denominator, excluding
+  no-home-geometry rows; n_redraw_eligible, n_donor_class_missing, n_at_workplace, n_home,
+  n_absent, n_escort_protected, by_assigned_class) plus the stage''s own enabled, matching (the
+  full dict from matching.match_home_office_donors), n_home_drawn, n_home_matched,
+  n_home_not_replaceable, share_home_not_replaceable, n_workers_without_home_geometry,
+  donor_source_by_assigned_class, share_donor_source_primary, final_state_counts (AFTER the
+  not-replaceable downgrade -- the draw''s own n_at_workplace/n_home/n_absent are BEFORE it).
+  The random draw is seeded with random_seed + COMMUTE_DAY_SEED_OFFSET (7301), a fixed additive
+  offset so this model''s RNG stream never collides with another stage''s use of the same base
+  seed.
+
+  Matching (matching.match_home_office_donors, called from this stage for every worker drawn to
+  "home"): three HARD criteria never coarsened (has_active_escort, has_children_u14, has_car -- a
+  donor with an unresolved has_car is excluded from the ENTIRE pass up front, not merely per
+  person); five SOFT criteria (distance_class, sex, age_class, household_size_class, has_license)
+  coarsened in that fixed order across 7 levels (0..6) as a person''s donor cell proves too small,
+  has_license skipped entirely when the MiD donor pool does not carry it (it does not, in
+  production) rather than inventing a value. household_size_class is derived identically on both
+  sides from the raw household_size column (ruling R1). Sampling is WITH replacement (a donor may
+  be reused across persons), one donor drawn uniformly at random from the first cell that reaches
+  minimum_cell (default 1) donors.
+
+  popsim_open and simple_ipf_open declare commute_day_state_enabled: false in their committed
+  fixtures and neither fixture''s synpp DAG reaches this stage -- not_used there is the DAG''s own
+  statement. Evidence: tests/test_commute_day_state.py and tests/test_commute_day_matching.py (the
+  pure modules, primary-method coverage and coarsening-level behaviour) and
+  tests/test_commute_day_stages.py (the stage''s OFF path, guard thresholds, reproducibility under
+  a fixed seed, one-row-per-worker invariant).'
