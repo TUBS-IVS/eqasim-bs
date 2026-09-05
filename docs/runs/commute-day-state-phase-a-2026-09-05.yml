@@ -83,9 +83,18 @@ pipeline:
     entry, verified read-only with cmp on felix (fix round 1): the pickle this run wrote
     (braunschweig.locations.synthesis.replacement_education_gravity__5ed9...) equals the one the
     2026-09-03 SrV baseline wrote (__a3a9...) and equals the 2026-08-24 i329-era entry (__4517...),
-    and braunschweig.gravity.model__3e35... equals its 08-24 sibling __8aff.... Per-person
+    and braunschweig.gravity.model__3e35... equals its 08-24 sibling __8aff.... A second
+    read-only cmp pass (fix round 2) extended this to EVERY comparable stage of the run: exactly
+    FOUR of the thirteen non-target stages kept an older sibling and all four are byte-identical
+    to it -- replacement_education_gravity (5 entries, equal to the 09-03 and 08-24 entries,
+    23,666,794 B), synthesis.population.spatial.primary.candidates (3 entries, equal to both
+    09-03 entries, 26,792,652 B), braunschweig.gravity.model (3 entries, equal to the 08-24
+    entry, 3,950,332 B) and braunschweig.data.schools.university_facilities (2 entries, equal to
+    the 08-24 entry, 15,896 B). The other nine hold one entry each and are uncheckable by
+    construction (see status.notes). Per-person
     identity of the measured work destinations is therefore KNOWN, not assumed: they are the i329
-    assignments. Consistently, the worker cohort (304,900) and the external-destination count
+    assignments -- and the candidates stage that feeds the location assignment is now proven
+    identical too, not merely consistent with an identical downstream output. Consistently, the worker cohort (304,900) and the external-destination count
     (39,150 / 12.84%) match srv-primary-distance-baseline-2026-09-04 exactly.'
 classification:
 - validation
@@ -112,22 +121,26 @@ status:
     synthesis.population.spatial.primary.candidates,
     braunschweig.data.schools.university_facilities, braunschweig.data.schools.kita_facilities,
     braunschweig.synthesis.locations.education_gravity and
-    braunschweig.locations.synthesis.replacement_education_gravity. THREE of them --
-    braunschweig.gravity.model, synthesis.population.spatial.primary.candidates and
-    braunschweig.locations.synthesis.replacement_education_gravity -- were written under NEW
-    hashes, leaving their 2026-08-24 siblings in place and thus COMPARABLE. Of those three, only
-    braunschweig.locations.synthesis.replacement_education_gravity and braunschweig.gravity.model
-    were actually cmp''d (result under pipeline.notes); the candidates stage
-    (synthesis.population.spatial.primary.candidates) was comparable but was NOT cmp''d, so its
-    byte-identity is UNKNOWN rather than established -- it is an input to
-    replacement_education_gravity, whose output was proven
-    byte-identical, which is consistent with an unchanged candidates payload but does not prove
-    one. The REMAINING TEN were overwritten IN PLACE under an unchanged stage hash, so no prior
-    copy of their payload survives and their before/after equality is not checkable -- stated as
-    a limit, not glossed over. (An earlier wording of this note said NINE and left one of the
-    thirteen unaccounted; the count is corrected here by enumerating the thirteen against
-    run_log.txt and subtracting the three new-hash entries. No new server observation was made
-    for the correction, and the read-only observation itself is unchanged.)
+    braunschweig.locations.synthesis.replacement_education_gravity. They split 4 + 9 = 13. FOUR
+    were written under a NEW stage hash, so their older siblings survive next to the new entry and
+    are COMPARABLE (entry count per stage directory in brackets):
+    braunschweig.locations.synthesis.replacement_education_gravity [5],
+    synthesis.population.spatial.primary.candidates [3], braunschweig.gravity.model [3] and
+    braunschweig.data.schools.university_facilities [2]. ALL FOUR were cmp''d read-only on felix
+    after the run and ALL FOUR are BYTE-IDENTICAL to their predecessors:
+    replacement_education_gravity equals both the 2026-09-03 and the 2026-08-24 entries
+    (23,666,794 B),
+    primary.candidates equals both 2026-09-03 entries (26,792,652 B), gravity.model equals the
+    2026-08-24 entry (3,950,332 B) and university_facilities equals the 2026-08-24 entry
+    (15,896 B). Nothing about these four is pending or unknown. The remaining NINE --
+    braunschweig.data.building_potentials, braunschweig.data.verbindungen.zones,
+    eqasim_common.data.osm.chunked, braunschweig.locations.work,
+    braunschweig.data.verbindungen.work_od, eqasim_common.data.osm.locations,
+    eqasim_common.locations.education, braunschweig.data.schools.kita_facilities and
+    braunschweig.synthesis.locations.education_gravity -- were overwritten IN PLACE under an
+    unchanged stage hash and now hold exactly ONE cache entry each, this run''s, so no predecessor
+    copy of their payload survives and their before/after equality is not checkable by
+    construction -- stated as a limit, not glossed over.
     braunschweig.analysis.synthesis.work_participation_by_kreis__e7f4d6171274d4814ba40f655eac6007
     was added as a new entry; .merged_config.yml was rewritten and
     run_provenance_20260904T230603Z.json added. The shared cache store gained nothing (auto-export: exported 0, already-in-store 39).

@@ -100,9 +100,15 @@
     strictly higher than the DONOR's class; otherwise the donor's own day already encodes its
     class's not-working and home-office behaviour and is passed through unchanged. This avoids
     double-counting the survey's own home-office mass.
-  - **Keep probability from the committed MiD table.**
-    `P(stay at workplace) = p_work(assigned class) / p_work(donor class)`, both read from
-    `mid2023_workday_location_by_commute_distance.csv` -- never typed from a report PDF.
+  - **Keep probability from the committed MiD table, named by column.**
+    `P(keep) = share_at_workplace(assigned class) / share_at_workplace(donor class)`, both read
+    from the `share_at_workplace` column of
+    `mid2023_workday_location_by_commute_distance.csv` -- never typed from a report PDF. The
+    quantity is explicitly NOT `1 - share_did_not_work`: that column is essentially FLAT across
+    the classes (0.2613 / 0.2670 / 0.2602 / 0.2296 / 0.2697), so a rule built on it would return
+    a ratio near 1 for every pair and be a no-op. What varies with distance -- and what the model
+    must therefore act on -- is the substitution of `share_at_home` (0.0815 -> 0.3285) for
+    `share_at_workplace` (0.5906 -> 0.3135), which is exactly the ratio above.
   - **`home` = a complete donor day, not chain surgery.** A person drawn to `home` receives the
     COMPLETE trip chain (purposes, modes, times, order) of a MiD home-office-day donor, prepared
     with the same time-offset logic as `braunschweig.popsim.trips_stage`. Hard matching criteria,
@@ -125,17 +131,37 @@
     an explicit test, per the project's default-ON convention.
   - **Phase A is measured first and decides nothing.** The numbers above state differences against
     committed references; no target is set and no threshold is attached in Phase A. Phase B builds
-    the model and is judged against the checks pre-registered in the design spec of 2026-09-04:
-    (1) realised `at_workplace`/`home`/`absent` shares and the share of employed persons without a
-    work trip, regionally against SrV **0.1418 / 0.6511 / 0.2071** at a tolerance of +/- 3 pp
-    (per-Kreis reported only, the SrV cells being assumption-grade); (2) inter-Gemeinde work bands
-    re-measured with the Phase 0 stages -- the `100_plus` band below 3 %, and no deterioration of
-    the bands up to 50 km against the 2026-09-04 baseline EMD; (3) cordon out-commuter gate
-    volumes before/after, against an expectation restricted to `at_workplace` persons; (4) donor
-    matching diagnostics (coarsening rate per step, not-replaceable share, missing-donor-distance
-    share, pool size per cell); (5) sensitivity of `commute_day_absent_share_far` 1.0 vs 0.6;
-    (6) OFF-path byte identity, a 25 % proof run first and a 100 % proof in the next scheduled
-    production run.
+    the model and is judged against the six checks below. **These six, as written here, ARE the
+    durable pre-registration**: the design spec of 2026-09-04 is only where they were first
+    drafted, and it is a gitignored local working document, so this record -- not that file -- is
+    what Phase B is held to. They are fixed BEFORE the model exists, and are not to be
+    retro-fitted to its outcome.
+    1. Realised `at_workplace`/`home`/`absent` shares and the share of employed persons without a
+       work trip, regionally against SrV **0.1418 / 0.6511 / 0.2071**, at a tolerance of
+       **+/- 3 pp on the regional aggregate only**; per-Kreis values are reported, never gated.
+       **ASSUMPTION -- the +/- 3 pp band is a pre-registered tolerance chosen a priori in the
+       2026-09-04 design, not derived from any committed source.** The reason it is a band and
+       not a point: the SrV per-Kreis home-office cells rest on 663-2,268 persons under a
+       stratified PSU design over ~44 selected municipalities and are assumption-grade for a full
+       Kreis (data record `srv2023_work_participation`), so only the regional aggregate
+       (n 8,016) is treated as gate-worthy, and even there with a declared slack.
+    2. Inter-Gemeinde work bands re-measured with the Phase 0 stages: the `100_plus` band
+       **below 3 %**, and no deterioration of the bands up to 50 km against the 2026-09-04
+       baseline EMD. **ASSUMPTION -- the 3 % bound is a chosen operating bound, pre-registered a
+       priori, with NO reference behind it.** The committed SrV reference cannot supply one: every
+       `100_plus` column of `srv2023_commute_distance_by_kreis.csv` is exactly **0.0** in all 15
+       rows (all three scopes, raw and shrunk), i.e. the survey records no such commute at all,
+       and ADR-0102 Assumption 2 records why that zero is itself suspect (GIS-invalid work trips
+       carry a heavier long-distance tail). A bound of 0 % would therefore assert the survey's
+       structural blind spot as truth; 3 % is a deliberately non-zero, deliberately unsourced
+       operating bound, and it must be labelled as such wherever the check is reported.
+    3. Cordon out-commuter gate volumes before/after, against an expectation restricted to
+       `at_workplace` persons.
+    4. Donor matching diagnostics: coarsening rate per step, not-replaceable share,
+       missing-donor-distance share, pool size per cell.
+    5. Sensitivity of `commute_day_absent_share_far`, 1.0 vs 0.6.
+    6. OFF-path byte identity, a 25 % proof run first and a 100 % proof in the next scheduled
+       production run.
 - **Amendments to the design, forced by the Phase A measurement:**
   1. **The donor distance measure changes.** The design named `P_ARB_ENTF` as the PRIMARY donor
      distance with the work-trip length as a fallback. On this population that is the wrong way
@@ -215,8 +241,13 @@
     as a check on this model; today it is derived from the same BA figures the model is anchored
     to and is therefore self-referential for out-commuters.
   - **Cache cost, deliberate:** the alias switch to the `.final` stage names devalidates secondary
-    locations and everything downstream ONCE, even with the flag OFF (the chainsolver alone is
-    ~2.7 h at 100 %).
+    locations and everything downstream ONCE, even with the flag OFF. For scale: the secondary
+    chainsolver accounted for **9,599 s (about 2 h 40 min)** of the i329 100 % run, but that is
+    the run's TOTAL solve time over FOUR executions in three phases (2,389.3 s + 2,306.9 s |
+    2,568.0 s | 2,334.9 s, `docs/runs/100pct-allfeat-i329-2026-08-24.yml`), not the cost of one
+    devalidation -- a single re-solve is roughly a quarter of it. The honest statement is that
+    the order of magnitude is hours, and the exact cost of one re-solve at 100 % is not pinned by
+    any committed measurement.
   - **Server hazard, recorded so it stops surprising us:** a freshly created detached worktree run
     against the SHARED i329 cache devalidates and re-executes a block of data/location/gravity
     stages it never targeted. This has now happened three times on record -- the 2026-09-03

@@ -91,8 +91,10 @@ limitations: |
   (Salzgitter, 03102) to 0.179 (Gifhorn, 03151) for share_home_office_day.
 notes: |
   Reference for the SrV-side (regional) validation of the commute-day-state model (far/weekly
-  commuters; issue #244, spec docs/superpowers/specs/2026-09-04-commute-day-state-design.md
-  Phase A Task 4). Complements the MiD-side (national) mid2023_workday_location dataset -- the
+  commuters; issue #244). The design this table serves, and the pre-registered Phase B check it
+  is the reference for, are recorded durably in ADR-0104 (register vs reporting-day universe of
+  out-commuters); the extraction was Phase A Task 4 of that work.
+  Complements the MiD-side (national) mid2023_workday_location dataset -- the
   two are not directly comparable (different universes and question wording) but both bound the
   plausible home-office/work-trip participation rate the model should reproduce. Not a control
   target: no synthesis or population stage reads this file (roles: validation_reference only);
