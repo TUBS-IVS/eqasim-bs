@@ -86,6 +86,8 @@ notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_
   n_absent, n_escort_protected, by_assigned_class) plus the stage''s own enabled, matching (the
   full dict from matching.match_home_office_donors), n_home_drawn, n_home_matched,
   n_home_not_replaceable, share_home_not_replaceable, n_workers_without_home_geometry,
+  the matching dict''s own n_donors_with_education_leg / n_persons_without_education_location /
+  n_persons_education_restricted (ruling R7),
   donor_source_by_assigned_class, share_donor_source_primary, final_state_counts (AFTER the
   not-replaceable downgrade -- the draw''s own n_at_workplace/n_home/n_absent are BEFORE it).
   The random draw is seeded with random_seed + COMMUTE_DAY_SEED_OFFSET (7301), a fixed additive
@@ -93,9 +95,15 @@ notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_
   seed.
 
   Matching (matching.match_home_office_donors, called from this stage for every worker drawn to
-  "home"): three HARD criteria never coarsened (has_active_escort, has_children_u14, has_car -- a
-  donor with an unresolved has_car is excluded from the ENTIRE pass up front, not merely per
-  person); five SOFT criteria (distance_class, sex, age_class, household_size_class, has_license)
+  "home"): three exact-match HARD criteria never coarsened (has_active_escort,
+  has_children_u14, has_car -- a donor with an unresolved has_car is excluded from the ENTIRE
+  pass up front, not merely per person); a FOURTH hard criterion that is an implication rather
+  than an equality (ruling R7: a donor with has_education_leg is eligible only for a person with
+  has_education_location, which this stage derives from the EDUCATION half of
+  synthesis.population.spatial.primary.locations -- a donor without an education leg matches
+  anyone, and an unresolved flag on either side takes the restrictive reading; both columns are
+  REQUIRED, so an absent one fails loudly instead of silently disabling the criterion); five SOFT
+  criteria (distance_class, sex, age_class, household_size_class, has_license)
   coarsened in that fixed order across 7 levels (0..6) as a person''s donor cell proves too small,
   has_license skipped entirely when the MiD donor pool does not carry it (it does not, in
   production) rather than inventing a value. household_size_class is derived identically on both

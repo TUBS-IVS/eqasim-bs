@@ -259,3 +259,127 @@ def test_duplicate_person_id_in_matches_raises_value_error():
         plan_replacement.build_day_trips(
             trips, _states_fixture(), duplicated_matches, _donor_trips_fixture(),
             random_seed=RANDOM_SEED)
+
+
+# ---------------------------------------------------------------------------
+# Ruling R9: an immobile donor is not a join failure
+# ---------------------------------------------------------------------------
+
+def _donor_attributes_fixture(n_trips_by_donor):
+    return pd.DataFrame({"donor_id": list(n_trips_by_donor),
+                         "n_trips": list(n_trips_by_donor.values())})
+
+
+def _matches_to(donor_id):
+    return pd.DataFrame({"person_id": ["p2"], "donor_id": [donor_id], "coarsening_level": [0]})
+
+
+def test_immobile_donor_is_counted_as_immobile_not_as_a_join_failure(caplog):
+    """``n_trips == 0``: a trip-less home-office day is the CORRECT outcome, not a defect."""
+    with caplog.at_level("WARNING",
+                         logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        day_trips, diagnostics = plan_replacement.build_day_trips(
+            _trips_fixture(), _states_fixture(), _matches_to("d_immobile"),
+            _donor_trips_fixture(), random_seed=RANDOM_SEED,
+            donor_attributes=_donor_attributes_fixture({"d1": 3, "d_immobile": 0}))
+
+    assert diagnostics["n_donors_immobile"] == 1
+    assert diagnostics["n_donors_without_trips"] == 0
+    assert diagnostics["share_donors_immobile"] == pytest.approx(1.0)
+    assert "p2" not in set(day_trips["person_id"])   # trip-less day, as intended
+    assert not any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+
+
+def test_donor_with_trips_but_no_rows_still_warns(caplog):
+    """``n_trips > 0`` and yet no rows: the join-failure symptom keeps its warning."""
+    with caplog.at_level("WARNING",
+                         logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        _day_trips, diagnostics = plan_replacement.build_day_trips(
+            _trips_fixture(), _states_fixture(), _matches_to("d_lost"), _donor_trips_fixture(),
+            random_seed=RANDOM_SEED,
+            donor_attributes=_donor_attributes_fixture({"d1": 3, "d_lost": 4}))
+
+    assert diagnostics["n_donors_without_trips"] == 1
+    assert diagnostics["n_donors_immobile"] == 0
+    assert any("donor_id key or dtype mismatch" in message for message in caplog.messages)
+
+
+def test_donor_absent_from_the_attributes_is_treated_as_suspicious_not_immobile(caplog):
+    """An unknown trip count must never be read as the benign case."""
+    with caplog.at_level("WARNING",
+                         logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        _day_trips, diagnostics = plan_replacement.build_day_trips(
+            _trips_fixture(), _states_fixture(), _matches_to("d_unknown"),
+            _donor_trips_fixture(), random_seed=RANDOM_SEED,
+            donor_attributes=_donor_attributes_fixture({"d1": 3}))
+
+    assert diagnostics["n_donors_unknown_trip_count"] == 1
+    assert diagnostics["n_donors_without_trips"] == 1
+    assert diagnostics["n_donors_immobile"] == 0
+
+
+def test_donor_attributes_require_the_trip_count_column():
+    with pytest.raises(ValueError, match="n_trips"):
+        plan_replacement.build_day_trips(
+            _trips_fixture(), _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+            random_seed=RANDOM_SEED,
+            donor_attributes=pd.DataFrame({"donor_id": ["d1"]}))
+
+
+# ---------------------------------------------------------------------------
+# Ruling R8: the replaced rows must not be assembled column by column
+# ---------------------------------------------------------------------------
+
+def _many_persons_fixture(n_persons=300, n_extra_columns=120, n_trips_per_person=2):
+    """A population-shaped fixture: many replaced persons AND many extra input columns.
+
+    Both dimensions matter: the fragmentation warning the 2026-09-05 run drowned in was emitted
+    once per (replaced person x inserted column), so a fixture with only a handful of either
+    would stay silent even under the old column-wise implementation.
+    """
+    person_ids = [f"p{index}" for index in range(n_persons)]
+    rows = []
+    for person_id in person_ids:
+        for trip_index in range(n_trips_per_person):
+            rows.append({
+                "person_id": person_id, "trip_index": trip_index,
+                "departure_time": 8 * 3600.0 + trip_index * 3600.0,
+                "arrival_time": 8 * 3600.0 + trip_index * 3600.0 + 900.0,
+                "preceding_purpose": "home", "following_purpose": "work",
+                "is_first_trip": trip_index == 0,
+                "is_last_trip": trip_index == n_trips_per_person - 1,
+                "trip_duration": 900.0, "activity_duration": np.nan, "mode": "car",
+                "euclidean_distance": 5000.0, "trip_key": f"{person_id}_{trip_index}",
+            })
+    trips = pd.DataFrame(rows)
+    # Built with ONE concat rather than a column-at-a-time loop, so the fixture itself does not
+    # emit the very warning the test is about.
+    trips = pd.concat([trips, pd.DataFrame(
+        "x", index=trips.index,
+        columns=[f"raw_mid_extra_{index}" for index in range(n_extra_columns)])], axis=1)
+    states = pd.DataFrame({"person_id": person_ids, "commute_day_state": "home"})
+    matches = pd.DataFrame({"person_id": person_ids, "donor_id": "d1",
+                            "coarsening_level": 0})
+    return trips, states, matches
+
+
+def test_build_day_trips_emits_no_pandas_performance_warning():
+    """Ruling R8: 657,888 PerformanceWarnings in one run made that run's log 254 MB."""
+    import warnings
+
+    trips, states, matches = _many_persons_fixture()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.PerformanceWarning)
+        day_trips, diagnostics = plan_replacement.build_day_trips(
+            trips, states, matches, _donor_trips_fixture(), random_seed=RANDOM_SEED)
+
+    assert diagnostics["n_persons_replaced"] == 300
+    assert diagnostics["n_trips_added"] == 300 * 3          # d1's chain is 3 trips long
+    assert len(day_trips) == 900
+    # The renumbering and the nulled extras must survive the batched assembly unchanged.
+    first_person = day_trips[day_trips["person_id"] == "p0"]
+    assert list(first_person["trip_index"]) == [0, 1, 2]
+    assert list(first_person["is_first_trip"]) == [True, False, False]
+    assert list(first_person["is_last_trip"]) == [False, False, True]
+    assert first_person["raw_mid_extra_0"].isna().all()
+    assert list(first_person["mode"]) == ["bike", "bike", "bike"]

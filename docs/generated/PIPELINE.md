@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 98 stages, 245 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 98 stages, 246 dependencies.
 
 ## Model-area flow (condensed)
 

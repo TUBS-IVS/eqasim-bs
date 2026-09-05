@@ -14,12 +14,25 @@ valid substitute for that person's day, however sparse the donor pool. A donor w
 is excluded from the ENTIRE matching pass up front (counted in
 ``n_donors_hard_excluded_has_car_unknown``), not merely for the one person it happens to fail.
 
+A FOURTH hard criterion (ruling R7) is not an equality but an implication, which is why it lives
+beside :data:`HARD_CRITERIA` rather than in it: a donor whose chain contains an EDUCATION activity
+(``has_education_leg``, see ``donor_pool.attach_trip_derived_attributes``) is eligible ONLY for a
+person who has an education location of their own (``has_education_location``). A donor WITHOUT an
+education leg matches anyone. Measured on the 100 % proof run of 2026-09-05: 36 of the 5,086
+persons drawn to ``home`` received such a donor although they have no education location, the
+transplanted activity could then not be anchored anywhere, and
+``synthesis/population/spatial/secondary/problems.py::find_assignment_problems`` built a problem
+with ``origin``/``destination`` ``None`` on which the secondary chainsolver raised
+``AttributeError``. Both columns are REQUIRED on their frame: silently skipping this criterion
+when a column is absent would re-open exactly that failure (CLAUDE.md "Fallback transparency").
+
 Five SOFT criteria (:data:`SOFT_CRITERIA`) are coarsened, in this fixed order, only after the
 hard criteria and every soft criterion still in play have failed to find a large enough donor
 cell (``minimum_cell``):
 
 ======  ============================================================================
-level   criteria still enforced (soft) in addition to the always-enforced hard three
+level   soft criteria still enforced, on top of the always-enforced hard ones (the three
+        exact-match criteria plus the education-anchor rule above)
 ======  ============================================================================
 0       distance_class (exact), sex, age_class, household_size_class, has_license*
 1       distance_class (exact), sex, age_class, household_size_class
@@ -75,6 +88,12 @@ SOFT_CRITERIA = ("distance_class", "sex", "age_class", "household_size_class", "
 #: replaceable at all.
 MAX_COARSENING_LEVEL = 6
 
+#: Donor column flagging an ``education`` activity in the donor's own chain (ruling R7).
+DONOR_EDUCATION_LEG_COLUMN = "has_education_leg"
+#: Person column flagging that the receiving person has an assigned education location, i.e. that
+#: an education activity transplanted onto their day can be anchored (ruling R7).
+PERSON_EDUCATION_LOCATION_COLUMN = "has_education_location"
+
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
@@ -110,10 +129,12 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
 
     ``persons_home`` -- one row per person drawn to ``home`` (``state.draw_states``): needs
     ``person_id``, ``assigned_distance_class``, ``sex``, ``age_class``, ``household_size``,
-    ``has_active_escort``, ``has_children_u14``, ``has_car``, and optionally ``has_license``.
-    ``donors`` -- the donor pool's attributes frame (``donor_pool.donor_attributes``): needs
-    ``donor_id``, ``distance_class``, ``sex``, ``age_class``, ``household_size``,
-    ``has_active_escort``, ``has_children_u14``, ``has_car``, and optionally ``has_license``.
+    ``has_active_escort``, ``has_children_u14``, ``has_car``,
+    :data:`PERSON_EDUCATION_LOCATION_COLUMN`, and optionally ``has_license``.
+    ``donors`` -- the donor pool's attributes frame (``donor_pool.build_home_office_donor_pool``):
+    needs ``donor_id``, ``distance_class``, ``sex``, ``age_class``, ``household_size``,
+    ``has_active_escort``, ``has_children_u14``, ``has_car``,
+    :data:`DONOR_EDUCATION_LEG_COLUMN`, and optionally ``has_license``.
 
     Returns ``(matches, diagnostics)``. ``matches`` columns: ``person_id``, ``donor_id``,
     ``coarsening_level`` (int, 0-:data:`MAX_COARSENING_LEVEL`) -- one row per REPLACEABLE
@@ -127,16 +148,21 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     ``soft_criteria_used`` (the subset of :data:`SOFT_CRITERIA` actually applied --
     ``has_license`` excluded when not carried by both frames),
     ``n_donors_hard_excluded_has_car_unknown`` (donors with ``has_car`` NaN, excluded from the
-    ENTIRE pass up front -- see the module docstring), and
+    ENTIRE pass up front -- see the module docstring),
     ``n_persons_hard_criteria_missing`` (``persons_home`` rows with a ``NaN`` in ANY of
     :data:`HARD_CRITERIA` -- such a person can never match any donor, since ``NaN`` never equals
-    a donor's exact value, and would otherwise vanish into ``n_not_replaceable`` unexplained).
+    a donor's exact value, and would otherwise vanish into ``n_not_replaceable`` unexplained),
+    ``n_donors_with_education_leg`` and ``n_persons_without_education_location`` (the two sides of
+    the ruling-R7 criterion) and ``n_persons_education_restricted`` (persons for whom the
+    education-leg donors were therefore excluded, i.e. the product of the two).
     """
     _require_columns(persons_home, ("person_id", "assigned_distance_class", "sex", "age_class",
                                     "household_size", "has_active_escort", "has_children_u14",
-                                    "has_car"), "persons_home frame")
+                                    "has_car", PERSON_EDUCATION_LOCATION_COLUMN),
+                     "persons_home frame")
     _require_columns(donors, ("donor_id", "distance_class", "sex", "age_class", "household_size",
-                              "has_active_escort", "has_children_u14", "has_car"), "donors frame")
+                              "has_active_escort", "has_children_u14", "has_car",
+                              DONOR_EDUCATION_LEG_COLUMN), "donors frame")
 
     # Imported here, not at module level: synthesis.population.matched is a synpp stage module
     # with heavy top-level imports, and this pure module must stay importable without them.
@@ -191,15 +217,48 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     donor_age_class = eligible_donors["age_class"].to_numpy()
     donor_hh_class = eligible_donors["household_size_class"].to_numpy()
     donor_license = eligible_donors["has_license"].to_numpy() if has_license_available else None
+    # Ruling R7. An UNRESOLVED flag on either side is read as the restrictive value (the donor
+    # may carry an education leg / the person may have no education location), never as the
+    # permissive one: an unknown must not be able to reproduce the very crash this criterion
+    # exists to prevent. Both cases are counted below.
+    donor_education_leg = (eligible_donors[DONOR_EDUCATION_LEG_COLUMN]
+                           .fillna(True).astype(bool).to_numpy())
+    n_donors_with_education_leg = int(donor_education_leg.sum())
+    n_donor_education_leg_unknown = int(eligible_donors[DONOR_EDUCATION_LEG_COLUMN].isna().sum())
+    person_education_location = (persons_home[PERSON_EDUCATION_LOCATION_COLUMN]
+                                 .fillna(False).astype(bool))
+    n_persons_without_education_location = int((~person_education_location).sum())
+    n_person_education_location_unknown = int(
+        persons_home[PERSON_EDUCATION_LOCATION_COLUMN].isna().sum())
+    persons_home[PERSON_EDUCATION_LOCATION_COLUMN] = person_education_location
+    if n_donor_education_leg_unknown or n_person_education_location_unknown:
+        logger.warning(
+            "%s ruling R7: %d donor(s) have an unresolved %r (read as 'has an education leg') "
+            "and %d person(s) an unresolved %r (read as 'has no education location') -- the "
+            "restrictive reading in both cases; check the upstream attribute sources.",
+            _LOG_TAG, n_donor_education_leg_unknown, DONOR_EDUCATION_LEG_COLUMN,
+            n_person_education_location_unknown, PERSON_EDUCATION_LOCATION_COLUMN)
+    logger.info(
+        "%s ruling R7 (education anchor): %d/%d donors carry an education leg; %d/%d persons "
+        "have NO education location and can therefore never receive one of them",
+        _LOG_TAG, n_donors_with_education_leg, len(eligible_donors),
+        n_persons_without_education_location, len(persons_home))
 
     matches = []
     matched_by_level = {level: 0 for level in range(MAX_COARSENING_LEVEL + 1)}
     n_not_replaceable = 0
 
+    n_persons_education_restricted = 0
     for person in persons_home.itertuples(index=False):
         hard_mask = ((donor_escort == person.has_active_escort)
                     & (donor_children == person.has_children_u14)
                     & (donor_car == person.has_car))
+        # Ruling R7, a hard criterion at EVERY coarsening level: a person without an education
+        # location can never anchor a transplanted education activity, so every donor carrying
+        # one is excluded for them (a donor without one stays eligible for everybody).
+        if not getattr(person, PERSON_EDUCATION_LOCATION_COLUMN):
+            hard_mask &= ~donor_education_leg
+            n_persons_education_restricted += 1
 
         chosen_donor = None
         chosen_level = None
@@ -251,6 +310,9 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         "soft_criteria_used": soft_criteria_used,
         "n_donors_hard_excluded_has_car_unknown": n_donors_hard_excluded_has_car_unknown,
         "n_persons_hard_criteria_missing": n_persons_hard_criteria_missing,
+        "n_donors_with_education_leg": n_donors_with_education_leg,
+        "n_persons_without_education_location": n_persons_without_education_location,
+        "n_persons_education_restricted": n_persons_education_restricted,
     }
 
     logger.info(

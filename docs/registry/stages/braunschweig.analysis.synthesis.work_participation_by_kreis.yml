@@ -22,11 +22,16 @@ description: 'Phase A measurement of the commute-day-state model (spec 2026-09-0
   external-destination section that reads like a measured result), cds_edge_tolerance_km (default
   5.0, half-width of the band around a commute-distance class edge inside which a worker counts as
   near an edge), cds_max_states_outside_employed_share (default 0.05, RAISES above -- the share of
-  the drawn reporting-day states that falls OUTSIDE the employed universe; the state-to-person
-  join is a plain person_id match, so an id dtype drift between the state stage and
-  synthesis.population.enriched would match nothing and yield a check-1 table of 0 / 0 / 0 with
-  share_no_workplace = 1.0 that reads like a measurement, and a non-empty employed universe with
-  no matched worker at all raises regardless of the threshold).'
+  the drawn reporting-day states that resolve to NO employed-universe row at all: no
+  synthesis.population.enriched row, or an employed person whose home Kreis lies outside the ZGB.
+  The state-to-person join is a plain person_id match, so an id dtype drift between the state
+  stage and synthesis.population.enriched would match nothing and yield a check-1 table of
+  0 / 0 / 0 with share_no_workplace = 1.0 that reads like a measurement, and a non-empty employed
+  universe with no matched worker at all raises regardless of the threshold. ADR-0104 ruling R6:
+  workers whose person DOES exist but is not flagged employed are a UNIVERSE DIFFERENCE, not a
+  join failure -- they are counted separately (n_workers_not_employed) and only WARN, above a
+  fixed 5% rate; conflating the two made this guard abort the 2026-09-05 proof run on 12.37% of
+  states whose person_id every one of them matched).'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -108,7 +113,8 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   it; with commute_day_state_enabled false that alias is a pass-through and the Phase A numbers
   are reproduced unchanged. With the model on the stage additionally reads
   braunschweig.synthesis.commute_day.state_stage and writes a SEVENTH file,
-  commute_day_state_shares.csv (code, n_workers, share_at_workplace, share_home, share_absent,
+  commute_day_state_shares.csv (code, n_workers, n_workers_not_employed, share_at_workplace,
+  share_home, share_absent,
   share_no_workplace, n_employed, share_employed_no_work_trip, srv_share_home_office_day,
   srv_share_work_trip, srv_share_neither, delta_no_work_trip_pp; one row per ZGB Kreis code plus
   a zgb row over exactly their union), plus a "Check 1 (ADR-0104)" section in summary.md that
@@ -122,8 +128,13 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   n_employed agree by construction (a disagreement raises); the employed persons WITHOUT an
   assigned workplace, for whom the model draws no state at all, are reported as
   share_no_workplace, so the four model shares sum to 1 over the employed, and n_workers is a
-  COUNT beside them, never a denominator. Workers outside that universe (not flagged employed, or
-  a home Kreis outside the ZGB) are excluded, counted and logged. The +/- 3 pp band itself is an
+  COUNT beside them, never a denominator, and so is n_workers_not_employed. Workers outside that
+  universe are excluded, counted and logged, SPLIT BY CAUSE (ruling R6): a worker whose person
+  exists but carries no employed flag is a universe difference -- the model gave a workplace to
+  somebody the population does not call employed -- counted per home Kreis in
+  n_workers_not_employed, stated in the check-1 section, warned about above a 5% rate and never
+  fatal; everything else (no population row at all, or a home Kreis outside the ZGB) keeps the
+  fatal cds_max_states_outside_employed_share semantics. The +/- 3 pp band itself is an
   ASSUMPTION chosen a priori in the 2026-09-04 design and recorded in ADR-0104, not derived from
   any committed source. The state-to-SrV correspondence
   (at_workplace <-> work trip, home <-> full home-office day, absent <-> neither) is likewise an

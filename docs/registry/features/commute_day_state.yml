@@ -201,33 +201,41 @@ validation:
     commute_day_state_scaling.json). (4) Donor-matching diagnostics: coarsening rate per step,
     not-replaceable share, missing-donor-distance share, pool size per cell. (5) Sensitivity of
     commute_day_absent_share_far, 1.0 vs 0.6. (6) OFF-path byte identity, a 25% proof run first
-    and a 100% proof in the next scheduled production run. None of these six has been run against
-    a live population yet -- Task 7 of this Phase B plan runs the 25% proof; until that
-    comparison is recorded in a run manifest, this record stays "unvalidated": the model is wired,
-    tested on synthetic frames, and its fallback rates are instrumented, but it has not yet been
-    measured against any of its own pre-registered checks. Convergence of a MATSim run is not
+    and a 100% proof in the next scheduled production run. The six were measured against a live
+    population for the first time on 2026-09-05, at 100% on the cached i329 population instead of
+    at 25% (controller ruling R4: the server 25% cache is from June 2026 and would have rebuilt
+    PopulationSim; the substitution is disclosed in the manifest''s pipeline.notes). The per-check
+    outcome is in validation.metric above and every number in the manifest. This record is
+    therefore measured_vs_reference and NOT behaviourally_validated: check 1, the only one that
+    compares the realised three-way state split against an observed reference, was BLOCKED and did
+    not run, and the ON population line did not complete. Convergence of a MATSim run is not
     validation and is not claimed here.
-    UPDATE 2026-09-05: that proof run has now happened, at 100% on the cached i329 population
-    instead of at 25% (controller ruling R4: the server 25% cache is from June 2026 and would
-    have rebuilt PopulationSim; the substitution is disclosed in the manifest''s pipeline.notes).
-    The per-check outcome is in validation.metric above and every number in the manifest. This
-    record is therefore measured_vs_reference and NOT behaviourally_validated: check 1, the only
-    one that compares the realised three-way state split against an observed reference, was
-    BLOCKED and did not run, and the ON population line did not complete. The run also found
-    three defects on real data -- two fixed in this branch (an 8-digit AGS assumption in the
-    Phase A analysis stage that rejected all 265,750 in-region destinations, and a NaN/str sex
-    column that killed the donor-pool resample) and one left open for a maintainer decision: 36
-    of the 5,086 persons drawn to "home" (0.71%) receive a donor chain with an EDUCATION activity
-    they have no location for, which makes the secondary chainsolver raise. Until that is
-    resolved, the flag cannot be run to a written population at 100%.'
+    That run found five things to fix, all fixed in code in this branch and NONE of them yet
+    re-measured: (a) an 8-digit AGS assumption in the Phase A analysis stage that rejected all
+    265,750 in-region destinations and (b) a NaN/str sex column that killed the donor-pool
+    resample, both fixed during the run itself; then, in fix wave A, (c) ruling R5 -- check 2
+    measured ASSIGNED workplaces, which this model never changes, so the work comparison now runs
+    over the reporting-day commuters and keeps the assigned-workplace view as a second table;
+    (d) ruling R6 -- check 1''s guard conflated a person_id join failure with the universe
+    difference between the model''s workers and the enriched population''s employed flag, and now
+    counts the latter separately instead of aborting on it; (e) ruling R7 -- 36 of the 5,086
+    persons drawn to "home" (0.71%) received a donor chain with an EDUCATION activity they have
+    no location for, which made the secondary chainsolver raise; such a donor is now ineligible
+    for a person without an education location (a hard matching criterion). Two further fixes are
+    diagnostic only: the plan replacement no longer emits a pandas PerformanceWarning per replaced
+    column (657,888 of them made the ON run''s log 254 MB), and an immobile donor (n_trips == 0,
+    32.5% of the pool by construction) is no longer counted as a possible donor_id join failure.
+    Until the ON line is re-run with these fixes, nothing about their effect on any check is
+    claimed here.'
 assessment:
   status: pending
   pending_reason: 'The 2026-09-05 proof run measured checks 2-6 but check 1 was blocked by its own
     guard (the model''s worker universe and the enriched population''s employed universe differ by
-    12.37%, a maintainer decision ADR-0104 does not settle), and the ON population line aborted on
-    the education-anchor defect above. The assessment stays pending until those two are resolved
-    and check 1 is actually measured; no owner verdict on realised commute-day-state behaviour
-    exists yet.'
+    12.37%) and the ON population line aborted on the education-anchor defect. Fix wave A resolved
+    both in code (rulings R6 and R7) and corrected check 2''s universe (ruling R5), but the ON line
+    has NOT been re-run: no check has been re-measured, so check 1 still has no verdict and no
+    owner verdict on realised commute-day-state behaviour exists yet. The assessment stays pending
+    until the re-run is recorded in a run manifest.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
   MiD reference table (data record mid2023_workday_location) for the keep-probability ratio.

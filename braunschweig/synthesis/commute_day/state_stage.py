@@ -11,7 +11,9 @@ documented there, never re-stated here:
   from the synthesised home/workplace geometry.
 * :func:`braunschweig.synthesis.commute_day.state.draw_states` -- the seeded state draw.
 * :func:`braunschweig.synthesis.commute_day.matching.match_home_office_donors` -- the donor for
-  every person drawn to ``home``.
+  every person drawn to ``home``. Its ruling-R7 hard criterion needs ``has_education_location``
+  per person, which this stage derives from the EDUCATION half of
+  ``synthesis.population.spatial.primary.locations`` (see :func:`_persons_home_frame`).
 
 Universe: every person with an assigned WORK location (the work half of
 ``synthesis.population.spatial.primary.locations``). A worker drawn to ``home`` for whom the
@@ -195,7 +197,7 @@ def _households_with_children(persons):
     return set(persons.loc[is_child, "household_id"])
 
 
-def _persons_home_frame(person_ids, workers, persons, escort_persons):
+def _persons_home_frame(person_ids, workers, persons, escort_persons, education_person_ids):
     """Attribute frame for :func:`match_home_office_donors`, one row per ``home`` worker.
 
     Built from the enriched population so every criterion is the model's own attribute, never a
@@ -203,9 +205,12 @@ def _persons_home_frame(person_ids, workers, persons, escort_persons):
     :func:`braunschweig.popsim.chain_matching.derive_age_class` (the identical binning the donor
     side uses), ``household_size`` UNBINNED (the matching module bins both sides itself, ruling
     R1), ``has_car`` from ``number_of_cars > 0``, ``has_children_u14`` from the ages of the
-    person's own household members, ``has_active_escort`` from the person's own trips, and
-    ``has_license`` ONLY when the enriched frame carries it (the MiD donor pool does not, so the
-    matching module then skips that soft criterion rather than inventing a value).
+    person's own household members, ``has_active_escort`` from the person's own trips,
+    ``has_education_location`` from ``education_person_ids`` (the person ids of the EDUCATION half
+    of ``synthesis.population.spatial.primary.locations``; ruling R7 -- a person who has no
+    education location cannot anchor a transplanted education activity), and ``has_license`` ONLY
+    when the enriched frame carries it (the MiD donor pool does not, so the matching module then
+    skips that soft criterion rather than inventing a value).
     """
     _require_columns(persons, ("person_id", "household_id", "sex", "age", "household_size",
                                "number_of_cars"), "the enriched persons frame")
@@ -219,6 +224,7 @@ def _persons_home_frame(person_ids, workers, persons, escort_persons):
     frame["has_car"] = frame["number_of_cars"] > 0
     frame["has_children_u14"] = frame["household_id"].isin(households_with_children)
     frame["has_active_escort"] = frame["person_id"].isin(escort_persons)
+    frame["has_education_location"] = frame["person_id"].isin(education_person_ids)
     frame = frame.merge(workers[["person_id", "assigned_distance_class"]], on="person_id",
                         how="left")
 
@@ -307,7 +313,7 @@ def execute(context):
     df_trips = context.stage("synthesis.population.trips")
     df_persons = context.stage("synthesis.population.enriched")
     df_home = context.stage("synthesis.population.spatial.home.locations")
-    df_work, _df_education = context.stage("synthesis.population.spatial.primary.locations")
+    df_work, df_education = context.stage("synthesis.population.spatial.primary.locations")
     donor_attributes, _donor_trips, _donor_diagnostics = context.stage(
         "braunschweig.synthesis.commute_day.home_office_donors_stage")
 
@@ -375,8 +381,17 @@ def execute(context):
                                       absent_share_far=absent_share_far,
                                       escort_persons=escort_persons)
 
+    # Ruling R7: the EDUCATION half of synthesis.population.spatial.primary.locations names every
+    # person who can anchor an education activity. A donor chain containing one may only be
+    # transplanted onto such a person (see matching.match_home_office_donors).
+    _require_columns(df_education, ("person_id",), "the primary education locations frame")
+    education_person_ids = set(df_education["person_id"])
+    logger.info("%s education anchors: %d persons have an assigned education location "
+                "(%d workers in total)", _LOG_TAG, len(education_person_ids), len(worker_ids))
+
     home_person_ids = states.loc[states["commute_day_state"] == "home", "person_id"]
-    persons_home = _persons_home_frame(home_person_ids, workers, df_persons, escort_persons)
+    persons_home = _persons_home_frame(home_person_ids, workers, df_persons, escort_persons,
+                                       education_person_ids)
     matches, matching_diagnostics = match_home_office_donors(persons_home, donor_attributes, rng)
 
     states = states.merge(matches, on="person_id", how="left")

@@ -85,6 +85,15 @@ DISTANCE_SOURCE_UNKNOWN = "unknown"
 #: silently dropped by any ``groupby``/``merge`` the matching module performs on this column.
 DISTANCE_CLASS_UNKNOWN = "unknown"
 
+#: eqasim trip purposes marking a leg that ARRIVES AT (or DEPARTS FROM) a FIXED activity the
+#: receiving person must be able to anchor to a location of their own. Read from the BUILT donor
+#: trip table (:func:`donor_trips`), never from the raw MiD ``W_ZWECK`` codes, so the flags follow
+#: the same purpose mapping the day itself was built with -- including
+#: ``escort_passive_education``, which relabels a passive escort leg (``W_ZWECK`` 13) to
+#: ``"education"``.
+EDUCATION_PURPOSE = "education"
+WORK_PURPOSE = "work"
+
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
@@ -207,8 +216,10 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
 
     Donors without any qualifying trip (e.g. an immobile home-office day) still get a row here;
     :func:`donor_trips` yields no rows for them, and :func:`build_home_office_donor_pool` is what
-    turns that absence into its ``n_immobile`` / ``n_chain_dropped_by_resample`` diagnostics --
-    there is no ``n_trips`` column on this frame.
+    turns that absence into its ``n_immobile`` / ``n_chain_dropped_by_resample`` diagnostics.
+    This frame carries no ``n_trips`` / ``has_education_leg`` / ``has_work_leg`` column: those
+    three are read from the BUILT chains and are attached afterwards by
+    :func:`attach_trip_derived_attributes`, which :func:`build_home_office_donor_pool` calls.
     """
     _require_columns(donors, ("HP_ID", "H_ID", "P_ID", "HP_SEX", "HP_ALTER", "P_ARB_ENTF"),
                      "donors frame")
@@ -415,6 +426,54 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
     return table[contract_columns + extra_columns]
 
 
+def _donors_with_purpose(trips: pd.DataFrame, purpose: str) -> set:
+    """Donor ids whose BUILT chain contains an activity of ``purpose`` at either trip end.
+
+    Both ends are inspected (``preceding_purpose`` and ``following_purpose``): the leg TOWARDS a
+    fixed activity arrives at it and the return leg departs from it, and either is evidence that
+    the day contains that activity.
+    """
+    if not len(trips):
+        return set()
+    ids = set()
+    for column in ("preceding_purpose", "following_purpose"):
+        if column in trips.columns:
+            ids |= set(trips.loc[trips[column] == purpose, "donor_id"])
+    return ids
+
+
+def attach_trip_derived_attributes(attributes: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
+    """Add ``n_trips``, ``has_education_leg`` and ``has_work_leg`` to the donor attributes.
+
+    These three columns cannot be produced by :func:`donor_attributes`, which never sees the
+    BUILT trip table; they are attached here, by :func:`build_home_office_donor_pool`, once that
+    table exists. All three are read from the built chains (never from the raw MiD codes), so
+    they follow the same purpose mapping the donor's day was built with.
+
+    * ``n_trips`` -- rows the donor has in ``trips``; ``0`` for an immobile home-office day.
+      Ruling R9: a donor with ZERO trips is a VALID (trip-less) day, and the plan-replacement
+      step needs this column to tell that expected case apart from a ``donor_id`` join failure,
+      which produces the identical "no rows for this donor" symptom.
+    * ``has_education_leg`` -- the chain contains an ``education`` activity. Ruling R7: such a
+      donor is only eligible for a receiving person who HAS an education location, because the
+      transplanted activity would otherwise have nowhere to be anchored and the secondary
+      chainsolver raises on the ``None`` origin/destination it then builds.
+    * ``has_work_leg`` -- the chain contains a ``work`` activity. Reported as a pool diagnostic
+      only, never used as a matching criterion: every receiving person is a worker with an
+      assigned workplace by construction, so a work leg can always be anchored.
+    """
+    _require_columns(attributes, ("donor_id",), "attributes frame")
+    attributes = attributes.copy()
+    trip_counts = trips["donor_id"].value_counts() if len(trips) else pd.Series(dtype=int)
+    attributes["n_trips"] = (attributes["donor_id"].map(trip_counts)
+                             .fillna(0).astype(int))
+    education_donors = _donors_with_purpose(trips, EDUCATION_PURPOSE)
+    work_donors = _donors_with_purpose(trips, WORK_PURPOSE)
+    attributes["has_education_leg"] = attributes["donor_id"].isin(education_donors)
+    attributes["has_work_leg"] = attributes["donor_id"].isin(work_donors)
+    return attributes
+
+
 def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, households: pd.DataFrame,
                                  *, random_seed: int, escort_purpose: bool = False,
                                  escort_passive_education: bool = False,
@@ -426,7 +485,10 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     :func:`donor_trips` (see each for the exact per-column semantics); this function's own
     contribution is the diagnostics summary.
 
-    Returns ``(attributes, trips, diagnostics)``. ``diagnostics``:
+    Returns ``(attributes, trips, diagnostics)``. ``attributes`` carries
+    :func:`donor_attributes`' columns PLUS the three trip-derived ones
+    :func:`attach_trip_derived_attributes` adds (``n_trips``, ``has_education_leg``,
+    ``has_work_leg``). ``diagnostics``:
 
     * ``n_donors`` -- rows in ``attributes`` (every selected donor, mobile or immobile).
     * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day).
@@ -438,6 +500,11 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       ``P_ARB_ENTF`` nor a work trip; ``distance_class`` itself is always the literal
       ``DISTANCE_CLASS_UNKNOWN`` in that case, never null).
     * ``n_sex_unknown`` -- donors with ``sex`` unknown (``HP_SEX`` outside {1, 2}).
+    * ``n_donors_with_education_leg`` / ``n_donors_with_work_leg`` -- donors whose BUILT chain
+      contains an ``education`` / a ``work`` activity (see
+      :func:`attach_trip_derived_attributes`). The education count is the size of the pool the
+      ruling-R7 hard criterion restricts to persons with an education location of their own; the
+      work count is reported for symmetry only (every receiving person has a workplace).
     * ``n_not_in_module`` -- selected donors with ``M_HOFF != MID_MODULE`` (see
       :func:`select_home_office_day_donors`).
     * ``n_household_unmatched`` -- donors whose ``H_ID`` has no row in ``households`` (``has_car``
@@ -454,6 +521,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
     )
+    # n_trips / has_education_leg / has_work_leg can only be read once the chains exist (rulings
+    # R7 and R9); donor_attributes never sees them.
+    attributes = attach_trip_derived_attributes(attributes, trips)
 
     n_donors = len(attributes)
     mobile_donor_ids = set(trips["donor_id"].unique()) if len(trips) else set()
@@ -472,6 +542,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     n_chain_dropped_by_resample = int((has_any_wege_row & ~is_mobile).sum())
     n_missing_distance = int((attributes["distance_source"] == DISTANCE_SOURCE_UNKNOWN).sum())
     n_sex_unknown = int(attributes["sex"].isna().sum())
+    n_donors_with_education_leg = int(attributes["has_education_leg"].sum())
+    n_donors_with_work_leg = int(attributes["has_work_leg"].sum())
     n_not_in_module = _count_not_in_module(donors)
     n_household_unmatched = _count_household_unmatched(attributes["H_ID"], households)
     distance_source_counts = attributes["distance_source"].value_counts().to_dict()
@@ -489,6 +561,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         "n_chain_dropped_by_resample": n_chain_dropped_by_resample,
         "n_missing_distance": n_missing_distance,
         "n_sex_unknown": n_sex_unknown,
+        "n_donors_with_education_leg": n_donors_with_education_leg,
+        "n_donors_with_work_leg": n_donors_with_work_leg,
         "n_not_in_module": n_not_in_module,
         "n_household_unmatched": n_household_unmatched,
         "distance_source_counts": distance_source_counts,
@@ -506,5 +580,14 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         "home-office module, %d household-unmatched",
         _LOG_TAG, n_donors, n_missing_distance, 100.0 * n_missing_distance / max(n_donors, 1),
         n_sex_unknown, n_not_in_module, n_household_unmatched,
+    )
+    logger.info(
+        "%s fixed-purpose legs in the donor chains: %d/%d donors (%.1f%%) carry an %r activity "
+        "(only matchable to persons WITH an education location, ruling R7), %d/%d (%.1f%%) carry "
+        "a %r activity (matchable to anyone -- every receiving person has a workplace)",
+        _LOG_TAG, n_donors_with_education_leg, n_donors,
+        100.0 * n_donors_with_education_leg / max(n_donors, 1), EDUCATION_PURPOSE,
+        n_donors_with_work_leg, n_donors, 100.0 * n_donors_with_work_leg / max(n_donors, 1),
+        WORK_PURPOSE,
     )
     return attributes, trips, diagnostics

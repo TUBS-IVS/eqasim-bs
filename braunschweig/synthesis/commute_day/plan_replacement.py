@@ -53,6 +53,12 @@ _LOG_TAG = "[commute day plan replacement]"
 #: ``donor_pool.donor_trips``): copied verbatim onto replaced rows, never nulled.
 _DONOR_EXTRA_COLUMNS = ("euclidean_distance", "trip_key")
 
+#: Share of matched donors with zero rows in ``donor_trips`` -- EXCLUDING the donors the donor
+#: attributes report as immobile (``n_trips == 0``, ruling R9) -- above which the replacement
+#: warns: what remains after that split can no longer be explained by the donor pool's own
+#: immobility and points at a ``donor_id`` key/dtype mismatch.
+WARN_DONORS_WITHOUT_TRIPS_SHARE = 0.01
+
 STATE_ABSENT = "absent"
 STATE_HOME = "home"
 STATE_AT_WORKPLACE = "at_workplace"
@@ -65,8 +71,46 @@ def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
                          f"(present: {sorted(frame.columns)})")
 
 
+def _replaced_rows(donor_blocks, person_ids, other_extra_columns):
+    """Assemble every replaced person's donor block into ONE frame, without column-wise inserts.
+
+    ``donor_blocks`` is a list of per-person donor trip frames (already ordered by
+    ``trip_index``), ``person_ids`` the receiving person of each block, in the same order.
+
+    The naive shape -- copy each donor block, then write ``person_id``, ``trip_index``,
+    ``is_first_trip``, ``is_last_trip`` and every extra column into it one at a time -- performs
+    ``len(donor_blocks) * (4 + len(other_extra_columns))`` single-column inserts. On the 100 %
+    proof run of 2026-09-05 that was 657,888 inserts, each one emitting a pandas
+    ``PerformanceWarning: DataFrame is highly fragmented``, which alone made the run log 254 MB.
+    Here the blocks are concatenated ONCE, the four recomputed columns are written on the single
+    combined frame (four inserts in total, not four per person), and the NaN extras are built as
+    one block and joined with a single ``concat`` -- so the number of insert operations no longer
+    grows with the number of replaced persons.
+    """
+    replaced = pd.concat(donor_blocks, ignore_index=True)
+    lengths = np.fromiter((len(block) for block in donor_blocks), dtype=int,
+                          count=len(donor_blocks))
+    trip_index = np.concatenate([np.arange(length) for length in lengths]) if len(lengths) else \
+        np.empty(0, dtype=int)
+    # The LAST trip of each block, i.e. the block's own length - 1 repeated over the block; a
+    # zero-length block contributes nothing, so max(n-1, 0) never has to be special-cased.
+    last_index = np.repeat(np.maximum(lengths - 1, 0), lengths)
+    replaced["person_id"] = np.repeat(np.asarray(person_ids), lengths)
+    replaced["trip_index"] = trip_index
+    replaced["is_first_trip"] = trip_index == 0
+    replaced["is_last_trip"] = trip_index == last_index
+    if other_extra_columns:
+        # One NaN block for every extra column at once (see the docstring): there is no
+        # donor-side value to copy and inventing one would violate CLAUDE.md's ban on invented
+        # data, so they are nulled -- but nulled in a single operation.
+        extras = pd.DataFrame(np.nan, index=replaced.index, columns=list(other_extra_columns))
+        replaced = pd.concat([replaced, extras], axis=1)
+    return replaced
+
+
 def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataFrame,
-                    donor_trips: pd.DataFrame, *, random_seed: int) -> tuple[pd.DataFrame, dict]:
+                    donor_trips: pd.DataFrame, *, random_seed: int,
+                    donor_attributes: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
     """Build the reporting-day trips table from a state draw and a donor match.
 
     ``trips`` -- the pre-assignment ``synthesis.population.trips`` table (CONTRACT columns plus
@@ -77,6 +121,10 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     ``donor_id`` (one row per REPLACEABLE ``home`` person; an unreplaceable one is simply
     absent). ``donor_trips`` -- :func:`donor_pool.donor_trips` output: needs ``donor_id`` plus
     the CONTRACT columns (minus ``person_id``) and ``euclidean_distance`` / ``trip_key``.
+    ``donor_attributes`` -- the donor pool's attributes frame (``donor_id``, ``n_trips``); OPTIONAL
+    only so the pure-helper tests can call this function without one, and always passed by
+    ``trips_day_stage``. Without it every donor absent from ``donor_trips`` is counted as
+    ``n_donors_without_trips``, as before ruling R9.
 
     Returns ``(day_trips, diagnostics)``. ``diagnostics``: ``n_persons_replaced`` (``home``
     persons with a donor match -- including a donor whose own day has ZERO trips, i.e. a fully
@@ -84,12 +132,19 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     correct outcome, not an error), ``n_persons_absent``, ``n_trips_removed`` (original rows
     dropped, for both replaced and absent persons), ``n_trips_added`` (donor rows spliced in),
     ``n_home_unmatched``, ``n_extra_columns_nulled`` (count of DISTINCT extra input columns
-    nulled on replaced rows, see the module docstring), ``n_donors_without_trips`` (matched
-    persons whose ``donor_id`` has NO rows at all in ``donor_trips`` -- legitimately a fully
-    immobile donor day in the common case, but ALSO the symptom a ``donor_id`` key/dtype mismatch
-    between ``matches`` and ``donor_trips`` would produce, silently wiping every replaced person;
-    logged as a rate and raised to a warning above 1% of replaced persons for exactly that
-    reason).
+    nulled on replaced rows, see the module docstring), and -- ruling R9 -- the SPLIT of the
+    matched persons whose ``donor_id`` has no rows at all in ``donor_trips``:
+
+    * ``n_donors_immobile`` / ``share_donors_immobile`` -- the donor's own ``n_trips`` is 0, an
+      immobile home-office day. EXPECTED (the MiD donor pool is 32.5 % immobile by construction),
+      reported at info level, and the person's trip-less day is the correct outcome.
+    * ``n_donors_without_trips`` / ``share_donors_without_trips`` -- the donor HAS trips (or is
+      absent from ``donor_attributes``, i.e. unknown) yet none of them arrived here. That is the
+      symptom of a ``donor_id`` key/dtype mismatch between ``matches`` and ``donor_trips``, which
+      silently wipes every affected person's day, so this rate -- and only this one -- warns above
+      :data:`WARN_DONORS_WITHOUT_TRIPS_SHARE`.
+    * ``n_donors_unknown_trip_count`` -- how many of the latter were the "absent from
+      ``donor_attributes``" case (always 0 when no attributes frame is given).
 
     Raises ``ValueError`` if ``matches["person_id"]`` contains duplicates -- each person can have
     at most one donor match; a duplicate would make the replacement for that person ambiguous.
@@ -133,34 +188,52 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     donor_groups = {donor_id: group.sort_values("trip_index").reset_index(drop=True)
                     for donor_id, group in donor_trips.groupby("donor_id", sort=False)}
 
-    replaced_frames = []
+    # Ruling R9: an absent donor is only an ERROR when that donor actually has trips. The donor
+    # attributes carry n_trips (0 for an immobile home-office day, see
+    # donor_pool.attach_trip_derived_attributes), so the two cases can be told apart instead of
+    # being conflated into one warning -- the pool is 32.5 % immobile BY CONSTRUCTION, which made
+    # the conflated rate (27.3 % on the 2026-09-05 proof run) unreadable as a defect signal.
+    donor_trip_counts = None
+    if donor_attributes is not None:
+        _require_columns(donor_attributes, ("donor_id", "n_trips"), "donor_attributes frame")
+        donor_trip_counts = donor_attributes.set_index("donor_id")["n_trips"]
+
+    donor_blocks = []
+    replaced_person_ids = []
     n_donors_without_trips = 0
+    n_donors_immobile = 0
+    n_donors_unknown_trip_count = 0
     for person_id in sorted(matched_home_persons):
         donor_id = donor_by_person.loc[person_id]
         donor_rows = donor_groups.get(donor_id)
         if donor_rows is None:
-            # The donor has no rows at all in donor_trips -- legitimately a fully immobile
-            # home-office day in the common case (see donor_pool.donor_trips), but this is also
-            # exactly what a donor_id key/dtype mismatch between matches and donor_trips would
-            # produce for EVERY replaced person, so it is counted and rate-checked below rather
-            # than silently accepted.
-            n_donors_without_trips += 1
+            # The donor has no rows at all in donor_trips. With the donor attributes at hand this
+            # splits into the EXPECTED case (n_trips == 0: a fully immobile home-office day, so
+            # the person legitimately gets a trip-less day) and the SUSPICIOUS one (n_trips > 0:
+            # the donor has trips that did not arrive here, exactly what a donor_id key/dtype
+            # mismatch between matches and donor_trips produces). A donor missing from the
+            # attributes frame entirely is counted as unknown and treated as suspicious -- an
+            # unknown must never be read as the benign case.
+            n_trips_of_donor = None
+            if donor_trip_counts is not None:
+                raw_n_trips = donor_trip_counts.get(donor_id)
+                if raw_n_trips is None or pd.isna(raw_n_trips):
+                    n_donors_unknown_trip_count += 1
+                else:
+                    n_trips_of_donor = int(raw_n_trips)
+            if n_trips_of_donor == 0:
+                n_donors_immobile += 1
+            else:
+                n_donors_without_trips += 1
             continue
-        new_rows = donor_rows.copy()
-        new_rows["person_id"] = person_id
-        n = len(new_rows)
-        new_rows["trip_index"] = np.arange(n)
-        new_rows["is_first_trip"] = new_rows["trip_index"] == 0
-        new_rows["is_last_trip"] = new_rows["trip_index"] == max(n - 1, 0)
-        for column in other_extra_columns:
-            new_rows[column] = np.nan
-        replaced_frames.append(new_rows)
+        donor_blocks.append(donor_rows)
+        replaced_person_ids.append(person_id)
 
-    n_trips_added = sum(len(frame) for frame in replaced_frames)
-    n_extra_columns_nulled = len(other_extra_columns) if replaced_frames else 0
+    n_trips_added = sum(len(block) for block in donor_blocks)
+    n_extra_columns_nulled = len(other_extra_columns) if donor_blocks else 0
 
-    if replaced_frames:
-        replaced = pd.concat(replaced_frames, ignore_index=True)
+    if donor_blocks:
+        replaced = _replaced_rows(donor_blocks, replaced_person_ids, other_extra_columns)
         replaced = replaced.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
         # Ruling R2: the per-person jitter is applied EXACTLY ONCE here, on the replaced rows
         # only, keyed by the RECEIVING person_id -- never on the donor's own chain (donor_pool
@@ -178,36 +251,51 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     result = result[output_columns]
     result = result.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
 
-    share_donors_without_trips = n_donors_without_trips / max(len(matched_home_persons), 1)
+    n_matched = len(matched_home_persons)
+    share_donors_without_trips = n_donors_without_trips / max(n_matched, 1)
+    share_donors_immobile = n_donors_immobile / max(n_matched, 1)
     diagnostics = {
-        "n_persons_replaced": len(matched_home_persons),
+        "n_persons_replaced": n_matched,
         "n_persons_absent": n_persons_absent,
         "n_trips_removed": n_trips_removed,
         "n_trips_added": n_trips_added,
         "n_home_unmatched": n_home_unmatched,
         "n_extra_columns_nulled": n_extra_columns_nulled,
         "n_donors_without_trips": n_donors_without_trips,
+        "n_donors_immobile": n_donors_immobile,
+        "n_donors_unknown_trip_count": n_donors_unknown_trip_count,
+        "share_donors_without_trips": float(share_donors_without_trips),
+        "share_donors_immobile": float(share_donors_immobile),
     }
 
     logger.info(
-        "%s reporting-day trips built: %d persons replaced (+%d/-%d trips, %d/%d matched "
-        "donors had zero trips, %.1f%%), %d persons absent (0 rows), %d home persons unmatched "
-        "(kept unchanged, %d extra column(s) nulled on replaced rows)", _LOG_TAG,
-        diagnostics["n_persons_replaced"], n_trips_added, n_trips_removed,
-        n_donors_without_trips, len(matched_home_persons), 100.0 * share_donors_without_trips,
+        "%s reporting-day trips built: %d persons replaced (+%d/-%d trips), %d/%d matched donors "
+        "were IMMOBILE (%.1f%%, n_trips == 0, an expected trip-less home-office day) and %d/%d "
+        "(%.1f%%) had zero rows although their donor has trips; %d persons absent (0 rows), %d "
+        "home persons unmatched (kept unchanged, %d extra column(s) nulled on replaced rows)",
+        _LOG_TAG, n_matched, n_trips_added, n_trips_removed,
+        n_donors_immobile, n_matched, 100.0 * share_donors_immobile,
+        n_donors_without_trips, n_matched, 100.0 * share_donors_without_trips,
         n_persons_absent, n_home_unmatched, n_extra_columns_nulled)
+    if n_donors_unknown_trip_count > 0:
+        logger.warning(
+            "%s %d matched donor(s) with no rows in donor_trips are ALSO absent from the donor "
+            "attributes frame, so their trip count is unknown; they are counted as "
+            "n_donors_without_trips (the suspicious case), never as immobile.",
+            _LOG_TAG, n_donors_unknown_trip_count)
     if n_home_unmatched > 0:
         logger.warning(
             "%s %d home person(s) had no donor match and keep their ORIGINAL (pre-home-office) "
             "day unchanged -- the state stage is expected to downgrade these to at_workplace.",
             _LOG_TAG, n_home_unmatched)
-    if share_donors_without_trips > 0.01:
+    if share_donors_without_trips > WARN_DONORS_WITHOUT_TRIPS_SHARE:
         logger.warning(
-            "%s %d/%d matched donors (%.1f%%) have ZERO rows in donor_trips -- above 1%%, which "
-            "usually signals a donor_id key or dtype mismatch between matches and donor_trips "
-            "(silently wiping every affected replaced person's day) rather than a genuinely "
-            "immobile home-office day for that many donors.",
-            _LOG_TAG, n_donors_without_trips, len(matched_home_persons),
-            100.0 * share_donors_without_trips)
+            "%s %d/%d matched donors (%.1f%%) have ZERO rows in donor_trips although their donor "
+            "attributes report trips (or are missing altogether) -- above %.0f%%, which usually "
+            "signals a donor_id key or dtype mismatch between matches and donor_trips (silently "
+            "wiping every affected replaced person's day). Donors that are genuinely immobile "
+            "(n_trips == 0) are NOT counted here; they are reported as n_donors_immobile.",
+            _LOG_TAG, n_donors_without_trips, n_matched, 100.0 * share_donors_without_trips,
+            100.0 * WARN_DONORS_WITHOUT_TRIPS_SHARE)
 
     return result, diagnostics

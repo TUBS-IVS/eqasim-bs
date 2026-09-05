@@ -250,6 +250,10 @@
   ],
   [
    "braunschweig.synthesis.commute_day.state_stage",
+   "braunschweig.analysis.synthesis.commute_distance_by_kreis"
+  ],
+  [
+   "braunschweig.synthesis.commute_day.state_stage",
    "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [

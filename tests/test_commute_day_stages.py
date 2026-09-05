@@ -175,11 +175,14 @@ def _work_points():
         geometry=[Point(x, 0.0) for x in distances_m.values()], crs=CRS)
 
 
-def _donor_attributes(has_car=True):
+def _donor_attributes(has_car=True, has_education_leg=False):
     """A donor pool that can serve every worker of :func:`_persons`.
 
     ``has_car=False`` breaks the ``has_car`` HARD criterion for the whole (car-owning) worker
-    population, which is what the not-replaceable guard test needs.
+    population, which is what the not-replaceable guard test needs. ``has_education_leg=True``
+    does the same through the ruling-R7 criterion for every worker without an education location.
+    ``n_trips`` matches :func:`_donor_trips` (two trips each), so the plan replacement can tell an
+    immobile donor from a join failure (ruling R9).
     """
     return pd.DataFrame({
         "donor_id": ["d1", "d2", "d3", "d4"],
@@ -194,6 +197,9 @@ def _donor_attributes(has_car=True):
         "distance_source": ["trip_length"] * 4,
         "distance_km": [5.0, 60.0, 250.0, np.nan],
         "employed": [True, True, True, True],
+        "n_trips": [2, 2, 2, 2],
+        "has_education_leg": [has_education_leg] * 4,
+        "has_work_leg": [False, False, False, False],
     })
 
 
@@ -215,12 +221,27 @@ def _donor_trips():
     return pd.DataFrame(rows)
 
 
-def _state_stage_stages(donor_attributes=None, donor_trips=None, home_without_household=None):
+def _education_points(person_ids=(3, 7)):
+    """The EDUCATION half of ``synthesis.population.spatial.primary.locations``.
+
+    Ruling R7: its person_ids are exactly the persons who can anchor an education activity. The
+    default names the two NON-workers, so no worker of :func:`_work_points` has an education
+    location and an education-leg donor is ineligible for all of them.
+    """
+    return gpd.GeoDataFrame(
+        {"person_id": list(person_ids),
+         "location_id": [f"education_{p}" for p in person_ids]},
+        geometry=[Point(1000.0, 0.0)] * len(person_ids), crs=CRS)
+
+
+def _state_stage_stages(donor_attributes=None, donor_trips=None, home_without_household=None,
+                        education_person_ids=(3, 7)):
     return {
         "synthesis.population.trips": _trips(),
         "synthesis.population.enriched": _persons(),
         "synthesis.population.spatial.home.locations": _home_locations(home_without_household),
-        "synthesis.population.spatial.primary.locations": (_work_points(), None),
+        "synthesis.population.spatial.primary.locations": (
+            _work_points(), _education_points(education_person_ids)),
         DONOR_STAGE: (_donor_attributes() if donor_attributes is None else donor_attributes,
                       _donor_trips() if donor_trips is None else donor_trips,
                       {"enabled": True}),
@@ -549,12 +570,12 @@ def test_persons_home_frame_requires_exactly_one_enriched_row_per_worker():
     workers = pd.DataFrame({"person_id": [1, 99], "assigned_distance_class": ["lt10", "lt10"]})
 
     with pytest.raises(RuntimeError) as error:
-        STATE._persons_home_frame(pd.Series([1, 99]), workers, persons, set())
+        STATE._persons_home_frame(pd.Series([1, 99]), workers, persons, set(), set())
     assert "99" in str(error.value)
 
     duplicated = pd.concat([persons, persons.query("person_id == 1")], ignore_index=True)
     with pytest.raises(RuntimeError) as error:
-        STATE._persons_home_frame(pd.Series([1]), workers, duplicated, set())
+        STATE._persons_home_frame(pd.Series([1]), workers, duplicated, set(), set())
     assert "duplicated [1]" in str(error.value)
 
 
@@ -581,6 +602,43 @@ def test_state_stage_raises_above_the_not_replaceable_threshold():
     with pytest.raises(RuntimeError) as error:
         STATE.execute(context)
     assert STATE.KEY_MAX_NOT_REPLACEABLE_SHARE in str(error.value)
+
+
+def test_state_stage_downgrades_home_persons_when_every_donor_carries_an_education_leg():
+    """Ruling R7, end to end: the blocker of the 2026-09-05 proof run cannot recur.
+
+    No worker of the fixture has an education location (:func:`_education_points` names the two
+    non-workers), so a pool in which every donor carries an education activity can serve none of
+    them: the ``home`` persons are downgraded to ``at_workplace`` instead of receiving a chain
+    with an activity they cannot anchor.
+    """
+    stages = _state_stage_stages(donor_attributes=_donor_attributes(has_education_leg=True))
+    context = _context(STATE, stages=stages,
+                       config=_state_stage_config(max_not_replaceable_share=1.0))
+    result = STATE.execute(context)
+
+    diagnostics = result["diagnostics"]
+    assert diagnostics["n_home_drawn"] > 0, "the fixture must draw at least one home person"
+    assert diagnostics["n_home_not_replaceable"] == diagnostics["n_home_drawn"]
+    assert diagnostics["matching"]["n_donors_with_education_leg"] == 4
+    assert (diagnostics["matching"]["n_persons_without_education_location"]
+            == diagnostics["n_home_drawn"])
+    assert result["states"]["donor_id"].isna().all()
+
+
+def test_state_stage_lets_a_person_with_an_education_location_keep_such_a_donor():
+    """The same pool, but the drawn home persons DO have an education location."""
+    baseline = STATE.execute(_context(
+        STATE, stages=_state_stage_stages(), config=_state_stage_config()))
+    home_ids = baseline["states"].loc[
+        baseline["states"]["commute_day_state"] == "home", "person_id"].tolist()
+    assert home_ids, "the fixture must draw at least one home person"
+
+    stages = _state_stage_stages(donor_attributes=_donor_attributes(has_education_leg=True),
+                                 education_person_ids=tuple(home_ids))
+    result = STATE.execute(_context(STATE, stages=stages, config=_state_stage_config()))
+    assert result["diagnostics"]["n_home_not_replaceable"] == 0
+    assert result["diagnostics"]["matching"]["n_persons_without_education_location"] == 0
 
 
 # --------------------------------------------------------------------------- trips day stage
@@ -636,6 +694,35 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
             trips[trips["person_id"] == person_id][list(day_trips.columns)].reset_index(drop=True))
     # The CONTRACT columns stay first, as the pre-assignment view has them.
     assert list(day_trips.columns)[:len(CONTRACT)] == CONTRACT
+
+
+def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(caplog):
+    """Ruling R9 wiring: the stage must hand the donor ATTRIBUTES to the replacement.
+
+    Donor "d4" is matched but has no rows in ``donor_trips`` because its own day is immobile
+    (``n_trips == 0``). Without the attributes the replacement cannot know that and warns about a
+    donor_id key/dtype mismatch for 100 % of the replaced persons -- which is exactly the
+    unreadable 27.3 % signal of the 2026-09-05 proof run.
+    """
+    attributes = _donor_attributes()
+    attributes.loc[attributes["donor_id"] == "d4", "n_trips"] = 0
+    donor_trips = _donor_trips()
+    donor_trips = donor_trips[donor_trips["donor_id"] != "d4"].reset_index(drop=True)
+    states = _states_frame([
+        {"person_id": 1, "commute_day_state": "home", "donor_id": "d4", "coarsening_level": 0},
+    ])
+    stages = {"synthesis.population.trips": _trips(),
+              STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
+              DONOR_STAGE: (attributes, donor_trips, {"enabled": True})}
+    context = _context(TRIPS, stages=stages,
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True})
+
+    with caplog.at_level("WARNING",
+                         logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        day_trips = TRIPS.execute(context)
+
+    assert len(day_trips[day_trips["person_id"] == 1]) == 0   # a valid trip-less home day
+    assert not any("donor_id key or dtype mismatch" in message for message in caplog.messages)
 
 
 def test_matches_from_states_keeps_only_home_persons_with_a_donor():

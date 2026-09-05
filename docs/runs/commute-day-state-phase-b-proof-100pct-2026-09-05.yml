@@ -1,7 +1,7 @@
 id: commute-day-state-phase-b-proof-100pct-2026-09-05
 date: '2026-09-05'
 repository:
-  commit: 96e35e65
+  commit: ceaf147c
   branch: feature/commute-day-state-phase-b
   notes: 'The branch was NOT pushed. The 60 files it changes relative to origin/main c9b841d9
     (the commute_day package, the two analysis stages, the vendored synthesis/output.py and
@@ -186,8 +186,8 @@ validation:
     SrV one: over the 304,900 WORKERS the realised states are at_workplace 296,599 (0.9728),
     home 5,086 (0.0167), absent 3,215 (0.0105). Over the EMPLOYED universe the model''s work
     participation is 267,194/540,425 = 0.4944 with the flag OFF (delta -15.67 pp against the SrV
-    0.6511) and 260,082/540,425 = 0.4813 with the flag ON (delta -16.98 pp): the day-state model
-    moves this share FURTHER DOWN by 1.31 pp, which ADR-0104 predicted and explicitly declined to
+    0.6511) and 260,082/540,425 = 0.4813 with the flag ON (delta -16.99 pp): the day-state model
+    moves this share FURTHER DOWN by 1.32 pp, which ADR-0104 predicted and explicitly declined to
     treat as this model''s fit criterion. The ON figure is read from the run log; the ON table
     was not written because the raise came after it was computed.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-05/off/work_participation_by_kreis.csv
@@ -268,7 +268,16 @@ validation:
     0 chains dropped by the resample, 1,780 (22.2 %) with no usable commute distance, 12 with
     sex outside {1, 2}. POOL SIZE PER CELL is UNKNOWN: the diagnostics dict records the level a
     person was matched at, not the number of donors available in each matching cell, so the
-    fourth pre-registered diagnostic is not measured by this run.'
+    fourth pre-registered diagnostic is not measured by this run.
+    ZERO-ROW DONORS, reported here because it is the loudest warning the ON run emitted and the
+    three passes above do not cover it: 1,390 of the 5,086 matched donors (27.3 %) had ZERO rows
+    in donor_trips, above the 1 % bound plan_replacement warns at. The donor pool is 32.5 %
+    immobile BY CONSTRUCTION (2,605 of 8,026 donors have no MiD trip at all, see DONOR POOL
+    above), and an immobile donor legitimately gives the receiving person a trip-less home day --
+    but this run''s code counted an immobile donor and a donor_id key mismatch as the SAME thing,
+    so whether any part of the 27.3 % is a key mismatch is UNKNOWN. It cannot be settled from the
+    recorded artefacts: the two causes were never separated. Ruling R9 splits the counter
+    (n_donors_immobile vs n_donors_without_trips) and the re-run will resolve it.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-05/on/state_diagnostics.json,
     .../run_log_excerpts.txt'
   notes: 'The 22.2 % of donors with no usable commute distance is a property of the DONOR POOL

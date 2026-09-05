@@ -80,13 +80,17 @@ def execute(context):
         return trips
 
     state_output = context.stage("braunschweig.synthesis.commute_day.state_stage")
-    _donor_attributes, donor_trips, _donor_diagnostics = context.stage(
+    donor_attributes, donor_trips, _donor_diagnostics = context.stage(
         "braunschweig.synthesis.commute_day.home_office_donors_stage")
     states = state_output["states"]
     matches = matches_from_states(states)
 
+    # Ruling R9: the attributes carry n_trips, which is what lets build_day_trips tell an
+    # EXPECTED immobile donor day (n_trips == 0) apart from a donor_id join failure -- both look
+    # like "no rows for this donor" in donor_trips alone.
     day_trips, diagnostics = build_day_trips(trips, states, matches, donor_trips,
-                                             random_seed=int(context.config("random_seed")))
+                                             random_seed=int(context.config("random_seed")),
+                                             donor_attributes=donor_attributes)
     logger.info("%s reporting-day trips: %d rows for %d persons (from %d rows for %d persons); "
                 "diagnostics: %s", _LOG_TAG, len(day_trips), day_trips["person_id"].nunique(),
                 len(trips), trips["person_id"].nunique(), diagnostics)

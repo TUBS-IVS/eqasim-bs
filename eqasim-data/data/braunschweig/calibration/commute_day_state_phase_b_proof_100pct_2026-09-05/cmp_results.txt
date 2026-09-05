@@ -38,6 +38,6 @@ ON   3,369,358 trips, 865,859 persons with at least one trip  (-23,340 trips = -
 ## Blocking defect behind the aborted ON output line (measured on the cached ON frames)
 36 of the 5,086 persons drawn to home (0.71 %) receive a MiD home-office-day donor whose
 chain contains an education activity while the person has NO education location; every one
-of the 296,727 persons with a work activity and all other 178,600 with an education activity
-do have theirs. find_assignment_problems then builds a problem with origin/destination None
+of the 296,727 persons with a work activity and 178,564 of the 178,600 with an education
+activity do have theirs. find_assignment_problems then builds a problem with origin/destination None
 and the secondary chainsolver raises AttributeError.

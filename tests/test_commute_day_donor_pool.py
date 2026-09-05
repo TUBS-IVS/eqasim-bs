@@ -317,3 +317,63 @@ def test_build_home_office_donor_pool_distinguishes_chain_dropped_from_immobile(
     assert "21_1" not in set(trips["donor_id"].unique())
     assert diagnostics["n_immobile"] == 0
     assert diagnostics["n_chain_dropped_by_resample"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Rulings R7 and R9: the trip-derived donor attributes
+# ---------------------------------------------------------------------------
+
+def test_build_home_office_donor_pool_carries_n_trips_and_the_fixed_purpose_flags():
+    """``n_trips`` (0 for the immobile donor) plus ``has_education_leg`` / ``has_work_leg``.
+
+    The fixture's donors travel for escort (W_ZWECK 6), work (1) and home (8) only, so no chain
+    contains an education activity; "2_1" and "2_2" have a work trip and "2_3" is immobile.
+    """
+    attributes, trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        _persons_fixture(), _wege_fixture(), _households_fixture(), random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True)
+
+    by_donor = attributes.set_index("donor_id")
+    assert by_donor.loc["2_3", "n_trips"] == 0            # immobile, NOT a missing donor
+    assert by_donor.loc["2_1", "n_trips"] == len(trips[trips["donor_id"] == "2_1"])
+    assert by_donor["n_trips"].sum() == len(trips)
+    assert not by_donor["has_education_leg"].any()
+    assert bool(by_donor.loc["2_1", "has_work_leg"]) is True
+    assert bool(by_donor.loc["2_3", "has_work_leg"]) is False
+    assert diagnostics["n_donors_with_education_leg"] == 0
+    assert diagnostics["n_donors_with_work_leg"] == 2
+
+
+def test_donor_with_an_education_trip_is_flagged_has_education_leg():
+    """Read from the BUILT chain, so the flag follows the purpose mapping, not the raw code."""
+    wege = _wege_fixture()
+    # Donor "1_1"'s first trip becomes an education trip (MiD W_ZWECK 3 -> purpose "education").
+    wege.loc[0, "W_ZWECK"] = 3
+
+    attributes, trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        _persons_fixture(), wege, _households_fixture(), random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True)
+
+    assert "education" in set(trips.loc[trips["donor_id"] == "1_1", "following_purpose"])
+    by_donor = attributes.set_index("donor_id")
+    assert bool(by_donor.loc["1_1", "has_education_leg"]) is True
+    assert bool(by_donor.loc["2_1", "has_education_leg"]) is False
+    assert diagnostics["n_donors_with_education_leg"] == 1
+
+
+def test_attach_trip_derived_attributes_counts_both_trip_ends():
+    """An education activity is evidence at EITHER end of a leg (arrival and departure)."""
+    attributes = pd.DataFrame({"donor_id": ["d1", "d2", "d3"]})
+    trips = pd.DataFrame({
+        "donor_id":          ["d1", "d2"],
+        "preceding_purpose": ["education", "home"],
+        "following_purpose": ["home", "work"],
+    })
+    out = donor_pool.attach_trip_derived_attributes(attributes, trips).set_index("donor_id")
+    assert list(out["n_trips"]) == [1, 1, 0]
+    assert bool(out.loc["d1", "has_education_leg"]) is True
+    assert bool(out.loc["d2", "has_education_leg"]) is False
+    assert bool(out.loc["d2", "has_work_leg"]) is True
+    assert bool(out.loc["d3", "has_work_leg"]) is False

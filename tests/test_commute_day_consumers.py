@@ -536,23 +536,49 @@ def test_commute_day_state_shares_divides_by_the_employed_universe():
     assert np.isnan(empty["share_home"]) and np.isnan(empty[WP.NO_WORKPLACE_SHARE])
 
 
-def test_commute_day_state_shares_counts_workers_outside_the_employed_universe():
-    """A worker who is not flagged employed cannot enter an employed-based share."""
+def test_commute_day_state_shares_counts_not_employed_workers_without_raising():
+    """Ruling R6 branch (b): a worker whose person EXISTS but is not flagged employed.
+
+    That is a universe difference, not a join failure: it is counted (in ``stats`` and in the
+    table's own ``n_workers_not_employed`` column), excluded from every employed-based share, and
+    must NEVER raise -- not even at the DEFAULT bound, which the 20 %-outside fixture here would
+    trip if the two causes were still conflated.
+    """
     persons = _check_1_persons()
     homes = _check_1_homes(persons)
     states = _check_1_states({**_WORKER_STATES, 9: "at_workplace"})  # 9 is NOT employed
     stats = {}
-    # The bound is relaxed here because this fixture is 20 % outside on purpose; the bound
-    # itself is covered by test_commute_day_state_shares_raises_above_the_outside_universe_bound.
     table = WP.commute_day_state_shares(states, persons, homes,
-                                        _participation_table(persons, homes, 0.35),
-                                        max_states_outside_employed_share=1.0, stats=stats)
+                                        _participation_table(persons, homes, 0.35), stats=stats)
     assert stats["n_states"] == 5
     assert stats["n_workers_in_employed_universe"] == 4
-    assert stats["n_states_outside_employed_universe"] == 1
+    assert stats["n_workers_not_employed"] == 1
+    assert stats["share_workers_not_employed"] == pytest.approx(0.2)
+    # The join-failure residual -- the only one that can raise -- is empty.
+    assert stats["n_states_outside_employed_universe"] == 0
     zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
     assert zgb["n_employed"] == 8 and zgb["n_workers"] == 4
+    assert zgb["n_workers_not_employed"] == 1
     assert zgb["share_at_workplace"] == pytest.approx(0.25)
+    # The count is per home Kreis and the zgb row is exactly their union.
+    kreis = table[table["code"] == "03101"].iloc[0]
+    assert kreis["n_workers_not_employed"] == 1
+    assert table.loc[table["code"] == "03102", "n_workers_not_employed"].iloc[0] == 0
+    # The check-1 section reports it rather than leaving the reader to infer the two cohorts.
+    section = "\n".join(WP._state_shares_section(table))
+    assert "n_workers_not_employed" in section and "UNIVERSE DIFFERENCE" in section
+
+
+def test_commute_day_state_shares_warns_but_never_raises_on_many_not_employed(caplog):
+    """Ruling R6: the not-employed rate is a warning even far above the 5 % warn bound."""
+    persons = _check_1_persons(extra_not_employed=(9, 10))
+    homes = _check_1_homes(persons)
+    states = _check_1_states({1: "at_workplace", 9: "at_workplace", 10: "home"})
+    with caplog.at_level("WARNING"):
+        table = WP.commute_day_state_shares(states, persons, homes,
+                                            _participation_table(persons, homes, 0.35))
+    assert "NOT flagged employed" in caplog.text
+    assert table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]["n_workers_not_employed"] == 2
 
 
 def test_commute_day_state_shares_excludes_persons_outside_the_zgb():
@@ -592,13 +618,17 @@ def test_commute_day_state_shares_raises_when_no_state_matches_an_employed_perso
 
 
 def test_commute_day_state_shares_raises_above_the_outside_universe_bound():
-    """Most states outside the employed universe means the cohort is not the one measured."""
-    # 8 employed persons; 4 matching states plus 4 that match nobody -> 50 % outside.
+    """Ruling R6 branch (a): states whose person_id matches NO population row at all.
+
+    Person ids 901-904 exist in no population frame, so they are a join failure and keep the
+    fatal semantics -- unlike the not-employed persons of the test above.
+    """
+    # 8 employed persons; 4 matching states plus 4 that match nobody -> 50 % unresolvable.
     persons = _check_1_persons()
     homes = _check_1_homes(persons)
     states = _check_1_states({**_WORKER_STATES, 901: "home", 902: "home", 903: "home",
                               904: "home"})
-    with pytest.raises(RuntimeError, match="outside the employed universe"):
+    with pytest.raises(RuntimeError, match="resolve to no employed-universe row at all"):
         WP.commute_day_state_shares(states, persons, homes,
                                     _participation_table(persons, homes, 0.35))
 
@@ -620,7 +650,8 @@ def test_commute_day_state_shares_tolerates_a_one_percent_mismatch(caplog):
     assert stats["n_states"] == 100
     assert stats["n_states_outside_employed_universe"] == 1
     assert stats["share_states_outside_employed_universe"] == pytest.approx(0.01)
-    assert "outside it" in caplog.text
+    assert stats["n_workers_not_employed"] == 0
+    assert "resolve to no employed-universe row at all" in caplog.text
     zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
     assert zgb["n_employed"] == 100 and zgb["n_workers"] == 99
     assert zgb["share_at_workplace"] == pytest.approx(0.99)

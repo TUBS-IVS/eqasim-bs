@@ -10,6 +10,14 @@ education by the model's age levels. Compares in ROUTED km: euclidean * detour f
 Outputs go under ``<output_path>/analysis/srv_distance_validation/``. This stage reads
 cached synthesis stages only (no MATSim), so it runs in minutes on a cached 100% run.
 
+WORKER UNIVERSE (ADR-0104 ruling R5): when the reporting-day state model is enabled
+(``commute_day_state_enabled``), the work comparison is measured over the workers who actually
+COMMUTED on the reporting day (``commute_day_state == "at_workplace"``), which is the universe
+the SrV bands are defined on -- see :func:`reporting_day_workers` for why the assigned-workplace
+universe cannot answer that question. The assigned-workplace measurement is kept beside it as
+:data:`ALL_ASSIGNED_FILE`. With the model OFF the two universes are identical and every output
+file is unchanged.
+
 KNOWN QUIRK (n_model off-by-one, disclosed rather than silently left to be rediscovered):
 the ZGB aggregate row's ``n_model`` counts every scope-matching person in the realised
 work/education frame, INCLUDING persons whose home Kreis (``ars5``) could not be resolved
@@ -55,6 +63,18 @@ KEY_SUBDIR = "srv_distance_output_subdir"
 KEY_MAX_UNMATCHED_HOME_SHARE = "srv_distance_max_unmatched_home_share"
 KEY_WARN_UNMATCHED_DESTINATION_SHARE = "srv_distance_warn_unmatched_destination_share"
 KEY_SENSITIVITY_THRESHOLDS = "srv_distance_sensitivity_thresholds"
+#: Whether the reporting-day state model (ADR-0104) is active. It decides the WORKER UNIVERSE of
+#: the work comparison below -- see :func:`reporting_day_workers` and ruling R5.
+KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
+DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
+STATE_STAGE = "braunschweig.synthesis.commute_day.state_stage"
+#: Column carrying the drawn reporting-day state, and the one value that means "this worker
+#: actually commuted to their workplace on the reporting day".
+STATE_COLUMN = "commute_day_state"
+STATE_AT_WORKPLACE = "at_workplace"
+#: Second output file (ON path only): the work comparison over EVERY worker with an assigned
+#: workplace, i.e. the universe this stage measured before ruling R5.
+ALL_ASSIGNED_FILE = "commute_by_kreis_all_assigned.csv"
 # Minor: a plain literal -- os.path.join(output_path, DEFAULT_SUBDIR) happens once, at use.
 DEFAULT_SUBDIR = "analysis/srv_distance_validation"
 EQASIM_CDF_PROBABILITIES = np.linspace(0.0, 1.0, 20)
@@ -114,6 +134,14 @@ def configure(context):
     context.stage("synthesis.population.spatial.primary.locations")
     context.stage("synthesis.population.enriched")
     context.stage("braunschweig.analysis.reference.srv.commute_distance")
+    # Declared only when the model is on -- the same gate every other consumer of the state stage
+    # uses (braunschweig.analysis.synthesis.work_participation_by_kreis,
+    # braunschweig.matsim.scenario.population, braunschweig.synthesis.commute_day.output_day,
+    # braunschweig.analysis.cordon_validation), so a workflow running with the model off never
+    # carries the donor/state chain in its DAG for a universe it would not restrict anyway.
+    context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
+    if context.config(KEY_COMMUTE_DAY_STATE_ENABLED):
+        context.stage(STATE_STAGE)
     context.config("output_path")
     context.config("sampling_rate")
     context.config(KEY_DETOUR, T.DEFAULT_DETOUR_FACTOR)
@@ -304,6 +332,80 @@ def realised_work_frame(df_home_geo, df_work, df_persons, gemeinden,
                     n_dest_outside=n_dest_outside, n_nan_distance=n_nan_distance)
     return frame[["person_id", "ars5", "home_commune_id", "dest_commune_id",
                   "distance_km_euclid", "intra_gemeinde"]].reset_index(drop=True)
+
+
+def reporting_day_workers(realised_work, states, stats=None):
+    """Restrict the realised work frame to the workers who COMMUTED on the reporting day.
+
+    RULING R5, and the reason this stage's check-2 verdict could not move in the 2026-09-05 proof
+    run: :func:`realised_work_frame` measures ASSIGNED workplaces
+    (``synthesis.population.spatial.primary.locations``), which the commute-day-state model never
+    touches -- it changes WHO TRAVELS on the simulated day, not WHERE anyone works -- so the ON
+    and OFF frames were byte-identical and every band share with them. The SrV universe the
+    reference bands are defined on is "persons who made a work trip on the reporting day", so the
+    model side must be the same: a worker drawn to ``home`` (home-office day) or ``absent``
+    (weekly/far commuter away from the region) did not commute today and does not belong in it.
+
+    ``states`` is the ``states`` frame of ``braunschweig.synthesis.commute_day.state_stage``
+    (``person_id``, ``commute_day_state``; EXACTLY one row per worker). ``None`` -- the model is
+    off -- returns ``realised_work`` UNCHANGED, so the OFF path is byte-identical to before this
+    ruling.
+
+    A worker with no state row at all is EXCLUDED and counted separately
+    (``n_workers_without_state``): every worker of the primary work locations has a state by the
+    state stage's own assertion, so a non-zero count is a person_id join defect, not a category --
+    and an unknown must not be silently read as "commuted". A universe that ends up EMPTY while
+    the input was not raises: every band share would then be NaN and read like a measurement.
+    ``stats``, if a dict, receives the universe sizes.
+    """
+    if states is None:
+        if stats is not None:
+            stats.update(commute_day_state_enabled=False, n_workers_assigned=len(realised_work),
+                         n_workers_reporting_day=len(realised_work), n_workers_without_state=0)
+        return realised_work
+
+    missing = [column for column in ("person_id", STATE_COLUMN) if column not in states.columns]
+    if missing:
+        raise ValueError(
+            f"the commute-day state frame is missing the required column(s) {missing} (present: "
+            f"{sorted(states.columns)[:20]}); the reporting-day worker universe cannot be built")
+
+    n_assigned = len(realised_work)
+    state_by_person = states.set_index("person_id")[STATE_COLUMN]
+    worker_state = realised_work["person_id"].map(state_by_person)
+    n_without_state = int(worker_state.isna().sum())
+    keep = worker_state == STATE_AT_WORKPLACE
+    n_reporting_day = int(keep.sum())
+
+    LOGGER.info(
+        "[srv_distance] reporting-day worker universe (ruling R5): %d/%d workers with an assigned "
+        "workplace are in state %r and commuted today (%.2f%%); %d did not (home or absent) and "
+        "%d have no state row at all. The SrV reference bands are defined on persons with a work "
+        "trip on the reporting day, so the comparison below uses this universe",
+        n_reporting_day, n_assigned, STATE_AT_WORKPLACE,
+        100.0 * n_reporting_day / n_assigned if n_assigned else 0.0,
+        n_assigned - n_reporting_day - n_without_state, n_without_state)
+    if n_without_state:
+        LOGGER.warning(
+            "[srv_distance] %d/%d workers (%.2f%%) have an assigned workplace but NO row in the "
+            "commute-day state frame, although the state stage asserts one row per worker; they "
+            "are EXCLUDED (an unknown state must not be read as 'commuted') -- check the "
+            "person_id join between the state stage and "
+            "synthesis.population.spatial.primary.locations",
+            n_without_state, n_assigned, 100.0 * n_without_state / n_assigned if n_assigned else 0.0)
+    if n_assigned > 0 and n_reporting_day == 0:
+        raise ValueError(
+            f"not one of the {n_assigned} workers with an assigned workplace is in state "
+            f"{STATE_AT_WORKPLACE!r}; every band share below would be NaN and read like a "
+            "measured result. This is a broken person_id join between "
+            "braunschweig.synthesis.commute_day.state_stage and this stage's work frame (check "
+            "the id dtypes on both sides), not a population in which nobody commutes")
+
+    if stats is not None:
+        stats.update(commute_day_state_enabled=True, n_workers_assigned=n_assigned,
+                     n_workers_reporting_day=n_reporting_day,
+                     n_workers_without_state=n_without_state)
+    return realised_work[keep.fillna(False).to_numpy()].reset_index(drop=True)
 
 
 def realised_education_frame(df_home_geo, df_education, df_persons,
@@ -786,12 +888,44 @@ def _sensitivity_markdown(cells_sensitivity, dec_sensitivity, thresholds_frame):
     return lines
 
 
+def _universe_lines(universe):
+    """The ruling-R5 universe paragraph; empty when the reporting-day state model is off.
+
+    Names, in the report itself, WHICH workers ``commute_by_kreis.csv`` is measured over -- the
+    one thing a reader must not have to infer, because the two universes differ by the persons
+    who did not commute on the reporting day.
+    """
+    if not universe or not universe.get("commute_day_state_enabled"):
+        return []
+    n_assigned = int(universe.get("n_workers_assigned", 0))
+    n_day = int(universe.get("n_workers_reporting_day", 0))
+    n_without_state = int(universe.get("n_workers_without_state", 0))
+    return ["", "## Worker universe of the work comparison (ADR-0104 ruling R5)", "",
+            f"commute_by_kreis.csv is measured over the {n_day} of {n_assigned} workers with an "
+            f"assigned workplace",
+            f"({100.0 * n_day / n_assigned if n_assigned else float('nan'):.2f}%) whose drawn "
+            f"reporting-day state is '{STATE_AT_WORKPLACE}', i.e. who actually",
+            "commuted on the simulated day. That is the universe the SrV reference bands are "
+            "defined on (persons with a",
+            "work trip on the reporting day); a worker drawn to 'home' or 'absent' made no work "
+            "trip today.",
+            f"{n_without_state} worker(s) have no state row at all and are excluded as unknown.",
+            "",
+            f"{ALL_ASSIGNED_FILE} carries the SAME comparison over ALL {n_assigned} workers with "
+            "an assigned workplace",
+            "(the universe measured before this ruling). It is a diagnostic: the decisions in "
+            "decisions.json are the",
+            "reporting-day ones."]
+
+
 def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None,
-                      cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None):
+                      cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None,
+                      universe=None):
     lines = ["# SrV primary-distance baseline", ""] + _provenance_lines(provenance) + [
              "Model = realised euclidean home->activity distance x detour factor; reference = SrV 2023",
              "(GIS routed, person-level, GEWICHT_W_ZENSUS, shrunk shares). Classification per the",
-             "pre-registered rule (braunschweig.calibration.decision).", "", "## Work (per scope)"]
+             "pre-registered rule (braunschweig.calibration.decision)."] \
+        + _universe_lines(universe) + ["", "## Work (per scope)"]
     for scope, d in dec_work.items():
         lines.append(f"- **{scope}**: build = {_build_label(d)} -- {d['reason']}")
     lines += ["", "| scope | code | n_model | n_ref | EMD | noise floor | class |", "|---|---|---|---|---|---|---|"]
@@ -812,7 +946,8 @@ def _summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance=None,
 
 
 def write_outputs(directory, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance=None,
-                  cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None):
+                  cells_sensitivity=None, dec_sensitivity=None, thresholds_frame=None,
+                  cells_work_all_assigned=None, universe=None):
     """Write the report artifacts. ``provenance`` (IMPORTANT 7) and the three sensitivity
     arguments are optional so the pure-helper tests can exercise this function without building
     a full stage-execute context; ``execute`` always passes all of them. The CSVs stay
@@ -827,10 +962,18 @@ def write_outputs(directory, cells_work, dec_work, cells_edu, dec_edu, quantiles
     EMD-threshold sweep). ``decisions.json`` keeps ``["work"]`` and ``["education"]`` exactly as
     the pre-registered rule produced them and carries the diagnostics under a separate
     ``["sensitivity"]`` key.
+
+    ``cells_work_all_assigned`` (ruling R5) adds :data:`ALL_ASSIGNED_FILE`, the same work
+    comparison over EVERY worker with an assigned workplace instead of over the reporting-day
+    commuters, and ``universe`` adds the paragraph of ``summary.md`` that names which of the two
+    ``commute_by_kreis.csv`` holds. Both are ``None`` when the reporting-day state model is off --
+    the two universes are then identical, and the output set is unchanged.
     """
     provenance = provenance or {}
     os.makedirs(directory, exist_ok=True)
     cells_work.to_csv(os.path.join(directory, "commute_by_kreis.csv"), index=False)
+    if cells_work_all_assigned is not None:
+        cells_work_all_assigned.to_csv(os.path.join(directory, ALL_ASSIGNED_FILE), index=False)
     cells_edu.to_csv(os.path.join(directory, "education_by_kreis_level.csv"), index=False)
     quantiles.to_csv(os.path.join(directory, "commute_quantiles_model.csv"), index=False)
     decisions = {"work": dec_work, "education": dec_edu}
@@ -850,7 +993,8 @@ def write_outputs(directory, cells_work, dec_work, cells_edu, dec_edu, quantiles
         json.dump(provenance, fh, indent=2)
     with open(os.path.join(directory, "summary.md"), "w", encoding="utf-8") as fh:
         fh.write(_summary_markdown(cells_work, dec_work, cells_edu, dec_edu, provenance,
-                                   cells_sensitivity, dec_sensitivity, thresholds_frame))
+                                   cells_sensitivity, dec_sensitivity, thresholds_frame,
+                                   universe))
 
 
 # --------------------------------------------------------------------------- stage
@@ -894,6 +1038,10 @@ def execute(context):
     df_work, df_education = context.stage("synthesis.population.spatial.primary.locations")
     df_persons = context.stage("synthesis.population.enriched")[["person_id", "household_id", "age"]]
     reference = context.stage("braunschweig.analysis.reference.srv.commute_distance")
+    # Read only when declared: configure() gates the state stage on the same flag, so reading it
+    # unconditionally would fail on a workflow that runs with the model off.
+    commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
+    df_states = (context.stage(STATE_STAGE)["states"] if commute_day_state_enabled else None)
     detour = float(context.config(KEY_DETOUR))
     emd_threshold = float(context.config(KEY_EMD_THRESHOLD))
     min_persons = int(context.config(KEY_MIN_PERSONS))
@@ -917,17 +1065,29 @@ def execute(context):
         sampling_rate, out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
-    work_stats, edu_stats = {}, {}
-    realised_work = realised_work_frame(homes, df_work, df_persons, gemeinden,
-                                        max_unmatched_home_share=max_unmatched_home_share,
-                                        warn_unmatched_destination_share=warn_unmatched_destination_share,
-                                        stats=work_stats)
+    work_stats, edu_stats, universe = {}, {}, {}
+    realised_assigned = realised_work_frame(homes, df_work, df_persons, gemeinden,
+                                            max_unmatched_home_share=max_unmatched_home_share,
+                                            warn_unmatched_destination_share=warn_unmatched_destination_share,
+                                            stats=work_stats)
+    # Ruling R5: the pre-registered comparison measures the workers who actually commuted on the
+    # reporting day, which is the universe the SrV bands are defined on. With the model OFF this
+    # is the identical frame and every output is unchanged.
+    realised_work = reporting_day_workers(realised_assigned, df_states, stats=universe)
     realised_edu = realised_education_frame(homes, df_education, df_persons,
                                             max_unmatched_home_share=max_unmatched_home_share,
                                             stats=edu_stats)
 
     cells_work, dec_work = compare_work(realised_work, reference["commute"], detour, emd_threshold, min_persons,
                                         aggregate_requires_min_persons)
+    # The ASSIGNED-workplace view stays visible beside it (ON path only): the same comparison over
+    # every worker with an assigned workplace, written as a second table. Its decisions are NOT
+    # pre-registered and are deliberately discarded -- decisions.json keeps the reporting-day ones.
+    cells_work_all_assigned = None
+    if df_states is not None:
+        cells_work_all_assigned, _dec_all_assigned = compare_work(
+            realised_assigned, reference["commute"], detour, emd_threshold, min_persons,
+            aggregate_requires_min_persons)
     cells_edu, dec_edu = compare_education(realised_edu, reference["education"], detour, emd_threshold, min_persons,
                                            aggregate_requires_min_persons)
     quantiles = model_quantiles(realised_work)
@@ -948,7 +1108,10 @@ def execute(context):
             "warn_unmatched_destination_share": warn_unmatched_destination_share,
             "sensitivity_thresholds": sensitivity_thresholds,
             "sampling_rate": sampling_rate,
+            "commute_day_state_enabled": commute_day_state_enabled,
         },
+        # Ruling R5: which workers the work comparison above is measured over.
+        "universe": universe,
         "reference": {
             "srv_dir": str(reference["srv_dir"]),
             "n_commute_rows": int(len(reference["commute"])),
@@ -971,13 +1134,16 @@ def execute(context):
         },
     }
     write_outputs(out_dir, cells_work, dec_work, cells_edu, dec_edu, quantiles, provenance,
-                  cells_sensitivity, dec_sensitivity, thresholds_frame)
+                  cells_sensitivity, dec_sensitivity, thresholds_frame,
+                  cells_work_all_assigned=cells_work_all_assigned,
+                  universe=universe if commute_day_state_enabled else None)
     for scope, d in dec_work.items():
         LOGGER.info("[srv_distance] work/%s: %s", scope, d["reason"])
     for level, d in dec_edu.items():
         LOGGER.info("[srv_distance] education/%s: %s", level, d["reason"])
     return dict(commute=cells_work, education=cells_edu, quantiles=quantiles,
                 sensitivity=cells_sensitivity, thresholds=thresholds_frame,
+                commute_all_assigned=cells_work_all_assigned, universe=universe,
                 decisions={"work": dec_work, "education": dec_edu,
                            "sensitivity": {
                                "variants": dec_sensitivity,

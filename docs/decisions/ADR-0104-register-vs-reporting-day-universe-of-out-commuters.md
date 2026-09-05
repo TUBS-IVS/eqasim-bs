@@ -203,6 +203,54 @@
      (a `home` or `absent` person makes no work trip, so it moves it FURTHER DOWN), which is
      exactly why it must not be treated as this model's fit criterion: Phase B check (1) compares
      the THREE-WAY split against SrV, not this single share.
+- **Amendments forced by the Phase B proof run (2026-09-05, fix wave A):** the run
+  (`docs/runs/commute-day-state-phase-b-proof-100pct-2026-09-05.yml`) blocked on check 1, could
+  not move check 2, and could not write an ON population at all. The three amendments below
+  change WHAT is measured or matched; they are written down here, rather than applied quietly,
+  because altering a check after seeing its own result is precisely what pre-registration exists
+  to prevent. **None of them moves a threshold**: the +/- 3 pp band, the 3 % `100_plus` bound,
+  `cds_max_states_outside_employed_share` = 0.05 and
+  `commute_day_max_not_replaceable_share` = 0.5 all stand unchanged.
+  1. **Check 2 is measured over the reporting-day commuters, not over the assigned workplaces**
+     (ruling R5). `braunschweig.analysis.synthesis.commute_distance_by_kreis` reads
+     `synthesis.population.spatial.primary.locations`, i.e. WHERE people work, which this model
+     never changes -- the ON and OFF location frames of the proof run were byte-identical, and so
+     was every band share, so check 2 as executed could not have registered any effect of the
+     model whatever it did. The SrV reference bands are defined on persons who made a work trip on
+     the reporting day, so the model side is now restricted to workers whose drawn state is
+     `at_workplace`. The assigned-workplace measurement is kept beside it as
+     `commute_by_kreis_all_assigned.csv` and is not deleted: it remains the right universe for
+     questions about the workplace ASSIGNMENT, and keeping both makes the change auditable.
+  2. **Check 1's guard distinguishes a join failure from a universe difference** (ruling R6). The
+     guard fired at 12.37 % on a residual in which every person_id matched a population row: those
+     37,706 workers have an assigned workplace but are not flagged `employed` by
+     `synthesis.population.enriched`. That is a difference between the model's worker cohort and
+     the employed cohort SrV surveyed -- a finding to report, not a defect to abort on -- so it is
+     now counted (`n_workers_not_employed`, per Kreis in `commute_day_state_shares.csv` and in
+     the check-1 section) and warned about, while states that resolve to no population row at all
+     keep the fatal semantics the guard was written for. **The gap itself is NOT explained by this
+     amendment**: why the model assigns workplaces to 12.37 % more persons than the population
+     calls employed is an open question, tracked with the -15.67 pp participation gap above.
+  3. **A fourth hard matching criterion: the education anchor** (ruling R7). ADR-0104's three hard
+     criteria (active escort, children under 14, car availability) do not cover FIXED PURPOSES the
+     receiving person cannot anchor. 36 of the 5,086 persons drawn to `home` (0.71 %) received a
+     donor chain containing an `education` activity while having no education location, and the
+     secondary chainsolver raised on the `None` origin/destination that produces. A donor whose
+     chain contains an education activity is therefore eligible only for a person who has an
+     education location; a donor without one still matches anyone. Of the three candidate fixes,
+     re-anchoring the activity (inventing a location the person does not have) and dropping the
+     leg (silently editing a transplanted real day) were rejected in favour of not transplanting
+     such a day at all -- the person is then downgraded to `at_workplace` by the model's existing,
+     already-instrumented not-replaceable path, so the effect is visible in the diagnostics rather
+     than hidden inside a repaired chain. The cost is a smaller effective donor pool for persons
+     without an education location, which the coarsening cascade and the not-replaceable rate
+     both report.
+  Two further fixes of the same wave (rulings R8 and R9) are DIAGNOSTIC ONLY and change no
+  measurement: the plan replacement no longer assembles replaced rows column by column (657,888
+  pandas `PerformanceWarning`s, a 254 MB run log), and an immobile donor (`n_trips == 0`, 32.5 %
+  of the pool by construction) is now counted apart from a donor absent through a `donor_id`
+  mismatch, which the run conflated into one unreadable 27.3 % rate.
+
 - **Assumptions (explicit, none of them observed):**
   1. **Far threshold 200 km.** Taken from the MiD `P_ARB_ENTF` top-code: MiD carries no evidence
      at all above 200 km, so the threshold is where the reference stops, not where behaviour

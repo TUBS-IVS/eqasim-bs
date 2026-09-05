@@ -96,14 +96,28 @@ KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 #: written at all (rather than written as a table of constants).
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
 DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
-#: Above this share of the state frame that falls OUTSIDE the employed universe the check-1
-#: table RAISES. The join from the drawn states onto the employed persons is a plain person_id
-#: match, so a dtype drift between the state stage and synthesis.population.enriched would match
-#: NOTHING and produce a table of 0 / 0 / 0 with share_no_workplace = 1.0 that reads like a
-#: measurement (CLAUDE.md "Fallback transparency": a fallback that fires for everyone is a
-#: broken primary method, not a result). 5 % mirrors cds_max_unmatched_home_share.
+#: Above this share of the state frame that cannot be RESOLVED against the population at all --
+#: no ``synthesis.population.enriched`` row, or an employed person whose home resolves to no ZGB
+#: Kreis -- the check-1 table RAISES. The join from the drawn states onto the employed persons is
+#: a plain person_id match, so a dtype drift between the state stage and
+#: synthesis.population.enriched would match NOTHING and produce a table of 0 / 0 / 0 with
+#: share_no_workplace = 1.0 that reads like a measurement (CLAUDE.md "Fallback transparency": a
+#: fallback that fires for everyone is a broken primary method, not a result). 5 % mirrors
+#: cds_max_unmatched_home_share.
+#:
+#: Ruling R6: workers whose person DOES exist but is not flagged ``employed`` are a UNIVERSE
+#: DIFFERENCE, not a join failure (measured on the 100 % proof run of 2026-09-05: 37,706 of
+#: 304,900 workers, 12.37 %, which tripped this guard although every one of those person_ids
+#: matched), so they are counted separately (see :data:`WARN_WORKERS_NOT_EMPLOYED_SHARE`) and can
+#: never raise it.
 KEY_MAX_STATES_OUTSIDE_SHARE = "cds_max_states_outside_employed_share"
 DEFAULT_MAX_STATES_OUTSIDE_SHARE = 0.05
+#: Share of the state frame whose person exists in the population but is NOT flagged ``employed``
+#: above which the check-1 table WARNS -- never raises (ruling R6). The model assigning workplaces
+#: to persons the population does not call employed is a finding about the two universes, and it
+#: is reported as such: the count is in ``commute_day_state_shares.csv``, in the check-1 section
+#: of ``summary.md`` and in ``provenance.json``.
+WARN_WORKERS_NOT_EMPLOYED_SHARE = 0.05
 
 #: Euclidean -> routed conversion, same convention (and default) as
 #: ``braunschweig.analysis.synthesis.commute_distance_by_kreis``; the SrV/MiD distance classes
@@ -173,9 +187,13 @@ STATE_COLUMN = "commute_day_state"
 #: by construction: the first three cover the employed persons that HAVE an assigned workplace
 #: (``n_workers`` of them, a count, not a denominator) and the fourth the employed remainder
 #: without one, for whom the model draws no state at all.
+#: ``n_workers_not_employed`` is a COUNT beside them and NEVER a denominator (ruling R6): the
+#: workers of that code whose person exists in the population but is not flagged ``employed``.
+#: They are outside the SrV universe, so they enter no share above; the count is reported so a
+#: reader can see how far the model's worker cohort reaches beyond the employed one.
 STATE_SHARE_COLUMNS = (
-    "code", "n_workers", "share_at_workplace", "share_home", "share_absent",
-    "share_no_workplace", "n_employed", "share_employed_no_work_trip",
+    "code", "n_workers", "n_workers_not_employed", "share_at_workplace", "share_home",
+    "share_absent", "share_no_workplace", "n_employed", "share_employed_no_work_trip",
     "srv_share_home_office_day", "srv_share_work_trip", "srv_share_neither",
     "delta_no_work_trip_pp",
 )
@@ -470,18 +488,21 @@ def compare_participation(model, srv_table):
 
 # ------------------------------------------------------------------ reporting-day states (check 1)
 
-def _state_share_row(code, subset):
+def _state_share_row(code, subset, n_workers_not_employed=0):
     """One row of the state-share table, over ``subset``'s EMPLOYED persons.
 
     ``subset`` is the employed cohort of one code (see :func:`_employed_with_home_kreis`) with a
     ``commute_day_state`` column that is missing for every employed person WITHOUT an assigned
     workplace. Each of the three state shares and :data:`NO_WORKPLACE_SHARE` therefore divides
     by ``len(subset)`` = ``n_employed``, the universe the SrV reference is defined on, and the
-    four sum to 1. ``n_workers`` is reported as a COUNT beside them, never as a denominator.
+    four sum to 1. ``n_workers`` is reported as a COUNT beside them, never as a denominator, and
+    so is ``n_workers_not_employed`` (ruling R6, see :data:`STATE_SHARE_COLUMNS`), which is
+    supplied by the caller because those persons are by definition NOT in ``subset``.
     """
     n_employed = int(len(subset))
     n_workers = int(subset[STATE_COLUMN].notna().sum())
-    row = {"code": code, "n_workers": n_workers, "n_employed": n_employed}
+    row = {"code": code, "n_workers": n_workers, "n_employed": n_employed,
+           "n_workers_not_employed": int(n_workers_not_employed)}
     for state in COMMUTE_DAY_STATES:
         # No employed person: a share is undefined, not zero (same convention as
         # _participation_row -- never substitute a value for an absent measurement).
@@ -490,6 +511,42 @@ def _state_share_row(code, subset):
     row[NO_WORKPLACE_SHARE] = (float((n_employed - n_workers) / n_employed)
                                if n_employed else float("nan"))
     return row
+
+
+def workers_not_employed(states, persons, homes_with_ars5):
+    """The drawn states whose person EXISTS in the population but is not flagged ``employed``.
+
+    Ruling R6. The check-1 residual "states outside the employed universe" has two causes that
+    must not be conflated, because only one of them is a defect:
+
+    * the person_id matches NO row of ``synthesis.population.enriched`` at all -- a join failure
+      (a dtype drift between the state stage and the population), which keeps raising above
+      ``cds_max_states_outside_employed_share``;
+    * the person_id matches, but the enriched population does not flag that person ``employed``
+      -- a UNIVERSE DIFFERENCE: the model gave a workplace to somebody the population does not
+      call employed. Nothing is broken; those persons simply cannot enter a share whose
+      denominator is the employed cohort SrV surveyed.
+
+    Returns a frame ``person_id, ars5`` (home Kreis, ``NaN`` when the household has no home
+    geography row) with one row per state of the SECOND kind. A missing ``employed`` flag counts
+    as NOT employed, the same convention :func:`_employed_with_home_kreis` applies.
+    """
+    _require_columns(states, ("person_id",), "the commute-day state frame")
+    _require_columns(persons, ("person_id", "household_id", "employed"),
+                     "synthesis.population.enriched")
+    _require_columns(homes_with_ars5, ("household_id", "ars5"), "the home-geography frame")
+
+    population = persons[["person_id", "household_id", "employed"]].drop_duplicates("person_id")
+    # An explicit presence indicator, not "household_id is not NaN": the merge must distinguish
+    # "no row in the population" from "a row whose columns happen to be null".
+    population = population.assign(in_population=True)
+    frame = states[["person_id"]].merge(population, on="person_id", how="left", validate="m:1")
+    is_present = frame["in_population"].fillna(False).astype(bool)
+    is_employed = frame["employed"].fillna(False).astype(bool)
+    not_employed = frame.loc[is_present & ~is_employed, ["person_id", "household_id"]]
+    not_employed = not_employed.merge(_dedupe_homes(homes_with_ars5, ("household_id", "ars5")),
+                                      on="household_id", how="left")
+    return not_employed[["person_id", "ars5"]].reset_index(drop=True)
 
 
 def commute_day_state_shares(states, persons, homes_with_ars5, participation,
@@ -532,13 +589,22 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     Workers whose home resolves to no Kreis, to a Kreis outside the ZGB, or who are not flagged
     ``employed`` at all are outside the employed universe: they are excluded, counted and logged
     (CLAUDE.md "Fallback transparency") rather than silently inflating a share above 1. That
-    residual is also GUARDED: the join from the drawn states onto the employed persons is a
-    plain ``person_id`` match, so a dtype drift between the state stage and
-    ``synthesis.population.enriched`` would match NOTHING and produce a table of 0 / 0 / 0 with
-    ``share_no_workplace`` = 1.0 that reads exactly like a measured result. Above
-    ``max_states_outside_employed_share`` -- and whenever a NON-EMPTY employed universe ends up
-    with no matched worker at all -- the function raises ``RuntimeError`` instead of returning
-    that table. The rate is logged either way.
+    residual is SPLIT BY CAUSE (ruling R6) and only one half is fatal:
+
+    * a state whose person is present but NOT flagged ``employed`` (:func:`workers_not_employed`)
+      is a universe difference -- the model gave a workplace to somebody the population does not
+      call employed. It is counted (``n_workers_not_employed`` /
+      ``share_workers_not_employed``, and per code in the table), warned about above
+      :data:`WARN_WORKERS_NOT_EMPLOYED_SHARE`, and NEVER raises.
+    * everything else -- no ``synthesis.population.enriched`` row at all, or an employed person
+      whose home falls outside the ZGB -- keeps raising above
+      ``max_states_outside_employed_share``. The join from the drawn states onto the employed
+      persons is a plain ``person_id`` match, so a dtype drift between the state stage and the
+      population would match NOTHING and produce a table of 0 / 0 / 0 with
+      ``share_no_workplace`` = 1.0 that reads exactly like a measured result.
+
+    A NON-EMPTY employed universe with no matched worker at all also raises. Every rate is logged
+    either way.
 
     ``employed``, when given, is the already-computed universe from
     :func:`_employed_with_home_kreis` (the stage computes it ONCE per run and hands the same
@@ -572,20 +638,36 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     employed[STATE_COLUMN] = employed["person_id"].map(
         states.set_index("person_id")[STATE_COLUMN])
 
-    # Workers OUTSIDE the employed universe (not flagged employed, no home Kreis, or a home
-    # outside the ZGB). They cannot enter an employed-based share, so they are dropped here --
-    # loudly: a large residual would mean the model assigns workplaces to persons the population
-    # does not call employed, which is a finding about the model, not a rounding detail.
+    # Workers OUTSIDE the employed universe. They cannot enter an employed-based share, so they
+    # are dropped here -- loudly, and SPLIT by cause (ruling R6): a person the population does not
+    # flag employed is a universe difference (warned, counted, never fatal), while a person the
+    # population does not know at all is a join failure (still fatal above the threshold).
     n_states = int(len(states))
     n_workers_in_universe = int(employed[STATE_COLUMN].notna().sum())
-    n_states_outside = n_states - n_workers_in_universe
+    not_employed = workers_not_employed(states, persons, homes_with_ars5)
+    n_workers_not_employed = int(len(not_employed))
+    share_workers_not_employed = _rate(n_workers_not_employed, n_states)
+    n_states_outside = n_states - n_workers_in_universe - n_workers_not_employed
     share_outside = _rate(n_states_outside, n_states)
     LOGGER.info(
         "%s reporting-day states joined onto the employed universe: %d/%d workers matched "
-        "(%.2f%%); %d worker(s) (%.2f%%) are outside it (not flagged employed, or a home Kreis "
-        "outside the ZGB) and are excluded from every share below",
+        "(%.2f%%); %d (%.2f%%) have a person in the population that is NOT flagged employed (a "
+        "universe difference, reported as n_workers_not_employed); %d (%.2f%%) resolve to no "
+        "employed-universe row at all (no population row, or a home Kreis outside the ZGB). All "
+        "of them are excluded from every share below",
         _LOG_TAG, n_workers_in_universe, n_states, 100.0 * _rate(n_workers_in_universe, n_states),
+        n_workers_not_employed, 100.0 * share_workers_not_employed,
         n_states_outside, 100.0 * share_outside)
+    if share_workers_not_employed > WARN_WORKERS_NOT_EMPLOYED_SHARE:
+        LOGGER.warning(
+            "%s %d/%d workers (%.2f%%) have an assigned workplace but are NOT flagged employed by "
+            "synthesis.population.enriched, above %.1f%%. This is a UNIVERSE DIFFERENCE between "
+            "the model's worker cohort and the employed cohort the SrV reference is defined on, "
+            "not a join failure -- every one of these person_ids matches a population row. It is "
+            "reported (n_workers_not_employed) and never raised on; the check-1 shares below "
+            "describe the employed cohort only",
+            _LOG_TAG, n_workers_not_employed, n_states, 100.0 * share_workers_not_employed,
+            100.0 * WARN_WORKERS_NOT_EMPLOYED_SHARE)
     if len(employed) > 0 and n_workers_in_universe == 0:
         raise RuntimeError(
             f"not one of the {n_states} drawn state(s) matched any of the {len(employed)} "
@@ -596,16 +678,27 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
             "in which nobody works")
     if share_outside > max_states_outside_employed_share:
         raise RuntimeError(
-            f"{n_states_outside}/{n_states} drawn state(s) ({100.0 * share_outside:.1f}%) fall "
-            f"outside the employed universe, above the configured "
-            f"{KEY_MAX_STATES_OUTSIDE_SHARE} = {max_states_outside_employed_share:.3f}. The "
-            "check-1 shares would then describe a cohort the state model largely does not "
-            "cover; check the person_id join and whether the model assigns workplaces to "
-            "persons the population does not call employed before raising the threshold")
+            f"{n_states_outside}/{n_states} drawn state(s) ({100.0 * share_outside:.1f}%) resolve "
+            f"to no employed-universe row at all, above the configured "
+            f"{KEY_MAX_STATES_OUTSIDE_SHARE} = {max_states_outside_employed_share:.3f}. This "
+            f"count EXCLUDES the {n_workers_not_employed} worker(s) whose person exists but is "
+            "not flagged employed (a universe difference, reported separately), so what remains "
+            "is a person_id join failure between "
+            "braunschweig.synthesis.commute_day.state_stage and "
+            "synthesis.population.enriched (check the id dtypes on both sides) or a home Kreis "
+            "outside the ZGB; the check-1 shares would otherwise describe a cohort the state "
+            "model largely does not cover")
 
-    rows = [_state_share_row(code, employed[employed["ars5"] == code]) for code in ZGB_KREISE]
-    rows.append(_state_share_row(ZGB_ROW_CODE, employed))
-    table = pd.DataFrame(rows, columns=["code", "n_workers", "n_employed"]
+    # Per-code counts of the not-employed workers, over the eight ZGB Kreise only; the zgb row is
+    # exactly their union, the same convention every other count in this table follows. Workers
+    # whose home resolves to no ZGB Kreis are in the TOTAL above but in no row here.
+    not_employed_by_code = not_employed.loc[
+        not_employed["ars5"].isin(ZGB_KREISE), "ars5"].value_counts().to_dict()
+    rows = [_state_share_row(code, employed[employed["ars5"] == code],
+                             not_employed_by_code.get(code, 0)) for code in ZGB_KREISE]
+    rows.append(_state_share_row(ZGB_ROW_CODE, employed, sum(not_employed_by_code.values())))
+    table = pd.DataFrame(rows, columns=["code", "n_workers", "n_workers_not_employed",
+                                        "n_employed"]
                          + [f"share_{state}" for state in COMMUTE_DAY_STATES]
                          + [NO_WORKPLACE_SHARE])
 
@@ -647,7 +740,9 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
         stats.update(counts)
         stats.update(n_states=n_states, n_workers_in_employed_universe=n_workers_in_universe,
                      n_states_outside_employed_universe=n_states_outside,
-                     share_states_outside_employed_universe=float(share_outside))
+                     share_states_outside_employed_universe=float(share_outside),
+                     n_workers_not_employed=n_workers_not_employed,
+                     share_workers_not_employed=float(share_workers_not_employed))
     return out[list(STATE_SHARE_COLUMNS)]
 
 
@@ -1168,6 +1263,7 @@ def _state_shares_section(state_shares):
     )
     n_employed = int(row["n_employed"])
     n_workers = int(row["n_workers"])
+    n_workers_not_employed = int(row["n_workers_not_employed"])
     lines = ["", "## Check 1 (ADR-0104): reporting-day states vs SrV -- tolerance +/- 3 pp on "
              "the regional aggregate only (ASSUMPTION, pre-registered)", "",
              "DENOMINATOR: every model share below, and every SrV share it is compared to, is a "
@@ -1197,7 +1293,15 @@ def _state_shares_section(state_shares):
              "state is an",
              "interpretation, not a definitional identity.", "",
              f"ZGB employed persons: {n_employed} (sample count); of them {n_workers} with an "
-             f"assigned workplace and therefore a drawn state.", "",
+             f"assigned workplace and therefore a drawn state.",
+             f"A further {n_workers_not_employed} worker(s) with a ZGB home Kreis have an "
+             f"assigned workplace but are NOT flagged employed",
+             "by synthesis.population.enriched (column n_workers_not_employed). They are a "
+             "UNIVERSE DIFFERENCE between the model's",
+             "worker cohort and the employed cohort SrV surveyed -- not a join failure -- and "
+             "are excluded from every",
+             "share in this section; they are reported so the gap between the two cohorts stays "
+             "visible.", "",
              "| quantity (share of employed persons) | model | SrV 2023 | delta (pp) | "
              "+/- 3 pp |", "|---|---|---|---|---|"]
     for label, model_share, srv_share in pairs:
