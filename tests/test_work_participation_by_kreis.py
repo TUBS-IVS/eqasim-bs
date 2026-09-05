@@ -202,6 +202,23 @@ def test_realised_work_frame_flags_external_destinations_and_applies_the_detour_
     assert out.loc[3, "distance_class"] == "lt10"
 
 
+def test_realised_work_frame_classifies_an_exact_200km_model_distance_as_gt200():
+    """Follow-up (controller ruling R13): the model's home->work distance is a continuous
+    euclidean x detour-factor value, never subject to the MiD P_ARB_ENTF 200 km top-code, so a
+    worker whose distance lands on EXACTLY 200.0 km must classify as gt200, not 100_200 -- the
+    special case is disabled for this call (topcode_km=None)."""
+    homes = gpd.GeoDataFrame(
+        {"household_id": [1], "ars5": ["03101"]}, geometry=[Point(0.0, 0.0)], crs="EPSG:25832")
+    work = gpd.GeoDataFrame(
+        {"person_id": [1], "location_id": ["work_1"]},
+        geometry=[Point(200_000.0, 0.0)], crs="EPSG:25832")
+    locations = pd.DataFrame({"location_id": ["work_1"], "commune_id": ["EXT03241001"]})
+    persons = pd.DataFrame({"person_id": [1], "household_id": [1]})
+    out = S.realised_work_frame(homes, work, locations, persons, detour_factor=1.0)
+    assert out.loc[0, "distance_km"] == pytest.approx(200.0)
+    assert out.loc[0, "distance_class"] == "gt200"
+
+
 def test_realised_work_frame_raises_on_a_crs_mismatch():
     work = _work_points().set_crs("EPSG:3035", allow_override=True)
     with pytest.raises(ValueError, match="CRS mismatch"):

@@ -40,17 +40,21 @@
     (reporting day is a weekday) AND `M_HOFF == 1` (asked the home-office module) AND `P_STARB1`
     in (1, 2, 9); n_unweighted 49,527, of which 4,635 (9.4 %) carry no valid distance and appear
     only in the `all` row. Two caveats stated in the same header: classes are LEFT-INCLUSIVE
-    `[a, b)` and self-reported `P_ARB_ENTF` heaps on round numbers (36.2 % of valid distances are
-    multiples of 5 km; 2,159 persons report exactly 10 km, 133 exactly 100 km), so class COUNTS
-    are convention-sensitive while the weighted STATE SHARES agree within **0.0237** (2.37 pp)
-    between conventions -- MEASURED on the 2026-09-05 extraction (commit `43f74008`) by
+    `[a, b)` (chosen by convention -- spec wording, continuous model distances -- and applied
+    IDENTICALLY on the donor and the model side) and self-reported `P_ARB_ENTF` heaps on round
+    numbers (36.2 % of valid distances are multiples of 5 km; 2,159 persons report exactly 10 km,
+    133 exactly 100 km). **Both class COUNTS and weighted STATE SHARES are convention-sensitive**:
+    counts strongly (`lt10` moves between 19,100 and 21,259 persons depending on the convention),
+    shares by up to a MEASURED maximum absolute deviation of **0.0237** (2.37 pp) -- MEASURED on
+    the 2026-09-05 extraction (commit `43f74008`) by
     `commute_day_state_reference.measure_bin_convention_deviation`, which rebuilds the table a
     second time with right-inclusive bins; the figure is recorded verbatim in the committed CSV's
-    own header. (An earlier draft of this finding asserted "within 0.005" without deriving it;
-    the corrected, measured value is roughly 4.7x larger and is what is quoted throughout this
-    record -- CLAUDE.md "No invented reference values" forbids carrying the old, unmeasured
-    figure forward once a real measurement exists.) And the **200 km top-code** (202 of the 783
-    persons in the thin `100_200` class) means MiD cannot resolve anything beyond 200 km at all.
+    own header. (An earlier draft of this finding asserted the shares "stay robust ... within
+    0.005" without deriving it; the corrected, measured value is roughly 4.7x larger, and the
+    claim that only counts are convention-sensitive was itself false -- CLAUDE.md "No invented
+    reference values" forbids carrying the old, unmeasured figure or framing forward once a real
+    measurement exists.) And the **200 km top-code** (202 of the 783 persons in the thin
+    `100_200` class) means MiD cannot resolve anything beyond 200 km at all.
   - **Home-office-day donor pool**
     (`eqasim-data/data/braunschweig/mid/mid2023_home_office_donor_pool.csv`): **8,026** weekday
     module donors who worked at home (`P_STARB1 == 1`, `starb2 == 1`), by distance class `lt10`

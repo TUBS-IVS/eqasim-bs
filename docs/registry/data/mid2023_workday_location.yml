@@ -62,26 +62,27 @@ limitations: |
   (9.4%) universe persons have a missing/invalid distance and are counted only in the "all" row.
 
   Bin convention and self-report heaping (ruling R6, measured on the 2026-09-05 extraction,
-  commit 43f74008): distance classes are LEFT-INCLUSIVE [a, b) (e.g. 10_25 is [10, 25)). MiD
-  self-reported P_ARB_ENTF heaps heavily on round numbers: 36.2% of valid distances are
-  multiples of 5 km, with 2,159 persons reporting exactly 10 km, 133 reporting exactly 100 km,
-  and 202 reporting exactly the 200 km top-code. Because of this heaping, unweighted class
-  COUNTS are convention-sensitive -- the lt10 class would contain 21,259 persons under a
-  right-inclusive (a, b] convention instead of the 19,100 committed here, and 100_200 would
-  drop from 783 to 650 (both figures MEASURED by rebuilding the table a second time with
+  commit 43f74008): distance classes are LEFT-INCLUSIVE [a, b) (e.g. 10_25 is [10, 25)), chosen
+  by convention (spec wording, continuous model distances) and applied IDENTICALLY on the donor
+  and the model side. MiD self-reported P_ARB_ENTF heaps heavily on round numbers: 36.2% of
+  valid distances are multiples of 5 km, with 2,159 persons reporting exactly 10 km, 133
+  reporting exactly 100 km, and 202 reporting exactly the 200 km top-code. BOTH unweighted class
+  COUNTS and P_GEW-weighted STATE SHARES are convention-sensitive as a result -- counts strongly:
+  the lt10 class would contain 21,259 persons under a right-inclusive (a, b] convention instead
+  of the 19,100 committed here, and 100_200 would drop from 783 to 650 (both figures MEASURED by
+  rebuilding the table a second time with
   `commute_day_state_reference.measure_bin_convention_deviation`, not carried over from an
-  earlier ad-hoc scan; they reproduce the magnitudes an earlier, uncommitted controller scan
-  had estimated). P_GEW-weighted STATE SHARES are far more robust to the choice of convention
-  than the raw counts, but the maximum absolute deviation across the five share columns and
-  every distance class, AS MEASURED on this extraction, is **0.0237** (2.37 percentage points)
-  -- NOT the 0.005 figure an earlier draft of this record asserted without deriving it
-  (CLAUDE.md "No invented reference values": that number was corrected once it was actually
-  measured, rather than edited to match the old claim). The measured value is recorded verbatim
-  in the committed CSV's own header ("Bin-convention deviation" line), which is the traceable
-  source for this figure. The 200 km top-code alone (202 persons) is therefore a substantial
-  part of the already-thin 100_200 class (783 persons): that class mixes 100-200 km commutes
-  with arbitrarily long ones, and any consumer treating 100_200 as a narrow band should be
-  aware of this composition.
+  earlier ad-hoc scan; they reproduce the magnitudes an earlier, uncommitted controller scan had
+  estimated); shares by up to the measured maximum absolute deviation across the five share
+  columns and every distance class, AS MEASURED on this extraction, of **0.0237** (2.37
+  percentage points) -- NOT the "stay robust ... within 0.005" claim an earlier draft of this
+  record asserted without deriving it (CLAUDE.md "No invented reference values": that number and
+  its framing were corrected once actually measured, rather than edited to match the old claim).
+  The measured value is recorded verbatim in the committed CSV's own header ("Bin-convention
+  deviation" line), which is the traceable source for this figure. The 200 km top-code alone
+  (202 persons) is therefore a substantial part of the already-thin 100_200 class (783 persons):
+  that class mixes 100-200 km commutes with arbitrarily long ones, and any consumer treating
+  100_200 as a narrow band should be aware of this composition.
 
   National (not regional) sample -- there is no ZGB- or Kreis-level breakdown; the table is used
   as a national reference for the commute-day-state model, not a regional calibration target.

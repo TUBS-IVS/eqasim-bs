@@ -97,9 +97,12 @@ def _header(table: str, source_commit: str, extra: list[str]) -> list[str]:
         "#   cannot occur in MiD (the 200 km top-code always classes as 100_200); the donor-pool",
         "#   table additionally emits a 'missing' distance_class row for invalid/absent P_ARB_ENTF.",
         "# Bin convention & heaping (ruling R6): classes are LEFT-INCLUSIVE [a, b) (e.g. 10_25 is",
-        "#   [10, 25)); MiD self-reported P_ARB_ENTF heaps on round numbers, so class COUNTS are",
-        "#   convention-sensitive while class weighted SHARES stay robust across conventions --",
-        "#   see the per-table heaping stats below, measured on THIS extraction.",
+        "#   [10, 25)), chosen by convention (spec wording, continuous model distances) and applied",
+        "#   IDENTICALLY on the donor (this table) and the model side. MiD self-reported P_ARB_ENTF",
+        "#   heaps on round numbers: counts and shares are both convention-sensitive -- class COUNTS",
+        "#   strongly (e.g. lt10 moves between 19,100 and 21,259 persons depending on the convention),",
+        "#   P_GEW-weighted class SHARES by up to the measured maximum absolute deviation -- see the",
+        "#   per-table stats below, measured on THIS extraction.",
         "# Purpose: reference for the commute-day-state model (spec 2026-09-04); NOT a control target.",
     ] + [f"# {line}" for line in extra]
 
@@ -183,10 +186,11 @@ def main(argv=None) -> int:
         f"{100.0 * heaping['share_multiple_of_5']:.1f}% of valid distances are multiples of 5.",
         f"Bin-convention deviation (measured on this extraction by rebuilding this table a second time "
         f"with right-inclusive (a, b] bins -- see measure_bin_convention_deviation in the module): "
-        f"right-inclusive class counts are lt10 {right_lt10} (committed, left-inclusive: {n_lt10}), "
-        f"100_200 {right_100_200} (committed: {n_100_200}); weighted state shares agree within "
-        f"{bin_deviation['max_abs_share_deviation']:.4f} between the two conventions on THIS "
-        "extraction; only the unweighted class counts are convention-sensitive.",
+        f"BOTH counts and shares are convention-sensitive. Right-inclusive class counts are lt10 "
+        f"{right_lt10} (committed, left-inclusive: {n_lt10}), 100_200 {right_100_200} (committed: "
+        f"{n_100_200}) -- a strong, material shift. The weighted state shares move less but are NOT "
+        f"robust: the maximum absolute deviation of any share column between the two conventions on "
+        f"THIS extraction is {bin_deviation['max_abs_share_deviation']:.4f}.",
     ]
     _write(table, out / R.WORKDAY_LOCATION_TABLE, _header(R.WORKDAY_LOCATION_TABLE, args.source_commit, workday_extra))
 

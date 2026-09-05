@@ -421,7 +421,12 @@ def realised_work_frame(homes, df_work, work_locations, persons,
 
     ``distance_km`` is the euclidean home->workplace distance in kilometres multiplied by
     ``detour_factor``, matching the routed distances the reference classes are defined on;
-    ``distance_class`` applies ``commute_day_state_reference.classify_commute_distance`` to it.
+    ``distance_class`` applies ``commute_day_state_reference.classify_commute_distance`` to it
+    WITH ``topcode_km=None``: the MiD 200 km top-code is a property of the MiD self-report
+    question (``P_ARB_ENTF``), not of this model distance, which is a continuous euclidean x
+    detour-factor value that was never subject to that survey convention -- a worker whose model
+    distance lands on exactly 200.0 km must classify as ``gt200``, not be silently folded into
+    ``100_200`` as if it were a MiD top-coded response.
     ``destination_resolved`` records whether a workplace row was found at all for the worker's
     ``location_id``; it is what separates the ``internal`` from the ``unresolved`` scope in
     :func:`assigned_distance_classes` (``destination_is_external`` alone cannot: a worker with no
@@ -499,7 +504,7 @@ def realised_work_frame(homes, df_work, work_locations, persons,
             "for missing home/destination geometries",
             _LOG_TAG, n_nan_distance, n_input, 100.0 * _rate(n_nan_distance, n_input))
     frame = frame[frame["distance_km"].notna()].copy()
-    frame["distance_class"] = [R.classify_commute_distance(km) for km in frame["distance_km"]]
+    frame["distance_class"] = [R.classify_commute_distance(km, topcode_km=None) for km in frame["distance_km"]]
 
     n_workers = len(frame)
     n_external = int(frame["destination_is_external"].sum())

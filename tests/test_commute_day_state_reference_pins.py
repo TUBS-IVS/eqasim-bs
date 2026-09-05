@@ -74,3 +74,10 @@ def test_committed_header_discloses_universe_and_bin_convention():
     # not a hand-typed "0.005" carried over from an earlier, uncommitted scan.
     assert "bin-convention deviation" in header_text.lower()
     assert "within 0.005" not in header_text.lower()
+    # Follow-up (controller ruling R13): the header must NOT claim that shares "stay robust" or
+    # that "only" the unweighted counts are convention-sensitive -- both counts AND shares are
+    # convention-sensitive (counts strongly, shares by the measured deviation); the header must
+    # say so in those terms instead.
+    assert "stay robust" not in header_text.lower()
+    assert "only the unweighted class counts are convention-sensitive" not in header_text.lower()
+    assert "counts and shares are both convention-sensitive" in header_text.lower()
