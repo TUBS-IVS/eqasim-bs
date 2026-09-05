@@ -46,6 +46,35 @@ Two independent reasons:
    condition under which a consumer is reached has NOT been characterised here, and
    nothing in this repository should depend on it either way.
 
+## Characterised and fixed (2026-09-05, ADR-0105)
+
+The "does not reach every consumer" behaviour above is now characterised. synpp 1.6.2's
+second pass walks the graph from `list(set(source_hashes))` and re-enqueues only
+`stage["downstream"][0]`; which keys reach a stage therefore depends on the iteration
+order of a set of md5 strings, i.e. on the per-process `PYTHONHASHSEED`, and on which of
+several downstream paths happens to be walked. Two consequences: (1) a consumer may or may
+not receive an option (the `pt2matsim_version` crash above), and (2) the propagated set
+enters the stage hash that names the cache entry, so the SAME code with the SAME config
+yields different `<stage>__<hash>` names in different processes -- a spurious cache miss.
+The reproduction and the measured counts are recorded in ADR-0105, not restated here
+(one fact, one file).
+
+`braunschweig/synpp_deterministic.py` replaces the pass with a topological, all-edges
+propagation (upstream complete before downstream, sorted tie-breaks, conflicts raise) and
+is installed by `scripts/run_synpp.py` and `braunschweig.documentation.dag` before synpp
+builds the graph. Consequence (1) is thereby fixed for non-volatile options -- with one
+qualification preserved from synpp's own rule: `explicit_config_keys` is computed as the
+union of the `passed-parameters` across ALL callers of an upstream stage, not per caller, so
+a config key that ONE caller passes explicitly (`context.stage(descriptor, config={...})`)
+is withheld from implicit propagation to EVERY OTHER caller of that same upstream stage too.
+This is inert on the production graph (no caller currently depends on receiving a key another
+caller passes explicitly) but is a real limitation should a future stage graph rely on it. The
+rule at the top of this note nevertheless stands, because volatile options are still excluded
+by design and because a plain `python -m synpp` run does not install the patch. Consequence
+(2) is fixed at the price of a one-time re-hash: `scripts/report_stage_hash_impact.py`
+lists which cache entries a config would hit or miss under the deterministic hashes before
+the first patched run.
+
 ## The failure mode this produces
 
 The crash is **delayed**: a stage keeps running from cache for weeks and only fails

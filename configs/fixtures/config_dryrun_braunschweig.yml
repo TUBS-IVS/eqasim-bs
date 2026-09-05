@@ -8,7 +8,7 @@
 ## Required input data: see eqasim-data/DOWNLOAD_CHECKLIST_BS.md.
 ## Phase 3 of the eqasim-bs refactor wires this into pytest.
 ##
-## Usage:  python -m synpp config_dryrun_braunschweig.yml
+## Usage:  python scripts/run_synpp.py config_dryrun_braunschweig.yml
 
 working_directory: eqasim-data/cache_bs_dryrun
 

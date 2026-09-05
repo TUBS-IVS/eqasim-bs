@@ -119,7 +119,8 @@ log_file="logs/run_$(date +%Y%m%d_%H%M%S).log"
 # PYTHONUTF8=1 avoids UnicodeEncodeError when stages print non-ASCII diagnostics
 # (e.g. the IPF "max |delta| per margin" line) into a redirected/teed stream.
 # run_synpp.py is a thin wrapper around `python -m synpp` that timestamps the log
-# lines so per-stage runtimes can be extracted afterwards.
+# lines so per-stage runtimes can be extracted afterwards, and installs the
+# deterministic stage-hash patch (ADR-0105) before synpp builds the stage graph.
 # Sample machine CPU/RAM utilization while the pipeline runs (background). The
 # runtime analysis below joins these samples to each stage to expose single-core
 # bottlenecks (cores_busy ~ 1). Best-effort; never blocks the run.
