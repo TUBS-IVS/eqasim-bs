@@ -21,8 +21,11 @@ matching finds no donor at any coarsening level is DOWNGRADED to ``at_workplace`
 a donor pool that cannot serve most of the cohort makes the drawn state shares meaningless rather
 than merely sparse (CLAUDE.md "Fallback transparency").
 
-Output: ``{"states": DataFrame, "diagnostics": dict}``. ``states`` carries one row per worker,
-columns :data:`STATE_COLUMNS`; see :func:`execute` for the diagnostics keys. With
+Output: ``{"states": DataFrame, "diagnostics": dict}``. ``states`` carries EXACTLY one row per
+worker (asserted) -- including the workers whose household has no home geometry, whom
+``state.assigned_distance_class`` drops and who are recorded as ``at_workplace`` with
+``reason = "no_home_geometry"`` rather than left out of the frame; columns are
+:data:`STATE_COLUMNS`; see :func:`execute` for the diagnostics keys. With
 ``commute_day_state_enabled`` FALSE every worker gets ``at_workplace`` /
 ``reason = "disabled"`` and the diagnostics are ``{"enabled": False}``, so the stage stays
 readable by its consumers without a branch of their own.
@@ -88,6 +91,9 @@ STATE_COLUMNS = ("person_id", "commute_day_state", "p_keep", "redraw_eligible", 
 #: ``reason`` value of a ``home`` worker downgraded to ``at_workplace`` because the donor pool
 #: held no replaceable day for them.
 REASON_NOT_REPLACEABLE = "home_not_replaceable"
+#: ``reason`` value of a worker the draw never saw because their household carries no home
+#: geometry (``state.assigned_distance_class`` drops those; see :func:`execute`).
+REASON_NO_HOME_GEOMETRY = "no_home_geometry"
 #: ``reason`` value on the OFF path.
 REASON_DISABLED = "disabled"
 
@@ -120,18 +126,37 @@ def _require_columns(frame, columns, what):
                          f"(present: {sorted(frame.columns)[:20]})")
 
 
-def _escort_person_ids(trips):
+def _escort_person_ids(trips, donors):
     """Person ids with an escort leg on their own pre-assignment reporting day.
 
     Both trip ends are inspected (``following_purpose`` and ``preceding_purpose``): the escorting
     person's outbound leg ARRIVES at the escort activity, the return leg DEPARTS from it, and
     either is evidence of the escort duty (ADR-0104 Assumption 4).
+
+    The resulting share is logged, and a share of ZERO alongside a donor pool that DOES carry
+    escorting donors is warned about: ``has_active_escort`` is a HARD matching criterion, so in
+    that situation every escorting donor is excluded for every person -- which is what an
+    ``escort_purpose: false`` run looks like (no leg ever carries the ``escort`` purpose), not a
+    population that genuinely escorts nobody.
     """
     _require_columns(trips, ("person_id", "following_purpose", "preceding_purpose"),
                      "the trips frame")
     is_escort = ((trips["following_purpose"] == ESCORT_PURPOSE)
                  | (trips["preceding_purpose"] == ESCORT_PURPOSE))
-    return set(trips.loc[is_escort, "person_id"])
+    escort_persons = set(trips.loc[is_escort, "person_id"])
+    n_persons = trips["person_id"].nunique()
+    logger.info("%s escort duty: %d/%d persons with a trip (%.1f%%) have an %r leg on their "
+                "pre-assignment day", _LOG_TAG, len(escort_persons), n_persons,
+                100.0 * len(escort_persons) / max(n_persons, 1), ESCORT_PURPOSE)
+    n_escorting_donors = (int(donors["has_active_escort"].sum())
+                          if "has_active_escort" in donors.columns else 0)
+    if not escort_persons and n_escorting_donors > 0:
+        logger.warning(
+            "%s NO person carries an %r leg, yet %d donors in the pool do. has_active_escort is a "
+            "HARD matching criterion, so those donors can never be matched to anyone -- this "
+            "almost always means escort_purpose is OFF for the synthetic trips while the donor "
+            "pool was built with it ON.", _LOG_TAG, ESCORT_PURPOSE, n_escorting_donors)
+    return escort_persons
 
 
 def _households_with_children(persons):
@@ -173,12 +198,15 @@ def _persons_home_frame(person_ids, workers, persons, escort_persons):
     frame = frame.merge(workers[["person_id", "assigned_distance_class"]], on="person_id",
                         how="left")
 
-    n_missing = len(person_ids) - len(frame)
-    if n_missing:
-        raise ValueError(
-            f"{_LOG_TAG} {n_missing}/{len(person_ids)} worker(s) drawn to 'home' have no row in "
-            "the enriched population; the person_id join between the work locations and "
-            "synthesis.population.enriched is broken.")
+    if len(frame) != len(person_ids):
+        requested = set(person_ids)
+        absent = sorted(requested - set(frame["person_id"]))
+        duplicated = sorted(frame.loc[frame["person_id"].duplicated(), "person_id"].unique())
+        raise RuntimeError(
+            f"{_LOG_TAG} the enriched population must carry EXACTLY one row per worker drawn to "
+            f"'home', but {len(frame)} row(s) were found for {len(person_ids)} person(s): "
+            f"missing {absent[:20]}, duplicated {duplicated[:20]}. Check the person_id join "
+            "between the work locations and synthesis.population.enriched.")
     return frame
 
 
@@ -194,30 +222,39 @@ def _donor_source_by_assigned_class(workers):
     Returns a dict, assigned class (``"unknown"`` for a missing class) ->
     ``{"n_workers", "n_donor_from_trip_length", "n_donor_missing", "share_primary"}``.
     """
-    result: dict = {}
-    has_donor_class = workers["donor_distance_class"].notna()
-    for label, group in zip(workers["assigned_distance_class"], has_donor_class):
-        key = "unknown" if pd.isna(label) else label
-        cell = result.setdefault(key, {"n_workers": 0, "n_donor_from_trip_length": 0,
-                                       "n_donor_missing": 0, "share_primary": 0.0})
-        cell["n_workers"] += 1
-        if group:
-            cell["n_donor_from_trip_length"] += 1
-        else:
-            cell["n_donor_missing"] += 1
-    for cell in result.values():
-        cell["share_primary"] = cell["n_donor_from_trip_length"] / max(cell["n_workers"], 1)
-    return result
+    assigned = workers["assigned_distance_class"]
+    # An assigned class of None/NaN is keyed as the literal "unknown" (never a null key, which
+    # would neither survive a groupby nor serialise to JSON) -- the same convention
+    # ``state.draw_states`` uses for its own ``by_assigned_class`` diagnostics.
+    class_key = assigned.astype(object).where(assigned.notna(), "unknown")
+    grouped = (workers["donor_distance_class"].notna()
+               .groupby(class_key.rename("assigned_distance_class"))
+               .agg(["size", "sum"]))
+    return {
+        str(label): {
+            "n_workers": int(row["size"]),
+            "n_donor_from_trip_length": int(row["sum"]),
+            "n_donor_missing": int(row["size"]) - int(row["sum"]),
+            "share_primary": int(row["sum"]) / max(int(row["size"]), 1),
+        }
+        for label, row in grouped.iterrows()
+    }
 
 
-def _disabled_states(worker_ids):
-    """OFF-path states frame: every worker ``at_workplace`` with ``reason = "disabled"``."""
+def _placeholder_states(worker_ids, reason):
+    """States rows for workers the draw never saw: ``at_workplace`` with the given ``reason``.
+
+    Two callers: the OFF path (``reason = "disabled"``, every worker) and the workers dropped by
+    ``state.assigned_distance_class`` for want of a home geometry
+    (``reason = "no_home_geometry"``), who must still appear in the output -- a consumer joining
+    on ``person_id`` would otherwise silently find no ``commute_day_state`` for them.
+    """
     return pd.DataFrame({
         "person_id": np.asarray(worker_ids),
         "commute_day_state": "at_workplace",
         "p_keep": 1.0,
         "redraw_eligible": False,
-        "reason": REASON_DISABLED,
+        "reason": reason,
         "donor_id": np.nan,
         "coarsening_level": np.nan,
         "assigned_distance_class": None,
@@ -236,6 +273,8 @@ def execute(context):
     ``matching`` (see :func:`braunschweig.synthesis.commute_day.matching.match_home_office_donors`);
     ``n_home_drawn`` / ``n_home_matched`` / ``n_home_not_replaceable`` /
     ``share_home_not_replaceable`` (the downgrade, see the module docstring);
+    ``n_workers_without_home_geometry`` (workers the draw never saw, see below -- ``n_workers``
+    counts only the DRAWN workers, so the two together are the full universe);
     ``donor_source_by_assigned_class`` (ADR-0104 Amendment 1, see
     :func:`_donor_source_by_assigned_class`); ``share_donor_source_primary`` (the same rate over
     all workers); and ``final_state_counts`` (state counts AFTER the downgrade -- the drawn counts
@@ -254,7 +293,8 @@ def execute(context):
     if not bool(context.config(KEY_ENABLED)):
         logger.info("%s %s is false -- every one of the %d workers stays at_workplace.",
                     _LOG_TAG, KEY_ENABLED, len(worker_ids))
-        return {"states": _disabled_states(worker_ids), "diagnostics": {"enabled": False}}
+        return {"states": _placeholder_states(worker_ids, REASON_DISABLED),
+                "diagnostics": {"enabled": False}}
 
     detour_factor = float(context.config(KEY_DETOUR))
     far_threshold_km = float(context.config(KEY_FAR_THRESHOLD_KM))
@@ -269,13 +309,29 @@ def execute(context):
         COMMUTE_DAY_SEED_OFFSET)
 
     table = load_workday_location_table(os.path.join(str(data_path), *MID_REFERENCE_SUBDIR))
-    escort_persons = _escort_person_ids(df_trips)
+    escort_persons = _escort_person_ids(df_trips, donor_attributes)
 
     donor_classes = donor_distance_class_from_trips(df_trips)
     assigned = assigned_distance_class(df_work, df_home,
                                        df_persons[["person_id", "household_id"]], detour_factor)
     workers = assigned.merge(donor_classes[["person_id", "donor_distance_class"]],
                              on="person_id", how="left")
+
+    # state.assigned_distance_class DROPS workers whose household has no home geometry (it
+    # cannot measure their commute), so the draw below never sees them. They still get a states
+    # row -- at_workplace, reason "no_home_geometry" -- because a consumer joining on person_id
+    # would otherwise find no commute_day_state for them at all and silently treat that absence
+    # as its own default.
+    workers_without_home_geometry = sorted(set(worker_ids) - set(workers["person_id"]))
+    n_workers_without_home_geometry = len(workers_without_home_geometry)
+    if n_workers_without_home_geometry > 0:
+        logger.warning(
+            "%s %d/%d workers (%.1f%%) have no home geometry and cannot be given an assigned "
+            "commute distance; they are recorded as at_workplace with reason %r rather than "
+            "dropped -- check the household_id join to synthesis.population.spatial.home.locations.",
+            _LOG_TAG, n_workers_without_home_geometry, len(worker_ids),
+            100.0 * n_workers_without_home_geometry / max(len(worker_ids), 1),
+            REASON_NO_HOME_GEOMETRY)
 
     donor_source = _donor_source_by_assigned_class(workers)
     share_primary = (workers["donor_distance_class"].notna().sum() / max(len(workers), 1))
@@ -314,8 +370,21 @@ def execute(context):
     states.loc[is_not_replaceable, "reason"] = REASON_NOT_REPLACEABLE
     share_not_replaceable = n_not_replaceable / max(n_home_drawn, 1)
 
+    if n_workers_without_home_geometry > 0:
+        states = pd.concat(
+            [states, _placeholder_states(workers_without_home_geometry, REASON_NO_HOME_GEOMETRY)],
+            ignore_index=True)
+    states = states[list(STATE_COLUMNS)].sort_values("person_id").reset_index(drop=True)
+    assert len(states) == len(worker_ids) and not states["person_id"].duplicated().any(), (
+        f"{_LOG_TAG} the states frame must carry EXACTLY one row per worker: "
+        f"{len(states)} rows for {len(worker_ids)} workers, "
+        f"{int(states['person_id'].duplicated().sum())} duplicated person_id(s).")
+
     final_counts = states["commute_day_state"].value_counts().to_dict()
-    n_workers = len(states)
+    n_states = len(states)
+    # The draw's own denominator: workers that HAD an assigned distance (diagnostics["n_workers"]
+    # from draw_states), which excludes the no-home-geometry rows appended above.
+    n_drawn = int(diagnostics["n_workers"])
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
     diagnostics["matching"] = matching_diagnostics
@@ -323,17 +392,19 @@ def execute(context):
     diagnostics["n_home_matched"] = n_home_drawn - n_not_replaceable
     diagnostics["n_home_not_replaceable"] = n_not_replaceable
     diagnostics["share_home_not_replaceable"] = share_not_replaceable
+    diagnostics["n_workers_without_home_geometry"] = n_workers_without_home_geometry
     diagnostics["donor_source_by_assigned_class"] = donor_source
     diagnostics["share_donor_source_primary"] = float(share_primary)
     diagnostics["final_state_counts"] = {str(key): int(value)
                                          for key, value in final_counts.items()}
 
     logger.info(
-        "%s final states over %d workers: %s; re-draw eligible %.1f%%, %d/%d home persons not "
-        "replaceable (%.1f%%), coarsening levels used %s", _LOG_TAG, n_workers,
-        {key: f"{value} ({100.0 * value / max(n_workers, 1):.1f}%)"
+        "%s final states over %d workers (%d of them drawn): %s; re-draw eligible %.1f%% of the "
+        "drawn, %d/%d home persons not replaceable (%.1f%%), coarsening levels used %s",
+        _LOG_TAG, n_states, n_drawn,
+        {key: f"{value} ({100.0 * value / max(n_states, 1):.1f}%)"
          for key, value in sorted(diagnostics["final_state_counts"].items())},
-        100.0 * diagnostics["n_redraw_eligible"] / max(n_workers, 1), n_not_replaceable,
+        100.0 * diagnostics["n_redraw_eligible"] / max(n_drawn, 1), n_not_replaceable,
         n_home_drawn, 100.0 * share_not_replaceable,
         {level: count for level, count in matching_diagnostics["matched_by_level"].items()
          if count > 0})
@@ -347,5 +418,4 @@ def execute(context):
             "the model; check the donor pool size and the hard matching criteria "
             "(has_active_escort, has_children_u14, has_car) before raising the threshold.")
 
-    return {"states": states[list(STATE_COLUMNS)].reset_index(drop=True),
-            "diagnostics": diagnostics}
+    return {"states": states, "diagnostics": diagnostics}

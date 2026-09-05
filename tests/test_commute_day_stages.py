@@ -19,6 +19,7 @@ distance at all, a far worker and an escort-protected far worker.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 import geopandas as gpd
@@ -143,10 +144,12 @@ def _persons():
     })
 
 
-def _home_locations():
+def _home_locations(without_household=None):
+    """Home points for every household; ``without_household`` omits one (a broken home join)."""
+    household_ids = [h for h in (1, 2, 3, 4, 5, 6, 7) if h != without_household]
     return gpd.GeoDataFrame(
-        {"household_id": [1, 2, 3, 4, 5, 6, 7]},
-        geometry=[Point(0.0, 0.0)] * 7, crs=CRS)
+        {"household_id": household_ids},
+        geometry=[Point(0.0, 0.0)] * len(household_ids), crs=CRS)
 
 
 def _work_points():
@@ -212,11 +215,11 @@ def _donor_trips():
     return pd.DataFrame(rows)
 
 
-def _state_stage_stages(donor_attributes=None, donor_trips=None):
+def _state_stage_stages(donor_attributes=None, donor_trips=None, home_without_household=None):
     return {
         "synthesis.population.trips": _trips(),
         "synthesis.population.enriched": _persons(),
-        "synthesis.population.spatial.home.locations": _home_locations(),
+        "synthesis.population.spatial.home.locations": _home_locations(home_without_household),
         "synthesis.population.spatial.primary.locations": (_work_points(), None),
         DONOR_STAGE: (_donor_attributes() if donor_attributes is None else donor_attributes,
                       _donor_trips() if donor_trips is None else donor_trips,
@@ -495,6 +498,64 @@ def test_state_stage_is_reproducible_under_the_same_seed():
     second = STATE.execute(_context(STATE, stages=_state_stage_stages(),
                                     config=_state_stage_config()))["states"]
     pd.testing.assert_frame_equal(first, second)
+
+
+def test_escort_person_ids_warns_when_nobody_escorts_but_donors_do(caplog):
+    trips = _trips()
+    without_escort = trips[~((trips["following_purpose"] == STATE.ESCORT_PURPOSE)
+                             | (trips["preceding_purpose"] == STATE.ESCORT_PURPOSE))]
+
+    with caplog.at_level(logging.WARNING, logger=STATE.logger.name):
+        assert STATE._escort_person_ids(without_escort, _donor_attributes()) == set()
+    # has_active_escort is a HARD criterion, so escorting donors would be unusable for everyone;
+    # that is an escort_purpose: false run, not a population that escorts nobody.
+    assert any("escort_purpose" in record.getMessage() for record in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=STATE.logger.name):
+        assert STATE._escort_person_ids(trips, _donor_attributes()) == {5}
+    assert caplog.records == []
+
+
+def test_state_stage_keeps_one_row_per_worker_without_a_home_geometry():
+    # Household 6 has no home point, so state.assigned_distance_class cannot measure person 6's
+    # commute and drops them from the draw -- they must still appear in the states frame, or a
+    # consumer joining on person_id would find no commute_day_state for them at all.
+    context = _context(STATE, stages=_state_stage_stages(home_without_household=6),
+                       config=_state_stage_config())
+    result = STATE.execute(context)
+
+    states = result["states"]
+    assert len(states) == 6 and not states["person_id"].duplicated().any()
+    row = states.set_index("person_id").loc[6]
+    assert row["commute_day_state"] == "at_workplace"
+    assert row["reason"] == STATE.REASON_NO_HOME_GEOMETRY
+    assert pd.isna(row["distance_km"]) and pd.isna(row["assigned_distance_class"])
+    assert result["diagnostics"]["n_workers_without_home_geometry"] == 1
+    # The draw's own n_workers counts only the workers it actually saw.
+    assert result["diagnostics"]["n_workers"] == 5
+    assert sum(result["diagnostics"]["final_state_counts"].values()) == 6
+
+
+def test_persons_home_frame_requires_exactly_one_enriched_row_per_worker():
+    """The matching input must be 1:1 with the ``home`` cohort.
+
+    Driven directly rather than through ``execute``: a person absent from the enriched frame is
+    already dropped upstream (no household_id -> no home geometry -> not a worker), so this
+    defensive guard protects against a DUPLICATED or otherwise broken enriched frame reaching
+    the matching, where a duplicate would silently match one person twice.
+    """
+    persons = _persons()
+    workers = pd.DataFrame({"person_id": [1, 99], "assigned_distance_class": ["lt10", "lt10"]})
+
+    with pytest.raises(RuntimeError) as error:
+        STATE._persons_home_frame(pd.Series([1, 99]), workers, persons, set())
+    assert "99" in str(error.value)
+
+    duplicated = pd.concat([persons, persons.query("person_id == 1")], ignore_index=True)
+    with pytest.raises(RuntimeError) as error:
+        STATE._persons_home_frame(pd.Series([1]), workers, duplicated, set())
+    assert "duplicated [1]" in str(error.value)
 
 
 def test_state_stage_downgrades_unreplaceable_home_persons_below_the_threshold():

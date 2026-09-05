@@ -18,12 +18,24 @@ location assignment that produces that distance:
   reporting-day view) feed everything that needs the finished day: secondary chainsolvers, the
   MATSim population, and synthesis output.
 
-Stage modules planned for this package (see ADR-0104 "Decision" and "Consequences"):
-``home_office_donors_stage`` (MiD home-office-day donor pool from the raw MiD delivery),
-``state_stage`` (the state draw itself), ``trips_day_stage`` / ``activities_day_stage`` (the
-reporting-day trips/activities aliased above), ``spatial_locations_day`` / ``output_day``
-(consumers reading the ``.final`` view). This module (Task 1 of the Phase B implementation)
-provides only the pure state-model core in :mod:`state`: distance classes, keep probability, and
-the seeded state draw; the stage modules and the donor pool / matching / plan-replacement logic
-are added by later tasks.
+Pure modules (no file I/O, no synpp stage; each documents its own rules):
+
+* :mod:`state` -- distance classes, keep probability and the seeded state draw.
+* :mod:`donor_pool` -- the MiD home-office-day donor pool (attributes + trip chains).
+* :mod:`matching` -- the donor for every person drawn to ``home``.
+* :mod:`plan_replacement` -- the reporting-day trips table built from a draw and a match.
+
+synpp stages wiring those into the pipeline (see ADR-0104 "Decision" and "Consequences"):
+
+* :mod:`home_office_donors_stage` -- reads the raw MiD delivery and builds the donor pool.
+* :mod:`state_stage` -- the state draw plus the donor matching, one row per worker.
+* :mod:`trips_day_stage` -- aliased to ``synthesis.population.trips.final``.
+* :mod:`activities_day_stage` -- aliased to ``synthesis.population.activities.final``.
+
+Both aliases live in ``configs/base_bs.yml`` alongside the model's flags
+(``commute_day_state_enabled``, ``commute_day_far_threshold_km``,
+``commute_day_absent_share_far``, ``commute_day_max_not_replaceable_share``). With the model
+disabled both ``.final`` stages are pass-throughs of the pre-assignment views. The consumers that
+read the ``.final`` view (secondary locations, the MATSim population, synthesis output) are wired
+in a later task.
 """
