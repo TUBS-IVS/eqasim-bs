@@ -208,10 +208,20 @@ validation:
     the ZGB inter aggregate moves from "gap" to "ok". That is the R5 universe change, not a
     model improvement: restricting to at_workplace persons removes long-distance workers drawn
     to home or absent.
+    ON AGAINST OFF, the same reporting-day table in both runs and therefore the FLAG''S OWN
+    EFFECT rather than a universe change between runs: the ZGB inter model_share_100_plus is
+    0.1000834 with the flag OFF (off/commute_by_kreis.csv, n_model 304,900 -- every worker is
+    at_workplace when the flag is off) against 0.0737401 with it ON (on/commute_by_kreis.csv,
+    n_model 296,599), i.e. -2.63 pp, which is the removal of the 8,301 re-drawn non-travellers
+    from the reporting-day universe; the workplace ASSIGNMENTS behind both tables are the same
+    per-person assignments (byte-identical location caches, pipeline.notes).
     NO-DETERIORATION HALF, assigned universe: commute_by_kreis_all_assigned.csv from the ON run
-    is BYTE-IDENTICAL to srv_distance_baseline_2026-09-04/commute_by_kreis.csv and to run A''s
-    OFF commute_by_kreis.csv (cmp_results.txt section 2). The bands up to 50 km therefore did
-    not deteriorate; they did not move at all. MECHANISM, measured not interpreted: the stage
+    is BYTE-IDENTICAL AS PRODUCED (LF, on the server) to
+    srv_distance_baseline_2026-09-04/commute_by_kreis.csv and to run A''s OFF
+    commute_by_kreis.csv (cmp_results.txt section 2); the COMMITTED copies in this repository are
+    CONTENT-IDENTICAL after EOL normalisation, because the 2026-09-04 baseline was committed with
+    CRLF line endings (10,232 B) and this run''s table with LF (10,204 B). The bands up to 50 km
+    therefore did not deteriorate; they did not move at all. MECHANISM, measured not interpreted: the stage
     reads synthesis.population.spatial.primary.locations -- WHERE people work -- and the ON and
     OFF location caches are byte-identical (23,666,794 B), so the assigned-workplace bands
     cannot be moved by this model, which changes only WHO TRAVELS on the simulated day.'
@@ -279,8 +289,17 @@ validation:
     trips for 5,421 of them, 2,605 immobile (32.5 %), 0 chains dropped by the resample, 1,780
     (22.2 %) with no usable commute distance, 12 with sex outside {1, 2}.'
   artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/state_diagnostics.json
-    (read from the state-stage cache entry named inside it), .../run_log_excerpts.txt'
-  notes: 'The 22.2 % of donors with no usable commute distance is a property of the DONOR POOL
+    (read from the state-stage cache entry named inside it) for the coarsening levels, the
+    not-replaceable share, the donor-distance source coverage and the R7 education counters;
+    .../run_log_excerpts.txt for the RULING R9 COUNTERS (n_donors_immobile 1,435,
+    n_donors_without_trips 0, n_donors_unknown_trip_count 0) and the donor-pool builder
+    diagnostics -- the reporting-day trips stage LOGS its diagnostics dict but writes no
+    structured artefact, so those numbers are read from the committed log excerpt and from
+    nothing else'
+  notes: 'FOLLOW-UP, not done here: fold the reporting-day trips diagnostics (the R8/R9 counters
+    above) into a committed JSON in the next run, so check 4 does not have to be read out of a
+    log excerpt.
+    The 22.2 % of donors with no usable commute distance is a property of the DONOR POOL
     (they neither answered P_ARB_ENTF usably nor made a work trip on their reporting day --
     which is exactly the state being modelled); it is not the rate at which the MODEL falls
     back, which is 0.0 % above. The 28.2 % immobile-donor rate is likewise a property of the
@@ -370,7 +389,11 @@ notes: 'SUPERSEDES commute-day-state-phase-b-proof-100pct-2026-09-05 (the run ma
   has no supersedes field, so the relation is recorded here and in that manifest''s
   status.notes). The 2026-09-05 manifest stays as the historical record of the first attempt and
   of the three defects it found; every check verdict for the commute_day_state feature is taken
-  from THIS manifest, because the code it describes (fix wave A) is the code on the branch.'
+  from THIS manifest, because the code it describes (fix wave A) is the code on the branch.
+  The DECISION taken on these verdicts -- the flag stays default ON at the current parameters,
+  neither failed bound is relaxed, and five follow-ups are named -- is recorded ONCE, in ADR-0104
+  section "Proof 2026-09-06 (Phase B, 100 % on the cached i329 population)"; this manifest carries
+  the measurements only.'
 source: 'Phase B proof RE-RUN of the commute-day-state (far/weekly commuters) model at 100 % on
   the cached i329 population, after fix wave A: the OFF analysis re-check, the complete ON line
   down to the written population with its donor diagnostics, cordon scaling and commute-distance

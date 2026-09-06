@@ -245,23 +245,39 @@ validation:
     re-run''s is 99,519 B), and separating an immobile donor from a missing one showed that all
     1,435 zero-row donors (28.2%) are genuinely immobile and none is a donor_id key mismatch.'
 assessment:
-  status: pending
-  by: null
+  status: reviewed
+  by: Lasse Bienzeisler with Claude (Fable 5.1)
   date: '2026-09-06'
-  pending_reason: 'The re-run of 2026-09-05/06 (manifest
-    commute-day-state-phase-b-proof-100pct-2026-09-06-rerun) completed all three lines and every
-    one of the six pre-registered checks now has a verdict measured on a committed artefact, so
-    the blockers of the first attempt are gone. The assessment nevertheless stays pending,
-    because two of those verdicts are FAILURES that need an owner decision and not a further
-    measurement: check 1 misses the +/- 3 pp band on all three state shares (-17.01 / -13.35 /
-    -20.20 pp), which is dominated by the pre-existing fact that 50.6% of the employed universe
-    has no assigned workplace at all, and check 2 misses its 100_plus < 3% operating bound at
-    7.37% on the reporting-day universe (both bounds are ASSUMPTIONS with no committed source
-    behind them, per ADR-0104). Whether the model is accepted, re-parameterised, or held until
-    the participation deficit (issue #244 / srv_participation_controls) is addressed is a
-    maintainer judgement that nobody has recorded yet. Two smaller items remain open and are
-    NOT blockers: pool size per matching cell is still not recorded (the fourth check-4
-    diagnostic), and the 37,705 workers who are not flagged employed are counted but unexplained.'
+  source: ADR-0104
+  note: 'DECISION RECORDED, ADR-0104 section "Proof 2026-09-06 (Phase B, 100 % on the cached i329
+    population)", which carries the reasoning and the rejected alternatives; this is the summary,
+    not a second home for it. The FLAG STAYS DEFAULT ON at the current parameters
+    (commute_day_state_enabled true, commute_day_far_threshold_km 200.0,
+    commute_day_absent_share_far 1.0): checks 3, 4, 5 and 6 pass, the OFF path is unchanged in
+    substance, the only population change is the 8,301 re-drawn far commuters (every other
+    person''s plan byte-for-byte identical), and the flag''s own effect on the quantity it was
+    built to move is separable -- the reporting-day zgb/inter 100_plus band is 0.100083 OFF
+    against 0.073740 ON (-2.63 pp), with the workplace assignments identical in both.
+    Checks 1 and 2 FAIL and NEITHER BOUND WAS RELAXED; both bounds are ASSUMPTIONS with no
+    committed source behind them (ADR-0104). Check 1 (-17.01 / -13.35 / -20.20 pp on the three
+    state shares) fails by construction of the comparison rather than by miscalibration -- the
+    model''s home state covers only the far commuters it re-draws (0.8% of the employed universe)
+    while SrV''s 14.2% covers all employed persons, and the model''s implicit home-office and
+    not-working behaviour sits inside share_no_workplace 0.5056; the pre-existing participation
+    gap dominates and stays an open question of ADR-0104 (issue #244), not a target of this model.
+    Check 2 misses its 100_plus < 3% operating bound at 7.37%: of the 16,194 workers assigned at
+    or above 100 km, 11,327 stay at_workplace at a keep probability of 0.531-0.675 read from the
+    committed MiD table, and reaching the bound would need either an absent rule for the 100_200
+    class or lower keep ratios -- a PARAMETER decision reserved for the maintainer, taken by
+    nobody here.
+    FIVE FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
+    production run (still owed, ruling R4 substituted a proof on the cached i329 population), a
+    re-specification of check 1 (which needs a home-office attribution the population does not
+    carry), pool size per matching cell (the fourth check-4 diagnostic, still not recorded), a
+    committed JSON for the reporting-day trips diagnostics (the R8/R9 counters are log-only), and
+    the 37,705 workers with an assigned workplace whom the population does not flag employed.
+    The status is "reviewed" and not "assessed" precisely because those five are open; validation
+    stays measured_vs_reference and NOT behaviourally_validated.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
   MiD reference table (data record mid2023_workday_location) for the keep-probability ratio.

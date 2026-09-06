@@ -356,3 +356,161 @@
   record adopts is the commute-day-state design spec of 2026-09-04, a LOCAL working document
   under `docs/superpowers/specs/` which is gitignored and is therefore NOT a durable home: every
   fact it carries that matters is restated here, in the registry records, or in the manifest.
+
+## Proof 2026-09-06 (Phase B, 100 % on the cached i329 population)
+
+Phase B was proved in three runs on 2026-09-05/06 -- (A) the OFF analysis path, (B) the complete
+ON line down to the written population, (C) the `commute_day_absent_share_far` 0.6 sensitivity --
+at 100 % on the cached i329 population, under the code state `0be490ad` (the branch plus fix wave
+A). Run manifest `docs/runs/commute-day-state-phase-b-proof-100pct-2026-09-06-rerun.yml`;
+committed aggregates
+`eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/`.
+It SUPERSEDES the partial first attempt
+(`docs/runs/commute-day-state-phase-b-proof-100pct-2026-09-05.yml`), which aborted on check 1's
+guard and on the secondary chainsolver and never wrote an ON population; that manifest stays as
+the historical record of the three defects it found. **No threshold was moved, by fix wave A or
+here**, and every number below is copied from the manifest or from the committed artefact named
+beside it.
+
+### Per-check result against the pre-registration
+
+1. **State shares against SrV, +/- 3 pp on the regional aggregate -- FAIL.** Universe: the
+   540,425 employed persons with a ZGB home Kreis (`on/commute_day_state_shares.csv`, `zgb` row).
+   Measured against the committed SrV `zgb` row (`share_work_trip` 0.6511, `share_home_office_day`
+   0.1418, `share_neither` 0.2071, n_persons 8,016): `at_workplace` **0.4810** (-17.01 pp),
+   `home` **0.0082** (-13.35 pp), `absent` **0.0051** (-20.20 pp) -- all three OUTSIDE the +/- 3 pp
+   band, so the check fails on the aggregate. Beside them, `share_no_workplace` **0.5056** (the
+   employed persons for whom no state is drawn at all, because they have no assigned workplace)
+   and `share_employed_no_work_trip` 0.5188 against the SrV remainder 0.3489 (+16.99 pp).
+   `n_workers_not_employed` = **37,705** workers with an assigned workplace whom
+   `synthesis.population.enriched` does not flag employed: counted and warned about per ruling R6,
+   not fatal. Per-Kreis rows are reported, never gated.
+2. **Inter-Gemeinde work bands -- FAIL on the 3 % bound, PASS on no-deterioration.** The
+   `100_plus < 3 %` half is read, per the R5 amendment, from the REPORTING-DAY table
+   `on/commute_by_kreis.csv` (`zgb`/`inter`, the 296,599 of 304,900 workers whose drawn state is
+   `at_workplace`): **0.073740** (7.37 %) against the pre-registered 3 % -> FAIL; the same row's
+   EMD is 0.069395 with noise floor 0.012915 over n_ref 2,593, classification `ok`. The
+   no-deterioration half is read from the ASSIGNED-workplace table
+   `on/commute_by_kreis_all_assigned.csv`: byte-identical AS PRODUCED (LF) on the server to
+   `srv_distance_baseline_2026-09-04/commute_by_kreis.csv` and to run A's OFF
+   `commute_by_kreis.csv`; the committed copies are CONTENT-identical after EOL normalisation (the
+   2026-09-04 copy was committed with CRLF, 10,232 B against 10,204 B). Nothing up to 50 km moved
+   at all -- PASS.
+3. **Cordon out-commuter volumes, restricted to `at_workplace` persons -- PASS.**
+   `on/commute_day_state_scaling.json`: 33,143 of the 39,150 external workers are `at_workplace`,
+   share **0.846564**, scaling the outbound register expectation from **60,705** to **51,393** SvB
+   (-9,312, -15.34 %). All three joins complete (`n_workplace_unresolved`,
+   `n_states_without_work_location`, `n_work_locations_without_state` all 0). This is a
+   before/after of the EXPECTATION, not of simulated gate counts: no MATSim iteration ran.
+4. **Donor-matching diagnostics -- PASS for three of the four listed items.**
+   `on/state_diagnostics.json`: coarsening levels 0/1/2/3/4/5/6 = **3,786/0/352/391/23/534/0** over
+   the 5,086 persons drawn to `home`; not-replaceable **0 of 5,086** (0.00 %, far below
+   `commute_day_max_not_replaceable_share` 0.5); missing donor distance 0 and the PRIMARY
+   donor-distance source (Amendment 1 above) at **1.0 in every assigned class**, so its 50 %
+   warn bound never fired. The FOURTH item, **pool size per matching cell, is `unknown`**: the
+   diagnostics dict records the level a person matched at, not the number of donors the cell held.
+   Ruling R7, newly measured: 49 of the 8,026 donors carry an education leg, 4,954 of the 5,086
+   `home` persons have no education location and **4,911** of them lost at least one donor to the
+   new criterion, yet not-replaceable stayed at 0.00 %. Ruling R9 settles the first run's
+   unreadable 27.3 %: **1,435** of the 5,086 matched donors (28.2 %) are flagged `is_immobile` in
+   the raw MiD Wege file and correctly give a trip-less day, and **0** donors had zero rows
+   although their donor travelled. The R9 (and R8) counters are read from the committed
+   `run_log_excerpts.txt`, not from a structured artefact -- see the follow-ups below.
+5. **Sensitivity of `commute_day_absent_share_far`, 1.0 vs 0.6 -- PASS.** Same population, same
+   seed: 1.0 gives `home` **5,086** / `absent` **3,215**, 0.6 gives `home` **6,345** / `absent`
+   **1,956**, with `at_workplace` **296,599** IDENTICAL in both and the change confined to the
+   `gt200` class. Over check 1's employed denominator the 0.6 variant moves `home` to 0.0103
+   (-13.15 pp) and `absent` to 0.0031 (-20.40 pp) -- it does not move check 1 across its band.
+6. **OFF-path byte identity and the proof run itself -- PASS.** The ON population differs from the
+   OFF one for EXACTLY **8,301** persons (5,086 `home` + 3,215 `absent`): `households.csv`,
+   `vehicles.csv` and `vehicle_types.csv` byte-identical, `persons.csv` byte-identical after
+   removing the single appended `commute_day_state` column, 862,163 trip blocks and 1,122,903
+   activity blocks byte-identical, and no person present only in the ON file. Row counts: trips
+   **3,369,427** ON against **3,392,698** OFF (-23,271, -0.686 %), activities 4,500,631 against
+   4,523,902 for all 1,131,204 persons in both. The OFF POPULATION itself was not re-written by
+   this re-run (run A held the two analysis stages only), so its byte identity to
+   `output_bs_100pct_i329` stands from the 2026-09-05 manifest; what this run re-measured is the
+   OFF ANALYSIS path under fix-wave-A code, where every CSV and `decisions.json` are
+   byte-identical to the 2026-09-05 OFF outputs.
+
+### Decision
+
+- **The flag stays default ON at the current parameters** (`commute_day_state_enabled` true,
+  `commute_day_far_threshold_km` 200.0, `commute_day_absent_share_far` 1.0). Reasons, each read
+  from the artefacts above: checks 3, 4, 5 and 6 pass; the OFF path is unchanged in substance
+  (every OFF CSV and `decisions.json` byte-identical, and the OFF population byte-identical to the
+  i329 production output per the 2026-09-05 manifest); the ONLY population change is the 8,301
+  re-drawn far commuters, with every other person's plan byte-for-byte identical; and the model's
+  own effect on the quantity it was built to move is separable and in the intended direction --
+  the reporting-day `zgb`/`inter` `100_plus` band is **0.100083** with the flag OFF
+  (`off/commute_by_kreis.csv`, over all 304,900 workers) and **0.073740** with it ON
+  (`on/commute_by_kreis.csv`, over the 296,599 `at_workplace` workers), i.e. **-2.63 pp**, which is
+  the removal of the re-drawn non-travellers from the reporting-day universe and nothing else (the
+  ON and OFF workplace-location caches are byte-identical, so no workplace ASSIGNMENT moved).
+- **Check 1 fails BY CONSTRUCTION of the comparison, not by miscalibration of the model** --
+  labelled as a READING of the numbers, not as a measurement. The model's `home` state covers only
+  the far commuters it re-draws (0.8 % of the employed universe), whereas SrV's 14.2 % home-office
+  days cover ALL employed persons; the model's implicit home-office and not-working behaviour is
+  inside `share_no_workplace` = **0.5056**, i.e. 50.6 % of employed persons have no work trip on
+  their donor day, against the SrV remainder of 34.9 % (20.7 % neither + 14.2 % home office). The
+  arithmetic driver of the failure is therefore the pre-existing participation gap (-15.67 pp with
+  the flag OFF, Phase A; -16.99 pp with it ON), which this record already declines to treat as
+  this model's fit criterion (Phase A amendment 3, issue #244, `srv_participation_controls`).
+  **The tolerance is NOT relaxed**: check 1 is recorded as FAILED at its pre-registered form and
+  stays that way.
+- **Check 1 is proposed for RE-SPECIFICATION as follow-up work, and is not re-specified here.**
+  The comparison that would be informative -- the model's `home` plus its "no work trip because
+  the donor worked at home" mass against SrV's home-office days -- requires a home-office
+  ATTRIBUTION the population does not carry: a donor who made no work trip is not distinguished
+  from a donor who worked at home. Writing that re-specification into this record after seeing the
+  result is exactly what pre-registration exists to prevent, so it is named as future work and
+  nothing is changed.
+- **Check 2's 3 % bound is not met, and closing the gap is a PARAMETER decision reserved for the
+  maintainer.** The mechanism is fully visible in the committed artefacts: of the 16,194 workers
+  whose ASSIGNED class is at or above 100 km, **11,327 stay `at_workplace`** (4,106 in `100_200`,
+  7,221 in `gt200`) and **4,867 are re-drawn** (3,215 `absent` and 1,652 `home`); the remaining
+  3,434 of the 8,301 re-drawn persons sit in the `10_25`/`25_50`/`50_100` classes
+  (`on/state_diagnostics.json`, `by_assigned_class`). A worker stays at the workplace because the
+  model re-draws only when the assigned class exceeds the donor's class and then keeps the person
+  with `P(keep) = share_at_workplace(assigned) / share_at_workplace(donor)`, read from the
+  committed MiD table: with the numerator 0.3135 (the `100_200` row, which `gt200` also reads
+  because MiD top-codes at 200 km) the keep probability is **0.531 / 0.552 / 0.572 / 0.675** for
+  donor classes `lt10` / `10_25` / `25_50` / `50_100`, and exactly **1.0** when a `gt200` worker's
+  donor is already `100_200`. Two options would move the band further down, recorded with their
+  DIRECTION only and with no number invented for either: (a) extend the `absent` rule to the
+  `100_200` class instead of letting it keep the MiD value -- this would remove more far commuters
+  from the reporting day and lower the band, at the cost of Assumption 3, which is deliberately
+  conservative because MiD still measures 0.3135 of that class at the workplace; (b) lower the keep
+  ratios -- this would lower the band across all classes at once, but the ratio is currently read
+  straight from the committed MiD table by column name, so lowering it means introducing a factor
+  with no committed source. Neither is adopted here. **The bound itself remains an unsourced
+  pre-registered ASSUMPTION** (every `100_plus` column of the committed SrV table is exactly 0.0,
+  a structural survey blind spot per ADR-0102 Assumption 2), so the "fail" is a failure against a
+  chosen operating bound, not against an observed value.
+- **The 100 % proof inside a scheduled production run stays OWED.** Ruling R4 substituted a 100 %
+  proof on the CACHED i329 population for check 6's "25 % proof run first"; the proof in a
+  scheduled production run has not happened and is not claimed. A manifest is to follow when it
+  does.
+- **The 37,705 workers with an assigned workplace whom the population does not flag employed are
+  recorded as an OPEN DATA QUESTION and are not acted on here.** They are counted per Kreis
+  (`n_workers_not_employed`) and warned about; why the model assigns workplaces to 12.4 % more
+  persons than the enriched population calls employed is unexplained, and is tracked with the
+  participation gap under issue #244.
+
+**Rejected here, with the reason:**
+- **Relaxing either bound post hoc.** Rejected: both are pre-registered in this record, both are
+  explicitly labelled unsourced ASSUMPTIONS, and moving a threshold after seeing its own result
+  destroys the only thing the pre-registration buys.
+- **Switching the default to OFF.** Rejected: it would discard a demonstrated and side-effect-free
+  improvement of the far-commuter tail (-2.63 pp on the reporting-day `100_plus` band, with the
+  written population differing for exactly the 8,301 re-drawn persons and no other), on the
+  strength of two failures against bounds that have no observed value behind them.
+- **Re-specifying check 1 inside this record.** Rejected: see above -- it would be a check
+  retro-fitted to its own outcome. It is named as follow-up work instead.
+
+**Follow-ups named, none of them done here:** (i) the 100 % proof in a scheduled production run
+(check 6); (ii) a re-specification of check 1 against a home-office attribution the population does
+not yet carry; (iii) the fourth check-4 diagnostic, pool size per matching cell, which the
+diagnostics dict still does not record; (iv) folding the reporting-day trips diagnostics (the R8/R9
+counters, currently log-only) into a committed JSON in the next run; (v) the 37,705
+not-employed workers and the participation gap, both under issue #244.
