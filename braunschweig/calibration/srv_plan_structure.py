@@ -53,6 +53,7 @@ record ``docs/registry/data/srv2023_plan_structure_reference.yml``).
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 import pandas as pd
@@ -362,8 +363,14 @@ def person_level(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
         "first_dep_min": grouped["dep_min"].first(),
         "last_arr_min": grouped["arr_min"].last(),
     })
+    # One pass over (pid, purpose) instead of one grouped pass per purpose: the model side of
+    # the comparison runs this over millions of trips, where seven grouped passes are the
+    # dominant cost. A purpose that occurs in no trip at all is absent from the crosstab and
+    # gets an explicit zero column (never a missing one).
+    counts_by_purpose = pd.crosstab(t["pid"], t["purpose"])
     for purpose in PURPOSES:
-        per["n_%s" % purpose] = grouped["purpose"].apply(lambda s, p=purpose: int((s == p).sum()))
+        per["n_%s" % purpose] = (counts_by_purpose[purpose] if purpose in counts_by_purpose.columns
+                                 else 0)
     letters = t["purpose"].map(PATTERN_LETTER).fillna(PATTERN_LETTER[UNKNOWN_PURPOSE])
     origin = (grouped["prev_purpose"].first().map(PATTERN_LETTER)
               .fillna(PATTERN_LETTER[UNKNOWN_PURPOSE]))
@@ -387,7 +394,11 @@ def person_level(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
             raise ValueError(
                 "trip count mismatch: %d of %d persons have a reconstructed trip count that "
                 "differs from the reported one (E_ANZ_WEGE2); the trip table does not describe "
-                "the same reporting day as the person table" % (mismatched, len(out)))
+                "the same reporting day as the person table. Most likely causes: trips dropped "
+                "by the GEWICHT_W_ZENSUS exclusion in harmonise_srv (a person keeps its reported "
+                "count but loses trips), a trip file from a different delivery, or a caller "
+                "that filtered trips without filtering persons the same way"
+                % (mismatched, len(out)))
     return out.reset_index(drop=True)
 
 
@@ -444,8 +455,9 @@ def segment_metrics(per: pd.DataFrame, trips: pd.DataFrame, segment_label: str) 
     ``per`` is a :func:`person_level` frame restricted to the segment; ``trips`` may be the full
     harmonised trip table (it is restricted to the segment's persons here). Person-level metrics
     are weighted by the person weight, trip-level metrics by the trip weight. An empty segment
-    yields ``NaN`` for every metric (and 0 for the two counts) rather than raising, so a segment
-    that is empty in one universe still occupies its row.
+    yields ``NaN`` for every metric except the three counts ``n_persons_unweighted``,
+    ``n_persons_weighted`` and ``n_work_activities_measured``, which are 0, rather than raising,
+    so a segment that is empty in one universe still occupies its row.
 
     Metric groups (all names are stable; Task 10 compares the model side by name):
 
@@ -465,7 +477,11 @@ def segment_metrics(per: pd.DataFrame, trips: pd.DataFrame, segment_label: str) 
     * timing: ``mean_work_activity_h``, ``share_work_activities_lt_2h``,
       ``n_work_activities_measured``, ``dep_hour_share_<purpose|all>_<hour>`` for hours 4..23
     """
-    _require_columns(per, ["pid", "weight", "n_trips", "mobile"], "per")
+    _require_columns(per, ["pid", "weight", "n_trips", "mobile", "n_home_returns",
+                           "n_nonhome_acts", "first_from_home", "last_to_home"]
+                     + ["n_%s" % purpose for purpose in PURPOSES], "per")
+    _require_columns(trips, ["pid", "seq", "weight", "purpose", "prev_purpose", "dep_min",
+                             "arr_min"], "trips")
     weights = per["weight"].values if len(per) else np.zeros(0)
     mobile = per["mobile"].values.astype(bool) if len(per) else np.zeros(0, dtype=bool)
     mobile_weights = weights[mobile] if len(per) else np.zeros(0)
@@ -591,3 +607,21 @@ def build_reference(persons: pd.DataFrame, trips: pd.DataFrame, *, universe: str
             rows.append({"universe": universe, "segment": label, "metric": metric,
                          "value": float(value), "n_unweighted": n_unweighted})
     return pd.DataFrame(rows, columns=REFERENCE_COLUMNS)
+
+
+def load_plan_structure_reference(srv_dir) -> pd.DataFrame:
+    """Load the committed plan-structure reference table from ``srv_dir``.
+
+    ``srv_dir`` is the directory holding the committed SrV tables (normally
+    ``eqasim-data/data/braunschweig/srv``). The provenance header is skipped (``comment="#"``),
+    so the returned frame has exactly :data:`REFERENCE_COLUMNS`. Raises ``FileNotFoundError``
+    naming the path and the regeneration script rather than returning an empty frame -- a
+    consumer must never silently compare against nothing.
+    """
+    path = os.path.join(str(srv_dir), PLAN_STRUCTURE_TABLE)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            "Committed SrV plan-structure reference missing: %s. Regenerate with "
+            "scripts/extract_srv_plan_structure.py (the raw SrV 2023 microdata is local-only "
+            "and never committed)." % path)
+    return pd.read_csv(path, comment="#")
