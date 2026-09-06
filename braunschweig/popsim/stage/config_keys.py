@@ -215,14 +215,12 @@ KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
 # the closing dwell duration from the observed distribution; "fixed_1h" uses a
-# fixed one-hour dwell. Reserved for the trip-chain closure consumer (a later
-# task); NOT YET read by braunschweig.popsim.completed_donor.
+# fixed one-hour dwell. Read by braunschweig.popsim.trips_stage.
 KEY_CLOSURE_DWELL_MODEL = "braunschweig.population.popsim.closure_dwell_model"
 # Seed the trip_class KREIS-control seed counts from the CLOSURE-augmented
 # diary (i.e. after a synthesised closing leg is added) rather than the raw
-# MiD anzwege1. Default ON (project rule: new features default on). Reserved
-# for the trip_class seed-derivation consumer (a later task); NOT YET read by
-# braunschweig.popsim.completed_donor.
+# MiD anzwege1. Default ON (project rule: new features default on). Read by
+# braunschweig.popsim.stage.
 KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_seed_counts_closure"
 
 

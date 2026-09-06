@@ -265,19 +265,22 @@ python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml
 
 **Plan-structure config keys (`popsim_mid` only).** These six keys govern how a
 MiD donor's reporting day becomes a MATSim plan. All are default ON in
-`configs/base_bs.yml` (which stays the single home of every flag — the table is
-here because the three trip-side keys must be turned OFF on the ENTD path, see
-below); the rationale is ADR-0106 / ADR-0107 / ADR-0108 and the feature records
-`diary_plan_match`, `rbw_leg_convention`, `home_closure_model`.
+`configs/base_bs.yml`, which stays the single home of every flag and its
+default value (the table is here because the three trip-side keys must be
+turned OFF on the ENTD path, see below); the rationale is ADR-0106 / ADR-0107 /
+ADR-0108 and the feature records `diary_plan_match`, `rbw_leg_convention`,
+`home_closure_model`.
 
-| Key (prefix `braunschweig.population.popsim.`) | Default | Effect |
-|---|---|---|
-| `diary_plan_match` | `true` | Re-draws a plan source whose MiD diary was not collected (`anzwege1` 803/804) or whose only legs are rbW legs to a matched realisable weekday diary |
-| `exclude_holiday_plan_sources` | `true` | Excludes public-holiday reporting days (`feiertag == 1`) from plan sources and from the remap donor pool |
-| `exclude_rbw_legs` | `true` | Drops `W_RBW == 1` legs from the day plan (the round happens inside the work activity); keeps `rbwLegsCount` / `rbwDistanceKm` as person attributes |
-| `drop_leading_arrive_home_leg` | `true` | Drops a first leg that *arrives* home (`W_SO1 == 2`) instead of fabricating a home→home first trip |
-| `closure_dwell_model` | `empirical` | Draws the dwell before the synthesised return-home trip from observed durations (purpose × arrival band); `fixed_1h` restores the previous 3600 s constant |
-| `trip_class_seed_counts_closure` | `true` | Counts the closed day in the `trip_class` PopulationSim seed (`anzwege1 + 1` for an open-ended source), so seed, plan and SrV target count the same day |
+| Key (prefix `braunschweig.population.popsim.`) | Effect |
+|---|---|
+| `diary_plan_match` | Re-draws a plan source whose MiD diary was not collected (`anzwege1` 803/804) or whose only legs are rbW legs to a matched realisable weekday diary |
+| `exclude_holiday_plan_sources` | Excludes public-holiday reporting days (`feiertag == 1`) from plan sources and from the remap donor pool |
+| `exclude_rbw_legs` | Drops `W_RBW == 1` legs from the day plan (the round happens inside the work activity); keeps `rbwLegsCount` / `rbwDistanceKm` as person attributes |
+| `drop_leading_arrive_home_leg` | Drops a first leg that *arrives* home (`W_SO1 == 2`) instead of fabricating a home→home first trip |
+| `closure_dwell_model` | Draws the dwell before the synthesised return-home trip from observed durations (purpose × arrival band); `fixed_1h` restores the previous 3600 s constant |
+| `trip_class_seed_counts_closure` | Counts the closed day in the `trip_class` PopulationSim seed (`anzwege1 + 1` for an open-ended source), so seed, plan and SrV target count the same day |
+
+See `configs/base_bs.yml` for each key's current default value.
 
 The last three need MiD columns (`W_RBW`, `W_SO1`) and the MiD Wege table that
 ENTD does not have, so the ENTD donor source **rejects** any non-default value:

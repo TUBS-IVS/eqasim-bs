@@ -88,10 +88,18 @@
     the target side the SrV DOES count professional trips, so the replacement day and the target
     agree; this is stated as an explicit assumption, not as a measured equivalence.
 - **Consequences:**
-  - The number of realised work trips falls and the work-activity duration distribution shifts;
-    the expected directions (work->work repeats towards the SrV 4.5 % same-purpose share, 1-2 h
-    work activities from 19.5 % towards single digits, night-time work departures vanishing) are
-    **ASSUMPTIONS** pre-registered in this branch's A/B ladder, NOT measurements.
+  - The number of realised work trips falls and the work-activity duration distribution shifts.
+    Two distinct expected directions are pre-registered **ASSUMPTIONS** of this branch's A/B
+    ladder, NOT measurements, and must not be conflated:
+    (a) fewer spurious work->work leg repeats -- a qualitative expectation with no committed
+    reference at that purpose-pair granularity, since the SrV reference does not break
+    `share_trips_followed_by_same_purpose` down by purpose pair; and
+    (b) the ALL-purpose `share_trips_followed_by_same_purpose` metric (which counts home->home
+    pairs too, see ADR-0108's definitional note) moving from its i329 boundary-measurement value
+    (10.6 %, ADR-0108) towards the committed SrV reference **4.5 %**
+    (`share_trips_followed_by_same_purpose` = 0.0453, `at_home_zero` universe, segment "all").
+    Also pre-registered: 1-2 h work activities from 19.5 % towards single digits, and night-time
+    work departures vanishing.
   - Anything measured on the previous population that counted rbW legs as work trips is affected:
     the commute-distance baselines (#357-#359, ADR-0103) and the BA-flow calibration must be
     re-measured after the ladder, because more employed persons with a genuine work trip means
@@ -104,7 +112,7 @@
 - **Evidence:** issue **#366**; branch `feature/plan-structure-fix` (commits `ec500224` +
   `8b889e9b` the leg drop, `f1509186` + `84ba1026` the person attributes);
   `braunschweig/popsim/trips.py`, `braunschweig/popsim/enriched_adapter.py`,
-  `synthesis/output.py`, `braunschweig/matsim/scenario/population.py`; tests
+  `synthesis/output.py`, `matsim/scenario/population.py`; tests
   `tests/test_popsim_trips_rbw.py`, `tests/test_rbw_attributes_output.py`,
   `tests/test_popsim_trips_stage.py`; feature record
   `docs/registry/features/rbw_leg_convention.yml`. The eqasim-france mappings above were read in

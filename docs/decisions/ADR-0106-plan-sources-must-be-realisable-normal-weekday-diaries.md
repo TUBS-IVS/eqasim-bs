@@ -93,7 +93,9 @@
   - **Observability** (CLAUDE.md fallback transparency): the remap is logged per resolution class
     with counts, rates and the match-level distribution under the marker `[diary_plan_match]`,
     the per-person decisions are written to `diary_plan_match_trace.parquet` next to the weekend
-    trace, and a remapped share outside 5-25 % warns.
+    trace, and a remapped share outside the expected band warns (the band and the `len(persons) >
+    1000` guard that gates the warning are `braunschweig.popsim.diary_plan_match.EXPECTED_SHARE_REMAPPED`;
+    see the feature record for the exact figures).
 - **Rationale and rejected alternatives:** The argument is not that the borrowed day is the day
   the person would have had -- it is that a plan source with no diary produces a day that is
   demonstrably WRONG (empty) for 92 % of the affected donors, while the matched replacement is

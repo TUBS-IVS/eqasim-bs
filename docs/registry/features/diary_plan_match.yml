@@ -67,8 +67,12 @@ evidence:
     note: |
       The remap itself is the "fallback" whose rate must stay observable: the pass logs, per
       resolution class, the count and share of persons remapped and the match-level distribution
-      of the hierarchical relaxation, and WARNS when the remapped share falls outside 5-25%
-      (i329 magnitude: ~14%). Per-person decisions are written to diary_plan_match_trace.parquet
+      of the hierarchical relaxation, and WARNS when the population has more than 1,000 persons
+      AND the remapped share falls outside 5-30% (i329 magnitude: ~14%; below 1,000 persons the
+      band is not statistically meaningful and the warning is suppressed). The band and the guard
+      are the code constant braunschweig.popsim.diary_plan_match.EXPECTED_SHARE_REMAPPED --
+      this is the single place the exact figures are stated; ADR-0106 points here rather than
+      repeating them. Per-person decisions are written to diary_plan_match_trace.parquet
       next to the weekend trace, and the counters are published via context.set_info.
       Defense in depth on the other side: with the flag ON, derive_trip_class_seed RAISES if any
       resolved plan source still carries 803/804, so a silent regression cannot hide behind a

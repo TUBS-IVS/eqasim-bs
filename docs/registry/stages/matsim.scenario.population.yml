@@ -21,6 +21,7 @@ resolves_to:
   popsim_open: braunschweig.matsim.scenario.population
 features:
 - carless_routing_remode
+- rbw_leg_convention
 - urban_parking
 decisions:
 - ADR-0022

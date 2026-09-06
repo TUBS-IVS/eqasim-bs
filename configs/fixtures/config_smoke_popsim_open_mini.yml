@@ -166,7 +166,9 @@ config:
   # MiD Wege columns W_RBW / W_SO1 and the MiD Wege table the empirical closure dwell
   # is estimated from, none of which ENTD has. EntdSource.build_trips REJECTS a
   # non-default value with a message naming the key, so the smoke would abort with the
-  # default-ON values of configs/base_bs.yml. Same convention as the popsim_open
+  # defaults braunschweig.popsim.trips_stage.configure registers for every workflow
+  # (exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+  # closure_dwell_model="empirical"). Same convention as the popsim_open
   # full-size fixture config.
   braunschweig.population.popsim.exclude_rbw_legs: false
   braunschweig.population.popsim.drop_leading_arrive_home_leg: false

@@ -41,7 +41,7 @@ code_paths:
 - braunschweig/popsim/trips_stage.py
 - braunschweig/popsim/enriched_adapter.py
 - synthesis/output.py
-- braunschweig/matsim/scenario/population.py
+- matsim/scenario/population.py
 evidence:
   tests:
   - tests/test_popsim_trips_rbw.py
@@ -79,11 +79,15 @@ validation:
   runs: []
   metric: share_work_activities_lt_2h
   note: >-
-    NOT yet measured. The expected directions recorded in ADR-0107 (work->work repeats falling
-    towards the SrV 4.5% same-purpose share, 1-2 h work activities from 19.5% towards single
-    digits, night-time work departures vanishing) are pre-registered ASSUMPTIONS of the A/B
-    ladder, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv against the
-    committed SrV reference. No arm has run, so no claim is validated.
+    NOT yet measured. The expected directions recorded in ADR-0107 are pre-registered ASSUMPTIONS
+    of the A/B ladder, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv against
+    the committed SrV reference -- two distinct metrics, not to be conflated: fewer spurious
+    work->work leg repeats (qualitative, no committed reference exists at that purpose-pair
+    granularity) and the ALL-purpose share_trips_followed_by_same_purpose metric (which also
+    counts home->home pairs, ADR-0108) falling from its i329 boundary-measurement value of 10.6%
+    towards the committed SrV reference of 4.5%. Also pre-registered: 1-2 h work activities from
+    19.5% towards single digits, and night-time work departures vanishing. No arm has run, so no
+    claim is validated.
 assessment:
   status: pending
   by: null

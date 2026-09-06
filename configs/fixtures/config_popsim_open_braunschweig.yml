@@ -254,9 +254,12 @@ config:
   # columns W_RBW / W_SO1 and the MiD Wege table the empirical closure dwell is
   # estimated from, none of which the ENTD donor has. EntdSource.build_trips REJECTS
   # a non-default value with a message naming the key, so this popsim_open config
-  # would be unrunnable if these were left at their default-ON base values -- they are
-  # set to their OFF values here explicitly, the same convention this file already
-  # uses for income_spatial_tilt / placement_income. The remaining three keys
+  # would be unrunnable if these were left at the defaults
+  # braunschweig.popsim.trips_stage.configure registers for every workflow
+  # (exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+  # closure_dwell_model="empirical") -- they are set to their OFF values here
+  # explicitly, the same convention this file already uses for
+  # income_spatial_tilt / placement_income. The remaining three keys
   # (diary_plan_match, exclude_holiday_plan_sources, trip_class_seed_counts_closure)
   # are left at their defaults because they cannot change this workflow's result:
   # exclude_holiday_plan_sources is declared only by the completed_donor stage, which
