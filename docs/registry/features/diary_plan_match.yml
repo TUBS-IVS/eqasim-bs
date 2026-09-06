@@ -46,7 +46,9 @@ evidence:
   - tests/test_diary_facts.py
   - tests/test_completed_donor_diary_match.py
   - tests/test_completed_donor_stage.py
-  - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_raises
+  - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_raises_for_mobile_803_source
+  - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_keeps_immobile_803_source
+  - tests/test_completed_donor_diary_match.py::test_kept_immobile_803_source_survives_the_seed_guard_and_seeds_class_zero
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_completed_donor_stage.py::test_build_completed_donor_off_matches_pre_task_inline_pipeline
@@ -75,8 +77,13 @@ evidence:
       repeating them. Per-person decisions are written to diary_plan_match_trace.parquet
       next to the weekend trace, and the counters are published via context.set_info.
       Defense in depth on the other side: with the flag ON, derive_trip_class_seed RAISES if any
-      resolved plan source still carries 803/804, so a silent regression cannot hide behind a
-      seed that keeps hitting its target.
+      resolved plan source is one this match PROMISES to remap -- anzwege1 804, or 803 with the
+      SOURCE's mobil == 1 -- so a silent regression cannot hide behind a seed that keeps hitting
+      its target. The guard mirrors the classification exactly (fix wave 2026-09-06, controller
+      ruling R18): a 803 source with mobil != 1 is KEPT here by design, so raising on it aborted a
+      correctly behaving production run; it is instead seeded as 0 trips (its plan is empty by
+      construction) rather than age-band imputed, and the kept/must-have-been-remapped counts are
+      logged as rates. The guard requires the MiD column mobil and fails fast without it.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv

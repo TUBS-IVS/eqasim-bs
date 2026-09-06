@@ -54,17 +54,55 @@
     appended return-home trip is drawn, seeded with `random_seed + CLOSURE_SEED_OFFSET`
     (`74517`), from the empirical activity-duration distribution of the SAME purpose in the
     DIRECTLY CLOSED MiD weekday chains, binned by purpose x arrival-hour band (band edges
-    `ARRIVAL_BANDS_H = (0, 14, 18, 20, 22, 48)`, five bands). A cell with fewer than
-    `min_obs = 30` observations falls back to the purpose marginal, and that to a global marginal;
-    both fallback counts and their rates are logged, and a global-fallback rate above
-    `CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5` warns loudly, because a majority hitting the global
-    pool means the primary estimate is broken rather than thin. The draw is capped so the plan
-    stays inside `MAX_PLAN_TIME_SECONDS`, and the cap rate is logged.
-    `closure_dwell_model: fixed_1h` reproduces the previous constant exactly.
+    `ARRIVAL_BANDS_H = (0, 14, 18, 20, 22, 48)`, i.e. **five** bands: <14 h, 14-18 h, 18-20 h,
+    20-22 h, 22 h+). A cell with fewer than `min_obs` observations falls back to the purpose
+    marginal, and that to a global marginal; both fallback counts and their rates are logged, and
+    a global-fallback rate above `CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5` warns loudly, because a
+    majority hitting the global pool means the primary estimate is broken rather than thin.
+    `min_obs` is the config key `braunschweig.population.popsim.closure_dwell_min_obs` (default
+    **30**): it trades cell resolution against cell occupancy, so a study may legitimately vary it.
+    The complementary bound on which observations are pooled at all (`MAX_OBSERVED_DWELL_S` =
+    16 h) stays a module constant on purpose -- it delimits what a closing activity can plausibly
+    last (a longer "duration" means the donor's day spans a night, so the observation is not a
+    within-day dwell at all), which is not a parameter a study varies.
+    `closure_dwell_model: fixed_1h` reproduces the previous constant exactly, INCLUDING the
+    absence of the plan-time cap (see the next bullet).
+
+    **What the pool is made of, and its bias.** The pools hold the duration of EVERY activity that
+    is followed by another trip of the same person (`next departure - this arrival`), not only of
+    activities that a donor actually ended by going home. An activity that is followed by another
+    trip is by construction not the donor's last one, so the pool is **length-biased downward**
+    relative to a genuine day-closing activity: a person who is still going out again tends to have
+    stayed put for less time than one who is finishing their day. The alternative -- pooling from
+    open chains too -- is impossible (an open chain's terminal activity has no observed next
+    departure, i.e. exactly the quantity being estimated), and restricting the pool to "last
+    activity before a return home" would leave far thinner cells. The direction of the bias is
+    therefore stated here and must be read into any comparison of realised activity durations: the
+    model's closing activities are, if anything, too SHORT, not too long.
+  - **The plan-time cap is an EMPIRICAL-path behaviour only** (fix wave 2026-09-06, controller
+    ruling R19). Only a DRAWN dwell can push a chain past `MAX_PLAN_TIME_SECONDS` where the
+    one-hour constant would not have, so only the empirical path caps; with `fixed_1h` (or no
+    model at all) the behaviour is exactly the pre-#367 one -- no cap, and a chain that ends up
+    beyond the bound flows to the existing post-repair bound validation, which resamples the
+    person from a same-cell donor. Capping the constant path too would have made the OFF path
+    non-byte-identical, would have changed the Phase B donor pool, and could produce a
+    zero-duration final activity. When the cap does apply it never shortens the dwell below the
+    `HOME_CLOSURE_DWELL_S` floor: if even that floor breaches the bound (the outbound travel time
+    alone consumes the remaining budget), the row is left UNCAPPED for the same bound
+    validation -- a plausible closing activity is worth more than a technically-inside-the-bound
+    one-minute stop. The cap rate is logged either way and WARNs only above
+    `CLOSURE_CAP_WARN_RATE = 0.05` (the level pre-registered in the design spec), INFO otherwise.
   - **Synthetic closure trips are marked, not invisible.** `_append_return_home` sets
     `is_synthetic_closure` and suffixes the `trip_key` with `_closure`; `trips_stage` logs the
     share of persons and trips affected, and the new analysis stage reports it. A closure the
-    model invents must be distinguishable from a trip the donor reported.
+    model invents must be distinguishable from a trip the donor reported. The closure REPORTING
+    lives in those two places -- the `trips_stage` log and
+    `braunschweig.analysis.synthesis.plan_structure_vs_srv` -- and deliberately NOT in
+    `population_validation`: the closure share is a plan-structure quantity that only means
+    something next to the SrV reference and the accepted-deviation rows, and
+    `population_validation`'s trip-coherence section (which the design spec originally named)
+    reports control fit, not structure. Anyone looking for the closure rate looks at the analysis
+    stage's outputs or the stage log, not at the validation report.
   - **The trip_class seed counts the day the person will realise.** With
     `braunschweig.population.popsim.trip_class_seed_counts_closure` ON (default), the seed is
     `anzwege1 + 1` for a plan source whose last directly recorded, non-rbW leg does not end at
@@ -75,7 +113,28 @@
   - **A leading leg that ARRIVES home is dropped** (`braunschweig.population.popsim.
     drop_leading_arrive_home_leg`, default ON): the day starts at home and the rest of the chain
     is unchanged, instead of fabricating a home->home first trip. A chain that becomes EMPTY by
-    this drop goes through the ADR-0106 remap, because the person was demonstrably mobile.
+    this drop goes through the ADR-0106 remap, because the person was demonstrably mobile. The
+    trip_class seed SUBTRACTS that dropped leg (`anzwege1 - 1`, floored at 0) whenever the same
+    flag is on, for the same reason the closure adds one: the control must count the day the plan
+    realises (fix wave 2026-09-06, controller ruling R20). The flag is therefore read by
+    `braunschweig.popsim.stage` as well as by `trips_stage` and `completed_donor`, and the three
+    must be configured consistently.
+  - **Two seed-vs-plan residuals are ACCEPTED, not fixed** (fix wave 2026-09-06, ruling R20).
+    Both are named here so no later reader mistakes them for oversights:
+    - **(a) Closure-excluded persons still get the +1.** `repair_trips` excludes persons with NaN
+      plan times or an over-bound chain from the closure append and routes them to the same-cell
+      resample; the seed, which is derived earlier and knows nothing about either condition, has
+      already counted the return trip for them. Their seed therefore counts one trip more than
+      their (replaced) plan realises. Left as is because the seed would otherwise have to
+      anticipate a repair decision taken two stages later, and because the resample replaces the
+      whole chain anyway, so the "correct" count is not defined for them.
+    - **(b) With `exclude_rbw_legs` OFF and `trip_class_seed_counts_closure` ON, the +1 can be
+      wrong.** `src_ends_at_home` describes the last DIRECT (non-rbW) leg, while with rbW legs
+      kept the realised chain ends on an rbW leg, whose purpose need not agree. The combination is
+      not the production configuration (both flags default ON, where the two coincide by
+      construction) and is only reachable in a deliberate A/B; the mismatch is documented rather
+      than special-cased, because ADR-0107 already states that a plan containing rbW legs counts a
+      different day by construction.
   - **Accepted deviations, recorded here as such, not silently absorbed.** Because plans are
     always closed:
     - the SrV **2.24 %** open-end days are modelled as returning home late -> model 0 %;
@@ -128,6 +187,9 @@
     deviation rows next to them.
   - `is_synthetic_closure` is a trips-frame column and deliberately does NOT reach `trips.csv`
     (that writer has an explicit column list); the analysis stage reads the cached frame.
+  - The two residuals above mean seed and plan agree for the production configuration but not for
+    every reachable one; any A/B that turns `exclude_rbw_legs` off must not read a `trip_class`
+    control gap as a fitting failure.
   - MiD-only: `EntdSource.build_trips` rejects a non-`fixed_1h` dwell model and the arrive-home
     drop (no MiD Wege table, no `W_SO1`), so the two popsim_open fixture configs set both keys to
     their OFF values explicitly.
@@ -135,7 +197,8 @@
   **#375**; branch `feature/plan-structure-fix` (commits `bd7b0fae` + `d7f4eb7d` the empirical
   dwell and the closure marking, `74cb309b` + `48ca587b` the stage threading, `1c5ad2c8` +
   `a29e289b` the seed closure, `ec500224` + `8b889e9b` the arrive-home drop, `955bbe0f` the
-  analysis stage); `braunschweig/popsim/closure_dwell.py`,
+  analysis stage, `0ea220e4` the fix wave that scoped the cap to the empirical path, added the
+  arrive-home subtraction to the seed and made `min_obs` a config key); `braunschweig/popsim/closure_dwell.py`,
   `braunschweig/popsim/plan_validation.py`, `braunschweig/popsim/trips.py`,
   `braunschweig/popsim/trips_stage.py`, `braunschweig/popsim/mid/participation.py`,
   `braunschweig/analysis/synthesis/plan_structure_vs_srv.py`; tests

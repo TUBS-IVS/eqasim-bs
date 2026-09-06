@@ -8,7 +8,13 @@ description: >-
   CLOSURE_SEED_OFFSET 74517) from the observed activity-duration distribution of the same purpose
   x arrival-hour band (ARRIVAL_BANDS_H (0, 14, 18, 20, 22, 48), five bands) in the directly closed
   MiD weekday chains, instead of the constant HOME_CLOSURE_DWELL_S = 3600 s that gave 65,761 work
-  activities a duration of exactly 1.0 h; closure_dwell_model "fixed_1h" reproduces the constant.
+  activities a duration of exactly 1.0 h. The pools are length-biased downward (they hold every
+  activity FOLLOWED by another trip, which is never a genuine day-closing activity -- ADR-0108);
+  the cell threshold is the config key closure_dwell_min_obs (default 30). closure_dwell_model
+  "fixed_1h" reproduces the constant EXACTLY, including the absence of the plan-time cap: capping
+  a drawn dwell at MAX_PLAN_TIME_SECONDS is an EMPIRICAL-path behaviour only (only a drawn dwell
+  can exceed the bound where the constant would not), and even there the cap keeps a floor of
+  HOME_CLOSURE_DWELL_S or leaves the row to the existing bound validation.
   (2) synthesised closure rows are MARKED (is_synthetic_closure, trip_key suffix _closure) so an
   invented trip is distinguishable from a reported one. (3) the trip_class PopulationSim seed
   counts the closed day (anzwege1 + 1 for a plan source whose last directly recorded non-rbW leg
@@ -31,6 +37,7 @@ production:
   enabled: true
   flags:
   - braunschweig.population.popsim.closure_dwell_model
+  - braunschweig.population.popsim.closure_dwell_min_obs
   - braunschweig.population.popsim.drop_leading_arrive_home_leg
   - braunschweig.population.popsim.trip_class_seed_counts_closure
 introduced:
@@ -60,7 +67,14 @@ evidence:
       chain ends AWAY from home, so a closure is actually synthesised and closure_dwell_model
       "fixed_1h" is actually drawn, and the test asserts the closure row's dwell equals the
       unchanged constant HOME_CLOSURE_DWELL_S (the earlier version of this test was vacuous
-      because its fixture chain already ended at home -- review finding, fix round 1). The seed
+      because its fixture chain already ended at home -- review finding, fix round 1). What is
+      byte-identical is precisely the fixed_1h / no-model path INCLUDING the absence of the
+      plan-time cap, pinned near the bound by
+      tests/test_popsim_plan_validation.py::test_repair_with_fixed_dwell_model_is_never_capped and
+      ::test_repair_without_dwell_model_is_never_capped; the cap and its
+      HOME_CLOSURE_DWELL_S floor are exercised on the empirical path by
+      ::test_repair_caps_empirical_closure_dwell_at_plan_time_bound and
+      ::test_repair_leaves_closure_uncapped_when_even_the_floor_breaches_the_bound. The seed
       half of the feature is pinned separately by
       tests/test_trip_class_seed_closure.py::test_counts_closure_off_is_previous_behaviour, and
       the arrive-home drop by
@@ -70,11 +84,14 @@ evidence:
     log_marker: '[popsim.plan_validation] closure dwell:'
     note: |
       The empirical dwell has a two-step fallback and both steps are counted and logged as rates:
-      a (purpose, arrival band) cell with fewer than min_obs = 30 observations falls back to the
-      purpose marginal, and that to a global marginal. A global-fallback rate above
-      CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5 WARNS, because a majority hitting the global pool
-      means the primary estimate is broken (an empty join, a wrong key) rather than merely thin.
-      The cap that keeps a drawn dwell inside MAX_PLAN_TIME_SECONDS is counted too. The model
+      a (purpose, arrival band) cell with fewer than closure_dwell_min_obs (default 30)
+      observations falls back to the purpose marginal, and that to a global marginal. A
+      global-fallback rate above CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5 WARNS, because a majority
+      hitting the global pool means the primary estimate is broken (an empty join, a wrong key)
+      rather than merely thin. The cap that keeps a drawn dwell inside MAX_PLAN_TIME_SECONDS is
+      counted too, together with the rows that could NOT be capped without breaching the
+      HOME_CLOSURE_DWELL_S floor; that rate WARNS above CLOSURE_CAP_WARN_RATE = 0.05 and is INFO
+      otherwise. The model
       build itself logs its pooled observation count under the second marker "[closure_dwell]",
       and trips_stage logs the share of persons and trips carrying a synthetic closure.
   reference:

@@ -54,7 +54,9 @@ evidence:
     note: |
       The OFF path is pinned against the PRE-#366/#367 behaviour, not against itself: the fixture
       chain ends away from home so a closure is actually synthesised, and the test additionally
-      asserts the closure dwell equals the unchanged constant HOME_CLOSURE_DWELL_S.
+      asserts the closure dwell equals the unchanged constant HOME_CLOSURE_DWELL_S -- with no
+      plan-time cap either, which is what "byte-identical" means here (the cap applies only to a
+      drawn, empirical dwell; see home_closure_model and ADR-0108).
       tests/test_popsim_trips_rbw.py::test_default_keeps_every_leg pins the leg-level default, and
       tests/test_rbw_attributes_output.py::test_enriched_adapter_without_facts_has_no_rbw_columns
       plus ::test_output_columns_without_rbw_attributes_unchanged pin that the two person
@@ -64,9 +66,11 @@ evidence:
     instrumented: true
     log_marker: '[popsim.trips] rbW legs dropped'
     note: |
-      The drop logs count, share and the number of donor persons emptied by it; that count must be
-      0 when diary_plan_match is ON (only-rbW sources are remapped upstream) and a non-zero value
-      WARNS with the reason. A missing W_RBW column fails fast (KeyError naming the column) rather
+      The drop logs count, share and the number of donor persons emptied by it, the latter over the
+      donors REFERENCED by the synthetic persons rather than over the whole MiD Wege table (a
+      whole-table count made the warning a permanent false alarm, since the raw file always holds
+      unused only-rbW donors); that count must be 0 when diary_plan_match is ON (only-rbW sources
+      are remapped upstream) and a non-zero value WARNS with the reason. A missing W_RBW column fails fast (KeyError naming the column) rather
       than silently degrading to "no rbW legs present". On the attribute side the MATSim writer
       logs the rate of persons for which rbwLegsCount / rbwDistanceKm are OMITTED (no MiD plan
       source), and the enriched adapter logs the rate at which it has to fill a missing src_* fact

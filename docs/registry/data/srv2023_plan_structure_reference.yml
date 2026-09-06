@@ -120,3 +120,13 @@ notes: |
   trips_per_person 3.1865, trips_per_mobile_person 3.7767, participation_work 0.3316,
   share_trips_followed_by_same_purpose 0.0453, tours_per_mobile 1.5951,
   share_mobile_last_to_home 0.9776, mean_work_activity_h 6.2904.
+
+  Code state in the committed header: the CSV's provenance header records commit 1a841550, the
+  state of braunschweig/calibration/srv_plan_structure.py when the table was extracted. The
+  crosstab refactor at 734d0cba (review fix round 1: the per-purpose groupby.apply replaced by a
+  crosstab) changed that module afterwards WITHOUT changing this table: the extraction was re-run
+  on the refactored code and the regenerated file was verified byte-identical to the committed
+  one, so the header's older commit id still describes the numbers exactly. The CSV is therefore
+  deliberately NOT regenerated to refresh the id -- a rewrite would only churn the header line and
+  cost the byte-identity evidence. Anyone re-extracting must expect 1a841550 in the header of a
+  table produced by 734d0cba or later.
