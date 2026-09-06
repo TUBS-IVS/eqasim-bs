@@ -86,6 +86,13 @@ PERSON_FIELDS = [
 # PERSON_FIELDS.index(...) lookups for the mandatory fields are unaffected.
 OPTIONAL_PERSON_FIELDS = [
     "housing_tenure",  # Braunschweig completeness attribute (not consumed by the sim)
+    # Braunschweig rbW plan-source facts (popsim_mid): the number of regular
+    # work-related trips (regelmaessige berufliche Wege, MiD W_RBW) reported by the
+    # plan donor and their total coded distance in km, copied to these column names
+    # by braunschweig.popsim.enriched_adapter. Documentation attributes explaining
+    # why a person's plan can be short or empty; not consumed by the simulation.
+    "rbw_legs_count",
+    "rbw_distance_km",
 ]
 
 
@@ -186,6 +193,28 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _housing_tenure is None or pd.isna(_housing_tenure):
             _housing_tenure = "unknown"
         writer.add_attribute("housingTenure", "java.lang.String", str(_housing_tenure))
+
+    # Braunschweig rbW plan-source facts: number and total coded distance of the
+    # plan donor's regular work-related trips (regelmaessige berufliche Wege, MiD
+    # W_RBW), attached by braunschweig.popsim.diary_facts and renamed by
+    # braunschweig.popsim.enriched_adapter. ADDITIVE: emitted only when the columns
+    # are in the person tuple (popsim_mid with the diary-facts attachment), so the
+    # output is byte-identical otherwise. Documentation attributes -- they explain a
+    # short or empty plan; they are not consumed by the simulation.
+    if "rbw_legs_count" in person_fields:
+        _rbw_legs_count = person[person_fields.index("rbw_legs_count")]
+        # A NaN reaches this writer for rows reindexed onto the resident column set
+        # by the cordon in-commuter merge (see the housing_tenure guard above). 0 is
+        # the structural default -- no rbW leg reported -- and keeps the attribute a
+        # parseable java.lang.Integer instead of the literal string "nan".
+        if _rbw_legs_count is None or pd.isna(_rbw_legs_count):
+            _rbw_legs_count = 0
+        writer.add_attribute("rbwLegsCount", "java.lang.Integer", int(_rbw_legs_count))
+    if "rbw_distance_km" in person_fields:
+        _rbw_distance_km = person[person_fields.index("rbw_distance_km")]
+        if _rbw_distance_km is None or pd.isna(_rbw_distance_km):
+            _rbw_distance_km = 0.0
+        writer.add_attribute("rbwDistanceKm", "java.lang.Double", float(_rbw_distance_km))
 
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])

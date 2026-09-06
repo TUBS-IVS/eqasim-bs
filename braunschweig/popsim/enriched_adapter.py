@@ -20,7 +20,50 @@ natural non-leaking record id. This replaces the earlier "only-if-absent" guard.
 """
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+#: Plan-source diary facts (attached by braunschweig.popsim.diary_facts.
+#: attach_plan_source_facts) exported as public person attributes, mapped to their
+#: output column name. ``n_rbw_legs`` / ``rbw_distance_km`` describe the donor's
+#: regular work-related trips (regelmaessige berufliche Wege, MiD W_RBW): they
+#: explain why a person's realised plan can be short or empty, so they must be
+#: analysable in persons.csv and readable in the MATSim population.
+RBW_SOURCE_FACT_COLUMNS = {
+    "src_n_rbw_legs": "rbw_legs_count",
+    "src_rbw_distance_km": "rbw_distance_km",
+}
+
+#: Structural default for a person whose plan source carries no diary facts (no
+#: rbW leg reported). Also the dtype selector for the exported column.
+_RBW_FILL = {"rbw_legs_count": 0, "rbw_distance_km": 0.0}
+
+
+def _attach_rbw_attributes(out: pd.DataFrame) -> pd.DataFrame:
+    """Copy the present rbW plan-source facts to their public column names.
+
+    ADDITIVE: a fact column that is absent (non-MiD producer, or a popsim run
+    without the diary-facts attachment) produces no output column at all, so the
+    output stays byte-identical to the legacy output. The number of rows filled
+    with the structural default is logged as an explicit rate -- the fill applies
+    to rows whose source fact is missing (e.g. agents injected onto the resident
+    column set by the cordon merge) and must never fire silently.
+    """
+    for source_column, output_column in RBW_SOURCE_FACT_COLUMNS.items():
+        if source_column not in out.columns:
+            continue
+        values = out[source_column]
+        n_filled = int(values.isna().sum())
+        fill = _RBW_FILL[output_column]
+        out[output_column] = values.fillna(fill).astype(type(fill))
+        logger.info("[enriched_adapter] %s -> %s: %d/%d rows (%.2f%%) filled with the "
+                    "default %r (source fact missing)",
+                    source_column, output_column, n_filled, len(out),
+                    100.0 * n_filled / max(len(out), 1), fill)
+    return out
 
 
 def run(persons: pd.DataFrame) -> pd.DataFrame:
@@ -44,6 +87,9 @@ def run(persons: pd.DataFrame) -> pd.DataFrame:
         - ``census_person_id`` / ``census_household_id`` set from the current
           integer ``person_id`` / ``household_id`` (ALWAYS overwritten so the
           embedding strings from sampled do not reach the output).
+        - ``rbw_legs_count`` (int) / ``rbw_distance_km`` (float) copied from the
+          plan-source facts ``src_n_rbw_legs`` / ``src_rbw_distance_km`` ONLY
+          when those are present; absent facts leave the output unchanged.
     """
     out = persons.copy()
     # hts_id / hts_household_id: the MiD donor surrogate is the analog of the HTS
@@ -59,6 +105,8 @@ def run(persons: pd.DataFrame) -> pd.DataFrame:
     # For popsim_mid the synthetic integer id is the natural census record id.
     out["census_person_id"] = out["person_id"]
     out["census_household_id"] = out["household_id"]
+    # rbW plan-source facts -> public person attributes (only when attached).
+    out = _attach_rbw_attributes(out)
     return out
 
 
