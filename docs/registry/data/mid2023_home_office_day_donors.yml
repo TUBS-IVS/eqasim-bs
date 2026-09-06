@@ -1,0 +1,89 @@
+dataset: mid2023_home_office_day_donors
+title: MiD home-office-day donor pool (run-time attributes + trip chains)
+provider: derived at run time from the MiD 2023 B1 raw microdata (mid2023_b1)
+vintage: 2023 survey year
+geography: Germany (national MiD sample); no regional breakdown
+crs: null
+roles:
+- donor
+used_by:
+- braunschweig.synthesis.commute_day.state_stage
+- synthesis.population.trips.final
+acquisition:
+  method: derived
+  source: |
+    Built at every pipeline run by braunschweig.synthesis.commute_day.home_office_donors_stage
+    (braunschweig/synthesis/commute_day/donor_pool.py) from the SAME raw MiD 2023 delivery the
+    popsim_mid donor path reads (MiD2023_Personen.csv, MiD2023_Wege.csv, MiD2023_Haushalte.csv
+    under braunschweig.population.popsim.mid_dir; see the mid2023_b1 data record). Universe:
+    MiD persons with arbwo == weekday, P_STARB1 == worked, starb2 == at_home (a full home-office
+    reporting day). Trips are built with braunschweig.popsim.trips.build_validated_trip_table
+    using the IDENTICAL keyword arguments (resample=True, escort_purpose, escort_passive_education,
+    explicit_round_trip_purposes, random_seed) that braunschweig.popsim.trips_stage.run passes for
+    the synthetic population, minus the per-person departure-time jitter (applied once, later, by
+    plan_replacement, keyed by the RECEIVING person, never by the donor).
+  script: null
+storage:
+  expected_path: <synpp cache of braunschweig.synthesis.commute_day.home_office_donors_stage; no file>
+  committed: false
+  local_only: true
+  notes: |
+    Never written to eqasim-data/data or to any file: this is the in-memory (attributes, trips,
+    diagnostics) tuple synpp caches as the output of
+    braunschweig.synthesis.commute_day.home_office_donors_stage, keyed under the run's own
+    working_directory cache. A downstream consumer reads it exclusively via
+    context.stage("braunschweig.synthesis.commute_day.home_office_donors_stage"), never from a
+    path.
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: there is no separate file for a
+    contributor to obtain or verify -- its only prerequisite is the raw MiD 2023 B1 delivery
+    (mid2023_b1), which the verifier already checks under the popsim_mid donor path.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: derived from restricted scientific-use microdata (MiD 2023 B1)
+  restricted: true
+  redistribution: forbidden
+limitations: |
+  Never committed and never redistributed -- it inherits mid2023_b1's restricted licence, and no
+  aggregate export of the donor-level attributes/trips exists (the separate, committed
+  CELL-SIZE-only aggregate is a different dataset, mid2023_workday_location, specifically
+  mid2023_home_office_donor_pool.csv, which carries counts per cell but no donor-level rows).
+
+  Donor-pool size and composition (2026-09-04 server extraction, cited in ADR-0104 and committed
+  in mid2023_workday_location_by_commute_distance.csv's sibling file
+  mid2023_home_office_donor_pool.csv): 8,026 weekday module donors who worked at home, by
+  distance class lt10 1,860 / 10_25 1,944 / 25_50 1,462 / 50_100 696 / 100_200 276, plus 1,788
+  with no valid distance. The THINNEST cross-classified cells (distance class x has_children_u14
+  x has_active_escort) are 50_100 with children AND active escort (76 donors) and 100_200 with
+  children AND active escort (30 donors) -- too thin for a stable per-cell draw on their own,
+  which is exactly why braunschweig.synthesis.commute_day.matching coarsens away
+  household_size_class, age_class, sex and finally the distance constraint itself (in that
+  order) before giving up on a person (see the stage record's notes for the full coarsening
+  table). These two counts are the ONLY donor-pool cell sizes with a committed source (the
+  mid2023_home_office_donor_pool.csv header); no other cell size in this record is asserted.
+
+  ASSUMPTION (ADR-0104): the national MiD relationship between commute distance, household
+  composition and home-office-day behaviour is assumed to transfer to the Braunschweig/ZGB study
+  area; there is no regional MiD sample to check this against. The donor's own commute-distance
+  class is derived PRIMARILY from their first valid work-trip length (86.40% coverage on the
+  Phase A population), with P_ARB_ENTF as a cross-check only (ADR-0104 Amendment 1) -- a donor
+  who worked at home or did not work on their reporting day has no work-trip length by
+  construction, which is the residual braunschweig.synthesis.commute_day.state_stage reports as
+  donor_source_by_assigned_class rather than passing over silently.
+notes: |
+  Distinct from mid2023_workday_location (the committed, aggregate-only reference tables used for
+  the keep-probability ratio and for the Phase A thin-cell finding): this record is the donor
+  pool's own RUN-TIME, per-donor rows (attributes + full trip chains), rebuilt fresh on every
+  pipeline execution and consumed directly by braunschweig.synthesis.commute_day.state_stage (for
+  matching) and synthesis.population.trips.final (for the replacement day itself). With
+  commute_day_state_enabled false, home_office_donors_stage reads nothing at all and returns two
+  EMPTY frames with the ON-path columns (see its stage record), so no consumer of this dataset
+  reads the raw MiD delivery on the OFF path either.
+  Decision record: ADR-0104 (register vs reporting-day universe of out-commuters). Tests:
+  tests/test_commute_day_donor_pool.py (the pure builder), tests/test_commute_day_stages.py (the
+  stage's I/O and OFF path).

@@ -85,6 +85,31 @@ config:
   # (W_GEW-weighted) used to arrive at their purpose by fallback, 1.06% of them these three
   # codes. false reproduces the pre-#241 assignment for the A/B.
   explicit_round_trip_purposes: true
+  # Commute-day state (issue #244, ADR-0104): every employed person with an
+  # assigned workplace gets a reporting-day state in {at_workplace, home,
+  # absent}, so the register-anchored work OD can be compared against the
+  # reporting-day surveys (SrV/MiD) on the same universe. A person drawn to
+  # 'home' receives a matched MiD home-office-day donor's own trip chain; the
+  # pre-assignment trips/activities views stay unchanged and the reporting-day
+  # view is served by the .final aliases below. false -> every worker stays
+  # at_workplace and .final is a pass-through (byte-identical A/B).
+  commute_day_state_enabled: true
+  # Assigned commute distance (km, routed = euclidean * cds_detour_factor) above
+  # which a not-kept worker may be 'absent' (a weekly/far commuter who is not in
+  # the region at all that day) instead of 'home'. ASSUMPTION: 200 km is the MiD
+  # P_ARB_ENTF top-code, so the survey resolves nothing above it and no evidence
+  # for a different threshold exists.
+  commute_day_far_threshold_km: 200.0
+  # Share (0..1) of those far, not-kept workers that become 'absent' rather than
+  # 'home'. ASSUMPTION: 1.0 -- a weekly commuter beyond the top-code is treated
+  # as away for the whole reporting day; no observed rate exists. Sensitivity to
+  # be run at 0.6 (ADR-0104).
+  commute_day_absent_share_far: 1.0
+  # Guard (share of the 'home' cohort, 0..1): a 'home' person for whom the donor
+  # pool holds no day at any coarsening level is downgraded to at_workplace and
+  # counted; above this share the state stage RAISES, because the drawn home
+  # share would then be governed by donor-pool gaps rather than by the model.
+  commute_day_max_not_replaceable_share: 0.5
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location
@@ -417,6 +442,18 @@ aliases:
   data.spatial.iris: eqasim_common.data.spatial.iris
   data.spatial.codes: eqasim_common.spatial.entd_codes
   synthesis.population.spatial.primary.locations: braunschweig.locations.synthesis.replacement_education_gravity
+  # Reporting-day view of the day (issue #244, ADR-0104): the pre-assignment
+  # synthesis.population.trips / .activities stay unchanged and keep feeding the
+  # commute distances and the primary location assignment; everything that needs
+  # the FINISHED day (secondary locations, the MATSim population, synthesis
+  # output) reads these .final stages instead. With commute_day_state_enabled
+  # false both are pass-throughs of the pre-assignment views.
+  synthesis.population.trips.final: braunschweig.synthesis.commute_day.trips_day_stage
+  synthesis.population.activities.final: braunschweig.synthesis.commute_day.activities_day_stage
+  # The eqasim location join, run on the reporting-day activities (.final) instead of the pre-assignment ones.
+  synthesis.population.spatial.locations: braunschweig.synthesis.commute_day.spatial_locations_day
+  # The eqasim output writer, run on the reporting-day trips/activities; also exports commute_day_state in persons.csv.
+  synthesis.output: braunschweig.synthesis.commute_day.output_day
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
   matsim.scenario.population: braunschweig.matsim.scenario.population
   matsim.scenario.households: braunschweig.matsim.scenario.households

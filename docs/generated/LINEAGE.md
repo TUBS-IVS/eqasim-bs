@@ -17,11 +17,11 @@ ported from another eqasim project), `retired`.
 
 | Lineage | Stages |
 |---|---|
-| inherited | 22 |
+| inherited | 21 |
 | configured | 8 |
-| extended | 7 |
-| overridden | 22 |
-| braunschweig_new | 59 |
+| extended | 6 |
+| overridden | 24 |
+| braunschweig_new | 63 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -42,11 +42,13 @@ ported from another eqasim project), `retired`.
 | `synthesis.locations.home.locations` | `braunschweig.locations.home` | `braunschweig.locations.home` | `braunschweig.locations.home` |
 | `synthesis.locations.secondary` | `braunschweig.locations.secondary` | `braunschweig.locations.secondary` | `braunschweig.locations.secondary` |
 | `synthesis.locations.work` | `braunschweig.locations.work` | `braunschweig.locations.work` | `braunschweig.locations.work` |
+| `synthesis.output` | `braunschweig.synthesis.commute_day.output_day` | `synthesis.output` | `synthesis.output` |
 | `synthesis.population.enriched` | `braunschweig.popsim.enriched_adapter` | `braunschweig.popsim.enriched_adapter` | `braunschweig.synthesis.population.enriched` |
 | `synthesis.population.income.selected` | `braunschweig.synthesis.income` | `braunschweig.synthesis.income` | `braunschweig.synthesis.income` |
 | `synthesis.population.spatial.commute_distance` | `braunschweig.popsim.commute_distance` | `braunschweig.popsim.commute_distance` | `braunschweig.synthesis.spatial.commute_distance` |
 | `synthesis.population.spatial.home.locations` | `braunschweig.synthesis.locations.home_cell` | `braunschweig.synthesis.locations.home_cell` | `=` |
 | `synthesis.population.spatial.home.zones` | `braunschweig.synthesis.spatial.home_zones` | `braunschweig.synthesis.spatial.home_zones` | `braunschweig.synthesis.spatial.home_zones` |
+| `synthesis.population.spatial.locations` | `braunschweig.synthesis.commute_day.spatial_locations_day` | `synthesis.population.spatial.locations` | `synthesis.population.spatial.locations` |
 | `synthesis.population.spatial.primary.locations` | `braunschweig.locations.synthesis.replacement_education_gravity` | `braunschweig.locations.synthesis.replacement_education_gravity` | `eqasim_common.locations.synthesis.replacement` |
 | `synthesis.population.spatial.secondary.distance_distributions` | `braunschweig.popsim.distance_distributions` | `=` | `=` |
 | `synthesis.population.spatial.secondary.locations` | `braunschweig.synthesis.locations.secondary_chainsolvers` | `braunschweig.synthesis.locations.secondary_chainsolvers` | `braunschweig.synthesis.locations.secondary_chainsolvers` |
@@ -56,7 +58,7 @@ ported from another eqasim project), `retired`.
 
 - **Analysis**: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.simwrapper_export`
 - **Person & household attributes**: `braunschweig.data.census.employment`, `braunschweig.data.census.household_income`, `braunschweig.data.census.licenses`, `braunschweig.data.inkar.household_income`
-- **Travel / activity behavior**: `braunschweig.data.mid.data`, `braunschweig.data.mid.zones`
+- **Travel / activity behavior**: `braunschweig.data.mid.data`, `braunschweig.data.mid.zones`, `braunschweig.synthesis.commute_day.home_office_donors_stage`, `braunschweig.synthesis.commute_day.state_stage`, `synthesis.population.activities.final`, `synthesis.population.trips.final`
 - **Cordon / external demand**: `braunschweig.data.census.pendler`, `braunschweig.data.cordon_gemeinden`, `braunschweig.data.cordon_network`, `braunschweig.data.cordon_pt_gates`, `braunschweig.synthesis.cordon_gates`, `braunschweig.synthesis.incommuters`, `braunschweig.synthesis.student_incommuters`
 - **Education**: `braunschweig.data.education.student_share`, `braunschweig.data.schools.facilities`, `braunschweig.data.schools.kita_facilities`, `braunschweig.data.schools.university_facilities`, `braunschweig.synthesis.locations.education_gravity`
 - **Vehicle fleet**: `braunschweig.synthesis.vehicles.cars.household`

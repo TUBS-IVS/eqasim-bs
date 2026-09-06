@@ -643,3 +643,145 @@ def test_sensitivity_scope_masks_reuse_the_preregistered_all_and_inter_masks():
     assert (sensitivity["inter"] == preregistered["inter"]).all()
     # inter_zgb is strictly narrower than inter, never wider
     assert (sensitivity["inter_zgb"] <= sensitivity["inter"]).all()
+
+
+# ------------------------------------------------- reporting-day worker universe (ruling R5)
+
+def _states(state_by_person):
+    return pd.DataFrame({"person_id": list(state_by_person),
+                         S.STATE_COLUMN: list(state_by_person.values())})
+
+
+def test_reporting_day_workers_off_path_returns_the_frame_unchanged():
+    """The model OFF (``states is None``) must leave the universe -- and every output -- as it was."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    stats = {}
+    out = S.reporting_day_workers(realised, None, stats=stats)
+    pd.testing.assert_frame_equal(out, realised)
+    assert stats["commute_day_state_enabled"] is False
+    assert stats["n_workers_reporting_day"] == stats["n_workers_assigned"] == len(realised)
+
+
+def test_reporting_day_workers_excludes_a_home_worker():
+    """A worker drawn to ``home`` made no work trip today and leaves the SrV universe."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    stats = {}
+    out = S.reporting_day_workers(realised, _states({10: "home", 20: "at_workplace"}),
+                                  stats=stats)
+    assert list(out["person_id"]) == [20]
+    assert stats["commute_day_state_enabled"] is True
+    assert stats["n_workers_assigned"] == 2 and stats["n_workers_reporting_day"] == 1
+    assert stats["n_workers_without_state"] == 0
+
+
+def test_reporting_day_workers_excludes_an_absent_worker():
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    out = S.reporting_day_workers(realised, _states({10: "absent", 20: "at_workplace"}))
+    assert list(out["person_id"]) == [20]
+
+
+def test_reporting_day_workers_counts_and_excludes_a_worker_without_a_state(caplog):
+    """An unknown state must never be read as 'commuted' -- it is excluded and warned about."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    stats = {}
+    with caplog.at_level(logging.WARNING):
+        out = S.reporting_day_workers(realised, _states({10: "at_workplace"}), stats=stats)
+    assert list(out["person_id"]) == [10]  # person 20 has no state row at all
+    assert stats["n_workers_without_state"] == 1
+    assert "NO row in the commute-day state frame" in caplog.text
+
+
+def test_reporting_day_workers_rejects_a_duplicated_person_id():
+    """One row per worker is the state stage's own assertion; a duplicate is the wrong frame."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    duplicated = pd.DataFrame({"person_id": [10, 10, 20],
+                               S.STATE_COLUMN: ["at_workplace", "home", "at_workplace"]})
+    with pytest.raises(ValueError, match="EXACTLY one row per worker"):
+        S.reporting_day_workers(realised, duplicated)
+
+
+def test_reporting_day_workers_raises_when_the_join_matches_nothing():
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    with pytest.raises(ValueError, match="broken person_id join"):
+        S.reporting_day_workers(realised, _states({901: "at_workplace", 902: "at_workplace"}))
+
+
+def test_reporting_day_universe_moves_the_band_shares():
+    """The point of ruling R5: with the model ON the comparison can actually move.
+
+    Person 10 (03101, 15.6 km routed -> band 10_20) is drawn to ``home``, so the 03101 cell has
+    no reporting-day commuter left, while the assigned-workplace measurement still counts them.
+    """
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    day = S.reporting_day_workers(realised, _states({10: "home", 20: "at_workplace"}))
+
+    cells_day, _ = S.compare_work(day, _targets_commute(), 1.3, 0.08, 200)
+    cells_assigned, _ = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
+    day_row = cells_day[(cells_day["code"] == "03101") & (cells_day["scope"] == "all")].iloc[0]
+    assigned_row = cells_assigned[(cells_assigned["code"] == "03101")
+                                  & (cells_assigned["scope"] == "all")].iloc[0]
+    assert day_row["n_model"] == 0 and assigned_row["n_model"] == 1
+    assert assigned_row["model_share_10_20"] == pytest.approx(1.0)
+
+
+def test_write_outputs_second_table_and_universe_section(tmp_path):
+    """ON: the assigned-workplace view stays visible and summary.md names the universe."""
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    universe = {}
+    day = S.reporting_day_workers(realised, _states({10: "home", 20: "at_workplace"}),
+                                  stats=universe)
+    cells, decision = S.compare_work(day, _targets_commute(), 1.3, 0.08, 200)
+    cells_assigned, _ = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
+    edu = S.realised_education_frame(_homes(), _education(), _persons())
+    ecells, edecision = S.compare_education(edu, _education_targets(), 1.3, 0.08, 200)
+
+    S.write_outputs(tmp_path, cells, decision, ecells, edecision, S.model_quantiles(day),
+                    cells_work_all_assigned=cells_assigned, universe=universe)
+    assert (tmp_path / S.ALL_ASSIGNED_FILE).exists()
+    written = pd.read_csv(tmp_path / S.ALL_ASSIGNED_FILE)
+    assert set(written["scope"]) == {"all", "inter", "intra"}
+    summary = (tmp_path / "summary.md").read_text(encoding="utf-8")
+    assert "Worker universe of the work comparison (ADR-0104 ruling R5)" in summary
+    assert S.ALL_ASSIGNED_FILE in summary
+    # The reporting-day universe is applied to the WHOLE work frame, so it also governs
+    # commute_quantiles_model.csv and the sensitivity variants, not only commute_by_kreis.csv.
+    assert "commute_quantiles_model.csv" in summary
+    assert "sensitivity_cells.csv" in summary and "sensitivity.csv" in summary
+
+
+def test_write_outputs_off_path_writes_no_second_table_and_no_universe_section(tmp_path):
+    realised = S.realised_work_frame(_homes(), _work(), _persons(), _gemeinden())
+    cells, decision = S.compare_work(realised, _targets_commute(), 1.3, 0.08, 200)
+    edu = S.realised_education_frame(_homes(), _education(), _persons())
+    ecells, edecision = S.compare_education(edu, _education_targets(), 1.3, 0.08, 200)
+    S.write_outputs(tmp_path, cells, decision, ecells, edecision, S.model_quantiles(realised))
+    assert not (tmp_path / S.ALL_ASSIGNED_FILE).exists()
+    assert "ruling R5" not in (tmp_path / "summary.md").read_text(encoding="utf-8")
+
+
+def test_configure_gates_the_state_stage_on_the_flag():
+    """The state stage is declared ONLY when the model is on (the same gate its other consumers use)."""
+
+    class _Recorder:
+        def __init__(self, enabled):
+            self.stages, self.config_keys, self._enabled = [], {}, enabled
+
+        def stage(self, name, **_kwargs):
+            self.stages.append(name)
+
+        def config(self, name, default=None):
+            # setdefault, not assignment: configure() reads the flag a second time (one-argument)
+            # to decide the gate, and that read must not overwrite the declared default.
+            self.config_keys.setdefault(name, default)
+            if name == S.KEY_COMMUTE_DAY_STATE_ENABLED:
+                return self._enabled
+            return default
+
+    on = _Recorder(True)
+    S.configure(on)
+    assert S.STATE_STAGE in on.stages
+    assert on.config_keys[S.KEY_COMMUTE_DAY_STATE_ENABLED] is S.DEFAULT_COMMUTE_DAY_STATE_ENABLED
+
+    off = _Recorder(False)
+    S.configure(off)
+    assert S.STATE_STAGE not in off.stages

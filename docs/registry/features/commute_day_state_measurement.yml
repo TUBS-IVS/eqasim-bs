@@ -87,3 +87,11 @@ assessment:
     coverage instead of 26.52%), the class bins are fixed left-inclusive with the heaping
     sensitivity disclosed, and the -15.67 pp work-participation gap is held as a separate,
     undecomposed open question rather than as this model's fit criterion.
+notes: 'Phase B (ADR-0104, issue #244): this measurement''s evidence is CONSUMED by the
+  commute-day-state model itself, feature record docs/registry/features/commute_day_state.yml
+  (lifecycle active; its validation.state is measured_vs_reference against the 2026-09-06 proof
+  re-run and its assessment is reviewed, the decision itself being recorded in ADR-0104 section
+  "Proof 2026-09-06"). This
+  record stays the Phase A measurement -- it changes no model behaviour and remains the
+  before-picture the model is built against; it is not superseded or replaced by the later
+  feature.'

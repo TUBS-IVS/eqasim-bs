@@ -8,6 +8,11 @@ description: >-
   the solver is carla's SAMPLING variant carla_sample (one constant,
   solver_defaults.DEFAULT_CHAIN_SOLVER, also written explicitly into configs/base_bs.yml)
   instead of the deterministic carla -- adopted but not yet A/B-validated in this model.
+  Since ADR-0104 (issue #244) the solver reads the REPORTING-DAY trips
+  (synthesis.population.trips.final): secondary activities are placed on the day the
+  simulation actually runs, in which a worker drawn to 'home' carries a matched donor's day
+  and one drawn to 'absent' carries no trips at all. With commute_day_state_enabled false
+  that alias is a pass-through of the pre-assignment trips, so the OFF path is unchanged.
 lineage:
   type: overridden
   upstream: synthesis.population.spatial.secondary.locations

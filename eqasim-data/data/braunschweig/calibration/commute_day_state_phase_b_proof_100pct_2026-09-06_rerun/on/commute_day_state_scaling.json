@@ -1,0 +1,11 @@
+{
+  "n_workers": 304900,
+  "n_external": 39150,
+  "n_external_at_workplace": 33143,
+  "n_workplace_unresolved": 0,
+  "n_states_without_work_location": 0,
+  "n_work_locations_without_state": 0,
+  "share": 0.8465644955300128,
+  "outbound_register": 60705,
+  "outbound_at_workplace": 51393
+}

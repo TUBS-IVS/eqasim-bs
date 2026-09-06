@@ -1,8 +1,16 @@
 stage: matsim.scenario.population
 title: MATSim plans writer
 layer: matsim
-description: Writes plans.xml; the braunschweig wrapper adds cordon in-commuter injection and
-  carless re-mode on top of the upstream writer.
+description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter injection and
+  carless re-mode on top of the upstream writer. Since ADR-0104 (issue #244) the wrapper also
+  replaces the pre-assignment trips/activities the upstream load_raw reads by the REPORTING-DAY
+  views (synthesis.population.trips.final / ...activities.final) and, when
+  commute_day_state_enabled is on, merges the drawn commute_day_state into the resident persons
+  frame so add_person emits it as the person attribute commuteDayState (java.lang.String,
+  additive via OPTIONAL_PERSON_FIELDS). The attribute is written ONLY for persons that have a
+  state: persons without an assigned workplace and injected in-commuters carry no value and get
+  no attribute, never a substituted one. With the flag off the state stage is not even declared
+  and the plans are byte-identical.'
 lineage:
   type: overridden
   upstream: matsim.scenario.population
@@ -23,5 +31,6 @@ features:
 - carless_routing_remode
 - urban_parking
 decisions:
+- ADR-0104
 - ADR-0022
 - ADR-0029
