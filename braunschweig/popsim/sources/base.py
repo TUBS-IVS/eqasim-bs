@@ -36,7 +36,8 @@ map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
     so a pseudonymisation-required source can never silently lose its map.
 
 build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
-            escort_passive_education=False) -> trips:
+            escort_passive_education=False, exclude_rbw_legs=False,
+            drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h") -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -45,6 +46,11 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
     {6, 13} to the dedicated 'escort' purpose (issue #201).
     ``escort_passive_education`` further maps the passive leg (W_ZWECK 13) to
     'education' instead of 'escort' (issue #256); requires ``escort_purpose``.
+    ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` drop the two
+    non-diary leg kinds (issue #366) and ``closure_dwell_model`` selects the
+    dwell model for the synthesised chain closure (issue #367); an adapter
+    whose survey cannot support one of them must REJECT the non-default value
+    instead of ignoring it.
 """
 
 from __future__ import annotations
@@ -171,6 +177,9 @@ class PopsimSource(Protocol):
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
         explicit_round_trip_purposes: bool = True,
+        exclude_rbw_legs: bool = False,
+        drop_leading_arrive_home_leg: bool = False,
+        closure_dwell_model: str = "fixed_1h",
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -192,6 +201,24 @@ class PopsimSource(Protocol):
             instead of the 'other' catch-all (issue #241). Donor taxonomies
             without those codes ignore it; the implementing adapter documents
             what it does with the flag.
+        exclude_rbw_legs:
+            drop the survey's rbW legs (MiD ``W_RBW == 1``, the
+            regelmaessiger-beruflicher-Weg summary records) before the join
+            (issue #366). Donor taxonomies without such records must reject
+            ``True`` rather than ignore it (the caller would otherwise believe a
+            filter was applied that never was).
+        drop_leading_arrive_home_leg:
+            drop a donor's leading "arrive home from elsewhere" leg (MiD
+            ``W_SO1 == 2`` with a home purpose), which precedes the observed
+            diary window (issue #366). Same rejection rule as
+            ``exclude_rbw_legs`` for donors without that coding.
+        closure_dwell_model:
+            dwell-time model for the SYNTHESISED return-home trip that closes a
+            chain not ending at home (issue #367): ``"empirical"`` draws from the
+            donor diaries' observed activity durations, ``"fixed_1h"`` (default)
+            keeps the constant one-hour dwell. An adapter that cannot build the
+            empirical pools must reject the value rather than silently downgrade
+            to the constant.
 
         Returns
         -------

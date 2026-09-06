@@ -410,6 +410,9 @@ class EntdSource:
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
         explicit_round_trip_purposes: bool = True,
+        exclude_rbw_legs: bool = False,
+        drop_leading_arrive_home_leg: bool = False,
+        closure_dwell_model: str = "fixed_1h",
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -417,7 +420,37 @@ class EntdSource:
         :func:`braunschweig.popsim.sources.entd_trips.build_trips`; this
         method's ``__doc__`` is overwritten with that full text below
         (issue #295 -- single documentation copy).
+
+        The three plan-structure options (issues #366 / #367) are MiD-specific and
+        are rejected here rather than passed on: the ENTD frames carry neither the
+        rbW flag nor the MiD start-situation coding, and the empirical closure
+        dwell model is estimated from a MiD Wege table. Ignoring them would leave
+        a popsim_open run believing a filter or a dwell model was applied that
+        never was (CLAUDE.md: no silent fallbacks), so a popsim_open run must set
+        the corresponding config keys to False / False / "fixed_1h".
         """
+        if exclude_rbw_legs:
+            raise NotImplementedError(
+                "[popsim.sources.entd] exclude_rbw_legs=True is not supported for the "
+                "ENTD donor (no rbW leg coding: the MiD 'W_RBW' column has no ENTD "
+                "pendant); set braunschweig.population.popsim.exclude_rbw_legs to False "
+                "for popsim_open runs."
+            )
+        if drop_leading_arrive_home_leg:
+            raise NotImplementedError(
+                "[popsim.sources.entd] drop_leading_arrive_home_leg=True is not supported "
+                "for the ENTD donor (no start-situation coding: the MiD 'W_SO1' column has "
+                "no ENTD pendant); set "
+                "braunschweig.population.popsim.drop_leading_arrive_home_leg to False for "
+                "popsim_open runs."
+            )
+        if closure_dwell_model != "fixed_1h":
+            raise NotImplementedError(
+                f"[popsim.sources.entd] closure_dwell_model={closure_dwell_model!r} is not "
+                "supported for the ENTD donor (the empirical dwell pools are built from a "
+                "MiD Wege table); set braunschweig.population.popsim.closure_dwell_model to "
+                "'fixed_1h' for popsim_open runs."
+            )
         return _build_trips(
             persons,
             donor_trips,

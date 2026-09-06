@@ -140,3 +140,185 @@ def test_entd_source_rejects_escort_passive_education():
             pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
             escort_passive_education=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# plan-structure-fix Task 6 (issues #366 / #367): thread the rbW exclusion, the
+# leading arrive-home drop and the closure dwell model through trips_stage.
+# ---------------------------------------------------------------------------
+
+def _persons_and_wege():
+    """Minimal one-person / two-leg fixture whose chain already ends at home.
+
+    Same shape as the fixtures used by the escort tests above; no W_RBW / W_SO1
+    columns, so it exercises the flags-OFF path only.
+    """
+    persons = pd.DataFrame({"person_id": [1], "H_ID": [10], "P_ID": [1]})
+    wege = pd.DataFrame({
+        "H_ID": [10, 10], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [1, 8], "hvm_imp": [4, 4],
+        "W_SZS": [8, 17], "W_SZM": [0, 0], "W_AZS": [8, 17], "W_AZM": [30, 20],
+        "wegkm_imp": [12.0, 12.0], "wegmin_imp1": [30.0, 20.0], "W_GEW": [1.0, 1.0],
+    })
+    return persons, wege
+
+
+def _persons_and_wege_with_rbw():
+    """Two donors, each with one rbW leg (W_RBW=1, coded times 701) and a chain
+    that does NOT end at home (so a synthetic closure is required).
+
+    The observable activity duration of BOTH donors (work arrival -> next
+    departure) is exactly 30600 s (8.5 h), so an EMPIRICAL closure dwell is
+    distinguishable from the fixed one-hour constant by value alone.
+    """
+    persons = pd.DataFrame({
+        "person_id": [1, 2], "H_ID": [10, 20], "P_ID": [1, 1],
+        "ZENSUS100m": ["c1", "c1"],
+    })
+    wege = pd.DataFrame({
+        "H_ID": [10, 10, 10, 20, 20, 20],
+        "P_ID": [1, 1, 1, 1, 1, 1],
+        "W_ID": [1, 2, 3, 1, 2, 3],
+        # work, rbW summary leg, leisure / work, rbW summary leg, shop
+        "W_ZWECK": [1, 1, 7, 1, 1, 4],
+        "W_RBW": [0, 1, 0, 0, 1, 0],
+        "W_SO1": [1, 1, 1, 1, 1, 1],
+        "hvm_imp": [4, 4, 4, 4, 4, 4],
+        "W_SZS": [8, 701, 17, 7, 701, 16],
+        "W_SZM": [0, 701, 0, 0, 701, 0],
+        "W_AZS": [8, 701, 17, 7, 701, 16],
+        "W_AZM": [30, 701, 20, 30, 701, 15],
+        "wegkm_imp": [12.0, 30.0, 5.0, 12.0, 30.0, 5.0],
+        "wegmin_imp1": [30.0, 60.0, 20.0, 30.0, 60.0, 15.0],
+        "W_GEW": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    })
+    return persons, wege
+
+
+def test_run_excludes_rbw_and_marks_closure_with_empirical_dwell():
+    persons, wege = _persons_and_wege_with_rbw()
+    out = trips_stage.run(
+        persons, wege, random_seed=1,
+        exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+        closure_dwell_model="empirical",
+    )
+    # No rbW leg survives the exclusion. The brief sketched a "_rbw" trip_key
+    # suffix, which does not exist (trip_key is "<person_id>_<W_ID>"), so the
+    # W_RBW extra column -- which rides along into the output -- is the direct
+    # evidence instead.
+    assert "W_RBW" in out.columns
+    assert not (out["W_RBW"] == 1).any()
+    assert "is_synthetic_closure" in out.columns
+    closure = out["is_synthetic_closure"].astype(bool)
+    assert closure.any(), "both donor chains end away from home; a closure must be appended"
+    assert (out.loc[closure, "following_purpose"] == "home").all()
+
+
+def test_run_empirical_dwell_uses_observed_duration_not_the_fixed_hour():
+    """Primary-path test (CLAUDE.md fallback transparency): the empirical model
+    must actually supply the dwell, not silently degrade to HOME_CLOSURE_DWELL_S."""
+    persons, wege = _persons_and_wege_with_rbw()
+    out = trips_stage.run(
+        persons, wege, random_seed=1,
+        exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+        closure_dwell_model="empirical",
+    ).sort_values(["person_id", "trip_index"])
+    closure = out["is_synthetic_closure"].astype(bool)
+    assert closure.any()
+    for person_id in out.loc[closure, "person_id"].unique():
+        chain = out[out["person_id"] == person_id]
+        is_closure = chain["is_synthetic_closure"].astype(bool)
+        last_real = chain[~is_closure].iloc[-1]
+        closure_row = chain[is_closure].iloc[0]
+        dwell = float(closure_row["departure_time"]) - float(last_real["arrival_time"])
+        # 30600 s is the ONLY observed activity duration in this fixture; the
+        # per-person jitter shifts both rows by the SAME offset, so the
+        # difference only moves by the rounding of the two shifted times (<= 1 s).
+        assert abs(dwell - 30600.0) <= 1.0, (
+            f"person {person_id}: closure dwell {dwell}s is not the observed 30600s "
+            "(3600s would mean the fixed constant was used, i.e. the empirical "
+            "model never took effect)"
+        )
+
+
+def test_run_rejects_unknown_dwell_model():
+    persons, wege = _persons_and_wege_with_rbw()
+    with pytest.raises(ValueError, match="closure_dwell_model"):
+        trips_stage.run(persons, wege, random_seed=1, closure_dwell_model="median")
+
+
+def test_run_default_flags_off_is_byte_identical_to_previous_signature():
+    persons, wege = _persons_and_wege()
+    a = trips_stage.run(persons, wege, random_seed=1)
+    b = trips_stage.run(
+        persons, wege, random_seed=1,
+        exclude_rbw_legs=False, drop_leading_arrive_home_leg=False,
+        closure_dwell_model="fixed_1h",
+    )
+    assert "is_synthetic_closure" in a.columns and "is_synthetic_closure" in b.columns
+    pd.testing.assert_frame_equal(
+        a.drop(columns=["is_synthetic_closure"]),
+        b.drop(columns=["is_synthetic_closure"]),
+    )
+
+
+class _RecordingConfigureContext:
+    """Minimal synpp ConfigurationContext stand-in that records config() lookups.
+
+    Mirrors the CONFIGURE phase: every ``context.config(key, default)`` call is
+    recorded with the default the stage declared, so the test can assert what the
+    stage registers without depending on config VALUES (there are none during
+    configure). ``stage()`` records the declared dependencies because
+    trips_stage.configure() declares them. Same shape as the stand-in in
+    tests/test_completed_donor_stage.py.
+    """
+
+    def __init__(self, values=None):
+        self.calls = {}
+        self.stages = []
+        self._values = values or {}
+
+    def config(self, key, default=None):
+        self.calls[key] = default
+        return self._values.get(key, default)
+
+    def stage(self, name, alias=None, **kwargs):
+        self.stages.append((name, alias))
+
+
+def test_trips_stage_configure_registers_the_plan_structure_keys():
+    from braunschweig.popsim.stage import (
+        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+    )
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)
+    assert ctx.calls[KEY_EXCLUDE_RBW_LEGS] is True
+    assert ctx.calls[KEY_DROP_LEADING_ARRIVE_HOME_LEG] is True
+    assert ctx.calls[KEY_CLOSURE_DWELL_MODEL] == "empirical"
+
+
+def test_entd_source_rejects_exclude_rbw_legs():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="exclude_rbw_legs"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            exclude_rbw_legs=True,
+        )
+
+
+def test_entd_source_rejects_drop_leading_arrive_home_leg():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="drop_leading_arrive_home_leg"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            drop_leading_arrive_home_leg=True,
+        )
+
+
+def test_entd_source_rejects_empirical_closure_dwell_model():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="closure_dwell_model"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            closure_dwell_model="empirical",
+        )
