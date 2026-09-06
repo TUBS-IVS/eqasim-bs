@@ -69,6 +69,12 @@ def _model_homes():
                          "ars5": ["03101", "03102", "03103"]})
 
 
+def _model_homes_mostly_unmatched():
+    """``assign_geographies`` output for a broken VG250 join: only one household resolves."""
+    return pd.DataFrame({"household_id": [10, 20, 30],
+                         "ars5": ["03101", None, None]})
+
+
 def _reference_two_rows(universe=SRV.UNIVERSE_AT_HOME_ZERO):
     """Minimal reference frame in the committed long format."""
     return pd.DataFrame({
@@ -134,6 +140,24 @@ def test_harmonise_model_maps_an_unmapped_purpose_to_unknown(caplog):
         _, harmonised = P.harmonise_model(_model_persons(), trips, _model_homes())
     assert harmonised.iloc[0]["purpose"] == SRV.UNKNOWN_PURPOSE
     assert any("business" in record.getMessage() for record in caplog.records)
+
+
+def test_harmonise_model_keeps_a_person_without_a_home_kreis_and_logs_the_rate(caplog):
+    """An unresolvable home Kreis leaves the person in the model frame with kreis = NaN.
+
+    The person must NOT be dropped here (that would shrink the model side invisibly); the
+    stage is what excludes it from the head-to-head universe, after guarding the rate.
+    """
+    with caplog.at_level("INFO"):
+        persons, _ = P.harmonise_model(_model_persons(), _model_trips(),
+                                       _model_homes_mostly_unmatched())
+    assert len(persons) == 4
+    by_pid = persons.set_index("pid")
+    assert by_pid.loc[1, "kreis"] == "03101"
+    assert pd.isna(by_pid.loc[2, "kreis"]) and pd.isna(by_pid.loc[4, "kreis"])
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    # Households 20 and 30 do not resolve, so persons 2 and 4 have no Kreis.
+    assert "resolved for 2/4 persons" in messages and "unresolved 2" in messages
 
 
 def test_harmonise_model_raises_on_a_trip_without_a_person():
@@ -240,6 +264,16 @@ def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     assert open_end["note"] == P.ACCEPTED_DEVIATION_NOTE
 
 
+def test_accepted_deviation_note_names_the_issue_not_a_placeholder_adr_id():
+    """The ADR id lives ONLY in the stage record's ``decisions:`` list (one fact, one file).
+
+    An inlined placeholder such as "ADR E" would be a second, always-wrong home for it.
+    """
+    assert P.ACCEPTED_DEVIATION_NOTE == (
+        "closed plans by decision (issue #367; ADR in the stage record's decisions)")
+    assert "ADR E" not in P.ACCEPTED_DEVIATION_NOTE
+
+
 # --------------------------------------------------------------------------- stage
 
 class _ConfigureRecorder:
@@ -298,9 +332,37 @@ def _stage_context(tmp_path, data_path=DATA_PATH, subdir="analysis/plan_structur
             "sampling_rate": 1.0,
             S.KEY_SUBDIR: subdir,
             S.KEY_UNIVERSE: SRV.UNIVERSE_AT_HOME_ZERO,
+            S.KEY_MAX_UNMATCHED_HOME_SHARE: S.DEFAULT_MAX_UNMATCHED_HOME_SHARE,
         },
         cache_path=tmp_path / "cache",
     )
+
+
+def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
+    """The cache token must cover every module that shapes the comparison.
+
+    synpp hashes only the stage module's own source; ``plan_structure`` and
+    ``srv_plan_structure`` define the harmonisation and every metric, and
+    ``braunschweig.analysis.spatial.assign_geographies`` decides every person's home Kreis and
+    therefore the whole head-to-head universe.
+    """
+    from braunschweig.analysis import plan_structure, spatial
+    from braunschweig.calibration import srv_plan_structure
+
+    assert set(S._HELPER_MODULES) == {plan_structure, srv_plan_structure}
+    assert S._DEFERRED_HELPER_MODULE_NAMES == ("braunschweig.analysis.spatial",)
+
+    token = S.validate(None)
+    assert len(token) == 32 and int(token, 16) >= 0        # md5 hex digest
+    assert token == S.validate(None)                       # deterministic
+    # The token really depends on the deferred module's source, not only on the two direct
+    # helpers: hashing the three sources by hand must reproduce it.
+    import hashlib
+    import inspect
+    expected = hashlib.md5()
+    for module in (plan_structure, srv_plan_structure, spatial):
+        expected.update(inspect.getsource(module).encode("utf-8"))
+    assert token == expected.hexdigest()
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():
@@ -312,6 +374,8 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert "synthesis.population.spatial.home.locations" in recorder.stages
     assert recorder.config_keys[S.KEY_SUBDIR] == S.DEFAULT_SUBDIR
     assert recorder.config_keys[S.KEY_UNIVERSE] == S.DEFAULT_UNIVERSE
+    assert (recorder.config_keys[S.KEY_MAX_UNMATCHED_HOME_SHARE]
+            == S.DEFAULT_MAX_UNMATCHED_HOME_SHARE)
     for key in ("output_path", "data_path", "sampling_rate"):
         assert key in recorder.config_keys
 
@@ -379,6 +443,51 @@ def test_execute_raises_when_the_committed_reference_is_missing(tmp_path):
     with pytest.raises(FileNotFoundError, match=SRV.PLAN_STRUCTURE_TABLE):
         S.execute(_stage_context(tmp_path, data_path=missing_data_path))
     assert not os.path.exists(expected)
+
+
+def test_execute_raises_when_too_many_homes_have_no_kreis(tmp_path, monkeypatch):
+    """A broken VG250 / household join must abort, not produce a well-formed report of NaNs."""
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes_mostly_unmatched())
+    with pytest.raises(ValueError,
+                       match=S.KEY_MAX_UNMATCHED_HOME_SHARE):
+        S.execute(_stage_context(tmp_path))
+    assert not (tmp_path / "analysis").exists(),         "the stage must abort before writing any report file"
+
+
+def test_execute_excludes_a_person_without_a_home_kreis_from_the_head_to_head_universe(
+        tmp_path, monkeypatch):
+    """One unresolvable home stays under the guard threshold but leaves the 'all' segment.
+
+    With the threshold raised for this test the run completes, and the excluded person must be
+    visible in provenance.json (counted, not silently absorbed): the head-to-head 'all'
+    segment covers 2 of the 4 persons -- the Wolfsburg one is out of scope and the
+    Kreis-less one is unmatched.
+    """
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(
+        spatial, "assign_geographies",
+        lambda homes, kreise=None: pd.DataFrame({"household_id": [10, 20, 30],
+                                                 "ars5": ["03101", None, "03103"]}))
+    context = _stage_context(tmp_path)
+    context._config[S.KEY_MAX_UNMATCHED_HOME_SHARE] = 0.5
+    S.execute(context)
+
+    out_dir = tmp_path / "analysis" / "plan_structure_vs_srv"
+    provenance = json.loads((out_dir / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["model"]["n_persons_total"] == 4
+    assert provenance["model"]["n_persons_in_scope"] == 2      # persons 1 and 3, both in 03101
+    assert provenance["model"]["n_persons_no_kreis"] == 1      # person 2, household 20
+    assert provenance["model"]["share_persons_no_kreis"] == pytest.approx(0.25)
+    assert provenance["model"]["n_persons_out_of_scope"] == 1  # person 4, Wolfsburg
+    assert provenance["parameters"]["max_unmatched_home_share"] == 0.5
+
+    headline = pd.read_csv(out_dir / "headline.csv")
+    n_persons = headline[headline["metric"] == "n_persons_unweighted"].iloc[0]
+    assert n_persons["model"] == 2
 
 
 def test_execute_raises_on_an_unknown_universe(tmp_path):

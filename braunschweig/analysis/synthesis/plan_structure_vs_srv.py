@@ -26,7 +26,10 @@ committed reference itself (its ``kreis_*`` segments) and cross-checked against
 comparison universe. Every Kreis outside that set -- Wolfsburg in the canonical
 configuration -- is reported MODEL-ONLY in ``by_kreis.csv``, with ``srv`` and ``delta_pp``
 left NaN, never a substituted zero. Persons whose home Kreis cannot be resolved at all are
-counted, logged and excluded from the head-to-head universe.
+counted, logged and excluded from the head-to-head universe; above
+``plan_structure_max_unmatched_home_share`` (default 0.05) the stage RAISES, because a broken
+VG250 / household join must not produce a well-formed report that silently describes only part
+of the population.
 
 Outputs, under ``<output_path>/<plan_structure_output_subdir>/``:
 
@@ -46,6 +49,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import importlib
 import inspect
 import json
 import logging
@@ -65,8 +69,16 @@ _LOG_TAG = "[plan_structure_vs_srv]"
 
 KEY_SUBDIR = "plan_structure_output_subdir"
 KEY_UNIVERSE = "plan_structure_srv_universe"
+KEY_MAX_UNMATCHED_HOME_SHARE = "plan_structure_max_unmatched_home_share"
 
 DEFAULT_SUBDIR = "analysis/plan_structure_vs_srv"
+#: Above this share of persons whose home point resolves to no Kreis the stage RAISES; 5%
+#: mirrors ``cds_max_unmatched_home_share`` / ``srv_distance_max_unmatched_home_share`` in the
+#: sibling per-Kreis stages. A high unmatched rate almost always means a broken VG250 /
+#: household join (stale archive, wrong CRS) rather than genuinely home-less persons, and the
+#: head-to-head universe would then silently exclude that share of the population while the
+#: report still looked well-formed.
+DEFAULT_MAX_UNMATCHED_HOME_SHARE = 0.05
 #: The reference universe that matches a synthetic population: every person exists and
 #: starts the day at home, so an away-from-home reporting day counts as 0 trips.
 DEFAULT_UNIVERSE = SRV.UNIVERSE_AT_HOME_ZERO
@@ -85,22 +97,41 @@ KREIS_SEGMENT_PREFIX = "kreis_"
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
 
-#: synpp hashes only THIS module's source, so the two helper modules that define the
+#: synpp hashes only THIS module's source, so the helper modules that define the
 #: harmonisation and every metric must be folded into the validation token; without them an
 #: edit to a metric would silently serve a cached comparison built by the old code.
 _HELPER_MODULES = (P, SRV)
+#: Imported inside validate() rather than at module level, exactly as execute() does: a
+#: top-level import of braunschweig.analysis.spatial pulls geopandas and the VG250 access into
+#: every import of this stage. Its ``assign_geographies`` decides EVERY person's home Kreis and
+#: therefore the head-to-head universe and all per-Kreis rows, so a change there must invalidate
+#: this stage's cache.
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.analysis.spatial",)
 
 
 def validate(context):
     """synpp validation token: md5 over this stage's helper modules.
 
-    Same mechanism as ``braunschweig.popsim.trips_stage.validate()``. Over-hashing only
-    costs a re-run of a minutes-long analysis stage, while under-hashing silently reports a
-    stale comparison as a current result.
+    Same mechanism and boundary semantics as ``braunschweig.popsim.trips_stage.validate()``.
+    Over-hashing only costs a re-run of a minutes-long analysis stage, while under-hashing
+    silently reports a stale comparison as a current result. A deferred module that fails to
+    import raises rather than being skipped -- skipping it would keep the stale cache alive
+    exactly when the code is broken.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"plan_structure_vs_srv validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse a stale cached comparison."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -113,6 +144,7 @@ def configure(context):
     context.config("sampling_rate")
     context.config(KEY_SUBDIR, DEFAULT_SUBDIR)
     context.config(KEY_UNIVERSE, DEFAULT_UNIVERSE)
+    context.config(KEY_MAX_UNMATCHED_HOME_SHARE, DEFAULT_MAX_UNMATCHED_HOME_SHARE)
 
 
 # --------------------------------------------------------------------------- reference
@@ -174,6 +206,30 @@ def reference_kreise(reference: pd.DataFrame) -> tuple:
     return codes
 
 
+def guard_unmatched_home_share(n_unmatched, n_total, max_unmatched_home_share) -> float:
+    """Log the unmatched-home rate and RAISE above ``max_unmatched_home_share``.
+
+    Same shape (and default) as ``_guard_unmatched_home_share`` in the sibling stage
+    ``braunschweig.analysis.synthesis.work_participation_by_kreis``. A person whose home point
+    resolves to no Kreis is excluded from the head-to-head universe; a high share of such
+    persons almost always signals a broken VG250 / household join (stale archive, wrong CRS)
+    rather than genuinely home-less persons, and the report would then still LOOK well-formed
+    while silently describing only part of the population (CLAUDE.md "Fallback transparency":
+    a high fallback rate is a failure signal, not a footnote). Returns the rate.
+    """
+    rate = float(n_unmatched) / float(n_total) if n_total else 0.0
+    LOGGER.info("%s home Kreis: %d/%d persons (%.2f%%) have no ars5 match", _LOG_TAG,
+                n_unmatched, n_total, 100.0 * rate)
+    if rate > max_unmatched_home_share:
+        raise ValueError(
+            f"{n_unmatched}/{n_total} ({100.0 * rate:.1f}%) persons have no home Kreis match; "
+            f"exceeds {KEY_MAX_UNMATCHED_HOME_SHARE}={max_unmatched_home_share} -- the "
+            f"head-to-head comparison universe would silently exclude that share of the "
+            f"population; check the VG250 archive and the "
+            f"synthesis.population.spatial.home.locations / household_id join")
+    return rate
+
+
 # --------------------------------------------------------------------------- report
 
 def _fmt(value, decimals=4) -> str:
@@ -218,7 +274,10 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
         f"({_fmt(model.get('share_persons_in_scope'), 4)}); "
         f"{model.get('n_persons_out_of_scope')} person(s) live in a Kreis SrV does not survey "
         f"({', '.join(model.get('kreise_model_only', [])) or 'none'}, reported model-only in "
-        f"by_kreis.csv) and {model.get('n_persons_no_kreis')} have no resolvable home Kreis.",
+        f"by_kreis.csv) and {model.get('n_persons_no_kreis')} "
+        f"({_fmt(model.get('share_persons_no_kreis'), 4)}) have no resolvable home Kreis "
+        f"(the stage raises above "
+        f"{parameters.get('max_unmatched_home_share')}).",
         "",
         "Deltas: percentage points for share metrics (mobility_rate, share_*, "
         "participation_*, purpose_share_*, dep_hour_share_*), a plain difference otherwise. "
@@ -299,6 +358,7 @@ def execute(context):
     data_path = context.config("data_path")
     output_path = context.config("output_path")
     sampling_rate = float(context.config("sampling_rate"))
+    max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
     out_dir = os.path.join(output_path, subdir)
 
     # The reference is loaded FIRST: a missing or unusable reference must abort before any
@@ -309,22 +369,30 @@ def execute(context):
     df_persons = context.stage("synthesis.population.enriched")
     df_trips = context.stage("synthesis.population.trips")
     df_home = context.stage("synthesis.population.spatial.home.locations")
-    LOGGER.info("%s parameters: universe=%s, sampling_rate=%.4f, kreise_in_scope=%s; "
-                "writing to %s", _LOG_TAG, universe, sampling_rate, list(kreise_in_scope),
+    LOGGER.info("%s parameters: universe=%s, sampling_rate=%.4f, "
+                "max_unmatched_home_share=%.3f, kreise_in_scope=%s; writing to %s", _LOG_TAG,
+                universe, sampling_rate, max_unmatched_home_share, list(kreise_in_scope),
                 out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
     persons, trips = P.harmonise_model(df_persons, df_trips, homes)
 
     per = SRV.person_level(persons, trips)
-    in_scope_mask = per["kreis"].isin(kreise_in_scope)
-    per_in_scope = per[in_scope_mask]
-    model_kreise = sorted(per["kreis"].dropna().astype(str).unique().tolist())
+    # ONE string view of the home Kreis, used for every comparison below: the reference's
+    # segment codes are strings, so an object/str dtype mismatch on either side of the
+    # membership test would silently empty the head-to-head universe. pandas' nullable
+    # "string" dtype keeps a missing Kreis as <NA> instead of turning it into the literal
+    # "nan" that a bare ``astype(str)`` would produce.
+    kreis_code = per["kreis"].astype("string")
+    per_in_scope = per[kreis_code.isin(kreise_in_scope)]
+    model_kreise = sorted(kreis_code.dropna().unique().tolist())
     kreise_model_only = [code for code in model_kreise if code not in kreise_in_scope]
     n_persons_total = int(len(per))
     n_persons_in_scope = int(len(per_in_scope))
-    n_persons_no_kreis = int(per["kreis"].isna().sum())
+    n_persons_no_kreis = int(kreis_code.isna().sum())
     n_persons_out_of_scope = n_persons_total - n_persons_in_scope - n_persons_no_kreis
+    unmatched_home_share = guard_unmatched_home_share(
+        n_persons_no_kreis, n_persons_total, max_unmatched_home_share)
     LOGGER.info("%s head-to-head universe: %d/%d persons (%.2f%%) live in the %d "
                 "SrV-surveyed Kreise; %d live in a model-only Kreis (%s), %d have no "
                 "resolvable home Kreis", _LOG_TAG, n_persons_in_scope, n_persons_total,
@@ -339,7 +407,7 @@ def execute(context):
     # per-Kreis table with a NaN reference, never compared against a substituted value.
     model_only_long = P.model_structure(
         per, trips,
-        [(KREIS_SEGMENT_PREFIX + code, per[per["kreis"] == code])
+        [(KREIS_SEGMENT_PREFIX + code, per[kreis_code == code])
          for code in kreise_model_only])
     model_only = model_only_long.rename(columns={"value": "model"})
     model_only["srv"] = float("nan")
@@ -362,6 +430,7 @@ def execute(context):
             "srv_universe": universe,
             "output_subdir": subdir,
             "sampling_rate": sampling_rate,
+            "max_unmatched_home_share": max_unmatched_home_share,
         },
         "inputs": {
             "reference_path": reference_path(data_path),
@@ -375,6 +444,7 @@ def execute(context):
                                        if n_persons_total else float("nan")),
             "n_persons_out_of_scope": n_persons_out_of_scope,
             "n_persons_no_kreis": n_persons_no_kreis,
+            "share_persons_no_kreis": unmatched_home_share,
             "n_trips_total": int(len(trips)),
             "n_trips_in_scope": int(trips["pid"].isin(set(per_in_scope["pid"])).sum()),
             # The in-scope Kreise are an INPUT fact (they come from the reference table) and

@@ -81,7 +81,12 @@ REFERENCE_INPUT_COLUMNS = ("segment", "metric", "value", "n_unweighted")
 
 ACCEPTED_DEVIATION_COLUMNS = ["deviation", "metric", "model", "srv", "delta_pp", "n_srv",
                               "note"]
-ACCEPTED_DEVIATION_NOTE = "closed plans by decision, ADR E"
+#: Why the three deviations below are expected. The ADR id is deliberately NOT inlined here:
+#: it is allocated with the ADRs themselves and lives in ONE place, the ``decisions:`` list of
+#: the stage record ``docs/registry/stages/
+#: braunschweig.analysis.synthesis.plan_structure_vs_srv.yml`` (one fact, one file).
+ACCEPTED_DEVIATION_NOTE = ("closed plans by decision (issue #367; ADR in the stage record's "
+                           "decisions)")
 #: The three consequences of the "every plan starts and ends at home" decision, each derived
 #: from one comparison metric. ``complement`` says whether the reported value is
 #: ``1 - metric`` (an OPEN day is the complement of a closed one).
@@ -184,10 +189,11 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
                 100.0 * (n_persons - n_no_kreis) / n_persons if n_persons else float("nan"),
                 n_no_kreis, 100.0 * n_no_kreis / n_persons if n_persons else float("nan"))
     if n_no_kreis:
-        logger.warning("%s %d persons have no resolvable home Kreis; they stay in the 'all' "
-                       "segment of the model side but in no kreis segment, and they are "
-                       "EXCLUDED from the head-to-head comparison universe", _LOG_TAG,
-                       n_no_kreis)
+        logger.warning("%s %d persons have no resolvable home Kreis; they are KEPT in the "
+                       "harmonised frame (dropping them here would shrink the model side "
+                       "invisibly), but the comparison stage excludes them from the "
+                       "head-to-head universe and raises above its configured unmatched-home "
+                       "share", _LOG_TAG, n_no_kreis)
 
     age = pd.to_numeric(merged["age"], errors="coerce")
     sex = merged["sex"].astype(str).where(merged["sex"].astype(str).isin(SRV.SEXES))
