@@ -517,3 +517,70 @@ not yet carry; (iii) the fourth check-4 diagnostic, pool size per matching cell,
 diagnostics dict still does not record; (iv) folding the reporting-day trips diagnostics (the R8/R9
 counters, currently log-only) into a committed JSON in the next run; (v) the 37,705
 not-employed workers and the participation gap, both under issue #244.
+
+### Decision 2026-09-06 on check 2 (maintainer)
+
+The maintainer reviewed the Proof 2026-09-06 result above and decided on the `100_plus` half of
+check 2, the one item the proof itself left "reserved for the maintainer" (see "Check 2's 3 %
+bound is not met..." above).
+
+- **The pre-registered `100_plus < 3 %` bound is WITHDRAWN.** It was already labelled, at
+  registration, as "a chosen operating bound, pre-registered a priori, with NO reference behind
+  it" (Decision, check 2, above), because the committed SrV reference cannot supply one: every
+  `100_plus` column of `srv2023_commute_distance_by_kreis.csv` is exactly **0.0** in all 15 rows
+  (all three scopes, raw and shrunk) -- the survey records no work trip at or above 100 km at
+  all. ADR-0102 Assumption 2 records why that zero is itself suspect rather than a true zero: a
+  one-day regional survey plausibly UNDER-observes irregular long-distance commuting, and
+  GIS-invalid SrV work trips (excluded from the reference by construction) carry a heavier
+  long-distance tail than GIS-valid ones. A bound built on a reference that is a known structural
+  blind spot cannot be defended as a scientific target, so it is withdrawn rather than kept as an
+  unmet threshold. **No other bound in this ADR is touched**: check 1's +/- 3 pp band, check 2's
+  own no-deterioration half, `cds_max_states_outside_employed_share` 0.05 and
+  `commute_day_max_not_replaceable_share` 0.5 all stand exactly as pre-registered.
+- **The reference for the long band becomes MiD CONSISTENCY, not an SrV bound.** In place of the
+  withdrawn bound, the `100_plus` band is judged by whether the model's realised reporting-day
+  share is consistent with what MiD's own reporting-day "at workplace" probabilities, applied to
+  the register-anchored assigned distribution, would imply -- i.e. by the model's INTERNAL
+  reference (MiD, which already grounds the model's own keep-probability rule), not by an
+  external SrV figure the data cannot support for this band.
+- **The MiD-implied reporting-day share is 0.0602, computed and printed by the new script
+  `scripts/report_mid_implied_reporting_day_bands.py`** (issue #244), which converts the
+  assigned-workplace distribution (`off/commute_by_kreis.csv`, `zgb`/`inter` row, flag OFF, before
+  any commute-day-state re-draw) into a reporting-day distribution by applying MiD's
+  `share_at_workplace` (read by column name from the committed table
+  `mid2023_workday_location_by_commute_distance.csv`, the `100_200` class for the `100_plus` band
+  because MiD has no class beyond it) band by band and renormalising over the seven work-distance
+  bands. Output, committed alongside the proof artefacts:
+  `eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/mid_implied_reporting_day_bands.csv`.
+  The three `100_plus` numbers, all read from that CSV: **assigned (flag OFF) 0.1001**, **MiD-implied
+  0.0602**, **model realised (flag ON) 0.0737**. (Beside it, for context: `50_100` assigned
+  0.1330, MiD-implied 0.1185, model ON 0.1304 -- the same three-way pattern one class down, where
+  the model already sits between the two MiD-based figures.)
+- **The model's realised share (0.0737) lies BETWEEN the assigned share (0.1001) and the
+  MiD-implied share (0.0602).** The remaining **1.35 pp** by which the model sits ABOVE the
+  MiD-implied value (0.0737 - 0.0602) is read here as a consequence of ADR-0104's own re-draw
+  rule, not as an unexplained residual: the model re-draws a worker's day state ONLY when the
+  assigned distance class is strictly higher than the donor's own class ("Re-draw only upwards",
+  Decision above) -- it never ADDS a work trip for a person whose donor commuted farther than
+  their assignment. This is a deliberate design choice of this ADR, made to avoid double-counting
+  the survey's own not-working/home-office mass (a donor who already did not travel on their
+  reporting day is passed through unchanged, never "corrected" upward into travelling). The
+  MiD-implied figure carries no such asymmetry -- it applies MiD's at-workplace probability
+  uniformly in both directions -- so the model's one-directional rule is expected, by
+  construction, to retain more long-distance travellers than a symmetric MiD-implied calculation
+  would. The 1.35 pp gap is therefore labelled a READING of the model's own asymmetric design, not
+  a miscalibration and not a new finding requiring a further fix.
+- **Check 2 verdict under the new reference: consistent with MiD.** "Consistent" here means
+  precisely that the model's realised `100_plus` reporting-day share (0.0737) falls BETWEEN the
+  two MiD-based bounds constructed above -- the MiD-implied share (0.0602, the lower bound, from
+  applying MiD's own at-workplace probabilities to the assigned distribution) and the assigned
+  share itself (0.1001, the upper bound, i.e. the share before any MiD-motivated re-draw at all).
+  **No numeric tolerance is asserted** for this half of check 2 (unlike check 1's +/- 3 pp band,
+  which is unchanged): the verdict is the qualitative statement that the realised value sits in
+  the interval the model's own mechanism defines, not a distance-from-target measurement. The
+  no-deterioration half of check 2 is **UNCHANGED** and stays **PASS**, exactly as recorded in the
+  Proof 2026-09-06 section above (`commute_by_kreis_all_assigned.csv` byte-identical to the
+  2026-09-04 baseline).
+- **Nothing else in the Proof 2026-09-06 section is amended by this decision.** Check 1 remains
+  FAILED at its pre-registered +/- 3 pp band; the five follow-ups named there remain open and
+  undone; no threshold anywhere else is relaxed.

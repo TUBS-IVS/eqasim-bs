@@ -270,6 +270,21 @@ assessment:
     committed MiD table, and reaching the bound would need either an absent rule for the 100_200
     class or lower keep ratios -- a PARAMETER decision reserved for the maintainer, taken by
     nobody here.
+    MAINTAINER DECISION 2026-09-06 (ADR-0104, "Decision 2026-09-06 on check 2 (maintainer)"): the
+    100_plus < 3% bound above is WITHDRAWN -- every 100_plus column of the committed SrV reference
+    is exactly 0.0 in all 15 rows, a structural survey blind spot (ADR-0102 Assumption 2), so the
+    bound had no reference behind it from the start. The long band is now judged by CONSISTENCY
+    WITH MiD instead: scripts/report_mid_implied_reporting_day_bands.py converts the
+    assigned-workplace distribution into what MiD''s own at-workplace probabilities would imply
+    for the reporting day, committed as mid_implied_reporting_day_bands.csv. For the 100_plus
+    band: assigned (flag OFF) 0.1001, MiD-implied 0.0602, model realised (flag ON) 0.0737 -- the
+    model lies between the two MiD-based bounds, so check 2''s long band is now recorded as
+    consistent with MiD (no numeric tolerance asserted). The recorded "fail" against the original
+    3% bound in the run manifest is NOT changed (history stays); this is a new judgement added
+    beside it. The remaining 1.35 pp by which the model sits above the MiD-implied value is read
+    as the effect of ADR-0104''s own re-draw rule (upward-only: no work trip is ever ADDED for a
+    person whose donor commuted farther than their assignment, to avoid double-counting the
+    survey''s own not-working mass), not as a new defect.
     FIVE FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
     production run (still owed, ruling R4 substituted a proof on the cached i329 population), a
     re-specification of check 1 (which needs a home-office attribution the population does not

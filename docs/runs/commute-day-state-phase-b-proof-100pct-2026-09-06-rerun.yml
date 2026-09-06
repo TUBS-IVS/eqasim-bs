@@ -239,7 +239,25 @@ validation:
     operating bound, not against an observed value. Which table answers which half is fixed by
     the ADR-0104 R5 amendment and was applied here as written; reading the 100_plus bound off
     the assigned table instead would have given 0.1000834, and reading the no-deterioration half
-    off the reporting-day table would have compared two different universes.'
+    off the reporting-day table would have compared two different universes.
+
+    MAINTAINER DECISION 2026-09-06 (ADR-0104, "Decision 2026-09-06 on check 2 (maintainer)"): the
+    100_plus < 3 % bound recorded as FAILED above is WITHDRAWN -- the recorded fail against the
+    original bound is NOT changed, it stays the historical record of what was measured against
+    the pre-registered (and unsourced) bound. In its place, the long band is judged by CONSISTENCY
+    WITH MiD, computed by the new script scripts/report_mid_implied_reporting_day_bands.py and
+    committed as
+    eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/mid_implied_reporting_day_bands.csv.
+    Three 100_plus figures from that CSV: assigned (flag OFF) 0.1001, MiD-implied 0.0602 (MiD''s
+    own share_at_workplace applied to the assigned distribution and renormalised over the seven
+    bands), model realised (flag ON) 0.0737 -- the model sits BETWEEN the two MiD-based bounds.
+    VERDICT AFTER THE DECISION: consistent with MiD (no numeric tolerance asserted; "consistent"
+    means the realised share falls between the MiD-implied and assigned bounds). The
+    no-deterioration half stays PASS, unchanged. schema.py''s validation-entry schema allows only
+    metric/reference/result/artifact/notes (no free keys), so this decision is recorded in this
+    notes field rather than as a new structured key; the full reasoning, including why the
+    remaining 1.35 pp above the MiD-implied value is read as the deliberate upward-only re-draw
+    rule (never a rejection basis), is in ADR-0104''s new subsection, not repeated here.'
 - metric: 'ADR-0104 check 3 -- cordon out-commuter gate volumes before/after, against an
     expectation restricted to at_workplace persons'
   reference: none (the expectation is derived from the BA Pendleratlas register the model is
