@@ -208,9 +208,18 @@ config:
   braunschweig.population.popsim.drop_leading_arrive_home_leg: true
   # Dwell before the synthesised return-home trip: "empirical" draws it (seeded) from
   # the observed duration distribution of the same purpose x arrival band in the
-  # directly closed MiD weekday chains; "fixed_1h" is the previous hard-coded 3600 s,
-  # which gave 65,761 work activities a duration of exactly 1.0 h. ADR-0108.
+  # directly closed MiD weekday chains; "fixed_1h" reproduces the previous hard-coded
+  # 3600 s constant BYTE-IDENTICALLY (which gave 65,761 work activities a duration of
+  # exactly 1.0 h), including the absence of the plan-time cap -- capping a drawn dwell
+  # at MAX_PLAN_TIME_SECONDS is an EMPIRICAL-path behaviour only. ADR-0108.
   braunschweig.population.popsim.closure_dwell_model: empirical
+  # Minimum observations a (purpose x arrival band) cell of the empirical dwell model
+  # must hold to be drawn from directly; thinner cells fall back to the purpose
+  # marginal (fallback rate logged). Positive integer; inert for "fixed_1h". The
+  # complementary bound on which observations are pooled at all (16 h) is a module
+  # constant in braunschweig/popsim/closure_dwell.py, not a config key: it delimits
+  # what a closing activity can plausibly last, it is not a study parameter.
+  braunschweig.population.popsim.closure_dwell_min_obs: 30
   # Count the closed day in the trip_class PopulationSim seed (anzwege1 + 1 for a plan
   # source whose last directly recorded non-rbW leg does not end at home, clipped at
   # 50): seed and realised plan must count the same day. ADR-0108.

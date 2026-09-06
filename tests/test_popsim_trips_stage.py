@@ -403,3 +403,54 @@ def test_entd_source_rejects_empirical_closure_dwell_model():
             pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
             closure_dwell_model="empirical",
         )
+
+
+# ---------------------------------------------------------------------------
+# closure_dwell_min_obs is a config key, not a hard-coded 30 (final-review
+# minor M1): the value must reach ClosureDwellModel.from_trips, since it decides
+# whether a (purpose x arrival band) cell is used directly or falls back to the
+# purpose marginal -- the rate the fallback instrumentation reports.
+# ---------------------------------------------------------------------------
+
+def test_closure_dwell_min_obs_reaches_the_empirical_model():
+    persons, wege = _persons_and_wege_with_rbw()
+    lenient = trips_stage.build_closure_dwell_model(
+        persons, wege, closure_dwell_model="empirical", random_seed=1,
+        closure_dwell_min_obs=1, exclude_rbw_legs=True,
+    )
+    strict = trips_stage.build_closure_dwell_model(
+        persons, wege, closure_dwell_model="empirical", random_seed=1,
+        closure_dwell_min_obs=1000, exclude_rbw_legs=True,
+    )
+    # Same donor diaries, same draw: with min_obs=1 the (purpose, band) CELL is used;
+    # with min_obs=1000 no cell qualifies and every draw falls back to the marginal.
+    # 8:30 is the arrival of the work activity whose duration the donors observe
+    # (their next departure is at 17:00), so the (work, <14h) cell is populated.
+    lenient.draw("work", 8 * 3600.0 + 1800.0)
+    strict.draw("work", 8 * 3600.0 + 1800.0)
+    assert lenient.report["n_fallback_purpose_marginal"] == 0
+    assert strict.report["n_fallback_purpose_marginal"] == 1
+
+
+def test_closure_dwell_min_obs_must_be_positive():
+    persons, wege = _persons_and_wege_with_rbw()
+    with pytest.raises(ValueError, match="closure_dwell_min_obs"):
+        trips_stage.build_closure_dwell_model(
+            persons, wege, closure_dwell_model="empirical", random_seed=1,
+            closure_dwell_min_obs=0,
+        )
+
+
+def test_run_threads_closure_dwell_min_obs(monkeypatch):
+    seen = {}
+    original = trips_stage.build_closure_dwell_model
+
+    def spy(*args, **kwargs):
+        seen["min_obs"] = kwargs.get("closure_dwell_min_obs")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(trips_stage, "build_closure_dwell_model", spy)
+    persons, wege = _persons_and_wege_with_rbw()
+    trips_stage.run(persons, wege, random_seed=1, closure_dwell_model="empirical",
+                    closure_dwell_min_obs=7, exclude_rbw_legs=True)
+    assert seen["min_obs"] == 7

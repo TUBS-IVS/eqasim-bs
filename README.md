@@ -264,7 +264,7 @@ python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml
 python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml
 ```
 
-**Plan-structure config keys (`popsim_mid` only).** These six keys govern how a
+**Plan-structure config keys (`popsim_mid` only).** These seven keys govern how a
 MiD donor's reporting day becomes a MATSim plan. All are default ON in
 `configs/base_bs.yml`, which stays the single home of every flag and its
 default value (the table is here because the three trip-side keys must be
@@ -278,15 +278,18 @@ ADR-0108 and the feature records `diary_plan_match`, `rbw_leg_convention`,
 | `exclude_holiday_plan_sources` | Excludes public-holiday reporting days (`feiertag == 1`) from plan sources and from the remap donor pool |
 | `exclude_rbw_legs` | Drops `W_RBW == 1` legs from the day plan (the round happens inside the work activity); keeps `rbwLegsCount` / `rbwDistanceKm` as person attributes |
 | `drop_leading_arrive_home_leg` | Drops a first leg that *arrives* home (`W_SO1 == 2`) instead of fabricating a home→home first trip |
-| `closure_dwell_model` | Draws the dwell before the synthesised return-home trip from observed durations (purpose × arrival band); `fixed_1h` restores the previous 3600 s constant |
+| `closure_dwell_model` | Draws the dwell before the synthesised return-home trip from observed durations (purpose × arrival band); `fixed_1h` restores the previous 3600 s constant byte-identically, including no plan-time cap |
+| `closure_dwell_min_obs` | Minimum observations a (purpose × arrival band) cell of that empirical model needs before it is drawn from directly; thinner cells fall back to the purpose marginal (integer, not a flag) |
 | `trip_class_seed_counts_closure` | Counts the closed day in the `trip_class` PopulationSim seed (`anzwege1 + 1` for an open-ended source), so seed, plan and SrV target count the same day |
 
 See `configs/base_bs.yml` for each key's current default value.
 
-The last three need MiD columns (`W_RBW`, `W_SO1`) and the MiD Wege table that
-ENTD does not have, so the ENTD donor source **rejects** any non-default value:
-the two `popsim_open` fixture configs set them to `false` / `fixed_1h`
-explicitly.
+`exclude_rbw_legs`, `drop_leading_arrive_home_leg` and `closure_dwell_model`
+need MiD columns (`W_RBW`, `W_SO1`) and the MiD Wege table that ENTD does not
+have, so the ENTD donor source **rejects** any non-default value: the two
+`popsim_open` fixture configs set them to `false` / `fixed_1h` explicitly.
+(`closure_dwell_min_obs` needs no such rejection — it only sizes the empirical
+model's cells, which that rejection already prevents from ever being built.)
 
 **Local open-data smokes** (no restricted MiD data needed):
 

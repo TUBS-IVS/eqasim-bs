@@ -66,9 +66,14 @@ DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 # reached only transitively (via mid.load_completed_donor -> member_completion.
 # complete_members, and via mid.load_mid_wege internally) and are not imported
 # here directly, so they are named and imported lazily inside validate().
+# seedmod (braunschweig.popsim.seed) is included because it OWNS WEEKDAY_KERNWO, the
+# constant diary_plan_match.build_realisable_pool filters the remap donor pool with:
+# changing it changes which donors this stage can draw from, so it must devalidate
+# this stage's cache like any other build input.
 _HELPER_MODULES = (
     diary_facts,
     diary_plan_match,
+    seedmod,
     weekend_plan_match,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
@@ -260,11 +265,12 @@ def validate(context):
     Same mechanism and boundary semantics as ``braunschweig.popsim.trips_stage.
     validate()`` (the pattern this mirrors): synpp's ``get_stage_hash`` hashes only
     THIS file's own source, so editing a sibling helper this stage's build actually
-    depends on -- ``diary_facts``, ``diary_plan_match``, ``weekend_plan_match``
-    (own-package siblings imported directly above), plus ``member_completion`` and
-    ``mid.donor`` (reached only transitively, via ``mid.load_completed_donor`` /
-    ``mid.load_mid_wege``) -- would otherwise silently reuse this stage's stale
-    cached output on a partial rerun. A deferred module that fails to import
+    depends on -- ``diary_facts``, ``diary_plan_match``, ``seed`` (which owns the
+    ``WEEKDAY_KERNWO`` pool filter and the seed-column contract) and
+    ``weekend_plan_match`` (own-package siblings imported directly above), plus
+    ``member_completion`` and ``mid.donor`` (reached only transitively, via
+    ``mid.load_completed_donor`` / ``mid.load_mid_wege``) -- would otherwise silently
+    reuse this stage's stale cached output on a partial rerun. A deferred module that fails to import
     raises rather than being skipped -- skipping it would keep the stale cache
     alive exactly when the code is broken.
     """

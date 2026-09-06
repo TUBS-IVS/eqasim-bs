@@ -173,6 +173,7 @@ class MidSource:
         exclude_rbw_legs: bool = False,
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
+        closure_dwell_min_obs: int = 30,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -203,6 +204,9 @@ class MidSource:
         closure_dwell_model:
             ``"empirical"`` or ``"fixed_1h"`` dwell for the synthesised chain
             closure (issue #367); any other value raises ``ValueError``.
+        closure_dwell_min_obs:
+            minimum observations per (purpose x arrival band) cell of the
+            empirical dwell model (issue #367); inert for ``"fixed_1h"``.
 
         Returns
         -------
@@ -218,4 +222,5 @@ class MidSource:
             exclude_rbw_legs=exclude_rbw_legs,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             closure_dwell_model=closure_dwell_model,
+            closure_dwell_min_obs=closure_dwell_min_obs,
         )

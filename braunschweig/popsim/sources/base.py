@@ -37,7 +37,8 @@ map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
 
 build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             escort_passive_education=False, exclude_rbw_legs=False,
-            drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h") -> trips:
+            drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h",
+            closure_dwell_min_obs=30) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -180,6 +181,7 @@ class PopsimSource(Protocol):
         exclude_rbw_legs: bool = False,
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
+        closure_dwell_min_obs: int = 30,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -219,6 +221,11 @@ class PopsimSource(Protocol):
             keeps the constant one-hour dwell. An adapter that cannot build the
             empirical pools must reject the value rather than silently downgrade
             to the constant.
+        closure_dwell_min_obs:
+            minimum observations a (purpose x arrival band) cell of the empirical
+            dwell model must hold before it is drawn from directly (issue #367).
+            Inert for an adapter that only supports ``"fixed_1h"``, which never
+            builds those pools.
 
         Returns
         -------

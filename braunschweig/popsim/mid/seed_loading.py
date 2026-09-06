@@ -392,6 +392,7 @@ def _derive_trip_class_seed_column(
     kreis_seed_rng,
     trip_class_counts_closure: bool = False,
     forbid_no_diary_sources: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the person-level ``trip_class`` KREIS control seed column.
 
@@ -405,8 +406,8 @@ def _derive_trip_class_seed_column(
     see derive_trip_class_seed (audit 2026-07-09). ``load_mid_seed`` never has the
     Task 3 ``src_*`` plan-source diary facts (its persons frame is read directly from
     the raw MiD CSVs), so this call always keeps ``trip_class_counts_closure`` and
-    ``forbid_no_diary_sources`` at their False default -- byte-identical to before
-    Task 7.
+    ``forbid_no_diary_sources`` (and ``drop_leading_arrive_home_leg``) at their
+    False default -- byte-identical to before Task 7.
 
     In ``project_completed_seed``: derive trip_class from each person's REALISED
     weekday plan source, not their own reporting-day diary: after
@@ -415,9 +416,10 @@ def _derive_trip_class_seed_column(
     and the trips the synthetic person executes. See derive_trip_class_seed (audit
     2026-07-09; ~29% weekend reporters otherwise carried a weekend diary count into
     the weekday-anchored control). ``trip_class_counts_closure`` /
-    ``forbid_no_diary_sources`` are threaded through from ``popsim.stage`` (issue
-    #367 / #365, plan-structure-fix Task 7) -- see ``derive_trip_class_seed`` for
-    the full semantics.
+    ``forbid_no_diary_sources`` / ``drop_leading_arrive_home_leg`` are threaded
+    through from ``popsim.stage`` (issues #367 / #365 / #366, plan-structure-fix
+    Task 7 and controller ruling R20) -- see ``derive_trip_class_seed`` for the
+    full semantics.
 
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
@@ -427,7 +429,8 @@ def _derive_trip_class_seed_column(
             persons, rng=kreis_seed_rng,
             household_id=columns.person_household_id, person_id=columns.person_id,
             counts_closure=trip_class_counts_closure,
-            forbid_no_diary_sources=forbid_no_diary_sources)
+            forbid_no_diary_sources=forbid_no_diary_sources,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
     return persons
 
 
@@ -838,6 +841,7 @@ def project_completed_seed(
     mid_dir: Union[str, Path, None] = None,
     trip_class_counts_closure: bool = False,
     forbid_no_diary_sources: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -903,6 +907,13 @@ def project_completed_seed(
             ``braunschweig.population.popsim.diary_plan_match``, default True).
             See ``derive_trip_class_seed``'s ``forbid_no_diary_sources`` argument.
             Default False here for the same reason as above.
+        drop_leading_arrive_home_leg: threaded from ``popsim.stage`` (issue #366,
+            controller ruling R20; config key
+            ``braunschweig.population.popsim.drop_leading_arrive_home_leg``,
+            default True). Subtracts the leading arrive-home leg the trip build
+            drops under the same flag from the closure-counted seed; see
+            ``derive_trip_class_seed``'s argument of the same name. Default False
+            here for the same reason as above.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -934,6 +945,7 @@ def project_completed_seed(
         kreis_seed_rng=kreis_seed_rng,
         trip_class_counts_closure=trip_class_counts_closure,
         forbid_no_diary_sources=forbid_no_diary_sources,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
     )
     persons = _derive_pt_ticket_group_seed_column(
         persons,

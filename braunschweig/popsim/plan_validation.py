@@ -33,6 +33,14 @@ HOME_CLOSURE_DWELL_S = 3600.0
 # imports it for its final backstop assertion.
 MAX_PLAN_TIME_SECONDS = 36 * 3600
 
+# Above this share of appended closures needing the plan-time cap, the EMPIRICAL
+# dwell distribution and the chains it is asked to close disagree badly enough to
+# warrant a WARNING (a capped dwell is no longer the drawn one, so those rows stop
+# being distributed like the observed durations). At or below it the cap is a
+# routine tail effect and is reported at INFO. Controller ruling R19; the 5 % level
+# is the one pre-registered in the design spec (section 2.3).
+CLOSURE_CAP_WARN_RATE = 0.05
+
 
 @dataclass(frozen=True)
 class RepairReport:
@@ -116,13 +124,30 @@ def _append_return_home(
       ``dwell_model.draw(last.following_purpose, last.arrival_time)`` when a
       :class:`~braunschweig.popsim.closure_dwell.ClosureDwellModel` is given
       (drawn from what MiD donors actually report for the same purpose and
-      arrival band), else the constant ``dwell_s``. When the resulting
-      ``arrival_time`` would exceed ``max_plan_time_seconds``, ``dwell`` is
-      reduced (never below zero) just enough to bring it back to the bound —
-      the outbound ``travel_time`` is never shortened, only the dwell, since
-      shortening the travel time would misrepresent the return trip's actual
-      duration. Each capped draw is counted (in ``dwell_model.report["n_capped"]``
-      when a model was given) and the rate is logged by the caller.
+      arrival band), else the constant ``dwell_s``.
+
+      **The plan-time cap is an EMPIRICAL-path behaviour only** (controller
+      ruling R19). Only a DRAWN dwell can be long enough to push a chain past
+      ``max_plan_time_seconds`` that the constant would have left inside it, so
+      the cap applies ONLY when an empirical model was given
+      (``dwell_model.report["kind"] == "empirical"``). With ``fixed_1h`` or no
+      model the behaviour is exactly what it was before issue #367: no cap, and
+      a chain that ends up beyond the bound is left to the existing post-repair
+      bound validation, which resamples the person from a same-cell donor.
+      Capping the constant path too would have made that path non-byte-identical
+      and could produce a zero-duration final activity.
+
+      When the cap does apply, ``dwell`` is reduced just enough to bring the
+      appended arrival back to the bound, but never below the
+      ``HOME_CLOSURE_DWELL_S`` floor: if even that floor would breach the bound
+      (the outbound travel time alone already consumes the remaining budget), the
+      row is NOT capped and goes to the same bound validation / resample as on the
+      constant path - a plausible closing activity is worth more than a
+      technically-inside-the-bound one-minute stop. The outbound ``travel_time``
+      is never shortened, since that would misrepresent the return trip's actual
+      duration. Each capped draw is counted (in ``dwell_model.report["n_capped"]``)
+      and the rate is logged; it WARNs above :data:`CLOSURE_CAP_WARN_RATE` and is
+      INFO otherwise.
     - ``arrival_time = departure_time + travel_time``
       where ``travel_time = last.arrival_time - last.departure_time`` (symmetric
       assumption: the return trip takes the same time as the outbound leg; if
@@ -149,9 +174,10 @@ def _append_return_home(
         dwell_s: Constant dwell (seconds) used when ``dwell_model`` is ``None``.
         dwell_model: Optional ``ClosureDwellModel`` supplying an empirically
             drawn dwell time per (purpose, arrival time) instead of the constant.
+            A ``fixed`` model draws the constant and is NOT capped (see above).
         max_plan_time_seconds: Plan-time bound (seconds) the appended arrival
-            must not exceed (see the capping rule above); normally the caller's
-            ``PlanValidator.max_plan_time_seconds``.
+            should not exceed on the EMPIRICAL path (see the capping rule above);
+            normally the caller's ``PlanValidator.max_plan_time_seconds``.
     """
     df = df_trips.copy()
     df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
@@ -173,6 +199,10 @@ def _append_return_home(
     rows_to_append = []
     idx_to_flip = []  # old last-trip indices that need is_last_trip -> False
     n_capped = 0
+    n_cap_impossible = 0
+    # Ruling R19: only a DRAWN dwell can exceed the bound where the constant would
+    # not have; capping the constant path would change the pre-#367 behaviour.
+    cap_applies = dwell_model is not None and dwell_model.report.get("kind") == "empirical"
 
     for person_id, idx in last_idx.items():
         last = df.loc[idx]
@@ -195,15 +225,22 @@ def _append_return_home(
         dep = float(last["arrival_time"]) + dwell
         arr = dep + travel_time
 
-        if arr > max_plan_time_seconds:
-            # Shrink the dwell (floored at 0) so the appended arrival respects
-            # the bound; the outbound travel_time is preserved unchanged.
-            dwell = max(0.0, max_plan_time_seconds - travel_time - float(last["arrival_time"]))
-            dep = float(last["arrival_time"]) + dwell
-            arr = dep + travel_time
-            n_capped += 1
-            if dwell_model is not None:
+        if cap_applies and arr > max_plan_time_seconds:
+            # Shrink the DRAWN dwell so the appended arrival respects the bound; the
+            # outbound travel_time is preserved unchanged. The shrunk dwell must still
+            # leave a plausible closing activity, so it is floored at
+            # HOME_CLOSURE_DWELL_S; when the bound cannot accommodate even that floor,
+            # the row is left UNCAPPED for the post-repair bound validation (which
+            # resamples the person), exactly as on the constant path.
+            capped_dwell = max_plan_time_seconds - travel_time - float(last["arrival_time"])
+            if capped_dwell >= HOME_CLOSURE_DWELL_S:
+                dwell = capped_dwell
+                dep = float(last["arrival_time"]) + dwell
+                arr = dep + travel_time
+                n_capped += 1
                 dwell_model.report["n_capped"] = dwell_model.report.get("n_capped", 0) + 1
+            else:
+                n_cap_impossible += 1
 
         mode = last["mode"] if "mode" in df.columns and not pd.isna(last.get("mode")) else "car"
 
@@ -233,12 +270,22 @@ def _append_return_home(
     if not rows_to_append:
         return df
 
-    if n_capped:
-        logger.warning(
+    if n_capped or n_cap_impossible:
+        n_draws = len(rows_to_append)
+        cap_rate = n_capped / max(n_draws, 1)
+        # WARN only above the pre-registered rate (ruling R19): an occasional capped
+        # tail draw is expected, a systematic one means the drawn distribution and the
+        # chains being closed disagree.
+        log = logger.warning if cap_rate > CLOSURE_CAP_WARN_RATE else logger.info
+        log(
             "[popsim.plan_validation] home-closure dwell capped at the %.0fh plan-time "
-            "bound for %d/%d appended return-home trips (the dwell was reduced, never "
-            "the outbound travel time, so the appended arrival does not exceed the bound)",
-            max_plan_time_seconds / 3600.0, n_capped, len(rows_to_append),
+            "bound for %d/%d (%.2f%%) appended return-home trips (empirical dwell model "
+            "only; the dwell was reduced, never the outbound travel time, and never below "
+            "the %.1fh floor); %d/%d (%.2f%%) could not be capped without breaching that "
+            "floor and are left to the plan-time bound validation",
+            max_plan_time_seconds / 3600.0, n_capped, n_draws, 100.0 * cap_rate,
+            HOME_CLOSURE_DWELL_S / 3600.0,
+            n_cap_impossible, n_draws, 100.0 * n_cap_impossible / max(n_draws, 1),
         )
 
     # Flip the old last trips to is_last_trip=False before the new rows claim True.

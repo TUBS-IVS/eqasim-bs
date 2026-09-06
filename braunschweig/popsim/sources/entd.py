@@ -413,6 +413,7 @@ class EntdSource:
         exclude_rbw_legs: bool = False,
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
+        closure_dwell_min_obs: int = 30,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -428,6 +429,11 @@ class EntdSource:
         a popsim_open run believing a filter or a dwell model was applied that
         never was (CLAUDE.md: no silent fallbacks), so a popsim_open run must set
         the corresponding config keys to False / False / "fixed_1h".
+
+        ``closure_dwell_min_obs`` is accepted and ignored WITHOUT a rejection: it
+        only sizes the empirical model's cells, and the rejection above already
+        guarantees no empirical model is ever built here, so no ENTD run can
+        believe a cell threshold took effect.
         """
         if exclude_rbw_legs:
             raise NotImplementedError(

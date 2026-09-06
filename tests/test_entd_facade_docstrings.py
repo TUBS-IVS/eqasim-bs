@@ -86,6 +86,9 @@ _EXPECTED_SIGNATURES = {
     # 2026-09-06 (plan-structure fix, issues #366 / #367) for the same reason: they are
     # passed by trips_stage.execute to every adapter. EntdSource ACCEPTS and REJECTS
     # them (MiD-specific coding / MiD-built dwell pools), which is why they appear here.
+    # closure_dwell_min_obs (final-review minor M1) is accepted and IGNORED without a
+    # rejection: it only sizes the empirical model's cells, which the closure_dwell_model
+    # rejection already prevents from ever being built on this path.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
@@ -93,7 +96,8 @@ _EXPECTED_SIGNATURES = {
         "explicit_round_trip_purposes: 'bool' = True, "
         "exclude_rbw_legs: 'bool' = False, "
         "drop_leading_arrive_home_leg: 'bool' = False, "
-        "closure_dwell_model: 'str' = 'fixed_1h') -> 'pd.DataFrame'"
+        "closure_dwell_model: 'str' = 'fixed_1h', "
+        "closure_dwell_min_obs: 'int' = 30) -> 'pd.DataFrame'"
     ),
 }
 

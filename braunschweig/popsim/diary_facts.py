@@ -43,6 +43,9 @@ def compute_diary_facts(wege, *, household_id="H_ID", person_id="P_ID", trip_id=
 
     Raises:
         KeyError: naming the missing column(s) when any required column is absent.
+        ValueError: naming the column and the affected row count when ``W_SO1`` or
+            ``W_ZWECK`` is missing (NaN) on a direct (non-rbW) leg -- those two
+            codes carry the first/last-leg facts and cannot be imputed here.
     """
     missing = [c for c in (household_id, person_id, trip_id) + REQUIRED_WEGE_COLUMNS if c not in wege.columns]
     if missing:
@@ -56,6 +59,21 @@ def compute_diary_facts(wege, *, household_id="H_ID", person_id="P_ID", trip_id=
     km = km.where(~coded, 0.0)
     rbw = w[is_rbw].assign(km=km[is_rbw])
     direct = w[~is_rbw]
+    # W_SO1 / W_ZWECK are the two codes every DIRECT leg must carry: the first leg's
+    # W_SO1 decides starts_arriving_home and the first/last W_ZWECK decide
+    # first_direct_zweck / last_direct_zweck / ends_at_home. A NaN in either would
+    # otherwise surface as an opaque pandas "cannot convert NA to integer" from the
+    # astype(int) casts below, naming neither the column nor how many rows are
+    # affected; fail early with both instead (no silent coercion either -- a missing
+    # purpose code is a data defect, not a value to impute here).
+    for col in ("W_SO1", "W_ZWECK"):
+        n_missing = int(direct[col].isna().sum())
+        if n_missing:
+            raise ValueError(
+                f"compute_diary_facts: {n_missing}/{len(direct)} direct (non-rbW) Wege rows have a "
+                f"missing {col!r}; the diary facts derived from it (first_so1 / first_direct_zweck / "
+                "last_direct_zweck / ends_at_home / starts_arriving_home) cannot be computed. "
+                "Check the MiD Wege delivery for that column.")
     g = direct.groupby(keys, sort=True)
     facts = pd.DataFrame({
         "n_direct_legs": g.size(),

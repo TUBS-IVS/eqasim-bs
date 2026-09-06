@@ -31,6 +31,15 @@ ARRIVAL_BANDS_H = (0, 14, 18, 20, 22, 48)
 # WARNING when the observed rate exceeds this threshold.
 CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5
 
+# Longest observed activity duration still pooled by from_trips(). Deliberately a
+# module CONSTANT and not a config key: it is the bound of what a day-closing
+# activity can plausibly last (a longer "duration" means the donor's day spans a
+# night, i.e. the observation is not a within-day dwell at all), not a scientific
+# parameter a study would vary. min_obs, by contrast, trades cell resolution
+# against cell occupancy and IS configurable
+# (braunschweig.population.popsim.closure_dwell_min_obs).
+MAX_OBSERVED_DWELL_S = 16 * 3600
+
 
 def _band(arrival_time_s: float) -> int:
     """Return the index of the arrival band (in ``ARRIVAL_BANDS_H``) containing ``arrival_time_s``.
@@ -124,7 +133,7 @@ class ClosureDwellModel:
 
     @classmethod
     def from_trips(cls, trips: pd.DataFrame, *, rng, min_obs: int = 30,
-                    max_dwell_s: float = 16 * 3600) -> "ClosureDwellModel":
+                    max_dwell_s: float = MAX_OBSERVED_DWELL_S) -> "ClosureDwellModel":
         """Build an empirical model from a donor trip table (before closure repair).
 
         Args:
@@ -141,7 +150,9 @@ class ClosureDwellModel:
                 enforced on it), since it is already the aggregated fallback level.
             max_dwell_s: Observed durations above this bound are dropped as
                 implausible (e.g. a donor's day genuinely spans midnight) before
-                pooling.
+                pooling. Defaults to the module constant
+                :data:`MAX_OBSERVED_DWELL_S`; see there for why it is not a
+                config key.
 
         Returns:
             A ``ClosureDwellModel`` in empirical mode.

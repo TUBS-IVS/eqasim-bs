@@ -59,3 +59,25 @@ def test_attach_plan_source_facts_uses_source_keys_and_fills_missing():
     assert out.loc[2, "src_n_direct_legs"] == 0 and out.loc[2, "src_rbw_distance_km"] == 0.0
     assert out.loc[2, "src_first_so1"] == -1 and out.loc[2, "src_ends_at_home"] == False
     assert len(out) == 3 and "src_n_direct_legs" in out.columns
+
+
+@pytest.mark.parametrize("column", ["W_SO1", "W_ZWECK"])
+def test_compute_diary_facts_raises_named_error_on_nan_direct_leg_code(column):
+    """A NaN W_SO1 / W_ZWECK on a DIRECT leg must name the column and the count.
+
+    Before this guard the failure surfaced as an opaque pandas "cannot convert NA
+    to integer" from the internal astype(int) casts, naming neither the column nor
+    how many rows were affected (final-review minor M9).
+    """
+    wege = _wege()
+    wege.loc[0, column] = np.nan     # first DIRECT leg of person (1, 1)
+    with pytest.raises(ValueError, match=rf"1/4 direct \(non-rbW\) Wege rows have a missing '{column}'"):
+        df_mod.compute_diary_facts(wege)
+
+
+def test_compute_diary_facts_ignores_nan_codes_on_rbw_legs():
+    """Only DIRECT legs carry the first/last-leg facts, so an rbW leg's NaN is not an error."""
+    wege = _wege()
+    wege.loc[2, "W_SO1"] = np.nan    # an rbW leg of person (1, 1)
+    facts = df_mod.compute_diary_facts(wege)
+    assert facts.loc[(1, 1), "n_rbw_legs"] == 2

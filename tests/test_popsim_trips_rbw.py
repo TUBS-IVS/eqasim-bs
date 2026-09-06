@@ -46,6 +46,38 @@ def test_exclude_rbw_legs_drops_them_and_empties_only_rbw_person(caplog):
         out = T.expand_persons_to_trips(_persons(), _wege(), exclude_rbw_legs=True)
     assert len(out) == 4 and set(out["person_id"]) == {0, 1}
     assert "rbW legs dropped: 3/7" in caplog.text
+    # Donor (2,1) IS referenced by person 2, so it counts as emptied and warns.
+    assert "referenced donor persons emptied by the drop: 1/3" in caplog.text
+    assert any(r.levelno == logging.WARNING and "ONLY rbW legs" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Controller ruling R21: the "emptied by the drop" counters are about PLANS, so
+# their universe is the donors the synthetic persons actually source from. Over
+# the WHOLE MiD Wege table the warning fired on every production run (the raw
+# file always contains only-rbW and leading-arrive-home donors nobody uses),
+# which made a real signal indistinguishable from the permanent noise.
+# ---------------------------------------------------------------------------
+
+def test_emptied_counters_ignore_donors_no_person_references(caplog):
+    # Only persons 0 and 1 exist; donor (2,1) (only rbW) and a second unreferenced
+    # donor (3,1) (a single leading arrive-home leg) stay in the Wege table.
+    persons = _persons().iloc[:2].copy()
+    wege = pd.concat([_wege(), pd.DataFrame([dict(
+        H_ID=3, P_ID=1, W_ID=1, W_ZWECK=8, W_RBW=0, W_SO1=2, hvm_imp=3,
+        W_SZS=6, W_SZM=0, W_AZS=6, W_AZM=30, wegkm_imp=5.0, wegmin_imp1=30)])],
+        ignore_index=True)
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        out = T.expand_persons_to_trips(persons, wege, exclude_rbw_legs=True,
+                                        drop_leading_arrive_home_leg=True)
+
+    assert set(out["person_id"]) == {0, 1}
+    # Both drops still happen and are still counted at leg level ...
+    assert "rbW legs dropped: 3/8" in caplog.text
+    # ... but no REFERENCED donor is emptied, so no warning at all.
+    assert "referenced donor persons emptied by the drop: 0/2" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_drop_leading_arrive_home_leg_only_when_first_leg_arrives_home():

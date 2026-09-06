@@ -548,7 +548,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     ),
     "braunschweig.popsim.completed_donor": (
         "braunschweig.popsim.mid",
-        "braunschweig.popsim.seed",
         "braunschweig.popsim.stage",
     ),
     "braunschweig.popsim.distance_distributions": (

@@ -525,8 +525,12 @@ def expand_persons_to_trips(
         from the table (same as a donor without Wege today) and COUNTED; if
         that count is > 0 a warning is logged with the hint that
         ``braunschweig.population.popsim.diary_plan_match`` should have
-        remapped those persons upstream. Default False keeps every existing
-        caller byte-identical.
+        remapped those persons upstream. The count is taken over the donors
+        REFERENCED by ``persons`` (the synthetic universe), not over the whole
+        Wege table: emptying a donor nobody sources their plan from has no
+        effect on any plan, and counting those made the warning fire on every
+        production run regardless of whether the remap worked (controller
+        ruling R21). Default False keeps every existing caller byte-identical.
     drop_leading_arrive_home_leg:
         If True, drop each donor person's FIRST leg (by ``trip_col`` order)
         when it both arrives home (``W_ZWECK`` in {8, 9}) and started from
@@ -536,9 +540,9 @@ def expand_persons_to_trips(
         window. Applied AFTER ``exclude_rbw_legs``. A donor person whose Wege
         become empty as a result (their only leg WAS the dropped leading
         arrive-home leg) is dropped from the table and COUNTED the same way
-        as ``exclude_rbw_legs``; if that count is > 0 a warning is logged
-        with the same diary-plan-match hint. Default False keeps every
-        existing caller byte-identical.
+        as ``exclude_rbw_legs`` (over the REFERENCED donors only, ruling R21);
+        if that count is > 0 a warning is logged with the same diary-plan-match
+        hint. Default False keeps every existing caller byte-identical.
 
     Raises
     ------
@@ -548,37 +552,59 @@ def expand_persons_to_trips(
     """
     total = len(mid_wege)
     wege_in = mid_wege
+    # The "emptied by the drop" counters below are about PLANS, so their universe is
+    # the set of donors the synthetic persons actually source from -- not the whole MiD
+    # Wege table, which also holds donors nobody references (controller ruling R21: a
+    # whole-table count made the warning a permanent false alarm).
+    referenced_donors = pd.MultiIndex.from_frame(
+        persons[[household_col, person_col]].drop_duplicates()
+    )
+
+    def _n_referenced_donors_with_legs(frame: pd.DataFrame) -> int:
+        """Number of REFERENCED donors that still have at least one leg in ``frame``."""
+        if len(frame) == 0:
+            return 0
+        present = pd.MultiIndex.from_frame(frame[[household_col, person_col]].drop_duplicates())
+        return int(present.isin(referenced_donors).sum())
+
+    n_referenced = len(referenced_donors)
     if exclude_rbw_legs:
         if "W_RBW" not in wege_in.columns:
             raise KeyError("[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column 'W_RBW'")
         is_rbw = wege_in["W_RBW"] == 1
-        persons_before = wege_in[[household_col, person_col]].drop_duplicates()
+        n_referenced_before = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in[~is_rbw]
-        persons_after = wege_in[[household_col, person_col]].drop_duplicates()
-        n_emptied = len(persons_before) - len(persons_after)
-        logger.info("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); donor persons emptied by the drop: %d",
-                    int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1), n_emptied)
+        n_emptied = n_referenced_before - _n_referenced_donors_with_legs(wege_in)
+        logger.info("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); referenced donor persons emptied by "
+                    "the drop: %d/%d (%.2f%%)",
+                    int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1),
+                    n_emptied, n_referenced, 100.0 * n_emptied / max(n_referenced, 1))
         if n_emptied:
-            logger.warning("[popsim.trips] %d donor persons have ONLY rbW legs and become trip-less; with "
-                           "braunschweig.population.popsim.diary_plan_match on they should have been remapped "
-                           "upstream (completed_donor) -- check the flags are consistent", n_emptied)
+            logger.warning("[popsim.trips] %d donor persons referenced by this population have ONLY rbW legs "
+                           "and become trip-less; with braunschweig.population.popsim.diary_plan_match on they "
+                           "should have been remapped upstream (completed_donor) -- check the flags are "
+                           "consistent", n_emptied)
     if drop_leading_arrive_home_leg:
         if "W_SO1" not in wege_in.columns:
             raise KeyError("[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column 'W_SO1'")
         ordered = wege_in.sort_values([household_col, person_col, trip_col])
         first = ordered.groupby([household_col, person_col], sort=False).head(1)
         drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
-        persons_before_arrive_home = wege_in[[household_col, person_col]].drop_duplicates()
+        n_referenced_before_arrive_home = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in.drop(index=drop_idx)
-        persons_after_arrive_home = wege_in[[household_col, person_col]].drop_duplicates()
-        n_emptied_arrive_home = len(persons_before_arrive_home) - len(persons_after_arrive_home)
+        n_emptied_arrive_home = (
+            n_referenced_before_arrive_home - _n_referenced_donors_with_legs(wege_in)
+        )
         logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege); "
-                    "donor persons emptied by the drop: %d",
-                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1), n_emptied_arrive_home)
+                    "referenced donor persons emptied by the drop: %d/%d (%.2f%%)",
+                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1),
+                    n_emptied_arrive_home, n_referenced,
+                    100.0 * n_emptied_arrive_home / max(n_referenced, 1))
         if n_emptied_arrive_home:
-            logger.warning("[popsim.trips] %d donor persons have ONLY a leading arrive-home leg and become "
-                           "trip-less; with braunschweig.population.popsim.diary_plan_match on they should have "
-                           "been remapped upstream (completed_donor) -- check the flags are consistent",
+            logger.warning("[popsim.trips] %d donor persons referenced by this population have ONLY a leading "
+                           "arrive-home leg and become trip-less; with "
+                           "braunschweig.population.popsim.diary_plan_match on they should have been remapped "
+                           "upstream (completed_donor) -- check the flags are consistent",
                            n_emptied_arrive_home)
     wege = map_mode(map_purpose(
         wege_in, escort_purpose=escort_purpose,

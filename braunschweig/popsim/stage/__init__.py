@@ -239,6 +239,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
     KEY_CONTROLS_SOURCE,
+    KEY_CLOSURE_DWELL_MIN_OBS,
     KEY_CLOSURE_DWELL_MODEL,
     KEY_DIARY_PLAN_MATCH,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG,
@@ -792,16 +793,21 @@ def configure(context):
     context.config(KEY_PLACEMENT_INCOME, True)
     # Weekend-plan match (default ON; OFF = byte-identical to pre-feature donor build).
     context.config(KEY_WEEKEND_PLAN_MATCH, True)
-    # Diary plan match + trip_class-seed closure (issues #365 / #367, plan-structure-fix
-    # Task 7). Both are already declared by braunschweig.popsim.completed_donor
-    # (KEY_DIARY_PLAN_MATCH) / read downstream by mid.project_completed_seed
-    # (KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE); they are declared HERE too so THIS stage's
-    # OWN cache-validation hash tracks them (execute() reads both below and threads
-    # them into project_completed_seed -> mid.derive_trip_class_seed). Default ON
-    # (project rule: new features default on); OFF reproduces the pre-Task-7 trip_class
-    # seed byte-identically.
+    # Diary plan match + trip_class-seed closure + leading arrive-home drop (issues
+    # #365 / #367 / #366, plan-structure-fix Task 7 and controller ruling R20). All
+    # three are already declared by braunschweig.popsim.completed_donor
+    # (KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG) / read downstream by
+    # mid.project_completed_seed (KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE); they are declared
+    # HERE too so THIS stage's OWN cache-validation hash tracks them (execute() reads
+    # all three below and threads them into project_completed_seed ->
+    # mid.derive_trip_class_seed). KEY_DROP_LEADING_ARRIVE_HOME_LEG must carry the SAME
+    # value here as in braunschweig.popsim.trips_stage: the seed subtracts exactly the
+    # leg the trip build drops, so a divergent setting would re-open the seed-vs-plan
+    # mismatch this feature closes. Default ON (project rule: new features default on);
+    # OFF reproduces the pre-Task-7 trip_class seed byte-identically.
     context.config(KEY_DIARY_PLAN_MATCH, True)
     context.config(KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE, True)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1345,16 +1351,18 @@ def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_
 
 def _build_populationsim_seed(context, source, source_name: str, mid_dir, complete_members: bool,
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
-        trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False):
+        trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
+        drop_leading_arrive_home_leg: bool = False):
     """Build the PopulationSim seed through the active donor source.
 
-    ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` (issues #367 / #365,
-    plan-structure-fix Task 7) are threaded ONLY into the ``complete_members`` branch
-    below (``mid.project_completed_seed``): the completed-donor persons frame is the
-    only one carrying the Task 3 ``src_ends_at_home`` / ``src_n_direct_legs`` diary
-    facts the closure derivation requires. The legacy ``mid.load_mid_seed`` branch
+    ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
+    ``drop_leading_arrive_home_leg`` (issues #367 / #365 / #366, plan-structure-fix
+    Task 7 and controller ruling R20) are threaded ONLY into the ``complete_members``
+    branch below (``mid.project_completed_seed``): the completed-donor persons frame is
+    the only one carrying the Task 3 ``src_ends_at_home`` / ``src_n_direct_legs`` /
+    ``src_starts_arriving_home`` diary facts the closure derivation requires. The legacy ``mid.load_mid_seed`` branch
     (``complete_members=False``) never receives them, so its ``trip_class`` seed stays
-    byte-identical to before Task 7 (both flags default False inside
+    byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
 
     Build the PopulationSim seed.
@@ -1415,6 +1423,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             mid_dir=mid_dir,
             trip_class_counts_closure=trip_class_counts_closure,
             forbid_no_diary_sources=forbid_no_diary_sources,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -2230,6 +2239,9 @@ def execute(context) -> pd.DataFrame:
     # so a surviving 803/804 code on a resolved source signals that remap did not run.
     trip_class_counts_closure_on = bool(context.config(KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE))
     diary_plan_match_on = bool(context.config(KEY_DIARY_PLAN_MATCH))
+    # The seed must subtract exactly the leading arrive-home leg the trip build drops
+    # (controller ruling R20); read from the SAME key trips_stage reads.
+    drop_leading_arrive_home_leg_on = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2238,6 +2250,7 @@ def execute(context) -> pd.DataFrame:
         active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure=trip_class_counts_closure_on,
         forbid_no_diary_sources=diary_plan_match_on,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
     )
 
     run_one = _prepare_batch_runner(

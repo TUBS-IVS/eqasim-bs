@@ -208,15 +208,28 @@ KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
 # Treat a diary that starts by arriving home (first_so1 == 2, i.e. the
 # reporting day begins mid-trip and the first RECORDED leg only arrives home)
 # as having that leading leg dropped when counting direct legs, and remap a
-# plan source whose diary becomes empty after the drop. Default ON. Read only
-# when diary_plan_match is ON (see the note on that key re: the Wege table +
-# src_* facts being read/attached regardless of this flag).
+# plan source whose diary becomes empty after the drop. Default ON. Read by
+# braunschweig.popsim.completed_donor (plan-source realisability, only when
+# diary_plan_match is ON), by braunschweig.popsim.trips_stage (the leg is
+# actually dropped there) and by braunschweig.popsim.stage, whose trip_class
+# seed SUBTRACTS exactly that dropped leg when trip_class_seed_counts_closure
+# is on (controller ruling R20) -- all three must see the SAME value, or seed
+# and plan count different days again.
 KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
-# the closing dwell duration from the observed distribution; "fixed_1h" uses a
-# fixed one-hour dwell. Read by braunschweig.popsim.trips_stage.
+# the closing dwell duration from the observed distribution of the same purpose
+# x arrival band; "fixed_1h" reproduces the previous hard-coded 3600 s constant
+# BYTE-IDENTICALLY -- including the absence of the plan-time cap, which is an
+# EMPIRICAL-path behaviour only (only a drawn dwell can exceed the bound where
+# the constant would not; ruling R19). Read by braunschweig.popsim.trips_stage.
 KEY_CLOSURE_DWELL_MODEL = "braunschweig.population.popsim.closure_dwell_model"
+# Minimum number of observations a (purpose x arrival band) cell of the EMPIRICAL
+# closure-dwell model must hold before it is drawn from directly; a thinner cell
+# falls back to the purpose marginal (rate logged). Positive integer, default 30.
+# Inert when closure_dwell_model is "fixed_1h". Read by
+# braunschweig.popsim.trips_stage.
+KEY_CLOSURE_DWELL_MIN_OBS = "braunschweig.population.popsim.closure_dwell_min_obs"
 # Seed the trip_class KREIS-control seed counts from the CLOSURE-augmented
 # diary (i.e. after a synthesised closing leg is added) rather than the raw
 # MiD anzwege1. Default ON (project rule: new features default on). Read by

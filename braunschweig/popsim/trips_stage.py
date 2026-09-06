@@ -164,6 +164,13 @@ def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
 # braunschweig.population.popsim.closure_dwell_model).
 CLOSURE_DWELL_MODELS = ("empirical", "fixed_1h")
 
+# Default minimum observations per (purpose x arrival band) cell of the empirical
+# closure-dwell model (config key
+# braunschweig.population.popsim.closure_dwell_min_obs). Mirrors
+# ClosureDwellModel.from_trips' own default; declared here because this module owns
+# the stage-level default the config key is registered with.
+DEFAULT_CLOSURE_DWELL_MIN_OBS = 30
+
 
 def _donor_diary_frame(persons: pd.DataFrame) -> pd.DataFrame:
     """Return one surrogate person per distinct donor diary used by ``persons``.
@@ -223,6 +230,7 @@ def build_closure_dwell_model(
     *,
     closure_dwell_model: str,
     random_seed: int,
+    closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
@@ -254,6 +262,11 @@ def build_closure_dwell_model(
         Base seed; the model draws from
         ``RandomState(random_seed + CLOSURE_SEED_OFFSET)``, a child stream
         decorrelated from the jitter / resample / imputation streams.
+    closure_dwell_min_obs:
+        Minimum observations a ``(purpose, arrival band)`` cell must hold to be
+        drawn from directly; a thinner cell falls back to the purpose marginal
+        (config key ``braunschweig.population.popsim.closure_dwell_min_obs``).
+        Must be a positive integer. Inert for ``"fixed_1h"``.
 
     Returns
     -------
@@ -262,8 +275,15 @@ def build_closure_dwell_model(
     Raises
     ------
     ValueError
-        If ``closure_dwell_model`` is not one of :data:`CLOSURE_DWELL_MODELS`.
+        If ``closure_dwell_model`` is not one of :data:`CLOSURE_DWELL_MODELS`,
+        or if ``closure_dwell_min_obs`` is not a positive integer.
     """
+    if int(closure_dwell_min_obs) < 1:
+        raise ValueError(
+            f"[trips_stage] closure_dwell_min_obs={closure_dwell_min_obs!r} must be a "
+            "positive integer (config key "
+            "braunschweig.population.popsim.closure_dwell_min_obs); a cell threshold "
+            "below 1 would make the purpose-marginal fallback unreachable.")
     if closure_dwell_model == "fixed_1h":
         return ClosureDwellModel.fixed(HOME_CLOSURE_DWELL_S)
     if closure_dwell_model != "empirical":
@@ -282,7 +302,8 @@ def build_closure_dwell_model(
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
     )
     return ClosureDwellModel.from_trips(
-        donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET)
+        donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET),
+        min_obs=int(closure_dwell_min_obs),
     )
 
 
@@ -392,6 +413,7 @@ def run(
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
     closure_dwell_model: str = "fixed_1h",
+    closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -425,6 +447,11 @@ def run(
         donor diaries' observed activity durations (per following purpose and
         arrival band), ``"fixed_1h"`` (default) keeps the constant
         ``HOME_CLOSURE_DWELL_S``. Any other value raises ``ValueError``.
+    closure_dwell_min_obs:
+        minimum observations a (purpose x arrival band) cell of the EMPIRICAL
+        dwell model must hold to be drawn from directly; thinner cells fall back
+        to the purpose marginal (rate logged). Positive integer, default
+        :data:`DEFAULT_CLOSURE_DWELL_MIN_OBS`; inert for ``"fixed_1h"``.
 
     Returns
     -------
@@ -443,6 +470,7 @@ def run(
         persons, mid_wege,
         closure_dwell_model=closure_dwell_model,
         random_seed=random_seed,
+        closure_dwell_min_obs=closure_dwell_min_obs,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
@@ -555,11 +583,13 @@ def configure(context):
     # Defaults ON / "empirical" per the project rule (new features default on);
     # False / False / "fixed_1h" is the byte-identical pre-#366 path.
     from braunschweig.popsim.stage.config_keys import (
-        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
     )
     context.config(KEY_EXCLUDE_RBW_LEGS, True)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
     context.config(KEY_CLOSURE_DWELL_MODEL, "empirical")
+    context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -605,11 +635,13 @@ def execute(context):
     explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     # Declared in configure(); ExecuteContext.config() takes the key alone.
     from braunschweig.popsim.stage.config_keys import (
-        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
     )
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     closure_dwell_model = str(context.config(KEY_CLOSURE_DWELL_MODEL))
+    closure_dwell_min_obs = int(context.config(KEY_CLOSURE_DWELL_MIN_OBS))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
@@ -619,4 +651,5 @@ def execute(context):
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         closure_dwell_model=closure_dwell_model,
+        closure_dwell_min_obs=closure_dwell_min_obs,
     )

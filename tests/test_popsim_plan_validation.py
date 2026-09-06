@@ -575,47 +575,132 @@ def test_dwell_model_threaded_into_stage_a_reimpute_closure():
 
 
 # ---------------------------------------------------------------------------
-# Fix round 1, Important-3: the appended closure departure must be capped so
-# the arrival never exceeds MAX_PLAN_TIME_SECONDS, even with a long empirical
-# dwell draw and an already-late last arrival.
+# The plan-time cap (Fix round 1, Important-3) is an EMPIRICAL-path behaviour
+# ONLY (controller ruling R19): a drawn dwell can push a chain past
+# MAX_PLAN_TIME_SECONDS where the constant would not, so only that path caps.
+# fixed_1h / no model keep the pre-#367 behaviour byte-identically (no cap; an
+# over-bound chain goes to the existing bound validation + resample), and even
+# on the empirical path the cap never shortens the dwell below the
+# HOME_CLOSURE_DWELL_S floor.
 # ---------------------------------------------------------------------------
 
-def test_repair_caps_empirical_closure_dwell_at_plan_time_bound():
+def _long_dwell_model(seed=0):
+    """Empirical model whose ONLY observation is a 19.5h activity duration.
+
+    Every draw therefore returns the same 19.5h dwell, which makes the cap
+    behaviour deterministic without stubbing the model.
+    """
     import numpy as np
 
     from braunschweig.popsim.closure_dwell import ClosureDwellModel
 
-    # A single donor observation with a 19.5h "work" activity duration (well
-    # within max_dwell_s=24h) -- deliberately long so an uncapped draw would
-    # push the appended arrival far past the 36h plan bound.
     donor = pd.DataFrame({
         "person_id": [9, 9],
         "departure_time": [8 * 3600.0, 28 * 3600.0],
         "arrival_time": [8 * 3600.0 + 1800.0, 28 * 3600.0 + 1800.0],
         "following_purpose": ["work", "home"],
     })
-    model = ClosureDwellModel.from_trips(
-        donor, rng=np.random.RandomState(0), min_obs=1, max_dwell_s=24 * 3600,
+    return ClosureDwellModel.from_trips(
+        donor, rng=np.random.RandomState(seed), min_obs=1, max_dwell_s=24 * 3600,
     )
 
-    # Last activity ("work") arrives only 30 minutes before the plan bound;
-    # travel_time back is 1800s, so ANY dwell > 0 would already exceed the bound.
-    df = pd.DataFrame({
-        "person_id": ["p"],
-        "departure_time": [pv.MAX_PLAN_TIME_SECONDS - 3600],
-        "arrival_time": [pv.MAX_PLAN_TIME_SECONDS - 1800],
+
+def _open_chain(person_id, last_arrival_s, travel_s=1800.0):
+    """One person whose single trip ends AWAY from home at ``last_arrival_s``."""
+    return pd.DataFrame({
+        "person_id": [person_id],
+        "departure_time": [last_arrival_s - travel_s],
+        "arrival_time": [last_arrival_s],
         "preceding_purpose": ["home"], "following_purpose": ["work"],
         "is_first_trip": [True], "is_last_trip": [True],
     })
-    fixed, _ = pv.PlanValidator().repair_trips(df, dwell_model=model)
+
+
+def test_repair_caps_empirical_closure_dwell_at_plan_time_bound():
+    # Last activity arrives 4h before the bound and the return leg takes 30 min, so
+    # 3.5h of dwell still fit -- comfortably above the 1h floor. The 19.5h draw is
+    # therefore capped to exactly the remaining budget.
+    model = _long_dwell_model()
+    last_arrival = pv.MAX_PLAN_TIME_SECONDS - 4 * 3600
+    fixed, _ = pv.PlanValidator().repair_trips(_open_chain("p", last_arrival), dwell_model=model)
 
     closure = fixed[fixed["is_synthetic_closure"]]
     assert len(closure) == 1
-    assert closure.iloc[0]["arrival_time"] <= pv.MAX_PLAN_TIME_SECONDS, (
-        "the appended arrival must never exceed the plan-time bound, even with "
-        "a long empirical dwell draw"
-    )
+    assert closure.iloc[0]["arrival_time"] == pytest.approx(pv.MAX_PLAN_TIME_SECONDS)
+    dwell = closure.iloc[0]["departure_time"] - last_arrival
+    assert dwell == pytest.approx(3.5 * 3600)
+    assert dwell >= pv.HOME_CLOSURE_DWELL_S, "a capped dwell must keep the closing activity plausible"
     assert model.report["n_capped"] == 1
+
+
+def test_repair_leaves_closure_uncapped_when_even_the_floor_breaches_the_bound():
+    """Ruling R19: no zero-duration closing activity just to respect the bound.
+
+    The last activity arrives 30 min before the bound and the return leg takes 30 min,
+    so not even the 1h floor fits. The row is left UNCAPPED (the drawn dwell stands) and
+    the person is routed to the existing over-bound handling -- the same treatment the
+    constant path has always given such a chain.
+    """
+    model = _long_dwell_model()
+    last_arrival = pv.MAX_PLAN_TIME_SECONDS - 1800
+    fixed, report = pv.PlanValidator().repair_trips(_open_chain("p", last_arrival), dwell_model=model)
+
+    closure = fixed[fixed["is_synthetic_closure"]]
+    assert len(closure) == 1
+    assert closure.iloc[0]["departure_time"] - last_arrival == pytest.approx(19.5 * 3600)
+    assert closure.iloc[0]["arrival_time"] > pv.MAX_PLAN_TIME_SECONDS
+    assert model.report["n_capped"] == 0
+    assert "p" in report.unfixable_persons, (
+        "an uncappable chain must reach the bound validation / resample, not be silently kept"
+    )
+
+
+def test_repair_with_fixed_dwell_model_is_never_capped():
+    """fixed_1h near the bound reproduces the pre-#367 constant exactly (no cap)."""
+    from braunschweig.popsim.closure_dwell import ClosureDwellModel
+
+    model = ClosureDwellModel.fixed(pv.HOME_CLOSURE_DWELL_S)
+    last_arrival = pv.MAX_PLAN_TIME_SECONDS - 1800
+    fixed, _ = pv.PlanValidator().repair_trips(_open_chain("p", last_arrival), dwell_model=model)
+
+    closure = fixed[fixed["is_synthetic_closure"]]
+    assert len(closure) == 1
+    assert closure.iloc[0]["departure_time"] - last_arrival == pytest.approx(pv.HOME_CLOSURE_DWELL_S)
+    assert closure.iloc[0]["arrival_time"] > pv.MAX_PLAN_TIME_SECONDS
+    assert model.report["n_capped"] == 0
+
+
+def test_repair_without_dwell_model_is_never_capped():
+    """No model at all (the legacy call) keeps the constant and the pre-#367 behaviour."""
+    last_arrival = pv.MAX_PLAN_TIME_SECONDS - 1800
+    fixed, _ = pv.PlanValidator().repair_trips(_open_chain("p", last_arrival))
+
+    closure = fixed[fixed["is_synthetic_closure"]]
+    assert len(closure) == 1
+    assert closure.iloc[0]["departure_time"] - last_arrival == pytest.approx(pv.HOME_CLOSURE_DWELL_S)
+
+
+def test_closure_cap_warns_only_above_the_warn_rate(caplog):
+    """Ruling R19: WARN above CLOSURE_CAP_WARN_RATE, INFO at or below it."""
+    import logging
+
+    # 21 open chains, 20 of them early enough that the 19.5h draw fits inside the
+    # bound and only one late enough to be capped -> 1/21 = 4.8% <= 5% -> INFO.
+    early = pd.concat(
+        [_open_chain(f"e{i}", 9 * 3600.0) for i in range(20)], ignore_index=True
+    )
+    late = _open_chain("late", pv.MAX_PLAN_TIME_SECONDS - 4 * 3600)
+    many = pd.concat([early, late], ignore_index=True)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.plan_validation"):
+        pv._append_return_home(many, pv.HOME_CLOSURE_DWELL_S, dwell_model=_long_dwell_model())
+    cap_records = [r for r in caplog.records if "home-closure dwell capped" in r.message]
+    assert len(cap_records) == 1 and cap_records[0].levelno == logging.INFO
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.plan_validation"):
+        pv._append_return_home(late, pv.HOME_CLOSURE_DWELL_S, dwell_model=_long_dwell_model())
+    cap_records = [r for r in caplog.records if "home-closure dwell capped" in r.message]
+    assert len(cap_records) == 1 and cap_records[0].levelno == logging.WARNING
 
 
 # ---------------------------------------------------------------------------
