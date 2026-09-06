@@ -1,0 +1,117 @@
+dataset: srv2023_plan_structure_reference
+title: SrV 2023 daily plan-structure reference per person segment (committed aggregate)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); segments per home Kreis
+  cover the 7 SrV-surveyed Kreise (03101 Braunschweig, 03102 Salzgitter, 03151 Gifhorn, 03153
+  Goslar, 03154 Helmstedt, 03157 Peine, 03158 Wolfenbuettel). Wolfsburg (03103) is not surveyed
+  by SrV and has no segment here.
+crs: null
+roles:
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_plan_structure.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>. Reads
+    SrV2023_Personen.csv (V_ALTER, V_ERW, V_GESCHLECHT, E_ANZ_WEGE, E_ANZ_WEGE2,
+    GEWICHT_P_ZENSUS, STICHTAG_WTAG, GEWICHT_P_WERKTAG), SrV2023_Wege.csv (WNR, V_ZWECK,
+    E_START_ZWECK, E_BEGINN, E_ANKUNFT, GEWICHT_W_ZENSUS) and SrV2023_Haushalte.csv (AGS). The
+    raw microdata is local-only and never committed.
+  script: scripts/extract_srv_plan_structure.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file: srv2023_plan_structure_reference.csv, long format with columns
+    universe, segment, metric, value, n_unweighted (9,476 rows = 23 segments x 206 metrics x 2
+    universes). Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external
+    for a contributor to download or verify presence of, since the file ships committed with
+    every clone (mirrors the sibling committed SrV tables, e.g. srv2023_work_participation).
+    requirements.production is "not_needed" as long as no production stage reads it; the
+    plan-structure comparison stage that consumes it (issue #369, Task 10) must flip this to
+    "required" and add the README derived-inputs row at the same time.
+    Definitions and the metric set live in braunschweig/calibration/srv_plan_structure.py; unit
+    tests on a synthetic SrV-shaped fixture: tests/test_srv_plan_structure.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Two universes are emitted, both from the same 18,223-person delivery (measured on the
+  2026-09-06 extraction; every person carries a valid non-negative GEWICHT_P_ZENSUS, so no
+  person or trip is dropped for an invalid weight):
+
+  * at_home_zero (PRIMARY, 18,223 persons): every delivered person; the per-person trip count is
+    E_ANZ_WEGE2, which counts a person who was away from home over the whole reporting day
+    (E_ANZ_WEGE == -7, 954 persons) as 0 trips. This is the universe that matches a synthetic
+    population, in which every person exists and starts the day at home.
+  * at_home_only (SENSITIVITY, 17,269 persons): persons with E_ANZ_WEGE >= 0, i.e. the 954
+    away-from-home persons excluded entirely. In this delivery -7 is the only negative
+    E_ANZ_WEGE code, so the two universes differ by exactly those persons; the builder carries
+    both flags and logs any disagreement rather than assuming it stays that way.
+
+  The universe difference is large for the mobility metrics and must never be mixed: the "all"
+  segment has mobility_rate 0.8437 (at_home_zero) vs 0.8879 (at_home_only) and trips_per_person
+  3.1865 vs 3.3534; trip-level metrics (purpose shares, departure hours, work-activity
+  durations) are identical between the two because away persons contribute no trips.
+
+  Universe guards (the extraction raises, it never adapts): every STICHTAG_WTAG in {2, 3, 4}
+  (pure Tuesday-Thursday "mittlerer Werktag" delivery) and GEWICHT_P_WERKTAG == -6 everywhere;
+  the reconstructed per-person trip count must equal the delivered E_ANZ_WEGE2 for every person.
+
+  Weights: GEWICHT_P_ZENSUS for person-level metrics, GEWICHT_W_ZENSUS for trip-level metrics
+  (expansion to Zensus 2022; the stratum-internal GEWICHT_P/GEWICHT_W must not be used across
+  strata, ADR-0055). Weighted person total 787,251.
+
+  Accepted deviations / data-quality counts of the 2026-09-06 extraction, all written into the
+  committed file's own "# Exclusions:" header line: 27 of 58,148 trips (0.05%) have
+  V_ZWECK == -10 and map to "unknown"; 20 have an unknown origin purpose (E_START_ZWECK == -7).
+  Unknown-purpose trips ARE counted as trips (n_trips, trips_per_person, trip-count
+  distribution) but are EXCLUDED from the denominator of purpose_share_*, so the seven purpose
+  shares sum to exactly 1.0; their weight is reported separately as
+  share_trips_unknown_purpose (0.0007 for the "all" segment). This is the one deliberate
+  deviation from the session analysis that this builder ports (which kept unknown trips in the
+  purpose-share denominator); every other metric definition is identical, verified against the
+  session's published headline values (mobility_rate 0.8437 / 0.8879, trips_per_person 3.186,
+  participation_work 0.3316, participation_shop 0.2794, participation_leisure 0.3832 -- all
+  reproduced to 4 decimals). 250 trips have no valid departure time and 298 no valid arrival
+  time; they are excluded from the departure-hour and work-activity metrics only. 2 persons have
+  no valid age (they fall into the senior_65plus_not_employed group by the group rule's default
+  branch, kept identical to the session analysis rather than silently "fixed") and 34 have
+  V_GESCHLECHT 3 "divers" or 4 "no answer" (they are in no sex segment).
+
+  Segments (23): all; age_<band> for 0-5, 6-9, 10-17, 18-24, 25-44, 45-64, 65-74, 75+;
+  group_<g> for employed, child_0_5, school_age_6_17_not_employed, adult_18_64_not_employed,
+  senior_65plus_not_employed (employment x life phase, defined so a synthetic population without
+  a pupil/student flag can express it: employed wins, the non-employed are split by age);
+  sex_male, sex_female; kreis_<ars5> for the 7 surveyed Kreise. An empty segment carries NaN
+  values and is never dropped, so a consumer never has to guess whether a segment is missing or
+  empty; n_unweighted repeats the segment's person count on every one of its rows so thin
+  segments can be filtered without a second lookup.
+
+  Coverage caveat: stratified PSU design over ~44 selected municipalities; per-Kreis segments
+  represent the covered municipalities only (ASSUMPTION-grade for the full Kreis). Not a control
+  target: nothing in the synthesis or location pipeline reads this file.
+notes: |
+  SrV side of the plan-structure comparison of issue #369 (14.1% of synthetic persons receive an
+  empty plan because their MiD donor reported no diary). The table pins the OBSERVED daily plan
+  structure -- mobility rate, trip-count distribution, per-purpose participation and trip rates,
+  purpose shares, home-based share, tours per mobile person, day-closure indicators
+  (share_mobile_first_from_home / share_mobile_last_to_home / share_mobile_odd_trip_count),
+  consecutive-same-purpose share, work-activity durations and departure-hour profiles -- so the
+  synthetic population can be measured against it with the SAME metric code
+  (braunschweig.calibration.srv_plan_structure.segment_metrics is deliberately written against
+  the harmonised schema only, never against SrV column names, so the model side passes through
+  it unchanged). Headline values of the primary universe, "all" segment: mobility_rate 0.8437,
+  trips_per_person 3.1865, trips_per_mobile_person 3.7767, participation_work 0.3316,
+  share_trips_followed_by_same_purpose 0.0453, tours_per_mobile 1.5951,
+  share_mobile_last_to_home 0.9776, mean_work_activity_h 6.2904.
