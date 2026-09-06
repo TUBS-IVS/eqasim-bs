@@ -537,50 +537,85 @@ bound is not met..." above).
   unmet threshold. **No other bound in this ADR is touched**: check 1's +/- 3 pp band, check 2's
   own no-deterioration half, `cds_max_states_outside_employed_share` 0.05 and
   `commute_day_max_not_replaceable_share` 0.5 all stand exactly as pre-registered.
-- **The reference for the long band becomes MiD CONSISTENCY, not an SrV bound.** In place of the
-  withdrawn bound, the `100_plus` band is judged by whether the model's realised reporting-day
-  share is consistent with what MiD's own reporting-day "at workplace" probabilities, applied to
-  the register-anchored assigned distribution, would imply -- i.e. by the model's INTERNAL
-  reference (MiD, which already grounds the model's own keep-probability rule), not by an
-  external SrV figure the data cannot support for this band.
-- **The MiD-implied reporting-day share is 0.0602, computed and printed by the new script
-  `scripts/report_mid_implied_reporting_day_bands.py`** (issue #244), which converts the
-  assigned-workplace distribution (`off/commute_by_kreis.csv`, `zgb`/`inter` row, flag OFF, before
-  any commute-day-state re-draw) into a reporting-day distribution by applying MiD's
-  `share_at_workplace` (read by column name from the committed table
-  `mid2023_workday_location_by_commute_distance.csv`, the `100_200` class for the `100_plus` band
-  because MiD has no class beyond it) band by band and renormalising over the seven work-distance
-  bands. Output, committed alongside the proof artefacts:
-  `eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/mid_implied_reporting_day_bands.csv`.
-  The three `100_plus` numbers, all read from that CSV: **assigned (flag OFF) 0.1001**, **MiD-implied
-  0.0602**, **model realised (flag ON) 0.0737**. (Beside it, for context: `50_100` assigned
-  0.1330, MiD-implied 0.1185, model ON 0.1304 -- the same three-way pattern one class down, where
-  the model already sits between the two MiD-based figures.)
-- **The model's realised share (0.0737) lies BETWEEN the assigned share (0.1001) and the
-  MiD-implied share (0.0602).** The remaining **1.35 pp** by which the model sits ABOVE the
-  MiD-implied value (0.0737 - 0.0602) is read here as a consequence of ADR-0104's own re-draw
-  rule, not as an unexplained residual: the model re-draws a worker's day state ONLY when the
-  assigned distance class is strictly higher than the donor's own class ("Re-draw only upwards",
-  Decision above) -- it never ADDS a work trip for a person whose donor commuted farther than
-  their assignment. This is a deliberate design choice of this ADR, made to avoid double-counting
-  the survey's own not-working/home-office mass (a donor who already did not travel on their
-  reporting day is passed through unchanged, never "corrected" upward into travelling). The
-  MiD-implied figure carries no such asymmetry -- it applies MiD's at-workplace probability
-  uniformly in both directions -- so the model's one-directional rule is expected, by
-  construction, to retain more long-distance travellers than a symmetric MiD-implied calculation
-  would. The 1.35 pp gap is therefore labelled a READING of the model's own asymmetric design, not
-  a miscalibration and not a new finding requiring a further fix.
-- **Check 2 verdict under the new reference: consistent with MiD.** "Consistent" here means
-  precisely that the model's realised `100_plus` reporting-day share (0.0737) falls BETWEEN the
-  two MiD-based bounds constructed above -- the MiD-implied share (0.0602, the lower bound, from
-  applying MiD's own at-workplace probabilities to the assigned distribution) and the assigned
-  share itself (0.1001, the upper bound, i.e. the share before any MiD-motivated re-draw at all).
-  **No numeric tolerance is asserted** for this half of check 2 (unlike check 1's +/- 3 pp band,
-  which is unchanged): the verdict is the qualitative statement that the realised value sits in
-  the interval the model's own mechanism defines, not a distance-from-target measurement. The
-  no-deterioration half of check 2 is **UNCHANGED** and stays **PASS**, exactly as recorded in the
-  Proof 2026-09-06 section above (`commute_by_kreis_all_assigned.csv` byte-identical to the
-  2026-09-04 baseline).
+- **The reference for the long band is the REGIONAL MiD 2023 tables for the Grossraum
+  Braunschweig (infas 7555), not the national-ratio consistency check tried first.** Those
+  regional tables are committed and carry a regional, reporting-day (and register-like)
+  reference that the withdrawn SrV bound could not supply, in two matched views:
+  - **Reporting-day, work trips only:** `mid2023_W12_triplength_by_purpose.csv`, Tabelle A W12,
+    row `Arbeit` (row %, of the day's Arbeit trips): `d_100km_plus` **1 %**, `d_50_100km`
+    **2 %**, mean 15.2 km.
+  - **Assigned/register view, persons by usual commute distance:** `mid2023_P13.csv`, Tabelle A
+    P13, row `Gesamt` (n_unweighted 1,583, a register-like universe closer to the model's
+    BA-anchored assignment than a reporting-day trip count): `d_100p` **2 %**, `d_50_100`
+    **4 %**, mean 20.7 km (Kreis rows vary widely, e.g. Landkreis Goslar `d_100p` **10 %**).
+- **Against these regional references the model still sits high, on both matched views** (all
+  read from the committed proof artefacts of this same run, no new measurement):
+  - Reporting-day, `on/commute_by_kreis.csv`: `zgb`/`all` row `model_share_100_plus`
+    **0.038190** (3.8 % of all commuters) and `zgb`/`inter` row **0.073740** (7.4 % of
+    inter-Gemeinde commuters) -- both against W12's `Arbeit` `d_100km_plus` of **1 %**.
+  - Assigned/register view: of the 304,900 all-scope workers, **16,194** have an assigned class
+    at or above 100 km (`on/state_diagnostics.json`'s `by_assigned_class`, `100_200` 5,235 +
+    `gt200` 10,959), i.e. **0.053112** (5.3 % of all workers -- the same figure as the
+    `zgb`/`all` row of `off/commute_by_kreis.csv` and of `on/commute_by_kreis_all_assigned.csv`)
+    against P13's `Gesamt` `d_100p` of **2 %**. Of those 16,194, **11,327** (4,106 `100_200` +
+    7,221 `gt200`) stay `at_workplace` on the reporting day -- the same 0.038190 figure above,
+    read a second way: 11,327 / 296,599 = **0.0382**.
+- **The comparison is read as four labelled findings, not folded into one verdict:**
+  - **(a) The earlier national-ratio "MiD-implied" comparison is demoted: none of its three
+    figures is a regional reference.** Computed by
+    `scripts/report_mid_implied_reporting_day_bands.py` (issue #244) and committed as
+    `.../mid_implied_reporting_day_bands.csv`, it applied MiD's NATIONAL `share_at_workplace`
+    ratios (read by column name from `mid2023_workday_location_by_commute_distance.csv`, which
+    carries no Grossraum Braunschweig geography at all) to the region's own BA-assigned
+    distribution: `100_plus` assigned (flag OFF) **0.1001**, MiD-implied **0.0602**, model
+    realised (flag ON) **0.0737** (and, one class down, `50_100` assigned 0.1330, MiD-implied
+    0.1185, model ON 0.1304). It remains valid ONLY as an internal-consistency check of the
+    model's OWN keep-probability rule against itself, not as an independent regional
+    observation. Kept in that limited role: the model's 0.0737 sits **1.35 pp** above the
+    MiD-implied 0.0602, read (Decision above, unchanged) as the necessary consequence of the
+    "re-draw only upwards" rule -- the model never adds a work trip for a person whose donor
+    commuted farther than their assignment -- not as a new finding.
+  - **(b) The remaining factor of roughly 3-4 against the regional MiD tables lies in the
+    far-commuter mass itself, not in a measurement artefact** (0.038190 vs W12's 1 % is ~3.8x on
+    the reporting-day/all view; 0.073740 vs W12's 1 % is ~7.4x on the reporting-day/inter view;
+    0.053112 vs P13's 2 % is ~2.7x on the assigned view). Two candidate causes are named, both
+    PARAMETER/ANCHOR decisions, and NEITHER is taken here: (i) the register's >= 100 km
+    commuters may be absent from the region on a given reporting day far more often than the
+    national MiD keep ratio implies -- e.g. because they commute weekly rather than daily --
+    which would argue for an `absent` share (or lower keep ratios) reaching into the `100_200`
+    class and/or the classes below it, not only `gt200`; (ii) the BA-anchored far-commuter mass
+    itself may be too high for this region (P13's assigned reference is 2 % against the model's
+    assigned 5.3 %), which is the layer-1 question already re-targeted to issue #359 / ADR-0103
+    (WHICH destination a commuter is sent to, not how the day state re-draws it). Choosing
+    between (i), (ii), or a mixture of both is not decided here.
+  - **(c) P38.2 contradicts P13 and is not usable as a bound until resolved.**
+    `mid2023_P38_2_commute_distance_by_kreis.csv`'s `Gesamt` row gives `d_100_200km` 6 %,
+    `d_200_300km` 4 %, `d_300km_plus` 3 % (~13 % >= 100 km, mean 66.1 km) against P13's 2 % --
+    a factor of ~6 on what ADR-0102 already calls, without resolving, "Pendeldistanz tables"
+    (i.e. the two tables' variable and universe are not established to be the same quantity).
+    P38.2's `Gesamt` row also carries a 13 % `d_unplausibel_keine_angabe`
+    (implausible-or-no-answer) share that its band percentages do not visibly exclude. This is
+    recorded as an OPEN DATA QUESTION and is not adjudicated here: P38.2 is not used as a bound,
+    above or below, until the variable/universe conflict with P13 is resolved.
+  - **(d) Caveats of the W12/P13 regional tables, carried forward rather than smoothed over:**
+    row percentages are rounded to the nearest whole percent, so the >= 100 km figures compared
+    above are themselves within +/- 0.5 pp of their unrounded value; P13's `Gesamt` row rests on
+    n_unweighted **1,583** persons; W12 measures a TRIP universe (`Arbeit` trips on the
+    reporting day) while P13 measures a PERSON universe (usual commute distance), so the two are
+    matched views of related but not identical quantities; and both tables' distances are
+    self-reported or survey-imputed, not routed.
+- **Check 2 verdict under the regional MiD reference: NOT MET.** The model's realised `100_plus`
+  reporting-day share sits above the regional MiD reference by roughly a factor of 3-4 on every
+  matched view (reporting-day 3.8 % / 7.4 % against W12's 1 %; assigned 5.3 % against P13's 2 %).
+  **No numeric tolerance is asserted**: this is a comparison of point estimates against a table
+  with the caveats named in (d) above, not a pre-registered band, so the factor is reported as a
+  magnitude, not judged against a chosen threshold. The no-deterioration half of check 2 is
+  **UNCHANGED** and stays **PASS**, exactly as recorded in the Proof 2026-09-06 section above
+  (`commute_by_kreis_all_assigned.csv` byte-identical to the 2026-09-04 baseline).
 - **Nothing else in the Proof 2026-09-06 section is amended by this decision.** Check 1 remains
   FAILED at its pre-registered +/- 3 pp band; the five follow-ups named there remain open and
-  undone; no threshold anywhere else is relaxed.
+  undone; no threshold anywhere else is relaxed. A SIXTH follow-up is added here: resolve which
+  variable and universe `mid2023_P13.csv` and `mid2023_P38_2_commute_distance_by_kreis.csv` each
+  measure (finding (c) above) before either is used as a bound, and decide between findings
+  (b)(i) and (b)(ii) -- both parameter/anchor decisions reserved for the maintainer -- as the
+  candidate cause of the remaining factor-3-4 gap.

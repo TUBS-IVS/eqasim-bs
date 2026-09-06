@@ -285,13 +285,25 @@ assessment:
     as the effect of ADR-0104''s own re-draw rule (upward-only: no work trip is ever ADDED for a
     person whose donor commuted farther than their assignment, to avoid double-counting the
     survey''s own not-working mass), not as a new defect.
-    FIVE FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
+    SECOND MAINTAINER DECISION 2026-09-06 (same ADR subsection, amended further): the
+    MiD-implied comparison above is demoted to an internal-consistency check only (it reads
+    NATIONAL MiD ratios, no Grossraum Braunschweig geography), and the 100_plus band is now judged
+    against the REGIONAL MiD 2023 tables instead -- mid2023_W12_triplength_by_purpose.csv''s
+    Arbeit row (d_100km_plus 1%, d_50_100km 2%, reporting-day) and mid2023_P13.csv''s Gesamt row
+    (d_100p 2%, d_50_100 4%, n_unweighted 1,583, register-like) -- against which the model sits
+    roughly a factor of 3-4 higher (reporting-day 3.8% all / 7.4% inter-Gemeinde vs W12''s 1%;
+    assigned 5.3% vs P13''s 2%), verdict NOT MET with no numeric tolerance asserted, while the
+    no-deterioration half stays PASS unchanged.
+    SIX FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
     production run (still owed, ruling R4 substituted a proof on the cached i329 population), a
     re-specification of check 1 (which needs a home-office attribution the population does not
     carry), pool size per matching cell (the fourth check-4 diagnostic, still not recorded), a
-    committed JSON for the reporting-day trips diagnostics (the R8/R9 counters are log-only), and
-    the 37,705 workers with an assigned workplace whom the population does not flag employed.
-    The status is "reviewed" and not "assessed" precisely because those five are open; validation
+    committed JSON for the reporting-day trips diagnostics (the R8/R9 counters are log-only), the
+    37,705 workers with an assigned workplace whom the population does not flag employed, and
+    (added by the second maintainer decision) resolving whether mid2023_P13.csv and
+    mid2023_P38_2_commute_distance_by_kreis.csv measure the same variable/universe before either
+    is used as a bound.
+    The status is "reviewed" and not "assessed" precisely because those six are open; validation
     stays measured_vs_reference and NOT behaviourally_validated.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed

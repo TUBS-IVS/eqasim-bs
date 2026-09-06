@@ -257,7 +257,22 @@ validation:
     metric/reference/result/artifact/notes (no free keys), so this decision is recorded in this
     notes field rather than as a new structured key; the full reasoning, including why the
     remaining 1.35 pp above the MiD-implied value is read as the deliberate upward-only re-draw
-    rule (never a rejection basis), is in ADR-0104''s new subsection, not repeated here.'
+    rule (never a rejection basis), is in ADR-0104''s new subsection, not repeated here.
+
+    SECOND MAINTAINER DECISION 2026-09-06 (ADR-0104, the same subsection, amended further): the
+    MiD-implied national-ratio comparison above is demoted to an internal-consistency check only
+    (mid2023_workday_location_by_commute_distance.csv carries no Grossraum Braunschweig
+    geography). The reference for the 100_plus band is now the REGIONAL MiD 2023 tables (infas
+    7555). mid2023_W12_triplength_by_purpose.csv''s Arbeit row gives d_100km_plus 1 % (d_50_100km
+    2 %, mean 15.2 km), a reporting-day reference against which the model''s zgb/all and
+    zgb/inter reporting-day shares (0.038190 and 0.073740, this same commute_by_kreis.csv) sit
+    roughly 3.8x-7.4x higher. mid2023_P13.csv''s Gesamt row gives d_100p 2 % (d_50_100 4 %,
+    n_unweighted 1,583, mean 20.7 km), a register-like reference against which the model''s
+    assigned share 0.053112 (16,194 of 304,900 workers, state_diagnostics.json''s
+    by_assigned_class) sits roughly 2.7x higher. VERDICT: NOT MET, no numeric tolerance asserted;
+    the no-deterioration half stays PASS, unchanged. Full reasoning (four labelled findings, two
+    candidate causes of the remaining factor-3-4 gap, and the P38.2-vs-P13 open data question) is
+    in ADR-0104''s amended subsection, not repeated here.'
 - metric: 'ADR-0104 check 3 -- cordon out-commuter gate volumes before/after, against an
     expectation restricted to at_workplace persons'
   reference: none (the expectation is derived from the BA Pendleratlas register the model is
