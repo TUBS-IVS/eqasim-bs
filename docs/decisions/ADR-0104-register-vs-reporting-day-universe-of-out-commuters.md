@@ -387,8 +387,9 @@ beside it.
    not fatal. Per-Kreis rows are reported, never gated.
 2. **Inter-Gemeinde work bands -- FAIL on the 3 % bound, PASS on no-deterioration.** The
    `100_plus < 3 %` half is read, per the R5 amendment, from the REPORTING-DAY table
-   `on/commute_by_kreis.csv` (`zgb`/`inter`, the 296,599 of 304,900 workers whose drawn state is
-   `at_workplace`): **0.073740** (7.37 %) against the pre-registered 3 % -> FAIL; the same row's
+   `on/commute_by_kreis.csv`'s `zgb`/`inter` row (n_model **153,607** -- distinct from the
+   296,599-of-304,900 all-scope `at_workplace` worker count check 1 reports above):
+   **0.073740** (7.37 %) against the pre-registered 3 % -> FAIL; the same row's
    EMD is 0.069395 with noise floor 0.012915 over n_ref 2,593, classification `ok`. The
    no-deterioration half is read from the ASSIGNED-workplace table
    `on/commute_by_kreis_all_assigned.csv`: byte-identical AS PRODUCED (LF) on the server to
@@ -443,8 +444,10 @@ beside it.
   re-drawn far commuters, with every other person's plan byte-for-byte identical; and the model's
   own effect on the quantity it was built to move is separable and in the intended direction --
   the reporting-day `zgb`/`inter` `100_plus` band is **0.100083** with the flag OFF
-  (`off/commute_by_kreis.csv`, over all 304,900 workers) and **0.073740** with it ON
-  (`on/commute_by_kreis.csv`, over the 296,599 `at_workplace` workers), i.e. **-2.63 pp**, which is
+  (`off/commute_by_kreis.csv`'s `zgb`/`inter` row, n_model **161,805** -- of the all-scope
+  304,900 workers) and **0.073740** with it ON
+  (`on/commute_by_kreis.csv`'s `zgb`/`inter` row, n_model **153,607** -- of the all-scope
+  296,599 `at_workplace` workers), i.e. **-2.63 pp**, which is
   the removal of the re-drawn non-travellers from the reporting-day universe and nothing else (the
   ON and OFF workplace-location caches are byte-identical, so no workplace ASSIGNMENT moved).
 - **Check 1 fails BY CONSTRUCTION of the comparison, not by miscalibration of the model** --

@@ -581,6 +581,23 @@ def test_persons_home_frame_requires_exactly_one_enriched_row_per_worker():
     assert "duplicated [1]" in str(error.value)
 
 
+def test_persons_home_frame_nans_has_car_when_number_of_cars_is_nan(caplog):
+    """A NaN ``number_of_cars`` must resolve to has_car = NaN ("unresolved"), never to False via
+    a bare ``> 0`` (fix round 2 item M1) -- mirrors donor_pool.donor_attributes' has_car / MiD
+    H_ANZAUTO treatment on the donor side."""
+    persons = _persons()
+    persons.loc[persons["person_id"] == 1, "number_of_cars"] = np.nan
+    workers = pd.DataFrame({"person_id": [1, 2], "assigned_distance_class": ["lt10", "lt10"]})
+
+    with caplog.at_level(logging.WARNING, logger=STATE.logger.name):
+        frame = STATE._persons_home_frame(pd.Series([1, 2]), workers, persons, set(), set())
+
+    by_id = frame.set_index("person_id")
+    assert pd.isna(by_id.loc[1, "has_car"])
+    assert bool(by_id.loc[2, "has_car"]) is True
+    assert any("number_of_cars" in record.getMessage() for record in caplog.records)
+
+
 def test_state_stage_downgrades_unreplaceable_home_persons_below_the_threshold():
     # No donor shares the workers' car ownership -> the has_car HARD criterion can never be
     # satisfied, so every 'home' person is downgraded to at_workplace (threshold 1.0 = never raise).

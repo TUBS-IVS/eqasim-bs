@@ -17,7 +17,11 @@ and mutating it here would corrupt them.
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
+
+import synthesis.population.activities as base
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +32,29 @@ _LOG_TAG = "[commute day activities]"
 TRIPS_STAGE = "synthesis.population.trips"
 ENRICHED_STAGE = "synthesis.population.enriched"
 DAY_TRIPS_STAGE = "synthesis.population.trips.final"
+
+#: Modules whose sources this stage's cache token must cover (see :func:`validate`): this
+#: module only decides WHICH trips frame the vendored transform sees, and the VENDORED
+#: transform itself is what produces the output -- synpp hashes only this thin module, so an
+#: edit to synthesis/population/activities.py would otherwise leave a stale cached
+#: ``.activities.final`` in place (same mechanism as ``output_day.py`` /
+#: ``spatial_locations_day.py``).
+_HELPER_MODULES = (base,)
+
+
+def validate(context):
+    """synpp validation token: md5 over the pure helper modules' sources.
+
+    synpp hashes only THIS module's source, so an edit to a helper module it imports would
+    otherwise leave the cached stage output in place although the rules that produced it
+    changed. The token folds those sources in, so a helper edit devalidates the stage exactly
+    like an edit here (same mechanism as
+    ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):
@@ -61,8 +88,6 @@ class _ActivitiesShimContext:
 
 
 def execute(context):
-    import synthesis.population.activities as base
-
     day_trips = context.stage(DAY_TRIPS_STAGE)
     persons = context.stage(ENRICHED_STAGE)
     activities = base.execute(_ActivitiesShimContext(day_trips, persons))

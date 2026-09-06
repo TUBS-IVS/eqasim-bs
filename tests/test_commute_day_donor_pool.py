@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from braunschweig.synthesis.commute_day import donor_pool
 
@@ -214,6 +215,7 @@ def test_build_home_office_donor_pool_diagnostics_and_shapes():
     assert diagnostics["n_sex_unknown"] == 1
     assert diagnostics["n_not_in_module"] == 1
     assert diagnostics["n_household_unmatched"] == 0
+    assert diagnostics["n_car_unresolved"] == 0
     assert diagnostics["distance_source_counts"] == {
         "P_ARB_ENTF": 2, "trip_length": 1, "unknown": 1,
     }
@@ -252,6 +254,36 @@ def test_build_home_office_donor_pool_reports_household_unmatched_count():
         explicit_round_trip_purposes=True,
     )
     assert diagnostics["n_household_unmatched"] == 3
+
+
+def test_donor_attributes_warns_and_nans_has_car_when_h_anzauto_is_nan():
+    """A MATCHED household with an unresolved H_ANZAUTO (NaN) must NaN has_car, not read it as
+    False via a bare .gt(0) (fix round 2 item M1) -- distinct from the H_ID-absent case above."""
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    households = _households_fixture()
+    households.loc[households["H_ID"] == 2, "H_ANZAUTO"] = np.nan
+    attributes = donor_pool.donor_attributes(donors, persons, households, _wege_fixture())
+    by_id = attributes.set_index("donor_id")
+
+    assert bool(by_id.loc["1_1", "has_car"]) is True
+    for donor_id in ("2_1", "2_2", "2_3"):
+        assert pd.isna(by_id.loc[donor_id, "has_car"])
+
+
+def test_build_home_office_donor_pool_reports_car_unresolved_count():
+    persons = _persons_fixture()
+    wege = _wege_fixture()
+    households = _households_fixture()
+    households.loc[households["H_ID"] == 2, "H_ANZAUTO"] = np.nan
+
+    _attributes, _trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        persons, wege, households, random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True,
+    )
+    assert diagnostics["n_household_unmatched"] == 0
+    assert diagnostics["n_car_unresolved"] == 3
 
 
 def test_donor_attributes_works_with_a_shuffled_non_range_index():
@@ -401,3 +433,11 @@ def test_attach_trip_derived_attributes_separates_immobile_from_a_dropped_chain(
     assert list(out["n_trips"]) == [1, 0, 0]
     assert bool(out.loc["d2", "is_immobile"]) is False    # had a wege row, chain dropped
     assert bool(out.loc["d3", "is_immobile"]) is True     # no wege row at all
+
+
+def test_work_trip_length_km_requires_w_id():
+    """A wege frame missing W_ID must raise a clear module-style ValueError (fix round 2 item
+    M4), not an opaque pandas KeyError from the sort_values call inside the function."""
+    wege = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ZWECK": [1], "wegkm": [5.0]})
+    with pytest.raises(ValueError, match="W_ID"):
+        donor_pool._work_trip_length_km(wege)

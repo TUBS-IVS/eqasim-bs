@@ -125,6 +125,27 @@ def _count_household_unmatched(donor_h_ids: pd.Series, households: pd.DataFrame)
     return int((~donor_h_ids.isin(set(households["H_ID"]))).sum())
 
 
+def _count_car_unresolved(donor_h_ids: pd.Series, households: pd.DataFrame) -> int:
+    """Count donors with a MATCHED household whose ``H_ANZAUTO`` cannot resolve ``has_car``.
+
+    Distinct from :func:`_count_household_unmatched` (which counts an absent ``H_ID``): this
+    counts donors whose ``H_ID`` DOES exist in ``households`` but the ``H_ANZAUTO`` value is
+    missing (``NaN``), negative, or non-numeric. ``pandas.Series.gt(0)`` reads any of those as
+    ``False`` (``NaN > 0`` is ``False``), which would silently read as "no car" -- a hard
+    criterion (ruling: ``has_car`` gates a hard match) needs the restrictive reading instead:
+    ``has_car = NaN``, i.e. "unresolved", so the matching module treats it as unusable rather
+    than as a confirmed non-owner.
+
+    Shared between :func:`donor_attributes` (which warns and NaNs ``has_car`` for them) and
+    :func:`build_home_office_donor_pool` (which reports the same count as
+    ``n_car_unresolved``), so both read the identical definition.
+    """
+    household_matched = donor_h_ids.isin(set(households["H_ID"]))
+    h_anzauto = pd.to_numeric(
+        donor_h_ids.map(households.set_index("H_ID")["H_ANZAUTO"]), errors="coerce")
+    return int((household_matched & (h_anzauto.isna() | (h_anzauto < 0))).sum())
+
+
 def select_home_office_day_donors(persons: pd.DataFrame) -> pd.DataFrame:
     """MiD persons who worked AT HOME on their reporting day (weekday).
 
@@ -168,6 +189,7 @@ def _work_trip_length_km(wege: pd.DataFrame) -> pd.DataFrame:
     :data:`braunschweig.calibration.commute_day_state_reference.WORK_TRIP_LENGTH_COLUMN`. Persons
     without a qualifying trip are simply absent.
     """
+    _require_columns(wege, ("H_ID", "P_ID", "W_ID"), "wege frame")
     sorted_wege = wege.sort_values(["H_ID", "P_ID", "W_ID"])
     first = first_work_trip_length_km(sorted_wege)
     logger.info("%s work-trip-length fallback: %d distinct persons keep their first (by W_ID) "
@@ -199,7 +221,11 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
     * ``has_car`` -- ``H_ANZAUTO > 0`` from ``households``, joined on ``H_ID``. A donor whose
       ``H_ID`` has no matching row in ``households`` at all gets ``has_car = NaN`` (never
       silently defaulted to ``False``) and is counted (see ``n_household_unmatched`` on
-      :func:`build_home_office_donor_pool`'s diagnostics).
+      :func:`build_home_office_donor_pool`'s diagnostics); a donor with a MATCHED household whose
+      ``H_ANZAUTO`` is missing, negative, or non-numeric gets ``has_car = NaN`` too (``.gt(0)``
+      alone would silently read a ``NaN``/negative value as ``False``, i.e. "no car", which is
+      not the restrictive reading a hard criterion needs) and is counted separately (see
+      ``n_car_unresolved`` on :func:`build_home_office_donor_pool`'s diagnostics).
     * ``has_active_escort`` -- any ``wege`` row for the donor's ``(H_ID, P_ID)`` with ``W_ZWECK
       == MID_ESCORT_ACTIVE``.
     * ``household_size`` -- ``H_GR`` from ``households``, joined on ``H_ID``, UNBINNED (ruling
@@ -247,14 +273,18 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
 
     household_lookup = households.set_index("H_ID")
     n_household_unmatched = _count_household_unmatched(attributes["H_ID"], households)
-    if n_household_unmatched > 0:
+    n_car_unresolved = _count_car_unresolved(attributes["H_ID"], households)
+    if n_household_unmatched > 0 or n_car_unresolved > 0:
         logger.warning(
-            "%s households: %d/%d donors have an H_ID absent from the households frame; "
-            "has_car is NaN for them (never silently defaulted to False) -- check the "
-            "households/persons H_ID join.", _LOG_TAG, n_household_unmatched, len(attributes))
+            "%s households: %d/%d donors have an H_ID absent from the households frame, and "
+            "%d/%d have a MATCHED household whose H_ANZAUTO is missing/negative/non-numeric; "
+            "has_car is NaN for both groups (never silently defaulted to False via .gt(0)) -- "
+            "check the households/persons H_ID join and the MiD H_ANZAUTO coding.", _LOG_TAG,
+            n_household_unmatched, len(attributes), n_car_unresolved, len(attributes))
     household_matched = attributes["H_ID"].isin(set(households["H_ID"]))
-    h_anzauto = attributes["H_ID"].map(household_lookup["H_ANZAUTO"])
-    attributes["has_car"] = np.where(household_matched, h_anzauto.gt(0), np.nan)
+    h_anzauto = pd.to_numeric(attributes["H_ID"].map(household_lookup["H_ANZAUTO"]), errors="coerce")
+    car_value_resolved = h_anzauto.notna() & (h_anzauto >= 0)
+    attributes["has_car"] = np.where(household_matched & car_value_resolved, h_anzauto.gt(0), np.nan)
     attributes["household_size"] = attributes["H_ID"].map(household_lookup["H_GR"])
 
     escort_pairs = set(
@@ -525,6 +555,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       :func:`select_home_office_day_donors`).
     * ``n_household_unmatched`` -- donors whose ``H_ID`` has no row in ``households`` (``has_car``
       is ``NaN`` for them, see :func:`donor_attributes`).
+    * ``n_car_unresolved`` -- donors with a MATCHED household whose ``H_ANZAUTO`` is missing,
+      negative, or non-numeric (``has_car`` is ``NaN`` for them too, see :func:`donor_attributes`
+      and :func:`_count_car_unresolved`).
     * ``distance_source_counts`` -- dict, ``distance_source`` value -> donor count.
     * ``cells`` -- dict, ``(distance_class, has_children_u14, has_active_escort)`` -> donor
       count (one entry per donor; ``distance_class`` is never ``None`` -- the unknown-distance
@@ -557,6 +590,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     n_donors_with_work_leg = int(attributes["has_work_leg"].sum())
     n_not_in_module = _count_not_in_module(donors)
     n_household_unmatched = _count_household_unmatched(attributes["H_ID"], households)
+    n_car_unresolved = _count_car_unresolved(attributes["H_ID"], households)
     distance_source_counts = attributes["distance_source"].value_counts().to_dict()
 
     cells: dict = {}
@@ -576,6 +610,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         "n_donors_with_work_leg": n_donors_with_work_leg,
         "n_not_in_module": n_not_in_module,
         "n_household_unmatched": n_household_unmatched,
+        "n_car_unresolved": n_car_unresolved,
         "distance_source_counts": distance_source_counts,
         "cells": cells,
     }
@@ -588,9 +623,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     )
     logger.info(
         "%s donor pool built: %d donors, %d missing distance (%.1f%%), %d sex unknown, %d not in "
-        "home-office module, %d household-unmatched",
+        "home-office module, %d household-unmatched, %d car-unresolved",
         _LOG_TAG, n_donors, n_missing_distance, 100.0 * n_missing_distance / max(n_donors, 1),
-        n_sex_unknown, n_not_in_module, n_household_unmatched,
+        n_sex_unknown, n_not_in_module, n_household_unmatched, n_car_unresolved,
     )
     logger.info(
         "%s fixed-purpose legs in the donor chains: %d/%d donors (%.1f%%) carry an %r activity "

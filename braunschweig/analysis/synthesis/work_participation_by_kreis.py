@@ -65,7 +65,6 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import inspect
-import json
 import logging
 import math
 import os
@@ -1414,8 +1413,7 @@ def write_outputs(directory, participation, distance_classes, ext_table, per_per
     if state_shares is not None:
         state_shares.to_csv(os.path.join(directory, "commute_day_state_shares.csv"), index=False)
         n_files += 1
-    with open(os.path.join(directory, "provenance.json"), "w", encoding="utf-8") as handle:
-        json.dump(json_safe(provenance), handle, indent=2, allow_nan=False)
+    _json_output.write_json(os.path.join(directory, "provenance.json"), provenance)
     with open(os.path.join(directory, "summary.md"), "w", encoding="utf-8") as handle:
         handle.write(summary_markdown(participation, distance_classes, ext_table,
                                       near_edge_share, provenance, sampling_rate,

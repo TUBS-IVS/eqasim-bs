@@ -743,6 +743,10 @@ def test_write_outputs_second_table_and_universe_section(tmp_path):
     summary = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "Worker universe of the work comparison (ADR-0104 ruling R5)" in summary
     assert S.ALL_ASSIGNED_FILE in summary
+    # The reporting-day universe is applied to the WHOLE work frame, so it also governs
+    # commute_quantiles_model.csv and the sensitivity variants, not only commute_by_kreis.csv.
+    assert "commute_quantiles_model.csv" in summary
+    assert "sensitivity_cells.csv" in summary and "sensitivity.csv" in summary
 
 
 def test_write_outputs_off_path_writes_no_second_table_and_no_universe_section(tmp_path):

@@ -197,7 +197,8 @@ validation:
   result: 'VERDICT fail on the 100_plus bound, pass on the no-deterioration half.
     100_PLUS HALF, reporting-day universe (the 296,599 of 304,900 workers, 97.28 %, whose drawn
     state is at_workplace; 0 workers have no state row): ZGB inter model_share_100_plus
-    0.0737401 (7.37 %) against the pre-registered bound of 3 % -> FAIL. EMD 0.0693952 with noise
+    0.0737401 (7.37 %, zgb/inter row n_model 153,607 -- a subset of the 296,599, not the whole
+    all-scope universe) against the pre-registered bound of 3 % -> FAIL. EMD 0.0693952 with noise
     floor 0.0129150 over n_ref 2,593, classification "ok" (below the 0.08 gap threshold). ZGB
     all: 100_plus 0.0381896, EMD 0.0366951, floor 0.0122684, "ok". ZGB intra: 100_plus 0.0, EMD
     0.0110859, floor 0.0078273, "ok". Per-Kreis decisions on the reporting-day universe:
@@ -210,11 +211,13 @@ validation:
     to home or absent.
     ON AGAINST OFF, the same reporting-day table in both runs and therefore the FLAG''S OWN
     EFFECT rather than a universe change between runs: the ZGB inter model_share_100_plus is
-    0.1000834 with the flag OFF (off/commute_by_kreis.csv, n_model 304,900 -- every worker is
-    at_workplace when the flag is off) against 0.0737401 with it ON (on/commute_by_kreis.csv,
-    n_model 296,599), i.e. -2.63 pp, which is the removal of the 8,301 re-drawn non-travellers
-    from the reporting-day universe; the workplace ASSIGNMENTS behind both tables are the same
-    per-person assignments (byte-identical location caches, pipeline.notes).
+    0.1000834 with the flag OFF (off/commute_by_kreis.csv''s zgb/inter row, n_model 161,805 --
+    every worker is at_workplace when the flag is off, so this row already excludes the
+    intra-Gemeinde and non-ZGB workers of the all-scope 304,900) against 0.0737401 with it ON
+    (on/commute_by_kreis.csv''s zgb/inter row, n_model 153,607, out of the all-scope 296,599
+    at_workplace workers), i.e. -2.63 pp, which is the removal of the 8,301 re-drawn
+    non-travellers from the reporting-day universe; the workplace ASSIGNMENTS behind both tables
+    are the same per-person assignments (byte-identical location caches, pipeline.notes).
     NO-DETERIORATION HALF, assigned universe: commute_by_kreis_all_assigned.csv from the ON run
     is BYTE-IDENTICAL AS PRODUCED (LF, on the server) to
     srv_distance_baseline_2026-09-04/commute_by_kreis.csv and to run A''s OFF

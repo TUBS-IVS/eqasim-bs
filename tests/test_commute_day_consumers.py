@@ -38,6 +38,7 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig.analysis import cordon_validation as CORDON  # noqa: E402
 from braunschweig.analysis.synthesis import work_participation_by_kreis as WP  # noqa: E402
+from braunschweig.synthesis.commute_day import activities_day_stage as ACTIVITIES  # noqa: E402
 from braunschweig.synthesis.commute_day import output_day as OUTPUT  # noqa: E402
 from braunschweig.synthesis.commute_day import spatial_locations_day as LOCATIONS  # noqa: E402
 from synthesis.output import select_person_output_columns  # noqa: E402
@@ -422,12 +423,13 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
 def test_overrides_hash_the_vendored_base_module():
     """Regression pin: the cache token must cover the VENDORED writer/join, not only the shim.
 
-    synpp hashes a stage module's own source only. Both overrides are thin -- the frames they
-    produce come from ``synthesis.output`` / ``synthesis.population.spatial.locations`` -- so an
-    edit there (Task 5 itself edited ``synthesis/output.py``) would leave a stale cached output
-    behind unless the vendored module is part of the token.
+    synpp hashes a stage module's own source only. All three overrides are thin -- the frames
+    they produce come from ``synthesis.output`` / ``synthesis.population.spatial.locations`` /
+    ``synthesis.population.activities`` -- so an edit there (Task 5 itself edited
+    ``synthesis/output.py``) would leave a stale cached output behind unless the vendored
+    module is part of the token.
     """
-    for module in (OUTPUT, LOCATIONS):
+    for module in (OUTPUT, LOCATIONS, ACTIVITIES):
         assert module.base in module._HELPER_MODULES, (
             f"{module.__name__} must hash its vendored base module {module.base.__name__} in "
             "_HELPER_MODULES, otherwise an edit to the vendored writer/join leaves a stale "

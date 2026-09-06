@@ -204,7 +204,10 @@ def _persons_home_frame(person_ids, workers, persons, escort_persons, education_
     guess: ``sex`` and ``age`` verbatim, ``age_class`` via
     :func:`braunschweig.popsim.chain_matching.derive_age_class` (the identical binning the donor
     side uses), ``household_size`` UNBINNED (the matching module bins both sides itself, ruling
-    R1), ``has_car`` from ``number_of_cars > 0``, ``has_children_u14`` from the ages of the
+    R1), ``has_car`` from ``number_of_cars > 0`` -- a missing/negative/non-numeric
+    ``number_of_cars`` resolves to ``has_car = NaN`` ("unresolved"), never silently to ``False``
+    (counted as ``n_car_unresolved``, logged; mirrors ``donor_pool.donor_attributes``'
+    ``has_car`` / ``H_ANZAUTO`` treatment) -- ``has_children_u14`` from the ages of the
     person's own household members, ``has_active_escort`` from the person's own trips,
     ``has_education_location`` from ``education_person_ids`` (the person ids of the EDUCATION half
     of ``synthesis.population.spatial.primary.locations``; ruling R7 -- a person who has no
@@ -221,7 +224,22 @@ def _persons_home_frame(person_ids, workers, persons, escort_persons, education_
         columns.append("has_license")
     frame = persons.loc[persons["person_id"].isin(person_ids), columns].copy()
     frame["age_class"] = derive_age_class(frame["age"].to_numpy())
-    frame["has_car"] = frame["number_of_cars"] > 0
+
+    # ``number_of_cars`` missing/negative/non-numeric must resolve to has_car = NaN
+    # ("unresolved"), never to False via a bare `> 0` (NaN > 0 is False in pandas, which would
+    # silently read an unresolved value as a confirmed non-owner). has_car gates a HARD
+    # criterion in match_home_office_donors, so the restrictive NaN reading is what that
+    # criterion needs (mirrors donor_pool.donor_attributes' has_car / H_ANZAUTO treatment).
+    number_of_cars = pd.to_numeric(frame["number_of_cars"], errors="coerce")
+    car_value_unresolved = number_of_cars.isna() | (number_of_cars < 0)
+    n_car_unresolved = int(car_value_unresolved.sum())
+    if n_car_unresolved > 0:
+        logger.warning(
+            "%s cars: %d/%d 'home' persons have a missing/negative/non-numeric number_of_cars; "
+            "has_car is NaN for them (never silently defaulted to False via > 0) -- check the "
+            "enriched persons frame's number_of_cars column.", _LOG_TAG, n_car_unresolved,
+            len(frame))
+    frame["has_car"] = np.where(car_value_unresolved, np.nan, number_of_cars.gt(0))
     frame["has_children_u14"] = frame["household_id"].isin(households_with_children)
     frame["has_active_escort"] = frame["person_id"].isin(escort_persons)
     frame["has_education_location"] = frame["person_id"].isin(education_person_ids)

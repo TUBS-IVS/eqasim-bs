@@ -921,6 +921,11 @@ def _universe_lines(universe):
             "work trip on the reporting day); a worker drawn to 'home' or 'absent' made no work "
             "trip today.",
             f"{n_without_state} worker(s) have no state row at all and are excluded as unknown.",
+            "This reporting-day universe is applied to the WHOLE work frame before any output is "
+            "derived from it, so it also",
+            "governs commute_quantiles_model.csv and the sensitivity variants "
+            "(sensitivity_cells.csv / sensitivity.csv) -- not only the",
+            "pre-registered commute_by_kreis.csv comparison above.",
             "",
             f"{ALL_ASSIGNED_FILE} carries the SAME comparison over ALL {n_assigned} workers with "
             "an assigned workplace",

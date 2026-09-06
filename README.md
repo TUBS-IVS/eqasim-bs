@@ -286,8 +286,8 @@ gates `run_pipeline.sh` (skip with `EQASIM_SKIP_VERIFY=1`).
 
 `python scripts/run_synpp.py` remains the single entry point; the model itself is governed
 by four keys in `configs/base_bs.yml` plus one analysis-stage default
-(`cds_max_states_outside_employed_share`, not set in `configs/base_bs.yml` — see below)
-(ADR-0104, issue #244) that give every employed person with an assigned workplace a
+(`cds_max_states_outside_employed_share`, not set in `configs/base_bs.yml` — see below;
+ADR-0104, issue #244) that give every employed person with an assigned workplace a
 reporting-day state in `{at_workplace, home, absent}` — a person drawn to `home` receives a
 matched MiD home-office-day donor's own trip chain, and a person drawn to `absent` makes no
 trip that day:
