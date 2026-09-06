@@ -7,6 +7,8 @@ jitter preserves within-person trip ordering.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -163,6 +165,25 @@ def _persons_and_wege():
     return persons, wege
 
 
+def _persons_and_wege_not_ending_home():
+    """One-person / two-leg fixture whose chain ends AWAY from home (leisure).
+
+    Unlike :func:`_persons_and_wege`, this fixture forces
+    ``PlanValidator.repair_trips`` to append a synthesised home-return leg, so
+    a byte-identity test comparing two ``run()`` calls actually exercises the
+    ``closure_dwell_model="fixed_1h"`` draw instead of vacuously agreeing on a
+    plan that never needed a closure.
+    """
+    persons = pd.DataFrame({"person_id": [1], "H_ID": [10], "P_ID": [1]})
+    wege = pd.DataFrame({
+        "H_ID": [10, 10], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [1, 7], "hvm_imp": [4, 4],
+        "W_SZS": [8, 17], "W_SZM": [0, 0], "W_AZS": [8, 17], "W_AZM": [30, 20],
+        "wegkm_imp": [12.0, 12.0], "wegmin_imp1": [30.0, 20.0], "W_GEW": [1.0, 1.0],
+    })
+    return persons, wege
+
+
 def _persons_and_wege_with_rbw():
     """Two donors, each with one rbW leg (W_RBW=1, coded times 701) and a chain
     that does NOT end at home (so a synthetic closure is required).
@@ -214,15 +235,33 @@ def test_run_excludes_rbw_and_marks_closure_with_empirical_dwell():
     assert (out.loc[closure, "following_purpose"] == "home").all()
 
 
-def test_run_empirical_dwell_uses_observed_duration_not_the_fixed_hour():
+def test_run_empirical_dwell_uses_observed_duration_not_the_fixed_hour(caplog):
     """Primary-path test (CLAUDE.md fallback transparency): the empirical model
-    must actually supply the dwell, not silently degrade to HOME_CLOSURE_DWELL_S."""
+    must actually supply the dwell, not silently degrade to HOME_CLOSURE_DWELL_S.
+
+    Review finding (fix round 1, minor #2): with only one observed "work"
+    activity duration per donor and ``min_obs=30``, this fixture's model never
+    has enough observations to use its own (purpose, arrival-band) CELL for
+    either donor -- and since the donors' terminal purposes ("leisure" /
+    "shop") never appear as an OBSERVED activity at all (they are each
+    donor's open-ended last activity, excluded from the duration pool by
+    construction; see ``ClosureDwellModel.from_trips``), there is no
+    per-purpose marginal for those purposes either. Both closure draws must
+    therefore fall straight through to the GLOBAL marginal
+    (``n_fallback_global``), never the purpose marginal
+    (``n_fallback_purpose_marginal``). This is asserted directly on the
+    model's ``report`` (captured from the ``[trips_stage] closure dwell
+    model (...) report: ...`` log line trips_stage.run emits) so the test
+    states explicitly which pooling level it exercises, rather than passing
+    for any reason the two donors' durations happen to agree.
+    """
     persons, wege = _persons_and_wege_with_rbw()
-    out = trips_stage.run(
-        persons, wege, random_seed=1,
-        exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
-        closure_dwell_model="empirical",
-    ).sort_values(["person_id", "trip_index"])
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips_stage"):
+        out = trips_stage.run(
+            persons, wege, random_seed=1,
+            exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+            closure_dwell_model="empirical",
+        ).sort_values(["person_id", "trip_index"])
     closure = out["is_synthetic_closure"].astype(bool)
     assert closure.any()
     for person_id in out.loc[closure, "person_id"].unique():
@@ -240,6 +279,25 @@ def test_run_empirical_dwell_uses_observed_duration_not_the_fixed_hour():
             "model never took effect)"
         )
 
+    report_messages = [
+        record.getMessage() for record in caplog.records
+        if "closure dwell model" in record.getMessage()
+    ]
+    assert report_messages, (
+        "expected the '[trips_stage] closure dwell model (...) report: ...' log "
+        "line so the pooling level exercised can be checked"
+    )
+    report_line = report_messages[-1]
+    assert "'n_fallback_global': 2" in report_line, (
+        f"expected both closure draws to fall through to the global marginal "
+        f"(no observed 'leisure'/'shop' duration exists in this fixture): {report_line!r}"
+    )
+    assert "'n_fallback_purpose_marginal': 0" in report_line, (
+        f"this fixture's donors never contribute a purpose-marginal hit for their "
+        f"own terminal purpose, so the purpose-marginal fallback must stay at 0: "
+        f"{report_line!r}"
+    )
+
 
 def test_run_rejects_unknown_dwell_model():
     persons, wege = _persons_and_wege_with_rbw()
@@ -248,7 +306,22 @@ def test_run_rejects_unknown_dwell_model():
 
 
 def test_run_default_flags_off_is_byte_identical_to_previous_signature():
-    persons, wege = _persons_and_wege()
+    """Pin the OFF path (no new keywords) against the PRE-#366/#367 behaviour.
+
+    Review finding (fix round 1): the previous version of this test used
+    :func:`_persons_and_wege`, whose chain already ends at home, so no
+    closure was ever appended and ``closure_dwell_model="fixed_1h"`` was
+    never actually drawn -- the two calls agreed vacuously. This fixture's
+    chain ends away from home (leisure), forcing a synthesised return-home
+    leg in both calls, and the closure row's departure is additionally
+    checked against the OLD hard-coded constant (``arrival + HOME_CLOSURE_DWELL_S``,
+    imported from ``plan_validation``, unchanged since before this feature),
+    so the OFF path is pinned against the pre-change behaviour, not just
+    against itself.
+    """
+    from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
+
+    persons, wege = _persons_and_wege_not_ending_home()
     a = trips_stage.run(persons, wege, random_seed=1)
     b = trips_stage.run(
         persons, wege, random_seed=1,
@@ -256,9 +329,17 @@ def test_run_default_flags_off_is_byte_identical_to_previous_signature():
         closure_dwell_model="fixed_1h",
     )
     assert "is_synthetic_closure" in a.columns and "is_synthetic_closure" in b.columns
-    pd.testing.assert_frame_equal(
-        a.drop(columns=["is_synthetic_closure"]),
-        b.drop(columns=["is_synthetic_closure"]),
+    pd.testing.assert_frame_equal(a, b)
+
+    closure = a["is_synthetic_closure"].astype(bool)
+    assert closure.any(), "fixture must require a synthesised home-return closure"
+    last_real = a.loc[~closure].iloc[-1]
+    closure_row = a.loc[closure].iloc[0]
+    dwell = float(closure_row["departure_time"]) - float(last_real["arrival_time"])
+    assert abs(dwell - HOME_CLOSURE_DWELL_S) <= 1.0, (
+        f"closure dwell {dwell}s must equal the pre-change constant "
+        f"HOME_CLOSURE_DWELL_S={HOME_CLOSURE_DWELL_S}s (within 1s rounding); "
+        "closure_dwell_model='fixed_1h' must reproduce the old hard-coded dwell."
     )
 
 

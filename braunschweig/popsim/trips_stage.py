@@ -208,6 +208,12 @@ def _donor_diary_frame(persons: pd.DataFrame) -> pd.DataFrame:
         .reset_index(drop=True)
     )
     pairs.insert(0, "person_id", np.arange(len(pairs)))
+    n_persons = len(persons)
+    n_diaries = len(pairs)
+    logger.info(
+        "[trips_stage] closure dwell donor diaries: %d unique donor diaries / %d persons (%.1f%%)",
+        n_diaries, n_persons, 100.0 * n_diaries / max(n_persons, 1),
+    )
     return pairs
 
 
@@ -300,7 +306,7 @@ def _log_closure_share(table: pd.DataFrame) -> None:
     n_closure = int(closure.sum())
     n_persons_closed = table.loc[closure, "person_id"].nunique()
     logger.info(
-        "[trips_stage] synthetic closure trips: %d/%d (%.1f%%); persons closed: %d/%d (%.1f%%)",
+        "[trips_stage] synthetic closure trips: %d/%d trips (%.1f%%); persons closed: %d/%d (%.1f%%)",
         n_closure, n_trips, 100.0 * n_closure / max(n_trips, 1),
         n_persons_closed, n_persons, 100.0 * n_persons_closed / max(n_persons, 1),
     )
