@@ -341,19 +341,26 @@ def person_level(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.DataFrame:
     downstream check could see.
     """
     _require_columns(persons, ["pid", "weight"], "persons")
-    _require_columns(trips, ["pid", "seq", "purpose", "prev_purpose"], "trips")
+    _require_columns(trips, ["pid", "seq", "purpose", "prev_purpose", "dep_min", "arr_min"],
+                     "trips")
+    # A trip whose person is not in ``persons`` would be silently dropped by the left merge
+    # below and quietly shrink every trip-level metric, so it stops the build instead.
+    orphaned = int((~trips["pid"].isin(set(persons["pid"]))).sum())
+    if orphaned:
+        raise ValueError(
+            "%d of %d trips belong to a person that is not in the person frame; restrict the "
+            "trips to the person universe before calling person_level" % (orphaned, len(trips)))
 
     t = trips.sort_values(["pid", "seq"]).copy()
     t["is_home"] = t["purpose"] == "home"
-    t["home_based"] = (t["purpose"] == "home") | (t["prev_purpose"] == "home")
     grouped = t.groupby("pid")
     per = pd.DataFrame({
         "n_trips": grouped.size(),
         "n_home_returns": grouped["is_home"].sum(),
         "first_from_home": grouped["prev_purpose"].first().eq("home"),
         "last_to_home": grouped["purpose"].last().eq("home"),
-        "first_dep_min": grouped["dep_min"].first() if "dep_min" in t else np.nan,
-        "last_arr_min": grouped["arr_min"].last() if "arr_min" in t else np.nan,
+        "first_dep_min": grouped["dep_min"].first(),
+        "last_arr_min": grouped["arr_min"].last(),
     })
     for purpose in PURPOSES:
         per["n_%s" % purpose] = grouped["purpose"].apply(lambda s, p=purpose: int((s == p).sum()))

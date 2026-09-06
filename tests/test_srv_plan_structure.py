@@ -152,6 +152,13 @@ def test_person_level_pattern_and_structure():
     assert per.loc["3_1", "n_trips"] == 3
 
 
+def test_person_level_raises_on_a_trip_without_a_person():
+    # a left merge would silently drop such a trip and shrink every trip-level metric
+    persons, trips = _harmonised()
+    with pytest.raises(ValueError, match="not in the person frame"):
+        T.person_level(persons[persons["pid"] != "1_1"], trips)
+
+
 def test_person_level_raises_when_reported_trip_count_disagrees():
     persons, trips = _harmonised()
     persons = persons.copy()
