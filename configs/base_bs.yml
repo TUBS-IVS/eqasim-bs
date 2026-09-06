@@ -151,6 +151,46 @@ config:
   # stage compares against the string "on".
   braunschweig.population.popsim.pt_ticket_never_group: "on"
 
+  # --- Plan structure: realisable plan sources, rbW legs, home closure -------
+  # Six MiD-ONLY keys (issues #365 / #366 / #367; ADR-0106 / ADR-0107 / ADR-0108).
+  # They fix the plan chain measured against SrV 2023 in the i329 run: 14.1 % of
+  # persons received an EMPTY plan because their MiD plan source reported no diary,
+  # rbW legs ("regelmaessige berufliche Wege") were realised as work TRIPS, and every
+  # open chain was closed with a fixed one-hour dwell that the trip_class seed did not
+  # count. Each flag is default ON with an OFF path pinned byte-identical by a test;
+  # the ENTD source REJECTS a non-default value for the three trip-side keys (no MiD
+  # W_RBW / W_SO1 pendant and no MiD Wege table for the empirical dwell), which is why
+  # the popsim_open fixture configs set them explicitly to their OFF values.
+  #
+  # Remap a plan source whose MiD diary was not collected (anzwege1 803/804) or whose
+  # only legs are rbW legs to a realisable weekday diary of a matched donor, reusing
+  # the weekend-plan matcher. Read by braunschweig.popsim.completed_donor; also read
+  # by braunschweig.popsim.stage, where it arms the guard that RAISES if a resolved
+  # plan source still carries 803/804 (a silent regression would be invisible).
+  braunschweig.population.popsim.diary_plan_match: true
+  # Exclude MiD reporting days that fell on a public holiday at the residence
+  # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
+  # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
+  braunschweig.population.popsim.exclude_holiday_plan_sources: true
+  # Drop rbW legs (W_RBW == 1) before purpose mapping: a professional round is
+  # movement INSIDE the work activity, as ENTD/EGT/EDGT record it (ADR-0107). The
+  # counts stay on the person as rbwLegsCount / rbwDistanceKm for the future
+  # business-traffic module (#371).
+  braunschweig.population.popsim.exclude_rbw_legs: true
+  # Drop a leading leg that ARRIVES home (W_SO1 == 2): the person came home from
+  # elsewhere, so today's "the first trip leaves from home" assumption fabricated a
+  # degenerate home->home trip (2.1 % of persons in i329). ADR-0108.
+  braunschweig.population.popsim.drop_leading_arrive_home_leg: true
+  # Dwell before the synthesised return-home trip: "empirical" draws it (seeded) from
+  # the observed duration distribution of the same purpose x arrival band in the
+  # directly closed MiD weekday chains; "fixed_1h" is the previous hard-coded 3600 s,
+  # which gave 65,761 work activities a duration of exactly 1.0 h. ADR-0108.
+  braunschweig.population.popsim.closure_dwell_model: empirical
+  # Count the closed day in the trip_class PopulationSim seed (anzwege1 + 1 for a plan
+  # source whose last directly recorded non-rbW leg does not end at home, clipped at
+  # 50): seed and realised plan must count the same day. ADR-0108.
+  braunschweig.population.popsim.trip_class_seed_counts_closure: true
+
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so
   # they are not recomputed every run (primarily the ~3 h freight extraction). The

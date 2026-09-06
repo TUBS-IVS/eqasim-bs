@@ -1,0 +1,95 @@
+feature: rbw_leg_convention
+title: rbW legs are movement within the work activity (#366)
+area: behavior
+description: >-
+  Drops MiD "regelmaessige berufliche Wege" (W_RBW == 1) from the day plan before purpose mapping
+  and validation, and keeps their information as person attributes instead. An rbW leg is not a
+  diary entry: the respondent answers an aggregate question (count, kilometres) and MiD expands it
+  into untimed Wege rows (purpose code 701) appended after the last directly recorded leg, which
+  MiD itself excludes from anzwege1. Realising them as work trips made the PopulationSim seed and
+  the plan count different days by construction and imputed departure times for legs that have
+  none (i329: 122,852 legs = 3.6% of all trips, 26.4% of work trips, 22% of them starting after
+  27:00). eqasim-france collapses the same phenomenon before eqasim sees it (ENTD 9.91-9.96, EGT
+  2/3, EDGT 11-13/81 all map to work; a tournee is ONE record with a stop count and a total
+  distance), and eqasim has no business purpose at all. The counts survive as person attributes
+  rbw_legs_count / rbw_distance_km (persons.csv optional columns) and MATSim person attributes
+  rbwLegsCount (Integer) / rbwDistanceKm (Double); a person WITHOUT a MiD plan source (cordon
+  in-commuter) gets NO attribute rather than a zero, and the omission rate is logged once per
+  population. Nothing in this project consumes them -- business traffic is a separate project
+  (#371).
+stages:
+- synthesis.population.trips
+- synthesis.population.enriched
+- synthesis.output
+- matsim.scenario.population
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.exclude_rbw_legs
+introduced:
+  issue: '#366'
+  pr: null
+  adr: ADR-0107
+detail_doc: docs/codebase/notes/popsim-plan-source-resolution.md
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/enriched_adapter.py
+- synthesis/output.py
+- braunschweig/matsim/scenario/population.py
+evidence:
+  tests:
+  - tests/test_popsim_trips_rbw.py
+  - tests/test_rbw_attributes_output.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_diary_facts.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_trips_stage.py::test_run_default_flags_off_is_byte_identical_to_previous_signature
+    note: |
+      The OFF path is pinned against the PRE-#366/#367 behaviour, not against itself: the fixture
+      chain ends away from home so a closure is actually synthesised, and the test additionally
+      asserts the closure dwell equals the unchanged constant HOME_CLOSURE_DWELL_S.
+      tests/test_popsim_trips_rbw.py::test_default_keeps_every_leg pins the leg-level default, and
+      tests/test_rbw_attributes_output.py::test_enriched_adapter_without_facts_has_no_rbw_columns
+      plus ::test_output_columns_without_rbw_attributes_unchanged pin that the two person
+      attributes are purely additive (absent whenever the src_* facts are absent, e.g. on the
+      ENTD path).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.trips] rbW legs dropped'
+    note: |
+      The drop logs count, share and the number of donor persons emptied by it; that count must be
+      0 when diary_plan_match is ON (only-rbW sources are remapped upstream) and a non-zero value
+      WARNS with the reason. A missing W_RBW column fails fast (KeyError naming the column) rather
+      than silently degrading to "no rbW legs present". On the attribute side the MATSim writer
+      logs the rate of persons for which rbwLegsCount / rbwDistanceKm are OMITTED (no MiD plan
+      source), and the enriched adapter logs the rate at which it has to fill a missing src_* fact
+      -- a guard that cannot fire on the popsim path, so a non-zero rate is itself the signal.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: share_work_activities_lt_2h
+  note: >-
+    NOT yet measured. The expected directions recorded in ADR-0107 (work->work repeats falling
+    towards the SrV 4.5% same-purpose share, 1-2 h work activities from 19.5% towards single
+    digits, night-time work departures vanishing) are pre-registered ASSUMPTIONS of the A/B
+    ladder, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv against the
+    committed SrV reference. No arm has run, so no claim is validated.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Two things are unmeasured at production scale: the realised effect on the work-activity
+    duration and same-purpose-repeat metrics, and the share of persons for which the two MATSim
+    attributes are omitted. Also open by design: the attributes are exported but consumed by
+    nothing until the business-traffic project (#371) exists, so their usefulness is untested.

@@ -66,6 +66,29 @@ notes: |
   previously listed only the three popsim files, which is why the Autos file was believed to be
   missing while it sat in the popsimprep checkout all along.
 
+  Variables newly consumed since the plan-structure fix (#365 / #366 / #367; ADR-0106 / ADR-0107 /
+  ADR-0108), all from the B1 Personen and Wege files that are already synced:
+  - Personen `mobil` (0/1/9, "was mobile on the reporting day"): separates the two MiD no-diary
+    codes. A plan source with `anzwege1 == 803` and `mobil == 1` was mobile but had no diary
+    collected and is re-drawn to a realisable diary; with `mobil != 1` zero trips is the observed
+    day and the source is kept. Required whenever `diary_plan_match` is on.
+  - Personen `feiertag` (reporting day was a public holiday at the residence, 5.2 % of weekday
+    diary persons): excludes such days from plan sources AND from the remap donor pool, because
+    every SrV-anchored target is a normal-WEEKDAY level. Required only when
+    `exclude_holiday_plan_sources` is on.
+  - Personen `mobil_diff` (0-6/9): loaded as an OPTIONAL diagnostic only. The "only rbW legs"
+    state it encodes (`mobil_diff == 2`) is derived instead from the Wege rows the pipeline
+    actually uses (no direct legs, at least one rbW leg), so no code path depends on it.
+  - Wege `W_RBW` (regelmaessiger beruflicher Weg): the flag that marks MiD's expansion of the
+    aggregate professional-round question into untimed legs (purpose code 701). Now REQUIRED in
+    `MID_WEGE_REQUIRED_COLS`; those legs are dropped from the day plan and kept as person
+    attributes instead (ADR-0107).
+  - Wege `W_SO1` (start of the first leg): `== 2` marks a chain whose first leg ARRIVES home, i.e.
+    the person came home from elsewhere. Now REQUIRED in `MID_WEGE_REQUIRED_COLS`; the leading leg
+    is dropped rather than turned into a fabricated home->home first trip (ADR-0108).
+  The codebook package named under storage.expected_path is the authority for all five value
+  ranges; none of them is inferred.
+
   Further Autos variables not yet used, each a concrete modelling opportunity: A_HALTER
   (private/company, which addresses the KBA register-vs-household caveat of ADR-0081), A_BAUJ
   (vehicle age at micro level, joinable to oek_status and RegioStaR -- the axis ADR-0081 had to leave

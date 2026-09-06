@@ -21,7 +21,7 @@ ported from another eqasim project), `retired`.
 | configured | 8 |
 | extended | 7 |
 | overridden | 22 |
-| braunschweig_new | 59 |
+| braunschweig_new | 60 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -54,7 +54,7 @@ ported from another eqasim project), `retired`.
 
 ## Braunschweig-new stages per model area
 
-- **Analysis**: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.simwrapper_export`
+- **Analysis**: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`
 - **Person & household attributes**: `braunschweig.data.census.employment`, `braunschweig.data.census.household_income`, `braunschweig.data.census.licenses`, `braunschweig.data.inkar.household_income`
 - **Travel / activity behavior**: `braunschweig.data.mid.data`, `braunschweig.data.mid.zones`
 - **Cordon / external demand**: `braunschweig.data.census.pendler`, `braunschweig.data.cordon_gemeinden`, `braunschweig.data.cordon_network`, `braunschweig.data.cordon_pt_gates`, `braunschweig.synthesis.cordon_gates`, `braunschweig.synthesis.incommuters`, `braunschweig.synthesis.student_incommuters`

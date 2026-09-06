@@ -14,7 +14,13 @@ description: 'Compares the realised daily plan structure of the synthetic popula
   plan_structure_output_subdir (default analysis/plan_structure_vs_srv),
   plan_structure_srv_universe (default at_home_zero -- the reference universe that matches a
   synthetic population, in which every person exists and starts the day at home; at_home_only
-  is the sensitivity universe of the same table).'
+  is the sensitivity universe of the same table),
+  plan_structure_max_unmatched_home_share (default 0.05 -- persons whose home Kreis cannot be
+  resolved are counted, logged and excluded from the head-to-head universe, but ABOVE this share
+  the stage RAISES: a broken VG250 or household join must not produce a well-formed report that
+  silently describes only part of the population). These three are analysis parameters of this
+  stage, not production feature flags, so they live in the stage code defaults and are not
+  carried in configs/base_bs.yml.'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -35,7 +41,10 @@ features:
 - home_closure_model
 - diary_plan_match
 - rbw_leg_convention
-decisions: []
+decisions:
+- ADR-0106
+- ADR-0107
+- ADR-0108
 notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   comparison.csv (long: segment, metric, model, srv, delta_pp, n_srv), headline.csv (the "all"
   segment of the same table), by_kreis.csv (the kreis_* rows plus the model-only Kreise),
@@ -43,7 +52,8 @@ notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   table rather than only the head-to-head Kreise -- the closure is a property of the trip
   builder, not of a region), accepted_deviations.csv (open-end days,
   open-start days, single-trip days -- the three consequences of the closed-plan decision, each
-  with both sides'' value and the note "closed plans by decision, ADR E"), summary.md and
+  with both sides'' value and ACCEPTED_DEVIATION_NOTE, which names issue #367 and points at this
+  record''s decisions list, where ADR-0108 is the record of the closed-plan decision), summary.md and
   provenance.json (git commit, parameters, reference path, universe counts, closure counts).
   delta_pp is (model - srv) x 100 for share metrics (mobility_rate, share_*, participation_*,
   purpose_share_*, dep_hour_share_*) and the plain difference otherwise; the n_persons_* and

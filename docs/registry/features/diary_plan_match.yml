@@ -1,0 +1,100 @@
+feature: diary_plan_match
+title: Realisable normal-weekday plan sources (#365)
+area: population
+description: >-
+  Re-draws the MiD plan source (source_H_ID / source_P_ID) of every synthetic person whose
+  source cannot be realised as a normal-weekday day plan, in a second matching pass after the
+  weekend-plan match inside braunschweig.popsim.completed_donor. Unrealisable means: the MiD
+  diary was never collected (anzwege1 803 "Person ohne Wegeerfassung" with mobil == 1, or 804
+  "Mobilitaet unbekannt"); the source's only legs are rbW legs, so nothing remains once
+  rbw_leg_convention drops them; or the reporting day was a public holiday at the residence
+  (feiertag == 1) while every SrV-anchored target is a normal-weekday level. A person with
+  anzwege1 == 803 and mobil != 1 is KEPT -- zero trips is then the observed day. The matcher is
+  weekend_plan_match.match_person reused unchanged (has_license, sex, age_band, employed, has_pt;
+  hierarchical relaxation; P_GEW-weighted draw) on the completion rng, so only the plan source
+  changes and the OFF path stays byte-identical. Measured motivation (i329, 2026-08-24): 159,728
+  persons (14.1%) drew a no-diary source and 100% of them ended immobile, while every hard SrV
+  control was met among diary-carrying sources. The eight src_* plan-source fact columns computed
+  for this pass are attached unconditionally and are also what rbw_leg_convention and
+  home_closure_model read.
+stages:
+- braunschweig.popsim.completed_donor
+- data.census.filtered
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.diary_plan_match
+  - braunschweig.population.popsim.exclude_holiday_plan_sources
+introduced:
+  issue: '#365'
+  pr: null
+  adr: ADR-0106
+detail_doc: docs/codebase/notes/popsim-plan-source-resolution.md
+code_paths:
+- braunschweig/popsim/diary_plan_match.py
+- braunschweig/popsim/diary_facts.py
+- braunschweig/popsim/completed_donor.py
+- braunschweig/popsim/mid/participation.py
+evidence:
+  tests:
+  - tests/test_diary_plan_match.py
+  - tests/test_diary_facts.py
+  - tests/test_completed_donor_diary_match.py
+  - tests/test_completed_donor_stage.py
+  - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_raises
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_completed_donor_stage.py::test_build_completed_donor_off_matches_pre_task_inline_pipeline
+    note: |
+      With diary_plan_match_on=False the completed-donor persons frame must equal an inline
+      reference that runs ONLY member completion + weekend match and stops there (the pre-#365
+      pipeline): no Wege load, no diary match, no remap. Compared on H_ID / P_ID /
+      source_H_ID / source_P_ID -- the result additionally carries the src_* fact columns, which
+      are attached unconditionally by design (the stopped-early reference never computes them),
+      so they are outside the byte-identity claim and are documented in the stage record and in
+      docs/codebase/notes/popsim-plan-source-resolution.md.
+      tests/test_completed_donor_diary_match.py::test_diary_match_off_is_byte_identical_in_sources
+      pins the same claim at the plan-source level, and
+      tests/test_diary_plan_match.py::test_classify_respects_flags_off pins the classifier.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[diary_plan_match]'
+    note: |
+      The remap itself is the "fallback" whose rate must stay observable: the pass logs, per
+      resolution class, the count and share of persons remapped and the match-level distribution
+      of the hierarchical relaxation, and WARNS when the remapped share falls outside 5-25%
+      (i329 magnitude: ~14%). Per-person decisions are written to diary_plan_match_trace.parquet
+      next to the weekend trace, and the counters are published via context.set_info.
+      Defense in depth on the other side: with the flag ON, derive_trip_class_seed RAISES if any
+      resolved plan source still carries 803/804, so a silent regression cannot hide behind a
+      seed that keeps hitting its target.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: mobility_rate
+  note: >-
+    NOT yet measured against the reference. The metric named above is the committed reference
+    column mobility_rate (SrV 0.8437 for the "all" segment of the primary at_home_zero universe);
+    the "23.0% of persons without a trip" this feature attacks is its complement on the model
+    side. The A/B ladder pre-registered in this feature's design
+    (arms: package 1; 1+2; 1+2+3; 1+2+3+4 on the cached i329 population) is what will produce the
+    evidence, through braunschweig.analysis.synthesis.plan_structure_vs_srv and participation_fit.
+    Until an arm is recorded as a run manifest, the effect stated in ADR-0106 (that the
+    "donor-bound" participation deficit of srv_participation_controls is largely removed) is an
+    ASSUMPTION. Control convergence is not validation; the SrV comparison is.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Implemented and reviewed on the branch, but no run has executed it: the remap rate, the
+    match-level distribution and the effect on the realised plan structure are all unmeasured at
+    production scale. Assessment stays pending until the first A/B arm is recorded.

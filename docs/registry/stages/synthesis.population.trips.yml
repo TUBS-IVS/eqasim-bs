@@ -22,6 +22,23 @@ resolves_to:
   popsim_open: braunschweig.popsim.trips_stage
 features:
 - escort_purpose
+- home_closure_model
+- rbw_leg_convention
 decisions:
 - ADR-0072
 - ADR-0073
+- ADR-0107
+- ADR-0108
+notes: >-
+  Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
+  braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
+  (W_RBW == 1) before purpose mapping, .drop_leading_arrive_home_leg drops a first leg that
+  ARRIVES home (W_SO1 == 2) instead of fabricating a home->home first trip, and
+  .closure_dwell_model selects between the empirical closure dwell (default; built ONCE per run
+  from the unique donor diaries) and the previous fixed 3600 s constant. All three default ON /
+  "empirical" and each has a byte-identical OFF path. EntdSource.build_trips REJECTS a non-default
+  value for each of them with a message naming the key, because ENTD has no W_RBW / W_SO1 pendant
+  and no MiD Wege table to estimate the dwell from; the two popsim_open fixture configs therefore
+  set them to their OFF values explicitly. The stage logs the dropped-leg rates, the closure
+  shares and the dwell-fallback rates; is_synthetic_closure marks the synthesised rows on the
+  cached frame and deliberately does NOT reach trips.csv (explicit column list there).

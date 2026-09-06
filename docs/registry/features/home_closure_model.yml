@@ -1,0 +1,107 @@
+feature: home_closure_model
+title: Home-end closure with an observed dwell, counted in the seed (#367)
+area: behavior
+description: >-
+  Makes the day-closing return-home trip realistic, visible and consistently counted, under the
+  user's decision that MATSim plans in this project always start and end at home. Three parts, one
+  feature: (1) the dwell before the appended return-home trip is DRAWN (seeded, random_seed +
+  CLOSURE_SEED_OFFSET 74517) from the observed activity-duration distribution of the same purpose
+  x arrival-hour band (ARRIVAL_BANDS_H (0, 14, 18, 20, 22, 48), five bands) in the directly closed
+  MiD weekday chains, instead of the constant HOME_CLOSURE_DWELL_S = 3600 s that gave 65,761 work
+  activities a duration of exactly 1.0 h; closure_dwell_model "fixed_1h" reproduces the constant.
+  (2) synthesised closure rows are MARKED (is_synthetic_closure, trip_key suffix _closure) so an
+  invented trip is distinguishable from a reported one. (3) the trip_class PopulationSim seed
+  counts the closed day (anzwege1 + 1 for a plan source whose last directly recorded non-rbW leg
+  does not end at home, clipped at 50 to stay inside map_trip_class's value map), so seed, plan
+  and SrV target count the same day. A leading leg that ARRIVES home (MiD W_SO1 == 2) is dropped
+  rather than turned into a fabricated home->home first trip (18,231 of those in i329, 2.1% of
+  persons). The consequences of the closed-plan decision -- 0% open-end days against SrV 2.24%,
+  0% open-start days against 2.19%, 0% single-trip days against 0.69% -- are ACCEPTED deviations,
+  reported as such by the analysis stage.
+stages:
+- synthesis.population.trips
+- data.census.filtered
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.closure_dwell_model
+  - braunschweig.population.popsim.drop_leading_arrive_home_leg
+  - braunschweig.population.popsim.trip_class_seed_counts_closure
+introduced:
+  issue: '#367'
+  pr: null
+  adr: ADR-0108
+detail_doc: docs/codebase/notes/popsim-plan-source-resolution.md
+code_paths:
+- braunschweig/popsim/closure_dwell.py
+- braunschweig/popsim/plan_validation.py
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/mid/participation.py
+- braunschweig/popsim/mid/seed_loading.py
+evidence:
+  tests:
+  - tests/test_closure_dwell.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_trip_class_seed_closure.py
+  - tests/test_popsim_trips_rbw.py
+  - tests/test_plan_structure_vs_srv.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_trips_stage.py::test_run_default_flags_off_is_byte_identical_to_previous_signature
+    note: |
+      Pinned against the PRE-#367 behaviour rather than against a second OFF run: the fixture
+      chain ends AWAY from home, so a closure is actually synthesised and closure_dwell_model
+      "fixed_1h" is actually drawn, and the test asserts the closure row's dwell equals the
+      unchanged constant HOME_CLOSURE_DWELL_S (the earlier version of this test was vacuous
+      because its fixture chain already ended at home -- review finding, fix round 1). The seed
+      half of the feature is pinned separately by
+      tests/test_trip_class_seed_closure.py::test_counts_closure_off_is_previous_behaviour, and
+      the arrive-home drop by
+      tests/test_popsim_trips_rbw.py::test_drop_leading_arrive_home_leg_only_when_first_leg_arrives_home.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.plan_validation] closure dwell:'
+    note: |
+      The empirical dwell has a two-step fallback and both steps are counted and logged as rates:
+      a (purpose, arrival band) cell with fewer than min_obs = 30 observations falls back to the
+      purpose marginal, and that to a global marginal. A global-fallback rate above
+      CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5 WARNS, because a majority hitting the global pool
+      means the primary estimate is broken (an empty join, a wrong key) rather than merely thin.
+      The cap that keeps a drawn dwell inside MAX_PLAN_TIME_SECONDS is counted too. The model
+      build itself logs its pooled observation count under the second marker "[closure_dwell]",
+      and trips_stage logs the share of persons and trips carrying a synthetic closure.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: share_work_activities_lt_2h
+  note: >-
+    NOT yet measured. The reference side exists and is committed (SrV share_mobile_last_to_home
+    0.9776, mean_work_activity_h 6.2904, share_work_activities_lt_2h 0.1096,
+    share_trips_followed_by_same_purpose 0.0453 for the
+    "all" segment of the primary at_home_zero universe), and the comparison stage exists, but no
+    A/B arm has run. Note the definitional caveat recorded in ADR-0108:
+    share_trips_followed_by_same_purpose counts home->home pairs on BOTH sides, so any change to
+    the number of home trips moves it. Three model-side metrics are 0% BY DECISION (open-end,
+    open-start and single-trip days) and must always be read next to the accepted_deviations.csv
+    rows the analysis stage writes; a fourth (odd trip counts) is structurally bounded because
+    every closed day ends even-ended.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    The empirical dwell distribution has only been exercised on synthetic fixtures; its cell
+    occupancy, purpose-marginal fallback rate and cap rate on the real MiD Wege table are
+    unmeasured, and so is the realised work-activity duration distribution. The accepted
+    deviations are a recorded decision, not a finding, and stay open to challenge if a later
+    project wants genuinely open days.

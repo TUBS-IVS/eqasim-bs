@@ -9,7 +9,8 @@ geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); segments
 crs: null
 roles:
 - validation_reference
-used_by: []
+used_by:
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
 acquisition:
   method: committed
   source: |
@@ -32,15 +33,19 @@ verification:
     universes). Not listed in scripts/verify_braunschweig_inputs.py -- there is nothing external
     for a contributor to download or verify presence of, since the file ships committed with
     every clone (mirrors the sibling committed SrV tables, e.g. srv2023_work_participation).
-    requirements.production is "not_needed" as long as no production stage reads it; the
-    plan-structure comparison stage that consumes it (issue #369, Task 10) must flip this to
-    "required" and add the README derived-inputs row at the same time.
+    requirements.production is "required" since braunschweig.analysis.synthesis.plan_structure_vs_srv
+    entered the production run lists (issue #369): that stage ABORTS with a FileNotFoundError
+    naming the path when the reference is missing, rather than degrading to a model-only report
+    that would read like a measured result. The README derived-inputs row was added with the same
+    flip. Deliberately NOT added to scripts/verify_braunschweig_inputs.py: that verifier checks
+    inputs a contributor has to acquire, and NO SrV table is listed there at all, because they all
+    ship committed with every clone (checked 2026-09-06: the verifier contains no SrV entry).
     Definitions and the metric set live in braunschweig/calibration/srv_plan_structure.py; unit
     tests on a synthetic SrV-shaped fixture: tests/test_srv_plan_structure.py.
 requirements:
   synthesis: not_needed
   matsim: not_needed
-  production: not_needed
+  production: required
 licensing:
   license: aggregate values (data-protection reviewed); raw SciUse file restricted
   restricted: false
