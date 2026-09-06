@@ -72,10 +72,16 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
             closure (spec 2026-09-05-plan-structure-fix-design.md). The 803/804
             diary non-response codes are left untouched (still imputed as before);
             a source with zero direct legs (e.g. an unresolved 803/804 code) never
-            qualifies. Requires the ``src_ends_at_home`` / ``src_n_direct_legs``
-            columns on ``persons`` (raises ``KeyError`` naming the missing column
-            otherwise -- no silent no-op). Default False (byte-identical to the
-            pre-Task-7 behaviour).
+            qualifies. The incremented count is clipped at 50 (controller ruling
+            R11): ``attributes.map_trip_class``'s ``value_map`` only enumerates
+            ``anzwege1`` 0..50 (the MiD codebook's valid range), so an
+            ``anzwege1 == 50`` source with an open-ended diary would otherwise
+            become 51, an unenumerated code ``missing.resolve`` raises on; 51
+            would land in the same 5+ class as 50 under the class scheme, so the
+            clip changes no classification. Requires the ``src_ends_at_home`` /
+            ``src_n_direct_legs`` columns on ``persons`` (raises ``KeyError``
+            naming the missing column otherwise -- no silent no-op). Default
+            False (byte-identical to the pre-Task-7 behaviour).
         forbid_no_diary_sources: when True, raise ``ValueError`` if any resolved
             plan-source ``anzwege1`` is still 803/804 (issue #365 guard): when
             ``diary_plan_match`` is on, the completed_donor build is expected to
@@ -135,7 +141,13 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
         # count must include it. 803/804 codes (~codes already False for a resolved
         # count) and sources with zero direct legs never qualify.
         open_end = (~persons["src_ends_at_home"].astype(bool)) & (persons["src_n_direct_legs"] > 0) & ~codes
-        mapped = mapped.where(~open_end, mapped + 1)
+        # Clip at 50 (controller ruling R11): attributes.map_trip_class's value_map only
+        # enumerates anzwege1 0..50 (the MiD codebook's valid range), so an anzwege1==50
+        # source with an open-ended diary would otherwise become 51 -- an unenumerated
+        # code missing.resolve raises on. 51 would fall in the same 5+ class as 50 under
+        # the class scheme (0; 1-2; 3-4; 5+), so clipping changes no classification and
+        # keeps value_map the single source of truth for the valid range.
+        mapped = mapped.where(~open_end, (mapped + 1).clip(upper=50))
         logger.info(
             "[popsim.mid] trip_class seed counts the closed day: %d/%d (%.1f%%) sources get "
             "+1 for the synthetic return-home trip.",
