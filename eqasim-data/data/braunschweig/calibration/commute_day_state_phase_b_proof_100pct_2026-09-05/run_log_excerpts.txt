@@ -1,0 +1,105 @@
+# Commute-day-state Phase B proof run (100 % cached i329 population) -- run log excerpts
+# Server felix, detached worktree ~/wt_cds_b at c9b841d9 + the Phase B tar overlay.
+# working_directory eqasim-data/cache_bs_100pct_i329 (the i329 cache), 2026-09-05 CEST.
+
+== Run 1a OFF, first attempt (16:56:10 -> 19:26:55, 39 stages) -- ABORTED by a guard ==
+    return self.instance.execute(context)
+  File "/home/felix/wt_cds_b/braunschweig/analysis/synthesis/work_participation_by_kreis.py", line 1456, in execute
+    realised = realised_work_frame(
+  File "/home/felix/wt_cds_b/braunschweig/analysis/synthesis/work_participation_by_kreis.py", line 842, in realised_work_frame
+    raise ValueError(
+ValueError: 265750/304900 (87.2%) workers have no resolvable destination Kreis (0 with no workplace row for their location_id, 265750 with a workplace commune_id that yields no 5-digit Kreis); exceeds cds_max_unresolved_destination_share=0.05 -- the external-destination measurement would be empty or unrepresentative; check the braunschweig.locations.work location_id join and the 'EXT' + 8-digit AGS ids of braunschweig.data.external_workplaces
+
+== Run 1b OFF, resumed after the _destination_ars5 fix (19:30:26 -> 20:24:53, 6 stages) ==
+19:30:29 │ INFO    │ synpp            │ Devalidating 7 stages:
+  executed: braunschweig.analysis.synthesis.commute_distance_by_kreis
+  executed: braunschweig.analysis.cordon_validation
+  executed: braunschweig.analysis.synthesis.work_participation_by_kreis
+  executed: braunschweig.synthesis.commute_day.activities_day_stage
+  executed: braunschweig.synthesis.locations.secondary_chainsolvers
+  executed: braunschweig.synthesis.commute_day.spatial_locations_day
+  executed: braunschweig.synthesis.commute_day.output_day
+19:30:51 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] parameters: detour_factor=1.300, max_unmatched_home_share=0.050, max_unresolved_destination_share=0.050, edge_tolerance_km=5.00, sampling_rate=1.0000; writing to eqasim-data/output_bs_100pct_cds_off/analysis/commute_day_state_phase_a
+19:30:56 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] employed persons: 1/540426 (0.00%) with no home Kreis (ars5) match
+19:30:56 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] work participation: 540425 employed persons in the ZGB, 267194 with a work trip (49.44%). The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and counted once by _employed_with_home_kreis and recorded in provenance.json
+19:30:56 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] 1 code(s) have a SrV reference row with n_persons == 0 (not surveyed) and therefore a NaN delta: ['03103']
+19:30:56 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] commute_day_state_enabled is false -- no reporting-day state table is written (every worker carries the same placeholder state)
+19:30:57 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers (no home geometry): 0/304900 (0.00%) with no home Kreis (ars5) match
+19:30:58 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers: 1/304900 (0.00%) with no home Kreis (ars5) match
+19:31:00 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] realised work: 304900 workers input, 0 without home geometry dropped, 1 without a home Kreis, 0 without a workplace row, 0 with a NaN distance dropped, 304900 kept; external destinations 39150 (12.84%), destinations without a resolvable Kreis 0 (0.00%: 0 with no workplace row, 0 with a malformed workpla
+19:31:02 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] EXT destinations: 39150 workers over 646 (home, destination) Kreis pairs; 1 pair(s) have no BA Pendler flow (the BA export suppresses small cells, so the flow is unknown, not zero); 0 pair(s) have no Kreis centroid
+19:31:02 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] near-class-edge share: 129906/304900 workers (42.61%) lie within 5.0 km of a class edge [10.0, 25.0, 50.0, 100.0, 200.0]
+19:31:02 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] wrote 6 report files to eqasim-data/output_bs_100pct_cds_off/analysis/commute_day_state_phase_a
+19:31:02 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 540425 employed persons, share_work_trip 0.494 vs SrV 0.651 (delta -15.67 pp); near-class-edge share 0.426; EXT class agreement 0.826
+[braunschweig.secondary_chainsolvers] success rate: 0.9998 (860579/860733 problems fully placed)
+
+== Run 2a ON, first attempt (20:25:28 -> 20:25:52) -- ABORTED, mixed-type sex in the donor resample ==
+    df_assignment, _levels = statistical_matching(
+  File "/home/felix/wt_cds_b/synthesis/population/matched.py", line 226, in statistical_matching
+    unique_values[column] = list(sorted(set(df_source[column].unique()) | set(df_target[column].unique())))
+TypeError: '<' not supported between instances of 'float' and 'str'
+
+== Run 2b ON (20:28:22 -> 20:43:46, 10 stages) -- ABORTED at check 1 by cds_max_states_outside_employed_share ==
+20:28:24 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] reading the raw MiD delivery from eqasim-data/data/braunschweig/popsim/mid2023_raw
+20:28:38 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] read 420979 persons, 1087393 trips, 218101 households
+20:28:38 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] home-office-day donor filter: 8026/420979 persons kept (1.9%)
+20:28:38 │ WARNING │ synthesis.commute_day.donor_pool │ [commute day donors] sex: 12/8026 donors have an HP_SEX code outside {1, 2} (diverse/no answer) and get sex=NaN
+20:28:38 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] active escort: 1079/8026 donors (13.4%) have an active-escort trip (W_ZWECK == 6)
+20:28:39 │ INFO    │ calibration.commute_day_state_reference │ [commute day state reference] work-trip lengths: 76436/1087393 trips qualify (W_ZWECK == 1, 0 < wegkm < 1000); 70947 distinct persons keep their first qualifying trip
+20:28:39 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] work-trip-length fallback: 70947 distinct persons keep their first (by W_ID) qualifying work trip
+20:28:39 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] distance source over 8026 donors: {'P_ARB_ENTF': 6238, 'unknown': 1780, 'trip_length': 8} (1780, 22.2%, have no usable commute distance)
+20:28:39 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] trip-table resample: 12/8026 donors (0.15%) have sex=NaN and enter the stage-B matching as the explicit 'unknown' stratum (the attributes frame keeps NaN).
+20:28:49 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor trip table built: 18564 trips for 5421/8026 donors (valid=True)
+20:28:49 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor mobility: 2605/8026 donors immobile (no Wege rows, 32.5%), 0/8026 had Wege rows but no surviving trip chain after repair/resample (0.0%, a resample gap, not real behaviour)
+20:28:49 │ INFO    │ synthesis.commute_day.donor_pool │ [commute day donors] donor pool built: 8026 donors, 1780 missing distance (22.2%), 12 sex unknown, 0 not in home-office module, 0 household-unmatched
+20:28:49 │ INFO    │ synthesis.commute_day.home_office_donors_stage │ [commute day donors stage] donor pool: 8026 donors from 420979 MiD persons (1.91% unweighted, 1.64% P_GEW-weighted), 18564 donor trips; builder diagnostics: {'n_donors': 8026, 'n_immobile': 2605, 'n_chain_dropped_by_resample': 0, 'n_missing_distance': 1780, 'n_sex_unknown': 12, 'n_not_in_module': 0, 'n_household_unmatched': 0, 'distance_sourc
+20:36:42 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] parameters: detour_factor=1.300, far_threshold_km=200.0, absent_share_far=1.000, max_not_replaceable_share=0.500, random_seed=1234 (+7301 offset)
+20:36:43 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] escort duty: 100784/870464 persons with a trip (11.6%) have an 'escort' leg on their pre-assignment day
+20:36:43 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance column: 'wegkm_imp' (first of ('wegkm_imp', 'wegkm') present on the trips frame)
+20:36:48 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance class: 304900/870464 persons (35.0%) have a usable donor work-trip length; 565564 (65.0%) have no valid work trip and are counted with donor_distance_class=None (no re-draw for them, see keep_probability)
+20:36:51 │ INFO    │ synthesis.commute_day.state │ [commute day state] assigned distance class: 304900 workers classified (detour factor 1.30)
+20:36:51 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] donor-distance source (ADR-0104 Amendment 1) per assigned class: {'100_200': '5235/5235 (100.0%)', '10_25': '71528/71528 (100.0%)', '25_50': '54311/54311 (100.0%)', '50_100': '21515/21515 (100.0%)', 'gt200': '10959/10959 (100.0%)', 'lt10': '141352/141352 (100.0%)'}
+20:36:52 │ INFO    │ synthesis.commute_day.state │ [commute day state] state draw: 304900 workers, 60970 eligible for re-draw (20.0%), 0 donor class missing (0.0%)
+20:36:52 │ INFO    │ synthesis.commute_day.state │ [commute day state] state shares: at_workplace 97.3%, home 1.7%, absent 1.1% (of which escort-protected from absent: 523)
+20:36:52 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] has_license: not present on both frames (MiD donors carry no has_license column) -- skipped as a soft criterion rather than invented.
+20:36:55 │ INFO    │ synthesis.commute_day.matching │ [commute day matching] matched 5086/5086 persons (0.0% not replaceable); by coarsening level (rate of matched persons): {0: '3790/5086 (74.5%)', 2: '348/5086 (6.8%)', 3: '391/5086 (7.7%)', 4: '23/5086 (0.5%)', 5: '534/5086 (10.5%)'}
+20:36:55 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] final states over 304900 workers (304900 of them drawn): {'absent': '3215 (1.1%)', 'at_workplace': '296599 (97.3%)', 'home': '5086 (1.7%)'}; re-draw eligible 20.0% of the drawn, 0/5086 home persons not replaceable (0.0%), coarsening levels used {0: 3790, 2: 348, 3: 391, 4: 23, 5: 534}
+20:43:00 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] reporting-day trips built: 5086 persons replaced (+13475/-36815 trips, 1390/5086 matched donors had zero trips, 27.3%), 3215 persons absent (0 rows), 0 home persons unmatched (kept unchanged, 271 extra column(s) nulled on replaced rows)
+20:43:00 │ WARNING │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] 1390/5086 matched donors (27.3%) have ZERO rows in donor_trips -- above 1%, which usually signals a donor_id key or dtype mismatch between matches and donor_trips (silently wiping every affected replaced person's day) rather than a genuinely immobile home-office day for that many donors.
+20:43:01 │ INFO    │ synthesis.commute_day.trips_day_stage │ [commute day trips] reporting-day trips: 3369358 rows for 865859 persons (from 3392698 rows for 870464 persons); diagnostics: {'n_persons_replaced': 5086, 'n_persons_absent': 3215, 'n_trips_removed': 36815, 'n_trips_added': 13475, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 271, 'n_donors_without_trips': 1390}
+
+20:43:40 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] parameters: detour_factor=1.300, max_unmatched_home_share=0.050, max_unresolved_destination_share=0.050, edge_tolerance_km=5.00, sampling_rate=1.0000; writing to eqasim-data/output_bs_100pct_cds_on/analysis/commute_day_state_phase_a
+20:43:45 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] employed persons: 1/540426 (0.00%) with no home Kreis (ars5) match
+20:43:46 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] work participation: 540425 employed persons in the ZGB, 260082 with a work trip (48.13%). The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and counted once by _employed_with_home_kreis and recorded in provenance.json
+20:43:46 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] 1 code(s) have a SrV reference row with n_persons == 0 (not surveyed) and therefore a NaN delta: ['03103']
+20:43:46 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] reporting-day states joined onto the employed universe: 267194/304900 workers matched (87.63%); 37706 worker(s) (12.37%) are outside it (not flagged employed, or a home Kreis outside the ZGB) and are excluded from every share below
+
+    state_shares = commute_day_state_shares(
+  File "/home/felix/wt_cds_b/braunschweig/analysis/synthesis/work_participation_by_kreis.py", line 598, in commute_day_state_shares
+    raise RuntimeError(
+RuntimeError: 37706/304900 drawn state(s) (12.4%) fall outside the employed universe, above the configured cds_max_states_outside_employed_share = 0.050. The check-1 shares would then describe a cohort the state model largely does not cover; check the person_id join and whether the model assigns workplaces to persons the population does not call employed before raising the threshold
+
+== Run 2c ON without the blocked analysis stage (20:44:49 -> 20:49:04) -- ABORTED in the secondary chainsolver ==
+  executed: braunschweig.analysis.synthesis.commute_distance_by_kreis
+  executed: braunschweig.analysis.cordon_validation
+  executed: braunschweig.synthesis.commute_day.activities_day_stage
+  executed: braunschweig.synthesis.locations.secondary_chainsolvers
+    result = stage["wrapper"].execute(context)
+  File "/home/felix/miniforge3/envs/eqasim/lib/python3.10/site-packages/synpp/pipeline.py", line 88, in execute
+    return self.instance.execute(context)
+  File "/home/felix/wt_cds_b/braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py", line 966, in execute
+    problems = list(find_assignment_problems(
+  File "/home/felix/wt_cds_b/synthesis/population/spatial/secondary/problems.py", line 125, in find_assignment_problems
+    problem["origin"] = np.array([[problem["origin"].x, problem["origin"].y]])
+AttributeError: 'NoneType' object has no attribute 'x'
+
+== Run 3 sensitivity, commute_day_absent_share_far 0.6 (20:52:24 -> 21:00:18) -- completed ==
+21:00:01 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] parameters: detour_factor=1.300, far_threshold_km=200.0, absent_share_far=0.600, max_not_replaceable_share=0.500, random_seed=1234 (+7301 offset)
+21:00:02 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] escort duty: 100784/870464 persons with a trip (11.6%) have an 'escort' leg on their pre-assignment day
+21:00:02 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance column: 'wegkm_imp' (first of ('wegkm_imp', 'wegkm') present on the trips frame)
+21:00:07 │ INFO    │ synthesis.commute_day.state │ [commute day state] donor distance class: 304900/870464 persons (35.0%) have a usable donor work-trip length; 565564 (65.0%) have no valid work trip and are counted with donor_distance_class=None (no re-draw for them, see keep_probability)
+21:00:10 │ INFO    │ synthesis.commute_day.state │ [commute day state] assigned distance class: 304900 workers classified (detour factor 1.30)
+21:00:11 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] donor-distance source (ADR-0104 Amendment 1) per assigned class: {'100_200': '5235/5235 (100.0%)', '10_25': '71528/71528 (100.0%)', '25_50': '54311/54311 (100.0%)', '50_100': '21515/21515 (100.0%)', 'gt200': '10959/10959 (100.0%)', 'lt10': '141352/141352 (100.0%)'}
+21:00:11 │ INFO    │ synthesis.commute_day.state │ [commute day state] state draw: 304900 workers, 60970 eligible for re-draw (20.0%), 0 donor class missing (0.0%)
+21:00:11 │ INFO    │ synthesis.commute_day.state │ [commute day state] state shares: at_workplace 97.3%, home 2.1%, absent 0.6% (of which escort-protected from absent: 523)
+21:00:17 │ INFO    │ synthesis.commute_day.state_stage │ [commute day state] final states over 304900 workers (304900 of them drawn): {'absent': '1956 (0.6%)', 'at_workplace': '296599 (97.3%)', 'home': '6345 (2.1%)'}; re-draw eligible 20.0% of the drawn, 0/6345 home persons not replaceable (0.0%), coarsening levels used {0: 3790, 2: 348, 3: 391, 4: 23, 5: 1793}

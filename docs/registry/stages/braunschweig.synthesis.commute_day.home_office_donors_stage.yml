@@ -1,0 +1,108 @@
+stage: braunschweig.synthesis.commute_day.home_office_donors_stage
+title: MiD home-office donor pool
+layer: behavior
+description: 'Builds the donor pool for the reporting-day state model (ADR-0104, issue #244)
+  from the raw MiD 2023 delivery (MiD2023_Personen.csv / _Wege.csv / _Haushalte.csv under
+  braunschweig.population.popsim.mid_dir): the persons who reported a full home-office day, with
+  the matching attributes and their whole travel-day trip chain. Returns (attributes, trips,
+  diagnostics). The donor day is built by the IDENTICAL rules as the synthetic population''s day
+  (the same escort_purpose / escort_passive_education / explicit_round_trip_purposes flags and
+  the same trip-table builder), so a replaced day cannot follow a different purpose or mode
+  vocabulary than the one it replaces. With commute_day_state_enabled false the stage reads
+  nothing and returns two EMPTY frames with the ON-path columns.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent. The pure builder lives in
+    braunschweig/synthesis/commute_day/donor_pool.py; this stage owns the raw-MiD I/O, the
+    validation token over the raw file sizes plus the builder sources, and the synpp plumbing.
+code:
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- mid2023_b1
+features:
+- commute_day_state
+decisions:
+- ADR-0104
+notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
+  other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
+  directory braunschweig.popsim.trips_stage reads, so both stages can never point at different
+  MiD extracts), escort_purpose (code default false; configs/base_bs.yml: true),
+  escort_passive_education (code default false; configs/base_bs.yml: true),
+  explicit_round_trip_purposes (default true) -- the donor trip table is built with EXACTLY the
+  keyword arguments trips_stage.run passes for the SAME reason those flags exist there (ruling
+  R2): a replaced day must not follow a different purpose/mode vocabulary than the day it
+  replaces. random_seed is read but the donor trip table carries NO per-person departure-time
+  jitter of its own -- that jitter is applied once, later, by plan_replacement, keyed by the
+  RECEIVING person, not the donor (applying it twice would double-jitter the same donor day once
+  it is copied onto a worker).
+
+  Universe: MiD persons with arbwo == weekday, P_STARB1 == worked, starb2 == at_home (a full
+  home-office reporting day); M_HOFF != home-office-module is a data-consistency signal that is
+  counted and warned about, never filtered on directly, since starb2 is only codeable when the
+  module was asked. Attributes carried per donor: sex, age, age_class, employed (always true by
+  construction), has_children_u14 (from the donor''s OWN household members, not only donors),
+  has_car (household H_ANZAUTO > 0; NaN, never defaulted false, when the household join misses --
+  counted as n_household_unmatched), has_active_escort (any W_ZWECK == escort-active leg),
+  household_size (unbinned -- the matching module bins both donor and worker sides identically,
+  ruling R1), distance_km / distance_class / distance_source, and four columns
+  attach_trip_derived_attributes adds once the chains exist: n_trips (rows in the built trip
+  table), is_immobile (NO row in the raw Wege file at all), has_education_leg and has_work_leg.
+  The last three purpose flags are read from the BUILT chain, so they follow the same purpose
+  mapping the donor day itself was built with, including escort_passive_education; is_immobile is
+  read from the RAW Wege file instead, deliberately: n_trips == 0 is ALSO true of a donor whose
+  chain the repair/resample cascade dropped (n_chain_dropped_by_resample, a resample gap rather
+  than real behaviour), so is_immobile -- not n_trips -- is the pool''s statement of which of the
+  two a trip-less donor is, and it is what plan_replacement reads to tell an expected trip-less
+  day apart from a lost chain or a donor_id join failure (ruling R9). has_education_leg carries
+  ruling R7: a donor whose chain contains an education activity may only be matched to a person
+  who HAS an education location, since the receiving person could otherwise not anchor it; a work
+  leg needs no such restriction because every receiving person is a worker with an assigned
+  workplace. n_immobile and n_chain_dropped_by_resample below are computed from these same two
+  columns, so the pool diagnostics and the plan replacement can never disagree about a donor. Fallback chain for the donor''s own
+  commute distance, in order and each rate logged: (1) P_ARB_ENTF cleaned and classified with the
+  MiD 200 km top-code (distance_source = "P_ARB_ENTF"); (2) the donor''s first valid work-trip
+  length from the raw Wege file, classified WITHOUT a top-code since a raw trip length was never
+  subject to it (distance_source = "trip_length"); (3) the literal string "unknown" (never
+  None/NaN, so the matching module''s groupby/merge on this column never silently drops a row) --
+  a share of "unknown" above 50% is warned as usually signalling a broken join rather than a
+  genuinely undocumented commute (CLAUDE.md fallback transparency).
+
+  Trip-table construction reuses braunschweig.popsim.trips.build_validated_trip_table verbatim
+  (resample=True, resample_cell_col=None -- the legacy same-cell resample needs a synthetic-
+  population cell column MiD donors do not carry -- so an unfixable donor chain is instead
+  attribute-matched against the rest of the pool, which requires the persons frame handed to the
+  builder to carry sex/age/employed, exactly as trips_stage.run does for synthetic persons). A
+  donor with no Wege row at all is genuinely immobile (n_immobile); a donor that HAD Wege rows but
+  ended up with no surviving trip after repair/resample is a resample gap, not real behaviour, and
+  is counted separately (n_chain_dropped_by_resample) so the two failure modes are never conflated.
+
+  Diagnostics (builder + stage-level): n_donors, n_immobile, n_chain_dropped_by_resample,
+  n_missing_distance, n_sex_unknown (HP_SEX outside {1, 2}), n_not_in_module,
+  n_household_unmatched, n_donors_with_education_leg, n_donors_with_work_leg (ruling R7),
+  distance_source_counts, cells (one entry per donor, keyed by
+  (distance_class, has_children_u14, has_active_escort) -- the exact cross the matching module''s
+  hard criteria plus distance class draw against); stage-level enabled, n_mid_persons/n_mid_trips/
+  n_mid_households (raw rows read), donor_share_unweighted and donor_share_weighted (P_GEW-
+  weighted; NaN when the delivery carries no P_GEW column, never a substituted value).
+
+  validate() returns a cache token folding the summed byte size of the three raw MiD files (so a
+  re-delivered extract invalidates the cache) plus an md5 of the pure donor_pool/popsim.trips/
+  plan_validation module sources (so an edit to those helpers invalidates the stage exactly as an
+  edit to this file would, since synpp only hashes this module''s own source) -- 0 when the model
+  is OFF (nothing is read, nothing can invalidate it). A missing raw MiD file raises RuntimeError
+  at validation time, naming the missing path, rather than failing mid-run.
+
+  popsim_open and simple_ipf_open declare commute_day_state_enabled: false in their committed
+  fixtures (configs/fixtures/config_popsim_open_braunschweig.yml,
+  configs/fixtures/config_local_braunschweig_25pct.yml) and neither fixture''s synpp DAG reaches
+  this stage at all -- not_used there is the DAG''s own statement, not merely an unexercised
+  default. Evidence: tests/test_commute_day_donor_pool.py (the pure builder, primary-method
+  coverage) and tests/test_commute_day_stages.py (the stage''s I/O, OFF path, cache-token
+  behaviour, missing-column guard).'

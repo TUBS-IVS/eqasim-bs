@@ -287,7 +287,11 @@ def validate(context):
 # ---------------------------------------------------------------------------
 
 def configure(context):
-    context.stage("synthesis.population.trips")
+    # The REPORTING-DAY trips (ADR-0104, issue #244): secondary locations are placed on the
+    # day the simulation actually runs, in which a 'home' worker carries a donor's day and an
+    # 'absent' worker carries no trips at all. With commute_day_state_enabled false the alias
+    # is a pass-through of the pre-assignment trips, so the OFF path is unchanged.
+    context.stage("synthesis.population.trips.final")
     context.stage("synthesis.population.sampled")
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("synthesis.population.spatial.primary.locations")
@@ -841,7 +845,7 @@ def execute(context):
     # function scope so tests without the dependency can import this module.
     import chainsolvers  # noqa: F401
 
-    df_trips = context.stage("synthesis.population.trips").sort_values(
+    df_trips = context.stage("synthesis.population.trips.final").sort_values(
         by=["person_id", "trip_index"]
     )
     df_trips["travel_time"] = (

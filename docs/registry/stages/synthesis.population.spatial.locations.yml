@@ -1,15 +1,32 @@
 stage: synthesis.population.spatial.locations
 title: Location join
 layer: secondary
-description: Upstream join of persons to their chosen activity locations.
+description: 'Upstream join of persons to their chosen activity locations. In the production
+  config it resolves to braunschweig.synthesis.commute_day.spatial_locations_day (ADR-0104,
+  issue #244), which runs the SAME vendored join on the REPORTING-DAY activities
+  (synthesis.population.activities.final) -- the location rows must describe the activities the
+  MATSim population is written from, and the reporting-day view removes the work activity of a
+  home or absent worker and splices a donor day in its place. With commute_day_state_enabled
+  false the .final alias is a pass-through, so the output is byte-identical.'
 lineage:
-  type: inherited
-  upstream: null
-  notes: null
+  type: overridden
+  upstream: synthesis.population.spatial.locations
+  notes: Upstream eqasim stage name; the config alias table substitutes the regional implementation
+    per workflow (see resolves_to), the same pattern as
+    synthesis.population.spatial.primary.locations.
 code:
 - synthesis/population/spatial/locations.py
+- braunschweig/synthesis/commute_day/spatial_locations_day.py
 pipelines:
   popsim_mid: active
   popsim_open: active
   simple_ipf_open: active
 production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.spatial_locations_day
+  popsim_open: synthesis.population.spatial.locations
+  simple_ipf_open: synthesis.population.spatial.locations
+features:
+- commute_day_state
+decisions:
+- ADR-0104

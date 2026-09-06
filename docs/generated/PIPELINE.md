@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 95 stages, 230 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 99 stages, 249 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -51,6 +51,7 @@ flowchart LR
     cordon --> matsim
     cordon --> validation
     cordon --> work
+    education --> behavior
     education --> cordon
     education --> matsim
     education --> secondary
@@ -60,6 +61,7 @@ flowchart LR
     fleet --> matsim
     freight --> matsim
     home --> analysis
+    home --> behavior
     home --> education
     home --> fleet
     home --> matsim
@@ -153,6 +155,8 @@ flowchart LR
 | `braunschweig.ipf.prepare` | population | -- | -- | x |
 | `braunschweig.locations.work` | work | x | -- | -- |
 | `braunschweig.popsim.completed_donor` | population | x | -- | -- |
+| `braunschweig.synthesis.commute_day.home_office_donors_stage` | behavior | x | -- | -- |
+| `braunschweig.synthesis.commute_day.state_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.cordon_gates` | cordon | x | x | -- |
 | `braunschweig.synthesis.incommuters` | cordon | x | x | -- |
 | `braunschweig.synthesis.locations.education_gravity` | education | x | x | -- |
@@ -203,6 +207,7 @@ flowchart LR
 | `synthesis.locations.work` | work | -- | x | x |
 | `synthesis.output` | infrastructure | x | x | x |
 | `synthesis.population.activities` | behavior | x | x | x |
+| `synthesis.population.activities.final` | behavior | x | -- | -- |
 | `synthesis.population.enriched` | attributes | x | x | x |
 | `synthesis.population.income.selected` | attributes | -- | -- | x |
 | `synthesis.population.matched` | behavior | -- | -- | x |
@@ -216,5 +221,6 @@ flowchart LR
 | `synthesis.population.spatial.secondary.distance_distributions` | secondary | x | x | x |
 | `synthesis.population.spatial.secondary.locations` | secondary | x | x | x |
 | `synthesis.population.trips` | behavior | x | x | x |
+| `synthesis.population.trips.final` | behavior | x | -- | -- |
 | `synthesis.vehicles.passengers.default` | fleet | x | x | x |
 | `synthesis.vehicles.vehicles` | fleet | x | x | x |

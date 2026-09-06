@@ -13,6 +13,7 @@ used_by:
 - braunschweig.popsim.completed_donor
 - data.census.filtered
 - braunschweig.synthesis.vehicles.cars.household
+- braunschweig.synthesis.commute_day.home_office_donors_stage
 acquisition:
   method: restricted_delivery
   source: |

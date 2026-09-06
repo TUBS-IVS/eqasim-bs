@@ -1,0 +1,57 @@
+stage: synthesis.population.activities.final
+title: Reporting-day activities
+layer: behavior
+description: 'Reporting-day activity table (ADR-0104, issue #244): the same eqasim
+  trips->activities transform as synthesis.population.activities, applied to
+  synthesis.population.trips.final instead of the pre-assignment trips. The transform is NOT
+  re-implemented -- the stage calls synthesis.population.activities.execute through a shim
+  context, so the vendored activity logic cannot drift from a second copy. Read by the eqasim
+  location join (synthesis.population.spatial.locations) and by synthesis.output and the MATSim
+  population, all of which must see the finished day. With commute_day_state_enabled false the
+  upstream .final trips are a pass-through, so this frame equals the pre-assignment activities.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent; a second, terminal view of the activities table introduced by
+    ADR-0104, computed by the vendored eqasim stage through a shim context. Only
+    configs/base_bs.yml resolves it to the model; every configs/fixtures/* config aliases it
+    to the vendored synthesis.population.activities instead.
+code:
+- braunschweig/synthesis/commute_day/activities_day_stage.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.activities_day_stage
+features:
+- commute_day_state
+decisions:
+- ADR-0104
+notes: 'The shim (_ActivitiesShimContext) answers ONLY the two stage names
+  synthesis.population.activities.execute reads: it maps "synthesis.population.trips" onto a COPY
+  of the reporting-day trips (the VENDORED synthesis.population.activities.execute itself MUTATES
+  the trips frame it is handed -- adds trip_count, purpose, start_time, ... columns in place -- and
+  the reporting-day trips frame (synthesis.population.trips.final) is a cached synpp output other
+  stages read afterwards, so handing it the original rather than a copy would corrupt them) and
+  passes "synthesis.population.enriched" through unchanged; any OTHER
+  stage name the vendored module might request in a future eqasim version raises a KeyError naming
+  it, rather than silently returning None, so a new upstream dependency is noticed here rather
+  than producing a stage that silently ignores it.
+
+  No numeric guard or threshold of its own: this stage''s only obligations are (1) never
+  re-implementing the eqasim trips->activities transform and (2) never mutating the reporting-day
+  trips frame it reads. Both are exercised directly by
+  tests/test_commute_day_stages.py::test_activities_day_stage_matches_the_vendored_activities_stage
+  (byte-identical output to the vendored stage given the identical trips) and
+  ::test_activities_day_stage_does_not_mutate_the_trips_stage_output (the input frame''s identity
+  is unchanged after execute()); ::test_activities_day_shim_rejects_an_undeclared_stage covers the
+  KeyError guard. This stage has no synpp validate() of its own beyond synpp''s default per-file
+  hash: it holds no pure helper module of its own (unlike its siblings) -- every rule it depends on
+  either lives in the vendored synthesis.population.activities module (whose own cache token
+  governs it) or in synthesis.population.trips.final (governed by ITS OWN validate()).
+
+  popsim_open and simple_ipf_open declare commute_day_state_enabled: false in their committed
+  fixtures and neither fixture''s synpp DAG reaches activities_day_stage at all -- not_used there
+  is the DAG''s own statement, not merely an unexercised default.'

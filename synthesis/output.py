@@ -10,10 +10,12 @@ import numpy as np
 # Optional fork attributes appended to the persons CSV when the synthesis produced
 # them (license_type / economic_status from the Braunschweig enriched stage;
 # employment_status -- MiD P_BKAT-derived P9 taxonomy, popsim_mid only -- from
-# braunschweig.popsim.assembly.map_mid_person_attributes). When absent (feature OFF
-# / non-MiD source) they are simply not appended, so the column set stays
-# byte-identical to the legacy output. Appended AFTER the legacy columns so existing
-# column positions never shift.
+# braunschweig.popsim.assembly.map_mid_person_attributes; commute_day_state -- the
+# drawn reporting-day state at_workplace/home/absent, ADR-0104, merged in by
+# braunschweig.synthesis.commute_day.output_day and empty for persons without an
+# assigned workplace). When absent (feature OFF / non-MiD source) they are simply
+# not appended, so the column set stays byte-identical to the legacy output.
+# Appended AFTER the legacy columns so existing column positions never shift.
 #
 # rbw_legs_count / rbw_distance_km (popsim_mid only) are the donor's regular
 # work-related trips (regelmaessige berufliche Wege, MiD W_RBW), copied from the
@@ -21,7 +23,8 @@ import numpy as np
 # a person's realised plan can be short or empty, so analyses can separate those
 # persons from genuinely immobile ones.
 PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status", "employment_status",
-                                  "rbw_legs_count", "rbw_distance_km")
+                                  "rbw_legs_count", "rbw_distance_km",
+                                  "commute_day_state")
 
 
 def select_person_output_columns(available_columns, residency_col):

@@ -1,0 +1,83 @@
+cmp results -- commute-day-state Phase B proof RE-RUN after fix wave A (2026-09-06)
+All comparisons read-only. Files A = the 2026-09-05 first proof run, B = this re-run.
+
+=== 1. Run A (OFF, analysis only) vs the first run OFF outputs (R5/R6 claim: unchanged except provenance) ===
+IDENTICAL  commute_day_state_phase_a/assigned_class_by_person.csv
+IDENTICAL  commute_day_state_phase_a/assigned_distance_classes.csv
+IDENTICAL  commute_day_state_phase_a/ext_destination_distances.csv
+DIFFERS    commute_day_state_phase_a/provenance.json
+DIFFERS    commute_day_state_phase_a/summary.md
+IDENTICAL  commute_day_state_phase_a/work_participation_by_kreis.csv
+IDENTICAL  srv_distance_validation/commute_by_kreis.csv
+IDENTICAL  srv_distance_validation/commute_quantiles_model.csv
+IDENTICAL  srv_distance_validation/decisions.json
+IDENTICAL  srv_distance_validation/education_by_kreis_level.csv
+DIFFERS    srv_distance_validation/provenance.json
+IDENTICAL  srv_distance_validation/sensitivity_cells.csv
+IDENTICAL  srv_distance_validation/sensitivity.csv
+DIFFERS    srv_distance_validation/summary.md
+
+--- the two files that differ, in full ---
+# srv_distance_validation commute_day_state_phase_a/summary.md
+4c4
+< Generated at: 2026-09-05T17:31:02.119142+00:00
+---
+> Generated at: 2026-09-05T20:39:51.433554+00:00
+# srv_distance_validation/summary.md
+3,4c3,4
+< Parameters: detour_factor=1.3, emd_threshold=0.08, min_persons=200, aggregate_requires_min_persons=True, max_unmatched_home_share=0.05, warn_unmatched_destination_share=0.3, sensitivity_thresholds=[0.06, 0.08, 0.1], sampling_rate=1.0
+< Generated at: 2026-09-05T17:30:40.159307+00:00
+---
+> Parameters: detour_factor=1.3, emd_threshold=0.08, min_persons=200, aggregate_requires_min_persons=True, max_unmatched_home_share=0.05, warn_unmatched_destination_share=0.3, sensitivity_thresholds=[0.06, 0.08, 0.1], sampling_rate=1.0, commute_day_state_enabled=False
+> Generated at: 2026-09-05T20:38:50.432978+00:00
+# srv_distance_validation/provenance.json (pretty-printed, sorted)
+2c2
+<  "generated_at": "2026-09-05T17:30:40.159307+00:00",
+---
+>  "generated_at": "2026-09-05T20:38:50.432978+00:00",
+16a17
+>   "commute_day_state_enabled": false,
+39a41,46
+>  },
+>  "universe": {
+>   "commute_day_state_enabled": false,
+>   "n_workers_assigned": 304900,
+>   "n_workers_reporting_day": 304900,
+>   "n_workers_without_state": 0
+
+=== 2. Check 2: the all-assigned table against the 2026-09-04 baseline ===
+IDENTICAL  ON commute_by_kreis_all_assigned.csv == srv_distance_baseline_2026-09-04/commute_by_kreis.csv
+IDENTICAL  ON commute_by_kreis_all_assigned.csv == run A OFF commute_by_kreis.csv
+DIFFERS    ON reporting-day commute_by_kreis.csv vs the baseline (EXPECTED: a different universe)
+
+=== 3. Check 6: the ON population against the first run OFF population (byte-identical to output_bs_100pct_i329) ===
+DIFFERS    persons.csv  OFF 107221539 B  ON 111951583 B
+IDENTICAL  households.csv (32105146 B)
+DIFFERS    trips.csv  OFF 178103236 B  ON 176911417 B
+DIFFERS    activities.csv  OFF 226610983 B  ON 225372997 B
+IDENTICAL  vehicles.csv (385317779 B)
+IDENTICAL  vehicle_types.csv (9534 B)
+persons.csv with the new commute_day_state column removed:
+IDENTICAL  cut -f1-14 ON persons.csv == OFF persons.csv (the ONLY difference is the appended commute_day_state column)
+
+=== 4. Per-person effect of the flag, measured over the two written populations ===
+Computed with a per-person md5 of the concatenated CSV block (delimiter ";", key person_id),
+read-only, over the ON population of this re-run and the OFF population of the first run:
+trips.csv       ON 3,369,427 rows for   865,814 persons | OFF 3,392,698 rows for   870,464 persons
+                persons only in ON 0; only in OFF 4,650; common with a CHANGED block 3,651;
+                common and byte-identical 862,163 -> 8,301 persons total whose trips changed
+activities.csv  ON 4,500,631 rows for 1,131,204 persons | OFF 4,523,902 rows for 1,131,204 persons
+                persons only in ON 0; only in OFF 0; common with a CHANGED block 8,301;
+                common and byte-identical 1,122,903 -> 8,301 persons total whose activities changed
+8,301 = the 5,086 persons drawn to "home" + the 3,215 drawn to "absent"; every other person is
+byte-identical on both tables. Trip delta -23,271 rows (-0.686 %); 4,650 persons lose every trip.
+
+=== 5. Cache effect, verified read-only: the ON and OFF runs measured the SAME assignments ===
+IDENTICAL  replacement_education_gravity: ON braunschweig.locations.synthesis.replacement_education_gravity__4376239c0c7d6df382d3c95697f9a199.p == OFF braunschweig.locations.synthesis.replacement_education_gravity__d3017deb88dda3e456ded30545e85e91.p (23666794 B)
+IDENTICAL  primary.candidates: ON synthesis.population.spatial.primary.candidates__585972854cded89b5a36a200083ab2b3.p == OFF synthesis.population.spatial.primary.candidates__44cad5cc9da6fd2a71036e90474504e7.p (26792652 B)
+sensitivity run: replacement_education_gravity__653558977841ca47ba973adf3d36a1a9
+IDENTICAL  sensitivity == ON
+
+Escalation criterion of the task (a popsim stage starting to EXECUTE): never fired.
+  braunschweig.popsim.stage / completed_donor / enriched_adapter / trips_stage:
+  0 "Executing stage" lines in all three logs; 8 / 10 / 7 "Loading cache" lines instead.

@@ -1,0 +1,77 @@
+stage: synthesis.population.trips.final
+title: Reporting-day trips
+layer: behavior
+description: 'Reporting-day view of the population''s day (ADR-0104, issue #244): the
+  pre-assignment synthesis.population.trips with the day of every worker drawn to
+  ''home'' replaced by a matched MiD home-office donor''s day and the trips of every
+  worker drawn to ''absent'' removed. The pre-assignment view itself stays untouched and
+  keeps feeding the commute distances and the primary location assignment, which is what
+  keeps the day state -- it depends on the assigned distance -- out of a dependency cycle
+  with the location assignment. Everything that needs the FINISHED day reads this stage:
+  the secondary chainsolvers, synthesis.population.activities.final, synthesis.output, the
+  MATSim population and the two commute analyses. With commute_day_state_enabled false the
+  stage returns the pre-assignment frame itself, so the alias is a pure pass-through.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: No eqasim precedent; a second, terminal view of the trips table introduced by
+    ADR-0104. Only the configs/base_bs.yml production config resolves it to the model; every
+    configs/fixtures/* config aliases it to its own pre-assignment trips stage instead.
+code:
+- braunschweig/synthesis/commute_day/trips_day_stage.py
+- braunschweig/synthesis/commute_day/plan_replacement.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+resolves_to:
+  popsim_mid: braunschweig.synthesis.commute_day.trips_day_stage
+inputs:
+- mid2023_home_office_day_donors
+features:
+- commute_day_state
+decisions:
+- ADR-0104
+notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
+  module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
+  WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
+  (person_id rewritten to the RECEIVING person, trip_index renumbered 0..n-1 in the donor''s own
+  order, is_first_trip/is_last_trip recomputed; trip_key is copied VERBATIM from the donor and
+  therefore still names the donor and is not unique once a donor is reused -- useful only for
+  tracing a row back to its donor trip, never as a per-row identifier; any input column beyond the
+  CONTRACT plus euclidean_distance/trip_key is set to NaN on replaced rows rather than inventing a
+  donor-side value); home WITHOUT a donor match keeps the person''s ORIGINAL rows unchanged
+  (state_stage is expected to have already downgraded these to at_workplace -- ADR-0104''s
+  documented default -- so an unmatched home person reaching this stage is itself a signal, not
+  the normal path); at_workplace, or any person absent from the states frame altogether, keeps
+  their rows unchanged. The per-person departure-time jitter
+  (braunschweig.popsim.trips_stage.apply_per_person_jitter) is applied EXACTLY ONCE here, across
+  all replaced rows together, keyed by the RECEIVING person_id -- the donor pool deliberately omits
+  it so the same donor day is never jittered twice.
+
+  Guards and fallback rates, all logged: n_home_unmatched (home persons with no donor match still
+  reaching this stage, kept unchanged and warned about -- see above) and
+  n_donors_without_trips / share_donors_without_trips (matched persons whose donor_id has ZERO
+  rows in donor_trips -- legitimately a fully immobile home-office day in the common case, but ALSO
+  exactly the symptom a donor_id key/dtype mismatch between matches and donor_trips would produce
+  for EVERY replaced person; warned above 1% for that reason, CLAUDE.md fallback transparency).
+  Diagnostics: n_persons_replaced, n_persons_absent, n_trips_removed, n_trips_added,
+  n_home_unmatched, n_extra_columns_nulled, n_donors_without_trips -- logged by the stage on every
+  execute().
+
+  The cache token (validate()) is an md5 of plan_replacement''s source alone (synpp hashes only
+  trips_day_stage.py itself, so an edit to the pure replacement module would otherwise leave a
+  stale cached view in place) -- the same mechanism as
+  braunschweig.synthesis.locations.secondary_chainsolvers.validate. On the OFF path execute()
+  returns the pre-assignment trips frame BY IDENTITY (the same object, not a copy), so the alias is
+  byte-identical by construction, not merely by equal values.
+
+  popsim_open and simple_ipf_open declare commute_day_state_enabled: false in their committed
+  fixtures (configs/fixtures/config_popsim_open_braunschweig.yml,
+  configs/fixtures/config_local_braunschweig_25pct.yml); their synpp DAGs never reach
+  trips_day_stage at all -- not_used there is the DAG''s own statement, not merely an unexercised
+  default. Evidence: tests/test_commute_day_plan_replacement.py (the pure replacement rules,
+  primary-method coverage of each commute_day_state branch) and tests/test_commute_day_stages.py
+  (test_trips_day_stage_off_returns_the_identical_object, test_trips_day_stage_on_replaces_only_the_home_persons,
+  test_matches_from_states_keeps_only_home_persons_with_a_donor).'

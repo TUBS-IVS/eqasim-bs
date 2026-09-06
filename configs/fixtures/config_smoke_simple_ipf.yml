@@ -10,6 +10,12 @@ run:
   - synthesis.output
 
 config:
+  # Reporting-day commute-day-state model (ADR-0104, issue #244): OFF for this workflow. Its
+  # donor pool is built from the raw MiD 2023 delivery and is specific to the MiD/production
+  # workflow (configs/base_bs.yml), and the two reporting-day aliases below are pass-throughs
+  # of the pre-assignment stages here -- drawing states without replacing the day would write a
+  # commuteDayState attribute that contradicts the plan it is attached to.
+  commute_day_state_enabled: false
   processes: 8
 
   # ENTD 2008 remains the HTS for v1 (keep_bavaria_hts user preference)
@@ -224,6 +230,16 @@ aliases:
   # would silently fall back to the Bavaria delegate).
   synthesis.population.enriched: braunschweig.synthesis.population.enriched
   matsim.simulation.prepare: braunschweig.matsim.simulation.prepare
+  # Reporting-day view of the day (ADR-0104, issue #244). This workflow does NOT run the
+  # commute-day-state model -- its donor pool is built from the raw MiD 2023 delivery and is
+  # specific to the MiD/production workflow -- so the two reporting-day aliases point at the
+  # PRE-ASSIGNMENT stages themselves. That is a pure pass-through: the consumers that read the
+  # finished day (secondary chainsolvers, the MATSim population, synthesis.output, the two
+  # commute analyses) see exactly the frames they saw before, and no commute-day stage enters
+  # this pipeline at all. NOTE synpp substitutes an alias ONE step only, which is why the
+  # target below is the stage THIS config actually uses, not the seam name.
+  synthesis.population.trips.final: synthesis.population.trips
+  synthesis.population.activities.final: synthesis.population.activities
 
   # Region-specific loader overrides: redirect selected eqasim_common.data.* stages
   # to their Braunschweig forks. Only stages whose input layout differs.

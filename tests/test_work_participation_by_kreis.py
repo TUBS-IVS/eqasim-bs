@@ -79,6 +79,13 @@ def _work_persons():
     return pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2]})
 
 
+def _states():
+    """The state frame of braunschweig.synthesis.commute_day.state_stage: one row per worker."""
+    return pd.DataFrame({"person_id": [1, 3],
+                         "commute_day_state": ["at_workplace", "home"],
+                         "reason": ["kept", "redrawn"]})
+
+
 def _srv_table():
     """Shape of the committed SrV table, incl. the Wolfsburg row (n_persons 0, NaN shares)."""
     rows = []
@@ -304,7 +311,7 @@ def test_realised_work_frame_counts_a_malformed_workplace_commune_separately():
     assert bool(out.loc[1, "destination_resolved"]) is True
 
 
-def test_destination_ars5_internal_requires_the_full_8_digit_ags():
+def test_destination_ars5_internal_requires_a_complete_ags():
     """A 7-digit (one-digit-short) internal AGS must NOT yield a well-formed WRONG Kreis.
 
     A naive ``text[:5]`` would happily return "0310" + the next digit for a 7-digit id, a
@@ -312,7 +319,23 @@ def test_destination_ars5_internal_requires_the_full_8_digit_ags():
     """
     assert S._destination_ars5("0310100", False) == ""   # 7 digits: one short of a real AGS
     assert S._destination_ars5("031010001", False) == ""  # 9 digits: one too many
-    assert S._destination_ars5("03101000", False) == "03101"  # the real, 8-digit AGS
+    assert S._destination_ars5("03101000", False) == "03101"  # the 8-digit Gemeinde AGS
+
+
+def test_destination_ars5_internal_accepts_the_12_digit_ags_the_pipeline_actually_writes():
+    """The PRODUCTION format: braunschweig.locations.work writes the 12-digit AGS.
+
+    Measured on the i329 100 % population (2026-09-05): all 237,939 in-region workplaces carry a
+    12-digit Regionalschluessel such as "031010000000", none the 8-digit form. Pinning the
+    internal branch to 8 digits alone therefore made EVERY in-region destination unresolvable
+    (265,750 of 304,900 workers) and tripped cds_max_unresolved_destination_share -- a
+    regression the synthetic 8-digit fixtures above cannot see, which is why this test pins the
+    real format explicitly.
+    """
+    assert S._destination_ars5("031010000000", False) == "03101"
+    assert S._destination_ars5("031540000000", False) == "03154"
+    assert S._destination_ars5("0310100000000", False) == ""  # 13 digits: not an AGS length
+    assert S._destination_ars5("03101000000x", False) == ""   # 12 chars but not all digits
 
 
 def test_destination_ars5_external_requires_the_full_8_digit_ags_after_the_prefix():
@@ -555,17 +578,29 @@ def test_summary_markdown_reports_the_headline_numbers():
 # --------------------------------------------------------------------------- stage wiring
 
 class _ConfigureRecorder:
-    """Records what ``configure`` declares, with synpp's two-argument config() signature."""
+    """Records what ``configure`` declares, with synpp's two-argument config() signature.
 
-    def __init__(self):
+    ``config()`` also RETURNS the effective value (the declared default, or an override passed
+    to the constructor), because ``configure`` branches on ``commute_day_state_enabled`` before
+    declaring the state stage -- the ``context.config(key, default)`` then
+    ``if context.config(key):`` pattern synpp's ConfigurationContext supports. A recorder
+    returning ``None`` there would make that branch look disabled and hide the declaration.
+    """
+
+    def __init__(self, config=None):
         self.stages = []
         self.config_keys = {}
+        self._config = config or {}
 
     def stage(self, name, **_kwargs):
         self.stages.append(name)
 
     def config(self, name, default=None):
-        self.config_keys[name] = default
+        if name not in self.config_keys:
+            self.config_keys[name] = default
+        if name in self._config:
+            return self._config[name]
+        return self.config_keys[name]
 
 
 class _StubExecuteContext:
@@ -612,6 +647,13 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert (recorder.config_keys[S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE]
             == S.DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     assert recorder.config_keys[S.KEY_EDGE_TOLERANCE_KM] == S.DEFAULT_EDGE_TOLERANCE_KM
+    assert (recorder.config_keys[S.KEY_MAX_STATES_OUTSIDE_SHARE]
+            == S.DEFAULT_MAX_STATES_OUTSIDE_SHARE)
+    # Phase B (ADR-0104): the finished day and the drawn states.
+    assert "synthesis.population.trips.final" in recorder.stages
+    assert "braunschweig.synthesis.commute_day.state_stage" in recorder.stages
+    assert (recorder.config_keys[S.KEY_COMMUTE_DAY_STATE_ENABLED]
+            == S.DEFAULT_COMMUTE_DAY_STATE_ENABLED)
 
 
 def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path, monkeypatch):
@@ -647,7 +689,8 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             "synthesis.population.spatial.home.locations": home_locations,
             "synthesis.population.spatial.primary.locations": (_work_points(), None),
             "synthesis.population.enriched": persons,
-            "synthesis.population.trips": _trips(),
+            "synthesis.population.trips.final": _trips(),
+            "braunschweig.synthesis.commute_day.state_stage": {"states": _states()},
             "braunschweig.locations.work": _work_locations(),
             "data.spatial.municipalities": pd.DataFrame({"commune_id": ["03101000"]}),
             "braunschweig.data.census.pendler": _ba_flows(),
@@ -656,6 +699,8 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
             S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
             S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
+            S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
+            S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
         })
 
     result = S.execute(context)
@@ -663,8 +708,25 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     out_dir = tmp_path / "analysis" / "cds"
     for name in ("work_participation_by_kreis.csv", "assigned_distance_classes.csv",
                  "ext_destination_distances.csv", "assigned_class_by_person.csv",
-                 "summary.md", "provenance.json"):
+                 "summary.md", "provenance.json", "commute_day_state_shares.csv"):
         assert (out_dir / name).exists(), name
+
+    # ADR-0104 check 1: the state table and its summary section (both persons are workers;
+    # person 1 is at_workplace, person 3 home -> 0.5 / 0.5 / 0.0 over the two ZGB Kreise).
+    state_shares = pd.read_csv(out_dir / "commute_day_state_shares.csv", dtype={"code": str})
+    assert list(state_shares.columns) == list(S.STATE_SHARE_COLUMNS)
+    zgb_states = state_shares[state_shares["code"] == "zgb"].iloc[0]
+    # The denominator is n_employed (both employed persons here also have a workplace, so the
+    # employed remainder is empty); n_workers is a count beside it. See
+    # tests/test_commute_day_consumers.py for the case that discriminates the two denominators.
+    assert zgb_states["n_employed"] == 2
+    assert zgb_states["n_workers"] == 2
+    assert zgb_states["share_at_workplace"] == pytest.approx(0.5)
+    assert zgb_states["share_home"] == pytest.approx(0.5)
+    assert zgb_states["share_absent"] == pytest.approx(0.0)
+    assert zgb_states["share_no_workplace"] == pytest.approx(0.0)
+    summary = (out_dir / "summary.md").read_text(encoding="utf-8")
+    assert "Check 1 (ADR-0104)" in summary and "never gated" in summary
 
     participation = pd.read_csv(out_dir / "work_participation_by_kreis.csv", dtype={"code": str})
     assert list(participation.columns) == list(S.PARTICIPATION_COLUMNS)
@@ -684,7 +746,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     assert row["destination_ars5"] == "03241"
     assert bool(row["destination_is_external"]) is True
     assert set(result) == {"participation", "distance_classes", "ext_destinations",
-                           "near_class_edge_share", "counts"}
+                           "near_class_edge_share", "commute_day_state_shares", "counts"}
 
 
 # --------------------------------------------------------------------------- Kreis centroids
