@@ -18,6 +18,8 @@ import pandas as pd
 # of falling back to a re-implementation.
 from data.hts import hts  # noqa: E402
 
+from braunschweig.popsim.closure_dwell import CLOSURE_GLOBAL_FALLBACK_WARN_RATE
+
 logger = logging.getLogger(__name__)
 
 # How long (seconds) after the last arrival the synthetic return-home trip departs.
@@ -102,7 +104,8 @@ def _eqasim_fix_trip_times(df_trips: pd.DataFrame) -> pd.DataFrame:
 
 
 def _append_return_home(
-    df_trips: pd.DataFrame, dwell_s: float, *, dwell_model=None
+    df_trips: pd.DataFrame, dwell_s: float, *, dwell_model=None,
+    max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS,
 ) -> pd.DataFrame:
     """Append a synthetic return-home trip for each person whose day does not end at home.
 
@@ -113,7 +116,13 @@ def _append_return_home(
       ``dwell_model.draw(last.following_purpose, last.arrival_time)`` when a
       :class:`~braunschweig.popsim.closure_dwell.ClosureDwellModel` is given
       (drawn from what MiD donors actually report for the same purpose and
-      arrival band), else the constant ``dwell_s``.
+      arrival band), else the constant ``dwell_s``. When the resulting
+      ``arrival_time`` would exceed ``max_plan_time_seconds``, ``dwell`` is
+      reduced (never below zero) just enough to bring it back to the bound —
+      the outbound ``travel_time`` is never shortened, only the dwell, since
+      shortening the travel time would misrepresent the return trip's actual
+      duration. Each capped draw is counted (in ``dwell_model.report["n_capped"]``
+      when a model was given) and the rate is logged by the caller.
     - ``arrival_time = departure_time + travel_time``
       where ``travel_time = last.arrival_time - last.departure_time`` (symmetric
       assumption: the return trip takes the same time as the outbound leg; if
@@ -140,19 +149,30 @@ def _append_return_home(
         dwell_s: Constant dwell (seconds) used when ``dwell_model`` is ``None``.
         dwell_model: Optional ``ClosureDwellModel`` supplying an empirically
             drawn dwell time per (purpose, arrival time) instead of the constant.
+        max_plan_time_seconds: Plan-time bound (seconds) the appended arrival
+            must not exceed (see the capping rule above); normally the caller's
+            ``PlanValidator.max_plan_time_seconds``.
     """
     df = df_trips.copy()
     df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
 
     # The column must exist on every path (including the early-return below) so
     # callers can rely on it regardless of whether any closure was appended.
-    df["is_synthetic_closure"] = False
+    # ADDITIVE ONLY: a second repair_trips pass on an already-repaired table
+    # (e.g. trips._impute_nan_time_unfixable's stage-A re-repair, the normal
+    # production path) must not reset an earlier pass's True flags back to
+    # False, so the column is created (defaulting to False) only when absent.
+    if "is_synthetic_closure" not in df.columns:
+        df["is_synthetic_closure"] = False
+    else:
+        df["is_synthetic_closure"] = df["is_synthetic_closure"].fillna(False).astype(bool)
 
     # Identify the index of each person's last trip.
     last_idx = df.groupby("person_id", sort=False)["departure_time"].idxmax()
 
     rows_to_append = []
     idx_to_flip = []  # old last-trip indices that need is_last_trip -> False
+    n_capped = 0
 
     for person_id, idx in last_idx.items():
         last = df.loc[idx]
@@ -174,6 +194,16 @@ def _append_return_home(
 
         dep = float(last["arrival_time"]) + dwell
         arr = dep + travel_time
+
+        if arr > max_plan_time_seconds:
+            # Shrink the dwell (floored at 0) so the appended arrival respects
+            # the bound; the outbound travel_time is preserved unchanged.
+            dwell = max(0.0, max_plan_time_seconds - travel_time - float(last["arrival_time"]))
+            dep = float(last["arrival_time"]) + dwell
+            arr = dep + travel_time
+            n_capped += 1
+            if dwell_model is not None:
+                dwell_model.report["n_capped"] = dwell_model.report.get("n_capped", 0) + 1
 
         mode = last["mode"] if "mode" in df.columns and not pd.isna(last.get("mode")) else "car"
 
@@ -203,6 +233,14 @@ def _append_return_home(
     if not rows_to_append:
         return df
 
+    if n_capped:
+        logger.warning(
+            "[popsim.plan_validation] home-closure dwell capped at the %.0fh plan-time "
+            "bound for %d/%d appended return-home trips (the dwell was reduced, never "
+            "the outbound travel time, so the appended arrival does not exceed the bound)",
+            max_plan_time_seconds / 3600.0, n_capped, len(rows_to_append),
+        )
+
     # Flip the old last trips to is_last_trip=False before the new rows claim True.
     df.loc[idx_to_flip, "is_last_trip"] = False
 
@@ -210,6 +248,48 @@ def _append_return_home(
     df = pd.concat([df, new_df], ignore_index=True)
     df = df.sort_values(["person_id", "departure_time"]).reset_index(drop=True)
     return df
+
+
+def _log_closure_dwell_rates(report: dict) -> None:
+    """Log the closure-dwell fallback/capping rates as explicit ``n/total (rate)`` lines.
+
+    Replaces logging the raw ``ClosureDwellModel.report`` dict verbatim: a rate
+    line is directly actionable (CLAUDE.md "no silent fallbacks" — a rate must
+    be observable, not just a count buried in a dict repr). Also WARNs when the
+    global-fallback rate exceeds ``CLOSURE_GLOBAL_FALLBACK_WARN_RATE``: a
+    majority global fallback means the purpose vocabulary of the donor trips
+    used to build the model and the purposes seen among the closure rows
+    disagree (mismatched taxonomies, or the model built from the wrong donor
+    subset) — the closure dwell times are then not scientifically defensible.
+    """
+    n_draws = report.get("n_draws", 0)
+    n_purpose_fallback = report.get("n_fallback_purpose_marginal", 0)
+    n_global_fallback = report.get("n_fallback_global", 0)
+    n_capped = report.get("n_capped", 0)
+    n_cell_used = n_draws - n_purpose_fallback - n_global_fallback
+
+    def _rate(n: int, total: int) -> float:
+        return 100.0 * n / total if total > 0 else 0.0
+
+    logger.info(
+        "[popsim.plan_validation] closure dwell: %d draws total, cell %d/%d (%.1f%%), "
+        "purpose-marginal fallback %d/%d (%.1f%%), global fallback %d/%d (%.1f%%), "
+        "capped %d/%d (%.1f%%)",
+        n_draws,
+        n_cell_used, n_draws, _rate(n_cell_used, n_draws),
+        n_purpose_fallback, n_draws, _rate(n_purpose_fallback, n_draws),
+        n_global_fallback, n_draws, _rate(n_global_fallback, n_draws),
+        n_capped, n_draws, _rate(n_capped, n_draws),
+    )
+    if n_draws > 0 and (n_global_fallback / n_draws) > CLOSURE_GLOBAL_FALLBACK_WARN_RATE:
+        logger.warning(
+            "[popsim.plan_validation] closure dwell: global-fallback rate %.1f%% exceeds "
+            "the %.0f%% warn threshold (CLOSURE_GLOBAL_FALLBACK_WARN_RATE) -- a majority "
+            "global fallback means the purpose vocabulary of the donor trips used to "
+            "build the closure dwell model and the purposes seen among the closure rows "
+            "disagree; investigate before trusting these closure dwell times",
+            100.0 * n_global_fallback / n_draws, 100.0 * CLOSURE_GLOBAL_FALLBACK_WARN_RATE,
+        )
 
 
 class PlanValidator:
@@ -379,18 +459,29 @@ class PlanValidator:
             last_rows = df_sorted.groupby("person_id", sort=False).last()
             needs_closure = (last_rows["following_purpose"] != "home").sum()
             n_closure_appended = int(needs_closure)
-            closable = _append_return_home(closable, dwell_s, dwell_model=dwell_model)
+            closable = _append_return_home(
+                closable, dwell_s, dwell_model=dwell_model,
+                max_plan_time_seconds=self.max_plan_time_seconds,
+            )
             # The excluded (NaN-time / out-of-bound) rows never go through
-            # _append_return_home, so they lack the column entirely; every
-            # original row is False (only appended closure rows are True).
-            excluded["is_synthetic_closure"] = False
+            # _append_return_home this round, so the column may be absent (a
+            # first pass) or already carry True flags from an EARLIER pass (a
+            # second repair_trips call, e.g. the stage-A re-repair) — additive
+            # only, never overwrite an existing True back to False.
+            if "is_synthetic_closure" not in excluded.columns:
+                excluded["is_synthetic_closure"] = False
+            else:
+                excluded["is_synthetic_closure"] = excluded["is_synthetic_closure"].fillna(False).astype(bool)
             fixed = pd.concat([closable, excluded], ignore_index=True)
         else:
             # No closure repair at all (require_home_closure=False): the
             # column must still exist on every returned frame, so callers can
-            # rely on it unconditionally.
+            # rely on it unconditionally — but additive only (see above).
             fixed = fixed.copy()
-            fixed["is_synthetic_closure"] = False
+            if "is_synthetic_closure" not in fixed.columns:
+                fixed["is_synthetic_closure"] = False
+            else:
+                fixed["is_synthetic_closure"] = fixed["is_synthetic_closure"].fillna(False).astype(bool)
 
         # --- Step 4: recompute trip_id / trip_index / trip_duration / activity_duration ----
         # After _append_return_home the appended row has NaN trip_index and trip_duration,
@@ -446,7 +537,7 @@ class PlanValidator:
         )
 
         if dwell_model is not None:
-            logger.info("[popsim.plan_validation] closure dwell model report: %s", dwell_model.report)
+            _log_closure_dwell_rates(dwell_model.report)
 
         report = RepairReport(
             n_persons=n_persons,

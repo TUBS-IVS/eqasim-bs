@@ -49,3 +49,24 @@ def test_empirical_ignores_nonpositive_and_capped_durations():
     t.loc[0, "arrival_time"] = 17 * 3600     # arrival after the next departure -> negative duration, ignored
     m = ClosureDwellModel.from_trips(t, rng=np.random.RandomState(0), min_obs=1)
     assert m.report["n_obs_by_purpose"]["work"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1: fail-fast constructor and non-finite arrival time guards.
+# ---------------------------------------------------------------------------
+
+def test_band_raises_on_non_finite_arrival_time():
+    """A non-finite arrival time must raise, not silently pool into the last band."""
+    from braunschweig.popsim.closure_dwell import _band
+    with pytest.raises(ValueError, match="finite"):
+        _band(float("nan"))
+    with pytest.raises(ValueError, match="finite"):
+        _band(float("inf"))
+
+
+def test_empirical_model_requires_rng():
+    """An empirical model (fixed_s=None) must not be constructible without an rng:
+    it would otherwise crash on the first draw() instead of at construction, and
+    never construct an unseeded RNG internally (CLAUDE.md seeded-randomness rule)."""
+    with pytest.raises(ValueError, match="rng"):
+        ClosureDwellModel(cells={}, purpose_marginal={}, global_marginal=np.array([]))

@@ -22,10 +22,29 @@ CLOSURE_SEED_OFFSET = 74517
 # in addition to the following purpose: <14h, 14-17h, 18-19h, 20-21h, 22h+.
 ARRIVAL_BANDS_H = (0, 14, 18, 20, 22, 48)
 
+# Above this share of draws falling back to the GLOBAL marginal (i.e. neither
+# the cell nor the purpose marginal had any usable observations), the model is
+# no longer scientifically defensible: it means the purpose vocabulary of the
+# donor trips used to BUILD the model and the purposes seen among the closure
+# rows it is asked to DRAW for disagree (e.g. mismatched purpose taxonomies, or
+# the model was built from the wrong donor subset). ``repair_trips`` logs a
+# WARNING when the observed rate exceeds this threshold.
+CLOSURE_GLOBAL_FALLBACK_WARN_RATE = 0.5
+
 
 def _band(arrival_time_s: float) -> int:
-    """Return the index of the arrival band (in ``ARRIVAL_BANDS_H``) containing ``arrival_time_s``."""
+    """Return the index of the arrival band (in ``ARRIVAL_BANDS_H``) containing ``arrival_time_s``.
+
+    Raises:
+        ValueError: If ``arrival_time_s`` is not finite (NaN/inf). Silently
+            pooling a non-finite arrival into the last band would hide a data
+            error (e.g. an unclosed NaN-time chain reaching the model).
+    """
     hour = float(arrival_time_s) / 3600.0
+    if not np.isfinite(hour):
+        raise ValueError(
+            f"closure_dwell._band: arrival_time_s must be finite, got {arrival_time_s!r}"
+        )
     for i in range(len(ARRIVAL_BANDS_H) - 1):
         if ARRIVAL_BANDS_H[i] <= hour < ARRIVAL_BANDS_H[i + 1]:
             return i
@@ -47,18 +66,41 @@ class ClosureDwellModel:
 
     Fallback cascade (never silent, see :attr:`report`):
 
-    1. cell ``(purpose, arrival band)`` if it has at least ``min_obs`` observations;
-    2. else the purpose marginal (pooled across all arrival bands for that purpose);
+    1. cell ``(purpose, arrival band)`` if it has at least ``min_obs`` observations
+       (``min_obs`` applies to the CELL only);
+    2. else the purpose marginal (pooled across all arrival bands for that
+       purpose) — used as the fallback regardless of its OWN size (no minimum
+       is enforced on it: it is already the aggregated fallback level, and
+       requiring it to also clear ``min_obs`` would just add a second,
+       undocumented threshold);
     3. else the global marginal (pooled across all purposes) when the purpose is
        unknown or has no observations at all.
 
     A draw counts exactly ONE fallback: if the purpose marginal itself is missing
     or empty, the draw falls straight through to the global marginal and only
     ``n_fallback_global`` increments (not both counters).
+
+    The appended return-home departure is additionally capped at the caller's
+    plan-time bound (``_append_return_home`` in ``plan_validation``, since only
+    that caller knows the outbound travel time and the bound); each capped draw
+    increments this model's ``report["n_capped"]`` so the rate is observable
+    alongside the fallback rates.
     """
 
     def __init__(self, *, fixed_s=None, cells=None, purpose_marginal=None,
                  global_marginal=None, rng=None, min_obs: int = 30):
+        if fixed_s is None and rng is None:
+            # An empirical model (cells/purpose_marginal/global_marginal) draws
+            # via self._rng.randint(...); constructing one without an rng would
+            # crash on the first draw() call instead of at construction time,
+            # and (per the project's seeded-randomness rule) this constructor
+            # must never silently create one itself.
+            raise ValueError(
+                "ClosureDwellModel: an empirical model (fixed_s=None) requires an "
+                "rng for its draws. Use ClosureDwellModel.from_trips(..., rng=...) "
+                "to build one, or ClosureDwellModel.fixed(...) for the "
+                "constant-dwell mode."
+            )
         self._fixed = fixed_s
         self._cells = cells or {}
         self._purpose = purpose_marginal or {}
@@ -72,6 +114,7 @@ class ClosureDwellModel:
             "n_draws": 0,
             "n_fallback_purpose_marginal": 0,
             "n_fallback_global": 0,
+            "n_capped": 0,
         }
 
     @classmethod
@@ -93,7 +136,9 @@ class ClosureDwellModel:
                 unseeded RNG here).
             min_obs: Minimum number of observations a ``(purpose, arrival band)``
                 cell must have to be used directly; below this the draw falls back
-                to the purpose marginal.
+                to the purpose marginal. Applies to the CELL only — the purpose
+                marginal is used as-is at whatever size it has (no minimum is
+                enforced on it), since it is already the aggregated fallback level.
             max_dwell_s: Observed durations above this bound are dropped as
                 implausible (e.g. a donor's day genuinely spans midnight) before
                 pooling.

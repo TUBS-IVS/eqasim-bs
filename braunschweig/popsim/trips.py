@@ -711,10 +711,13 @@ def build_validated_trip_table(
         Default False keeps the OFF path byte-identical.
     dwell_model:
         Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
-        to ``PlanValidator.repair_trips`` so the synthetic return-home trip's
-        dwell time is drawn from observed donor activity durations instead of
-        the constant ``HOME_CLOSURE_DWELL_S``. Default ``None`` keeps the
-        constant-dwell behaviour.
+        to every ``PlanValidator.repair_trips`` call this function makes
+        (including the stage A re-repair inside ``_impute_nan_time_unfixable``,
+        for which that re-repair is the ONLY home-end closure a stage A person
+        gets) so the synthetic return-home trip's dwell time is drawn from
+        observed donor activity durations instead of the constant
+        ``HOME_CLOSURE_DWELL_S``. Default ``None`` keeps the constant-dwell
+        behaviour.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -762,7 +765,7 @@ def build_validated_trip_table(
     # unfixable set drives stage B (the existing same-cell resample).
     if resample and repair_report is not None and repair_report.unfixable_persons:
         table, repair_report = _impute_nan_time_unfixable(
-            table, repair_report, validator, random_seed=random_seed
+            table, repair_report, validator, random_seed=random_seed, dwell_model=dwell_model
         )
 
     if resample and repair_report is not None and repair_report.unfixable_persons:
@@ -785,6 +788,7 @@ def _impute_nan_time_unfixable(
     validator,
     *,
     random_seed: int,
+    dwell_model=None,
 ):
     """Cascade stage A: keep coded-time persons' own chains, impute only the times.
 
@@ -813,6 +817,12 @@ def _impute_nan_time_unfixable(
     (``RandomState(random_seed + TIME_IMPUTATION_SEED_OFFSET)``) so the
     imputation draws are decorrelated from the resample and jitter streams,
     which both consume ``RandomState(random_seed)`` directly.
+
+    ``dwell_model`` is forwarded to the re-repair's ``repair_trips`` call: for
+    stage A persons the re-repair IS their only home-end closure (their NaN
+    times excluded them from the first pass entirely), so without threading it
+    here they would silently get the constant ``HOME_CLOSURE_DWELL_S`` even
+    when the caller asked for the empirical model.
     """
     import numpy as np
 
@@ -852,7 +862,7 @@ def _impute_nan_time_unfixable(
         # Nothing changed; keep the first report (and skip a redundant repair).
         return table, repair_report
 
-    table, second_report = validator.repair_trips(table)
+    table, second_report = validator.repair_trips(table, dwell_model=dwell_model)
     return table, second_report
 
 
