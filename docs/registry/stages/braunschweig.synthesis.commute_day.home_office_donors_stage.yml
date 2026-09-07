@@ -73,7 +73,22 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   whereas diary_plan_match keeps an "803 and mobil != 1" person as a legitimately immobile day.
   That rule judges whether a person''s OWN realised day is credible; here the day is copied onto
   a far commuter, so a day that was never observed cannot serve as a donor day at all. The size
-  of the difference is counted (n_dropped_no_diary_immobile) and logged, never left implicit.
+  of the difference is counted and logged, never left implicit, and split in two (ruling R28):
+  n_dropped_no_diary_immobile counts the 803 donors whose mobil is KNOWN and not 1, while
+  n_dropped_no_diary_mobil_unknown counts those whose mobil is missing -- diary_plan_match''s
+  "mobil != 1" comparison keeps the latter too (NaN compares unequal), but immobility is then an
+  artefact of the comparison rather than something the data states, so folding them together
+  would overstate the number that documents the rule difference.
+
+  A filter that matches NOTHING must never look healthy (the drop-rate WARNING below is an upper
+  bound and a 0 % rate passes it silently), so two zero-match paths are closed explicitly. The
+  code columns are VALIDATED, never coerced -- filter_donor_diaries raises when anzwege1, mobil
+  or feiertag arrive with a non-numeric dtype, because the MiD codes are compared exactly (as
+  diary_plan_match compares them, so the two rules cannot drift apart) and an exact comparison
+  against a text column matches no row at all. And the rbW-only filter logs how many donors
+  actually resolved to a diary-facts row on (H_ID, P_ID), warning at a 0 % match rate and naming
+  both frames'' H_ID dtypes, so a key mismatch that joined nothing is visible on sight instead of
+  hiding behind "no rbW-only donors".
   anzwege1/mobil/feiertag are loaded as OPTIONAL MiD person columns, but execute() RAISES when an
   ACTIVE filter''s column is absent from the delivery (naming the column and the config key to
   switch off): a silently skipped filter would leave donors in the pool that the configuration
@@ -130,10 +145,15 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   than by asserting it. The closure dwell model is built by trips_stage.build_closure_dwell_model
   from the FILTERED donors'' own diaries -- the same donor-diary pooling trips_stage.run performs,
   keyed through source_H_ID/source_P_ID (a MiD donor IS its own plan source, so the pool takes the
-  same branch of that key precedence as the production stage rather than its fallback).
+  same branch of that key precedence as the production stage rather than its fallback). Its report
+  is logged AFTER the trip build, where trips_stage.run logs the identical line: the model''s
+  n_draws / n_fallback_purpose_marginal / n_fallback_global / n_capped counters are filled BY the
+  build, so a construction-time log would always print zeros and report a 100 % fallback rate as
+  no fallback at all.
 
   Diagnostics (builder + stage-level): n_donors, n_donors_before_diary_filters,
-  n_dropped_no_diary, n_dropped_no_diary_immobile, n_dropped_holiday, n_dropped_only_rbw (the
+  n_dropped_no_diary, n_dropped_no_diary_immobile, n_dropped_no_diary_mobil_unknown,
+  n_dropped_holiday, n_dropped_only_rbw (the
   #374 filter counts -- always present, zero for a filter that is off; the three drop classes are
   per class and may OVERLAP, so they need not sum to the number of donors removed), n_immobile,
   n_chain_dropped_by_resample,

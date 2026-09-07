@@ -201,7 +201,8 @@ MAX_EXPECTED_DIARY_FILTER_DROP_RATE = 0.5
 #: Keys :func:`filter_donor_diaries` always reports, so a consumer never has to tell "the filter
 #: did not fire" apart from "the filter did not run".
 DIARY_FILTER_COUNT_KEYS = ("n_donors_before_diary_filters", "n_dropped_no_diary",
-                           "n_dropped_no_diary_immobile", "n_dropped_holiday",
+                           "n_dropped_no_diary_immobile",
+                           "n_dropped_no_diary_mobil_unknown", "n_dropped_holiday",
                            "n_dropped_only_rbw")
 
 
@@ -209,6 +210,31 @@ def _log_diary_filter(name: str, n_dropped: int, n_input: int) -> None:
     """Log one filter's drop count as an explicit rate (CLAUDE.md fallback transparency)."""
     logger.info("%s donor filter %s: dropped %d/%d (%.1f%%)", _LOG_TAG, name, n_dropped, n_input,
                 100.0 * n_dropped / max(n_input, 1))
+
+
+def _require_numeric_codes(donors: pd.DataFrame, columns, filter_name: str) -> None:
+    """Raise unless every named MiD code column has a NUMERIC dtype.
+
+    VALIDATE, never coerce. The filters compare the raw code columns exactly as
+    :func:`braunschweig.popsim.diary_plan_match._own_diary_reason` does -- coercing here would
+    create a NEW divergence between the two rules, which is precisely what issue #374 exists to
+    remove. But an exact comparison against an OBJECT column silently matches nothing: a delivery
+    whose ``anzwege1`` arrives as text makes ``Series(["803"]).isin((803, 804))`` ``False`` for
+    every row, so the filter runs to a 0 % drop rate that is indistinguishable from a delivery
+    genuinely holding no such donors. The drop-rate WARNING cannot catch it either -- 0 % is
+    below any upper bound. Failing here is the only honest option (CLAUDE.md: no silent
+    fallbacks; a filter that matches nothing must never look healthy).
+    """
+    for column in columns:
+        if not pd.api.types.is_numeric_dtype(donors[column]):
+            sample = donors[column].dropna().head(3).tolist()
+            raise ValueError(
+                f"{_LOG_TAG} the {filter_name} donor filter needs a NUMERIC {column!r} column, "
+                f"but the donors frame carries dtype {donors[column].dtype!r} (e.g. {sample}). "
+                "The MiD codes are compared exactly (never coerced, so this pool and "
+                "diary_plan_match cannot drift apart), and an exact comparison against a "
+                "non-numeric column matches nothing -- the filter would silently drop 0 donors. "
+                f"Read {column!r} as a number, or switch the filter off.")
 
 
 def filter_donor_diaries(donors: pd.DataFrame, wege, *, exclude_no_diary: bool,
@@ -230,8 +256,12 @@ def filter_donor_diaries(donors: pd.DataFrame, wege, *, exclude_no_diary: bool,
       realised day is credible, and such a person genuinely stayed home. Here the day is not the
       donor's own -- it is copied onto a far commuter -- so a day that was never observed cannot
       be a home-office-day donor at all, whether or not its owner was immobile. The size of that
-      difference is counted (``n_dropped_no_diary_immobile``), never left implicit. ``mobil`` is
-      therefore required whenever this filter is on, exactly as
+      difference is counted, never left implicit: ``n_dropped_no_diary_immobile`` for the 803
+      donors whose ``mobil`` is KNOWN and not 1, and ``n_dropped_no_diary_mobil_unknown`` for
+      those whose ``mobil`` is missing (ruling R28 -- ``diary_plan_match``'s ``mobil != 1``
+      comparison keeps those too, since NaN compares unequal, but immobility is then an
+      artefact of the comparison rather than something the data states, so the two are counted
+      apart). ``mobil`` is therefore required whenever this filter is on, exactly as
       ``braunschweig.popsim.completed_donor`` requires it for the plan-source side.
     * ``exclude_holidays`` -- the diary was reported on a public holiday
       (``feiertag == MID_HOLIDAY``); SrV reference days exclude public holidays.
@@ -261,7 +291,10 @@ def filter_donor_diaries(donors: pd.DataFrame, wege, *, exclude_no_diary: bool,
 
     Raises:
         ValueError: naming the column (or the missing ``wege`` frame) a live filter needs -- a
-            filter is never silently skipped because its input is absent.
+            filter is never silently skipped because its input is absent -- or naming a code
+            column delivered with a non-numeric dtype, which would make the exact comparison
+            match nothing and the filter look healthy at a 0 %% drop rate
+            (:func:`_require_numeric_codes`).
     """
     _require_columns(donors, ("H_ID", "P_ID"), "donors frame")
     n_input = len(donors)
@@ -277,24 +310,36 @@ def filter_donor_diaries(donors: pd.DataFrame, wege, *, exclude_no_diary: bool,
     if exclude_no_diary:
         _require_columns(donors, ("anzwege1", "mobil"),
                          "donors frame (the no-diary donor filter is on)")
+        _require_numeric_codes(donors, ("anzwege1", "mobil"), "no_diary")
         anzwege1_not_collected, _anzwege1_unknown = NO_DIARY_CODES  # 803, 804
         no_diary = donors["anzwege1"].isin(NO_DIARY_CODES)
         counts["n_dropped_no_diary"] = int(no_diary.sum())
         # The donors diary_plan_match would KEEP as legitimately immobile (see the docstring):
         # measuring the divergence is what keeps this a documented decision, not a hidden one.
+        # Ruling R28: a MISSING mobil is counted SEPARATELY rather than folded in here. Its
+        # `mobil != 1` comparison is True for NaN, so diary_plan_match does keep such a person --
+        # but immobility is then an artefact of the comparison, not something the data states,
+        # and this count is the number that documents the rule difference. The two counts
+        # together are the full divergence; this one alone is the part the data establishes.
+        not_collected = donors["anzwege1"] == anzwege1_not_collected
+        mobil_known = donors["mobil"].notna()
         counts["n_dropped_no_diary_immobile"] = int(
-            ((donors["anzwege1"] == anzwege1_not_collected) & (donors["mobil"] != 1)).sum())
+            (not_collected & mobil_known & (donors["mobil"] != 1)).sum())
+        counts["n_dropped_no_diary_mobil_unknown"] = int((not_collected & ~mobil_known).sum())
         drop |= no_diary
         _log_diary_filter("no_diary", counts["n_dropped_no_diary"], n_input)
-        logger.info(
-            "%s donor filter no_diary: %d/%d of them carry anzwege1 %d with mobil != 1 -- kept by "
-            "diary_plan_match as a genuinely immobile OWN day, dropped here because a donor day "
-            "that was never observed cannot be transplanted onto a worker.",
-            _LOG_TAG, counts["n_dropped_no_diary_immobile"], counts["n_dropped_no_diary"],
-            anzwege1_not_collected)
+        if counts["n_dropped_no_diary"] > 0:
+            logger.info(
+                "%s donor filter no_diary: of those, %d carry anzwege1 %d with a KNOWN mobil != 1 "
+                "and %d carry it with mobil missing -- diary_plan_match keeps both as an immobile "
+                "OWN day; this pool drops them because a donor day that was never observed cannot "
+                "be transplanted onto a worker.", _LOG_TAG,
+                counts["n_dropped_no_diary_immobile"], anzwege1_not_collected,
+                counts["n_dropped_no_diary_mobil_unknown"])
 
     if exclude_holidays:
         _require_columns(donors, ("feiertag",), "donors frame (the holiday donor filter is on)")
+        _require_numeric_codes(donors, ("feiertag",), "holiday")
         holiday = donors["feiertag"] == MID_HOLIDAY
         counts["n_dropped_holiday"] = int(holiday.sum())
         drop |= holiday
@@ -338,11 +383,30 @@ def _only_rbw_donors(donors: pd.DataFrame, wege: pd.DataFrame) -> pd.Series:
     separately as ``is_immobile``).
     """
     _require_columns(wege, ("H_ID", "P_ID"), "wege frame (the rbW-only donor filter is on)")
+    n_donors = len(donors)
     donor_wege = wege[wege["H_ID"].isin(set(donors["H_ID"]))]
     if not len(donor_wege):
+        # Two different situations, and only one of them is normal: a genuinely trip-less donor
+        # set, or an H_ID key mismatch (e.g. one side read as text) that joined nothing. Neither
+        # would ever show up in the drop rate -- both produce 0 rbW-only donors -- so the join
+        # itself is reported (CLAUDE.md: a filter that matches nothing must not look healthy).
+        log = logger.warning if len(wege) else logger.info
+        log("%s donor filter only_rbw: 0/%d donors matched ANY Wege row (donor H_ID dtype %s vs "
+            "wege H_ID dtype %s, %d wege rows offered); with no diary to read, no donor can be "
+            "classified rbW-only.", _LOG_TAG, n_donors, donors["H_ID"].dtype, wege["H_ID"].dtype
+            if len(wege) else "n/a", len(wege))
         return pd.Series(False, index=donors.index)
     facts = compute_diary_facts(donor_wege).reindex(
         pd.MultiIndex.from_arrays([donors["H_ID"], donors["P_ID"]]))
+    # How many donors actually resolved to a diary-facts row. A donor without one is either
+    # genuinely immobile (no Wege row of its own) or the victim of a (H_ID, P_ID) key mismatch;
+    # the rate makes a zero-match join visible on sight instead of hiding it in a 0 % drop rate.
+    n_matched = int(facts["n_direct_legs"].notna().sum())
+    log = logger.warning if n_matched == 0 else logger.info
+    log("%s donor filter only_rbw: %d/%d donors (%.1f%%) matched a diary-facts row on "
+        "(H_ID, P_ID); the rest have no Wege row of their own (immobile) -- a 0 %% match rate "
+        "instead means a key mismatch, not an immobile pool.", _LOG_TAG, n_matched, n_donors,
+        100.0 * n_matched / max(n_donors, 1))
     n_direct = facts["n_direct_legs"].fillna(0).astype(int).to_numpy()
     n_rbw = facts["n_rbw_legs"].fillna(0).astype(int).to_numpy()
     return pd.Series((n_direct == 0) & (n_rbw > 0), index=donors.index)
@@ -772,8 +836,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
     * ``n_donors`` -- rows in ``attributes`` (every donor that survived the diary filters,
       mobile or immobile).
     * ``n_donors_before_diary_filters``, ``n_dropped_no_diary``, ``n_dropped_no_diary_immobile``,
-      ``n_dropped_holiday``, ``n_dropped_only_rbw`` -- :func:`filter_donor_diaries`' counts,
-      always present (zero for a filter that is off).
+      ``n_dropped_no_diary_mobil_unknown``, ``n_dropped_holiday``, ``n_dropped_only_rbw`` --
+      :func:`filter_donor_diaries`' counts, always present (zero for a filter that is off).
     * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day);
       the ``is_immobile`` column of ``attributes`` is the per-donor form of this count.
     * ``n_chain_dropped_by_resample`` -- donors that DID have Wege rows, but ended up with no
@@ -823,8 +887,6 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
             exclude_rbw_legs=exclude_rbw_legs,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
-        logger.info("%s closure dwell model (%s) report: %s", _LOG_TAG, closure_dwell_model,
-                    dwell_model.report)
     trips = donor_trips(
         donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
@@ -833,6 +895,13 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         dwell_model=dwell_model,
     )
+    if dwell_model is not None:
+        # AFTER the trip build, exactly where trips_stage.run logs the identical report: the
+        # model's counters (n_draws, n_fallback_purpose_marginal, n_fallback_global, n_capped)
+        # are filled BY the build, so logging at construction time would always report zeros and
+        # hide a 100 % fallback rate -- the one thing the report exists to make observable.
+        logger.info("%s closure dwell model (%s) report: %s", _LOG_TAG, closure_dwell_model,
+                    dwell_model.report)
     # n_trips / is_immobile / has_education_leg / has_work_leg can only be read once the chains
     # exist (rulings R7 and R9); donor_attributes never sees them.
     attributes = attach_trip_derived_attributes(attributes, trips, wege)
