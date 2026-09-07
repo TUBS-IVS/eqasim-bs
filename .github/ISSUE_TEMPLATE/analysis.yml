@@ -1,0 +1,46 @@
+name: Analysis
+description: A measurement or validation against a committed reference; produces evidence, does not change the model
+title: "<stage or attribute>: validate/measure <what> against <reference>"
+type: Analysis
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. An Analysis carries the `step:*` of the thing it measures (a commute-distance validation is `step:distribution`). Convergence is not validation.
+  - type: input
+    id: stages
+    attributes:
+      label: Stages
+      description: Registry stage id(s) whose output is measured (docs/registry/stages/). `unknown` is allowed.
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What is measured and what decision the result feeds.
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference (committed source)
+      description: Path of the committed reference table / publication with the figure. If none exists, say so and label the bound as ASSUMPTION.
+    validations:
+      required: true
+  - type: textarea
+    id: metric
+    attributes:
+      label: Metric, universe and pre-registered bound
+      description: Same taxonomy, weighting and universe on both sides (apples to apples). State the bound BEFORE running.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence home
+      description: Run manifest under docs/runs/<run_id>.yml (required for any validation claim), analysis stage or script.
+  - type: input
+    id: links
+    attributes:
+      label: Linked issue / ADR
