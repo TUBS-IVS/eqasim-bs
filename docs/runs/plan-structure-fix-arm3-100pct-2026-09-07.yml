@@ -241,7 +241,9 @@ validation:
 artifacts:
 - 'eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/
   (headline.csv, comparison.csv, by_kreis.csv, closure.csv, accepted_deviations.csv,
-  summary.md, provenance.json = the plan_structure_vs_srv outputs; work_participation_by_kreis.csv,
+  plan_structure_vs_srv_summary.md, plan_structure_vs_srv_provenance.json = the
+  plan_structure_vs_srv outputs, renamed from the stage''s generic summary.md / provenance.json so
+  the two stages'' reports cannot collide in one directory; work_participation_by_kreis.csv,
   commute_day_state_shares.csv, commute_day_state_phase_a_summary.md = the
   work_participation_by_kreis outputs; trip_table_diagnostics_arm3.txt and
   trip_table_diagnostics_i329.txt from trip_table_diagnostics.py; donor_inheritance_diagnostics_arm3.txt
