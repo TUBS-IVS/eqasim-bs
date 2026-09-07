@@ -164,22 +164,35 @@ def test_active_kreis_entries_includes_leisure_and_excludes_education_participat
     }
 
 
-def test_off_path_excludes_both_new_controls_independently():
+def test_off_path_excludes_leisure_participation():
+    """leisure_participation has no Plan B replacement and still defaults "on", so an
+    explicit "off" discriminates (unlike education_participation, which already defaults
+    "off" since #368 -- see test_legacy_on_path_activates_education_participation below,
+    where the meaningful direction is turning it back ON)."""
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(
-        _FakeContext({
-            stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off",
-            stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off",
-        }), "mid",
-    )
+        _FakeContext({stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off"}), "mid")
     names = {c.name for c in active}
     assert "leisure_participation" not in names
-    assert "education_participation" not in names
-    # work_by_employment (education_participation's sibling replacement family) and the
-    # other default-on entries are unaffected by these two toggles.
-    assert "work_by_employment" in names
     assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
             "trip_class", "employment_status"} <= names
+
+
+def test_legacy_on_path_activates_education_participation():
+    """The legacy ON path (Plan B, issue #368, ADR-0109): a bare "off" override on
+    KEY_EDUCATION_PARTICIPATION_CONTROL no longer discriminates -- "off" is now the
+    default. Explicitly turning it back ON -- together with the shared replacement
+    toggle (education_by_age_kreis_control) explicitly off -- activates it and drops all
+    three age-range entries."""
+    from braunschweig.popsim import stage
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "on",
+                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid")
+    names = {c.name for c in active}
+    assert "education_participation" in names
+    assert not ({"education_0_5", "education_6_17", "education_18plus"} & names)
+    assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
+            "trip_class", "employment_status", "leisure_participation"} <= names
 
 
 def test_off_controls_csv_byte_identical_to_pre_task_default():

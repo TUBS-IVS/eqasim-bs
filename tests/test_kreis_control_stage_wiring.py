@@ -339,24 +339,45 @@ def test_active_kreis_entries_employment_status_can_be_turned_off():
     assert names == _default_active_kreis_entry_names() - {"employment_status", "work_by_employment"}
 
 
-def test_active_kreis_entries_work_participation_can_be_turned_off():
+def test_active_kreis_entries_work_by_employment_can_be_turned_off():
     from braunschweig.popsim import stage
 
-    # An explicit "off" for the third person-level entry (work_participation, feature
-    # #224 task 4) drops only that entry.
+    # An explicit "off" for the work_by_employment replacement (Plan B, issue #368,
+    # ADR-0109) drops only that entry; its dependency employment_status and every other
+    # default-active entry are unaffected.
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
-    assert "work_participation" not in names
-    assert names == _default_active_kreis_entry_names() - {"work_participation"}
+    assert "work_by_employment" not in names
+    assert names == _default_active_kreis_entry_names() - {"work_by_employment"}
+
+
+def test_active_kreis_entries_work_participation_can_be_turned_on():
+    from braunschweig.popsim import stage
+
+    # The legacy ON path (Plan B, issue #368, ADR-0109): work_participation_kreis_control
+    # now defaults "off" (its replacement work_by_employment defaults "on" instead -- see
+    # _default_active_kreis_entry_names), so a bare "off" override on this toggle is a
+    # no-op and no longer discriminates. Explicitly turning it back ON -- together with
+    # its replacement off, or this hits active_kreis_entries' contradiction guard --
+    # activates it and nothing else changes.
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "on",
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+    )
+    names = {c.name for c in active}
+    assert "work_participation" in names
+    assert names == (_default_active_kreis_entry_names() - {"work_by_employment"}) | {"work_participation"}
 
 
 def test_active_kreis_entries_leisure_participation_can_be_turned_off():
     from braunschweig.popsim import stage
 
     # An explicit "off" for the fourth person-level entry (leisure_participation,
-    # feature #224 task 5) drops only that entry.
+    # feature #224 task 5) drops only that entry. Unlike work_participation /
+    # education_participation, leisure_participation has no Plan B replacement and still
+    # defaults "on", so this "off" override still discriminates.
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off"}), "mid"
     )
@@ -365,17 +386,37 @@ def test_active_kreis_entries_leisure_participation_can_be_turned_off():
     assert names == _default_active_kreis_entry_names() - {"leisure_participation"}
 
 
-def test_active_kreis_entries_education_participation_can_be_turned_off():
+def test_active_kreis_entries_education_by_age_can_be_turned_off():
     from braunschweig.popsim import stage
 
-    # An explicit "off" for the fifth person-level entry (education_participation,
-    # feature #224 task 5) drops only that entry.
+    # An explicit "off" for the shared education_by_age toggle (Plan B, issue #368,
+    # ADR-0109) drops all three age-range entries at once -- they share ONE toggle; every
+    # other default-active entry is unaffected.
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
-    assert "education_participation" not in names
-    assert names == _default_active_kreis_entry_names() - {"education_participation"}
+    assert not ({"education_0_5", "education_6_17", "education_18plus"} & names)
+    assert names == _default_active_kreis_entry_names() - {
+        "education_0_5", "education_6_17", "education_18plus"}
+
+
+def test_active_kreis_entries_education_participation_can_be_turned_on():
+    from braunschweig.popsim import stage
+
+    # The legacy ON path (Plan B, issue #368, ADR-0109): education_participation_kreis_control
+    # now defaults "off" (its replacement education_by_age defaults "on" instead), so a
+    # bare "off" override on this toggle is a no-op and no longer discriminates.
+    # Explicitly turning it back ON -- together with the shared replacement toggle off --
+    # activates it and drops all three age-range entries.
+    active = stage.active_kreis_entries(
+        _FakeContext({stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "on",
+                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid"
+    )
+    names = {c.name for c in active}
+    assert "education_participation" in names
+    assert names == (_default_active_kreis_entry_names() - {
+        "education_0_5", "education_6_17", "education_18plus"}) | {"education_participation"}
 
 
 # --- issue #329: the four-group PT control REPLACES the three-group one ---

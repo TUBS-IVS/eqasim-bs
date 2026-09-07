@@ -138,14 +138,21 @@ def test_active_kreis_entries_excludes_work_participation_by_default():
     }
 
 
-def test_off_path_excludes_control():
+def test_legacy_on_path_activates_work_participation():
+    """The legacy ON path (Plan B, issue #368, ADR-0109). A bare "off" override on
+    KEY_WORK_PARTICIPATION_CONTROL no longer discriminates -- "off" is now the default
+    (see test_active_kreis_entries_excludes_work_participation_by_default) -- so the
+    meaningful direction to test is turning it back ON, together with its replacement
+    work_by_employment explicitly off (both "on" is a config-time contradiction)."""
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_WORK_PARTICIPATION_CONTROL: "on",
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
-    assert "work_participation" not in names
-    # The other six default-on entries are unaffected by this toggle.
+    assert "work_participation" in names
+    assert "work_by_employment" not in names
+    # The other six pre-#368 default-on entries are unaffected by these two toggles.
     assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
             "trip_class", "employment_status"} <= names
 

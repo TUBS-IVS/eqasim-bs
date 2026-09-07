@@ -524,6 +524,22 @@ def test_project_completed_seed_universe_control_requires_mid_dir():
     assert "education_6_17" in str(excinfo.value)
 
 
+def test_education_flag_is_derived_once_for_every_active_age_band(tmp_path):
+    """Every education-by-age entry reads the SAME education_flag column, so activating
+    two bands must produce exactly one column, not two derivations that could disagree."""
+    from braunschweig.popsim.kreis_attribute_control import EDUCATION_FLAG_CATEGORIES
+    from braunschweig.popsim.mid import load_mid_seed
+    _write_mini_mid(tmp_path)
+    entries = _universe_entries() + [
+        _universe_entry("education_0_5", "education_flag", EDUCATION_FLAG_CATEGORIES,
+                        min_age=0, max_age=5)]
+    _hh, pers, _rep = load_mid_seed(
+        tmp_path, day_filter_values=(), kreis_control_entries=entries,
+        kreis_seed_rng=np.random.RandomState(0),
+        escort_passive_education=True, exclude_rbw_legs=True)
+    assert list(pers.columns).count("education_flag") == 1
+    assert set(pers["education_flag"]) <= set(EDUCATION_FLAG_CATEGORIES)
+
 
 # --------------------------------------------------------------------------- #
 # Task 3: registry entries, toggles, replacement rules (Plan B, issue #368,
@@ -562,6 +578,15 @@ def test_toggles_registered_with_the_decided_defaults():
                for n in ("education_0_5", "education_6_17", "education_18plus"))
     assert ck._KREIS_CONTROL_DEFAULT["work_by_employment"] == "on" and ck._KREIS_CONTROL_DEFAULT["education_6_17"] == "on"
     assert ck._KREIS_CONTROL_DEFAULT["work_participation"] == "off" and ck._KREIS_CONTROL_DEFAULT["education_participation"] == "off"
+    # The three education_by_age entries share ONE config toggle, so their DEFAULT values
+    # must agree by construction (config_keys._EDUCATION_BY_AGE_DEFAULT) -- a real run only
+    # ever resolves one value for all three. Pinned explicitly (not just relied on via the
+    # shared constant) so a future edit that reintroduces three independent literals here
+    # cannot silently make configure() (which reads the "education_6_17" entry) disagree
+    # with a test double that resolves the shared key via a different one of the three names.
+    assert (ck._KREIS_CONTROL_DEFAULT["education_0_5"]
+            == ck._KREIS_CONTROL_DEFAULT["education_6_17"]
+            == ck._KREIS_CONTROL_DEFAULT["education_18plus"])
 
 
 class _Ctx:
@@ -582,15 +607,27 @@ def test_default_configuration_activates_the_new_and_drops_the_replaced_controls
     assert not ({"work_participation", "education_participation"} & names)
 
 
-@pytest.mark.parametrize("overrides, match", [
-    ({"braunschweig.population.popsim.work_participation_kreis_control": "on"}, "work_participation_kreis_control"),
-    ({"braunschweig.population.popsim.employment_status_kreis_control": "off"}, "employment_status_kreis_control"),
-    ({"braunschweig.population.popsim.education_participation_kreis_control": "on"}, "education_participation_kreis_control"),
+@pytest.mark.parametrize("overrides, keys", [
+    ({"braunschweig.population.popsim.work_participation_kreis_control": "on"},
+     ("braunschweig.population.popsim.work_by_employment_kreis_control",
+      "braunschweig.population.popsim.work_participation_kreis_control")),
+    ({"braunschweig.population.popsim.employment_status_kreis_control": "off"},
+     ("braunschweig.population.popsim.work_by_employment_kreis_control",
+      "braunschweig.population.popsim.employment_status_kreis_control")),
+    ({"braunschweig.population.popsim.education_participation_kreis_control": "on"},
+     ("braunschweig.population.popsim.education_by_age_kreis_control",
+      "braunschweig.population.popsim.education_participation_kreis_control")),
 ])
-def test_contradictory_toggles_raise_naming_both_keys(overrides, match):
+def test_contradictory_toggles_raise_naming_both_keys(overrides, keys):
+    """Each of the three raises must name BOTH the replacement's and the legacy/dependency
+    key, fully qualified, so a user can grep their config for the exact string (fix round 1
+    item 6) -- asserting a single ``match`` substring left the second key name unverified."""
     from braunschweig.popsim.stage.source_resolution import active_kreis_entries
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(ValueError) as excinfo:
         active_kreis_entries(_Ctx(overrides), "mid")
+    message = str(excinfo.value)
+    for key in keys:
+        assert key in message, f"{key!r} not found in raise message: {message!r}"
 
 
 def test_legacy_configuration_is_unchanged(tmp_path):
@@ -603,20 +640,3 @@ def test_legacy_configuration_is_unchanged(tmp_path):
     assert [e.name for e in active_kreis_entries(ctx, "mid")] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class", "employment_status",
         "pt_ticket_group4", "work_participation", "leisure_participation", "education_participation", "escort_participation"]
-
-
-def test_education_flag_is_derived_once_for_every_active_age_band(tmp_path):
-    """Every education-by-age entry reads the SAME education_flag column, so activating
-    two bands must produce exactly one column, not two derivations that could disagree."""
-    from braunschweig.popsim.kreis_attribute_control import EDUCATION_FLAG_CATEGORIES
-    from braunschweig.popsim.mid import load_mid_seed
-    _write_mini_mid(tmp_path)
-    entries = _universe_entries() + [
-        _universe_entry("education_0_5", "education_flag", EDUCATION_FLAG_CATEGORIES,
-                        min_age=0, max_age=5)]
-    _hh, pers, _rep = load_mid_seed(
-        tmp_path, day_filter_values=(), kreis_control_entries=entries,
-        kreis_seed_rng=np.random.RandomState(0),
-        escort_passive_education=True, exclude_rbw_legs=True)
-    assert list(pers.columns).count("education_flag") == 1
-    assert set(pers["education_flag"]) <= set(EDUCATION_FLAG_CATEGORIES)

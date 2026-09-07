@@ -64,6 +64,11 @@ def _seed_persons() -> pd.DataFrame:
         # evaluated) so the fixture reaches all four new entries, not just the
         # pre-existing ones -- otherwise check_category_partition would silently SKIP
         # them (missing seed column) and the vacuous-pass guard below would never notice.
+        # NOT cross-checked against the "employment_status" column above (e.g. row 4 is
+        # "vollzeit" -- employed -- yet carries "nonemployed_work" here): these values only
+        # need to span WORK_BY_EMPLOYMENT_CATEGORIES for the partition check, so the
+        # label/status pairing is deliberately ARBITRARY and must NOT be reused by a future
+        # test that asserts anything about work_by_employment's actual semantics.
         "work_by_employment": ["nonemployed_nowork", "nonemployed_nowork", "employed_work",
                                 "employed_nowork", "nonemployed_work", "nonemployed_nowork",
                                 "employed_work", "employed_nowork"],

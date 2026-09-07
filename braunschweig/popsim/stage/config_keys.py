@@ -294,6 +294,17 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
 }
 
+# Shared default for the three education_by_age entries (Plan B, issue #368, ADR-0109):
+# declared ONCE because they share a SINGLE config toggle (KEY_EDUCATION_BY_AGE_CONTROL,
+# see _KREIS_CONTROL_TOGGLE_KEY above) -- a real run only ever resolves ONE value for all
+# three, so their _KREIS_CONTROL_DEFAULT entries must be textually identical by
+# construction, not merely equal by coincidence. Without this, `configure()` reads
+# _KREIS_CONTROL_DEFAULT["education_6_17"] while a test double resolving the shared
+# toggle key by iterating this dict (or _KREIS_CONTROL_TOGGLE_KEY) could silently pick up
+# a DIFFERENT one of the three names first and diverge from configure() the moment a
+# future edit changes just one of the three literals.
+_EDUCATION_BY_AGE_DEFAULT = "on"
+
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
 # was blocked pending server verification of the MiD household e-bike column (issue
 # #116); that verification landed 2026-07-08 (H_ANZPED, see KEY_EBIKE_SEED_COLUMN), and
@@ -317,7 +328,7 @@ _KREIS_CONTROL_DEFAULT = {
     "education_participation": "off",
     "escort_participation": "on",
     "work_by_employment": "on",
-    "education_0_5": "on",
-    "education_6_17": "on",
-    "education_18plus": "on",
+    "education_0_5": _EDUCATION_BY_AGE_DEFAULT,
+    "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
+    "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
 }
