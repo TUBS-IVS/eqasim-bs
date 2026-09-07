@@ -302,8 +302,12 @@ def test_participation_universe_fit_report_joins_kreis_and_scores_work_by_employ
         persons, geo, _participation_universe_trips(), R.DATA_PATH)
 
     assert set(fit.columns) == {
-        "ars5", "control", "category", "realised_share", "target_share", "abs_error"}
+        "ars5", "control", "category", "realised_share", "n_persons",
+        "target_share", "abs_error"}
     by_cat = fit[fit["control"] == "work_by_employment"].set_index("category")
+    # n_persons is the universe this Kreis's share was computed over (final fix wave,
+    # item 2): both persons are 14+, so the work_by_employment universe holds 2.
+    assert by_cat.loc["employed_work", "n_persons"] == 2
     # 1/2 employed+work, 1/2 non-employed+no-work; ars5 comes from the geo join,
     # not from the persons frame (which carries no kreis column at all).
     assert by_cat.loc["employed_work", "realised_share"] == pytest.approx(0.5)

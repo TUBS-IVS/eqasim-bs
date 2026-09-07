@@ -25,7 +25,7 @@ from braunschweig.popsim import control_spec as cs
 from braunschweig.popsim import mid
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.stage.controls_builder import (
-    person_total_by_kreis_age_range, person_total_by_kreis_min_age)
+    age_universe_entries, person_total_by_kreis_age_range, person_total_by_kreis_min_age)
 
 
 def _entry(min_age=None, max_age=None):
@@ -640,3 +640,126 @@ def test_legacy_configuration_is_unchanged(tmp_path):
     assert [e.name for e in active_kreis_entries(ctx, "mid")] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class", "employment_status",
         "pt_ticket_group4", "work_participation", "leisure_participation", "education_participation", "escort_participation"]
+
+
+# --------------------------------------------------------------------------- #
+# Final fix wave, item 1: the PRODUCTION parquet load set must carry every active
+# universe control's denominator columns.
+#
+# The tests above all run on `_cells()`, which hands the denominator helpers all 101
+# single-year columns for both sexes. The production stage never loads that set: it
+# resolves the parquet columns through `stage._resolve_cell_load_columns`, which (before
+# this fix) requested single-year ages only INCIDENTALLY -- 10-19 for the fine teen bands
+# and 16+ for the employment grid. `education_0_5` therefore had NO column of its band and
+# `education_6_17` silently lost ages 6-9. The tests below drive that REAL resolution
+# instead of a pre-populated fixture, so the same gap can never reopen unnoticed.
+# --------------------------------------------------------------------------- #
+
+# The production control configuration (configs/base_bs.yml): catalog source, MiD seed,
+# all four tiers, employment grid / ownership grid / fine teen bands / income tilt ON.
+_PRODUCTION_TIERS = ("tier0", "tier1", "tier2", "tier3")
+_KEY_INCOME_TILT = "braunschweig.population.popsim.income_spatial_tilt"
+
+
+def _write_prepared_cells_parquet(tmp_path, base_cols):
+    """A parquet whose SCHEMA mirrors the production prepared-cells file for the columns
+    this test is about: every catalog census-source column plus the single-year
+    ``{M,F}_AGE_<year>`` columns for ages 0-100.
+
+    The real file carries that full single-year range for both sexes (measured against its
+    schema during the whole-branch review: 174/174 columns for the 14+ employment universe,
+    166/166 for 18+). The defect was never a missing parquet column -- it was the load
+    SELECTION -- so a schema-faithful synthetic file is what discriminates here.
+    """
+    from braunschweig.popsim.stage.controls_builder import SINGLE_YEAR_MAX_AGE
+    columns = list(dict.fromkeys([
+        "GITTER_ID_100m",
+        *base_cols,
+        *(f"{prefix}_AGE_{year}"
+          for prefix in ("M", "F")
+          for year in range(0, SINGLE_YEAR_MAX_AGE + 1)),
+    ]))
+    path = tmp_path / "prepared_cells.parquet"
+    pd.DataFrame({name: [1.0, 2.0] for name in columns}).to_parquet(path, index=False)
+    return path
+
+
+def _resolve_production_load_columns(tmp_path):
+    """Run the stage's OWN column resolution under the production configuration.
+
+    Returns ``(load_cols, active_entries)``.
+    """
+    from braunschweig.popsim import stage
+
+    ctx = _Ctx({_KEY_INCOME_TILT: True})
+    active_entries = stage.active_kreis_entries(ctx, "mid")
+    controls_df, base_cols = stage._build_control_frame(
+        "catalog", None, "mid", _PRODUCTION_TIERS, True,
+        tuple(entry.name for entry in active_entries), "uniform",
+        fine_teen_age_bands=True, ownership_grid_on=True)
+    assert not controls_df.empty
+    cells_path = _write_prepared_cells_parquet(tmp_path, base_cols)
+    load_cols = stage._resolve_cell_load_columns(
+        ctx, "catalog", "mid", _PRODUCTION_TIERS, base_cols, True, cells_path,
+        active_entries, fine_teen_age_bands=True, ownership_grid_on=True)
+    return load_cols, active_entries
+
+
+def test_production_load_columns_cover_every_active_universe_denominator(tmp_path):
+    """Every active age-universe control's per-Kreis denominator is computable, and
+    COMPLETE, from the columns the stage actually loads.
+
+    Each cell column holds 1.0 in the first row and 2.0 in the second, so a per-Kreis total
+    of ``2 * (upper - lower + 1)`` for the first Kreis proves that ALL of the band's
+    ``{M,F}_AGE_<year>`` columns -- both sexes, every year -- reached the frame. A single
+    missing year makes the assertion fail rather than silently shrinking the universe.
+    """
+    from braunschweig.popsim.stage import (
+        person_total_by_kreis_age_range, person_total_by_kreis_min_age)
+
+    load_cols, active_entries = _resolve_production_load_columns(tmp_path)
+    # The production predicate itself ("which entries have an age universe, over which
+    # years"), so this test cannot drift from what the load path actually derives; the
+    # membership assertion below is what keeps an empty list from passing vacuously.
+    universe_entries = age_universe_entries(active_entries)
+    # Guard the guard: if the REGISTRY ever stops declaring age universes, an empty loop
+    # below would pass while asserting nothing.
+    assert {entry.name for entry, _, _ in universe_entries} >= {
+        "employment_status", "work_by_employment",
+        "education_0_5", "education_6_17", "education_18plus"}
+
+    cells = pd.DataFrame({name: [1.0, 2.0] for name in load_cols})
+    kreis = pd.Series(["03101", "03102"])
+    for entry, lower, upper in universe_entries:
+        expected_columns = [f"{prefix}_AGE_{year}"
+                            for prefix in ("M", "F")
+                            for year in range(lower, upper + 1)]
+        missing = [c for c in expected_columns if c not in load_cols]
+        assert not missing, (
+            f"{entry.name}: {len(missing)} of {len(expected_columns)} denominator columns "
+            f"are not in the resolved parquet load set (e.g. {missing[:6]})")
+        totals = person_total_by_kreis_age_range(cells, kreis, lower, upper)
+        assert totals["03101"] == pytest.approx(2 * (upper - lower + 1))
+        assert totals["03102"] == pytest.approx(4 * (upper - lower + 1))
+        if entry.max_age is None:
+            # The stage dispatches an entry without an upper bound to the min_age entry
+            # point; it must agree with the range helper on the same universe.
+            assert person_total_by_kreis_min_age(cells, kreis, entry.min_age) == totals
+
+
+def test_age_range_denominator_raises_on_a_partially_covered_band():
+    """The complete-coverage guard: a band that is only PARTLY present raises and names the
+    missing years, instead of returning a plausible total over a shorter universe.
+
+    This is the half of the fix that catches a future load-set regression -- ``education_6_17``
+    was silently computed over ages 10-17 because SOME of its columns were present, which the
+    old "no columns at all" guard could not see.
+    """
+    cells, kreis = _cells()
+    partial = cells.drop(columns=[f"{prefix}_AGE_{year}"
+                                  for prefix in ("M", "F") for year in range(6, 10)])
+    with pytest.raises(RuntimeError) as excinfo:
+        person_total_by_kreis_age_range(partial, kreis, 6, 17)
+    message = str(excinfo.value)
+    assert "6, 7, 8, 9" in message
+    assert "8 of the 24" in message

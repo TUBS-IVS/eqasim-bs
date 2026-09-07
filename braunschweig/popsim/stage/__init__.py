@@ -55,7 +55,10 @@ Submodules extracted so far:
                   frame (``build_controls_df``), the per-Kreis census-column
                   map (``_kreis_controls_map``), the per-Kreis PERSON totals
                   (``person_band_census_columns``, ``person_total_by_kreis``,
-                  ``person_total_by_kreis_min_age``), the grid-geography
+                  ``person_total_by_kreis_min_age``,
+                  ``person_total_by_kreis_age_range``) with the single-year
+                  census columns they are summed over
+                  (``universe_age_census_columns``), the grid-geography
                   control filter (``_grid_geography_controls``) and the
                   aggregation-map / source-column builders
                   (``build_aggregation_map``, ``build_source_columns``).
@@ -297,6 +300,7 @@ from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
     _grid_geography_controls,
     _kreis_controls_map,
+    age_universe_entries,
     build_aggregation_map,
     build_controls_df,
     build_source_columns,
@@ -304,6 +308,7 @@ from .controls_builder import (  # noqa: F401  (re-exports)
     person_total_by_kreis,
     person_total_by_kreis_age_range,
     person_total_by_kreis_min_age,
+    universe_age_census_columns,
 )
 from . import source_resolution
 from .source_resolution import (  # noqa: F401  (re-exports)
@@ -1126,7 +1131,7 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
-        employment_grid_on: bool, cells_path, fine_teen_age_bands: bool = True,
+        employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
         ownership_grid_on: bool = False):
     """Resolve the column set loaded from the prepared-cells parquet.
 
@@ -1135,8 +1140,13 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     rather than the derived control names.  For tier0-only or CSV-based controls,
     source_cols == base_cols == current behaviour -> byte-identical.
 
-    Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid and
-    income-tilt blocks, so the caller MUST reassign it).
+    ``active_entries`` is the ACTIVE KREIS attribute-control REGISTRY list (the same one
+    ``_derive_kreis_attribute_control_targets`` iterates); it is a REQUIRED argument, not a
+    defaulted one, because an omitted list would silently reproduce the very defect this
+    parameter exists to close (see the universe block below).
+
+    Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid,
+    universe-denominator and income-tilt blocks, so the caller MUST reassign it).
     Mutates: nothing; reads only the parquet SCHEMA when the employment grid or
     ownership grid control is on.
     """
@@ -1180,6 +1190,31 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
         _og_raw_names = _pq_og.ParquetFile(cells_path).schema.names
         _og_available = [prepared_cells.clean_col_name(_n) for _n in _og_raw_names]
         load_cols = _og.select_load_columns(load_cols, _og_available)
+
+    # Participation-universe denominators (Plan B, issue #368): every ACTIVE person-level
+    # REGISTRY entry with an age universe partitions the single-year census total of its
+    # OWN [min_age, max_age] band (controls_builder.person_total_by_kreis_age_range /
+    # _min_age). Those columns are NOT implied by the rendered control frame -- the frame
+    # only asks for what PopulationSim balances -- so without this block the load set
+    # carries single-year ages only incidentally: 10-19 from the fine teen bands and 16+
+    # from the employment grid. education_0_5 then had NO column of its band (the
+    # denominator raised, aborting the stage) and education_6_17 silently lost ages 6-9.
+    # The bands are derived from the entries themselves, never re-listed, and requested
+    # unconditionally: a column truly absent from the parquet must surface as the
+    # denominator helper's complete-coverage error (which names the missing years), not be
+    # dropped here by an availability filter that would restore the silent shortening.
+    _universe_cols = universe_age_census_columns(active_entries)
+    if _universe_cols:
+        _universe_new = [c for c in _universe_cols if c not in set(load_cols)]
+        load_cols = [*load_cols, *_universe_new]
+        logger.info(
+            "[popsim.stage] participation-universe denominators: %d single-year age "
+            "column(s) required by %s, %d added to the parquet load set (%d already "
+            "requested by the control frame / employment grid).",
+            len(_universe_cols),
+            [f"{entry.name} ({lower}-{upper})"
+             for entry, lower, upper in age_universe_entries(active_entries)],
+            len(_universe_new), len(_universe_cols) - len(_universe_new))
 
     # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
     # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
@@ -2278,7 +2313,8 @@ def execute(context) -> pd.DataFrame:
     )
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
-        employment_grid_on, cells_path, fine_teen_age_bands=fine_teen_bands_on,
+        employment_grid_on, cells_path, active_entries,
+        fine_teen_age_bands=fine_teen_bands_on,
         ownership_grid_on=ownership_grid_on,
     )
 

@@ -731,8 +731,12 @@ def test_universe_participation_fit_abs_error_on_fixture(tmp_path):
     result = universe_participation_fit(
         _trips_purpose_schema_universe(), _persons_kreis_universe(), targets_dir)
 
+    # n_persons is carried through from realised_universe_participation (final fix wave,
+    # item 2): the size of THAT control's universe in THAT Kreis is what makes an
+    # abs_error interpretable, and the run's headline line reports a single worst cell.
     assert set(result.columns) == {
-        "ars5", "control", "category", "realised_share", "target_share", "abs_error"}
+        "ars5", "control", "category", "realised_share", "n_persons",
+        "target_share", "abs_error"}
     indexed = result.set_index(["ars5", "control", "category"])
     # 03101 work_by_employment: realised 0.25 each vs synthetic target 0.3/0.2/0.1/0.4.
     assert indexed.loc[("03101", "work_by_employment", "employed_work"), "abs_error"] \
@@ -745,6 +749,13 @@ def test_universe_participation_fit_abs_error_on_fixture(tmp_path):
     assert indexed.loc[("03102", "education_6_17", "noedu"), "abs_error"] == pytest.approx(0.3)
     # 03101 education_18plus: realised 0.0/1.0 vs synthetic target 0.05/0.95.
     assert indexed.loc[("03101", "education_18plus", "noedu"), "abs_error"] == pytest.approx(0.05)
+    # The universe SIZE survives the join unchanged (it is the denominator each
+    # realised_share was computed over, per _EXPECTED_UNIVERSE): 03102's two education
+    # bands hold 2 persons each, 03101's work_by_employment universe holds 4. Without this
+    # column those cells' abs_errors are indistinguishable in the headline line.
+    assert indexed.loc[("03102", "education_0_5", "edu"), "n_persons"] == 2
+    assert indexed.loc[("03102", "education_6_17", "noedu"), "n_persons"] == 2
+    assert indexed.loc[("03101", "work_by_employment", "employed_work"), "n_persons"] == 4
 
 
 def test_universe_participation_fit_drops_realised_cells_without_target(tmp_path, caplog):

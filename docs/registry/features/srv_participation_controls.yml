@@ -71,7 +71,11 @@ validation:
     control-registry route stays structurally closed -- controls.build_registry validates
     columns of the assembled population, and the participation flags are input-only popsim
     seed columns that never reach it -- so the fit is measured from the realised trips.
-    It is a FIT CHECK against the steering SrV targets, never independent validation.
+    It is a FIT CHECK against the steering SrV targets for the leisure and escort
+    purposes. For work and education it is weaker but no longer circular: since #368
+    those two all-persons controls default off, so their rates are steered only
+    indirectly, through the universe replacements built from the same SrV aggregate
+    (see notes). Neither case is independent validation.
     DONOR-BOUND DEFICIT, ROOT CAUSE FOUND (#365, ADR-0106): the residual gap this record and the
     i329 manifest call "donor-bound" is now attributed. The controls were MET in the seed and in
     the realised plans of every person whose plan source carries a diary (work 0.314 vs 0.332,

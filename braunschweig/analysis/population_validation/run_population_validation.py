@@ -142,11 +142,26 @@ def _participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
     no geo row are DROPPED (``dropna``), never folded into some other Kreis (no
     silent fallback).
 
-    HONESTY CAVEAT (reproduce wherever these numbers are reported): the SrV
-    targets STEER the raking, so this is a FIT CHECK measuring convergence toward
-    the target, not independent agreement with reality -- the same framing as
-    ``independence="fit_check"`` for driving_license_type. See
-    the :mod:`participation_fit` module docstring.
+    HONESTY CAVEAT (reproduce wherever these numbers are reported) -- it differs by
+    purpose since Plan B (issue #368, ADR-0109) retired two of the four all-persons
+    controls, so labelling all four rows a "fit check" is no longer accurate:
+
+    - ``leisure`` / ``escort``: their all-persons SrV controls still STEER the raking
+      (``leisure_participation`` / ``escort_participation`` default "on"), so these rows
+      are a FIT CHECK measuring convergence toward the target, not independent agreement
+      with reality -- the same framing as ``independence="fit_check"`` for
+      driving_license_type.
+    - ``work`` / ``education``: the all-persons ``work_participation`` /
+      ``education_participation`` controls default "off" since #368, so nothing steers
+      these two rates directly any more and their comparison is a genuine, if weak, one.
+      It is still NOT independent validation: the replacements that steer instead
+      (``work_by_employment``, ``education_0_5`` / ``_6_17`` / ``_18plus``) are built from
+      the SAME SrV aggregate and constrain the same trips inside their universes, so
+      agreement here is largely inherited from that steering.
+
+    Which case applies depends on the RUN's configuration, which this report cannot read;
+    the split above states the defaults (``source_resolution._KREIS_CONTROL_DEFAULT``,
+    ``configs/base_bs.yml``). See the :mod:`participation_fit` module docstring.
 
     Returns the ``ars5, purpose, realised_rate, target_rate, abs_error`` frame.
     """
@@ -179,8 +194,10 @@ def _participation_universe_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
     FIT CHECK measuring convergence toward the target, not independent agreement with
     reality. See the :mod:`participation_fit` module docstring.
 
-    Returns the ``ars5, control, category, realised_share, target_share, abs_error``
-    frame.
+    Returns the ``ars5, control, category, realised_share, n_persons, target_share,
+    abs_error`` frame. ``n_persons`` is the size of that control's own universe in that
+    Kreis: without it the headline "worst abs_error" cell logged below cannot be told
+    apart from a cell measured over a handful of persons (final fix wave, item 2).
     """
     persons_kreis = persons[["person_id", "household_id", "employment_status", "age"]].merge(
         geo[["household_id", "ars5"]], on="household_id", how="left")
@@ -373,9 +390,12 @@ def run(ns) -> dict:
             participation_json = participation.to_dict(orient="records")
             worst = participation.sort_values("abs_error", ascending=False).head(1)
             LOGGER.info(
-                "Participation fit (FIT CHECK against the steering SrV targets, "
-                "not independent validation): %d (Kreis, purpose) cells, mean "
-                "|error| %.2f pp, worst %s in %s at %.2f pp.",
+                "Participation fit: %d (Kreis, purpose) cells, mean |error| %.2f pp, "
+                "worst %s in %s at %.2f pp. FIT CHECK against the steering SrV targets "
+                "for leisure/escort; work/education are no longer steered DIRECTLY (their "
+                "all-persons controls default off since #368) but inherit the universe "
+                "controls' SrV steering -- neither is independent validation "
+                "(see _participation_fit_report).",
                 len(participation), 100 * participation["abs_error"].mean(),
                 worst["purpose"].iloc[0] if not worst.empty else "n/a",
                 worst["ars5"].iloc[0] if not worst.empty else "n/a",
@@ -419,10 +439,11 @@ def run(ns) -> dict:
                 LOGGER.info(
                     "Universe participation fit (FIT CHECK against the steering targets, "
                     "not independent validation): %d (Kreis, control, category) cells, "
-                    "mean |error| %.2f pp, worst %s/%s in %s at %.2f pp.",
+                    "mean |error| %.2f pp, worst %s/%s in %s at %.2f pp over %d person(s) "
+                    "in that control's universe.",
                     len(participation_universe), 100 * participation_universe["abs_error"].mean(),
                     worst["control"].iloc[0], worst["category"].iloc[0], worst["ars5"].iloc[0],
-                    100 * worst["abs_error"].iloc[0])
+                    100 * worst["abs_error"].iloc[0], int(worst["n_persons"].iloc[0]))
         except Exception:
             LOGGER.exception(
                 "Universe participation fit failed; continuing without it.")
@@ -501,8 +522,9 @@ def run(ns) -> dict:
         "family_scores": fam.to_dict(orient="records"),
         "quality": quality.to_dict(orient="records"),
         "trip_coherence": trip_json,
-        # Issue #334: FIT CHECK against the steering SrV targets (see
-        # _participation_fit_report), not independent validation.
+        # Issue #334: FIT CHECK against the steering SrV targets for leisure/escort;
+        # work/education are steered only indirectly since #368 -- neither is independent
+        # validation. The per-purpose split is in _participation_fit_report's docstring.
         "participation_fit": participation_json,
         # Plan B, issue #368: FIT CHECK against the steering universe-control
         # targets (see _participation_universe_fit_report), not independent

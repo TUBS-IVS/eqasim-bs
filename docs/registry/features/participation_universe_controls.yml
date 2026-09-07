@@ -231,4 +231,14 @@ notes: >-
   popsim stage each recompute once, and the four new target CSVs purge the PopulationSim batch
   cache through batch_cache.compute_batch_config_signature. MiD-only: every Kreis attribute control
   is empty for a non-MiD source (active_kreis_entries returns [] there), which is why popsim_open
-  is inactive rather than active.
+  is inactive rather than active. PARQUET LOAD SET (final whole-branch review, item 1): an
+  age-universe control's per-Kreis denominator is summed from the single-year {M,F}_AGE_<year>
+  cell columns, and those are NOT implied by the rendered control frame -- before the fix the
+  stage loaded single-year ages only incidentally (10-19 for the fine teen bands, 16+ for the
+  employment grid), so education_0_5 had none of its band (the denominator raised, aborting the
+  stage hours into a run) and education_6_17 silently lost ages 6-9. stage._resolve_cell_load_columns
+  now derives the required columns from the ACTIVE registry entries' own bounds
+  (controls_builder.universe_age_census_columns), and person_total_by_kreis_age_range raises on a
+  PARTIALLY covered band naming the missing years -- which also closes the same latent hole in
+  employment_status's 14+ denominator, previously complete only by the coincidence of those two
+  flags being on.

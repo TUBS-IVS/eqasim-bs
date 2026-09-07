@@ -572,13 +572,28 @@ def run(
 
 
 def configure(context):
+    # The shared key/default constants every stage that reads these flags declares them
+    # with (braunschweig.popsim.stage.config_keys is the single home for both halves).
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_EXCLUDE_RBW_LEGS,
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
+        KEY_EXCLUDE_RBW_LEGS,
+    )
     # Read from synthesis.population.sampled (not the raw producer): sampled carries the
     # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
     # table is built against the already-sampled and id-remapped synthetic population.
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
     context.config("escort_purpose", False)
-    context.config("escort_passive_education", False)
+    # escort_passive_education is declared with the SHARED key/default constants (final fix
+    # wave, item 3), like the plan-structure flags below: the popsim stage reads the same
+    # key so its education_flag control seed counts the same W_ZWECK codes as education
+    # that THIS trip build realises (issue #368), and a second literal spelling of key or
+    # default here is exactly the drift that would reopen the seed-vs-plan education
+    # mismatch this package exists to remove.
+    context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
     # Explicit W_ZWECK purposes (issue #241): default True maps codes 14/15/16
     # (Sport / Freunde besuchen / Unterricht nicht Schule) to "leisure" instead of letting
     # them reach "other" through the silent fallback. False reproduces the pre-#241
@@ -591,11 +606,6 @@ def configure(context):
     # is emptied by a drop that the plan match should have handled upstream.
     # Defaults ON / "empirical" per the project rule (new features default on);
     # False / False / "fixed_1h" is the byte-identical pre-#366 path.
-    from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
-        DEFAULT_EXCLUDE_RBW_LEGS, KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
-    )
     context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
@@ -640,14 +650,15 @@ def execute(context):
         # persons tables are not needed here (trips only).
         _donor_households, _donor_persons, donor_trips = source.load_donor(mid_dir)
 
-    escort_purpose = bool(context.config("escort_purpose"))
-    escort_passive_education = bool(context.config("escort_passive_education"))
-    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     # Declared in configure(); ExecuteContext.config() takes the key alone.
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
+        KEY_EXCLUDE_RBW_LEGS,
     )
+    escort_purpose = bool(context.config("escort_purpose"))
+    escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
+    explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     closure_dwell_model = str(context.config(KEY_CLOSURE_DWELL_MODEL))

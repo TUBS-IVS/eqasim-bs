@@ -140,7 +140,10 @@ def test_person_total_by_kreis_min_age_counts_only_ages_at_or_above_min_age():
 
     kreis = pd.Series(["03101", "03101", "03102"])
     cells = _cells_with_single_year_ages(kreis, lo=10, hi=20)
-    totals = person_total_by_kreis_min_age(cells, kreis, min_age=14)
+    # single_year_max=20 states the range THIS fixture carries: the helper now requires the
+    # requested band to be COMPLETELY present (final fix wave, item 1b), so leaving the 100
+    # default would ask for ages 21-100 the fixture deliberately never had.
+    totals = person_total_by_kreis_min_age(cells, kreis, min_age=14, single_year_max=20)
     # Sum over y=14..20 for M and F: sum(14..20) = 14+15+...+20 = 119; both sexes -> 238.
     expected_per_row = sum(range(14, 21)) * 2
     assert totals["03101"] == expected_per_row * 2  # two rows in 03101
@@ -152,8 +155,9 @@ def test_person_total_by_kreis_min_age_excludes_under_min_age_columns():
 
     kreis = pd.Series(["03101"])
     cells = _cells_with_single_year_ages(kreis, lo=10, hi=20)
-    total_14 = person_total_by_kreis_min_age(cells, kreis, min_age=14)["03101"]
-    total_0 = person_total_by_kreis_min_age(cells, kreis, min_age=10)["03101"]
+    # single_year_max=20: see the note in the test above (complete-coverage contract).
+    total_14 = person_total_by_kreis_min_age(cells, kreis, min_age=14, single_year_max=20)["03101"]
+    total_0 = person_total_by_kreis_min_age(cells, kreis, min_age=10, single_year_max=20)["03101"]
     assert total_14 < total_0
 
 

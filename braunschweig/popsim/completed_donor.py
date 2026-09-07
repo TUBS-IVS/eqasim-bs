@@ -323,8 +323,9 @@ def configure(context):
         KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_DIARY_PLAN_MATCH, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
-        DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_PLAN_MATCH,
+        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        DEFAULT_EXCLUDE_RBW_LEGS,
     )
     context.config(KEY_MID)
     context.config("random_seed")
@@ -339,7 +340,7 @@ def configure(context):
     # flipping it must rebuild the donor, not reuse the cached one. Declared here
     # only (like KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES): the popsim stage never reads it
     # and inherits the invalidation through its completed_donor stage dependency.
-    context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT, True)
+    context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT)
 
 
 def execute(context) -> CompletedDonor:

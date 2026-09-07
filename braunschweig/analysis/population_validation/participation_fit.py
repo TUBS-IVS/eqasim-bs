@@ -14,6 +14,19 @@ independent agreement with reality; and ~5-8pp of the mobility level is a
 documented SrV-vs-MiD survey method offset (spec Section 7). A tight fit here
 must never be reported as "validated against reality".
 
+That caveat is exact for ``leisure`` and ``escort``, whose all-persons controls
+still steer. For ``work`` and ``education`` it became half wrong with Plan B
+(issue #368, ADR-0109): those two all-persons controls default OFF now, so
+nothing steers their rates DIRECTLY and the purpose-level comparison is a
+genuine, if weak, one. It is still not independent validation -- the universe
+controls that replaced them (below) are built from the SAME SrV aggregate and
+constrain the same trips inside their universes, so agreement is largely
+inherited from that steering. Which case a given run is in depends on its
+configuration, which this module cannot read; the statement above is the
+default one (``source_resolution._KREIS_CONTROL_DEFAULT``, configs/base_bs.yml).
+``run_population_validation._participation_fit_report`` carries the same split
+for the report it writes.
+
 Plan B (issue #368, Task 8) adds a SECOND, related family: the participation-
 UNIVERSE controls (``realised_universe_participation`` / ``load_universe_targets``
 / ``universe_participation_fit``). These replace ``work_participation`` /
@@ -35,11 +48,19 @@ picked up here automatically, and a REGISTRY shape this module can no longer
 resolve fails loudly at IMPORT time rather than silently reporting on the wrong
 universe. "Employed" is the ``employment_status``-class test
 (``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``), NEVER the ``employed``
-boolean attribute -- a different MiD variable the two agree on for only about
-99.8% of persons; the control pins the former, and so does this report. A share
-computed over the WHOLE population would answer a different question and would
-be wrong -- see :func:`realised_universe_participation`'s docstring for the
-full universe definitions. The SAME HONESTY CAVEAT above applies verbatim to
+boolean attribute -- a DIFFERENT MiD variable, which the two do not agree on
+for every person; the control pins the former, and so does this report.
+(ASSUMPTION, not a committed reference: the arm-3 100 % run logged an
+``[attributes] employment_status vs employed agreement`` line of ~99.8 %, but
+that line is NOT part of the committed excerpt
+``eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/run_log_excerpts_part1.txt``
+of run manifest ``plan-structure-fix-arm3-100pct-2026-09-07``, so the figure is
+not reproducible from this repository and must not be quoted as an established
+one. The choice above rests on the QUALITATIVE fact that the two variables
+differ at all, which does not depend on the exact rate.) A share computed over
+the WHOLE population would answer a different question and would be wrong --
+see :func:`realised_universe_participation`'s docstring for the full universe
+definitions. The SAME HONESTY CAVEAT above applies verbatim to
 these three functions: their targets also STEER the raking, so a good fit is
 convergence, never independent validation.
 
@@ -399,8 +420,10 @@ def realised_universe_participation(trips: pd.DataFrame, persons_kreis: pd.DataF
     - ``work_by_employment``: persons aged >= the REGISTRY entry's ``min_age`` (14 today),
       no upper bound. "Employed" is the ``employment_status``-class test
       (:data:`attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`), NEVER the ``employed``
-      boolean attribute -- a different MiD variable the two agree on for only about
-      99.8% of persons; the control pins the former, and so does this report.
+      boolean attribute -- a DIFFERENT MiD variable the two do not agree on for every
+      person; the control pins the former, and so does this report. (The module docstring
+      says why no agreement RATE is quoted here: the measured one is not traceable to a
+      committed source.)
     - ``education_0_5`` / ``education_6_17`` / ``education_18plus``: persons whose age
       falls in that REGISTRY entry's ``[min_age, max_age]`` band, INCLUSIVE on both
       bounds (``education_18plus`` has no upper bound).
@@ -610,7 +633,17 @@ def universe_participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
     """Join realised universe-control participation (interface 1) to the committed
     universe targets (interface 2).
 
-    Returns ``ars5, control, category, realised_share, target_share, abs_error``.
+    Returns ``ars5, control, category, realised_share, n_persons, target_share,
+    abs_error``.
+
+    ``n_persons`` -- the size of THAT control's own universe in that Kreis, carried
+    through unchanged from :func:`realised_universe_participation` -- is what makes an
+    ``abs_error`` interpretable: an ``education_0_5`` universe of a handful of children in
+    one Kreis and one of several thousand in another produce equally large deviations for
+    entirely different reasons, and the run's headline "worst abs_error" line
+    (``run_population_validation``) reports exactly such a single cell. The Plan-B design
+    pinned a six-column output; this seventh column is a deliberate, reviewed extension of
+    it (final fix wave, item 2).
 
     Realised (``ars5``, ``control``, ``category``) cells with no matching target row are
     logged (warning, with examples) and dropped -- mirroring :func:`participation_fit`'s
@@ -634,8 +667,8 @@ def universe_participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
             len(missing), examples)
     merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
     merged["abs_error"] = (merged["realised_share"] - merged["target_share"]).abs()
-    return merged[["ars5", "control", "category", "realised_share", "target_share", "abs_error"]] \
-        .reset_index(drop=True)
+    return merged[["ars5", "control", "category", "realised_share", "n_persons",
+                   "target_share", "abs_error"]].reset_index(drop=True)
 
 
 def donor_neff(persons: pd.DataFrame, donor_id_col: str) -> dict:

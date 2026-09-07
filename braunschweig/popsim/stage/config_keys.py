@@ -236,6 +236,10 @@ DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES = True
 # match runs, so it is declared there (like exclude_holiday_plan_sources) and
 # reaches the popsim stage through that stage dependency.
 KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_hard_employment"
+# Declared next to the key like every neighbouring flag (final fix wave, item 3): the
+# stage that declares it used to spell the default as a literal `True`, so the default and
+# the key had two independent homes and could drift apart silently.
+DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
