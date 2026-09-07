@@ -13,14 +13,48 @@ raking), so a good realised-vs-target fit measures raking convergence, NOT
 independent agreement with reality; and ~5-8pp of the mobility level is a
 documented SrV-vs-MiD survey method offset (spec Section 7). A tight fit here
 must never be reported as "validated against reality".
+
+Plan B (issue #368, Task 8) adds a SECOND, related family: the participation-
+UNIVERSE controls (``realised_universe_participation`` / ``load_universe_targets``
+/ ``universe_participation_fit``). These replace ``work_participation`` /
+``education_participation`` (registered over ALL persons) with controls defined
+over a SPECIFIC universe, because the all-persons controls were met by the WRONG
+persons (arm-3 run manifest plan-structure-fix-arm3-100pct-2026-09-07: employed
+persons with a work trip were 58.4% against the SrV target 67.5%, pensioners 7.8%
+against 1.8%; 6-17-year-olds in education were 84.3% against 90.0%). Each
+function below mirrors its purpose-only namesake exactly, with ONE addition: the
+realised share is computed over the control's OWN universe subset of
+``persons_kreis``, matching ``kreis_attribute_control.REGISTRY`` exactly --
+
+- ``work_by_employment``: persons aged >=
+  ``kreis_attribute_control.WORK_BY_EMPLOYMENT_MIN_AGE_YEARS`` (mirrors that
+  entry's ``min_age``), employed via
+  ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`` (mirrors the seed
+  derivation's employment test -- NEVER the ``employed`` boolean attribute,
+  a different MiD variable the two agree on for only ~99.8% of persons);
+- ``education_0_5`` / ``education_6_17`` / ``education_18plus``: persons whose
+  age falls in ``kreis_attribute_control.EDUCATION_AGE_BOUNDS[control]``,
+  inclusive on both bounds (mirrors that entry's ``min_age`` / ``max_age``;
+  ``education_18plus`` has no upper bound).
+
+A share computed over the WHOLE population would answer a different question
+and would be wrong -- see :func:`realised_universe_participation`'s docstring
+for the full universe definitions. The SAME HONESTY CAVEAT above applies
+verbatim to these three functions: their targets also STEER the raking, so a
+good fit is convergence, never independent validation.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.attributes import EMPLOYED_EMPLOYMENT_STATUS_CLASSES
+from braunschweig.popsim.kreis_attribute_control import (
+    EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, WORK_BY_EMPLOYMENT_CATEGORIES,
+    WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
 from braunschweig.popsim.mid import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
@@ -201,6 +235,248 @@ def participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame, targets_
     merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
     merged["abs_error"] = (merged["realised_rate"] - merged["target_rate"]).abs()
     return merged[["ars5", "purpose", "realised_rate", "target_rate", "abs_error"]].reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
+# Participation-UNIVERSE controls (Plan B, issue #368, Task 8)
+# --------------------------------------------------------------------------- #
+
+def _purpose_leg_person_ids(trips: pd.DataFrame, purposes) -> dict:
+    """Per-``purpose`` set of person ids with >= 1 trip of that purpose.
+
+    Schema detection is IDENTICAL to :func:`realised_participation` (the eqasim
+    ``following_purpose``/``preceding_purpose`` string pair, preferred when both
+    schemas are present and logged as such, else a raw MiD ``W_ZWECK`` int column
+    mapped through :data:`PARTICIPATION_W_ZWECK`). Kept as a small, separate
+    detector rather than a refactor of :func:`realised_participation` -- mirrors
+    ``mid.participation``'s own precedent of sibling derivations over one shared,
+    heavily parametrised core (see that module's package docstring) -- so this
+    addition cannot change the already-tested purpose-only behaviour.
+
+    Raises ``KeyError`` if neither schema is present (no silent fallback to an
+    empty participant set).
+    """
+    has_purpose_string_schema = {"following_purpose", "preceding_purpose"}.issubset(trips.columns)
+    has_wzweck_schema = "W_ZWECK" in trips.columns
+    if not has_purpose_string_schema and not has_wzweck_schema:
+        raise KeyError(
+            "realised_universe_participation: trips must carry either the eqasim "
+            "'following_purpose'/'preceding_purpose' string pair or a MiD 'W_ZWECK' "
+            f"int column; has {list(trips.columns)}. No silent fallback to an empty result.")
+    if has_purpose_string_schema and has_wzweck_schema:
+        LOGGER.info(
+            "realised_universe_participation: trips carries both the eqasim purpose-string "
+            "columns and a MiD 'W_ZWECK' column; using the eqasim schema deterministically.")
+
+    result: dict = {}
+    if has_purpose_string_schema:
+        for purpose in purposes:
+            mask = (trips["following_purpose"] == purpose) | (trips["preceding_purpose"] == purpose)
+            result[purpose] = set(trips.loc[mask, "person_id"].unique())
+    else:
+        for purpose in purposes:
+            codes = PARTICIPATION_W_ZWECK[purpose]
+            mask = trips["W_ZWECK"].isin(codes)
+            result[purpose] = set(trips.loc[mask, "person_id"].unique())
+    return result
+
+
+def _category_shares(ars5: np.ndarray, category: np.ndarray, control: str, categories) -> pd.DataFrame:
+    """Per-Kreis category shares over ONE control's own universe subset.
+
+    ``ars5`` and ``category`` must already be restricted to that universe and
+    positionally aligned (e.g. both filtered from the same boolean mask). Every
+    (Kreis, category) combination present in ``categories`` gets an explicit row
+    -- a Kreis where nobody falls in some category still reports an explicit 0.0
+    share, not a missing row, mirroring :func:`realised_participation`'s
+    per-purpose reindex. A Kreis with NO universe member at all (e.g. no
+    0-5-year-old) is simply absent from ``ars5`` and therefore contributes no
+    rows here -- see :func:`realised_universe_participation`'s docstring for why
+    that must never default to a defined-but-zero share.
+    """
+    frame = pd.DataFrame({"ars5": ars5, "category": category})
+    rows = []
+    for kreis, group in frame.groupby("ars5"):
+        n_persons = len(group)
+        counts = group["category"].value_counts().reindex(categories, fill_value=0)
+        for cat, count in counts.items():
+            rows.append({
+                "ars5": kreis,
+                "control": control,
+                "category": cat,
+                "realised_share": count / n_persons,
+                "n_persons": n_persons,
+            })
+    return pd.DataFrame(rows, columns=["ars5", "control", "category", "realised_share", "n_persons"])
+
+
+def realised_universe_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
+    """Per-Kreis realised share for each participation-UNIVERSE control (Plan B, #368),
+    read from the realised trips exactly like :func:`realised_participation` -- see this
+    module's docstring for why the trips frame (not the popsim seed) is the source.
+
+    Each control's OWN universe -- never the whole population -- is the denominator (the
+    #97 universe-mismatch defect these controls exist to fix; mirrors
+    ``kreis_attribute_control.REGISTRY``'s ``work_by_employment`` / education entries
+    EXACTLY, so a reader can check the correspondence directly):
+
+    - ``work_by_employment``: persons aged >=
+      :data:`kreis_attribute_control.WORK_BY_EMPLOYMENT_MIN_AGE_YEARS` (14), no upper
+      bound -- mirrors that entry's ``min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS``.
+      "Employed" is the ``employment_status``-class test
+      (:data:`attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`), NEVER the ``employed``
+      boolean attribute -- a different MiD variable the two agree on for only about
+      99.8% of persons; the control pins the former, and so does this report.
+    - ``education_0_5`` / ``education_6_17`` / ``education_18plus``: persons whose age
+      falls in the band :data:`kreis_attribute_control.EDUCATION_AGE_BOUNDS` declares for
+      that control, INCLUSIVE on both bounds (``education_18plus`` has no upper bound) --
+      mirrors each entry's ``min_age`` / ``max_age`` exactly.
+
+    ``persons_kreis`` must carry ``person_id``, ``ars5``, ``employment_status`` and
+    ``age``. ``trips`` schema detection is IDENTICAL to :func:`realised_participation`:
+    the eqasim ``following_purpose``/``preceding_purpose`` string pair (preferred when
+    both are present, logged), else a raw MiD ``W_ZWECK`` int column; ``KeyError`` if
+    neither is present (no silent fallback to an empty result).
+
+    Returns one row per (``ars5``, ``control``, ``category``): columns ``ars5, control,
+    category, realised_share, n_persons``, where ``n_persons`` is the size of THAT
+    control's own universe in that Kreis (the denominator the share is actually computed
+    over), NOT the Kreis's total person count -- a share computed over all persons would
+    answer a different question and would be wrong. A Kreis with NO member of a control's
+    universe (e.g. no 0-5-year-old) produces NO row for that (``ars5``, ``control``) pair,
+    rather than a defaulted/zero share -- proof the age filter actually restricts the
+    population rather than silently including out-of-band persons under a
+    plausible-looking 0.0.
+
+    HONESTY CAVEAT (mandatory, reproduce in any report built on this function): these
+    targets STEER the raking (see the module docstring), so a good realised-vs-target fit
+    here measures raking convergence, NOT independent agreement with reality.
+    """
+    required_persons_cols = ["person_id", "ars5", "employment_status", "age"]
+    missing_persons_cols = [c for c in required_persons_cols if c not in persons_kreis.columns]
+    if missing_persons_cols:
+        raise KeyError(
+            f"realised_universe_participation: persons_kreis is missing required column(s) "
+            f"{missing_persons_cols} (has {list(persons_kreis.columns)}).")
+    if "person_id" not in trips.columns:
+        raise KeyError(
+            f"realised_universe_participation: trips is missing required column 'person_id' "
+            f"(has {list(trips.columns)}).")
+
+    participants = _purpose_leg_person_ids(trips, ("work", "education"))
+    ars5 = persons_kreis["ars5"].to_numpy()
+    ages = pd.to_numeric(persons_kreis["age"], errors="coerce").to_numpy()
+    employed = persons_kreis["employment_status"].isin(EMPLOYED_EMPLOYMENT_STATUS_CLASSES).to_numpy()
+    has_work_leg = persons_kreis["person_id"].isin(participants["work"]).to_numpy()
+    has_education_leg = persons_kreis["person_id"].isin(participants["education"]).to_numpy()
+
+    frames = []
+
+    # work_by_employment: universe = age >= WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, mirroring
+    # kreis_attribute_control.REGISTRY's work_by_employment entry (min_age=
+    # WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, no max_age).
+    in_universe = ages >= WORK_BY_EMPLOYMENT_MIN_AGE_YEARS
+    category = np.where(
+        employed[in_universe],
+        np.where(has_work_leg[in_universe], "employed_work", "employed_nowork"),
+        np.where(has_work_leg[in_universe], "nonemployed_work", "nonemployed_nowork"))
+    frames.append(_category_shares(
+        ars5[in_universe], category, "work_by_employment", WORK_BY_EMPLOYMENT_CATEGORIES))
+
+    # education_0_5 / education_6_17 / education_18plus: each its OWN age-band universe,
+    # mirroring kreis_attribute_control.REGISTRY's three education entries (min_age/
+    # max_age = EDUCATION_AGE_BOUNDS[control]) exactly; max_age None means no upper bound.
+    edu_label, noedu_label = EDUCATION_FLAG_CATEGORIES
+    for control, (min_age, max_age) in EDUCATION_AGE_BOUNDS.items():
+        in_band = ages >= min_age
+        if max_age is not None:
+            in_band = in_band & (ages <= max_age)
+        category = np.where(has_education_leg[in_band], edu_label, noedu_label)
+        frames.append(_category_shares(ars5[in_band], category, control, EDUCATION_FLAG_CATEGORIES))
+
+    return pd.concat(frames, ignore_index=True)[
+        ["ars5", "control", "category", "realised_share", "n_persons"]]
+
+
+def load_universe_targets(targets_dir: Path) -> pd.DataFrame:
+    """Load the four committed participation-UNIVERSE per-Kreis targets as one tidy frame.
+
+    Reads ``target2026_work_by_employment_by_kreis.csv`` (columns
+    :data:`WORK_BY_EMPLOYMENT_CATEGORIES`) and, for every control in
+    :data:`EDUCATION_AGE_BOUNDS`, ``target2026_<control>_by_kreis.csv`` (columns
+    :data:`EDUCATION_FLAG_CATEGORIES`) -- the SAME four committed files
+    ``kreis_attribute_control.REGISTRY`` points its ``work_by_employment`` /
+    ``education_0_5`` / ``education_6_17`` / ``education_18plus`` entries at, so a
+    committed-target change is picked up by both the balancer and this report together.
+
+    Returns tidy columns ``ars5, control, category, target_share``.
+
+    Raises ``FileNotFoundError`` naming the missing path if a required target file is
+    absent, and ``KeyError`` if a required column is missing from a target file that IS
+    present (no silent fallback to a guessed column name) -- mirrors
+    :func:`load_participation_targets` exactly.
+    """
+    targets_dir = Path(targets_dir)
+    frames = []
+
+    def _load_one(control: str, filename: str, categories) -> None:
+        path = targets_dir / filename
+        if not path.exists():
+            raise FileNotFoundError(
+                f"load_universe_targets: required target file {path} is missing.")
+        target = pd.read_csv(path, comment="#", dtype={"ars5": str})
+        missing_cols = [c for c in ("ars5", *categories) if c not in target.columns]
+        if missing_cols:
+            raise KeyError(
+                f"load_universe_targets: {path} is missing required column(s) "
+                f"{missing_cols} (has {list(target.columns)}).")
+        for category in categories:
+            frames.append(pd.DataFrame({
+                "ars5": target["ars5"],
+                "control": control,
+                "category": category,
+                "target_share": target[category],
+            }))
+
+    _load_one("work_by_employment", "target2026_work_by_employment_by_kreis.csv",
+              WORK_BY_EMPLOYMENT_CATEGORIES)
+    for control in EDUCATION_AGE_BOUNDS:
+        _load_one(control, f"target2026_{control}_by_kreis.csv", EDUCATION_FLAG_CATEGORIES)
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def universe_participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
+                               targets_dir: Path) -> pd.DataFrame:
+    """Join realised universe-control participation (interface 1) to the committed
+    universe targets (interface 2).
+
+    Returns ``ars5, control, category, realised_share, target_share, abs_error``.
+
+    Realised (``ars5``, ``control``, ``category``) cells with no matching target row are
+    logged (warning, with examples) and dropped -- mirroring :func:`participation_fit`'s
+    (and ``control_validation.evaluate_control``'s) out-of-vocabulary handling -- rather
+    than silently coercing them to NaN or 0.
+
+    See the module docstring for the mandatory honesty caveat: a good fit here reflects
+    raking convergence toward the committed target, not independent agreement with
+    reality.
+    """
+    realised = realised_universe_participation(trips, persons_kreis)
+    targets = load_universe_targets(targets_dir)
+
+    merged = realised.merge(targets, on=["ars5", "control", "category"], how="left", indicator=True)
+    missing = merged[merged["_merge"] == "left_only"]
+    if not missing.empty:
+        examples = list(zip(missing["ars5"], missing["control"], missing["category"]))[:5]
+        LOGGER.warning(
+            "universe_participation_fit: %d realised (ars5, control, category) cell(s) have "
+            "no matching target and are excluded from the fit; examples: %s",
+            len(missing), examples)
+    merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
+    merged["abs_error"] = (merged["realised_share"] - merged["target_share"]).abs()
+    return merged[["ars5", "control", "category", "realised_share", "target_share", "abs_error"]] \
+        .reset_index(drop=True)
 
 
 def donor_neff(persons: pd.DataFrame, donor_id_col: str) -> dict:

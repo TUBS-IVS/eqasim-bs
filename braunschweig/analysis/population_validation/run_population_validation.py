@@ -157,6 +157,37 @@ def _participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
     return PF.participation_fit(trips, persons_kreis, targets_dir)
 
 
+def _participation_universe_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
+                                       trips: pd.DataFrame, data_path: str) -> pd.DataFrame:
+    """Realised-vs-target fit for the four participation-UNIVERSE controls (Plan B,
+    issue #368): ``work_by_employment`` / ``education_0_5`` / ``education_6_17`` /
+    ``education_18plus``.
+
+    Mirrors :func:`_participation_fit_report` exactly (same ``ars5``-via-``geo`` join,
+    same drop of persons whose household has no geo row), with the two EXTRA person
+    attributes those controls' universes are defined over: ``employment_status`` and
+    ``age``. Both are ordinary eqasim/BS person attributes and are expected on
+    ``persons`` for any full synthetic population; a run-output source that lacks
+    either propagates a ``KeyError`` naming it (via
+    :func:`participation_fit.realised_universe_participation`) rather than silently
+    computing the wrong (undifferentiated) universe.
+
+    HONESTY CAVEAT (reproduce wherever these numbers are reported): identical to
+    :func:`_participation_fit_report` -- these targets STEER the raking, so this is a
+    FIT CHECK measuring convergence toward the target, not independent agreement with
+    reality. See the :mod:`participation_fit` module docstring.
+
+    Returns the ``ars5, control, category, realised_share, target_share, abs_error``
+    frame.
+    """
+    persons_kreis = persons[["person_id", "household_id", "employment_status", "age"]].merge(
+        geo[["household_id", "ars5"]], on="household_id", how="left")
+    persons_kreis = persons_kreis.dropna(subset=["ars5"])[
+        ["person_id", "ars5", "employment_status", "age"]]
+    targets_dir = Path(data_path) / "braunschweig" / "targets"
+    return PF.universe_participation_fit(trips, persons_kreis, targets_dir)
+
+
 def _interpretation_markdown(quality: pd.DataFrame) -> str:
     if quality.empty:
         return "_No controls with a target were evaluated._"
@@ -356,6 +387,39 @@ def run(ns) -> dict:
             "No %strips.csv at the source; participation fit skipped "
             "(it is derived from the realised trips).", frames.prefix)
 
+    # Per-Kreis participation-UNIVERSE control fit (Plan B, issue #368):
+    # work_by_employment / education_0_5 / education_6_17 / education_18plus.
+    # Deliberately its OWN top-level try/except -- NOT nested inside the
+    # purpose-participation block above -- so a source that lacks
+    # 'employment_status' or 'age' (both required for these controls' universes
+    # but not for the purpose-only participation_fit) fails only this block and
+    # never discards the participation_fit evidence already produced.
+    participation_universe_json = None
+    if frames.trips is not None:
+        try:
+            participation_universe = _participation_universe_fit_report(
+                frames.persons, geo, frames.trips, DATA_PATH)
+            participation_universe.to_csv(out / "participation_universe_fit.csv", index=False)
+            participation_universe_json = participation_universe.to_dict(orient="records")
+            worst = participation_universe.sort_values("abs_error", ascending=False).head(1)
+            LOGGER.info(
+                "Universe participation fit (FIT CHECK against the steering targets, "
+                "not independent validation): %d (Kreis, control, category) cells, "
+                "mean |error| %.2f pp, worst %s/%s in %s at %.2f pp.",
+                len(participation_universe), 100 * participation_universe["abs_error"].mean(),
+                worst["control"].iloc[0] if not worst.empty else "n/a",
+                worst["category"].iloc[0] if not worst.empty else "n/a",
+                worst["ars5"].iloc[0] if not worst.empty else "n/a",
+                100 * worst["abs_error"].iloc[0] if not worst.empty else float("nan"))
+        except Exception:
+            LOGGER.exception(
+                "Universe participation fit failed; continuing without it.")
+            participation_universe_json = None
+    else:
+        LOGGER.info(
+            "No %strips.csv at the source; universe participation fit skipped "
+            "(it is derived from the realised trips).", frames.prefix)
+
     # Feature B: vehicle age × economic-status validation panel.
     # Data-absent-safe: skips gracefully when vehicles is None or lacks columns.
     fleet_age_panel = FAS.build_panel(frames.vehicles, DATA_PATH)
@@ -428,6 +492,10 @@ def run(ns) -> dict:
         # Issue #334: FIT CHECK against the steering SrV targets (see
         # _participation_fit_report), not independent validation.
         "participation_fit": participation_json,
+        # Plan B, issue #368: FIT CHECK against the steering universe-control
+        # targets (see _participation_universe_fit_report), not independent
+        # validation.
+        "participation_universe_fit": participation_universe_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
         "fleet_evaluation": _fe_paths,
         "minor_employment": minor_emp,
