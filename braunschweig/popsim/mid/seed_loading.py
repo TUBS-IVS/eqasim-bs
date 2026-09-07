@@ -526,7 +526,8 @@ def _derive_participation_seed_columns(
     *,
     active_kreis_entry_names: set[str],
     kreis_seed_rng,
-    escort_passive_education: bool = False,
+    escort_passive_education: bool,
+    exclude_rbw_legs: bool,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``load_mid_seed``.
 
@@ -547,7 +548,9 @@ def _derive_participation_seed_columns(
     JOINT distribution. Both run AFTER :func:`_derive_employment_status_seed_column` in
     both public functions -- ``derive_work_by_employment_seed`` needs the
     ``employment_status`` column and raises a ``KeyError`` naming it otherwise (no silent
-    fallback).
+    fallback). ``exclude_rbw_legs`` is forwarded so the seed counts exactly the legs the
+    trip build keeps (controller ruling R8); both new keywords are keyword-only with NO
+    default here, so the two public callers must state them and the twins cannot drift.
 
     Returns: the persons frame with one derived column per active purpose plus the active
     universe seed columns (MUST be reassigned).
@@ -570,13 +573,14 @@ def _derive_participation_seed_columns(
                 household_id=columns.person_household_id, person_id=columns.person_id)
         if "work_by_employment" in active_kreis_entry_names:
             persons = derive_work_by_employment_seed(
-                persons, wege,
+                persons, wege, exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
         # Every education-by-age-range entry reads the SAME education_flag column (they
         # differ only in their age universe), so it is derived ONCE if any is active.
         if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
+                exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -653,7 +657,8 @@ def _derive_projected_participation_seed_columns(
     *,
     active_kreis_entry_names: set[str],
     kreis_seed_rng,
-    escort_passive_education: bool = False,
+    escort_passive_education: bool,
+    exclude_rbw_legs: bool,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``project_completed_seed``.
 
@@ -667,7 +672,9 @@ def _derive_projected_participation_seed_columns(
 
     The participation-UNIVERSE seed columns (``work_by_employment`` / ``education_flag``,
     Plan B issue #368) are derived from the same Wege table here too -- the two functions
-    are deliberate TWINS, so whatever one derives the other derives as well.
+    are deliberate TWINS, so whatever one derives the other derives as well, with the same
+    ``escort_passive_education`` / ``exclude_rbw_legs`` semantics (both keyword-only with
+    NO default here, so a caller cannot silently omit one on just one path).
 
     Kept separate from the ``load_mid_seed`` twin
     (``_derive_participation_seed_columns``) because of the extra ``mid_dir``
@@ -704,13 +711,14 @@ def _derive_projected_participation_seed_columns(
                 household_id=columns.person_household_id, person_id=columns.person_id)
         if "work_by_employment" in active_kreis_entry_names:
             persons = derive_work_by_employment_seed(
-                persons, wege,
+                persons, wege, exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
         # Every education-by-age-range entry reads the SAME education_flag column (they
         # differ only in their age universe), so it is derived ONCE if any is active.
         if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
+                exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -764,6 +772,7 @@ def load_mid_seed(
     kreis_seed_rng=None,
     ebike_seed_column: Optional[str] = None,
     escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -817,6 +826,18 @@ def load_mid_seed(
             describe different days. Default False -- the same default
             ``braunschweig.popsim.trips_stage`` declares -- so direct callers/tests are
             unaffected; the stage always passes its configured value explicitly.
+        exclude_rbw_legs: The value of the ``exclude_rbw_legs`` trip-build flag for
+            THIS run (config key ``braunschweig.population.popsim.exclude_rbw_legs``,
+            threaded from ``popsim.stage``). Read ONLY by the participation-universe seed
+            derivations (controller ruling R8): the trip build drops rbW legs
+            (``W_RBW == 1``) from the plan only under this flag, so the seed must count
+            them exactly when the plan does -- filtering them unconditionally would say
+            "no work" about a plan that makes a work trip whenever the flag is OFF (arm 1
+            of the A/B ladder does exactly that). Default True, matching the config
+            default ``braunschweig.popsim.completed_donor`` and
+            ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
+            gets the PRODUCTION convention rather than a divergent one; the flag is inert
+            unless a participation-universe control is active.
     """
     if complete_members and completion_rng is None:
         raise ValueError(
@@ -885,6 +906,7 @@ def load_mid_seed(
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
         escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
     )
     households = _join_hh_type5_column(households, persons, columns)
     _hh_extra, _person_extra = _split_kreis_entries_by_level(effective_kreis_entries)
@@ -907,6 +929,7 @@ def project_completed_seed(
     forbid_no_diary_sources: bool = False,
     drop_leading_arrive_home_leg: bool = False,
     escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = True,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -987,6 +1010,18 @@ def project_completed_seed(
             that code as education too, or seed and realised plan describe different
             days. Default False here for the same reason as above -- it is the default
             ``braunschweig.popsim.trips_stage`` declares.
+        exclude_rbw_legs: The value of the ``exclude_rbw_legs`` trip-build flag for
+            THIS run (config key ``braunschweig.population.popsim.exclude_rbw_legs``,
+            threaded from ``popsim.stage``). Read ONLY by the participation-universe seed
+            derivations (controller ruling R8): the trip build drops rbW legs
+            (``W_RBW == 1``) from the plan only under this flag, so the seed must count
+            them exactly when the plan does -- filtering them unconditionally would say
+            "no work" about a plan that makes a work trip whenever the flag is OFF (arm 1
+            of the A/B ladder does exactly that). Default True, matching the config
+            default ``braunschweig.popsim.completed_donor`` and
+            ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
+            gets the PRODUCTION convention rather than a divergent one; the flag is inert
+            unless a participation-universe control is active.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -1035,6 +1070,7 @@ def project_completed_seed(
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
         escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
     )
 
     households = _join_hh_type5_column(households, persons, columns)

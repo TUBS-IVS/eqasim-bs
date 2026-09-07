@@ -487,9 +487,10 @@ def derive_work_participation_seed(persons, wege, *, rng, household_id="H_ID", p
 #   3. its education code set is the static ``{3, 11, 12}``, while the realised plan
 #      additionally maps ``W_ZWECK 13`` to education when ``escort_passive_education``
 #      is on (issue #256).
-# The functions below use DIRECT legs only, no imputation and no code pass-through, and
-# their education code set follows the active flag -- the "seed equals the realised plan"
-# principle the trip_class package established (ADR-0108).
+# The functions below use no imputation and no code pass-through, their education code set
+# follows the active escort_passive_education flag, and their rbW filter FOLLOWS the trip
+# build's exclude_rbw_legs rather than being unconditional (controller ruling R8) -- the
+# "seed equals the realised plan" principle the trip_class package established (ADR-0108).
 # --------------------------------------------------------------------------- #
 
 #: MiD ``W_ZWECK`` 13 = "Begleitung Erwachsener" / the PASSIVE escort leg (the escorted
@@ -502,37 +503,50 @@ PASSIVE_ESCORT_W_ZWECK = 13
 
 def compute_has_direct_purpose_leg(
     persons: pd.DataFrame, wege: pd.DataFrame, purpose_codes, *,
+    exclude_rbw_legs: bool,
     household_id: str = "H_ID", person_id: str = "P_ID",
     zweck_col: str = "W_ZWECK", rbw_col: str = "W_RBW",
 ) -> pd.Series:
-    """Per-person 0/1 flag: does the person have at least one DIRECTLY recorded leg?
-
-    1 when the person has at least one leg with ``rbw_col == 0`` (a directly reported
-    trip, not a "regelmaessige berufliche Wege" summary leg) whose ``zweck_col`` is in
-    ``purpose_codes``, else 0.
+    """Per-person 0/1 flag: does the person have at least one leg the PLAN will contain
+    whose ``zweck_col`` is in ``purpose_codes``?
 
     No 803/804 pass-through and no imputation, unlike :func:`compute_has_purpose_trip`:
     the seed must equal the REALISED plan, and a plan source without a diary carries no
-    legs, so it is 0 by construction (Plan B, issue #368). The rbW rule mirrors
-    ``trips.build_trip_table`` under ``exclude_rbw_legs``, which drops exactly these legs
-    from the plan.
+    legs, so it is 0 by construction (Plan B, issue #368).
+
+    Args:
+        exclude_rbw_legs: mirrors the trip build's flag of the same name (controller
+            ruling R8). When True, only DIRECTLY recorded legs count (``rbw_col == 0``),
+            because ``trips.expand_persons_to_trips`` then drops the rbW
+            ("regelmaessige berufliche Wege") summary legs from the plan. When False the
+            rbW filter does not run AT ALL, because the plan then CONTAINS those legs --
+            filtering them out of the seed would say "no work" about a plan that makes a
+            work trip, the same seed-vs-plan divergence this package exists to remove and
+            the mirror image of ``derive_trip_class_seed``'s ruling R20. Keyword-only
+            with NO default on purpose: a caller that silently picked the wrong
+            convention would produce a plausible-looking but wrong seed.
 
     Returns a ``pd.Series`` of ``int`` indexed like ``persons`` (index preserved).
 
-    Raises ``KeyError`` if any of ``household_id`` / ``person_id`` / ``zweck_col`` /
-    ``rbw_col`` is absent from ``wege`` (no silent fallback to a guessed column name).
+    Raises ``KeyError`` if any of ``household_id`` / ``person_id`` / ``zweck_col`` is
+    absent from ``wege``, or ``rbw_col`` when ``exclude_rbw_legs`` is True (no silent
+    fallback to a guessed column name; ``rbw_col`` is not required when the filter is off,
+    since it is then never read).
     """
-    missing = [c for c in (household_id, person_id, zweck_col, rbw_col) if c not in wege.columns]
+    required = [household_id, person_id, zweck_col] + ([rbw_col] if exclude_rbw_legs else [])
+    missing = [c for c in required if c not in wege.columns]
     if missing:
         raise KeyError(
             f"compute_has_direct_purpose_leg: column(s) {missing} absent from the Wege frame "
             f"(has {list(wege.columns)}); cannot derive the direct-leg flag.")
-    # A non-numeric / missing rbW code is read as a DIRECT leg (0), the same reading
-    # trips.build_trip_table applies; the coercion is explicit so a string-typed column
-    # cannot silently exclude every leg.
-    rbw = pd.to_numeric(wege[rbw_col], errors="coerce").fillna(0)
-    direct = wege[(rbw == 0) & wege[zweck_col].isin(set(purpose_codes))]
-    keys = pd.MultiIndex.from_arrays([direct[household_id], direct[person_id]]).unique()
+    counted = wege[wege[zweck_col].isin(set(purpose_codes))]
+    if exclude_rbw_legs:
+        # A non-numeric / missing rbW code is read as a DIRECT leg (0), the same reading
+        # trips.expand_persons_to_trips applies; the coercion is explicit so a
+        # string-typed column cannot silently exclude every leg.
+        rbw = pd.to_numeric(counted[rbw_col], errors="coerce").fillna(0)
+        counted = counted[rbw == 0]
+    keys = pd.MultiIndex.from_arrays([counted[household_id], counted[person_id]]).unique()
     person_keys = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
     return pd.Series(person_keys.isin(keys).astype(int), index=persons.index)
 
@@ -576,23 +590,31 @@ def _real_persons(persons: pd.DataFrame) -> pd.DataFrame:
     return persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
 
 
-def _plan_source_flag(persons, wege, purpose_codes, *, household_id, person_id, name):
+def _plan_source_flag(persons, wege, purpose_codes, *, exclude_rbw_legs, household_id,
+                      person_id, name):
     """:func:`compute_has_direct_purpose_leg` over the real donor persons, mapped onto
     every person via its plan source (shared core of the two derivations below)."""
     real = _real_persons(persons)
     real_flag = compute_has_direct_purpose_leg(
-        real, wege, purpose_codes, household_id=household_id, person_id=person_id)
+        real, wege, purpose_codes, exclude_rbw_legs=exclude_rbw_legs,
+        household_id=household_id, person_id=person_id)
     real_flag.index = pd.MultiIndex.from_arrays([real[household_id], real[person_id]])
     return map_flag_from_plan_source(
         persons, real_flag, household_id=household_id, person_id=person_id, name=name)
 
 
-def derive_work_by_employment_seed(persons, wege, *, household_id="H_ID", person_id="P_ID"):
+def derive_work_by_employment_seed(persons, wege, *, exclude_rbw_legs,
+                                   household_id="H_ID", person_id="P_ID"):
     """Derive the ``work_by_employment`` seed column: the four MECE labels of
     ``kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES``.
 
     label = (``employment_status`` in ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``)
-    x (the realised plan source has a DIRECT work leg, ``PARTICIPATION_W_ZWECK["work"]``).
+    x (the realised plan source has a work leg the plan will contain,
+    ``PARTICIPATION_W_ZWECK["work"]``).
+
+    ``exclude_rbw_legs`` is forwarded verbatim to
+    :func:`compute_has_direct_purpose_leg` (controller ruling R8) and is keyword-only
+    with no default for the same reason.
 
     Requires the ``employment_status`` column, which ``attributes.map_employment_status``
     derives earlier in ``seed_loading``; raises ``KeyError`` naming it rather than
@@ -612,7 +634,7 @@ def derive_work_by_employment_seed(persons, wege, *, household_id="H_ID", person
             "derive_work_by_employment_seed: 'employment_status' absent from the persons frame; "
             "attributes.map_employment_status must run BEFORE this derivation (seed_loading order).")
     work = _plan_source_flag(
-        persons, wege, PARTICIPATION_W_ZWECK["work"],
+        persons, wege, PARTICIPATION_W_ZWECK["work"], exclude_rbw_legs=exclude_rbw_legs,
         household_id=household_id, person_id=person_id, name="work_by_employment").to_numpy() == 1
     employed = persons["employment_status"].isin(attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES).to_numpy()
     label = np.where(employed,
@@ -630,20 +652,20 @@ def derive_work_by_employment_seed(persons, wege, *, household_id="H_ID", person
         WORK_BY_EMPLOYMENT_CATEGORIES, fill_value=0)
     n = int(universe.sum())
     logger.info(
-        "[popsim.mid] work_by_employment seed over %d persons aged %d+ (direct legs only, "
-        "no imputation): %s",
+        "[popsim.mid] work_by_employment seed over %d persons aged %d+ (%s, no imputation): %s",
         n, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS,
+        "direct legs only" if exclude_rbw_legs else "all legs incl. rbW",
         {k: f"{int(v)} ({v / max(n, 1):.1%})" for k, v in counts.items()})
     return out
 
 
 def derive_education_flag_seed(persons, wege, *, escort_passive_education,
-                               household_id="H_ID", person_id="P_ID"):
+                               exclude_rbw_legs, household_id="H_ID", person_id="P_ID"):
     """Derive the ``education_flag`` seed column (``EDUCATION_FLAG_CATEGORIES``:
     ``edu`` / ``noedu``).
 
-    ``edu`` when the realised plan source has a DIRECT leg whose MAPPED purpose is
-    education under the ACTIVE flags: ``PARTICIPATION_W_ZWECK["education"]``
+    ``edu`` when the realised plan source has a leg the plan will contain whose MAPPED
+    purpose is education under the ACTIVE flags: ``PARTICIPATION_W_ZWECK["education"]``
     (``{3, 11, 12}``), plus :data:`PASSIVE_ESCORT_W_ZWECK` iff
     ``escort_passive_education`` -- exactly the vocabulary ``trips.map_purpose`` gives the
     plan under the same flag. A static code set would seed an escorted child's Kita leg as
@@ -653,6 +675,9 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
         escort_passive_education: the value of the ``escort_passive_education``
             trip-build flag for THIS run. No default: the seed and the plan must be built
             from the same flag, so the caller has to state it.
+        exclude_rbw_legs: forwarded verbatim to
+            :func:`compute_has_direct_purpose_leg` (controller ruling R8); keyword-only
+            with no default for the same reason.
 
     Logs the ``edu`` share as a count AND a rate per education-by-age band
     (``EDUCATION_AGE_BOUNDS``), i.e. per control universe, so a band whose seed cannot
@@ -664,8 +689,9 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     codes = set(PARTICIPATION_W_ZWECK["education"])
     if escort_passive_education:
         codes = codes | {PASSIVE_ESCORT_W_ZWECK}
-    flag = _plan_source_flag(persons, wege, codes, household_id=household_id,
-                             person_id=person_id, name="education_flag")
+    flag = _plan_source_flag(persons, wege, codes, exclude_rbw_legs=exclude_rbw_legs,
+                             household_id=household_id, person_id=person_id,
+                             name="education_flag")
     edu_label, noedu_label = EDUCATION_FLAG_CATEGORIES
     out = persons.copy()
     out["education_flag"] = np.where(flag.to_numpy() == 1, edu_label, noedu_label)
@@ -679,16 +705,19 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
             n_edu = int((out.loc[band, "education_flag"] == edu_label).sum())
             logger.info(
                 "[popsim.mid] education_flag seed, %s (ages %s): %d/%d (%.1f%%) %s "
-                "(direct legs only, W_ZWECK %s)",
+                "(%s, W_ZWECK %s)",
                 entry_name,
                 f"{min_age}-{max_age}" if max_age is not None else f"{min_age}+",
-                n_edu, n_band, 100.0 * n_edu / max(n_band, 1), edu_label, sorted(codes))
+                n_edu, n_band, 100.0 * n_edu / max(n_band, 1), edu_label,
+                "direct legs only" if exclude_rbw_legs else "all legs incl. rbW",
+                sorted(codes))
     else:
         # No age column (a fixture / a caller that never loads HP_ALTER): report the
         # overall rate rather than nothing, so the fallback-free derivation still logs.
         n_edu = int((out["education_flag"] == edu_label).sum())
         logger.info(
             "[popsim.mid] education_flag seed over %d persons (no HP_ALTER column -> no "
-            "per-age-band rates): %d (%.1f%%) %s (direct legs only, W_ZWECK %s)",
-            len(out), n_edu, 100.0 * n_edu / max(len(out), 1), edu_label, sorted(codes))
+            "per-age-band rates): %d (%.1f%%) %s (%s, W_ZWECK %s)",
+            len(out), n_edu, 100.0 * n_edu / max(len(out), 1), edu_label,
+            "direct legs only" if exclude_rbw_legs else "all legs incl. rbW", sorted(codes))
     return out

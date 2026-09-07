@@ -818,6 +818,13 @@ def configure(context):
     # OWN cache-validation hash tracks it and so execute() may read it with the
     # single-arg form below. configs/base_bs.yml sets it to true.
     context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
+    # rbW-leg exclusion (controller ruling R8), the same key + default
+    # braunschweig.popsim.completed_donor and braunschweig.popsim.trips_stage declare:
+    # the trip build drops rbW legs from the plan only under this flag, so the
+    # participation-universe seeds must count them exactly when the plan does. Declaring
+    # it here adds the key to THIS stage's config-validation hash set (intended: a change
+    # to it changes the seed, so the stage must re-run).
+    context.config(KEY_EXCLUDE_RBW_LEGS, True)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1363,7 +1370,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
         drop_leading_arrive_home_leg: bool = False,
-        escort_passive_education: bool = False):
+        escort_passive_education: bool = False, exclude_rbw_legs: bool = True):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1376,10 +1383,11 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
 
-    ``escort_passive_education`` (Plan B, issue #368) is threaded into BOTH MiD branches,
-    unlike the three flags above: the ``education_flag`` seed it governs is derived from
-    the MiD Wege table on either path, not from the completed-donor diary facts. It is
-    inert unless an education-by-age-range KREIS control is active.
+    ``escort_passive_education`` and ``exclude_rbw_legs`` (Plan B issue #368, controller
+    ruling R8) are threaded into BOTH MiD branches, unlike the three flags above: the
+    participation-universe seeds they govern are derived from the MiD Wege table on either
+    path, not from the completed-donor diary facts. Both are inert unless a
+    participation-universe KREIS control is active.
 
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -1441,6 +1449,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             forbid_no_diary_sources=forbid_no_diary_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             escort_passive_education=escort_passive_education,
+            exclude_rbw_legs=exclude_rbw_legs,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1460,6 +1469,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             kreis_seed_rng=kreis_seed_rng,
             ebike_seed_column=ebike_seed_column_cfg,
             escort_passive_education=escort_passive_education,
+            exclude_rbw_legs=exclude_rbw_legs,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (
@@ -2278,6 +2288,9 @@ def execute(context) -> pd.DataFrame:
     # build maps to education (Plan B, issue #368); read from the SAME key trips_stage
     # reads, so seed and plan can never disagree.
     escort_passive_education_on = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
+    # The participation-universe seeds must count exactly the legs the trip build keeps
+    # (controller ruling R8); read from the SAME key trips_stage / completed_donor read.
+    exclude_rbw_legs_on = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2288,6 +2301,7 @@ def execute(context) -> pd.DataFrame:
         forbid_no_diary_sources=diary_plan_match_on,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
         escort_passive_education=escort_passive_education_on,
+        exclude_rbw_legs=exclude_rbw_legs_on,
     )
 
     run_one = _prepare_batch_runner(

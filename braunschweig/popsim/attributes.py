@@ -81,6 +81,13 @@ EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 # report (participation_fit) and the target margin
 # (scripts/build_participation_universe_targets.py).
 EMPLOYED_EMPLOYMENT_STATUS_CLASSES = ("vollzeit", "teilzeit", "geringfuegig", "in_ausbildung")
+# Hand-listed labels must all EXIST in the seed column's value set (controller ruling R9):
+# a typo would make derive_work_by_employment_seed's isin() all-False, silently labelling
+# every person nonemployed_* behind a plausible-looking log line and no error -- a silent
+# wrong result, which the no-silent-failure rule forbids regardless of severity label.
+assert set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(EMPLOYMENT_STATUS_CATEGORIES), (
+    f"EMPLOYED_EMPLOYMENT_STATUS_CLASSES {EMPLOYED_EMPLOYMENT_STATUS_CLASSES} must be a "
+    f"subset of EMPLOYMENT_STATUS_CATEGORIES {EMPLOYMENT_STATUS_CATEGORIES}.")
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
