@@ -59,3 +59,18 @@ def test_person_total_by_kreis_age_range_raises_without_any_band_column():
     cells, kreis = _cells()
     with pytest.raises(RuntimeError, match="age_range"):
         person_total_by_kreis_age_range(cells.drop(columns=[c for c in cells.columns if "_AGE_" in c]), kreis, 6, 17)
+
+
+def test_person_total_by_kreis_min_age_error_names_itself_not_the_delegate():
+    """person_total_by_kreis_min_age delegates to person_total_by_kreis_age_range and
+    rewrites that helper's RuntimeError message to carry ITS OWN name (so a caller of the
+    min_age entry point never sees an error naming a function it never called). This
+    substitution is a plain string.replace on the delegate's message text: if that text is
+    ever edited so the substring no longer matches, the replace silently becomes a no-op
+    and the raised error would name the wrong function -- this test pins the substitution
+    so such a drift fails loudly."""
+    cells, kreis = _cells()
+    with pytest.raises(RuntimeError, match="person_total_by_kreis_min_age") as excinfo:
+        person_total_by_kreis_min_age(
+            cells.drop(columns=[c for c in cells.columns if "_AGE_" in c]), kreis, 14)
+    assert "person_total_by_kreis_age_range" not in str(excinfo.value)

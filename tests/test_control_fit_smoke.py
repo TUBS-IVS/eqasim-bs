@@ -173,14 +173,22 @@ def test_control_fit_reports_per_category_deviation():
 
 def test_check_category_partition_narrows_the_universe_by_max_age():
     """An age-RANGE universe (min_age AND max_age set, Plan B #368): persons outside the
-    band are legitimately uncovered by every category, not a partition gap."""
+    band are legitimately uncovered by every category, not a partition gap.
+
+    The age-40 row deliberately carries a seed value ("other") that matches NEITHER
+    category predicate: with only the min_age (>=6) narrowing it would be inside the
+    universe and reported as an uncovered gap (hits == 0), so this test actually
+    discriminates whether the max_age (<=17) narrowing runs -- unlike a fixture where
+    every row matches some category regardless of the universe, which would pass
+    whether or not max_age narrowing is applied at all.
+    """
     from braunschweig.analysis.population_validation import control_fit_smoke as smoke
     from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
     ctl = KreisAttributeControl(
         name="edu_band", seed_column="education_flag", level="person",
         categories=(("edu", "== 'edu'"), ("noedu", "== 'noedu'")),
         target_csv_relpath="x.csv", target_columns=("edu", "noedu"), tier="hard", min_age=6, max_age=17)
-    persons = pd.DataFrame({"HP_ALTER": [3, 10, 40], "education_flag": ["edu", "noedu", "edu"]})
+    persons = pd.DataFrame({"HP_ALTER": [3, 10, 40], "education_flag": ["edu", "noedu", "other"]})
     report = smoke.check_category_partition([ctl], persons=persons, households=pd.DataFrame())
     assert report.failures == []          # the 3- and 40-year-olds are outside the universe, not gaps
     assert report.n_controls_checked == 1
