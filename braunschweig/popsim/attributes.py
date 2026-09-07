@@ -73,6 +73,15 @@ EMPLOYMENT_STATUS_BY_P_BKAT = {
 # codebook code order 1..7 above.
 EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
+# The employment_status classes that count as EMPLOYED for the work_by_employment KREIS
+# control (Plan B, issue #368, spec decision Q5): the SrV twin is V_ERW in {8, 9, 10, 11}.
+# Apprentices are IN (MiD EMPLOYED_TAET includes P_TAET 8; ADR-0060 treats MiD
+# in_ausbildung and SrV V_ERW 8 as apples-to-apples); sonstiges / erwerbstaetig_unspec /
+# nicht_erwerbstaetig are OUT. Single source for the seed (mid.participation), the fit
+# report (participation_fit) and the target margin
+# (scripts/build_participation_universe_targets.py).
+EMPLOYED_EMPLOYMENT_STATUS_CLASSES = ("vollzeit", "teilzeit", "geringfuegig", "in_ausbildung")
+
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
 # These map to studies=True; all other codes (employment 1-7, Rentner/arbeitslos/

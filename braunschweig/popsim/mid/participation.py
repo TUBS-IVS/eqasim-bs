@@ -6,6 +6,13 @@
 - ``derive_participation_seed``       -- ``<purpose>_participation`` seed from the realised plan
 - ``derive_work_participation_seed``  -- thin ``derive_participation_seed`` wrapper (purpose="work")
 
+Participation-UNIVERSE seeds (Plan B, issue #368) -- the replacement family:
+
+- ``compute_has_direct_purpose_leg``  -- has-a-DIRECT-<purpose>-leg flag (no rbW, no codes)
+- ``map_flag_from_plan_source``       -- map a donor flag onto every person via its plan source
+- ``derive_work_by_employment_seed``  -- ``work_by_employment`` seed (4 MECE labels)
+- ``derive_education_flag_seed``      -- ``education_flag`` seed ('edu'/'noedu')
+
 Extracted verbatim from the stage module (``__init__``); see the package
 docstring for the stage-level context.
 
@@ -23,10 +30,18 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import attributes
 from braunschweig.popsim import trips
+# The participation-universe control vocabularies (Plan B, issue #368) live with the
+# CONTROL (kreis_attribute_control), because the seed column's value set, the registry
+# entry's categories and the target CSV's share columns must be one ordered list. That
+# module imports only ``attributes`` + numpy/pandas, so this import creates no cycle.
+from braunschweig.popsim.kreis_attribute_control import (
+    EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, WORK_BY_EMPLOYMENT_CATEGORIES,
+    WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
 # The 803/804 diary non-response codes are DECLARED by the diary plan match (the module
 # that decides which of them are remapped and which are kept); the seed guard below must
 # use that single declaration rather than repeating the literals here.
@@ -446,3 +461,234 @@ def derive_work_participation_seed(persons, wege, *, rng, household_id="H_ID", p
     """
     return derive_participation_seed(
         persons, wege, "work", rng=rng, household_id=household_id, person_id=person_id)
+
+
+# --------------------------------------------------------------------------- #
+# Participation UNIVERSE seeds (Plan B, issue #368)
+#
+# The <purpose>_participation family above constrains the share of ALL persons with a
+# <purpose> trip. Measured on the production run, that marginal was MET while the WRONG
+# persons made the trips (employed 58.4 % with a work trip vs 67.5 % in the survey,
+# pensioners 7.8 % vs 1.8 %): a share over an undifferentiated universe cannot see which
+# sub-population supplies it. The controls below therefore steer the JOINT distribution
+# (employment status x has a work leg; education flag within an age band).
+#
+# Their seeds must not reproduce three defects of ``compute_has_purpose_trip``, all
+# measured on the MiD 2023 B1 delivery:
+#   1. it filters on ``W_ZWECK`` ONLY, so it counts rbW legs (``W_RBW == 1``,
+#      "regelmaessige berufliche Wege" -- 26.4 % of all work legs) that the trip builder
+#      DROPS from the plan (``trips.build_trip_table`` under ``exclude_rbw_legs``); a
+#      donor with direct non-work legs plus rbW work legs was seeded "has work" and
+#      realises no work trip;
+#   2. it passes the 803/804 diary non-response codes THROUGH so
+#      ``attributes.map_participation`` age-band imputes them; 3,283 plan sources are
+#      deliberately kept immobile (``diary_plan_match`` REASON_KEEP_IMMOBILE) and were
+#      thereby seeded as mobile;
+#   3. its education code set is the static ``{3, 11, 12}``, while the realised plan
+#      additionally maps ``W_ZWECK 13`` to education when ``escort_passive_education``
+#      is on (issue #256).
+# The functions below use DIRECT legs only, no imputation and no code pass-through, and
+# their education code set follows the active flag -- the "seed equals the realised plan"
+# principle the trip_class package established (ADR-0108).
+# --------------------------------------------------------------------------- #
+
+#: MiD ``W_ZWECK`` 13 = "Begleitung Erwachsener" / the PASSIVE escort leg (the escorted
+#: person's own trip to their destination; 100 % minors on the raw file, see
+#: ``trips.ESCORT_W_ZWECK`` and the issue #256 active/passive split). It counts as an
+#: EDUCATION leg only under ``escort_passive_education``, which is exactly what
+#: ``trips.map_purpose`` does to the realised plan under the same flag.
+PASSIVE_ESCORT_W_ZWECK = 13
+
+
+def compute_has_direct_purpose_leg(
+    persons: pd.DataFrame, wege: pd.DataFrame, purpose_codes, *,
+    household_id: str = "H_ID", person_id: str = "P_ID",
+    zweck_col: str = "W_ZWECK", rbw_col: str = "W_RBW",
+) -> pd.Series:
+    """Per-person 0/1 flag: does the person have at least one DIRECTLY recorded leg?
+
+    1 when the person has at least one leg with ``rbw_col == 0`` (a directly reported
+    trip, not a "regelmaessige berufliche Wege" summary leg) whose ``zweck_col`` is in
+    ``purpose_codes``, else 0.
+
+    No 803/804 pass-through and no imputation, unlike :func:`compute_has_purpose_trip`:
+    the seed must equal the REALISED plan, and a plan source without a diary carries no
+    legs, so it is 0 by construction (Plan B, issue #368). The rbW rule mirrors
+    ``trips.build_trip_table`` under ``exclude_rbw_legs``, which drops exactly these legs
+    from the plan.
+
+    Returns a ``pd.Series`` of ``int`` indexed like ``persons`` (index preserved).
+
+    Raises ``KeyError`` if any of ``household_id`` / ``person_id`` / ``zweck_col`` /
+    ``rbw_col`` is absent from ``wege`` (no silent fallback to a guessed column name).
+    """
+    missing = [c for c in (household_id, person_id, zweck_col, rbw_col) if c not in wege.columns]
+    if missing:
+        raise KeyError(
+            f"compute_has_direct_purpose_leg: column(s) {missing} absent from the Wege frame "
+            f"(has {list(wege.columns)}); cannot derive the direct-leg flag.")
+    # A non-numeric / missing rbW code is read as a DIRECT leg (0), the same reading
+    # trips.build_trip_table applies; the coercion is explicit so a string-typed column
+    # cannot silently exclude every leg.
+    rbw = pd.to_numeric(wege[rbw_col], errors="coerce").fillna(0)
+    direct = wege[(rbw == 0) & wege[zweck_col].isin(set(purpose_codes))]
+    keys = pd.MultiIndex.from_arrays([direct[household_id], direct[person_id]]).unique()
+    person_keys = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
+    return pd.Series(person_keys.isin(keys).astype(int), index=persons.index)
+
+
+def map_flag_from_plan_source(persons: pd.DataFrame, real_flag: pd.Series, *,
+                              household_id: str, person_id: str, name: str) -> pd.Series:
+    """Map a flag indexed by ``(household_id, person_id)`` of REAL donor persons onto
+    every person via that person's PLAN SOURCE.
+
+    A synthetic person executes the MiD plan identified by ``(source_H_ID, source_P_ID)``,
+    so a participation seed must describe the SOURCE's diary, not the person's own -- the
+    same weekday-vs-realised-plan argument :func:`derive_trip_class_seed` documents in
+    full. When the plan-source columns are absent (no member completion / weekend match
+    ran) the person's own key is used, and the seed is already weekday-filtered.
+
+    Raises ``ValueError`` when any plan source does not resolve to a row of ``real_flag``
+    (upstream donor/source corruption; mirrors :func:`derive_participation_seed`). There
+    is deliberately NO fallback: seeding an unresolved source from a default would hide a
+    broken donor join behind a plausible-looking control.
+    """
+    if "source_H_ID" in persons.columns and "source_P_ID" in persons.columns:
+        idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+    else:
+        idx = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
+    mapped = pd.Series(real_flag.reindex(idx).to_numpy(), index=persons.index)
+    n_unresolved = int(mapped.isna().sum())
+    if n_unresolved:
+        raise ValueError(
+            f"{name}: {n_unresolved} person(s) have a plan source (source_H_ID, source_P_ID) "
+            "absent from the donor frame; cannot derive the seed from the realised plan.")
+    return mapped.astype(int)
+
+
+def _real_persons(persons: pd.DataFrame) -> pd.DataFrame:
+    """The REAL (non mirror-imputed) donor persons -- the only valid plan sources.
+
+    A member-completion filler's ``(source_H_ID, source_P_ID)`` points at its mirror
+    donor, which is one of these real persons; restricting the flag frame to them keeps
+    the plan-source index unique (:func:`derive_trip_class_seed` restricts the same way).
+    """
+    return persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
+
+
+def _plan_source_flag(persons, wege, purpose_codes, *, household_id, person_id, name):
+    """:func:`compute_has_direct_purpose_leg` over the real donor persons, mapped onto
+    every person via its plan source (shared core of the two derivations below)."""
+    real = _real_persons(persons)
+    real_flag = compute_has_direct_purpose_leg(
+        real, wege, purpose_codes, household_id=household_id, person_id=person_id)
+    real_flag.index = pd.MultiIndex.from_arrays([real[household_id], real[person_id]])
+    return map_flag_from_plan_source(
+        persons, real_flag, household_id=household_id, person_id=person_id, name=name)
+
+
+def derive_work_by_employment_seed(persons, wege, *, household_id="H_ID", person_id="P_ID"):
+    """Derive the ``work_by_employment`` seed column: the four MECE labels of
+    ``kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES``.
+
+    label = (``employment_status`` in ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``)
+    x (the realised plan source has a DIRECT work leg, ``PARTICIPATION_W_ZWECK["work"]``).
+
+    Requires the ``employment_status`` column, which ``attributes.map_employment_status``
+    derives earlier in ``seed_loading``; raises ``KeyError`` naming it rather than
+    deriving it a second time (a second resolve of the P_BKAT code-9 item non-response
+    would be an independent rng draw -- the defect ADR-0087 removed for the PT ticket
+    group).
+
+    Logs the label distribution as counts AND rates over the control's own 14+ universe
+    (``WORK_BY_EMPLOYMENT_MIN_AGE_YEARS``), so a seed that cannot reach the target margin
+    is visible in the run log before PopulationSim ever sees it.
+
+    Returns the persons frame with the added string column (MUST be reassigned).
+    Mutates: nothing in place.
+    """
+    if "employment_status" not in persons.columns:
+        raise KeyError(
+            "derive_work_by_employment_seed: 'employment_status' absent from the persons frame; "
+            "attributes.map_employment_status must run BEFORE this derivation (seed_loading order).")
+    work = _plan_source_flag(
+        persons, wege, PARTICIPATION_W_ZWECK["work"],
+        household_id=household_id, person_id=person_id, name="work_by_employment").to_numpy() == 1
+    employed = persons["employment_status"].isin(attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES).to_numpy()
+    label = np.where(employed,
+                     np.where(work, "employed_work", "employed_nowork"),
+                     np.where(work, "nonemployed_work", "nonemployed_nowork"))
+    out = persons.copy()
+    out["work_by_employment"] = label
+    # Report over the CONTROL's universe (14+), not over all persons: the target margin is
+    # reported over that base, so a distribution over everybody would not be comparable.
+    if "HP_ALTER" in out.columns:
+        universe = pd.to_numeric(out["HP_ALTER"], errors="coerce") >= WORK_BY_EMPLOYMENT_MIN_AGE_YEARS
+    else:
+        universe = pd.Series(True, index=out.index)
+    counts = out.loc[universe, "work_by_employment"].value_counts().reindex(
+        WORK_BY_EMPLOYMENT_CATEGORIES, fill_value=0)
+    n = int(universe.sum())
+    logger.info(
+        "[popsim.mid] work_by_employment seed over %d persons aged %d+ (direct legs only, "
+        "no imputation): %s",
+        n, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS,
+        {k: f"{int(v)} ({v / max(n, 1):.1%})" for k, v in counts.items()})
+    return out
+
+
+def derive_education_flag_seed(persons, wege, *, escort_passive_education,
+                               household_id="H_ID", person_id="P_ID"):
+    """Derive the ``education_flag`` seed column (``EDUCATION_FLAG_CATEGORIES``:
+    ``edu`` / ``noedu``).
+
+    ``edu`` when the realised plan source has a DIRECT leg whose MAPPED purpose is
+    education under the ACTIVE flags: ``PARTICIPATION_W_ZWECK["education"]``
+    (``{3, 11, 12}``), plus :data:`PASSIVE_ESCORT_W_ZWECK` iff
+    ``escort_passive_education`` -- exactly the vocabulary ``trips.map_purpose`` gives the
+    plan under the same flag. A static code set would seed an escorted child's Kita leg as
+    non-education while the plan realises it as education (issue #256).
+
+    Args:
+        escort_passive_education: the value of the ``escort_passive_education``
+            trip-build flag for THIS run. No default: the seed and the plan must be built
+            from the same flag, so the caller has to state it.
+
+    Logs the ``edu`` share as a count AND a rate per education-by-age band
+    (``EDUCATION_AGE_BOUNDS``), i.e. per control universe, so a band whose seed cannot
+    reach its target is visible before PopulationSim runs.
+
+    Returns the persons frame with the added string column (MUST be reassigned).
+    Mutates: nothing in place.
+    """
+    codes = set(PARTICIPATION_W_ZWECK["education"])
+    if escort_passive_education:
+        codes = codes | {PASSIVE_ESCORT_W_ZWECK}
+    flag = _plan_source_flag(persons, wege, codes, household_id=household_id,
+                             person_id=person_id, name="education_flag")
+    edu_label, noedu_label = EDUCATION_FLAG_CATEGORIES
+    out = persons.copy()
+    out["education_flag"] = np.where(flag.to_numpy() == 1, edu_label, noedu_label)
+    if "HP_ALTER" in out.columns:
+        age = pd.to_numeric(out["HP_ALTER"], errors="coerce")
+        for entry_name, (min_age, max_age) in EDUCATION_AGE_BOUNDS.items():
+            band = age >= min_age
+            if max_age is not None:
+                band = band & (age <= max_age)
+            n_band = int(band.sum())
+            n_edu = int((out.loc[band, "education_flag"] == edu_label).sum())
+            logger.info(
+                "[popsim.mid] education_flag seed, %s (ages %s): %d/%d (%.1f%%) %s "
+                "(direct legs only, W_ZWECK %s)",
+                entry_name,
+                f"{min_age}-{max_age}" if max_age is not None else f"{min_age}+",
+                n_edu, n_band, 100.0 * n_edu / max(n_band, 1), edu_label, sorted(codes))
+    else:
+        # No age column (a fixture / a caller that never loads HP_ALTER): report the
+        # overall rate rather than nothing, so the fallback-free derivation still logs.
+        n_edu = int((out["education_flag"] == edu_label).sum())
+        logger.info(
+            "[popsim.mid] education_flag seed over %d persons (no HP_ALTER column -> no "
+            "per-age-band rates): %d (%.1f%%) %s (direct legs only, W_ZWECK %s)",
+            len(out), n_edu, 100.0 * n_edu / max(len(out), 1), edu_label, sorted(codes))
+    return out

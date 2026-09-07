@@ -235,6 +235,19 @@ KEY_CLOSURE_DWELL_MIN_OBS = "braunschweig.population.popsim.closure_dwell_min_ob
 # MiD anzwege1. Default ON (project rule: new features default on). Read by
 # braunschweig.popsim.stage.
 KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_seed_counts_closure"
+# Map the PASSIVE escort leg (MiD W_ZWECK 13, the escorted child's own trip) to the
+# education purpose (issue #256). This is a TRIP-BUILD flag, declared with this exact
+# unprefixed key name and this exact default by braunschweig.popsim.trips_stage and
+# braunschweig.synthesis.commute_day.home_office_donors_stage (synpp requires every stage
+# that READS a key to declare it, so the declaration -- not the fact -- is repeated).
+# THIS stage reads it because the education_flag KREIS-control seed must count the same
+# codes as education that the trip build does (Plan B, issue #368): a seed built from
+# {3, 11, 12} while the plan realises {3, 11, 12, 13} as education would make the control
+# and the plan describe different days -- the same seed-vs-plan mismatch
+# KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE exists to close. All stages must therefore see the
+# SAME value. Read by braunschweig.popsim.stage -> mid.derive_education_flag_seed.
+KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
+DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).

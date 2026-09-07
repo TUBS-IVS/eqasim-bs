@@ -74,3 +74,83 @@ def test_person_total_by_kreis_min_age_error_names_itself_not_the_delegate():
         person_total_by_kreis_min_age(
             cells.drop(columns=[c for c in cells.columns if "_AGE_" in c]), kreis, 14)
     assert "person_total_by_kreis_age_range" not in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------- #
+# Task 2: the work_by_employment / education_flag SEED columns
+#
+# The three measured defects the new derivation must NOT reproduce (spec Plan B, #368):
+#   1. compute_has_purpose_trip counts rbW legs (W_RBW == 1) the trip builder DROPS, so a
+#      donor with only rbW work legs is seeded "has work" and realises no work trip;
+#   2. it passes the 803/804 diary non-response codes through for later age-band
+#      imputation, seeding deliberately immobile plan sources as mobile;
+#   3. its education code set is static, while the realised plan additionally maps
+#      W_ZWECK 13 to education when escort_passive_education is on.
+# The functions below therefore use DIRECT legs only, no imputation, no code
+# pass-through, and an education code set that follows the active flag.
+# --------------------------------------------------------------------------- #
+
+def _persons_wege():
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 2, 3], "P_ID": [1, 2, 1, 1], "HP_ALTER": [40, 12, 70, 30],
+        "employment_status": ["vollzeit", "nicht_erwerbstaetig", "nicht_erwerbstaetig", "in_ausbildung"],
+        "member_imputed": [False, False, False, False],
+        "source_H_ID": [1, 1, 2, 1], "source_P_ID": [1, 2, 1, 1]})   # person 3/1 borrows 1/1's diary
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1, 2, 2], "P_ID": [1, 1, 2, 1, 1], "W_ID": [1, 2, 1, 1, 2],
+        "W_ZWECK": [1, 8, 3, 2, 8], "W_RBW": [0, 0, 0, 1, 1]})          # 2/1 has ONLY rbW work legs
+    return persons, wege
+
+
+def test_direct_purpose_leg_ignores_rbw_legs_and_never_passes_through_codes():
+    from braunschweig.popsim.mid.participation import compute_has_direct_purpose_leg
+    persons, wege = _persons_wege()
+    flag = compute_has_direct_purpose_leg(persons, wege, {1, 2})
+    assert flag.tolist() == [1, 0, 0, 0]      # 2/1's rbW work legs do not count; no 803/804 carry-through
+
+
+def test_work_by_employment_labels_follow_employment_status_and_the_plan_source():
+    from braunschweig.popsim.mid.participation import derive_work_by_employment_seed
+    persons, wege = _persons_wege()
+    out = derive_work_by_employment_seed(persons, wege)
+    assert out["work_by_employment"].tolist() == [
+        "employed_work", "nonemployed_nowork", "nonemployed_nowork", "employed_work"]
+    # 3/1 is in_ausbildung (employed by decision Q5) and borrows 1/1's direct work leg
+
+
+def test_work_by_employment_requires_employment_status_first():
+    from braunschweig.popsim.mid.participation import derive_work_by_employment_seed
+    persons, wege = _persons_wege()
+    with pytest.raises(KeyError, match="employment_status"):
+        derive_work_by_employment_seed(persons.drop(columns=["employment_status"]), wege)
+
+
+def test_education_flag_counts_code_13_only_with_the_passive_escort_flag():
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _persons_wege()
+    wege13 = pd.concat([wege, pd.DataFrame({"H_ID": [2], "P_ID": [1], "W_ID": [3], "W_ZWECK": [13], "W_RBW": [0]})])
+    assert derive_education_flag_seed(persons, wege13, escort_passive_education=False)["education_flag"].tolist() == ["noedu", "edu", "noedu", "noedu"]
+    assert derive_education_flag_seed(persons, wege13, escort_passive_education=True)["education_flag"].tolist() == ["noedu", "edu", "edu", "noedu"]
+
+
+def test_map_flag_from_plan_source_raises_on_an_unresolved_source():
+    from braunschweig.popsim.mid.participation import map_flag_from_plan_source
+    persons, _ = _persons_wege()
+    real_flag = pd.Series([1, 0], index=pd.MultiIndex.from_arrays([[1, 1], [1, 2]]))  # 2/1 missing
+    with pytest.raises(ValueError, match="absent from the donor frame"):
+        map_flag_from_plan_source(persons, real_flag, household_id="H_ID", person_id="P_ID", name="work_by_employment")
+
+
+def test_education_by_age_entry_names_are_derived_from_the_bounds():
+    """Controller ruling R1: the education-by-age entry NAMES are derived from
+    EDUCATION_AGE_BOUNDS, never re-listed, so a later task cannot register an entry name
+    the bounds do not cover (or vice versa)."""
+    from braunschweig.popsim.kreis_attribute_control import (
+        EDUCATION_AGE_BOUNDS, EDUCATION_BY_AGE_ENTRY_NAMES, EDUCATION_FLAG_CATEGORIES,
+        WORK_BY_EMPLOYMENT_CATEGORIES)
+    assert EDUCATION_AGE_BOUNDS == {
+        "education_0_5": (0, 5), "education_6_17": (6, 17), "education_18plus": (18, None)}
+    assert EDUCATION_BY_AGE_ENTRY_NAMES == tuple(EDUCATION_AGE_BOUNDS)
+    assert WORK_BY_EMPLOYMENT_CATEGORIES == (
+        "employed_work", "employed_nowork", "nonemployed_work", "nonemployed_nowork")
+    assert EDUCATION_FLAG_CATEGORIES == ("edu", "noedu")

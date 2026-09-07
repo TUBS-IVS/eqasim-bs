@@ -142,6 +142,51 @@ def kreis_rows_indexed_by_ars5(target_df: pd.DataFrame) -> pd.DataFrame:
     return out.drop(index=[key for key in _AGG_ARS5 if key in out.index])
 
 
+# --------------------------------------------------------------------------- #
+# Participation-universe control vocabularies (Plan B, issue #368)
+#
+# Declared here (not in the seed module) because they are the CONTROL's category order:
+# the seed column's value set, the registry entry's `categories`, the target CSV's share
+# columns and the fit report must all use the same labels in the same order. The seed
+# derivation (braunschweig.popsim.mid.participation) imports them from here.
+# --------------------------------------------------------------------------- #
+
+# The four MECE labels of the work_by_employment control: employment status (employed iff
+# the person's employment_status is in attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES) x
+# whether the realised plan contains a direct work leg. This replaces the
+# work_participation control, which constrained the share of ALL persons with a work trip
+# and was therefore met while the WRONG persons made the trips (measured: employed 58.4 %
+# vs 67.5 % in the survey, pensioners 7.8 % vs 1.8 %).
+WORK_BY_EMPLOYMENT_CATEGORIES = ("employed_work", "employed_nowork", "nonemployed_work", "nonemployed_nowork")
+
+# Minimum age (inclusive) of the work_by_employment control universe. The MiD P9 / SrV
+# employment-status reference the target margin is built from is reported over persons
+# aged 14+, so the control's universe must be restricted the same way (the #97 universe
+# trap); declared here -- with the categories -- so the registry entry's `min_age` and the
+# seed derivation's universe log cannot state different bounds.
+WORK_BY_EMPLOYMENT_MIN_AGE_YEARS = 14
+
+# The two labels of the education_flag seed column: whether the realised plan contains a
+# direct education leg. Used by every education-by-age-range entry below (they differ only
+# in their age universe, not in their categories).
+EDUCATION_FLAG_CATEGORIES = ("edu", "noedu")
+
+# Inclusive age bounds (min_age, max_age) of the education-by-age-range control universes;
+# `None` as the upper bound means "no upper bound" (KreisAttributeControl.max_age = None).
+# The three bands separate the life stages whose education participation is governed by
+# different institutions -- pre-school (0-5), compulsory schooling (6-17) and post-school
+# education (18+) -- so a single education control cannot trade a missing pupil against a
+# surplus student (the #97 universe trap).
+EDUCATION_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
+    "education_0_5": (0, 5),
+    "education_6_17": (6, 17),
+    "education_18plus": (18, None),
+}
+# DERIVED from EDUCATION_AGE_BOUNDS (never re-listed) so a registry entry name and its age
+# universe cannot drift apart (controller ruling R1).
+EDUCATION_BY_AGE_ENTRY_NAMES = tuple(EDUCATION_AGE_BOUNDS)
+
+
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
 _TARGET_DIR = "braunschweig/targets"
 

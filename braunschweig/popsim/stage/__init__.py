@@ -230,6 +230,7 @@ from .cell_attributes import (  # noqa: F401  (re-exports)
 )
 from . import config_keys
 from .config_keys import (  # noqa: F401  (re-exports)
+    DEFAULT_ESCORT_PASSIVE_EDUCATION,
     KEY_BATCH_TIMEOUT,
     KEY_BIKES_KREIS_CONTROL,
     KEY_CARS_KREIS_CONTROL,
@@ -248,6 +249,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
     KEY_ESCORT_PARTICIPATION_CONTROL,
+    KEY_ESCORT_PASSIVE_EDUCATION,
     KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
     KEY_EXCLUDE_RBW_LEGS,
     KEY_FINE_TEEN_AGE_BANDS,
@@ -809,6 +811,13 @@ def configure(context):
     context.config(KEY_DIARY_PLAN_MATCH, True)
     context.config(KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE, True)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    # Passive-escort-as-education (issue #256), a TRIP-BUILD flag also declared by
+    # braunschweig.popsim.trips_stage with the same default: the education_flag
+    # KREIS-control seed must count the same W_ZWECK codes as education that the trip
+    # build does (Plan B, issue #368), so this stage declares the key too -- both so its
+    # OWN cache-validation hash tracks it and so execute() may read it with the
+    # single-arg form below. configs/base_bs.yml sets it to true.
+    context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1353,7 +1362,8 @@ def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_
 def _build_populationsim_seed(context, source, source_name: str, mid_dir, complete_members: bool,
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
-        drop_leading_arrive_home_leg: bool = False):
+        drop_leading_arrive_home_leg: bool = False,
+        escort_passive_education: bool = False):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1365,6 +1375,11 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     (``complete_members=False``) never receives them, so its ``trip_class`` seed stays
     byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
+
+    ``escort_passive_education`` (Plan B, issue #368) is threaded into BOTH MiD branches,
+    unlike the three flags above: the ``education_flag`` seed it governs is derived from
+    the MiD Wege table on either path, not from the completed-donor diary facts. It is
+    inert unless an education-by-age-range KREIS control is active.
 
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -1425,6 +1440,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             trip_class_counts_closure=trip_class_counts_closure,
             forbid_no_diary_sources=forbid_no_diary_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            escort_passive_education=escort_passive_education,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1443,6 +1459,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             kreis_control_entries=active_entries,
             kreis_seed_rng=kreis_seed_rng,
             ebike_seed_column=ebike_seed_column_cfg,
+            escort_passive_education=escort_passive_education,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (
@@ -2257,6 +2274,10 @@ def execute(context) -> pd.DataFrame:
     # The seed must subtract exactly the leading arrive-home leg the trip build drops
     # (controller ruling R20); read from the SAME key trips_stage reads.
     drop_leading_arrive_home_leg_on = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    # The education_flag seed must count the SAME W_ZWECK codes as education that the trip
+    # build maps to education (Plan B, issue #368); read from the SAME key trips_stage
+    # reads, so seed and plan can never disagree.
+    escort_passive_education_on = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2266,6 +2287,7 @@ def execute(context) -> pd.DataFrame:
         trip_class_counts_closure=trip_class_counts_closure_on,
         forbid_no_diary_sources=diary_plan_match_on,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
+        escort_passive_education=escort_passive_education_on,
     )
 
     run_one = _prepare_batch_runner(
