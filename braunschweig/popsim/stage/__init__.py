@@ -297,6 +297,7 @@ from .controls_builder import (  # noqa: F401  (re-exports)
     build_source_columns,
     person_band_census_columns,
     person_total_by_kreis,
+    person_total_by_kreis_age_range,
     person_total_by_kreis_min_age,
 )
 from . import source_resolution
@@ -1513,10 +1514,12 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
         # time such an entry is seen (fail-fast on a missing band column; no silent fallback).
         _kac_persons_by_kreis = None
-        # Age-restricted PERSON totals (min_age is not None, e.g. employment_status: 14+)
-        # use the single-year age columns instead (person_total_by_kreis_min_age) and are
-        # cached PER min_age value, so two entries sharing the same min_age reuse one
-        # computation while a different min_age recomputes correctly (no cross-entry reuse
+        # Age-restricted PERSON totals (min_age and/or max_age not None, e.g.
+        # employment_status: 14+, or an age-RANGE universe such as an education control,
+        # Plan B #368) use the single-year age columns instead
+        # (person_total_by_kreis_min_age / person_total_by_kreis_age_range) and are cached
+        # PER (min_age, max_age) pair, so two entries sharing the same bounds reuse one
+        # computation while different bounds recompute correctly (no cross-entry reuse
         # of the wrong universe -- the #97 universe trap this whole field exists to avoid).
         _kac_persons_by_kreis_min_age: dict = {}
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
@@ -1540,14 +1543,26 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
             # Entries with min_age set (e.g. employment_status: 14+, feature #172 task 4)
             # instead partition the min_age-restricted PERSON total (single-year age
             # columns) -- using the ALL-ages total here would let <min_age persons distort
-            # the category counts (the #97 universe trap).
+            # the category counts (the #97 universe trap). Entries that additionally set
+            # max_age (an age-RANGE universe, e.g. an education control, Plan B #368)
+            # partition the [min_age, max_age] band total instead.
             if _ctl.level == "person":
                 _entry_min_age = getattr(_ctl, "min_age", None)
-                if _entry_min_age is not None:
-                    if _entry_min_age not in _kac_persons_by_kreis_min_age:
-                        _kac_persons_by_kreis_min_age[_entry_min_age] = person_total_by_kreis_min_age(
+                _entry_max_age = getattr(_ctl, "max_age", None)
+                _entry_age_key = (_entry_min_age, _entry_max_age)
+                if _entry_max_age is not None:
+                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
+                        _lo = _entry_min_age if _entry_min_age is not None else 0
+                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_age_range(
+                            cells, _kac_kreis, _lo, _entry_max_age)
+                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
+                    _lo = _entry_min_age if _entry_min_age is not None else 0
+                    _total_label = f"persons (age {_lo}-{_entry_max_age})"
+                elif _entry_min_age is not None:
+                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
+                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_min_age(
                             cells, _kac_kreis, _entry_min_age)
-                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_min_age]
+                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
                     _total_label = f"persons (age>={_entry_min_age})"
                 else:
                     if _kac_persons_by_kreis is None:

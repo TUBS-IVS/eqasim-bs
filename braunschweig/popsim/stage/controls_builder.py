@@ -10,8 +10,10 @@ per-control aggregation map, source-column list and per-Kreis census-column map.
   column names (tier0 backbone), used to derive the per-Kreis PERSON total.
 - :func:`person_total_by_kreis` -- per-Kreis PERSON total summed over the 18
   age-x-sex band columns.
+- :func:`person_total_by_kreis_age_range` -- per-Kreis PERSON total for ages in
+  ``[min_age, max_age]`` (inclusive), summed over the single-year age columns.
 - :func:`person_total_by_kreis_min_age` -- per-Kreis PERSON total restricted to
-  age >= ``min_age``, summed over the single-year age columns.
+  age >= ``min_age``; delegates to ``person_total_by_kreis_age_range``.
 - :func:`_grid_geography_controls` -- keep only controls sourced from the GRID
   parquet (ZENSUS100m / ZENSUS1km), excluding KREIS-geography Tier-3 controls.
 - :func:`build_aggregation_map` -- the multi-column aggregation map for the
@@ -167,16 +169,72 @@ def person_total_by_kreis(cells, kreis_by_row, *, fine_teen_age_bands=True):
     return cells.groupby(kreis_by_row)[band_cols].sum().sum(axis=1).to_dict()
 
 
+def person_total_by_kreis_age_range(cells, kreis_by_row, min_age, max_age):
+    """Per-Kreis PERSON total for ages in ``[min_age, max_age]`` (inclusive).
+
+    Sums the single-year ``{M,F}_AGE_<year>`` cell columns (the same age-SHAPE columns
+    ``employment_grid`` reads; see its ``_group_cell_pop``) for ``year`` in that inclusive
+    range, grouped by Kreis. Unlike :func:`person_total_by_kreis` (which sums the 18
+    ten-year age x sex BAND columns), this uses the finer single-year columns so the total
+    can be restricted to an arbitrary age boundary that does not align with a ten-year band
+    edge -- e.g. "age >= 14" or "6 <= age <= 17" cannot be expressed as a sum of whole
+    ``AGE_0_9`` / ``AGE_10_19`` bands.
+
+    Used for KREIS attribute controls whose committed target's shares are reported over an
+    age-restricted base (e.g. ``employment_status``: MiD P9 / SrV 14+, feature #172 task 4;
+    or an age-RANGE universe such as an education control, Plan B issue #368). Without this
+    restriction, persons outside ``[min_age, max_age]`` would be counted into the per-Kreis
+    total the category counts partition, silently distorting the target shares -- the same
+    universe mismatch as the #97 bug.
+
+    Parameters
+    ----------
+    cells:
+        The loaded (ZGB-filtered) cells frame; expected to carry the single-year
+        ``{M,F}_AGE_<year>`` columns.
+    kreis_by_row:
+        A Series aligned to ``cells`` giving the 5-digit Kreis code per row.
+    min_age:
+        Inclusive lower age bound in years.
+    max_age:
+        Inclusive upper age bound in years.
+
+    Returns
+    -------
+    dict[str, float]
+        ``{ars5: person_total}`` summed over the single-year columns with
+        ``min_age <= year <= max_age`` per Kreis.
+
+    Raises
+    ------
+    RuntimeError
+        If NO single-year ``{M,F}_AGE_<year>`` column within ``[min_age, max_age]`` is
+        present in ``cells`` at all (no silent fallback: an age-range-restricted
+        person-level control cannot be constrained without at least some of its
+        denominator columns).
+    """
+    cols = [
+        f"{prefix}_AGE_{year}"
+        for prefix in ("M", "F")
+        for year in range(int(min_age), int(max_age) + 1)
+        if f"{prefix}_AGE_{year}" in cells.columns
+    ]
+    if not cols:
+        raise RuntimeError(
+            "person_total_by_kreis_age_range: an age-range-restricted person-level KREIS "
+            f"control is ON (ages {min_age}-{max_age}) but NO single-year age columns "
+            f"{{M,F}}_AGE_<year> of that band are present in the cells frame; cannot "
+            "derive its per-Kreis PERSON total (no silent fallback).")
+    return cells.groupby(kreis_by_row)[cols].sum().sum(axis=1).to_dict()
+
+
 def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_max=100):
     """Per-Kreis PERSON total restricted to age >= ``min_age``.
 
-    Sums the single-year ``{M,F}_AGE_<year>`` cell columns (the same age-SHAPE columns
-    ``employment_grid`` reads; see its ``_group_cell_pop``) for ``year`` in
-    ``[min_age, single_year_max]``, grouped by Kreis. Unlike :func:`person_total_by_kreis`
-    (which sums the 18 ten-year age x sex BAND columns), this uses the finer single-year
-    columns so the total can be restricted to an arbitrary age boundary that does not
-    align with a ten-year band edge -- e.g. "age >= 14" cannot be expressed as a sum of
-    whole ``AGE_0_9`` / ``AGE_10_19`` bands.
+    Delegates to :func:`person_total_by_kreis_age_range` with ``max_age=single_year_max``
+    (byte-identical result to before that helper existed); the RuntimeError message is
+    rewritten to keep THIS function's name, since it is what a caller of this entry point
+    would recognise.
 
     Used for KREIS attribute controls whose committed target's shares are reported over
     an age-restricted base (e.g. ``employment_status``: MiD P9 / SrV 14+, feature #172
@@ -210,20 +268,11 @@ def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_m
         in ``cells`` at all (no silent fallback: a min_age-restricted person-level
         control cannot be constrained without at least some of its denominator columns).
     """
-    cols = [
-        f"{prefix}_AGE_{year}"
-        for prefix in ("M", "F")
-        for year in range(min_age, single_year_max + 1)
-        if f"{prefix}_AGE_{year}" in cells.columns
-    ]
-    if not cols:
+    try:
+        return person_total_by_kreis_age_range(cells, kreis_by_row, min_age, single_year_max)
+    except RuntimeError as exc:
         raise RuntimeError(
-            "person_total_by_kreis_min_age: a min_age-restricted person-level KREIS "
-            f"control is ON (min_age={min_age}) but NO single-year age columns "
-            f"{{M,F}}_AGE_<year> for year in [{min_age}, {single_year_max}] are present "
-            "in the cells frame; cannot derive the per-Kreis age-restricted PERSON total "
-            "(no silent fallback).")
-    return cells.groupby(kreis_by_row)[cols].sum().sum(axis=1).to_dict()
+            str(exc).replace("person_total_by_kreis_age_range", "person_total_by_kreis_min_age")) from None
 
 
 def _grid_geography_controls(controls, cs):

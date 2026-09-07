@@ -64,6 +64,12 @@ class KreisAttributeControl:
     # must apply this restriction; level must be "person" for min_age to have any effect
     # (household-level entries have no natural per-person age to restrict on).
     min_age: int | None = None
+    # Inclusive upper age bound of the universe, or None (default; every pre-existing entry).
+    # With min_age it defines an AGE-RANGE universe (e.g. education_6_17): the rendered seed
+    # expression gains "(persons.HP_ALTER <= max_age)" and the per-Kreis total the categories
+    # partition is controls_builder.person_total_by_kreis_age_range (single-year census
+    # columns, exact for any band). Plan B, issue #368.
+    max_age: int | None = None
 
 
 def control_columns(ctl: KreisAttributeControl) -> tuple:
