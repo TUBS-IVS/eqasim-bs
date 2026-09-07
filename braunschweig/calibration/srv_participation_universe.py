@@ -78,7 +78,8 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.calibration.srv_distance_targets import ZGB_KREISE, kreis_from_ags
+from braunschweig.calibration.srv_distance_targets import (WOLFSBURG_KREIS, ZGB_KREISE,
+                                                            kreis_from_ags)
 from braunschweig.calibration.srv_plan_structure import AWAY_FROM_HOME_CODE, EMPLOYED_V_ERW
 
 logger = logging.getLogger(__name__)
@@ -220,24 +221,33 @@ def prepare_universe_persons(persons: pd.DataFrame,
     n_persons_total = len(persons)
 
     weekday = pd.to_numeric(persons["MITTL_WERKTAG"], errors="coerce")
-    foreign_weekday = weekday[weekday != AVERAGE_WEEKDAY]
+    foreign_weekday = weekday[weekday != AVERAGE_WEEKDAY]   # NaN != 1 is True, so NaN is caught
     if len(foreign_weekday) > 0:
         raise ValueError(
-            "universe drift: %d of %d persons have MITTL_WERKTAG != %d (found %s); these "
-            "aggregates are defined on the average-weekday (Tuesday-Thursday) delivery only"
+            "universe drift: %d of %d persons have MITTL_WERKTAG != %d (found %s, plus %d "
+            "non-numeric/missing); these aggregates are defined on the average-weekday "
+            "(Tuesday-Thursday) delivery only"
             % (len(foreign_weekday), n_persons_total, AVERAGE_WEEKDAY,
-               sorted(foreign_weekday.dropna().unique().tolist())))
+               sorted(foreign_weekday.dropna().unique().tolist()),
+               int(foreign_weekday.isna().sum())))
 
+    # A non-numeric E_ANZ_WEGE coerces to NaN, and NaN passes BOTH "< 0" and "== -7" as False:
+    # such a person would neither raise nor be counted as away-from-home, and would silently
+    # stay in the universe with an unknown reporting-day state. That is exactly the uncounted
+    # row this module exists to make impossible, so NaN raises alongside the unexpected
+    # negatives (controller ruling R16).
     n_legs_reported = pd.to_numeric(persons["E_ANZ_WEGE"], errors="coerce")
     unexpected_negative = n_legs_reported[(n_legs_reported < 0)
                                           & (n_legs_reported != AWAY_FROM_HOME_CODE)]
-    if len(unexpected_negative) > 0:
+    n_not_numeric = int(n_legs_reported.isna().sum())
+    if len(unexpected_negative) > 0 or n_not_numeric > 0:
         raise ValueError(
             "universe drift: %d of %d persons have a negative E_ANZ_WEGE other than %d (found "
-            "%s); the 'E_ANZ_WEGE >= 0' universe filter would drop them without counting them "
-            "as away-from-home persons"
+            "%s) and %d have a missing or non-numeric E_ANZ_WEGE; the 'E_ANZ_WEGE >= 0' "
+            "universe filter would drop the former and KEEP the latter, in both cases without "
+            "counting them as away-from-home persons"
             % (len(unexpected_negative), n_persons_total, AWAY_FROM_HOME_CODE,
-               sorted(unexpected_negative.dropna().unique().tolist())))
+               sorted(unexpected_negative.dropna().unique().tolist()), n_not_numeric))
 
     weight = pd.to_numeric(persons["GEWICHT_P_ZENSUS"], errors="coerce")
     valid_weight = weight.notna() & (weight >= 0)
@@ -296,9 +306,10 @@ def prepare_universe_persons(persons: pd.DataFrame,
                 n_missing_age, n_missing_employment_code)
     missing_kreise = [code for code in ZGB_KREISE if code not in set(universe["kreis"])]
     if missing_kreise:
-        logger.info("%s ZGB Kreise with no person in this universe: %s (Wolfsburg 03103 is not "
-                    "surveyed by SrV and is expected here; any OTHER code means the delivery "
-                    "changed)", _LOG_TAG, missing_kreise)
+        logger.info("%s ZGB Kreise with no person in this universe: %s (%s is Wolfsburg, which "
+                    "SrV does not survey, and is expected here; any OTHER code means the "
+                    "delivery changed and is rejected by check_kreis_coverage)",
+                    _LOG_TAG, missing_kreise, WOLFSBURG_KREIS)
 
     diagnostics = {
         "n_persons_total": n_persons_total,
@@ -399,7 +410,11 @@ def build_education_by_age_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
     :data:`EDUCATION_E_ZWECK_9`).
 
     ``diagnostics`` extends the universe diagnostics with ``n_legs_total``,
-    ``n_legs_missing_purpose`` and one ``n_band_<band>`` count per band.
+    ``n_legs_missing_purpose`` and one ``n_band_<band>`` count per band. The number of persons
+    in NO band is ``n_universe - sum(n_band_*)`` and its two causes are logged separately (no
+    valid ``V_ALTER`` vs a valid age above the top band's upper bound); the split is not a
+    separate diagnostics key because it is already derivable from ``n_missing_age`` and the band
+    counts, all of which the committed header carries.
     """
     universe, diagnostics = prepare_universe_persons(persons, households)
     education_pids, leg_diagnostics = persons_with_purpose(legs, EDUCATION_E_ZWECK_9)
@@ -420,12 +435,19 @@ def build_education_by_age_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
         diagnostics["n_band_%s" % band] = int(total["n_unweighted"])
         logger.info("%s education band %s: n=%d, p_education=%.4f", _LOG_TAG, band,
                     int(total["n_unweighted"]), total["p_education"])
+    # A person can fall into no band for TWO reasons: no valid V_ALTER, or a valid age outside
+    # every band (only possible above the top band's sentinel upper bound). The two are counted
+    # separately so the warning names the actual cause instead of asserting the more likely one.
     n_no_band = int(len(universe)) - sum(diagnostics["n_band_%s" % band]
                                          for band, _, _ in EDUCATION_AGE_BANDS)
     if n_no_band:
-        logger.warning("%s %d/%d universe persons fall into no education age band (no valid "
-                       "V_ALTER); they are in no band row and in no band total", _LOG_TAG,
-                       n_no_band, len(universe))
+        top_bound = max(maximum for _, _, maximum in EDUCATION_AGE_BANDS)
+        n_above_top_band = n_no_band - diagnostics["n_missing_age"]
+        logger.warning("%s %d/%d universe persons fall into no education age band: %d have no "
+                       "valid V_ALTER and %d have a valid age outside every band (i.e. above "
+                       "the top band's upper bound of %d years); they are in no band row and "
+                       "in no band total", _LOG_TAG, n_no_band, len(universe),
+                       diagnostics["n_missing_age"], n_above_top_band, top_bound)
     logger.info("%s education-by-age table: %d rows (%d Kreis x %d bands + %d total bands)",
                 _LOG_TAG, len(table), len(codes), len(EDUCATION_AGE_BANDS),
                 len(EDUCATION_AGE_BANDS))
@@ -462,6 +484,9 @@ def check_invariants(work_table: pd.DataFrame, education_table: pd.DataFrame) ->
        table): the total row is DEFINED as the union of the Kreis rows, and a target builder
        that falls back to the total row for Wolfsburg relies on it.
     5. Every share is ``NaN`` or inside ``[0, 1]``.
+
+    Kreis COVERAGE is deliberately not checked here -- see :func:`check_kreis_coverage`, which
+    the extraction script calls in addition to this function.
     """
     if list(work_table.columns) != WORK_COLUMNS:
         raise ValueError("work table columns %s != expected %s"
@@ -501,6 +526,42 @@ def check_invariants(work_table: pd.DataFrame, education_table: pd.DataFrame) ->
                 raise ValueError("%s table: %s outside [0, 1] on %d row(s), e.g. %s"
                                  % (name, column, len(outside),
                                     sorted(outside.unique().tolist())[:5]))
+
+
+def check_kreis_coverage(work_table: pd.DataFrame, education_table: pd.DataFrame,
+                         expected_kreise=ZGB_KREISE) -> None:
+    """Raise ``ValueError`` if a Kreis that SrV surveys has no row in either table.
+
+    Both builders emit one row per Kreis PRESENT in the universe, which keeps
+    ``sum(kreis) == total`` exact but means a delivery that lost a whole Kreis would produce a
+    table that is one row shorter and still satisfies every invariant of
+    :func:`check_invariants`. Wolfsburg (:data:`srv_distance_targets.WOLFSBURG_KREIS`) is the
+    one legitimately absent code -- SrV does not survey it -- so exactly that code may be
+    missing and nothing else.
+
+    Separate from :func:`check_invariants` because coverage is a property of a FULL delivery,
+    not of the builders: a caller working on a subset of Kreise (a unit-test fixture, a
+    single-Kreis diagnostic) passes a narrower ``expected_kreise`` or does not call this at all,
+    whereas ``scripts/extract_srv_participation_universe.py`` always calls it with the full
+    :data:`srv_distance_targets.ZGB_KREISE`.
+    """
+    expected = {code for code in expected_kreise if code != WOLFSBURG_KREIS}
+    for table, name in ((work_table, "work"), (education_table, "education")):
+        present = set(table.loc[table["level"] == LEVEL_KREIS, "code"])
+        absent = sorted(expected - present)
+        if absent:
+            raise ValueError(
+                "%s table: expected a kreis row for every surveyed ZGB Kreis but %s "
+                "%s missing (present: %s; %s is Wolfsburg, which SrV does not survey, and is "
+                "the only code allowed to be absent). A delivery that lost a Kreis must not "
+                "silently produce a shorter table."
+                % (name, absent, "is" if len(absent) == 1 else "are", sorted(present),
+                   WOLFSBURG_KREIS))
+        unexpected = sorted(present - set(expected_kreise))
+        if unexpected:
+            raise ValueError(
+                "%s table: kreis row(s) %s are not in the expected Kreis set %s"
+                % (name, unexpected, list(expected_kreise)))
 
 
 def _check_levels(table: pd.DataFrame, name: str) -> None:

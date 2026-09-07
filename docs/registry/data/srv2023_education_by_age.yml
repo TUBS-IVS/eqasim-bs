@@ -62,9 +62,11 @@ limitations: |
   from that older table's education column.
 
   Universe guards (the extraction raises, it never adapts): every MITTL_WERKTAG == 1 (pure
-  average-weekday Tuesday-Thursday delivery), every negative E_ANZ_WEGE == -7 (so the ">= 0"
-  universe filter drops exactly the away-from-home persons and nothing uncounted), and every
-  resolved Kreis inside the 8 ZGB Kreise.
+  average-weekday Tuesday-Thursday delivery), every E_ANZ_WEGE either non-negative or exactly
+  -7 and never missing/non-numeric (so the ">= 0" universe filter drops exactly the
+  away-from-home persons and nothing uncounted - a missing value would otherwise be KEPT with an
+  unknown reporting-day state, controller ruling R16), and every resolved Kreis inside the 8 ZGB
+  Kreise.
 
   Definitions: age bands from V_ALTER with INCLUSIVE bounds - education_0_5 = ages 0-5,
   education_6_17 = ages 6-17, education_18plus = ages 18-200 (200 is an upper sentinel far above
@@ -90,6 +92,13 @@ limitations: |
   sum(kreis n_unweighted) == 03ZGB n_unweighted holds by construction (enforced by
   srv_participation_universe.check_invariants, which also enforces that every band is present
   and that every share is NaN or inside [0, 1]).
+
+  Kreis COVERAGE has its own guard, srv_participation_universe.check_kreis_coverage, which the
+  extraction calls with the full ZGB_KREISE set and which raises if any surveyed Kreis has no
+  row (only WOLFSBURG_KREIS may be absent) or if a row carries a code outside the expected set.
+  It is separate from check_invariants because the builders emit one row per Kreis PRESENT in
+  the universe, so a delivery that lost a whole Kreis would satisfy every table invariant while
+  emitting one row fewer.
 
   Thin-cell caveat: the per-Kreis 0-5 and 6-17 bands rest on 75-541 unweighted persons per cell
   (smallest: Helmstedt 03154 with 75 in education_0_5, Goslar 03153 with 95). Coverage caveat
@@ -129,3 +138,12 @@ notes: |
   education_0_5 rate 0.6784849 likewise equals that reference's at_home_only / age_0-5 /
   participation_education. The old srv2023_participation_by_kreis.csv has no age breakdown at
   all and therefore no per-Kreis kita rate.
+
+  Code state in the committed header: b4e76d2d, the state of
+  braunschweig/calibration/srv_participation_universe.py when the table was first extracted.
+  The fix-round-1 hardening at b737b726+ (a NaN guard on E_ANZ_WEGE, the Kreis-coverage guard,
+  a clearer no-band warning) changed that module afterwards WITHOUT changing this table: the
+  extraction was re-run on the hardened code and the result verified byte-identical to the
+  committed file, so the header's commit id still describes the numbers exactly. Same convention
+  as srv2023_plan_structure_reference; the file is deliberately not rewritten to refresh the id,
+  because that would churn the header and cost the byte-identity evidence.

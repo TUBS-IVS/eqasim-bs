@@ -252,7 +252,13 @@ def main(argv=None) -> int:
     education_table, education_diagnostics = T.build_education_by_age_aggregate(
         persons, legs, households)
     T.check_invariants(work_table, education_table)
-    logger.info("invariants passed for both tables")
+    # Coverage is checked separately from the table invariants: both builders emit one row per
+    # Kreis PRESENT in the universe, so a delivery that lost a whole Kreis would satisfy every
+    # invariant with a shorter table. Wolfsburg is the one code allowed to be absent.
+    T.check_kreis_coverage(work_table, education_table, expected_kreise=ZGB_KREISE)
+    logger.info("invariants and Kreis coverage passed for both tables (expected Kreise %s, "
+                "%s legitimately absent because SrV does not survey it)", list(ZGB_KREISE),
+                T.WOLFSBURG_KREIS)
     logger.info("work diagnostics: %s", work_diagnostics)
     logger.info("education diagnostics: %s", education_diagnostics)
 
