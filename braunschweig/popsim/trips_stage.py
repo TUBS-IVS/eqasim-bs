@@ -583,12 +583,13 @@ def configure(context):
     # Defaults ON / "empirical" per the project rule (new features default on);
     # False / False / "fixed_1h" is the byte-identical pre-#366 path.
     from braunschweig.popsim.stage.config_keys import (
-        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_EXCLUDE_RBW_LEGS, KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
     )
-    context.config(KEY_EXCLUDE_RBW_LEGS, True)
-    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
-    context.config(KEY_CLOSURE_DWELL_MODEL, "empirical")
+    context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
+    context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage

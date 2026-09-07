@@ -282,6 +282,13 @@ def _write_raw_mid(directory):
         "M_HOFF": [1, 0, 2, 1, 1],
         "P_ARB_ENTF": [15.0, np.nan, 200.0, 999.0, np.nan],
         "P_GEW": [1.0, 1.0, 2.0, 2.0, 2.0],
+        # The three columns the issue-#374 donor filters read. Every fixture person has a
+        # collected, non-holiday diary, so the default-ON filters drop nobody and the donor pool
+        # assertions below stay the pre-#374 ones; "2_3" is genuinely immobile (0 trips, mobil 0),
+        # which is NOT a no-diary code and must therefore keep it in the pool.
+        "anzwege1": [2, 0, 2, 2, 0],
+        "mobil": [1, 0, 1, 1, 0],
+        "feiertag": [0, 0, 0, 0, 0],
     })
     wege = pd.DataFrame({
         "H_ID": [1, 1, 2, 2, 2, 2],
@@ -312,8 +319,15 @@ def _write_raw_mid(directory):
     return directory
 
 
-def _donor_stage_config(mid_dir, enabled=True):
-    return {
+def _donor_stage_config(mid_dir, enabled=True, **overrides):
+    """The donor stage's config, at the defaults ``configure()`` itself declares.
+
+    The plan-structure / donor-filter values are read from the recorder rather than re-typed, so
+    this helper can never drift from the stage's own declared defaults (issue #374).
+    """
+    declared = _ConfigureRecorder()
+    DONORS.configure(declared)
+    config = {
         DONORS.KEY_MID_DIR: str(mid_dir),
         DONORS.KEY_ESCORT_PURPOSE: DONORS.DEFAULT_ESCORT_PURPOSE,
         DONORS.KEY_ESCORT_PASSIVE_EDUCATION: DONORS.DEFAULT_ESCORT_PASSIVE_EDUCATION,
@@ -321,6 +335,10 @@ def _donor_stage_config(mid_dir, enabled=True):
         DONORS.KEY_ENABLED: enabled,
         "random_seed": RANDOM_SEED,
     }
+    for key, default in declared.config_keys.items():
+        config.setdefault(key, default)
+    config.update(overrides)
+    return config
 
 
 # --------------------------------------------------------------------------- configure contracts
@@ -335,9 +353,26 @@ def test_configure_declares_the_documented_stages_and_defaults():
     trips_stage_recorder = _ConfigureRecorder()
     from braunschweig.popsim import trips_stage
     trips_stage.configure(trips_stage_recorder)
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+    )
     for key in (DONORS.KEY_ESCORT_PURPOSE, DONORS.KEY_ESCORT_PASSIVE_EDUCATION,
-                DONORS.KEY_EXPLICIT_ROUND_TRIP_PURPOSES):
+                DONORS.KEY_EXPLICIT_ROUND_TRIP_PURPOSES,
+                # Issue #374: the plan-structure flags must be declared with trips_stage's
+                # defaults too, or the donor day would be built by different rules again.
+                KEY_EXCLUDE_RBW_LEGS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+                KEY_CLOSURE_DWELL_MODEL, KEY_CLOSURE_DWELL_MIN_OBS):
         assert donors.config_keys[key] == trips_stage_recorder.config_keys[key]
+
+    # The two donor-filter keys are the plan-source realisability flags completed_donor declares;
+    # the same value must steer both stages, so the declared defaults must agree there as well.
+    completed_donor_recorder = _ConfigureRecorder()
+    from braunschweig.popsim import completed_donor
+    completed_donor.configure(completed_donor_recorder)
+    for key in (KEY_DIARY_PLAN_MATCH, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+                KEY_DROP_LEADING_ARRIVE_HOME_LEG):
+        assert donors.config_keys[key] == completed_donor_recorder.config_keys[key]
 
     state = _ConfigureRecorder()
     STATE.configure(state)
@@ -435,6 +470,142 @@ def test_donor_stage_on_raises_when_a_required_mid_column_is_absent(tmp_path):
         DONORS.execute(context)
     assert "H_ANZAUTO" in str(error.value)
 
+
+
+def test_donor_stage_forwards_the_plan_structure_flags_and_the_donor_filters(tmp_path, monkeypatch):
+    """Issue #374: every declared flag reaches the pure builder with the configured value.
+
+    The pure builder's own defaults are the pre-#374 (OFF) ones, so a flag the stage forgets to
+    forward silently reverts the donor day to the old rules -- exactly the defect this closes.
+    """
+    _write_raw_mid(str(tmp_path))
+    captured = {}
+    real_builder = DONORS.build_home_office_donor_pool
+
+    def capturing_builder(persons, wege, households, **kwargs):
+        captured.update(kwargs)
+        return real_builder(persons, wege, households, **kwargs)
+
+    monkeypatch.setattr(DONORS, "build_home_office_donor_pool", capturing_builder)
+    context = _context(DONORS, config=_donor_stage_config(tmp_path))
+
+    DONORS.execute(context)
+
+    from braunschweig.popsim import trips_stage
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_EXCLUDE_RBW_LEGS,
+    )
+    assert captured["exclude_rbw_legs"] is DEFAULT_EXCLUDE_RBW_LEGS
+    assert captured["drop_leading_arrive_home_leg"] is DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG
+    assert captured["closure_dwell_model"] == DEFAULT_CLOSURE_DWELL_MODEL
+    assert captured["closure_dwell_min_obs"] == trips_stage.DEFAULT_CLOSURE_DWELL_MIN_OBS
+    # diary_plan_match is on by default and gates all three donor filters.
+    assert captured["exclude_no_diary"] is True
+    assert captured["exclude_holidays"] is True
+    assert captured["exclude_only_rbw"] is True
+
+
+def test_donor_stage_donor_filters_follow_the_plan_source_flags(tmp_path, monkeypatch):
+    """The master switch turns every donor filter off; the two sub-keys gate one filter each."""
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DIARY_PLAN_MATCH, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+    )
+    _write_raw_mid(str(tmp_path))
+    captured = {}
+    real_builder = DONORS.build_home_office_donor_pool
+
+    def capturing_builder(persons, wege, households, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        return real_builder(persons, wege, households, **kwargs)
+
+    monkeypatch.setattr(DONORS, "build_home_office_donor_pool", capturing_builder)
+
+    DONORS.execute(_context(DONORS, config=_donor_stage_config(
+        tmp_path, **{KEY_DIARY_PLAN_MATCH: False})))
+    assert (captured["exclude_no_diary"], captured["exclude_holidays"],
+            captured["exclude_only_rbw"]) == (False, False, False)
+
+    DONORS.execute(_context(DONORS, config=_donor_stage_config(
+        tmp_path, **{KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES: False})))
+    assert (captured["exclude_no_diary"], captured["exclude_holidays"],
+            captured["exclude_only_rbw"]) == (True, False, True)
+
+    DONORS.execute(_context(DONORS, config=_donor_stage_config(
+        tmp_path, **{KEY_EXCLUDE_RBW_LEGS: False})))
+    assert (captured["exclude_no_diary"], captured["exclude_holidays"],
+            captured["exclude_only_rbw"]) == (True, True, False)
+
+
+@pytest.mark.parametrize("missing_column", ["anzwege1", "mobil", "feiertag"])
+def test_donor_stage_raises_when_a_live_filter_column_is_absent(tmp_path, missing_column):
+    """A filter is never silently skipped because the delivery lacks its column."""
+    _write_raw_mid(str(tmp_path))
+    path = os.path.join(str(tmp_path), DONORS.PERSONS_FILE)
+    pd.read_csv(path).drop(columns=[missing_column]).to_csv(path, index=False)
+    context = _context(DONORS, config=_donor_stage_config(tmp_path))
+
+    with pytest.raises(RuntimeError) as error:
+        DONORS.execute(context)
+    assert missing_column in str(error.value)
+
+
+def test_donor_stage_off_filters_load_without_the_filter_columns(tmp_path):
+    """With the filters off the same delivery loads fine -- the columns are optional to LOAD."""
+    from braunschweig.popsim.stage.config_keys import KEY_DIARY_PLAN_MATCH
+    _write_raw_mid(str(tmp_path))
+    path = os.path.join(str(tmp_path), DONORS.PERSONS_FILE)
+    pd.read_csv(path).drop(columns=["anzwege1", "mobil", "feiertag"]).to_csv(path, index=False)
+    context = _context(DONORS, config=_donor_stage_config(
+        tmp_path, **{KEY_DIARY_PLAN_MATCH: False}))
+
+    attributes, _trips, diagnostics = DONORS.execute(context)
+    assert set(attributes["donor_id"]) == {"1_1", "2_1", "2_2", "2_3"}
+    assert diagnostics["n_dropped_no_diary"] == 0
+
+
+def test_donor_stage_drops_a_no_diary_and_a_holiday_donor_from_the_delivery(tmp_path):
+    """End to end through the real CSV path: the counts reach the stage diagnostics."""
+    _write_raw_mid(str(tmp_path))
+    path = os.path.join(str(tmp_path), DONORS.PERSONS_FILE)
+    persons = pd.read_csv(path)
+    persons.loc[persons["HP_ID"] == "2_1", "anzwege1"] = 804    # diary not collected
+    persons.loc[persons["HP_ID"] == "2_2", "feiertag"] = 1      # public-holiday diary
+    persons.to_csv(path, index=False)
+    context = _context(DONORS, config=_donor_stage_config(tmp_path))
+
+    attributes, trips, diagnostics = DONORS.execute(context)
+
+    assert set(attributes["donor_id"]) == {"1_1", "2_3"}
+    assert set(trips["donor_id"].unique()) == {"1_1"}
+    assert diagnostics["n_donors"] == 2
+    assert diagnostics["n_donors_before_diary_filters"] == 4
+    assert diagnostics["n_dropped_no_diary"] == 1
+    assert diagnostics["n_dropped_holiday"] == 1
+    assert diagnostics["n_dropped_only_rbw"] == 0
+
+
+def test_donor_stage_validate_token_tracks_the_declared_option_surface(tmp_path, monkeypatch):
+    """The deferred config-key module is hashed: a changed declared default must invalidate.
+
+    Without it, flipping a plan-structure default would serve a donor pool built under the old
+    option surface -- the same stale-cache hazard the helper-module hash exists to close.
+    """
+    _write_raw_mid(str(tmp_path))
+    context = _context(DONORS, config=_donor_stage_config(tmp_path))
+    token = DONORS.validate(context)
+
+    from braunschweig.popsim.stage import config_keys
+    real_getsource = DONORS.inspect.getsource
+
+    def patched_getsource(module):
+        if module is config_keys:
+            return real_getsource(module) + "\n# a changed declared default\n"
+        return real_getsource(module)
+
+    monkeypatch.setattr(DONORS.inspect, "getsource", patched_getsource)
+    assert DONORS.validate(context) != token
 
 # --------------------------------------------------------------------------- state stage
 

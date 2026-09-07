@@ -80,6 +80,12 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.member_completion",
     "braunschweig.popsim.mid.donor",
+    # Leaf module holding the KEY_* names AND (since issue #374) the DEFAULT_* values this
+    # stage's configure() declares its plan-structure options with. Imported inside
+    # configure()/execute() to avoid a heavy top-level import of the popsim stage package, and
+    # hashed here for the same reason braunschweig.popsim.trips_stage hashes it: a renamed key or
+    # a changed declared default must not serve a donor built under the old option surface.
+    "braunschweig.popsim.stage.config_keys",
 )
 
 
@@ -316,14 +322,18 @@ def configure(context):
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
         KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_DIARY_PLAN_MATCH, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+    )
     context.config(KEY_MID)
     context.config("random_seed")
     context.config(KEY_SEED_DAY_FILTER, "default")
     context.config(KEY_WEEKEND_PLAN_MATCH, True)
-    context.config(KEY_DIARY_PLAN_MATCH, True)
-    context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, True)
-    context.config(KEY_EXCLUDE_RBW_LEGS, True)
-    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
+    context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
+    context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     # Issue #368: the un-relaxable employment boundary changes which donor a
     # diary-less plan source draws, so it belongs in THIS stage's config hash --
     # flipping it must rebuild the donor, not reuse the cached one. Declared here

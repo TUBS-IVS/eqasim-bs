@@ -205,6 +205,18 @@ KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 # source_P_ID (and the downstream plans built from them), NOT to the input
 # file set read.
 KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
+# Each DEFAULT_* below is the declared default of the KEY_* immediately above it. Every one of
+# these five plan-structure keys is declared by MORE THAN ONE stage
+# (braunschweig.popsim.trips_stage, braunschweig.popsim.completed_donor and
+# braunschweig.synthesis.commute_day.home_office_donors_stage), because synpp requires every
+# stage that READS a key to declare it. synpp resolves ONE value per key per run, so the stages
+# must declare the IDENTICAL default or the value a stage sees would depend on which stage
+# happened to declare it first. Naming the defaults here -- next to the keys, in the leaf module
+# every one of those stages already imports -- makes that identity structural instead of a
+# convention three files have to keep by hand. (closure_dwell_min_obs' default stays in
+# trips_stage as DEFAULT_CLOSURE_DWELL_MIN_OBS: it sizes the empirical model that module owns,
+# and the other stages import it from there for the same one-home reason.)
+DEFAULT_DIARY_PLAN_MATCH = True
 # Exclude public-holiday-reported diaries (feiertag == 1) from the realisable
 # plan-source pool and remap persons sourced from one: SrV reference days
 # exclude public holidays, so a holiday-reported diary is not a realisable
@@ -212,6 +224,7 @@ KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
 # note on that key re: the Wege table + src_* facts being read/attached
 # regardless of this flag).
 KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES = True
 # Never relax the `employed` key when the diary plan match re-draws a plan
 # source (issue #368, Plan B Task 6). weekend_plan_match.match_person drops
 # `employed` second-from-last on its relaxation ladder, so a non-employed person
@@ -230,6 +243,7 @@ KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_ha
 # note on that key re: the Wege table + src_* facts being read/attached
 # regardless of this flag).
 KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
+DEFAULT_EXCLUDE_RBW_LEGS = True
 # Treat a diary that starts by arriving home (first_so1 == 2, i.e. the
 # reporting day begins mid-trip and the first RECORDED leg only arrives home)
 # as having that leading leg dropped when counting direct legs, and remap a
@@ -241,6 +255,7 @@ KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
 # is on (controller ruling R20) -- all three must see the SAME value, or seed
 # and plan count different days again.
 KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
+DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG = True
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
 # the closing dwell duration from the observed distribution of the same purpose
@@ -249,6 +264,7 @@ KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_
 # EMPIRICAL-path behaviour only (only a drawn dwell can exceed the bound where
 # the constant would not; ruling R19). Read by braunschweig.popsim.trips_stage.
 KEY_CLOSURE_DWELL_MODEL = "braunschweig.population.popsim.closure_dwell_model"
+DEFAULT_CLOSURE_DWELL_MODEL = "empirical"
 # Minimum number of observations a (purpose x arrival band) cell of the EMPIRICAL
 # closure-dwell model must hold before it is drawn from directly; a thinner cell
 # falls back to the purpose marginal (rate logged). Positive integer, default 30.

@@ -18,12 +18,22 @@ Wege/trip file):
   plan-replacement step (a later Phase B task) needs to match a synthetic worker to a donor day.
 * :func:`donor_trips` -- the donor's own trip chain in the ``synthesis.population.trips``
   CONTRACT (:data:`braunschweig.popsim.trips_stage.CONTRACT`), built with
-  :func:`braunschweig.popsim.trips.build_validated_trip_table` using EXACTLY the keyword
-  arguments :func:`braunschweig.popsim.trips_stage.run` passes (``resample=True``, the escort /
-  round-trip flags, ``random_seed``) -- ruling R2 -- but WITHOUT ``trips_stage.run``'s
-  per-person departure-time jitter step: the jitter is applied ONCE later, in the plan-replacement
-  step, keyed by the RECEIVING synthetic person, not the donor (applying it here would jitter the
-  same donor's day twice once it is copied onto a worker).
+  :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword arguments
+  :func:`braunschweig.popsim.trips_stage.run` passes -- ``resample=True``, the escort /
+  round-trip flags, ``random_seed``, and the three plan-structure arguments
+  ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` / ``dwell_model`` (issues #366, #367,
+  wired here by issue #374) -- ruling R2, but WITHOUT ``trips_stage.run``'s per-person
+  departure-time jitter step: the jitter is applied ONCE later, in the plan-replacement step,
+  keyed by the RECEIVING synthetic person, not the donor (applying it here would jitter the same
+  donor's day twice once it is copied onto a worker).
+
+The donor UNIVERSE is additionally narrowed by :func:`filter_donor_diaries`, which removes
+donors whose reporting day cannot serve as a replacement day at all: an uncollected diary
+(``anzwege1`` 803/804), a public-holiday diary (``feiertag == 1``) and a diary consisting only of
+rbW summary legs. Those are the SAME three exclusions
+:mod:`braunschweig.popsim.diary_plan_match` applies to a synthetic person's plan source; see
+:func:`filter_donor_diaries` for the one deliberate difference (803 is dropped regardless of
+``mobil``).
 
 ``household_size`` (MiD ``H_GR``) is carried through UNBINNED: the class binning
 (``household_size_class``) is the responsibility of the later matching module, which must apply
@@ -52,8 +62,14 @@ from braunschweig.calibration.commute_day_state_reference import (
 )
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 from braunschweig.popsim.chain_matching import derive_age_class
+from braunschweig.popsim.diary_facts import compute_diary_facts
+from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
 from braunschweig.popsim.trips import build_validated_trip_table
-from braunschweig.popsim.trips_stage import CONTRACT
+from braunschweig.popsim.trips_stage import (
+    CONTRACT,
+    DEFAULT_CLOSURE_DWELL_MIN_OBS,
+    build_closure_dwell_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +189,183 @@ def select_home_office_day_donors(persons: pd.DataFrame) -> pd.DataFrame:
             "persons) despite starb2 == MID_AT_HOME -- a data-consistency signal, not expected "
             "to occur under a correct MiD extract.", _LOG_TAG, n_not_in_module, n_donors, MID_MODULE)
     return donors
+
+
+#: Drop rate above which the three diary filters are reported as a WARNING rather than an INFO.
+#: A DIAGNOSTIC bound, not a reference value: losing more than half the selected donors to the
+#: filters usually signals a broken column join (an ``anzwege1`` read as text, a ``feiertag``
+#: recoded in a re-delivery) rather than a genuinely unusable donor universe. Mirrors the
+#: identical 50 % bound :func:`donor_attributes` applies to its unknown-distance share.
+MAX_EXPECTED_DIARY_FILTER_DROP_RATE = 0.5
+
+#: Keys :func:`filter_donor_diaries` always reports, so a consumer never has to tell "the filter
+#: did not fire" apart from "the filter did not run".
+DIARY_FILTER_COUNT_KEYS = ("n_donors_before_diary_filters", "n_dropped_no_diary",
+                           "n_dropped_no_diary_immobile", "n_dropped_holiday",
+                           "n_dropped_only_rbw")
+
+
+def _log_diary_filter(name: str, n_dropped: int, n_input: int) -> None:
+    """Log one filter's drop count as an explicit rate (CLAUDE.md fallback transparency)."""
+    logger.info("%s donor filter %s: dropped %d/%d (%.1f%%)", _LOG_TAG, name, n_dropped, n_input,
+                100.0 * n_dropped / max(n_input, 1))
+
+
+def filter_donor_diaries(donors: pd.DataFrame, wege, *, exclude_no_diary: bool,
+                         exclude_holidays: bool,
+                         exclude_only_rbw: bool) -> tuple[pd.DataFrame, dict]:
+    """Drop donors whose reporting day cannot serve as a replacement day (issue #374).
+
+    :func:`select_home_office_day_donors` states WHO worked at home; this states whose day is
+    USABLE. The three exclusions are the same ones
+    :func:`braunschweig.popsim.diary_plan_match.build_realisable_pool` applies to a synthetic
+    person's plan source, read from the same MiD codes, so a home-office day and an ordinary
+    weekday plan are drawn from diaries of the same quality:
+
+    * ``exclude_no_diary`` -- the diary was not collected: ``anzwege1`` in
+      :data:`braunschweig.popsim.diary_plan_match.NO_DIARY_CODES` (803 "Person ohne
+      Wegeerfassung", 804 "Mobilitaet unbekannt"). **Both codes are dropped regardless of
+      ``mobil``**, which is the ONE deliberate difference from ``diary_plan_match``: that rule
+      keeps an ``803 and mobil != 1`` person because it is deciding whether the person's OWN
+      realised day is credible, and such a person genuinely stayed home. Here the day is not the
+      donor's own -- it is copied onto a far commuter -- so a day that was never observed cannot
+      be a home-office-day donor at all, whether or not its owner was immobile. The size of that
+      difference is counted (``n_dropped_no_diary_immobile``), never left implicit. ``mobil`` is
+      therefore required whenever this filter is on, exactly as
+      ``braunschweig.popsim.completed_donor`` requires it for the plan-source side.
+    * ``exclude_holidays`` -- the diary was reported on a public holiday
+      (``feiertag == MID_HOLIDAY``); SrV reference days exclude public holidays.
+    * ``exclude_only_rbw`` -- the diary consists ONLY of rbW summary legs
+      (``n_direct_legs == 0 and n_rbw_legs > 0``, from
+      :func:`braunschweig.popsim.diary_facts.compute_diary_facts`), i.e. it carries no
+      individually reported trip; with ``exclude_rbw_legs`` on, such a donor's built chain is
+      empty and the day would silently degrade to an immobile one.
+
+    Args:
+        donors: The selected donors (:func:`select_home_office_day_donors`' output); needs
+            ``H_ID``/``P_ID``, plus ``anzwege1``/``mobil`` and ``feiertag`` for the filters that
+            read them.
+        wege: The raw MiD Wege frame; required (not ``None``) only when ``exclude_only_rbw`` is
+            on, and then it must carry
+            :data:`braunschweig.popsim.diary_facts.REQUIRED_WEGE_COLUMNS`.
+        exclude_no_diary: Apply the ``anzwege1`` 803/804 filter.
+        exclude_holidays: Apply the ``feiertag`` filter.
+        exclude_only_rbw: Apply the rbW-only filter.
+
+    Returns:
+        ``(kept_donors, counts)``. ``kept_donors`` is a row subset of ``donors`` with the index
+        reset; with every flag off it is ``donors`` itself, unchanged. ``counts`` always carries
+        :data:`DIARY_FILTER_COUNT_KEYS`, zero for a filter that is off. The three drop counts are
+        per CLASS and may OVERLAP (a holiday diary can also be rbW-only), so they need not sum to
+        the number of donors actually removed; the union is logged.
+
+    Raises:
+        ValueError: naming the column (or the missing ``wege`` frame) a live filter needs -- a
+            filter is never silently skipped because its input is absent.
+    """
+    _require_columns(donors, ("H_ID", "P_ID"), "donors frame")
+    n_input = len(donors)
+    counts = {key: 0 for key in DIARY_FILTER_COUNT_KEYS}
+    counts["n_donors_before_diary_filters"] = n_input
+    if not (exclude_no_diary or exclude_holidays or exclude_only_rbw):
+        logger.info("%s donor diary filters are all off: %d donors kept unfiltered",
+                    _LOG_TAG, n_input)
+        return donors, counts
+
+    drop = pd.Series(False, index=donors.index)
+
+    if exclude_no_diary:
+        _require_columns(donors, ("anzwege1", "mobil"),
+                         "donors frame (the no-diary donor filter is on)")
+        anzwege1_not_collected, _anzwege1_unknown = NO_DIARY_CODES  # 803, 804
+        no_diary = donors["anzwege1"].isin(NO_DIARY_CODES)
+        counts["n_dropped_no_diary"] = int(no_diary.sum())
+        # The donors diary_plan_match would KEEP as legitimately immobile (see the docstring):
+        # measuring the divergence is what keeps this a documented decision, not a hidden one.
+        counts["n_dropped_no_diary_immobile"] = int(
+            ((donors["anzwege1"] == anzwege1_not_collected) & (donors["mobil"] != 1)).sum())
+        drop |= no_diary
+        _log_diary_filter("no_diary", counts["n_dropped_no_diary"], n_input)
+        logger.info(
+            "%s donor filter no_diary: %d/%d of them carry anzwege1 %d with mobil != 1 -- kept by "
+            "diary_plan_match as a genuinely immobile OWN day, dropped here because a donor day "
+            "that was never observed cannot be transplanted onto a worker.",
+            _LOG_TAG, counts["n_dropped_no_diary_immobile"], counts["n_dropped_no_diary"],
+            anzwege1_not_collected)
+
+    if exclude_holidays:
+        _require_columns(donors, ("feiertag",), "donors frame (the holiday donor filter is on)")
+        holiday = donors["feiertag"] == MID_HOLIDAY
+        counts["n_dropped_holiday"] = int(holiday.sum())
+        drop |= holiday
+        _log_diary_filter("holiday", counts["n_dropped_holiday"], n_input)
+
+    if exclude_only_rbw:
+        if wege is None:
+            raise ValueError(
+                f"{_LOG_TAG} exclude_only_rbw=True needs the raw MiD wege frame to classify "
+                "rbW-only diaries, but none was passed (wege is None).")
+        only_rbw = _only_rbw_donors(donors, wege)
+        counts["n_dropped_only_rbw"] = int(only_rbw.sum())
+        drop |= only_rbw
+        _log_diary_filter("only_rbw", counts["n_dropped_only_rbw"], n_input)
+
+    kept = donors[~drop].reset_index(drop=True)
+    n_dropped = n_input - len(kept)
+    drop_rate = n_dropped / max(n_input, 1)
+    log = logger.warning if drop_rate > MAX_EXPECTED_DIARY_FILTER_DROP_RATE else logger.info
+    log("%s donor diary filters: %d/%d donors dropped (%.1f%%; no_diary %d, holiday %d, only_rbw "
+        "%d -- classes may overlap), %d donors remain", _LOG_TAG, n_dropped, n_input,
+        100.0 * drop_rate, counts["n_dropped_no_diary"], counts["n_dropped_holiday"],
+        counts["n_dropped_only_rbw"], len(kept))
+    if drop_rate > MAX_EXPECTED_DIARY_FILTER_DROP_RATE:
+        logger.warning(
+            "%s donor diary filters dropped more than %.0f%% of the selected donors, which "
+            "usually signals a broken column join rather than a genuinely unusable donor "
+            "universe -- check anzwege1/mobil/feiertag and the Wege join before trusting the pool.",
+            _LOG_TAG, 100.0 * MAX_EXPECTED_DIARY_FILTER_DROP_RATE)
+    return kept, counts
+
+
+def _only_rbw_donors(donors: pd.DataFrame, wege: pd.DataFrame) -> pd.Series:
+    """Boolean mask (indexed like ``donors``) of donors whose diary holds ONLY rbW legs.
+
+    Ruling R5 of the plan-structure fix: rbW-only diaries are detected from the diary FACTS
+    (``n_direct_legs == 0 & n_rbw_legs > 0``), derived from the Wege rows the pipeline actually
+    builds trips from, rather than from MiD ``mobil_diff`` -- the identical definition
+    :func:`braunschweig.popsim.diary_plan_match._own_diary_reason` uses for a plan source. A
+    donor with no Wege row at all is NOT rbW-only (it is immobile, which the pool reports
+    separately as ``is_immobile``).
+    """
+    _require_columns(wege, ("H_ID", "P_ID"), "wege frame (the rbW-only donor filter is on)")
+    donor_wege = wege[wege["H_ID"].isin(set(donors["H_ID"]))]
+    if not len(donor_wege):
+        return pd.Series(False, index=donors.index)
+    facts = compute_diary_facts(donor_wege).reindex(
+        pd.MultiIndex.from_arrays([donors["H_ID"], donors["P_ID"]]))
+    n_direct = facts["n_direct_legs"].fillna(0).astype(int).to_numpy()
+    n_rbw = facts["n_rbw_legs"].fillna(0).astype(int).to_numpy()
+    return pd.Series((n_direct == 0) & (n_rbw > 0), index=donors.index)
+
+
+def _donors_as_persons(donors: pd.DataFrame) -> pd.DataFrame:
+    """The donors frame in the shape ``trips_stage.run`` hands ``build_closure_dwell_model``.
+
+    That function reduces its ``persons`` argument to the distinct donor diaries the trip table
+    is built from, keyed by ``(source_H_ID, source_P_ID)`` when those columns are present and by
+    ``(H_ID, P_ID)`` otherwise (see
+    :func:`braunschweig.popsim.trips_stage._donor_diary_frame`). A MiD donor IS its own plan
+    source, so both key pairs are the same values here; they are carried explicitly anyway, so
+    the donor pool takes the SAME branch of that precedence as the production stage instead of
+    relying on the fallback -- the exact class of silent divergence issue #374 exists to close.
+    """
+    return pd.DataFrame({
+        "person_id": donors["HP_ID"].to_numpy(),
+        "H_ID": donors["H_ID"].to_numpy(),
+        "P_ID": donors["P_ID"].to_numpy(),
+        "source_H_ID": donors["H_ID"].to_numpy(),
+        "source_P_ID": donors["P_ID"].to_numpy(),
+    })
 
 
 def _work_trip_length_km(wege: pd.DataFrame) -> pd.DataFrame:
@@ -354,18 +547,31 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
 
 def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFrame, *,
                 random_seed: int, escort_purpose: bool, escort_passive_education: bool,
-                explicit_round_trip_purposes: bool) -> pd.DataFrame:
+                explicit_round_trip_purposes: bool, exclude_rbw_legs: bool = False,
+                drop_leading_arrive_home_leg: bool = False, dwell_model=None) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
-    Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using EXACTLY the
-    keyword arguments :func:`braunschweig.popsim.trips_stage.run` passes (``resample=True``, the
-    escort/round-trip flags, ``random_seed``) -- ruling R2 -- but WITHOUT
-    ``trips_stage.run``'s per-person departure-time jitter step
+    Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
+    arguments :func:`braunschweig.popsim.trips_stage.run` passes -- ``resample=True``, the
+    escort/round-trip flags, ``random_seed``, and the three plan-structure arguments
+    ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` / ``dwell_model`` -- ruling R2, but
+    WITHOUT ``trips_stage.run``'s per-person departure-time jitter step
     (:func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`): that jitter is applied
     ONCE later, in the plan-replacement step, keyed by the RECEIVING synthetic person -- applying
     it here would jitter the same donor's day a second time once it is copied onto a worker.
     ``resample_cell_col`` is fixed to ``None``: the legacy same-cell resample fallback needs a
     synthetic-population cell column (e.g. ``ZENSUS100m``) that MiD donors do not carry.
+
+    The three plan-structure arguments were MISSING here until issue #374, while this docstring
+    claimed the call already passed "EXACTLY" what ``trips_stage.run`` passes. They have been
+    default-ON in production since issues #366/#367, so a donor day kept the rbW summary legs and
+    the leading arrive-home leg that the day it replaces does not have, and closed an open chain
+    with the constant one-hour dwell instead of the empirical one. The false claim is recorded
+    here because it is what hid the defect: the parity is now expressed by NAMING every argument
+    on both sides rather than by asserting it. They default to the pre-#374 values so a caller
+    that passes none reproduces the old output byte-identically; the stage
+    (``home_office_donors_stage``) passes the values of the same config keys ``trips_stage``
+    reads, so one base-config value steers both.
 
     The persons frame handed to ``build_validated_trip_table`` carries ``sex``, ``age`` and
     ``employed`` from ``attributes`` (:func:`donor_attributes`'s output) IN ADDITION to
@@ -434,6 +640,9 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        dwell_model=dwell_model,
     )
     n_donors_with_trips = table["person_id"].nunique() if len(table) else 0
     logger.info("%s donor trip table built: %d trips for %d/%d donors (valid=%s)",
@@ -523,19 +732,48 @@ def attach_trip_derived_attributes(attributes: pd.DataFrame, trips: pd.DataFrame
 def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, households: pd.DataFrame,
                                  *, random_seed: int, escort_purpose: bool = False,
                                  escort_passive_education: bool = False,
-                                 explicit_round_trip_purposes: bool = True
+                                 explicit_round_trip_purposes: bool = True,
+                                 exclude_rbw_legs: bool = False,
+                                 drop_leading_arrive_home_leg: bool = False,
+                                 closure_dwell_model: str | None = None,
+                                 closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+                                 exclude_no_diary: bool = False,
+                                 exclude_holidays: bool = False,
+                                 exclude_only_rbw: bool = False
                                  ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Build the MiD home-office-day donor pool: attributes + trip chains + diagnostics.
 
-    Thin orchestration over :func:`select_home_office_day_donors`, :func:`donor_attributes` and
-    :func:`donor_trips` (see each for the exact per-column semantics); this function's own
-    contribution is the diagnostics summary.
+    Thin orchestration over :func:`select_home_office_day_donors`,
+    :func:`filter_donor_diaries`, :func:`donor_attributes` and :func:`donor_trips` (see each for
+    the exact per-column semantics); this function's own contribution is the diagnostics summary.
+
+    Every keyword added by issue #374 defaults to the pre-#374 behaviour, so a caller that passes
+    none reproduces the previous output byte-identically:
+
+    * ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` -- forwarded to
+      :func:`donor_trips` (issue #366).
+    * ``closure_dwell_model`` -- ``None`` builds NO dwell model and leaves the synthesised chain
+      closure on the constant one-hour dwell, exactly as before. A model NAME (see
+      :data:`braunschweig.popsim.trips_stage.CLOSURE_DWELL_MODELS`) is handed to
+      :func:`braunschweig.popsim.trips_stage.build_closure_dwell_model` HERE rather than by the
+      caller, because the empirical pools must be estimated on the donor diaries this pool
+      actually keeps -- i.e. AFTER :func:`filter_donor_diaries` -- and that set exists only
+      inside this function. Building it outside would force the caller to repeat the selection
+      and the filters, and the two copies could then drift apart.
+    * ``closure_dwell_min_obs`` -- minimum observations per (purpose x arrival band) cell of the
+      empirical model; inert while ``closure_dwell_model`` is ``None`` or ``"fixed_1h"``.
+    * ``exclude_no_diary`` / ``exclude_holidays`` / ``exclude_only_rbw`` -- forwarded to
+      :func:`filter_donor_diaries`.
 
     Returns ``(attributes, trips, diagnostics)``. ``attributes`` carries
     :func:`donor_attributes`' columns PLUS the four :func:`attach_trip_derived_attributes` adds
     (``n_trips``, ``is_immobile``, ``has_education_leg``, ``has_work_leg``). ``diagnostics``:
 
-    * ``n_donors`` -- rows in ``attributes`` (every selected donor, mobile or immobile).
+    * ``n_donors`` -- rows in ``attributes`` (every donor that survived the diary filters,
+      mobile or immobile).
+    * ``n_donors_before_diary_filters``, ``n_dropped_no_diary``, ``n_dropped_no_diary_immobile``,
+      ``n_dropped_holiday``, ``n_dropped_only_rbw`` -- :func:`filter_donor_diaries`' counts,
+      always present (zero for a filter that is off).
     * ``n_immobile`` -- donors with NO Wege row at all (a genuine immobile home-office day);
       the ``is_immobile`` column of ``attributes`` is the per-donor form of this count.
     * ``n_chain_dropped_by_resample`` -- donors that DID have Wege rows, but ended up with no
@@ -564,11 +802,36 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       cell uses the literal ``DISTANCE_CLASS_UNKNOWN``).
     """
     donors = select_home_office_day_donors(persons)
+    donors, diary_filter_counts = filter_donor_diaries(
+        donors, wege, exclude_no_diary=exclude_no_diary, exclude_holidays=exclude_holidays,
+        exclude_only_rbw=exclude_only_rbw,
+    )
     attributes = donor_attributes(donors, persons, households, wege)
+    # Built BEFORE the trip table and from the FILTERED donors, mirroring trips_stage.run: the
+    # empirical model must see the donor diaries as reported, i.e. before any synthetic closure
+    # has been appended to them, and only the diaries this pool actually builds days from.
+    dwell_model = None
+    if closure_dwell_model is not None:
+        dwell_model = build_closure_dwell_model(
+            _donors_as_persons(donors), wege,
+            closure_dwell_model=closure_dwell_model,
+            random_seed=random_seed,
+            closure_dwell_min_obs=closure_dwell_min_obs,
+            escort_purpose=escort_purpose,
+            escort_passive_education=escort_passive_education,
+            explicit_round_trip_purposes=explicit_round_trip_purposes,
+            exclude_rbw_legs=exclude_rbw_legs,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        )
+        logger.info("%s closure dwell model (%s) report: %s", _LOG_TAG, closure_dwell_model,
+                    dwell_model.report)
     trips = donor_trips(
         donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        dwell_model=dwell_model,
     )
     # n_trips / is_immobile / has_education_leg / has_work_leg can only be read once the chains
     # exist (rulings R7 and R9); donor_attributes never sees them.
@@ -602,6 +865,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
 
     diagnostics = {
         "n_donors": n_donors,
+        **diary_filter_counts,
         "n_immobile": n_immobile,
         "n_chain_dropped_by_resample": n_chain_dropped_by_resample,
         "n_missing_distance": n_missing_distance,

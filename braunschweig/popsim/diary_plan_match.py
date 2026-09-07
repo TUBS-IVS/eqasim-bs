@@ -32,6 +32,12 @@ from braunschweig.popsim.weekend_plan_match import match_person
 logger = logging.getLogger(__name__)
 
 NO_DIARY_CODES = (803, 804)
+#: MiD ``feiertag`` value marking a diary reported on a public holiday. SrV reference days
+#: exclude public holidays, so such a diary is not a realisable weekday plan. Named here (rather
+#: than typed as a literal at each comparison) because the home-office donor pool applies the
+#: SAME exclusion to its donors and must read the identical code
+#: (:func:`braunschweig.synthesis.commute_day.donor_pool.filter_donor_diaries`).
+MID_HOLIDAY = 1
 REASON_KEEP = "realisable"
 REASON_KEEP_IMMOBILE = "nodiary_immobile_keep"
 REASONS_REMAP = ("nodiary_mobile", "nodiary_unknown", "only_rbw", "holiday", "emptied_by_arrive_home_drop")
@@ -86,7 +92,8 @@ def _own_diary_reason(donors, facts, *, exclude_rbw_legs, exclude_holidays, drop
     arriving = f["starts_arriving_home"].fillna(False).astype(bool).to_numpy()
     anz = donors["anzwege1"].to_numpy()
     mobil = donors["mobil"].to_numpy()
-    holiday = donors["feiertag"].to_numpy() == 1 if "feiertag" in donors.columns else np.zeros(len(donors), bool)
+    holiday = (donors["feiertag"].to_numpy() == MID_HOLIDAY if "feiertag" in donors.columns
+               else np.zeros(len(donors), bool))
     reason = np.full(len(donors), REASON_KEEP, dtype=object)
     remaining_direct = n_direct - (arriving.astype(int) if drop_leading_arrive_home_leg else 0)
     only_rbw = (n_direct == 0) & (n_rbw > 0)
