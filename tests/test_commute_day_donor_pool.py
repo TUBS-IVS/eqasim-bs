@@ -849,20 +849,59 @@ def test_the_dwell_report_is_logged_with_its_post_build_counters(caplog):
     global-marginal fallback rate was reported as no fallback at all: exactly the silence
     CLAUDE.md's fallback-transparency rule forbids. ``trips_stage.run`` logs it after the build,
     and this pool now does the same.
+
+    Asserted against ``caplog.text``, which pytest's ``LogCaptureHandler`` renders through a real
+    formatter AT EMIT TIME. ``record.getMessage()`` would not discriminate on its own: it
+    recomputes ``msg % args`` on every call, so as long as the record holds a reference to the
+    model's live report dict it renders the FINAL counters no matter when the statement ran
+    (fix round 2 item 1 -- the reason the builder now logs ``dict(report)``, pinned separately by
+    :func:`test_the_dwell_report_log_is_a_frozen_snapshot`).
     """
     caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
     _build_open_chain_pool(closure_dwell_model="empirical", closure_dwell_min_obs=1)
 
-    reports = [record.getMessage() for record in caplog.records
-               if record.name == donor_pool.logger.name
-               and "closure dwell model" in record.getMessage()]
-    assert len(reports) == 1, reports
-    # The single donor's closure IS drawn, so a report carrying n_draws 0 can only be the stale
-    # construction-time one.
-    assert "'n_draws': 1" in reports[0], reports[0]
+    emitted = [line for line in caplog.text.splitlines()
+               if "[commute day donors] closure dwell model" in line]
+    assert len(emitted) == 1, caplog.text
+    # The single open chain IS closed, so a report carrying n_draws 0 can only have been rendered
+    # before the trip build ran.
+    assert "'n_draws': 1" in emitted[0], emitted[0]
     # ... and that draw found no same-purpose observation, so it fell back to the global
     # marginal -- a 100 % fallback rate that the pre-fix log reported as zero.
-    assert "'n_fallback_global': 1" in reports[0], reports[0]
+    assert "'n_fallback_global': 1" in emitted[0], emitted[0]
+
+
+def test_the_dwell_report_log_is_a_frozen_snapshot(caplog):
+    """Fix round 2 item 1: the log must carry a COPY of the report, not the live mapping.
+
+    ``ClosureDwellModel.report`` is one dict that ``draw()`` mutates in place, and ``logging``
+    keeps the argument in ``LogRecord.args`` and renders it lazily. Passing the live mapping
+    therefore makes the record report whatever the counters happen to be when something formats
+    it -- a queue handler, a deferred formatter, or a later assertion -- rather than what the run
+    logged. Mutating the model AFTER the build must not change the already-emitted record.
+    """
+    captured = {}
+    real_builder = donor_pool.build_closure_dwell_model
+
+    def capturing_builder(persons, mid_wege, **kwargs):
+        captured["model"] = real_builder(persons, mid_wege, **kwargs)
+        return captured["model"]
+
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+    original = donor_pool.build_closure_dwell_model
+    donor_pool.build_closure_dwell_model = capturing_builder
+    try:
+        _build_open_chain_pool(closure_dwell_model="empirical", closure_dwell_min_obs=1)
+    finally:
+        donor_pool.build_closure_dwell_model = original
+
+    record = next(record for record in caplog.records
+                  if record.name == donor_pool.logger.name
+                  and "closure dwell model" in record.getMessage())
+    before = record.getMessage()
+    captured["model"].report["n_draws"] = 987654
+    assert record.getMessage() == before
+    assert "987654" not in record.getMessage()
 
 
 def test_closure_dwell_model_default_builds_no_model_and_passes_none(monkeypatch):

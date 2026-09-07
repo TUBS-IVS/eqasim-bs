@@ -900,8 +900,17 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         # model's counters (n_draws, n_fallback_purpose_marginal, n_fallback_global, n_capped)
         # are filled BY the build, so logging at construction time would always report zeros and
         # hide a 100 % fallback rate -- the one thing the report exists to make observable.
+        #
+        # A SNAPSHOT (dict(...)), never the live mapping. ClosureDwellModel.report is one dict
+        # that draw() mutates in place, and logging stores the ARGUMENT in LogRecord.args and
+        # renders it lazily -- logging.LogRecord.getMessage() recomputes msg % args on every
+        # call. A handler that formats late (a QueueHandler, a deferred formatter, a test
+        # inspecting the record afterwards) would therefore render the counters as they are at
+        # FORMAT time, not as they were at EMIT time: the record would silently report a state
+        # the run never actually logged. Freezing the mapping here makes the line mean what it
+        # says whenever it is rendered.
         logger.info("%s closure dwell model (%s) report: %s", _LOG_TAG, closure_dwell_model,
-                    dwell_model.report)
+                    dict(dwell_model.report))
     # n_trips / is_immobile / has_education_leg / has_work_leg can only be read once the chains
     # exist (rulings R7 and R9); donor_attributes never sees them.
     attributes = attach_trip_derived_attributes(attributes, trips, wege)

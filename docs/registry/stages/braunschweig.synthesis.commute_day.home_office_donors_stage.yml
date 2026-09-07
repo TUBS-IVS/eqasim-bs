@@ -85,9 +85,15 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   code columns are VALIDATED, never coerced -- filter_donor_diaries raises when anzwege1, mobil
   or feiertag arrive with a non-numeric dtype, because the MiD codes are compared exactly (as
   diary_plan_match compares them, so the two rules cannot drift apart) and an exact comparison
-  against a text column matches no row at all. And the rbW-only filter logs how many donors
-  actually resolved to a diary-facts row on (H_ID, P_ID), warning at a 0 % match rate and naming
-  both frames'' H_ID dtypes, so a key mismatch that joined nothing is visible on sight instead of
+  against a text column matches no row at all. The rbW-only filter then reports its join in TWO
+  separate log statements, because a key mismatch can bite at either level and neither shows up
+  in the drop rate. (a) If the H_ID pre-filter selects no Wege row at all, one line states
+  "0/N donors matched ANY Wege row" and names BOTH frames'' H_ID dtypes together with the number
+  of rows offered -- WARNING whenever the Wege frame was non-empty, since a genuinely trip-less
+  donor set is the only innocent explanation. (b) Otherwise a second line always reports how many
+  donors resolved to a diary-facts row on the FULL (H_ID, P_ID) key, as a rate; it does not name
+  dtypes, and it warns at a 0 % match rate -- the symptom of a P_ID mismatch that survived the
+  H_ID pre-filter. Between them, a join that matched nothing is visible on sight instead of
   hiding behind "no rbW-only donors".
   anzwege1/mobil/feiertag are loaded as OPTIONAL MiD person columns, but execute() RAISES when an
   ACTIVE filter''s column is absent from the delivery (naming the column and the config key to
@@ -149,7 +155,10 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   is logged AFTER the trip build, where trips_stage.run logs the identical line: the model''s
   n_draws / n_fallback_purpose_marginal / n_fallback_global / n_capped counters are filled BY the
   build, so a construction-time log would always print zeros and report a 100 % fallback rate as
-  no fallback at all.
+  no fallback at all. The line carries a SNAPSHOT of the report (dict(...)), never the live
+  mapping: draw() mutates that one dict in place and logging renders its arguments lazily, so a
+  handler that formats late would otherwise print the counters as of format time rather than as
+  of emit time.
 
   Diagnostics (builder + stage-level): n_donors, n_donors_before_diary_filters,
   n_dropped_no_diary, n_dropped_no_diary_immobile, n_dropped_no_diary_mobil_unknown,
