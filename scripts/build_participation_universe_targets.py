@@ -32,11 +32,13 @@ Wolfsburg (03103) and Gesamt conventions (both documented ASSUMPTIONs, not silen
 
 ASSUMPTION (controller ruling R15, universe mismatch, NOT reconciled): the employment_status
 margin's universe is persons 14+ with a valid V_ERW; the SrV conditional rates' universe is
-persons 14+ INCLUDING the 11 persons with a missing/implausible V_ERW code (classed
-non-employed there). The two universes differ by exactly these 11 persons of the 14,845-person
-14+ universe (0.07 pp on the employed share) -- see srv2023_work_by_employment_by_kreis.csv's own
-"# Exclusions:" header line, n_missing_employment_code=11. This gap is combined as-is and
-documented in the written target's header, never silently absorbed.
+persons 14+ INCLUDING the persons with a missing/implausible V_ERW code (classed non-employed
+there). The two universes differ by AT MOST 11 persons of the 14,845-person 14+ universe (0.07pp
+on the employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header
+line measures n_missing_employment_code=11 on the 17,269-person at-home-or-mobile universe, not
+on the 14,845-person 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round
+1, item 7). This gap is combined as-is and documented in the written target's header, never
+silently absorbed.
 
 Output (committed, FINAL targets -- consume via kreis_attribute_control.load_kreis_target with
 prior_n = 0): eqasim-data/data/braunschweig/targets/target2026_work_by_employment_by_kreis.csv
@@ -65,6 +67,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from braunschweig.analysis import spatial  # noqa: E402
 from braunschweig.popsim.attributes import EMPLOYED_EMPLOYMENT_STATUS_CLASSES  # noqa: E402
 from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
     EDUCATION_AGE_BOUNDS, EDUCATION_BY_AGE_ENTRY_NAMES, EDUCATION_FLAG_CATEGORIES,
@@ -80,9 +83,18 @@ log = logging.getLogger("build_participation_universe_targets")
 WOLFSBURG_ARS5 = "03103"
 GESAMT_ARS5 = "Gesamt"
 
+# The 5-digit ARS codes of the 7 Kreise SrV actually surveys, derived from
+# spatial.ZGB8 (never re-listed literally) so a change to the canonical ZGB-8 set cannot
+# silently drift out of sync with the coverage check below (fix round 1, item 3).
+_EXPECTED_SRV_KREIS_CODES = frozenset(code for code in spatial.ZGB8 if code != WOLFSBURG_ARS5)
+
 _EMPLOYMENT_STATUS_TARGET_RELPATH = "targets/target2026_employment_status_by_kreis.csv"
 _SRV_WORK_BY_EMPLOYMENT_RELPATH = "srv/srv2023_work_by_employment_by_kreis.csv"
 _SRV_EDUCATION_BY_AGE_RELPATH = "srv/srv2023_education_by_age_by_kreis.csv"
+
+# The region-total row's code every written header asserts the conditional rate came from
+# (fix round 1, item 5): both builders must not silently accept a relabelled total row.
+_REGION_TOTAL_CODE = "03ZGB"
 
 
 # --------------------------------------------------------------------------- input readers
@@ -122,12 +134,34 @@ def read_srv_education_by_age(data: Path) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- validation
+def _require_unit_interval(value: float, ars5: str, label: str, context: str) -> None:
+    """Raise if `value` is not a finite number inside [0, 1]. `0.0 <= NaN <= 1.0` is False in
+    Python, so this also rejects NaN -- the SrV aggregate's own header documents NaN as a
+    LEGITIMATE value when a conditioning class is empty in a Kreis, and a NaN reaching a
+    written share must fail loudly here rather than propagate into employed_work etc. and
+    slip past a sum-based guard (fix round 1, item 1)."""
+    if not (0.0 <= value <= 1.0):
+        raise ValueError(f"{context}: {label} for Kreis {ars5!r} is out of [0, 1]: {value}.")
+
+
 def _check_shares_sum_to_one(df: pd.DataFrame, categories, context: str) -> None:
     """Fail fast (no silent under/over-constrained control) if any row's category shares do not
     sum to 1 within kreis_attribute_control.TARGET_SHARE_TOLERANCE -- the same tolerance
     load_kreis_target enforces at consumption time, checked here so a bad build is caught at
-    build time, not three stages downstream."""
+    build time, not three stages downstream.
+
+    Checks finiteness FIRST and separately (fix round 1, item 1): `abs(NaN - 1.0) >
+    TARGET_SHARE_TOLERANCE` evaluates to False in numpy, so a NaN cell would otherwise pass this
+    guard silently. In practice `_require_unit_interval` on every individual share already
+    rejects NaN before a row reaches this function; this is a second, independent line of
+    defence so the sum guard itself cannot be defeated even if a future cell type skips the
+    per-share check."""
     sums = df[list(categories)].to_numpy(dtype=float).sum(axis=1)
+    non_finite = ~np.isfinite(sums)
+    if non_finite.any():
+        raise ValueError(
+            f"{context}: rows {df.loc[non_finite, 'ars5'].tolist()} have a non-finite share sum "
+            f"(NaN or inf), not a value comparable to 1; got {sums[non_finite].tolist()}.")
     bad = np.abs(sums - 1.0) > TARGET_SHARE_TOLERANCE
     if bad.any():
         raise ValueError(
@@ -138,10 +172,15 @@ def _check_shares_sum_to_one(df: pd.DataFrame, categories, context: str) -> None
 # --------------------------------------------------------------------------- work_by_employment
 def _work_by_employment_row(ars5: str, source: str, n_effective: int, margin: float,
                              p_work_employed: float, p_work_nonemployed: float) -> dict:
-    if not (0.0 <= margin <= 1.0):
-        raise ValueError(
-            f"build_work_by_employment_target: employed margin for Kreis {ars5!r} is out of "
-            f"[0, 1]: {margin}.")
+    _context = "build_work_by_employment_target"
+    _require_unit_interval(margin, ars5, "employed margin", _context)
+    # Both conditional rates must be validated too (fix round 1, item 1): the SrV aggregate's
+    # own header documents NaN as a legitimate value when a conditioning class (e.g. nobody
+    # employed in a tiny Kreis) is empty, so an unvalidated conditional would otherwise reach
+    # a written share silently -- the education builder's _education_row already range-checks
+    # its single share; this closes the corresponding gap on the work side.
+    _require_unit_interval(p_work_employed, ars5, "p_work_employed", _context)
+    _require_unit_interval(p_work_nonemployed, ars5, "p_work_nonemployed", _context)
     return {
         "ars5": ars5,
         "source": source,
@@ -163,9 +202,20 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
     conditional rates; Gesamt uses the Gesamt margin row combined with the same 03ZGB
     conditional rates. Fails fast if a required column, Kreis row or region-total row is
     missing (no under-constrained control)."""
+    emp_path = data / _EMPLOYMENT_STATUS_TARGET_RELPATH
     emp = read_employment_status_target(data)
     emp = emp.copy()
     emp["ars5"] = emp["ars5"].astype(str)
+    # Fix round 1, item 8: a duplicate ars5 key would make emp_by_ars5.loc[ars5, ...] return a
+    # DataFrame instead of a Series, and .sum() on that DataFrame silently collapses the
+    # duplicate rows into one number -- checked once, up front, rather than relying on the
+    # ambiguous-truth-value error that lookup would eventually raise.
+    duplicate_ars5 = sorted(set(emp["ars5"][emp["ars5"].duplicated()]))
+    if duplicate_ars5:
+        raise ValueError(
+            f"build_work_by_employment_target: employment_status target {emp_path} has "
+            f"duplicate ars5 row(s) {duplicate_ars5}; the employed-margin lookup requires a "
+            "unique key per Kreis.")
     emp_by_ars5 = emp.set_index("ars5")
 
     work = read_srv_work_by_employment(data)
@@ -177,19 +227,53 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
         raise ValueError(
             "build_work_by_employment_target: no Kreis rows (level == 'kreis') in the SrV "
             "work-by-employment source.")
+    # Fix round 1, item 3: a delivery missing one of the 7 SrV-surveyed Kreise must not
+    # silently ship a short target -- the two-argument .empty check above only catches the
+    # all-Kreise-missing case.
+    present_codes = set(kreis_rows["code"])
+    missing_codes = sorted(_EXPECTED_SRV_KREIS_CODES - present_codes)
+    if missing_codes:
+        raise ValueError(
+            f"build_work_by_employment_target: SrV work-by-employment source is missing kreis "
+            f"row(s) for {missing_codes} (expected the 7 SrV-surveyed Kreise, "
+            f"spatial.ZGB8 minus Wolfsburg {WOLFSBURG_ARS5!r}); present: {sorted(present_codes)}.")
+    unexpected_codes = sorted(present_codes - _EXPECTED_SRV_KREIS_CODES)
+    if unexpected_codes:
+        raise ValueError(
+            f"build_work_by_employment_target: SrV work-by-employment source has unexpected "
+            f"kreis row code(s) {unexpected_codes}, not in the expected set "
+            f"{sorted(_EXPECTED_SRV_KREIS_CODES)}.")
     total_rows = work[work["level"] == "total"]
     if len(total_rows) != 1:
         raise ValueError(
             "build_work_by_employment_target: expected exactly one region-total row "
             f"(level == 'total') in the SrV work-by-employment source, found {len(total_rows)}.")
     total_row = total_rows.iloc[0]
+    # Fix round 1, item 5: every written header asserts the conditional rate came from 03ZGB;
+    # a relabelled (or differently-coded) single total row must not be accepted silently.
+    if str(total_row["code"]) != _REGION_TOTAL_CODE:
+        raise ValueError(
+            f"build_work_by_employment_target: expected the region-total row's code to be "
+            f"{_REGION_TOTAL_CODE!r}, got {total_row['code']!r}.")
 
     def margin_for(ars5: str) -> float:
         if ars5 not in emp_by_ars5.index:
             raise ValueError(
                 f"build_work_by_employment_target: employment_status target has no row for "
                 f"Kreis {ars5!r}, needed as the employed margin for the work_by_employment cross.")
-        return float(emp_by_ars5.loc[ars5, list(EMPLOYED_EMPLOYMENT_STATUS_CLASSES)].sum())
+        row = emp_by_ars5.loc[ars5, list(EMPLOYED_EMPLOYMENT_STATUS_CLASSES)]
+        # Fix round 1, item 2: pandas' .sum() defaults to skipna=True, so a NaN in one class
+        # column would silently SHRINK the margin (e.g. a blank teilzeit contributes 0 instead
+        # of failing) while the row can still sum to 1 downstream, defeating the sum guard. The
+        # margin is this control's authoritative quantity, so a NaN class must raise, naming
+        # the file, the Kreis and the column, rather than quietly disappear.
+        nan_columns = [c for c in EMPLOYED_EMPLOYMENT_STATUS_CLASSES if pd.isna(row[c])]
+        if nan_columns:
+            raise ValueError(
+                f"build_work_by_employment_target: employment_status target {emp_path} has "
+                f"NaN in employed-class column(s) {nan_columns} for Kreis {ars5!r}; the "
+                "employed margin cannot be computed without silently shrinking it.")
+        return float(row.sum())
 
     rows = []
     for _, r in kreis_rows.iterrows():
@@ -213,10 +297,7 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- education_by_age
 def _education_row(ars5: str, source: str, n_effective: int, edu_share: float) -> dict:
-    if not (0.0 <= edu_share <= 1.0):
-        raise ValueError(
-            f"build_education_by_age_target: p_education for Kreis {ars5!r} is out of [0, 1]: "
-            f"{edu_share}.")
+    _require_unit_interval(edu_share, ars5, "p_education", "build_education_by_age_target")
     return {
         "ars5": ars5,
         "source": source,
@@ -252,12 +333,33 @@ def build_education_by_age_target(data: Path, entry_name: str) -> pd.DataFrame:
         raise ValueError(
             f"build_education_by_age_target: no Kreis rows (level == 'kreis') for band "
             f"{entry_name!r} in the SrV education-by-age source.")
+    # Fix round 1, item 3: a delivery missing one of the 7 SrV-surveyed Kreise for this band
+    # must not silently ship a short target.
+    present_codes = set(kreis_rows["code"])
+    missing_codes = sorted(_EXPECTED_SRV_KREIS_CODES - present_codes)
+    if missing_codes:
+        raise ValueError(
+            f"build_education_by_age_target: SrV education-by-age source is missing kreis "
+            f"row(s) for band {entry_name!r}: {missing_codes} (expected the 7 SrV-surveyed "
+            f"Kreise, spatial.ZGB8 minus Wolfsburg {WOLFSBURG_ARS5!r}); present: "
+            f"{sorted(present_codes)}.")
+    unexpected_codes = sorted(present_codes - _EXPECTED_SRV_KREIS_CODES)
+    if unexpected_codes:
+        raise ValueError(
+            f"build_education_by_age_target: SrV education-by-age source has unexpected kreis "
+            f"row code(s) {unexpected_codes} for band {entry_name!r}, not in the expected set "
+            f"{sorted(_EXPECTED_SRV_KREIS_CODES)}.")
     total_rows = band[band["level"] == "total"]
     if len(total_rows) != 1:
         raise ValueError(
             f"build_education_by_age_target: expected exactly one region-total row "
             f"(level == 'total') for band {entry_name!r}, found {len(total_rows)}.")
     total_row = total_rows.iloc[0]
+    # Fix round 1, item 5: every written header asserts the conditional rate came from 03ZGB.
+    if str(total_row["code"]) != _REGION_TOTAL_CODE:
+        raise ValueError(
+            f"build_education_by_age_target: expected the region-total row's code to be "
+            f"{_REGION_TOTAL_CODE!r} for band {entry_name!r}, got {total_row['code']!r}.")
 
     rows = [
         _education_row(r["code"], "srv", int(r["n_unweighted"]), float(r["p_education"]))
@@ -298,11 +400,13 @@ HEADER_WORK = """\
 # ASSUMPTION (controller ruling R15, universe mismatch -- documented, NOT reconciled): the
 # employment_status margin's universe is persons 14+ with a valid V_ERW; the SrV conditional
 # rates' universe is persons 14+ INCLUDING the persons with a missing/implausible V_ERW code
-# (classed non-employed on the SrV side). The two universes differ by exactly
+# (classed non-employed on the SrV side). The two universes differ by AT MOST
 # n_missing_employment_code=11 persons of the 14,845-person 14+ universe (0.07 pp on the
-# employed share) -- see srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header
-# line for the count. The two universes are combined as-is; this is a small, explicitly
-# documented gap, not a silently absorbed one.
+# employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header line
+# measures that count on the 17,269-person at-home-or-mobile universe, not on the 14,845-person
+# 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round 1, item 7). The two
+# universes are combined as-is; this is a small, explicitly documented gap, not a silently
+# absorbed one.
 #
 # ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
 # target2026_work_participation): 03103 is not covered by SrV, so its row uses ITS OWN
@@ -311,6 +415,15 @@ HEADER_WORK = """\
 # ASSUMPTION (Gesamt): the Gesamt row uses the Gesamt margin row combined with the SAME 03ZGB
 # conditional rates as Wolfsburg (source = "employment_status_target x srv_region_total"), since
 # 03ZGB is the only committed region-total conditional rate available.
+#
+# NOTE (n_effective, fix round 1 item 6): n_effective is the SrV CONDITIONAL row's n_unweighted
+# (e.g. 03101: 3629), not the employment_status margin row's own n_effective (03101: 1902).
+# n_effective exists to size kreis_attribute_control._shrunk_shares' Dirichlet shrinkage prior;
+# while this control is consumed with prior_n = 0 (see CONSUMER NOTE below) the choice is INERT
+# and changes no shipped value. If a future prior_n > 0 is ever set for this control, the SrV
+# row's roughly 2x larger unweighted count would shrink with roughly twice the confidence the
+# margin row alone would justify -- stated here so that trade-off is visible before prior_n is
+# ever moved off 0, not discovered afterwards.
 #
 # CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0 (this control is
 # registered tier="hard").

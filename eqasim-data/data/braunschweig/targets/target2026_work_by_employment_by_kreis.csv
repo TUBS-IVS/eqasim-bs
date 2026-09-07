@@ -21,11 +21,13 @@
 # ASSUMPTION (controller ruling R15, universe mismatch -- documented, NOT reconciled): the
 # employment_status margin's universe is persons 14+ with a valid V_ERW; the SrV conditional
 # rates' universe is persons 14+ INCLUDING the persons with a missing/implausible V_ERW code
-# (classed non-employed on the SrV side). The two universes differ by exactly
+# (classed non-employed on the SrV side). The two universes differ by AT MOST
 # n_missing_employment_code=11 persons of the 14,845-person 14+ universe (0.07 pp on the
-# employed share) -- see srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header
-# line for the count. The two universes are combined as-is; this is a small, explicitly
-# documented gap, not a silently absorbed one.
+# employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header line
+# measures that count on the 17,269-person at-home-or-mobile universe, not on the 14,845-person
+# 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round 1, item 7). The two
+# universes are combined as-is; this is a small, explicitly documented gap, not a silently
+# absorbed one.
 #
 # ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
 # target2026_work_participation): 03103 is not covered by SrV, so its row uses ITS OWN
@@ -34,6 +36,15 @@
 # ASSUMPTION (Gesamt): the Gesamt row uses the Gesamt margin row combined with the SAME 03ZGB
 # conditional rates as Wolfsburg (source = "employment_status_target x srv_region_total"), since
 # 03ZGB is the only committed region-total conditional rate available.
+#
+# NOTE (n_effective, fix round 1 item 6): n_effective is the SrV CONDITIONAL row's n_unweighted
+# (e.g. 03101: 3629), not the employment_status margin row's own n_effective (03101: 1902).
+# n_effective exists to size kreis_attribute_control._shrunk_shares' Dirichlet shrinkage prior;
+# while this control is consumed with prior_n = 0 (see CONSUMER NOTE below) the choice is INERT
+# and changes no shipped value. If a future prior_n > 0 is ever set for this control, the SrV
+# row's roughly 2x larger unweighted count would shrink with roughly twice the confidence the
+# margin row alone would justify -- stated here so that trade-off is visible before prior_n is
+# ever moved off 0, not discovered afterwards.
 #
 # CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0 (this control is
 # registered tier="hard").
