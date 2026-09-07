@@ -1,0 +1,304 @@
+id: commute-day-state-phase-b-sensitivity-far100-2026-09-06
+date: '2026-09-06'
+repository:
+  commit: 2531a996
+  branch: feature/commute-day-state-phase-b
+  notes: 'The worktree HEAD at the time this manifest was written is 2531a996 (the branch tip
+    after the check-2 regional-MiD amendment). The server run followed the SAME detached-worktree
+    procedure as the Phase B proof re-run (manifest
+    commute-day-state-phase-b-proof-100pct-2026-09-06-rerun): the branch was tarred and extracted
+    onto a detached server worktree at c9b841d9 (~/wt-i329, per this task''s brief), not pushed and
+    not committed there. Both brought-back provenance files
+    (phase_a_provenance.json / a10 and a06) record git_commit "c9b841d9+dirty" -- the DETACHED
+    BASE commit plus an uncommitted tar overlay, which is exactly what the rerun manifest''s
+    procedure also produces and is therefore not distinguishable, from the artefact alone, from
+    an earlier point on the branch. Nothing in the two runs'' artefacts pins the exact branch-tip
+    commit the tar reflected (no branch-tip hash is written anywhere in
+    state_diagnostics.json, decisions.json, phase_a_provenance.json or srv_distance_provenance.json).
+    UNKNOWN, and stated as such rather than assumed: whether the tar reflected exactly 2531a996 or
+    an earlier commit on this same branch (the branch''s commits between the previous proof
+    re-run''s 0be490ad and 2531a996 touch only the check-2 judgement text in ADR-0104 and one
+    code commit, 34ff1801, which changes has-car handling and a cache-hash detail in
+    donor_pool.py / state_stage.py / activities_day_stage.py -- none of which this run''s three-stage
+    target list exercises for activities_day_stage, but state_stage and donor_pool ARE exercised).
+    The run parameters recorded below (far_threshold_km, absent_share_far) are certain because they
+    are printed verbatim in the committed run_log_excerpts.txt of each variant.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/cds_b3_far100_a10.yml (commute_day_far_threshold_km 100.0, commute_day_absent_share_far
+    1.0)'
+  - 'felix:~/cds_b3_far100_a06.yml (commute_day_far_threshold_km 100.0, commute_day_absent_share_far
+    0.6)'
+  notes: 'A CONFIG-ONLY sensitivity: no default in configs/base_bs.yml was changed by this task.
+    Both overlays set commute_day_state_enabled true (the flag stays at its production default)
+    and change ONLY commute_day_far_threshold_km (100.0 instead of the base config''s 200.0) and,
+    for a06, commute_day_absent_share_far (0.6 instead of the base config''s 1.0; a10 keeps the
+    base config''s 1.0). Every other parameter -- detour_factor 1.3,
+    commute_day_max_not_replaceable_share 0.5, the i329 production block (sampling_rate 1.0,
+    random_seed 1234, popsim work_dir eqasim-data/popsim_work_i329, max_cells 750, num_workers 3,
+    importance_profile optimized_2026_06_30, eqasim_version 2.3.1, matsim_last_iteration 0) -- is
+    read from base_bs.yml / the i329 block exactly as the two prior Phase B proof runs used it.
+    Run list narrowed to
+    [braunschweig.synthesis.commute_day.state_stage,
+    braunschweig.analysis.synthesis.work_participation_by_kreis,
+    braunschweig.analysis.synthesis.commute_distance_by_kreis] -- no chainsolver and no
+    synthesis.output stage, so NO population was written by either variant (this measures the
+    drawn day-state and its distance-band consequence only, not a full ON population as the
+    2026-09-06 proof re-run did). Logs: ~/cds_b3_far100_a10.log, ~/cds_b3_far100_a06.log. Output
+    directories: eqasim-data/output_bs_100pct_cds2_sens_far100_a10,
+    eqasim-data/output_bs_100pct_cds2_sens_far100_a06, both under ~/wt-i329/eqasim-data on felix.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'No population was synthesised: the persons, households and home locations are the i329
+    ones (manifest 100pct-allfeat-i329-2026-08-24), reached through the same cache as the two prior
+    Phase B proof runs and the SrV baselines. Cohorts are IDENTICAL to every prior Phase B run:
+    1,131,204 persons, 540,426 flagged employed (540,425 with a ZGB home Kreis), 304,900 workers
+    with an assigned workplace. This sensitivity changes neither the population nor any workplace
+    ASSIGNMENT (commute_by_kreis_all_assigned.csv is byte-for-byte identical to the 2026-09-06 proof
+    re-run''s copy in both a10 and a06, verified below), only which workers are drawn to
+    at_workplace/home/absent on the simulated day.'
+pipeline:
+  targets:
+  - braunschweig.synthesis.commute_day.state_stage
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  - braunschweig.analysis.synthesis.commute_distance_by_kreis
+  notes: 'Both variants completed (run_log_excerpts.txt of each ends with the trips-day-stage
+    diagnostics line, no traceback). Run a10 (far_threshold_km 100.0, absent_share_far 1.0) logged
+    17:37:04-17:38:42; run a06 (100.0, 0.6) logged 17:53:17-17:54:54 (both CEST, read from the
+    excerpt timestamps). CACHE EFFECTS: UNKNOWN -- the committed run_log_excerpts.txt of each
+    variant carries only the commute-day stage''s own INFO lines (parameters, escort duty, donor
+    distance, state draw, matching, plan replacement, trips-day diagnostics); neither excerpt
+    includes the synpp stage-discovery/devalidation banner ("N stages found/devalidated") that the
+    two prior Phase B manifests quote, so whether any stage besides the three-stage target list
+    was devalidated or re-executed, and how many i329 cache entries this run added, is not
+    recoverable from the committed evidence and is recorded as unknown rather than assumed. Both
+    variants''s donor-distance source coverage is 100.0% primary in every assigned class
+    (state_diagnostics.json, confirmed identical to the two prior proof runs), so the shared trips
+    cache was read successfully in both.'
+classification:
+- validation
+status:
+  execution: completed
+  notes: 'COMPLETE for both variants at the narrowed three-stage target list; NOT a re-run of the
+    full ON line (no chainsolver, no synthesis.output -- see pipeline.notes), so this manifest adds
+    no new evidence on checks 3, 4 (pool size per cell still unknown), 6 or the written-population
+    byte identity, all of which stand as measured in the 2026-09-06 proof re-run. What this run
+    adds is a THIRD and FOURTH point (a10, a06) on the far_threshold_km / absent_share_far surface,
+    beside the two already measured at far_threshold_km=200.0 in the proof re-run
+    (absent_share_far 1.0, the production default, and 0.6, ADR-0104 check 5).'
+environment: server
+validation:
+- metric: 'State shares among ALL 304,900 workers (n_at_workplace / n_home / n_absent), compared
+    across three points on the far_threshold_km / absent_share_far surface: the production default
+    (200.0 / 1.0, from the 2026-09-06 proof re-run), and this task''s two new points
+    (100.0 / 1.0 = "a10", 100.0 / 0.6 = "a06")'
+  reference: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/state_diagnostics.json
+    (baseline 200.0 / 1.0)'
+  result: 'at_workplace is IDENTICAL across all three points: 296,599 (97.28%) in baseline, a10 and
+    a06 alike (state_diagnostics.json''s n_at_workplace in each of the three directories).
+    Baseline (200.0/1.0): home 5,086 (1.6681%), absent 3,215 (1.0544%).
+    a10 (100.0/1.0): home 4,098 (1.3440%), absent 4,203 (1.3785%) -- home falls by 988, absent rises
+    by the same 988.
+    a06 (100.0/0.6): home 5,756 (1.8878%), absent 2,545 (0.8347%) -- home rises by 670, absent falls
+    by the same 670, relative to baseline.
+    home + absent is 8,301 in all three (the redrawn set is fixed by the keep-probability rule,
+    which does not depend on far_threshold_km or absent_share_far -- see the far-assigned-cohort
+    entry below for the mechanism).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/state_diagnostics.json
+    (n_at_workplace, n_home, n_absent), .../{a10,a06}/commute_day_state_shares.csv (per-Kreis
+    breakdown), .../commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/state_diagnostics.json
+    (baseline)'
+  notes: 'Read by script (scratch, not committed): each state_diagnostics.json''s top-level
+    n_at_workplace/n_home/n_absent, divided by n_workers=304900. Neither far_threshold_km nor
+    absent_share_far is an observed value; both are ASSUMPTIONS recorded in ADR-0104 (200.0 is the
+    MiD P_ARB_ENTF top-code, 1.0 was the design default, 100.0 and 0.6 are this task''s sensitivity
+    points, none derived from a committed source).'
+- metric: 'States WITHIN the 16,194 workers whose ASSIGNED commute-distance class is 100_200 or
+    gt200 (state_diagnostics.json''s by_assigned_class, summed over those two classes) -- the
+    far-assigned cohort check 2''s 100_plus band is built from'
+  reference: none (model-internal breakdown, compared across the three parameter points above)
+  result: 'at_workplace is IDENTICAL across all three points: 11,327 (4,106 in 100_200 + 7,221 in
+    gt200), 69.9457% of the 16,194 -- the keep/not-kept split depends only on
+    P(keep) = share_at_workplace(assigned)/share_at_workplace(donor) read from the committed MiD
+    table, which neither far_threshold_km nor absent_share_far enters.
+    Baseline (200.0/1.0): home 1,652 (10.20%; 1,129 from 100_200 + 523 from gt200 -- the 100_200
+    class is BELOW the 200 km far threshold, so none of its not-kept workers become absent), absent
+    3,215 (19.85%; all from gt200).
+    a10 (100.0/1.0): home 664 (4.10%; 141 from 100_200 + 523 from gt200), absent 4,203 (25.95%; 988
+    from 100_200 + 3,215 from gt200) -- moving the threshold from 200 to 100 km makes the 100_200
+    class''s 1,129 not-kept workers eligible for the absent draw too (988 of them redrawn absent
+    instead of home, 141 staying home, mostly the escort-protected).
+    a06 (100.0/0.6): home 2,322 (14.34%; 540 from 100_200 + 1,782 from gt200), absent 2,545 (15.72%;
+    589 from 100_200 + 1,956 from gt200) -- lowering absent_share_far to 0.6 at the same 100 km
+    threshold shifts roughly 40% of the not-kept far-assigned cohort back from absent to home,
+    relative to a10, while the KEPT (at_workplace) count is again unchanged.
+    home + absent is 4,867 in all three points (16,194 - 11,327).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/state_diagnostics.json
+    (by_assigned_class, classes 100_200 and gt200)'
+  notes: 'Every escort-protected person (n_escort_protected = 664 in both a10 and a06, per
+    state_diagnostics.json) becomes home rather than absent by construction (ADR-0104: an active
+    escort leg on the person''s own day evidences presence at home), which is why a10''s far-cohort
+    home count (664) equals exactly the escort-protected count -- at absent_share_far 1.0 every
+    non-escort not-kept far worker is drawn absent.'
+- metric: 'Reporting-day distance bands (commute_by_kreis.csv, the reporting-day/at_workplace
+    universe), zgb/all and zgb/inter rows, the 100_plus and 50_100 bands -- the quantity ADR-0104
+    check 2''s 100_plus half is measured on'
+  reference: eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/commute_by_kreis.csv
+  result: 'BYTE-FOR-BYTE IDENTICAL across all three parameter points, not merely close: zgb/all
+    model_share_100_plus 0.0381896 (3.82%), model_share_50_100 0.0675457 (6.75%), n_model 296,599,
+    classification "ok"; zgb/inter model_share_100_plus 0.0737401 (7.37%), model_share_50_100
+    0.1304237 (13.04%), n_model 153,607, classification "ok" -- read the same in
+    a10/commute_by_kreis.csv, a06/commute_by_kreis.csv and the 2026-09-06 proof re-run''s
+    on/commute_by_kreis.csv. MECHANISM: commute_by_kreis.csv is built only over workers whose drawn
+    state is at_workplace, and that set of 296,599 persons, and each one''s home->workplace
+    distance, is unchanged by far_threshold_km and absent_share_far (previous entry) -- both
+    parameters govern only how the NOT-KEPT far-assigned workers split between home and absent,
+    and neither state enters this table. CONSEQUENCE FOR CHECK 2: moving the far threshold from 200
+    to 100 km, or the absent share from 1.0 to 0.6, changes NEITHER half of check 2 -- the 100_plus
+    band stays exactly at the value the 2026-09-06 proof re-run already measured, and so does its
+    distance to every reference (W12, P13, the withdrawn SrV bound).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/commute_by_kreis.csv,
+    .../commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/commute_by_kreis.csv'
+  notes: 'Verified by direct comparison of the zgb/all and zgb/inter rows of all three files
+    (identical to the seventh decimal place read from the CSV); the two new files'' decisions.json
+    and sensitivity.csv (EMD-threshold sweep, GIS-fallback and inter_zgb variants) are likewise
+    identical to each other and to the corresponding section of the proof re-run''s
+    on/decisions.json. This is a NEGATIVE sensitivity result: far_threshold_km / absent_share_far
+    is one of the two commute-day-state parameters, but it has ZERO effect on the check-2
+    distance-band metric across the two points tested here.'
+- metric: 'Assigned/register view (commute_by_kreis_all_assigned.csv, the "OFF-equivalent" universe
+    of all 304,900 workers with an assigned workplace, regardless of drawn state), zgb/all and
+    zgb/inter rows, the 100_plus and 50_100 bands'
+  reference: eqasim-data/data/braunschweig/calibration/srv_distance_baseline_2026-09-04/commute_by_kreis.csv
+  result: 'BYTE-FOR-BYTE IDENTICAL across all three parameter points and to the 2026-09-04 baseline
+    and the 2026-09-06 proof re-run''s OFF/assigned view: zgb/all model_share_100_plus 0.0531125
+    (5.31%), model_share_50_100 0.0705641 (7.06%), n_model 304,900, classification "ok"; zgb/inter
+    model_share_100_plus 0.1000834 (10.01%), model_share_50_100 0.1329687 (13.30%), n_model
+    161,805, classification "gap". This view depends only on the workplace ASSIGNMENT (which
+    commute_day_state never changes, by construction of the two-view trips architecture), so its
+    identity across every commute-day-state parameter combination measured to date is expected, not
+    a new finding -- it is repeated here only to confirm the two new runs read the same location
+    caches as every prior run.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/commute_by_kreis_all_assigned.csv'
+  notes: 'No-deterioration half of check 2 stays PASS under both new points, trivially -- this
+    table cannot move without a change to primary location assignment, which this task did not
+    touch.'
+- metric: 'ADR-0104 check-1 shares (commute_day_state_shares.csv, zgb row): share_at_workplace,
+    share_home, share_absent, share_no_workplace, share_employed_no_work_trip, over the 540,425
+    employed persons with a ZGB home Kreis'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+  result: 'share_at_workplace (0.4810362) and share_no_workplace (0.5055854) are IDENTICAL across
+    baseline, a10 and a06 -- both depend only on which workers are drawn at_workplace, unaffected
+    by this sensitivity (see the ALL-workers entry above). share_home and share_absent move against
+    each other by construction (their sum is fixed at 0.0133783 in all three):
+    baseline (200.0/1.0) home 0.0082472 (0.82%), absent 0.0051311 (0.51%);
+    a10 (100.0/1.0) home 0.0066207 (0.66%, -0.163 pp vs baseline), absent 0.0067576 (0.68%, +0.163
+    pp vs baseline);
+    a06 (100.0/0.6) home 0.0092797 (0.93%, +0.103 pp vs baseline), absent 0.0040986 (0.41%, -0.103
+    pp vs baseline).
+    share_employed_no_work_trip moves by less than 0.02 pp in either direction (baseline 0.5187565,
+    a10 0.5187750 [+0.0019 pp], a06 0.5186418 [-0.0115 pp]) because it is dominated by
+    share_no_workplace, which this sensitivity does not touch. Against the SrV zgb row
+    (share_home_office_day 0.1417723, share_work_trip 0.6511224, share_neither 0.2071053), ALL THREE
+    points remain far OUTSIDE the +/- 3 pp band on every one of the three state shares -- moving
+    far_threshold_km/absent_share_far across the range tested cannot close a gap of 13-20 pp with a
+    shift of at most 0.16 pp.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/commute_day_state_shares.csv
+    (zgb row), .../commute_day_state_phase_b_proof_100pct_2026-09-06_rerun/on/commute_day_state_shares.csv
+    (baseline zgb row)'
+  notes: 'No verdict is recorded here: ADR-0104 check 1''s +/- 3 pp band is already recorded FAILED
+    in the 2026-09-06 proof re-run and is not re-adjudicated by this sensitivity, which exists to
+    characterise the parameter surface, not to re-run the pre-registered check. The +/- 3 pp band
+    and the SrV correspondence (at_workplace <-> work trip, home <-> home-office day, absent <->
+    neither) are the same ASSUMPTIONS the proof re-run''s validation entry 1 already names.'
+- metric: 'Donor-matching diagnostics (state_diagnostics.json''s matching block): not-replaceable
+    share and coarsening-level distribution, for the home cohort each variant actually drew'
+  reference: none (model-internal diagnostics; the guard is commute_day_max_not_replaceable_share
+    0.5, unchanged)
+  result: 'not-replaceable stays 0.00% in both new variants (0 of 4,098 in a10, 0 of 5,756 in a06),
+    same as the 0 of 5,086 baseline -- moving the threshold and absent share never exhausts a
+    matching cell. Coarsening levels (0/2/3/4/5, level 1 and 6 empty in all three, matching the
+    baseline):
+    baseline (200.0/1.0, n=5,086): 3,786/352/391/23/534 (74.4/6.9/7.7/0.5/10.5%).
+    a10 (100.0/1.0, n=4,098): 3,027/207/307/23/534 (73.9/5.1/7.5/0.6/13.0%).
+    a06 (100.0/0.6, n=5,756): 3,337/263/340/23/1,793 (58.0/4.6/5.9/0.4/31.2%).
+    Level 4 (23 persons) is IDENTICAL in count across all three variants; level 5 (the loosest
+    coarsening step) absorbs most of the swing in cohort size, rising from 534 (baseline and a10,
+    which draw a SMALLER or equal home cohort than baseline) to 1,793 in a06 (the LARGER home
+    cohort, +1,259 vs a10), i.e. the additional home persons a06 draws are matched disproportionately
+    at the loosest level, not spread evenly.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/{a10,a06}/state_diagnostics.json
+    (matching.n_not_replaceable, matching.share_not_replaceable, matching.matched_by_level),
+    .../{a10,a06}/run_log_excerpts.txt (the matching-stage INFO line repeats the same counts)'
+  notes: 'Donor-distance source coverage (donor_source_by_assigned_class) is 100.0% primary in
+    every assigned class in both new variants, identical to the baseline -- the 50% warn bound on
+    that diagnostic never approaches firing under either sensitivity point.'
+- metric: 'Distance of the reporting-day 100_plus band to the two regional MiD 2023 references
+    named in ADR-0104''s "Decision 2026-09-06 on check 2 (maintainer)" section -- W12''s Arbeit row
+    and P13''s Gesamt row -- across the three parameter points, reported as a DIRECTION only (no
+    verdict, no tolerance, the parameter decision explicitly left to the maintainer, issue #377)'
+  reference: 'eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv (Arbeit row,
+    reporting-day work trips), eqasim-data/data/braunschweig/mid/mid2023_P13.csv (Gesamt row,
+    usual/register-like commute distance)'
+  result: 'UNCHANGED at every one of the three points, because the underlying model quantities
+    (reporting-day zgb/all and zgb/inter 100_plus, and the assigned-view zgb/all 100_plus) are
+    byte-identical across baseline, a10 and a06 (see the two commute_by_kreis entries above):
+    reporting-day zgb/all 0.0381896 (3.82%) sits above W12''s Arbeit d_100km_plus (1%) by the same
+    margin in all three; reporting-day zgb/inter 0.0737401 (7.37%) sits above the same 1% reference
+    by the same margin in all three; the assigned-view zgb/all 0.0531125 (5.31%) sits above P13''s
+    Gesamt d_100p (2%) by the same margin in all three. Neither "closer" nor "farther": the two
+    sensitivity points tested here (moving far_threshold_km from 200 to 100 km, and
+    absent_share_far from 1.0 to 0.6, independently and together) leave the model''s distance to
+    both regional references EXACTLY where the 2026-09-06 proof re-run already measured it.'
+  artifact: 'eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv,
+    eqasim-data/data/braunschweig/mid/mid2023_P13.csv, and the commute_by_kreis.csv /
+    commute_by_kreis_all_assigned.csv entries above for the model-side figures'
+  notes: 'This entry states a DIFFERENCE only, per this task''s brief: the model sits above both
+    regional references before and after this sensitivity, and moving these two parameters within
+    the range tested does not change that. It does NOT conclude that no parameter combination could
+    move the model closer -- ADR-0104''s "Decision 2026-09-06 on check 2" already names the two
+    candidate mechanisms that WOULD move it (extending the absent rule further down the distance
+    scale than gt200/100_200, or lowering the keep ratios below the committed MiD values), neither
+    of which this sensitivity tests: far_threshold_km only decides which not-kept workers are
+    ELIGIBLE for the absent draw, and this task''s narrowest point (100 km) already covers the
+    entire far-assigned cohort (100_200 and gt200), so a threshold below 100 km was not tested and
+    would additionally require redefining what "far" means relative to the assigned-class
+    boundaries the model already uses. NO DEFAULT IS CHANGED by this manifest and no verdict is
+    recorded here; the choice among the mechanisms named in ADR-0104 remains a PARAMETER decision
+    reserved for the maintainer (issue #377).'
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/commute_day_state_phase_b_sensitivity_far100_2026-09-06/
+  (a10/: state_diagnostics.json, commute_day_state_shares.csv, commute_by_kreis.csv,
+  commute_by_kreis_all_assigned.csv, work_participation_by_kreis.csv, assigned_distance_classes.csv,
+  decisions.json, sensitivity.csv, phase_a_provenance.json, phase_a_summary.md,
+  srv_distance_provenance.json, srv_distance_summary.md, run_log_excerpts.txt; a06/: the same
+  thirteen files) -- aggregates only, no per-person file was brought back, and neither variant
+  wrote a population (pipeline.notes)'
+- 'felix:~/wt-i329/eqasim-data/output_bs_100pct_cds2_sens_far100_a10/,
+  .../output_bs_100pct_cds2_sens_far100_a06/ (analysis directories only, no chainsolver/output
+  stage in either run list)'
+- 'felix:~/cds_b3_far100_a10.yml, ~/cds_b3_far100_a06.yml (server-local overlays, not committed) and
+  the two run logs ~/cds_b3_far100_a10.log, ~/cds_b3_far100_a06.log'
+issues:
+- '#244'
+- '#377'
+decisions:
+- ADR-0104
+notes: 'Sensitivity companion to the 2026-09-06 proof re-run, adding two new points
+  (far_threshold_km=100.0 at absent_share_far=1.0 and 0.6) beside the two the proof re-run already
+  measured at far_threshold_km=200.0 (absent_share_far 1.0 the production default, 0.6 ADR-0104
+  check 5). KEY FINDING, stated once here and not duplicated elsewhere: the reporting-day and
+  assigned commute-distance bands (check 2''s metric) are COMPLETELY INSENSITIVE to both parameters
+  across the points tested -- only check 1''s home/absent split moves, by at most 0.16 percentage
+  points, which cannot close SrV gaps of 13-20 pp. No default in configs/base_bs.yml is changed by
+  this manifest; the parameter decision on far_threshold_km / absent_share_far, and on the two
+  mechanisms ADR-0104 names as capable of actually moving check 2 (extending the absent rule to
+  shorter classes, or lowering the keep ratios below the committed MiD values), is explicitly left
+  to the maintainer under issue #377.'
+source: 'Sensitivity measurement of the commute-day-state (far/weekly commuters) model''s
+  far_threshold_km (100 vs the production default 200 km) and absent_share_far (1.0 vs 0.6)
+  parameters at 100% on the cached i329 population, narrowed to the state/participation/distance
+  stages (no chainsolver, no written population), following up ADR-0104 check 5 and the maintainer''s
+  2026-09-06 check-2 decision (issue #244 / #377)'

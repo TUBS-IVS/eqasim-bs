@@ -619,3 +619,48 @@ bound is not met..." above).
   measure (finding (c) above) before either is used as a bound, and decide between findings
   (b)(i) and (b)(ii) -- both parameter/anchor decisions reserved for the maintainer -- as the
   candidate cause of the remaining factor-3-4 gap.
+
+### Sensitivity 2026-09-06: far threshold 100 km
+
+Follow-up (b) above named two candidate mechanisms for the remaining factor-3-4 gap against the
+regional MiD tables, one of which is "extending the absent rule ... reaching into the `100_200`
+class". This section measures what moving `commute_day_far_threshold_km` from its production
+default (200.0) down to 100.0 actually does, at both `commute_day_absent_share_far` values already
+on record (1.0 and 0.6), on the same cached i329 population and the same narrowed
+state/participation/distance-band stages (no chainsolver, no written population). Full numbers,
+mechanism and artefacts are in run manifest
+`commute-day-state-phase-b-sensitivity-far100-2026-09-06`; this paragraph is the summary, not a
+second home for the figures.
+
+- **Check 1's home/absent split moves, by at most 0.16 pp.** Over the 540,425-employed-person
+  denominator, `share_at_workplace` (0.481036) and `share_no_workplace` (0.505585) are IDENTICAL at
+  every point tested (200/1.0, 100/1.0, 100/0.6) -- the far threshold and the absent share affect
+  only how the not-kept far-assigned workers split between `home` and `absent`, never who is kept.
+  At 100/1.0, `share_home` falls from 0.008247 to 0.006621 (-0.163 pp) and `share_absent` rises from
+  0.005131 to 0.006758 (+0.163 pp); at 100/0.6 the shift is the opposite direction and about
+  two-thirds the size (+0.103 / -0.103 pp). Neither point comes close to closing SrV gaps of
+  13-20 pp on any of the three state shares.
+- **Check 2's `100_plus` band is COMPLETELY UNCHANGED by this parameter, at either absent-share
+  value.** `commute_by_kreis.csv`'s `zgb`/`all` and `zgb`/`inter` `100_plus` and `50_100` cells are
+  byte-identical across all three points (200/1.0, 100/1.0, 100/0.6), and so is the assigned view
+  `commute_by_kreis_all_assigned.csv`. Mechanism: that table is built only over the 296,599 workers
+  drawn `at_workplace`, and that set -- and each such worker's own commute distance -- never changes
+  when `far_threshold_km` or `absent_share_far` moves, because the KEEP probability is read from the
+  committed MiD table by assigned/donor class alone; the two parameters decide only the destination
+  (`home` vs `absent`) of workers who are NOT kept, and a not-kept worker contributes to neither
+  table. Consequently the model's distance to both regional references (W12's `Arbeit`
+  `d_100km_plus` 1 %, P13's `Gesamt` `d_100p` 2 %) is **exactly where it was before this
+  sensitivity** at every point tested -- neither closer nor farther.
+- **Reading across both findings: `far_threshold_km` alone cannot be the lever that closes the
+  check-2 gap.** Moving it from 200 to 100 km reassigns already-not-kept workers between `home` and
+  `absent` (visible only in check 1's small home/absent split); it cannot remove a KEPT
+  (`at_workplace`) worker from the reporting-day distance bands, because kept status never depends
+  on the threshold. Follow-up (b)(i)'s mechanism -- extending the absent rule to move check 2 --
+  would therefore require moving the KEEP probability itself (e.g. a lower ratio for the `100_200`
+  class), not merely the threshold at which "not kept" becomes "absent" instead of "home". Follow-up
+  (b)(ii) (the BA-anchored far-commuter mass itself) is untouched by anything measured here.
+- **No default is changed by this sensitivity measurement.** `commute_day_far_threshold_km` stays
+  at 200.0 and `commute_day_absent_share_far` at 1.0 in `configs/base_bs.yml`. The parameter
+  decision on `far_threshold_km` / `absent_share_far`, and the choice between follow-ups (b)(i) and
+  (b)(ii) as the path to closing the check-2 gap, remains explicitly reserved for the maintainer
+  (issue #377).
