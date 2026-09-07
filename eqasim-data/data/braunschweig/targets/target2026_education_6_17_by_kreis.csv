@@ -1,0 +1,32 @@
+# education_by_age per-Kreis control target for the 'education_6_17' age band (6-17),
+# Plan B issue #368, ADR-0109, decision Q2 (three 2-cell age-range controls incl. 0-5).
+# Built by scripts/build_participation_universe_targets.py from ONE committed input, NO raw
+# microdata, NO MiD blending and NO margin (unlike work_by_employment, decision Q2's shares are
+# a direct SrV conditional rate):
+#   eqasim-data/data/braunschweig/srv/srv2023_education_by_age_by_kreis.csv, band == 'education_6_17'
+#   (p_education = weighted share of the age band's persons with >= 1 education-purpose leg on
+#   the reporting day, E_ZWECK_9 in {3, 4}).
+#
+# FORMULA: edu = round(p_education, 4); noedu = round(1 - p_education, 4).
+#
+# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
+# target2026_work_participation): 03103 is not covered by SrV; its row uses the 03ZGB
+# (region-total) p_education directly (source = "srv_region_total").
+# ASSUMPTION (Gesamt): the Gesamt row also uses the 03ZGB p_education directly (source = "srv"),
+# the same convention as scripts/build_participation_target.py.
+#
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0 (this control is
+# registered tier="hard"). Age universe (KreisAttributeControl.min_age / max_age) must match
+# kreis_attribute_control.EDUCATION_AGE_BOUNDS['education_6_17'] = (6, 17).
+# Columns: ars5, source, n_effective (the SrV row's n_unweighted), edu, noedu
+# (kreis_attribute_control.EDUCATION_FLAG_CATEGORIES).
+ars5,source,n_effective,edu,noedu
+03101,srv,541,0.9177,0.0823
+03102,srv,206,0.9064,0.0936
+03151,srv,374,0.8905,0.1095
+03153,srv,205,0.9015,0.0985
+03154,srv,210,0.9252,0.0748
+03157,srv,293,0.9328,0.0672
+03158,srv,191,0.9611,0.0389
+03103,srv_region_total,2020,0.9171,0.0829
+Gesamt,srv,2020,0.9171,0.0829

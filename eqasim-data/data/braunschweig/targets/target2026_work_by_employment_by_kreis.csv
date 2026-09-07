@@ -1,0 +1,51 @@
+# work_by_employment per-Kreis control target (Plan B, issue #368, ADR-0109; decisions Q1 and
+# Q5 in .superpowers/sdd/2026-09-07-participation-universe-controls-plan-b/SPEC.md).
+# Built by scripts/build_participation_universe_targets.py from TWO committed inputs, NO raw
+# microdata:
+#   - eqasim-data/data/braunschweig/targets/target2026_employment_status_by_kreis.csv (the
+#     employed MARGIN = vollzeit + teilzeit + geringfuegig + in_ausbildung, i.e.
+#     attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES; decision Q5 puts in_ausbildung IN the
+#     employed set to match ADR-0060's MiD in_ausbildung / SrV V_ERW 8 apprentice equivalence).
+#   - eqasim-data/data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv (the SrV
+#     conditional rates p_work_employed = P(work trip | employed) and p_work_nonemployed =
+#     P(work trip | not employed), per Kreis and for the 03ZGB region total).
+#
+# FORMULA (margin x conditional, decision Q1), per Kreis:
+#   employed_work      = round(MARGIN * p_work_employed, 4)
+#   employed_nowork     = round(MARGIN * (1 - p_work_employed), 4)
+#   nonemployed_work    = round((1 - MARGIN) * p_work_nonemployed, 4)
+#   nonemployed_nowork  = round((1 - MARGIN) * (1 - p_work_nonemployed), 4)
+# The four cells partition to 1 exactly before rounding; independent 4-dp rounding of each cell
+# can leave a row up to ~4e-4 off 1, inside kreis_attribute_control.TARGET_SHARE_TOLERANCE (1e-3).
+#
+# ASSUMPTION (controller ruling R15, universe mismatch -- documented, NOT reconciled): the
+# employment_status margin's universe is persons 14+ with a valid V_ERW; the SrV conditional
+# rates' universe is persons 14+ INCLUDING the persons with a missing/implausible V_ERW code
+# (classed non-employed on the SrV side). The two universes differ by exactly
+# n_missing_employment_code=11 persons of the 14,845-person 14+ universe (0.07 pp on the
+# employed share) -- see srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header
+# line for the count. The two universes are combined as-is; this is a small, explicitly
+# documented gap, not a silently absorbed one.
+#
+# ASSUMPTION (Wolfsburg 03103, SrV region-total convention -- same as target2026_has_ebike /
+# target2026_work_participation): 03103 is not covered by SrV, so its row uses ITS OWN
+# employment_status margin row combined with the 03ZGB (region-total) conditional rates;
+# source = "employment_status_target x srv_region_total".
+# ASSUMPTION (Gesamt): the Gesamt row uses the Gesamt margin row combined with the SAME 03ZGB
+# conditional rates as Wolfsburg (source = "employment_status_target x srv_region_total"), since
+# 03ZGB is the only committed region-total conditional rate available.
+#
+# CONSUMER NOTE: FINAL target - use with kreis_attribute_control prior_n = 0 (this control is
+# registered tier="hard").
+# Columns: ars5, source, n_effective (the SrV row's n_unweighted), employed_work, employed_nowork,
+# nonemployed_work, nonemployed_nowork (kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES).
+ars5,source,n_effective,employed_work,employed_nowork,nonemployed_work,nonemployed_nowork
+03101,employment_status_target x srv,3629,0.3604,0.1613,0.0316,0.4467
+03102,employment_status_target x srv,1492,0.3872,0.1255,0.0163,0.471
+03151,employment_status_target x srv,2916,0.3931,0.1846,0.0189,0.4034
+03153,employment_status_target x srv,1890,0.3658,0.1312,0.0125,0.4905
+03154,employment_status_target x srv,1450,0.3504,0.1523,0.0185,0.4788
+03157,employment_status_target x srv,1942,0.3651,0.1778,0.0209,0.4362
+03158,employment_status_target x srv,1526,0.4007,0.156,0.0226,0.4207
+03103,employment_status_target x srv_region_total,14845,0.3125,0.1319,0.0263,0.5293
+Gesamt,employment_status_target x srv_region_total,14845,0.3693,0.1559,0.0224,0.4524
