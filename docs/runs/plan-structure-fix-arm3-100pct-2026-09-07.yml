@@ -199,6 +199,27 @@ validation:
     share_mobile_first_from_home 1.0 vs 0.9781, share_trips_1 0.0010 vs 0.0058 (closed plans by
     decision, issue #367).'
   artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/closure.csv
+- metric: 'ADR-0104 check 1, work-participation half: share of employed persons with a work trip
+    and its complement, on the ADR-0104 denominator (employed persons with a ZGB home Kreis), from
+    braunschweig.analysis.synthesis.work_participation_by_kreis'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+  result: 'Measured on the SAME denominator, reference row and definition as the Phase B proof
+    (commute-day-state-phase-b-proof-100pct-2026-09-06-rerun), so the two are directly comparable:
+    employed persons 540,473 (Phase B: 540,425), with a work trip 308,342 = 0.5705 vs SrV 0.6511
+    (delta -8.06 pp); the complement, employed WITHOUT a work trip, is 0.4295 vs SrV 0.3489
+    (+8.06 pp) against +16.99 pp in the Phase B proof. The plan-structure fix therefore closes
+    just over half of that gap, and the check still FAILS the pre-registered +/- 3 pp band --
+    no threshold was moved. State shares on the same universe: at_workplace 0.5702 (Phase B
+    0.4810) vs SrV 0.6511, home 0.0114 (0.0082) vs 0.1418, absent 0.0065 (0.0051) vs 0.2071,
+    no_workplace 0.4119 (0.5056, no SrV counterpart). Per Kreis delta_work_trip_pp -4.77 (03101)
+    to -12.51 (03153); 03103 Wolfsburg has no SrV row.
+    FINDING THAT SHARPENS #368: the workers-not-employed residual GREW, from 37,705 of 304,900
+    workers (12.37 %) to 41,680 of 317,848 (13.11 %). Recovering plans for persons whose plan
+    source had no diary recovers work activities for employed and NOT-employed persons alike,
+    because the participation control is not conditional on employment. That is the mechanism
+    package 4 (#368) removes, and it is measured here rather than assumed. The home and absent
+    shares are essentially unchanged (+0.3 pp / +0.1 pp) and stay the territory of #377.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/work_participation_by_kreis.csv
 - metric: 'Departure-hour profile (dep_hour_share_<purpose>_<hour>)'
   reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
   result: 'All trips: hour 6 +1.25 pp, hour 7 -1.37 pp, every other hour within +/- 0.65 pp.
@@ -210,7 +231,9 @@ validation:
 artifacts:
 - 'eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/
   (headline.csv, comparison.csv, by_kreis.csv, closure.csv, accepted_deviations.csv,
-  summary.md, provenance.json = the analysis stage outputs; trip_table_diagnostics_arm3.txt and
+  summary.md, provenance.json = the plan_structure_vs_srv outputs; work_participation_by_kreis.csv,
+  commute_day_state_shares.csv, commute_day_state_phase_a_summary.md = the
+  work_participation_by_kreis outputs; trip_table_diagnostics_arm3.txt and
   trip_table_diagnostics_i329.txt from trip_table_diagnostics.py; donor_inheritance_diagnostics_arm3.txt
   from donor_inheritance_diagnostics.py; run_log_excerpts_part1.txt) -- aggregates only'
 - 'felix:~/psf_data/output_bs_100pct_psf3/ (analysis/plan_structure_vs_srv/, meta json; the
@@ -229,6 +252,7 @@ issues:
 - '#373'
 - '#375'
 decisions:
+- ADR-0104
 - ADR-0106
 - ADR-0107
 - ADR-0108
