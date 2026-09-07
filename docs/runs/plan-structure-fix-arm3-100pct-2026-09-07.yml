@@ -1,0 +1,305 @@
+id: plan-structure-fix-arm3-100pct-2026-09-07
+date: '2026-09-07'
+repository:
+  commit: 5e1872a0
+  branch: feature/plan-structure-fix
+  notes: 'The branch was NOT pushed. The server ran a DETACHED worktree ~/wt-psf checked out at
+    1ea945a7 (origin/main, the merge of Phase B #376, which the branch had merged in 0f8d3885)
+    with a tar overlay of every file the branch changes relative to 1ea945a7 (HEAD 5e1872a0);
+    the stage therefore records pipeline_commit "1ea945a7+dirty". The Windows git archive
+    produced CRLF line endings, normalised with sed on the server before the launch. The
+    worktree''s eqasim-data is a symlink to ~/psf_data (the tracked eqasim-data tree moved to
+    eqasim-data._tracked); the committed reference tables of the branch (the whole
+    eqasim-data/data/braunschweig/{srv,mid,targets,kba} trees, including the new
+    srv2023_plan_structure_reference.csv) were copied into the shared server data directory
+    ~/eqasim-bs/eqasim-data/data/braunschweig/ so the run could read them. ONE CONTROLLER
+    OMISSION in that copy caused the crash described in pipeline.notes: kba/derived/
+    kba_wohnmobile_holder_age.csv and kba/raw/kba_wohnmobile_holder_age_20250401.csv were
+    missing and were copied afterwards. No code was changed during or after the run.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/psf_arm3_100pct.yml (copy in the session scratchpad; content reproduced in notes)'
+  notes: 'Merge log "composed configs/base_bs.yml + /home/felix/psf_arm3_100pct.yml: 0 overridden,
+    14 added". The overlay is scale/paths only: working_directory
+    eqasim-data/cache_bs_100pct_psf3 (a cp -al hardlink copy of the i329 cache
+    cache_bs_100pct_i329, so every stage the branch does not devalidate is a cache hit), run
+    list [synthesis.output, braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    braunschweig.analysis.synthesis.work_participation_by_kreis], sampling_rate 1.0,
+    output_path eqasim-data/output_bs_100pct_psf3, analysis_working_directory = the cache,
+    output_prefix braunschweig_100pct_psf3_, matsim_last_iteration 0,
+    braunschweig.population.popsim.work_dir eqasim-data/popsim_work_psf3, max_cells 750,
+    num_workers 3, importance_profile optimized_2026_06_30, cache_share_export false,
+    cache_share_recompute [], eqasim_version "2.3.1". ARM 3 of the pre-registered ladder = the
+    base_bs.yml DEFAULTS of the seven new flags, none overridden: diary_plan_match true,
+    exclude_holiday_plan_sources true, exclude_rbw_legs true, drop_leading_arrive_home_leg true,
+    closure_dwell_model empirical, closure_dwell_min_obs 30, trip_class_seed_counts_closure
+    true. Package 4 (#368, controls conditional on employment / school age) is NOT built, so arm
+    4 does not exist; arms 1 and 2 (package 1 alone; 1+2) were NOT run (controller ruling: one
+    100 % proof of the default state first, the isolating arms at 25 % remain optional).
+    Launched with "python scripts/run_synpp.py configs/base_bs.yml ~/psf_arm3_100pct.yml" in
+    tmux session psf3.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'The population WAS re-synthesised: braunschweig.popsim.completed_donor and
+    braunschweig.popsim.stage devalidated (new diary_plan_match step, new trip_class seed) and
+    ran for 36 min and 6 h 39 min (60 batches). The result has 1,131,314 persons (i329:
+    1,131,204; the two populations are different draws and are compared as populations, not
+    person by person). 1,003,727 persons (88.72 %) live in one of the seven SrV-surveyed Kreise
+    and form the head-to-head universe; 127,585 live in 03103 Wolfsburg (model-only rows) and 2
+    have no resolvable home Kreis. 1,002,332 persons carry 3,655,159 trips (i329: 3,392,698).
+    Every n_* below is a SAMPLE count at sampling_rate 1.0, never expanded; SrV values are the
+    committed weighted reference (18,223 respondents, 787,251 weighted persons).'
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: 'TWO synpp invocations (times CEST). (1) 2026-09-06 20:33:57 -> 2026-09-07 06:26:21,
+    log ~/psf_arm3_100pct_part1.log: 59 stages found; completed_donor 20:45-21:21 (diary_facts
+    over 305,206 donor persons with Wege, diary_plan_match report below); popsim.stage
+    21:21-04:00 (6 h 39 min); trips_stage 04:01-05:32 (rbW drop, arrive-home drop, closure
+    dwell model, stage A repair 743,926 valid / 216,635 repaired / 41,771 unfixable, time
+    imputation 40,520/40,520 coded-time persons, stage B 1,147 unfixable persons -> 1,147
+    matched chains, 0 home-only); plan_structure_vs_srv finished 06:04; the run then CRASHED at
+    06:26 in braunschweig.synthesis.vehicles.cars.household: fleet_wohnmobile_age_tilt raised
+    because kba_wohnmobile_holder_age.csv was not in the shared server data directory (the
+    committed-table guard worked as designed; cause = the controller''s incomplete copy, see
+    repository.notes). (2) 2026-09-07 08:32:05 -> (running at the time of writing), log
+    ~/psf_arm3_100pct.log: after copying the two KBA files, the same command; 14 stages to run,
+    the population, trips and analysis stages are cache hits; plan_structure_vs_srv re-executed
+    08:32-08:34 with a byte-identical headline.csv (cmp against the 06:04 copy). The vehicles,
+    locations, synthesis.output and work_participation_by_kreis stages follow. status.notes
+    records the final outcome.'
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+  notes: 'COMPLETE: invocation (2) finished 2026-09-07 10:33:40 with 14/14 stages, no traceback,
+    and wrote the full population (persons 1,131,314 with the rbw_legs_count, rbw_distance_km and
+    commute_day_state columns present; households, trips, vehicles, four GeoPackages). The
+    reporting-day trip table has 3,629,477 trips against the 3,655,159 of the plan trip table: the
+    difference is the Phase B day states removing work legs (absent 3,984, home 6,868 of the
+    359,528 workers with a state; at_workplace 348,676), not a loss in this branch''s code.
+    Secondary chainsolvers: success rate 0.9998 (968,014/968,249 problems fully placed), SrV
+    location draw marginal fallback 79,320/964,551 (8.2 %). Activities 4,760,791.
+    NOT EXERCISED by this run, stated so it is not read as covered: the run list stops at
+    synthesis.output, so no MATSim XML was written and the rbwLegsCount / rbwDistanceKm attribute
+    path in braunschweig/matsim/scenario/population.py (with its per-population omission-rate log,
+    ruling R13) ran only in the test suite. The CSV path IS exercised -- enriched_adapter reports
+    0/1,131,314 rows (0.00 %) filled with the default 0, so every person carries a real source
+    fact. The MATSim writer is covered by the owed production run, issue #22.
+    OUTCOME OF THE PRE-REGISTERED EXPECTATIONS (design spec section 3, "expected after arm 4";
+    measured after arm 3 because package 4 is not built), without interpretation: persons without
+    trip 11.28 % (expected 11-13 %) MET; trips per person 3.235 (3.2-3.5) MET; mobile persons with
+    odd trip count 29.3 % (25-30 %) MET; degenerate home->home first trips 0 (0 %) MET; employed
+    with work trip 58.4 % (>= 60 %, package 4 pending) NOT YET; education participation 6-17
+    84.3 % (>= 85 %, package 4 pending) NOT YET; trips followed by the same purpose 10.8 % (< 6 %)
+    NOT MET; work activities < 2 h 20.2 % (< 8 %) NOT MET. The two NOT MET rows were diagnosed on
+    the trip table (validation entries 6 and 7): both values are reproduced by the unique MiD
+    donor diaries themselves (10.7 % and 19.0 %), so the pre-registered bounds rested on a wrong
+    attribution (to rbW legs and the fixed closure dwell, both of which are gone) and the residual
+    is the donor survey''s recording granularity. No threshold was relaxed; the spec table is
+    left as written and this manifest carries the measured values.'
+environment: server
+validation:
+- metric: 'Persons without a trip (complement of mobility_rate), head-to-head universe of the
+    seven SrV Kreise, at_home_zero universe of the reference'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'model mobility_rate 0.8872 (11.28 % without a trip) vs SrV 0.8437 (+4.35 pp); i329
+    0.7708 (23.0 %). The popsim trip_class control targets the SrV AT-HOME share of 11.2 % (persons
+    at home all day, E_ANZ_WEGE2 universe), which the realised population now hits; the analysis
+    stage''s primary universe additionally counts SrV persons away from home with zero trips
+    (15.6 % in total), which the model does not represent (follow-up issue #370, general absence).
+    Per Kreis: 03101 0.9006 vs 0.8533, 03102 0.8797 vs 0.8519, 03151 0.8779 vs 0.8359, 03153
+    0.8794 vs 0.8324, 03154 0.8852 vs 0.8423, 03157 0.8774 vs 0.8212, 03158 0.9000 vs 0.8599
+    (deltas +2.8 to +5.6 pp, all the same sign, i.e. the universe offset, not Kreis noise).
+    By group: employed 0.9308 vs 0.8849, children 0-5 0.9132 vs 0.8944, school age 6-17 0.9400 vs
+    0.9362, adults 18-64 not employed 0.8297 vs 0.7814, seniors 65+ 0.7912 vs 0.7434.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/headline.csv
+- metric: 'trips_per_person, trips_per_mobile_person, tours_per_mobile, trip-count distribution'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'trips_per_person 3.235 vs 3.187 (i329 3.007); trips_per_mobile_person 3.646 vs 3.777
+    (i329 3.902); tours_per_mobile 1.512 vs 1.595; nonhome_acts_per_mobile 2.135 vs 2.182.
+    Trip-count shares model vs SrV: 0 trips 0.113 vs 0.156, 1 trip 0.001 vs 0.006, 2 trips 0.339
+    vs 0.314, 3 trips 0.129 vs 0.085, 4 trips 0.193 vs 0.222, 5 trips 0.092 vs 0.064, 6 trips
+    0.067 vs 0.076, 7 trips 0.029 vs 0.030, 8+ 0.037 vs 0.048. share_mobile_odd_trip_count 0.2931
+    vs 0.2325 (i329 0.34; pre-registered band 25-30 % met). Per Kreis trips_per_person deltas
+    +0.01 to +0.09.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/headline.csv
+- metric: 'Purpose participation and purpose shares (work, education, shop, leisure, escort,
+    other), segment all and the employment / age groups'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'participation all: work 0.3176 vs 0.3316 (i329 0.270), education 0.1799 vs 0.1761,
+    shop 0.2185 vs 0.2794, leisure 0.3773 vs 0.3832, escort 0.0986 vs 0.0992, other 0.2655 vs
+    0.1712. Employed: work 0.5838 vs 0.6755 (i329 0.4916; pre-registered >= 60 % after package
+    4, which is not built -- the remaining 9.2 pp is the control universe, issue #368).
+    School age 6-17 not employed: education 0.8427 vs 0.8997 (i329 0.74; pre-registered >= 85 %
+    after package 4). Purpose shares of trips: work 0.1228 vs 0.1239, education 0.0696 vs
+    0.0610, shop 0.0803 vs 0.1105, leisure 0.1519 vs 0.1647, escort 0.0475 vs 0.0502, other
+    0.1134 vs 0.0671, home 0.4145 vs 0.4226. The shop deficit (-6.1 pp participation) and the
+    other surplus (+9.4 pp) are the purpose-taxonomy systematics measured before the fix
+    (MiD W_ZWECK 10 "anderer Zweck" and code 5 vs SrV 10/11/70; children 6-9 other participation
+    0.180 vs 0.061) and are unchanged by this branch: issue #373.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/comparison.csv
+- metric: 'diary_plan_match report and the trip_class seed guards (package 1, ADR-0106)'
+  reference: 'braunschweig.popsim.diary_plan_match EXPECTED_SHARE_REMAPPED = (0.05, 0.30)'
+  result: '485,709 plan sources; 407,528 realisable as drawn, 74,898 remapped (15.42 %, inside
+    the band): nodiary_mobile 40,580, holiday 22,976, only_rbw 7,024, nodiary_unknown 4,044;
+    3,283 sources (0.68 %) are anzwege1 803 with mobil != 1 and stay immobile by design, 274
+    emptied. 68,352 sources (14.07 %) have no Wege row after the match (the kept-immobile and
+    the genuinely immobile). Seed guards: 0 forbidden no-diary sources; 95,890 sources (19.7 %)
+    get +1 for the closed day, 2,831 (0.6 %) get -1 for the dropped leading arrive-home leg.
+    PopulationSim then ran 60 batches in 6 h 39 min (i329 popsim runtime is recorded in its own
+    manifest; not compared here).'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/run_log_excerpts_part1.txt
+- metric: 'rbW leg drop and leading arrive-home leg drop rates (packages 2 and 5, ADR-0107/0108)'
+  reference: 'rate logs mandated by the project fallback rule; no external reference'
+  result: '22,933 of 305,206 donor persons with Wege (7.5 %) carry rbW legs; 107,368 of
+    1,087,393 Wege rows (9.87 %) dropped, 0 coded-km rbW rows set to 0, 0 of 23,538 referenced
+    donor diaries emptied. 3,198 donor persons (1.07 %) start by arriving home and lost that
+    leg; 0 referenced donors emptied. 86,445 donor persons (28.3 %) do not end at home and
+    receive a closure. After the drops the synthetic trip table has 0 work->work pairs with
+    W_RBW 1 (trip_table_diagnostics_arm3.txt).'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/run_log_excerpts_part1.txt
+- metric: 'share_trips_followed_by_same_purpose (pre-registered < 6 % after the ladder)'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'VERDICT not met: model 0.1076 vs SrV 0.0453 (+6.22 pp); i329 by the same stage
+    definition is not available (the stage did not exist), the 2026-09-05 boundary measurement
+    gave 10.6 % and the raw-pickle recount gives 12.6 % (i329) vs 10.7 % (arm 3). Repeats by
+    purpose (arm 3): leisure 80,545, home 76,278, work 72,531, other 66,031, education 36,333,
+    shop 33,197, escort 26,281 -- 14-16 % of the trips of every non-home purpose. INHERITED: the
+    20,296 unique MiD donor persons realised in the population show 0.107 of trips (0.148 of
+    pairs) with the same purpose profile, so the synthesis reproduces the MiD recording
+    granularity (a leisure->leisure or errand->errand sequence is two records in MiD) and the
+    SrV comparison measures a survey difference plus the home->home round trips (86,761 = 2.4 %
+    of trips, issue #375). By segment: 6-9 0.131 vs 0.028, 10-17 0.094 vs 0.020, employed 0.109
+    vs 0.047, seniors 0.103 vs 0.056.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/donor_inheritance_diagnostics_arm3.txt
+- metric: 'share_work_activities_lt_2h and mean_work_activity_h (pre-registered < 8 % after
+    packages 2 + 3)'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'VERDICT not met: 0.2025 vs SrV 0.1096 (+9.29 pp); mean 5.68 h vs 6.29 h. On the raw
+    trip table (same definition, all Kreise): arm 3 0.202 over 449,692 measurable work
+    activities, i329 0.264 over 464,689 -- so the branch removed a quarter of the excess, not
+    all of it. Decomposition of the 20.2 % by what follows the work activity: work->work
+    repeat 72,531 activities (16.1 %), 64.9 % of them < 2 h, contributing 10.5 pp; work->home
+    (real leg) 269,528 (59.9 %), 10.3 % < 2 h, 6.1 pp; work->other purpose 93,393 (20.8 %),
+    12.8 % < 2 h, 2.6 pp; work->synthetic closure 14,240 (3.2 %), 29.4 % < 2 h, 0.9 pp (i329:
+    the fixed 1 h dwell made every closure-preceding activity exactly 1.0 h). The remaining
+    work->work pairs are W_ZWECK 2->2 30,512 (67.9 % < 2 h, mean 1.61 h), 1->2 25,622 (65.4 %),
+    1->1 10,358 (63.4 %), 2->1 6,039 (49.7 %): non-rbW business legs recorded one by one.
+    INHERITED: the unique MiD donors show 0.190 with the identical composition (2->2 68.7 %,
+    1->2 52.8 %, 1->1 68.4 % < 2 h). Reading: the SrV/MiD difference in how business legs are
+    recorded, plus part-time and short work days; follow-up issue #371 (business-trip chains
+    as one work activity). Observed but not pursued: some 1->1 pairs have a zero dwell (arrival
+    equals the next departure), visible in the diagnostic sample.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/trip_table_diagnostics_arm3.txt
+- metric: 'Synthetic home closure and the closure dwell model (package 3, ADR-0108)'
+  reference: 'ClosureDwellModel rate logs (CLOSURE_GLOBAL_FALLBACK_WARN_RATE 0.5, CLOSURE_CAP_WARN_RATE 0.05)'
+  result: '238,757 synthetic closure trips of 3,655,159 (6.53 %; i329 248,355 = 7.3 %), 238,757
+    of 1,002,332 mobile persons (23.8 %) closed, 15.76 % of all home trips synthetic. Dwell
+    model built from 23,538 unique donor diaries; draws 88.9 % from the full cell, 11.1 %
+    purpose-marginal fallback, 0 global fallback, 0.3-0.4 % capped at the observed maximum --
+    all below the warn rates. Stage A repair 743,926 valid / 216,635 repaired / 41,771
+    unfixable; after time imputation 979,051 / 22,134 / 1,147; stage B replaced 1,147 persons.
+    Accepted deviations written by the stage: share_mobile_last_to_home 1.0 vs 0.9776,
+    share_mobile_first_from_home 1.0 vs 0.9781, share_trips_1 0.0010 vs 0.0058 (closed plans by
+    decision, issue #367).'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/closure.csv
+- metric: 'ADR-0104 check 1, work-participation half: share of employed persons with a work trip
+    and its complement, on the ADR-0104 denominator (employed persons with a ZGB home Kreis), from
+    braunschweig.analysis.synthesis.work_participation_by_kreis'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv
+  result: 'Measured on the SAME denominator, reference row and definition as the Phase B proof
+    (commute-day-state-phase-b-proof-100pct-2026-09-06-rerun), so the two are directly comparable:
+    employed persons 540,473 (Phase B: 540,425), with a work trip 308,342 = 0.5705 vs SrV 0.6511
+    (delta -8.06 pp); the complement, employed WITHOUT a work trip, is 0.4295 vs SrV 0.3489
+    (+8.06 pp) against +16.99 pp in the Phase B proof. The plan-structure fix therefore closes
+    just over half of that gap, and the check still FAILS the pre-registered +/- 3 pp band --
+    no threshold was moved. State shares on the same universe: at_workplace 0.5702 (Phase B
+    0.4810) vs SrV 0.6511, home 0.0114 (0.0082) vs 0.1418, absent 0.0065 (0.0051) vs 0.2071,
+    no_workplace 0.4119 (0.5056, no SrV counterpart). Per Kreis delta_work_trip_pp -4.77 (03101)
+    to -12.51 (03153); 03103 Wolfsburg has no SrV row.
+    FINDING THAT SHARPENS #368: the workers-not-employed residual GREW, from 37,705 of 304,900
+    workers (12.37 %) to 41,680 of 317,848 (13.11 %). Recovering plans for persons whose plan
+    source had no diary recovers work activities for employed and NOT-employed persons alike,
+    because the participation control is not conditional on employment. That is the mechanism
+    package 4 (#368) removes, and it is measured here rather than assumed. The home and absent
+    shares are essentially unchanged (+0.3 pp / +0.1 pp) and stay the territory of #377.'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/work_participation_by_kreis.csv
+- metric: 'Departure-hour profile (dep_hour_share_<purpose>_<hour>)'
+  reference: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+  result: 'All trips: hour 6 +1.25 pp, hour 7 -1.37 pp, every other hour within +/- 0.65 pp.
+    Education: hour 6 +10.8 pp and hour 7 -14.6 pp (model 0.175 / 0.471 vs SrV 0.066 / 0.617),
+    hour 15 +1.8 pp -- the school departure sits one hour too early in the model; escort hour 7
+    -5.8 pp, hour 16 +2.4 pp mirrors it. Not pre-registered, reported as measured; candidate
+    for a follow-up issue (MiD start-time imputation of school trips vs SrV).'
+  artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/headline.csv
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/
+  (headline.csv, comparison.csv, by_kreis.csv, closure.csv, accepted_deviations.csv,
+  plan_structure_vs_srv_summary.md, plan_structure_vs_srv_provenance.json = the
+  plan_structure_vs_srv outputs, renamed from the stage''s generic summary.md / provenance.json so
+  the two stages'' reports cannot collide in one directory; work_participation_by_kreis.csv,
+  commute_day_state_shares.csv, commute_day_state_phase_a_summary.md = the
+  work_participation_by_kreis outputs; trip_table_diagnostics_arm3.txt and
+  trip_table_diagnostics_i329.txt from trip_table_diagnostics.py; donor_inheritance_diagnostics_arm3.txt
+  from donor_inheritance_diagnostics.py; run_log_excerpts_part1.txt) -- aggregates only'
+- 'felix:~/psf_data/output_bs_100pct_psf3/ (2.2 G: the complete arm-3 population --
+  persons/households/trips/vehicles/vehicle_types CSV, activities/commutes/homes/trips GeoPackage,
+  meta json -- plus analysis/plan_structure_vs_srv/ and analysis/commute_day_state_phase_a/),
+  ~/psf_data/cache_bs_100pct_psf3/ (the arm-3 cache incl. the 8.1 GB trips_stage pickle and the
+  monitoring series), ~/psf_data/popsim_work_psf3/. Kept as run evidence and as the base for the
+  optional arms 1 and 2.'
+- 'felix:~/psf_arm3_100pct.yml (overlay), ~/psf_arm3_100pct_part1.log (invocation 1),
+  ~/psf_arm3_100pct.log (invocation 2), ~/psf_diag_arm3.py, ~/psf_diag2.py'
+issues:
+- '#365'
+- '#366'
+- '#367'
+- '#369'
+- '#368'
+- '#370'
+- '#371'
+- '#373'
+- '#375'
+decisions:
+- ADR-0104
+- ADR-0106
+- ADR-0107
+- ADR-0108
+notes: 'SERVER STATE AND CLEANUP, verified after the run. Removed: the detached worktree ~/wt-psf
+  (its eqasim-data symlink unlinked FIRST so nothing could traverse into the data directory, then
+  eqasim-data._tracked deleted, then git worktree remove --force + prune), the transfer tar
+  /tmp/psf_5e1872a0.tgz, and the ONE branch-new committed table that had been copied into the
+  shared data directory (eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv);
+  it must not linger in ~/eqasim-bs while the branch is unmerged. The other tables copied there are
+  committed tables of main that belong in that directory and were left in place, including the two
+  kba_wohnmobile_holder_age files whose absence caused the crash -- restoring them repairs the
+  shared checkout rather than polluting it. Shared-checkout invariants on felix: worktrees back
+  from 20 to 19, porcelain unchanged at 28 entries. TWO of those 28 are local modifications of
+  committed tables (kba/derived/kba_age_national.csv, mid/mid2023_P13_commute_distance_by_rs7.csv);
+  their working content matches NEITHER that checkout''s HEAD (2714b857) NOR the version this run
+  copied, so they predate this run and were deliberately not reverted.
+  KEPT as run evidence, with the user still to decide whether to delete it: ~/psf_data, 5.5 G
+  outside the cache (the 2.2 G population, popsim_work_psf3, cache_shared) plus the arm-3 cache
+  cache_bs_100pct_psf3, whose 3,074 files are 149 G apparent but only 24.5 G of genuinely new
+  blocks in 137 unshared files (the 8.1 GB trips_stage pickle among them); the other 135.3 G are
+  hardlinks shared with the i329 cache. Disk after cleanup: 545 G used of 786 G (73 %).
+  The pre-registered table of the design spec (docs/superpowers/specs/2026-09-05-plan-structure-fix-design.md,
+  gitignored) states its bounds "after arm 4"; arm 4 needs package 4 (#368), which is not built,
+  so this manifest records arm 3 against those bounds and marks the two package-4 rows as
+  pending rather than failed. The two rows that ARE failed (same-purpose repeats, short work
+  activities) were pre-registered on the assumption that rbW legs and the fixed closure dwell
+  caused them; the donor-inheritance diagnostic shows the MiD diaries carry both patterns at the
+  same rate, which is a finding about the reference comparison, not a reason to move a bound.
+  SrV note on definitions: the spec table quoted "work activities < 2 h 4.8 %" from the 1-2 h bin
+  of the 2026-09-05 report; the committed reference column share_work_activities_lt_2h (0.1096)
+  counts everything below 2 h and is the figure used here.'
+source: 'Arm 3 (every package of the plan-structure fix ON = base_bs.yml defaults) of the
+  pre-registered A/B ladder, run at 100 % on a hardlink copy of the i329 cache with a
+  re-synthesised population, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv
+  against the committed SrV 2023 plan-structure reference (issues #365, #366, #367, #369)'

@@ -64,10 +64,21 @@ validation:
     columns of the assembled population, and the participation flags are input-only popsim
     seed columns that never reach it -- so the fit is measured from the realised trips.
     It is a FIT CHECK against the steering SrV targets, never independent validation.
+    DONOR-BOUND DEFICIT, ROOT CAUSE FOUND (#365, ADR-0106): the residual gap this record and the
+    i329 manifest call "donor-bound" is now attributed. The controls were MET in the seed and in
+    the realised plans of every person whose plan source carries a diary (work 0.314 vs 0.332,
+    leisure 0.372 vs 0.383, education 0.184 vs 0.176, escort 0.104 vs 0.099); the whole deficit
+    sat with the 14.1% of persons whose plan source had no collected diary (MiD anzwege1 803/804)
+    and who therefore received an EMPTY plan, while the same codes were imputed for the CONTROL
+    variable and the seed hit its target. diary_plan_match removes that class of plan source. The
+    expectation that the participation fit improves accordingly is an ASSUMPTION until an A/B arm
+    is recorded; the runs that will measure it are pre-registered in
+    docs/registry/features/diary_plan_match.yml and reported by
+    braunschweig.analysis.synthesis.plan_structure_vs_srv.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
-    No ADR exists for #224, so there is no written record of why the residual gap was accepted as donor-bound. This is the largest documentation gap among the pilot features.
+    No ADR exists for #224, so there is no written record of why the residual gap was accepted as donor-bound. This is the largest documentation gap among the pilot features. Partly closed by ADR-0106 (#365), which records what the "donor-bound" residual actually was (14.1% of plan sources had no collected diary) and removes it; the #224 control design itself still has no ADR, and no run has yet re-measured the fit.
   source: null

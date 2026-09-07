@@ -362,11 +362,11 @@ def _write_mini_mid_with_wege(tmp: Path):
         "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1\n"
         "11;1;1.0;40;1;1;2;5\n12;2;1.0;20;2;1;1;2\n13;3;1.0;25;1;1;1;1\n", encoding="utf-8")
     wege.write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "1;11;101;1;4;8;0;8;30;5.0;30\n"      # p11: work
-        "1;11;102;7;4;18;0;18;30;5.0;30\n"    # p11: leisure
-        "2;12;103;11;1;9;0;9;20;2.0;20\n"     # p12: education
-        "3;13;104;7;1;9;0;9;20;2.0;20\n",     # p13: leisure only
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "1;11;101;1;4;8;0;8;30;5.0;30;0;1\n"      # p11: work
+        "1;11;102;7;4;18;0;18;30;5.0;30;0;1\n"    # p11: leisure
+        "2;12;103;11;1;9;0;9;20;2.0;20;0;1\n"     # p12: education
+        "3;13;104;7;1;9;0;9;20;2.0;20;0;1\n",     # p13: leisure only
         encoding="utf-8")
 
 
@@ -461,11 +461,11 @@ def _completed_donor_frames():
 def _write_wege_only(tmp: Path):
     wege = tmp / "MiD2023_Wege.csv"
     wege.write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "h1;p1;101;1;4;8;0;8;30;5.0;30\n"
-        "h1;p1;102;7;4;18;0;18;30;5.0;30\n"
-        "h2;p2;103;11;1;9;0;9;20;2.0;20\n"
-        "h3;p3;104;7;1;9;0;9;20;2.0;20\n", encoding="utf-8")
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "h1;p1;101;1;4;8;0;8;30;5.0;30;0;1\n"
+        "h1;p1;102;7;4;18;0;18;30;5.0;30;0;1\n"
+        "h2;p2;103;11;1;9;0;9;20;2.0;20;0;1\n"
+        "h3;p3;104;7;1;9;0;9;20;2.0;20;0;1\n", encoding="utf-8")
 
 
 def test_project_completed_seed_derives_leisure_and_education(tmp_path):

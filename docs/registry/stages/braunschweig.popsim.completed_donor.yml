@@ -1,14 +1,28 @@
 stage: braunschweig.popsim.completed_donor
 title: Completed donor households
 layer: population
-description: Member-completes the MiD seed households (mirror sampling to declared H_GR, weekend-plan
-  match) -- cached once and shared across runs (Tier B2).
+description: >-
+  Builds the MiD donor tables every synthetic person is drawn from, in three passes, and caches the
+  result once for all runs (Tier B2). (1) MEMBER COMPLETION: mirror-samples the seed households up
+  to their declared H_GR. (2) WEEKEND-PLAN MATCH: re-draws the plan source of a person whose
+  reporting day was a weekend to a matched weekday donor. (3) DIARY PLAN MATCH (#365, ADR-0106):
+  re-draws the plan source of a person whose source cannot be realised as a normal weekday --
+  no collected diary (anzwege1 803 with mobil == 1, or 804), only rbW legs left once
+  exclude_rbw_legs drops them, or a public-holiday reporting day (feiertag == 1) -- reusing
+  weekend_plan_match.match_person on the SAME completion rng, continued in deterministic frame
+  order, so the OFF path is byte-identical. All three passes change only source_H_ID /
+  source_P_ID, never the receiving person's own attributes. The stage then attaches the eight
+  src_* plan-source diary facts (direct/rbW leg counts, rbW distance, ends-at-home, leading
+  arrive-home leg, ...) computed from the MiD Wege table; they are attached UNCONDITIONALLY,
+  independent of the flags, because downstream stages read them (see notes).
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/popsim/completed_donor.py
+- braunschweig/popsim/diary_plan_match.py
+- braunschweig/popsim/diary_facts.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -18,6 +32,29 @@ inputs:
 - mid2023_b1
 features:
 - popsim_method
+- diary_plan_match
 decisions:
 - ADR-0002
 - ADR-0059
+- ADR-0106
+notes: >-
+  INPUT: reads the MiD Haushalte and Personen tables as before, and since #365 the MiD WEGE table
+  as well (the diary facts and the realisable-source classification are derived from it), plus the
+  person columns mobil (always) and feiertag (only when exclude_holiday_plan_sources is ON);
+  mobil_diff stays an optional diagnostic column -- only-rbW sources are detected from the Wege
+  rows the pipeline actually uses (n_direct_legs == 0 and n_rbw_legs > 0), which is the same
+  information without depending on a second MiD derivation. Config keys read here:
+  braunschweig.population.popsim.diary_plan_match, .exclude_holiday_plan_sources,
+  .exclude_rbw_legs and .drop_leading_arrive_home_leg (the last two only to decide WHICH sources
+  are unrealisable; the legs themselves are dropped downstream in the trips stage). The stage
+  defines validate() over an md5 of its helper modules (diary_facts, diary_plan_match,
+  weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
+  itself and a helper edit would otherwise serve a stale cached donor build.
+  THE src_* COLUMNS PROPAGATE (intended, ruling R8 of the #365/#366/#367 implementation): they sit
+  on the completed-donor persons frame and therefore reach the synthetic persons frame.
+  braunschweig.popsim.stage reads src_ends_at_home / src_n_direct_legs for the closed-day
+  trip_class seed (ADR-0108) and braunschweig.popsim.enriched_adapter reads src_n_rbw_legs /
+  src_rbw_distance_km for the rbW person attributes (ADR-0107). synthesis.output selects its
+  columns explicitly, so persons.csv changed only by the two rbW columns that were added
+  deliberately. Walkthrough of the whole resolution chain:
+  docs/codebase/notes/popsim-plan-source-resolution.md.

@@ -32,6 +32,8 @@ inputs:
 - mid2023_bikes_by_rs7_haustyp
 features:
 - age_aware_composition
+- diary_plan_match
+- home_closure_model
 - housing_tenure
 - income_spatial_tilt
 - ipf_synthesis_legacy
@@ -45,3 +47,15 @@ features:
 decisions:
 - ADR-0002
 - ADR-0092
+- ADR-0106
+- ADR-0108
+notes: >-
+  Two plan-structure flags are declared and read HERE as well as in the stages that own them
+  (#365 / #367): braunschweig.population.popsim.diary_plan_match arms the guard that RAISES if a
+  resolved plan source still carries MiD anzwege1 803/804 after the diary match (a silent
+  regression would otherwise be invisible, because the imputed seed keeps hitting its target),
+  and braunschweig.population.popsim.trip_class_seed_counts_closure makes the trip_class seed
+  count the closed day (anzwege1 + 1 for an open-ended source, clipped at 50). Both reach only the
+  member-completion branch of the seed build, which is the only one carrying the src_* plan-source
+  facts they need; the ENTD branch and the legacy load_mid_seed branch keep their previous seed
+  byte-identically. Declaring the keys here means THIS stage's cache hash tracks them.

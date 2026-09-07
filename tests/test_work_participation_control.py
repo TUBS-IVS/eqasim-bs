@@ -197,13 +197,13 @@ def _write_mini_mid_with_wege(tmp: Path):
         "14;4;1.0;70;2;1;1;5\n"
         "15;5;1.0;45;1;1;803;5\n", encoding="utf-8")
     wege.write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "1;11;101;1;4;8;0;8;30;5.0;30\n"
-        "1;11;102;7;4;18;0;18;30;5.0;30\n"
-        "3;13;103;7;1;9;0;9;20;2.0;20\n"
-        "3;13;104;4;1;12;0;12;15;1.0;15\n"
-        "3;13;105;8;1;17;0;17;10;1.0;10\n"
-        "4;14;106;2;4;8;0;8;25;6.0;25\n", encoding="utf-8")
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "1;11;101;1;4;8;0;8;30;5.0;30;0;1\n"
+        "1;11;102;7;4;18;0;18;30;5.0;30;0;1\n"
+        "3;13;103;7;1;9;0;9;20;2.0;20;0;1\n"
+        "3;13;104;4;1;12;0;12;15;1.0;15;0;1\n"
+        "3;13;105;8;1;17;0;17;10;1.0;10;0;1\n"
+        "4;14;106;2;4;8;0;8;25;6.0;25;0;1\n", encoding="utf-8")
 
 
 def test_load_mid_seed_derives_work_participation_only_when_active(tmp_path):
@@ -307,13 +307,13 @@ def _write_wege_only(tmp: Path):
     """A MiD2023_Wege.csv matching the h1..h4/p1..p4 completed-donor frame."""
     wege = tmp / "MiD2023_Wege.csv"
     wege.write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "h1;p1;101;1;4;8;0;8;30;5.0;30\n"
-        "h1;p1;102;7;4;18;0;18;30;5.0;30\n"
-        "h3;p3;103;7;1;9;0;9;20;2.0;20\n"
-        "h3;p3;104;4;1;12;0;12;15;1.0;15\n"
-        "h3;p3;105;8;1;17;0;17;10;1.0;10\n"
-        "h4;p4;106;2;4;8;0;8;25;6.0;25\n", encoding="utf-8")
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "h1;p1;101;1;4;8;0;8;30;5.0;30;0;1\n"
+        "h1;p1;102;7;4;18;0;18;30;5.0;30;0;1\n"
+        "h3;p3;103;7;1;9;0;9;20;2.0;20;0;1\n"
+        "h3;p3;104;4;1;12;0;12;15;1.0;15;0;1\n"
+        "h3;p3;105;8;1;17;0;17;10;1.0;10;0;1\n"
+        "h4;p4;106;2;4;8;0;8;25;6.0;25;0;1\n", encoding="utf-8")
 
 
 def test_project_completed_seed_derives_work_participation(tmp_path):

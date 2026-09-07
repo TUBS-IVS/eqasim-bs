@@ -306,12 +306,20 @@ def build_trip_table(
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
     Mirrors ``data/hts/entd/cleaned.py`` exactly, reusing the shared helpers from
     ``data/hts/hts.py`` in the same order as the ENTD path:
 
+    0a. (optional, ``exclude_rbw_legs``) Drop rbW legs (``W_RBW == 1``) before
+        the join; a donor person left with no legs is dropped (and counted).
+    0b. (optional, ``drop_leading_arrive_home_leg``) Drop a donor person's first
+        leg when it both arrives home and started elsewhere (``W_SO1 == 2``),
+        applied after step 0a. Both steps run inside
+        ``expand_persons_to_trips``, before the purpose/mode mapping.
     1. ``expand_persons_to_trips`` — join donor Wege onto synthetic persons, map
        purpose and mode, produce a string ``trip_key`` (``<person_id>_<W_ID>``) for
        traceability.
@@ -371,6 +379,16 @@ def build_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to ``map_purpose``
         via ``expand_persons_to_trips``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    exclude_rbw_legs:
+        If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
+        ``expand_persons_to_trips``); see that function's docstring for the
+        rationale and the emptied-persons handling. Default False keeps the
+        OFF path byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop a donor person's leading "arrive home from elsewhere"
+        leg (forwarded to ``expand_persons_to_trips``); see that function's
+        docstring for the rationale. Default False keeps the OFF path
+        byte-identical.
 
     Returns
     -------
@@ -408,6 +426,8 @@ def build_trip_table(
         trip_col=trip_col,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -481,6 +501,8 @@ def expand_persons_to_trips(
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -495,9 +517,97 @@ def expand_persons_to_trips(
         Synthetic persons with ``person_id`` + donor keys ``H_ID`` / ``P_ID``.
     mid_wege:
         MiD Wege keyed by ``(H_ID, P_ID)``.
+    exclude_rbw_legs:
+        If True, drop legs with ``W_RBW == 1`` (regelmaessiger beruflicher Weg --
+        a regular-commuter summary record standing in for the diary leg, see
+        ``time_imputation.py``'s module docstring) BEFORE the purpose/mode
+        mapping. A donor person whose Wege become empty as a result is dropped
+        from the table (same as a donor without Wege today) and COUNTED; if
+        that count is > 0 a warning is logged with the hint that
+        ``braunschweig.population.popsim.diary_plan_match`` should have
+        remapped those persons upstream. The count is taken over the donors
+        REFERENCED by ``persons`` (the synthetic universe), not over the whole
+        Wege table: emptying a donor nobody sources their plan from has no
+        effect on any plan, and counting those made the warning fire on every
+        production run regardless of whether the remap worked (controller
+        ruling R21). Default False keeps every existing caller byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop each donor person's FIRST leg (by ``trip_col`` order)
+        when it both arrives home (``W_ZWECK`` in {8, 9}) and started from
+        elsewhere (``W_SO1 == 2``): such a leg is not the diary's actual first
+        trip (which starts at home by the diary-starts-at-home convention),
+        it is a leftover "arrive home" record from before the observed diary
+        window. Applied AFTER ``exclude_rbw_legs``. A donor person whose Wege
+        become empty as a result (their only leg WAS the dropped leading
+        arrive-home leg) is dropped from the table and COUNTED the same way
+        as ``exclude_rbw_legs`` (over the REFERENCED donors only, ruling R21);
+        if that count is > 0 a warning is logged with the same diary-plan-match
+        hint. Default False keeps every existing caller byte-identical.
+
+    Raises
+    ------
+    KeyError
+        If ``exclude_rbw_legs`` is True and ``mid_wege`` lacks ``W_RBW``, or if
+        ``drop_leading_arrive_home_leg`` is True and ``mid_wege`` lacks ``W_SO1``.
     """
+    total = len(mid_wege)
+    wege_in = mid_wege
+    # The "emptied by the drop" counters below are about PLANS, so their universe is
+    # the set of donors the synthetic persons actually source from -- not the whole MiD
+    # Wege table, which also holds donors nobody references (controller ruling R21: a
+    # whole-table count made the warning a permanent false alarm).
+    referenced_donors = pd.MultiIndex.from_frame(
+        persons[[household_col, person_col]].drop_duplicates()
+    )
+
+    def _n_referenced_donors_with_legs(frame: pd.DataFrame) -> int:
+        """Number of REFERENCED donors that still have at least one leg in ``frame``."""
+        if len(frame) == 0:
+            return 0
+        present = pd.MultiIndex.from_frame(frame[[household_col, person_col]].drop_duplicates())
+        return int(present.isin(referenced_donors).sum())
+
+    n_referenced = len(referenced_donors)
+    if exclude_rbw_legs:
+        if "W_RBW" not in wege_in.columns:
+            raise KeyError("[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column 'W_RBW'")
+        is_rbw = wege_in["W_RBW"] == 1
+        n_referenced_before = _n_referenced_donors_with_legs(wege_in)
+        wege_in = wege_in[~is_rbw]
+        n_emptied = n_referenced_before - _n_referenced_donors_with_legs(wege_in)
+        logger.info("[popsim.trips] rbW legs dropped: %d/%d (%.2f%%); referenced donor persons emptied by "
+                    "the drop: %d/%d (%.2f%%)",
+                    int(is_rbw.sum()), total, 100.0 * is_rbw.sum() / max(total, 1),
+                    n_emptied, n_referenced, 100.0 * n_emptied / max(n_referenced, 1))
+        if n_emptied:
+            logger.warning("[popsim.trips] %d donor persons referenced by this population have ONLY rbW legs "
+                           "and become trip-less; with braunschweig.population.popsim.diary_plan_match on they "
+                           "should have been remapped upstream (completed_donor) -- check the flags are "
+                           "consistent", n_emptied)
+    if drop_leading_arrive_home_leg:
+        if "W_SO1" not in wege_in.columns:
+            raise KeyError("[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column 'W_SO1'")
+        ordered = wege_in.sort_values([household_col, person_col, trip_col])
+        first = ordered.groupby([household_col, person_col], sort=False).head(1)
+        drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
+        n_referenced_before_arrive_home = _n_referenced_donors_with_legs(wege_in)
+        wege_in = wege_in.drop(index=drop_idx)
+        n_emptied_arrive_home = (
+            n_referenced_before_arrive_home - _n_referenced_donors_with_legs(wege_in)
+        )
+        logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege); "
+                    "referenced donor persons emptied by the drop: %d/%d (%.2f%%)",
+                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1),
+                    n_emptied_arrive_home, n_referenced,
+                    100.0 * n_emptied_arrive_home / max(n_referenced, 1))
+        if n_emptied_arrive_home:
+            logger.warning("[popsim.trips] %d donor persons referenced by this population have ONLY a leading "
+                           "arrive-home leg and become trip-less; with "
+                           "braunschweig.population.popsim.diary_plan_match on they should have been remapped "
+                           "upstream (completed_donor) -- check the flags are consistent",
+                           n_emptied_arrive_home)
     wege = map_mode(map_purpose(
-        mid_wege, escort_purpose=escort_purpose,
+        wege_in, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
     ))
@@ -545,6 +655,9 @@ def build_validated_trip_table(
     random_seed: int | None = None,
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
+    dwell_model=None,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -614,6 +727,23 @@ def build_validated_trip_table(
         ``"education"`` instead of ``"escort"`` (forwarded to
         ``build_trip_table`` / ``map_purpose``). Requires ``escort_purpose=True``.
         Default False keeps the OFF path byte-identical.
+    exclude_rbw_legs:
+        If True, drop rbW legs (``W_RBW == 1``) before the join (forwarded to
+        ``build_trip_table`` / ``expand_persons_to_trips``). Default False
+        keeps the OFF path byte-identical.
+    drop_leading_arrive_home_leg:
+        If True, drop a donor person's leading "arrive home from elsewhere"
+        leg (forwarded to ``build_trip_table`` / ``expand_persons_to_trips``).
+        Default False keeps the OFF path byte-identical.
+    dwell_model:
+        Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
+        to every ``PlanValidator.repair_trips`` call this function makes
+        (including the stage A re-repair inside ``_impute_nan_time_unfixable``,
+        for which that re-repair is the ONLY home-end closure a stage A person
+        gets) so the synthetic return-home trip's dwell time is drawn from
+        observed donor activity durations instead of the constant
+        ``HOME_CLOSURE_DWELL_S``. Default ``None`` keeps the constant-dwell
+        behaviour.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -644,12 +774,14 @@ def build_validated_trip_table(
 
     table = build_trip_table(
         persons, mid_wege, escort_purpose=escort_purpose,
-        escort_passive_education=escort_passive_education, **kwargs,
+        escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg, **kwargs,
     )
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None
     if repair:
-        table, repair_report = validator.repair_trips(table)
+        table, repair_report = validator.repair_trips(table, dwell_model=dwell_model)
 
     # Cascade stage A: time imputation for coded-time (nan_times) persons with a
     # complete own wegmin_imp1.  Runs AFTER the first repair (the nan_times
@@ -659,7 +791,7 @@ def build_validated_trip_table(
     # unfixable set drives stage B (the existing same-cell resample).
     if resample and repair_report is not None and repair_report.unfixable_persons:
         table, repair_report = _impute_nan_time_unfixable(
-            table, repair_report, validator, random_seed=random_seed
+            table, repair_report, validator, random_seed=random_seed, dwell_model=dwell_model
         )
 
     if resample and repair_report is not None and repair_report.unfixable_persons:
@@ -682,6 +814,7 @@ def _impute_nan_time_unfixable(
     validator,
     *,
     random_seed: int,
+    dwell_model=None,
 ):
     """Cascade stage A: keep coded-time persons' own chains, impute only the times.
 
@@ -710,6 +843,12 @@ def _impute_nan_time_unfixable(
     (``RandomState(random_seed + TIME_IMPUTATION_SEED_OFFSET)``) so the
     imputation draws are decorrelated from the resample and jitter streams,
     which both consume ``RandomState(random_seed)`` directly.
+
+    ``dwell_model`` is forwarded to the re-repair's ``repair_trips`` call: for
+    stage A persons the re-repair IS their only home-end closure (their NaN
+    times excluded them from the first pass entirely), so without threading it
+    here they would silently get the constant ``HOME_CLOSURE_DWELL_S`` even
+    when the caller asked for the empirical model.
     """
     import numpy as np
 
@@ -749,7 +888,7 @@ def _impute_nan_time_unfixable(
         # Nothing changed; keep the first report (and skip a redundant repair).
         return table, repair_report
 
-    table, second_report = validator.repair_trips(table)
+    table, second_report = validator.repair_trips(table, dwell_model=dwell_model)
     return table, second_report
 
 

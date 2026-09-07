@@ -170,6 +170,10 @@ class MidSource:
         escort_purpose: bool = False,
         escort_passive_education: bool = False,
         explicit_round_trip_purposes: bool = True,
+        exclude_rbw_legs: bool = False,
+        drop_leading_arrive_home_leg: bool = False,
+        closure_dwell_model: str = "fixed_1h",
+        closure_dwell_min_obs: int = 30,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -193,16 +197,30 @@ class MidSource:
             give the round-trip leisure W_ZWECK codes their own purposes instead
             of the 'other' catch-all (issue #241); ``False`` restores the pre-#241
             assignment for an A/B.
+        exclude_rbw_legs:
+            drop rbW legs (``W_RBW == 1``) before the join (issue #366).
+        drop_leading_arrive_home_leg:
+            drop a donor's leading "arrive home from elsewhere" leg (issue #366).
+        closure_dwell_model:
+            ``"empirical"`` or ``"fixed_1h"`` dwell for the synthesised chain
+            closure (issue #367); any other value raises ``ValueError``.
+        closure_dwell_min_obs:
+            minimum observations per (purpose x arrival band) cell of the
+            empirical dwell model (issue #367); inert for ``"fixed_1h"``.
 
         Returns
         -------
         pd.DataFrame
             11-column synthesis.population.trips contract + ``euclidean_distance``
-            + MiD extras.
+            + MiD extras (incl. ``is_synthetic_closure``).
         """
         return trips_stage.run(
             persons, donor_trips, random_seed=random_seed,
             escort_purpose=escort_purpose,
             escort_passive_education=escort_passive_education,
             explicit_round_trip_purposes=explicit_round_trip_purposes,
+            exclude_rbw_legs=exclude_rbw_legs,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            closure_dwell_model=closure_dwell_model,
+            closure_dwell_min_obs=closure_dwell_min_obs,
         )

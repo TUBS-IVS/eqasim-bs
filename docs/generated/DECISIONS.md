@@ -114,3 +114,6 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0103](../decisions/ADR-0103-decision-per-layer-after-srv-distance-baseline.md) | 2026-09-03 | active | Decision per calibration layer after the SrV distance baseline |
 | [ADR-0104](../decisions/ADR-0104-register-vs-reporting-day-universe-of-out-commuters.md) | 2026-09-05 | active | Register vs reporting-day universe of out-commuters |
 | [ADR-0105](../decisions/ADR-0105-deterministic-synpp-stage-hashes.md) | 2026-09-05 | active | Deterministic synpp stage hashes (patch of the implicit-config propagation) |
+| [ADR-0106](../decisions/ADR-0106-plan-sources-must-be-realisable-normal-weekday-diaries.md) | 2026-09-06 | active | Plan sources must be realisable normal-weekday diaries |
+| [ADR-0107](../decisions/ADR-0107-rbw-legs-are-movement-within-the-work-activity.md) | 2026-09-06 | active | rbW legs are movement within the work activity, not trips of the day plan |
+| [ADR-0108](../decisions/ADR-0108-plans-start-and-end-at-home-with-an-observed-closure-dwell.md) | 2026-09-06 | active | Plans start and end at home, with an observed closure dwell counted in the seed |

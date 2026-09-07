@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 79 | stages: 122 | datasets: 63 | ADRs: 105 | run manifests: 35
+- Features: 82 | stages: 123 | datasets: 64 | ADRs: 108 | run manifests: 36
 
 ## Population synthesis
 
@@ -20,6 +20,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Age-aware composition (#3b)](../registry/features/age_aware_composition.yml) | supported | off | -/-/A | unvalidated |  |
+| [Realisable normal-weekday plan sources (#365)](../registry/features/diary_plan_match.yml) | active | ON | A/-/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#365](https://github.com/TUBS-IVS/eqasim-bs/issues/365) |
 | [Fine teen age bands in the tier0 backbone (10-14 / 15-17 / 18-19)](../registry/features/fine_teen_age_bands.yml) | active | ON | A/A/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#320](https://github.com/TUBS-IVS/eqasim-bs/issues/320) |
 | [Household-size margin](../registry/features/household_size_margin.yml) | active | off | -/-/A | unvalidated |  |
 | [Income spatial tilt (Nettokaltmiete)](../registry/features/income_spatial_tilt.yml) | active | off | i/i/- | unvalidated |  |
@@ -59,6 +60,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Commute-day-state model (far/weekly out-commuters)](../registry/features/commute_day_state.yml) | active | ON | A/-/- | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
+| [Home-end closure with an observed dwell, counted in the seed (#367)](../registry/features/home_closure_model.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#367](https://github.com/TUBS-IVS/eqasim-bs/issues/367) |
+| [rbW legs are movement within the work activity (#366)](../registry/features/rbw_leg_convention.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#366](https://github.com/TUBS-IVS/eqasim-bs/issues/366) |
 
 ## Vehicle fleet
 
@@ -153,7 +156,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-2 stage(s), 2 in the production DAG. Datasets: --
+3 stage(s), 3 in the production DAG. Datasets: `srv2023_plan_structure_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

@@ -29,5 +29,6 @@ resolves_to:
   simple_ipf_open: synthesis.output
 features:
 - commute_day_state
+- rbw_leg_convention
 decisions:
 - ADR-0104
