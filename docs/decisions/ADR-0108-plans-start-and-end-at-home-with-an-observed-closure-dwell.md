@@ -213,3 +213,16 @@
   `docs/runs/100pct-allfeat-i329-2026-08-24.yml` with the 2026-09-05 boundary measurement.
   ADR-0106 and ADR-0107 are the two records this one composes with. **The A/B ladder has not run:
   every expected effect stated in this record is an assumption, not a measurement.**
+- **Proof (2026-09-07, arm 3, 100 %, run manifest `plan-structure-fix-arm3-100pct-2026-09-07`):**
+  238,757 closure trips (6.53 % of 3,655,159; i329 7.3 %), 23.8 % of mobile persons closed. Dwell
+  draws: 88.9 % from the (purpose, hour, duration-class) cell, 11.1 % purpose-marginal fallback,
+  0 global fallback, 0.4 % capped -- the fixed 1 h spike is gone (work activities that precede a
+  closure now have mean 4.66 h). Leading arrive-home legs dropped for 3,198 donors (1.07 %); no
+  degenerate home->home first trip remains. `share_mobile_odd_trip_count` 0.2931 vs SrV 0.2325
+  (i329 0.34), inside the pre-registered 25-30 % band. The accepted deviations were written by the
+  stage as designed (open-end 0 vs 0.0224, open-start 0 vs 0.0219, single-trip days 0.0010 vs
+  0.0058). `share_trips_followed_by_same_purpose` stayed at 0.1076 vs SrV 0.0453 and did NOT reach
+  the pre-registered < 6 %: the unique MiD donors show 0.107 themselves (repeats at 14-16 % of the
+  trips of leisure, other, work and education), so the gap is the MiD/SrV recording granularity,
+  not a closure effect; the 86,761 home->home round trips (2.4 %) are follow-up issue #375. The
+  decisions of this record stand.

@@ -151,3 +151,16 @@
   universe), ADR-0107 (rbW legs), ADR-0108 (closed plans). **The A/B ladder that measures the
   effect of this decision has not run at the time of writing: nothing here is a validation
   claim.**
+- **Proof (2026-09-07, arm 3 = every package ON, 100 %, run manifest
+  `plan-structure-fix-arm3-100pct-2026-09-07`):** the mechanism this record describes is
+  confirmed on the realised population. 74,898 of 485,709 plan sources (15.42 %) were remapped to a
+  realisable diary (nodiary_mobile 40,580, holiday 22,976, only_rbw 7,024, nodiary_unknown 4,044;
+  3,283 kept immobile by design, 274 emptied), and the share of head-to-head persons without a trip
+  fell from 23.0 % (i329) to 11.28 % -- the SrV at-home share the `trip_class` control targets is
+  11.2 %. Against the analysis stage's primary `at_home_zero` universe (SrV mobility 0.8437) the
+  model is now over-mobile by +4.35 pp: that is the universe decision of 2026-09-05 (target the
+  at-home share, treat SrV persons away from home as a follow-up, issue #370), not a defect. Work
+  participation of employed persons 0.494 -> 0.584 (SrV 0.675; the rest is the control universe,
+  issue #368), education participation 6-17 not employed 0.74 -> 0.843 (SrV 0.900). Arms 1 and 2
+  were not run separately, so the gain is attributed to this package by mechanism, not by A/B
+  isolation. The decision stands: flag default ON.

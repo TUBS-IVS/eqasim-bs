@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-09-07T04:04:18.911179+00:00",
+  "pipeline_commit": "1ea945a7+dirty",
+  "parameters": {
+    "srv_universe": "at_home_zero",
+    "output_subdir": "analysis/plan_structure_vs_srv",
+    "sampling_rate": 1.0,
+    "max_unmatched_home_share": 0.05
+  },
+  "inputs": {
+    "reference_path": "eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv",
+    "n_reference_rows": 4738,
+    "kreise_in_scope": [
+      "03101",
+      "03102",
+      "03151",
+      "03153",
+      "03154",
+      "03157",
+      "03158"
+    ]
+  },
+  "model": {
+    "n_persons_total": 1131314,
+    "n_persons_in_scope": 1003727,
+    "share_persons_in_scope": 0.8872222919543116,
+    "n_persons_out_of_scope": 127585,
+    "n_persons_no_kreis": 2,
+    "share_persons_no_kreis": 1.7678557853964504e-06,
+    "n_trips_total": 3655159,
+    "n_trips_in_scope": 3247183,
+    "kreise_model_only": [
+      "03103"
+    ]
+  },
+  "closure": {
+    "closure_column_present": true,
+    "n_trips": 3655159,
+    "n_trips_synthetic_closure": 238757,
+    "share_trips_synthetic_closure": 0.06532055103485239,
+    "n_persons": 1002332,
+    "n_persons_closed": 238757,
+    "share_persons_closed": 0.23820151406919066,
+    "n_home_trips": 1515354,
+    "n_home_trips_synthetic": 238757,
+    "share_home_trips_synthetic": 0.15755856387352393
+  }
+}

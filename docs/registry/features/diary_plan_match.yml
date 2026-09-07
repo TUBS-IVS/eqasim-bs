@@ -88,19 +88,24 @@ evidence:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - plan-structure-fix-arm3-100pct-2026-09-07
   metric: mobility_rate
   note: >-
-    NOT yet measured against the reference. The metric named above is the committed reference
-    column mobility_rate (SrV 0.8437 for the "all" segment of the primary at_home_zero universe);
-    the "23.0% of persons without a trip" this feature attacks is its complement on the model
-    side. The A/B ladder pre-registered in this feature's design
-    (arms: package 1; 1+2; 1+2+3; 1+2+3+4 on the cached i329 population) is what will produce the
-    evidence, through braunschweig.analysis.synthesis.plan_structure_vs_srv and participation_fit.
-    Until an arm is recorded as a run manifest, the effect stated in ADR-0106 (that the
-    "donor-bound" participation deficit of srv_participation_controls is largely removed) is an
-    ASSUMPTION. Control convergence is not validation; the SrV comparison is.
+    MEASURED at 100 % (arm 3 = every package ON, run manifest plan-structure-fix-arm3-100pct-2026-09-07, analysis stage
+    braunschweig.analysis.synthesis.plan_structure_vs_srv against the committed SrV reference):
+    mobility_rate 0.8872 vs SrV 0.8437 (at_home_zero universe, +4.35 pp), i.e. 11.28 % of the
+    head-to-head persons have no trip vs 23.0 % in the i329 baseline; the popsim control targets
+    the SrV at-home share (11.2 %), which is met. diary_plan_match remapped 74,898 of 485,709
+    plan sources (15.42 %, inside the expected 5-30 % band; nodiary_mobile 40,580, holiday
+    22,976, only_rbw 7,024, nodiary_unknown 4,044; 3,283 kept immobile, 274 emptied). Work
+    participation of employed persons rose from 0.494 to 0.584 (SrV 0.675, the residual is the
+    control universe, issue #368); education participation of 6-17 not employed from 0.74 to
+    0.843 (SrV 0.900). Against the at_home_zero universe the model is over-mobile by the
+    construction of the target (ADR-0106 proof section). Arm 1 alone (package 1 only) was not
+    run, so the attribution of the mobility gain to this package alone is by mechanism, not by
+    A/B isolation.
 assessment:
   status: pending
   by: null

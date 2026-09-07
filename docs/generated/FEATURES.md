@@ -24,7 +24,7 @@ may only name run manifests (no run, no claim).
 | [cordon_mode_balancer](../registry/features/cordon_mode_balancer.yml) | cordon | active | ON | A/A/- | 2 | -- | marker | committed | unvalidated | pending |
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
-| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 7 | proven | marker | committed | unvalidated | pending |
+| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 7 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [driving_licence_enrichment](../registry/features/driving_licence_enrichment.yml) | attributes | active | off | -/-/A | 1 | -- | none | committed | unvalidated | pending |
 | [economic_status_bayes](../registry/features/economic_status_bayes.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
@@ -47,7 +47,7 @@ may only name run manifests (no run, no claim).
 | [full_analysis](../registry/features/full_analysis.yml) | analysis | active | ON | A/s/s | 1 | -- | none | none | unvalidated | pending |
 | [gravity_od](../registry/features/gravity_od.yml) | work | active | ON | A/A/A | 4 | -- | none | none | unvalidated | pending |
 | [gravity_slope_by_rs7](../registry/features/gravity_slope_by_rs7.yml) | work | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
-| [home_closure_model](../registry/features/home_closure_model.yml) | behavior | active | ON | A/i/- | 5 | proven | marker | committed | unvalidated | pending |
+| [home_closure_model](../registry/features/home_closure_model.yml) | behavior | active | ON | A/i/- | 5 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [household_fleet](../registry/features/household_fleet.yml) | fleet | active | ON | A/A/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_income_distribution](../registry/features/household_income_distribution.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [household_size_margin](../registry/features/household_size_margin.yml) | population | active | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
@@ -71,7 +71,7 @@ may only name run manifests (no run, no claim).
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | pending |
-| [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | unvalidated | pending |
+| [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |

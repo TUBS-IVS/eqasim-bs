@@ -124,3 +124,15 @@
   `eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv`. ADR-0106 (realisable
   plan sources) and ADR-0108 (closed plans) are the two records this one composes with. **No A/B
   arm has run: no claim here is validated.**
+- **Proof (2026-09-07, arm 3, 100 %, run manifest `plan-structure-fix-arm3-100pct-2026-09-07`):**
+  107,368 of 1,087,393 Wege rows (9.87 %) were dropped as rbW legs; no referenced donor was emptied;
+  work->work leg pairs fell from 106,864 (i329) to 72,531 and none of the survivors carries
+  `W_RBW == 1`. The pre-registered expectation that 1-2 h work activities would fall "towards
+  single digits" did NOT hold: `share_work_activities_lt_2h` is 0.2025 against SrV 0.1096 (i329 on
+  the same definition: 0.264). The decomposition (`trip_table_diagnostics_arm3.txt` in the run's
+  aggregate directory) shows 10.5 of the 20.2 pp come from the remaining work->work pairs, which are
+  non-rbW `W_ZWECK` 1/2 chains (Arbeit -> dienstlich -> dienstlich ...) with 63-68 % dwell < 2 h; the
+  20,296 unique MiD donor persons show the same 0.190 with the same composition, so the residual is
+  the MiD diary structure itself (business legs recorded one by one), not a synthesis artefact and
+  not something this record's convention can remove. The convention stands (the rbW part of the
+  problem is gone); the business-leg chains are the separate follow-up issue #371.

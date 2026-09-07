@@ -98,20 +98,23 @@ evidence:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - plan-structure-fix-arm3-100pct-2026-09-07
   metric: share_work_activities_lt_2h
   note: >-
-    NOT yet measured. The reference side exists and is committed (SrV share_mobile_last_to_home
-    0.9776, mean_work_activity_h 6.2904, share_work_activities_lt_2h 0.1096,
-    share_trips_followed_by_same_purpose 0.0453 for the
-    "all" segment of the primary at_home_zero universe), and the comparison stage exists, but no
-    A/B arm has run. Note the definitional caveat recorded in ADR-0108:
-    share_trips_followed_by_same_purpose counts home->home pairs on BOTH sides, so any change to
-    the number of home trips moves it. Three model-side metrics are 0% BY DECISION (open-end,
-    open-start and single-trip days) and must always be read next to the accepted_deviations.csv
-    rows the analysis stage writes; a fourth (odd trip counts) is structurally bounded because
-    every closed day ends even-ended.
+    MEASURED at 100 % (arm 3, run manifest plan-structure-fix-arm3-100pct-2026-09-07): closure trips 238,757 of 3,655,159
+    (6.53 %; i329 7.3 %), 23.8 % of mobile persons closed; dwell draws 88.9 % from the
+    (purpose, hour, duration-class) cell, 11.1 % purpose-marginal fallback, 0 global, 0.4 %
+    capped. The fixed-1 h spike is gone (work activities before a closure: mean 4.66 h, 29 %
+    < 2 h, contributing 0.9 pp of the 20.2 % short-work share). share_mobile_odd_trip_count
+    0.2931 vs SrV 0.2325 (i329 0.34, inside the pre-registered 25-30 % band).
+    share_trips_followed_by_same_purpose 0.1076 vs SrV 0.0453 did NOT reach the pre-registered
+    < 6 %: the unique MiD donors themselves show 0.107 (leisure, other, work, education repeats
+    at 14-16 % of each purpose's trips), so the gap is a survey-taxonomy difference, not a
+    closure effect. Leading arrive-home legs dropped for 3,198 donors (1.07 %); 0 degenerate
+    home->home first trips remain. Accepted deviations recorded by the stage: open-end 0 vs
+    0.0224, open-start 0 vs 0.0219, single-trip days 0.0010 vs 0.0058.
 assessment:
   status: pending
   by: null

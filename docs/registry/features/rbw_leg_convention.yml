@@ -79,19 +79,20 @@ evidence:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - plan-structure-fix-arm3-100pct-2026-09-07
   metric: share_work_activities_lt_2h
   note: >-
-    NOT yet measured. The expected directions recorded in ADR-0107 are pre-registered ASSUMPTIONS
-    of the A/B ladder, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv against
-    the committed SrV reference -- two distinct metrics, not to be conflated: fewer spurious
-    work->work leg repeats (qualitative, no committed reference exists at that purpose-pair
-    granularity) and the ALL-purpose share_trips_followed_by_same_purpose metric (which also
-    counts home->home pairs, ADR-0108) falling from its i329 boundary-measurement value of 10.6%
-    towards the committed SrV reference of 4.5%. Also pre-registered: 1-2 h work activities from
-    19.5% towards single digits, and night-time work departures vanishing. No arm has run, so no
-    claim is validated.
+    MEASURED at 100 % (arm 3, run manifest plan-structure-fix-arm3-100pct-2026-09-07): 107,368 of 1,087,393 Wege rows
+    (9.87 %) are rbW legs and were dropped; 0 referenced donors emptied. work->work leg pairs
+    fell from 106,864 (i329) to 72,531, and the remaining ones carry W_RBW 0 without exception.
+    The pre-registered direction for share_work_activities_lt_2h did NOT materialise: 0.2025 vs
+    SrV 0.1096 (i329 on the same definition 0.264). The residual is INHERITED from the MiD
+    diaries, not made by the synthesis: the 20,296 unique donor persons show 0.190 with the
+    identical work->work composition (W_ZWECK 1/2 chains of non-rbW business legs, 63-68 % of
+    them < 2 h), and the synthetic population reproduces it at 0.202. Follow-up: issue #371
+    (business-trip chains). Night-time work departures were not measured separately.
 assessment:
   status: pending
   by: null
