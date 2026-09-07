@@ -12,6 +12,8 @@ KEPT (mobil != 1) -- must both survive mid.project_completed_seed's
 forbid_no_diary_sources guard, which previously raised on every kept-immobile source and
 would have aborted a production run.
 """
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -153,3 +155,56 @@ def test_mobile_803_source_still_raises_when_the_match_did_not_run(tmp_path):
             trip_class_counts_closure=True,
             forbid_no_diary_sources=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Un-relaxable employment boundary -- Plan B Task 6, issue #368
+# ---------------------------------------------------------------------------
+def _make_employment_crossing_fixture(mid_dir):
+    """Set up the one plan source whose remap can cross the employment boundary.
+
+    Person (1,1) -- employed, male, 40, with a licence -- loses their diary (803 with
+    mobil == 1) and must be remapped. Person (2,1), otherwise their perfect soft-key
+    twin (male, 41, licence, PT sub), is turned into a Rentner (P_TAET 11): today's
+    ladder drops ``employed`` before ``sex``/``age_band`` and therefore prefers that
+    not-employed twin, while the remaining employed weekday donors (1,2) / (2,2) are
+    female. Returns the (H_ID, P_ID) of the remapped person.
+    """
+    persons_path = mid_dir / "MiD2023_Personen.csv"
+    p = pd.read_csv(persons_path)
+    diaryless = (p["H_ID"] == 1) & (p["P_ID"] == 1)
+    p.loc[diaryless, ["anzwege1", "mobil"]] = [803, 1]
+    p.loc[(p["H_ID"] == 2) & (p["P_ID"] == 1), "P_TAET"] = 11
+    p.to_csv(persons_path, index=False)
+    return 1, 1
+
+
+def _employed_lookup(persons):
+    from braunschweig.popsim.attributes import EMPLOYED_TAET
+    return persons.set_index(["H_ID", "P_ID"])["P_TAET"].isin(EMPLOYED_TAET)
+
+
+def test_diary_match_keeps_the_employment_boundary_and_reports_the_crossing_rate(tmp_path, caplog):
+    _write_mid_attribute_fixture(tmp_path)
+    hid, pid = _make_employment_crossing_fixture(tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        hard = cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None,
+                                        weekend_plan_match_on=True)
+    soft = cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None,
+                                    weekend_plan_match_on=True,
+                                    diary_match_hard_employment=False)
+
+    # ON (default): no remapped person may take a donor of the other employment class.
+    assert hard.diary_report.n_crossed_employment_boundary == 0
+    hard_row = hard.persons[(hard.persons["H_ID"] == hid) & (hard.persons["P_ID"] == pid)].iloc[0]
+    employed = _employed_lookup(hard.persons)
+    assert bool(employed.loc[(hard_row["source_H_ID"], hard_row["source_P_ID"])]) is True
+    # OFF: the same build crosses the boundary at least once (here: the Rentner twin),
+    # which is what makes the ON assertion above discriminating.
+    assert soft.diary_report.n_crossed_employment_boundary >= 1
+    soft_row = soft.persons[(soft.persons["H_ID"] == hid) & (soft.persons["P_ID"] == pid)].iloc[0]
+    assert (soft_row["source_H_ID"], soft_row["source_P_ID"]) == (2, 1)
+    # The counter is logged as a rate, not silently carried in the report only.
+    assert any("employment boundary crossed by 0/" in record.getMessage()
+               for record in caplog.records)

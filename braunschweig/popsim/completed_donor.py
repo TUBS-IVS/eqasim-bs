@@ -18,8 +18,9 @@ The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issu
 match, in that order, CONTINUING the same seeded RNG instance -- they are new
 steps appended to the byte-identity contract above, never inserted before or
 between the existing two. The stage now also depends on the MiD Wege (trip)
-table (``mid.load_mid_wege``) and four additional flags (diary_plan_match,
-exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg);
+table (``mid.load_mid_wege``) and five additional flags (diary_plan_match,
+exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg,
+diary_match_hard_employment);
 it remains sampling- and controls-independent, so it is still shareable across
 runs via the cache_share store. The eight ``src_*`` plan-source fact columns are
 attached to ``persons`` ALWAYS (even with diary_plan_match OFF) -- they are
@@ -111,6 +112,7 @@ def build_completed_donor(
     exclude_holiday_plan_sources: bool = True,
     exclude_rbw_legs: bool = True,
     drop_leading_arrive_home_leg: bool = True,
+    diary_match_hard_employment: bool = True,
     diary_trace_path: Optional[Union[str, Path]] = None,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
@@ -159,6 +161,14 @@ def build_completed_donor(
         arrive-home leg when counting direct legs, and remap a plan source whose
         diary becomes empty after the drop. Ignored when ``diary_plan_match_on``
         is False.
+    diary_match_hard_employment:
+        When True (default) and ``diary_plan_match_on``, the ``employed`` match key
+        is NEVER relaxed while re-drawing a plan source, so a person can only
+        inherit the diary of a donor of their own employment class (issue #368).
+        Ignored when ``diary_plan_match_on`` is False. Only the diary match is
+        affected: the weekend-plan match above keeps the unconstrained ladder, and
+        ``match_person`` draws exactly ONE weighted value per call either way, so the
+        shared completion RNG stream is unchanged (byte-identity contract above).
     diary_trace_path:
         Where to write the diary-plan-match trace parquet (only when matching is
         on and a path is given). ``None`` -> trace not persisted (e.g. unit tests).
@@ -241,6 +251,7 @@ def build_completed_donor(
             exclude_rbw_legs=exclude_rbw_legs,
             exclude_holidays=exclude_holiday_plan_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            hard_employment=diary_match_hard_employment,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
@@ -301,9 +312,9 @@ def configure(context):
     cache_share store.
     """
     from braunschweig.popsim.stage import (
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
-        KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     context.config(KEY_MID)
     context.config("random_seed")
@@ -313,6 +324,12 @@ def configure(context):
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, True)
     context.config(KEY_EXCLUDE_RBW_LEGS, True)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    # Issue #368: the un-relaxable employment boundary changes which donor a
+    # diary-less plan source draws, so it belongs in THIS stage's config hash --
+    # flipping it must rebuild the donor, not reuse the cached one. Declared here
+    # only (like KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES): the popsim stage never reads it
+    # and inherits the invalidation through its completed_donor stage dependency.
+    context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT, True)
 
 
 def execute(context) -> CompletedDonor:
@@ -323,9 +340,9 @@ def execute(context) -> CompletedDonor:
     PopulationSim seed and the expansion donor tables.
     """
     from braunschweig.popsim.stage import (
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
-        KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     mid_dir = context.config(KEY_MID)
     random_seed = int(context.config("random_seed"))
@@ -338,6 +355,7 @@ def execute(context) -> CompletedDonor:
     exclude_holiday_plan_sources = bool(context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES))
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    diary_match_hard_employment = bool(context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT))
 
     result = build_completed_donor(
         mid_dir,
@@ -349,6 +367,7 @@ def execute(context) -> CompletedDonor:
         exclude_holiday_plan_sources=exclude_holiday_plan_sources,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        diary_match_hard_employment=diary_match_hard_employment,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
     )
 
@@ -360,4 +379,6 @@ def execute(context) -> CompletedDonor:
     if result.diary_report is not None:
         context.set_info("diary_plan_match_remapped", result.diary_report.n_remapped)
         context.set_info("diary_plan_match_share", result.diary_report.share_remapped)
+        context.set_info("diary_plan_match_crossed_employment_boundary",
+                         result.diary_report.n_crossed_employment_boundary)
     return result

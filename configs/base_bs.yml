@@ -206,6 +206,14 @@ config:
   # by braunschweig.popsim.stage, where it arms the guard that RAISES if a resolved
   # plan source still carries 803/804 (a silent regression would be invisible).
   braunschweig.population.popsim.diary_plan_match: true
+  # Never relax the `employed` key while re-drawing such a source (#368): the matcher
+  # drops it second-from-last, so a non-employed person could inherit an employed
+  # donor's work diary while their own employment attribute comes from a different MiD
+  # respondent -- a plan the employment-conditional work control would fight. A GUARD,
+  # not a correction: only 2 of the 74,898 remaps of the arm-3 100 % run relaxed that
+  # far (docs/runs/plan-structure-fix-arm3-100pct-2026-09-07.yml), so the expected
+  # effect on the population is nil.
+  braunschweig.population.popsim.diary_match_hard_employment: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).

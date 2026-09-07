@@ -137,30 +137,75 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
     }, index=persons.index)
 
 
-def match_person(target_row, weekday_persons, *, rng):
+def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
+    """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
+
+    Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
+    lowest-priority remaining SOFT key when no donor qualifies. Returns
+    ``(H_ID, P_ID, relaxation_level)``.
+
+    ``hard_keys`` names keys that are NEVER relaxed (default: none). They are
+    required on every candidate pool, and the ladder pops only the soft keys, in
+    the same order as without them. When the soft keys are exhausted the draw comes
+    from the hard-key-only pool; only when even THAT pool is empty does the
+    whole-pool fallback of the unconditional ladder apply -- it still returns a
+    donor rather than raising, and the CALLER is responsible for counting how often
+    the boundary was crossed (see ``diary_plan_match.reassign_diaryless_plan_sources``,
+    ``DiaryMatchReport.n_crossed_employment_boundary``).
+
+    ``level`` counts SOFT-key relaxations, so its maximum is ``len(soft keys)``:
+    with ``hard_keys`` empty that is ``len(PERSON_KEYS_BY_PRIORITY)`` (unchanged),
+    with one hard key it is one less. Callers that log level histograms must
+    therefore read them against the hard-key setting of the run.
+
+    BYTE-IDENTITY (mandatory): with the default ``hard_keys=frozenset()`` this
+    function takes the same branches, builds the same pools in the same order and
+    makes the same number of ``weighted_choice`` calls (exactly one, whichever
+    branch returns) as the pre-``hard_keys`` implementation. Both callers --
+    ``reassign_weekend_plan_sources`` and ``diary_plan_match.
+    reassign_diaryless_plan_sources`` -- draw from ONE shared seeded RandomState
+    whose draw sequence is a documented byte-identity contract (see the
+    ``braunschweig.popsim.completed_donor`` module docstring); the frozen baseline in
+    tests/test_weekend_plan_match.py::
+    test_match_person_with_empty_hard_keys_reproduces_todays_draw_sequence pins it.
+    """
     if len(weekday_persons) == 0:
         raise ValueError("empty weekday person pool; cannot match weekend person")
+    if hard_keys:
+        # A misspelled key would otherwise be silently dropped by the comprehensions
+        # below, leaving the caller believing a boundary is guarded when it is not.
+        unknown_keys = sorted(set(hard_keys) - set(PERSON_KEYS_BY_PRIORITY))
+        if unknown_keys:
+            raise ValueError(
+                f"match_person: unknown hard match key(s) {unknown_keys}; valid keys are "
+                f"{list(PERSON_KEYS_BY_PRIORITY)}")
     keys = _person_keys(weekday_persons)
     tkeys = _person_keys(pd.DataFrame([target_row])).iloc[0]
-    active = list(PERSON_KEYS_BY_PRIORITY)
+    hard = [key for key in PERSON_KEYS_BY_PRIORITY if key in hard_keys]
+    soft = [key for key in PERSON_KEYS_BY_PRIORITY if key not in hard_keys]
+    hard_mask = pd.Series(True, index=weekday_persons.index)
+    for key in hard:
+        hard_mask &= keys[key] == tkeys[key]
+    active = list(soft)
     while True:
-        mask = pd.Series(True, index=weekday_persons.index)
+        mask = hard_mask.copy()
         for key in active:
             mask &= keys[key] == tkeys[key]
         pool = weekday_persons[mask]
         if len(pool) > 0:
-            level = len(PERSON_KEYS_BY_PRIORITY) - len(active)
+            level = len(soft) - len(active)
             h, p = weighted_choice(list(zip(pool["H_ID"], pool["P_ID"])),
                                    pool["P_GEW"].to_numpy(), rng=rng)
             return h, p, level
         if not active:
             h, p = weighted_choice(list(zip(weekday_persons["H_ID"], weekday_persons["P_ID"])),
                                    weekday_persons["P_GEW"].to_numpy(), rng=rng)
+            hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
             logger.debug(
                 "[weekend_plan_match] match_person hit the whole-pool size-only "
-                "fallback (all person keys dropped); drew weekday (%s, %s).",
-                h, p)
-            return h, p, len(PERSON_KEYS_BY_PRIORITY)
+                "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
+                hard_note, h, p)
+            return h, p, len(soft)
         active.pop()
 
 

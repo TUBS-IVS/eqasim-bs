@@ -212,6 +212,17 @@ KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
 # note on that key re: the Wege table + src_* facts being read/attached
 # regardless of this flag).
 KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+# Never relax the `employed` key when the diary plan match re-draws a plan
+# source (issue #368, Plan B Task 6). weekend_plan_match.match_person drops
+# `employed` second-from-last on its relaxation ladder, so a non-employed person
+# could inherit an employed donor's work diary while their own employment
+# attribute comes from a DIFFERENT MiD respondent -- a plan the
+# employment-conditional work control would then be fighting. A GUARD, not a
+# correction (see configs/base_bs.yml for the measured magnitude). Default ON;
+# read ONLY by braunschweig.popsim.completed_donor, which is where the diary
+# match runs, so it is declared there (like exclude_holiday_plan_sources) and
+# reaches the popsim stage through that stage dependency.
+KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_hard_employment"
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
