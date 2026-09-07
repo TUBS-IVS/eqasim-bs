@@ -168,9 +168,11 @@ def _participation_universe_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
     attributes those controls' universes are defined over: ``employment_status`` and
     ``age``. Both are ordinary eqasim/BS person attributes and are expected on
     ``persons`` for any full synthetic population; a run-output source that lacks
-    either propagates a ``KeyError`` naming it (via
-    :func:`participation_fit.realised_universe_participation`) rather than silently
-    computing the wrong (undifferentiated) universe.
+    either raises ``KeyError`` naming it at the column selection immediately below
+    (pandas' own missing-column error fires there first -- fix round 1, item 4:
+    :func:`participation_fit.realised_universe_participation`'s own missing-column
+    guard is never reached from THIS call site) rather than silently computing the
+    wrong (undifferentiated) universe.
 
     HONESTY CAVEAT (reproduce wherever these numbers are reported): identical to
     :func:`_participation_fit_report` -- these targets STEER the raking, so this is a
@@ -401,16 +403,26 @@ def run(ns) -> dict:
                 frames.persons, geo, frames.trips, DATA_PATH)
             participation_universe.to_csv(out / "participation_universe_fit.csv", index=False)
             participation_universe_json = participation_universe.to_dict(orient="records")
-            worst = participation_universe.sort_values("abs_error", ascending=False).head(1)
-            LOGGER.info(
-                "Universe participation fit (FIT CHECK against the steering targets, "
-                "not independent validation): %d (Kreis, control, category) cells, "
-                "mean |error| %.2f pp, worst %s/%s in %s at %.2f pp.",
-                len(participation_universe), 100 * participation_universe["abs_error"].mean(),
-                worst["control"].iloc[0] if not worst.empty else "n/a",
-                worst["category"].iloc[0] if not worst.empty else "n/a",
-                worst["ars5"].iloc[0] if not worst.empty else "n/a",
-                100 * worst["abs_error"].iloc[0] if not worst.empty else float("nan"))
+            if participation_universe.empty:
+                # Fix round 1, item 2: an all-non-numeric 'age' (or similarly broken
+                # 'employment_status') column makes EVERY control's universe empty, so
+                # realised_universe_participation already WARNs per control -- but the
+                # summary below must not then log an uninformative "0 cells, mean |error|
+                # nan pp" at INFO as though nothing were wrong.
+                LOGGER.warning(
+                    "Universe participation fit produced NO (Kreis, control, category) "
+                    "cells; check whether the source's 'age'/'employment_status' columns "
+                    "are present and hold recognised values (see the per-control WARNINGs "
+                    "above, if any, for the specific cause).")
+            else:
+                worst = participation_universe.sort_values("abs_error", ascending=False).head(1)
+                LOGGER.info(
+                    "Universe participation fit (FIT CHECK against the steering targets, "
+                    "not independent validation): %d (Kreis, control, category) cells, "
+                    "mean |error| %.2f pp, worst %s/%s in %s at %.2f pp.",
+                    len(participation_universe), 100 * participation_universe["abs_error"].mean(),
+                    worst["control"].iloc[0], worst["category"].iloc[0], worst["ars5"].iloc[0],
+                    100 * worst["abs_error"].iloc[0])
         except Exception:
             LOGGER.exception(
                 "Universe participation fit failed; continuing without it.")

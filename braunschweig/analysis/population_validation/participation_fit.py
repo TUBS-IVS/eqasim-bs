@@ -24,24 +24,37 @@ persons with a work trip were 58.4% against the SrV target 67.5%, pensioners 7.8
 against 1.8%; 6-17-year-olds in education were 84.3% against 90.0%). Each
 function below mirrors its purpose-only namesake exactly, with ONE addition: the
 realised share is computed over the control's OWN universe subset of
-``persons_kreis``, matching ``kreis_attribute_control.REGISTRY`` exactly --
+``persons_kreis``.
 
-- ``work_by_employment``: persons aged >=
-  ``kreis_attribute_control.WORK_BY_EMPLOYMENT_MIN_AGE_YEARS`` (mirrors that
-  entry's ``min_age``), employed via
-  ``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`` (mirrors the seed
-  derivation's employment test -- NEVER the ``employed`` boolean attribute,
-  a different MiD variable the two agree on for only ~99.8% of persons);
-- ``education_0_5`` / ``education_6_17`` / ``education_18plus``: persons whose
-  age falls in ``kreis_attribute_control.EDUCATION_AGE_BOUNDS[control]``,
-  inclusive on both bounds (mirrors that entry's ``min_age`` / ``max_age``;
-  ``education_18plus`` has no upper bound).
+The universe of every control (``work_by_employment`` and the three
+``education_*`` bands) is read DIRECTLY off the matching
+``kreis_attribute_control.REGISTRY`` entry's ``min_age`` / ``max_age`` fields
+(fix round 1, item 3; see ``_universe_registry_entries`` below) rather than from
+a same-VALUED but separately-imported constant -- a REGISTRY change is then
+picked up here automatically, and a REGISTRY shape this module can no longer
+resolve fails loudly at IMPORT time rather than silently reporting on the wrong
+universe. "Employed" is the ``employment_status``-class test
+(``attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES``), NEVER the ``employed``
+boolean attribute -- a different MiD variable the two agree on for only about
+99.8% of persons; the control pins the former, and so does this report. A share
+computed over the WHOLE population would answer a different question and would
+be wrong -- see :func:`realised_universe_participation`'s docstring for the
+full universe definitions. The SAME HONESTY CAVEAT above applies verbatim to
+these three functions: their targets also STEER the raking, so a good fit is
+convergence, never independent validation.
 
-A share computed over the WHOLE population would answer a different question
-and would be wrong -- see :func:`realised_universe_participation`'s docstring
-for the full universe definitions. The SAME HONESTY CAVEAT above applies
-verbatim to these three functions: their targets also STEER the raking, so a
-good fit is convergence, never independent validation.
+The raw MiD ``W_ZWECK`` trip schema (see :func:`realised_participation`'s
+schema detection) is deliberately NOT supported for these three functions (fix
+round 1, item 1): its static ``PARTICIPATION_W_ZWECK`` code sets apply no rbW
+filter and no ``escort_passive_education`` W_ZWECK-13 relabelling, so a
+"work"/"education" leg on that schema would not match
+``mid.participation.derive_work_by_employment_seed`` /
+``derive_education_flag_seed``'s realised-plan definition -- the exact
+seed-vs-realised-plan mismatch that module's own docstring names as the defect
+those functions exist to remove, just reached via the report's trip schema
+instead of via the control's seed. ``realised_universe_participation`` raises
+``ValueError`` rather than silently mismeasuring; supply the eqasim trip
+schema, or use :func:`realised_participation` for a ``W_ZWECK``-only cohort.
 """
 from __future__ import annotations
 
@@ -51,10 +64,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYED_EMPLOYMENT_STATUS_CLASSES
-from braunschweig.popsim.kreis_attribute_control import (
-    EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, WORK_BY_EMPLOYMENT_CATEGORIES,
-    WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
+from braunschweig.popsim import kreis_attribute_control as kac
+from braunschweig.popsim.attributes import (
+    EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES)
 from braunschweig.popsim.mid import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
@@ -66,6 +78,45 @@ LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
 # there is picked up here automatically -- including its committed target file
 # requirement in load_participation_targets.
 PARTICIPATION_PURPOSES = tuple(PARTICIPATION_W_ZWECK)
+
+
+def _universe_registry_entries(categories: tuple) -> tuple:
+    """``kreis_attribute_control.REGISTRY`` entries whose rendered category-label tuple
+    equals ``categories`` exactly (fix round 1, item 3).
+
+    Identifying "the participation-UNIVERSE entries" this way -- by the SAME canonical
+    category vocabulary (:data:`kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES` /
+    :data:`kreis_attribute_control.EDUCATION_FLAG_CATEGORIES`) those entries are built
+    from, rather than by a hand-maintained list of control names -- means this module
+    reads its universe bounds (``min_age``/``max_age``) DIRECTLY off the REGISTRY entry
+    instead of a same-valued-today-but-separately-imported constant, so a future change
+    to a REGISTRY entry's bounds is picked up here automatically. Verified unique in
+    :data:`kreis_attribute_control.REGISTRY` today (module-level assertions below); no
+    other entry shares either category tuple.
+    """
+    return tuple(
+        ctl for ctl in kac.REGISTRY
+        if tuple(label for label, _ in ctl.categories) == categories)
+
+
+_WORK_BY_EMPLOYMENT_REGISTRY_ENTRIES = _universe_registry_entries(kac.WORK_BY_EMPLOYMENT_CATEGORIES)
+if len(_WORK_BY_EMPLOYMENT_REGISTRY_ENTRIES) != 1:
+    # Fail at IMPORT time, not at call time with a wrong result: a REGISTRY shape change
+    # this lookup can no longer resolve must never silently report on 0 or 2+ controls.
+    raise RuntimeError(
+        f"participation_fit: expected exactly 1 kreis_attribute_control.REGISTRY entry "
+        f"shaped like WORK_BY_EMPLOYMENT_CATEGORIES, found "
+        f"{len(_WORK_BY_EMPLOYMENT_REGISTRY_ENTRIES)}; the work_by_employment universe "
+        "filter can no longer be derived from the REGISTRY (has the entry's categories "
+        "changed?).")
+_WORK_BY_EMPLOYMENT_REGISTRY_ENTRY = _WORK_BY_EMPLOYMENT_REGISTRY_ENTRIES[0]
+
+_EDUCATION_REGISTRY_ENTRIES = _universe_registry_entries(kac.EDUCATION_FLAG_CATEGORIES)
+if not _EDUCATION_REGISTRY_ENTRIES:
+    raise RuntimeError(
+        "participation_fit: found NO kreis_attribute_control.REGISTRY entries shaped like "
+        "EDUCATION_FLAG_CATEGORIES; the education universe filters can no longer be "
+        "derived from the REGISTRY.")
 
 
 def realised_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
@@ -242,19 +293,32 @@ def participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame, targets_
 # --------------------------------------------------------------------------- #
 
 def _purpose_leg_person_ids(trips: pd.DataFrame, purposes) -> dict:
-    """Per-``purpose`` set of person ids with >= 1 trip of that purpose.
+    """Per-``purpose`` set of person ids with >= 1 trip of that purpose, for the
+    eqasim trip schema ONLY.
 
-    Schema detection is IDENTICAL to :func:`realised_participation` (the eqasim
-    ``following_purpose``/``preceding_purpose`` string pair, preferred when both
-    schemas are present and logged as such, else a raw MiD ``W_ZWECK`` int column
-    mapped through :data:`PARTICIPATION_W_ZWECK`). Kept as a small, separate
-    detector rather than a refactor of :func:`realised_participation` -- mirrors
-    ``mid.participation``'s own precedent of sibling derivations over one shared,
-    heavily parametrised core (see that module's package docstring) -- so this
-    addition cannot change the already-tested purpose-only behaviour.
+    Schema detection mirrors :func:`realised_participation`'s (the eqasim
+    ``following_purpose``/``preceding_purpose`` string pair, preferred -- and used
+    deterministically, logged -- when both schemas are present). Kept as a small,
+    separate detector rather than a refactor of :func:`realised_participation` --
+    mirrors ``mid.participation``'s own precedent of sibling derivations over one
+    shared, heavily parametrised core (see that module's package docstring) -- so
+    this addition cannot change the already-tested purpose-only behaviour.
 
-    Raises ``KeyError`` if neither schema is present (no silent fallback to an
-    empty participant set).
+    Unlike :func:`realised_participation`, the raw MiD ``W_ZWECK``-only schema is
+    NOT supported here (fix round 1, item 1): ``PARTICIPATION_W_ZWECK``'s static
+    code sets apply no rbW filter and no ``escort_passive_education`` W_ZWECK-13
+    relabelling, so "work"/"education" on that schema would not match
+    ``mid.participation.derive_work_by_employment_seed`` /
+    ``derive_education_flag_seed``'s realised-plan definition of those purposes --
+    the eqasim schema is safe here because a built ``eqasim_trips.csv`` already
+    reflects whichever ``exclude_rbw_legs`` / ``escort_passive_education`` flags
+    built it, while the raw ``W_ZWECK`` schema carries no such information and this
+    function has no parameter to receive it. Raises ``ValueError`` naming the
+    reason rather than silently measuring a different universe than the control
+    constrains -- see the module docstring.
+
+    Raises ``KeyError`` if neither schema is present at all (no silent fallback to
+    an empty participant set).
     """
     has_purpose_string_schema = {"following_purpose", "preceding_purpose"}.issubset(trips.columns)
     has_wzweck_schema = "W_ZWECK" in trips.columns
@@ -267,17 +331,26 @@ def _purpose_leg_person_ids(trips: pd.DataFrame, purposes) -> dict:
         LOGGER.info(
             "realised_universe_participation: trips carries both the eqasim purpose-string "
             "columns and a MiD 'W_ZWECK' column; using the eqasim schema deterministically.")
+    if not has_purpose_string_schema:
+        # has_wzweck_schema is True here (the only remaining case after the two checks
+        # above) -- the raw-MiD-only path fix round 1 item 1 forbids. See the docstring
+        # and the module docstring for the full rbW / escort_passive_education rationale.
+        raise ValueError(
+            "realised_universe_participation: the raw MiD 'W_ZWECK' trip schema is not "
+            "supported for the participation-UNIVERSE controls (unlike "
+            "realised_participation), because 'work'/'education' on that schema cannot be "
+            "corrected for the exclude_rbw_legs / escort_passive_education flags the "
+            "production seed derivation (mid.participation.derive_work_by_employment_seed / "
+            "derive_education_flag_seed) applies, and this function has no parameter to "
+            "receive them -- silently evaluating it would measure a DIFFERENT universe than "
+            "the control actually constrains. Provide the eqasim "
+            "'following_purpose'/'preceding_purpose' trip schema instead, or use "
+            "realised_participation for a W_ZWECK-only cohort.")
 
     result: dict = {}
-    if has_purpose_string_schema:
-        for purpose in purposes:
-            mask = (trips["following_purpose"] == purpose) | (trips["preceding_purpose"] == purpose)
-            result[purpose] = set(trips.loc[mask, "person_id"].unique())
-    else:
-        for purpose in purposes:
-            codes = PARTICIPATION_W_ZWECK[purpose]
-            mask = trips["W_ZWECK"].isin(codes)
-            result[purpose] = set(trips.loc[mask, "person_id"].unique())
+    for purpose in purposes:
+        mask = (trips["following_purpose"] == purpose) | (trips["preceding_purpose"] == purpose)
+        result[purpose] = set(trips.loc[mask, "person_id"].unique())
     return result
 
 
@@ -313,30 +386,44 @@ def _category_shares(ars5: np.ndarray, category: np.ndarray, control: str, categ
 def realised_universe_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame) -> pd.DataFrame:
     """Per-Kreis realised share for each participation-UNIVERSE control (Plan B, #368),
     read from the realised trips exactly like :func:`realised_participation` -- see this
-    module's docstring for why the trips frame (not the popsim seed) is the source.
+    module's docstring for why the trips frame (not the popsim seed) is the source, and
+    for why the raw MiD ``W_ZWECK``-only trip schema is NOT supported here.
 
     Each control's OWN universe -- never the whole population -- is the denominator (the
-    #97 universe-mismatch defect these controls exist to fix; mirrors
-    ``kreis_attribute_control.REGISTRY``'s ``work_by_employment`` / education entries
-    EXACTLY, so a reader can check the correspondence directly):
+    #97 universe-mismatch defect these controls exist to fix). The universe bounds are
+    read DIRECTLY off the matching ``kreis_attribute_control.REGISTRY`` entry's
+    ``min_age`` / ``max_age`` fields (fix round 1, item 3; see
+    :func:`_universe_registry_entries`), so a reader -- and a future REGISTRY change --
+    cannot silently diverge from what is implemented here:
 
-    - ``work_by_employment``: persons aged >=
-      :data:`kreis_attribute_control.WORK_BY_EMPLOYMENT_MIN_AGE_YEARS` (14), no upper
-      bound -- mirrors that entry's ``min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS``.
-      "Employed" is the ``employment_status``-class test
+    - ``work_by_employment``: persons aged >= the REGISTRY entry's ``min_age`` (14 today),
+      no upper bound. "Employed" is the ``employment_status``-class test
       (:data:`attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES`), NEVER the ``employed``
       boolean attribute -- a different MiD variable the two agree on for only about
       99.8% of persons; the control pins the former, and so does this report.
     - ``education_0_5`` / ``education_6_17`` / ``education_18plus``: persons whose age
-      falls in the band :data:`kreis_attribute_control.EDUCATION_AGE_BOUNDS` declares for
-      that control, INCLUSIVE on both bounds (``education_18plus`` has no upper bound) --
-      mirrors each entry's ``min_age`` / ``max_age`` exactly.
+      falls in that REGISTRY entry's ``[min_age, max_age]`` band, INCLUSIVE on both
+      bounds (``education_18plus`` has no upper bound).
 
     ``persons_kreis`` must carry ``person_id``, ``ars5``, ``employment_status`` and
-    ``age``. ``trips`` schema detection is IDENTICAL to :func:`realised_participation`:
-    the eqasim ``following_purpose``/``preceding_purpose`` string pair (preferred when
-    both are present, logged), else a raw MiD ``W_ZWECK`` int column; ``KeyError`` if
-    neither is present (no silent fallback to an empty result).
+    ``age``. ``trips`` schema detection mirrors :func:`realised_participation`'s (the
+    eqasim ``following_purpose``/``preceding_purpose`` string pair); ``KeyError`` if
+    neither schema is present at all, ``ValueError`` if ONLY the raw MiD ``W_ZWECK``
+    schema is present (no silent fallback to an empty result, and no silent
+    universe mismatch -- see :func:`_purpose_leg_person_ids`).
+
+    Fallback-transparency instrumentation (fix round 1, item 2 -- MANDATORY, no silent
+    degradation): logs a WARNING, with a count and examples, for (a) persons whose ``age``
+    is missing/non-numeric (coerced to NaN by ``pd.to_numeric``) and therefore excluded
+    from EVERY universe; (b) persons whose ``employment_status`` is outside the
+    recognised :data:`attributes.EMPLOYMENT_STATUS_CATEGORIES` vocabulary and are
+    therefore silently classified NON-employed by the ``isin`` employment test; (c) a
+    purpose ("work"/"education") whose trip participants match NONE of
+    ``persons_kreis``'s ``person_id`` values (the empty-join trap
+    ``mid.participation.map_flag_from_plan_source`` also documents and defends against --
+    typically a dtype mismatch); and (d) any control whose resulting universe is entirely
+    EMPTY (0 persons) in the given frame. The per-purpose match rate is always logged at
+    INFO for traceability, even when it is not zero.
 
     Returns one row per (``ars5``, ``control``, ``category``): columns ``ars5, control,
     category, realised_share, n_persons``, where ``n_persons`` is the size of THAT
@@ -363,36 +450,105 @@ def realised_universe_participation(trips: pd.DataFrame, persons_kreis: pd.DataF
             f"realised_universe_participation: trips is missing required column 'person_id' "
             f"(has {list(trips.columns)}).")
 
+    n_persons_total = len(persons_kreis)
     participants = _purpose_leg_person_ids(trips, ("work", "education"))
+
+    # Item 2(c): the empty-join trap. A person_id dtype mismatch between trips and
+    # persons_kreis makes isin() match nothing, silently zeroing every "has_<purpose>_leg"
+    # flag -- mirrors mid.participation.map_flag_from_plan_source's own documented defense.
+    persons_kreis_ids = set(persons_kreis["person_id"])
+    for purpose, ids in participants.items():
+        n_participants = len(ids)
+        if n_participants == 0:
+            continue
+        n_matched = len(ids & persons_kreis_ids)
+        if n_matched == 0:
+            LOGGER.warning(
+                "realised_universe_participation: trips carry %d distinct person(s) with a "
+                "'%s' leg, but NONE of them match any person_id in persons_kreis (dtype "
+                "mismatch? trips person_id dtype %s vs persons_kreis person_id dtype %s); "
+                "the resulting universe flag will be all-zero for this purpose.",
+                n_participants, purpose, trips["person_id"].dtype, persons_kreis["person_id"].dtype)
+        else:
+            LOGGER.info(
+                "realised_universe_participation: '%s' leg -- %d/%d (%.1f%%) trip "
+                "participant(s) matched a person_id in persons_kreis.",
+                purpose, n_matched, n_participants, 100.0 * n_matched / n_participants)
+
     ars5 = persons_kreis["ars5"].to_numpy()
     ages = pd.to_numeric(persons_kreis["age"], errors="coerce").to_numpy()
+
+    # Item 2(a): a non-numeric/missing age is coerced to NaN, which compares False to
+    # every ">="/"<=" bound below and so silently excludes that person from EVERY
+    # universe -- log the count rather than letting the universe quietly shrink.
+    n_bad_age = int(pd.isna(ages).sum())
+    if n_bad_age:
+        LOGGER.warning(
+            "realised_universe_participation: %d/%d (%.1f%%) persons have a non-numeric or "
+            "missing 'age' value (coerced to NaN) and are therefore excluded from EVERY "
+            "control's universe; check the age column's dtype/values upstream.",
+            n_bad_age, n_persons_total, 100.0 * n_bad_age / max(n_persons_total, 1))
+
+    # Item 2(b): an employment_status value outside the recognised vocabulary is silently
+    # classified NON-employed by isin() below -- the very failure attributes.py's own
+    # module-level guard raises on for the CONSTANT (EMPLOYED_EMPLOYMENT_STATUS_CLASSES
+    # must be a subset of EMPLOYMENT_STATUS_CATEGORIES); this is the equivalent guard on
+    # the DATA side.
+    recognised_employment_status = persons_kreis["employment_status"].isin(EMPLOYMENT_STATUS_CATEGORIES)
+    n_bad_employment_status = int((~recognised_employment_status).sum())
+    if n_bad_employment_status:
+        bad_examples = sorted(
+            {str(v) for v in persons_kreis.loc[~recognised_employment_status, "employment_status"]})[:5]
+        LOGGER.warning(
+            "realised_universe_participation: %d/%d (%.1f%%) persons carry an "
+            "'employment_status' value outside the recognised %s classes (examples: %s); "
+            "they are silently classified NON-employed by the work_by_employment employment "
+            "test -- check for a label/vocabulary mismatch upstream.",
+            n_bad_employment_status, n_persons_total,
+            100.0 * n_bad_employment_status / max(n_persons_total, 1),
+            EMPLOYMENT_STATUS_CATEGORIES, bad_examples)
+
     employed = persons_kreis["employment_status"].isin(EMPLOYED_EMPLOYMENT_STATUS_CLASSES).to_numpy()
     has_work_leg = persons_kreis["person_id"].isin(participants["work"]).to_numpy()
     has_education_leg = persons_kreis["person_id"].isin(participants["education"]).to_numpy()
 
+    def _warn_if_empty(control_name: str, mask: np.ndarray) -> None:
+        # Item 2(d): a control whose universe comes out empty must WARN, not silently
+        # return zero rows for that (ars5, control) pair with no signal at all.
+        if not mask.any():
+            LOGGER.warning(
+                "realised_universe_participation: control '%s' universe is EMPTY (0/%d "
+                "persons in the provided persons_kreis frame); check the 'age' (and, for "
+                "work_by_employment, 'employment_status') column's values/dtype.",
+                control_name, n_persons_total)
+
     frames = []
 
-    # work_by_employment: universe = age >= WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, mirroring
-    # kreis_attribute_control.REGISTRY's work_by_employment entry (min_age=
-    # WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, no max_age).
-    in_universe = ages >= WORK_BY_EMPLOYMENT_MIN_AGE_YEARS
+    # work_by_employment: universe = age in [min_age, max_age], read from the REGISTRY
+    # entry itself (fix round 1, item 3) rather than a separately-imported constant.
+    ctl = _WORK_BY_EMPLOYMENT_REGISTRY_ENTRY
+    in_universe = ages >= ctl.min_age
+    if ctl.max_age is not None:
+        in_universe = in_universe & (ages <= ctl.max_age)
+    _warn_if_empty(ctl.name, in_universe)
+    categories = tuple(label for label, _ in ctl.categories)
     category = np.where(
         employed[in_universe],
         np.where(has_work_leg[in_universe], "employed_work", "employed_nowork"),
         np.where(has_work_leg[in_universe], "nonemployed_work", "nonemployed_nowork"))
-    frames.append(_category_shares(
-        ars5[in_universe], category, "work_by_employment", WORK_BY_EMPLOYMENT_CATEGORIES))
+    frames.append(_category_shares(ars5[in_universe], category, ctl.name, categories))
 
     # education_0_5 / education_6_17 / education_18plus: each its OWN age-band universe,
-    # mirroring kreis_attribute_control.REGISTRY's three education entries (min_age/
-    # max_age = EDUCATION_AGE_BOUNDS[control]) exactly; max_age None means no upper bound.
-    edu_label, noedu_label = EDUCATION_FLAG_CATEGORIES
-    for control, (min_age, max_age) in EDUCATION_AGE_BOUNDS.items():
-        in_band = ages >= min_age
-        if max_age is not None:
-            in_band = in_band & (ages <= max_age)
+    # again read from its own REGISTRY entry; max_age None means no upper bound.
+    for ctl in _EDUCATION_REGISTRY_ENTRIES:
+        in_band = ages >= ctl.min_age
+        if ctl.max_age is not None:
+            in_band = in_band & (ages <= ctl.max_age)
+        _warn_if_empty(ctl.name, in_band)
+        categories = tuple(label for label, _ in ctl.categories)
+        edu_label, noedu_label = categories
         category = np.where(has_education_leg[in_band], edu_label, noedu_label)
-        frames.append(_category_shares(ars5[in_band], category, control, EDUCATION_FLAG_CATEGORIES))
+        frames.append(_category_shares(ars5[in_band], category, ctl.name, categories))
 
     return pd.concat(frames, ignore_index=True)[
         ["ars5", "control", "category", "realised_share", "n_persons"]]
@@ -401,13 +557,15 @@ def realised_universe_participation(trips: pd.DataFrame, persons_kreis: pd.DataF
 def load_universe_targets(targets_dir: Path) -> pd.DataFrame:
     """Load the four committed participation-UNIVERSE per-Kreis targets as one tidy frame.
 
-    Reads ``target2026_work_by_employment_by_kreis.csv`` (columns
-    :data:`WORK_BY_EMPLOYMENT_CATEGORIES`) and, for every control in
-    :data:`EDUCATION_AGE_BOUNDS`, ``target2026_<control>_by_kreis.csv`` (columns
-    :data:`EDUCATION_FLAG_CATEGORIES`) -- the SAME four committed files
-    ``kreis_attribute_control.REGISTRY`` points its ``work_by_employment`` /
-    ``education_0_5`` / ``education_6_17`` / ``education_18plus`` entries at, so a
-    committed-target change is picked up by both the balancer and this report together.
+    The filename and category columns for each control are read DIRECTLY off the
+    matching ``kreis_attribute_control.REGISTRY`` entry's ``target_csv_relpath`` /
+    ``categories`` fields (fix round 1, item 3) -- the SAME entries
+    :func:`realised_universe_participation` reads its universe bounds from -- rather
+    than re-derived as ``f"target2026_{control}_by_kreis.csv"``, a second path that
+    could silently drift from the REGISTRY's actual filename. ``target_csv_relpath`` is
+    relative to the DATA root (e.g. ``"braunschweig/targets/target2026_..._by_kreis.csv"``)
+    while ``targets_dir`` here is already that targets directory, so only the relpath's
+    filename component is used.
 
     Returns tidy columns ``ars5, control, category, target_share``.
 
@@ -419,8 +577,10 @@ def load_universe_targets(targets_dir: Path) -> pd.DataFrame:
     targets_dir = Path(targets_dir)
     frames = []
 
-    def _load_one(control: str, filename: str, categories) -> None:
+    def _load_one(ctl) -> None:
+        filename = Path(ctl.target_csv_relpath).name
         path = targets_dir / filename
+        categories = tuple(label for label, _ in ctl.categories)
         if not path.exists():
             raise FileNotFoundError(
                 f"load_universe_targets: required target file {path} is missing.")
@@ -433,15 +593,14 @@ def load_universe_targets(targets_dir: Path) -> pd.DataFrame:
         for category in categories:
             frames.append(pd.DataFrame({
                 "ars5": target["ars5"],
-                "control": control,
+                "control": ctl.name,
                 "category": category,
                 "target_share": target[category],
             }))
 
-    _load_one("work_by_employment", "target2026_work_by_employment_by_kreis.csv",
-              WORK_BY_EMPLOYMENT_CATEGORIES)
-    for control in EDUCATION_AGE_BOUNDS:
-        _load_one(control, f"target2026_{control}_by_kreis.csv", EDUCATION_FLAG_CATEGORIES)
+    _load_one(_WORK_BY_EMPLOYMENT_REGISTRY_ENTRY)
+    for ctl in _EDUCATION_REGISTRY_ENTRIES:
+        _load_one(ctl)
 
     return pd.concat(frames, ignore_index=True)
 

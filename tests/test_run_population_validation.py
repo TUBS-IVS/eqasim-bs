@@ -1,4 +1,5 @@
 import json
+import logging
 
 import geopandas as gpd
 import pandas as pd
@@ -362,3 +363,35 @@ def test_run_participation_universe_fit_failure_does_not_affect_participation_fi
     assert report["participation_fit"] is not None
     assert not (out / "participation_universe_fit.csv").exists()
     assert report["participation_universe_fit"] is None
+
+
+def test_run_warns_not_info_when_universe_fit_is_entirely_empty(tmp_path, monkeypatch, caplog):
+    """Fix round 1, item 2(a)/(d): an all-non-numeric 'age' column makes EVERY
+    control's universe empty. universe_participation_fit then SUCCEEDS (it is not an
+    exception -- the own-try-block test above covers the exception path) but returns
+    zero rows; run() must WARN, not silently log an uninformative INFO '0 cells, mean
+    |error| nan pp' summary as though nothing were wrong."""
+    base = _e2e_frames()
+    persons = base.persons.assign(
+        employment_status=["vollzeit", "nicht_erwerbstaetig", "vollzeit", "nicht_erwerbstaetig"],
+        age=["bad", "bad", "bad", "bad"],  # non-numeric -> every universe comes out empty
+    )
+    frames = PopulationFrames(persons, base.households, base.homes, None,
+                              "run_output", "x", "e2e_", _participation_universe_trips())
+
+    monkeypatch.setattr(R.spatial, "load_kreise", lambda crs: _e2e_kreise())
+    monkeypatch.setattr(R.spatial, "load_gemeinden", lambda crs: _e2e_gemeinden())
+    monkeypatch.setattr(R.spatial, "assign_geographies", _e2e_assign_geographies)
+    monkeypatch.setattr(R.C, "build_registry", _e2e_registry)
+    monkeypatch.setattr(R.PS, "load_population",
+                        lambda run_output_dir=None, sim_cache=None, prefix=None: frames)
+
+    out = tmp_path / "analysis_out"
+    ns = R._parse_args(["--run-output-dir", str(tmp_path), "--label", "empty-universe",
+                        "--analysis-out", str(out), "--no-geo"])
+    with caplog.at_level(logging.WARNING):
+        report = R.run(ns)
+
+    assert (out / "participation_universe_fit.csv").exists()
+    assert report["participation_universe_fit"] == []
+    assert any("NO (Kreis, control, category) cells" in r.message for r in caplog.records)
