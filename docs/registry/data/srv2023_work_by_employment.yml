@@ -1,0 +1,128 @@
+dataset: srv2023_work_by_employment
+title: SrV 2023 employed share and conditional work-participation rates per Kreis, 14+
+  (committed aggregate, SrV conditional half of the work_by_employment control target)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per surveyed
+  home Kreis (7 of the 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and has NO row)
+  plus one 03ZGB region-total row.
+crs: null
+roles:
+- calibration_target
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_education_by_age_by_kreis.csv in one run. Reads
+    SrV2023_Personen.csv (HHNR, PNR, V_ALTER, V_ERW, E_ANZ_WEGE, GEWICHT_P_ZENSUS,
+    MITTL_WERKTAG), SrV2023_Wege.csv (HHNR, PNR, E_ZWECK_9) and SrV2023_Haushalte.csv (HHNR,
+    AGS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_participation_universe.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file: srv2023_work_by_employment_by_kreis.csv (8 rows: 7 kreis + 1 03ZGB).
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup
+    tables: the file ships committed with every clone, no SrV table is listed in the
+    verifier at all, and no pipeline stage reads it - it is a BUILD-TIME input to the
+    work_by_employment target builder, which is why requirements.production is "optional".
+    Same treatment as the sibling srv2023_ticket_groups4_14plus_by_kreis. Definitions live in
+    braunschweig/calibration/srv_participation_universe.py; unit tests on synthetic SrV-shaped
+    frames (including the by-hand conditional rates, the raising universe guards and the
+    table invariants): tests/test_srv_participation_universe.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe (at_home_or_mobile, measured on the 2026-09-07 extraction of the 18,223-person
+  delivery): a valid non-negative GEWICHT_P_ZENSUS (0 dropped), E_ANZ_WEGE != -7 so the persons
+  away from home over the WHOLE reporting day are excluded (954 dropped, 5.24%), a household
+  that resolves to a Kreis (0 dropped) and age (V_ALTER) >= 14 (2,424 dropped of the 17,269
+  at-home-or-mobile persons, 14.04%, the 2 persons without a valid V_ALTER among them).
+  Universe = 14,845 persons. Every exclusion count is written into the committed file's own
+  "# Exclusions:" header line by the builder, not only into a run log.
+
+  Why the away-from-home persons are excluded (user decision 2026-09-05, spec section 2.1 of
+  issue #368): a synthetic population has no such state - every synthetic person exists and
+  starts the day at home - so a control target taken from the all-persons universe of
+  srv2023_participation_by_kreis.csv asks the population to reproduce a rate diluted by a state
+  it cannot represent. This is the ONLY definitional difference from that older table apart
+  from the employment conditioning and the 14+ bound.
+
+  Universe guards (the extraction raises, it never adapts): every MITTL_WERKTAG == 1 (pure
+  average-weekday Tuesday-Thursday delivery), every negative E_ANZ_WEGE == -7 (so the ">= 0"
+  universe filter drops exactly the away-from-home persons and nothing uncounted), and every
+  resolved Kreis inside the 8 ZGB Kreise.
+
+  Definitions: employed = V_ERW in {8, 9, 10, 11} (in Ausbildung/Lehre, full-time, part-time,
+  marginally employed). Code 8 is IN by decision Q5 of issue #368 - the MiD-side
+  employment_status classes the control targets include in_ausbildung, and ADR-0060 treats MiD
+  in_ausbildung (1.93%) and SrV V_ERW 8 (1.87%) as apples-to-apples; the same widening was
+  applied to srv2023_plan_structure_reference in the same commit so that the control and the
+  validation reference measure the same "employed". A person whose V_ERW is a missing code (-8
+  not surveyed, -10 implausible) is classed NOT employed: 11 persons of the 17,269 universe,
+  counted as n_missing_employment_code in the header. work = at least one leg with E_ZWECK_9 in
+  {1, 2} (Arbeit, dienstlich/geschaeftlich) on the reporting day, the same purpose set as
+  srv2023_participation_by_kreis.csv. 27 of 58,148 legs carry a missing E_ZWECK_9 code and can
+  match no purpose.
+
+  Known asymmetry to the MiD seed side (documented, NOT corrected): the seed column counts only
+  DIRECTLY RECORDED work legs (MiD W_RBW == 0, i.e. excluding legs reconstructed from a
+  "regelmaessiger beruflicher Weg" block). The SrV Wege file has no W_RBW counterpart, so no
+  such filter can be applied on this side.
+
+  Weight: GEWICHT_P_ZENSUS (person expansion to Zensus 2022 counts; the stratum-internal
+  GEWICHT_P must not be used across strata, ADR-0055). Kreis: first 5 digits of the zero-padded
+  8-digit household AGS joined via HHNR - never the survey design stratum ST_CODE.
+  Kreis-code-to-name mapping (canonical: braunschweig.analysis.spatial.ZGB8): 03101
+  Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154
+  Helmstedt, 03157 Peine, 03158 Wolfenbuettel.
+
+  Wolfsburg (03103) is NOT surveyed by SrV and has no row (the convention of
+  srv2023_participation_by_kreis.csv, whose consumer scripts/build_participation_target.py fills
+  Wolfsburg from the region total); a target builder must do the same and document it as an
+  assumption. The 03ZGB row is EXACTLY the union of the 7 kreis rows, so
+  sum(kreis n_unweighted) == 03ZGB n_unweighted holds by construction (enforced by
+  srv_participation_universe.check_invariants, which also enforces that the employed and
+  not-employed counts partition n_unweighted on every row and that every share is NaN or inside
+  [0, 1]). A share is NaN, never 0.0, when its conditioning class is empty in a Kreis.
+
+  Coverage caveat inherited from every SrV table: stratified PSU design over ~44 selected
+  municipalities, so per-Kreis rows extrapolate from the sampled municipalities and are
+  ASSUMPTION-grade for the full Kreis.
+
+  Measured 2026-09-07 (03ZGB row, n_unweighted = 14,845): employed_share = 0.5389,
+  p_work_employed = 0.7032, p_work_nonemployed = 0.0473. Per-Kreis employed_share ranges from
+  0.5093 (Salzgitter 03102) to 0.5567 (Peine 03157) and p_work_employed from 0.6724 (Peine
+  03157) to 0.7551 (Salzgitter 03102).
+notes: |
+  SrV conditional half of the work_by_employment Kreis control of issue #368 (spec section
+  2.2), which replaces the work_participation control. The target builder does NOT take four
+  shares straight from this table: it multiplies the EMPLOYED MARGIN of the blended
+  target2026_employment_status_by_kreis.csv (the sum of the classes chosen in decision Q5) with
+  the two conditional rates p_work_employed and p_work_nonemployed here. That margin-times-
+  conditional construction exists so that the new control and the existing employment_status
+  control cannot disagree on the employed margin: the two disagree on it by ~1.4 pp (this
+  table's 03ZGB employed_share 0.5389 against the blended target's Gesamt employed margin
+  0.5252 = vollzeit 0.3535 + teilzeit 0.1212 + geringfuegig 0.0303 + in_ausbildung 0.0202, read
+  from eqasim-data/data/braunschweig/targets/target2026_employment_status_by_kreis.csv on
+  2026-09-07; per-Kreis the blend spans 0.4970 to 0.5777), so taking four shares straight from
+  SrV would leave two hard controls pulling in opposite directions on the same margin.
+
+  The 03ZGB p_work_employed 0.7032 here and the at_home_only group_employed participation_work
+  0.7033 of srv2023_plan_structure_reference are the same quantity measured on the same universe
+  (the 0.0001 difference is the 14+ bound), which is the cross-check that the two SrV-side
+  definitions are now aligned. Both moved when V_ERW 8 entered the employed set: the
+  plan-structure value was 0.7087 with V_ERW {9, 10, 11}.
