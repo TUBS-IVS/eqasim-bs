@@ -112,6 +112,9 @@ notes: >-
   halves of test_leisure_education_participation.py). leisure_participation and
   escort_participation are UNCHANGED by this task. See
   tests/test_participation_universe_controls.py for the replacement's seed derivation,
-  registry entries and contradiction guards; a dedicated feature record for the
-  replacement mechanism itself is expected once ADR-0109 lands and the whole Plan B
-  feature closes.
+  registry entries and contradiction guards. The replacement mechanism now has its own
+  record, docs/registry/features/participation_universe_controls.yml (ADR-0109): its
+  seed derivations, universes, targets, OFF-path proofs, rate instrumentation and
+  pre-registered arm-4 expectations live THERE and are not repeated here; this record
+  keeps the two sub-controls Plan B did not touch (leisure_participation,
+  escort_participation) and the #224/#227 history of all four.

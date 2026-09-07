@@ -36,6 +36,7 @@ decisions:
 - ADR-0106
 - ADR-0107
 - ADR-0108
+- ADR-0109
 notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
   other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
   directory braunschweig.popsim.trips_stage reads, so both stages can never point at different

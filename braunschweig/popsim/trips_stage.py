@@ -499,8 +499,17 @@ def run(
         )
 
     _log_closure_share(table)
+    # A SNAPSHOT (dict(...)), never the live mapping: ClosureDwellModel.report is one dict
+    # that draw() mutates in place, and logging keeps the ARGUMENT in LogRecord.args and
+    # renders it lazily (LogRecord.getMessage() recomputes msg % args on every call), so a
+    # late-formatting handler would render the counters as they are at FORMAT time rather
+    # than at EMIT time. The same defect was found and fixed in the Phase B home-office
+    # donor pool (braunschweig/synthesis/commute_day/donor_pool.py, #374 fix round 2),
+    # where it was ACTIVE; here the dict is already final when this line runs, so the
+    # hazard is latent -- the snapshot keeps it that way for any later edit or deferred
+    # handler.
     logger.info("[trips_stage] closure dwell model (%s) report: %s",
-                closure_dwell_model, dwell_model.report)
+                closure_dwell_model, dict(dwell_model.report))
 
     logger.info(
         "[trips_stage] trip table built: %d trips for %d persons; "

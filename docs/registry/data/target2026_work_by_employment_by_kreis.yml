@@ -1,0 +1,107 @@
+dataset: target2026_work_by_employment_by_kreis
+title: Blended per-Kreis FINAL target for the work_by_employment control (employment_status
+  margin x SrV conditional work-trip rate, 14+)
+provider: derived in-repo from the committed blended employment_status target x the committed
+  SrV 2023 work-by-employment aggregate
+vintage: MiD 2023 x SrV 2023 (both via committed intermediates); target label 2026
+geography: the 8 ZGB Kreise plus a Gesamt row (ars5 keys); Wolfsburg (03103) has no SrV coverage
+  and takes the region-total conditional rates
+crs: null
+roles:
+- control
+- calibration_target
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/build_participation_universe_targets.py (optional --data /
+    --out-dir; no raw microdata, no network). It reads exactly two COMMITTED inputs:
+      - eqasim-data/data/braunschweig/targets/target2026_employment_status_by_kreis.csv, whose
+        employed MARGIN is the sum of the classes of attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES
+        (vollzeit + teilzeit + geringfuegig + in_ausbildung, decision Q5 of issue #368), and
+      - eqasim-data/data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv (data record
+        srv2023_work_by_employment), whose p_work_employed / p_work_nonemployed are the SrV
+        conditional rates.
+    The same run writes the three education targets (data record
+    target2026_education_by_age_by_kreis).
+  script: scripts/build_participation_universe_targets.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/targets/target2026_work_by_employment_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup tables
+    (which list the REGENERATE command instead): the file ships committed, so a production run
+    needs no acquisition step, and no target2026_* or srv2023_* file is listed in the verifier at
+    all. requirements.production is "optional" following the target2026_* family convention
+    recorded in the umbrella record blended_kreis_targets, exactly as for the sibling
+    target2026_pt_ticket_group4_by_kreis - although the popsim stage DOES read this file whenever
+    braunschweig.population.popsim.work_by_employment_kreis_control is "on" (the default), and
+    kreis_attribute_control.load_kreis_target fails fast on a missing file, a missing category
+    column, a missing Gesamt/03ZGB row or a row that does not sum to 1 within
+    TARGET_SHARE_TOLERANCE (1e-3). Builder and table invariants:
+    tests/test_participation_universe_targets.py; the registry entry and its seed:
+    tests/test_participation_universe_controls.py.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived (source restrictions apply)
+  restricted: false
+  redistribution: restricted
+limitations: |
+  FINAL target - consume with kreis_attribute_control prior_n = 0 (stated in the file header).
+  Columns: ars5, source, n_effective, then the four shares employed_work / employed_nowork /
+  nonemployed_work / nonemployed_nowork (kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES)
+  summing to 1. Universe: persons 14+ (the entry's min_age, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS), so
+  the shares are shares of the 14+ population, NOT of all persons.
+
+  CONSTRUCTION (decision Q1 of issue #368, ADR-0109) - margin x conditional, per Kreis:
+  employed_work = MARGIN * p_work_employed, employed_nowork = MARGIN * (1 - p_work_employed),
+  nonemployed_work = (1 - MARGIN) * p_work_nonemployed, nonemployed_nowork =
+  (1 - MARGIN) * (1 - p_work_nonemployed), each rounded to 4 dp independently (a row can therefore
+  sit up to ~4e-4 off 1, inside the 1e-3 consumer tolerance). WHY not four shares straight from
+  SrV: the SrV employed share (0.5389 for 03ZGB) and the blended employment_status margin (0.5252
+  Gesamt) disagree by about 1.4 pp, so four SrV shares would put two HARD controls on incompatible
+  employed marginals; taking the margin from the file the employment_status control already uses
+  makes the two agree by construction and confines the survey disagreement to the conditional
+  rates. The per-Kreis blended margin spans 0.4444 (Wolfsburg 03103, a pure-MiD row) to 0.5777
+  (Gifhorn 03151).
+
+  ASSUMPTION (Wolfsburg 03103): not covered by SrV, so its row combines ITS OWN employment_status
+  margin with the 03ZGB region-total conditional rates (source column
+  "employment_status_target x srv_region_total") - the convention of
+  scripts/build_participation_target.py and target2026_has_ebike. The Gesamt row uses the Gesamt
+  margin with the same 03ZGB rates, because 03ZGB is the only committed region-total conditional.
+
+  ASSUMPTION (universe mismatch, controller ruling R15 - documented, NOT reconciled): the margin's
+  universe is persons 14+ with a valid V_ERW; the conditional rates' universe is persons 14+
+  INCLUDING those with a missing/implausible V_ERW code (classed non-employed on the SrV side).
+  The two differ by at most 11 persons of the 14,845-person 14+ universe (0.07 pp on the employed
+  share); the exact count within the 14+ subset is not measured, 11 is an upper bound taken from
+  the aggregate's own "# Exclusions:" header line.
+
+  n_effective is the SrV CONDITIONAL row's n_unweighted (03101: 3629), not the margin row's own
+  (03101: 1902). It exists only to size kreis_attribute_control._shrunk_shares' Dirichlet prior and
+  is INERT while the control is consumed with prior_n = 0; if a prior_n > 0 is ever set for this
+  control, the SrV row's roughly 2x larger count would shrink with roughly twice the confidence the
+  margin row alone would justify.
+
+  Coverage caveat inherited from the SrV side: stratified PSU design over about 44 selected
+  municipalities, so per-Kreis conditional rates are ASSUMPTION-grade for a full Kreis (see the
+  data record srv2023_work_by_employment for the full universe, weighting and exclusion account -
+  it is not repeated here).
+notes: |
+  Steers the work_by_employment person-level Kreis control (tier hard, min_age 14) of issue #368,
+  which REPLACES the all-persons work_participation control by default (ADR-0109; feature record
+  participation_universe_controls). Hitting these shares is control FIT, never validation: the
+  quantity that decides whether the package worked is the SrV plan-structure comparison of
+  braunschweig.analysis.synthesis.plan_structure_vs_srv, and NO run has executed this control yet -
+  the realised fit is unknown and every expectation is an assumption until arm 4 measures it.
+  Sibling record for the three education targets built in the same run:
+  target2026_education_by_age_by_kreis. Umbrella record for the whole target2026_* family (family
+  conventions, licensing, the glob): blended_kreis_targets.

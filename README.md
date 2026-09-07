@@ -218,6 +218,8 @@ tables keep all reference comparisons working.
 | SrV primary-distance targets (committed) | `python scripts/extract_srv_primary_distance_targets.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_commute_distance_by_kreis.csv`, `braunschweig/srv/srv2023_education_distance_by_kreis_level.csv`, `braunschweig/srv/srv2023_commute_distance_quantiles_by_kreis.csv`, `braunschweig/srv/srv2023_commute_distance_sensitivity_by_kreis.csv` (sensitivity variants, not a target) |
 | SrV work-participation reference (committed) | `python scripts/extract_srv_work_participation.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_work_participation_by_kreis.csv` |
 | SrV plan-structure reference (committed) | `python scripts/extract_srv_plan_structure.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only) | `braunschweig/srv/srv2023_plan_structure_reference.csv` — read by the `plan_structure_vs_srv` analysis stage, which aborts if it is missing |
+| SrV participation-universe aggregates (committed) | `python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run | `braunschweig/srv/srv2023_work_by_employment_by_kreis.csv`, `braunschweig/srv/srv2023_education_by_age_by_kreis.csv` — build-time inputs of the participation-universe targets below, not read at run time |
+| Participation-universe Kreis targets (committed) | `python scripts/build_participation_universe_targets.py` (no raw data: reads the two SrV aggregates above and the committed `target2026_employment_status_by_kreis.csv`) | `braunschweig/targets/target2026_work_by_employment_by_kreis.csv`, `braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv` — read by the popsim stage whenever the controls of issue #368 are on (the default) |
 | MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below). The model's own run-time donor pool (data record `mid2023_home_office_day_donors`) has no separate file: it is rebuilt fresh from the raw MiD delivery on every run. | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
 
 Two diagnostics check the synthesised fleet against those committed references
@@ -265,12 +267,17 @@ python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test.yml
 ```
 
 **Plan-structure config keys (`popsim_mid` only).** These seven keys govern how a
-MiD donor's reporting day becomes a MATSim plan. All are default ON in
-`configs/base_bs.yml`, which stays the single home of every flag and its
-default value (the table is here because the three trip-side keys must be
-turned OFF on the ENTD path, see below); the rationale is ADR-0106 / ADR-0107 /
-ADR-0108 and the feature records `diary_plan_match`, `rbw_leg_convention`,
-`home_closure_model`.
+MiD donor's reporting day becomes a MATSim plan — and five of them
+(`diary_plan_match`, `exclude_holiday_plan_sources`, `exclude_rbw_legs`,
+`drop_leading_arrive_home_leg`, `closure_dwell_model`) reach further than the
+plan-source pool and the trip build: since issue #374 they steer the Phase B
+home-office **donor pool** as well, so one setting decides both which diaries a
+plan may come from and which diaries a home-office day may be spliced in from.
+All are default ON in `configs/base_bs.yml`, which stays the single home of
+every flag and its default value (the table is here because the three trip-side
+keys must be turned OFF on the ENTD path, see below); the rationale is
+ADR-0106 / ADR-0107 / ADR-0108 and the feature records `diary_plan_match`,
+`rbw_leg_convention`, `home_closure_model`, `commute_day_state`.
 
 | Key (prefix `braunschweig.population.popsim.`) | Effect |
 |---|---|
@@ -290,6 +297,26 @@ have, so the ENTD donor source **rejects** any non-default value: the two
 `popsim_open` fixture configs set them to `false` / `fixed_1h` explicitly.
 (`closure_dwell_min_obs` needs no such rejection — it only sizes the empirical
 model's cells, which that rejection already prevents from ever being built.)
+
+**Participation-universe control keys (`popsim_mid` only).** Five more keys
+decide WHICH persons the trip-participation controls constrain (issue #368,
+ADR-0109, feature record `participation_universe_controls`). Two of them replace
+an older control by default and the two they replace are therefore OFF; the
+defaults themselves live only in `configs/base_bs.yml`, as for every other flag.
+Every Kreis attribute control is inert for a non-MiD donor source, so no ENTD
+rejection is needed here.
+
+| Key (prefix `braunschweig.population.popsim.`) | Effect |
+|---|---|
+| `work_by_employment_kreis_control` | Constrains four MECE cells over persons 14+ — employment status × whether the realised plan has a directly recorded work leg — instead of one all-persons work share. **Replaces** `work_participation_kreis_control` |
+| `work_participation_kreis_control` | The replaced all-persons work-participation control; kept registered (and its target file committed) for ablation configs |
+| `education_by_age_kreis_control` | One toggle for three 2-cell (`edu`/`noedu`) controls on the age ranges 0–5, 6–17 and 18+, each with a census-exact band total. **Replaces** `education_participation_kreis_control` |
+| `education_participation_kreis_control` | The replaced all-persons education-participation control; likewise kept for ablation configs |
+| `diary_match_hard_employment` | Forbids the diary plan match from relaxing the `employed` match key, so a person's employment attribute and their work diary cannot come from two different MiD respondents; surviving crossings are counted and logged |
+
+Enabling a replacement together with the control it replaces — or a replacement
+while `employment_status_kreis_control` is off — fails at **config time** with a
+`ValueError` naming both keys, rather than double-constraining the same persons.
 
 **Local open-data smokes** (no restricted MiD data needed):
 

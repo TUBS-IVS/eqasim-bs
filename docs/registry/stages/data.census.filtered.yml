@@ -39,6 +39,7 @@ features:
 - ipf_synthesis_legacy
 - kreis_income_control
 - ownership_grid_1km
+- participation_universe_controls
 - placement_income_l2
 - popsim_method
 - sex_aware_couples
@@ -49,6 +50,7 @@ decisions:
 - ADR-0092
 - ADR-0106
 - ADR-0108
+- ADR-0109
 notes: >-
   Two plan-structure flags are declared and read HERE as well as in the stages that own them
   (#365 / #367): braunschweig.population.popsim.diary_plan_match arms the guard that RAISES if a
@@ -59,3 +61,19 @@ notes: >-
   member-completion branch of the seed build, which is the only one carrying the src_* plan-source
   facts they need; the ENTD branch and the legacy load_mid_seed branch keep their previous seed
   byte-identically. Declaring the keys here means THIS stage's cache hash tracks them.
+  PARTICIPATION-UNIVERSE CONTROLS (#368, ADR-0109, feature participation_universe_controls): four
+  more toggles are declared and read here --
+  braunschweig.population.popsim.work_by_employment_kreis_control (default "on") with
+  .work_participation_kreis_control (now "off"), and .education_by_age_kreis_control (default "on",
+  ONE toggle for the three age-range entries education_0_5 / education_6_17 / education_18plus)
+  with .education_participation_kreis_control (now "off"). Enabling a replacement together with its
+  predecessor, or a replacement while .employment_status_kreis_control is off, RAISES at config
+  time in source_resolution.active_kreis_entries and names both keys in full. Two further keys the
+  stage did NOT declare before are declared now, because the new seed columns must count exactly
+  the legs the trip build keeps and map education exactly as the trip build maps it:
+  .exclude_rbw_legs and .escort_passive_education (the same keys and defaults
+  braunschweig.popsim.trips_stage / braunschweig.popsim.completed_donor declare) -- which means
+  changing either now invalidates THIS stage's cache as well, intended, because both change the
+  seed. The two seed columns (work_by_employment, education_flag) are derived on both MiD seed
+  paths only when a universe entry is active; every Kreis attribute control is empty for a non-MiD
+  source, so the ENTD path is untouched.

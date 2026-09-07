@@ -30,6 +30,7 @@ production:
   flags:
   - braunschweig.population.popsim.diary_plan_match
   - braunschweig.population.popsim.exclude_holiday_plan_sources
+  - braunschweig.population.popsim.diary_match_hard_employment
 introduced:
   issue: '#365'
   pr: null
@@ -49,6 +50,12 @@ evidence:
   - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_raises_for_mobile_803_source
   - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_keeps_immobile_803_source
   - tests/test_completed_donor_diary_match.py::test_kept_immobile_803_source_survives_the_seed_guard_and_seeds_class_zero
+  - tests/test_weekend_plan_match.py
+  - tests/test_weekend_plan_match.py::test_match_person_with_empty_hard_keys_reproduces_todays_draw_sequence
+  - tests/test_weekend_plan_match.py::test_match_person_never_relaxes_a_hard_key
+  - tests/test_diary_plan_match.py::test_reassign_reports_zero_crossings_with_hard_employment_and_counts_them_without
+  - tests/test_diary_plan_match.py::test_reassign_warns_when_a_crossing_survives_hard_employment
+  - tests/test_completed_donor_diary_match.py::test_diary_match_keeps_the_employment_boundary_and_reports_the_crossing_rate
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_completed_donor_stage.py::test_build_completed_donor_off_matches_pre_task_inline_pipeline
@@ -84,6 +91,17 @@ evidence:
       correctly behaving production run; it is instead seeded as 0 trips (its plan is empty by
       construction) rather than age-band imputed, and the kept/must-have-been-remapped counts are
       logged as rates. The guard requires the MiD column mobil and fails fast without it.
+      SINCE #368 (ADR-0109) the pass also counts DiaryMatchReport.n_crossed_employment_boundary --
+      remaps whose donor's employment class (P_TAET in EMPLOYED_TAET, the same derivation the
+      employed match key uses) differs from the receiving person's -- and logs it as n/total with a
+      percentage, at WARNING when braunschweig.population.popsim.diary_match_hard_employment is on
+      and a crossing survived (with the key hard the only way to cross is the whole-pool fallback,
+      which fires when no donor at all shares the person's employment class), INFO otherwise. The
+      match-level line now states the flag as well, because the level scale depends on it: with one
+      hard key the levels count SOFT relaxations (0..4) instead of the previous 0..5, so an arm-4
+      histogram is not directly comparable to arm 3's. On the arm-3 100 % run only 2 of the 74,898
+      remaps relaxed past employed (match_level_counts={0: 74896, 3: 2}), so the flag is a GUARD
+      against a future pool composition rather than a correction of a measured defect.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
