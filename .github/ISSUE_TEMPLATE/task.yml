@@ -1,0 +1,38 @@
+name: Task
+description: Work with a defined end that is not a bug, feature, analysis or decision (refactoring, server run, config wiring, tooling, docs)
+title: "<module or run>: <what is done>"
+type: Task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Conventions: `docs/codebase/notes/issue-conventions.md`. Tooling/docs tasks carry `area:tooling` / `area:docs` and no `step:*`; model tasks carry both.
+  - type: input
+    id: stages
+    attributes:
+      label: Stages
+      description: Registry stage id(s) touched, or `none` for tooling/docs.
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What and why
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state (tests green, config committed, run manifest recorded, docs rebuilt).
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Behaviour change?
+      description: Byte-identical outputs expected? If not, what changes and how it is verified.
+  - type: input
+    id: links
+    attributes:
+      label: Linked issue / PR / ADR

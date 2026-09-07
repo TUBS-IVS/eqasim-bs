@@ -50,8 +50,11 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
 ## Issue-first for newly discovered work
 
 When a new feature/gap/idea surfaces mid-work, **propose it first**, then open a GitHub
-issue (`feature` / `bug` / `decision` template) **in `TUBS-IVS/eqasim-bs`**. Nothing
-incidental gets forgotten. Decisions graduate into an ADR in `docs/DECISIONS.md`.
+issue **in `TUBS-IVS/eqasim-bs`** with its native type (Bug / Feature / Analysis / Decision /
+Task), one `step:*` and one or two `area:*` labels, and a `Stages:` line naming the registry
+stage ids; the title reads `<stage or attribute>: <finding>`. The full rule is
+[docs/codebase/notes/issue-conventions.md](docs/codebase/notes/issue-conventions.md).
+Nothing incidental gets forgotten. Decisions graduate into an ADR under `docs/decisions/`.
 
 ## Non-negotiable rules (summary — full text in CLAUDE.md)
 

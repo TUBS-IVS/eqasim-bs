@@ -1,0 +1,52 @@
+name: Feature
+description: A model extension or data integration (flag-gated, OFF path byte-identical)
+title: "<stage or attribute>: <what is produced>"
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Conventions: `docs/codebase/notes/issue-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage. Programme steps get a parent (`gh issue edit N --parent M`).
+  - type: input
+    id: stages
+    attributes:
+      label: Stages
+      description: Registry stage id(s) touched or added (docs/registry/stages/). `unknown` is allowed.
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should be added and why. One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: flag
+    attributes:
+      label: Config flag (default ON/OFF) and OFF-path expectation
+      description: New behaviour MUST be flag-gated. Flag name, default, and that the OFF path stays byte-identical (tested).
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference data / source
+      description: The committed CSV / Zensus / MiD / SrV table or publication this is grounded in. No invented reference values; label assumptions as ASSUMPTION.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validated against
+      description: Which observed reference the result is compared to. Convergence is NOT validation.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we know it is done and correct (tests, A/B, registry records).
+  - type: input
+    id: links
+    attributes:
+      label: Linked ADR / parent issue
+      placeholder: "ADR-00NN, parent #NN"

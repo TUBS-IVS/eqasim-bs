@@ -1,0 +1,48 @@
+name: Bug
+description: A wrong, non-reproducible or scientifically indefensible result, including a silent fallback
+title: "<stage or attribute>: <what is wrong>"
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Conventions: `docs/codebase/notes/issue-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage.
+  - type: input
+    id: stages
+    attributes:
+      label: Stages
+      description: Registry stage id(s) from docs/registry/stages/, e.g. `synthesis.population.trips`. `unknown` is allowed.
+      placeholder: "synthesis.population.trips"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Exact config (base + overlay), sampling rate, command, environment (local / server), commit.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: Expected behaviour or value with its committed reference (path), vs what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: fallback
+    attributes:
+      label: Suspected cause / silent fallback
+      description: Is a primary method silently falling back? State the primary-vs-fallback rate if known.
+  - type: input
+    id: links
+    attributes:
+      label: Linked ADR / PR / run manifest
+      placeholder: "ADR-00NN, PR #NN, docs/runs/<run_id>.yml"
