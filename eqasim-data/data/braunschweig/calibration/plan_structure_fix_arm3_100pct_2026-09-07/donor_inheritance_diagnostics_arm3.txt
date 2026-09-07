@@ -1,0 +1,37 @@
+ALL SYNTHETIC: persons 1002332, trips 3655159, work acts 449692, <2h 0.202, mean 5.72; same-purpose repeats 0.147 of pairs, 0.107 of trips
+   work->work pairs 72531 (0.161 of work acts), <2h 0.649
+   by (W_ZWECK of trip to work, W_ZWECK of next trip):
+                       n   lt2h  mean_h
+W_ZWECK nxt_zweck                      
+2.0     2.0        30512  0.679   1.613
+1.0     2.0        25622  0.654   2.141
+        1.0        10358  0.634   3.664
+2.0     1.0         6039  0.497   2.479
+   repeats by purpose: {'leisure': 80545, 'home': 76278, 'work': 72531, 'other': 66031, 'education': 36333, 'shop': 33197, 'escort': 26281}
+   repeats by purpose, share of that purpose's trips: {'education': 0.143, 'escort': 0.152, 'home': 0.05, 'leisure': 0.145, 'other': 0.16, 'shop': 0.112, 'work': 0.161}
+UNIQUE DONORS (MiD pool as realised): persons 20296, trips 73709, work acts 9085, <2h 0.190, mean 5.81; same-purpose repeats 0.148 of pairs, 0.107 of trips
+   work->work pairs 1347 (0.148 of work acts), <2h 0.633
+   by (W_ZWECK of trip to work, W_ZWECK of next trip):
+                     n   lt2h  mean_h
+W_ZWECK nxt_zweck                    
+2.0     2.0        572  0.687   1.688
+1.0     2.0        443  0.528   2.456
+        1.0        231  0.684   2.047
+2.0     1.0        101  0.673   1.924
+   repeats by purpose: {'other': 1649, 'home': 1612, 'leisure': 1535, 'work': 1347, 'shop': 717, 'education': 555, 'escort': 469}
+   repeats by purpose, share of that purpose's trips: {'education': 0.136, 'escort': 0.146, 'home': 0.052, 'leisure': 0.15, 'other': 0.176, 'shop': 0.104, 'work': 0.148}
+work->work: W_RBW of trip {0.0: 72531}
+work->work sample of 12 (person_id, trip_index, dep, arr, nxt_dep, W_ZWECK, nxt_zweck, W_SZ, W_AZ, wegmin):
+     person_id  trip_index  departure_time  arrival_time  nxt_dep  W_ZWECK  nxt_zweck      W_SZ      W_AZ  wegmin  is_synthetic_closure
+10           3           0         14176.0       15676.0  15676.0      1.0        1.0  04:00:00  04:25:00    25.0                 False
+334        112           2         35349.0       38649.0  50049.0      1.0        2.0  09:30:00  10:25:00    55.0                 False
+454        146           0         21264.0       23064.0  26364.0      1.0        2.0  06:20:00  06:50:00    30.0                 False
+455        146           1         26364.0       29064.0  34464.0      2.0        2.0  07:45:00  08:30:00    45.0                 False
+456        146           2         34464.0       43464.0  47064.0      2.0        2.0  10:00:00  12:30:00   150.0                 False
+457        146           3         47064.0       49464.0  56964.0      2.0        2.0  13:30:00  14:10:00    40.0                 False
+541        176           0         27390.0       27990.0  34590.0      1.0        2.0  08:00:00  08:10:00    10.0                 False
+642        207           0         46342.0       47842.0  51742.0      1.0        2.0  12:45:00  13:10:00    25.0                 False
+709        227           0         18489.0       19089.0  19989.0      1.0        2.0  04:50:00  05:00:00    10.0                 False
+710        227           1         19989.0       26289.0  26289.0      2.0        2.0  05:15:00  07:00:00   105.0                 False
+711        227           2         26289.0       29889.0  33489.0      2.0        2.0  07:00:00  08:00:00    60.0                 False
+712        227           3         33489.0       37989.0  40689.0      2.0        2.0  09:00:00  10:15:00    75.0                 False

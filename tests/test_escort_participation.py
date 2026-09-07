@@ -211,10 +211,10 @@ def _write_mini_mid_with_escort_wege(tmp: Path):
         "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1\n"
         "11;1;1.0;40;1;1;1;5\n12;2;1.0;10;2;1;1;2\n13;3;1.0;25;1;1;1;1\n", encoding="utf-8")
     (tmp / "MiD2023_Wege.csv").write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "1;11;101;6;4;8;0;8;30;5.0;30\n"      # p11: ACTIVE escort
-        "2;12;103;13;1;9;0;9;20;2.0;20\n"     # p12: PASSIVE escort only
-        "3;13;104;1;1;9;0;9;20;2.0;20\n",     # p13: work only
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "1;11;101;6;4;8;0;8;30;5.0;30;0;1\n"      # p11: ACTIVE escort
+        "2;12;103;13;1;9;0;9;20;2.0;20;0;1\n"     # p12: PASSIVE escort only
+        "3;13;104;1;1;9;0;9;20;2.0;20;0;1\n",     # p13: work only
         encoding="utf-8")
 
 
@@ -237,9 +237,9 @@ def test_load_mid_seed_derives_escort_participation_when_active(tmp_path):
 def test_project_completed_seed_derives_escort_participation(tmp_path):
     from braunschweig.popsim import sources
     (tmp_path / "MiD2023_Wege.csv").write_text(
-        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1\n"
-        "h1;p1;101;6;4;8;0;8;30;5.0;30\n"
-        "h2;p2;103;13;1;9;0;9;20;2.0;20\n", encoding="utf-8")
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
+        "h1;p1;101;6;4;8;0;8;30;5.0;30;0;1\n"
+        "h2;p2;103;13;1;9;0;9;20;2.0;20;0;1\n", encoding="utf-8")
     cols = sources.get_source("mid").seed_columns()
     households = pd.DataFrame({
         cols.household_id: ["h1", "h2"],

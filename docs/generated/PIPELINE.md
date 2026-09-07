@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 98 stages, 246 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 99 stages, 249 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -30,6 +30,7 @@ flowchart LR
     spatial["Spatial base data"]
     validation["Validation"]
     work["Work locations"]
+    attributes --> analysis
     attributes --> behavior
     attributes --> cordon
     attributes --> education
@@ -39,6 +40,7 @@ flowchart LR
     attributes --> population
     attributes --> validation
     attributes --> work
+    behavior --> analysis
     behavior --> infrastructure
     behavior --> matsim
     behavior --> secondary
@@ -58,6 +60,7 @@ flowchart LR
     fleet --> infrastructure
     fleet --> matsim
     freight --> matsim
+    home --> analysis
     home --> behavior
     home --> education
     home --> fleet
@@ -105,6 +108,7 @@ flowchart LR
 | `braunschweig.analysis.reference.srv.commute_distance` | validation | x | -- | -- |
 | `braunschweig.analysis.simwrapper_export` | analysis | x | -- | -- |
 | `braunschweig.analysis.synthesis.commute_distance_by_kreis` | validation | x | -- | -- |
+| `braunschweig.analysis.synthesis.plan_structure_vs_srv` | analysis | x | -- | -- |
 | `braunschweig.analysis.synthesis.work_participation_by_kreis` | validation | x | -- | -- |
 | `braunschweig.analysis.verbindungen_validation` | validation | x | -- | -- |
 | `braunschweig.data.alkis` | spatial | x | x | x |

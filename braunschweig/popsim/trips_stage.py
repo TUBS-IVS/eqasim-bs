@@ -24,8 +24,12 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim import closure_dwell as _closure_dwell
+from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as popsim_trips
+from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
+from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
 # Authoritative plan-time bound lives in plan_validation (where bound-exceeding
 # persons are classified unfixable + resampled); re-exported here for the final
 # backstop assertion and for tests referencing trips_stage.MAX_PLAN_TIME_SECONDS.
@@ -41,9 +45,18 @@ logger = logging.getLogger(__name__)
 # canonical statement in braunschweig.popsim.stage.validate(); the deferred names cover
 # the function-level `from braunschweig.popsim import sources` plus the source adapters
 # one level deep, whose build_trips() IS the trip construction for the active donor.
+# closure_dwell shapes the synthesised return-home trip's dwell time (and therefore
+# every closed chain's times), so it belongs in the token exactly like trips.py and
+# plan_validation.py. diary_facts is hashed although this stage never CALLS it: its
+# facts decide (in completed_donor) which donor diaries are realisable plan sources
+# and therefore which diaries this stage builds trips from, so a change there changes
+# this stage's input semantics; over-hashing only costs a cache rebuild, while
+# under-hashing silently serves stale trips (the 2026-08-19 hazard above).
 _HELPER_MODULES = (
     popsim_trips,
     _plan_validation,
+    _closure_dwell,
+    _diary_facts,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -52,6 +65,11 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources.entd_diary_matching",
     "braunschweig.popsim.sources.entd_trips",
     "braunschweig.popsim.sources.mid",
+    # Leaf module holding this stage's config-key constants (imported inside
+    # configure()/execute() to avoid a heavy top-level import of the popsim stage
+    # package). Hashed so a key rename or a changed declared default cannot serve
+    # a cached trip table built under the old option surface.
+    "braunschweig.popsim.stage.config_keys",
 )
 
 
@@ -142,6 +160,179 @@ def _resolve_resample_cell_col(persons: pd.DataFrame) -> str | None:
     return None
 
 
+# Accepted values of the closure_dwell_model option (config key
+# braunschweig.population.popsim.closure_dwell_model).
+CLOSURE_DWELL_MODELS = ("empirical", "fixed_1h")
+
+# Default minimum observations per (purpose x arrival band) cell of the empirical
+# closure-dwell model (config key
+# braunschweig.population.popsim.closure_dwell_min_obs). Mirrors
+# ClosureDwellModel.from_trips' own default; declared here because this module owns
+# the stage-level default the config key is registered with.
+DEFAULT_CLOSURE_DWELL_MIN_OBS = 30
+
+
+def _donor_diary_frame(persons: pd.DataFrame) -> pd.DataFrame:
+    """Return one surrogate person per distinct donor diary used by ``persons``.
+
+    The empirical closure dwell model must be estimated on the DONOR diaries, not
+    on the synthetic population: a donor diary executed by 500 synthetic persons
+    is still ONE observation of that day's activity durations, and pooling it 500
+    times would weight the empirical distribution by the synthetic expansion
+    factor instead of the survey.  This helper therefore reduces ``persons`` to
+    its unique donor-key pairs and gives each a surrogate ``person_id`` (0..n-1)
+    for :func:`braunschweig.popsim.trips.build_trip_table`.
+
+    The donor keys are ``(source_H_ID, source_P_ID)`` when present -- the plan
+    source a synthetic person actually executes after member completion / the
+    weekend and diary plan matches -- and ``(H_ID, P_ID)`` otherwise; the same
+    precedence ``build_trip_table`` itself applies, so the pooled diaries are
+    exactly the diaries the trip table is built from.  The path taken is logged
+    (no silent key downgrade).
+
+    Parameters
+    ----------
+    persons:
+        Synthetic persons with ``H_ID`` / ``P_ID`` (optionally ``source_H_ID`` /
+        ``source_P_ID``).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``person_id`` (surrogate, 0..n-1), ``H_ID``, ``P_ID``; one row per
+        distinct donor diary.
+    """
+    has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
+    household_key = persons["source_H_ID"] if has_source else persons["H_ID"]
+    person_key = persons["source_P_ID"] if has_source else persons["P_ID"]
+    logger.info(
+        "[trips_stage] closure dwell donor diaries keyed by %s",
+        "(source_H_ID, source_P_ID)" if has_source else "(H_ID, P_ID)",
+    )
+    pairs = (
+        pd.DataFrame({"H_ID": household_key.to_numpy(), "P_ID": person_key.to_numpy()})
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    pairs.insert(0, "person_id", np.arange(len(pairs)))
+    n_persons = len(persons)
+    n_diaries = len(pairs)
+    logger.info(
+        "[trips_stage] closure dwell donor diaries: %d unique donor diaries / %d persons (%.1f%%)",
+        n_diaries, n_persons, 100.0 * n_diaries / max(n_persons, 1),
+    )
+    return pairs
+
+
+def build_closure_dwell_model(
+    persons: pd.DataFrame,
+    mid_wege: pd.DataFrame,
+    *,
+    closure_dwell_model: str,
+    random_seed: int,
+    closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+    escort_purpose: bool = False,
+    escort_passive_education: bool = False,
+    explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
+):
+    """Build the :class:`ClosureDwellModel` selected by ``closure_dwell_model``.
+
+    ``"fixed_1h"`` returns the constant-dwell model (``HOME_CLOSURE_DWELL_S``),
+    i.e. the behaviour that predates issue #367.  ``"empirical"`` estimates the
+    dwell distribution from the DONOR diaries this stage builds trips from (see
+    :func:`_donor_diary_frame`), pooled by (following purpose, arrival band).
+
+    The donor trip table is built with the SAME purpose/leg flags as the main
+    trip table, because the empirical pools are stratified by
+    ``following_purpose``: building the pools with a different purpose
+    vocabulary would send every draw of a flag-specific purpose (e.g.
+    ``"escort"``) into the model's purpose-marginal fallback.
+
+    Parameters
+    ----------
+    persons:
+        Synthetic persons (donor keys only are used).
+    mid_wege:
+        The donor MiD Wege table.
+    closure_dwell_model:
+        One of :data:`CLOSURE_DWELL_MODELS`.
+    random_seed:
+        Base seed; the model draws from
+        ``RandomState(random_seed + CLOSURE_SEED_OFFSET)``, a child stream
+        decorrelated from the jitter / resample / imputation streams.
+    closure_dwell_min_obs:
+        Minimum observations a ``(purpose, arrival band)`` cell must hold to be
+        drawn from directly; a thinner cell falls back to the purpose marginal
+        (config key ``braunschweig.population.popsim.closure_dwell_min_obs``).
+        Must be a positive integer. Inert for ``"fixed_1h"``.
+
+    Returns
+    -------
+    ClosureDwellModel
+
+    Raises
+    ------
+    ValueError
+        If ``closure_dwell_model`` is not one of :data:`CLOSURE_DWELL_MODELS`,
+        or if ``closure_dwell_min_obs`` is not a positive integer.
+    """
+    if int(closure_dwell_min_obs) < 1:
+        raise ValueError(
+            f"[trips_stage] closure_dwell_min_obs={closure_dwell_min_obs!r} must be a "
+            "positive integer (config key "
+            "braunschweig.population.popsim.closure_dwell_min_obs); a cell threshold "
+            "below 1 would make the purpose-marginal fallback unreachable.")
+    if closure_dwell_model == "fixed_1h":
+        return ClosureDwellModel.fixed(HOME_CLOSURE_DWELL_S)
+    if closure_dwell_model != "empirical":
+        raise ValueError(
+            f"[trips_stage] closure_dwell_model={closure_dwell_model!r} is not supported; "
+            f"expected one of {list(CLOSURE_DWELL_MODELS)} (config key "
+            f"braunschweig.population.popsim.closure_dwell_model)."
+        )
+
+    donor_trips = popsim_trips.build_trip_table(
+        _donor_diary_frame(persons), mid_wege,
+        escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+    )
+    return ClosureDwellModel.from_trips(
+        donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET),
+        min_obs=int(closure_dwell_min_obs),
+    )
+
+
+def _log_closure_share(table: pd.DataFrame) -> None:
+    """Log how many trips / persons carry a SYNTHESISED chain closure.
+
+    The closure is a modelling assumption, not observed behaviour, so its share is
+    reported as an explicit rate (CLAUDE.md fallback transparency) rather than left
+    implicit in the trip count.
+    """
+    if "is_synthetic_closure" not in table.columns:
+        logger.warning(
+            "[trips_stage] no 'is_synthetic_closure' column in the trip table; the "
+            "synthetic-closure share cannot be reported (PlanValidator.repair_trips "
+            "always adds it -- a missing column means repair was skipped)."
+        )
+        return
+    closure = table["is_synthetic_closure"].fillna(False).astype(bool)
+    n_trips = len(table)
+    n_persons = table["person_id"].nunique()
+    n_closure = int(closure.sum())
+    n_persons_closed = table.loc[closure, "person_id"].nunique()
+    logger.info(
+        "[trips_stage] synthetic closure trips: %d/%d trips (%.1f%%); persons closed: %d/%d (%.1f%%)",
+        n_closure, n_trips, 100.0 * n_closure / max(n_trips, 1),
+        n_persons_closed, n_persons, 100.0 * n_persons_closed / max(n_persons, 1),
+    )
+
+
 def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     """Apply the eqasim per-person departure-time jitter to a trips table.
 
@@ -219,6 +410,10 @@ def run(
     escort_purpose: bool = False,
     escort_passive_education: bool = False,
     explicit_round_trip_purposes: bool = True,
+    exclude_rbw_legs: bool = False,
+    drop_leading_arrive_home_leg: bool = False,
+    closure_dwell_model: str = "fixed_1h",
+    closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -237,6 +432,26 @@ def run(
     escort_passive_education:
         map the passive escort leg (MiD W_ZWECK 13) to 'education' instead of
         'escort' (issue #256). Requires escort_purpose=True.
+    exclude_rbw_legs:
+        drop rbW legs (``W_RBW == 1``, the regelmaessiger-beruflicher-Weg summary
+        records) before the join (issue #366). Requires the ``W_RBW`` column.
+        Default False keeps the OFF path byte-identical.
+    drop_leading_arrive_home_leg:
+        drop a donor's leading "arrive home from elsewhere" leg (``W_SO1 == 2``
+        with a home ``W_ZWECK``), which precedes the observed diary window
+        (issue #366). Requires the ``W_SO1`` column. Default False keeps the OFF
+        path byte-identical.
+    closure_dwell_model:
+        dwell-time model for the SYNTHESISED return-home trip that closes a chain
+        not ending at home (issue #367): ``"empirical"`` draws the dwell from the
+        donor diaries' observed activity durations (per following purpose and
+        arrival band), ``"fixed_1h"`` (default) keeps the constant
+        ``HOME_CLOSURE_DWELL_S``. Any other value raises ``ValueError``.
+    closure_dwell_min_obs:
+        minimum observations a (purpose x arrival band) cell of the EMPIRICAL
+        dwell model must hold to be drawn from directly; thinner cells fall back
+        to the purpose marginal (rate logged). Positive integer, default
+        :data:`DEFAULT_CLOSURE_DWELL_MIN_OBS`; inert for ``"fixed_1h"``.
 
     Returns
     -------
@@ -249,6 +464,19 @@ def run(
     # Resample unfixable persons (e.g. NaN-time rbW/kA records, MiD codes 701/99)
     # from same-cell donors so no NaN time and no multi-day timestamp survives.
     resample_cell_col = _resolve_resample_cell_col(persons)
+    # Built BEFORE the trip table: the empirical model must see the donor diaries
+    # as reported, i.e. before any synthetic closure has been appended to them.
+    dwell_model = build_closure_dwell_model(
+        persons, mid_wege,
+        closure_dwell_model=closure_dwell_model,
+        random_seed=random_seed,
+        closure_dwell_min_obs=closure_dwell_min_obs,
+        escort_purpose=escort_purpose,
+        escort_passive_education=escort_passive_education,
+        explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+    )
     table, report = popsim_trips.build_validated_trip_table(
         persons, mid_wege,
         resample=True,
@@ -257,7 +485,22 @@ def run(
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        dwell_model=dwell_model,
     )
+
+    if "is_synthetic_closure" in table.columns:
+        # Keep the flag a clean boolean: the stage-B chain replacement concatenates
+        # donor rows that need not carry the column, which would leave NaN in an
+        # object column and break boolean indexing downstream.
+        table["is_synthetic_closure"] = (
+            table["is_synthetic_closure"].fillna(False).astype(bool)
+        )
+
+    _log_closure_share(table)
+    logger.info("[trips_stage] closure dwell model (%s) report: %s",
+                closure_dwell_model, dwell_model.report)
 
     logger.info(
         "[trips_stage] trip table built: %d trips for %d persons; "
@@ -332,6 +575,21 @@ def configure(context):
     # them reach "other" through the silent fallback. False reproduces the pre-#241
     # assignment for the A/B.
     context.config("explicit_round_trip_purposes", True)
+    # Plan-structure flags (issues #366 / #367). The first two mirror the keys
+    # completed_donor declares for the plan-source side of the same decision (a
+    # diary is only realisable if it still has legs after these drops), so both
+    # stages MUST be configured consistently -- the trip build warns when a donor
+    # is emptied by a drop that the plan match should have handled upstream.
+    # Defaults ON / "empirical" per the project rule (new features default on);
+    # False / False / "fixed_1h" is the byte-identical pre-#366 path.
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+    )
+    context.config(KEY_EXCLUDE_RBW_LEGS, True)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    context.config(KEY_CLOSURE_DWELL_MODEL, "empirical")
+    context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -375,10 +633,23 @@ def execute(context):
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config("escort_passive_education"))
     explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))
+    # Declared in configure(); ExecuteContext.config() takes the key alone.
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+    )
+    exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    closure_dwell_model = str(context.config(KEY_CLOSURE_DWELL_MODEL))
+    closure_dwell_min_obs = int(context.config(KEY_CLOSURE_DWELL_MIN_OBS))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        closure_dwell_model=closure_dwell_model,
+        closure_dwell_min_obs=closure_dwell_min_obs,
     )

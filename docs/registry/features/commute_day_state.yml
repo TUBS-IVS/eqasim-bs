@@ -163,6 +163,7 @@ validation:
   runs:
   - commute-day-state-phase-b-proof-100pct-2026-09-06-rerun
   - commute-day-state-phase-b-proof-100pct-2026-09-05
+  - commute-day-state-phase-b-sensitivity-far100-2026-09-06
   metric: 'ADR-0104 checks 1-6, measured at 100 % on the cached i329 population. The CURRENT
     verdicts are those of the RE-RUN after fix wave A, run manifest
     commute-day-state-phase-b-proof-100pct-2026-09-06-rerun, which carries every number; the
@@ -294,6 +295,13 @@ assessment:
     roughly a factor of 3-4 higher (reporting-day 3.8% all / 7.4% inter-Gemeinde vs W12''s 1%;
     assigned 5.3% vs P13''s 2%), verdict NOT MET with no numeric tolerance asserted, while the
     no-deterioration half stays PASS unchanged.
+    SENSITIVITY 2026-09-06 (ADR-0104 "Sensitivity 2026-09-06: far threshold 100 km", run manifest
+    commute-day-state-phase-b-sensitivity-far100-2026-09-06): moving commute_day_far_threshold_km
+    from 200 to 100 km, at both commute_day_absent_share_far values on record (1.0 and 0.6), moves
+    only check 1''s home/absent split (by at most 0.16 pp) and leaves check 2''s 100_plus band --
+    and therefore its distance to W12 (1%) and P13 (2%) -- byte-for-byte unchanged at every point
+    tested, because the KEEP probability that decides who stays at_workplace never depends on the
+    threshold; no default is changed and the parameter decision stays with the maintainer (#377).
     SIX FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
     production run (still owed, ruling R4 substituted a proof on the cached i329 population), a
     re-specification of check 1 (which needs a home-office attribution the population does not

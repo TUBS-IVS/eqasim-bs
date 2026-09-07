@@ -38,6 +38,12 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
     assert _implementation_keywords() == {
         "random_seed", "escort_purpose", "escort_passive_education",
         "explicit_round_trip_purposes",
+        # Added 2026-09-06 (plan-structure fix, issues #366 / #367): trips_stage.execute
+        # reads and passes these four, so all four layers must carry them.
+        # closure_dwell_min_obs joined in the same wave (final-review minor M1: the
+        # empirical model's cell threshold became a config key).
+        "exclude_rbw_legs", "drop_leading_arrive_home_leg", "closure_dwell_model",
+        "closure_dwell_min_obs",
     }
 
 

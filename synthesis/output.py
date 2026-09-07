@@ -16,7 +16,14 @@ import numpy as np
 # assigned workplace). When absent (feature OFF / non-MiD source) they are simply
 # not appended, so the column set stays byte-identical to the legacy output.
 # Appended AFTER the legacy columns so existing column positions never shift.
+#
+# rbw_legs_count / rbw_distance_km (popsim_mid only) are the donor's regular
+# work-related trips (regelmaessige berufliche Wege, MiD W_RBW), copied from the
+# plan-source diary facts by braunschweig.popsim.enriched_adapter. They document why
+# a person's realised plan can be short or empty, so analyses can separate those
+# persons from genuinely immobile ones.
 PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status", "employment_status",
+                                  "rbw_legs_count", "rbw_distance_km",
                                   "commute_day_state")
 
 

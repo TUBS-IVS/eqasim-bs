@@ -1,11 +1,23 @@
 import io, gzip
+import collections
 import itertools
+import logging
 
 import numpy as np
 import pandas as pd
 
 import matsim.writers as writers
 from matsim.writers import backlog_iterator
+
+logger = logging.getLogger(__name__)
+
+#: Person attribute name and Java type per optional rbW column (see
+#: OPTIONAL_PERSON_FIELDS). Written as a pair: a person whose plan source is unknown
+#: has NEITHER value, so neither attribute is written for it.
+RBW_PERSON_ATTRIBUTES = (
+    ("rbw_legs_count", "rbwLegsCount", "java.lang.Integer", int),
+    ("rbw_distance_km", "rbwDistanceKm", "java.lang.Double", float),
+)
 
 def configure(context):
     context.stage("synthesis.population.enriched")
@@ -86,6 +98,13 @@ PERSON_FIELDS = [
 # PERSON_FIELDS.index(...) lookups for the mandatory fields are unaffected.
 OPTIONAL_PERSON_FIELDS = [
     "housing_tenure",  # Braunschweig completeness attribute (not consumed by the sim)
+    # Braunschweig rbW plan-source facts (popsim_mid): the number of regular
+    # work-related trips (regelmaessige berufliche Wege, MiD W_RBW) reported by the
+    # plan donor and their total coded distance in km, copied to these column names
+    # by braunschweig.popsim.enriched_adapter. Documentation attributes explaining
+    # why a person's plan can be short or empty; not consumed by the simulation.
+    "rbw_legs_count",
+    "rbw_distance_km",
     "commute_day_state",  # Braunschweig reporting-day state (ADR-0104; written as commuteDayState)
 ]
 
@@ -110,13 +129,17 @@ VEHICLE_FIELDS = [
 
 def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
                write_income_eur = False, person_fields = None,
-               remode_carless_car_legs = False, id_attribute_types = None):
+               remode_carless_car_legs = False, id_attribute_types = None,
+               rbw_omission_counter = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
     # attributes (e.g. housing_tenure) can be emitted only when present.
     if person_fields is None:
         person_fields = PERSON_FIELDS
+    # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
+    # (write_population); it accumulates the persons whose rbW attributes had to be
+    # omitted so the rate can be logged ONCE for the whole population.
 
     def _id_type(column, value):
         # Java type for a census/hts id attribute. When the caller provides
@@ -187,6 +210,37 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _housing_tenure is None or pd.isna(_housing_tenure):
             _housing_tenure = "unknown"
         writer.add_attribute("housingTenure", "java.lang.String", str(_housing_tenure))
+
+    # Braunschweig rbW plan-source facts: number and total coded distance of the
+    # plan donor's regular work-related trips (regelmaessige berufliche Wege, MiD
+    # W_RBW), attached by braunschweig.popsim.diary_facts and renamed by
+    # braunschweig.popsim.enriched_adapter. ADDITIVE: emitted only when the columns
+    # are in the person tuple (popsim_mid with the diary-facts attachment), so the
+    # output is byte-identical otherwise. Documentation attributes -- they explain a
+    # short or empty plan; they are not consumed by the simulation.
+    #
+    # A person WITHOUT a MiD plan source (e.g. an in-commuter injected by the cordon
+    # merge, whose rows are reindexed onto the resident column set and become NaN)
+    # has NO rbW information at all -- which is not the same as "zero rbW legs".
+    # Writing 0 would mask that gap, so BOTH attributes are omitted for such a person
+    # (MATSim person attributes are optional per person) and the omission is counted
+    # in ``rbw_omission_counter`` so write_population can report the rate once.
+    rbw_attributes = []
+    rbw_source_missing = False
+    for column, attribute, java_type, cast in RBW_PERSON_ATTRIBUTES:
+        if column not in person_fields:
+            continue
+        value = person[person_fields.index(column)]
+        if value is None or pd.isna(value):
+            rbw_source_missing = True
+            continue
+        rbw_attributes.append((attribute, java_type, cast(value)))
+    if rbw_source_missing:
+        if rbw_omission_counter is not None:
+            rbw_omission_counter["persons_without_rbw_facts"] += 1
+    else:
+        for attribute, java_type, value in rbw_attributes:
+            writer.add_attribute(attribute, java_type, value)
 
     # Braunschweig reporting-day commute state {at_workplace, home, absent} drawn by
     # braunschweig.synthesis.commute_day.state_stage (ADR-0104, issue #244), merged into the
@@ -301,6 +355,13 @@ def prepare_frames(df_persons, df_activities, df_locations, df_trips, df_vehicle
 
 def write_population(output_path, df_persons, df_activities, df_trips, df_vehicles,
                     enable_urban_parking, context, write_income_eur = False):
+    # Persons without a MiD plan source carry NaN in the rbW columns; add_person omits
+    # their rbW attributes and counts them here, so the gap is reported once for the
+    # whole population instead of disappearing silently (CLAUDE.md: no silent fallbacks).
+    rbw_omission_counter = collections.Counter()
+    writes_rbw_attributes = any(
+        column in df_persons.columns for column, _, _, _ in RBW_PERSON_ATTRIBUTES)
+
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
             writer = writers.PopulationWriter(writer)
@@ -373,10 +434,18 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                enable_urban_parking, write_income_eur,
                                person_fields=person_fields,
                                remode_carless_car_legs=remode_carless_car_legs,
-                               id_attribute_types=id_attribute_types)
+                               id_attribute_types=id_attribute_types,
+                               rbw_omission_counter=rbw_omission_counter)
                     progress.update()
 
             writer.end_population()
+
+    if writes_rbw_attributes:
+        n_omitted = rbw_omission_counter["persons_without_rbw_facts"]
+        n_persons = len(df_persons)
+        logger.info("[population] rbw attributes omitted for %d/%d persons (%.2f%%) -- "
+                    "persons without a MiD plan source",
+                    n_omitted, n_persons, 100.0 * n_omitted / max(n_persons, 1))
 
     return "population.xml.gz"
 

@@ -177,6 +177,65 @@ KEY_EBIKE_SEED_COLUMN = "braunschweig.population.popsim.ebike_seed_column"
 # byte-identical to today (weekday (1,2,3) filter only, no remap).
 KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 
+# Diary plan match (issue #365, plan-structure-fix Task 3): when a synthetic
+# person's plan source has no realisable MiD diary (no-diary code 803
+# "Person ohne Wegeerfassung" with mobil == 1, or 804 "Mobilitaet unbekannt";
+# only rbW legs; emptied by the leading arrive-home-leg drop; or a public
+# holiday), remap its source_H_ID/source_P_ID to a matched weekday donor with
+# a realisable diary (braunschweig.popsim.diary_plan_match.
+# reassign_diaryless_plan_sources). Default ON (project rule: new features
+# default on). NOTE: the completed_donor stage ALWAYS reads MiD2023_Wege.csv
+# and attaches the src_* plan-source diary fact columns, regardless of this
+# flag (or the three below) -- they are facts about the plan source's diary,
+# not behaviour. "OFF is byte-identical" below refers to source_H_ID/
+# source_P_ID (and the downstream plans built from them), NOT to the input
+# file set read.
+KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
+# Exclude public-holiday-reported diaries (feiertag == 1) from the realisable
+# plan-source pool and remap persons sourced from one: SrV reference days
+# exclude public holidays, so a holiday-reported diary is not a realisable
+# weekday plan. Default ON. Read only when diary_plan_match is ON (see the
+# note on that key re: the Wege table + src_* facts being read/attached
+# regardless of this flag).
+KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+# Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
+# consists ONLY of regelmaessige berufliche Wege summary legs, no individually
+# reported trip) from the realisable plan-source pool and remap persons
+# sourced from one. Default ON. Read only when diary_plan_match is ON (see the
+# note on that key re: the Wege table + src_* facts being read/attached
+# regardless of this flag).
+KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
+# Treat a diary that starts by arriving home (first_so1 == 2, i.e. the
+# reporting day begins mid-trip and the first RECORDED leg only arrives home)
+# as having that leading leg dropped when counting direct legs, and remap a
+# plan source whose diary becomes empty after the drop. Default ON. Read by
+# braunschweig.popsim.completed_donor (plan-source realisability, only when
+# diary_plan_match is ON), by braunschweig.popsim.trips_stage (the leg is
+# actually dropped there) and by braunschweig.popsim.stage, whose trip_class
+# seed SUBTRACTS exactly that dropped leg when trip_class_seed_counts_closure
+# is on (controller ruling R20) -- all three must see the SAME value, or seed
+# and plan count different days again.
+KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
+# Dwell-time model applied when a synthesised trip-chain closure is needed
+# (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
+# the closing dwell duration from the observed distribution of the same purpose
+# x arrival band; "fixed_1h" reproduces the previous hard-coded 3600 s constant
+# BYTE-IDENTICALLY -- including the absence of the plan-time cap, which is an
+# EMPIRICAL-path behaviour only (only a drawn dwell can exceed the bound where
+# the constant would not; ruling R19). Read by braunschweig.popsim.trips_stage.
+KEY_CLOSURE_DWELL_MODEL = "braunschweig.population.popsim.closure_dwell_model"
+# Minimum number of observations a (purpose x arrival band) cell of the EMPIRICAL
+# closure-dwell model must hold before it is drawn from directly; a thinner cell
+# falls back to the purpose marginal (rate logged). Positive integer, default 30.
+# Inert when closure_dwell_model is "fixed_1h". Read by
+# braunschweig.popsim.trips_stage.
+KEY_CLOSURE_DWELL_MIN_OBS = "braunschweig.population.popsim.closure_dwell_min_obs"
+# Seed the trip_class KREIS-control seed counts from the CLOSURE-augmented
+# diary (i.e. after a synthesised closing leg is added) rather than the raw
+# MiD anzwege1. Default ON (project rule: new features default on). Read by
+# braunschweig.popsim.stage.
+KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_seed_counts_closure"
+
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.

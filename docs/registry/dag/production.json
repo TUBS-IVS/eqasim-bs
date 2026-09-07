@@ -734,6 +734,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.analysis.synthesis.work_participation_by_kreis"
   ],
   [
@@ -815,6 +819,10 @@
   [
    "synthesis.population.spatial.home.locations",
    "braunschweig.analysis.synthesis.commute_distance_by_kreis"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
   ],
   [
    "synthesis.population.spatial.home.locations",
@@ -930,6 +938,10 @@
   ],
   [
    "synthesis.population.trips",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "synthesis.population.trips",
    "braunschweig.synthesis.commute_day.state_stage"
   ],
   [
@@ -995,6 +1007,7 @@
   "braunschweig.analysis.reference.srv.commute_distance",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.plan_structure_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "braunschweig.data.alkis",
@@ -1094,6 +1107,7 @@
   "braunschweig.analysis.cordon_validation",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.plan_structure_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
   "matsim.output",

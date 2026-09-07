@@ -296,6 +296,14 @@ def _write_raw_mid(directory):
         "wegkm": [3.0, 3.0, 100.0, 100.0, 200.0, 5.0],
         "wegkm_imp": [3.0, 3.0, 100.0, 100.0, 200.0, 5.0],
         "wegmin_imp1": [15.0, 15.0, 30.0, 30.0, 40.0, 40.0],
+        # W_RBW / W_SO1 are part of braunschweig.popsim.mid.donor.MID_WEGE_REQUIRED_COLS
+        # (the single committed definition this stage's WEGE_COLUMNS derives from), so the
+        # fixture delivery must carry them like the real MiD 2023 B1 Wege file does.
+        # All fixture legs are direct diary legs (W_RBW 0, i.e. no rbW summary record) and
+        # every diary starts at home (W_SO1 1 on the first leg; 809 = not applicable on the
+        # later ones, mirroring tests/test_completed_donor_stage.py).
+        "W_RBW": [0, 0, 0, 0, 0, 0],
+        "W_SO1": [1, 809, 1, 809, 1, 809],
     })
     households = pd.DataFrame({"H_ID": [1, 2], "H_GR": [2, 3], "H_ANZAUTO": [1, 0]})
     persons.to_csv(os.path.join(directory, DONORS.PERSONS_FILE), index=False)

@@ -167,6 +167,19 @@ config:
   osmosis_binary: C:/Users/bienzeisler/tools/osmosis/osmosis-0.49.2/bin/osmosis.bat
   osmconvert_binary: C:/Users/bienzeisler/tools/osmconvert/osmconvert.exe
 
+  # --- Plan structure (issues #365 / #366 / #367) -----------------------------
+  # MiD-ONLY keys, set to their OFF values for this ENTD-donor smoke: they need the
+  # MiD Wege columns W_RBW / W_SO1 and the MiD Wege table the empirical closure dwell
+  # is estimated from, none of which ENTD has. EntdSource.build_trips REJECTS a
+  # non-default value with a message naming the key, so the smoke would abort with the
+  # defaults braunschweig.popsim.trips_stage.configure registers for every workflow
+  # (exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+  # closure_dwell_model="empirical"). Same convention as the popsim_open
+  # full-size fixture config.
+  braunschweig.population.popsim.exclude_rbw_legs: false
+  braunschweig.population.popsim.drop_leading_arrive_home_leg: false
+  braunschweig.population.popsim.closure_dwell_model: fixed_1h
+
   # --- Feature flags --------------------------------------------------------
   education_gravity_enabled: false
 

@@ -1,0 +1,77 @@
+stage: braunschweig.analysis.synthesis.plan_structure_vs_srv
+title: Realised daily plan structure vs SrV 2023
+layer: analysis
+description: 'Compares the realised daily plan structure of the synthetic population against
+  the committed SrV 2023 plan-structure reference (issue #369): mobility rate, trips per
+  person, trip-count distribution, per-purpose participation and trip rates, purpose shares,
+  home-based share, tours per mobile person, the day-closure indicators, work-activity
+  durations and departure-hour profiles, per segment (all / age band / employment-and-life-phase
+  group / sex / home Kreis). Both sides go through ONE metric implementation:
+  braunschweig.analysis.plan_structure.harmonise_model puts the eqasim person/trip frames into
+  the schema srv_plan_structure.harmonise_srv produces, and the metrics come from
+  srv_plan_structure.person_level / segment_metrics -- the same functions that built the
+  committed reference. Writes <output_path>/analysis/plan_structure_vs_srv/. Config keys:
+  plan_structure_output_subdir (default analysis/plan_structure_vs_srv),
+  plan_structure_srv_universe (default at_home_zero -- the reference universe that matches a
+  synthetic population, in which every person exists and starts the day at home; at_home_only
+  is the sensitivity universe of the same table),
+  plan_structure_max_unmatched_home_share (default 0.05 -- persons whose home Kreis cannot be
+  resolved are counted, logged and excluded from the head-to-head universe, but ABOVE this share
+  the stage RAISES: a broken VG250 or household join must not produce a well-formed report that
+  silently describes only part of the population). These three are analysis parameters of this
+  stage, not production feature flags, so they live in the stage code defaults and are not
+  carried in configs/base_bs.yml.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/* (a comparison stage writing a report next to the
+    population); the plan-structure metric set and the harmonised comparison schema are
+    Braunschweig-specific (issue #369).
+code:
+- braunschweig/analysis/synthesis/plan_structure_vs_srv.py
+- braunschweig/analysis/plan_structure.py
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+production: true
+inputs:
+- srv2023_plan_structure_reference
+features:
+- home_closure_model
+- diary_plan_match
+- rbw_leg_convention
+decisions:
+- ADR-0106
+- ADR-0107
+- ADR-0108
+notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
+  comparison.csv (long: segment, metric, model, srv, delta_pp, n_srv), headline.csv (the "all"
+  segment of the same table), by_kreis.csv (the kreis_* rows plus the model-only Kreise),
+  closure.csv (the synthesised home-closure rates, measured over the WHOLE model trip
+  table rather than only the head-to-head Kreise -- the closure is a property of the trip
+  builder, not of a region), accepted_deviations.csv (open-end days,
+  open-start days, single-trip days -- the three consequences of the closed-plan decision, each
+  with both sides'' value and ACCEPTED_DEVIATION_NOTE, which names issue #367 and points at this
+  record''s decisions list, where ADR-0108 is the record of the closed-plan decision), summary.md and
+  provenance.json (git commit, parameters, reference path, universe counts, closure counts).
+  delta_pp is (model - srv) x 100 for share metrics (mobility_rate, share_*, participation_*,
+  purpose_share_*, dep_hour_share_*) and the plain difference otherwise; the n_persons_* and
+  n_work_activities_measured rows are the two sides'' sample sizes, not a gap.
+  COMPARISON UNIVERSE: SrV 2023 surveys seven of the eight ZGB Kreise (Wolfsburg 03103 is not
+  surveyed), so the head-to-head table is restricted to model persons whose home Kreis is one of
+  those seven -- comparing an "all" segment that includes Wolfsburg residents against a reference
+  that excludes them would be an undeclared universe mismatch. The in-scope Kreise are read from
+  the committed reference itself and cross-checked against ZGB_KREISE minus Wolfsburg; a
+  disagreement RAISES rather than silently shifting the universe. Wolfsburg is reported
+  model-only in by_kreis.csv with srv/delta_pp left NaN, never a substituted zero; persons whose
+  home Kreis cannot be resolved (VG250 sjoin miss) are counted, logged and excluded from the
+  head-to-head universe. A MISSING committed reference aborts the stage (FileNotFoundError
+  naming the path) rather than degrading to a model-only report that would read like a measured
+  result. VG250-EW is read at run time via braunschweig.analysis.spatial.assign_geographies to
+  resolve the home Kreis. The stage reads cached synthesis stages only (no MATSim), so it runs on
+  a cached population; validate() hashes braunschweig/analysis/plan_structure.py and
+  braunschweig/calibration/srv_plan_structure.py, because synpp hashes only the stage module
+  itself and a metric edit would otherwise serve a stale cached comparison.
+  Unit tests: tests/test_plan_structure_vs_srv.py (the stage test runs against the REAL
+  committed reference, only the VG250 access is stubbed).'
