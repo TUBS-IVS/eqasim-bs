@@ -76,11 +76,21 @@ classification:
 - ab_test
 - validation
 status:
-  execution: running
-  notes: 'PENDING TAIL: invocation (2) is executing the vehicle fleet, the location chain,
-    synthesis.output and work_participation_by_kreis; this field is updated when it ends. The
-    plan-structure evidence below is COMPLETE: the analysis stage ran on the finished trip table
-    and its outputs are committed.
+  execution: completed
+  notes: 'COMPLETE: invocation (2) finished 2026-09-07 10:33:40 with 14/14 stages, no traceback,
+    and wrote the full population (persons 1,131,314 with the rbw_legs_count, rbw_distance_km and
+    commute_day_state columns present; households, trips, vehicles, four GeoPackages). The
+    reporting-day trip table has 3,629,477 trips against the 3,655,159 of the plan trip table: the
+    difference is the Phase B day states removing work legs (absent 3,984, home 6,868 of the
+    359,528 workers with a state; at_workplace 348,676), not a loss in this branch''s code.
+    Secondary chainsolvers: success rate 0.9998 (968,014/968,249 problems fully placed), SrV
+    location draw marginal fallback 79,320/964,551 (8.2 %). Activities 4,760,791.
+    NOT EXERCISED by this run, stated so it is not read as covered: the run list stops at
+    synthesis.output, so no MATSim XML was written and the rbwLegsCount / rbwDistanceKm attribute
+    path in braunschweig/matsim/scenario/population.py (with its per-population omission-rate log,
+    ruling R13) ran only in the test suite. The CSV path IS exercised -- enriched_adapter reports
+    0/1,131,314 rows (0.00 %) filled with the default 0, so every person carries a real source
+    fact. The MATSim writer is covered by the owed production run, issue #22.
     OUTCOME OF THE PRE-REGISTERED EXPECTATIONS (design spec section 3, "expected after arm 4";
     measured after arm 3 because package 4 is not built), without interpretation: persons without
     trip 11.28 % (expected 11-13 %) MET; trips per person 3.235 (3.2-3.5) MET; mobile persons with
@@ -236,9 +246,12 @@ artifacts:
   work_participation_by_kreis outputs; trip_table_diagnostics_arm3.txt and
   trip_table_diagnostics_i329.txt from trip_table_diagnostics.py; donor_inheritance_diagnostics_arm3.txt
   from donor_inheritance_diagnostics.py; run_log_excerpts_part1.txt) -- aggregates only'
-- 'felix:~/psf_data/output_bs_100pct_psf3/ (analysis/plan_structure_vs_srv/, meta json; the
-  population files once invocation 2 finishes), ~/psf_data/cache_bs_100pct_psf3/ (the arm-3
-  cache incl. the 8.1 GB trips_stage pickle), ~/psf_data/popsim_work_psf3/'
+- 'felix:~/psf_data/output_bs_100pct_psf3/ (2.2 G: the complete arm-3 population --
+  persons/households/trips/vehicles/vehicle_types CSV, activities/commutes/homes/trips GeoPackage,
+  meta json -- plus analysis/plan_structure_vs_srv/ and analysis/commute_day_state_phase_a/),
+  ~/psf_data/cache_bs_100pct_psf3/ (the arm-3 cache incl. the 8.1 GB trips_stage pickle and the
+  monitoring series), ~/psf_data/popsim_work_psf3/. Kept as run evidence and as the base for the
+  optional arms 1 and 2.'
 - 'felix:~/psf_arm3_100pct.yml (overlay), ~/psf_arm3_100pct_part1.log (invocation 1),
   ~/psf_arm3_100pct.log (invocation 2), ~/psf_diag_arm3.py, ~/psf_diag2.py'
 issues:
@@ -256,7 +269,25 @@ decisions:
 - ADR-0106
 - ADR-0107
 - ADR-0108
-notes: 'The pre-registered table of the design spec (docs/superpowers/specs/2026-09-05-plan-structure-fix-design.md,
+notes: 'SERVER STATE AND CLEANUP, verified after the run. Removed: the detached worktree ~/wt-psf
+  (its eqasim-data symlink unlinked FIRST so nothing could traverse into the data directory, then
+  eqasim-data._tracked deleted, then git worktree remove --force + prune), the transfer tar
+  /tmp/psf_5e1872a0.tgz, and the ONE branch-new committed table that had been copied into the
+  shared data directory (eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv);
+  it must not linger in ~/eqasim-bs while the branch is unmerged. The other tables copied there are
+  committed tables of main that belong in that directory and were left in place, including the two
+  kba_wohnmobile_holder_age files whose absence caused the crash -- restoring them repairs the
+  shared checkout rather than polluting it. Shared-checkout invariants on felix: worktrees back
+  from 20 to 19, porcelain unchanged at 28 entries. TWO of those 28 are local modifications of
+  committed tables (kba/derived/kba_age_national.csv, mid/mid2023_P13_commute_distance_by_rs7.csv);
+  their working content matches NEITHER that checkout''s HEAD (2714b857) NOR the version this run
+  copied, so they predate this run and were deliberately not reverted.
+  KEPT as run evidence, with the user still to decide whether to delete it: ~/psf_data, 5.5 G
+  outside the cache (the 2.2 G population, popsim_work_psf3, cache_shared) plus the arm-3 cache
+  cache_bs_100pct_psf3, whose 3,074 files are 149 G apparent but only 24.5 G of genuinely new
+  blocks in 137 unshared files (the 8.1 GB trips_stage pickle among them); the other 135.3 G are
+  hardlinks shared with the i329 cache. Disk after cleanup: 545 G used of 786 G (73 %).
+  The pre-registered table of the design spec (docs/superpowers/specs/2026-09-05-plan-structure-fix-design.md,
   gitignored) states its bounds "after arm 4"; arm 4 needs package 4 (#368), which is not built,
   so this manifest records arm 3 against those bounds and marks the two package-4 rows as
   pending rather than failed. The two rows that ARE failed (same-purpose repeats, short work
