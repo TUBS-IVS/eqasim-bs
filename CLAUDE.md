@@ -14,7 +14,7 @@ Information is maintained ONCE, machine-readable, and rendered into views (full 
 - **Feature Registry** `docs/registry/features/*.yml` = feature semantics, evidence pointers, lifecycle × production × per-pipeline applicability.
 - **Data Registry** `docs/registry/data/*.yml` = dataset provenance, licensing, exact expected paths (README data setup is checked against it).
 - **ADRs** `docs/decisions/ADR-NNNN-*.md` (one file per record; ids append-only; `docs/decisions/README.md` has numbering notes) = scientific/architectural rationale incl. rejected approaches.
-- **GitHub issues** on `TUBS-IVS/eqasim-bs` = the ONLY backlog (issue-first rule below).
+- **GitHub issues** on `TUBS-IVS/eqasim-bs` = the ONLY backlog, each typed and labelled per `docs/codebase/notes/issue-and-pr-conventions.md` (issue-first rule below).
 - **Run manifests** `docs/runs/<run_id>.yml` = executed runs + validation evidence. Never claim validation without reference + run + comparison evidence recorded there.
 - **README.md** = public setup/install/data-acquisition contract; assess README impact whenever repository dependencies, environment, required inputs, input paths, downloader/import scripts, the canonical config, verification, run commands, or outputs change.
 - **`docs/generated/*.md`** (STATUS/PIPELINE/STAGES/FEATURES/DATA/LINEAGE/DECISIONS/RUNS) = generated views — NEVER edit manually; rebuild with `python -m braunschweig.documentation build`; `... check` must show 0 FAIL (CI runs it metadata-only).
@@ -35,10 +35,11 @@ Maintenance duties: every new/changed stage → Stage Registry (+ `... dag` if t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
 
-**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, and apply the issue-first rule for newly discovered work.
+**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, apply the issue-first rule for newly discovered work, and run the issue triage check (every open model issue has a type, a `step:`, an `area:` and a `**Stages:**` line; review the untriaged `prio`-less list).
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the alias on a new machine:
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
+A PR mirrors its issue: branch `<fix|feature|analysis|docs|chore|test>/i<issue>-<slug>`, the issue's own `step:`/`area:` labels (never `prio:`), a title stating what the change does with `(closes #NN)`, and the same `**Stages:**` line in the body — `docs/codebase/notes/issue-and-pr-conventions.md`.
 Never push without explicit per-push confirmation (see the git policy below).
 
 Layer budgets (checked only at /close — exceeding one never blocks work): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · SESSION_LOG.md ≤ 10 entries. Registries have no budget (one fact per file scales).
@@ -235,10 +236,13 @@ all branches and remotes, including `origin/main`.
 **Issue-first for newly discovered work.** When a new feature, gap, or idea surfaces
 mid-session, PROPOSE it to the user; only after explicit confirmation, open a GitHub
 issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the `eqasim-org/eqasim-bavaria`
-upstream). This guarantees incidental findings are tracked, not forgotten. All issues,
-PRs, and the Project board live on the fork only. The canonical feature workflow that
-ties this together (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr`
--> record) is documented in `CONTRIBUTING.md`.
+upstream) — with its type, `step:`/`area:` labels, a `**Stages:**` line and a
+`<stage or attribute>: <finding>` title per `docs/codebase/notes/issue-and-pr-conventions.md`
+(never re-create the retired `bug`/`enhancement`/`decision` labels). This guarantees
+incidental findings are tracked, not forgotten. All issues, PRs, and the Project board
+live on the fork only. The canonical feature workflow that ties this together (brainstorm
+-> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record) is documented in
+`CONTRIBUTING.md`.
 
 **Working hygiene (each rule cost real time once; reasoning in `docs/codebase/notes/git-working-hygiene.md`):**
 - **One worktree per TASK, not per session.** `git worktree add -b <branch> .claude/worktrees/<task> origin/main`. Reusing the warm worktree for a second task is what put a data script in the main checkout (it rewrote seven committed CSVs on the user's branch) and what lost track of `HEAD`.

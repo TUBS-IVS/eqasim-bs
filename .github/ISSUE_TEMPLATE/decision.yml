@@ -1,0 +1,45 @@
+name: Decision (ADR candidate)
+description: A modelling or architecture choice to be recorded as an Architecture Decision Record
+title: "<stage or attribute>: <the question or the alternatives>"
+type: Decision
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The record ends as `docs/decisions/ADR-NNNN-*.md` (check the number across ALL branches first).
+  - type: input
+    id: stages
+    attributes:
+      label: Stages
+      description: Registry stage id(s) the decision governs (docs/registry/stages/). `unknown` is allowed.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / problem
+      description: What forces a decision now.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: The realistic alternatives, each with its trade-off.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Committed measurements, reference data, publications. No invented targets.
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+      description: What the chosen option enables / costs / forecloses, including deliberately rejected options.
+  - type: input
+    id: adr
+    attributes:
+      label: Becomes
+      placeholder: "docs/decisions/ADR-NNNN-<slug>.md"
