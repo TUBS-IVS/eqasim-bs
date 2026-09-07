@@ -14,6 +14,7 @@ their targets and the config toggles are later tasks.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -236,11 +237,59 @@ def test_employed_classes_are_a_subset_of_the_employment_status_value_set():
     """Controller ruling R9: a typo in the hand-listed EMPLOYED_EMPLOYMENT_STATUS_CLASSES
     makes derive_work_by_employment_seed's isin() all-False and silently labels every
     person nonemployed_*, with a plausible-looking log line and no error. attributes.py
-    carries an import-time assertion for exactly this; the pin here states the invariant
-    where the seed's readers look for it."""
+    raises at import time for exactly this; the pin here states the invariant where the
+    seed's readers look for it."""
     from braunschweig.popsim import attributes
     assert set(attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(
         attributes.EMPLOYMENT_STATUS_CATEGORIES)
+
+
+def test_map_flag_from_plan_source_logs_which_key_the_flag_came_from(caplog):
+    """Controller ruling R10: the own-key branch must not be silent.
+
+    It is the branch that can go wrong invisibly -- a donor frame built with mismatched
+    id dtypes joins to nothing, every flag comes out 0, and NOTHING raises, because
+    without source_* columns the own-key choice is itself legitimate. The log line is the
+    only signal, so it is pinned here: the own-key branch says so and names the columns,
+    and the plan-source branch must NOT claim to be own-key.
+    """
+    from braunschweig.popsim.mid.participation import map_flag_from_plan_source
+    persons, _ = _persons_wege()
+    own = persons.drop(columns=["source_H_ID", "source_P_ID"])
+    real_flag = pd.Series(
+        [1, 0, 0, 0, 0],
+        index=pd.MultiIndex.from_arrays([[1, 1, 2, 3, 4], [1, 2, 1, 1, 1]]))
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.mid.participation"):
+        flag_own = map_flag_from_plan_source(
+            own, real_flag, household_id="H_ID", person_id="P_ID", name="work_by_employment")
+    assert flag_own.tolist() == [1, 0, 0, 0, 0]
+    assert "work_by_employment seed: derived from each person's own key (H_ID, P_ID)" in caplog.text
+    assert "no plan-source columns present" in caplog.text
+    assert "5 persons" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.mid.participation"):
+        map_flag_from_plan_source(
+            persons, real_flag, household_id="H_ID", person_id="P_ID", name="education_flag")
+    # The plan-source branch reports the SOURCE keys and never claims the own-key path.
+    assert "education_flag seed: derived from the realised plan source" in caplog.text
+    assert "own key" not in caplog.text
+
+
+def test_employed_classes_invariant_survives_python_dash_o():
+    """Controller ruling R10/item 2: the EMPLOYED-classes invariant is enforced by an
+    explicit raise, not an ``assert`` -- ``assert`` statements are stripped under
+    ``python -O``, which would silently remove the guard on exactly the interpreter a
+    long production run is most likely to use. Pinned by reading the source, because a
+    test cannot re-import the module under a different interpreter flag."""
+    from pathlib import Path as _Path
+
+    from braunschweig.popsim import attributes
+    src = _Path(attributes.__file__).read_text(encoding="utf-8")
+    assert "assert set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES)" not in src
+    assert "if not set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(EMPLOYMENT_STATUS_CATEGORIES):" in src
+    assert "raise RuntimeError(" in src
 
 
 # --------------------------------------------------------------------------- #

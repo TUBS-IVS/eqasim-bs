@@ -562,6 +562,15 @@ def map_flag_from_plan_source(persons: pd.DataFrame, real_flag: pd.Series, *,
     full. When the plan-source columns are absent (no member completion / weekend match
     ran) the person's own key is used, and the seed is already weekday-filtered.
 
+    WHICH key was used is LOGGED at info level (controller ruling R10), in the same shape
+    :func:`derive_participation_seed` already logs the same choice. Without that line the
+    own-key branch is silent, and it is the branch that can go wrong invisibly: a caller
+    that builds the donor frame itself with mismatched id dtypes (int64 ids read back from
+    a CSV against a string-keyed donor frame) gets an EMPTY join, every flag 0, and no
+    error at all -- because with no ``source_*`` columns the own-key choice is itself
+    legitimate, so there is no unresolved source to raise on. The log line is what makes
+    that visible.
+
     Raises ``ValueError`` when any plan source does not resolve to a row of ``real_flag``
     (upstream donor/source corruption; mirrors :func:`derive_participation_seed`). There
     is deliberately NO fallback: seeding an unresolved source from a default would hide a
@@ -569,8 +578,15 @@ def map_flag_from_plan_source(persons: pd.DataFrame, real_flag: pd.Series, *,
     """
     if "source_H_ID" in persons.columns and "source_P_ID" in persons.columns:
         idx = pd.MultiIndex.from_arrays([persons["source_H_ID"], persons["source_P_ID"]])
+        logger.info(
+            "[popsim.mid] %s seed: derived from the realised plan source "
+            "(source_H_ID, source_P_ID) for %d persons.", name, len(persons))
     else:
         idx = pd.MultiIndex.from_arrays([persons[household_id], persons[person_id]])
+        logger.info(
+            "[popsim.mid] %s seed: derived from each person's own key (%s, %s) for %d "
+            "persons (no plan-source columns present -> seed is weekday-filtered).",
+            name, household_id, person_id, len(persons))
     mapped = pd.Series(real_flag.reindex(idx).to_numpy(), index=persons.index)
     n_unresolved = int(mapped.isna().sum())
     if n_unresolved:

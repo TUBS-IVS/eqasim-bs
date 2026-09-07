@@ -85,9 +85,13 @@ EMPLOYED_EMPLOYMENT_STATUS_CLASSES = ("vollzeit", "teilzeit", "geringfuegig", "i
 # a typo would make derive_work_by_employment_seed's isin() all-False, silently labelling
 # every person nonemployed_* behind a plausible-looking log line and no error -- a silent
 # wrong result, which the no-silent-failure rule forbids regardless of severity label.
-assert set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(EMPLOYMENT_STATUS_CATEGORIES), (
-    f"EMPLOYED_EMPLOYMENT_STATUS_CLASSES {EMPLOYED_EMPLOYMENT_STATUS_CLASSES} must be a "
-    f"subset of EMPLOYMENT_STATUS_CATEGORIES {EMPLOYMENT_STATUS_CATEGORIES}.")
+# An explicit raise, NOT an assert: assert statements are stripped under python -O, so the
+# invariant -- and with it the guard against that failure mode -- would silently disappear
+# on exactly the interpreter a long production run is most likely to use.
+if not set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(EMPLOYMENT_STATUS_CATEGORIES):
+    raise RuntimeError(
+        f"EMPLOYED_EMPLOYMENT_STATUS_CLASSES {EMPLOYED_EMPLOYMENT_STATUS_CLASSES} must be a "
+        f"subset of EMPLOYMENT_STATUS_CATEGORIES {EMPLOYMENT_STATUS_CATEGORIES}.")
 
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
