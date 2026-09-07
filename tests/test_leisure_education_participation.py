@@ -131,28 +131,36 @@ class _FakeContext:
         raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
 
 
-@pytest.mark.parametrize("purpose,key_name", [
-    ("leisure", "KEY_LEISURE_PARTICIPATION_CONTROL"),
-    ("education", "KEY_EDUCATION_PARTICIPATION_CONTROL"),
+@pytest.mark.parametrize("purpose,key_name,expected_default", [
+    ("leisure", "KEY_LEISURE_PARTICIPATION_CONTROL", "on"),
+    # education_participation flips to "off" by default (Plan B, issue #368, ADR-0109):
+    # education_by_age (three age bands) REPLACES it. leisure_participation has no
+    # replacement and stays "on".
+    ("education", "KEY_EDUCATION_PARTICIPATION_CONTROL", "off"),
 ])
-def test_toggle_key_registered_and_defaults_on(purpose, key_name):
+def test_toggle_key_registered_with_the_decided_default(purpose, key_name, expected_default):
     from braunschweig.popsim import stage
     name = f"{purpose}_participation"
     assert stage._KREIS_CONTROL_TOGGLE_KEY[name] == getattr(stage, key_name)
-    assert stage._KREIS_CONTROL_DEFAULT[name] == "on"
+    assert stage._KREIS_CONTROL_DEFAULT[name] == expected_default
 
 
-def test_active_kreis_entries_includes_both_new_controls_by_default():
+def test_active_kreis_entries_includes_leisure_and_excludes_education_participation_by_default():
+    """education_participation is retired by default (Plan B, issue #368, ADR-0109),
+    replaced by the three education_by_age entries; leisure_participation has no
+    replacement and stays active. See tests/test_participation_universe_controls.py for
+    the full replacement/contradiction semantics."""
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     names = {c.name for c in active}
+    assert "education_participation" not in names
     # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
     # three-group entry while pt_ticket_never_group is on (the default, issue #329).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
         "trip_class", "employment_status", "pt_ticket_group4",
-        "work_participation", "leisure_participation", "education_participation",
-        "escort_participation",
+        "leisure_participation", "escort_participation",
+        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
     }
 
 
@@ -167,8 +175,9 @@ def test_off_path_excludes_both_new_controls_independently():
     names = {c.name for c in active}
     assert "leisure_participation" not in names
     assert "education_participation" not in names
-    # work_participation and the other six default-on entries are unaffected.
-    assert "work_participation" in names
+    # work_by_employment (education_participation's sibling replacement family) and the
+    # other default-on entries are unaffected by these two toggles.
+    assert "work_by_employment" in names
     assert {"economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
             "trip_class", "employment_status"} <= names
 

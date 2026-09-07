@@ -57,6 +57,17 @@ def _seed_persons() -> pd.DataFrame:
         "leisure_participation": [1, 1, 0, 0, 1, 0, 1, 1],
         "education_participation": [1, 1, 1, 0, 0, 0, 0, 0],
         "escort_participation": [0, 1, 0, 1, 0, 0, 1, 0],
+        # work_by_employment / education_flag (Plan B, issue #368): the two
+        # participation-UNIVERSE seed columns the work_by_employment and the three
+        # education_by_age REGISTRY entries read. Values are set for every row (including
+        # rows outside a given entry's age universe, where they are simply never
+        # evaluated) so the fixture reaches all four new entries, not just the
+        # pre-existing ones -- otherwise check_category_partition would silently SKIP
+        # them (missing seed column) and the vacuous-pass guard below would never notice.
+        "work_by_employment": ["nonemployed_nowork", "nonemployed_nowork", "employed_work",
+                                "employed_nowork", "nonemployed_work", "nonemployed_nowork",
+                                "employed_work", "employed_nowork"],
+        "education_flag": ["edu", "noedu", "edu", "noedu", "edu", "noedu", "edu", "noedu"],
     })
 
 

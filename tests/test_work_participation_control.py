@@ -110,26 +110,31 @@ class _FakeContext:
         raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
 
 
-def test_toggle_key_registered_and_defaults_on():
+def test_toggle_key_registered_and_defaults_off():
+    """work_participation flips to "off" by default (Plan B, issue #368, ADR-0109):
+    work_by_employment REPLACES it. See tests/test_participation_universe_controls.py for
+    the replacement's own default-on wiring and the contradiction guards."""
     from braunschweig.popsim import stage
     assert stage._KREIS_CONTROL_TOGGLE_KEY["work_participation"] == stage.KEY_WORK_PARTICIPATION_CONTROL
-    assert stage._KREIS_CONTROL_DEFAULT["work_participation"] == "on"
+    assert stage._KREIS_CONTROL_DEFAULT["work_participation"] == "off"
 
 
-def test_active_kreis_entries_includes_work_participation_by_default():
+def test_active_kreis_entries_excludes_work_participation_by_default():
+    """work_participation is registered but INACTIVE by default (Plan B, issue #368,
+    ADR-0109): work_by_employment replaces it. Explicitly turning work_participation back
+    on while work_by_employment stays on is a config contradiction (see
+    tests/test_participation_universe_controls.py)."""
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     names = {c.name for c in active}
-    assert "work_participation" in names
-    # feature #224 task 5 adds two more default-on person-level entries
-    # (leisure_participation / education_participation); the full active set now
-    # includes them too (see tests/test_leisure_education_participation.py).
+    assert "work_participation" not in names
     # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
     # three-group entry while pt_ticket_never_group is on (the default, issue #329).
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group4", "work_participation",
-        "leisure_participation", "education_participation", "escort_participation",
+        "trip_class", "employment_status", "pt_ticket_group4",
+        "leisure_participation", "escort_participation",
+        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
     }
 
 

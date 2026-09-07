@@ -176,6 +176,19 @@ config:
   # stage compares against the string "on".
   braunschweig.population.popsim.pt_ticket_never_group: "on"
 
+  # Participation controls conditional on their universe (issue #368, ADR-0109, Plan B).
+  # work_by_employment REPLACES work_participation: four MECE cells over persons 14+
+  # (employed x has a direct work leg in the realised plan). Measured before: employed
+  # persons with a work trip 58.4 % against the SrV target 67.5 %, pensioners 7.8 %
+  # against 1.8 % (arm-3 run manifest plan-structure-fix-arm3-100pct-2026-09-07).
+  braunschweig.population.popsim.work_by_employment_kreis_control: "on"
+  braunschweig.population.popsim.work_participation_kreis_control: "off"
+  # education_by_age REPLACES education_participation: edu/noedu over three age bands
+  # (0-5, 6-17, 18+). Measured before: 6-17 was 84.3 % against the SrV target 90.0 %,
+  # 0-5 was 73.4 % against 65.6 % (same arm-3 run manifest).
+  braunschweig.population.popsim.education_by_age_kreis_control: "on"
+  braunschweig.population.popsim.education_participation_kreis_control: "off"
+
   # --- Plan structure: realisable plan sources, rbW legs, home closure -------
   # Six MiD-ONLY keys (issues #365 / #366 / #367; ADR-0106 / ADR-0107 / ADR-0108).
   # They fix the plan chain measured against SrV 2023 in the i329 run: 14.1 % of

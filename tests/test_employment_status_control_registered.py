@@ -202,8 +202,14 @@ def test_active_kreis_entries_includes_employment_status_by_default():
 
 def test_active_kreis_entries_excludes_employment_status_when_off():
     from braunschweig.popsim import stage
+    # work_by_employment must also be turned off here: it defaults "on" (Plan B, issue
+    # #368, ADR-0109) and REQUIRES employment_status to be active (its seed derivation
+    # reads the employment_status column) -- active_kreis_entries raises otherwise. See
+    # tests/test_participation_universe_controls.py for that contradiction guard on its
+    # own.
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "employment_status" not in names

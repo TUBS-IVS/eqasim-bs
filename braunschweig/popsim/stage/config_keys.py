@@ -164,6 +164,20 @@ KEY_EDUCATION_PARTICIPATION_CONTROL = "braunschweig.population.popsim.education_
 # (byte-identical for that attribute). MiD-only (seed derivation reads the MiD Wege
 # table); ignored for source="entd".
 KEY_ESCORT_PARTICIPATION_CONTROL = "braunschweig.population.popsim.escort_participation_kreis_control"
+# work_by_employment x Kreis control (Plan B, issue #368, ADR-0109): REPLACES
+# work_participation by default. Four MECE labels (employment status x direct work leg)
+# over the persons 14+ universe (WORK_BY_EMPLOYMENT_MIN_AGE_YEARS), read by
+# braunschweig.popsim.stage. Default "on" -- work_participation flips to "off" alongside it
+# (see _KREIS_CONTROL_DEFAULT below) so the two controls never both steer the same
+# work-trip mass at once (source_resolution.active_kreis_entries raises otherwise).
+KEY_WORK_BY_EMPLOYMENT_CONTROL = "braunschweig.population.popsim.work_by_employment_kreis_control"
+# education_by_age x Kreis controls (Plan B, issue #368, ADR-0109): ONE toggle for the
+# three age-range entries (education_0_5 / education_6_17 / education_18plus,
+# kreis_attribute_control.EDUCATION_BY_AGE_ENTRY_NAMES) -- they share a single seed column
+# and a single universe mechanism, so they are switched together. REPLACES
+# education_participation by default, which flips to "off" alongside it (see
+# _KREIS_CONTROL_DEFAULT below).
+KEY_EDUCATION_BY_AGE_CONTROL = "braunschweig.population.popsim.education_by_age_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -273,6 +287,11 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "leisure_participation": KEY_LEISURE_PARTICIPATION_CONTROL,
     "education_participation": KEY_EDUCATION_PARTICIPATION_CONTROL,
     "escort_participation": KEY_ESCORT_PARTICIPATION_CONTROL,
+    "work_by_employment": KEY_WORK_BY_EMPLOYMENT_CONTROL,
+    # The three education-by-age entries share ONE toggle key (they are switched together).
+    "education_0_5": KEY_EDUCATION_BY_AGE_CONTROL,
+    "education_6_17": KEY_EDUCATION_BY_AGE_CONTROL,
+    "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
 }
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
@@ -289,8 +308,16 @@ _KREIS_CONTROL_DEFAULT = {
     "employment_status": "on",
     "pt_ticket_group": "on",
     "pt_ticket_group4": "on",
-    "work_participation": "on",
+    # work_participation / education_participation flip to "off" (Plan B, issue #368,
+    # ADR-0109): work_by_employment / education_by_age REPLACE them by default. The
+    # OFF-path tests (tests/test_participation_universe_controls.py) pin that turning the
+    # new controls off and these two back on reproduces exactly today's legacy active set.
+    "work_participation": "off",
     "leisure_participation": "on",
-    "education_participation": "on",
+    "education_participation": "off",
     "escort_participation": "on",
+    "work_by_employment": "on",
+    "education_0_5": "on",
+    "education_6_17": "on",
+    "education_18plus": "on",
 }

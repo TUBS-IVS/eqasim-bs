@@ -42,9 +42,16 @@ def _default_active_kreis_entry_names() -> set:
     with ``pt_ticket_never_group`` on (the default, issue #329) the four-group
     ``pt_ticket_group4`` entry replaces it -- see
     ``source_resolution.active_kreis_entries``.
+
+    ``work_participation`` / ``education_participation`` are excluded because they flip to
+    "off" by DEFAULT (Plan B, issue #368, ADR-0109): ``work_by_employment`` /
+    ``education_by_age`` (education_0_5 / education_6_17 / education_18plus) replace them
+    and are themselves included (their own toggles default "on").
     """
     from braunschweig.popsim import kreis_attribute_control as kac
-    return {c.name for c in kac.REGISTRY} - {"pt_ticket_group"}
+    return {c.name for c in kac.REGISTRY} - {
+        "pt_ticket_group", "work_participation", "education_participation",
+    }
 
 
 def _entry(name):
@@ -224,22 +231,24 @@ class _FakeContext:
 def test_active_kreis_entries_all_default_on_for_mid():
     from braunschweig.popsim import stage
 
-    # Empty config -> all twelve REGISTERED entries default "on" (project rule: new
-    # features default on), leaving eleven ACTIVE after the pt_ticket substitution below,
-    # in REGISTRY order. has_ebike's source column (H_ANZPED) was server-verified
-    # 2026-07-08; trip_class (first person-level entry) is the 2026-07-08 follow-on;
-    # employment_status (second person-level entry, 14+ universe) is feature #172 task 4;
-    # work_participation / leisure_participation / education_participation (third,
-    # fourth, fifth person-level entries) are feature #224 tasks 4-5; pt_ticket_group
-    # (sixth person-level entry, 14+ universe) is issue #321 -- and appears here as its
-    # four-group refinement pt_ticket_group4, which REPLACES it while
-    # pt_ticket_never_group is on (the default, issue #329); escort_participation
-    # (seventh person-level entry) is issue #227.
+    # Empty config -> every REGISTERED entry resolves its declared default (project rule:
+    # new features default on), leaving thirteen ACTIVE in REGISTRY order after the
+    # pt_ticket substitution and the two Plan B replacements below. has_ebike's source
+    # column (H_ANZPED) was server-verified 2026-07-08; trip_class (first person-level
+    # entry) is the 2026-07-08 follow-on; employment_status (second person-level entry,
+    # 14+ universe) is feature #172 task 4; pt_ticket_group (issue #321) appears here as
+    # its four-group refinement pt_ticket_group4, which REPLACES it while
+    # pt_ticket_never_group is on (the default, issue #329); leisure_participation /
+    # escort_participation (feature #224) stay active (no replacement). work_participation
+    # and education_participation are registered but default OFF (Plan B, issue #368,
+    # ADR-0109): work_by_employment and the three education_by_age entries (education_0_5 /
+    # education_6_17 / education_18plus) REPLACE them and default ON instead -- see
+    # tests/test_participation_universe_controls.py for the contradiction guards.
     active = stage.active_kreis_entries(_FakeContext({}), "mid")
     assert [c.name for c in active] == [
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class",
-        "employment_status", "pt_ticket_group4", "work_participation", "leisure_participation",
-        "education_participation", "escort_participation",
+        "employment_status", "pt_ticket_group4", "leisure_participation", "escort_participation",
+        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
     ]
 
 
@@ -268,6 +277,11 @@ def test_active_kreis_entries_all_off_is_empty():
         stage.KEY_LEISURE_PARTICIPATION_CONTROL: "off",
         stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "off",
         stage.KEY_ESCORT_PARTICIPATION_CONTROL: "off",
+        # The two Plan B replacements (issue #368, ADR-0109) default "on", so they must be
+        # turned off explicitly too, or their contradiction guards would fire instead of
+        # this test reaching an empty set.
+        stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+        stage.KEY_EDUCATION_BY_AGE_CONTROL: "off",
     }
     assert stage.active_kreis_entries(_FakeContext(off), "mid") == []
 
@@ -312,13 +326,17 @@ def test_active_kreis_entries_employment_status_can_be_turned_off():
     from braunschweig.popsim import stage
 
     # An explicit "off" for the second person-level entry (employment_status, feature
-    # #172 task 4) drops only that entry.
+    # #172 task 4) drops only that entry. work_by_employment must be turned off here too:
+    # it defaults "on" (Plan B, issue #368, ADR-0109) and REQUIRES employment_status
+    # active (its seed derivation reads the employment_status column) -- otherwise
+    # active_kreis_entries raises instead of reaching this test's assertions.
     active = stage.active_kreis_entries(
-        _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off"}), "mid"
+        _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "employment_status" not in names
-    assert names == _default_active_kreis_entry_names() - {"employment_status"}
+    assert names == _default_active_kreis_entry_names() - {"employment_status", "work_by_employment"}
 
 
 def test_active_kreis_entries_work_participation_can_be_turned_off():

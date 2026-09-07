@@ -284,6 +284,8 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_TRIPS_KREIS_CONTROL,
     KEY_UV,
     KEY_WEEKEND_PLAN_MATCH,
+    KEY_WORK_BY_EMPLOYMENT_CONTROL,
+    KEY_EDUCATION_BY_AGE_CONTROL,
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
     KEY_WORKERS,
@@ -749,6 +751,18 @@ def configure(context):
     # identical wiring to the other three participation controls (parametrized by
     # purpose "escort" = ACTIVE W_ZWECK 6 only, see mid.PARTICIPATION_W_ZWECK).
     context.config(KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"])
+    # work_by_employment / education_by_age (Plan B, issue #368, ADR-0109): REPLACE
+    # work_participation / education_participation by default (see the flipped defaults
+    # above). Their committed targets (SrV conditional rate x the employment_status /
+    # census-age-band margin) live under data_path (declared below via the any()-gate).
+    # source_resolution.active_kreis_entries raises at config-resolution time on a
+    # contradictory combination (both a replacement and its legacy counterpart "on", or
+    # work_by_employment "on" with employment_status "off").
+    context.config(KEY_WORK_BY_EMPLOYMENT_CONTROL, _KREIS_CONTROL_DEFAULT["work_by_employment"])
+    # ONE toggle for the three education-by-age entries (education_0_5 / education_6_17 /
+    # education_18plus); they share a single seed column and universe mechanism, so they
+    # are switched together (see _KREIS_CONTROL_TOGGLE_KEY in config_keys.py).
+    context.config(KEY_EDUCATION_BY_AGE_CONTROL, _KREIS_CONTROL_DEFAULT["education_6_17"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -770,6 +784,10 @@ def configure(context):
         (KEY_LEISURE_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["leisure_participation"]),
         (KEY_EDUCATION_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["education_participation"]),
         (KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"]),
+        # work_by_employment / education_by_age (issue #368): both consume a committed
+        # target2026_* table under data_path, so both belong in this gate too.
+        (KEY_WORK_BY_EMPLOYMENT_CONTROL, _KREIS_CONTROL_DEFAULT["work_by_employment"]),
+        (KEY_EDUCATION_BY_AGE_CONTROL, _KREIS_CONTROL_DEFAULT["education_6_17"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"

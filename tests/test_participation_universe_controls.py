@@ -524,6 +524,87 @@ def test_project_completed_seed_universe_control_requires_mid_dir():
     assert "education_6_17" in str(excinfo.value)
 
 
+
+# --------------------------------------------------------------------------- #
+# Task 3: registry entries, toggles, replacement rules (Plan B, issue #368,
+# ADR-0109). The four target CSVs are committed (a prior task built and closed
+# them), so these tests exercise the REAL registry entries and REAL config-toggle
+# wiring end to end -- unlike the ad hoc entries used above for the seed-wiring
+# proof, which deliberately stayed independent of the registration.
+# --------------------------------------------------------------------------- #
+
+def test_registry_carries_the_four_universe_entries_as_hard_person_controls():
+    from braunschweig.popsim.kreis_attribute_control import (
+        REGISTRY, EDUCATION_AGE_BOUNDS, WORK_BY_EMPLOYMENT_CATEGORIES)
+    by = {c.name: c for c in REGISTRY}
+    w = by["work_by_employment"]
+    assert (w.level, w.tier, w.min_age, w.max_age, w.seed_column) == ("person", "hard", 14, None, "work_by_employment")
+    assert [lbl for lbl, _ in w.categories] == list(WORK_BY_EMPLOYMENT_CATEGORIES)
+    for name, (lo, hi) in EDUCATION_AGE_BOUNDS.items():
+        e = by[name]
+        assert (e.seed_column, e.tier, e.min_age, e.max_age) == ("education_flag", "hard", lo, hi)
+        assert e.target_csv_relpath.endswith(f"target2026_{name}_by_kreis.csv")
+
+
+def test_importance_group_is_kreis_hard_for_every_rendered_column():
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim.kreis_attribute_control import REGISTRY, control_columns
+    for c in REGISTRY:
+        if c.name in ("work_by_employment", "education_0_5", "education_6_17", "education_18plus"):
+            for col in control_columns(c):
+                assert cs.importance_group_for_field(f"{col}_KREIS") == "kreis_hard", col
+
+
+def test_toggles_registered_with_the_decided_defaults():
+    from braunschweig.popsim.stage import config_keys as ck
+    assert ck._KREIS_CONTROL_TOGGLE_KEY["work_by_employment"] == ck.KEY_WORK_BY_EMPLOYMENT_CONTROL
+    assert all(ck._KREIS_CONTROL_TOGGLE_KEY[n] == ck.KEY_EDUCATION_BY_AGE_CONTROL
+               for n in ("education_0_5", "education_6_17", "education_18plus"))
+    assert ck._KREIS_CONTROL_DEFAULT["work_by_employment"] == "on" and ck._KREIS_CONTROL_DEFAULT["education_6_17"] == "on"
+    assert ck._KREIS_CONTROL_DEFAULT["work_participation"] == "off" and ck._KREIS_CONTROL_DEFAULT["education_participation"] == "off"
+
+
+class _Ctx:
+    def __init__(self, overrides):
+        from braunschweig.popsim.stage import config_keys as ck
+        self._v = {ck._KREIS_CONTROL_TOGGLE_KEY[n]: d for n, d in ck._KREIS_CONTROL_DEFAULT.items()}
+        self._v.update(overrides)
+
+    def config(self, key):
+        return self._v[key]
+
+
+def test_default_configuration_activates_the_new_and_drops_the_replaced_controls():
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    names = {e.name for e in active_kreis_entries(_Ctx({}), "mid")}
+    assert {"work_by_employment", "education_0_5", "education_6_17", "education_18plus",
+            "employment_status"} <= names
+    assert not ({"work_participation", "education_participation"} & names)
+
+
+@pytest.mark.parametrize("overrides, match", [
+    ({"braunschweig.population.popsim.work_participation_kreis_control": "on"}, "work_participation_kreis_control"),
+    ({"braunschweig.population.popsim.employment_status_kreis_control": "off"}, "employment_status_kreis_control"),
+    ({"braunschweig.population.popsim.education_participation_kreis_control": "on"}, "education_participation_kreis_control"),
+])
+def test_contradictory_toggles_raise_naming_both_keys(overrides, match):
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    with pytest.raises(ValueError, match=match):
+        active_kreis_entries(_Ctx(overrides), "mid")
+
+
+def test_legacy_configuration_is_unchanged(tmp_path):
+    """New toggles off + old ones on = exactly today's active set (OFF path)."""
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    ctx = _Ctx({"braunschweig.population.popsim.work_by_employment_kreis_control": "off",
+                "braunschweig.population.popsim.education_by_age_kreis_control": "off",
+                "braunschweig.population.popsim.work_participation_kreis_control": "on",
+                "braunschweig.population.popsim.education_participation_kreis_control": "on"})
+    assert [e.name for e in active_kreis_entries(ctx, "mid")] == [
+        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike", "trip_class", "employment_status",
+        "pt_ticket_group4", "work_participation", "leisure_participation", "education_participation", "escort_participation"]
+
+
 def test_education_flag_is_derived_once_for_every_active_age_band(tmp_path):
     """Every education-by-age entry reads the SAME education_flag column, so activating
     two bands must produce exactly one column, not two derivations that could disagree."""
