@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-conventions.md`. The record ends as `docs/decisions/ADR-NNNN-*.md` (check the number across ALL branches first).
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The record ends as `docs/decisions/ADR-NNNN-*.md` (check the number across ALL branches first).
   - type: input
     id: stages
     attributes:

@@ -1,8 +1,8 @@
-# Issue conventions (TUBS-IVS/eqasim-bs)
+# Issue and PR conventions (TUBS-IVS/eqasim-bs)
 
-GitHub issues on the fork are the ONLY backlog (CLAUDE.md). This note is the one home
-for how an issue is named, typed, labelled and opened. The Project board is a mirror
-that `/close` keeps in sync; nobody has to open it to understand an issue.
+GitHub issues on the fork are the ONLY backlog (CLAUDE.md). This note is the one home for
+how an issue and its PR are named, typed and labelled. The Project board is a mirror that
+`/close` keeps in sync; nobody has to open it to understand a work item.
 
 ## Four dimensions, one home each
 
@@ -38,8 +38,8 @@ validation is `Analysis` + `step:distribution`.
 
 ### Step vs area
 
-The step is the coarse axis one thinks in; the area is the registry axis that links an
-issue to its stage and feature records. Area determines step:
+The step is the coarse axis one thinks in; the area is the registry axis that links a work
+item to its stage and feature records. Area determines step:
 
 | step | areas |
 |---|---|
@@ -47,7 +47,7 @@ issue to its stage and feature records. Area determines step:
 | `population` | `population`, `attributes`, `fleet`, `home` |
 | `generation` | `behavior` |
 | `distribution` | `work`, `education`, `secondary` |
-| `mode-choice` | (`behavior`/`matsim` issues about mode choice, parking, ASCs) |
+| `mode-choice` | mode choice, parking and ASC issues (`behavior` / `matsim`) |
 | `assignment` | `matsim` |
 
 `cordon` and `freight` are demand segments and lie across steps; `analysis` and
@@ -66,7 +66,7 @@ at the front of the title, and as the first body line
 using the registry ids (`docs/registry/stages/<id>.yml`). `unknown` is a valid value and
 is fixed at triage. Search: `gh issue list --search "synthesis.population.trips in:body"`.
 
-## Title rule
+## Issue title rule
 
 `<stage or attribute>: <what is wrong / what is produced / what is decided>` — at most
 about 90 characters, no `[bug]`-style prefix (the type badge shows it), no `(#357)` parent
@@ -78,28 +78,51 @@ every number goes in the body.
 - Analysis: `Validate … against <reference>` / `Measure …`.
 - Decision: the question or the alternatives. `Home->home round trips (2.6 %): virtual destination or zero-distance legs`
 
-## Opening an issue from a session
+## PRs: same axes, one kind prefix
+
+A PR is a *change*, so it needs no type field of its own — the branch prefix carries the
+kind, and the PR inherits the issue's `step:`/`area:` labels so both lists filter the same
+way. `prio:` never goes on a PR.
+
+| Issue type | Branch prefix | Example |
+|---|---|---|
+| Bug | `fix/` | `fix/i344-chainsolver-worker-death` |
+| Feature | `feature/` | `feature/i329-pt-never-group` |
+| Analysis | `analysis/` | `analysis/i369-day-structure-vs-srv` |
+| Decision | `docs/` (the ADR is the deliverable) | `docs/adr-0079-donor-attributes-255` |
+| Task | `chore/`, or `test/` for a test-only change | `chore/git-working-hygiene` |
+
+**Branch:** `<prefix>/i<issue>-<slug>`, lowercase, hyphenated, and it is also the worktree
+name (`.claude/worktrees/<slug>`). One worktree per task, branched off `origin/main`.
+
+**PR title:** what the change does, imperative or nominal, at most about 90 characters,
+ending in `(#NN)` or `(closes #NN)`. No `[fix]` prefix, no bare `fix` / `update` / `changes`.
+Good: `Survive a killed chainsolver shard worker instead of waiting forever (#344)`.
+
+**PR body:** the template's sections, and the same `**Stages:**` line as the issue, so a
+reviewer sees which registry stages the diff touches without reading the diff. `Closes #NN`
+is mandatory whenever an issue exists — a PR without an issue is only for hygiene commits
+that the issue-first rule does not cover.
 
 ```
-gh issue create --repo TUBS-IVS/eqasim-bs --type Feature \
-  --label step:generation --label area:behavior --label data-quality \
-  --title "<stage>: <outcome>" --body-file issue.md
-gh issue edit 360 --repo TUBS-IVS/eqasim-bs --parent 357     # programme step
-gh issue list --repo TUBS-IVS/eqasim-bs --label prio:now
-gh issue list --repo TUBS-IVS/eqasim-bs --type Bug --label step:distribution
+git pr --label step:generation --label area:behavior \
+  --title "<what the change does> (closes #NN)" --body-file pr.md
 ```
 
-The five issue forms under `.github/ISSUE_TEMPLATE/` set the type and ask for the
-`Stages:` field; `step:`/`area:` labels are added by hand, `prio:` only at triage by the
-model owner. Programmes (several dependent steps) are a parent issue with sub-issues.
-Milestones are reserved for time-boxed waves with a defined end.
+(`git pr` is the alias pinning base `main` on the fork; extra flags pass straight through
+to `gh pr create`.) Merging is the user's action, never ours.
 
 ## Triage check (part of `/close`)
 
 Every open model issue has: a type, one `step:` label, at least one `area:` label, a
-`Stages:` line. `prio` may be absent (= not yet triaged) but the untriaged list is
-reviewed at every close. Closed issues keep their type and labels; their titles are not
-rewritten.
+`Stages:` line. `prio` may be absent (= not yet triaged) but the untriaged list is reviewed
+at every close. Closed issues keep their type and labels; their titles are not rewritten.
+
+```
+gh issue list --repo TUBS-IVS/eqasim-bs --label prio:now
+gh issue list --repo TUBS-IVS/eqasim-bs --type Bug --label step:distribution
+gh issue list --repo TUBS-IVS/eqasim-bs --search "no:label -label:prio:now"   # untriaged
+```
 
 ## Retired
 

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-conventions.md`. Tooling/docs tasks carry `area:tooling` / `area:docs` and no `step:*`; model tasks carry both.
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. Tooling/docs tasks carry `area:tooling` / `area:docs` and no `step:*`; model tasks carry both.
   - type: input
     id: stages
     attributes:

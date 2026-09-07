@@ -40,7 +40,13 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
 
 ## Branches & PRs
 
-- Branch naming: `feature/<topic>`, `fix/<topic>`, `docs/<topic>`, `chore/<topic>`.
+- Branch naming mirrors the issue type: `fix/` (Bug), `feature/` (Feature), `analysis/`
+  (Analysis), `docs/` (Decision → the ADR, and documentation), `chore/` (Task), `test/`
+  (test-only). Shape: `<prefix>/i<issue>-<slug>`, which is also the worktree name.
+- PR title says what the change does and ends in `(#NN)` / `(closes #NN)`; the PR carries
+  its issue's `step:`/`area:` labels (never `prio:`) and repeats the issue's `**Stages:**`
+  line. Full rule:
+  [docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 - **PRs and issues live only on the fork `TUBS-IVS/eqasim-bs`.** The GitHub web UI defaults
   a PR base to the upstream — always switch it, or just use the alias:
   `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
@@ -53,7 +59,7 @@ When a new feature/gap/idea surfaces mid-work, **propose it first**, then open a
 issue **in `TUBS-IVS/eqasim-bs`** with its native type (Bug / Feature / Analysis / Decision /
 Task), one `step:*` and one or two `area:*` labels, and a `Stages:` line naming the registry
 stage ids; the title reads `<stage or attribute>: <finding>`. The full rule is
-[docs/codebase/notes/issue-conventions.md](docs/codebase/notes/issue-conventions.md).
+[docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 Nothing incidental gets forgotten. Decisions graduate into an ADR under `docs/decisions/`.
 
 ## Non-negotiable rules (summary — full text in CLAUDE.md)

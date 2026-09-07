@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Issue conventions (types, step/area/prio labels, title rule, Stages field)
-    url: https://github.com/TUBS-IVS/eqasim-bs/blob/main/docs/codebase/notes/issue-conventions.md
+    url: https://github.com/TUBS-IVS/eqasim-bs/blob/main/docs/codebase/notes/issue-and-pr-conventions.md
     about: Read before opening an issue by hand or via gh issue create.

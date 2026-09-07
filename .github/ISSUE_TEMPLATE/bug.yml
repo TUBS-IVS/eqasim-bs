@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage.
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage.
   - type: input
     id: stages
     attributes:

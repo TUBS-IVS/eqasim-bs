@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-conventions.md`. An Analysis carries the `step:*` of the thing it measures (a commute-distance validation is `step:distribution`). Convergence is not validation.
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. An Analysis carries the `step:*` of the thing it measures (a commute-distance validation is `step:distribution`). Convergence is not validation.
   - type: input
     id: stages
     attributes:
