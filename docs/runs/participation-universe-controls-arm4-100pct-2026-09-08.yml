@@ -62,7 +62,7 @@ pipeline:
     it and a fresh output_path never exists. NOT a defect of this branch: the identical abort
     opened the first launch of the two preceding proof runs (Phase B 2026-09-05 and arm 3
     2026-09-06). Fixed by mkdir -p on output_bs_100pct_pb4 and popsim_work_pb4.
-    (2) 2026-09-08 00:24:21 -> 11:1x, log ~/pb4_arm4_100pct.log: completed_donor a CACHE HIT so
+    (2) 2026-09-08 00:24:21 -> 11:17:17, log ~/pb4_arm4_100pct.log: completed_donor a CACHE HIT so
     its 49 minutes were not repeated; popsim.stage 00:24-07:08 (6 h 44 min, 60/60 batches
     succeeded, 0 failed, 0 skipped, balancer 6:35:51, merge 60/60 with 0 missing); trips_stage
     07:08-08:41 (1 h 33 min); plan_structure_vs_srv and work_participation_by_kreis written by
@@ -74,12 +74,14 @@ classification:
 - validation
 status:
   execution: completed
-  notes: 'Arm 4 = arm 3 + the participation-universe controls = the base_bs.yml default state.
-    EIGHT of the nine pre-registered rows are MET and one is missed by 0.28 pp; the population,
-    households, trips, activities and vehicles tables were all written (641 MB under
-    output_bs_100pct_pb4). The one open check at the time of writing is whether the three hard
-    controls on overlapping mass degraded the pre-existing controls -- see the last validation
-    entry.'
+  notes: 'COMPLETE. The pipeline reached 23/23 at 11:17:17 CEST with zero error markers in the
+    whole log, and wrote the persons, households, trips, activities, vehicles and vehicle_types
+    tables plus the four GeoPackages (641 MB under output_bs_100pct_pb4). Arm 4 = arm 3 + the
+    participation-universe controls = the base_bs.yml default state. EIGHT of the nine
+    pre-registered rows are MET and one (seniors 65+ with a work trip) is missed by 0.28 pp. The
+    SPEC section 5 overlapping-mass risk was closed afterwards by running the identical validation
+    on BOTH populations: no systematic degradation, with one small real exception in household_size
+    recorded in its own validation entry.'
 environment: server
 validation:
 - metric: 'The critical pre-run defect: whether the four new controls can build their per-Kreis
@@ -223,28 +225,83 @@ validation:
     6,868, absent 3,984); more workers carry a state because more employed persons now have a
     workplace, which is the intended direction.'
   artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/run_log_excerpts.txt'
-- metric: 'OPEN AT THE TIME OF WRITING -- whether the three hard controls on overlapping mass
-    degraded the pre-existing controls (age x sex, trip_class, the ownership controls), and the
-    realised same-universe participation fit'
-  reference: 'the realised control fit of braunschweig/analysis/population_validation
-    (control_validation) and participation_universe_fit.csv against the committed universe targets'
-  result: 'unknown. This is the risk SPEC section 5 named and it is NOT closed by anything above.
-    PopulationSim writes no per-control summary table in this configuration (the per-batch output
-    holds only synthetic_households.csv, synthetic_persons.csv, final_expanded_household_ids.csv and
-    logs), and the 1 km sub-balancing "converged False" lines in populationsim.log are the known
-    behaviour of that geography, not a Kreis-level fit statement. run_population_validation was
-    chained to the run''s completion on the server (felix:~/pb4_val_chain.sh, output ~/pb4_val_out)
-    and its result will be recorded here. Until then this row reads unknown, and the eight MET rows
-    above must not be read as a statement about the other controls.'
-  artifact: 'felix:~/pb4_val_out (pending), felix:~/pb4_val.log'
+- metric: 'SPEC section 5 RISK -- whether the three hard controls on overlapping mass degraded the
+    pre-existing controls (age x sex, trip_class, the ownership controls)'
+  reference: 'the SAME measurement code run on BOTH populations: run_population_validation
+    (control_validation) against the arm-3 output that is still on the server, so the baseline is
+    measured and not assumed. PopulationSim itself writes no per-control summary in this
+    configuration, and the 1 km sub-balancing "converged False" lines of populationsim.log are the
+    known behaviour of that geography, not a Kreis-level fit statement.'
+  result: 'CLOSED -- no systematic degradation. Both arms were measured with the identical command
+    (felix:~/pb4_val_out label arm4_pb4, felix:~/psf3_val_out label arm3_psf3, both exit 0, both
+    with --escort-passive-education to match the run config). All ten validated controls are present
+    in both arms. Not one control''s mean relative RMSE grew by more than 1.0, and four fell
+    materially: pt_ticket_type -2.93, driving_license_type -1.78, employment -1.19,
+    employment_status -0.44. The two EMPLOYMENT controls improved on their worst cell as well
+    (employment 4.73 -> 3.17 pp, employment_status 4.73 -> 3.45 pp), which is decision Q1 working as
+    designed: the new work control is built from the SAME employed margin, so the two can no longer
+    disagree. sex improved (0.34 -> 0.28 pp). Two controls'' worst cell grew: age_group +0.52 pp
+    (2.13 -> 2.65, all of it in the 45-59 band, while its mean RMSE FELL 0.31 and three of six bands
+    improved) and household_size +1.88 pp (18.37 -> 20.25 in category "2"). THE HOUSEHOLD_SIZE MOVE
+    IS A REAL, IF SMALL, DEGRADATION AND IS NOT EXPLAINED AWAY: five of its six categories are
+    slightly worse in arm 4 (worst cell +0.66 to +1.88 pp, mean RMSE +0.20 to +2.49), it is the only
+    control measured on 113 geographies instead of 8, and 15 of its synthetic cells have no matching
+    target category at all and are excluded from the deviation -- a pre-existing gap in that
+    control, not something this package created. trip_class is NOT one of the validated controls, so
+    it is closed through the quantity it targets instead: the trip_class-derived mobility target of
+    participation_fit is unmoved, realised 87.94 % -> 87.93 % against a target of 88.45 %, mean
+    absolute error 0.51 -> 0.52 pp. On the same table work participation improved from 2.24 to 1.02
+    pp mean absolute error and escort from 0.34 to 0.12, while education (0.43 -> 0.59) and leisure
+    (0.54 -> 0.61) grew by less than 0.2 pp.'
+  artifact: 'felix:~/pb4_val_out/{controls_summary,participation_fit,participation_universe_fit}.csv,
+    felix:~/psf3_val_out/{controls_summary,participation_fit,participation_universe_fit}.csv,
+    felix:~/pb4_val.log, felix:~/psf3_val.log'
+- metric: 'The realised same-universe participation fit -- the only place where the model and the
+    control target sit on the SAME denominator, and the same-universe answer to pre-registered row 4'
+  reference: 'the committed targets target2026_work_by_employment_by_kreis.csv and
+    target2026_education_{0_5,6_17,18plus}_by_kreis.csv, joined per Kreis by
+    braunschweig/analysis/population_validation/participation_fit.py::universe_participation_fit'
+  result: 'MEASURED, and tight: all ten cells within 1.2 pp, mean absolute error 0.59 pp over the 80
+    (Kreis, control, category) cells, worst single cell 2.62 pp for
+    work_by_employment/nonemployed_nowork in 03103 over 113,832 persons. Aggregated over Kreise
+    weighted by each row''s own n_persons -- realised against target -- education_0_5 edu 68.58 vs
+    67.93 (+0.65 pp), education_6_17 edu 92.25 vs 91.73 (+0.51), education_18plus edu 4.56 vs 4.63
+    (-0.07), work_by_employment employed_work 36.04 vs 36.67 (-0.64), employed_nowork 16.74 vs 15.54
+    (+1.20), nonemployed_work 2.01 vs 2.23 (-0.22), nonemployed_nowork 45.22 vs 45.56 (-0.34). The
+    largest cell, employed_nowork +1.20, has its mirror in employed_work -0.64: that is Phase B''s
+    post-control day states taking the work trip from some employed persons, the deviation SPEC 2.1
+    documents, not a control miss. PRE-REGISTERED ROW 4 ON ONE DENOMINATOR: from these cells the
+    conditional rate P(work trip | not employed) is 2.01/(45.22+2.01) = 4.26 % realised against
+    2.23/(45.56+2.23) = 4.67 % targeted, so the model now sits 0.4 pp BELOW the reference rather
+    than far above it. THE MANDATORY CAVEAT: this table compares the model to targets it was RAKED
+    to. It is a fit check, not independent validation -- the code prints exactly that on every run
+    -- and the independent-facing comparison is the plan-structure one against the SrV reference.
+    BEFORE AND AFTER ON THE SAME UNIVERSE, the single clearest result of this package: arm 3''s
+    population was run through the IDENTICAL validation code, so the before column is measured and
+    not assumed. Mean absolute deviation over the ten aggregate cells falls from 4.90 pp to 0.48
+    pp, and EVERY cell improves -- education_6_17 edu 82.65 -> 92.25 against a 91.72 target (9.07
+    -> 0.52 pp), education_0_5 edu 73.42 -> 68.58 against 67.95 (5.47 -> 0.63), education_18plus
+    edu 5.21 -> 4.56 against 4.63 (0.59 -> 0.07), employed_nowork 22.71 -> 16.74 against 15.54
+    (7.17 -> 1.20), employed_work 30.52 -> 36.04 against 36.67 (6.15 -> 0.63), nonemployed_nowork
+    42.35 -> 45.22 against 45.56 (3.21 -> 0.34) and nonemployed_work 4.42 -> 2.01 against 2.23
+    (2.20 -> 0.22). Pre-registered row 4 read this way: the conditional P(work trip | not employed)
+    was 4.42/(42.35+4.42) = 9.45 % in arm 3, roughly double the 4.67 % target, and is 4.26 % in
+    arm 4. Reading these deltas as validation would still be wrong -- arm 4 was raked to these
+    targets and arm 3 was not -- so what the table proves is that the controls DO steer the
+    quantity they name, not that the steered quantity matches reality.'
+  artifact: 'felix:~/pb4_val_out/participation_universe_fit.csv,
+    felix:~/psf3_val_out/participation_universe_fit.csv, and both copies committed as
+    eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/population_validation_arm{3,4}_*.csv'
 artifacts:
 - 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/
   -- the committed aggregate: comparison.csv, headline.csv, by_kreis.csv, closure.csv,
   accepted_deviations.csv, plan_structure_vs_srv_{summary.md,provenance.json},
   work_participation_by_kreis.csv, commute_day_state_shares.csv,
-  commute_day_state_phase_a_{summary.md,provenance.json}, run_log_excerpts.txt. The two report
-  files of each stage carry their stage name because both stages write generic summary.md and
-  provenance.json names and one overwrote the other in the arm-3 aggregate.'
+  commute_day_state_phase_a_{summary.md,provenance.json}, run_log_excerpts.txt, and the six
+  population_validation_arm{3,4}_{controls_summary,participation_fit,participation_universe_fit}.csv
+  files that make the A/B control-fit and same-universe comparisons reproducible from the repository
+  alone. The two report files of each stage carry their stage name because both stages write generic
+  summary.md and provenance.json names and one overwrote the other in the arm-3 aggregate.'
 - 'felix:~/pb4_data/output_bs_100pct_pb4/ (641 MB: persons, households, trips, activities,
   vehicles, vehicle_types, the GeoPackages and the two analysis directories),
   ~/pb4_data/cache_bs_100pct_pb4/, ~/pb4_data/popsim_work_pb4/, ~/pb4_data/data/'

@@ -227,11 +227,27 @@ validation:
     the control cannot stop the residual concentrating in one age band. An age split of that cell
     would be the fix; it is NOT in this package and is not claimed.
 
-    STILL NOT VALIDATED, TWO WAYS. (1) These controls were RAKED to the committed targets, so
-    agreement with them is convergence toward a target, not independent agreement with reality.
-    (2) The SPEC section 5 risk -- whether three hard controls on overlapping mass degraded age x
-    sex, trip_class or the ownership controls -- is recorded as unknown in the run manifest's last
-    validation entry and is NOT closed by the eight MET rows.
+    THE OVERLAPPING-MASS RISK OF SPEC SECTION 5 IS CLOSED, measured by running the IDENTICAL
+    validation code on BOTH populations (the arm-3 output was still on the server), so the baseline
+    is measured and not assumed. No systematic degradation: not one of the ten validated controls
+    grew by more than 1.0 in mean relative RMSE, four fell materially, both employment controls
+    improved on their worst cell (4.73 -> 3.17 and 4.73 -> 3.45 pp, which is decision Q1 removing
+    the disagreement by construction), and sex improved. Two controls' worst cell grew:
+    age_group +0.52 pp, concentrated in the 45-59 band while its mean RMSE fell, and household_size
+    +1.88 pp, which is a real if small degradation in five of its six categories and is recorded as
+    such rather than explained away. trip_class is not a validated control, so it is closed through
+    the quantity it targets: the trip_class-derived mobility rate is unmoved at 87.94 -> 87.93 %
+    against a target of 88.45 %.
+
+    ON THE CONTROLS' OWN UNIVERSE the mean absolute deviation over the ten aggregate cells falls
+    from 4.90 pp to 0.48 pp and every cell improves; the run manifest carries the cell-by-cell
+    table.
+
+    STILL NOT VALIDATED. These controls were RAKED to the committed targets, so agreement with them
+    is convergence toward a target and NOT independent agreement with reality. The before/after
+    table above shows the controls steer the quantity they name; it does not show that the steered
+    quantity matches the world. The independent-facing comparison is the plan-structure one against
+    the SrV reference, and there one pre-registered row is still NOT met.
 assessment:
   status: reviewed
   by: 'Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07;

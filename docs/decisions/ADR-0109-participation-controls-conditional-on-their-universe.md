@@ -223,11 +223,16 @@
   the control cannot stop the residual concentrating in one age band. An age split of that cell
   would be the fix; it is deliberately NOT in this package.
   **Two limits on the above.** (1) These controls were RAKED to the committed targets, so agreement
-  with them is convergence toward a target and NOT independent agreement with reality. (2) The risk
-  this ADR named -- three hard controls sitting on overlapping mass -- is recorded as `unknown` in
-  the run manifest's last validation entry: PopulationSim writes no per-control summary in this
-  configuration, and whether age x sex, `trip_class` or the ownership controls degraded is not
-  settled by the eight MET rows.
+  with them is convergence toward a target and NOT independent agreement with reality: on the
+  controls' own universe the mean absolute deviation over ten aggregate cells falls from 4.90 pp to
+  0.48 pp and every cell improves, which proves the controls steer the quantity they name and not
+  that the steered quantity matches the world. (2) The risk this ADR named -- three hard controls
+  sitting on overlapping mass -- is CLOSED, by running the identical validation code on both
+  populations rather than by assuming a baseline: no systematic degradation across the ten
+  validated controls, both employment controls improved on their worst cell (decision Q1 removing
+  the disagreement by construction), `trip_class` closed through its own quantity with the mobility
+  rate unmoved at 87.94 -> 87.93 %, and one small real exception in `household_size`, whose worst
+  cell grew 1.88 pp in five of six categories.
 
 - **Evidence:** issues **#368** (this package), **#374** (rider, IN), **#369** (the measuring
   analysis stage), **#370** (universe rule fixed here), **#372** and **#373** (assessed and kept
