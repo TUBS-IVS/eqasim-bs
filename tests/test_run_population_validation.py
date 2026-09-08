@@ -209,7 +209,8 @@ def test_participation_fit_report_joins_kreis_and_scores_every_purpose():
 
     fit = R._participation_fit_report(persons, geo, _participation_trips(), R.DATA_PATH)
 
-    assert set(fit.columns) == {"ars5", "purpose", "realised_rate", "target_rate", "abs_error"}
+    assert set(fit.columns) == {"ars5", "purpose", "realised_rate", "n_persons",
+                                 "target_rate", "abs_error"}
     # Every registered purpose plus the derived mobility pseudo-purpose.
     assert set(fit["purpose"]) == {"work", "leisure", "education", "escort", "mobility"}
     by_purpose = fit.set_index("purpose")

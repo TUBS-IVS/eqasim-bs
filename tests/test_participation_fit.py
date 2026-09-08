@@ -188,7 +188,8 @@ def test_participation_fit_abs_error_on_fixture(tmp_path):
     targets_dir = _write_synthetic_targets(tmp_path)
     result = participation_fit(_trips_purpose_schema(), _persons_kreis(), targets_dir)
 
-    assert set(result.columns) == {"ars5", "purpose", "realised_rate", "target_rate", "abs_error"}
+    assert set(result.columns) == {"ars5", "purpose", "realised_rate", "n_persons",
+                                 "target_rate", "abs_error"}
     assert len(result) == 10
 
     indexed = result.set_index(["ars5", "purpose"])

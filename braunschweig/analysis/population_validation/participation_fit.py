@@ -283,7 +283,13 @@ def load_participation_targets(targets_dir: Path) -> pd.DataFrame:
 def participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame, targets_dir: Path) -> pd.DataFrame:
     """Join realised participation (interface 1) to the SrV targets (interface 2).
 
-    Returns ``ars5, purpose, realised_rate, target_rate, abs_error``.
+    Returns ``ars5, purpose, realised_rate, n_persons, target_rate, abs_error``.
+
+    ``n_persons`` -- the number of persons in that Kreis, carried through unchanged from
+    :func:`realised_participation` -- is what makes an ``abs_error`` interpretable: the
+    same deviation means different things in a Kreis of 500 and one of 50,000, and the
+    run's headline "worst abs_error" line reports exactly such a single cell. Added for
+    parity with :func:`universe_participation_fit`, which has carried it since #368.
 
     Realised (``ars5``, ``purpose``) cells with no matching target row are
     logged (warning, with examples) and dropped -- mirroring
@@ -306,7 +312,8 @@ def participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame, targets_
             "target and are excluded from the fit; examples: %s", len(missing), examples)
     merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
     merged["abs_error"] = (merged["realised_rate"] - merged["target_rate"]).abs()
-    return merged[["ars5", "purpose", "realised_rate", "target_rate", "abs_error"]].reset_index(drop=True)
+    return merged[["ars5", "purpose", "realised_rate", "n_persons", "target_rate",
+                   "abs_error"]].reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
