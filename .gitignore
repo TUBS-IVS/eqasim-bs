@@ -152,3 +152,21 @@ docs/data/*.xlsx
 # Report written by scripts/audit_test_data_dependencies.py (a local diagnostic run,
 # never a committed artifact; see docs/codebase/notes/test-data-dependencies.md).
 test_data_probe_audit.txt
+
+# Local scratch AT THE REPOSITORY ROOT. Ad-hoc diagnostics, pickle probes, one-off
+# exports and launch helpers pile up at the root of long-lived server checkouts, where
+# they are untracked but were NOT ignored -- one careless `git add -A` from entering the
+# history of a citable scientific repository. 17 such files were found in the shared
+# felix checkout on 2026-09-08. `scratch/` is the intended home and is ignored wholesale;
+# the name patterns below are the safety net for files dropped at the root anyway.
+# Every pattern is ROOT-ANCHORED on purpose: scripts/extract_*.py (31 tracked) and
+# scripts/inspect_*.py (3 tracked) are real committed tooling and must stay visible.
+# Pinned by tests/test_gitignore_root_scratch.py.
+/scratch/
+/diag_*.py
+/export_*.py
+/extract_*.py
+/inspect_*.py
+/launch_*.sh
+/launch_*.py
+/mkcfg_*.py
