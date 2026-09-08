@@ -1,0 +1,149 @@
+dataset: srv2023_education_by_age
+title: SrV 2023 education-participation rates per Kreis and age band 0-5 / 6-17 / 18+
+  (committed aggregate, source of the three education_by_age control targets)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per surveyed
+  home Kreis x age band (7 of the 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and has
+  NO row) plus one 03ZGB region-total row per band; 7 x 3 + 3 = 24 rows.
+crs: null
+roles:
+- calibration_target
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_work_by_employment_by_kreis.csv in one run. Reads
+    SrV2023_Personen.csv (HHNR, PNR, V_ALTER, V_ERW, E_ANZ_WEGE, GEWICHT_P_ZENSUS,
+    MITTL_WERKTAG), SrV2023_Wege.csv (HHNR, PNR, E_ZWECK_9) and SrV2023_Haushalte.csv (HHNR,
+    AGS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_participation_universe.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_education_by_age_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file: srv2023_education_by_age_by_kreis.csv (24 rows: 21 kreis + 3 03ZGB).
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup
+    tables: the file ships committed with every clone, no SrV table is listed in the verifier
+    at all, and no pipeline stage reads it - it is a BUILD-TIME input to the education_by_age
+    target builder, which is why requirements.production is "optional". Same treatment as the
+    sibling srv2023_ticket_groups4_14plus_by_kreis. Definitions live in
+    braunschweig/calibration/srv_participation_universe.py; unit tests on synthetic SrV-shaped
+    frames (including the by-hand band rates, the emitted-but-empty band row and the table
+    invariants): tests/test_srv_participation_universe.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe (at_home_or_mobile, measured on the 2026-09-07 extraction of the 18,223-person
+  delivery): a valid non-negative GEWICHT_P_ZENSUS (0 dropped), E_ANZ_WEGE != -7 so the persons
+  away from home over the WHOLE reporting day are excluded (954 dropped, 5.24%) and a household
+  that resolves to a Kreis (0 dropped). Universe = 17,269 persons, of which 2 have no valid
+  V_ALTER and therefore fall into NO band (they are in no band row and in no band total, so the
+  three bands sum to 17,267 rather than 17,269). Every exclusion count is written into the
+  committed file's own "# Exclusions:" header line by the builder, not only into a run log.
+
+  Why the away-from-home persons are excluded (user decision 2026-09-05, spec section 2.1 of
+  issue #368): a synthetic population has no such state - every synthetic person exists and
+  starts the day at home - so a control target taken from the all-persons universe of
+  srv2023_participation_by_kreis.csv asks the population to reproduce a rate diluted by a state
+  it cannot represent. Together with the age banding, that is the ONLY definitional difference
+  from that older table's education column.
+
+  Universe guards (the extraction raises, it never adapts): every MITTL_WERKTAG == 1 (pure
+  average-weekday Tuesday-Thursday delivery), every E_ANZ_WEGE either non-negative or exactly
+  -7 and never missing/non-numeric (so the ">= 0" universe filter drops exactly the
+  away-from-home persons and nothing uncounted - a missing value would otherwise be KEPT with an
+  unknown reporting-day state, controller ruling R16), and every resolved Kreis inside the 8 ZGB
+  Kreise.
+
+  Definitions: age bands from V_ALTER with INCLUSIVE bounds - education_0_5 = ages 0-5,
+  education_6_17 = ages 6-17, education_18plus = ages 18-200 (200 is an upper sentinel far above
+  any plausible age, not a real bound). p_education = GEWICHT_P_ZENSUS-weighted share of the
+  band's persons with at least one leg with E_ZWECK_9 in {3, 4} (Kita/Schule,
+  Ausbildung/Studium) on the reporting day, the same purpose set as
+  srv2023_participation_by_kreis.csv. 27 of 58,148 legs carry a missing E_ZWECK_9 code and can
+  match no purpose. A band with no person in a Kreis is still emitted, with n_unweighted = 0 and
+  a NaN share (never dropped or backfilled), so a consumer never has to guess whether a band is
+  missing or empty; no band is empty on this delivery.
+
+  Weight: GEWICHT_P_ZENSUS (person expansion to Zensus 2022 counts; the stratum-internal
+  GEWICHT_P must not be used across strata, ADR-0055). Kreis: first 5 digits of the zero-padded
+  8-digit household AGS joined via HHNR - never the survey design stratum ST_CODE.
+  Kreis-code-to-name mapping (canonical: braunschweig.analysis.spatial.ZGB8): 03101
+  Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154
+  Helmstedt, 03157 Peine, 03158 Wolfenbuettel.
+
+  Wolfsburg (03103) is NOT surveyed by SrV and has no row (the convention of
+  srv2023_participation_by_kreis.csv, whose consumer scripts/build_participation_target.py fills
+  Wolfsburg from the region total); a target builder must do the same and document it as an
+  assumption. Per band the 03ZGB row is EXACTLY the union of the 7 kreis rows, so
+  sum(kreis n_unweighted) == 03ZGB n_unweighted holds by construction (enforced by
+  srv_participation_universe.check_invariants, which also enforces that every band is present
+  and that every share is NaN or inside [0, 1]).
+
+  Kreis COVERAGE has its own guard, srv_participation_universe.check_kreis_coverage, which the
+  extraction calls with the full ZGB_KREISE set and which raises if any surveyed Kreis has no
+  row (only WOLFSBURG_KREIS may be absent) or if a row carries a code outside the expected set.
+  It is separate from check_invariants because the builders emit one row per Kreis PRESENT in
+  the universe, so a delivery that lost a whole Kreis would satisfy every table invariant while
+  emitting one row fewer.
+
+  Thin-cell caveat: the per-Kreis 0-5 and 6-17 bands rest on 75-541 unweighted persons per cell
+  (smallest: Helmstedt 03154 with 75 in education_0_5, Goslar 03153 with 95). Coverage caveat
+  inherited from every SrV table: stratified PSU design over ~44 selected municipalities, so
+  per-Kreis rows extrapolate from the sampled municipalities and are ASSUMPTION-grade for the
+  full Kreis.
+
+  Measured 2026-09-07 (03ZGB rows): education_0_5 p_education = 0.6785 (n = 1,050),
+  education_6_17 = 0.9171 (n = 2,020), education_18plus = 0.0476 (n = 14,197). Per-Kreis
+  education_6_17 spans 0.8905 (Gifhorn 03151) to 0.9611 (Wolfenbuettel 03158) and education_0_5
+  spans 0.6492 (Wolfenbuettel 03158) to 0.7582 (Goslar 03153).
+notes: |
+  Source of the three education_by_age Kreis controls of issue #368 (spec section 2.3), which
+  replace the single education_participation control: education_0_5 (kita / nokita),
+  education_6_17 (school_edu / school_noedu) and education_18plus (edu / noedu). Each is a
+  2-cell control on an AGE-RANGE universe, so its target needs only the conditional rate in this
+  table - the age-range total per Kreis comes from the single-year census cell columns
+  (M_AGE_*/F_AGE_*), which makes it exact census data and means no census margin table has to be
+  committed alongside.
+
+  Age bands rather than one 4- or 6-cell control over all persons: the shares of such a control
+  would embed an age margin, and the census cell controls cannot pin 6-17 (their bands are 0_9,
+  10_14, 15_17, 18_19, ... in control_spec.AGE_BANDS / FINE_TEEN_AGE_BANDS), so two hard
+  controls would fight over the 6-17 share. The 0-5 band exists because the previous control
+  left kita participation uncontrolled and the arm-3 measurement of issue #368 found the
+  synthetic 0-5 rate above the observed one (the exact deviation is recorded with that
+  measurement, not here).
+
+  Cross-check against the sibling srv2023_plan_structure_reference (verified 2026-09-07): this
+  table's 03ZGB education_6_17 rate 0.9170553 and n = 2,020 are IDENTICAL to the values that
+  reference carried for at_home_only / group_school_age_6_17_not_employed /
+  participation_education BEFORE the V_ERW 8 realignment - identical because under the old
+  employed set {9, 10, 11} no 6-17 person was employed, so that group and this age band were the
+  same 2,020 people. After the realignment 22 of them are apprentices, so the plan-structure
+  segment is now 1,998 persons at 0.9215 while this table's band stays age-only (the education
+  controls condition on age alone, never on employment) and therefore unchanged. The 03ZGB
+  education_0_5 rate 0.6784849 likewise equals that reference's at_home_only / age_0-5 /
+  participation_education. The old srv2023_participation_by_kreis.csv has no age breakdown at
+  all and therefore no per-Kreis kita rate.
+
+  Code state in the committed header: b4e76d2d, the state of
+  braunschweig/calibration/srv_participation_universe.py when the table was first extracted.
+  The fix-round-1 hardening at b737b726+ (a NaN guard on E_ANZ_WEGE, the Kreis-coverage guard,
+  a clearer no-band warning) changed that module afterwards WITHOUT changing this table: the
+  extraction was re-run on the hardened code and the result verified byte-identical to the
+  committed file, so the header's commit id still describes the numbers exactly. Same convention
+  as srv2023_plan_structure_reference; the file is deliberately not rewritten to refresh the id,
+  because that would churn the header and cost the byte-identity evidence.

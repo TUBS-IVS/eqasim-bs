@@ -64,12 +64,16 @@ CODE_DEFAULT_TRUE = {
         "braunschweig/popsim/stage/__init__.py (ADR-0069, default ON)",
     "fleet_consistency_v2": "braunschweig/synthesis/vehicles/cars/household.py:299",
     "simwrapper_export_enabled": "braunschweig/analysis/simwrapper_export.py:26",
-    "braunschweig.population.popsim.work_participation_kreis_control":
-        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
     "braunschweig.population.popsim.leisure_participation_kreis_control":
         "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
-    "braunschweig.population.popsim.education_participation_kreis_control":
-        "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #224)",
+    # work_participation_kreis_control / education_participation_kreis_control REMOVED
+    # (Plan B, issue #368, ADR-0109): both now default "off" in
+    # _KREIS_CONTROL_DEFAULT (work_by_employment / education_by_age replace them), so an
+    # entry here claiming a TRUE code default would be false evidence -- this map's
+    # contract is "flags whose CODE default is true" and CheckContext.flag_value only
+    # consults it when a flag is ABSENT from the composed config; leaving a stale entry
+    # would let K1/K2 silently report a disabled control as enabled if either key were
+    # ever removed from configs/base_bs.yml.
     "braunschweig.population.popsim.escort_participation_kreis_control":
         "braunschweig/popsim/stage/config_keys.py _KREIS_CONTROL_DEFAULT ('on', #227)",
     "cordon_student_incommuters_enabled":

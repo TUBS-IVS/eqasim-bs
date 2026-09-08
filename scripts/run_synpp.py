@@ -112,6 +112,44 @@ def export_to_store_from_config(config_path):
     return report
 
 
+def ensure_run_directories(config_path):
+    """Create the run's ``working_directory`` and ``output_path`` before synpp starts.
+
+    Upstream ``documentation/meta_output.py`` opens ``<output_path>/<prefix>meta.json``
+    for writing without creating ``output_path``, and a fresh output_path never exists,
+    so that stage aborts a run within minutes of launch. It is upstream eqasim and is
+    deliberately not modified here (fork-divergence minimisation, see
+    :mod:`braunschweig.provenance`), so the directory is created here instead -- the
+    same thing ``prime_from_config`` already does for ``working_directory``, but
+    unconditionally rather than only when the shared cache is enabled.
+
+    Reads the resolved config, so a composed run sees the merged ``output_path``.
+    Returns the list of directories it actually created (empty when both already
+    existed), and logs created-versus-present explicitly rather than silently.
+    """
+    with open(config_path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
+    cfg = doc.get("config", {}) or {}
+    wanted = [("working_directory", doc.get("working_directory")),
+              ("output_path", cfg.get("output_path"))]
+    created, present, absent = [], [], []
+    for name, path in wanted:
+        if not path:
+            absent.append(name)
+            continue
+        if os.path.isdir(path):
+            present.append(name)
+            continue
+        os.makedirs(path, exist_ok=True)
+        created.append(path)
+    logging.getLogger("braunschweig").info(
+        "[run_dirs] created %d (%s), already present %d (%s), not configured %d (%s)",
+        len(created), ", ".join(created) or "-",
+        len(present), ", ".join(present) or "-",
+        len(absent), ", ".join(absent) or "-")
+    return created
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) not in (1, 2):
@@ -139,6 +177,10 @@ def main(argv=None) -> int:
     # population.method -- logged and persisted into the working_directory so
     # even a killed run is traceable (meta_output.py only writes on success).
     log_and_write_run_provenance(config_path)
+    # Create working_directory and output_path before any stage runs: upstream
+    # meta_output.py writes into output_path without creating it, which aborted three
+    # consecutive 100 % proof runs minutes after launch.
+    ensure_run_directories(config_path)
     prime_from_config(config_path)
     # Record this run's own resource time series next to its outputs (issue #350).
     # The recorder samples the tree of THIS process, so every forked PopulationSim

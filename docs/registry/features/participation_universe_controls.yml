@@ -1,0 +1,293 @@
+feature: participation_universe_controls
+title: Participation controls conditional on their universe (#368)
+area: attributes
+description: >-
+  Replaces the two all-persons SrV participation Kreis controls whose target was met by the
+  WRONG persons with controls that are conditional on the universe they describe, and makes
+  the diary plan match keep the employment boundary so the two axes cannot come from two
+  different MiD respondents (issue #368, ADR-0109). Three parts. (1) work_by_employment:
+  four MECE cells (employed_work / employed_nowork / nonemployed_work / nonemployed_nowork)
+  over persons 14+, where "employed" reads the P_BKAT-based employment_status classes
+  (attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES, in_ausbildung INCLUDED, decision Q5) and
+  "work" is the realised plan source having a DIRECTLY recorded (W_RBW == 0) leg with
+  W_ZWECK in {1, 2} -- never an imputed flag, so a kept-immobile MiD 803 source is nowork by
+  construction. Its committed target is the employed MARGIN of the blended
+  target2026_employment_status_by_kreis.csv times the SrV conditional work-trip rates, so
+  this control and the employment_status control agree on the margin by construction
+  (decision Q1). (2) education_0_5 / education_6_17 / education_18plus: three 2-cell
+  (edu / noedu) controls on AGE-RANGE universes behind one toggle, each MECE within its band
+  and each band total summed exactly from the census single-year cell columns, so no external
+  age margin is committed (decision Q2); the seed reads the same map_purpose the trip builder
+  uses, so a passive-escort education leg cannot be education in the plan and non-education in
+  the seed. (3) diary_match_hard_employment: weekend_plan_match.match_person gained a
+  keyword-only hard_keys (default empty, so the weekend caller is byte-identical) and the
+  diary match passes {"employed"}, with surviving crossings counted and logged as a rate
+  (decision Q6). All targets are built on ONE universe rule -- the SrV persons who were at
+  home or mobile on the reporting day (at_home_only), the away-from-home persons being outside
+  every target denominator because a synthetic population has no such state.
+stages:
+- data.census.filtered
+- braunschweig.popsim.completed_donor
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.work_by_employment_kreis_control
+  - braunschweig.population.popsim.education_by_age_kreis_control
+  - braunschweig.population.popsim.diary_match_hard_employment
+introduced:
+  issue: '#368'
+  pr: null
+  adr: ADR-0109
+code_paths:
+- braunschweig/popsim/kreis_attribute_control.py
+- braunschweig/popsim/mid/participation.py
+- braunschweig/popsim/mid/seed_loading.py
+- braunschweig/popsim/stage/
+- braunschweig/popsim/control_spec.py
+- braunschweig/popsim/diary_plan_match.py
+- braunschweig/popsim/weekend_plan_match.py
+- braunschweig/calibration/srv_participation_universe.py
+- braunschweig/analysis/population_validation/participation_fit.py
+- scripts/extract_srv_participation_universe.py
+- scripts/build_participation_universe_targets.py
+evidence:
+  tests:
+  - tests/test_participation_universe_controls.py
+  - tests/test_participation_universe_targets.py
+  - tests/test_srv_participation_universe.py
+  - tests/test_kreis_control_stage_wiring.py
+  - tests/test_weekend_plan_match.py
+  - tests/test_diary_plan_match.py
+  - tests/test_completed_donor_diary_match.py
+  - tests/test_participation_fit.py
+  - tests/test_run_population_validation.py
+  - tests/test_control_fit_smoke.py
+  - tests/test_participation_universe_controls.py::test_registry_carries_the_four_universe_entries_as_hard_person_controls
+  - tests/test_participation_universe_controls.py::test_default_configuration_activates_the_new_and_drops_the_replaced_controls
+  - tests/test_participation_universe_controls.py::test_contradictory_toggles_raise_naming_both_keys
+  - tests/test_weekend_plan_match.py::test_match_person_never_relaxes_a_hard_key
+  - tests/test_diary_plan_match.py::test_reassign_reports_zero_crossings_with_hard_employment_and_counts_them_without
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_participation_universe_controls.py::test_legacy_configuration_is_unchanged
+    note: |
+      Four independent OFF-path claims, each pinned by its own test, and three of them proven
+      DISCRIMINATING by mutation (the mutation harness and its backups lived in the scratchpad,
+      never in the repository; the reverts are recorded in the task reports of this branch):
+      (1) CONFIG LEVEL -- test_legacy_configuration_is_unchanged: with the two new toggles "off"
+      and the two predecessors "on", active_kreis_entries returns exactly today's entry list, in
+      order. Mutation item1_toggle_ignored (the toggle check replaced by an unconditional append)
+      failed this test and the three sibling toggle tests in
+      tests/test_kreis_control_stage_wiring.py.
+      (2) CONTROL RENDERING -- test_max_age_none_renders_byte_identical_to_before_the_field_existed:
+      an entry without max_age renders the seed expression exactly as before the field existed
+      (with and without min_age), so no existing control's expression moves.
+      (3) CONTROLS TABLE -- tests/test_kreis_control_stage_wiring.py::
+      test_off_controls_csv_byte_identical_to_pre_task_default: the controls.csv of a run with no
+      Kreis controls is byte-identical to the pre-task default.
+      (4) SEED PATH -- test_load_mid_seed_off_path_no_universe_control_touches_wege and
+      test_project_completed_seed_off_path_needs_no_mid_dir: with no universe entry active neither
+      seed path reads the MiD Wege table or needs mid_dir at all, so a run without these controls
+      cannot be changed by them.
+      (5) MATCHER -- tests/test_weekend_plan_match.py::
+      test_match_person_with_empty_hard_keys_reproduces_todays_draw_sequence: 50 frozen
+      (H_ID, P_ID, level) draws captured from the PRE-change match_person (the capture script
+      asserted that "hard_keys" was not yet in the signature) are reproduced for both call shapes,
+      so the weekend caller's RNG stream is unchanged; 33 of the 50 sit at a level that DOES relax
+      past employed, i.e. the baseline covers exactly the ladder step this feature makes optional.
+      test_hard_keys_do_not_change_the_number_of_rng_draws additionally pins that turning the guard
+      ON consumes the same number of rng values, so no later consumer of the shared completion
+      stream shifts.
+      NOT claimed: the ON path is a deliberate behaviour change (different controls, different
+      seed columns, a different plan source for at most the handful of persons whose remap
+      crossed the employment boundary).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.mid]'
+    note: |
+      The two seed derivations have NO fallback by design -- an unresolved plan source RAISES in
+      map_flag_from_plan_source instead of being seeded from a default, because a default would
+      hide a broken donor join behind a plausible-looking control. What is instrumented is
+      therefore (a) the primary-vs-degenerate CHOICE and (b) every rate a reader needs to see that
+      the primary method actually worked:
+      - [popsim.mid] work_by_employment seed: the four labels as counts AND shares, reported over
+        the CONTROL's own 14+ universe (not over all persons, which would not be comparable to the
+        target margin), naming whether direct legs only or all legs incl. rbW were counted.
+      - [popsim.mid] education_flag seed: the edu share as count and rate PER age band
+        (EDUCATION_AGE_BOUNDS), i.e. per control universe, plus the W_ZWECK code set actually used
+        -- so a band whose seed cannot reach its target is visible before PopulationSim runs. With
+        no HP_ALTER column the overall rate is logged instead of nothing.
+      - [popsim.mid] the seed KEY branch: which key the flag was mapped through (the realised plan
+        source (source_H_ID, source_P_ID), or the person's own key when no plan-source columns
+        exist). The own-key branch is the one that can go wrong invisibly -- a caller with
+        mismatched id dtypes gets an empty join, every flag 0, and no error -- so it is logged
+        rather than left silent (controller ruling R10).
+      - [diary_plan_match] employment boundary crossed by n/N remaps as a rate, at WARNING when the
+        hard key is on and a crossing survived (only reachable through the whole-pool fallback),
+        INFO otherwise; the match-level line states the flag, because the level scale itself
+        depends on it (with one hard key the levels count SOFT relaxations, 0..4 instead of 0..5).
+      - [commute day donors] the #374 rider's donor filters: each of no_diary / only_rbw / holiday
+        logs dropped n/N with a rate, and a combined drop above
+        MAX_EXPECTED_DIARY_FILTER_DROP_RATE warns loudly, because a majority being filtered means
+        the classification is broken rather than the pool being unusual.
+      - The builders behind the committed tables log and RAISE rather than adapt: the SrV
+        extraction raises on a non-average-weekday delivery, on a missing/non-numeric E_ANZ_WEGE
+        (which would otherwise be KEPT with an unknown reporting-day state) and on a missing Kreis
+        row; the target builder raises on a NaN share, a duplicate Kreis or an uncovered Kreis.
+      Realised RATES are unknown: no arm has run with this feature on.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv
+    note: >-
+      The SrV conditional half of the work target (data record srv2023_work_by_employment); its
+      sibling srv2023_education_by_age_by_kreis.csv (data record srv2023_education_by_age) is the
+      whole of the three education targets. Both are BUILD-TIME inputs of
+      scripts/build_participation_universe_targets.py, not files the pipeline reads at run time --
+      the run-time inputs are the four committed targets (data records
+      target2026_work_by_employment_by_kreis and target2026_education_by_age_by_kreis). The
+      VALIDATION reference is a different file and a different universe:
+      srv2023_plan_structure_reference.csv, read by braunschweig.analysis.synthesis.
+      plan_structure_vs_srv on its primary at_home_zero universe. Hitting the targets is control
+      FIT; the SrV plan-structure comparison is the check that matters.
+validation:
+  state: measured_vs_reference
+  runs:
+  - participation-universe-controls-arm4-100pct-2026-09-08
+  metric: >-
+    Pre-registered before implementation (design of 2026-09-07, section 2.6), measured by
+    braunschweig.analysis.synthesis.plan_structure_vs_srv, braunschweig.analysis.synthesis.
+    work_participation_by_kreis and the new participation_universe_fit.csv of
+    run_population_validation. The arm-3 column is the state BEFORE this feature (run manifest
+    plan-structure-fix-arm3-100pct-2026-09-07); the expectation column is an ASSUMPTION until
+    arm 4 measures it.
+  note: |
+    The pre-registered table, verbatim from section 2.6 of the design (the universe column and the
+    note beneath it were added on 2026-09-07 by the documentation task, which changed no
+    expectation -- the original table named no universe per row, and the two universes differ by
+    about 3.4 pp on the employed segment, so a row judged against the wrong denominator would read
+    as a hit or a miss that never happened):
+
+    | metric | universe / measured by | arm 3 | expected after arm 4 |
+    |---|---|---|---|
+    | employed with work trip (head-to-head) | `at_home_zero`, segment `group_employed`, `plan_structure_vs_srv` vs `srv2023_plan_structure_reference.csv` | 58.4 % | >= 62 % (SrV 67.5 %; Phase B post-control states take about 2 pp) |
+    | seniors 65+ not employed with work trip | `at_home_zero`, segment `group_senior_65plus_not_employed`, same stage/reference | 7.8 % | <= 3 % (SrV 1.8 %) |
+    | ADR-0104 check 1, employed without work trip | ADR-0104 denominator (population `employed` attribute, ZGB home Kreis), `work_participation_by_kreis` vs `srv2023_work_participation_by_kreis.csv` -- a THIRD universe, neither of the two above | +8.06 pp | inside +/- 3 pp |
+    | workers not flagged employed | model-side count only (persons with an assigned workplace not flagged `employed`), `work_participation_by_kreis.csv`; no SrV universe | 41,680 (13.1 %) | towards the SrV non-employed work rate (2.8 % of 14+ non-employed) |
+    | education participation 6-17 not employed | `at_home_zero`, segment `group_school_age_6_17_not_employed`, `plan_structure_vs_srv`; NOT the control universe (`education_6_17` covers ALL 6-17 persons on `at_home_only`, target 0.9171) | 84.3 % | >= 88 % (SrV 90.0 %) |
+    | education participation 0-5 | `at_home_zero`, segment `group_child_0_5`, `plan_structure_vs_srv`; control universe `at_home_only`, target 0.6785 | 73.4 % | 63-69 % (SrV 65.6 %) |
+    | persons without a trip | `at_home_zero`, segment `all` (1 - `mobility_rate`), `plan_structure_vs_srv` | 11.3 % | unchanged 11-13 % (the controls are MECE, mobility untouched) |
+    | diary-match remaps crossing the employment boundary | the diary match's own remapped plan sources (`DiaryMatchReport`, `completed_donor` log); no survey universe | 2 of 74,898 (`match_level_counts={0: 74896, 3: 2}`, arm-3 log excerpt) | 0 |
+    | home-office donor pool: no-diary / rbW / holiday donors | the Phase B home-office donor pool (`filter_donor_diaries` counts); no survey universe | to be counted | 0 after the filters |
+
+    A metric moving the wrong way stops the ladder for diagnosis. Popsim control-fit convergence is
+    reported, not validation; the SrV comparison is.
+
+    TWO REFERENCE VALUES IN THIS TABLE MOVED with decision Q5 (apprentices, SrV V_ERW 8, entered
+    the employed set and EMPLOYED_V_ERW was realigned in the same branch, so the committed SrV
+    plan-structure reference was re-extracted): group_employed participation_work 0.6755 -> 0.6694
+    on at_home_zero (0.7087 -> 0.7033 on at_home_only) and group_school_age_6_17_not_employed
+    participation_education 0.8997 -> 0.9042 (0.9171 -> 0.9215), with segment sizes 8,066 -> 8,306
+    and 2,062 -> 2,039 persons. The "SrV 67.5 %" and "SrV 90.0 %" inside the expectation cells are
+    the PRE-realignment values the pre-registration was written against and are kept verbatim; arm 4
+    is measured against the CURRENT committed reference, so those gaps will not reproduce exactly.
+    Row 4's "2.8 % of 14+ non-employed" is NOT traceable to a committed table: the committed
+    srv2023_work_by_employment_by_kreis.csv gives p_work_nonemployed 0.0473 for 03ZGB (0.0249 to
+    0.0661 per Kreis) on the control universe -- judge arm 4 against that and treat 2.8 % as an
+    untraceable estimate.
+
+    MEASURED 2026-09-08 by arm 4 (run manifest
+    participation-universe-controls-arm4-100pct-2026-09-08, 100 % ZGB-8, commit 30cde0a1). EIGHT of
+    the nine rows above are MET; ONE is missed by 0.28 pp. Measured column, arm 3 -> arm 4:
+
+    | row | arm 3 | arm 4 | bound | verdict |
+    |---|---|---|---|---|
+    | employed with work trip | 58.38 % | 69.36 % | >= 62 % | MET |
+    | seniors 65+ not employed with work trip | 7.82 % | 3.28 % | <= 3 % | NOT MET by 0.28 pp |
+    | ADR-0104 check 1 | +8.06 pp | +2.25 pp | inside +/- 3 pp | MET |
+    | workers not flagged employed | 41,680 (13.1 %) | 18,672 (5.0 %) | towards 4.73 % | MET |
+    | education 6-17 not employed | 84.27 % | 93.05 % | >= 88 % | MET |
+    | education 0-5 | 73.44 % | 68.62 % | 63-69 % | MET |
+    | persons without a trip | 11.279 % | 11.278 % | unchanged 11-13 % | MET |
+    | diary remaps crossing the boundary | 2 of 74,898 | 0 of 74,898 | 0 | MET |
+    | donor pool no-diary / rbW / holiday | uncounted | 0 after the filters | 0 | MET |
+
+    Read on the universe the CONTROL targets (at_home_only) the three controlled segments land
+    within 1 pp: employed work -0.97, education 6-17 +0.89, education 0-5 +0.77. Read on the
+    at_home_zero universe the analysis stage prints, the same three sit 2.4 to 3.0 pp ABOVE the
+    reference, because the model has no away-from-home state while that reference counts such
+    persons as zero-trip. That is the documented deviation of SPEC 2.1, not a new finding.
+
+    THE ONE MISS HAS A MECHANISM, NOT A TUNING PROBLEM: work_by_employment pins the TOTAL
+    nonemployed_work mass over persons 14+ and leaves the age composition inside that cell free, so
+    the control cannot stop the residual concentrating in one age band. An age split of that cell
+    would be the fix; it is NOT in this package and is not claimed.
+
+    THE OVERLAPPING-MASS RISK OF SPEC SECTION 5 IS CLOSED, measured by running the IDENTICAL
+    validation code on BOTH populations (the arm-3 output was still on the server), so the baseline
+    is measured and not assumed. No systematic degradation: not one of the ten validated controls
+    grew by more than 1.0 in mean relative RMSE, four fell materially, both employment controls
+    improved on their worst cell (4.73 -> 3.17 and 4.73 -> 3.45 pp, which is decision Q1 removing
+    the disagreement by construction), and sex improved. Two controls' worst cell grew:
+    age_group +0.52 pp, concentrated in the 45-59 band while its mean RMSE fell, and household_size
+    +1.88 pp, which is a real if small degradation in five of its six categories and is recorded as
+    such rather than explained away. trip_class is not a validated control, so it is closed through
+    the quantity it targets: the trip_class-derived mobility rate is unmoved at 87.94 -> 87.93 %
+    against a target of 88.45 %.
+
+    ON THE CONTROLS' OWN UNIVERSE the mean absolute deviation over the ten aggregate cells falls
+    from 4.90 pp to 0.48 pp and every cell improves; the run manifest carries the cell-by-cell
+    table.
+
+    STILL NOT VALIDATED. These controls were RAKED to the committed targets, so agreement with them
+    is convergence toward a target and NOT independent agreement with reality. The before/after
+    table above shows the controls steer the quantity they name; it does not show that the steered
+    quantity matches the world. The independent-facing comparison is the plan-structure one against
+    the SrV reference, and there one pre-registered row is still NOT met.
+assessment:
+  status: reviewed
+  by: 'Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07;
+    the whole-branch review found the census age-column defect that would have aborted the arm-4
+    run, so the review is load-bearing evidence and not a formality. User sign-off outstanding.'
+  date: null
+  pending_reason: |
+    Implemented, reviewed and gated on the branch, but never executed: no arm-4 run exists, so the
+    realised cell shares, the seed label distributions, the donor counts per (Kreis x cell) and the
+    effect on the SrV plan-structure comparison are all unmeasured at production scale. The
+    assessment stays pending until the arm-4 run manifest is recorded, and the risk it must settle
+    is named in advance: three hard controls (employment_status, work_by_employment and the
+    employment-grid age shape) now sit on overlapping margins, and seed sparsity per Kreis x cell
+    (non-employed with a work trip in a small Landkreis) is the cell most likely to be too thin.
+notes: >-
+  WHY production.flags lists three keys and not the five this package touches: the K2-production
+  check requires every declared flag to resolve TRUTHY for production.enabled true, so the two
+  RETIRED predecessors -- braunschweig.population.popsim.work_participation_kreis_control and
+  ...education_participation_kreis_control, both "off" in configs/base_bs.yml -- are named here
+  instead of in production.flags. They stay REGISTERED entries with committed target files
+  (population_validation/participation_fit.py still reads every
+  target2026_<purpose>_participation_by_kreis.csv) and remain available for ablation configs;
+  enabling a predecessor together with its replacement, or a replacement while
+  employment_status_kreis_control is off, is a config-time ValueError from
+  source_resolution.active_kreis_entries that names both keys in full. The same-shaped record for
+  the four ORIGINAL participation controls is srv_participation_controls, which keeps
+  leisure_participation and escort_participation (unchanged by this feature) and points here for
+  the work/education halves; the diary-match guard is also carried by the diary_plan_match record,
+  whose mechanism it modifies. Cache cost, deliberate: braunschweig.popsim.completed_donor and the
+  popsim stage each recompute once, and the four new target CSVs purge the PopulationSim batch
+  cache through batch_cache.compute_batch_config_signature. MiD-only: every Kreis attribute control
+  is empty for a non-MiD source (active_kreis_entries returns [] there), which is why popsim_open
+  is inactive rather than active. PARQUET LOAD SET (final whole-branch review, item 1): an
+  age-universe control's per-Kreis denominator is summed from the single-year {M,F}_AGE_<year>
+  cell columns, and those are NOT implied by the rendered control frame -- before the fix the
+  stage loaded single-year ages only incidentally (10-19 for the fine teen bands, 16+ for the
+  employment grid), so education_0_5 had none of its band (the denominator raised, aborting the
+  stage hours into a run) and education_6_17 silently lost ages 6-9. stage._resolve_cell_load_columns
+  now derives the required columns from the ACTIVE registry entries' own bounds
+  (controls_builder.universe_age_census_columns), and person_total_by_kreis_age_range raises on a
+  PARTIALLY covered band naming the missing years -- which also closes the same latent hole in
+  employment_status's 14+ denominator, previously complete only by the coincidence of those two
+  flags being on.

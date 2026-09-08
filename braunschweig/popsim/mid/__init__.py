@@ -74,7 +74,12 @@ below. Submodules extracted:
                    weekday plan (``derive_trip_class_seed``,
                    ``compute_has_purpose_trip``, ``compute_has_work_trip``,
                    ``derive_participation_seed``,
-                   ``derive_work_participation_seed``)
+                   ``derive_work_participation_seed``), plus the
+                   participation-UNIVERSE seeds that replace them
+                   (``compute_has_direct_purpose_leg``,
+                   ``map_flag_from_plan_source``,
+                   ``derive_work_by_employment_seed``,
+                   ``derive_education_flag_seed``)
     seed_loading   The consistent MiD seed load + the completed-donor
                    projection (``load_mid_seed``, ``project_completed_seed``)
 """
@@ -167,11 +172,16 @@ from .kreis_controls import (  # noqa: F401  (re-exports)
 from . import participation
 from .participation import (  # noqa: F401  (re-exports)
     PARTICIPATION_W_ZWECK,
+    PASSIVE_ESCORT_W_ZWECK,
+    compute_has_direct_purpose_leg,
     compute_has_purpose_trip,
     compute_has_work_trip,
+    derive_education_flag_seed,
     derive_participation_seed,
     derive_trip_class_seed,
+    derive_work_by_employment_seed,
     derive_work_participation_seed,
+    map_flag_from_plan_source,
     trips,
 )
 

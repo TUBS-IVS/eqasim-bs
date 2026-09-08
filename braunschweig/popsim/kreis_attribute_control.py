@@ -64,6 +64,12 @@ class KreisAttributeControl:
     # must apply this restriction; level must be "person" for min_age to have any effect
     # (household-level entries have no natural per-person age to restrict on).
     min_age: int | None = None
+    # Inclusive upper age bound of the universe, or None (default; every pre-existing entry).
+    # With min_age it defines an AGE-RANGE universe (e.g. education_6_17): the rendered seed
+    # expression gains "(persons.HP_ALTER <= max_age)" and the per-Kreis total the categories
+    # partition is controls_builder.person_total_by_kreis_age_range (single-year census
+    # columns, exact for any band). Plan B, issue #368.
+    max_age: int | None = None
 
 
 def control_columns(ctl: KreisAttributeControl) -> tuple:
@@ -134,6 +140,51 @@ def kreis_rows_indexed_by_ars5(target_df: pd.DataFrame) -> pd.DataFrame:
     """
     out = target_df.set_index("ars5")
     return out.drop(index=[key for key in _AGG_ARS5 if key in out.index])
+
+
+# --------------------------------------------------------------------------- #
+# Participation-universe control vocabularies (Plan B, issue #368)
+#
+# Declared here (not in the seed module) because they are the CONTROL's category order:
+# the seed column's value set, the registry entry's `categories`, the target CSV's share
+# columns and the fit report must all use the same labels in the same order. The seed
+# derivation (braunschweig.popsim.mid.participation) imports them from here.
+# --------------------------------------------------------------------------- #
+
+# The four MECE labels of the work_by_employment control: employment status (employed iff
+# the person's employment_status is in attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES) x
+# whether the realised plan contains a direct work leg. This replaces the
+# work_participation control, which constrained the share of ALL persons with a work trip
+# and was therefore met while the WRONG persons made the trips (measured: employed 58.4 %
+# vs 67.5 % in the survey, pensioners 7.8 % vs 1.8 %).
+WORK_BY_EMPLOYMENT_CATEGORIES = ("employed_work", "employed_nowork", "nonemployed_work", "nonemployed_nowork")
+
+# Minimum age (inclusive) of the work_by_employment control universe. The MiD P9 / SrV
+# employment-status reference the target margin is built from is reported over persons
+# aged 14+, so the control's universe must be restricted the same way (the #97 universe
+# trap); declared here -- with the categories -- so the registry entry's `min_age` and the
+# seed derivation's universe log cannot state different bounds.
+WORK_BY_EMPLOYMENT_MIN_AGE_YEARS = 14
+
+# The two labels of the education_flag seed column: whether the realised plan contains a
+# direct education leg. Used by every education-by-age-range entry below (they differ only
+# in their age universe, not in their categories).
+EDUCATION_FLAG_CATEGORIES = ("edu", "noedu")
+
+# Inclusive age bounds (min_age, max_age) of the education-by-age-range control universes;
+# `None` as the upper bound means "no upper bound" (KreisAttributeControl.max_age = None).
+# The three bands separate the life stages whose education participation is governed by
+# different institutions -- pre-school (0-5), compulsory schooling (6-17) and post-school
+# education (18+) -- so a single education control cannot trade a missing pupil against a
+# surplus student (the #97 universe trap).
+EDUCATION_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
+    "education_0_5": (0, 5),
+    "education_6_17": (6, 17),
+    "education_18plus": (18, None),
+}
+# DERIVED from EDUCATION_AGE_BOUNDS (never re-listed) so a registry entry name and its age
+# universe cannot drift apart (controller ruling R1).
+EDUCATION_BY_AGE_ENTRY_NAMES = tuple(EDUCATION_AGE_BOUNDS)
 
 
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
@@ -382,6 +433,56 @@ REGISTRY: tuple = (
         target_columns=("escort_yes", "escort_no"),
         tier="hard",
     ),
+    # work_by_employment x Kreis control (Plan B, issue #368, ADR-0109): REPLACES
+    # work_participation by default (source_resolution.active_kreis_entries raises if both
+    # are "on"). Four MECE labels over persons 14+ (WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, the
+    # employment_status universe) cross employment status (employed iff
+    # attributes.EMPLOYED_EMPLOYMENT_STATUS_CLASSES) with whether the realised plan
+    # contains a direct work leg (mid.participation.derive_work_by_employment_seed). The
+    # all-persons work_participation control constrained the wrong persons: employed
+    # persons with a work trip were 58.4 % against the SrV target 67.5 %, and pensioners
+    # 7.8 % against 1.8 % (arm-3 run manifest plan-structure-fix-arm3-100pct-2026-09-07).
+    # The committed target (scripts/build_participation_universe_targets.py) is the
+    # employment_status margin x SrV conditional work-trip rate per employment class.
+    # tier="hard": classified into the "kreis_hard" importance group, alongside the other
+    # participation-family entries. min_age must read WORK_BY_EMPLOYMENT_MIN_AGE_YEARS (not
+    # the literal 14) so this entry and the seed derivation's universe log cannot state
+    # different bounds (controller ruling R6).
+    KreisAttributeControl(
+        name="work_by_employment",
+        seed_column="work_by_employment",
+        level="person",
+        categories=tuple((k, f"== '{k}'") for k in WORK_BY_EMPLOYMENT_CATEGORIES),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_work_by_employment_by_kreis.csv",
+        target_columns=WORK_BY_EMPLOYMENT_CATEGORIES,
+        tier="hard",
+        min_age=WORK_BY_EMPLOYMENT_MIN_AGE_YEARS,
+    ),
+    # education_0_5 / education_6_17 / education_18plus x Kreis controls (Plan B, issue
+    # #368, ADR-0109): REPLACE education_participation by default (source_resolution.
+    # active_kreis_entries raises if education_participation is "on" together with any of
+    # the three). Three age-range universes sharing the SAME education_flag seed column
+    # (mid.participation.derive_education_flag_seed) -- each is MECE (edu/noedu) within its
+    # own band and partitions the census-exact band total (controls_builder.
+    # person_total_by_kreis_age_range), so a single all-ages control cannot trade a missing
+    # pupil against a surplus student (the #97 universe trap). The all-persons
+    # education_participation control missed the age-specific levels: 6-17 was 84.3 %
+    # against the SrV target 90.0 %, 0-5 was 73.4 % against 65.6 % (arm-3 run manifest
+    # plan-structure-fix-arm3-100pct-2026-09-07). The committed targets (scripts/
+    # build_participation_universe_targets.py) are built from the SAME SrV aggregate. Age
+    # bounds are read from EDUCATION_AGE_BOUNDS, never re-listed (controller ruling R6), so
+    # an entry name and its universe cannot drift apart.
+    *(KreisAttributeControl(
+        name=name,
+        seed_column="education_flag",
+        level="person",
+        categories=tuple((k, f"== '{k}'") for k in EDUCATION_FLAG_CATEGORIES),
+        target_csv_relpath=f"{_TARGET_DIR}/target2026_{name}_by_kreis.csv",
+        target_columns=EDUCATION_FLAG_CATEGORIES,
+        tier="hard",
+        min_age=lo,
+        max_age=hi,
+      ) for name, (lo, hi) in EDUCATION_AGE_BOUNDS.items()),
 )
 
 

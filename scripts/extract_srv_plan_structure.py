@@ -122,7 +122,11 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "# Segments: all; age_<band> for %s; group_<g> for %s (employment x life phase, defined"
         % (list(T.AGE_LABELS), list(T.GROUPS)),
         "#   so that a synthetic population without a pupil/student flag can express it: employed",
-        "#   wins, the non-employed are split by age); sex_male / sex_female (V_GESCHLECHT 3",
+        "#   wins, the non-employed are split by age; employed = V_ERW in %s, i.e. in"
+        % (list(T.EMPLOYED_V_ERW),),
+        "#   Ausbildung/Lehre (8, an apprenticeship with an employment contract) counts as",
+        "#   employed, aligned with the MiD-side employment_status classes of the regional",
+        "#   controls -- decision Q5 of issue #368, ADR-0060); sex_male / sex_female (V_GESCHLECHT 3",
         "#   'divers' and 4 'no answer' are in no sex segment); kreis_<ars5> for the 7 surveyed",
         "#   Kreise (Wolfsburg 03103 is NOT surveyed by SrV and has no row here).",
         "# Metric definitions: mobility_rate = weighted share of persons with >= 1 trip;",

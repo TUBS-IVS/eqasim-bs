@@ -37,14 +37,25 @@ import pandas as pd
 from braunschweig.popsim import attributes
 from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import seed as seedmod
+from braunschweig.popsim.kreis_attribute_control import EDUCATION_BY_AGE_ENTRY_NAMES
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
 
 from .csv_format import detect_csv_separator
 from .donor import load_mid_wege
 from .participation import PARTICIPATION_W_ZWECK
+from .participation import derive_education_flag_seed
 from .participation import derive_participation_seed
 from .participation import derive_trip_class_seed
+from .participation import derive_work_by_employment_seed
+
+# The participation-UNIVERSE control entry names (Plan B, issue #368) whose seed columns
+# are derived from the MiD Wege table, exactly like the <purpose>_participation entries:
+# work_by_employment (one column) plus every education-by-age-range entry (which all read
+# the SAME education_flag column, differing only in their age universe). Derived from
+# EDUCATION_BY_AGE_ENTRY_NAMES rather than re-listed, so registering a further age band
+# needs no edit here.
+_UNIVERSE_ENTRY_NAMES = frozenset({"work_by_employment"}) | frozenset(EDUCATION_BY_AGE_ENTRY_NAMES)
 
 
 # --------------------------------------------------------------------------- #
@@ -515,8 +526,10 @@ def _derive_participation_seed_columns(
     *,
     active_kreis_entry_names: set[str],
     kreis_seed_rng,
+    escort_passive_education: bool,
+    exclude_rbw_legs: bool,
 ) -> pd.DataFrame:
-    """Derive the ``<purpose>_participation`` seed columns for ``load_mid_seed``.
+    """Derive the participation seed columns for ``load_mid_seed``.
 
     participation controls (work_participation task 4; leisure_participation /
     education_participation task 5, feature #224): derive the 0/1 has-a-<purpose>-trip
@@ -528,10 +541,21 @@ def _derive_participation_seed_columns(
     not otherwise read; loaded ONCE here (gated on ANY participation control being
     active) so the OFF path never touches MiD2023_Wege.csv (byte-identical no-op).
 
-    Returns: the persons frame with one derived column per active purpose (MUST be
-    reassigned).
+    The participation-UNIVERSE seed columns (Plan B, issue #368) are derived from the
+    SAME Wege table in the same step: ``work_by_employment`` (employment status x a direct
+    work leg) and ``education_flag`` (a direct education leg), which replace the
+    ``work_participation`` / ``education_participation`` marginals with controls on the
+    JOINT distribution. Both run AFTER :func:`_derive_employment_status_seed_column` in
+    both public functions -- ``derive_work_by_employment_seed`` needs the
+    ``employment_status`` column and raises a ``KeyError`` naming it otherwise (no silent
+    fallback). ``exclude_rbw_legs`` is forwarded so the seed counts exactly the legs the
+    trip build keeps (controller ruling R8); both new keywords are keyword-only with NO
+    default here, so the two public callers must state them and the twins cannot drift.
+
+    Returns: the persons frame with one derived column per active purpose plus the active
+    universe seed columns (MUST be reassigned).
     Mutates: nothing in place; reads ``MiD2023_Wege.csv`` from ``mid_dir`` when at
-    least one participation control is active.
+    least one participation or participation-universe control is active.
     """
     # Every purpose in PARTICIPATION_W_ZWECK (work/leisure/education, feature #224;
     # escort, issue #227) is seedable; the single source of truth for the purpose set
@@ -540,11 +564,23 @@ def _derive_participation_seed_columns(
         purpose for purpose in PARTICIPATION_W_ZWECK
         if f"{purpose}_participation" in active_kreis_entry_names
     ]
-    if _active_participation_purposes:
+    _needs_universe = bool(active_kreis_entry_names & _UNIVERSE_ENTRY_NAMES)
+    if _active_participation_purposes or _needs_universe:
         wege = load_mid_wege(mid_dir)
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
                 persons, wege, purpose, rng=kreis_seed_rng,
+                household_id=columns.person_household_id, person_id=columns.person_id)
+        if "work_by_employment" in active_kreis_entry_names:
+            persons = derive_work_by_employment_seed(
+                persons, wege, exclude_rbw_legs=exclude_rbw_legs,
+                household_id=columns.person_household_id, person_id=columns.person_id)
+        # Every education-by-age-range entry reads the SAME education_flag column (they
+        # differ only in their age universe), so it is derived ONCE if any is active.
+        if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
+            persons = derive_education_flag_seed(
+                persons, wege, escort_passive_education=escort_passive_education,
+                exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -621,8 +657,10 @@ def _derive_projected_participation_seed_columns(
     *,
     active_kreis_entry_names: set[str],
     kreis_seed_rng,
+    escort_passive_education: bool,
+    exclude_rbw_legs: bool,
 ) -> pd.DataFrame:
-    """Derive the ``<purpose>_participation`` columns for ``project_completed_seed``.
+    """Derive the participation seed columns for ``project_completed_seed``.
 
     Derive each active <purpose>_participation from the completed donor's MiD Wege
     table (loaded from mid_dir; the completed-donor frames do not carry the Wege
@@ -632,15 +670,21 @@ def _derive_projected_participation_seed_columns(
     and reused for every active purpose (work_participation task 4; leisure_
     participation / education_participation task 5, feature #224).
 
+    The participation-UNIVERSE seed columns (``work_by_employment`` / ``education_flag``,
+    Plan B issue #368) are derived from the same Wege table here too -- the two functions
+    are deliberate TWINS, so whatever one derives the other derives as well, with the same
+    ``escort_passive_education`` / ``exclude_rbw_legs`` semantics (both keyword-only with
+    NO default here, so a caller cannot silently omit one on just one path).
+
     Kept separate from the ``load_mid_seed`` twin
     (``_derive_participation_seed_columns``) because of the extra ``mid_dir``
     requirement check, whose ValueError names its caller and is raised inside the
     guarded branch, so it cannot stay with the caller.
 
-    Returns: the persons frame with one derived column per active purpose (MUST be
-    reassigned).
+    Returns: the persons frame with one derived column per active purpose plus the active
+    universe seed columns (MUST be reassigned).
     Mutates: nothing in place; reads ``MiD2023_Wege.csv`` from ``mid_dir`` when at
-    least one participation control is active.
+    least one participation or participation-universe control is active.
     """
     # Same single-source-of-truth purpose set as the load_mid_seed twin (see
     # _derive_participation_seed_columns).
@@ -648,17 +692,33 @@ def _derive_projected_participation_seed_columns(
         purpose for purpose in PARTICIPATION_W_ZWECK
         if f"{purpose}_participation" in active_kreis_entry_names
     ]
-    if _active_participation_purposes:
+    # The universe entries need the SAME Wege table; a missing mid_dir must name whichever
+    # family of controls demanded it, so the message lists the purposes when one is active
+    # and the universe entries otherwise.
+    _active_universe_entries = sorted(active_kreis_entry_names & _UNIVERSE_ENTRY_NAMES)
+    _wege_demanded_by = _active_participation_purposes or _active_universe_entries
+    if _wege_demanded_by:
         if mid_dir is None:
             raise ValueError(
                 "project_completed_seed: a participation kreis control "
-                f"{_active_participation_purposes} is active but mid_dir is not set; cannot "
-                f"load the MiD Wege table to derive participation flags for {_active_participation_purposes} (no silent fallback)."
+                f"{_wege_demanded_by} is active but mid_dir is not set; cannot "
+                f"load the MiD Wege table to derive participation flags for {_wege_demanded_by} (no silent fallback)."
             )
         wege = load_mid_wege(mid_dir)
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
                 persons, wege, purpose, rng=kreis_seed_rng,
+                household_id=columns.person_household_id, person_id=columns.person_id)
+        if "work_by_employment" in active_kreis_entry_names:
+            persons = derive_work_by_employment_seed(
+                persons, wege, exclude_rbw_legs=exclude_rbw_legs,
+                household_id=columns.person_household_id, person_id=columns.person_id)
+        # Every education-by-age-range entry reads the SAME education_flag column (they
+        # differ only in their age universe), so it is derived ONCE if any is active.
+        if active_kreis_entry_names & set(EDUCATION_BY_AGE_ENTRY_NAMES):
+            persons = derive_education_flag_seed(
+                persons, wege, escort_passive_education=escort_passive_education,
+                exclude_rbw_legs=exclude_rbw_legs,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -711,6 +771,8 @@ def load_mid_seed(
     kreis_control_entries: Sequence[KreisAttributeControl] = (),
     kreis_seed_rng=None,
     ebike_seed_column: Optional[str] = None,
+    escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -754,6 +816,28 @@ def load_mid_seed(
         ebike_seed_column: Name of the (server-verified) MiD household e-bike
             column feeding the ``has_ebike`` entry. REQUIRED when ``has_ebike`` is
             active (no silent fallback to a guessed column name).
+        escort_passive_education: The value of the ``escort_passive_education``
+            trip-build flag for THIS run (config key ``escort_passive_education``,
+            threaded from ``popsim.stage``; ``configs/base_bs.yml`` sets it to
+            ``true``). Read ONLY by the ``education_flag`` seed derivation
+            (``mid.derive_education_flag_seed``, Plan B issue #368): under the flag the
+            trip build maps MiD ``W_ZWECK`` 13 (the passive escort leg) to education, so
+            the seed must count that code as education too, or seed and realised plan
+            describe different days. Default False -- the same default
+            ``braunschweig.popsim.trips_stage`` declares -- so direct callers/tests are
+            unaffected; the stage always passes its configured value explicitly.
+        exclude_rbw_legs: The value of the ``exclude_rbw_legs`` trip-build flag for
+            THIS run (config key ``braunschweig.population.popsim.exclude_rbw_legs``,
+            threaded from ``popsim.stage``). Read ONLY by the participation-universe seed
+            derivations (controller ruling R8): the trip build drops rbW legs
+            (``W_RBW == 1``) from the plan only under this flag, so the seed must count
+            them exactly when the plan does -- filtering them unconditionally would say
+            "no work" about a plan that makes a work trip whenever the flag is OFF (arm 1
+            of the A/B ladder does exactly that). Default True, matching the config
+            default ``braunschweig.popsim.completed_donor`` and
+            ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
+            gets the PRODUCTION convention rather than a divergent one; the flag is inert
+            unless a participation-universe control is active.
     """
     if complete_members and completion_rng is None:
         raise ValueError(
@@ -821,6 +905,8 @@ def load_mid_seed(
         persons, columns, mid_dir,
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
+        escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
     )
     households = _join_hh_type5_column(households, persons, columns)
     _hh_extra, _person_extra = _split_kreis_entries_by_level(effective_kreis_entries)
@@ -842,6 +928,8 @@ def project_completed_seed(
     trip_class_counts_closure: bool = False,
     forbid_no_diary_sources: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    escort_passive_education: bool = False,
+    exclude_rbw_legs: bool = True,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -914,6 +1002,26 @@ def project_completed_seed(
             drops under the same flag from the closure-counted seed; see
             ``derive_trip_class_seed``'s argument of the same name. Default False
             here for the same reason as above.
+        escort_passive_education: threaded from ``popsim.stage`` (Plan B issue #368;
+            config key ``escort_passive_education``, which ``configs/base_bs.yml`` sets
+            to ``true``). Read ONLY by the ``education_flag`` seed derivation
+            (``mid.derive_education_flag_seed``): under the flag the trip build maps MiD
+            ``W_ZWECK`` 13 (the passive escort leg) to education, so the seed must count
+            that code as education too, or seed and realised plan describe different
+            days. Default False here for the same reason as above -- it is the default
+            ``braunschweig.popsim.trips_stage`` declares.
+        exclude_rbw_legs: The value of the ``exclude_rbw_legs`` trip-build flag for
+            THIS run (config key ``braunschweig.population.popsim.exclude_rbw_legs``,
+            threaded from ``popsim.stage``). Read ONLY by the participation-universe seed
+            derivations (controller ruling R8): the trip build drops rbW legs
+            (``W_RBW == 1``) from the plan only under this flag, so the seed must count
+            them exactly when the plan does -- filtering them unconditionally would say
+            "no work" about a plan that makes a work trip whenever the flag is OFF (arm 1
+            of the A/B ladder does exactly that). Default True, matching the config
+            default ``braunschweig.popsim.completed_donor`` and
+            ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
+            gets the PRODUCTION convention rather than a divergent one; the flag is inert
+            unless a participation-universe control is active.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -961,6 +1069,8 @@ def project_completed_seed(
         persons, columns, mid_dir,
         active_kreis_entry_names=active_kreis_entry_names,
         kreis_seed_rng=kreis_seed_rng,
+        escort_passive_education=escort_passive_education,
+        exclude_rbw_legs=exclude_rbw_legs,
     )
 
     households = _join_hh_type5_column(households, persons, columns)

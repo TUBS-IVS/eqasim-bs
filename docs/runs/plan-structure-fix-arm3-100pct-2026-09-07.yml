@@ -142,7 +142,15 @@ validation:
     0.1134 vs 0.0671, home 0.4145 vs 0.4226. The shop deficit (-6.1 pp participation) and the
     other surplus (+9.4 pp) are the purpose-taxonomy systematics measured before the fix
     (MiD W_ZWECK 10 "anderer Zweck" and code 5 vs SrV 10/11/70; children 6-9 other participation
-    0.180 vs 0.061) and are unchanged by this branch: issue #373.'
+    0.180 vs 0.061) and are unchanged by this branch: issue #373. Reference vintage: every
+    reference value above was read from srv2023_plan_structure_reference.csv as committed at
+    1a841550, i.e. BEFORE the 2026-09-07 EMPLOYED_V_ERW realignment (issue #368 decision Q5,
+    which added V_ERW 8 apprentices to the employed set). The all / age_* / sex_* / kreis_*
+    reference values are unaffected and stay directly comparable; the two GROUP references
+    quoted here moved when the reference was regenerated -- employed participation_work 0.6755
+    -> 0.6694 and school-age-6-17-not-employed participation_education 0.8997 -> 0.9042 -- so a
+    re-measurement against the current reference will not reproduce those two gaps exactly. See
+    docs/registry/data/srv2023_plan_structure_reference.yml for the full blast radius.'
   artifact: eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/comparison.csv
 - metric: 'diary_plan_match report and the trip_class seed guards (package 1, ADR-0106)'
   reference: 'braunschweig.popsim.diary_plan_match EXPECTED_SHARE_REMAPPED = (0.05, 0.30)'

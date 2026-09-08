@@ -1064,6 +1064,10 @@ def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogCo
     distort the category counts (the #97 universe trap). Entries with ``min_age=None``
     (every pre-existing REGISTRY entry) are unaffected: their rendered expression is
     byte-identical to before this field existed.
+
+    When an entry additionally carries ``max_age`` (not ``None``), the expression ANDs in
+    a second clause ``(persons.HP_ALTER <= max_age)`` AFTER the ``min_age`` clause, turning
+    the universe into an inclusive AGE RANGE (e.g. education_6_17). Plan B, issue #368.
     """
     from braunschweig.popsim.kreis_attribute_control import control_columns as _cols
     table_of = {"household": SEED_TABLE_HOUSEHOLDS, "person": SEED_TABLE_PERSONS}
@@ -1074,6 +1078,8 @@ def attribute_kreis_controls(controls, importance: int = 1000) -> List[CatalogCo
             expr = f"({table}.{ctl.seed_column} {predicate})"
             if getattr(ctl, "min_age", None) is not None:
                 expr = f"{expr} & ({table}.HP_ALTER >= {ctl.min_age})"
+            if getattr(ctl, "max_age", None) is not None:
+                expr = f"{expr} & ({table}.HP_ALTER <= {ctl.max_age})"
             out.append(
                 CatalogControl(
                     name=col,

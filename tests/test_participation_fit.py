@@ -1,7 +1,7 @@
 """Tests for braunschweig/analysis/population_validation/participation_fit.py
-(Task 7 of feature #224).
+(Task 7 of feature #224; universe-control additions Task 8 of Plan B, issue #368).
 
-Covers the four public interfaces:
+Covers the four purpose-only public interfaces:
 - ``realised_participation`` on both the eqasim purpose-string trip schema and
   the raw MiD ``W_ZWECK`` schema, on tiny synthetic fixtures with known
   per-Kreis participation/mobility rates;
@@ -10,6 +10,26 @@ Covers the four public interfaces:
   including the no-silent-fallback drop of realised cells without a target;
 - ``donor_neff`` on a fixture with known donor duplication, and its
   no-silent-fallback raise when the donor id column is absent.
+
+Plus the three participation-UNIVERSE interfaces (Plan B, issue #368):
+- ``realised_universe_participation`` on the eqasim trip schema ONLY (fix round
+  1, item 1: the raw MiD ``W_ZWECK``-only schema deliberately raises here --
+  see the dedicated negative test), with dedicated boundary tests per control
+  proving each universe filter (age band, employment-status class) actually
+  restricts the denominator -- a person inside the frame but outside a
+  control's own universe must not move that control's share -- and (fix round
+  1, item 3) a REGISTRY-driven test proving the age bounds and the control set
+  itself are read from ``kreis_attribute_control.REGISTRY``, not merely from a
+  same-valued constant;
+- fallback-transparency tests (fix round 1, item 2) for the three silent-
+  degradation paths the reviewer found: a non-numeric/missing ``age``, an
+  ``employment_status`` value outside the recognised vocabulary, a
+  ``person_id`` dtype mismatch between ``trips`` and ``persons_kreis``, and an
+  entirely empty control universe -- each must WARN, never degrade silently;
+- ``load_universe_targets`` against the real committed target2026_work_by_
+  employment / target2026_education_{0_5,6_17,18plus} files;
+- ``universe_participation_fit`` joining a realised fixture to a synthetic
+  target, including the same no-silent-fallback drop behaviour.
 """
 import logging
 import sys
@@ -24,9 +44,15 @@ import pytest  # noqa: E402
 from braunschweig.analysis.population_validation.participation_fit import (  # noqa: E402
     donor_neff,
     load_participation_targets,
+    load_universe_targets,
     participation_fit,
     realised_participation,
+    realised_universe_participation,
+    universe_participation_fit,
 )
+from braunschweig.popsim import kreis_attribute_control as kac  # noqa: E402
+from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
+    EDUCATION_AGE_BOUNDS, WORK_BY_EMPLOYMENT_CATEGORIES, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
 
 TARGETS_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "targets"
 
@@ -162,7 +188,8 @@ def test_participation_fit_abs_error_on_fixture(tmp_path):
     targets_dir = _write_synthetic_targets(tmp_path)
     result = participation_fit(_trips_purpose_schema(), _persons_kreis(), targets_dir)
 
-    assert set(result.columns) == {"ars5", "purpose", "realised_rate", "target_rate", "abs_error"}
+    assert set(result.columns) == {"ars5", "purpose", "realised_rate", "n_persons",
+                                 "target_rate", "abs_error"}
     assert len(result) == 10
 
     indexed = result.set_index(["ars5", "purpose"])
@@ -219,3 +246,533 @@ def test_donor_neff_raises_on_missing_donor_id_column():
     persons = pd.DataFrame({"person_id": [1, 2, 3]})
     with pytest.raises(KeyError, match="source_P_ID"):
         donor_neff(persons, "source_P_ID")
+
+
+# ---------------------------------------------------------------------------
+# Participation-UNIVERSE controls (Plan B, issue #368, Task 8):
+# realised_universe_participation / load_universe_targets / universe_participation_fit
+# ---------------------------------------------------------------------------
+#
+# Shared fixture: 10 persons in 2 Kreise, purpose-string trip schema.
+#
+# Kreis 03101 (four working-age adults, age 20 -- inside work_by_employment AND
+# education_18plus, outside both education_0_5 and education_6_17):
+#   P1 vollzeit  + work leg    -> work_by_employment employed_work
+#   P2 nicht_erwerbstaetig + work leg -> nonemployed_work
+#   P3 vollzeit  + no trip     -> employed_nowork
+#   P4 nicht_erwerbstaetig + no trip  -> nonemployed_nowork
+#   None of the four have an education leg -> education_18plus all noedu.
+#   -> work_by_employment: each of the 4 categories 1/4 = 0.25, n=4.
+#   -> education_18plus:   edu 0/4=0.0, noedu 4/4=1.0, n=4.
+#   -> education_0_5 / education_6_17: universe EMPTY at 03101 (no row).
+#
+# Kreis 03102 (two Kita-age, two school-age, two working-age-but-young/senior):
+#   P5 age 4  + education leg -> education_0_5 edu
+#   P6 age 4  + no trip       -> education_0_5 noedu
+#   P7 age 12 + education leg -> education_6_17 edu (also < 14: OUTSIDE
+#       work_by_employment -- proves that control's own universe excludes them)
+#   P8 age 12 + no trip       -> education_6_17 noedu (same age-14 exclusion)
+#   P9 age 25 teilzeit (employed) + no trip -> work_by_employment employed_nowork;
+#       education_18plus noedu (no education leg)
+#   P10 age 25 nicht_erwerbstaetig + work leg -> work_by_employment nonemployed_work;
+#       education_18plus noedu
+#   -> education_0_5:      edu 1/2=0.5, noedu 1/2=0.5, n=2.
+#   -> education_6_17:     edu 1/2=0.5, noedu 1/2=0.5, n=2.
+#   -> work_by_employment: employed_nowork 1/2=0.5, nonemployed_work 1/2=0.5,
+#      employed_work 0.0, nonemployed_nowork 0.0, n=2 (P7/P8 excluded by age).
+#   -> education_18plus:   edu 0/2=0.0, noedu 2/2=1.0, n=2 (P5-P8 excluded by age).
+
+
+def _persons_kreis_universe():
+    return pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "ars5": ["03101", "03101", "03101", "03101",
+                 "03102", "03102", "03102", "03102", "03102", "03102"],
+        "age": [20, 20, 20, 20, 4, 4, 12, 12, 25, 25],
+        "employment_status": [
+            "vollzeit", "nicht_erwerbstaetig", "vollzeit", "nicht_erwerbstaetig",
+            "nicht_erwerbstaetig", "nicht_erwerbstaetig",
+            "nicht_erwerbstaetig", "nicht_erwerbstaetig",
+            "teilzeit", "nicht_erwerbstaetig",
+        ],
+    })
+
+
+def _trips_purpose_schema_universe():
+    return pd.DataFrame({
+        "person_id": [1, 1, 2, 2, 5, 5, 7, 7, 10, 10],
+        "preceding_purpose": ["home", "work", "home", "work",
+                              "home", "education", "home", "education", "home", "work"],
+        "following_purpose": ["work", "home", "work", "home",
+                              "education", "home", "education", "home", "work", "home"],
+    })
+
+
+def _trips_wzweck_schema_universe():
+    # A well-formed W_ZWECK-only trips frame (W_ZWECK 1 = Arbeit, 3 = Ausbildung/Schule,
+    # one trip per participating person, exactly like _trips_wzweck_schema above) --
+    # used ONLY to exercise realised_universe_participation's deliberate raise on this
+    # schema (fix round 1, item 1). realised_participation itself still accepts and
+    # correctly processes this exact shape; see test_realised_participation_wzweck_schema.
+    return pd.DataFrame({
+        "person_id": [1, 2, 5, 7, 10],
+        "W_ZWECK": [1, 1, 3, 3, 1],
+    })
+
+
+_EXPECTED_UNIVERSE = {
+    ("03101", "work_by_employment", "employed_work"): (0.25, 4),
+    ("03101", "work_by_employment", "employed_nowork"): (0.25, 4),
+    ("03101", "work_by_employment", "nonemployed_work"): (0.25, 4),
+    ("03101", "work_by_employment", "nonemployed_nowork"): (0.25, 4),
+    ("03101", "education_18plus", "edu"): (0.0, 4),
+    ("03101", "education_18plus", "noedu"): (1.0, 4),
+    ("03102", "education_0_5", "edu"): (0.5, 2),
+    ("03102", "education_0_5", "noedu"): (0.5, 2),
+    ("03102", "education_6_17", "edu"): (0.5, 2),
+    ("03102", "education_6_17", "noedu"): (0.5, 2),
+    ("03102", "work_by_employment", "employed_work"): (0.0, 2),
+    ("03102", "work_by_employment", "employed_nowork"): (0.5, 2),
+    ("03102", "work_by_employment", "nonemployed_work"): (0.5, 2),
+    ("03102", "work_by_employment", "nonemployed_nowork"): (0.0, 2),
+    ("03102", "education_18plus", "edu"): (0.0, 2),
+    ("03102", "education_18plus", "noedu"): (1.0, 2),
+}
+
+
+def _assert_matches_expected_universe(result: pd.DataFrame):
+    assert set(result.columns) == {"ars5", "control", "category", "realised_share", "n_persons"}
+    assert len(result) == 16
+    indexed = result.set_index(["ars5", "control", "category"])
+    for key, (expected_share, expected_n) in _EXPECTED_UNIVERSE.items():
+        assert indexed.loc[key, "realised_share"] == pytest.approx(expected_share)
+        assert indexed.loc[key, "n_persons"] == expected_n
+    # A Kreis with NO member of a control's universe (03101 has nobody aged 0-17)
+    # must produce NO row for that (ars5, control) pair -- not a defaulted 0 share,
+    # which would hide a broken/absent age filter behind a plausible-looking number.
+    present = set(zip(result["ars5"], result["control"]))
+    assert ("03101", "education_0_5") not in present
+    assert ("03101", "education_6_17") not in present
+
+
+def test_realised_universe_participation_purpose_string_schema():
+    result = realised_universe_participation(_trips_purpose_schema_universe(), _persons_kreis_universe())
+    _assert_matches_expected_universe(result)
+
+
+def test_realised_universe_participation_raises_on_wzweck_only_schema():
+    """Fix round 1, item 1: the raw MiD W_ZWECK schema is NOT supported for the
+    universe controls (unlike realised_participation), because its static
+    PARTICIPATION_W_ZWECK code sets apply no rbW filter and no
+    escort_passive_education relabelling -- so "work"/"education" on that schema
+    would not match derive_work_by_employment_seed / derive_education_flag_seed's
+    realised-plan definition. Silently evaluating it would measure a DIFFERENT
+    universe than the control constrains, so this must raise rather than reuse the
+    (correct, for realised_participation) W_ZWECK code-set logic.
+    """
+    with pytest.raises(ValueError, match="W_ZWECK"):
+        realised_universe_participation(_trips_wzweck_schema_universe(), _persons_kreis_universe())
+
+
+def test_realised_universe_participation_raises_on_unknown_trip_schema():
+    trips = pd.DataFrame({"person_id": [1, 2], "some_other_column": ["a", "b"]})
+    persons = pd.DataFrame({
+        "person_id": [1, 2], "ars5": ["03101", "03101"],
+        "age": [20, 20], "employment_status": ["vollzeit", "nicht_erwerbstaetig"],
+    })
+    with pytest.raises(KeyError, match="following_purpose"):
+        realised_universe_participation(trips, persons)
+
+
+def test_realised_universe_participation_raises_on_missing_persons_columns():
+    # No 'employment_status' / 'age': a realised share computed without them would
+    # silently answer a different (undifferentiated) universe question.
+    persons = pd.DataFrame({"person_id": [1], "ars5": ["03101"]})
+    trips = pd.DataFrame({
+        "person_id": [1], "preceding_purpose": ["home"], "following_purpose": ["work"]})
+    with pytest.raises(KeyError, match="employment_status"):
+        realised_universe_participation(trips, persons)
+
+
+# --- Universe-boundary discrimination tests -------------------------------
+#
+# Each test below includes at least one person INSIDE the frame but OUTSIDE the
+# control's own universe, and gives that person the OPPOSITE category from the
+# in-universe person(s) -- so a universe filter that silently failed (or was
+# off-by-one at a bound) would visibly shift both realised_share AND n_persons
+# away from the expected value. A test where the excluded person shares the
+# same category as everyone else could not tell a working filter from a
+# missing one; these are built so it always can.
+
+def test_realised_universe_participation_work_by_employment_boundary_is_inclusive_from_min_age():
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "ars5": ["03101", "03101"],
+        # Person 1 is exactly at the minimum age (must be INCLUDED); person 2 is
+        # one year younger (must be EXCLUDED) -- tests the inclusive lower bound.
+        "age": [WORK_BY_EMPLOYMENT_MIN_AGE_YEARS, WORK_BY_EMPLOYMENT_MIN_AGE_YEARS - 1],
+        "employment_status": ["vollzeit", "nicht_erwerbstaetig"],
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 2, 2],
+        "preceding_purpose": ["home", "work", "home", "work"],
+        "following_purpose": ["work", "home", "work", "home"],
+    })
+    result = realised_universe_participation(trips, persons)
+    wbe = result[result["control"] == "work_by_employment"].set_index("category")
+    # If person 2 (non-employed, has a work leg) were wrongly included, this
+    # would drop from 1.0 (1/1) to 0.5 (1/2) and n_persons would read 2, not 1.
+    assert wbe.loc["employed_work", "realised_share"] == pytest.approx(1.0)
+    assert wbe.loc["employed_work", "n_persons"] == 1
+    assert set(wbe.index) == set(WORK_BY_EMPLOYMENT_CATEGORIES)
+
+
+def test_realised_universe_participation_education_0_5_boundaries_are_inclusive():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "ars5": ["03101", "03101", "03101"],
+        "age": [0, 5, 6],  # 0 and 5 are the inclusive band edges; 6 is just outside
+        "employment_status": ["nicht_erwerbstaetig"] * 3,
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 2, 2],
+        "preceding_purpose": ["home", "education", "home", "education"],
+        "following_purpose": ["education", "home", "education", "home"],
+    })
+    result = realised_universe_participation(trips, persons)
+    e05 = result[result["control"] == "education_0_5"].set_index("category")
+    # Person 3 (age 6, no education leg) must be excluded: if included, edu
+    # would drop from 1.0 (2/2) to 0.667 (2/3) and n_persons would read 3.
+    assert e05.loc["edu", "realised_share"] == pytest.approx(1.0)
+    assert e05.loc["edu", "n_persons"] == 2
+
+
+def test_realised_universe_participation_education_6_17_boundaries_are_inclusive():
+    lo, hi = EDUCATION_AGE_BOUNDS["education_6_17"]
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4],
+        "ars5": ["03101"] * 4,
+        # 1 and 3 sit exactly on the inclusive edges (must be INCLUDED); 2 and 4
+        # sit one year outside each edge (must be EXCLUDED).
+        "age": [lo, lo - 1, hi, hi + 1],
+        "employment_status": ["nicht_erwerbstaetig"] * 4,
+    })
+    trips = pd.DataFrame({
+        "person_id": [1, 1, 3, 3],
+        "preceding_purpose": ["home", "education", "home", "education"],
+        "following_purpose": ["education", "home", "education", "home"],
+    })
+    result = realised_universe_participation(trips, persons)
+    e617 = result[result["control"] == "education_6_17"].set_index("category")
+    # If either out-of-band neighbour (age lo-1 or hi+1, neither with an
+    # education leg) were wrongly included, edu would drop below 1.0 and
+    # n_persons would exceed 2.
+    assert e617.loc["edu", "realised_share"] == pytest.approx(1.0)
+    assert e617.loc["edu", "n_persons"] == 2
+
+
+def test_realised_universe_participation_education_18plus_boundary_and_no_upper_bound():
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "ars5": ["03101"] * 3,
+        # 18 is the inclusive lower edge; 95 proves there is genuinely NO upper
+        # bound; 17 is one year below the edge and must be EXCLUDED.
+        "age": [18, 95, 17],
+        "employment_status": ["nicht_erwerbstaetig"] * 3,
+    })
+    # Only person 3 (excluded, age 17) has an education leg.
+    trips = pd.DataFrame({
+        "person_id": [3, 3],
+        "preceding_purpose": ["home", "education"],
+        "following_purpose": ["education", "home"],
+    })
+    result = realised_universe_participation(trips, persons)
+    e18 = result[result["control"] == "education_18plus"].set_index("category")
+    # If person 3 were wrongly included, noedu would drop from 1.0 (2/2) to
+    # 0.667 (2/3) and n_persons would read 3, not 2.
+    assert e18.loc["noedu", "realised_share"] == pytest.approx(1.0)
+    assert e18.loc["noedu", "n_persons"] == 2
+
+
+# --- Fix round 1, item 3: universe bounds/control-set tied to the REGISTRY --------
+
+def _universe_registry_entries():
+    """The REGISTRY entries realised_universe_participation's universe filters must
+    match EXACTLY: work_by_employment + the three education_* entries, identified
+    structurally by their category-label tuple -- the SAME lookup
+    participation_fit._universe_registry_entries itself uses, reconstructed here
+    independently rather than imported, so this test cannot pass merely because it
+    shares a helper with the code under test."""
+    work = [ctl for ctl in kac.REGISTRY
+            if tuple(label for label, _ in ctl.categories) == WORK_BY_EMPLOYMENT_CATEGORIES]
+    edu = [ctl for ctl in kac.REGISTRY
+           if tuple(label for label, _ in ctl.categories) == kac.EDUCATION_FLAG_CATEGORIES]
+    return work + edu
+
+
+def test_realised_universe_participation_age_bounds_match_registry_entries_exactly():
+    """Fix round 1, item 3: derive (min_age, max_age) from the REGISTRY entries
+    THEMSELVES (not from a same-valued-today constant), feed a person at each band
+    edge plus/minus one, assert n_persons equals the in-band count exactly, and
+    assert the set of controls in the output equals the set of universe entries in
+    REGISTRY -- so a future REGISTRY change (a moved bound, or an added/removed
+    universe entry) breaks this test rather than silently diverging from what
+    participation_fit.py implements.
+    """
+    entries = _universe_registry_entries()
+    assert len(entries) == 4, "expected work_by_employment + 3 education_* entries"
+
+    for ctl in entries:
+        lo, hi = ctl.min_age, ctl.max_age
+        candidate_ages = sorted({lo - 1, lo} if hi is None else {lo - 1, lo, hi, hi + 1})
+        n_in_band = sum(1 for a in candidate_ages if a >= lo and (hi is None or a <= hi))
+
+        persons = pd.DataFrame({
+            "person_id": list(range(len(candidate_ages))),
+            "ars5": ["03101"] * len(candidate_ages),
+            "age": candidate_ages,
+            "employment_status": ["nicht_erwerbstaetig"] * len(candidate_ages),
+        })
+        trips = pd.DataFrame({"person_id": [], "preceding_purpose": [], "following_purpose": []})
+
+        result = realised_universe_participation(trips, persons)
+        sub = result[result["control"] == ctl.name]
+        if n_in_band == 0:
+            assert sub.empty, f"{ctl.name}: expected 0 in-band persons (no row)"
+        else:
+            assert not sub.empty, f"{ctl.name}: expected {n_in_band} in-band person(s)"
+            assert sub["n_persons"].iloc[0] == n_in_band, ctl.name
+
+    # The set of controls actually produced by a frame with >= 1 in-band member per
+    # entry equals the set of universe REGISTRY entries -- a REGISTRY entry this
+    # module does not know about would otherwise be silently absent with no failure.
+    persons_one_per_entry = pd.DataFrame({
+        "person_id": range(len(entries)),
+        "ars5": ["03101"] * len(entries),
+        "age": [ctl.min_age for ctl in entries],
+        "employment_status": ["nicht_erwerbstaetig"] * len(entries),
+    })
+    trips_empty = pd.DataFrame({"person_id": [], "preceding_purpose": [], "following_purpose": []})
+    combined = realised_universe_participation(trips_empty, persons_one_per_entry)
+    assert set(combined["control"]) == {ctl.name for ctl in entries}
+
+
+# --- Fix round 1, item 2: fallback-transparency / no-silent-degradation tests -----
+
+def test_realised_universe_participation_warns_on_non_numeric_age(caplog):
+    """Item 2(a): a non-numeric/missing age must WARN with a count, not silently
+    shrink a control's universe with no signal."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3],
+        "ars5": ["03101", "03101", "03101"],
+        "age": [30, "not-a-number", 25],
+        "employment_status": ["vollzeit", "nicht_erwerbstaetig", "vollzeit"],
+    })
+    trips = pd.DataFrame({"person_id": [], "preceding_purpose": [], "following_purpose": []})
+
+    with caplog.at_level(logging.WARNING):
+        result = realised_universe_participation(trips, persons)
+
+    assert any("non-numeric or missing" in r.message and "1/3" in r.message
+               for r in caplog.records)
+    # The bad-age person must be excluded from EVERY universe: work_by_employment's
+    # universe here is persons 1 and 3 only (n=2), not 3.
+    wbe = result[result["control"] == "work_by_employment"]
+    assert wbe["n_persons"].iloc[0] == 2
+
+
+def test_realised_universe_participation_warns_on_unrecognised_employment_status(caplog):
+    """Item 2(b): an employment_status value outside the recognised
+    EMPLOYMENT_STATUS_CATEGORIES vocabulary must WARN -- attributes.py's own guard
+    protects only the CONSTANT (EMPLOYED_EMPLOYMENT_STATUS_CLASSES is a subset of
+    EMPLOYMENT_STATUS_CATEGORIES), not the incoming DATA."""
+    persons = pd.DataFrame({
+        "person_id": [1, 2],
+        "ars5": ["03101", "03101"],
+        "age": [30, 30],
+        "employment_status": ["vollzeit", "Vollzeit"],  # wrong case -> unrecognised
+    })
+    trips = pd.DataFrame({"person_id": [], "preceding_purpose": [], "following_purpose": []})
+
+    with caplog.at_level(logging.WARNING):
+        result = realised_universe_participation(trips, persons)
+
+    assert any("employment_status" in r.message and "outside the recognised" in r.message
+               for r in caplog.records)
+    # The unrecognised-label person is silently classified NON-employed by isin(), not
+    # dropped -- confirms the exact silent-degradation MECHANISM the warning surfaces.
+    wbe = result[result["control"] == "work_by_employment"].set_index("category")
+    assert wbe.loc["employed_nowork", "realised_share"] == pytest.approx(0.5)
+    assert wbe.loc["nonemployed_nowork", "realised_share"] == pytest.approx(0.5)
+
+
+def test_realised_universe_participation_warns_when_a_control_universe_is_empty(caplog):
+    """Item 2(d): a control whose universe comes out entirely empty must WARN, not
+    silently produce zero rows for that (ars5, control) with no signal at all."""
+    persons = pd.DataFrame({
+        "person_id": [1],
+        "ars5": ["03101"],
+        "age": [3],  # inside education_0_5 ONLY
+        "employment_status": ["nicht_erwerbstaetig"],
+    })
+    trips = pd.DataFrame({"person_id": [], "preceding_purpose": [], "following_purpose": []})
+
+    with caplog.at_level(logging.WARNING):
+        result = realised_universe_participation(trips, persons)
+
+    empty_warnings = [r.message for r in caplog.records if "universe is EMPTY" in r.message]
+    assert any("work_by_employment" in m for m in empty_warnings)
+    assert any("education_6_17" in m for m in empty_warnings)
+    assert any("education_18plus" in m for m in empty_warnings)
+    assert not any("education_0_5" in m for m in empty_warnings)
+    assert set(result["control"]) == {"education_0_5"}
+
+
+def test_realised_universe_participation_warns_on_person_id_dtype_mismatch(caplog):
+    """Item 2(c): a person_id dtype mismatch between trips and persons_kreis makes the
+    isin() join silently empty -- the same empty-join trap
+    mid.participation.map_flag_from_plan_source documents and defends against."""
+    persons = pd.DataFrame({
+        "person_id": [1],  # int64
+        "ars5": ["03101"],
+        "age": [30],
+        "employment_status": ["nicht_erwerbstaetig"],
+    })
+    trips = pd.DataFrame({
+        "person_id": ["1"],  # string -- isin() against an int64 column matches nothing
+        "preceding_purpose": ["home"],
+        "following_purpose": ["work"],
+    })
+
+    with caplog.at_level(logging.WARNING):
+        result = realised_universe_participation(trips, persons)
+
+    assert any("NONE of them match" in r.message and "'work'" in r.message
+               for r in caplog.records)
+    # The silent symptom this warning exists to surface: person 1 reads as "no work
+    # leg" even though trips clearly records one, just under a mismatched dtype.
+    wbe = result[result["control"] == "work_by_employment"].set_index("category")
+    assert wbe.loc["nonemployed_nowork", "realised_share"] == pytest.approx(1.0)
+
+
+# --- load_universe_targets --------------------------------------------------
+
+def test_load_universe_targets_real_committed_files():
+    targets = load_universe_targets(TARGETS_DIR)
+    assert set(targets.columns) == {"ars5", "control", "category", "target_share"}
+    assert set(targets["control"]) == {
+        "work_by_employment", "education_0_5", "education_6_17", "education_18plus"}
+    assert ((targets["target_share"] >= 0.0) & (targets["target_share"] <= 1.0)).all()
+    # Every committed file carries the 7 SrV Kreise + 03103 + Gesamt = 9 rows.
+    for control in ("work_by_employment", "education_0_5", "education_6_17", "education_18plus"):
+        n_categories = 4 if control == "work_by_employment" else 2
+        assert (targets["control"] == control).sum() == 9 * n_categories, control
+
+
+def test_load_universe_targets_missing_file_raises(tmp_path):
+    # Fix round 1, item 5: pin the "naming it" the brief requires -- work_by_employment
+    # is the first file _load_one reads, so an empty directory raises on it specifically.
+    with pytest.raises(FileNotFoundError, match="target2026_work_by_employment"):
+        load_universe_targets(tmp_path)
+
+
+def test_load_universe_targets_missing_column_raises(tmp_path):
+    targets_dir = tmp_path / "targets"
+    targets_dir.mkdir()
+    (targets_dir / "target2026_work_by_employment_by_kreis.csv").write_text(
+        # nonemployed_nowork column missing.
+        "ars5,source,n_effective,employed_work,employed_nowork,nonemployed_work\n"
+        "03101,x,100,0.3,0.2,0.1\n",
+        encoding="utf-8")
+    with pytest.raises(KeyError, match="nonemployed_nowork"):
+        load_universe_targets(targets_dir)
+
+
+def _write_synthetic_universe_targets(tmp_path: Path) -> Path:
+    targets_dir = tmp_path / "targets"
+    targets_dir.mkdir()
+    (targets_dir / "target2026_work_by_employment_by_kreis.csv").write_text(
+        "ars5,source,n_effective,employed_work,employed_nowork,nonemployed_work,nonemployed_nowork\n"
+        "03101,x,100,0.3,0.2,0.1,0.4\n"
+        "03102,x,100,0.25,0.25,0.25,0.25\n",
+        encoding="utf-8")
+    (targets_dir / "target2026_education_0_5_by_kreis.csv").write_text(
+        "ars5,source,n_effective,edu,noedu\n"
+        "03101,x,100,0.6,0.4\n"
+        "03102,x,100,0.5,0.5\n",
+        encoding="utf-8")
+    (targets_dir / "target2026_education_6_17_by_kreis.csv").write_text(
+        "ars5,source,n_effective,edu,noedu\n"
+        "03101,x,100,0.9,0.1\n"
+        "03102,x,100,0.8,0.2\n",
+        encoding="utf-8")
+    (targets_dir / "target2026_education_18plus_by_kreis.csv").write_text(
+        "ars5,source,n_effective,edu,noedu\n"
+        "03101,x,100,0.05,0.95\n"
+        "03102,x,100,0.1,0.9\n",
+        encoding="utf-8")
+    return targets_dir
+
+
+def test_load_universe_targets_synthetic_files(tmp_path):
+    targets_dir = _write_synthetic_universe_targets(tmp_path)
+    targets = load_universe_targets(targets_dir)
+
+    assert set(targets.columns) == {"ars5", "control", "category", "target_share"}
+    assert len(targets) == 4 * 2 + 2 * 2 * 3  # work_by_employment (4 cats) + 3 education controls (2 cats)
+    indexed = targets.set_index(["ars5", "control", "category"])
+    assert indexed.loc[("03101", "work_by_employment", "employed_work"), "target_share"] == pytest.approx(0.3)
+    assert indexed.loc[("03102", "education_18plus", "edu"), "target_share"] == pytest.approx(0.1)
+
+
+# --- universe_participation_fit ---------------------------------------------
+
+def test_universe_participation_fit_abs_error_on_fixture(tmp_path):
+    targets_dir = _write_synthetic_universe_targets(tmp_path)
+    result = universe_participation_fit(
+        _trips_purpose_schema_universe(), _persons_kreis_universe(), targets_dir)
+
+    # n_persons is carried through from realised_universe_participation (final fix wave,
+    # item 2): the size of THAT control's universe in THAT Kreis is what makes an
+    # abs_error interpretable, and the run's headline line reports a single worst cell.
+    assert set(result.columns) == {
+        "ars5", "control", "category", "realised_share", "n_persons",
+        "target_share", "abs_error"}
+    indexed = result.set_index(["ars5", "control", "category"])
+    # 03101 work_by_employment: realised 0.25 each vs synthetic target 0.3/0.2/0.1/0.4.
+    assert indexed.loc[("03101", "work_by_employment", "employed_work"), "abs_error"] \
+        == pytest.approx(0.05)
+    assert indexed.loc[("03101", "work_by_employment", "nonemployed_nowork"), "abs_error"] \
+        == pytest.approx(0.15)
+    # 03102 education_0_5: realised 0.5/0.5 vs synthetic target 0.5/0.5 -> exact fit.
+    assert indexed.loc[("03102", "education_0_5", "edu"), "abs_error"] == pytest.approx(0.0)
+    # 03102 education_6_17: realised 0.5/0.5 vs synthetic target 0.8/0.2.
+    assert indexed.loc[("03102", "education_6_17", "noedu"), "abs_error"] == pytest.approx(0.3)
+    # 03101 education_18plus: realised 0.0/1.0 vs synthetic target 0.05/0.95.
+    assert indexed.loc[("03101", "education_18plus", "noedu"), "abs_error"] == pytest.approx(0.05)
+    # The universe SIZE survives the join unchanged (it is the denominator each
+    # realised_share was computed over, per _EXPECTED_UNIVERSE): 03102's two education
+    # bands hold 2 persons each, 03101's work_by_employment universe holds 4. Without this
+    # column those cells' abs_errors are indistinguishable in the headline line.
+    assert indexed.loc[("03102", "education_0_5", "edu"), "n_persons"] == 2
+    assert indexed.loc[("03102", "education_6_17", "noedu"), "n_persons"] == 2
+    assert indexed.loc[("03101", "work_by_employment", "employed_work"), "n_persons"] == 4
+
+
+def test_universe_participation_fit_drops_realised_cells_without_target(tmp_path, caplog):
+    targets_dir = _write_synthetic_universe_targets(tmp_path)
+    persons = pd.concat([
+        _persons_kreis_universe(),
+        pd.DataFrame({
+            "person_id": [11], "ars5": ["03999"], "age": [20],
+            "employment_status": ["vollzeit"],
+        }),
+    ], ignore_index=True)
+    trips = _trips_purpose_schema_universe()
+
+    with caplog.at_level(logging.WARNING):
+        result = universe_participation_fit(trips, persons, targets_dir)
+
+    assert "03999" not in set(result["ars5"])
+    assert any("03999" in record.message or "no matching" in record.message
+               for record in caplog.records)

@@ -81,7 +81,16 @@ PURPOSES = ("work", "education", "shop", "leisure", "escort", "other", "home")
 PATTERN_LETTER = {"home": "H", "work": "W", "education": "E", "shop": "S", "leisure": "L",
                   "escort": "B", "other": "O", UNKNOWN_PURPOSE: "?"}
 
-EMPLOYED_V_ERW = (9, 10, 11)          # V_ERW: full-time, part-time, marginally employed
+# V_ERW: 8 in Ausbildung/Lehre, 9 full-time, 10 part-time, 11 marginally employed. Code 8 is an
+# apprenticeship WITH an employment contract and is counted as employed by decision Q5 of the
+# participation-universe spec (issue #368): the MiD-side employment_status classes that the
+# regional controls target include `in_ausbildung`, and ADR-0060 treats MiD in_ausbildung
+# (1.93 %) and SrV V_ERW 8 (1.87 %) as apples-to-apples. Before that realignment this reference
+# and the control measured different populations -- a 16-year-old apprentice was `employed` on
+# the MiD side but `school_age_6_17_not_employed` here. The arm-3 aggregates under
+# calibration/plan_structure_fix_arm3_100pct_2026-09-07/ were built with the narrower (9, 10, 11)
+# definition and stay historical; see docs/registry/data/srv2023_plan_structure_reference.yml.
+EMPLOYED_V_ERW = (8, 9, 10, 11)
 SEX_BY_V_GESCHLECHT = {1: "male", 2: "female"}   # 3 "divers" / 4 "keine Angabe" -> NaN
 AWAY_FROM_HOME_CODE = -7              # E_ANZ_WEGE: person was away from home all reporting day
 EXPECTED_STICHTAG_WTAG = (2, 3, 4)    # delivered reporting days: Tuesday, Wednesday, Thursday

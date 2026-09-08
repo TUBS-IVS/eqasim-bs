@@ -117,3 +117,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0106](../decisions/ADR-0106-plan-sources-must-be-realisable-normal-weekday-diaries.md) | 2026-09-06 | active | Plan sources must be realisable normal-weekday diaries |
 | [ADR-0107](../decisions/ADR-0107-rbw-legs-are-movement-within-the-work-activity.md) | 2026-09-06 | active | rbW legs are movement within the work activity, not trips of the day plan |
 | [ADR-0108](../decisions/ADR-0108-plans-start-and-end-at-home-with-an-observed-closure-dwell.md) | 2026-09-06 | active | Plans start and end at home, with an observed closure dwell counted in the seed |
+| [ADR-0109](../decisions/ADR-0109-participation-controls-conditional-on-their-universe.md) | 2026-09-07 | active | Participation controls are conditional on their universe |

@@ -73,6 +73,26 @@ EMPLOYMENT_STATUS_BY_P_BKAT = {
 # codebook code order 1..7 above.
 EMPLOYMENT_STATUS_CATEGORIES = tuple(EMPLOYMENT_STATUS_BY_P_BKAT.values())
 
+# The employment_status classes that count as EMPLOYED for the work_by_employment KREIS
+# control (Plan B, issue #368, spec decision Q5): the SrV twin is V_ERW in {8, 9, 10, 11}.
+# Apprentices are IN (MiD EMPLOYED_TAET includes P_TAET 8; ADR-0060 treats MiD
+# in_ausbildung and SrV V_ERW 8 as apples-to-apples); sonstiges / erwerbstaetig_unspec /
+# nicht_erwerbstaetig are OUT. Single source for the seed (mid.participation), the fit
+# report (participation_fit) and the target margin
+# (scripts/build_participation_universe_targets.py).
+EMPLOYED_EMPLOYMENT_STATUS_CLASSES = ("vollzeit", "teilzeit", "geringfuegig", "in_ausbildung")
+# Hand-listed labels must all EXIST in the seed column's value set (controller ruling R9):
+# a typo would make derive_work_by_employment_seed's isin() all-False, silently labelling
+# every person nonemployed_* behind a plausible-looking log line and no error -- a silent
+# wrong result, which the no-silent-failure rule forbids regardless of severity label.
+# An explicit raise, NOT an assert: assert statements are stripped under python -O, so the
+# invariant -- and with it the guard against that failure mode -- would silently disappear
+# on exactly the interpreter a long production run is most likely to use.
+if not set(EMPLOYED_EMPLOYMENT_STATUS_CLASSES) <= set(EMPLOYMENT_STATUS_CATEGORIES):
+    raise RuntimeError(
+        f"EMPLOYED_EMPLOYMENT_STATUS_CLASSES {EMPLOYED_EMPLOYMENT_STATUS_CLASSES} must be a "
+        f"subset of EMPLOYMENT_STATUS_CATEGORIES {EMPLOYMENT_STATUS_CATEGORIES}.")
+
 # MiD P_TAET codes that indicate the person is in education (Ausbildung, Schueler,
 # Student): 8 = in Ausbildung, 9 = Schueler/in (einschl. Vorschule), 10 = Student/in.
 # These map to studies=True; all other codes (employment 1-7, Rentner/arbeitslos/

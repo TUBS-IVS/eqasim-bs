@@ -8,6 +8,14 @@ is dropped, or when it was recorded on a public holiday (``feiertag == 1``; SrV 
 exclude public holidays). 803 persons with ``mobil == 0`` genuinely stayed home and keep their
 (empty) day. The remap reuses ``weekend_plan_match.match_person`` (has_license, sex, age band,
 employed, has_pt; hierarchical relaxation; P_GEW-weighted draw) and continues the caller's rng.
+
+Under ``hard_employment`` (issue #368, Plan B Task 6) the ``employed`` key is never relaxed:
+the ladder would otherwise drop it second-from-last, so a non-employed person could inherit an
+employed donor's work diary although their own employment attribute comes from a DIFFERENT MiD
+respondent -- a plan the employment-conditional work control (work_by_employment) would then be
+fighting. This is a GUARD, not a correction: it constrains a boundary that the pool composition
+could start crossing more often, and the count of surviving crossings is reported and logged as
+a rate (``DiaryMatchReport.n_crossed_employment_boundary``).
 """
 from __future__ import annotations
 
@@ -17,12 +25,19 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import match_person
 
 logger = logging.getLogger(__name__)
 
 NO_DIARY_CODES = (803, 804)
+#: MiD ``feiertag`` value marking a diary reported on a public holiday. SrV reference days
+#: exclude public holidays, so such a diary is not a realisable weekday plan. Named here (rather
+#: than typed as a literal at each comparison) because the home-office donor pool applies the
+#: SAME exclusion to its donors and must read the identical code
+#: (:func:`braunschweig.synthesis.commute_day.donor_pool.filter_donor_diaries`).
+MID_HOLIDAY = 1
 REASON_KEEP = "realisable"
 REASON_KEEP_IMMOBILE = "nodiary_immobile_keep"
 REASONS_REMAP = ("nodiary_mobile", "nodiary_unknown", "only_rbw", "holiday", "emptied_by_arrive_home_drop")
@@ -39,6 +54,11 @@ PERSON_MATCH_COLUMNS = ("H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TA
 #: Expected band of the remapped share on the real MiD (2026-09-05 measurement: 14.1 % no-diary
 #: + 5.2 % holiday + 1.6 % only-rbW, overlapping); outside it the build WARNS.
 EXPECTED_SHARE_REMAPPED = (0.05, 0.30)
+#: The ``weekend_plan_match.match_person`` key(s) this pass refuses to relax when
+#: ``hard_employment`` is on (issue #368). ``employed`` is derived there from
+#: ``P_TAET in attributes.EMPLOYED_TAET`` -- the same single source of truth the
+#: employment control and the crossing counter below use.
+HARD_EMPLOYMENT_KEYS = frozenset({"employed"})
 
 
 @dataclass(frozen=True)
@@ -48,6 +68,13 @@ class DiaryMatchReport:
     counts_by_reason: dict
     match_level_counts: dict
     share_remapped: float
+    #: Remapped persons whose NEW donor sits on the other side of the employment
+    #: boundary (``P_TAET in EMPLOYED_TAET`` differs). With ``hard_employment`` on this
+    #: must be 0; a non-zero value means match_person had to use its whole-pool
+    #: fallback because the donor pool held nobody of the person's employment class.
+    #: Deliberately WITHOUT a default: a construction that forgets it would otherwise
+    #: claim "no crossings" without having counted any.
+    n_crossed_employment_boundary: int
 
 
 def _require(frame, columns, what):
@@ -65,7 +92,8 @@ def _own_diary_reason(donors, facts, *, exclude_rbw_legs, exclude_holidays, drop
     arriving = f["starts_arriving_home"].fillna(False).astype(bool).to_numpy()
     anz = donors["anzwege1"].to_numpy()
     mobil = donors["mobil"].to_numpy()
-    holiday = donors["feiertag"].to_numpy() == 1 if "feiertag" in donors.columns else np.zeros(len(donors), bool)
+    holiday = (donors["feiertag"].to_numpy() == MID_HOLIDAY if "feiertag" in donors.columns
+               else np.zeros(len(donors), bool))
     reason = np.full(len(donors), REASON_KEEP, dtype=object)
     remaining_direct = n_direct - (arriving.astype(int) if drop_leading_arrive_home_leg else 0)
     only_rbw = (n_direct == 0) & (n_rbw > 0)
@@ -122,8 +150,42 @@ def build_realisable_pool(donor_persons, facts, *, exclude_rbw_legs, exclude_hol
     return pool
 
 
+def _count_employment_boundary_crossings(persons, donor_pool, remapped_index):
+    """Count REMAPPED persons whose new donor has the other employment class.
+
+    Both sides are derived exactly as ``weekend_plan_match._person_keys`` derives the
+    ``employed`` match key: ``P_TAET in attributes.EMPLOYED_TAET``. ``donor_pool`` is
+    the realisable "any" pool, which is a superset of the "mobile" pool and therefore
+    contains every donor the match can have drawn; a source that does not resolve in it
+    would make the count meaningless, so it RAISES instead of scoring silently.
+    """
+    if len(remapped_index) == 0:
+        return 0
+    remapped = persons.loc[remapped_index]
+    person_employed = remapped["P_TAET"].isin(EMPLOYED_TAET).to_numpy()
+    donor_employed_by_key = donor_pool.set_index(["H_ID", "P_ID"])["P_TAET"].isin(EMPLOYED_TAET)
+    donor_index = pd.MultiIndex.from_arrays([remapped["source_H_ID"], remapped["source_P_ID"]])
+    donor_employed = donor_employed_by_key.reindex(donor_index)
+    n_unresolved = int(donor_employed.isna().sum())
+    if n_unresolved:
+        raise ValueError(
+            f"diary_plan_match: {n_unresolved} remapped plan source(s) do not resolve to a donor "
+            "of the realisable pool; the employment-boundary count cannot be computed")
+    return int((donor_employed.to_numpy().astype(bool) != person_employed).sum())
+
+
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
-                                    exclude_holidays, drop_leading_arrive_home_leg):
+                                    exclude_holidays, drop_leading_arrive_home_leg,
+                                    hard_employment):
+    """Remap every person whose plan source has no realisable weekday diary.
+
+    ``hard_employment``: when True, ``employed`` is passed to ``match_person`` as an
+    un-relaxable key, so a remapped person can only inherit the diary of a donor of
+    their OWN employment class (issue #368). The number of surviving crossings is
+    counted over the remapped persons and logged as a rate; with the flag on it must
+    be 0 (a non-zero count means the donor pool held nobody of that class, so
+    match_person fell back to the whole pool).
+    """
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
     # match_person() is called below on rows of `persons` (not `donor_persons`); validate its
@@ -142,6 +204,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     # Build the source-anzwege1 lookup ONCE before the loop (not per row) -- same
     # behaviour as a per-row set_index/get, but O(n_donors) instead of O(n_remap x n_donors).
     donor_anzwege1 = donor_persons.set_index(["H_ID", "P_ID"])["anzwege1"]
+    hard_keys = HARD_EMPLOYMENT_KEYS if hard_employment else frozenset()
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
@@ -154,18 +217,27 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
             src_anz = donor_anzwege1.get(
                 (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
             pool = pools["mobile"] if (isinstance(src_anz, (int, np.integer)) and 0 < src_anz < 800) else pools["any"]
-        sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng)
+        sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys)
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level
     counts = reasons.value_counts().to_dict()
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)
+    crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     report = DiaryMatchReport(n_persons=len(persons), n_remapped=n_remapped, counts_by_reason=counts,
                               match_level_counts=match_level.dropna().astype(int).value_counts().sort_index().to_dict(),
-                              share_remapped=share)
+                              share_remapped=share, n_crossed_employment_boundary=crossed)
     logger.info("[diary_plan_match] %d/%d persons (%.2f%%) remapped to a realisable weekday diary; reasons %s; "
-                "match levels %s", n_remapped, len(persons), 100.0 * share, counts, report.match_level_counts)
+                "match levels %s (levels count SOFT-key relaxations; hard_employment=%s)",
+                n_remapped, len(persons), 100.0 * share, counts, report.match_level_counts, hard_employment)
+    # No silent fallback: the boundary crossings are reported as a RATE, and a crossing
+    # that survives the hard key means match_person had to draw from the whole pool.
+    logger.log(logging.WARNING if (hard_employment and crossed > 0) else logging.INFO,
+               "[diary_plan_match] employment boundary crossed by %d/%d remaps (%.2f%%); "
+               "hard_employment=%s (with it on the count must be 0 -- a non-zero count means the "
+               "donor pool held no realisable diary of the person's employment class)",
+               crossed, n_remapped, 100.0 * crossed / max(n_remapped, 1), hard_employment)
     if not (EXPECTED_SHARE_REMAPPED[0] <= share <= EXPECTED_SHARE_REMAPPED[1]) and len(persons) > 1000:
         logger.warning("[diary_plan_match] remapped share %.2f%% outside the expected band %s -- check the donor "
                        "columns anzwege1/mobil/feiertag and the Wege join", 100.0 * share, EXPECTED_SHARE_REMAPPED)

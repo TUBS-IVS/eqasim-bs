@@ -33,10 +33,12 @@ inputs:
 features:
 - popsim_method
 - diary_plan_match
+- participation_universe_controls
 decisions:
 - ADR-0002
 - ADR-0059
 - ADR-0106
+- ADR-0109
 notes: >-
   INPUT: reads the MiD Haushalte and Personen tables as before, and since #365 the MiD WEGE table
   as well (the diary facts and the realisable-source classification are derived from it), plus the
@@ -46,7 +48,15 @@ notes: >-
   information without depending on a second MiD derivation. Config keys read here:
   braunschweig.population.popsim.diary_plan_match, .exclude_holiday_plan_sources,
   .exclude_rbw_legs and .drop_leading_arrive_home_leg (the last two only to decide WHICH sources
-  are unrealisable; the legs themselves are dropped downstream in the trips stage). The stage
+  are unrealisable; the legs themselves are dropped downstream in the trips stage), and since #368
+  (ADR-0109) .diary_match_hard_employment, which makes the diary match pass hard_keys={"employed"}
+  to weekend_plan_match.match_person so the key ladder never relaxes past employment; surviving
+  crossings (only reachable through the whole-pool fallback) are counted in
+  DiaryMatchReport.n_crossed_employment_boundary, logged as a rate and published via
+  set_info("diary_plan_match_crossed_employment_boundary"). Like its sibling
+  .exclude_holiday_plan_sources the key is declared HERE only (no other stage reads it), which is
+  what puts it into this stage's config hash: flipping it rebuilds the donor AND, as a descendant,
+  re-runs popsim. The stage
   defines validate() over an md5 of its helper modules (diary_facts, diary_plan_match,
   weekend_plan_match, member_completion, mid.donor), because synpp hashes only the stage module
   itself and a helper edit would otherwise serve a stale cached donor build.

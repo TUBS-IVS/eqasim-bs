@@ -118,12 +118,16 @@ def check_category_partition(
         stacked = np.vstack(list(masks.values())) if masks else np.empty((0, len(frame)))
         hits = stacked.sum(axis=0)
 
-        # The universe is the age-restricted subset when min_age is set: rows below it are
-        # legitimately outside EVERY category and must not count as a gap.
+        # The universe is the age-restricted subset when min_age and/or max_age is set:
+        # rows outside it are legitimately outside EVERY category and must not count as a
+        # gap. max_age narrows it further into an age RANGE (Plan B, issue #368).
         universe = np.ones(len(frame), dtype=bool)
         if ctl.min_age is not None and keyword == "persons":
             universe = (pd.to_numeric(persons["HP_ALTER"], errors="coerce")
                         >= ctl.min_age).to_numpy()
+        if getattr(ctl, "max_age", None) is not None and keyword == "persons":
+            universe &= (pd.to_numeric(persons["HP_ALTER"], errors="coerce")
+                         <= ctl.max_age).to_numpy()
 
         uncovered = int(((hits == 0) & universe).sum())
         overlapping = int(((hits > 1) & universe).sum())

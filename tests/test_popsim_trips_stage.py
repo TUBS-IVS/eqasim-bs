@@ -299,6 +299,52 @@ def test_run_empirical_dwell_uses_observed_duration_not_the_fixed_hour(caplog):
     )
 
 
+def test_the_dwell_report_log_is_a_frozen_snapshot(caplog):
+    """The report log must carry a COPY of the counters, not the live mapping (#374, R31).
+
+    ``ClosureDwellModel.report`` is one dict that ``draw()`` mutates in place, and
+    ``logging`` keeps the argument in ``LogRecord.args`` and renders it lazily, so passing
+    the live mapping makes the record report whatever the counters happen to be when
+    something formats it -- a queue handler, a deferred formatter, or a later assertion --
+    rather than what the run logged. The identical defect was ACTIVE in the Phase B
+    home-office donor pool (``tests/test_commute_day_donor_pool.py::
+    test_the_dwell_report_log_is_a_frozen_snapshot``); here it is latent, because
+    ``dwell_model`` is not touched again after the log statement. This test pins that the
+    line stays a snapshot regardless.
+    """
+    persons, wege = _persons_and_wege_with_rbw()
+    captured = {}
+    real_builder = trips_stage.build_closure_dwell_model
+
+    def capturing_builder(*args, **kwargs):
+        captured["model"] = real_builder(*args, **kwargs)
+        return captured["model"]
+
+    trips_stage.build_closure_dwell_model = capturing_builder
+    try:
+        with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips_stage"):
+            trips_stage.run(
+                persons, wege, random_seed=1,
+                exclude_rbw_legs=True, drop_leading_arrive_home_leg=True,
+                closure_dwell_model="empirical",
+            )
+    finally:
+        trips_stage.build_closure_dwell_model = real_builder
+
+    # Select on the LOGGER and on "report:", not merely on "closure dwell model": caplog
+    # collects every logger, and plan_validation's global-fallback WARNING for this fixture
+    # also contains the words "closure dwell model" -- with float args, so a test that
+    # matched it would pass no matter what this line passes.
+    record = next(record for record in caplog.records
+                  if record.name == "braunschweig.popsim.trips_stage"
+                  and "closure dwell model" in record.getMessage()
+                  and "report:" in record.getMessage())
+    before = record.getMessage()
+    captured["model"].report["n_draws"] = 987654
+    assert record.getMessage() == before
+    assert "987654" not in record.getMessage()
+
+
 def test_run_rejects_unknown_dwell_model():
     persons, wege = _persons_and_wege_with_rbw()
     with pytest.raises(ValueError, match="closure_dwell_model"):

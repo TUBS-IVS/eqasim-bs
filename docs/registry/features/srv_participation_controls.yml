@@ -6,7 +6,13 @@ description: >-
   shares, #224; escort share, #227) applied to the MiD donor draw in the PopulationSim
   workflow. The escort control counts only the ACTIVE MiD escort leg (W_ZWECK 6) to match
   the SrV E_ZWECK_9 == 6 (Holen/Bringen) target universe; the passive leg (W_ZWECK 13,
-  escorted minors' own trips) is deliberately excluded.
+  escorted minors' own trips) is deliberately excluded. Since Plan B (issue #368,
+  ADR-0109), the work and education sub-controls are rendered through
+  employment/age-conditional REPLACEMENTS (work_by_employment; education_0_5 /
+  education_6_17 / education_18plus) instead of the original all-persons
+  work_participation / education_participation entries, which stay REGISTERED but
+  default OFF -- see the notes field for the full account. leisure_participation and
+  escort_participation are unaffected.
 stages:
 - data.census.filtered
 pipelines:
@@ -17,9 +23,9 @@ lifecycle: active
 production:
   enabled: true
   flags:
-  - braunschweig.population.popsim.work_participation_kreis_control
+  - braunschweig.population.popsim.work_by_employment_kreis_control
   - braunschweig.population.popsim.leisure_participation_kreis_control
-  - braunschweig.population.popsim.education_participation_kreis_control
+  - braunschweig.population.popsim.education_by_age_kreis_control
   - braunschweig.population.popsim.escort_participation_kreis_control
 introduced:
   issue: '#224'
@@ -28,6 +34,7 @@ introduced:
 detail_doc: docs/features/regional-control-targets.md
 code_paths:
 - braunschweig/popsim/stage/
+- braunschweig/popsim/kreis_attribute_control.py
 - braunschweig/analysis/population_validation/participation_fit.py
 evidence:
   tests:
@@ -37,6 +44,7 @@ evidence:
   - tests/test_leisure_education_participation.py
   - tests/test_escort_participation.py
   - tests/test_run_population_validation.py
+  - tests/test_participation_universe_controls.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_participation_target.py
@@ -63,7 +71,11 @@ validation:
     control-registry route stays structurally closed -- controls.build_registry validates
     columns of the assembled population, and the participation flags are input-only popsim
     seed columns that never reach it -- so the fit is measured from the realised trips.
-    It is a FIT CHECK against the steering SrV targets, never independent validation.
+    It is a FIT CHECK against the steering SrV targets for the leisure and escort
+    purposes. For work and education it is weaker but no longer circular: since #368
+    those two all-persons controls default off, so their rates are steered only
+    indirectly, through the universe replacements built from the same SrV aggregate
+    (see notes). Neither case is independent validation.
     DONOR-BOUND DEFICIT, ROOT CAUSE FOUND (#365, ADR-0106): the residual gap this record and the
     i329 manifest call "donor-bound" is now attributed. The controls were MET in the seed and in
     the realised plans of every person whose plan source carries a diary (work 0.314 vs 0.332,
@@ -82,3 +94,31 @@ assessment:
   pending_reason: |
     No ADR exists for #224, so there is no written record of why the residual gap was accepted as donor-bound. This is the largest documentation gap among the pilot features. Partly closed by ADR-0106 (#365), which records what the "donor-bound" residual actually was (14.1% of plan sources had no collected diary) and removes it; the #224 control design itself still has no ADR, and no run has yet re-measured the fit.
   source: null
+notes: >-
+  Plan B (issue #368, ADR-0109) changed the DEFAULT mechanism for two of this feature's
+  four sub-controls: work_participation_kreis_control and
+  education_participation_kreis_control now default "off" (configs/base_bs.yml), and the
+  two K2-production flags this record checks in their place are the REPLACEMENTS --
+  work_by_employment_kreis_control (four employment-status x direct-work-leg MECE cells
+  over persons 14+, kreis_attribute_control.REGISTRY entry work_by_employment) and
+  education_by_age_kreis_control (one toggle for three age-range entries sharing the
+  education_flag seed column: education_0_5, education_6_17, education_18plus). Motivation
+  was a measured universe mismatch: the all-persons controls were met by the WRONG
+  persons -- employed persons with a work trip 58.4% against the SrV target 67.5%,
+  pensioners 7.8% against 1.8%; education 6-17 84.3% against the SrV target 90.0%, 0-5
+  73.4% against 65.6% (arm-3 run manifest plan-structure-fix-arm3-100pct-2026-09-07).
+  The two REGISTERED-but-inactive predecessors stay available under their own toggles for
+  ablation configs (turning a predecessor back "on" together with its replacement, or
+  turning a replacement on while employment_status_kreis_control is off, is a
+  config-time ValueError raised by source_resolution.active_kreis_entries -- no silent
+  double-constraint or run-time KeyError) and stay covered by their own tests
+  (test_work_participation_control.py; the work_participation/education_participation
+  halves of test_leisure_education_participation.py). leisure_participation and
+  escort_participation are UNCHANGED by this task. See
+  tests/test_participation_universe_controls.py for the replacement's seed derivation,
+  registry entries and contradiction guards. The replacement mechanism now has its own
+  record, docs/registry/features/participation_universe_controls.yml (ADR-0109): its
+  seed derivations, universes, targets, OFF-path proofs, rate instrumentation and
+  pre-registered arm-4 expectations live THERE and are not repeated here; this record
+  keeps the two sub-controls Plan B did not touch (leisure_participation,
+  escort_participation) and the #224/#227 history of all four.

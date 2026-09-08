@@ -57,16 +57,19 @@ def active_kreis_entries(context, source_name):
     An entry is active when its per-attribute toggle resolves to "on" AND the donor
     source is MiD. All KREIS attribute controls are MiD-only (their seed columns have no
     ENTD pendant), so the list is empty for any non-"mid" source. Each toggle defaults per
-    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- all nine
-    entries (economic_status, number_of_cars, number_of_bicycles, has_ebike, trip_class,
-    employment_status, work_participation, leisure_participation, education_participation)
-    default "on". The has_ebike source column (H_ANZPED) was server-verified 2026-07-08
-    (issue #116). trip_class (2026-07-08 follow-on), employment_status (feature #172 task
-    4), and work_participation / leisure_participation / education_participation (feature
-    #224 tasks 4-5) are PERSON-level entries; each is wired on both seed paths (its
-    per-Kreis target partitions the PERSON total, not the household total -- see the
-    KREIS block in execute()). employment_status additionally restricts that PERSON
-    total to age >= 14 (its REGISTRY entry's min_age), see person_total_by_kreis_min_age.
+    ``_KREIS_CONTROL_DEFAULT`` (project rule: new features default on) -- economic_status,
+    number_of_cars, number_of_bicycles, has_ebike, trip_class, employment_status,
+    leisure_participation and escort_participation default "on". work_participation and
+    education_participation now default "off" (Plan B, issue #368, ADR-0109; see the
+    REPLACEMENTS paragraph below) -- their replacements work_by_employment and
+    education_by_age default "on" in their place. The has_ebike source column (H_ANZPED)
+    was server-verified 2026-07-08 (issue #116). trip_class (2026-07-08 follow-on),
+    employment_status (feature #172 task 4), and work_participation / leisure_participation
+    / education_participation (feature #224 tasks 4-5) are PERSON-level entries; each is
+    wired on both seed paths (its per-Kreis target partitions the PERSON total, not the
+    household total -- see the KREIS block in execute()). employment_status additionally
+    restricts that PERSON total to age >= 14 (its REGISTRY entry's min_age), see
+    person_total_by_kreis_min_age.
 
     Called at EXECUTE time: synpp's ``ExecuteContext.config(key)`` takes NO default
     argument (a positional default raises ``TypeError``; the same pitfall was fixed for
@@ -80,6 +83,18 @@ def active_kreis_entries(context, source_name):
     both toggles are on, the three-group entry is dropped and only the four-group one stays
     active. Its toggle being on while the base ``pt_ticket_kreis_control`` is off is a config
     contradiction and raises (no silent activation of a refinement whose base is disabled).
+
+    Two more REPLACEMENTS (Plan B, issue #368, ADR-0109), defaulting the other way around --
+    the REPLACEMENT defaults "on" and the entry it replaces defaults "off" -- so both must be
+    explicitly re-enabled/disabled to reach the legacy configuration: ``work_by_employment``
+    replaces the all-persons ``work_participation``, and the three ``education_by_age``
+    entries (one shared toggle, ``education_by_age_kreis_control``) replace the all-persons
+    ``education_participation``. Turning a replacement on while its legacy counterpart is
+    also on is a config contradiction and raises. ``work_by_employment`` additionally
+    requires ``employment_status`` to be active (its seed derivation reads the
+    ``employment_status`` column, which ``attributes.map_employment_status`` only assigns
+    when that entry is on) -- without this check the config would resolve silently and abort
+    deep inside the popsim stage with a ``KeyError`` instead of failing at config time.
 
     Returns the entries in REGISTRY order (economic_status first), so downstream
     catalog rendering and count-table merges are deterministic.
@@ -109,4 +124,28 @@ def active_kreis_entries(context, source_name):
                 "either enable pt_ticket_kreis_control or turn "
                 "pt_ticket_never_group off.")
         active = [e for e in active if e.name != "pt_ticket_group"]
+    # work_by_employment / education_by_age REPLACE work_participation /
+    # education_participation by default (Plan B, issue #368, ADR-0109): both members of a
+    # pair steering the same universe would double-constrain it, and the new controls'
+    # seed derivation depends on employment_status being active. Fail at CONFIG time --
+    # not hours into a run -- when a contradictory combination is requested.
+    if "work_by_employment" in names:
+        if "work_participation" in names:
+            raise ValueError(
+                "active_kreis_entries: braunschweig.population.popsim.work_by_employment_kreis_control "
+                "and braunschweig.population.popsim.work_participation_kreis_control are both 'on'. The "
+                "employment-conditional control REPLACES the all-persons one (issue #368, ADR-0109); turn "
+                "braunschweig.population.popsim.work_participation_kreis_control off.")
+        if "employment_status" not in names:
+            raise ValueError(
+                "active_kreis_entries: braunschweig.population.popsim.work_by_employment_kreis_control is "
+                "'on' but braunschweig.population.popsim.employment_status_kreis_control is 'off'. The new "
+                "control's seed and target margin are the employment_status column and target; enable "
+                "braunschweig.population.popsim.employment_status_kreis_control.")
+    if names & set(_kac.EDUCATION_BY_AGE_ENTRY_NAMES) and "education_participation" in names:
+        raise ValueError(
+            "active_kreis_entries: braunschweig.population.popsim.education_by_age_kreis_control and "
+            "braunschweig.population.popsim.education_participation_kreis_control are both 'on'. The "
+            "age-range controls REPLACE the all-persons one (issue #368, ADR-0109); turn "
+            "braunschweig.population.popsim.education_participation_kreis_control off.")
     return active

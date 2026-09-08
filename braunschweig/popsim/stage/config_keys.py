@@ -164,6 +164,20 @@ KEY_EDUCATION_PARTICIPATION_CONTROL = "braunschweig.population.popsim.education_
 # (byte-identical for that attribute). MiD-only (seed derivation reads the MiD Wege
 # table); ignored for source="entd".
 KEY_ESCORT_PARTICIPATION_CONTROL = "braunschweig.population.popsim.escort_participation_kreis_control"
+# work_by_employment x Kreis control (Plan B, issue #368, ADR-0109): REPLACES
+# work_participation by default. Four MECE labels (employment status x direct work leg)
+# over the persons 14+ universe (WORK_BY_EMPLOYMENT_MIN_AGE_YEARS), read by
+# braunschweig.popsim.stage. Default "on" -- work_participation flips to "off" alongside it
+# (see _KREIS_CONTROL_DEFAULT below) so the two controls never both steer the same
+# work-trip mass at once (source_resolution.active_kreis_entries raises otherwise).
+KEY_WORK_BY_EMPLOYMENT_CONTROL = "braunschweig.population.popsim.work_by_employment_kreis_control"
+# education_by_age x Kreis controls (Plan B, issue #368, ADR-0109): ONE toggle for the
+# three age-range entries (education_0_5 / education_6_17 / education_18plus,
+# kreis_attribute_control.EDUCATION_BY_AGE_ENTRY_NAMES) -- they share a single seed column
+# and a single universe mechanism, so they are switched together. REPLACES
+# education_participation by default, which flips to "off" alongside it (see
+# _KREIS_CONTROL_DEFAULT below).
+KEY_EDUCATION_BY_AGE_CONTROL = "braunschweig.population.popsim.education_by_age_kreis_control"
 # Name of the MiD household e-bike column feeding the has_ebike control. Default
 # "H_ANZPED" (Anzahl Pedelecs, 0..10, missing code 99) -- verified 2026-07-08 against the
 # server MiD B1 microdata (see braunschweig.popsim.attributes.map_has_ebike). Kept
@@ -191,6 +205,18 @@ KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
 # source_P_ID (and the downstream plans built from them), NOT to the input
 # file set read.
 KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
+# Each DEFAULT_* below is the declared default of the KEY_* immediately above it. Every one of
+# these five plan-structure keys is declared by MORE THAN ONE stage
+# (braunschweig.popsim.trips_stage, braunschweig.popsim.completed_donor and
+# braunschweig.synthesis.commute_day.home_office_donors_stage), because synpp requires every
+# stage that READS a key to declare it. synpp resolves ONE value per key per run, so the stages
+# must declare the IDENTICAL default or the value a stage sees would depend on which stage
+# happened to declare it first. Naming the defaults here -- next to the keys, in the leaf module
+# every one of those stages already imports -- makes that identity structural instead of a
+# convention three files have to keep by hand. (closure_dwell_min_obs' default stays in
+# trips_stage as DEFAULT_CLOSURE_DWELL_MIN_OBS: it sizes the empirical model that module owns,
+# and the other stages import it from there for the same one-home reason.)
+DEFAULT_DIARY_PLAN_MATCH = True
 # Exclude public-holiday-reported diaries (feiertag == 1) from the realisable
 # plan-source pool and remap persons sourced from one: SrV reference days
 # exclude public holidays, so a holiday-reported diary is not a realisable
@@ -198,6 +224,22 @@ KEY_DIARY_PLAN_MATCH = "braunschweig.population.popsim.diary_plan_match"
 # note on that key re: the Wege table + src_* facts being read/attached
 # regardless of this flag).
 KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES = True
+# Never relax the `employed` key when the diary plan match re-draws a plan
+# source (issue #368, Plan B Task 6). weekend_plan_match.match_person drops
+# `employed` second-from-last on its relaxation ladder, so a non-employed person
+# could inherit an employed donor's work diary while their own employment
+# attribute comes from a DIFFERENT MiD respondent -- a plan the
+# employment-conditional work control would then be fighting. A GUARD, not a
+# correction (see configs/base_bs.yml for the measured magnitude). Default ON;
+# read ONLY by braunschweig.popsim.completed_donor, which is where the diary
+# match runs, so it is declared there (like exclude_holiday_plan_sources) and
+# reaches the popsim stage through that stage dependency.
+KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_hard_employment"
+# Declared next to the key like every neighbouring flag (final fix wave, item 3): the
+# stage that declares it used to spell the default as a literal `True`, so the default and
+# the key had two independent homes and could drift apart silently.
+DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
@@ -205,6 +247,7 @@ KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES = "braunschweig.population.popsim.exclude_holid
 # note on that key re: the Wege table + src_* facts being read/attached
 # regardless of this flag).
 KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
+DEFAULT_EXCLUDE_RBW_LEGS = True
 # Treat a diary that starts by arriving home (first_so1 == 2, i.e. the
 # reporting day begins mid-trip and the first RECORDED leg only arrives home)
 # as having that leading leg dropped when counting direct legs, and remap a
@@ -216,6 +259,7 @@ KEY_EXCLUDE_RBW_LEGS = "braunschweig.population.popsim.exclude_rbw_legs"
 # is on (controller ruling R20) -- all three must see the SAME value, or seed
 # and plan count different days again.
 KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
+DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG = True
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
 # the closing dwell duration from the observed distribution of the same purpose
@@ -224,6 +268,7 @@ KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_
 # EMPIRICAL-path behaviour only (only a drawn dwell can exceed the bound where
 # the constant would not; ruling R19). Read by braunschweig.popsim.trips_stage.
 KEY_CLOSURE_DWELL_MODEL = "braunschweig.population.popsim.closure_dwell_model"
+DEFAULT_CLOSURE_DWELL_MODEL = "empirical"
 # Minimum number of observations a (purpose x arrival band) cell of the EMPIRICAL
 # closure-dwell model must hold before it is drawn from directly; a thinner cell
 # falls back to the purpose marginal (rate logged). Positive integer, default 30.
@@ -235,6 +280,19 @@ KEY_CLOSURE_DWELL_MIN_OBS = "braunschweig.population.popsim.closure_dwell_min_ob
 # MiD anzwege1. Default ON (project rule: new features default on). Read by
 # braunschweig.popsim.stage.
 KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_seed_counts_closure"
+# Map the PASSIVE escort leg (MiD W_ZWECK 13, the escorted child's own trip) to the
+# education purpose (issue #256). This is a TRIP-BUILD flag, declared with this exact
+# unprefixed key name and this exact default by braunschweig.popsim.trips_stage and
+# braunschweig.synthesis.commute_day.home_office_donors_stage (synpp requires every stage
+# that READS a key to declare it, so the declaration -- not the fact -- is repeated).
+# THIS stage reads it because the education_flag KREIS-control seed must count the same
+# codes as education that the trip build does (Plan B, issue #368): a seed built from
+# {3, 11, 12} while the plan realises {3, 11, 12, 13} as education would make the control
+# and the plan describe different days -- the same seed-vs-plan mismatch
+# KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE exists to close. All stages must therefore see the
+# SAME value. Read by braunschweig.popsim.stage -> mid.derive_education_flag_seed.
+KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
+DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
@@ -260,7 +318,23 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "leisure_participation": KEY_LEISURE_PARTICIPATION_CONTROL,
     "education_participation": KEY_EDUCATION_PARTICIPATION_CONTROL,
     "escort_participation": KEY_ESCORT_PARTICIPATION_CONTROL,
+    "work_by_employment": KEY_WORK_BY_EMPLOYMENT_CONTROL,
+    # The three education-by-age entries share ONE toggle key (they are switched together).
+    "education_0_5": KEY_EDUCATION_BY_AGE_CONTROL,
+    "education_6_17": KEY_EDUCATION_BY_AGE_CONTROL,
+    "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
 }
+
+# Shared default for the three education_by_age entries (Plan B, issue #368, ADR-0109):
+# declared ONCE because they share a SINGLE config toggle (KEY_EDUCATION_BY_AGE_CONTROL,
+# see _KREIS_CONTROL_TOGGLE_KEY above) -- a real run only ever resolves ONE value for all
+# three, so their _KREIS_CONTROL_DEFAULT entries must be textually identical by
+# construction, not merely equal by coincidence. Without this, `configure()` reads
+# _KREIS_CONTROL_DEFAULT["education_6_17"] while a test double resolving the shared
+# toggle key by iterating this dict (or _KREIS_CONTROL_TOGGLE_KEY) could silently pick up
+# a DIFFERENT one of the three names first and diverge from configure() the moment a
+# future edit changes just one of the three literals.
+_EDUCATION_BY_AGE_DEFAULT = "on"
 
 # Per-entry default for its toggle (project rule: new features default "on"). has_ebike
 # was blocked pending server verification of the MiD household e-bike column (issue
@@ -276,8 +350,16 @@ _KREIS_CONTROL_DEFAULT = {
     "employment_status": "on",
     "pt_ticket_group": "on",
     "pt_ticket_group4": "on",
-    "work_participation": "on",
+    # work_participation / education_participation flip to "off" (Plan B, issue #368,
+    # ADR-0109): work_by_employment / education_by_age REPLACE them by default. The
+    # OFF-path tests (tests/test_participation_universe_controls.py) pin that turning the
+    # new controls off and these two back on reproduces exactly today's legacy active set.
+    "work_participation": "off",
     "leisure_participation": "on",
-    "education_participation": "on",
+    "education_participation": "off",
     "escort_participation": "on",
+    "work_by_employment": "on",
+    "education_0_5": _EDUCATION_BY_AGE_DEFAULT,
+    "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
+    "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
 }

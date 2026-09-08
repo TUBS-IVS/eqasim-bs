@@ -35,8 +35,20 @@ and shared across runs (Tier B2).
    a public-holiday reporting day (`feiertag == 1`) when
    `exclude_holiday_plan_sources` is on. `anzwege1 == 803` with `mobil != 1` is
    **kept** — zero trips is then the observed day. Writes
-   `diary_plan_match_trace.parquet`. Reuses `weekend_plan_match.match_person`
-   unchanged, so there is exactly one matcher implementation in the repository.
+   `diary_plan_match_trace.parquet`. Reuses `weekend_plan_match.match_person`, so
+   there is exactly one matcher implementation in the repository.
+   Since #368 (ADR-0109) the diary caller passes `hard_keys={"employed"}` while
+   `diary_match_hard_employment` is on: the key ladder relaxes only the SOFT keys and
+   never drops `employed`, because the receiving person's employment attribute and the
+   donor's work diary would otherwise come from two different MiD respondents — exactly
+   the plan the employment-conditional work control has to fight. Two consequences worth
+   knowing before reading a trace: (a) with one hard key `match_level` counts SOFT
+   relaxations, so its scale is 0..4 instead of 0..5 and the log line states the flag; (b)
+   a person for whom NO donor shares the employment class still gets a donor through the
+   pre-existing whole-pool fallback, and that crossing is counted in
+   `DiaryMatchReport.n_crossed_employment_boundary` and logged as a rate (WARNING when the
+   guard is on). The weekend caller passes no hard keys, so its draw sequence is
+   byte-identical.
 5. **Fact attachment** — `diary_facts.attach_plan_source_facts`. Joins the facts of
    the FINAL plan source onto every person as `src_<fact>` columns. Also
    unconditional (see the propagation contract below).
@@ -47,7 +59,13 @@ Downstream, on the population that the donor build feeds:
    alias), via `mid.project_completed_seed`. Reads `src_ends_at_home` /
    `src_n_direct_legs` to count the CLOSED day in the `trip_class` seed
    (`trip_class_seed_counts_closure`), and raises if a resolved plan source still
-   carries `803`/`804` while `diary_plan_match` is on.
+   carries `803`/`804` while `diary_plan_match` is on. Since #368 it also derives the
+   two participation-UNIVERSE seed columns from the FINAL plan source's Wege rows —
+   `work_by_employment` (employment status × a directly recorded work leg) and
+   `education_flag` (a directly recorded education leg, mapped with the same
+   `escort_passive_education` setting the trip build uses) — but only when a matching
+   control entry is active; with none active neither seed path touches the Wege table.
+   An unresolved plan source RAISES here too: no flag is ever imputed.
 7. **Trip building** — `braunschweig.popsim.trips_stage` (the
    `synthesis.population.trips` alias), via `trips.build_trip_table`. Drops
    `W_RBW == 1` legs and leading arrive-home legs (`W_SO1 == 2`), then closes the

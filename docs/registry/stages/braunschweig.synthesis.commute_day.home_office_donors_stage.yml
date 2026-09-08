@@ -6,9 +6,12 @@ description: 'Builds the donor pool for the reporting-day state model (ADR-0104,
   braunschweig.population.popsim.mid_dir): the persons who reported a full home-office day, with
   the matching attributes and their whole travel-day trip chain. Returns (attributes, trips,
   diagnostics). The donor day is built by the IDENTICAL rules as the synthetic population''s day
-  (the same escort_purpose / escort_passive_education / explicit_round_trip_purposes flags and
-  the same trip-table builder), so a replaced day cannot follow a different purpose or mode
-  vocabulary than the one it replaces. With commute_day_state_enabled false the stage reads
+  (the same escort_purpose / escort_passive_education / explicit_round_trip_purposes flags, the
+  same exclude_rbw_legs / drop_leading_arrive_home_leg / closure-dwell-model plan-structure rules
+  and the same trip-table builder), so a replaced day cannot follow a different purpose, mode or
+  chain-structure vocabulary than the one it replaces; and the donor universe is narrowed by the
+  SAME diary-realisability rules the plan-source pool uses (no uncollected diary, no public
+  holiday, no rbW-only diary -- issue #374). With commute_day_state_enabled false the stage reads
   nothing and returns two EMPTY frames with the ON-path columns.'
 lineage:
   type: braunschweig_new
@@ -30,18 +33,75 @@ features:
 - commute_day_state
 decisions:
 - ADR-0104
+- ADR-0106
+- ADR-0107
+- ADR-0108
+- ADR-0109
 notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
   other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
   directory braunschweig.popsim.trips_stage reads, so both stages can never point at different
   MiD extracts), escort_purpose (code default false; configs/base_bs.yml: true),
   escort_passive_education (code default false; configs/base_bs.yml: true),
-  explicit_round_trip_purposes (default true) -- the donor trip table is built with EXACTLY the
-  keyword arguments trips_stage.run passes for the SAME reason those flags exist there (ruling
-  R2): a replaced day must not follow a different purpose/mode vocabulary than the day it
-  replaces. random_seed is read but the donor trip table carries NO per-person departure-time
-  jitter of its own -- that jitter is applied once, later, by plan_replacement, keyed by the
-  RECEIVING person, not the donor (applying it twice would double-jitter the same donor day once
-  it is copied onto a worker).
+  explicit_round_trip_purposes (default true), and -- added by issue #374 -- the four
+  plan-structure keys braunschweig.population.popsim.exclude_rbw_legs (default true),
+  .drop_leading_arrive_home_leg (default true), .closure_dwell_model (default "empirical"),
+  .closure_dwell_min_obs (default 30) plus the two donor-filter keys
+  braunschweig.population.popsim.diary_plan_match (default true) and
+  .exclude_holiday_plan_sources (default true). Every one of them is the SAME key
+  braunschweig.popsim.trips_stage / braunschweig.popsim.completed_donor read, declared with the
+  SAME default -- the key names AND the defaults are imported from the leaf module
+  braunschweig.popsim.stage.config_keys (DEFAULT_* constants added by #374 next to the KEY_*
+  they belong to), never re-typed, so three stages declaring one key cannot disagree about its
+  default. The donor trip table is built with the keyword arguments trips_stage.run passes for
+  the SAME reason those flags exist there (ruling R2): a replaced day must not follow a different
+  purpose/mode/chain-structure vocabulary than the day it replaces. random_seed is read but the
+  donor trip table carries NO per-person departure-time jitter of its own -- that jitter is
+  applied once, later, by plan_replacement, keyed by the RECEIVING person, not the donor
+  (applying it twice would double-jitter the same donor day once it is copied onto a worker).
+
+  Donor filters (issue #374, donor_pool.filter_donor_diaries), applied to the selected donors
+  BEFORE the attributes and the trip chains are built, so a dropped donor leaves the pool
+  entirely: (1) no-diary -- anzwege1 in {803 "Person ohne Wegeerfassung", 804 "Mobilitaet
+  unbekannt"}; (2) holiday -- feiertag == 1 (SrV reference days exclude public holidays);
+  (3) rbW-only -- the diary carries no direct leg at all (diary_facts.compute_diary_facts:
+  n_direct_legs == 0 and n_rbw_legs > 0), so with exclude_rbw_legs on the built chain would be
+  empty and the day would silently degrade to an immobile one. These are the same three
+  exclusions braunschweig.popsim.diary_plan_match applies to a synthetic person''s plan source,
+  read from the same MiD codes and steered by the same config keys: diary_plan_match is the
+  master switch, exclude_holiday_plan_sources additionally gates (2) and exclude_rbw_legs
+  additionally gates (3), exactly as diary_plan_match._own_diary_reason gates them. ONE
+  deliberate difference, documented on the function: anzwege1 803 is dropped REGARDLESS of mobil,
+  whereas diary_plan_match keeps an "803 and mobil != 1" person as a legitimately immobile day.
+  That rule judges whether a person''s OWN realised day is credible; here the day is copied onto
+  a far commuter, so a day that was never observed cannot serve as a donor day at all. The size
+  of the difference is counted and logged, never left implicit, and split in two (ruling R28):
+  n_dropped_no_diary_immobile counts the 803 donors whose mobil is KNOWN and not 1, while
+  n_dropped_no_diary_mobil_unknown counts those whose mobil is missing -- diary_plan_match''s
+  "mobil != 1" comparison keeps the latter too (NaN compares unequal), but immobility is then an
+  artefact of the comparison rather than something the data states, so folding them together
+  would overstate the number that documents the rule difference.
+
+  A filter that matches NOTHING must never look healthy (the drop-rate WARNING below is an upper
+  bound and a 0 % rate passes it silently), so two zero-match paths are closed explicitly. The
+  code columns are VALIDATED, never coerced -- filter_donor_diaries raises when anzwege1, mobil
+  or feiertag arrive with a non-numeric dtype, because the MiD codes are compared exactly (as
+  diary_plan_match compares them, so the two rules cannot drift apart) and an exact comparison
+  against a text column matches no row at all. The rbW-only filter then reports its join in TWO
+  separate log statements, because a key mismatch can bite at either level and neither shows up
+  in the drop rate. (a) If the H_ID pre-filter selects no Wege row at all, one line states
+  "0/N donors matched ANY Wege row" and names BOTH frames'' H_ID dtypes together with the number
+  of rows offered -- WARNING whenever the Wege frame was non-empty, since a genuinely trip-less
+  donor set is the only innocent explanation. (b) Otherwise a second line always reports how many
+  donors resolved to a diary-facts row on the FULL (H_ID, P_ID) key, as a rate; it does not name
+  dtypes, and it warns at a 0 % match rate -- the symptom of a P_ID mismatch that survived the
+  H_ID pre-filter. Between them, a join that matched nothing is visible on sight instead of
+  hiding behind "no rbW-only donors".
+  anzwege1/mobil/feiertag are loaded as OPTIONAL MiD person columns, but execute() RAISES when an
+  ACTIVE filter''s column is absent from the delivery (naming the column and the config key to
+  switch off): a silently skipped filter would leave donors in the pool that the configuration
+  says must not be there. Every drop class is counted and logged as an explicit rate, and a total
+  drop rate above 50 % is raised as a WARNING (a diagnostic bound, not a reference value: it
+  usually signals a broken column join).
 
   Universe: MiD persons with arbwo == weekday, P_STARB1 == worked, starb2 == at_home (a full
   home-office reporting day); M_HOFF != home-office-module is a data-consistency signal that is
@@ -82,8 +142,31 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   donor with no Wege row at all is genuinely immobile (n_immobile); a donor that HAD Wege rows but
   ended up with no surviving trip after repair/resample is a resample gap, not real behaviour, and
   is counted separately (n_chain_dropped_by_resample) so the two failure modes are never conflated.
+  CORRECTED PARITY CLAIM (issue #374): until #374 both this record and donor_pool.donor_trips
+  stated that the call passed "EXACTLY the keyword arguments trips_stage.run passes", while it in
+  fact omitted exclude_rbw_legs, drop_leading_arrive_home_leg and dwell_model -- all three
+  default-ON in production since issues #366/#367 -- so a donor day kept the rbW summary legs and
+  the leading arrive-home leg the day it replaces does not have, and closed an open chain with the
+  constant one-hour dwell instead of the empirical one. The three arguments are now threaded from
+  the config keys above, and the parity is expressed by NAMING every argument on both sides rather
+  than by asserting it. The closure dwell model is built by trips_stage.build_closure_dwell_model
+  from the FILTERED donors'' own diaries -- the same donor-diary pooling trips_stage.run performs,
+  keyed through source_H_ID/source_P_ID (a MiD donor IS its own plan source, so the pool takes the
+  same branch of that key precedence as the production stage rather than its fallback). Its report
+  is logged AFTER the trip build, where trips_stage.run logs the identical line: the model''s
+  n_draws / n_fallback_purpose_marginal / n_fallback_global / n_capped counters are filled BY the
+  build, so a construction-time log would always print zeros and report a 100 % fallback rate as
+  no fallback at all. The line carries a SNAPSHOT of the report (dict(...)), never the live
+  mapping: draw() mutates that one dict in place and logging renders its arguments lazily, so a
+  handler that formats late would otherwise print the counters as of format time rather than as
+  of emit time.
 
-  Diagnostics (builder + stage-level): n_donors, n_immobile, n_chain_dropped_by_resample,
+  Diagnostics (builder + stage-level): n_donors, n_donors_before_diary_filters,
+  n_dropped_no_diary, n_dropped_no_diary_immobile, n_dropped_no_diary_mobil_unknown,
+  n_dropped_holiday, n_dropped_only_rbw (the
+  #374 filter counts -- always present, zero for a filter that is off; the three drop classes are
+  per class and may OVERLAP, so they need not sum to the number of donors removed), n_immobile,
+  n_chain_dropped_by_resample,
   n_missing_distance, n_sex_unknown (HP_SEX outside {1, 2}), n_not_in_module,
   n_household_unmatched, n_donors_with_education_leg, n_donors_with_work_leg (ruling R7),
   distance_source_counts, cells (one entry per donor, keyed by
@@ -94,15 +177,26 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
 
   validate() returns a cache token folding the summed byte size of the three raw MiD files (so a
   re-delivered extract invalidates the cache) plus an md5 of the pure donor_pool/popsim.trips/
-  plan_validation module sources (so an edit to those helpers invalidates the stage exactly as an
-  edit to this file would, since synpp only hashes this module''s own source) -- 0 when the model
-  is OFF (nothing is read, nothing can invalidate it). A missing raw MiD file raises RuntimeError
-  at validation time, naming the missing path, rather than failing mid-run.
+  plan_validation/trips_stage/closure_dwell/diary_facts/diary_plan_match module sources and of
+  the deferred leaf module popsim.stage.config_keys (so an edit to those helpers -- or a changed
+  declared default -- invalidates the stage exactly as an edit to this file would, since synpp
+  only hashes this module''s own source; the last four were added by issue #374 together with the
+  code that depends on them) -- 0 when the model is OFF (nothing is read, nothing can invalidate
+  it). A deferred module that fails to import raises rather than being skipped: skipping it would
+  keep a stale cache alive exactly when the code is broken. A missing raw MiD file raises
+  RuntimeError at validation time, naming the missing path, rather than failing mid-run.
 
   popsim_open and simple_ipf_open declare commute_day_state_enabled: false in their committed
   fixtures (configs/fixtures/config_popsim_open_braunschweig.yml,
   configs/fixtures/config_local_braunschweig_25pct.yml) and neither fixture''s synpp DAG reaches
   this stage at all -- not_used there is the DAG''s own statement, not merely an unexercised
   default. Evidence: tests/test_commute_day_donor_pool.py (the pure builder, primary-method
-  coverage) and tests/test_commute_day_stages.py (the stage''s I/O, OFF path, cache-token
-  behaviour, missing-column guard).'
+  coverage; for #374 also the per-flag leg-drop behaviour, the three donor filters with their
+  counts, the deliberate 803-regardless-of-mobil divergence, the dwell model being built from the
+  FILTERED donors through the source_* keys, and test_defaults_keep_the_pool_byte_identical --
+  a golden captured from the pre-#374 implementation and verified green against it, so the OFF
+  path is pinned by the previous output rather than by the new code''s own) and
+  tests/test_commute_day_stages.py (the stage''s I/O, OFF path, cache-token behaviour incl. the
+  deferred config-key module, missing-column guard, the forwarding of every declared flag, the
+  gating of the three filters by the plan-source keys, and the fail-fast raise when an active
+  filter''s MiD column is absent).'

@@ -97,11 +97,46 @@ limitations: |
   Segments (23): all; age_<band> for 0-5, 6-9, 10-17, 18-24, 25-44, 45-64, 65-74, 75+;
   group_<g> for employed, child_0_5, school_age_6_17_not_employed, adult_18_64_not_employed,
   senior_65plus_not_employed (employment x life phase, defined so a synthetic population without
-  a pupil/student flag can express it: employed wins, the non-employed are split by age);
+  a pupil/student flag can express it: employed wins, the non-employed are split by age;
+  employed = V_ERW in {8, 9, 10, 11}, see the employed-definition paragraph below);
   sex_male, sex_female; kreis_<ars5> for the 7 surveyed Kreise. An empty segment carries NaN
   values and is never dropped, so a consumer never has to guess whether a segment is missing or
   empty; n_unweighted repeats the segment's person count on every one of its rows so thin
   segments can be filtered without a second lookup.
+
+  Employed definition (CHANGED 2026-09-07, issue #368 decision Q5): employed =
+  srv_plan_structure.EMPLOYED_V_ERW = V_ERW in {8, 9, 10, 11} - in Ausbildung/Lehre, full-time,
+  part-time, marginally employed. Code 8 (an apprenticeship WITH an employment contract) was
+  previously EXCLUDED, which made this reference and the regional employment controls measure
+  different populations: the MiD-side employment_status classes the controls target include
+  in_ausbildung, MiD EMPLOYED_TAET includes P_TAET 8 (so the MODEL side of this very comparison
+  already counted apprentices as employed), and ADR-0060 treats MiD in_ausbildung (1.93%) and
+  SrV V_ERW 8 (1.87%) as apples-to-apples. A 16-year-old apprentice was therefore "employed" on
+  the model side and "school_age_6_17_not_employed" here.
+
+  Blast radius of that change, verified with a row-by-row pandas comparison of the regenerated
+  table against the previously committed one (2026-09-07): 1,236 of 9,476 rows moved and EVERY
+  one of them is a group_* row - the all, age_*, sex_* and kreis_* segments are identical to the
+  last digit, as they must be since none of them conditions on employment, and the row grid (2
+  universes x 23 segments x 206 metrics) is unchanged. The group counts moved as
+  at_home_zero group_employed 8,066 -> 8,306 persons, adult_18_64_not_employed 2,675 -> 2,458,
+  school_age_6_17_not_employed 2,062 -> 2,039 (240 apprentices reclassified = 217 + 23);
+  at_home_only group_employed 7,682 -> 7,905, adult_18_64_not_employed 2,460 -> 2,259,
+  school_age_6_17_not_employed 2,020 -> 1,998 (223 = 201 + 22). Headline metric moves:
+  group_employed participation_work 0.6755 -> 0.6694 (at_home_zero) and 0.7087 -> 0.7033
+  (at_home_only); group_adult_18_64_not_employed participation_work 0.1329 -> 0.0939 and
+  0.1438 -> 0.1014 (the reclassified apprentices carried most of that group's work
+  participation); group_school_age_6_17_not_employed participation_work 0.0099 -> 0.0056 and
+  0.0100 -> 0.0057. The at_home_only group_employed participation_work 0.7033 now equals the
+  p_work_employed 0.7032 of the new srv2023_work_by_employment aggregate (same universe, the
+  0.0001 from its 14+ bound), which is the cross-check that both SrV-side definitions are
+  aligned.
+
+  Historical comparisons built with the OLD definition stay as they are: the arm-3 aggregates
+  under eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/
+  and the deltas recorded in docs/runs/plan-structure-fix-arm3-100pct-2026-09-07.yml were
+  computed against the V_ERW {9, 10, 11} reference. Their group_* deltas are therefore NOT
+  comparable to a re-run against this table; their all / age_* / sex_* / kreis_* deltas are.
 
   Coverage caveat: stratified PSU design over ~44 selected municipalities; per-Kreis segments
   represent the covered municipalities only (ASSUMPTION-grade for the full Kreis). Not a control
@@ -121,12 +156,12 @@ notes: |
   share_trips_followed_by_same_purpose 0.0453, tours_per_mobile 1.5951,
   share_mobile_last_to_home 0.9776, mean_work_activity_h 6.2904.
 
-  Code state in the committed header: the CSV's provenance header records commit 1a841550, the
-  state of braunschweig/calibration/srv_plan_structure.py when the table was extracted. The
-  crosstab refactor at 734d0cba (review fix round 1: the per-purpose groupby.apply replaced by a
-  crosstab) changed that module afterwards WITHOUT changing this table: the extraction was re-run
-  on the refactored code and the regenerated file was verified byte-identical to the committed
-  one, so the header's older commit id still describes the numbers exactly. The CSV is therefore
-  deliberately NOT regenerated to refresh the id -- a rewrite would only churn the header line and
-  cost the byte-identity evidence. Anyone re-extracting must expect 1a841550 in the header of a
-  table produced by 734d0cba or later.
+  Code state in the committed header: the CSV's provenance header records commit b4e76d2d, the
+  state of braunschweig/calibration/srv_plan_structure.py when the table was re-extracted on
+  2026-09-07 for the EMPLOYED_V_ERW realignment (issue #368 decision Q5, see the
+  employed-definition paragraph under limitations). It supersedes the previous extraction at
+  1a841550, whose numbers survived the crosstab refactor at 734d0cba byte-identically (that
+  refactor changed the module without changing the table, which was verified by re-running the
+  extraction; the header id was deliberately left at 1a841550 then, since a rewrite would only
+  have churned the header and cost the byte-identity evidence). Anything re-extracted from a
+  commit that carries EMPLOYED_V_ERW = (8, 9, 10, 11) must reproduce the current table.

@@ -307,11 +307,15 @@ def test_all_kreis_entries_default_on():
     names = {c.name for c in active}
     # pt_ticket_group appears as its four-group refinement pt_ticket_group4: with
     # pt_ticket_never_group on (the default, issue #329) the finer entry REPLACES the
-    # three-group one (same marginal, never both).
+    # three-group one (same marginal, never both). work_participation /
+    # education_participation are registered but default OFF (Plan B, issue #368,
+    # ADR-0109): work_by_employment / education_0_5 / education_6_17 / education_18plus
+    # REPLACE them and default ON instead.
     assert names == {
         "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group4", "work_participation",
-        "leisure_participation", "education_participation", "escort_participation",
+        "trip_class", "employment_status", "pt_ticket_group4",
+        "leisure_participation", "escort_participation",
+        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
     }
 
 
@@ -350,9 +354,16 @@ def test_classify_rng_style_covers_every_drawing_default_active_entry():
 
     active_names = {c.name for c in active_kreis_entries(_FakeContext(), "mid")}
     rng_style = _classify_rng_style_kreis_entries(active_names)
-    # economic_status is a RAW oek_status pass-through (no draw), so it must NOT appear;
-    # every other default-active entry imputes a missing/nonresponse code.
-    assert rng_style == active_names - {"economic_status"}
+    # economic_status is a RAW oek_status pass-through (no draw); work_by_employment /
+    # education_0_5 / education_6_17 / education_18plus (Plan B, issue #368) derive
+    # DETERMINISTICALLY from the realised plan source's Wege legs -- no missing/
+    # nonresponse code imputation, so no rng draw (see derive_work_by_employment_seed /
+    # derive_education_flag_seed's "no imputation" log line). Every OTHER default-active
+    # entry imputes a missing/nonresponse code and therefore draws.
+    assert rng_style == active_names - {
+        "economic_status", "work_by_employment",
+        "education_0_5", "education_6_17", "education_18plus",
+    }
     assert {"pt_ticket_group4"} <= rng_style
     # The three-group resolution draws identically, even though the default activates the
     # four-group refinement instead.

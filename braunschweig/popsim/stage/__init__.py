@@ -55,7 +55,10 @@ Submodules extracted so far:
                   frame (``build_controls_df``), the per-Kreis census-column
                   map (``_kreis_controls_map``), the per-Kreis PERSON totals
                   (``person_band_census_columns``, ``person_total_by_kreis``,
-                  ``person_total_by_kreis_min_age``), the grid-geography
+                  ``person_total_by_kreis_min_age``,
+                  ``person_total_by_kreis_age_range``) with the single-year
+                  census columns they are summed over
+                  (``universe_age_census_columns``), the grid-geography
                   control filter (``_grid_geography_controls``) and the
                   aggregation-map / source-column builders
                   (``build_aggregation_map``, ``build_source_columns``).
@@ -230,6 +233,7 @@ from .cell_attributes import (  # noqa: F401  (re-exports)
 )
 from . import config_keys
 from .config_keys import (  # noqa: F401  (re-exports)
+    DEFAULT_ESCORT_PASSIVE_EDUCATION,
     KEY_BATCH_TIMEOUT,
     KEY_BIKES_KREIS_CONTROL,
     KEY_CARS_KREIS_CONTROL,
@@ -241,13 +245,16 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CONTROLS_SOURCE,
     KEY_CLOSURE_DWELL_MIN_OBS,
     KEY_CLOSURE_DWELL_MODEL,
+    KEY_DIARY_MATCH_HARD_EMPLOYMENT,
     KEY_DIARY_PLAN_MATCH,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG,
     KEY_EBIKE_KREIS_CONTROL,
     KEY_EBIKE_SEED_COLUMN,
+    KEY_EDUCATION_BY_AGE_CONTROL,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
     KEY_ESCORT_PARTICIPATION_CONTROL,
+    KEY_ESCORT_PASSIVE_EDUCATION,
     KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
     KEY_EXCLUDE_RBW_LEGS,
     KEY_FINE_TEEN_AGE_BANDS,
@@ -282,6 +289,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_TRIPS_KREIS_CONTROL,
     KEY_UV,
     KEY_WEEKEND_PLAN_MATCH,
+    KEY_WORK_BY_EMPLOYMENT_CONTROL,
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
     KEY_WORKERS,
@@ -292,12 +300,15 @@ from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
     _grid_geography_controls,
     _kreis_controls_map,
+    age_universe_entries,
     build_aggregation_map,
     build_controls_df,
     build_source_columns,
     person_band_census_columns,
     person_total_by_kreis,
+    person_total_by_kreis_age_range,
     person_total_by_kreis_min_age,
+    universe_age_census_columns,
 )
 from . import source_resolution
 from .source_resolution import (  # noqa: F401  (re-exports)
@@ -746,6 +757,18 @@ def configure(context):
     # identical wiring to the other three participation controls (parametrized by
     # purpose "escort" = ACTIVE W_ZWECK 6 only, see mid.PARTICIPATION_W_ZWECK).
     context.config(KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"])
+    # work_by_employment / education_by_age (Plan B, issue #368, ADR-0109): REPLACE
+    # work_participation / education_participation by default (see the flipped defaults
+    # above). Their committed targets (SrV conditional rate x the employment_status /
+    # census-age-band margin) live under data_path (declared below via the any()-gate).
+    # source_resolution.active_kreis_entries raises at config-resolution time on a
+    # contradictory combination (both a replacement and its legacy counterpart "on", or
+    # work_by_employment "on" with employment_status "off").
+    context.config(KEY_WORK_BY_EMPLOYMENT_CONTROL, _KREIS_CONTROL_DEFAULT["work_by_employment"])
+    # ONE toggle for the three education-by-age entries (education_0_5 / education_6_17 /
+    # education_18plus); they share a single seed column and universe mechanism, so they
+    # are switched together (see _KREIS_CONTROL_TOGGLE_KEY in config_keys.py).
+    context.config(KEY_EDUCATION_BY_AGE_CONTROL, _KREIS_CONTROL_DEFAULT["education_6_17"])
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -767,6 +790,10 @@ def configure(context):
         (KEY_LEISURE_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["leisure_participation"]),
         (KEY_EDUCATION_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["education_participation"]),
         (KEY_ESCORT_PARTICIPATION_CONTROL, _KREIS_CONTROL_DEFAULT["escort_participation"]),
+        # work_by_employment / education_by_age (issue #368): both consume a committed
+        # target2026_* table under data_path, so both belong in this gate too.
+        (KEY_WORK_BY_EMPLOYMENT_CONTROL, _KREIS_CONTROL_DEFAULT["work_by_employment"]),
+        (KEY_EDUCATION_BY_AGE_CONTROL, _KREIS_CONTROL_DEFAULT["education_6_17"]),
     )
     if any(
         str(context.config(k, default)).strip().lower() == "on"
@@ -808,6 +835,20 @@ def configure(context):
     context.config(KEY_DIARY_PLAN_MATCH, True)
     context.config(KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE, True)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    # Passive-escort-as-education (issue #256), a TRIP-BUILD flag also declared by
+    # braunschweig.popsim.trips_stage with the same default: the education_flag
+    # KREIS-control seed must count the same W_ZWECK codes as education that the trip
+    # build does (Plan B, issue #368), so this stage declares the key too -- both so its
+    # OWN cache-validation hash tracks it and so execute() may read it with the
+    # single-arg form below. configs/base_bs.yml sets it to true.
+    context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
+    # rbW-leg exclusion (controller ruling R8), the same key + default
+    # braunschweig.popsim.completed_donor and braunschweig.popsim.trips_stage declare:
+    # the trip build drops rbW legs from the plan only under this flag, so the
+    # participation-universe seeds must count them exactly when the plan does. Declaring
+    # it here adds the key to THIS stage's config-validation hash set (intended: a change
+    # to it changes the seed, so the stage must re-run).
+    context.config(KEY_EXCLUDE_RBW_LEGS, True)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1090,7 +1131,7 @@ def _load_tier3_kreis_controls(context, control_tiers, controls_source, source_n
 
 
 def _resolve_cell_load_columns(context, controls_source, source_name: str, control_tiers, base_cols,
-        employment_grid_on: bool, cells_path, fine_teen_age_bands: bool = True,
+        employment_grid_on: bool, cells_path, active_entries, fine_teen_age_bands: bool = True,
         ownership_grid_on: bool = False):
     """Resolve the column set loaded from the prepared-cells parquet.
 
@@ -1099,8 +1140,13 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     rather than the derived control names.  For tier0-only or CSV-based controls,
     source_cols == base_cols == current behaviour -> byte-identical.
 
-    Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid and
-    income-tilt blocks, so the caller MUST reassign it).
+    ``active_entries`` is the ACTIVE KREIS attribute-control REGISTRY list (the same one
+    ``_derive_kreis_attribute_control_targets`` iterates); it is a REQUIRED argument, not a
+    defaulted one, because an omitted list would silently reproduce the very defect this
+    parameter exists to close (see the universe block below).
+
+    Returns: ``load_cols`` (rebound by the employment-grid, ownership-grid,
+    universe-denominator and income-tilt blocks, so the caller MUST reassign it).
     Mutates: nothing; reads only the parquet SCHEMA when the employment grid or
     ownership grid control is on.
     """
@@ -1144,6 +1190,31 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
         _og_raw_names = _pq_og.ParquetFile(cells_path).schema.names
         _og_available = [prepared_cells.clean_col_name(_n) for _n in _og_raw_names]
         load_cols = _og.select_load_columns(load_cols, _og_available)
+
+    # Participation-universe denominators (Plan B, issue #368): every ACTIVE person-level
+    # REGISTRY entry with an age universe partitions the single-year census total of its
+    # OWN [min_age, max_age] band (controls_builder.person_total_by_kreis_age_range /
+    # _min_age). Those columns are NOT implied by the rendered control frame -- the frame
+    # only asks for what PopulationSim balances -- so without this block the load set
+    # carries single-year ages only incidentally: 10-19 from the fine teen bands and 16+
+    # from the employment grid. education_0_5 then had NO column of its band (the
+    # denominator raised, aborting the stage) and education_6_17 silently lost ages 6-9.
+    # The bands are derived from the entries themselves, never re-listed, and requested
+    # unconditionally: a column truly absent from the parquet must surface as the
+    # denominator helper's complete-coverage error (which names the missing years), not be
+    # dropped here by an availability filter that would restore the silent shortening.
+    _universe_cols = universe_age_census_columns(active_entries)
+    if _universe_cols:
+        _universe_new = [c for c in _universe_cols if c not in set(load_cols)]
+        load_cols = [*load_cols, *_universe_new]
+        logger.info(
+            "[popsim.stage] participation-universe denominators: %d single-year age "
+            "column(s) required by %s, %d added to the parquet load set (%d already "
+            "requested by the control frame / employment grid).",
+            len(_universe_cols),
+            [f"{entry.name} ({lower}-{upper})"
+             for entry, lower, upper in age_universe_entries(active_entries)],
+            len(_universe_new), len(_universe_cols) - len(_universe_new))
 
     # Income spatial tilt (issue #136): fetch the tilt cell columns (rent /
     # Eigentuemerquote / HH weight) in this SINGLE read instead of re-scanning
@@ -1352,7 +1423,8 @@ def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_
 def _build_populationsim_seed(context, source, source_name: str, mid_dir, complete_members: bool,
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
-        drop_leading_arrive_home_leg: bool = False):
+        drop_leading_arrive_home_leg: bool = False,
+        escort_passive_education: bool = False, exclude_rbw_legs: bool = True):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1364,6 +1436,12 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     (``complete_members=False``) never receives them, so its ``trip_class`` seed stays
     byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
+
+    ``escort_passive_education`` and ``exclude_rbw_legs`` (Plan B issue #368, controller
+    ruling R8) are threaded into BOTH MiD branches, unlike the three flags above: the
+    participation-universe seeds they govern are derived from the MiD Wege table on either
+    path, not from the completed-donor diary facts. Both are inert unless a
+    participation-universe KREIS control is active.
 
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -1424,6 +1502,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             trip_class_counts_closure=trip_class_counts_closure,
             forbid_no_diary_sources=forbid_no_diary_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            escort_passive_education=escort_passive_education,
+            exclude_rbw_legs=exclude_rbw_legs,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1442,6 +1522,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             kreis_control_entries=active_entries,
             kreis_seed_rng=kreis_seed_rng,
             ebike_seed_column=ebike_seed_column_cfg,
+            escort_passive_education=escort_passive_education,
+            exclude_rbw_legs=exclude_rbw_legs,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (
@@ -1513,10 +1595,12 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # only for PERSON-level entries (e.g. trip_class), so compute them LAZILY the first
         # time such an entry is seen (fail-fast on a missing band column; no silent fallback).
         _kac_persons_by_kreis = None
-        # Age-restricted PERSON totals (min_age is not None, e.g. employment_status: 14+)
-        # use the single-year age columns instead (person_total_by_kreis_min_age) and are
-        # cached PER min_age value, so two entries sharing the same min_age reuse one
-        # computation while a different min_age recomputes correctly (no cross-entry reuse
+        # Age-restricted PERSON totals (min_age and/or max_age not None, e.g.
+        # employment_status: 14+, or an age-RANGE universe such as an education control,
+        # Plan B #368) use the single-year age columns instead
+        # (person_total_by_kreis_min_age / person_total_by_kreis_age_range) and are cached
+        # PER (min_age, max_age) pair, so two entries sharing the same bounds reuse one
+        # computation while different bounds recompute correctly (no cross-entry reuse
         # of the wrong universe -- the #97 universe trap this whole field exists to avoid).
         _kac_persons_by_kreis_min_age: dict = {}
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
@@ -1540,14 +1624,26 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
             # Entries with min_age set (e.g. employment_status: 14+, feature #172 task 4)
             # instead partition the min_age-restricted PERSON total (single-year age
             # columns) -- using the ALL-ages total here would let <min_age persons distort
-            # the category counts (the #97 universe trap).
+            # the category counts (the #97 universe trap). Entries that additionally set
+            # max_age (an age-RANGE universe, e.g. an education control, Plan B #368)
+            # partition the [min_age, max_age] band total instead.
             if _ctl.level == "person":
                 _entry_min_age = getattr(_ctl, "min_age", None)
-                if _entry_min_age is not None:
-                    if _entry_min_age not in _kac_persons_by_kreis_min_age:
-                        _kac_persons_by_kreis_min_age[_entry_min_age] = person_total_by_kreis_min_age(
+                _entry_max_age = getattr(_ctl, "max_age", None)
+                _entry_age_key = (_entry_min_age, _entry_max_age)
+                if _entry_max_age is not None:
+                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
+                        _lo = _entry_min_age if _entry_min_age is not None else 0
+                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_age_range(
+                            cells, _kac_kreis, _lo, _entry_max_age)
+                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
+                    _lo = _entry_min_age if _entry_min_age is not None else 0
+                    _total_label = f"persons (age {_lo}-{_entry_max_age})"
+                elif _entry_min_age is not None:
+                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
+                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_min_age(
                             cells, _kac_kreis, _entry_min_age)
-                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_min_age]
+                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
                     _total_label = f"persons (age>={_entry_min_age})"
                 else:
                     if _kac_persons_by_kreis is None:
@@ -2217,7 +2313,8 @@ def execute(context) -> pd.DataFrame:
     )
     load_cols = _resolve_cell_load_columns(
         context, controls_source, source_name, control_tiers, base_cols,
-        employment_grid_on, cells_path, fine_teen_age_bands=fine_teen_bands_on,
+        employment_grid_on, cells_path, active_entries,
+        fine_teen_age_bands=fine_teen_bands_on,
         ownership_grid_on=ownership_grid_on,
     )
 
@@ -2242,6 +2339,13 @@ def execute(context) -> pd.DataFrame:
     # The seed must subtract exactly the leading arrive-home leg the trip build drops
     # (controller ruling R20); read from the SAME key trips_stage reads.
     drop_leading_arrive_home_leg_on = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    # The education_flag seed must count the SAME W_ZWECK codes as education that the trip
+    # build maps to education (Plan B, issue #368); read from the SAME key trips_stage
+    # reads, so seed and plan can never disagree.
+    escort_passive_education_on = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
+    # The participation-universe seeds must count exactly the legs the trip build keeps
+    # (controller ruling R8); read from the SAME key trips_stage / completed_donor read.
+    exclude_rbw_legs_on = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2251,6 +2355,8 @@ def execute(context) -> pd.DataFrame:
         trip_class_counts_closure=trip_class_counts_closure_on,
         forbid_no_diary_sources=diary_plan_match_on,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
+        escort_passive_education=escort_passive_education_on,
+        exclude_rbw_legs=exclude_rbw_legs_on,
     )
 
     run_one = _prepare_batch_runner(

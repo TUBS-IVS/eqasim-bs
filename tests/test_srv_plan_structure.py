@@ -130,6 +130,24 @@ def test_harmonise_person_attributes():
     assert p.loc["2_2", "group"] == "senior_65plus_not_employed"
 
 
+def test_harmonise_counts_apprentices_as_employed():
+    """Decision Q5 (issue #368): V_ERW 8 "in Ausbildung/Lehre" -- an apprenticeship WITH an
+    employment contract -- is employed on the SrV side, because the MiD-side employment_status
+    classes the control targets include ``in_ausbildung`` and ADR-0060 treats MiD in_ausbildung
+    (1.93 %) and SrV V_ERW 8 (1.87 %) as apples-to-apples. Before the realignment the
+    16-year-old apprentice below fell into ``school_age_6_17_not_employed`` instead, which made
+    the control and this validation reference measure different populations.
+    """
+    persons, trips, households = _srv_fixture()
+    persons.loc[persons["PNR"].eq(2) & persons["HHNR"].eq(3), "V_ERW"] = 8
+    persons.loc[persons["PNR"].eq(2) & persons["HHNR"].eq(3), "V_ALTER"] = 16
+    harmonised, _ = T.harmonise_srv(persons, trips, households)
+    row = harmonised.set_index("pid").loc["3_2"]
+    assert bool(row["employed"])
+    assert row["group"] == "employed"
+    assert 8 in T.EMPLOYED_V_ERW
+
+
 def test_harmonisation_diagnostics_counts_are_on_their_stated_universes():
     """The three universes the diagnostics keys mix (raw rows, weight-filtered trips, harmonised
     frames) must not be confused: the raw counts include the dropped person 3_3 and its trip,

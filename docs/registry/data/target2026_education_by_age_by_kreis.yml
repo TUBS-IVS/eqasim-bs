@@ -1,0 +1,94 @@
+dataset: target2026_education_by_age_by_kreis
+title: Per-Kreis FINAL targets for the three education-by-age controls (0-5, 6-17, 18+),
+  straight SrV conditional shares
+provider: derived in-repo from the committed SrV 2023 education-by-age aggregate
+vintage: SrV 2023; target label 2026
+geography: the 8 ZGB Kreise plus a Gesamt row (ars5 keys) in each of the three files; Wolfsburg
+  (03103) has no SrV coverage and takes the region-total rate
+crs: null
+roles:
+- control
+- calibration_target
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/build_participation_universe_targets.py (optional --data /
+    --out-dir; no raw microdata, no network). All THREE files come out of one run, from ONE
+    committed input and with no blending and no margin (unlike the work target, decision Q2 of
+    issue #368 takes the shares directly):
+    eqasim-data/data/braunschweig/srv/srv2023_education_by_age_by_kreis.csv (data record
+    srv2023_education_by_age), band == 'education_0_5' / 'education_6_17' / 'education_18plus'.
+    edu = round(p_education, 4); noedu = round(1 - p_education, 4). The same run writes
+    target2026_work_by_employment_by_kreis.
+  script: scripts/build_participation_universe_targets.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    THREE committed files, one per age band, deliberately kept as one record: they are one
+    dataset produced by one builder from one aggregate under one rule, differing only in the age
+    band, so splitting them would copy the same construction, the same Wolfsburg assumption and
+    the same guards into three files. Each file is addressed separately by its own registry entry
+    (kreis_attribute_control.EDUCATION_AGE_BOUNDS -> target_csv_relpath), which is what a consumer
+    resolves.
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup tables
+    (which list the REGENERATE command instead): the files ship committed, so a production run
+    needs no acquisition step, and no target2026_* or srv2023_* file is listed in the verifier at
+    all. requirements.production is "optional" following the target2026_* family convention
+    recorded in the umbrella record blended_kreis_targets - although the popsim stage DOES read all
+    three whenever braunschweig.population.popsim.education_by_age_kreis_control is "on" (the
+    default), and kreis_attribute_control.load_kreis_target fails fast on a missing file, a missing
+    category column, a missing Gesamt/03ZGB row or a row that does not sum to 1 within
+    TARGET_SHARE_TOLERANCE (1e-3). Builder and table invariants:
+    tests/test_participation_universe_targets.py; the three registry entries, their shared seed
+    column and their age universes: tests/test_participation_universe_controls.py.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived (source restrictions apply)
+  restricted: false
+  redistribution: restricted
+limitations: |
+  FINAL targets - consume with kreis_attribute_control prior_n = 0 (stated in each file header).
+  Columns: ars5, source, n_effective (the SrV row's n_unweighted), edu, noedu
+  (kreis_attribute_control.EDUCATION_FLAG_CATEGORIES), the two shares summing to 1.
+
+  UNIVERSE, and the trap it avoids: each file's shares are shares of ITS OWN AGE BAND, not of all
+  persons - inclusive bounds 0-5, 6-17 and 18+ (kreis_attribute_control.EDUCATION_AGE_BOUNDS,
+  mirrored by each entry's min_age/max_age). The band universes are what make an external age
+  margin unnecessary: the per-Kreis band total is summed exactly from the census single-year cell
+  columns. Note the band is defined by AGE ALONE - it is NOT the "6-17 not employed" segment of
+  srv2023_plan_structure_reference.csv, which additionally excludes employed teenagers; the two
+  differ (committed 03ZGB values on the at-home-or-mobile universe: this table's education_6_17
+  0.9171 against the plan-structure reference's group_school_age_6_17_not_employed 0.9215), so a
+  validation number and a target number of the "same" quantity must not be compared naively.
+
+  Universe (SrV side, in full in the data record srv2023_education_by_age, not repeated here):
+  at-home-or-mobile persons (E_ANZ_WEGE >= 0), weight GEWICHT_P_ZENSUS, education =
+  at least one leg with E_ZWECK_9 in {3, 4} on the reporting day.
+
+  ASSUMPTION (Wolfsburg 03103): not covered by SrV, so its row uses the 03ZGB region-total
+  p_education directly (source column "srv_region_total"); the Gesamt row does the same
+  (source "srv"). Same convention as scripts/build_participation_target.py.
+
+  Committed 03ZGB / Gesamt values, 2026-09-07: education_0_5 edu 0.6785 (n 1050), education_6_17
+  edu 0.9171 (n 2020), education_18plus edu 0.0476 (n 14197). Coverage caveat inherited from every
+  SrV table: stratified PSU design over about 44 selected municipalities, so per-Kreis rows are
+  ASSUMPTION-grade for a full Kreis - and the 0-5 band's per-Kreis counts are small (75 to 288
+  persons), which is why the three age bands are separate controls rather than one pooled one.
+notes: |
+  Steer the three education_by_age person-level Kreis controls (tier hard, one shared toggle
+  braunschweig.population.popsim.education_by_age_kreis_control, one shared education_flag seed
+  column) of issue #368, which REPLACE the all-persons education_participation control by default
+  (ADR-0109; feature record participation_universe_controls). Hitting these shares is control FIT,
+  never validation, and NO run has executed these controls yet: the realised fit is unknown and the
+  pre-registered expectations are assumptions until arm 4 measures them. Sibling record for the
+  work target built in the same run: target2026_work_by_employment_by_kreis. Umbrella record for
+  the whole target2026_* family: blended_kreis_targets.

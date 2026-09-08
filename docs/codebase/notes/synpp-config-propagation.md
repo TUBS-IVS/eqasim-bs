@@ -91,3 +91,26 @@ arrival instead of waiting for the next cache devalidation to expose it, and the
 discovery itself is pinned against returning an empty subject list (a vacuous
 green). Modules that only DEFINE a wrapper are exempted explicitly, by name, in
 that file.
+
+## One key still spelled two ways, and why it is deliberately not fixed yet
+
+`escort_passive_education` has a named constant, `KEY_ESCORT_PASSIVE_EDUCATION` in
+`braunschweig/popsim/stage/config_keys.py` (added by the #368 package), while
+`braunschweig/popsim/distance_distributions.py` still declares and reads the key as a
+bare string literal in its `configure()` and `execute()`. One fact, two spellings, which
+is exactly what the shape rule forbids.
+
+It is not fixed on arrival because **both possible edit sites are synpp-hashed**, and the
+cost is measured in hours rather than minutes:
+
+- `distance_distributions.py` IS a stage (`configure`/`execute`), so editing it devalidates
+  that stage and the whole secondary-location chain below it.
+- `config_keys.py` is listed in `_HELPER_MODULES` of `braunschweig/popsim/stage`, so even
+  adding a COMMENT there devalidates `popsim.stage` -- 6 h 44 min at 100 % on the 64-core
+  server, measured by the arm-4 run of 2026-09-08.
+
+The change is behaviour-preserving (the literal and the constant hold the same string), so
+paying a multi-hour recomputation for it alone is not defensible. **Fold it into the next
+change that touches either module for another reason** — at that point the devalidation is
+already being paid and the cleanup is free. This note is the reminder, deliberately placed
+in an unhashed file so that recording it costs nothing.

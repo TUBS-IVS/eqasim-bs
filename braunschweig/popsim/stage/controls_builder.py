@@ -10,8 +10,13 @@ per-control aggregation map, source-column list and per-Kreis census-column map.
   column names (tier0 backbone), used to derive the per-Kreis PERSON total.
 - :func:`person_total_by_kreis` -- per-Kreis PERSON total summed over the 18
   age-x-sex band columns.
+- :func:`person_total_by_kreis_age_range` -- per-Kreis PERSON total for ages in
+  ``[min_age, max_age]`` (inclusive), summed over the single-year age columns.
 - :func:`person_total_by_kreis_min_age` -- per-Kreis PERSON total restricted to
-  age >= ``min_age``, summed over the single-year age columns.
+  age >= ``min_age``; delegates to ``person_total_by_kreis_age_range``.
+- :func:`universe_age_census_columns` -- the single-year age columns those two
+  helpers need, derived from the ACTIVE registry entries' own age bounds; the
+  stage adds them to the parquet load set.
 - :func:`_grid_geography_controls` -- keep only controls sourced from the GRID
   parquet (ZENSUS100m / ZENSUS1km), excluding KREIS-geography Tier-3 controls.
 - :func:`build_aggregation_map` -- the multi-column aggregation map for the
@@ -24,6 +29,15 @@ docstring for the stage-level context.
 """
 
 import pandas as pd
+
+# Inclusive upper bound of the single-year ``{M,F}_AGE_<year>`` census columns in the
+# prepared-cell parquet (ages 0..100; the top column is the open 100+ class). Stated ONCE
+# here because THREE places must agree on it or the loaded columns and the denominator
+# they are summed into describe different universes: the load-set builder
+# (:func:`universe_age_census_columns`), the min_age denominator
+# (:func:`person_total_by_kreis_min_age`) and ``employment_grid.select_load_columns`` /
+# ``per_cell_employment_targets`` (which carry the same 100 as their own default).
+SINGLE_YEAR_MAX_AGE = 100
 
 
 def build_controls_df(*, controls_source="csv", controls_path=None, seed="mid", tiers=("tier0",),
@@ -167,16 +181,83 @@ def person_total_by_kreis(cells, kreis_by_row, *, fine_teen_age_bands=True):
     return cells.groupby(kreis_by_row)[band_cols].sum().sum(axis=1).to_dict()
 
 
-def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_max=100):
-    """Per-Kreis PERSON total restricted to age >= ``min_age``.
+def person_total_by_kreis_age_range(cells, kreis_by_row, min_age, max_age):
+    """Per-Kreis PERSON total for ages in ``[min_age, max_age]`` (inclusive).
 
     Sums the single-year ``{M,F}_AGE_<year>`` cell columns (the same age-SHAPE columns
-    ``employment_grid`` reads; see its ``_group_cell_pop``) for ``year`` in
-    ``[min_age, single_year_max]``, grouped by Kreis. Unlike :func:`person_total_by_kreis`
-    (which sums the 18 ten-year age x sex BAND columns), this uses the finer single-year
-    columns so the total can be restricted to an arbitrary age boundary that does not
-    align with a ten-year band edge -- e.g. "age >= 14" cannot be expressed as a sum of
-    whole ``AGE_0_9`` / ``AGE_10_19`` bands.
+    ``employment_grid`` reads; see its ``_group_cell_pop``) for ``year`` in that inclusive
+    range, grouped by Kreis. Unlike :func:`person_total_by_kreis` (which sums the 18
+    ten-year age x sex BAND columns), this uses the finer single-year columns so the total
+    can be restricted to an arbitrary age boundary that does not align with a ten-year band
+    edge -- e.g. "age >= 14" or "6 <= age <= 17" cannot be expressed as a sum of whole
+    ``AGE_0_9`` / ``AGE_10_19`` bands.
+
+    Used for KREIS attribute controls whose committed target's shares are reported over an
+    age-restricted base (e.g. ``employment_status``: MiD P9 / SrV 14+, feature #172 task 4;
+    or an age-RANGE universe such as an education control, Plan B issue #368). Without this
+    restriction, persons outside ``[min_age, max_age]`` would be counted into the per-Kreis
+    total the category counts partition, silently distorting the target shares -- the same
+    universe mismatch as the #97 bug.
+
+    Parameters
+    ----------
+    cells:
+        The loaded (ZGB-filtered) cells frame; expected to carry the single-year
+        ``{M,F}_AGE_<year>`` columns.
+    kreis_by_row:
+        A Series aligned to ``cells`` giving the 5-digit Kreis code per row.
+    min_age:
+        Inclusive lower age bound in years.
+    max_age:
+        Inclusive upper age bound in years.
+
+    Returns
+    -------
+    dict[str, float]
+        ``{ars5: person_total}`` summed over the single-year columns with
+        ``min_age <= year <= max_age`` per Kreis.
+
+    Raises
+    ------
+    RuntimeError
+        If ANY single-year ``{M,F}_AGE_<year>`` column of ``[min_age, max_age]`` is absent
+        from ``cells`` -- a PARTIALLY covered band, not only an empty one (no silent
+        fallback). A partial band is the more dangerous case: the sum still succeeds and
+        looks plausible, but it is a denominator over a SHORTER universe than the control's
+        target shares are reported on, so PopulationSim receives per-Kreis totals that
+        contradict the tier-0 100 m age bands with nothing in the log saying so. The
+        columns come from the parquet load set the stage resolves
+        (:func:`universe_age_census_columns`), so a raise here means that load set and this
+        universe have drifted apart, never a data defect the caller could work around.
+    """
+    expected = [
+        f"{prefix}_AGE_{year}"
+        for prefix in ("M", "F")
+        for year in range(int(min_age), int(max_age) + 1)
+    ]
+    missing = [c for c in expected if c not in cells.columns]
+    if missing:
+        missing_years = sorted({int(c.rsplit("_", 1)[1]) for c in missing})
+        shown = missing_years if len(missing_years) <= 20 else missing_years[:20] + ["..."]
+        raise RuntimeError(
+            "person_total_by_kreis_age_range: an age-range-restricted person-level KREIS "
+            f"control is ON (ages {min_age}-{max_age}) but {len(missing)} of the "
+            f"{len(expected)} single-year age columns {{M,F}}_AGE_<year> of that band are "
+            f"absent from the cells frame (missing years: {shown}); cannot derive its "
+            "per-Kreis PERSON total over the FULL universe (no silent fallback -- a total "
+            "summed over the present years only would be a denominator for a different, "
+            "shorter universe than the control's target shares).")
+    return cells.groupby(kreis_by_row)[expected].sum().sum(axis=1).to_dict()
+
+
+def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *,
+                                  single_year_max=SINGLE_YEAR_MAX_AGE):
+    """Per-Kreis PERSON total restricted to age >= ``min_age``.
+
+    Delegates to :func:`person_total_by_kreis_age_range` with ``max_age=single_year_max``
+    (byte-identical result to before that helper existed); the RuntimeError message is
+    rewritten to keep THIS function's name, since it is what a caller of this entry point
+    would recognise.
 
     Used for KREIS attribute controls whose committed target's shares are reported over
     an age-restricted base (e.g. ``employment_status``: MiD P9 / SrV 14+, feature #172
@@ -194,8 +275,11 @@ def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_m
     min_age:
         Inclusive lower age bound in years.
     single_year_max:
-        Inclusive upper age bound in years. Default 100, mirroring the single-year cap
-        ``employment_grid.per_cell_employment_targets`` uses.
+        Inclusive upper age bound in years. Default :data:`SINGLE_YEAR_MAX_AGE` (100),
+        the same single-year cap ``employment_grid.per_cell_employment_targets`` uses.
+        A caller whose frame deliberately carries a SHORTER single-year range (a unit-test
+        fixture, say) must pass its own bound here rather than let the delegate raise on
+        the columns it never had.
 
     Returns
     -------
@@ -206,24 +290,87 @@ def person_total_by_kreis_min_age(cells, kreis_by_row, min_age, *, single_year_m
     Raises
     ------
     RuntimeError
-        If NO single-year ``{M,F}_AGE_<year>`` column for ``year >= min_age`` is present
-        in ``cells`` at all (no silent fallback: a min_age-restricted person-level
-        control cannot be constrained without at least some of its denominator columns).
+        If ANY single-year ``{M,F}_AGE_<year>`` column for
+        ``min_age <= year <= single_year_max`` is absent from ``cells`` -- the delegate's
+        complete-coverage guard, inherited unchanged (no silent fallback). This closes a
+        latent hole in the ``employment_status`` denominator: its 14+ band was covered only
+        by the COINCIDENCE that the fine teen bands supply 14-15 and the employment grid
+        16+, so turning either flag off used to shorten the denominator silently.
     """
-    cols = [
-        f"{prefix}_AGE_{year}"
-        for prefix in ("M", "F")
-        for year in range(min_age, single_year_max + 1)
-        if f"{prefix}_AGE_{year}" in cells.columns
-    ]
-    if not cols:
+    try:
+        return person_total_by_kreis_age_range(cells, kreis_by_row, min_age, single_year_max)
+    except RuntimeError as exc:
         raise RuntimeError(
-            "person_total_by_kreis_min_age: a min_age-restricted person-level KREIS "
-            f"control is ON (min_age={min_age}) but NO single-year age columns "
-            f"{{M,F}}_AGE_<year> for year in [{min_age}, {single_year_max}] are present "
-            "in the cells frame; cannot derive the per-Kreis age-restricted PERSON total "
-            "(no silent fallback).")
-    return cells.groupby(kreis_by_row)[cols].sum().sum(axis=1).to_dict()
+            str(exc).replace("person_total_by_kreis_age_range", "person_total_by_kreis_min_age")) from None
+
+
+def age_universe_entries(active_entries, *, single_year_max=SINGLE_YEAR_MAX_AGE):
+    """The ACTIVE entries that HAVE an age universe, each with the inclusive single-year
+    band its per-Kreis denominator is summed over: ``((entry, lower, upper), ...)``.
+
+    The single home of the "which entries have an age universe, and over which years"
+    rule: :func:`universe_age_census_columns` (the parquet load set) and the stage's own
+    log line both read it here, so the columns loaded and the entries reported can never
+    describe different sets. An entry with no ``max_age`` is capped at ``single_year_max``,
+    exactly as :func:`person_total_by_kreis_min_age` caps it.
+    """
+    entries = []
+    for control in active_entries:
+        if getattr(control, "level", None) != "person":
+            continue
+        min_age = getattr(control, "min_age", None)
+        max_age = getattr(control, "max_age", None)
+        if min_age is None and max_age is None:
+            continue
+        lower = 0 if min_age is None else int(min_age)
+        upper = int(single_year_max) if max_age is None else int(max_age)
+        entries.append((control, lower, upper))
+    return tuple(entries)
+
+
+def universe_age_census_columns(active_entries, *, single_year_max=SINGLE_YEAR_MAX_AGE):
+    """The single-year ``{M,F}_AGE_<year>`` columns the ACTIVE age-restricted person-level
+    KREIS attribute controls need as their per-Kreis denominator.
+
+    One entry contributes the columns of its OWN inclusive ``[min_age, max_age]`` universe:
+    the exact set :func:`person_total_by_kreis_age_range` (or, for an entry with no upper
+    bound, :func:`person_total_by_kreis_min_age`) sums over. The bounds are read off the
+    ``kreis_attribute_control.KreisAttributeControl`` entries themselves, never re-listed
+    here, so a REGISTRY change (a new universe control, a moved band edge) propagates into
+    the parquet load set automatically instead of drifting out of it.
+
+    This exists because the load set the stage would otherwise build carries single-year
+    age columns only INCIDENTALLY -- the fine teen bands (ages 10-19) and the employment
+    grid (ages 16+) request them for their own reasons. Every universe outside that
+    incidental union was therefore unloadable: ``education_0_5`` had NO column of its band
+    and raised, and ``education_6_17`` silently lost ages 6-9. The denominator helpers'
+    complete-coverage guard now fails loudly on such a gap, and this function is what keeps
+    it from ever opening.
+
+    Parameters
+    ----------
+    active_entries:
+        The active REGISTRY entries (``source_resolution.active_kreis_entries``). Entries
+        that are not person-level, or that set neither ``min_age`` nor ``max_age``, need no
+        single-year column and contribute none.
+    single_year_max:
+        Inclusive upper bound used for an entry whose ``max_age`` is ``None``. Default
+        :data:`SINGLE_YEAR_MAX_AGE`; MUST equal the ``single_year_max`` the matching
+        :func:`person_total_by_kreis_min_age` call uses.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The de-duplicated column names in a deterministic order (M before F, ascending
+        year), possibly empty when no active entry has an age universe.
+    """
+    years: set[int] = set()
+    for _control, lower, upper in age_universe_entries(
+            active_entries, single_year_max=single_year_max):
+        years.update(range(lower, upper + 1))
+    return tuple(
+        f"{prefix}_AGE_{year}" for prefix in ("M", "F") for year in sorted(years)
+    )
 
 
 def _grid_geography_controls(controls, cs):

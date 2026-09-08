@@ -19,6 +19,8 @@ exercise the n_not_in_module diagnostic/warning even though starb2 alone already
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -441,3 +443,624 @@ def test_work_trip_length_km_requires_w_id():
     wege = pd.DataFrame({"H_ID": [1], "P_ID": [1], "W_ZWECK": [1], "wegkm": [5.0]})
     with pytest.raises(ValueError, match="W_ID"):
         donor_pool._work_trip_length_km(wege)
+
+
+# ---------------------------------------------------------------------------
+# Issue #374: the Plan A trip rules and the diary donor filters
+# ---------------------------------------------------------------------------
+
+def _rbw_wege_fixture() -> pd.DataFrame:
+    """One donor ("9_1") whose home-work-home day carries an rbW summary leg in the middle.
+
+    The rbW leg (``W_RBW == 1``) sits BETWEEN the two direct legs, so dropping it leaves a chain
+    that still starts and ends at home: the leg count is then the only thing that changes between
+    the flag's two settings, and no synthesised home closure is added on either path (which would
+    otherwise mask the drop behind a compensating repair).
+    """
+    return pd.DataFrame({
+        "H_ID":      [9, 9, 9],
+        "P_ID":      [1, 1, 1],
+        "W_ID":      [1, 2, 3],
+        "W_ZWECK":   [1, 1, 8],      # work, work (rbW), home
+        "W_RBW":     [0, 1, 0],
+        "W_SO1":     [1, 809, 809],  # the day starts AT HOME (1), so no leading arrive-home leg
+        "hvm_imp":   [4, 4, 4],
+        "W_SZS":     [8, 12, 17],
+        "W_SZM":     [0, 0, 0],
+        "W_AZS":     [8, 12, 17],
+        "W_AZM":     [30, 15, 30],
+        "wegkm":     [10.0, 5.0, 10.0],
+        "wegkm_imp": [10.0, 5.0, 10.0],
+    })
+
+
+def _rbw_donor_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    donors = pd.DataFrame({"HP_ID": ["9_1"], "H_ID": [9], "P_ID": [1]})
+    attributes = pd.DataFrame({"donor_id": ["9_1"], "sex": ["male"], "age": [40],
+                               "employed": [True]})
+    return donors, attributes
+
+
+def test_donor_trips_drops_rbw_legs_when_the_flag_is_on():
+    """``exclude_rbw_legs`` must reach ``build_validated_trip_table`` (issue #374, half 1).
+
+    The production trip build has run with this flag ON since issue #366; the donor pool called
+    the SAME builder without it, so a donor day kept rbW summary legs the replaced day never has.
+    """
+    donors, attributes = _rbw_donor_frames()
+    wege = _rbw_wege_fixture()
+    common = dict(random_seed=0, escort_purpose=False, escort_passive_education=False,
+                  explicit_round_trip_purposes=True)
+
+    trips_off = donor_pool.donor_trips(donors, attributes, wege, **common)
+    trips_on = donor_pool.donor_trips(donors, attributes, wege, exclude_rbw_legs=True, **common)
+
+    assert len(trips_off) == 3
+    assert len(trips_on) == 2
+
+
+def test_donor_trips_drops_the_leading_arrive_home_leg_when_the_flag_is_on():
+    """``drop_leading_arrive_home_leg`` must reach the builder too (issue #374, half 1)."""
+    donors, attributes = _rbw_donor_frames()
+    wege = _rbw_wege_fixture()
+    # Turn the first leg into the "arrive home from elsewhere" leg the flag removes: it precedes
+    # the observed diary window (W_SO1 == 2 with a home purpose).
+    wege.loc[0, ["W_ZWECK", "W_SO1"]] = [8, 2]
+    common = dict(random_seed=0, escort_purpose=False, escort_passive_education=False,
+                  explicit_round_trip_purposes=True, exclude_rbw_legs=True)
+
+    trips_off = donor_pool.donor_trips(donors, attributes, wege, **common)
+    trips_on = donor_pool.donor_trips(donors, attributes, wege,
+                                      drop_leading_arrive_home_leg=True, **common)
+
+    assert len(trips_off) == 2
+    assert len(trips_on) == 1
+
+
+def _filter_donors_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Five donors, one of each drop class plus one that must survive all three filters.
+
+    * ``d1`` -- an ordinary collected weekday diary (kept).
+    * ``d2`` -- ``anzwege1 == 803`` ("Person ohne Wegeerfassung") with ``mobil == 0``: the case
+      ``braunschweig.popsim.diary_plan_match`` deliberately KEEPS as a legitimately immobile own
+      day, and that this pool must nevertheless drop (see ``filter_donor_diaries``).
+    * ``d3`` -- ``anzwege1 == 804`` ("Mobilitaet unbekannt").
+    * ``d4`` -- a diary reported on a public holiday (``feiertag == 1``).
+    * ``d5`` -- a diary consisting ONLY of rbW summary legs (no individually reported trip).
+    """
+    donors = pd.DataFrame({
+        "HP_ID":    ["d1", "d2", "d3", "d4", "d5"],
+        "H_ID":     [1, 2, 3, 4, 5],
+        "P_ID":     [1, 1, 1, 1, 1],
+        "anzwege1": [2, 803, 804, 2, 1],
+        "mobil":    [1, 0, 1, 1, 1],
+        "feiertag": [0, 0, 0, 1, 0],
+    })
+    wege = pd.DataFrame({
+        # d1 and d4 have a direct home-work-home pair; d5 has one rbW leg only; d2/d3 have no
+        # diary at all (no Wege row), which is exactly what their anzwege1 code states.
+        "H_ID":      [1, 1, 4, 4, 5],
+        "P_ID":      [1, 1, 1, 1, 1],
+        "W_ID":      [1, 2, 1, 2, 1],
+        "W_ZWECK":   [1, 8, 1, 8, 1],
+        "W_RBW":     [0, 0, 0, 0, 1],
+        "W_SO1":     [1, 809, 1, 809, 1],
+        # The time/mode/length columns the trip-table build needs, so the same fixture drives
+        # both filter_donor_diaries alone and the whole pool builder.
+        "hvm_imp":   [4, 4, 4, 4, 4],
+        "W_SZS":     [8, 17, 8, 17, 12],
+        "W_SZM":     [0, 0, 0, 0, 0],
+        "W_AZS":     [8, 17, 8, 17, 12],
+        "W_AZM":     [30, 30, 30, 30, 15],
+        "wegkm":     [10.0, 10.0, 10.0, 10.0, 5.0],
+        "wegkm_imp": [10.0, 10.0, 10.0, 10.0, 5.0],
+    })
+    return donors, wege
+
+
+def test_filter_donor_diaries_drops_no_diary_holiday_and_only_rbw_donors_with_counts():
+    donors, wege = _filter_donors_fixture()
+
+    kept, counts = donor_pool.filter_donor_diaries(
+        donors, wege, exclude_no_diary=True, exclude_holidays=True, exclude_only_rbw=True)
+
+    assert list(kept["HP_ID"]) == ["d1"]
+    assert counts["n_dropped_no_diary"] == 2
+    assert counts["n_dropped_holiday"] == 1
+    assert counts["n_dropped_only_rbw"] == 1
+    # The 803-with-mobil==0 donor is the ONE case where this pool deliberately differs from
+    # diary_plan_match's kept-immobile rule; the divergence is counted, never left implicit.
+    assert counts["n_dropped_no_diary_immobile"] == 1
+    assert counts["n_donors_before_diary_filters"] == 5
+
+
+def test_filter_donor_diaries_is_inert_with_every_flag_off():
+    donors, wege = _filter_donors_fixture()
+
+    kept, counts = donor_pool.filter_donor_diaries(
+        donors, wege, exclude_no_diary=False, exclude_holidays=False, exclude_only_rbw=False)
+
+    pd.testing.assert_frame_equal(kept, donors)
+    assert counts["n_dropped_no_diary"] == 0
+    assert counts["n_dropped_holiday"] == 0
+    assert counts["n_dropped_only_rbw"] == 0
+
+
+def test_filter_donor_diaries_drops_803_even_when_the_donor_is_immobile():
+    """The no-diary rule ignores ``mobil`` ON PURPOSE (see :func:`filter_donor_diaries`)."""
+    donors, wege = _filter_donors_fixture()
+    only_803 = donors[donors["HP_ID"].isin(["d1", "d2"])].reset_index(drop=True)
+
+    kept, counts = donor_pool.filter_donor_diaries(
+        only_803, wege, exclude_no_diary=True, exclude_holidays=False, exclude_only_rbw=False)
+
+    assert list(kept["HP_ID"]) == ["d1"]
+    assert counts["n_dropped_no_diary"] == 1
+    assert counts["n_dropped_no_diary_immobile"] == 1
+
+
+@pytest.mark.parametrize("flags, missing_column", [
+    (dict(exclude_no_diary=True), "anzwege1"),
+    (dict(exclude_no_diary=True), "mobil"),
+    (dict(exclude_holidays=True), "feiertag"),
+])
+def test_filter_donor_diaries_raises_naming_the_column_a_live_filter_needs(flags, missing_column):
+    donors, wege = _filter_donors_fixture()
+    donors = donors.drop(columns=[missing_column])
+    all_flags = dict(exclude_no_diary=False, exclude_holidays=False, exclude_only_rbw=False)
+    all_flags.update(flags)
+
+    with pytest.raises(ValueError) as error:
+        donor_pool.filter_donor_diaries(donors, wege, **all_flags)
+    assert missing_column in str(error.value)
+
+
+def test_filter_donor_diaries_raises_when_the_only_rbw_filter_has_no_wege_frame():
+    donors, _wege = _filter_donors_fixture()
+
+    with pytest.raises(ValueError) as error:
+        donor_pool.filter_donor_diaries(
+            donors, None, exclude_no_diary=False, exclude_holidays=False, exclude_only_rbw=True)
+    assert "wege" in str(error.value)
+
+
+def _filter_pool_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The five-donor filter fixture, widened to what the whole pool builder needs."""
+    donors, wege = _filter_donors_fixture()
+    persons = donors.assign(arbwo=1, P_STARB1=1, starb2=1, HP_SEX=1, HP_ALTER=40,
+                            P_ARB_ENTF=15.0)
+    households = pd.DataFrame({"H_ID": [1, 2, 3, 4, 5], "H_ANZAUTO": [1] * 5, "H_GR": [1] * 5})
+    return persons, wege, households
+
+
+def test_build_home_office_donor_pool_reports_the_three_drop_counts():
+    """The counts reach the diagnostics dict, and the dropped donors leave the pool entirely."""
+    persons, wege, households = _filter_pool_frames()
+
+    attributes, _trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        persons, wege, households, random_seed=0, escort_purpose=False,
+        escort_passive_education=False, explicit_round_trip_purposes=True,
+        exclude_no_diary=True, exclude_holidays=True, exclude_only_rbw=True)
+
+    assert list(attributes["donor_id"]) == ["d1"]
+    assert diagnostics["n_donors"] == 1
+    assert diagnostics["n_dropped_no_diary"] == 2
+    assert diagnostics["n_dropped_holiday"] == 1
+    assert diagnostics["n_dropped_only_rbw"] == 1
+
+
+def test_build_home_office_donor_pool_builds_the_dwell_model_from_the_filtered_donors(monkeypatch):
+    """The closure dwell model is estimated on the diaries the pool actually keeps.
+
+    ``trips_stage.run`` builds it from the persons frame it then builds trips for; the donor pool
+    must do the same, or the empirical dwell pools would be stratified over diaries that no donor
+    day in this pool is ever built from.
+    """
+    captured = {}
+    real_dwell_builder = donor_pool.build_closure_dwell_model
+    real_trip_builder = donor_pool.build_validated_trip_table
+
+    def capturing_dwell_builder(persons, mid_wege, **kwargs):
+        captured["persons"] = persons.copy()
+        captured["kwargs"] = dict(kwargs)
+        return real_dwell_builder(persons, mid_wege, **kwargs)
+
+    def capturing_trip_builder(persons, wege, **kwargs):
+        captured["dwell_model"] = kwargs.get("dwell_model")
+        return real_trip_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_closure_dwell_model", capturing_dwell_builder)
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_trip_builder)
+
+    persons, wege, households = _filter_pool_frames()
+    donor_pool.build_home_office_donor_pool(
+        persons, wege, households, random_seed=0, escort_purpose=False,
+        escort_passive_education=False, explicit_round_trip_purposes=True,
+        exclude_no_diary=True, exclude_holidays=True, exclude_only_rbw=True,
+        closure_dwell_model="empirical", closure_dwell_min_obs=1)
+
+    dwell_persons = captured["persons"]
+    # Only the donors that survived the three filters may feed the dwell pools.
+    assert list(dwell_persons["H_ID"]) == [1]
+    # trips_stage.run hands build_closure_dwell_model a frame whose donor diary keys are the
+    # source_* columns; the donor pool mirrors that shape (its own ids ARE the plan source).
+    assert list(dwell_persons["source_H_ID"]) == list(dwell_persons["H_ID"])
+    assert list(dwell_persons["source_P_ID"]) == list(dwell_persons["P_ID"])
+    assert captured["kwargs"]["closure_dwell_model"] == "empirical"
+    assert captured["kwargs"]["closure_dwell_min_obs"] == 1
+    assert captured["dwell_model"] is not None
+
+
+def _golden_off_path_attributes() -> pd.DataFrame:
+    """The ``attributes`` frame the pre-#374 builder produced for the module fixtures.
+
+    Captured from the implementation BEFORE the #374 keywords existed and verified green against
+    it, so :func:`test_defaults_keep_the_pool_byte_identical` is a true characterisation of the
+    OFF path rather than a restatement of the new code's own output.
+    """
+    return pd.DataFrame({
+        "donor_id": ["1_1", "2_1", "2_2", "2_3"],
+        "H_ID": np.array([1, 2, 2, 2], dtype="int64"),
+        "P_ID": np.array([1, 1, 2, 3], dtype="int64"),
+        "sex": ["male", "female", np.nan, "male"],
+        "age": np.array([40, 35, 50, 30], dtype="int64"),
+        "age_class": np.array([2, 2, 3, 2], dtype="int64"),
+        "employed": [True, True, True, True],
+        "has_children_u14": [True, False, False, False],
+        "has_car": np.array([1.0, 0.0, 0.0, 0.0], dtype="float64"),
+        "has_active_escort": [True, False, False, False],
+        "household_size": np.array([2, 3, 3, 3], dtype="int64"),
+        "distance_km": np.array([15.0, 200.0, 200.0, np.nan], dtype="float64"),
+        "distance_class": ["10_25", "100_200", "gt200", "unknown"],
+        "distance_source": ["P_ARB_ENTF", "P_ARB_ENTF", "trip_length", "unknown"],
+        "n_trips": np.array([2, 2, 2, 0], dtype="int32"),
+        "is_immobile": [False, False, False, True],
+        "has_education_leg": [False, False, False, False],
+        "has_work_leg": [False, True, True, False],
+    })
+
+
+def _golden_off_path_trips() -> pd.DataFrame:
+    """The ``trips`` frame the pre-#374 builder produced for the module fixtures (see above)."""
+    return pd.DataFrame({
+        "donor_id": ["1_1", "1_1", "2_1", "2_1", "2_2", "2_2"],
+        "trip_index": np.array([0, 1, 0, 1, 0, 1], dtype="int64"),
+        "departure_time": np.array([25200.0, 27000.0, 28800.0, 61200.0, 28800.0, 61200.0]),
+        "arrival_time": np.array([26100.0, 27900.0, 30600.0, 63000.0, 31200.0, 63600.0]),
+        "preceding_purpose": ["home", "other", "home", "work", "home", "work"],
+        "following_purpose": ["other", "home", "work", "home", "work", "home"],
+        "is_first_trip": [True, False, True, False, True, False],
+        "is_last_trip": [False, True, False, True, False, True],
+        "trip_duration": np.array([900.0, 900.0, 1800.0, 1800.0, 2400.0, 2400.0]),
+        "activity_duration": np.array([900.0, np.nan, 30600.0, np.nan, 30000.0, np.nan]),
+        "mode": ["car", "car", "car", "car", "car", "car"],
+        "euclidean_distance": (np.array([3.0, 3.0, 100.0, 100.0, 200.0, 5.0]) * 1000.0
+                               / donor_pool.DETOUR_FACTOR),
+        "trip_key": ["1_1_1", "1_1_2", "2_1_1", "2_1_2", "2_2_1", "2_2_2"],
+    })
+
+
+def test_defaults_keep_the_pool_byte_identical():
+    """Every #374 keyword at its default must reproduce the pre-#374 frames exactly.
+
+    Two claims in one test: the frames equal the golden captured from the previous
+    implementation (column order, values and dtypes), and passing every new keyword EXPLICITLY at
+    its documented OFF value produces the identical result -- i.e. the defaults really are the
+    OFF path, not merely a similar one.
+    """
+    persons, wege, households = _persons_fixture(), _wege_fixture(), _households_fixture()
+    common = dict(random_seed=0, escort_purpose=False, escort_passive_education=False,
+                  explicit_round_trip_purposes=True)
+
+    attributes, trips, diagnostics = donor_pool.build_home_office_donor_pool(
+        persons, wege, households, **common)
+
+    pd.testing.assert_frame_equal(attributes, _golden_off_path_attributes())
+    pd.testing.assert_frame_equal(trips, _golden_off_path_trips())
+
+    explicit_attributes, explicit_trips, explicit_diagnostics = \
+        donor_pool.build_home_office_donor_pool(
+            persons, wege, households, exclude_rbw_legs=False,
+            drop_leading_arrive_home_leg=False, closure_dwell_model=None,
+            exclude_no_diary=False, exclude_holidays=False, exclude_only_rbw=False, **common)
+
+    pd.testing.assert_frame_equal(attributes, explicit_attributes)
+    pd.testing.assert_frame_equal(trips, explicit_trips)
+    assert diagnostics == explicit_diagnostics
+    # The OFF path reports every drop class as zero rather than omitting the keys, so a consumer
+    # never has to guess whether a filter ran.
+    assert diagnostics["n_dropped_no_diary"] == 0
+    assert diagnostics["n_dropped_holiday"] == 0
+    assert diagnostics["n_dropped_only_rbw"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #374 fix round 1: the dwell report's counters, the zero-match guards,
+# the mobil-unknown split and the closure_dwell_model discrimination
+# ---------------------------------------------------------------------------
+
+def _open_chain_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """One donor whose day does NOT end at home, so the chain closure actually fires.
+
+    The module fixtures all end at home, so no synthesised return-home trip is ever built from
+    them and the closure dwell model stays untouched -- which is exactly why the OFF-path
+    identity test cannot discriminate ``closure_dwell_model`` on them (ruling R29) and why the
+    dwell report's counters stayed zero there (fix round 1 item 1).
+
+    Donor "7_1" leaves its day open after a work leg; donor "8_1" makes a closed
+    home -> shop -> home day, whose completed SHOP activity is the only observation the empirical
+    dwell pools hold. Closing "7_1"'s day therefore finds no (work, band) cell and no work
+    purpose marginal and falls through to the global marginal -- a 100 %% global fallback, which
+    is exactly the rate the construction-time log reported as zero.
+    """
+    persons = pd.DataFrame({
+        "H_ID": [7, 8], "P_ID": [1, 1], "HP_ID": ["7_1", "8_1"], "HP_SEX": [1, 1],
+        "HP_ALTER": [40, 41], "arbwo": [1, 1], "P_STARB1": [1, 1], "starb2": [1, 1],
+        "M_HOFF": [1, 1], "P_ARB_ENTF": [15.0, 15.0],
+        "anzwege1": [1, 2], "mobil": [1, 1], "feiertag": [0, 0],
+    })
+    households = pd.DataFrame({"H_ID": [7, 8], "H_ANZAUTO": [1, 1], "H_GR": [1, 1]})
+    wege = pd.DataFrame({
+        # 7_1: a single home -> work leg, so the day is left OPEN and the plan repair appends a
+        # synthesised work -> home closure whose dwell comes from the model.
+        # 8_1: home -> shop (W_ZWECK 4) -> home, a closed day contributing one observed SHOP
+        # activity duration to the empirical pools.
+        "H_ID":      [7, 8, 8],
+        "P_ID":      [1, 1, 1],
+        "W_ID":      [1, 1, 2],
+        "W_ZWECK":   [1, 4, 8],
+        "W_RBW":     [0, 0, 0],
+        "W_SO1":     [1, 1, 809],
+        "hvm_imp":   [4, 4, 4],
+        "W_SZS":     [8, 9, 11],
+        "W_SZM":     [0, 0, 0],
+        "W_AZS":     [8, 9, 11],
+        "W_AZM":     [30, 20, 20],
+        "wegkm":     [10.0, 2.0, 2.0],
+        "wegkm_imp": [10.0, 2.0, 2.0],
+    })
+    return persons, wege, households
+
+
+def _build_open_chain_pool(**kwargs):
+    persons, wege, households = _open_chain_frames()
+    return donor_pool.build_home_office_donor_pool(
+        persons, wege, households, random_seed=0, escort_purpose=False,
+        escort_passive_education=False, explicit_round_trip_purposes=True, **kwargs)
+
+
+def test_the_open_chain_fixture_really_synthesises_a_closure():
+    """Guards the two tests below: without a synthesised closure they would prove nothing."""
+    _attributes, trips, _diagnostics = _build_open_chain_pool()
+    open_donor = trips[trips["donor_id"] == "7_1"]
+    # One reported leg in, two legs out -- the second is the synthesised return home.
+    assert len(open_donor) == 2
+    assert list(open_donor["following_purpose"]) == ["work", "home"]
+    # The closed donor is the empirical pools' only observation and must stay closed.
+    assert list(trips.loc[trips["donor_id"] == "8_1", "following_purpose"]) == ["shop", "home"]
+
+
+def test_the_dwell_report_is_logged_with_its_post_build_counters(caplog):
+    """Fix round 1 item 1: the report must be logged AFTER the trip build, not at construction.
+
+    ``ClosureDwellModel``'s counters (``n_draws``, ``n_fallback_purpose_marginal``,
+    ``n_fallback_global``, ``n_capped``) are filled BY the trip build. Logging the report at
+    construction time -- as this function did before -- always printed zeros, so a 100 %
+    global-marginal fallback rate was reported as no fallback at all: exactly the silence
+    CLAUDE.md's fallback-transparency rule forbids. ``trips_stage.run`` logs it after the build,
+    and this pool now does the same.
+
+    Asserted against ``caplog.text``, which pytest's ``LogCaptureHandler`` renders through a real
+    formatter AT EMIT TIME. ``record.getMessage()`` would not discriminate on its own: it
+    recomputes ``msg % args`` on every call, so as long as the record holds a reference to the
+    model's live report dict it renders the FINAL counters no matter when the statement ran
+    (fix round 2 item 1 -- the reason the builder now logs ``dict(report)``, pinned separately by
+    :func:`test_the_dwell_report_log_is_a_frozen_snapshot`).
+    """
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+    _build_open_chain_pool(closure_dwell_model="empirical", closure_dwell_min_obs=1)
+
+    emitted = [line for line in caplog.text.splitlines()
+               if "[commute day donors] closure dwell model" in line]
+    assert len(emitted) == 1, caplog.text
+    # The single open chain IS closed, so a report carrying n_draws 0 can only have been rendered
+    # before the trip build ran.
+    assert "'n_draws': 1" in emitted[0], emitted[0]
+    # ... and that draw found no same-purpose observation, so it fell back to the global
+    # marginal -- a 100 % fallback rate that the pre-fix log reported as zero.
+    assert "'n_fallback_global': 1" in emitted[0], emitted[0]
+
+
+def test_the_dwell_report_log_is_a_frozen_snapshot(caplog):
+    """Fix round 2 item 1: the log must carry a COPY of the report, not the live mapping.
+
+    ``ClosureDwellModel.report`` is one dict that ``draw()`` mutates in place, and ``logging``
+    keeps the argument in ``LogRecord.args`` and renders it lazily. Passing the live mapping
+    therefore makes the record report whatever the counters happen to be when something formats
+    it -- a queue handler, a deferred formatter, or a later assertion -- rather than what the run
+    logged. Mutating the model AFTER the build must not change the already-emitted record.
+    """
+    captured = {}
+    real_builder = donor_pool.build_closure_dwell_model
+
+    def capturing_builder(persons, mid_wege, **kwargs):
+        captured["model"] = real_builder(persons, mid_wege, **kwargs)
+        return captured["model"]
+
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+    original = donor_pool.build_closure_dwell_model
+    donor_pool.build_closure_dwell_model = capturing_builder
+    try:
+        _build_open_chain_pool(closure_dwell_model="empirical", closure_dwell_min_obs=1)
+    finally:
+        donor_pool.build_closure_dwell_model = original
+
+    record = next(record for record in caplog.records
+                  if record.name == donor_pool.logger.name
+                  and "closure dwell model" in record.getMessage())
+    before = record.getMessage()
+    captured["model"].report["n_draws"] = 987654
+    assert record.getMessage() == before
+    assert "987654" not in record.getMessage()
+
+
+def test_closure_dwell_model_default_builds_no_model_and_passes_none(monkeypatch):
+    """Ruling R29: pin ``closure_dwell_model``'s OFF path directly.
+
+    ``test_defaults_keep_the_pool_byte_identical`` cannot see this keyword -- the module fixtures
+    have no open chain, so no closure is ever synthesised and both settings yield identical
+    frames. Rather than change those fixtures (which would invalidate the externally captured
+    golden that the whole OFF-path proof rests on), the mechanism is pinned here: at the default
+    NO model is constructed and ``dwell_model=None`` reaches the trip builder. Flipping the
+    default to a model name fails this test loudly.
+    """
+    calls = {"dwell": 0, "trip_kwargs": []}
+    real_dwell_builder = donor_pool.build_closure_dwell_model
+    real_trip_builder = donor_pool.build_validated_trip_table
+
+    def counting_dwell_builder(persons, mid_wege, **kwargs):
+        calls["dwell"] += 1
+        return real_dwell_builder(persons, mid_wege, **kwargs)
+
+    def capturing_trip_builder(persons, wege, **kwargs):
+        calls["trip_kwargs"].append(kwargs.get("dwell_model"))
+        return real_trip_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_closure_dwell_model", counting_dwell_builder)
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_trip_builder)
+
+    _build_open_chain_pool()
+
+    assert calls["dwell"] == 0
+    assert calls["trip_kwargs"] == [None]
+
+
+def test_closure_dwell_model_changes_the_synthesised_closure(monkeypatch):
+    """The keyword is not inert: the two models close the same open chain differently.
+
+    Pinned on the open-chain fixture because that is the only shape the model can reach. The
+    fixed model uses the constant ``HOME_CLOSURE_DWELL_S``; the empirical one draws, so the
+    synthesised leg's departure time differs.
+    """
+    _a, fixed_trips, _d = _build_open_chain_pool(closure_dwell_model="fixed_1h")
+    _a, empirical_trips, _d = _build_open_chain_pool(
+        closure_dwell_model="empirical", closure_dwell_min_obs=1)
+
+    def closing_departure(trips):
+        closing = trips[(trips["donor_id"] == "7_1") & trips["is_last_trip"]]
+        return float(closing["departure_time"].iloc[0])
+
+    assert closing_departure(fixed_trips) != closing_departure(empirical_trips)
+
+
+@pytest.mark.parametrize("column, filter_flags", [
+    ("anzwege1", dict(exclude_no_diary=True)),
+    ("mobil", dict(exclude_no_diary=True)),
+    ("feiertag", dict(exclude_holidays=True)),
+])
+def test_filter_donor_diaries_raises_on_a_non_numeric_code_column(column, filter_flags):
+    """Fix round 1 item 2: a text-delivered code column must fail, not drop 0 donors silently.
+
+    ``Series(["803"]).isin((803, 804))`` is False for every row, so the filter would run to a
+    0 %% drop rate -- below any upper bound, so the 50 %% WARNING never fires and the log looks
+    perfectly healthy. The rule is VALIDATE, not coerce: coercing here would create a new
+    divergence from ``diary_plan_match``, which compares the raw codes.
+    """
+    donors, wege = _filter_donors_fixture()
+    donors[column] = donors[column].astype(str)
+    flags = dict(exclude_no_diary=False, exclude_holidays=False, exclude_only_rbw=False)
+    flags.update(filter_flags)
+
+    with pytest.raises(ValueError) as error:
+        donor_pool.filter_donor_diaries(donors, wege, **flags)
+    message = str(error.value)
+    assert column in message
+    assert "numeric" in message.lower()
+
+
+def test_a_text_anzwege1_would_otherwise_have_dropped_nobody():
+    """Demonstrates the failure mode the guard above closes (documentation as much as a test)."""
+    donors, _wege = _filter_donors_fixture()
+    text_codes = donors["anzwege1"].astype(str)
+    # This is the comparison filter_donor_diaries performs; against text it matches nothing,
+    # which is why a 0 %% drop rate had to be made impossible to reach silently.
+    assert int(text_codes.isin(donor_pool.NO_DIARY_CODES).sum()) == 0
+    assert int(donors["anzwege1"].isin(donor_pool.NO_DIARY_CODES).sum()) == 2
+
+
+def test_only_rbw_logs_the_diary_facts_match_rate_and_warns_on_a_zero_match_join(caplog):
+    """Fix round 1 item 2: a Wege join that matches nothing must be visible on sight.
+
+    With ``H_ID`` read as text on one side the join yields no donor Wege rows at all, so
+    ``n_dropped_only_rbw`` is 0 -- again below every upper bound. The match rate is therefore
+    logged in its own right, and a zero rate is a WARNING.
+    """
+    donors, wege = _filter_donors_fixture()
+    mismatched = wege.assign(H_ID=wege["H_ID"].astype(str))
+
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+    kept, counts = donor_pool.filter_donor_diaries(
+        donors, mismatched, exclude_no_diary=False, exclude_holidays=False,
+        exclude_only_rbw=True)
+
+    assert counts["n_dropped_only_rbw"] == 0      # the silent symptom ...
+    assert len(kept) == len(donors)
+    warnings = [record.getMessage() for record in caplog.records
+                if record.levelno >= logging.WARNING and "only_rbw" in record.getMessage()]
+    assert len(warnings) == 1, [r.getMessage() for r in caplog.records]
+    assert "0/5 donors matched ANY Wege row" in warnings[0]
+
+    # The healthy delivery logs the same rate at INFO, never silently.
+    caplog.clear()
+    donor_pool.filter_donor_diaries(donors, wege, exclude_no_diary=False, exclude_holidays=False,
+                                    exclude_only_rbw=True)
+    matched = [record.getMessage() for record in caplog.records
+               if "matched a diary-facts row" in record.getMessage()]
+    assert len(matched) == 1, [r.getMessage() for r in caplog.records]
+    assert "3/5 donors (60.0%)" in matched[0], matched[0]
+
+
+def test_a_float_h_id_still_joins_so_the_guard_does_not_cry_wolf(caplog):
+    """A float-vs-int key IS tolerated by the reindex; only a genuine mismatch must warn."""
+    donors, wege = _filter_donors_fixture()
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+
+    _kept, counts = donor_pool.filter_donor_diaries(
+        donors, wege.assign(H_ID=wege["H_ID"].astype(float)), exclude_no_diary=False,
+        exclude_holidays=False, exclude_only_rbw=True)
+
+    assert counts["n_dropped_only_rbw"] == 1
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_no_diary_counts_a_missing_mobil_apart_from_a_known_immobile_donor():
+    """Ruling R28: a NaN ``mobil`` must not inflate the immobile divergence count."""
+    donors, wege = _filter_donors_fixture()
+    # d2 already carries anzwege1 803 with mobil 0 (known immobile); make d3 an 803 with a
+    # MISSING mobil instead of its 804.
+    donors.loc[donors["HP_ID"] == "d3", ["anzwege1", "mobil"]] = [803, np.nan]
+
+    _kept, counts = donor_pool.filter_donor_diaries(
+        donors, wege, exclude_no_diary=True, exclude_holidays=False, exclude_only_rbw=False)
+
+    assert counts["n_dropped_no_diary"] == 2
+    assert counts["n_dropped_no_diary_immobile"] == 1
+    assert counts["n_dropped_no_diary_mobil_unknown"] == 1
+
+
+def test_the_no_diary_divergence_line_is_not_logged_when_nothing_was_dropped(caplog):
+    """Fix round 1 item 5: no `0/0` line on a clean delivery."""
+    donors, wege = _filter_donors_fixture()
+    clean = donors[donors["HP_ID"] == "d1"].reset_index(drop=True)
+
+    caplog.set_level(logging.INFO, logger=donor_pool.logger.name)
+    donor_pool.filter_donor_diaries(clean, wege, exclude_no_diary=True, exclude_holidays=True,
+                                    exclude_only_rbw=True)
+
+    divergence = [record.getMessage() for record in caplog.records
+                  if "diary_plan_match keeps both" in record.getMessage()]
+    assert divergence == []
+    # The per-class rate lines are still there -- suppressing the empty case must not suppress
+    # the rate itself.
+    assert [record for record in caplog.records
+            if "donor filter no_diary: dropped 0/1" in record.getMessage()]

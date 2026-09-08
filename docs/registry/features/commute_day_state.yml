@@ -148,7 +148,26 @@ evidence:
       matched donors having zero rows in donor_trips (a donor_id key/dtype mismatch symptom, not a
       genuinely immobile donor at that rate); the output writer raises if not one person in the
       enriched population matches the state frame at all (a broken join, not "no worker works
-      today").'
+      today").
+
+      SINCE ISSUE #374 (2026-09-07, the same branch as ADR-0109) the donor pool itself is narrowed
+      and instrumented. donor_pool.donor_trips now passes the three plan-structure keyword
+      arguments its docstring had always CLAIMED it passed (exclude_rbw_legs,
+      drop_leading_arrive_home_leg, dwell_model), read from the stage config from the SAME keys
+      trips_stage reads, so a spliced home-office day is built under the same rules as every other
+      plan; and donor_pool.filter_donor_diaries drops three donor classes the pool used to admit
+      silently - no collected diary (MiD anzwege1 803/804), only-rbW diaries, and public-holiday
+      reporting days - classified with diary_facts.compute_diary_facts plus the two MiD person
+      codes, each logged as dropped n/N with a rate and warned in combination above
+      MAX_EXPECTED_DIARY_FILTER_DROP_RATE, because a majority being filtered would mean the
+      classification is broken rather than the pool unusual. The closure-dwell report is now logged
+      AFTER the trip build and as a frozen dict snapshot: logging the live mapping at construction
+      time reported zeros, i.e. a 100% fallback rate rendered as no fallback at all. The realised
+      counts are UNMEASURED - no run has executed the filtered pool, so the pre-registered "0
+      no-diary / rbW / holiday donors after the filters" is an expectation, not a result, and the
+      pool statistics and the six ADR-0104 checks are owed a re-measurement in arm 4. Full
+      mechanical detail (columns, filter order, guards, cache) is in the stage record
+      braunschweig.synthesis.commute_day.home_office_donors_stage.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_workday_location_by_commute_distance.csv

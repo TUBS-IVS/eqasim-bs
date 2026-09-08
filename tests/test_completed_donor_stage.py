@@ -101,6 +101,10 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on, diary_plan
     persons, _diary_trace, _diary_report = diary_plan_match.reassign_diaryless_plan_sources(
         persons, persons, facts, rng=completion_rng, exclude_rbw_legs=True,
         exclude_holidays=True, drop_leading_arrive_home_leg=True,
+        # Mirrors build_completed_donor's default (Task 6, issue #368): the employment
+        # key is never relaxed. match_person draws exactly ONE rng value per call
+        # regardless of the flag, so the shared completion stream stays in lockstep.
+        hard_employment=True,
     )
     persons = diary_facts.attach_plan_source_facts(persons, facts)
     return households, persons
@@ -234,8 +238,9 @@ class _RecordingConfigureContext:
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():
     from braunschweig.popsim.stage import (
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        KEY_EXCLUDE_RBW_LEGS,
     )
     ctx = _RecordingConfigureContext()
     cd.configure(ctx)
@@ -243,6 +248,9 @@ def test_completed_donor_configure_registers_diary_plan_match_keys():
     assert ctx.calls[KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES] is True
     assert ctx.calls[KEY_EXCLUDE_RBW_LEGS] is True
     assert ctx.calls[KEY_DROP_LEADING_ARRIVE_HOME_LEG] is True
+    # Task 6 (issue #368): the un-relaxable employment boundary must be part of THIS
+    # stage's config hash, or flipping it would silently reuse the cached donor build.
+    assert ctx.calls[KEY_DIARY_MATCH_HARD_EMPLOYMENT] is True
 
 
 import inspect
