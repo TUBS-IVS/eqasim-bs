@@ -51,6 +51,50 @@ exactly those files are in the commit. Files under `eqasim-data/` are ignored by
 design and reach a commit only through a deliberate `git add -f` against the
 allowlist documented in `.gitignore`.
 
+## Scratch goes in `scratch/`, never at the repository root
+
+Ad-hoc diagnostics, pickle probes, one-off exports and launch helpers pile up at the
+root of long-lived checkouts. On 2026-09-08 the shared felix checkout held 17 of them --
+`diag_*.py`, `export_*.py`, `launch_*.sh`, `mkcfg_*.py` and friends -- untracked but NOT
+ignored, so a single `git add -A` at the root would have put them in the history of a
+citable scientific repository.
+
+`scratch/` at the repository root is ignored wholesale and is the intended home. Put
+throwaway work there. `.gitignore` also carries a safety net of root-anchored name
+patterns for the observed families, pinned by
+`tests/test_gitignore_root_scratch.py`.
+
+Two details that matter if you ever touch those rules. They are **root-anchored** with a
+leading slash on purpose: the repository tracks 31 `scripts/extract_*.py` and 3
+`scripts/inspect_*.py` files, and an unanchored pattern would hide real tooling and every
+future sibling of it. And when you test such a rule, query `git check-ignore` with
+`--no-index`: without that flag git reports every tracked path as not-ignored whatever
+the rules say, so an assertion that committed tooling stays visible can never fail. That
+is measured, not theoretical -- stripping the leading slashes fails 7 of the 9 visibility
+cases with the flag and only 3 without it.
+
+For a checkout that already has such files and cannot wait for a release, the same
+patterns in `.git/info/exclude` work immediately and stay machine-local.
+
+### When a scratch diagnostic graduates to `scripts/`
+
+`scripts/` is the home for durable tooling and already hosts a diagnostics family
+(`diagnose_anchor_p13.py`, `inspect_hh_gap.py`, `inspect_mid_p13.py`,
+`inspect_zensus_hh.py`, `check_pendler_intra.py`). A scratch script earns a place there
+on two conditions: it takes its input as an ARGUMENT instead of hard-coding a cache path,
+and it answers a question the project still asks.
+
+The first condition is the one that decides it in practice. Of the 17 scratch files found
+on 2026-09-08, eleven could not run at all: eight hard-code a `popsim.stage__<hash>`
+pickle from June whose hash no longer exists in any cache, and three call a
+`config_server_*.yml` at the repository root that the composed-config system
+(`scripts/run_synpp.py configs/base_bs.yml configs/overlays/<scale>.yml`) replaced. A
+hard-coded stage hash has a shelf life of one code change; an argument does not.
+
+So: copy nothing wholesale. Take the QUESTION the script answered, write it as a script
+that accepts a run output directory or a cache path, and leave the original in `scratch/`
+as the record of the investigation.
+
 ## The `.git` directory is shared, so local branches are visible
 
 Every worktree shares one object store and one set of refs with the main
