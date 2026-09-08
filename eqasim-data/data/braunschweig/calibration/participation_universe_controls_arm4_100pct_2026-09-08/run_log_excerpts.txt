@@ -1,0 +1,69 @@
+# Arm-4 run log excerpts, invocation 2 (felix:~/pb4_arm4_100pct.log, 2026-09-08 00:24 CEST onward).
+# Selected with the pattern below; nothing edited. The three grep groups are the
+# participation-universe denominators and seeds, the diary/donor measurements, and the
+# trip-table and closure counters. Part-1 measurements (donor pool, diary match) live in
+# felix:~/pb4_arm4_100pct_part1.log and are quoted in the run manifest.
+# pattern: participation-universe|work_by_employment seed|education_flag seed|trip_class seed|
+#          kreis control|denominator|diary_plan_match|commute day donors|trips_stage|plan_validation|
+#          Pipeline progress
+
+39:00:24:23 │ INFO    │ synpp            │ - braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9
+57:00:24:24 │ INFO    │ synpp            │ Pipeline progress: 1/23 (4.35%)
+65:00:24:24 │ INFO    │ popsim.stage     │ [popsim.stage] participation-universe denominators: 202 single-year age column(s) required by ['employment_status (14-100)', 'pt_ticket_group4 (14-100)', 'work_by_employment (14-100)', 'education_0_5 (0-5)', 'education_6_17 (6-17)', 'education_18plus (18-100)'], 20 added to the parquet load set (182 already requested by the control frame / employment grid).
+78:00:24:58 │ INFO    │ popsim.mid.participation │ [popsim.mid] trip_class seed no-diary guard: 3283/485709 (0.68%) plan sources are 803 with mobil != 1 (kept immobile by diary_plan_match's design, not an error) and are seeded as 0 trips; 0/485709 (0.00%) must have been remapped.
+79:00:24:58 │ INFO    │ popsim.mid.participation │ [popsim.mid] trip_class seed counts the closed day: 95890/485709 (19.7%) sources get +1 for the synthetic return-home trip.
+80:00:24:58 │ INFO    │ popsim.mid.participation │ [popsim.mid] trip_class seed subtracts the dropped leading arrive-home leg: 2831/485709 (0.6%) sources get -1.
+81:00:24:58 │ INFO    │ popsim.mid.participation │ [popsim.mid] trip_class seed: derived from the realised weekday plan source (source anzwege1) for 485709 persons -- aligns the control with the SrV weekday target universe and the trips the synthetic person actually executes.
+91:00:26:02 │ INFO    │ popsim.mid.participation │ [popsim.mid] work_by_employment seed: derived from the realised plan source (source_H_ID, source_P_ID) for 485709 persons.
+92:00:26:02 │ INFO    │ popsim.mid.participation │ [popsim.mid] work_by_employment seed over 422187 persons aged 14+ (direct legs only, no imputation): {'employed_work': '123927 (29.4%)', 'employed_nowork': '102711 (24.3%)', 'nonemployed_work': '20085 (4.8%)', 'nonemployed_nowork': '175464 (41.6%)'}
+93:00:26:03 │ INFO    │ popsim.mid.participation │ [popsim.mid] education_flag seed: derived from the realised plan source (source_H_ID, source_P_ID) for 485709 persons.
+94:00:26:03 │ INFO    │ popsim.mid.participation │ [popsim.mid] education_flag seed, education_0_5 (ages 0-5): 17254/26863 (64.2%) edu (direct legs only, W_ZWECK [3, 11, 12, 13])
+95:00:26:03 │ INFO    │ popsim.mid.participation │ [popsim.mid] education_flag seed, education_6_17 (ages 6-17): 38151/53626 (71.1%) edu (direct legs only, W_ZWECK [3, 11, 12, 13])
+96:00:26:03 │ INFO    │ popsim.mid.participation │ [popsim.mid] education_flag seed, education_18plus (ages 18+): 11555/405220 (2.9%) edu (direct legs only, W_ZWECK [3, 11, 12, 13])
+291:07:08:23 │ INFO    │ synpp            │ Pipeline progress: 2/23 (8.70%)
+298:07:08:33 │ INFO    │ synpp            │ Pipeline progress: 3/23 (13.04%)
+305:07:08:38 │ INFO    │ synpp            │ Pipeline progress: 4/23 (17.39%)
+306:07:08:38 │ INFO    │ synpp            │ Executing stage braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+308:07:08:39 │ INFO    │ popsim.trips_stage │ [trips_stage] active donor source: mid
+310:07:09:29 │ INFO    │ popsim.trips_stage │ [trips_stage] resample cell column: ZENSUS100m
+311:07:09:29 │ INFO    │ popsim.trips_stage │ [trips_stage] closure dwell donor diaries keyed by (source_H_ID, source_P_ID)
+312:07:09:29 │ INFO    │ popsim.trips_stage │ [trips_stage] closure dwell donor diaries: 23152 unique donor diaries / 1130516 persons (2.0%)
+348:07:25:39 │ WARNING │ popsim.plan_validation │ [popsim.plan_validation] 250629/1001503 persons invalid; issues {'no_home_end': 229399, 'nan_times': 42652, 'time_exceeds_bound': 2342, 'negative_activity_duration': 8, 'trip_overlap': 8}
+358:07:44:52 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] home-closure dwell capped at the 36h plan-time bound for 1028/207678 (0.49%) appended return-home trips (empirical dwell model only; the dwell was reduced, never the outbound travel time, and never below the 1.0h floor); 1395/207678 (0.67%) could not be capped without breaching that floor and are left to the plan-time bound validation
+359:07:57:02 │ WARNING │ popsim.plan_validation │ [popsim.plan_validation] 44896/1001503 persons invalid; issues {'nan_times': 42652, 'no_home_end': 21763, 'time_exceeds_bound': 3737, 'negative_activity_duration': 516, 'trip_overlap': 516}
+360:07:57:03 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] repair: 750859 valid, 205748 repaired, 44896 unfixable (of 1001503 total); home-end closure appended to 207636 persons (20.7% of pool); 42652 persons (4.3%) have NaN trip times (MiD coded times 99/701) and 2342 persons (0.2%) exceed the 36h plan-time bound after the midnight-shift repair; both groups were excluded from closure repair and routed to the resample
+361:07:57:03 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] closure dwell: 207678 draws total, cell 184722/207678 (88.9%), purpose-marginal fallback 22956/207678 (11.1%), global fallback 0/207678 (0.0%), capped 1028/207678 (0.5%)
+364:08:08:34 │ WARNING │ popsim.plan_validation │ [popsim.plan_validation] 24437/1001503 persons invalid; issues {'no_home_end': 22392, 'time_exceeds_bound': 1735, 'negative_activity_duration': 516, 'trip_overlap': 516}
+377:08:16:15 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] home-closure dwell capped at the 36h plan-time bound for 256/21554 (1.19%) appended return-home trips (empirical dwell model only; the dwell was reduced, never the outbound travel time, and never below the 1.0h floor); 143/21554 (0.66%) could not be capped without breaching that floor and are left to the plan-time bound validation
+378:08:28:53 │ WARNING │ popsim.plan_validation │ [popsim.plan_validation] 2502/1001503 persons invalid; issues {'time_exceeds_bound': 2502, 'no_home_end': 209}
+379:08:28:54 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] repair: 976768 valid, 22233 repaired, 2502 unfixable (of 1001503 total); home-end closure appended to 21554 persons (2.2% of pool); 0 persons (0.0%) have NaN trip times (MiD coded times 99/701) and 2359 persons (0.2%) exceed the 36h plan-time bound after the midnight-shift repair; both groups were excluded from closure repair and routed to the resample
+380:08:28:54 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] closure dwell: 229232 draws total, cell 201714/229232 (88.0%), purpose-marginal fallback 27518/229232 (12.0%), global fallback 0/229232 (0.0%), capped 1284/229232 (0.6%)
+382:08:40:39 │ INFO    │ popsim.plan_validation │ [popsim.plan_validation] 0/1001503 persons invalid; issues {}
+383:08:40:39 │ INFO    │ popsim.trips_stage │ [trips_stage] synthetic closure trips: 228278/3662925 trips (6.2%); persons closed: 228278/1001503 (22.8%)
+384:08:40:39 │ INFO    │ popsim.trips_stage │ [trips_stage] closure dwell model (empirical) report: {'kind': 'empirical', 'n_cells': 33, 'n_obs_by_purpose': {'education': 3895, 'escort': 2381, 'home': 9585, 'leisure': 7088, 'other': 7148, 'shop': 5632, 'work': 8519}, 'n_draws': 229232, 'n_fallback_purpose_marginal': 27518, 'n_fallback_global': 0, 'n_capped': 1284}
+385:08:40:39 │ INFO    │ popsim.trips_stage │ [trips_stage] trip table built: 3662925 trips for 1001503 persons; valid=True home_closed_rate=nan%
+386:08:41:25 │ INFO    │ synpp            │ Writing cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9
+387:08:41:49 │ INFO    │ synpp            │ Finished running braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9.
+388:08:41:49 │ INFO    │ synpp            │ Pipeline progress: 5/23 (21.74%)
+395:09:11:52 │ INFO    │ synpp            │ Pipeline progress: 6/23 (26.09%)
+400:09:11:56 │ INFO    │ synpp            │ Pipeline progress: 7/23 (30.43%)
+405:09:12:00 │ INFO    │ synpp            │ Pipeline progress: 8/23 (34.78%)
+407:09:12:00 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+412:09:12:27 │ INFO    │ synpp            │ Pipeline progress: 9/23 (39.13%)
+416:09:12:29 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+460:09:14:09 │ INFO    │ synpp            │ Pipeline progress: 10/23 (43.48%)
+475:09:35:37 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] gemeinde EV tilt: 2026 Kreis-mean denominator weights: primary (FZ27.17 private_total) 113/113 (100.0%), fallback (no FZ27.17 match, weight=1) 0 (0.0%).
+476:09:35:37 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] gemeinde EV tilt: 2026 source (kba_gemeinde_ev); 113 Gemeinden loaded; same-vintage (2026/2026) weighted Kreis-mean denominator (pure relative tilt, no EV level shift).
+520:09:40:28 │ INFO    │ synpp            │ Pipeline progress: 11/23 (47.83%)
+544:09:40:31 │ INFO    │ synpp            │ Pipeline progress: 12/23 (52.17%)
+550:09:40:48 │ INFO    │ synpp            │ Pipeline progress: 13/23 (56.52%)
+553:09:40:49 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+564:09:43:00 │ INFO    │ synpp            │ Pipeline progress: 14/23 (60.87%)
+593:09:43:10 │ INFO    │ synpp            │ Pipeline progress: 15/23 (65.22%)
+883:09:49:55 │ INFO    │ synpp            │ Pipeline progress: 16/23 (69.57%)
+885:09:49:55 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+905:09:50:22 │ INFO    │ synpp            │ Pipeline progress: 17/23 (73.91%)
+907:09:50:23 │ INFO    │ synpp            │ Loading cache for braunschweig.popsim.trips_stage__b00e4fc3462dd4cb3d8bd621678059a9 ...
+916:09:52:12 │ INFO    │ synpp            │ Pipeline progress: 18/23 (78.26%)
+944:09:52:38 │ INFO    │ synpp            │ Pipeline progress: 19/23 (82.61%)
+951:09:53:38 │ INFO    │ synpp            │ Pipeline progress: 20/23 (86.96%)

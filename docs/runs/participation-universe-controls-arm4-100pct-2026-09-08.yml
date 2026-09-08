@@ -1,0 +1,284 @@
+id: participation-universe-controls-arm4-100pct-2026-09-08
+date: '2026-09-08'
+repository:
+  commit: 30cde0a1
+  branch: feature/i368-participation-universe-controls
+  notes: 'The branch WAS pushed for this run (the user authorised the push for the proof run on
+    2026-09-07), so unlike the arm-3 proof this run is a plain checkout of an exact commit rather
+    than a tar overlay: the server holds a DETACHED worktree ~/wt-pb4 created with
+    "git worktree add --detach origin/feature/i368-participation-universe-controls" at 30cde0a1,
+    which is the merge of origin/main 42137433 (PR #381) into the package branch. The four new
+    committed reference tables therefore travelled WITH the checkout instead of being hand-copied
+    into a shared data directory -- the omission that crashed the arm-3 run. The run records
+    pipeline_commit "30cde0a1+dirty"; the dirt is EXCLUSIVELY the eqasim-data symlink swap,
+    measured on the server as 265 deletions all under eqasim-data/ with
+    "git status --short -- braunschweig scripts configs tests docs" returning zero entries, so the
+    code state is exactly the pushed commit. No code was changed during the run.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/pb4_arm4_100pct.yml (scale and paths only; content reproduced in notes)'
+  notes: 'Merge log "composed configs/base_bs.yml + /home/felix/pb4_arm4_100pct.yml: 0 overridden,
+    14 added". ARM 4 IS THE BASE CONFIG DEFAULT STATE: not one flag of this package is overridden
+    in the overlay, which is scale and paths only -- working_directory
+    eqasim-data/cache_bs_100pct_pb4 (a cp -al hardlink copy of the arm-3 cache
+    cache_bs_100pct_psf3, so every stage this branch does not devalidate is a cache hit),
+    output_path eqasim-data/output_bs_100pct_pb4, analysis_working_directory = the cache,
+    output_prefix braunschweig_100pct_pb4_, matsim_last_iteration 0, popsim work_dir
+    eqasim-data/popsim_work_pb4, max_cells 750, num_workers 3, importance_profile
+    optimized_2026_06_30, sampling_rate 1.0, cache_share_export false, cache_share_recompute [],
+    eqasim_version "2.3.1", run list [synthesis.output,
+    braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    braunschweig.analysis.synthesis.work_participation_by_kreis].
+    The package flags at their base_bs.yml values: work_by_employment_kreis_control on,
+    education_by_age_kreis_control on, work_participation_kreis_control OFF,
+    education_participation_kreis_control OFF, diary_match_hard_employment true, and the five
+    plan-structure flags of the predecessor package unchanged (diary_plan_match,
+    exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg true;
+    closure_dwell_model empirical, closure_dwell_min_obs 30, trip_class_seed_counts_closure true).
+    The DATA DIRECTORY was built so no shared file could be written through: every top-level input
+    tree except braunschweig symlinked from ~/psf_data/data, braunschweig hardlink-copied, then the
+    checkout''s committed tables overlaid with "cp -a --remove-destination". Verified on a file
+    present on both sides before and after the overlay: md5 unchanged (9b3aa2bb...) and inode
+    unchanged (17303152), only the link count fell from 2 to 1.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'The population WAS re-synthesised: completed_donor and popsim.stage devalidated (the new
+    diary_match_hard_employment key, the two new seed columns, the widened helper hash) and ran for
+    49 min and 6 h 44 min. Result: 1,130,516 persons, of whom 1,001,503 carry trips and 1,002,871
+    reach the plan-structure analysis. Every n_* is a SAMPLE count at sampling_rate 1.0, never
+    expanded.'
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: 'TWO synpp invocations, times CEST. (1) 2026-09-07 23:22:10 -> 2026-09-08 00:11:19, log
+    ~/pb4_arm4_100pct_part1.log: 59 stages found; the home-office donor pool rebuilt with the #374
+    filters; completed_donor 23:22-00:11 (49 min) with the diary match and the two new seeds; the
+    run then ABORTED in documentation.meta_output with FileNotFoundError on
+    <output_path>/<prefix>meta.json, because that stage writes into output_path without creating
+    it and a fresh output_path never exists. NOT a defect of this branch: the identical abort
+    opened the first launch of the two preceding proof runs (Phase B 2026-09-05 and arm 3
+    2026-09-06). Fixed by mkdir -p on output_bs_100pct_pb4 and popsim_work_pb4.
+    (2) 2026-09-08 00:24:21 -> 11:1x, log ~/pb4_arm4_100pct.log: completed_donor a CACHE HIT so
+    its 49 minutes were not repeated; popsim.stage 00:24-07:08 (6 h 44 min, 60/60 batches
+    succeeded, 0 failed, 0 skipped, balancer 6:35:51, merge 60/60 with 0 missing); trips_stage
+    07:08-08:41 (1 h 33 min); plan_structure_vs_srv and work_participation_by_kreis written by
+    09:52; the location chain (secondary_chainsolvers 62 shards, about 50 min) and
+    synthesis.output to 11:12. ZERO error markers in the whole log
+    (grep -cE "Traceback|FileNotFoundError|MemoryError|Killed|CRITICAL" = 0).'
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+  notes: 'Arm 4 = arm 3 + the participation-universe controls = the base_bs.yml default state.
+    EIGHT of the nine pre-registered rows are MET and one is missed by 0.28 pp; the population,
+    households, trips, activities and vehicles tables were all written (641 MB under
+    output_bs_100pct_pb4). The one open check at the time of writing is whether the three hard
+    controls on overlapping mass degraded the pre-existing controls -- see the last validation
+    entry.'
+environment: server
+validation:
+- metric: 'The critical pre-run defect: whether the four new controls can build their per-Kreis
+    census denominators at all (the whole-branch review predicted education_0_5 would raise)'
+  reference: 'braunschweig/popsim/stage/controls_builder.py::person_total_by_kreis_age_range, whose
+    guard now rejects a partially covered band'
+  result: 'PASS, and this is the finding the final review saved the run from. All four controls came
+    up ON with real denominators: work_by_employment over 984,995 persons aged 14+, education_0_5
+    over 63,870 aged 0-5, education_6_17 over 122,748 aged 6-17, education_18plus over 944,320 aged
+    18+. The fix wave''s own instrumentation logged "participation-universe denominators: 202
+    single-year age column(s) required by [''employment_status (14-100)'', ''pt_ticket_group4
+    (14-100)'', ''work_by_employment ...''] ...", i.e. the columns are derived from the REGISTRY
+    entries rather than from a hard-coded 10-100 range. The three education bands sum to 1,130,938
+    and partition THAT census total exactly (5.65 % / 10.85 % / 83.50 %) -- 944,320 is 1,130,938
+    minus the two child bands to the person, so the bands are complete and disjoint. The census
+    total sits 422 persons above the 1,130,516 delivered persons, the ordinary raking residual. The
+    band widths are internally consistent: 10,645 persons per year of age for 0-5 and 10,229 for
+    6-17, and the 14+ denominator implies 40,675 aged 14-17 against the 40,916 those per-year rates
+    predict. Before the fix, education_0_5 raised (no column of its band was loaded) and
+    education_6_17 would have built its denominator SILENTLY from ages 10-17 only.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/run_log_excerpts.txt'
+- metric: 'PRE-REGISTERED ROW 1 -- employed persons with a work trip, head-to-head SrV Kreise'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv, universe
+    at_home_zero, segment group_employed, metric participation_work = 0.6693693964 (n 8,306); the
+    universe the CONTROL targets is at_home_only = 0.7032715106'
+  result: 'MET. 0.6936 against a pre-registered bound of >= 0.62, up from arm 3''s 0.5838 (+10.98
+    pp). Measured on the at_home_zero universe the model sits 2.42 pp ABOVE the reference; measured
+    on the at_home_only universe the control actually targets it sits 0.97 pp BELOW it. The
+    model has no away-from-home state at all, so its single realised rate is compared to two
+    different denominators -- the at_home_only number is the one the control was raked to, and
+    the 2.42 pp overshoot against at_home_zero is the documented universe deviation of SPEC 2.1,
+    not a new finding.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/comparison.csv'
+- metric: 'PRE-REGISTERED ROW 2 -- seniors 65+ not employed with a work trip'
+  reference: 'same file, at_home_zero, segment group_senior_65plus_not_employed,
+    participation_work = 0.01745748322 (n 4,339); at_home_only = 0.01851661976'
+  result: 'NOT MET, by 0.28 pp. 0.032766 against a pre-registered bound of <= 0.03, down from arm
+    3''s 0.078192 -- a fall of 4.54 pp, 58 % of the arm-3 excess removed. Diagnosis, stated as a
+    mechanism and not as a fit problem: seniors are NOT a controlled segment. work_by_employment
+    pins the TOTAL nonemployed_work mass over persons 14+, and the age composition INSIDE that cell
+    is free, so the control cannot stop the residual from concentrating in one age band. This is
+    the within-group-freedom pattern (total fixed, inside free). The corresponding fix would be an
+    age split of the nonemployed_work cell, not a larger control weight; it is NOT in this package
+    and is not claimed.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/comparison.csv'
+- metric: 'PRE-REGISTERED ROW 3 -- ADR-0104 check 1, employed persons with a work trip on the
+    ADR-0104 denominator (population employed attribute, ZGB home Kreis) -- a THIRD universe'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv, zgb row,
+    srv_share_work_trip = 0.6511223931 (n 8,016)'
+  result: 'MET. delta_work_trip_pp +2.25 against a pre-registered bound of inside +/- 3 pp, from
+    arm 3''s -8.06. The sign flipped from under- to over-participation and the magnitude fell from
+    8.06 to 2.25 pp. Realised 360,910 of 535,757 employed persons with a work trip = 0.6736.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/work_participation_by_kreis.csv'
+- metric: 'PRE-REGISTERED ROW 4 -- workers with an assigned workplace who are NOT flagged employed'
+  reference: 'judged against the COMMITTED p_work_nonemployed of
+    eqasim-data/data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv, 03ZGB = 0.04726708691
+    (per Kreis 0.0249 to 0.0661), NOT against the untraceable "2.8 % of 14+ non-employed" of the
+    original pre-registration (controller ruling R36)'
+  result: 'MET directionally, and the manifest states the denominator mismatch rather than hiding
+    it. 18,672 of 372,052 workers = 5.02 %, from arm 3''s 41,680 of 317,848 = 13.11 %: the count
+    fell 55 % while the worker pool GREW 17 %, so the improvement is not an artefact of a shrinking
+    base. The model rate 5.02 % is measured on persons with an assigned workplace; the committed
+    4.73 % is measured on 14+ non-employed persons. They are NOT the same base, so the claim the
+    pre-registration supports is the direction and the magnitude of the move, not equality. The
+    same-universe number lives in participation_universe_fit.csv (last entry).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/commute_day_state_shares.csv'
+- metric: 'PRE-REGISTERED ROW 5 -- education participation, 6-17 not employed'
+  reference: 'same plan-structure file, at_home_zero, segment
+    group_school_age_6_17_not_employed, participation_education = 0.9042394712 (n 2,039);
+    at_home_only = 0.9215223516, and the CONTROL''s own committed target for the whole 6-17 band is
+    0.9171'
+  result: 'MET, and this row settles controller ruling R39. 0.930464 against a pre-registered bound
+    of >= 0.88, up from arm 3''s 0.842666 (+8.78 pp). +0.89 pp against the at_home_only reference
+    the control targets, +2.62 pp against the at_home_zero measurement. R39 refused to kill the run
+    when the SEED for this band showed 71.1 % edu against a 91.7 % target, on the ground that a
+    seed share is a floor and reweighting is the mechanism; the realised 93.05 % confirms that, and
+    arm 3 already reached 84.27 % from the same seed with NO education control at all.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/comparison.csv'
+- metric: 'PRE-REGISTERED ROW 6 -- education participation, children 0-5'
+  reference: 'same file, at_home_zero, segment group_child_0_5, participation_education =
+    0.6558256021 (n 1,081); at_home_only = 0.6784849381, the control''s committed target 0.6785'
+  result: 'MET. 0.686200 inside the pre-registered band of 0.63 to 0.69, down from arm 3''s 0.734444
+    (-4.82 pp). +0.77 pp against the at_home_only reference the control targets. It sits close to
+    the upper edge of the band, so a small further move would leave it; the band, not the midpoint,
+    is what was pre-registered.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/comparison.csv'
+- metric: 'PRE-REGISTERED ROW 7 -- persons without a trip (the MECE claim: the controls steer WHO
+    travels, not WHETHER anyone travels)'
+  reference: 'same file, at_home_zero, segment all, share_trips_0; the SrV value is 0.1562798646'
+  result: 'MET, and far more tightly than the band required. share_trips_0 0.11278021 against arm
+    3''s 0.11279362 -- a change of 0.0013 pp against a pre-registered band of 0.11 to 0.13. The
+    two arms are NOT the same artefact: comparison.csv has a different md5 (e0e00fad... versus
+    3881076811...) and a different person count (1,002,871 versus 1,003,727), so the near-identity
+    is a measured result and not a stale cache hit. Independently, the trip table counted 129,013
+    of 1,130,516 persons without a trip = 11.41 % against arm 3''s 11.39 %.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/comparison.csv'
+- metric: 'PRE-REGISTERED ROW 8 -- diary-match remaps crossing the employment boundary (decision Q6)'
+  reference: 'pre-registered expectation 0; the guard warns when the count is non-zero with the flag on'
+  result: 'MET exactly. "[diary_plan_match] employment boundary crossed by 0/74898 remaps (0.00%);
+    hard_employment=True". Arm 3 had 2 crossings of 74,898 remaps, so the measured effect of the
+    guard is at most those 2 persons -- it is a guard, not a correction, and this manifest says so.
+    Per ruling R25 the arm-4 and arm-3 match_level histograms are NOT comparable: the hard key makes
+    the scale 0-4 instead of 0-5.'
+  artifact: 'felix:~/pb4_arm4_100pct_part1.log'
+- metric: 'PRE-REGISTERED ROW 9 -- home-office donor pool: no-diary, public-holiday and only-rbW
+    donors (issue #374)'
+  reference: 'pre-registered expectation 0 after the filters'
+  result: 'MET, and larger than expected. 8,026 home-office-day donors were selected from 420,979
+    persons (1.9 %), and the three filters removed 1,182 of them = 14.7 % of the pool: no_diary
+    1,017 (12.7 %), holiday 81 (1.0 %), only_rbw 84 (1.0 %). Of the no-diary drops, 9 carry
+    anzwege1 803 with a KNOWN mobil != 1 and 0 carry it with mobil missing -- the deliberate
+    divergence from diary_plan_match''s kept-immobile rule, now measured rather than assumed. The
+    only-rbW classification matched 5,421 of 8,026 donors (67.5 %) to a diary-facts row; the rest
+    have no Wege row of their own, i.e. a genuinely immobile home-office day. Consequence: before
+    this fix one in eight far commuters redrawn to a home-office day could receive an EMPTY plan.'
+  artifact: 'felix:~/pb4_arm4_100pct_part1.log'
+- metric: 'The seed the new controls are raked from (context for the rows above, not a pass/fail)'
+  reference: 'the committed targets target2026_work_by_employment_by_kreis.csv and
+    target2026_education_{0_5,6_17,18plus}_by_kreis.csv (Gesamt rows)'
+  result: 'MEASURED. work_by_employment over 422,187 persons aged 14+: employed_work 123,927
+    (29.4 %), employed_nowork 102,711 (24.3 %), nonemployed_work 20,085 (4.8 %), nonemployed_nowork
+    175,464 (41.6 %). The seed employed MARGIN is 53.68 % against the target''s 52.52 %, only +1.16
+    pp, so the margin-times-conditional construction of ADR-0109 decision Q1 rests on solid ground;
+    what had to move was the CONDITIONAL, P(work | employed) 54.68 % against 70.32 %.
+    education_flag edu rates: 64.2 % (0-5, n 26,863) against a 67.85 % target, 71.1 % (6-17, n
+    53,626) against 91.71 %, 2.9 % (18+, n 405,220) against 4.76 %. The logged code set [3, 11, 12,
+    13] confirms escort_passive_education reaches the seed. A seed share is NOT expected to equal
+    its target -- reweighting is the mechanism -- and rows 5 and 6 above show what the reweighting
+    achieved from these seeds.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/run_log_excerpts.txt'
+- metric: 'Trip table, closure model and reporting-day states, against arm 3'
+  reference: 'arm 3, run manifest plan-structure-fix-arm3-100pct-2026-09-07'
+  result: 'MEASURED, no pre-registered bound. 3,662,925 trips for 1,001,503 persons against arm 3''s
+    3,655,159 for 1,002,332 (+0.21 %). Synthetic closure trips 228,278 = 6.2 % of trips and 22.8 %
+    of mobile persons, against 238,757 = 6.5 % and 23.8 %. Closure dwell quality unchanged: 229,232
+    draws, 88.0 % from the full (purpose, hour, duration-class) cell, 12.0 % purpose-marginal
+    fallback, ZERO global fallback, 0.6 % capped at the plan-time bound. Stage A repair 976,768
+    valid / 22,233 repaired / 2,502 unfixable; stage B replaced those 2,502 chains with 0 home-only
+    outcomes. Reporting-day states: 390,724 of 1,130,516 persons (34.6 %) carry one -- at_workplace
+    378,875, home 7,379, absent 4,470 -- against arm 3''s 359,528 (at_workplace 348,676, home
+    6,868, absent 3,984); more workers carry a state because more employed persons now have a
+    workplace, which is the intended direction.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/run_log_excerpts.txt'
+- metric: 'OPEN AT THE TIME OF WRITING -- whether the three hard controls on overlapping mass
+    degraded the pre-existing controls (age x sex, trip_class, the ownership controls), and the
+    realised same-universe participation fit'
+  reference: 'the realised control fit of braunschweig/analysis/population_validation
+    (control_validation) and participation_universe_fit.csv against the committed universe targets'
+  result: 'unknown. This is the risk SPEC section 5 named and it is NOT closed by anything above.
+    PopulationSim writes no per-control summary table in this configuration (the per-batch output
+    holds only synthetic_households.csv, synthetic_persons.csv, final_expanded_household_ids.csv and
+    logs), and the 1 km sub-balancing "converged False" lines in populationsim.log are the known
+    behaviour of that geography, not a Kreis-level fit statement. run_population_validation was
+    chained to the run''s completion on the server (felix:~/pb4_val_chain.sh, output ~/pb4_val_out)
+    and its result will be recorded here. Until then this row reads unknown, and the eight MET rows
+    above must not be read as a statement about the other controls.'
+  artifact: 'felix:~/pb4_val_out (pending), felix:~/pb4_val.log'
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/
+  -- the committed aggregate: comparison.csv, headline.csv, by_kreis.csv, closure.csv,
+  accepted_deviations.csv, plan_structure_vs_srv_{summary.md,provenance.json},
+  work_participation_by_kreis.csv, commute_day_state_shares.csv,
+  commute_day_state_phase_a_{summary.md,provenance.json}, run_log_excerpts.txt. The two report
+  files of each stage carry their stage name because both stages write generic summary.md and
+  provenance.json names and one overwrote the other in the arm-3 aggregate.'
+- 'felix:~/pb4_data/output_bs_100pct_pb4/ (641 MB: persons, households, trips, activities,
+  vehicles, vehicle_types, the GeoPackages and the two analysis directories),
+  ~/pb4_data/cache_bs_100pct_pb4/, ~/pb4_data/popsim_work_pb4/, ~/pb4_data/data/'
+- 'felix:~/pb4_arm4_100pct.yml (overlay), ~/pb4_arm4_100pct_part1.log (invocation 1),
+  ~/pb4_arm4_100pct.log (invocation 2), ~/pb4_val_chain.sh, ~/pb4_val.log'
+issues:
+- '#368'
+- '#374'
+- '#369'
+- '#370'
+decisions:
+- ADR-0109
+- ADR-0104
+- ADR-0106
+notes: 'HOW TO READ THIS MANIFEST. (1) Every row is judged on the universe named in its reference
+  field. The control TARGETS the at-home-or-mobile universe (at_home_only) while the analysis stage
+  MEASURES the model on its primary universe (at_home_zero, which counts away-from-home persons as
+  zero-trip); the two are about 3.4 pp apart for the employed segment, so a row judged against the
+  wrong denominator would read as a hit or a miss that never happened. On the at_home_only universe
+  the three controlled segments land within 1 pp: employed work -0.97, education 6-17 +0.89,
+  education 0-5 +0.77. (2) CONVERGENCE IS NOT VALIDATION. These controls were RAKED to the
+  committed targets, so agreement with them is convergence, not independent agreement with
+  reality; the at_home_zero comparison is the closest thing here to an independent check and
+  there the model overshoots by 2.4 to 3.0 pp for exactly the universe reason in (1). (3) Two
+  reference values in the pre-registered table moved with decision Q5 (apprentices, SrV V_ERW 8,
+  entered the employed set), so arm-3 and arm-4 delta_pp columns are not comparable for
+  group_employed and group_school_age_6_17_not_employed -- only the model columns are, and this
+  manifest compares models across arms and deltas within an arm. (4) Row 4''s two rates sit on
+  different denominators and the entry says so. (5) The one NOT MET row has a mechanism, not a
+  tuning problem: the controlled cell is nonemployed_work over all persons 14+, and age
+  composition inside it is unconstrained.'
+source: 'Arm 4 (arm 3 plus the participation-universe controls = the base_bs.yml default state) of
+  the pre-registered A/B ladder, run at 100 % on a hardlink copy of the arm-3 cache from a detached
+  worktree at the pushed commit 30cde0a1, measured by
+  braunschweig.analysis.synthesis.plan_structure_vs_srv and
+  braunschweig.analysis.synthesis.work_participation_by_kreis against the committed SrV references
+  (issues #368, #374; design of 2026-09-07 section 2.6)'

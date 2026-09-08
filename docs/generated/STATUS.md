@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 83 | stages: 123 | datasets: 68 | ADRs: 109 | run manifests: 36
+- Features: 83 | stages: 123 | datasets: 68 | ADRs: 109 | run manifests: 37
 
 ## Population synthesis
 
@@ -44,7 +44,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
 | [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
-| [Participation controls conditional on their universe (#368)](../registry/features/participation_universe_controls.yml) | active | ON | A/i/- | unvalidated | [#368](https://github.com/TUBS-IVS/eqasim-bs/issues/368) |
+| [Participation controls conditional on their universe (#368)](../registry/features/participation_universe_controls.yml) | active | ON | A/i/- | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | [#368](https://github.com/TUBS-IVS/eqasim-bs/issues/368) |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
 | [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
 | [PT-subscription per-Kreis control (four groups by default, three under the flag; MiD x SrV blend)](../registry/features/pt_ticket_group_kreis_control.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | [#321](https://github.com/TUBS-IVS/eqasim-bs/issues/321) |

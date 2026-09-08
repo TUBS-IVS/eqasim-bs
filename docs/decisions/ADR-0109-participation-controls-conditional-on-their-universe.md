@@ -196,6 +196,39 @@
     `work_by_employment`, the employment-grid age shape). The control-fit report must show all of
     them converging; if it does not, the importance group is revisited rather than the target.
     Convergence of the controls is FIT, never validation.
+- **Proof (arm 4, measured 2026-09-08; run manifest
+  `participation-universe-controls-arm4-100pct-2026-09-08`, 100 % ZGB-8 at commit `30cde0a1`):**
+  arm 4 is arm 3 plus this package, which is the `configs/base_bs.yml` default state, so the
+  overlay overrode not one flag. **Eight of the nine pre-registered rows are MET; one is missed by
+  0.28 pp.** Employed persons with a work trip rose 58.38 % -> 69.36 % (bound >= 62 %); education
+  participation among the 6-17 not employed rose 84.27 % -> 93.05 % (bound >= 88 %); education
+  among the 0-5 fell 73.44 % -> 68.62 % (band 63-69 %); the ADR-0104 check-1 deviation moved
+  +8.06 pp -> +2.25 pp (bound +/- 3 pp); workers with a workplace who are not flagged employed fell
+  41,680 (13.1 % of workers) -> 18,672 (5.0 %) while the worker pool GREW 17 %; diary remaps
+  crossing the employment boundary fell 2 -> 0 of 74,898; the donor-pool filters removed 1,182 of
+  8,026 home-office donors (14.7 %), of which 1,017 had no diary at all. The MECE claim of decision
+  Q2/Q3 held to 0.0013 pp: persons without a trip moved 11.2794 % -> 11.2780 %, and the two arms'
+  `comparison.csv` differ in md5 and person count, so that near-identity is a measurement and not a
+  cache hit.
+  **Read on the universe the controls TARGET (`at_home_only`) the three controlled segments land
+  within 1 pp** -- employed work -0.97, education 6-17 +0.89, education 0-5 +0.77 -- which is the
+  direct confirmation of decision Q1's margin-times-conditional construction and of the ONE
+  universe rule of this ADR. Read on `at_home_zero`, the universe the analysis stage prints, the
+  same three sit 2.4 to 3.0 pp ABOVE the reference, because the model has no away-from-home state
+  while that reference counts such persons as zero-trip: the deviation this ADR itself documents,
+  not a new finding.
+  **The one miss is a mechanism, not a tuning problem.** Seniors 65+ not employed with a work trip
+  fell 7.82 % -> 3.28 % against a <= 3 % bound. `work_by_employment` pins the TOTAL
+  `nonemployed_work` mass over persons 14+ and leaves the age composition inside that cell free, so
+  the control cannot stop the residual concentrating in one age band. An age split of that cell
+  would be the fix; it is deliberately NOT in this package.
+  **Two limits on the above.** (1) These controls were RAKED to the committed targets, so agreement
+  with them is convergence toward a target and NOT independent agreement with reality. (2) The risk
+  this ADR named -- three hard controls sitting on overlapping mass -- is recorded as `unknown` in
+  the run manifest's last validation entry: PopulationSim writes no per-control summary in this
+  configuration, and whether age x sex, `trip_class` or the ownership controls degraded is not
+  settled by the eight MET rows.
+
 - **Evidence:** issues **#368** (this package), **#374** (rider, IN), **#369** (the measuring
   analysis stage), **#370** (universe rule fixed here), **#372** and **#373** (assessed and kept
   out); branch `feature/participation-universe-controls` (commits `0b97939e` age-range universes,
@@ -221,5 +254,11 @@
   side is `docs/runs/plan-structure-fix-arm3-100pct-2026-09-07.yml` with its committed artifact
   directory `eqasim-data/data/braunschweig/calibration/plan_structure_fix_arm3_100pct_2026-09-07/`.
   ADR-0104, ADR-0106, ADR-0107, ADR-0108 and ADR-0060 are the records this one composes with.
-  **NO ARM HAS RUN. Every expected effect of this package is an assumption until arm 4 measures it;
-  nothing recorded here is validated, and the convergence of a control is fit, not validation.**
+  ARM 4 HAS RUN (2026-09-08): the measured side is now
+  `docs/runs/participation-universe-controls-arm4-100pct-2026-09-08.yml` with its committed artifact
+  directory
+  `eqasim-data/data/braunschweig/calibration/participation_universe_controls_arm4_100pct_2026-09-08/`,
+  summarised in the Proof bullet above, and the arm-3 manifest is the BEFORE state.
+  **What is measured is not the same as validated: the controls converged toward committed targets
+  they were raked to, one pre-registered row is NOT met, and the overlapping-mass risk is still
+  recorded as unknown.**

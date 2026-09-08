@@ -155,8 +155,9 @@ evidence:
       plan_structure_vs_srv on its primary at_home_zero universe. Hitting the targets is control
       FIT; the SrV plan-structure comparison is the check that matters.
 validation:
-  state: unvalidated
-  runs: []
+  state: measured_vs_reference
+  runs:
+  - participation-universe-controls-arm4-100pct-2026-09-08
   metric: >-
     Pre-registered before implementation (design of 2026-09-07, section 2.6), measured by
     braunschweig.analysis.synthesis.plan_structure_vs_srv, braunschweig.analysis.synthesis.
@@ -199,11 +200,43 @@ validation:
     0.0661 per Kreis) on the control universe -- judge arm 4 against that and treat 2.8 % as an
     untraceable estimate.
 
-    NOTHING HERE IS VALIDATED. No arm has run with this feature on: runs is empty, every
-    expectation above is an assumption, and control-fit convergence would be fit, not validation.
+    MEASURED 2026-09-08 by arm 4 (run manifest
+    participation-universe-controls-arm4-100pct-2026-09-08, 100 % ZGB-8, commit 30cde0a1). EIGHT of
+    the nine rows above are MET; ONE is missed by 0.28 pp. Measured column, arm 3 -> arm 4:
+
+    | row | arm 3 | arm 4 | bound | verdict |
+    |---|---|---|---|---|
+    | employed with work trip | 58.38 % | 69.36 % | >= 62 % | MET |
+    | seniors 65+ not employed with work trip | 7.82 % | 3.28 % | <= 3 % | NOT MET by 0.28 pp |
+    | ADR-0104 check 1 | +8.06 pp | +2.25 pp | inside +/- 3 pp | MET |
+    | workers not flagged employed | 41,680 (13.1 %) | 18,672 (5.0 %) | towards 4.73 % | MET |
+    | education 6-17 not employed | 84.27 % | 93.05 % | >= 88 % | MET |
+    | education 0-5 | 73.44 % | 68.62 % | 63-69 % | MET |
+    | persons without a trip | 11.279 % | 11.278 % | unchanged 11-13 % | MET |
+    | diary remaps crossing the boundary | 2 of 74,898 | 0 of 74,898 | 0 | MET |
+    | donor pool no-diary / rbW / holiday | uncounted | 0 after the filters | 0 | MET |
+
+    Read on the universe the CONTROL targets (at_home_only) the three controlled segments land
+    within 1 pp: employed work -0.97, education 6-17 +0.89, education 0-5 +0.77. Read on the
+    at_home_zero universe the analysis stage prints, the same three sit 2.4 to 3.0 pp ABOVE the
+    reference, because the model has no away-from-home state while that reference counts such
+    persons as zero-trip. That is the documented deviation of SPEC 2.1, not a new finding.
+
+    THE ONE MISS HAS A MECHANISM, NOT A TUNING PROBLEM: work_by_employment pins the TOTAL
+    nonemployed_work mass over persons 14+ and leaves the age composition inside that cell free, so
+    the control cannot stop the residual concentrating in one age band. An age split of that cell
+    would be the fix; it is NOT in this package and is not claimed.
+
+    STILL NOT VALIDATED, TWO WAYS. (1) These controls were RAKED to the committed targets, so
+    agreement with them is convergence toward a target, not independent agreement with reality.
+    (2) The SPEC section 5 risk -- whether three hard controls on overlapping mass degraded age x
+    sex, trip_class or the ownership controls -- is recorded as unknown in the run manifest's last
+    validation entry and is NOT closed by the eight MET rows.
 assessment:
-  status: pending
-  by: null
+  status: reviewed
+  by: 'Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07;
+    the whole-branch review found the census age-column defect that would have aborted the arm-4
+    run, so the review is load-bearing evidence and not a formality. User sign-off outstanding.'
   date: null
   pending_reason: |
     Implemented, reviewed and gated on the branch, but never executed: no arm-4 run exists, so the
