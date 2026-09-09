@@ -231,7 +231,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         escort_passive_education: bool = False,
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
-        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) -> dict:
+        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        codeplan_sentinels: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -303,6 +304,22 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     passive_pair_max_gap_minutes:
         Maximum |departure-time gap| in MINUTES for that pairing; inert unless
         ``escort_passive_from_adult`` is True.
+    codeplan_sentinels:
+        When True (issue #242 Task 5, ADR-0113), the leisure_subtype_split /
+        other_subtype_split donor pools above are built from
+        ``purpose_subtype.leisure_spec(True)`` / ``other_errand_spec(True))``
+        instead of the raw ``LEISURE_GROUPS`` / ``OTHER_ERRAND_GROUPS``
+        constants, so W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung k.A.")
+        -- NO-DETAIL codeplan codes -- are excluded from the
+        "leisure_activity" / "other_errand_long" donor pool the SAME way
+        ``braunschweig.synthesis.locations.secondary_chainsolvers``'s
+        deciders exclude them from ESTIMATION. Both consumers read the SAME
+        ``purpose_subtype_codeplan_sentinels`` config key and must resolve the
+        same value, or a leg the decider labels "leisure_activity" /
+        "other_errand_long" would draw its distance from a donor pool that
+        still includes the excluded legs. Default False keeps this function's
+        OFF path byte-identical to before issue #242 Task 5; inert unless
+        ``leisure_subtype_split`` or ``other_subtype_split`` is also True.
 
     Returns
     -------
@@ -527,9 +544,11 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
     # --- Step 8: leisure subtype sub-distributions (Task 3, issue #127). -----
     # Splits following_purpose == "leisure" legs by their W_ZWD detail code into
-    # the groups defined in purpose_subtype.LEISURE_GROUPS (local/visit/activity/
-    # excursion). The aggregate "leisure" key is KEPT so downstream callers without
-    # the split can still use it as a fallback (mirrors the shop split above).
+    # the groups defined in purpose_subtype.leisure_spec(codeplan_sentinels)
+    # (local/visit/activity/excursion; see codeplan_sentinels above for the
+    # 799 "Freizeit k.A." sentinel treatment). The aggregate "leisure" key is
+    # KEPT so downstream callers without the split can still use it as a
+    # fallback (mirrors the shop split above).
     if leisure_subtype_split:
         if "W_ZWD" not in df.columns:
             logger.warning(
@@ -538,10 +557,15 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                 "leisure subtype split."
             )
         else:
-            from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS
+            from braunschweig.popsim.purpose_subtype import leisure_spec
 
+            # leisure_spec(codeplan_sentinels) selects LEISURE_SPEC_CODEPLAN
+            # (799 "Freizeit k.A." excluded as a NO-DETAIL sentinel) or the
+            # unchanged LEISURE_SPEC by identity -- see the codeplan_sentinels
+            # docstring parameter above.
+            leisure_groups = leisure_spec(codeplan_sentinels).groups
             leisure_df = df[df["following_purpose"] == "leisure"]
-            for group_name, codes in LEISURE_GROUPS.items():
+            for group_name, codes in leisure_groups.items():
                 group_df = leisure_df[leisure_df["W_ZWD"].isin(codes)]
                 logger.info(
                     "[popsim.distance_distributions] leisure subtype %s: %d legs",
@@ -563,9 +587,9 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             )
         else:
             from braunschweig.popsim.purpose_subtype import (
-                OTHER_ERRAND_GROUPS,
                 OTHER_ERRAND_ZWECK,
                 OTHER_ESCORT_ZWECK,
+                other_errand_spec,
             )
 
             other_df = df[df["following_purpose"] == "other"]
@@ -593,8 +617,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                     "since it does not depend on W_ZWD)."
                 )
             else:
+                # other_errand_spec(codeplan_sentinels) selects
+                # OTHER_ERRAND_SPEC_CODEPLAN (699 "Erledigung k.A." excluded as
+                # a NO-DETAIL sentinel) or the unchanged OTHER_ERRAND_SPEC by
+                # identity -- see the codeplan_sentinels docstring parameter.
+                other_errand_groups = other_errand_spec(codeplan_sentinels).groups
                 errand_df = other_df[other_df["W_ZWECK"].isin(OTHER_ERRAND_ZWECK)]
-                for group_name, codes in OTHER_ERRAND_GROUPS.items():
+                for group_name, codes in other_errand_groups.items():
                     group_df = errand_df[errand_df["W_ZWD"].isin(codes)]
                     logger.info(
                         "[popsim.distance_distributions] other subtype %s: %d legs",
@@ -621,6 +650,20 @@ def configure(context):
     context.config("secondary_shop_daily_split", False)
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
+    # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
+    # Task 5, ADR-0113). SHARED with
+    # braunschweig.synthesis.locations.secondary_chainsolvers, which ALSO
+    # declares this key with the identical default -- see that stage's
+    # configure() for why both stages must resolve the SAME value (the
+    # leisure_activity / other_errand_long donor pool built here must exclude
+    # exactly the legs the chainsolver deciders' estimation excludes, or a leg
+    # placed under one label draws its distance from a donor pool built for a
+    # different label). Declared UNCONDITIONALLY (like the two split flags
+    # above) so an all-flags-off config never needs it; inert unless
+    # leisure_subtype_split or other_subtype_split is also True. Default True
+    # (project rule: new features default on); the production value is also
+    # set in configs/base_bs.yml (issue #242 Task 7).
+    context.config("purpose_subtype_codeplan_sentinels", True)
     context.config("escort_purpose", False)
     context.config("escort_passive_education", False)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
@@ -658,6 +701,7 @@ def execute(context):
     shop_daily_split = context.config("secondary_shop_daily_split")
     leisure_subtype_split = context.config("secondary_leisure_subtype_split")
     other_subtype_split = context.config("secondary_other_subtype_split")
+    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
     escort_purpose = context.config("escort_purpose")
     escort_passive_education = context.config("escort_passive_education")
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
@@ -682,4 +726,5 @@ def execute(context):
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        codeplan_sentinels=codeplan_sentinels,
     )

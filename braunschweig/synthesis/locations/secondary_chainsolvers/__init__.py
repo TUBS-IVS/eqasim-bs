@@ -405,6 +405,21 @@ def configure(context):
     # internal to the chainsolver. OFF (default) is byte-identical.
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
+    # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
+    # Task 5, ADR-0113): W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung
+    # k.A.") carry no usable subtype signal, so ON excludes them from
+    # ESTIMATION via purpose_subtype.leisure_spec / other_errand_spec (read by
+    # _build_leisure_subtype_decider / _build_other_subtype_decider below).
+    # SHARED with braunschweig.popsim.distance_distributions, which ALSO
+    # declares this key with the identical default -- see that module's
+    # configure() for why both stages must resolve the SAME value (the
+    # leisure_activity / other_errand_long distance-layer donor pool must
+    # exclude exactly the legs the decider's estimation excludes). Declared
+    # UNCONDITIONALLY (like the two split flags above) so an all-flags-off
+    # config never needs it; inert while both subtype splits are OFF. Default
+    # True (project rule: new features default on); the production value is
+    # also set in configs/base_bs.yml (issue #242 Task 7).
+    context.config("purpose_subtype_codeplan_sentinels", True)
 
     # Escort as dedicated activity purpose (issue #201). The decider draws one
     # location TYPE per escort leg from the SrV-derived weights; defaults are

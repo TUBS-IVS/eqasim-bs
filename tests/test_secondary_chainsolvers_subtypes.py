@@ -530,6 +530,14 @@ def test_configure_requires_mid_dir_when_other_subtype_split_on():
     assert "braunschweig.population.popsim.mid_dir" in ctx.registered
 
 
+def test_configure_declares_codeplan_sentinels_default_true():
+    # Issue #242 Task 5: declared UNCONDITIONALLY, default True (project rule:
+    # new features default on).
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered["purpose_subtype_codeplan_sentinels"] is True
+
+
 # ---------------------------------------------------------------------------
 # Decider construction: synthetic (non-MiD-file) Wege frames via a
 # monkeypatched braunschweig.popsim.mid.load_mid_wege, mirroring the synthetic
@@ -651,6 +659,103 @@ def test_build_other_subtype_decider_reproducible_across_builds(monkeypatch, cap
     out = capsys.readouterr().out
     assert "other subtype: coarse marginal shares" in out
     assert "errand marginal shares" in out
+
+
+# ---------------------------------------------------------------------------
+# Issue #242 Task 5: purpose_subtype_codeplan_sentinels threaded into both
+# deciders. 799 ("Freizeit k.A.") and 699 ("Erledigung k.A.") are NO-DETAIL
+# codes; OFF (default False at the code level; True in configure()) keeps
+# counting them as genuine group members (today's behaviour), ON excludes them
+# from ESTIMATION entirely.
+# ---------------------------------------------------------------------------
+
+
+def test_build_leisure_subtype_decider_codeplan_sentinels_off_labels_799_as_activity(monkeypatch):
+    # Every leisure leg carries ONLY the NO-DETAIL code 799; with the flag OFF
+    # it is still a leisure_activity group member (marginal = 1.0), so the
+    # decider is fully deterministic -- exactly the pre-Task-5 behaviour.
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=799, wegkm=15.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_leisure_subtype_split": True, "purpose_subtype_codeplan_sentinels": False},
+        monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    for tt in (100.0, 500.0, 900.0):
+        assert decide("car", tt) == "leisure_activity"
+
+
+def test_build_leisure_subtype_decider_codeplan_sentinels_on_excludes_799(monkeypatch):
+    # Same fixture, flag ON: 799 is excluded from every group -> zero labelled
+    # leisure legs remain -> estimate_group_probabilities raises loudly
+    # (CLAUDE.md: no invented reference values / no silent empty-marginal
+    # fallback) instead of building a decider from zero observations.
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=799, wegkm=15.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_leisure_subtype_split": True, "purpose_subtype_codeplan_sentinels": True},
+        monkeypatch, wege)
+
+    with pytest.raises(ValueError, match="no legs with a known"):
+        sc._build_leisure_subtype_decider(ctx, random_seed=1)
+
+
+def test_build_leisure_subtype_decider_flag_omitted_defaults_to_off_path(monkeypatch):
+    # A test double that never sets purpose_subtype_codeplan_sentinels (the
+    # _FakeContext default is None -> bool(None) is False) must reproduce the
+    # explicit-OFF behaviour above.
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=799, wegkm=15.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert decide("car", 100.0) == "leisure_activity"
+
+
+def test_build_other_subtype_decider_codeplan_sentinels_off_labels_699_as_long(monkeypatch):
+    # Every errand leg carries ONLY the NO-DETAIL code 699; OFF keeps it a
+    # other_errand_long group member (errand marginal other_errand_long=1.0),
+    # so composed with the coarse errand=1.0 share the decider is deterministic.
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=699, wegkm=12.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_other_subtype_split": True, "purpose_subtype_codeplan_sentinels": False},
+        monkeypatch, wege)
+
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    for tt in (100.0, 500.0, 900.0):
+        assert decide("car", tt) == "other_errand_long"
+
+
+def test_build_other_subtype_decider_codeplan_sentinels_on_excludes_699(monkeypatch):
+    # Same fixture, flag ON: 699 is excluded from other_errand_long -> Stage 2
+    # (the W_ZWD-based short/long split, estimated on W_ZWECK=5 legs only) has
+    # zero labelled legs -> estimate_group_probabilities raises loudly.
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=699, wegkm=12.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_other_subtype_split": True, "purpose_subtype_codeplan_sentinels": True},
+        monkeypatch, wege)
+
+    with pytest.raises(ValueError, match="no legs with a known"):
+        sc._build_other_subtype_decider(ctx, random_seed=1)
+
+
+def test_build_other_subtype_decider_flag_omitted_defaults_to_off_path(monkeypatch):
+    rows = []
+    _add_rows(rows, 0, w_zweck=5, w_zwd=699, wegkm=12.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_other_subtype_split": True}, monkeypatch, wege)
+
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert decide("car", 100.0) == "other_errand_long"
 
 
 # ---------------------------------------------------------------------------

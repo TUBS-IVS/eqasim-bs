@@ -12,26 +12,39 @@ Taxonomy provenance (LEISURE_SPEC / OTHER_ERRAND_SPEC, issue #127 Task 2):
     The group boundaries in LEISURE_GROUPS / OTHER_ERRAND_GROUPS below were derived
     from a MEASURED 2026-07-09 W_GEW-weighted mean-distance clustering over the raw
     MiD Wege table (wegkm_imp, clipped at 200 km), NOT from the MiD 2023 codeplan's
-    semantic category descriptions. The MiD 2023 codeplan xlsx
-    (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx) was not available in this repository
-    or session, and docs/data/MID2023_HANDBOOK_REFERENCE.md does not enumerate
-    individual W_ZWD category labels (its "7xx"/"6xx" table entries are unrelated
-    designbedingt missing-value codes, not W_ZWD purpose-detail codes). Every
-    per-code comment below is therefore a distance-based grouping observation, not a
-    verified semantic label; comments marked "label to verify (codeplan)" have NOT
-    been checked against the codeplan and must not be read as an established purpose
-    description until they are.
+    semantic category descriptions.
 
-    Two boundary decisions were resolved by measured distance alone, pending codeplan
-    confirmation:
-    - W_ZWD 799 is placed in "leisure_activity" (~10-18 km band): boundary decision,
-      measured mean, semantics to verify. If the codeplan shows 799 to be a
-      no-assignment / residual code rather than a genuine activity code, it must move
-      to LEISURE_SENTINELS and the estimation goldens re-run.
-    - W_ZWD 601 is placed in "other_errand_short" (~5-9 km band): boundary decision,
-      measured mean, semantics to verify. Its measured mean sits close to the
-      errand_short/errand_long boundary; codeplan review may reassign it to
-      "other_errand_long".
+    Codebook verification (issue #242 Task 5): every W_ZWD code referenced below has
+    since been checked against the MiD 2023 codeplan
+    (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD); the
+    verified label is transcribed into the comment next to each code. The distance-
+    based grouping is confirmed semantically plausible for every code EXCEPT two
+    NO-DETAIL ("keine Angabe") codes that the module's own rule ("if a code turns out
+    to be a no-assignment code, it must move to the sentinel set") flags for sentinel
+    treatment instead of a genuine activity/errand label:
+    - W_ZWD 799 "Freizeit k.A." (in "leisure_activity", ~10-18 km band).
+    - W_ZWD 699 "Erledigung k.A." (in "other_errand_long", ~11-16 km band).
+    Both move to their spec's sentinel set ONLY in the `_CODEPLAN` variant of the spec
+    (LEISURE_SPEC_CODEPLAN / OTHER_ERRAND_SPEC_CODEPLAN, selected via
+    `purpose_subtype_codeplan_sentinels`; see `leisure_spec` / `other_errand_spec`
+    below) so that moving them is an explicit, flag-gated, and reproducible change
+    rather than a silent edit to the unflagged LEISURE_SPEC / OTHER_ERRAND_SPEC, which
+    keep today's groups completely unchanged (the OFF path is byte-identical by
+    construction: `leisure_spec(False) is LEISURE_SPEC`). No other group membership
+    changed in this verification pass: local = Gaststaette/Spaziergang/Hund/Kirche/
+    Spielplatz, visit = Besuch/Treffen, activity = Kultur/Veranstaltung/Sport/Garten/
+    sonstiges/Kurse, excursion = Tagesausflug/Urlaub/Kurzreise, errand short =
+    Arzt/Behoerde, errand long = fuer andere Person/sonstiges/Betreuung -- all
+    confirmed plausible against the codeplan labels.
+
+    W_ZWD detail codes measurably cross MiD purposes: 7 % of W_ZWECK=5 (other/errand)
+    legs carry the leisure code 701, 5 % carry the shop code 503, 5.1 % carry the shop
+    code 504 (2026-07-09 measurement). This is WHY LEISURE_SENTINELS / OTHER_ERRAND_
+    SENTINELS below include codes that carry a valid label under a DIFFERENT purpose's
+    W_ZWD vocabulary (e.g. 503/599 are shop codes, 701/706/711/713/716/721 are leisure
+    codes) rather than a leisure- or errand-specific meaning: excluding them keeps
+    ESTIMATION from mislabelling a cross-purpose intrusion as if it were a genuine
+    group member of the purpose being estimated.
 """
 from __future__ import annotations
 
@@ -308,16 +321,37 @@ def code_coverage_guard(mid_wege: pd.DataFrame, spec: SubtypeSpec) -> None:
 
 
 # Measured 2026-07-09 on the raw MiD Wege (W_GEW-weighted mean km, wegkm_imp
-# clipped at 200; see the spec table). Semantic labels: verify each against the
-# MiD 2023 codeplan; if 799 turns out to be a no-assignment code, move it to
-# LEISURE_SENTINELS (then re-run the estimation goldens).
+# clipped at 200; see the spec table). Semantic labels verified against the MiD 2023
+# codeplan (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD;
+# issue #242 Task 5) -- see the module docstring for the verification outcome.
 LEISURE_ZWECK = frozenset({7})
 LEISURE_GROUPS = {
-    "leisure_local":     frozenset({706, 710, 711, 713, 716}),   # ~4-7 km, label to verify (codeplan)
-    "leisure_visit":     frozenset({701}),                        # 19.1 km, label to verify (codeplan)
-    "leisure_activity":  frozenset({702, 703, 704, 707, 720, 721, 799}),  # ~10-18 km, label to verify (codeplan)
-    "leisure_excursion": frozenset({708, 709, 722}),              # 45-100 km, label to verify (codeplan)
+    # leisure_local (~4-7 km): 706 Restaurant/Gaststaette, 710 Spaziergang,
+    # 711 Hund ausfuehren, 713 Kirche/Friedhof, 716 Begleitung von Kindern
+    # (Spielplatz).
+    "leisure_local":     frozenset({706, 710, 711, 713, 716}),
+    # leisure_visit (19.1 km): 701 Besuch/Treffen Freunde, Verwandte.
+    "leisure_visit":     frozenset({701}),
+    # leisure_activity (~10-18 km): 702 kulturelle Einrichtung, 703 Veranstaltung,
+    # 704 Sport selbst aktiv, 707 Schrebergarten/Wochenendhaus, 720 sonstiger
+    # Freizeitzweck, 721 andere Treffen (Kurse, Hobby, Verein), 799 Freizeit k.A.
+    # -- 799 is a NO-DETAIL ("keine Angabe") code; LEISURE_SPEC_CODEPLAN moves it
+    # to LEISURE_SENTINELS under purpose_subtype_codeplan_sentinels (see below).
+    "leisure_activity":  frozenset({702, 703, 704, 707, 720, 721, 799}),
+    # leisure_excursion (45-100 km): 708 Tagesausflug, 709 Urlaub (ab 4
+    # Uebernachtungen), 722 Kurzreise (bis 3 Uebernachtungen).
+    "leisure_excursion": frozenset({708, 709, 722}),
 }
+# Generic MiD design sentinels (2202 "im PAPI nicht erhoben", 4402 "Kind unter
+# 14 Jahren" -- not asked of children) plus cross-purpose intrusions confirmed
+# by the codeplan: 503 (Stadt-/Einkaufsbummel) and 599 (Einkauf k.A.) are SHOP
+# W_ZWD codes; 603 (private Erledigung fuer andere Person) and 605 (Betreuung
+# Familienmitglieder) are ERRAND W_ZWD codes. All four are measured to
+# occasionally appear on W_ZWECK=7 (leisure) legs (cross-purpose leakage, see
+# module docstring) but carry no leisure-specific meaning, so they stay
+# unlabelled here rather than being force-fit into a leisure group. 999: label
+# not in the verified codeplan excerpt (issue #242 Task 5); kept as a sentinel
+# pending a dedicated codeplan lookup.
 LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
 # Defensive addition (issue #373, ADR-0111): 7704 "kein Einkaufs-, Erledigungs-, oder
 # Freizeitweg" and 7705 "Weg ohne Info zum Wegezweck" (codebook labels, MiD2023_
@@ -341,12 +375,33 @@ LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
 # whether the underlying donor leg was originally W_ZWECK 7 or 10.
 LEISURE_SENTINELS |= {7704, 7705}
 
-OTHER_ERRAND_ZWECK = frozenset({5})   # private Erledigung, label to verify (codeplan)
-OTHER_ESCORT_ZWECK = frozenset({6})   # Bringen/Holen (no W_ZWD detail), label to verify (codeplan)
+OTHER_ERRAND_ZWECK = frozenset({5})   # W_ZWECK 5: private Erledigung (verified, MiD 2023 codeplan)
+OTHER_ESCORT_ZWECK = frozenset({6})   # W_ZWECK 6: Bringen/Holen (verified; no W_ZWD detail is collected for this purpose)
 OTHER_ERRAND_GROUPS = {
-    "other_errand_short": frozenset({601, 602}),            # ~5-9 km (601 borderline: verify), label to verify (codeplan)
-    "other_errand_long":  frozenset({603, 604, 605, 699}),  # ~11-16 km, label to verify (codeplan)
+    # other_errand_short (~5-9 km): 601 Arztbesuch/medizinisch, 602 Behoerde,
+    # Bank, Post.
+    "other_errand_short": frozenset({601, 602}),
+    # other_errand_long (~11-16 km): 603 private Erledigung fuer andere
+    # Person, 604 sonstiger Erledigungszweck, 605 Betreuung
+    # Familienmitglieder, 699 Erledigung k.A. -- 699 is a NO-DETAIL ("keine
+    # Angabe") code; OTHER_ERRAND_SPEC_CODEPLAN moves it to
+    # OTHER_ERRAND_SENTINELS under purpose_subtype_codeplan_sentinels (see
+    # below).
+    "other_errand_long":  frozenset({603, 604, 605, 699}),
 }
+# Generic MiD design sentinels (2202 "im PAPI nicht erhoben", 4402 "Kind unter
+# 14 Jahren", 7704 "kein Einkaufs-, Erledigungs-, oder Freizeitweg", 7705 "Weg
+# ohne Info zum Wegezweck") plus cross-purpose intrusions confirmed by the
+# codeplan: 599 (Einkauf k.A.), 503 (Stadt-/Einkaufsbummel) and 504
+# (Dienstleistungen, Friseur, Schuster) are SHOP W_ZWD codes (measured: 5.0 %
+# / 5.1 % of W_ZWECK=5 legs carry 503 / 504 respectively, see module
+# docstring); 701 (Besuch/Treffen Freunde, Verwandte), 706/711/713/716
+# (leisure_local) and 721 (leisure_activity) are LEISURE W_ZWD codes
+# (measured: 7 % of W_ZWECK=5 legs carry 701). All are codeplan-confirmed as
+# belonging to another purpose's W_ZWD vocabulary, so they stay unlabelled
+# here rather than being force-fit into an errand group. 999: label not in
+# the verified codeplan excerpt (issue #242 Task 5); kept as a sentinel
+# pending a dedicated codeplan lookup.
 OTHER_ERRAND_SENTINELS = frozenset({2202, 4402, 7704, 7705, 599, 999,
                                     503, 504, 701, 706, 711, 713, 716, 721})
 
@@ -365,3 +420,84 @@ OTHER_ERRAND_SPEC = SubtypeSpec(
     groups=OTHER_ERRAND_GROUPS,
     sentinels=OTHER_ERRAND_SENTINELS,
 )
+
+
+def _move_code_to_sentinels(groups: dict, sentinels: frozenset, *, code: int,
+                             group_name: str) -> tuple:
+    """Return ``(new_groups, new_sentinels)`` with ``code`` moved out of
+    ``groups[group_name]`` and into ``sentinels`` (issue #242 Task 5).
+
+    Used to build the ``_CODEPLAN`` sentinel variant of a base spec's groups/
+    sentinels from the unchanged base groups/sentinels: a NO-DETAIL ("keine
+    Angabe") W_ZWD code carries no usable subtype signal and must be excluded
+    from ESTIMATION the same way the design-code sentinels above are, rather
+    than silently diluting a real group's probability with unlabelled legs.
+
+    Raises
+    ------
+    ValueError
+        If ``code`` is not currently a member of ``groups[group_name]`` -- a
+        defensive check so a future edit to the base group cannot silently
+        desynchronise the codeplan variant from the group it is meant to
+        modify.
+    """
+    if code not in groups.get(group_name, frozenset()):
+        raise ValueError(
+            f"[purpose_subtype] cannot move W_ZWD code {code} out of group "
+            f"{group_name!r}; it is not currently a member of that group "
+            f"({sorted(groups.get(group_name, ()))})."
+        )
+    new_groups = dict(groups)
+    new_groups[group_name] = frozenset(groups[group_name]) - {code}
+    new_sentinels = frozenset(sentinels) | {code}
+    return new_groups, new_sentinels
+
+
+# Codeplan no-detail sentinel variants (issue #242 Task 5, ADR-0113): 799
+# "Freizeit k.A." and 699 "Erledigung k.A." are NO-DETAIL codes (see the module
+# docstring); these variants move them from their group into the sentinel set,
+# leaving every other code exactly where LEISURE_SPEC / OTHER_ERRAND_SPEC has it.
+_LEISURE_GROUPS_CODEPLAN, _LEISURE_SENTINELS_CODEPLAN = _move_code_to_sentinels(
+    LEISURE_GROUPS, LEISURE_SENTINELS, code=799, group_name="leisure_activity")
+
+LEISURE_SPEC_CODEPLAN = SubtypeSpec(
+    purpose_label="leisure",
+    zweck_values=LEISURE_ZWECK,
+    groups=_LEISURE_GROUPS_CODEPLAN,
+    sentinels=_LEISURE_SENTINELS_CODEPLAN,
+)
+
+_OTHER_ERRAND_GROUPS_CODEPLAN, _OTHER_ERRAND_SENTINELS_CODEPLAN = _move_code_to_sentinels(
+    OTHER_ERRAND_GROUPS, OTHER_ERRAND_SENTINELS, code=699, group_name="other_errand_long")
+
+OTHER_ERRAND_SPEC_CODEPLAN = SubtypeSpec(
+    purpose_label="other_errand",
+    zweck_values=OTHER_ERRAND_ZWECK,
+    groups=_OTHER_ERRAND_GROUPS_CODEPLAN,
+    sentinels=_OTHER_ERRAND_SENTINELS_CODEPLAN,
+)
+
+
+def leisure_spec(codeplan_sentinels: bool) -> SubtypeSpec:
+    """Select the leisure SubtypeSpec for the ``purpose_subtype_codeplan_sentinels``
+    config flag (issue #242 Task 5, ADR-0113).
+
+    Returns ``LEISURE_SPEC_CODEPLAN`` (799 "Freizeit k.A." excluded as a
+    NO-DETAIL sentinel) when ``codeplan_sentinels`` is True, else the
+    unchanged ``LEISURE_SPEC`` -- by IDENTITY (``leisure_spec(False) is
+    LEISURE_SPEC``), not a re-derived equivalent object, so the OFF path is
+    byte-identical to the pre-Task-5 behaviour by construction.
+    """
+    return LEISURE_SPEC_CODEPLAN if codeplan_sentinels else LEISURE_SPEC
+
+
+def other_errand_spec(codeplan_sentinels: bool) -> SubtypeSpec:
+    """Select the other-errand SubtypeSpec for the same flag as ``leisure_spec``.
+
+    Returns ``OTHER_ERRAND_SPEC_CODEPLAN`` (699 "Erledigung k.A." excluded as
+    a NO-DETAIL sentinel) when ``codeplan_sentinels`` is True, else the
+    unchanged ``OTHER_ERRAND_SPEC`` -- by IDENTITY (``other_errand_spec(False)
+    is OTHER_ERRAND_SPEC``), so the OFF path is byte-identical to the
+    pre-Task-5 behaviour by construction.
+    """
+    return OTHER_ERRAND_SPEC_CODEPLAN if codeplan_sentinels else OTHER_ERRAND_SPEC

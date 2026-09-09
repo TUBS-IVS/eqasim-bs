@@ -182,3 +182,95 @@ def test_subtype_split_requires_by_purpose():
         run(_make_subtype_wege(), by_purpose=False, leisure_subtype_split=True)
     with pytest.raises(ValueError, match="requires secondary_distance_by_purpose"):
         run(_make_subtype_wege(), by_purpose=False, other_subtype_split=True)
+
+
+# ---------------------------------------------------------------------------
+# Issue #242 Task 5: codeplan_sentinels excludes the NO-DETAIL codes (799, 699)
+# from the leisure_activity / other_errand_long donor pool the SAME way
+# secondary_chainsolvers.deciders excludes them from ESTIMATION -- the two
+# consumers must agree, or a leg labelled "leisure_activity" would draw its
+# distance from a donor pool that still includes the excluded 799 legs.
+# ---------------------------------------------------------------------------
+
+_LEISURE_ACTIVITY_NODETAIL_KM = 33.0    # W_ZWD 799 "Freizeit k.A."
+_OTHER_ERRAND_LONG_NODETAIL_KM = 44.0   # W_ZWD 699 "Erledigung k.A."
+
+
+def _make_codeplan_sentinel_wege() -> pd.DataFrame:
+    """One ordinary group code plus the group's NO-DETAIL code, for both
+    leisure_activity (702 vs. 799) and other_errand_long (603 vs. 699), each
+    with a DISTINCT wegkm_imp so the NO-DETAIL leg's distance is uniquely
+    identifiable in the resulting CDF "values" array."""
+    rows: list = []
+    row_id = 0
+    row_id = _add_rows(rows, row_id, w_zweck=7, w_zwd=702, wegkm=_LEISURE_ACTIVITY_KM)
+    row_id = _add_rows(rows, row_id, w_zweck=7, w_zwd=799, wegkm=_LEISURE_ACTIVITY_NODETAIL_KM)
+    row_id = _add_rows(rows, row_id, w_zweck=5, w_zwd=603, wegkm=_OTHER_ERRAND_LONG_KM)
+    row_id = _add_rows(rows, row_id, w_zweck=5, w_zwd=699, wegkm=_OTHER_ERRAND_LONG_NODETAIL_KM)
+    return pd.DataFrame(rows)
+
+
+def test_codeplan_sentinels_off_leisure_activity_includes_799_legs():
+    w = _make_codeplan_sentinel_wege()
+    out = run(w, by_purpose=True, leisure_subtype_split=True, codeplan_sentinels=False)
+    values = np.concatenate([d["values"] for d in out["leisure_activity"]["car"]["distributions"]])
+    expected_ordinary_m = _LEISURE_ACTIVITY_KM * 1000.0 / DETOUR_FACTOR
+    expected_nodetail_m = _LEISURE_ACTIVITY_NODETAIL_KM * 1000.0 / DETOUR_FACTOR
+    assert np.isclose(values, expected_ordinary_m).any()
+    assert np.isclose(values, expected_nodetail_m).any(), (
+        "codeplan_sentinels=False (the default, byte-identical to before issue "
+        "#242 Task 5) must keep including 799 legs in leisure_activity"
+    )
+
+
+def test_codeplan_sentinels_on_leisure_activity_excludes_799_legs():
+    w = _make_codeplan_sentinel_wege()
+    out = run(w, by_purpose=True, leisure_subtype_split=True, codeplan_sentinels=True)
+    values = np.concatenate([d["values"] for d in out["leisure_activity"]["car"]["distributions"]])
+    expected_ordinary_m = _LEISURE_ACTIVITY_KM * 1000.0 / DETOUR_FACTOR
+    expected_nodetail_m = _LEISURE_ACTIVITY_NODETAIL_KM * 1000.0 / DETOUR_FACTOR
+    assert np.isclose(values, expected_ordinary_m).any(), (
+        "the ordinary group code (702) must stay in leisure_activity"
+    )
+    assert not np.isclose(values, expected_nodetail_m).any(), (
+        "codeplan_sentinels=True must exclude the 799 NO-DETAIL legs from the "
+        "leisure_activity donor pool"
+    )
+
+
+def test_codeplan_sentinels_off_other_errand_long_includes_699_legs():
+    w = _make_codeplan_sentinel_wege()
+    out = run(w, by_purpose=True, other_subtype_split=True, codeplan_sentinels=False)
+    values = np.concatenate([d["values"] for d in out["other_errand_long"]["car"]["distributions"]])
+    expected_nodetail_m = _OTHER_ERRAND_LONG_NODETAIL_KM * 1000.0 / DETOUR_FACTOR
+    assert np.isclose(values, expected_nodetail_m).any()
+
+
+def test_codeplan_sentinels_on_other_errand_long_excludes_699_legs():
+    w = _make_codeplan_sentinel_wege()
+    out = run(w, by_purpose=True, other_subtype_split=True, codeplan_sentinels=True)
+    values = np.concatenate([d["values"] for d in out["other_errand_long"]["car"]["distributions"]])
+    expected_ordinary_m = _OTHER_ERRAND_LONG_KM * 1000.0 / DETOUR_FACTOR
+    expected_nodetail_m = _OTHER_ERRAND_LONG_NODETAIL_KM * 1000.0 / DETOUR_FACTOR
+    assert np.isclose(values, expected_ordinary_m).any()
+    assert not np.isclose(values, expected_nodetail_m).any()
+
+
+def test_codeplan_sentinels_default_is_off_byte_identical():
+    # codeplan_sentinels' CODE-level default (False) must reproduce the
+    # explicit OFF call exactly -- a direct caller/test that omits the keyword
+    # keeps today's behaviour (the config-declared default of True lives only
+    # in configure(), not here).
+    w = _make_codeplan_sentinel_wege()
+    default = run(w, by_purpose=True, leisure_subtype_split=True, other_subtype_split=True)
+    explicit_off = run(w, by_purpose=True, leisure_subtype_split=True, other_subtype_split=True,
+                        codeplan_sentinels=False)
+    assert set(default) == set(explicit_off)
+    for purpose in default:
+        for mode in default[purpose]:
+            np.testing.assert_array_equal(
+                default[purpose][mode]["bounds"], explicit_off[purpose][mode]["bounds"])
+            for d_default, d_off in zip(default[purpose][mode]["distributions"],
+                                         explicit_off[purpose][mode]["distributions"]):
+                np.testing.assert_array_equal(d_default["values"], d_off["values"])
+                np.testing.assert_array_equal(d_default["weights"], d_off["weights"])

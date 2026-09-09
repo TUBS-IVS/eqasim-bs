@@ -318,6 +318,11 @@ def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeyp
         "escort_purpose": True,
         "secondary_distance_min_obs": 1,
         "braunschweig.population.popsim.mid_dir": "unused",
+        # issue #242 Task 5: read unconditionally by _build_other_subtype_decider;
+        # inert here since neither 699 nor 799 appear in this mini fixture's
+        # errand rows (601, 603), so the OFF value keeps this test's original
+        # pre-Task-5 intent.
+        "purpose_subtype_codeplan_sentinels": False,
     })
     decide = sc._build_other_subtype_decider(ctx, random_seed=3)
     outcomes = {decide("car", 600.0) for _ in range(200)}

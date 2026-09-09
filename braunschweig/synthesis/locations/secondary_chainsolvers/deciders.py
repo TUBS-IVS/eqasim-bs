@@ -180,19 +180,34 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     (``LEISURE_SUBTYPE_SEED_OFFSET``, NOT ``random``) and resolves it via
     ``_inverse_cdf_choice`` -- see that helper's docstring for why the per-leg
     draw is done inline rather than via a per-leg call to ``impute_groups``.
+
+    Codeplan no-detail sentinels (issue #242 Task 5, ADR-0113): when the
+    ``purpose_subtype_codeplan_sentinels`` config flag is ON, estimation uses
+    ``purpose_subtype.LEISURE_SPEC_CODEPLAN`` (via ``leisure_spec``) instead of
+    ``LEISURE_SPEC``, so W_ZWD 799 ("Freizeit k.A.", a NO-DETAIL code) is
+    excluded from the ``leisure_activity`` group and treated as an unlabelled
+    sentinel leg. This is the SAME flag
+    ``braunschweig.popsim.distance_distributions.run`` reads for the leisure
+    subtype distance layer -- both must resolve the same value or a leg
+    labelled ``leisure_activity`` here would draw its distance from a donor
+    pool that still includes the excluded 799 legs.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
-        LEISURE_SPEC,
         estimate_group_probabilities,
+        leisure_spec,
         tt_band,
     )
     from braunschweig.popsim.trips import map_mode, mid_time_seconds
 
     min_obs = int(context.config("secondary_distance_min_obs"))
+    # Execute-context config() takes the key alone (declared in configure()
+    # with default True; shared with distance_distributions, see the
+    # docstring note above).
+    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
     # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
@@ -206,11 +221,13 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
     mid_wege = mid_wege.assign(travel_time=tt)
 
-    cell_probs, marginal = estimate_group_probabilities(mid_wege, LEISURE_SPEC, min_obs=min_obs)
+    cell_probs, marginal = estimate_group_probabilities(
+        mid_wege, leisure_spec(codeplan_sentinels), min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
         + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
+        + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'})"
     )
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)
@@ -270,19 +287,33 @@ def _build_other_subtype_decider(context, random_seed: int):
     ``escort_purpose`` OFF this is value-identical to the previous 3-way split
     (same ``group_names`` tuple, same probability composition, same single
     draw).
+
+    Codeplan no-detail sentinels (issue #242 Task 5, ADR-0113): Stage 2 uses
+    ``purpose_subtype.OTHER_ERRAND_SPEC_CODEPLAN`` (via ``other_errand_spec``)
+    instead of ``OTHER_ERRAND_SPEC`` when ``purpose_subtype_codeplan_sentinels``
+    is ON, so W_ZWD 699 ("Erledigung k.A.", a NO-DETAIL code) is excluded from
+    the ``other_errand_long`` group and treated as an unlabelled sentinel leg.
+    Stage 1 is unaffected (it splits on the raw W_ZWECK code, not W_ZWD). This
+    is the SAME flag ``braunschweig.popsim.distance_distributions.run`` reads
+    for the other-errand subtype distance layer -- both must resolve the same
+    value or a leg labelled ``other_errand_long`` here would draw its distance
+    from a donor pool that still includes the excluded 699 legs.
     """
     if not context.config("secondary_other_subtype_split"):
         return None
 
     escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
+    # Same flag/default as _build_leisure_subtype_decider and
+    # distance_distributions -- see the docstring note above.
+    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
-        OTHER_ERRAND_SPEC,
         OTHER_ERRAND_ZWECK,
         OTHER_ESCORT_ZWECK,
         SubtypeSpec,
         estimate_group_probabilities,
+        other_errand_spec,
         tt_band,
     )
     from braunschweig.popsim.trips import PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds
@@ -325,7 +356,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     # Stage 2: within errand legs, the existing W_ZWD-based short/long split.
     errand_cell_probs, errand_marginal = estimate_group_probabilities(
-        mid_wege, OTHER_ERRAND_SPEC, min_obs=min_obs)
+        mid_wege, other_errand_spec(codeplan_sentinels), min_obs=min_obs)
 
     # Issue #201: "escort" is only a coarse_marginal key when escort_purpose is
     # OFF (Stage 1 above only builds that group in the 3-way OFF-path spec) --
@@ -338,7 +369,8 @@ def _build_other_subtype_decider(context, random_seed: int):
         f"{escort_summary}errand={coarse_marginal['errand']:.3f}, "
         f"rest={coarse_marginal['rest']:.3f}; errand marginal shares "
         f"other_errand_short={errand_marginal['other_errand_short']:.3f}, "
-        f"other_errand_long={errand_marginal['other_errand_long']:.3f}"
+        f"other_errand_long={errand_marginal['other_errand_long']:.3f} "
+        f"(codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'})"
     )
 
     outcome_names = ["other_errand_short", "other_errand_long", "other_rest"]
