@@ -47,19 +47,27 @@
   | 75+ | 1,757 | 95 | 5.81 % |
   | all | 18,223 | 954 | 4.98 % |
 
-  Employment (14+) separates little: employed 4.82 %, not employed 6.04 %. Per Kreis the share
-  ranges from 3.20 % (Salzgitter, n 1,794) to 6.42 % (Peine, n 2,446) -- assumption-grade cells
-  under SrV's stratified PSU design, reported but not used for the draw.
+  Employment (14+) separates little: employed 4.82 %, not employed 6.04 % (ad-hoc measured
+  2026-09-09 on the local raw file, not reproduced by committed code). Per Kreis the share ranges
+  from 3.20 % (Salzgitter, n 1,794) to 6.42 % (Peine, n 2,446) -- assumption-grade cells under
+  SrV's stratified PSU design, reported but not used for the draw (ad-hoc measured 2026-09-09 on
+  the local raw file, not reproduced by committed code).
 
   Household clustering: **55.8 %** (person-weighted; 49.4 % unweighted) of absent persons live in a
-  household in which EVERY member is absent. Share of households in which all members are absent,
-  by household size (household-weighted, `GEWICHT_HH_ZENSUS`): 1 person 5.29 %, 2 persons 3.40 %, 3
-  persons 1.31 %, 4 persons 1.49 %, 5+ persons 0.18 % (n households 1,969 / 3,750 / 1,166 / 934 /
-  287; the sibling person-weighted composition figures quoted in the spec differ slightly because
-  they use the person, not the household, weight -- both tables commit the numbers each actually
-  uses, see `srv2023_absence_household_by_size.csv`'s own header). Of 73 absent children (0-17), 47
-  have at least one absent adult in their household. Partially absent households are dominated by
-  18-29-year-olds (113 of 190 in that band are absent in such households): young adults away alone.
+  household in which EVERY member is absent -- committed by
+  `braunschweig.calibration.srv_absence.clustering_share` and written as the `# Clustering:`
+  header line of `srv2023_absence_household_by_size.csv` (final-review fix wave, ruling R12); the
+  only Context figure below reproduced by committed code rather than measured ad hoc. Share of
+  households in which all members are absent, by household size (household-weighted,
+  `GEWICHT_HH_ZENSUS`): 1 person 5.29 %, 2 persons 3.40 %, 3 persons 1.31 %, 4 persons 1.49 %, 5+
+  persons 0.18 % (n households 1,969 / 3,750 / 1,166 / 934 / 287; the sibling person-weighted
+  composition figures quoted in the spec differ slightly because they use the person, not the
+  household, weight -- both tables commit the numbers each actually uses, see
+  `srv2023_absence_household_by_size.csv`'s own header). Of 73 absent children (0-17), 47 have at
+  least one absent adult in their household (ad-hoc measured 2026-09-09 on the local raw file, not
+  reproduced by committed code). Partially absent households are dominated by 18-29-year-olds (113
+  of 190 in that band are absent in such households): young adults away alone (ad-hoc measured
+  2026-09-09 on the local raw file, not reproduced by committed code).
 
   **Why MiD `P_STREISE` is not the donor** (issue text had suggested "consuming `P_STREISE` donors
   where available"). Codebook: `P_STREISE` ("Reise am Stichtag") = 1 Tagesreise, 2 Reise mit 1-3
@@ -127,10 +135,16 @@
      `braunschweig.synthesis.day_absence.absence_stage` via `ABSENCE_STAGE`).
      `trips_day_stage.configure` declares all four stages -- `synthesis.population.trips`,
      `state_stage`, `home_office_donors_stage`, `ABSENCE_STAGE` -- UNCONDITIONALLY; the gating is in
-     `execute`, not `configure` (the test-harness stub context used across
-     `tests/test_commute_day_stages.py` does not resolve a config value the way real synpp's
-     `ConfigureContext` does, so a conditional `context.stage(...)` there would never be recorded as
-     declared). With both flags false the stage returns the pre-assignment frame BY IDENTITY (the
+     `execute`, not `configure`. This is a STABLE declaration list, `trips_day_stage`'s own local
+     convention (corrected wording, final-review fix wave, Important finding 7): `state_stage` and
+     `home_office_donors_stage` were already declared unconditionally here before this feature
+     existed, and the absence stage's OFF path is equally trivial -- NOT a limitation of the
+     test-harness stub context (`tests/test_commute_day_stages.py`'s recorders were extended with
+     config overrides by Tasks 6/7 of this plan, so that justification no longer holds). Sibling
+     consumers of the same stages (`plan_structure_vs_srv`, `work_participation_by_kreis`,
+     `output_day`, the MATSim population wrapper) DO gate their own declarations on the flag in
+     `configure`, which stays equally legitimate. With both flags false the stage returns the
+     pre-assignment frame BY IDENTITY (the
      same object, not a copy); with only `day_absence_enabled` true, empty commute-day placeholders
      (`empty_states()`, `empty_matches()`, `_empty_donor_trips()`) keep `build_day_trips`'s column
      contract satisfied without touching the state/donor stage outputs at all.
@@ -227,6 +241,7 @@
     | absent persons in fully absent households | -- | 55.8 % | 45-65 % |
     | employed with a work trip (`at_home_zero`) | +2.25 pp | 0.6511 (ADR-0104 check 1 basis) | within +/- 1.5 pp |
     | `participation_*` on `at_home_only` (model restricted) | met (arm 4) | -- | unchanged within +/- 0.5 pp |
+    | absence rate by household size class (reported, not targeted) | -- | -- | no tolerance -- `draw_absence`'s `by_size_class` diagnostic is REPORTED for transparency (ruling R11), never gated: the model does not fit a per-size person-level rate (see Assumptions and the Risks bullet below) |
 
     A metric moving the wrong way stops the ladder for diagnosis (no fix stacking). The OFF arm must
     be byte-identical to arm 4 on `trips.final`
@@ -234,6 +249,19 @@
     pins the identity object; a server run additionally compares `trips.csv` md5). No arm has run
     yet at the time this record is written -- see the Assumptions and Evidence sections below for
     what is and is not yet known.
+  - **Household-size marginals are not targeted (known limitation).** The model does NOT target
+    per-size person-level absence rates (singles are over-, multi-person households under-absent
+    within a band while the band rates hold). The household stage draws one Bernoulli outcome per
+    HOUSEHOLD, independent of its size, so a single-person household is absorbed into that draw
+    directly while a member of a large household needs several co-members to also draw absent
+    before the whole household counts -- the per-band target rate still holds in expectation
+    across the band (the residual formula corrects for exactly what the household stage
+    contributed there), but the person-level rate is NOT held constant across household-size
+    classes within a band. `draw_absence`'s `by_size_class` diagnostic (ruling R11) reports the
+    realised rate per household size class for transparency; it is not a target the draw is tuned
+    against, and no guard fires on it. The design alternative that would address this directly --
+    an individual residual restricted to households of size >= 2 -- is a SPEC CHANGE and is out of
+    scope for this wave (issue-first: proposed to the user, not implemented here).
   - **Risks named but not resolved here:** the trip_class / participation controls of ADR-0109 were
     fitted on the `at_home_only` universe, so the employed-with-work-trip share on `at_home_zero`
     moves BY CONSTRUCTION once absence is modelled -- that is the intended comparability this
@@ -248,7 +276,11 @@
   modelled. The household stage reproduces the "whole household away" mass and the individual stage
   the remainder; the two-stage construction hits the band marginals IN EXPECTATION (the residual
   formula is exact in expectation, so any realised per-band deviation is sampling noise, guarded at
-  `day_absence_max_band_deviation_pp`, not a defect signal by itself). Absence is assumed
+  `day_absence_max_band_deviation_pp`, not a defect signal by itself). The model does NOT target
+  per-size person-level absence rates (singles are over-, multi-person households under-absent
+  within a band while the band rates hold) -- a known limitation, restated in Consequences below,
+  reported (not targeted) via `draw_absence`'s `by_size_class` diagnostic (ruling R11). Absence is
+  assumed
   independent of the person's trip pattern WITHIN a band (an absent person is drawn without regard
   to whether they would otherwise have travelled). The SrV Tuesday-Thursday reporting-day absence
   level is assumed to be the right level for the simulated normal weekday (no seasonal or

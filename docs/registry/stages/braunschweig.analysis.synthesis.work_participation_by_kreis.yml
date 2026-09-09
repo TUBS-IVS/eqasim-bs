@@ -154,9 +154,12 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   (apply_general_absence) -- the general day-absence draw is a full-day, all-purpose absence and
   therefore takes precedence over the reporting-day commute-day-state draw, including for an
   employed person the model never assigned a workplace to (folded out of share_no_workplace and
-  into share_absent). The count of persons the override actually moved is appended as
-  n_absent_general in commute_day_state_shares.csv (present, as 0, even when the absence draw is
-  off, so the column schema never depends on the flag -- ruling R9 of the #370 SDD plan). A
+  into share_absent). n_absent_general, appended in commute_day_state_shares.csv (present, as 0,
+  even when the absence draw is off, so the column schema never depends on the flag -- ruling R9
+  of the #370 SDD plan), counts EVERY generally absent employed person of that code -- not only
+  the ones the override actually changed: a person whose commute-day state was ALREADY "absent"
+  (a commute-day far commuter) is counted too, even though the override is a no-op for them
+  (absent -> absent); wording corrected, final-review fix wave, minor polish. A
   non-empty absence draw that overrides nobody in the employed universe WARNS (CLAUDE.md
   "Fallback transparency"): a real population almost always has at least one generally absent
   employed person, so a zero overlap most likely signals a person_id join defect between the

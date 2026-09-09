@@ -15,7 +15,11 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   day_absence_enabled) into the resident persons frame the SAME way, so add_person emits
   dayAbsenceState for every RESIDENT person (unlike commuteDayState''s worker-only coverage);
   composition rule and evidence are in the feature record general_day_absence and the note
-  docs/codebase/notes/day-absence-state.md, not repeated here.'
+  docs/codebase/notes/day-absence-state.md, not repeated here. The wrapper gained a validate()
+  (final-review fix wave, Important finding 8): an md5 over the vendored matsim.scenario.population
+  writer''s source, so an edit to the VENDORED writer devalidates this stage''s synpp cache -- it
+  previously had no validate() at all, leaving a stale cached plans.xml.gz in place after such an
+  edit.'
 lineage:
   type: overridden
   upstream: matsim.scenario.population

@@ -810,6 +810,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "synthesis.population.trips.final"
+  ],
+  [
+   "synthesis.population.enriched",
    "synthesis.vehicles.passengers.default"
   ],
   [

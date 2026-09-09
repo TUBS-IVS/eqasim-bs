@@ -47,6 +47,14 @@ limitations: |
   extraction RAISES if any such household has no row/weight in the household file
   (build_absence_household_by_size), rather than silently dropping it.
 
+  ASSUMPTION: household size is the count of DELIVERED persons per HHNR in
+  SrV2023_Personen.csv (build_absence_household_by_size's per_hh groupby "n" column), not a
+  dedicated household-size variable read from SrV2023_Haushalte.csv. Verified equal to
+  V_ANZ_PERS for all 8,106 households on 2026-09-09 (ad-hoc check against the local raw file, not
+  reproduced by committed code), so the assumption holds for the current delivery; a future
+  delivery with an incomplete household roster (a person excluded from Personen.csv while still
+  counted in V_ANZ_PERS) would silently understate that household's size class.
+
   Household size classes (srv_absence.household_size_class): 1..5, class 5 = '5 or more'
   members -- the same top-coding convention as every household-size classification in this
   codebase. all_absent (per household): every member's E_ANZ_WEGE == -7 (all_absent = n_absent ==

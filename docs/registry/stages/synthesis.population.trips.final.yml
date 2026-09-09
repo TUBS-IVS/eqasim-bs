@@ -88,18 +88,35 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   docs/codebase/notes/day-absence-state.md -- not repeated here. trips_day_stage.configure()
   declares braunschweig.synthesis.day_absence.absence_stage UNCONDITIONALLY, the same
   always-declared-dependency trade-off state_stage/home_office_donors_stage already made for
-  commute_day_state_enabled (the test-harness stub context used across
-  tests/test_commute_day_stages.py does not resolve a config value at configure() time, so a
-  conditional declare would never be recorded there); the gating on both flags happens in
-  execute(). With BOTH flags false the stage still returns the pre-assignment frame BY IDENTITY,
+  commute_day_state_enabled -- a STABLE declaration list, this stage''s own local convention
+  (corrected wording, final-review fix wave, Important finding 7): state_stage and
+  home_office_donors_stage were already declared unconditionally before this feature existed,
+  and the absence stage''s OFF path is equally trivial, not a limitation of the test-harness stub
+  context (tests/test_commute_day_stages.py''s recorders were extended with config overrides by
+  Tasks 6/7 of the #370 SDD plan, so that is no longer an accurate justification). Sibling
+  consumers of the same stages (plan_structure_vs_srv, work_participation_by_kreis, output_day,
+  the MATSim population wrapper) DO gate their own declarations on the flag in configure(), which
+  stays equally legitimate; the gating here happens entirely in execute() instead. With BOTH
+  flags false the stage still returns the pre-assignment frame BY IDENTITY,
   covered by the dedicated identity test
   tests/test_commute_day_stages.py::test_trips_day_stage_off_off_returns_the_identical_object.
-  configs/fixtures/config_popsim_open_braunschweig.yml and
-  configs/fixtures/config_smoke_popsim_open_mini.yml also set day_absence_enabled: false
-  explicitly (ruling R2 of the #370 SDD plan): both alias synthesis.population.trips.final to
-  their own pre-assignment trips stage directly, with no day-absence-aware stage in between, so
-  the flag has no consumer there either way -- set for parity with commute_day_state_enabled, not
-  because it changes the DAG. configs/fixtures/config_local_braunschweig_25pct.yml
-  (simple_ipf_open) leaves day_absence_enabled at its code default for the identical reason: that
-  fixture''s synthesis.population.trips.final alias is likewise the bare pre-assignment stage, so
-  the flag remains unreachable there regardless of its value.'
+  configs/fixtures/config_popsim_open_braunschweig.yml sets day_absence_enabled: false (ruling
+  R13 of the #370 SDD plan, correcting ruling R2''s wrong premise that no
+  synthesis.population.trips.final alias existed there at all): the alias DOES exist there, to
+  the bare pre-assignment stage braunschweig.popsim.trips_stage (not day-absence-aware), but
+  matsim.scenario.population is ALSO aliased there, to the braunschweig wrapper
+  (docs/registry/stages/matsim.scenario.population.yml), which gates its OWN declaration/read of
+  braunschweig.synthesis.day_absence.absence_stage on this SAME flag, independent of the
+  trips.final alias. Leaving the flag at its true default would therefore make the wrapper merge
+  a dayAbsenceState attribute onto every resident person while their trips remain untouched (the
+  same inconsistency the final-review fix wave''s Important finding 1 closed for
+  configs/fixtures/config_popsim_mid_braunschweig.yml) -- false is NECESSARY here, not merely set
+  for parity with commute_day_state_enabled. configs/fixtures/config_smoke_popsim_open_mini.yml
+  also sets day_absence_enabled: false, but for the ORIGINAL parity reason: it aliases neither
+  matsim.scenario.population nor synthesis.output to a day-absence-aware stage (its run: list
+  does not even include matsim.output), so the flag genuinely has no consumer there.
+  configs/fixtures/config_local_braunschweig_25pct.yml (simple_ipf_open) leaves
+  day_absence_enabled at its code default for the identical no-consumer reason: it aliases
+  neither matsim.scenario.population nor synthesis.population.trips.final to anything
+  day-absence-aware (the .final alias there is the bare pre-assignment stage
+  synthesis.population.trips), so the flag remains unreachable there regardless of its value.'

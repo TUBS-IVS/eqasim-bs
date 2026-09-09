@@ -24,6 +24,7 @@ lineage:
 code:
 - braunschweig/synthesis/day_absence/absence_stage.py
 - braunschweig/synthesis/day_absence/absence.py
+- braunschweig/calibration/srv_absence.py
 pipelines:
   popsim_mid: active
   popsim_open: not_used
@@ -79,8 +80,10 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   n_persons, n_households, n_absent_household, n_absent_individual, n_absent_total,
   share_absent_total, share_absent_in_fully_absent_households, n_bands_overshoot,
   household_stage (bool), by_band (per-band n, reference_rate, realised_household_rate,
-  residual_p, realised_rate) -- plus the stage''s own enabled and n_band_guard_hits. OFF path:
-  {"enabled": False} only.
+  residual_p, realised_rate), by_size_class (per household_size_class 1..5, n and realised_rate
+  -- REPORTED, not targeted; the model does not fit a per-size person-level absence rate, see
+  ADR-0110 Assumptions/Consequences) -- plus the stage''s own enabled and n_band_guard_hits. OFF
+  path: {"enabled": False} only.
 
   OFF-path schema stability (execute._disabled_frame): the disabled frame carries EVERY column
   of the enabled frame with the SAME dtypes, including age_band and household_size_class derived
@@ -91,9 +94,14 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   failing on data the enabled path would reject -- the OFF path must never fail where the ON path
   would.
 
-  The cache token (validate()) is an md5 of the pure absence module''s source alone (synpp hashes
-  only absence_stage.py itself, so an edit to the pure draw rule would otherwise leave a stale
-  cached output in place) -- the same mechanism as
+  The cache token (validate()) is an md5 of TWO pure modules'' sources, not the absence module
+  alone (final-review fix wave, Important finding 3): synpp hashes only absence_stage.py itself,
+  so an edit to either helper module would otherwise leave a stale cached output in place. The
+  draw module absence.py owns the household/individual composition and the overshoot guard; the
+  band edges/labels and the household-size-class top -- what a person is drawn AGAINST -- live in
+  braunschweig.calibration.srv_absence (AGE_BAND_LABELS, AGE_BAND_EDGES,
+  HOUSEHOLD_SIZE_CLASS_TOP, age_band, household_size_class), so an edit there must devalidate the
+  stage just as much as an edit to absence.py -- the same mechanism as
   braunschweig.synthesis.commute_day.state_stage.validate.
 
   Composition with the commute-day-state model (ADR-0104): this stage''s output is INDEPENDENT of

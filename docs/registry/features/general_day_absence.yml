@@ -98,13 +98,23 @@ evidence:
       tests), and the MATSim writer emits dayAbsenceState only for persons that have one, never a
       substituted value, when the absence stage is declared
       (tests/test_commute_day_consumers.py::test_matsim_writer_emits_day_absence_state_only_for_persons_that_have_one).
-      configs/fixtures/config_popsim_open_braunschweig.yml and
-      configs/fixtures/config_smoke_popsim_open_mini.yml additionally set day_absence_enabled:
-      false explicitly (ruling R2 of the #370 SDD plan) for parity with commute_day_state_enabled,
-      although neither fixture aliases synthesis.population.trips.final to a day-absence-aware
-      stage at all, so the flag has no consumer to disable there either way; the plain DAG
-      non-wiring is what actually keeps popsim_open and simple_ipf_open byte-identical (same
-      precedent as commute_day_state_enabled''s "redundant but explicit" fixture setting, see
+      configs/fixtures/config_popsim_open_braunschweig.yml sets day_absence_enabled: false
+      (ruling R13 of the #370 SDD plan, correcting ruling R2''s wrong premise that no
+      synthesis.population.trips.final alias existed there at all): it DOES alias
+      synthesis.population.trips.final, to the bare pre-assignment stage
+      braunschweig.popsim.trips_stage, but it ALSO aliases matsim.scenario.population to the
+      braunschweig wrapper, which gates its own declaration of
+      braunschweig.synthesis.day_absence.absence_stage on this SAME flag independent of the
+      trips.final alias -- false is NECESSARY there to avoid writing a dayAbsenceState attribute
+      onto persons whose trips are never removed (the defect class the final-review fix wave''s
+      Important finding 1 closed for configs/fixtures/config_popsim_mid_braunschweig.yml), not
+      merely set for parity. configs/fixtures/config_smoke_popsim_open_mini.yml sets the same
+      flag false for the ORIGINAL parity reason: it aliases neither matsim.scenario.population
+      nor synthesis.output to a day-absence-aware stage (it does not even run matsim.output), so
+      the flag genuinely has no consumer there. configs/fixtures/config_local_braunschweig_25pct.yml
+      (simple_ipf_open) leaves the flag at its code default for the identical no-consumer reason.
+      The plain DAG non-wiring in the no-consumer cases is what actually keeps those byte-identical
+      (same precedent as commute_day_state_enabled''s "redundant but explicit" fixture setting, see
       docs/codebase/notes/commute-day-two-view-trips.md).'
   fallback_rate:
     instrumented: true
@@ -155,10 +165,13 @@ validation:
   state: unvalidated
   runs: []
   metric: 'Not yet measured. ADR-0110''s pre-registered A/B (Consequences section) specifies three
-    arms (OFF; ON two-stage; ON individual-only sensitivity) and five metrics (mobility rate,
+    arms (OFF; ON two-stage; ON individual-only sensitivity) and six rows (mobility rate,
     per-band absent share, household-clustering share, employed-with-work-trip share on
-    at_home_zero, participation_* on at_home_only) against explicit tolerance bands, to be run as
-    Task 10 of the #370 SDD plan on the cached arm-4 population.'
+    at_home_zero, participation_* on at_home_only) against explicit tolerance bands, plus a sixth
+    row -- absence rate by household size class -- that is REPORTED, not targeted (ruling R11:
+    the model does not fit a per-size person-level absence rate, see ADR-0110 Assumptions/
+    Consequences and draw_absence''s by_size_class diagnostic), to be run as Task 10 of the #370
+    SDD plan on the cached arm-4 population.'
   note: 'No run has executed this code as of this record (Task 8, the documentation task, is
     written before Task 10, the A/B run). validation.state is unvalidated, not
     measured_vs_reference, per CLAUDE.md "convergence is not validation" and "no invented

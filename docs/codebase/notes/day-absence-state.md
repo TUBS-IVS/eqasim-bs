@@ -78,6 +78,8 @@ only the total:
 | `n_persons_absent_both` | the overlap of the two |
 | `n_persons_absent_total` | the union -- the actual number of persons with zero rows in the reporting-day trips |
 | `n_trips_removed_general` | rows removed BECAUSE OF general absence specifically, excluding persons already counted under commute-absence, so the two removal reasons are never double-counted |
+| `n_absent_with_escort_leg` | of the absent persons above (commute- or generally-absent), how many carry an escort leg (`following_purpose`/`preceding_purpose` == `"escort"`) on their ORIGINAL trips row |
+| `n_children_with_absent_escorter` | `None` unless `persons` is given; otherwise a HOUSEHOLD-LEVEL PROXY for "this child's escorting adult is absent" -- present children (age <= 17) living in a household with at least one member counted above. The chainsolver link between an escort leg and the child it escorts does not exist at this stage, so this is the closest observable signal, not an exact count |
 
 **Absence wins over a splice.** A `home` worker whose donor day was about to
 be spliced in who is ALSO generally absent is excluded from the matched set
@@ -100,16 +102,21 @@ not a defect to guard against.
 
 Two INDEPENDENT flags -- `commute_day_state_enabled` and
 `day_absence_enabled` -- gate what `trips_day_stage.execute` composes into
-the reporting day. `configure()` declares all four upstream stages
+the reporting day. `configure()` declares all five upstream stages
 (`synthesis.population.trips`, `state_stage`, `home_office_donors_stage`,
-`braunschweig.synthesis.day_absence.absence_stage`) UNCONDITIONALLY; the
-gating happens entirely in `execute()`. This is deliberate, not an oversight:
-the test-harness stub context used across `tests/test_commute_day_stages.py`
-does not resolve a config value the way real synpp's `ConfigureContext` does,
-so a conditional `context.stage(...)` in `configure()` would never be
-recorded as declared under that stub -- the same trade-off
-`state_stage`/`home_office_donors_stage` already made for
-`commute_day_state_enabled` before this feature existed.
+`braunschweig.synthesis.day_absence.absence_stage`,
+`synthesis.population.enriched`) UNCONDITIONALLY; the
+gating happens entirely in `execute()`. This is a STABLE declaration list,
+`trips_day_stage`'s own LOCAL convention, not a repo-wide rule (corrected
+wording, final-review fix wave, Important finding 7): `state_stage` and
+`home_office_donors_stage` were already declared unconditionally here before
+this feature existed, and the absence stage's OFF path is equally trivial, so
+keeping the whole list unconditional avoids a branch here for a stage whose
+DAG cost when unused is negligible. It is NOT a limitation of the
+test-harness stub context used across `tests/test_commute_day_stages.py` --
+that stub's recorders were extended with config overrides by Tasks 6/7 of the
+#370 SDD plan, so "the stub cannot record a conditional declare" stopped
+being an accurate justification once those tasks landed.
 
 | `commute_day_state_enabled` | `day_absence_enabled` | behaviour |
 |---|---|---|
@@ -118,10 +125,15 @@ recorded as declared under that stub -- the same trade-off
 | `false` | `true` | `build_day_trips` runs with EMPTY commute-day placeholders (`empty_states()`, `empty_matches()`, `_empty_donor_trips()`, correct columns, no state/donor stage output touched) plus the real absence frame -- only the general-absence removal applies |
 | `true` | `true` | both compositions apply together |
 
-**Rule for touching this stage:** never gate a NEW dependency in
-`configure()` on a config value here -- add it to the unconditional
-declaration list and gate its USE in `execute()` instead, or the stub-context
-tests silently stop exercising it.
+**This stage's own convention, not a repo-wide rule:** inside
+`trips_day_stage.configure()` specifically, add a NEW dependency to the
+unconditional declaration list and gate its USE in `execute()` instead of
+gating the declaration itself -- consistent with the stable-list reasoning
+above. Sibling consumers of the SAME stages (`plan_structure_vs_srv`,
+`work_participation_by_kreis`, `output_day`, the MATSim population wrapper)
+DO gate their own declarations on the flag in `configure()`, and that stays
+equally legitimate: a workflow that never enables the model there must not
+carry the donor/state/absence chain in its DAG at all.
 
 `activities_day_stage` needs no absence-specific code at all: a person with
 zero rows in the reporting-day trips already receives a full-day home
