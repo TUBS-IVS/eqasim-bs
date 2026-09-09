@@ -131,7 +131,7 @@ def main(argv=None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8", newline="") as handle:
         handle.write(header_lines)
-        table.to_csv(handle, index=False)
+        table.to_csv(handle, index=False, float_format="%.4f")
 
     n_codes = table["w_zweck"].nunique()
     print(f"[extract_mid_w_zweck_hwzweck1] -> {args.out} ({n_codes} W_ZWECK codes)")

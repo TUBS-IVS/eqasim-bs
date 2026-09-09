@@ -16,7 +16,6 @@ delivery).
 import os
 
 import pandas as pd
-import pytest
 
 from braunschweig.popsim import trips
 
@@ -26,10 +25,12 @@ TABLE = os.path.join(REPO, "eqasim-data", "data", "braunschweig", "mid", "mid202
 #: eqasim purpose of each MiD main purpose (hwzweck1): 1 Arbeit, 2 dienstlich, 3 Ausbildung, 4 Einkauf,
 #: 5 Erledigung, 6 Freizeit, 7 Begleitung, 99 keine Angabe.
 PURPOSE_BY_HWZWECK1 = {1: "work", 2: "work", 3: "education", 4: "shop", 5: "other", 6: "leisure", 7: "escort", 99: "other"}
-#: Codes whose eqasim purpose deliberately differs from the fold: 8/9 home (MiD recodes home to the previous
-#: leg), 6/13 the escort family (flag-dependent, tested in test_popsim_trips), 16 leisure (ADR-0091 decision 4
-#: agrees with the fold but is listed for the record), 2 business -> work (fold 2 dienstlich = work, agrees).
-FOLD_EXCEPTIONS = {8, 9, 6, 13, 2, 16}
+#: Codes whose eqasim purpose deliberately differs from the fold: 8/9 home (MiD recodes home to whichever
+#: purpose the PREVIOUS leg on the diary had, so no single dominant fold applies) and 6/13 the escort family
+#: (flag-dependent; asserted in test_popsim_trips, not here). Every other code -- including 2 (dienstlich ->
+#: work) and 16 (Freizeit -> leisure) -- agrees with the fold and IS asserted by the loop below; excluding
+#: them would remove exactly the verification this pin exists for.
+FOLD_EXCEPTIONS = {8, 9, 6, 13}
 
 
 def _fold():

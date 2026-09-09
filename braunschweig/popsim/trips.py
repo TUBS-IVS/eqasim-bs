@@ -220,8 +220,11 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
     if w_zweck_10_as_leisure:
         is_code_10 = codes == W_ZWECK_OTHER_CODE
         out.loc[is_code_10, "purpose"] = LEISURE_PURPOSE
-        share = (float(out.loc[is_code_10, "W_GEW"].astype(float).sum() / out["W_GEW"].astype(float).sum())
-                 if "W_GEW" in out.columns and out["W_GEW"].astype(float).sum() else float(is_code_10.mean()))
+        if "W_GEW" in out.columns:
+            total_weight = float(out["W_GEW"].astype(float).sum())
+            share = float(out.loc[is_code_10, "W_GEW"].astype(float).sum() / total_weight) if total_weight else 0.0
+        else:
+            share = float(is_code_10.mean()) if len(out) else 0.0
         logger.info("[popsim.trips] w_zweck_10_as_leisure ON: W_ZWECK 10 'anderer Zweck' -> 'leisure' for %d/%d legs "
                     "(%.2f%%), following MiD's hwzweck1 fold (ADR-0111)", int(is_code_10.sum()), len(out), 100.0 * share)
     if escort_passive_education and not escort_purpose:
