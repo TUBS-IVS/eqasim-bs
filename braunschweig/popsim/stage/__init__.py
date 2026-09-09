@@ -234,6 +234,7 @@ from .cell_attributes import (  # noqa: F401  (re-exports)
 from . import config_keys
 from .config_keys import (  # noqa: F401  (re-exports)
     DEFAULT_ESCORT_PASSIVE_EDUCATION,
+    DEFAULT_W_ZWECK_10_AS_LEISURE,
     KEY_BATCH_TIMEOUT,
     KEY_BIKES_KREIS_CONTROL,
     KEY_CARS_KREIS_CONTROL,
@@ -293,6 +294,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
     KEY_WORKERS,
+    KEY_W_ZWECK_10_AS_LEISURE,
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
@@ -849,6 +851,12 @@ def configure(context):
     # it here adds the key to THIS stage's config-validation hash set (intended: a change
     # to it changes the seed, so the stage must re-run).
     context.config(KEY_EXCLUDE_RBW_LEGS, True)
+    # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111), the same key + default
+    # braunschweig.popsim.trips_stage declares: the leisure_participation KREIS-control
+    # seed must count the same W_ZWECK codes as leisure that the trip build does, or seed
+    # and plan describe different days again (the same mismatch class
+    # escort_passive_education / exclude_rbw_legs above exist to close).
+    context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1424,7 +1432,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
         drop_leading_arrive_home_leg: bool = False,
-        escort_passive_education: bool = False, exclude_rbw_legs: bool = True):
+        escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
+        w_zweck_10_as_leisure: bool = False):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1437,11 +1446,12 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
 
-    ``escort_passive_education`` and ``exclude_rbw_legs`` (Plan B issue #368, controller
-    ruling R8) are threaded into BOTH MiD branches, unlike the three flags above: the
-    participation-universe seeds they govern are derived from the MiD Wege table on either
-    path, not from the completed-donor diary facts. Both are inert unless a
-    participation-universe KREIS control is active.
+    ``escort_passive_education``, ``exclude_rbw_legs`` and ``w_zweck_10_as_leisure``
+    (Plan B issue #368 controller ruling R8; issue #373 ADR-0111) are threaded into BOTH
+    MiD branches, unlike the three flags above: the participation-universe seeds they
+    govern are derived from the MiD Wege table on either path, not from the
+    completed-donor diary facts. All three are inert unless a participation(-universe)
+    KREIS control is active.
 
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -1504,6 +1514,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             escort_passive_education=escort_passive_education,
             exclude_rbw_legs=exclude_rbw_legs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1524,6 +1535,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             ebike_seed_column=ebike_seed_column_cfg,
             escort_passive_education=escort_passive_education,
             exclude_rbw_legs=exclude_rbw_legs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (
@@ -2346,6 +2358,9 @@ def execute(context) -> pd.DataFrame:
     # The participation-universe seeds must count exactly the legs the trip build keeps
     # (controller ruling R8); read from the SAME key trips_stage / completed_donor read.
     exclude_rbw_legs_on = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    # The leisure_participation seed must count the SAME W_ZWECK codes as leisure that the
+    # trip build does (issue #373, ADR-0111); read from the SAME key trips_stage reads.
+    w_zweck_10_as_leisure_on = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2357,6 +2372,7 @@ def execute(context) -> pd.DataFrame:
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
         escort_passive_education=escort_passive_education_on,
         exclude_rbw_legs=exclude_rbw_legs_on,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure_on,
     )
 
     run_one = _prepare_batch_runner(

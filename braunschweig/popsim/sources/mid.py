@@ -174,6 +174,7 @@ class MidSource:
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
         closure_dwell_min_obs: int = 30,
+        w_zweck_10_as_leisure: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -207,6 +208,10 @@ class MidSource:
         closure_dwell_min_obs:
             minimum observations per (purpose x arrival band) cell of the
             empirical dwell model (issue #367); inert for ``"fixed_1h"``.
+        w_zweck_10_as_leisure:
+            map MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"`` purpose
+            instead of ``"other"`` (issue #373, ADR-0111), following MiD's own
+            hwzweck1 fold (mid2023_w_zweck_by_hwzweck1.csv).
 
         Returns
         -------
@@ -223,4 +228,5 @@ class MidSource:
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             closure_dwell_model=closure_dwell_model,
             closure_dwell_min_obs=closure_dwell_min_obs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         )

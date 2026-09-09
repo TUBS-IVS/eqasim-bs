@@ -70,6 +70,10 @@ KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
 DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 KEY_EXPLICIT_ROUND_TRIP_PURPOSES = "explicit_round_trip_purposes"
 DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES = True
+#: W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111). Key name and default are
+#: imported from ``braunschweig.popsim.stage.config_keys`` (the SHARED constants), never
+#: re-typed here -- see the plan-structure-keys note below for why every stage that reads
+#: a key declared by more than one stage must import the same constant.
 
 #: Plan-structure keys (issues #366/#367), declared and read here for the SAME reason the three
 #: flags above are: the donor's day must be built by exactly the rules the replaced day was built
@@ -169,9 +173,10 @@ def configure(context):
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DIARY_PLAN_MATCH,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        DEFAULT_EXCLUDE_RBW_LEGS, KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        KEY_EXCLUDE_RBW_LEGS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config(KEY_MID_DIR)
     context.config(KEY_ESCORT_PURPOSE, DEFAULT_ESCORT_PURPOSE)
@@ -181,6 +186,7 @@ def configure(context):
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, _trips_stage.DEFAULT_CLOSURE_DWELL_MIN_OBS)
+    context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
@@ -323,7 +329,7 @@ def execute(context):
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS,
+        KEY_EXCLUDE_RBW_LEGS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     if not bool(context.config(KEY_ENABLED)):
         logger.info("%s %s is false -- returning an empty donor pool (no raw MiD is read).",
@@ -361,6 +367,7 @@ def execute(context):
         drop_leading_arrive_home_leg=bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG)),
         closure_dwell_model=str(context.config(KEY_CLOSURE_DWELL_MODEL)),
         closure_dwell_min_obs=int(context.config(KEY_CLOSURE_DWELL_MIN_OBS)),
+        w_zweck_10_as_leisure=bool(context.config(KEY_W_ZWECK_10_AS_LEISURE)),
         **filter_flags,
     )
 

@@ -236,6 +236,7 @@ def build_closure_dwell_model(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
 ):
     """Build the :class:`ClosureDwellModel` selected by ``closure_dwell_model``.
 
@@ -267,6 +268,14 @@ def build_closure_dwell_model(
         drawn from directly; a thinner cell falls back to the purpose marginal
         (config key ``braunschweig.population.popsim.closure_dwell_min_obs``).
         Must be a positive integer. Inert for ``"fixed_1h"``.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` (forwarded to the donor trip table build). Must match the
+        value the main trip table is built with -- otherwise the empirical
+        dwell pools are stratified by a DIFFERENT purpose vocabulary than the
+        table they are drawn into, sending every W_ZWECK-10-following draw into
+        the wrong purpose's pool. Default False keeps the OFF path
+        byte-identical.
 
     Returns
     -------
@@ -300,6 +309,7 @@ def build_closure_dwell_model(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
     )
     return ClosureDwellModel.from_trips(
         donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET),
@@ -414,6 +424,7 @@ def run(
     drop_leading_arrive_home_leg: bool = False,
     closure_dwell_model: str = "fixed_1h",
     closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+    w_zweck_10_as_leisure: bool = False,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -452,6 +463,15 @@ def run(
         dwell model must hold to be drawn from directly; thinner cells fall back
         to the purpose marginal (rate logged). Positive integer, default
         :data:`DEFAULT_CLOSURE_DWELL_MIN_OBS`; inert for ``"fixed_1h"``.
+    w_zweck_10_as_leisure:
+        remap MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"`` purpose
+        instead of ``"other"`` (issue #373, ADR-0111), following MiD's own
+        hwzweck1 fold (100% of code-10 legs fold to 6 Freizeit; see the
+        committed evidence table ``mid2023_w_zweck_by_hwzweck1.csv``). Forwarded
+        to ``build_closure_dwell_model`` and ``build_validated_trip_table`` /
+        ``map_purpose``. Default False keeps the OFF path byte-identical; the
+        production default is configured by ``braunschweig.popsim.stage.
+        config_keys.DEFAULT_W_ZWECK_10_AS_LEISURE``.
 
     Returns
     -------
@@ -476,6 +496,7 @@ def run(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
     )
     table, report = popsim_trips.build_validated_trip_table(
         persons, mid_wege,
@@ -487,6 +508,7 @@ def run(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         dwell_model=dwell_model,
     )
 
@@ -577,9 +599,10 @@ def configure(context):
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
         DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_EXCLUDE_RBW_LEGS,
-        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
-        KEY_EXCLUDE_RBW_LEGS,
+        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
+        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_ESCORT_PASSIVE_EDUCATION, KEY_EXCLUDE_RBW_LEGS,
+        KEY_W_ZWECK_10_AS_LEISURE,
     )
     # Read from synthesis.population.sampled (not the raw producer): sampled carries the
     # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
@@ -610,6 +633,13 @@ def configure(context):
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
+    # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a TRIP-BUILD flag
+    # declared with the SHARED key/default constants, like escort_passive_education
+    # above -- the popsim stage's leisure_participation KREIS-control seed and the
+    # distance-distribution layers must see the SAME value this trip build uses, or
+    # they disagree on which W_ZWECK codes mean leisure (the seed-vs-plan mismatch
+    # class this package exists to remove).
+    context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -654,7 +684,7 @@ def execute(context):
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
-        KEY_EXCLUDE_RBW_LEGS,
+        KEY_EXCLUDE_RBW_LEGS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
@@ -663,6 +693,7 @@ def execute(context):
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     closure_dwell_model = str(context.config(KEY_CLOSURE_DWELL_MODEL))
     closure_dwell_min_obs = int(context.config(KEY_CLOSURE_DWELL_MIN_OBS))
+    w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
@@ -673,4 +704,5 @@ def execute(context):
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         closure_dwell_model=closure_dwell_model,
         closure_dwell_min_obs=closure_dwell_min_obs,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
     )

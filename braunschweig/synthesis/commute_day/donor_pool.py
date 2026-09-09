@@ -612,13 +612,15 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
 def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFrame, *,
                 random_seed: int, escort_purpose: bool, escort_passive_education: bool,
                 explicit_round_trip_purposes: bool, exclude_rbw_legs: bool = False,
-                drop_leading_arrive_home_leg: bool = False, dwell_model=None) -> pd.DataFrame:
+                drop_leading_arrive_home_leg: bool = False,
+                w_zweck_10_as_leisure: bool = False, dwell_model=None) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
     Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
     arguments :func:`braunschweig.popsim.trips_stage.run` passes -- ``resample=True``, the
-    escort/round-trip flags, ``random_seed``, and the three plan-structure arguments
-    ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` / ``dwell_model`` -- ruling R2, but
+    escort/round-trip/``w_zweck_10_as_leisure`` flags, ``random_seed``, and the three
+    plan-structure arguments ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` /
+    ``dwell_model`` -- ruling R2, but
     WITHOUT ``trips_stage.run``'s per-person departure-time jitter step
     (:func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`): that jitter is applied
     ONCE later, in the plan-replacement step, keyed by the RECEIVING synthetic person -- applying
@@ -706,6 +708,7 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         dwell_model=dwell_model,
     )
     n_donors_with_trips = table["person_id"].nunique() if len(table) else 0
@@ -801,6 +804,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
                                  drop_leading_arrive_home_leg: bool = False,
                                  closure_dwell_model: str | None = None,
                                  closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+                                 w_zweck_10_as_leisure: bool = False,
                                  exclude_no_diary: bool = False,
                                  exclude_holidays: bool = False,
                                  exclude_only_rbw: bool = False
@@ -826,6 +830,10 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       and the filters, and the two copies could then drift apart.
     * ``closure_dwell_min_obs`` -- minimum observations per (purpose x arrival band) cell of the
       empirical model; inert while ``closure_dwell_model`` is ``None`` or ``"fixed_1h"``.
+    * ``w_zweck_10_as_leisure`` -- maps MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"``
+      purpose instead of ``"other"`` (issue #373, ADR-0111), forwarded to
+      :func:`build_closure_dwell_model` (when a dwell model is built) and :func:`donor_trips`,
+      following MiD's own hwzweck1 fold. Default False keeps the pre-#373 output byte-identical.
     * ``exclude_no_diary`` / ``exclude_holidays`` / ``exclude_only_rbw`` -- forwarded to
       :func:`filter_donor_diaries`.
 
@@ -886,6 +894,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
             explicit_round_trip_purposes=explicit_round_trip_purposes,
             exclude_rbw_legs=exclude_rbw_legs,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         )
     trips = donor_trips(
         donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
@@ -893,6 +902,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         dwell_model=dwell_model,
     )
     if dwell_model is not None:

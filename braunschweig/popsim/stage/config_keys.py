@@ -294,6 +294,23 @@ KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_
 KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
 DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 
+# Map MiD W_ZWECK 10 ("anderer Zweck") to the leisure purpose (issue #373, ADR-0111):
+# MiD's own hwzweck1 derivation folds code 10 to 6 Freizeit for 100% of legs (committed
+# evidence table mid2023_w_zweck_by_hwzweck1.csv), so the trip build, the seed and the
+# distance layers must all treat it as leisure or they describe different days again --
+# the same seed-vs-plan mismatch class KEY_ESCORT_PASSIVE_EDUCATION exists to close. A
+# TRIP-BUILD flag, declared with this exact unprefixed key name (like
+# escort_passive_education) by every stage that reads it: braunschweig.popsim.trips_stage,
+# braunschweig.popsim.distance_distributions, braunschweig.popsim.stage (the
+# leisure_participation KREIS-control seed must count the same W_ZWECK codes as leisure
+# that the trip build does) and
+# braunschweig.synthesis.commute_day.home_office_donors_stage. Default True is the
+# PRODUCTION default (issue #373 task 2); the CODE default of the map_purpose /
+# build_trip_table / participation_w_zweck keyword arguments stays False so a direct
+# caller/test that omits it keeps today's behaviour.
+KEY_W_ZWECK_10_AS_LEISURE = "w_zweck_10_as_leisure"
+DEFAULT_W_ZWECK_10_AS_LEISURE = True
+
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.

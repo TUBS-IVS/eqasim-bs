@@ -38,7 +38,7 @@ map_person_attributes(persons, households, *, rng) -> (persons, pseudonym_map):
 build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             escort_passive_education=False, exclude_rbw_legs=False,
             drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h",
-            closure_dwell_min_obs=30) -> trips:
+            closure_dwell_min_obs=30, w_zweck_10_as_leisure=False) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -51,7 +51,10 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
     non-diary leg kinds (issue #366) and ``closure_dwell_model`` selects the
     dwell model for the synthesised chain closure (issue #367); an adapter
     whose survey cannot support one of them must REJECT the non-default value
-    instead of ignoring it.
+    instead of ignoring it. ``w_zweck_10_as_leisure`` maps MiD W_ZWECK 10
+    ("anderer Zweck") to the 'leisure' purpose instead of 'other' (issue #373,
+    ADR-0111); an adapter whose survey has no W_ZWECK vocabulary must REJECT a
+    non-default value for the same reason.
 """
 
 from __future__ import annotations
@@ -182,6 +185,7 @@ class PopsimSource(Protocol):
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
         closure_dwell_min_obs: int = 30,
+        w_zweck_10_as_leisure: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -226,6 +230,11 @@ class PopsimSource(Protocol):
             dwell model must hold before it is drawn from directly (issue #367).
             Inert for an adapter that only supports ``"fixed_1h"``, which never
             builds those pools.
+        w_zweck_10_as_leisure:
+            map MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"`` purpose
+            instead of ``"other"`` (issue #373, ADR-0111), following MiD's own
+            hwzweck1 fold. An adapter whose survey has no W_ZWECK vocabulary
+            must REJECT a non-default (True) value rather than ignore it.
 
         Returns
         -------

@@ -340,6 +340,7 @@ def build_trip_table(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -421,6 +422,11 @@ def build_trip_table(
         leg (forwarded to ``expand_persons_to_trips``); see that function's
         docstring for the rationale. Default False keeps the OFF path
         byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``map_purpose`` via
+        ``expand_persons_to_trips``). Default False keeps the OFF path
+        byte-identical.
 
     Returns
     -------
@@ -460,6 +466,7 @@ def build_trip_table(
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -535,6 +542,7 @@ def expand_persons_to_trips(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -575,6 +583,10 @@ def expand_persons_to_trips(
         as ``exclude_rbw_legs`` (over the REFERENCED donors only, ruling R21);
         if that count is > 0 a warning is logged with the same diary-plan-match
         hint. Default False keeps every existing caller byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``map_purpose``).
+        Default False keeps every existing caller byte-identical.
 
     Raises
     ------
@@ -642,6 +654,7 @@ def expand_persons_to_trips(
         wege_in, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
     ))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")
@@ -689,6 +702,7 @@ def build_validated_trip_table(
     escort_passive_education: bool = False,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
     dwell_model=None,
     **kwargs,
 ):
@@ -767,6 +781,10 @@ def build_validated_trip_table(
         If True, drop a donor person's leading "arrive home from elsewhere"
         leg (forwarded to ``build_trip_table`` / ``expand_persons_to_trips``).
         Default False keeps the OFF path byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``build_trip_table``
+        / ``map_purpose``). Default False keeps the OFF path byte-identical.
     dwell_model:
         Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
         to every ``PlanValidator.repair_trips`` call this function makes
@@ -808,7 +826,8 @@ def build_validated_trip_table(
         persons, mid_wege, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
-        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg, **kwargs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure, **kwargs,
     )
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None

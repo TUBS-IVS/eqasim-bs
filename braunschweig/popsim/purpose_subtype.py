@@ -319,6 +319,14 @@ LEISURE_GROUPS = {
     "leisure_excursion": frozenset({708, 709, 722}),              # 45-100 km, label to verify (codeplan)
 }
 LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
+# Defensive addition (issue #373, ADR-0111): 7704 "kein Einkaufs-, Erledigungs-, oder
+# Freizeitweg" and 7705 "Weg ohne Info zum Wegezweck" (codebook labels, MiD2023_
+# Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD). W_ZWECK 10 ("anderer
+# Zweck") legs relabelled to "leisure" under w_zweck_10_as_leisure carry sentinel-only
+# W_ZWD codes (their W_ZWD is always a sentinel per ADR-0111), so if LEISURE_SPEC's
+# zweck_values is ever widened to include code 10, these two codes must already be
+# excluded rather than tripping code_coverage_guard's unmapped-code error.
+LEISURE_SENTINELS |= {7704, 7705}
 
 OTHER_ERRAND_ZWECK = frozenset({5})   # private Erledigung, label to verify (codeplan)
 OTHER_ESCORT_ZWECK = frozenset({6})   # Bringen/Holen (no W_ZWD detail), label to verify (codeplan)

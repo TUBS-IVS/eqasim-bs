@@ -306,10 +306,43 @@ PARTICIPATION_W_ZWECK: dict[str, set[int]] = {
 PARTICIPATION_W_ZWECK["escort"] = {6}
 
 
+def participation_w_zweck(purpose: str, *, w_zweck_10_as_leisure: bool = False) -> set:
+    """The ``<purpose>`` participation W_ZWECK code set, flag-aware for leisure (issue
+    #373, ADR-0111).
+
+    Mirrors ``PARTICIPATION_W_ZWECK[purpose]`` for every purpose (``PARTICIPATION_W_ZWECK``
+    stays the flag-OFF vocabulary), except ``"leisure"``: when ``w_zweck_10_as_leisure`` is
+    True, the leisure code set additionally includes W_ZWECK 10 ("anderer Zweck") --
+    delegated to :func:`braunschweig.popsim.trips.leisure_w_zweck_codes`, the single source
+    of truth also used by ``trips.map_purpose``, so a participation seed built through this
+    function always agrees with the realised plan on which W_ZWECK codes mean leisure.
+
+    Args:
+        purpose: one of ``PARTICIPATION_W_ZWECK`` (``"work"``, ``"leisure"``,
+            ``"education"``, ``"escort"``).
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run. Inert for every purpose except ``"leisure"``.
+
+    Returns:
+        A plain ``set`` of MiD ``W_ZWECK`` codes.
+
+    Raises:
+        ValueError: if ``purpose`` is not one of ``PARTICIPATION_W_ZWECK``.
+    """
+    if purpose not in PARTICIPATION_W_ZWECK:
+        raise ValueError(
+            f"participation_w_zweck: purpose must be one of {sorted(PARTICIPATION_W_ZWECK)}, "
+            f"got {purpose!r}.")
+    if purpose == "leisure":
+        return set(trips.leisure_w_zweck_codes(w_zweck_10_as_leisure=w_zweck_10_as_leisure))
+    return set(PARTICIPATION_W_ZWECK[purpose])
+
+
 def compute_has_purpose_trip(
     persons: pd.DataFrame, wege: pd.DataFrame, purpose: str, *,
     household_id: str = "H_ID", person_id: str = "P_ID",
     trips_col: str = "anzwege1", zweck_col: str = "W_ZWECK",
+    w_zweck_10_as_leisure: bool = False,
 ) -> pd.Series:
     """Derive the per-person ``has_<purpose>_trip`` flag (0/1, or a carried 803/804 diary
     non-response code) from each person's MiD Wege, for a ``<purpose>_participation`` seed
@@ -328,6 +361,12 @@ def compute_has_purpose_trip(
     ``missing.AttributeSpec(impute_codes=(803, 804))`` imputes it from the valid {0, 1}
     pool within the person's age band, exactly as ``trip_class`` handles the same codes.
     A diary non-response person must never be forced to 0.
+
+    Args:
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run (issue #373, ADR-0111), forwarded to
+            :func:`participation_w_zweck`. Inert unless ``purpose == "leisure"``. Default
+            False keeps every existing caller byte-identical.
 
     Returns a ``pd.Series`` indexed like ``persons`` (index preserved, not reset).
 
@@ -350,7 +389,7 @@ def compute_has_purpose_trip(
             f"compute_has_purpose_trip: column(s) {missing_wege_cols} absent from the Wege "
             f"frame (has {list(wege.columns)}); cannot derive has_{purpose}_trip.")
 
-    purpose_codes = PARTICIPATION_W_ZWECK[purpose]
+    purpose_codes = participation_w_zweck(purpose, w_zweck_10_as_leisure=w_zweck_10_as_leisure)
     purpose_wege = wege[wege[zweck_col].isin(purpose_codes)]
     purpose_person_keys = pd.MultiIndex.from_arrays(
         [purpose_wege[household_id], purpose_wege[person_id]]).unique()
@@ -387,7 +426,8 @@ def compute_has_work_trip(
         trips_col=trips_col, zweck_col=zweck_col)
 
 
-def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID", person_id="P_ID"):
+def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID", person_id="P_ID",
+                              w_zweck_10_as_leisure: bool = False):
     """Derive the ``<purpose>_participation`` control seed from each person's REALISED
     weekday plan (generic core behind ``derive_work_participation_seed`` / the leisure /
     education controls, feature #224 task 5; mirrors ``derive_trip_class_seed`` -- see
@@ -407,6 +447,12 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
     person's own Wege directly; the path taken is logged (no silent fallback). The
     803/804 diary non-response codes are imputed within the PERSON's own ``alter_gr1``
     age band, exactly as ``derive_trip_class_seed`` does.
+
+    Args:
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run (issue #373, ADR-0111), forwarded to
+            :func:`compute_has_purpose_trip`. Inert unless ``purpose == "leisure"``.
+            Default False keeps every existing caller byte-identical.
     """
     name = f"{purpose}_participation"
     has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
@@ -416,7 +462,8 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
             "(no plan-source columns present -> seed is weekday-filtered).", name)
         persons = persons.copy()
         persons[f"has_{purpose}_trip"] = compute_has_purpose_trip(
-            persons, wege, purpose, household_id=household_id, person_id=person_id)
+            persons, wege, purpose, household_id=household_id, person_id=person_id,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure)
         out = attributes.map_participation(persons, name, source_col=f"has_{purpose}_trip", rng=rng)
         return out.drop(columns=[f"has_{purpose}_trip"])
 
@@ -424,7 +471,8 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
     # points at its mirror donor, which is one of these real persons.
     real = persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
     real_has_purpose_trip = compute_has_purpose_trip(
-        real, wege, purpose, household_id=household_id, person_id=person_id)
+        real, wege, purpose, household_id=household_id, person_id=person_id,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure)
     source_has_purpose_trip = pd.Series(
         real_has_purpose_trip.to_numpy(),
         index=pd.MultiIndex.from_arrays([real[household_id], real[person_id]]))

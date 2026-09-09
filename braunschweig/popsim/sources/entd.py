@@ -414,6 +414,7 @@ class EntdSource:
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
         closure_dwell_min_obs: int = 30,
+        w_zweck_10_as_leisure: bool = False,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -434,7 +435,19 @@ class EntdSource:
         only sizes the empirical model's cells, and the rejection above already
         guarantees no empirical model is ever built here, so no ENTD run can
         believe a cell threshold took effect.
+
+        ``w_zweck_10_as_leisure`` (issue #373, ADR-0111) is rejected on a non-default
+        (True) value for the same reason as the plan-structure options: the ENTD
+        donor has no MiD W_ZWECK column at all, so there is no code 10 to remap and
+        a popsim_open run believing the remap happened would be a silent no-op
+        masquerading as an applied flag.
         """
+        if w_zweck_10_as_leisure:
+            raise ValueError(
+                "[popsim.sources.entd] w_zweck_10_as_leisure=True is not supported for the "
+                "ENTD donor (no MiD W_ZWECK column, so there is no code 10 to remap); set "
+                "w_zweck_10_as_leisure to False for popsim_open runs."
+            )
         if exclude_rbw_legs:
             raise NotImplementedError(
                 "[popsim.sources.entd] exclude_rbw_legs=True is not supported for the "
