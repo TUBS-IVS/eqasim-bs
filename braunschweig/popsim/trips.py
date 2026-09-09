@@ -98,6 +98,20 @@ ROUND_TRIP_LEISURE_W_ZWECK = frozenset({14, 15, 16})
 # an escort trip in its own right; code 6 keeps mapping to "escort".
 ESCORT_W_ZWECK = frozenset({6, 13})
 
+#: MiD W_ZWECK 10 "anderer Zweck". MiD's own main-purpose derivation hwzweck1 folds it to 6 Freizeit for
+#: 100 % of the legs (committed mid2023_w_zweck_by_hwzweck1.csv, ADR-0111); its W_ZWD is always a sentinel.
+W_ZWECK_OTHER_CODE = 10
+LEISURE_PURPOSE = "leisure"
+
+
+def leisure_w_zweck_codes(*, w_zweck_10_as_leisure: bool) -> frozenset:
+    """The W_ZWECK codes that mean 'leisure' under the active flags (single source for seeds and plans)."""
+    codes = {code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == LEISURE_PURPOSE}
+    if w_zweck_10_as_leisure:
+        codes.add(W_ZWECK_OTHER_CODE)
+    return frozenset(codes)
+
+
 # MiD hvm_imp (imputed Hauptverkehrsmittel; handbook Kap. 4.2 mandates the
 # imputed variant) -> eqasim canonical mode. hvm_imp is fully imputed (codes
 # 1..5 only); any other code is a data/contract error and raises.
@@ -115,7 +129,8 @@ MODE_BY_HVM = {
 def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 escort_purpose: bool = False,
                 escort_passive_education: bool = False,
-                explicit_round_trip_purposes: bool = True) -> pd.DataFrame:
+                explicit_round_trip_purposes: bool = True,
+                w_zweck_10_as_leisure: bool = False) -> pd.DataFrame:
     """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
 
     When ``escort_purpose`` is True (issue #201), W_ZWECK codes in
@@ -147,6 +162,13 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
     escort_passive_education:
         If True (issue #256), further relabel the passive leg (W_ZWECK 13) to
         ``"education"``. Requires ``escort_purpose=True``.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"``, following MiD's own hwzweck1
+        fold (100 % of code-10 legs fold to 6 Freizeit; see the committed
+        evidence table ``mid2023_w_zweck_by_hwzweck1.csv``). Default False
+        keeps every existing caller byte-identical; the production default is
+        wired in a later task (issue #373 task 2).
 
     Returns
     -------
@@ -195,6 +217,13 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
             "[popsim.trips] explicit_round_trip_purposes OFF: W_ZWECK %s reverted to %r "
             "(%d legs) -- pre-#241 assignment for the A/B",
             sorted(ROUND_TRIP_LEISURE_W_ZWECK), DEFAULT_PURPOSE, int(reverted.sum()))
+    if w_zweck_10_as_leisure:
+        is_code_10 = codes == W_ZWECK_OTHER_CODE
+        out.loc[is_code_10, "purpose"] = LEISURE_PURPOSE
+        share = (float(out.loc[is_code_10, "W_GEW"].astype(float).sum() / out["W_GEW"].astype(float).sum())
+                 if "W_GEW" in out.columns and out["W_GEW"].astype(float).sum() else float(is_code_10.mean()))
+        logger.info("[popsim.trips] w_zweck_10_as_leisure ON: W_ZWECK 10 'anderer Zweck' -> 'leisure' for %d/%d legs "
+                    "(%.2f%%), following MiD's hwzweck1 fold (ADR-0111)", int(is_code_10.sum()), len(out), 100.0 * share)
     if escort_passive_education and not escort_purpose:
         raise ValueError(
             "[popsim.trips] escort_passive_education requires escort_purpose to be ON "
