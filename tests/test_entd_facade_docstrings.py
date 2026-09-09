@@ -89,6 +89,11 @@ _EXPECTED_SIGNATURES = {
     # closure_dwell_min_obs (final-review minor M1) is accepted and IGNORED without a
     # rejection: it only sizes the empirical model's cells, which the closure_dwell_model
     # rejection already prevents from ever being built on this path.
+    # w_zweck_10_as_leisure was added 2026-09-09 (purpose correctness, issue #373 task 2)
+    # for the same reason as the plan-structure options above: trips_stage.execute passes
+    # it to every source adapter. EntdSource ACCEPTS and REJECTS it (no MiD W_ZWECK column
+    # to remap code 10 on) with a ValueError, unlike the NotImplementedError the three
+    # plan-structure options above raise.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
@@ -97,7 +102,8 @@ _EXPECTED_SIGNATURES = {
         "exclude_rbw_legs: 'bool' = False, "
         "drop_leading_arrive_home_leg: 'bool' = False, "
         "closure_dwell_model: 'str' = 'fixed_1h', "
-        "closure_dwell_min_obs: 'int' = 30) -> 'pd.DataFrame'"
+        "closure_dwell_min_obs: 'int' = 30, "
+        "w_zweck_10_as_leisure: 'bool' = False) -> 'pd.DataFrame'"
     ),
 }
 

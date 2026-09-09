@@ -554,6 +554,12 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.popsim.mid",
         "braunschweig.popsim.purpose_subtype",
         "braunschweig.popsim.shop_subtype",
+        # config_keys joined 2026-09-09 (purpose correctness, issue #373 task 2):
+        # configure()/execute() now import KEY_W_ZWECK_10_AS_LEISURE /
+        # DEFAULT_W_ZWECK_10_AS_LEISURE from braunschweig.popsim.stage.config_keys (the
+        # SHARED constants every stage reading this key declares with) instead of a raw
+        # string literal; same no-token debt as the other four siblings in this entry.
+        "braunschweig.popsim.stage.config_keys",
         "braunschweig.popsim.time_imputation",
         "braunschweig.popsim.trips",
     ),
