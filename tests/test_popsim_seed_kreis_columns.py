@@ -282,22 +282,10 @@ def test_project_completed_seed_has_ebike_requires_ebike_seed_column():
 # --- has_ebike now defaults ON like the other three entries (server-verified 2026-07-08) ---
 
 
-class _FakeContext:
-    """Minimal synpp ExecuteContext stand-in: config(key) takes NO default argument
-    (matches the real execute-time contract; declared defaults come from
-    stage._KREIS_CONTROL_DEFAULT exactly as configure() declares them)."""
-
-    def __init__(self, values=None):
-        self._values = values or {}
-
-    def config(self, key):
-        if key in self._values:
-            return self._values[key]
-        from braunschweig.popsim import stage
-        for name, toggle_key in stage._KREIS_CONTROL_TOGGLE_KEY.items():
-            if key == toggle_key:
-                return stage._KREIS_CONTROL_DEFAULT[name]
-        raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
+# The shared KREIS-toggle synpp context stand-in. Aliased to the historical local name
+# so this module's call sites stay unchanged; the class itself, and the reason the seven
+# copies were merged, live in tests/stage_context.py.
+from tests.stage_context import KreisToggleContext as _FakeContext  # noqa: E402
 
 
 def test_all_kreis_entries_default_on():

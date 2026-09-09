@@ -863,10 +863,10 @@ def test_the_band_map_reproduces_the_previous_inline_formula_for_every_productio
     from braunschweig.popsim.stage import active_kreis_entries
     from braunschweig.popsim.stage.controls_builder import (
         SINGLE_YEAR_MAX_AGE, age_band_by_entry_name)
-    from tests.test_kreis_control_stage_wiring import _FakeContext
+    from tests.stage_context import KreisToggleContext
 
-    # Empty overrides -> every toggle at its declared default (the production state).
-    active = active_kreis_entries(_FakeContext({}), "mid")
+    # No overrides -> every toggle at its declared default (the production state).
+    active = active_kreis_entries(KreisToggleContext(), "mid")
     bands = age_band_by_entry_name(active)
     expected = {
         control.name: (0 if control.min_age is None else int(control.min_age),
@@ -881,3 +881,45 @@ def test_the_band_map_reproduces_the_previous_inline_formula_for_every_productio
     # comparison above is not two empty dicts.
     assert set(bands) >= {"employment_status", "work_by_employment",
                           "education_0_5", "education_6_17", "education_18plus"}
+
+
+def test_the_cells_parquet_footer_is_read_once_when_both_grids_are_on(tmp_path, monkeypatch):
+    """The parquet FOOTER must be opened once, not once per grid.
+
+    Both the employment grid and the ownership grid need the parquet's column names to
+    decide what is available, and each opened the file itself -- so with both flags on
+    (the production state) the footer of a multi-hundred-column file was parsed twice for
+    one identical answer (issue #327). The schema is a property of the file, not of the
+    grid asking.
+    """
+    import pyarrow.parquet as pq
+
+    from braunschweig.popsim import stage
+    from braunschweig.popsim.stage import controls_builder as cb
+
+    ctx = _Ctx({_KEY_INCOME_TILT: True})
+    active_entries = stage.active_kreis_entries(ctx, "mid")
+    _controls_df, base_cols = stage._build_control_frame(
+        "catalog", None, "mid", _PRODUCTION_TIERS, True,
+        tuple(entry.name for entry in active_entries), "uniform",
+        fine_teen_age_bands=True, ownership_grid_on=True)
+    cells_path = _write_prepared_cells_parquet(tmp_path, base_cols)
+
+    opened: list[str] = []
+    real_parquet_file = pq.ParquetFile
+
+    def _counting_parquet_file(path, *args, **kwargs):
+        opened.append(str(path))
+        return real_parquet_file(path, *args, **kwargs)
+
+    monkeypatch.setattr(pq, "ParquetFile", _counting_parquet_file)
+    load_cols = stage._resolve_cell_load_columns(
+        ctx, "catalog", "mid", _PRODUCTION_TIERS, base_cols, True, cells_path,
+        active_entries, fine_teen_age_bands=True, ownership_grid_on=True)
+
+    assert opened == [str(cells_path)], opened
+    # Guard the guard: the resolution really did run both grid branches, so "once" is not
+    # "never" -- the ownership dwelling columns and the universe ages are both present.
+    from braunschweig.popsim.ownership_grid import DWELLING_INPUT_COLUMNS
+    assert any(c in load_cols for c in DWELLING_INPUT_COLUMNS)
+    assert set(cb.universe_age_census_columns(active_entries)) <= set(load_cols)

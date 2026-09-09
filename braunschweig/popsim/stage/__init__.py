@@ -1170,14 +1170,28 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     # parquet load set and add the single-year {M,F}_AGE_<year> input columns (the age
     # SHAPE denominator, y>=16) that ARE present in the parquet. When OFF, load_cols is
     # untouched (byte-identical).
+    # The cleaned parquet column names, read ONCE and shared by both grid branches: the
+    # schema is a property of the file, not of the grid asking for it, and each branch
+    # opening the file itself parsed the footer of a several-hundred-column file twice in
+    # the production state where both grids are on (issue #327). Resolved lazily so an OFF
+    # /OFF configuration still touches no parquet.
+    _available_cells_columns = None
+
+    def _cells_columns_available():
+        nonlocal _available_cells_columns
+        if _available_cells_columns is None:
+            import pyarrow.parquet as _pq
+
+            _available_cells_columns = [
+                prepared_cells.clean_col_name(_n)
+                for _n in _pq.ParquetFile(cells_path).schema.names]
+        return _available_cells_columns
+
     if employment_grid_on:
         from braunschweig.popsim import employment_grid as _eg
-        import pyarrow.parquet as _pq_eg
 
-        _eg_raw_names = _pq_eg.ParquetFile(cells_path).schema.names
-        _eg_available = [prepared_cells.clean_col_name(_n) for _n in _eg_raw_names]
         load_cols = _eg.select_load_columns(
-            load_cols, _eg_available,
+            load_cols, _cells_columns_available(),
             computed_cols={
                 "EMPLOYED_M_16_29_agg", "EMPLOYED_M_30_39_agg", "EMPLOYED_M_40_49_agg",
                 "EMPLOYED_M_50_59_agg", "EMPLOYED_M_60plus_agg",
@@ -1186,17 +1200,18 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
             },
         )
 
-    # Ownership grid (issue #240): the nine OWN_*_agg targets are COMPUTED per cell
-    # (not stored in the parquet); add the Zensus dwelling-composition input columns
-    # plus the geography/weight inputs that ARE present. When OFF, load_cols is
+    # Ownership grid (issue #240): the nine OWN_*_agg targets are COMPUTED per cell (not
+    # stored in the parquet), and select_load_columns adds ONLY the Zensus
+    # dwelling-composition input columns that exist. It does NOT add the geography or
+    # weight inputs -- ZENSUS1km is derived from the 100m id by the loader,
+    # RegionalSchlussel_ARS / RegioStaR7 / POP_TOTAL arrive via
+    # mid.control_cells._EXTRA_CELL_COLUMNS, and the HH_TOTAL census column is already a
+    # tier0 base column (see that function's own docstring). When OFF, load_cols is
     # untouched (byte-identical).
     if ownership_grid_on:
         from braunschweig.popsim import ownership_grid as _og
-        import pyarrow.parquet as _pq_og
 
-        _og_raw_names = _pq_og.ParquetFile(cells_path).schema.names
-        _og_available = [prepared_cells.clean_col_name(_n) for _n in _og_raw_names]
-        load_cols = _og.select_load_columns(load_cols, _og_available)
+        load_cols = _og.select_load_columns(load_cols, _cells_columns_available())
 
     # Participation-universe denominators (Plan B, issue #368): every ACTIVE person-level
     # REGISTRY entry with an age universe partitions the single-year census total of its

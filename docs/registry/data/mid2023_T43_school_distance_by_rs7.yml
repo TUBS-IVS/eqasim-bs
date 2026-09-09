@@ -1,0 +1,88 @@
+dataset: mid2023_T43_school_distance_by_rs7
+title: MiD 2023 Tabelle 43 Kita/school trip lengths by RegioStaR7 and age group (committed
+  reference table)
+provider: |
+  unknown -- transcribed in-repo from "MiD 2023 Tabelle 43, Kita- und Schulweglaengen nach
+  Raumtyp und Altersgruppe" (BMDV / infas). WHICH MiD 2023 publication that table comes from
+  (the national report or a regional infas evaluation) is not recorded anywhere in this repo
+  and was deliberately not inferred -- see geography and limitations.
+vintage: 2023 survey year
+geography: |
+  unknown. Rows are RegioStaR-7 classes 71..77 (all seven), but whether the underlying table is
+  a NATIONAL or a regional evaluation is UNVERIFIED in this repo -- ADR-0102 states exactly
+  this and notes that the committed CSV carries no source header at all. The one INDICATION,
+  recorded as an indication and not as a finding, is that class 71 (Metropole) IS present with
+  values while the regional infas 7555 table (dataset mid2023_P13_commute_distance_by_rs7) has
+  no 71 row because the Grossraum Braunschweig contains no Metropole; a table covering 71 is
+  therefore unlikely to be a ZGB-only evaluation. Confirming this requires the source
+  publication, which is not in the repo.
+crs: null
+roles:
+- calibration_target
+- validation_reference
+# used_by is deliberately absent: it lists STAGE ids, and the one stage module that reads
+# this table (braunschweig.data.mid.school_distance) has no Stage Registry record because it
+# is wired into no run. The consumers are named under notes instead.
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/seed_mid_t43_school_distance.py. That script does NOT read
+    a raw file -- the 28 values are HARD-CODED in its _PINNED dict, transcribed by hand from
+    the source table, and the CSV is written from them. "Regenerating" therefore only rewrites
+    the same pinned numbers; it re-derives nothing. Do not hand-edit the CSV (the script's own
+    instruction); correcting a value means correcting _PINNED.
+  script: scripts/seed_mid_t43_school_distance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README input tables: it
+    ships committed with the checkout and requirements.production is not_needed, so there is
+    nothing for a contributor to download or verify presence of.
+    NOT independently verifiable inside this repo either. Because the values are pinned
+    literals rather than an aggregation of a committed raw file, no double-implementation gate
+    of the kind dataset mid2023_cars_by_rs7_haustyp carries is possible here; a transcription
+    error would be invisible to every test. Checking the four columns against the source
+    publication is open work.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: unknown (aggregate values transcribed from a BMDV / infas MiD 2023 result table)
+  restricted: false
+  redistribution: allowed
+  notes: |
+    Recorded as unredistricted because the file holds 28 rounded aggregate kilometre values.
+    The licence of the SOURCE table is not recorded in this repo.
+limitations: |
+  Construct: mean ROUTED trip length in kilometres per (RegioStaR-7 class, age group), with the
+  four age groups 0-6, 7-10, 11-13 and 14-17 as the columns km_0_6, km_7_10, km_11_13,
+  km_14_17. Values are integers as transcribed -- 2 to 10 km -- so they are ROUNDED means, and
+  differences below 1 km between classes are below the resolution of the table.
+  braunschweig.data.mid.school_distance.build_target_table converts them to straight-line
+  target distances with routed_to_straight_line (the project detour factor), so a consumer
+  compares against a straight-line figure derived from a rounded routed mean.
+  Scope: ages 0-17 only. There is no BBS target and no university target, so
+  Berufsschule pupils and university students (20+) are OUT of this table's scope and
+  braunschweig.analysis.run_mid_validation does not validate them against it.
+  No sample sizes: the table carries no n per cell, so the precision of any single cell is
+  unknown and cannot be reported.
+notes: |
+  This record deliberately carries "unknown" in provider and geography rather than a plausible
+  guess. CLAUDE.md treats unknown as a valid value, and #327 flagged this dataset precisely
+  because its CSV has no provenance header -- inferring a geography from the RS7 coverage alone
+  would turn an indication into a claimed reference, which the no-invented-reference rule
+  forbids.
+  ADR-0024 records the education gravity (schools / Kita / university) as calibrated to MiD T43
+  plus Destatis Mikrozensus 2024; that calibration is offline and its RESULT lives in the run
+  config, which is why every requirements level here is not_needed.
+  The stage module braunschweig.data.mid.school_distance defines configure/execute and reads
+  this file through the mid_t43_path config key, but it appears in no committed DAG snapshot
+  and has no Stage Registry record -- it is not wired into any current run. The live
+  consumers are braunschweig.analysis.run_mid_validation (the ages 0-17 school-distance
+  comparison) and braunschweig.calibration._legacy_education_slopes, both through
+  braunschweig.data.mid.school_distance.build_target_table.

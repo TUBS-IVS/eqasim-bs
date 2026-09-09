@@ -41,6 +41,8 @@ Restricted datasets are never committed or redistributed.
 | [lsn_kitas](../registry/data/lsn_kitas.yml) | supply_input | manual_download (`scripts/extract_nds_kitas.py`) | `data/braunschweig/schools/nds_kitas_zgb.csv` | o/-/r | no |
 | [lsn_schools](../registry/data/lsn_schools.yml) | supply_input | manual_download (`scripts/extract_nds_schools.py`) | `data/braunschweig/schools/nds_schools_zgb.csv` | o/-/r | no |
 | [lsn_universities](../registry/data/lsn_universities.yml) | supply_input | manual_download (`scripts/seed_nds_hochschulen.py`) | `data/braunschweig/schools/nds_hochschulen.csv` | o/-/r | no |
+| [mid2023_P13_commute_distance_by_rs7](../registry/data/mid2023_P13_commute_distance_by_rs7.yml) | calibration_target, reference_table | committed (`scripts/extract_mid_p13_rs7.py`) | `data/braunschweig/mid/mid2023_P13_commute_distance_by_rs7.csv` | -/-/- | no |
+| [mid2023_T43_school_distance_by_rs7](../registry/data/mid2023_T43_school_distance_by_rs7.yml) | calibration_target, validation_reference | committed (`scripts/seed_mid_t43_school_distance.py`) | `data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` | -/-/- | no |
 | [mid2023_b1](../registry/data/mid2023_b1.yml) | donor, reference_table | restricted_delivery | `The B1 package lives OUTSIDE this repository, in the sibling popsimprep checkout:
   <popsimprep>/inputs/MiD2023/MiD2023_B1_Datensatzpaket/CSV/MiD2023_{Haushalte,Personen,Wege,
   Autos,Etappen,Reisen,Tagesreisen}.csv

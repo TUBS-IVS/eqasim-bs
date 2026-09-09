@@ -117,18 +117,10 @@ def test_importance_group_for_field_classifies_as_kreis_hard(purpose):
 # --- Stage flag wiring (mirrors test_kreis_control_stage_wiring.py's _FakeContext) ---
 
 
-class _FakeContext:
-    def __init__(self, values=None):
-        self._values = values or {}
-
-    def config(self, key):
-        if key in self._values:
-            return self._values[key]
-        from braunschweig.popsim import stage
-        for name, toggle_key in stage._KREIS_CONTROL_TOGGLE_KEY.items():
-            if key == toggle_key:
-                return stage._KREIS_CONTROL_DEFAULT[name]
-        raise KeyError(f"_FakeContext: no value or declared default for config key {key!r}")
+# The shared KREIS-toggle synpp context stand-in. Aliased to the historical local name
+# so this module's call sites stay unchanged; the class itself, and the reason the seven
+# copies were merged, live in tests/stage_context.py.
+from tests.stage_context import KreisToggleContext as _FakeContext  # noqa: E402
 
 
 @pytest.mark.parametrize("purpose,key_name,expected_default", [
