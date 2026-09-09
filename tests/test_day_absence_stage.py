@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from braunschweig.synthesis.day_absence import absence as D
 from braunschweig.synthesis.day_absence import absence_stage as S
@@ -90,3 +89,15 @@ def test_off_path_marks_everyone_present_without_reading_any_file(tmp_path):
 def test_validate_token_is_an_md5_over_the_pure_module():
     token = S.validate(None)
     assert isinstance(token, str) and len(token) == 32
+
+
+def test_off_frame_has_the_same_dtypes_and_derived_attributes_as_the_on_frame():
+    persons = _enriched()
+    on = S.execute(_context({"synthesis.population.enriched": persons}, _config()))["absence"]
+    off = S.execute(_context({"synthesis.population.enriched": persons},
+                             _config(**{S.KEY_ENABLED: False})))["absence"]
+    assert on.dtypes.equals(off.dtypes)
+    on_sorted = on.sort_values("person_id").reset_index(drop=True)
+    off_sorted = off.sort_values("person_id").reset_index(drop=True)
+    assert (on_sorted["age_band"] == off_sorted["age_band"]).all()
+    assert (on_sorted["household_size_class"] == off_sorted["household_size_class"]).all()

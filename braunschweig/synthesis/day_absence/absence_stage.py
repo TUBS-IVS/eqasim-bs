@@ -3,7 +3,9 @@
 Owns only the synpp plumbing and the guards; every rule lives in
 :mod:`braunschweig.synthesis.day_absence.absence`. Output ``{"absence": frame, "diagnostics": dict}``
 with EXACTLY one row per enriched person (asserted). OFF: every person ``present`` with reason
-``disabled``, no reference file is read, diagnostics ``{"enabled": False}``.
+``disabled``, no reference file is read, diagnostics ``{"enabled": False}`` -- but the frame's
+SCHEMA (dtypes) and its derived ``age_band`` / ``household_size_class`` attributes are identical to
+the ON path (see :func:`_disabled_frame`), so a consumer never has to branch on the flag.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from braunschweig.calibration import srv_absence
 from braunschweig.synthesis.day_absence import absence as _absence
 from braunschweig.synthesis.day_absence.absence import (ABSENCE_COLUMNS, DAY_ABSENCE_SEED_OFFSET,
                                                           REASON_DISABLED, STATE_PRESENT, draw_absence,
@@ -62,9 +65,31 @@ def configure(context):
 
 
 def _disabled_frame(persons):
+    """OFF-path frame: schema- and attribute-identical to the ON-path frame, without any I/O.
+
+    ``household_size_class`` and ``age_band`` are derived with the SAME pure helpers
+    :func:`~braunschweig.synthesis.day_absence.absence.draw_absence` itself calls
+    (:func:`braunschweig.calibration.srv_absence.household_size_class` /
+    :func:`~braunschweig.calibration.srv_absence.age_band`), so the OFF frame's dtypes never drift
+    from the ON frame's -- a consumer must be able to treat the two paths identically (this is the
+    schema-stability rule the OFF path must not violate).
+
+    Unlike the ON path (:func:`~braunschweig.synthesis.day_absence.absence.draw_absence`, which
+    RAISES on a missing age), a missing age here stays ``NaN`` in ``age_band`` rather than failing:
+    the OFF path must never fail on data the ON path would reject. A non-zero count is logged.
+    """
+    household_sizes = persons.groupby("household_id")["person_id"].transform("size").to_numpy()
+    household_size_class = srv_absence.household_size_class(household_sizes)
+    age_band = srv_absence.age_band(persons["age"])
+    n_missing_age = int(age_band.isna().sum())
+    if n_missing_age > 0:
+        logger.warning("%s %s is false -- %d/%d persons have no age and get age_band = NaN on the "
+                       "disabled path (the enabled path would raise on this).", _LOG_TAG, KEY_ENABLED,
+                       n_missing_age, len(persons))
     return pd.DataFrame({
         "person_id": persons["person_id"].to_numpy(), "household_id": persons["household_id"].to_numpy(),
-        "day_absence_state": STATE_PRESENT, "age_band": None, "household_size_class": np.nan,
+        "day_absence_state": STATE_PRESENT, "age_band": age_band.to_numpy(),
+        "household_size_class": household_size_class,
         "p_household": 0.0, "p_individual": 0.0, "reason": REASON_DISABLED})[list(ABSENCE_COLUMNS)]
 
 
