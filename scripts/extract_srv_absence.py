@@ -46,10 +46,10 @@ CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False
 PERSONS_FILE = "SrV2023_Personen.csv"
 HOUSEHOLDS_FILE = "SrV2023_Haushalte.csv"
 
-# Units of the diagnostics keys, written once into each header's "Diagnostics:" line: the key
+# Units of the diagnostics keys, written once into each header's "Exclusions:" line: the key
 # names alone do not say whether a count is measured over the FULL raw Personen file or over an
 # already-filtered subset (same note as scripts/extract_srv_participation_universe.py).
-_DIAGNOSTICS_UNITS_NOTE = (
+_EXCLUSIONS_UNITS_NOTE = (
     "(n_persons_raw is the raw Personen-file row count; n_persons_dropped_weight is measured on "
     "it; n_persons_universe is the resulting count with a valid positive GEWICHT_P_ZENSUS; "
     "n_absent and n_persons_missing_age are measured on n_persons_universe)"
@@ -98,12 +98,8 @@ def _common_header(table_name: str, diagnostics: dict, source_commit: str) -> li
         % A.AVERAGE_WEEKDAY,
         "#   (average-weekday Tuesday-Thursday delivery) and every negative E_ANZ_WEGE == %d."
         % A.AWAY_FROM_HOME_CODE,
-        "# Diagnostics: n_persons_raw=%d, n_persons_dropped_weight=%d, n_persons_universe=%d,"
-        % (diagnostics["n_persons_raw"], diagnostics["n_persons_dropped_weight"],
-           diagnostics["n_persons_universe"]),
-        "#   n_absent=%d, n_persons_missing_age=%d. %s"
-        % (diagnostics["n_absent"], diagnostics["n_persons_missing_age"],
-           _DIAGNOSTICS_UNITS_NOTE),
+        "# Exclusions: " + ", ".join("%s=%s" % (key, value) for key, value in diagnostics.items())
+        + " " + _EXCLUSIONS_UNITS_NOTE,
     ]
 
 

@@ -49,6 +49,17 @@ def test_prepare_raises_when_not_average_weekday():
         A.prepare_absence_persons(bad)
 
 
+def test_prepare_logs_the_drop_rate_not_just_the_count(caplog):
+    """No-silent-fallback rule (CLAUDE.md, MANDATORY): a dropped-row class must be logged as
+    n / total (rate), never as a bare count. One of six persons has a non-positive weight, so
+    the warning must state "1/6 persons (16.67%) dropped"."""
+    bad = _persons(); bad.loc[0, "GEWICHT_P_ZENSUS"] = 0.0
+    caplog.set_level("WARNING")
+    A.prepare_absence_persons(bad)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("1/6 persons (16.67%) dropped" in message for message in messages), messages
+
+
 def test_by_age_band_rates_and_all_row():
     prepared, _ = A.prepare_absence_persons(_persons())
     table = A.build_absence_by_age_band(prepared)

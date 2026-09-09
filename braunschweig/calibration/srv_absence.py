@@ -82,8 +82,10 @@ def prepare_absence_persons(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     valid = weight > 0
     n_dropped = int((~valid).sum())
     if n_dropped:
-        logger.warning("%s %d/%d persons dropped for a missing/non-positive GEWICHT_P_ZENSUS",
-                       _LOG_TAG, n_dropped, len(p))
+        n_before_drop = len(p)
+        drop_rate = 100.0 * n_dropped / n_before_drop if n_before_drop else float("nan")
+        logger.warning("%s %d/%d persons (%.2f%%) dropped for a missing/non-positive "
+                       "GEWICHT_P_ZENSUS", _LOG_TAG, n_dropped, n_before_drop, drop_rate)
     p = p[valid].copy()
     out = pd.DataFrame({
         "hhnr": p["HHNR"].values, "pnr": p["PNR"].values,
@@ -99,8 +101,11 @@ def prepare_absence_persons(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     diagnostics = {"n_persons_raw": int(len(persons)), "n_persons_dropped_weight": n_dropped,
                    "n_persons_universe": int(len(out)), "n_absent": int(out["absent"].sum()),
                    "n_persons_missing_age": n_missing_age}
+    weight_total = float(out["weight"].sum())
+    absent_weight = float(out.loc[out["absent"], "weight"].sum())
     logger.info("%s universe %d persons, %d absent (%.2f%% weighted)", _LOG_TAG, len(out),
-                diagnostics["n_absent"], 100.0 * out.loc[out["absent"], "weight"].sum() / out["weight"].sum())
+                diagnostics["n_absent"],
+                100.0 * absent_weight / weight_total if weight_total else float("nan"))
     return out, diagnostics
 
 
