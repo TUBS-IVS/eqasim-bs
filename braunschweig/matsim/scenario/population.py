@@ -21,6 +21,12 @@ the simulation actually runs, so the pre-assignment trips/activities that the ve
 persons frame so ``matsim.scenario.population.add_person`` emits it as the person
 attribute ``commuteDayState``. With ``commute_day_state_enabled`` false both ``.final``
 aliases are pass-throughs and no state column exists -> byte-identical plans.
+
+General day absence (ADR-0110, issue #370), independent of the commute-day model above: the
+drawn ``day_absence_state`` (``braunschweig.synthesis.day_absence.absence_stage``, EXACTLY one
+row per enriched person on both its enabled and disabled path) is merged into the resident
+persons frame the SAME way, so ``add_person`` emits it as ``dayAbsenceState``. With
+``day_absence_enabled`` false no such column is merged -> byte-identical plans.
 """
 from __future__ import annotations
 
@@ -56,6 +62,18 @@ DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
 #: persons that have one, and writes no attribute at all for the persons that do not.
 STATE_COLUMN = "commute_day_state"
 
+#: General day-absence flag (issue #370) and the stage it reads when on -- independent of
+#: KEY_COMMUTE_DAY_STATE_ENABLED. Same names as
+#: braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED / ABSENCE_STAGE.
+KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
+DEFAULT_DAY_ABSENCE_ENABLED = True
+ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
+
+#: Person column carrying the drawn absence state; ``matsim.scenario.population.
+#: OPTIONAL_PERSON_FIELDS`` emits it as the MATSim person attribute ``dayAbsenceState``
+#: (java.lang.String) for the persons that have one.
+ABSENCE_STATE_COLUMN = "day_absence_state"
+
 
 def configure(context):
     base.configure(context)
@@ -68,6 +86,11 @@ def configure(context):
     # its DAG for a value it never writes.
     if context.config(KEY_COMMUTE_DAY_STATE_ENABLED):
         context.stage(STATE_STAGE)
+    # issue #370: the general day-absence draw is independent of the commute-day model above, so
+    # it gets its own flag and its own gate -- the same trade-off.
+    context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
+    if context.config(KEY_DAY_ABSENCE_ENABLED):
+        context.stage(ABSENCE_STAGE)
     context.config("cordon_enabled", False)
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
@@ -102,6 +125,35 @@ def attach_commute_day_state(persons, states):
     return merged
 
 
+def attach_day_absence_state(persons, absence):
+    """Left-join ``day_absence_state`` onto the resident persons frame.
+
+    Unlike ``attach_commute_day_state`` (worker-only), ``absence`` carries EXACTLY one row per
+    enriched person on both the enabled and disabled path
+    (``braunschweig.synthesis.day_absence.absence_stage``), so a healthy join covers every
+    resident; any uncovered remainder is a person_id mismatch with the absence stage, not a
+    person without a day-absence state. The coverage rate is logged and a coverage of zero
+    raises, because an all-missing column is a broken ``person_id`` join rather than a
+    population in which nobody is ever absent (CLAUDE.md "Fallback transparency").
+    """
+    if ABSENCE_STATE_COLUMN in persons.columns:
+        raise ValueError(
+            f"{_LOG_TAG} the persons frame already carries a {ABSENCE_STATE_COLUMN!r} column; "
+            "merging the absence stage on top of it would produce two ambiguous columns.")
+    merged = persons.merge(absence[["person_id", ABSENCE_STATE_COLUMN]], on="person_id",
+                           how="left", validate="one_to_one")  # one row per person on BOTH sides
+    n_with_state = int(merged[ABSENCE_STATE_COLUMN].notna().sum())
+    logger.info("%s %d/%d resident persons (%.1f%%) carry a day-absence state written as the "
+                "MATSim attribute 'dayAbsenceState'", _LOG_TAG, n_with_state, len(merged),
+                100.0 * n_with_state / max(len(merged), 1))
+    if n_with_state == 0:
+        raise ValueError(
+            f"{_LOG_TAG} not one of the {len(merged)} resident persons was matched to a row of "
+            f"the absence frame ({len(absence)} rows); this is a broken person_id join, not a "
+            "population without absences.")
+    return merged
+
+
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
@@ -124,6 +176,15 @@ def execute(context):
         # commuteDayState attribute -> byte-identical plans.
         logger.info("%s %s is false -- no commuteDayState attribute is written.",
                     _LOG_TAG, KEY_COMMUTE_DAY_STATE_ENABLED)
+
+    if bool(context.config(KEY_DAY_ABSENCE_ENABLED)):
+        raw["persons"] = attach_day_absence_state(
+            raw["persons"], context.stage(ABSENCE_STAGE)["absence"])
+    else:
+        # No column -> matsim.scenario.population.effective_person_fields is unchanged -> no
+        # dayAbsenceState attribute -> byte-identical plans.
+        logger.info("%s %s is false -- no dayAbsenceState attribute is written.",
+                    _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
