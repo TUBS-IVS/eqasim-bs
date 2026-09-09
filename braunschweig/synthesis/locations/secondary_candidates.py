@@ -26,22 +26,50 @@ unchanged (byte-identical OFF path).
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 
 
+#: Modules hashed by dotted NAME because both are imported inside a function body.
+#: ``secondary_chainsolvers`` is borrowed as a plain function library (its own
+#: ``_HELPER_MODULES`` are folded in below), and ``landuse_candidates`` appends the landuse
+#: candidate set. Neither was hashed until the #327 helper-hash re-audit: only the
+#: chainsolvers' SUBMODULES were, so an edit to the chainsolvers package ``__init__`` itself
+#: -- where the assembly this stage delegates to lives -- left this cache in place.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.synthesis.locations.landuse_candidates",
+    "braunschweig.synthesis.locations.secondary_chainsolvers",
+)
+
+
 def validate(context):
-    """synpp validation token: md5 over the chainsolver helper submodules.
+    """synpp validation token: md5 over the chainsolver helpers plus this stage's own.
 
     This stage delegates the assembly logic to the secondary_chainsolvers
     package submodules, but synpp's get_stage_hash only hashes THIS file's
     source -- without this hook a change confined to those helpers would
     silently reuse the stale cached candidate set on a partial rerun.
+
+    The borrowed ``secondary_chainsolvers._HELPER_MODULES`` covers that package's helpers;
+    :data:`_DEFERRED_HELPER_MODULE_NAMES` adds the two modules this stage imports itself,
+    including the chainsolvers package ``__init__`` the borrowed tuple does not contain.
     """
     from braunschweig.synthesis.locations import secondary_chainsolvers
 
     digest = hashlib.md5()
     for module in secondary_chainsolvers._HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"secondary_candidates validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

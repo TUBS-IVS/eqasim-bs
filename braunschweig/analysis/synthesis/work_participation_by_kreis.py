@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import importlib
 import inspect
 import logging
 import math
@@ -76,6 +77,8 @@ import pandas as pd
 from braunschweig.analysis import json_output as _json_output
 from braunschweig.analysis.json_output import json_safe as _json_safe
 from braunschweig.calibration import commute_day_state_reference as R
+from braunschweig.calibration import srv_distance_targets as _srv_distance_targets
+from braunschweig.calibration import srv_work_participation as _srv_work_participation
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
 from braunschweig.calibration.srv_work_participation import load_srv_work_participation
 
@@ -219,6 +222,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"work_participation_by_kreis validate(): cannot hash the deferred helper "
+                f"module {module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -1378,7 +1392,17 @@ json_safe = _json_safe
 #: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shared
 #: strict-JSON writer decides how provenance.json represents a missing measurement, which is
 #: part of this stage's output and is no longer visible in this module's own source.
-_HELPER_MODULES = (_json_output,)
+# R / _srv_distance_targets / _srv_work_participation own the committed SrV reference, the
+# Kreis set and the distance-class bands every row of this comparison is measured against;
+# all three were module-level imports outside the token. braunschweig.analysis.spatial and
+# braunschweig.provenance are imported INSIDE write_outputs (to keep geopandas and the
+# VG250 access out of import time), so they are hashed by dotted NAME instead
+# (#327 helper-hash re-audit).
+_HELPER_MODULES = (_json_output, R, _srv_distance_targets, _srv_work_participation)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.analysis.spatial",
+    "braunschweig.provenance",
+)
 
 
 def write_outputs(directory, participation, distance_classes, ext_table, per_person,

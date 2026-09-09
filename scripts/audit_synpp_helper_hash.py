@@ -194,14 +194,19 @@ def helper_tuples(tree, own_module: str) -> tuple[set[str], set[str], dict[str, 
     return aliases, deferred, alias_map
 
 
-def expand_one_level(name: str, on_disk: set[str], packages: set[str]) -> set[str]:
-    """A package contributes its __init__ plus each submodule on disk (one level deep)."""
-    out = {name}
-    if name in packages:
-        prefix = name + "."
-        out |= {m for m in on_disk
-                if m.startswith(prefix) and "." not in m[len(prefix):]}
-    return out
+def covered_by_entry(name: str) -> set[str]:
+    """The modules ONE helper-tuple entry actually causes to be hashed.
+
+    Exactly one: the entry's own file. ``validate()`` digests
+    ``inspect.getsource(module)``, and for a PACKAGE that returns only its ``__init__.py``
+    -- verified against the interpreter, not assumed. An earlier version of this pass
+    credited a package entry with its submodules too ("enumerated one level deep", the
+    phrasing the audit note uses for what it COUNTS as covered). That over-credits: listing
+    a package does not hash its submodules, and a stage that listed only the package would
+    have been reported as fully covered while every submodule went unhashed. The stages that
+    ARE fully covered list each submodule explicitly for exactly this reason.
+    """
+    return {name}
 
 
 def report_meta(repo: Path) -> dict:
@@ -265,9 +270,9 @@ def build_report(repo: Path) -> dict:
             resolved = set()
             for alias in alias_names:
                 target = alias_map.get(alias, alias)
-                resolved |= expand_one_level(target, on_disk, packages)
+                resolved |= covered_by_entry(target)
             for dotted in deferred:
-                resolved |= expand_one_level(dotted, on_disk, packages)
+                resolved |= covered_by_entry(dotted)
             entry["covered"] = sorted(resolved)
             entry["uncovered"] = sorted(required - resolved)
         report[name] = entry

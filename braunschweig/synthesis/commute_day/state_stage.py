@@ -42,6 +42,9 @@ import os
 import numpy as np
 import pandas as pd
 
+from braunschweig import constants as _constants
+from braunschweig.calibration import commute_day_state_reference as _state_reference
+from braunschweig.popsim import chain_matching as _chain_matching
 from braunschweig.calibration.commute_day_state_reference import MID_CHILD_MAX_AGE
 from braunschweig.calibration.commute_day_state_reference import load_workday_location_table
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
@@ -63,7 +66,11 @@ _LOG_TAG = "[commute day state]"
 #: Pure modules whose sources this stage's cache token must cover (see :func:`validate`); the
 #: donor pool's own rules are covered by ``home_office_donors_stage``'s token, which this stage
 #: consumes as an input.
-_HELPER_MODULES = (_state, _matching)
+# _state_reference owns the workday-location reference table and MID_CHILD_MAX_AGE;
+# _constants owns ROUTED_DETOUR_FACTOR, with which this stage converts assigned commute
+# distances; _chain_matching owns derive_age_class, the binning the donor match relies on.
+# All three were module-level imports outside the token (#327 helper-hash re-audit).
+_HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching)
 
 # --------------------------------------------------------------------------- config keys
 

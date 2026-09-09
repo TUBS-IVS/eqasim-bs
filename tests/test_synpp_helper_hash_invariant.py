@@ -546,10 +546,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
     ),
-    "braunschweig.popsim.completed_donor": (
-        "braunschweig.popsim.mid",
-        "braunschweig.popsim.stage",
-    ),
     "braunschweig.popsim.distance_distributions": (
         "braunschweig.popsim.mid",
         "braunschweig.popsim.purpose_subtype",
@@ -567,10 +563,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.synthesis.locations.building_typing",
         "braunschweig.synthesis.locations.cell_building_signals",
         "braunschweig.synthesis.locations.home_matcher",
-    ),
-    "braunschweig.synthesis.locations.secondary_candidates": (
-        "braunschweig.synthesis.locations.landuse_candidates",
-        "braunschweig.synthesis.locations.secondary_chainsolvers",
     ),
     "braunschweig.synthesis.student_incommuters": (
         "braunschweig.synthesis.incommuters",

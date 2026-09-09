@@ -55,6 +55,7 @@ change devalidates the cached stage output exactly like an edit here.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import time
 from typing import Any, Dict, Tuple
@@ -63,7 +64,9 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.calibration import secondary_measurement as _secondary_measurement
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
+from synthesis.population.spatial.secondary import problems as _secondary_problems
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -251,7 +254,12 @@ def __getattr__(name):
 # without the validate() hook below a change confined to a helper submodule
 # would silently reuse the stale cached stage output on a partial rerun.
 # Every submodule extracted from this package MUST be listed here.
+# _secondary_measurement (boundary_clip_share, the placement quality measure) and
+# _secondary_problems (the upstream problem construction this solver consumes) were
+# module-level imports outside the token until the #327 helper-hash re-audit.
 _HELPER_MODULES: Tuple[Any, ...] = (
+    _secondary_measurement,
+    _secondary_problems,
     activity_types,
     candidate_columns,
     candidates,
@@ -269,6 +277,16 @@ _HELPER_MODULES: Tuple[Any, ...] = (
 )
 
 
+#: Hashed by dotted NAME because they are imported inside a function body rather than at
+#: module level: escort_links (the escort anchor/link build) and parallelism (which resolves
+#: the worker count the chainsolver runs with). Both were outside the token until the #327
+#: helper-hash re-audit.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.parallelism",
+    "braunschweig.synthesis.locations.escort_links",
+)
+
+
 def validate(context):
     """synpp validation token: md5 over the helper submodules' sources.
 
@@ -279,6 +297,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"secondary_chainsolvers validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

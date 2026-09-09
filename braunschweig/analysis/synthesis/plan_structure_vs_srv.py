@@ -100,7 +100,10 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: synpp hashes only THIS module's source, so the helper modules that define the
 #: harmonisation and every metric must be folded into the validation token; without them an
 #: edit to a metric would silently serve a cached comparison built by the old code.
-_HELPER_MODULES = (P, SRV)
+# T (calibration.srv_distance_targets) supplies the committed SrV reference bands and
+# ZGB_KREISE, and run_provenance writes the provenance record this stage's output is
+# judged from -- both module-level imports that sat outside the token (#327 re-audit).
+_HELPER_MODULES = (P, SRV, T, run_provenance)
 #: Imported inside validate() rather than at module level, exactly as execute() does: a
 #: top-level import of braunschweig.analysis.spatial pulls geopandas and the VG250 access into
 #: every import of this stage. Its ``assign_geographies`` decides EVERY person's home Kreis and

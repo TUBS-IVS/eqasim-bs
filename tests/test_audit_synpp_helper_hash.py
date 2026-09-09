@@ -115,3 +115,68 @@ def test_the_real_repository_reports_popsim_stage_as_fully_covered():
     assert entry["hashes_source"] is True
     assert entry["uncovered"] == []
     assert entry["required_helpers"], "an empty required set would pass vacuously"
+
+
+def test_a_package_entry_does_not_credit_its_submodules():
+    """One helper-tuple entry hashes exactly one file -- its own.
+
+    ``validate()`` digests ``inspect.getsource(module)``, which for a PACKAGE returns only
+    its ``__init__.py``. An earlier version of this pass credited a package entry with its
+    submodules as well, so a stage listing only ``braunschweig.popsim.mid`` would have been
+    reported fully covered while all nine of its submodules went unhashed. Verified against
+    the interpreter here rather than assumed, because the whole gate below rests on it.
+    """
+    import importlib
+    import inspect as inspect_module
+
+    assert audit.covered_by_entry("braunschweig.popsim.mid") == {"braunschweig.popsim.mid"}
+    package = importlib.import_module("braunschweig.popsim.mid")
+    assert inspect_module.getsource(package) == open(
+        package.__file__, encoding="utf-8").read()
+    assert package.__file__.endswith("__init__.py")
+
+
+# --- The full-surface coverage gate -----------------------------------------------------
+#
+# tests/test_synpp_helper_hash_invariant.py gates the NARROW own-package-siblings slice.
+# This gate covers the WIDER first-party surface the audit note inventories: for every stage
+# whose validate() hashes source at all, EVERY first-party module it imports and does not
+# declare as a synpp stage dependency must feed that token. Under-hashing means a warm cache
+# silently serves output built by code that has since changed.
+#
+# EXPECTED_UNCOVERED is a shrinking register of deliberate exceptions, empty by design. An
+# entry needs a reason in the comment above it, not just a name -- the only defensible reason
+# is that COVERING the module would be worse than not covering it (a downstream stage hashing
+# a large upstream package would be re-run by every unrelated edit to it), and in that case
+# the right fix is usually to narrow the IMPORT instead.
+EXPECTED_UNCOVERED: dict[str, tuple[str, ...]] = {}
+
+
+def test_every_source_hashing_stage_covers_its_required_helpers():
+    """No stage with a source-hashing validate() may leave a first-party import unhashed.
+
+    Discovered by the #327 re-audit: eight of the sixteen source-hashing stages did. This
+    gate is what keeps the audit note's inventory from drifting back into debt -- a new
+    unhashed import fails here instead of quietly joining a list in a dated document.
+    """
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    report = audit.build_report(repo)
+    offenders = {name: tuple(entry["uncovered"])
+                 for name, entry in sorted(report.items())
+                 if entry["hashes_source"] and entry["uncovered"]}
+    expected = {name: tuple(mods) for name, mods in EXPECTED_UNCOVERED.items()}
+
+    assert offenders == expected, (
+        "helper-hash coverage changed.\n"
+        f"unhashed now: {offenders}\n"
+        f"allow-listed: {expected}\n"
+        "Add the module to the stage's _HELPER_MODULES (module-level import) or "
+        "_DEFERRED_HELPER_MODULE_NAMES (function-level import), or narrow the import so the "
+        "module is no longer part of this stage's surface. Only add an EXPECTED_UNCOVERED "
+        "entry if covering it would be actively worse, with the reason written down.")
+
+    # Guard the guard: the gate must be looking at a non-trivial set of stages.
+    hashing = [n for n, e in report.items() if e["hashes_source"]]
+    assert len(hashing) >= 15, hashing

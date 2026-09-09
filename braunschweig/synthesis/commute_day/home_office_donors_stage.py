@@ -41,6 +41,8 @@ from braunschweig.popsim import diary_plan_match as _diary_plan_match
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim import trips_stage as _trips_stage
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
+from braunschweig.popsim.mid import donor as _mid_donor
 from braunschweig.popsim.mid.csv_format import detect_csv_separator
 from braunschweig.popsim.mid.donor import MID_WEGE_REQUIRED_COLS
 from braunschweig.popsim.trips_stage import CONTRACT
@@ -163,8 +165,12 @@ TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column 
 #: classifies the rbW-only diaries and ``diary_plan_match`` owns the MiD codes the donor filters
 #: read (issue #374). Over-hashing only costs a cache rebuild; under-hashing silently serves a
 #: stale pool.
+# _mid_csv_format / _mid_donor carry the raw-delivery read semantics this stage depends on:
+# detect_csv_separator decides how the MiD files are parsed at all, and
+# MID_WEGE_REQUIRED_COLS is the single committed definition of the Wege columns the donor
+# pool is built from. Both were imported at module level and unhashed (#327 re-audit).
 _HELPER_MODULES = (_donor_pool, _popsim_trips, _plan_validation, _trips_stage, _closure_dwell,
-                   _diary_facts, _diary_plan_match)
+                   _diary_facts, _diary_plan_match, _mid_csv_format, _mid_donor)
 #: Modules hashed by NAME because they are imported inside ``configure()``/``execute()`` rather
 #: than at module level (see the config-key block above). Written as string LITERALS, like
 #: every other stage's deferred list: ``tests/test_synpp_helper_hash_invariant.py`` resolves
