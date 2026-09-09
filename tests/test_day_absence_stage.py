@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from braunschweig.synthesis.day_absence import absence as D
 from braunschweig.synthesis.day_absence import absence_stage as S
@@ -89,6 +90,52 @@ def test_off_path_marks_everyone_present_without_reading_any_file(tmp_path):
 def test_validate_token_is_an_md5_over_the_pure_module():
     token = S.validate(None)
     assert isinstance(token, str) and len(token) == 32
+
+
+def test_validate_token_changes_when_srv_absence_module_changes(monkeypatch):
+    """Important finding 3 (final-review fix wave): the token must ALSO cover
+    braunschweig.calibration.srv_absence, not absence.py alone -- the age-band edges/labels and
+    the household-size-class top (what a person is drawn AGAINST) live there, so an edit there
+    must devalidate the stage's cache exactly like an edit to the draw rule in absence.py."""
+    token = S.validate(None)
+    real_getsource = S.inspect.getsource
+
+    def patched_getsource(module):
+        if module is S.srv_absence:
+            return real_getsource(module) + "\n# a changed age band edge\n"
+        return real_getsource(module)
+
+    monkeypatch.setattr(S.inspect, "getsource", patched_getsource)
+    assert S.validate(None) != token
+
+
+def test_band_deviation_guard_fires_when_realised_and_reference_diverge(monkeypatch, caplog):
+    """Deferred minor (final-review fix wave): the >= 1,000-person band-deviation WARNING path.
+
+    1,200 single-person households in one age band, with a monkeypatched reference whose
+    household-size-1 probability is 1.0: the household stage marks EVERY one of them absent with
+    CERTAINTY (a numpy ``random_sample`` draw is always < 1.0), so the band's realised rate is
+    exactly 100% against a reference of 5% -- a 95 pp deviation, far above
+    ``day_absence_max_band_deviation_pp``'s default 1.0 pp and well past
+    ``MIN_PERSONS_FOR_BAND_GUARD`` (1,000), so this is not dismissed as sampling noise.
+    """
+    persons = pd.DataFrame({
+        "person_id": range(1200), "household_id": range(1200), "age": [35] * 1200,
+    })
+    reference = D.AbsenceReference(
+        p_absent_by_band={band: (0.05 if band == "30-44" else 0.0) for band in D.AGE_BAND_LABELS},
+        p_all_absent_by_size={1: 1.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: reference)
+
+    with caplog.at_level("WARNING", logger=S.logger.name):
+        out = S.execute(_context({"synthesis.population.enriched": persons}, _config()))
+
+    diagnostics = out["diagnostics"]
+    band_cell = diagnostics["by_band"]["30-44"]
+    assert band_cell["n"] == 1200
+    assert band_cell["realised_rate"] == pytest.approx(1.0)
+    assert diagnostics["n_band_guard_hits"] >= 1
+    assert any("30-44" in message and "exceeds" in message for message in caplog.messages)
 
 
 def test_off_frame_has_the_same_dtypes_and_derived_attributes_as_the_on_frame():

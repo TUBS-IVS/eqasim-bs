@@ -73,17 +73,32 @@ def validate(context):
 
 
 def configure(context):
-    # All four stages are declared UNCONDITIONALLY (including ABSENCE_STAGE): the test harness's
-    # _ConfigureRecorder stub (tests/test_commute_day_stages.py) does not resolve a config value
-    # the way real synpp's ConfigureContext does, so an `if context.config(...): context.stage(...)`
-    # gate would never be recorded as declared under that stub, breaking the stub-context plumbing
-    # every existing and new test here relies on. Real synpp already accepts always-declared stages
-    # whose stub output simply goes unused on the OFF path (see execute()), the same trade-off
-    # state_stage/home_office_donors_stage already made for KEY_ENABLED.
+    # All four upstream stages are declared UNCONDITIONALLY (including ABSENCE_STAGE): this is a
+    # STABLE declaration list, a local convention of THIS stage, not a limitation of the test
+    # harness (corrected wording, final-review fix wave, Important finding 7 -- the recorders
+    # used across tests/test_commute_day_stages.py were EXTENDED with config overrides by Tasks
+    # 6/7 of the #370 SDD plan, so "the stub cannot record a conditional declare" is no longer an
+    # accurate justification for anything written after those tasks). state_stage and
+    # home_office_donors_stage were ALREADY declared unconditionally here before this feature
+    # existed (KEY_ENABLED's own OFF path is likewise trivial, see execute()), and ABSENCE_STAGE's
+    # OFF path (_disabled_frame in absence_stage.py) is equally cheap, so keeping the whole list
+    # unconditional avoids a branch here for a stage whose DAG cost when unused is negligible.
+    # This is THIS stage's own convention, not a repo-wide rule: sibling consumers of the SAME
+    # stages -- braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    # braunschweig.analysis.synthesis.work_participation_by_kreis,
+    # braunschweig.synthesis.commute_day.output_day, braunschweig.matsim.scenario.population --
+    # gate their OWN declarations on the flag in configure(), and that stays legitimate: a
+    # workflow that never enables the model there must not carry the donor/state/absence chain in
+    # its DAG at all.
     context.stage("synthesis.population.trips")
     context.stage("braunschweig.synthesis.commute_day.state_stage")
     context.stage("braunschweig.synthesis.commute_day.home_office_donors_stage")
     context.stage(ABSENCE_STAGE)
+    # Ruling R10 (final-review fix wave, spec 2.1 point 4): declared EXPLICITLY, even though the
+    # absence stage above already reads it -- synpp does not transitively expose a dependency's
+    # own dependencies, so this stage must declare it itself to pass it on to
+    # build_day_trips's escort-coherence diagnostics (n_children_with_absent_escorter).
+    context.stage("synthesis.population.enriched")
     context.config("random_seed")
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
     context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
@@ -144,6 +159,10 @@ def execute(context):
     # issue #370: the general day-absence frame is independent of the commute-day model, so it is
     # read regardless of commute_on, whenever the absence model itself is on.
     general_absence = context.stage(ABSENCE_STAGE)["absence"] if absence_on else None
+    # Ruling R10: always fetched (regardless of either flag) and forwarded to build_day_trips's
+    # escort-coherence diagnostics -- cheap (already cached by the absence stage's own
+    # dependency) and keeps the diagnostic available whenever this stage actually runs.
+    persons = context.stage("synthesis.population.enriched")
 
     if commute_on:
         state_output = context.stage("braunschweig.synthesis.commute_day.state_stage")
@@ -166,7 +185,8 @@ def execute(context):
     day_trips, diagnostics = build_day_trips(trips, states, matches, donor_trips,
                                              random_seed=int(context.config("random_seed")),
                                              donor_attributes=donor_attributes,
-                                             general_absence=general_absence)
+                                             general_absence=general_absence,
+                                             persons=persons)
     logger.info("%s reporting-day trips: %d rows for %d persons (from %d rows for %d persons); "
                 "%s=%s, %s=%s; diagnostics: %s", _LOG_TAG, len(day_trips),
                 day_trips["person_id"].nunique(), len(trips), trips["person_id"].nunique(),

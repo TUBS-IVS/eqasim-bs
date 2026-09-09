@@ -98,6 +98,21 @@ def test_plan_replacement_present_general_matches_absence_state():
     assert plan_replacement.STATE_PRESENT_GENERAL == D.STATE_PRESENT
 
 
+def test_by_size_class_reports_the_realised_rate_per_household_size_reported_not_targeted():
+    """Ruling R11 (final-review fix wave): by_size_class is REPORTED, never a target the draw is
+    tuned against -- there is no size-class-level reference, unlike by_band."""
+    ref = _reference(p_band=0.0)   # no residual: only the household stage acts, as in the sibling test
+    _out, diag = D.draw_absence(_persons(), ref, np.random.RandomState(1))
+    by_size_class = diag["by_size_class"]
+    assert set(by_size_class) == {1, 2, 3, 4, 5}
+    assert by_size_class[1]["n"] == 200 and by_size_class[2]["n"] == 400
+    assert 0.35 < by_size_class[1]["realised_rate"] < 0.65   # matches the "singles" assertion above
+    assert by_size_class[2]["realised_rate"] == pytest.approx(0.0)
+    for size_class in (3, 4, 5):
+        assert by_size_class[size_class]["n"] == 0
+        assert np.isnan(by_size_class[size_class]["realised_rate"])
+
+
 def test_reference_missing_size_class_or_band_raises():
     # Six of the seven bands: the last one ("75+") is missing.
     bands_missing_one = {b: 0.1 for b in D.AGE_BAND_LABELS[:-1]}

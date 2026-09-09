@@ -66,6 +66,24 @@ def test_popsim_open_parity_flags_on():
     assert c["cordon_enabled"] is True
 
 
+def test_popsim_mid_day_absence_disabled():
+    """General day absence (issue #370) must stay OFF here, final-review fix wave Important
+    finding 1: matsim.scenario.population is aliased to the braunschweig wrapper (cordon_enabled
+    True, see CORDON_WRITER_ALIASES below), which merges a dayAbsenceState attribute
+    independently of synthesis.population.trips.final -- aliased below to the bare
+    braunschweig.popsim.trips_stage, not day-absence-aware -- so leaving the flag at its true
+    default would write an absence attribute onto persons whose trips are never removed."""
+    c = _cfg(MID_CONFIG)
+    assert c["day_absence_enabled"] is False
+
+
+def test_popsim_open_day_absence_disabled():
+    """Same flag, same OFF requirement (ruling R13): config_popsim_open_braunschweig.yml also
+    aliases matsim.scenario.population to the braunschweig wrapper."""
+    c = _cfg(OPEN_CONFIG)
+    assert c["day_absence_enabled"] is False
+
+
 def test_popsim_configs_carry_cordon_writer_aliases():
     for path in (MID_CONFIG, OPEN_CONFIG):
         with open(path, encoding="utf-8") as f:

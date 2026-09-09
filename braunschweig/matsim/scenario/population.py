@@ -30,6 +30,8 @@ persons frame the SAME way, so ``add_person`` emits it as ``dayAbsenceState``. W
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
 
 import matsim.scenario.population as base
@@ -40,6 +42,14 @@ from braunschweig.synthesis.incommuter_merge._base import (assert_unique_ids,
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[commute day population]"
+
+#: Module whose source this stage's cache token must cover (see :func:`validate`): the VENDORED
+#: writer, not this wrapper alone. synpp hashes only THIS module's source, so an edit to the
+#: vendored ``matsim.scenario.population`` (``load_raw``, ``prepare_frames``, ``write_population``,
+#: ``add_person``/``OPTIONAL_PERSON_FIELDS``) would otherwise leave a stale cached plans.xml.gz in
+#: place although the writer that produced it changed (final-review fix wave, Important finding
+#: 8; same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
+_HELPER_MODULES = (base,)
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads
@@ -73,6 +83,22 @@ ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 #: OPTIONAL_PERSON_FIELDS`` emits it as the MATSim person attribute ``dayAbsenceState``
 #: (java.lang.String) for the persons that have one.
 ABSENCE_STATE_COLUMN = "day_absence_state"
+
+
+def validate(context):
+    """synpp validation token: md5 over the vendored writer's source.
+
+    synpp hashes only THIS module's source, so an edit to the vendored
+    ``matsim.scenario.population`` this wrapper delegates to (``load_raw``, ``prepare_frames``,
+    ``write_population``, ``add_person``/``OPTIONAL_PERSON_FIELDS``) would otherwise leave a stale
+    cached ``plans.xml.gz`` in place although the writer that produced it changed. The token folds
+    that source in, so a vendored-writer edit devalidates the stage exactly like an edit here
+    (same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def configure(context):

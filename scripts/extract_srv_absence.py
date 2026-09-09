@@ -124,10 +124,23 @@ def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> l
     return lines
 
 
-def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
+def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, clustering: dict) -> list:
     """Provenance header for the absence-household-by-size table."""
     lines = _common_header(A.ABSENCE_HOUSEHOLD_TABLE, diagnostics, source_commit)
     lines += [
+        "# Clustering: %.4f (%d/%d) of absent persons live in a household in which EVERY member"
+        % (clustering["unweighted_share"], clustering["n_absent_in_fully_absent_households"],
+           clustering["n_absent_persons"]),
+        "#   is absent, UNWEIGHTED; %.4f PERSON-WEIGHTED (GEWICHT_P_ZENSUS). Computed by"
+        % clustering["weighted_share"],
+        "#   braunschweig.calibration.srv_absence.clustering_share(prepared) -- the traceable",
+        "#   source of the household-clustering figure ADR-0110 cites (issue #370 final-review",
+        "#   fix wave, ruling R12).",
+        "# ASSUMPTION: household size = the count of DELIVERED persons per HHNR in",
+        "#   SrV2023_Personen.csv, not a dedicated household-size variable from",
+        "#   SrV2023_Haushalte.csv; verified equal to V_ANZ_PERS for all 8,106 households on",
+        "#   2026-09-09 (ad-hoc check against the local raw file, not reproduced by committed",
+        "#   code).",
         "# Household size classes: 1..%d, class %d = '%d or more' members."
         % (A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP),
         "# Columns: size_class, n_households_unweighted, n_all_absent_unweighted, p_all_absent",
@@ -179,11 +192,13 @@ def main(argv=None) -> int:
     prepared, diagnostics = A.prepare_absence_persons(persons)
     by_age = A.build_absence_by_age_band(prepared)
     by_size = A.build_absence_household_by_size(prepared, households)
+    clustering = A.clustering_share(prepared)
     A.check_invariants(by_age, by_size)
-    logger.info("invariants passed; diagnostics: %s", diagnostics)
+    logger.info("invariants passed; diagnostics: %s; clustering: %s", diagnostics, clustering)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE, _age_header(by_age, diagnostics, args.source_commit))
-    _write(by_size, args.out_dir / A.ABSENCE_HOUSEHOLD_TABLE, _size_header(by_size, diagnostics, args.source_commit))
+    _write(by_size, args.out_dir / A.ABSENCE_HOUSEHOLD_TABLE,
+          _size_header(by_size, diagnostics, args.source_commit, clustering))
     return 0
 
 

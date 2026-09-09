@@ -633,6 +633,43 @@ def test_execute_excludes_absent_persons_from_the_model_side_under_at_home_only(
     assert n_persons["model"] == 2
 
 
+def test_execute_counts_the_absent_person_as_zero_trip_under_at_home_zero(tmp_path, monkeypatch):
+    """Deferred minor (final-review fix wave): universe=at_home_zero (the default) WITH a
+    non-empty absence draw.
+
+    Unlike ``at_home_only`` (the sibling test above), ``at_home_zero`` never EXCLUDES an
+    away-from-home person -- they stay in the head-to-head universe and are counted as a
+    ZERO-TRIP person, exactly as the module docstring's "Comparison universe" section states.
+    ``harmonise_model`` itself never removes a trip row (only ``trips_day_stage`` does, upstream,
+    in production); this fixture mirrors the reporting-day view directly by giving person 2 --
+    the one marked absent -- zero trips, so the test exercises the ACTUAL zero-trip contribution
+    to ``mobility_rate``, not merely the ``away_from_home`` flag.
+    """
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    trips_without_person_2 = _model_trips()
+    trips_without_person_2 = trips_without_person_2[
+        trips_without_person_2["person_id"] != 2].reset_index(drop=True)
+    context = _stage_context(tmp_path, absent_ids={2})
+    context._stages["trips"] = trips_without_person_2
+
+    S.execute(context)
+
+    out_dir = tmp_path / "analysis" / "plan_structure_vs_srv"
+    provenance = json.loads((out_dir / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["parameters"]["srv_universe"] == SRV.UNIVERSE_AT_HOME_ZERO
+    assert provenance["model"]["n_persons_away_from_home"] == 1
+    assert provenance["model"]["n_persons_excluded_away"] == 0
+    assert provenance["model"]["n_persons_in_scope"] == 3   # person 2 stays IN the universe
+
+    headline = pd.read_csv(out_dir / "headline.csv")
+    mobility = headline[headline["metric"] == "mobility_rate"].iloc[0]
+    # Persons 1 and 3 are mobile (2 trips each); person 2 is now the zero-trip absent person.
+    assert mobility["model"] == pytest.approx(2.0 / 3.0)
+
+
 def test_warns_when_at_home_zero_is_compared_without_the_absence_model(tmp_path, monkeypatch,
                                                                         caplog):
     """at_home_zero + day_absence_enabled=False: the model has no away-from-home state at all,

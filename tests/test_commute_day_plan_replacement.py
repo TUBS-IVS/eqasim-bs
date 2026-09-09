@@ -482,6 +482,77 @@ def test_general_absence_excludes_an_unmatched_home_person_from_n_home_unmatched
     assert not any("keep their ORIGINAL" in message for message in caplog.messages)
 
 
+# ---------------------------------------------------------------------------
+# Escort-coherence diagnostics (issue #370 final-review fix wave, ruling R10, spec 2.1 point 4)
+# ---------------------------------------------------------------------------
+
+def test_n_absent_with_escort_leg_counts_absent_persons_with_an_original_escort_leg():
+    # p1 has an escort leg and is generally absent; p2 has none and is present -- only p1 must
+    # be counted, and it must be read from the ORIGINAL trips row (p1 receives no rows at all).
+    trips = pd.DataFrame({
+        "person_id":         ["p1", "p1", "p2", "p2"],
+        "trip_index":        [0, 1, 0, 1],
+        "departure_time":    [7 * 3600.0, 8 * 3600.0, 8 * 3600.0, 17 * 3600.0],
+        "arrival_time":      [7 * 3600.0 + 600, 8 * 3600.0 + 600, 8 * 3600.0 + 900, 17 * 3600.0 + 900],
+        "preceding_purpose": ["home", "escort", "home", "work"],
+        "following_purpose": ["escort", "work", "work", "home"],
+        "is_first_trip":     [True, False, True, False],
+        "is_last_trip":      [False, True, False, True],
+        "trip_duration":     [600, 600, 900, 900],
+        "activity_duration": [np.nan, np.nan, np.nan, np.nan],
+        "mode":              ["car", "car", "car", "car"],
+    })
+    states = pd.DataFrame({"person_id": ["p1", "p2"], "commute_day_state": ["at_workplace", "at_workplace"]})
+    matches = pd.DataFrame(columns=["person_id", "donor_id", "coarsening_level"])
+    general = pd.DataFrame({"person_id": ["p1", "p2"], "day_absence_state": ["absent_individual", "present"]})
+
+    _day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, states, matches, _donor_trips_fixture(), random_seed=RANDOM_SEED,
+        general_absence=general)
+
+    assert diagnostics["n_absent_with_escort_leg"] == 1
+    assert diagnostics["n_persons_absent_total"] == 1
+
+
+def test_n_children_with_absent_escorter_counts_present_children_via_household_proxy():
+    trips = pd.DataFrame({
+        "person_id":         ["adult1", "adult1"],
+        "trip_index":        [0, 1],
+        "departure_time":    [7 * 3600.0, 8 * 3600.0],
+        "arrival_time":      [7 * 3600.0 + 600, 8 * 3600.0 + 600],
+        "preceding_purpose": ["home", "escort"],
+        "following_purpose": ["escort", "work"],
+        "is_first_trip":     [True, False],
+        "is_last_trip":      [False, True],
+        "trip_duration":     [600, 600],
+        "activity_duration": [np.nan, np.nan],
+        "mode":              ["car", "car"],
+    })
+    states = pd.DataFrame({"person_id": ["adult1"], "commute_day_state": ["at_workplace"]})
+    matches = pd.DataFrame(columns=["person_id", "donor_id", "coarsening_level"])
+    general = pd.DataFrame({"person_id": ["adult1"], "day_absence_state": ["absent_individual"]})
+    # h1: adult1 (absent, escorting) + two present children -- both counted. h2: an unrelated
+    # present child in a household with no absent escorter -- must NOT be counted.
+    persons = pd.DataFrame({
+        "person_id":   ["adult1", "child1", "child2", "unrelated_child"],
+        "household_id": ["h1", "h1", "h1", "h2"],
+        "age":          [40, 10, 17, 8],
+    })
+
+    _day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, states, matches, _donor_trips_fixture(), random_seed=RANDOM_SEED,
+        general_absence=general, persons=persons)
+
+    assert diagnostics["n_children_with_absent_escorter"] == 2
+
+
+def test_n_children_with_absent_escorter_is_none_without_a_persons_frame():
+    trips = _trips_fixture()
+    _day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(), random_seed=RANDOM_SEED)
+    assert diagnostics["n_children_with_absent_escorter"] is None
+
+
 def test_build_day_trips_emits_no_pandas_performance_warning():
     """Ruling R8: 657,888 PerformanceWarnings in one run made that run's log 254 MB."""
     import warnings

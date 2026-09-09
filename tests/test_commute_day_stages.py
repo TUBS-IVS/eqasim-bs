@@ -388,7 +388,7 @@ def test_configure_declares_the_documented_stages_and_defaults():
     trips = _ConfigureRecorder()
     TRIPS.configure(trips)
     assert set(trips.stages) == {"synthesis.population.trips", STATE_STAGE, DONOR_STAGE,
-                                 TRIPS.ABSENCE_STAGE}
+                                 TRIPS.ABSENCE_STAGE, "synthesis.population.enriched"}
     assert trips.config_keys[TRIPS.KEY_ENABLED] is TRIPS.DEFAULT_ENABLED
     assert trips.config_keys[TRIPS.KEY_DAY_ABSENCE_ENABLED] is TRIPS.DEFAULT_DAY_ABSENCE_ENABLED
 
@@ -847,6 +847,7 @@ def test_state_stage_lets_a_person_with_an_education_location_keep_such_a_donor(
 def _trips_day_stages(states, trips=None):
     return {
         "synthesis.population.trips": _trips() if trips is None else trips,
+        "synthesis.population.enriched": _persons(),
         STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
         DONOR_STAGE: (_donor_attributes(), _donor_trips(), {"enabled": True}),
     }
@@ -888,6 +889,7 @@ def test_trips_day_stage_absence_only_removes_absent_persons():
         "day_absence_state": ["absent_individual"] + ["present"] * (len(person_ids) - 1),
     })
     context = _context(TRIPS, stages={"synthesis.population.trips": trips,
+                                      "synthesis.population.enriched": _persons(),
                                       TRIPS.ABSENCE_STAGE: {"absence": absence,
                                                             "diagnostics": {"enabled": True}}},
                        config={TRIPS.KEY_ENABLED: False, TRIPS.KEY_DAY_ABSENCE_ENABLED: True,
@@ -967,6 +969,7 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
         {"person_id": 1, "commute_day_state": "home", "donor_id": "d4", "coarsening_level": 0},
     ])
     stages = {"synthesis.population.trips": _trips(),
+              "synthesis.population.enriched": _persons(),
               STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
               DONOR_STAGE: (attributes, donor_trips, {"enabled": True})}
     context = _context(TRIPS, stages=stages,

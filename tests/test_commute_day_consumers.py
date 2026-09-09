@@ -409,6 +409,21 @@ def test_pop_attach_day_absence_state_refuses_an_existing_column():
         POP.attach_day_absence_state(persons, _absence())
 
 
+def test_matsim_population_validate_hashes_the_vendored_base_module():
+    """Important finding 8 (final-review fix wave): the MATSim writer wrapper had NO validate()
+    at all before this fix, so an edit to the vendored ``matsim.scenario.population`` writer left
+    a stale cached ``plans.xml.gz`` in place. Same pin as ``test_overrides_hash_the_vendored_base_
+    module`` for OUTPUT/LOCATIONS/ACTIVITIES, applied to the MATSim population wrapper."""
+    from braunschweig.matsim.scenario import population as POP
+
+    assert POP.base in POP._HELPER_MODULES, (
+        "braunschweig.matsim.scenario.population must hash the vendored matsim.scenario."
+        "population module in _HELPER_MODULES, otherwise an edit to the vendored writer leaves "
+        "a stale cached plans.xml.gz")
+    assert POP.validate(None) == POP.validate(None)
+    assert len(POP.validate(None)) == 32   # md5 hexdigest
+
+
 def test_matsim_population_load_raw_never_reads_the_pre_assignment_frames():
     """The reporting-day frames reach the vendored ``load_raw`` through the shim.
 

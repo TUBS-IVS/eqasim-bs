@@ -576,6 +576,10 @@ def execute(context):
             "kreise_in_scope": list(kreise_in_scope),
         },
         "model": {
+            # n_persons_total is measured on `per` (SRV.person_level's output), i.e. AFTER any
+            # at_home_only exclusion above -- the opposite timing of n_persons_away_from_home
+            # below, which is measured BEFORE that exclusion (final-review fix wave, minor
+            # polish: made explicit here, not only in the module docstring).
             "n_persons_total": n_persons_total,
             "n_persons_in_scope": n_persons_in_scope,
             "share_persons_in_scope": (n_persons_in_scope / n_persons_total

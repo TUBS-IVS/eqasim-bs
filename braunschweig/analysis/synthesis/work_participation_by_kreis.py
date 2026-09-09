@@ -212,13 +212,15 @@ STATE_COLUMN = "commute_day_state"
 #: reader can see how far the model's worker cohort reaches beyond the employed one.
 #: ``n_absent_general`` (issue #370, ADR-0104 Task 7, APPENDED at the end so the pre-existing
 #: column order stays stable -- no repo consumer reads this CSV positionally) is a COUNT beside
-#: ``n_workers``, never a denominator: the employed persons of that code whose commute-day state
-#: was OVERRIDDEN to ``absent`` by the general day-absence draw (:func:`apply_general_absence`),
-#: INCLUDING any of them with no assigned workplace at all -- folding them out of
-#: ``share_no_workplace`` and into ``share_absent``, which is why ``n_workers`` can be larger
-#: than "employed persons with an assigned workplace" once this column is non-zero. It makes that
-#: contribution traceable rather than hidden inside a state the workplace draw never actually
-#: produced.
+#: ``n_workers``, never a denominator: EVERY generally absent employed person of that code
+#: (:func:`apply_general_absence`'s mask), INCLUDING any of them with no assigned workplace at all
+#: -- folding them out of ``share_no_workplace`` and into ``share_absent``, which is why
+#: ``n_workers`` can be larger than "employed persons with an assigned workplace" once this column
+#: is non-zero -- AND including any of them whose commute-day state was ALREADY ``absent`` (a
+#: commute-day far commuter): the override is a no-op for that subset (``absent`` -> ``absent``),
+#: but they are still counted here, so ``n_absent_general`` is not a proxy for "persons the
+#: override actually changed". It makes the general-absence contribution traceable rather than
+#: hidden inside a state the workplace draw never actually produced.
 STATE_SHARE_COLUMNS = (
     "code", "n_workers", "n_workers_not_employed", "share_at_workplace",
     "share_home", "share_absent", "share_no_workplace", "n_employed",
@@ -1419,10 +1421,11 @@ def _state_shares_section(state_shares):
              "are excluded from every",
              "share in this section; they are reported so the gap between the two cohorts stays "
              "visible.", "",
-             f"The general day-absence draw (issue #370) overrode {n_absent_general} employed "
-             f"person(s) to 'absent' before the shares above were computed -- including any of "
+             f"The general day-absence draw (issue #370) marks {n_absent_general} employed "
+             f"person(s) 'absent' before the shares above were computed -- including any of "
              f"them without an assigned workplace, who would otherwise have been counted as "
-             f"no_workplace (column n_absent_general).", "",
+             f"no_workplace, and any of them already 'absent' as a commute-day far commuter, "
+             f"for whom the override has no effect (column n_absent_general).", "",
              "| quantity (share of employed persons) | model | SrV 2023 | delta (pp) | "
              "+/- 3 pp |", "|---|---|---|---|---|"]
     for label, model_share, srv_share in pairs:

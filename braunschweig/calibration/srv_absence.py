@@ -139,6 +139,10 @@ def build_absence_household_by_size(prepared: pd.DataFrame, households: pd.DataF
     if n_unweighted_hh:
         raise ValueError(f"{_LOG_TAG} {n_unweighted_hh} households of the person file have no row / weight "
                          "in the household file")
+    n_non_positive_weight_hh = int((per_hh["GEWICHT_HH_ZENSUS"] <= 0).sum())
+    if n_non_positive_weight_hh:
+        raise ValueError(f"{_LOG_TAG} {n_non_positive_weight_hh} household(s) have a non-positive "
+                         "GEWICHT_HH_ZENSUS; a household weight must be > 0")
     rows = []
     for size_class in range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1):
         g = per_hh[per_hh["size_class"] == size_class]
@@ -146,6 +150,48 @@ def build_absence_household_by_size(prepared: pd.DataFrame, households: pd.DataF
                      "n_all_absent_unweighted": int(g["all_absent"].sum()),
                      "p_all_absent": _weighted_share(g["GEWICHT_HH_ZENSUS"].astype(float), g["all_absent"])})
     return pd.DataFrame(rows, columns=BY_SIZE_COLUMNS)
+
+
+def clustering_share(prepared: pd.DataFrame) -> dict:
+    """Person-weighted and unweighted share of absent persons living in a fully absent household.
+
+    This is the traceable SOURCE of ADR-0110's "55.8 % (person-weighted; 49.4 % unweighted)"
+    household-clustering figure (CLAUDE.md "no invented reference values": a number cited in a
+    decision record must be reproducible by committed code, not a number measured once ad hoc and
+    then carried into prose). ``scripts/extract_srv_absence.py`` writes the result as a
+    ``# Clustering:`` header line of ``srv2023_absence_household_by_size.csv`` so the figure stays
+    reproducible from the committed file alone, without re-running the extraction against the
+    local-only raw delivery.
+
+    A household is "fully absent" when EVERY one of its delivered members has ``absent`` True
+    (the same ``all_absent`` definition :func:`build_absence_household_by_size` uses). Returns a
+    dict with the plain counts ``n_absent_persons`` / ``n_absent_in_fully_absent_households`` and
+    ``unweighted_share`` / ``weighted_share`` (the PERSON weight ``GEWICHT_P_ZENSUS``, i.e.
+    ``prepared["weight"]`` -- deliberately not the household weight
+    :func:`build_absence_household_by_size` uses, because this figure describes a share of
+    PERSONS). A share is ``NaN`` only when there are no absent persons at all (an empty
+    numerator/denominator, never a substituted zero).
+    """
+    _require_columns(prepared, ["hhnr", "pnr", "weight", "absent"], "prepared")
+    per_hh = prepared.groupby("hhnr").agg(n=("pnr", "size"), n_absent=("absent", "sum")).reset_index()
+    per_hh["all_absent"] = per_hh["n_absent"] == per_hh["n"]
+    merged = prepared.merge(per_hh[["hhnr", "all_absent"]], on="hhnr", how="left")
+    absent = merged[merged["absent"]]
+    n_absent_persons = int(len(absent))
+    n_absent_in_fully_absent_households = int(absent["all_absent"].sum())
+    weight_absent_total = float(absent["weight"].sum())
+    weight_absent_clustered = float(absent.loc[absent["all_absent"], "weight"].sum())
+    unweighted_share = (n_absent_in_fully_absent_households / n_absent_persons
+                        if n_absent_persons else float("nan"))
+    weighted_share = (weight_absent_clustered / weight_absent_total
+                      if weight_absent_total > 0 else float("nan"))
+    logger.info("%s clustering: %d/%d (%.2f%%) absent persons unweighted, %.2f%% person-weighted, "
+               "live in a fully absent household", _LOG_TAG, n_absent_in_fully_absent_households,
+               n_absent_persons, 100.0 * unweighted_share if n_absent_persons else float("nan"),
+               100.0 * weighted_share if weight_absent_total > 0 else float("nan"))
+    return {"n_absent_persons": n_absent_persons,
+           "n_absent_in_fully_absent_households": n_absent_in_fully_absent_households,
+           "unweighted_share": unweighted_share, "weighted_share": weighted_share}
 
 
 def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame) -> None:

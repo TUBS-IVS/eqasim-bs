@@ -79,6 +79,17 @@ STATE_AT_WORKPLACE = "at_workplace"
 #: constants are pinned equal by ``tests/test_day_absence.py``.
 STATE_PRESENT_GENERAL = "present"
 
+#: Escort-leg purpose, matching ``following_purpose`` / ``preceding_purpose`` of the CONTRACT
+#: (issue #370 final-review fix wave, ruling R10, spec 2.1 point 4). Kept as a local literal
+#: rather than importing ``braunschweig.synthesis.commute_day.state_stage.ESCORT_PURPOSE`` for the
+#: same cross-module-avoidance reason as :data:`STATE_PRESENT_GENERAL` above.
+ESCORT_PURPOSE = "escort"
+
+#: Upper (inclusive) age in years counted as a "child" for :func:`build_day_trips`'s
+#: ``n_children_with_absent_escorter`` diagnostic (spec 2026-09-09-general-day-absence-design.md
+#: section 2.1 point 4).
+CHILD_MAX_AGE_YEARS = 17
+
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
@@ -127,7 +138,8 @@ def _replaced_rows(donor_blocks, person_ids, other_extra_columns):
 def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataFrame,
                     donor_trips: pd.DataFrame, *, random_seed: int,
                     donor_attributes: pd.DataFrame = None,
-                    general_absence: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
+                    general_absence: pd.DataFrame = None,
+                    persons: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
     """Build the reporting-day trips table from a state draw and a donor match.
 
     ``trips`` -- the pre-assignment ``synthesis.population.trips`` table (CONTRACT columns plus
@@ -155,6 +167,13 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     person is generally absent and every new diagnostics key reports the pre-Task-4 value (0 for
     the general-only counters, the ``n_persons_absent`` value for ``n_persons_absent_commute`` /
     ``n_persons_absent_total``).
+
+    ``persons`` -- OPTIONAL (issue #370 final-review fix wave, ruling R10, spec 2.1 point 4):
+    the enriched population, needing ``person_id``, ``household_id``, ``age``. It feeds ONLY
+    ``n_children_with_absent_escorter`` below; every other diagnostic and the returned
+    ``day_trips`` frame are unaffected by whether it is given. With ``persons=None`` (the
+    default) that one diagnostic is ``None`` and is logged as "not computed" rather than a
+    substituted 0, so a caller can tell "nobody" apart from "not measured".
 
     Returns ``(day_trips, diagnostics)``. ``diagnostics``: ``n_persons_replaced`` (``home``
     persons with a donor match, general absence excluded -- including a donor whose own day has
@@ -184,10 +203,30 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     * ``n_donors_unknown_trip_count`` -- how many of the latter were the "absent from
       ``donor_attributes``" case (always 0 when no attributes frame is given).
 
+    Escort-coherence diagnostics (ruling R10, spec 2.1 point 4):
+
+    * ``n_absent_with_escort_leg`` -- of the ABSENT persons (commute- or generally-absent, i.e.
+      the union counted in ``n_persons_absent_total``), how many carry an escort leg
+      (``following_purpose`` or ``preceding_purpose`` == :data:`ESCORT_PURPOSE`) on their
+      ORIGINAL ``trips`` rows. Always computed (no optional input needed): a matched ``home``
+      person's original rows are read from ``trips``, not from the donor chain that replaces
+      them, exactly like every other person.
+    * ``n_children_with_absent_escorter`` -- a HOUSEHOLD-LEVEL PROXY for "this child's escorting
+      adult is generally or commute-absent", ``None`` when ``persons`` is not given. The
+      chainsolver link between an escort leg and the specific child it escorts does not exist at
+      this stage (this module runs on the pre-assignment trips table, long before any chain is
+      solved), so the closest available signal is: a person aged <=
+      :data:`CHILD_MAX_AGE_YEARS` who is PRESENT (not in the union of absent persons) and lives
+      in a household with at least one ABSENT member counted in ``n_absent_with_escort_leg``
+      above. This can both over-count (several children in one household, only one of whom is
+      actually escorted) and under-count (an escorted child living with a non-relative), but it
+      is the only signal observable without the chain solver.
+
     Raises ``ValueError`` if ``matches["person_id"]`` contains duplicates -- each person can have
     at most one donor match; a duplicate would make the replacement for that person ambiguous.
     """
-    _require_columns(trips, ("person_id", "trip_index"), "trips frame")
+    _require_columns(trips, ("person_id", "trip_index", "preceding_purpose", "following_purpose"),
+                     "trips frame")
     _require_columns(states, ("person_id", "commute_day_state"), "states frame")
     _require_columns(matches, ("person_id", "donor_id"), "matches frame")
     _require_columns(donor_trips, ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id"),
@@ -314,6 +353,44 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     n_matched = len(matched_home_persons)
     share_donors_without_trips = n_donors_without_trips / max(n_matched, 1)
     share_donors_immobile = n_donors_immobile / max(n_matched, 1)
+
+    # Ruling R10 (final-review fix wave, spec 2.1 point 4): escort-coherence diagnostics. Both
+    # counts are read from the ORIGINAL trips table, not from the (possibly already-removed)
+    # output rows -- an absent person's escort leg still existed before their day was cleared.
+    escort_leg_mask = ((trips["preceding_purpose"] == ESCORT_PURPOSE)
+                       | (trips["following_purpose"] == ESCORT_PURPOSE))
+    persons_with_escort_leg = set(trips.loc[escort_leg_mask, "person_id"])
+    absent_persons_with_escort_leg = absent_persons & persons_with_escort_leg
+    n_absent_with_escort_leg = len(absent_persons_with_escort_leg)
+    n_absent_total = len(absent_persons)
+    share_absent_with_escort_leg = n_absent_with_escort_leg / max(n_absent_total, 1)
+    logger.info(
+        "%s n_absent_with_escort_leg: %d/%d (%.2f%%) absent person(s) (commute- or "
+        "generally-absent) carry an escort leg on their original trips", _LOG_TAG,
+        n_absent_with_escort_leg, n_absent_total, 100.0 * share_absent_with_escort_leg)
+
+    n_children_with_absent_escorter = None
+    if persons is None:
+        logger.info("%s n_children_with_absent_escorter: not computed (no persons frame given)",
+                    _LOG_TAG)
+    else:
+        _require_columns(persons, ("person_id", "household_id", "age"), "persons frame")
+        households_with_absent_escorter = set(
+            persons.loc[persons["person_id"].isin(absent_persons_with_escort_leg), "household_id"])
+        is_child = persons["age"] <= CHILD_MAX_AGE_YEARS
+        is_present = ~persons["person_id"].isin(absent_persons)
+        lives_with_absent_escorter = persons["household_id"].isin(households_with_absent_escorter)
+        n_children_with_absent_escorter = int(
+            (is_child & is_present & lives_with_absent_escorter).sum())
+        n_children_total = int(is_child.sum())
+        share_children_with_absent_escorter = n_children_with_absent_escorter / max(n_children_total, 1)
+        logger.info(
+            "%s n_children_with_absent_escorter: %d/%d (%.2f%%) present children (age <= %d) "
+            "live in a household with an absent member carrying an escort leg (household-level "
+            "PROXY for a linked escorter -- the chainsolver link does not exist at this stage)",
+            _LOG_TAG, n_children_with_absent_escorter, n_children_total,
+            100.0 * share_children_with_absent_escorter, CHILD_MAX_AGE_YEARS)
+
     diagnostics = {
         "n_persons_replaced": n_matched,
         "n_persons_absent": n_persons_absent,           # unchanged meaning: commute-absent persons
@@ -331,6 +408,8 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         "n_donors_unknown_trip_count": n_donors_unknown_trip_count,
         "share_donors_without_trips": float(share_donors_without_trips),
         "share_donors_immobile": float(share_donors_immobile),
+        "n_absent_with_escort_leg": n_absent_with_escort_leg,
+        "n_children_with_absent_escorter": n_children_with_absent_escorter,
     }
 
     logger.info(

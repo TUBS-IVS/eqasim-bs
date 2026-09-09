@@ -188,14 +188,36 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     # population): a household is fully absent iff every member's `absent` flag is True.
     hh_all_absent = absent.groupby(out["household_id"]).transform("all")
     share_clustered = float((absent & hh_all_absent).sum() / n_abs) if n_abs else float("nan")
+
+    # Ruling R11 (final-review fix wave): realised absence rate PER HOUSEHOLD SIZE CLASS,
+    # reported for transparency only -- the model does NOT target a per-size person-level
+    # absence rate (only the household-clustering share and the per-AGE-BAND rate are
+    # targeted). Because the household stage marks a WHOLE household absent with one draw per
+    # household regardless of its size, a single-person household is effectively drawn at the
+    # household rate directly while a member of a large household needs many co-members to also
+    # draw absent for the whole household to be marked -- so singles are systematically
+    # OVER-absent and members of large households UNDER-absent relative to each other within a
+    # band, even though the band-level rate still holds in expectation (ADR-0110 Assumptions).
+    by_size_class = {}
+    for size_class in range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1):
+        in_class = (out["household_size_class"] == size_class).to_numpy()
+        n_class = int(in_class.sum())
+        by_size_class[size_class] = {
+            "n": n_class,
+            "realised_rate": float(absent[in_class].mean()) if n_class else float("nan"),
+        }
+
     diagnostics = {"n_persons": int(len(out)), "n_households": int(len(households)),
                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
                    "n_absent_total": n_abs, "share_absent_total": float(n_abs / max(len(out), 1)),
                    "share_absent_in_fully_absent_households": share_clustered,
-                   "n_bands_overshoot": n_overshoot, "household_stage": bool(household_stage), "by_band": by_band}
+                   "n_bands_overshoot": n_overshoot, "household_stage": bool(household_stage), "by_band": by_band,
+                   "by_size_class": by_size_class}
     logger.info("%s %d/%d persons absent (%.2f%%): %d by the household stage, %d by the individual stage; "
-                "%.1f%% of absent persons live in a fully absent household; per band %s", _LOG_TAG, n_abs,
+                "%.1f%% of absent persons live in a fully absent household; per band %s; per household size "
+                "class (REPORTED, not targeted -- see ADR-0110 Assumptions) %s", _LOG_TAG, n_abs,
                 len(out), 100.0 * diagnostics["share_absent_total"], diagnostics["n_absent_household"],
                 diagnostics["n_absent_individual"], 100.0 * share_clustered if n_abs else float("nan"),
-                {b: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}%" for b, v in by_band.items()})
+                {b: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}%" for b, v in by_band.items()},
+                {sc: f"{100 * v['realised_rate']:.2f}% (n={v['n']})" for sc, v in by_size_class.items()})
     return out, diagnostics

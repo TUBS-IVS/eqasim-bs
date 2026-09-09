@@ -26,8 +26,14 @@ from braunschweig.synthesis.day_absence.absence import (ABSENCE_COLUMNS, DAY_ABS
 logger = logging.getLogger(__name__)
 _LOG_TAG = "[day absence]"
 STAGE_NAME = "braunschweig.synthesis.day_absence.absence_stage"
-#: Pure modules whose sources this stage's cache token must cover (see :func:`validate`).
-_HELPER_MODULES = (_absence,)
+#: Pure modules whose sources this stage's cache token must cover (see :func:`validate`). Both
+#: modules are folded in: the draw rule itself lives in :mod:`absence` (the household/individual
+#: composition, the overshoot guard), but the age-band edges/labels and the household-size-class
+#: top live in :mod:`braunschweig.calibration.srv_absence` (:data:`AGE_BAND_LABELS`,
+#: :data:`AGE_BAND_EDGES`, :data:`HOUSEHOLD_SIZE_CLASS_TOP`, :func:`age_band`,
+#: :func:`household_size_class`) -- an edit there changes what a person is drawn AGAINST just as
+#: much as an edit to :mod:`absence` changes HOW they are drawn, so both must devalidate the cache.
+_HELPER_MODULES = (_absence, srv_absence)
 
 KEY_ENABLED = "day_absence_enabled"
 DEFAULT_ENABLED = True
@@ -131,5 +137,7 @@ def execute(context):
                 logger.warning("%s band %s realised %.2f%% vs reference %.2f%% (%.2f pp, n=%d) exceeds %s=%.2f pp",
                                _LOG_TAG, band, 100 * cell["realised_rate"], 100 * cell["reference_rate"],
                                deviation_pp, cell["n"], KEY_MAX_BAND_DEVIATION_PP, max_dev_pp)
-    diagnostics = dict(diagnostics); diagnostics["enabled"] = True; diagnostics["n_band_guard_hits"] = n_guard_hits
+    diagnostics = dict(diagnostics)
+    diagnostics["enabled"] = True
+    diagnostics["n_band_guard_hits"] = n_guard_hits
     return {"absence": absence, "diagnostics": diagnostics}

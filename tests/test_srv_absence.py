@@ -88,3 +88,56 @@ def test_invariants_accept_the_builder_output_and_reject_a_share_above_one():
     broken = by_age.copy(); broken.loc[0, "p_absent"] = 1.2
     with pytest.raises(ValueError, match="p_absent"):
         A.check_invariants(broken, by_size)
+
+
+def test_build_absence_household_by_size_raises_on_a_non_positive_household_weight():
+    """Deferred minor (final-review fix wave): a household weight <= 0 must raise, named."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    households = _households(); households.loc[households["HHNR"] == 2, "GEWICHT_HH_ZENSUS"] = 0.0
+    with pytest.raises(ValueError, match="non-positive GEWICHT_HH_ZENSUS"):
+        A.build_absence_household_by_size(prepared, households)
+
+
+# ---------------------------------------------------------------------------
+# clustering_share (final-review fix wave, ruling R12): the traceable source of ADR-0110's
+# "55.8 % (person-weighted; 49.4 % unweighted)" household-clustering figure.
+# ---------------------------------------------------------------------------
+
+def test_clustering_share_on_the_tiny_fixture():
+    # Households: 1 (1 person, absent -> fully absent), 2 (2 persons, both absent -> fully
+    # absent), 3 (3 persons, 1 absent, 2 present -> NOT fully absent). Absent persons: hh1/pnr1
+    # (weight 1.0), hh2/pnr1 (weight 1.0), hh2/pnr2 (weight 1.0) -- all in fully absent
+    # households -- plus none from hh3. So all 3 absent persons live in a fully absent household:
+    # both shares are 1.0 on this fixture (a genuinely partial case is exercised by construction
+    # in test_by_household_size_all_absent_share's household 3, which has zero absent members).
+    prepared, _ = A.prepare_absence_persons(_persons())
+    result = A.clustering_share(prepared)
+    assert result["n_absent_persons"] == 3
+    assert result["n_absent_in_fully_absent_households"] == 3
+    assert result["unweighted_share"] == pytest.approx(1.0)
+    assert result["weighted_share"] == pytest.approx(1.0)
+
+
+def test_clustering_share_distinguishes_clustered_from_partial_absence():
+    # A fourth, partially-absent household (id 4): one absent member out of two -- must lower
+    # the clustering share below 1.0 while every OTHER household stays as in the tiny fixture.
+    persons = _persons()
+    partial = pd.DataFrame({
+        "HHNR": [4, 4], "PNR": [1, 2], "V_ALTER": [50, 48],
+        "E_ANZ_WEGE": [-7, 3], "GEWICHT_P_ZENSUS": [1.0, 1.0], "MITTL_WERKTAG": [1, 1],
+    })
+    prepared, _ = A.prepare_absence_persons(pd.concat([persons, partial], ignore_index=True))
+    result = A.clustering_share(prepared)
+    assert result["n_absent_persons"] == 4          # 3 from the tiny fixture + 1 from household 4
+    assert result["n_absent_in_fully_absent_households"] == 3   # household 4 is only partially absent
+    assert result["unweighted_share"] == pytest.approx(3 / 4)
+    assert result["weighted_share"] == pytest.approx(3 / 4)     # equal weights on this fixture
+
+
+def test_clustering_share_returns_nan_when_nobody_is_absent():
+    persons = _persons()
+    persons["E_ANZ_WEGE"] = [3, 2, 3, 3, 0, 2]   # nobody away from home
+    prepared, _ = A.prepare_absence_persons(persons)
+    result = A.clustering_share(prepared)
+    assert result["n_absent_persons"] == 0
+    assert np.isnan(result["unweighted_share"]) and np.isnan(result["weighted_share"])
