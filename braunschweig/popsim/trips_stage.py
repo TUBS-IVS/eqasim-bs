@@ -12,6 +12,12 @@ Per-person jitter formula (matches synthesis/population/trips.py exactly):
     offset    = random_sample_per_person * interval * 2.0 - interval
                 -> range [-interval, +interval)
     All times for a person are shifted by the SAME offset to preserve ordering.
+
+Since issue #123 (Phase 0 Task 1), the offset actually applied is also recorded per trip in
+OFFSET_COLUMN (rounded to whole seconds, the same rounding as departure_time/arrival_time), so a
+later analysis can decompose a jittered time as departure_time = raw_departure_time + offset
+without re-deriving the offset from the RNG stream. This is purely an additional output column;
+the OFF/default jitter values (departure_time, arrival_time) are unchanged.
 """
 
 from __future__ import annotations
@@ -25,11 +31,23 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import closure_dwell as _closure_dwell
+from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
+# OFFSET_COLUMN is declared in departure_time_model, not here, so that module (Task 3, issue
+# #123) can import trips_stage.apply_per_person_jitter LAZILY (inside its own dispatch function)
+# without creating a circular import: trips_stage imports departure_time_model at module level
+# (this line), departure_time_model never imports trips_stage at module level. Re-exported here
+# under its historical name so `trips_stage.OFFSET_COLUMN` keeps working for existing callers.
+# The module OBJECT is also imported above (as _departure_time_model) purely so it can be added
+# to _HELPER_MODULES below: this file's own module-level import of it must be covered there or
+# the cross-file own-package-import guard (tests/test_synpp_helper_hash_invariant.py) fails, and
+# a rename of OFFSET_COLUMN's string value would otherwise silently change this stage's output
+# column name without invalidating the cached trip table (the 2026-08-19 hazard class again).
+from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
 # The passive-escort pairing gap default lives with the trip build (braunschweig.popsim.trips)
 # and is re-exported through it here rather than re-typed, so this stage and map_purpose can
 # never disagree on the threshold a run uses when the config leaves it unset.
@@ -68,6 +86,14 @@ _HELPER_MODULES = (
     # stage's trip purposes without changing trips.py, so it is hashed for exactly the reason
     # trips.py itself is.
     _escort_pairing,
+    # departure_time_model currently holds only OFFSET_COLUMN (issue #123, Phase 0 Task 1); hashed
+    # here because apply_per_person_jitter WRITES that name as a column, so a rename would silently
+    # change this stage's output schema without invalidating the cache. From Task 3 onward the
+    # module also gains apply_departure_time_model and its dispatch, which trips_stage does not
+    # call directly (the departure-time model calls INTO trips_stage.apply_per_person_jitter, not
+    # the other way around) -- but hashing it now costs nothing and avoids a second silent gap
+    # later when that logic lands.
+    _departure_time_model,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -380,7 +406,12 @@ def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFra
                  (one draw per person, repeated for every trip in the chain)
 
     Both ``departure_time`` and ``arrival_time`` are shifted by the same offset
-    (preserving within-chain ordering) and rounded to integer seconds.
+    (preserving within-chain ordering) and rounded to integer seconds. The applied
+    offset (rounded the same way) is additionally recorded in :data:`OFFSET_COLUMN`
+    (issue #123, Phase 0 Task 1) so a later analysis can decompose a jittered time
+    as ``departure_time = raw_departure_time + offset`` without re-deriving the
+    offset from the RNG stream -- this is the ONLY behaviour change: every existing
+    column keeps the exact RNG draw and rounding it always had.
 
     This function is factored out of :func:`run` so that the ENTD donor adapter
     (``braunschweig.popsim.sources.entd.EntdSource.build_trips``) can apply the
@@ -400,7 +431,9 @@ def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFra
     -------
     pd.DataFrame
         The input table (modified in-place) with jittered and rounded
-        departure/arrival times.  The table is returned for chaining.
+        departure/arrival times, plus :data:`OFFSET_COLUMN` (the applied offset,
+        rounded to whole seconds, repeated per trip). The table is returned for
+        chaining.
     """
     random = np.random.RandomState(random_seed)
 
@@ -428,6 +461,12 @@ def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFra
 
     table["departure_time"] = np.round(table["departure_time"] + offset)
     table["arrival_time"] = np.round(table["arrival_time"] + offset)
+    # Record the applied offset (issue #123): rounded the same way as the shifted times above, so
+    # departure_time - table[OFFSET_COLUMN] reproduces the rounded pre-jitter departure exactly
+    # (round(x + n) == round(x) + round(n) for the integer-valued pre-jitter times this pipeline
+    # produces). Written AFTER the two lines above so it never changes their RNG consumption or
+    # rounding -- the OFF/default columns stay byte-identical to before this feature.
+    table[OFFSET_COLUMN] = np.round(offset)
 
     assert (table["departure_time"] >= 0.0).all(), (
         "departure_time must be non-negative after jitter; "

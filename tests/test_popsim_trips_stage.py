@@ -41,6 +41,34 @@ def test_trips_stage_jitter_is_per_person_keeps_chain_ordered():
     assert deps[0] <= deps[1]   # chain ordering preserved (per-person jitter, same offset)
 
 
+def test_jitter_records_the_applied_offset_per_person():
+    """Issue #123 (Phase 0 Task 1): apply_per_person_jitter must record the offset it applied.
+
+    ``departure_time - departure_time_offset_seconds`` must reproduce the pre-jitter (rounded)
+    departure -- i.e. later analysis can decompose the model time as raw + offset without
+    re-deriving the offset from the RNG stream -- and the recorded offset must be the SAME for
+    every trip of one person's chain (one draw per person, per the jitter formula).
+    """
+    table = pd.DataFrame({
+        "person_id":      ["p1", "p1", "p2"],
+        "departure_time": [8 * 3600.0, 17 * 3600.0, 9 * 3600.0],
+        "arrival_time":   [8 * 3600.0 + 900.0, 17 * 3600.0 + 900.0, 9 * 3600.0 + 900.0],
+    })
+    pre_jitter_departure = table["departure_time"].copy()
+    pre_jitter_arrival = table["arrival_time"].copy()
+
+    out = trips_stage.apply_per_person_jitter(table.copy(), random_seed=7)
+
+    assert trips_stage.OFFSET_COLUMN in out.columns
+    recovered_departure = out["departure_time"] - out[trips_stage.OFFSET_COLUMN]
+    recovered_arrival = out["arrival_time"] - out[trips_stage.OFFSET_COLUMN]
+    assert np.allclose(recovered_departure, np.round(pre_jitter_departure))
+    assert np.allclose(recovered_arrival, np.round(pre_jitter_arrival))
+
+    n_distinct_offsets_per_person = out.groupby("person_id")[trips_stage.OFFSET_COLUMN].nunique()
+    assert (n_distinct_offsets_per_person == 1).all()   # one draw per person, shared by every trip
+
+
 # ---------------------------------------------------------------------------
 # Task 2.3 C: absolute plan-time bound + NaN-free guarantee in trips_stage.run.
 # ---------------------------------------------------------------------------
