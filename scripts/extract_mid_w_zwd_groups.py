@@ -45,6 +45,7 @@ if str(REPO) not in sys.path:
 
 from braunschweig.calibration.srv_distance_targets import weighted_quantiles  # noqa: E402
 from braunschweig.calibration.srv_fine_purpose import QUANTILE_PROBABILITIES  # noqa: E402
+from braunschweig.popsim.diary_facts import WEGKM_CODE_MIN  # noqa: E402
 from braunschweig.popsim.mid.csv_format import detect_csv_separator  # noqa: E402
 from braunschweig.popsim.purpose_subtype import (  # noqa: E402
     SubtypeSpec, code_coverage_guard, leisure_spec, other_errand_spec,
@@ -66,8 +67,11 @@ GROUP_COLUMNS = ["purpose", "spec_variant", "group", "n_unweighted", "share_with
                  "km_p25", "km_p50", "km_p75", "n_missing_distance"]
 
 #: ``wegkm_imp`` values at or above this bound are MiD missing-value codes (9994 upwards), not
-#: distances; they are excluded from the percentiles and counted separately.
-DISTANCE_MISSING_CODE_MIN = 9994.0
+#: distances; they are excluded from the percentiles and counted separately. Imported from
+#: ``braunschweig.popsim.diary_facts`` so the repository keeps ONE definition of the bound --
+#: note that diary_facts treats such a leg as 0 km, whereas this reference EXCLUDES it from the
+#: percentiles (a reference percentile must not be pulled down by a substituted zero).
+DISTANCE_MISSING_CODE_MIN = WEGKM_CODE_MIN
 
 #: The two settings of the ``purpose_subtype_codeplan_sentinels`` config key
 #: (``braunschweig/popsim/stage/config_keys.py``): "default" = flag OFF (LEISURE_SPEC /
@@ -107,14 +111,41 @@ def specs_for_variant(variant: str) -> tuple:
     return (SHOP_SPEC, other_errand_spec(codeplan_sentinels), leisure_spec(codeplan_sentinels))
 
 
-def filter_weekday_legs(wege: pd.DataFrame) -> pd.DataFrame:
-    """Weekday, non-rbW legs -- the same universe as scripts/extract_mid_w_zweck_hwzweck1.py."""
+def filter_weekday_legs(wege: pd.DataFrame) -> tuple:
+    """Weekday, non-rbW legs -- the same universe as scripts/extract_mid_w_zweck_hwzweck1.py.
+
+    Returns ``(filtered, diagnostics)``. The diagnostics carry the raw and kept leg counts and,
+    per column, how many values became NaN under the ``errors="coerce"`` numeric coercion: a
+    coercion that silently turns a mis-parsed column into NaN would shrink a filter's universe
+    without any signal, so the rate is logged (and, for the weight, escalated to an error below).
+    """
     frame = wege.copy()
+    n_total = len(frame)
+    coerced_to_nan = {}
     for column in REQUIRED_COLUMNS:
+        before = frame[column].notna()
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        n_coerced = int((before & frame[column].isna()).sum())
+        coerced_to_nan[column] = n_coerced
+        if n_coerced:
+            logger.warning("%s %d/%d values (%.2f%%) of column %s became NaN under the numeric "
+                           "coercion", _LOG_TAG, n_coerced, n_total,
+                           100.0 * n_coerced / n_total if n_total else float("nan"), column)
+    logger.info("%s numeric coercion produced NaN for %s (of %d legs)", _LOG_TAG,
+                ", ".join("%s=%d" % item for item in coerced_to_nan.items()), n_total)
+
+    invalid_weight = ~(frame["W_GEW"] > 0)
+    n_invalid_weight = int(invalid_weight.sum())
+    if n_invalid_weight:
+        raise ValueError(
+            "%s %d/%d legs (%.2f%%) have a missing or non-positive W_GEW; a weighted share and a "
+            "weighted percentile are undefined for them, and a delivery in which they occur must "
+            "be investigated rather than silently filtered."
+            % (_LOG_TAG, n_invalid_weight, n_total,
+               100.0 * n_invalid_weight / n_total if n_total else float("nan")))
+
     filtered = frame[frame["kernwo"].isin(KERNWO_WEEKDAY_CODES)
                      & (frame["W_RBW"] != RBW_SUMMARY_LEG_CODE)]
-    n_total = len(frame)
     logger.info("%s kept %d/%d legs (%.2f%%) after the weekday (kernwo in %s) and non-rbW "
                 "(W_RBW != %d) filter", _LOG_TAG, len(filtered), n_total,
                 100.0 * len(filtered) / n_total if n_total else float("nan"),
@@ -122,7 +153,10 @@ def filter_weekday_legs(wege: pd.DataFrame) -> pd.DataFrame:
     if len(filtered) == 0:
         raise ValueError("%s no legs left after the weekday/non-rbW filter; check the kernwo and "
                          "W_RBW column contents." % _LOG_TAG)
-    return filtered
+    diagnostics = {"n_legs_raw": n_total, "n_legs_after_weekday_rbw": int(len(filtered)),
+                   "n_legs_invalid_weight": n_invalid_weight,
+                   "n_values_coerced_to_nan": coerced_to_nan}
+    return filtered, diagnostics
 
 
 def build_group_reference(wege: pd.DataFrame) -> tuple:
@@ -136,9 +170,10 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
     Returns
     -------
     tuple[DataFrame, dict]
-        The table with :data:`GROUP_COLUMNS` and a diagnostics dict keyed
-        ``"<variant>/<purpose>"`` carrying the leg counts behind every row (total legs of the
-        purpose, labelled legs, sentinel legs, legs with a missing-distance code).
+        The table with :data:`GROUP_COLUMNS` and a diagnostics dict: the leg-universe counts of
+        :func:`filter_weekday_legs` (``n_legs_raw``, ``n_legs_after_weekday_rbw``, ...) plus one
+        entry per ``"<variant>/<purpose>"`` carrying the leg counts behind every row (total legs
+        of the purpose, labelled legs, sentinel legs, legs with a missing-distance code).
 
     Notes
     -----
@@ -152,9 +187,9 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
     missing = [column for column in REQUIRED_COLUMNS if column not in wege.columns]
     if missing:
         raise ValueError("%s MiD Wege table is missing required column(s) %s" % (_LOG_TAG, missing))
-    filtered = filter_weekday_legs(wege)
+    filtered, universe_diagnostics = filter_weekday_legs(wege)
 
-    rows, diagnostics = [], {}
+    rows, diagnostics = [], dict(universe_diagnostics)
     for variant in SPEC_VARIANTS:
         for spec in specs_for_variant(variant):
             # Raises if a W_ZWD code observed on this purpose is neither grouped nor a sentinel:
@@ -229,10 +264,11 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "# Source: MiD 2023 Wege (LOCAL raw %s; national scientific-use delivery, never" % WEGE_FILE,
         "#   committed), generated by scripts/extract_mid_w_zwd_groups.py on %s."
         % dt.date.today().isoformat(),
-        "# Code state: eqasim-bs %s; groups from braunschweig.popsim.purpose_subtype"
+        "# Code state: eqasim-bs %s (the commit that introduced the extraction code); groups from"
         % source_commit,
-        "#   (leisure_spec / other_errand_spec) and braunschweig.popsim.shop_subtype -- imported,",
-        "#   never retyped.",
+        "#   braunschweig.popsim.purpose_subtype (leisure_spec / other_errand_spec) and",
+        "#   braunschweig.popsim.shop_subtype -- imported, never retyped. Header text was updated",
+        "#   in the following fix-round commit; the measured data rows are unchanged.",
         "# Table: %s" % MID_GROUP_TABLE,
         "# Role: MEASUREMENT REFERENCE for scripts/compare_purpose_subtypes_srv.py (issue #242,",
         "#   sub-project C). NOT a control target and NOT a validated calibration target: no stage",
@@ -251,9 +287,19 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "#   _CODEPLAN variants, in which the no-detail codes W_ZWD 799 'Freizeit k.A.' and 699",
         "#   'Erledigung k.A.' are sentinels instead of group members). The shop split has no",
         "#   codeplan variant, so its two blocks are identical by construction.",
+        "# Exclusions: n_legs_raw=%d (raw Wege-file row count), n_legs_after_weekday_rbw=%d "
+        "(%.2f%% kept;" % (diagnostics["n_legs_raw"], diagnostics["n_legs_after_weekday_rbw"],
+                           100.0 * diagnostics["n_legs_after_weekday_rbw"]
+                           / diagnostics["n_legs_raw"] if diagnostics["n_legs_raw"] else float("nan")),
+        "#   the universe every count below is measured on), n_legs_invalid_weight=%d (missing or "
+        "non-positive" % diagnostics["n_legs_invalid_weight"],
+        "#   W_GEW; the extraction RAISES if this is not 0), n_values_coerced_to_nan=%s (per raw "
+        "column, values" % (diagnostics["n_values_coerced_to_nan"],),
+        "#   that became NaN under the numeric coercion of the raw text).",
         "# Coverage (labelled / sentinel / missing-distance legs per variant and purpose):",
     ]
-    for key in sorted(diagnostics):
+    for key in sorted(key for key, value in diagnostics.items()
+                      if isinstance(value, dict) and "n_purpose_legs" in value):
         stats = diagnostics[key]
         n_purpose = stats["n_purpose_legs"]
         lines.append(

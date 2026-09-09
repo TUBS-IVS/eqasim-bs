@@ -62,6 +62,28 @@ def test_subtype_map_only_references_measured_fine_codes():
         assert len({F.coarse_of(code) for code in codes}) <= 1, group
 
 
+def test_complementary_group_pairs_carry_the_same_exactness_grade():
+    """Ruling C-R16: where a purpose has exactly two groups and both are mapped, the two shares
+    are complements, so ``delta_a == -delta_b`` identically. One grade must then cover both --
+    otherwise the same number would be trustworthy under one name and not under the other."""
+    by_purpose = {}
+    for group, (codes, exactness) in F.SUBTYPE_TO_SRV_FINE.items():
+        if codes:
+            by_purpose.setdefault(F.coarse_of(codes[0]), []).append((group, exactness))
+    for purpose, entries in by_purpose.items():
+        if len(entries) == 2:
+            grades = {exactness for _, exactness in entries}
+            assert len(grades) == 1, (purpose, entries)
+
+
+def test_other_errand_pair_is_graded_approximate():
+    """Pinned separately from the structural rule above because the LABELS also overlap: MiD
+    W_ZWD 602 "Behoerde, Bank, Post" feeds other_errand_short while SrV 11
+    "Dienstleistungseinrichtung (z. B. Post, Bank, ...)" feeds other_errand_long."""
+    assert F.SUBTYPE_TO_SRV_FINE["other_errand_short"] == ((10,), "approximate")
+    assert F.SUBTYPE_TO_SRV_FINE["other_errand_long"] == ((11,), "approximate")
+
+
 def test_coarse_of_and_label_of_raise_for_an_unmapped_code():
     with pytest.raises(ValueError, match="12"):
         F.coarse_of(12)
@@ -270,8 +292,11 @@ def test_comparison_flags_only_exact_groups_beyond_the_threshold():
     # leisure_visit: MiD 0.35 vs SrV 0.30 -> +5.0 pp, exact but below the threshold.
     assert comparison.loc["leisure_visit", "delta_pp"] == pytest.approx(5.0)
     assert not bool(comparison.loc["leisure_visit", "candidate_for_reestimation"])
-    # other_errand_long: MiD 0.60 vs SrV 0.70 -> -10.0 pp, but only "approximate".
+    # other_errand_short/long: -12.0 / +12.0 pp, beyond the threshold but only "approximate"
+    # (ruling C-R16), so neither is flagged.
+    assert comparison.loc["other_errand_short", "delta_pp"] == pytest.approx(10.0)
     assert comparison.loc["other_errand_long", "delta_pp"] == pytest.approx(-10.0)
+    assert not bool(comparison.loc["other_errand_short", "candidate_for_reestimation"])
     assert not bool(comparison.loc["other_errand_long", "candidate_for_reestimation"])
 
 
@@ -280,7 +305,43 @@ def test_comparison_leaves_an_aggregate_only_group_unflagged_with_no_srv_share()
     row = comparison.loc["leisure_excursion"]
     assert row["exactness"] == "aggregate_only"
     assert np.isnan(row["share_srv"]) and np.isnan(row["delta_pp"])
+    # EMPTY, not 0: SrV does not code the activity separately at all.
+    assert np.isnan(row["n_srv_unweighted"])
+    assert np.isnan(row["share_mid_renormalised"]) and np.isnan(row["delta_pp_renormalised"])
     assert not bool(row["candidate_for_reestimation"])
+
+
+def test_renormalised_columns_stay_empty_where_the_crosswalk_covers_the_whole_mass():
+    """shop and other_errand map every group on both sides, so renormalising is the identity and
+    a filled column would only invite reading the same number twice."""
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    symmetric = comparison[comparison["purpose"].isin(["shop", "other_errand"])]
+    assert symmetric["share_mid_renormalised"].isna().all()
+    assert symmetric["share_srv_renormalised"].isna().all()
+    assert symmetric["delta_pp_renormalised"].isna().all()
+
+
+def test_renormalised_columns_divide_each_side_by_its_own_mapped_mass():
+    """leisure is asymmetric: MiD maps 0.90 of its mass (leisure_excursion is unmapped), SrV maps
+    0.95 (fine code 18 is unmapped). Each side must be divided by ITS OWN mapped mass."""
+    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
+    row = comparison.loc["leisure_visit"]
+    assert row["share_mid_renormalised"] == pytest.approx(0.35 / 0.90)
+    assert row["share_srv_renormalised"] == pytest.approx(0.30 / 0.95)
+    assert row["delta_pp_renormalised"] == pytest.approx(100.0 * (0.35 / 0.90 - 0.30 / 0.95))
+    mapped = comparison[comparison["purpose"].eq("leisure")
+                        & comparison["srv_fine_codes"].astype(bool)]
+    assert mapped["share_mid_renormalised"].sum() == pytest.approx(1.0)
+    assert mapped["share_srv_renormalised"].sum() == pytest.approx(1.0)
+
+
+def test_renormalisation_does_not_change_the_committed_candidate_flag():
+    """The flag is defined on the RAW delta; the renormalised columns are a reported sensitivity,
+    never a second, silently applied rule."""
+    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
+    visit = comparison.loc["leisure_visit"]
+    assert abs(visit["delta_pp"]) <= F.CANDIDATE_DELTA_PP_THRESHOLD
+    assert not bool(visit["candidate_for_reestimation"])
 
 
 def test_comparison_covers_every_subtype_group_and_variant():

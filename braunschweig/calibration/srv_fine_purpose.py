@@ -52,7 +52,8 @@ FINE_PURPOSE_TABLE = "srv2023_fine_purpose_reference.csv"
 
 # --------------------------------------------------------------------------- SrV code maps
 # Labels transcribed from the SrV 2023 codebook SrV2023_Datenkodierung_SciUse.xlsx, sheet
-# "Tabelle1", variable V_ZWECK ("Ziel/Zweck"), cells B8236-B8256 -- the codebook is the ONLY
+# "Tabelle1", variable V_ZWECK ("Ziel/Zweck"), rows 8236-8256 -- the value LABELS are column F
+# ("Kodierungstext"), cells F8236-F8256, beside the code numbers in column E; the codebook is the ONLY
 # source for these strings. German umlauts are transliterated (ae/oe/ue/ss) to keep the module
 # ASCII (CLAUDE.md "MATSim and eqasim style"); the codebook cell is named beside each code so the
 # original spelling stays traceable.
@@ -120,10 +121,18 @@ SUBTYPE_TO_SRV_FINE = {
     "shop_daily": ((8,), "exact"),
     # 9 "Sonstiger Einkauf" == W_ZWD 502-505 (non-daily shopping).
     "shop_non_daily": ((9,), "exact"),
-    # 10 "Behoerdengang, Arztbesuch" == W_ZWD 601 "Arztbesuch" + 602 "Behoerde, Bank, Post".
-    "other_errand_short": ((10,), "exact"),
+    # 10 "Behoerdengang, Arztbesuch" vs W_ZWD 601 "Arztbesuch" + 602 "Behoerde, Bank, Post".
+    # Graded APPROXIMATE, not exact, for two independent reasons (issue #242 Task 6 review,
+    # ruling C-R16): (a) the labels genuinely overlap the OTHER member of the pair -- SrV 11
+    # "Dienstleistungseinrichtung (z. B. Post, Bank, Friseur, Apotheke)" names Post and Bank,
+    # which MiD files under 602 and hence under other_errand_short; (b) with exactly two groups
+    # per side the two shares are complements, so delta_short == -delta_long identically and the
+    # pair cannot carry two different exactness grades without the grade meaning two different
+    # things for one and the same number.
+    "other_errand_short": ((10,), "approximate"),
     # 11 "Dienstleistungseinrichtung" overlaps but is not identical to W_ZWD 603/604/605
-    # (errand for another person, other errand, caring for family members).
+    # (errand for another person, other errand, caring for family members) -- and, per (a) above,
+    # its Post/Bank part belongs to the SHORT group's MiD codes.
     "other_errand_long": ((11,), "approximate"),
     # 15 "Privater Besuch (fremde Wohnung)" == W_ZWD 701 "Besuch/Treffen Freunde, Verwandte".
     "leisure_visit": ((15,), "exact"),
