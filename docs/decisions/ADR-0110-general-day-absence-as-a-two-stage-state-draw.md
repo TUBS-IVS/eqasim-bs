@@ -173,8 +173,9 @@
     sensitivity arm `day_absence_household_stage_enabled: false`).** Simpler (one Bernoulli draw per
     person at the band rate) and still hits every band marginal in expectation, but it cannot
     reproduce the 55.8 % household clustering: with an independent per-person draw at a ~5 % rate,
-    the chance that every member of even a 2-person household is drawn absent is `~0.25 %`, three
-    orders of magnitude below the observed household-fully-absent shares (3.40 % for size 2).
+    the chance that every member of even a 2-person household is drawn absent is `~0.25 %`, about
+    14 times (roughly one order of magnitude) below the observed household-fully-absent share of
+    3.40 % for size 2.
     Family vacations and joint travel are a real, measured pattern (partially absent households are
     dominated by lone 18-29-year-olds, the OPPOSITE signature), and an individual-only draw would
     silently erase it while still passing every per-band rate check -- exactly the kind of green

@@ -162,7 +162,13 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   employed person, so a zero overlap most likely signals a person_id join defect between the
   absence stage and this one. Composition rule documented once in the feature record
   general_day_absence and the note docs/codebase/notes/day-absence-state.md. Evidence:
-  tests/test_work_participation_by_kreis.py::test_apply_general_absence_overrides_only_the_generally_absent_persons,
+  tests/test_commute_day_consumers.py::test_apply_general_absence_overrides_only_the_generally_absent_persons,
   ::test_commute_day_state_shares_folds_a_generally_absent_worker_into_absent,
   ::test_commute_day_state_shares_counts_a_generally_absent_person_without_a_workplace_as_absent,
-  ::test_commute_day_state_shares_warns_when_the_general_absence_draw_matches_nobody.'
+  ::test_commute_day_state_shares_warns_when_the_general_absence_draw_matches_nobody (that file
+  imports this module as WP and exercises apply_general_absence / commute_day_state_shares
+  directly); the OFF-path configure()/execute() gating on day_absence_enabled and
+  commute_day_state_enabled is instead covered in this stage''s own test file,
+  tests/test_work_participation_by_kreis.py::test_configure_skips_the_absence_stage_when_day_absence_is_disabled,
+  ::test_configure_skips_the_absence_stage_when_the_commute_day_state_model_is_off,
+  ::test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_when_day_absence_is_disabled.'

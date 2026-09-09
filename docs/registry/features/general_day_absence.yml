@@ -15,8 +15,9 @@ description: 'Gives EVERY synthetic person a reporting-day absence state,
   met IN EXPECTATION net of what the household stage already realised in that band. This
   reproduces both the SrV per-band absence rates and the SrV household clustering (55.8 %
   of absent persons live in a fully absent household), which an individual-only draw at the
-  same rates could not (the chance of an independent draw absorbing an entire household is
-  three orders of magnitude below the observed clustering).
+  same rates could not (an independent draw absorbing a 2-person household is ~0.25 % vs. the
+  observed 3.40 % household-fully-absent share for that size -- about 14 times, roughly one
+  order of magnitude, apart).
 
   Independent of employment, workplace assignment, and the pre-existing far-commuter
   commute_day_state model of ADR-0104/#244 (a person can be both a commute-day "absent" far
