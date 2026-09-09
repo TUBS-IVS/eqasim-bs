@@ -1,0 +1,148 @@
+id: general-day-absence-arm0-100pct-2026-09-09
+date: '2026-09-09'
+repository:
+  commit: 9184f594
+  branch: feature/i370-general-day-absence
+  notes: 'Same checkout as the arm-1 manifest general-day-absence-arm1-100pct-2026-09-09: the
+    detached server worktree ~/wt-b370 at the PR #387 head 9184f594, tree-identical to main
+    ada06b61 ("git diff --stat ada06b61 9184f594" is empty); pipeline_commit "9184f594+dirty" with
+    the eqasim-data symlink swap as the only dirt.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/b370_arm0.yml (the arm-1 overlay with working_directory
+    eqasim-data/cache_bs_100pct_b370_arm0, output_path eqasim-data/output_bs_100pct_b370_arm0,
+    output_prefix braunschweig_100pct_b370_arm0_ and ONE flag override: day_absence_enabled false)'
+  - 'felix:~/b370_arm0_aho.yml (analysis-only follow-up, 19:27-19:29 CEST: run list reduced to
+    braunschweig.analysis.synthesis.plan_structure_vs_srv with plan_structure_srv_universe
+    at_home_only and plan_structure_output_subdir analysis/plan_structure_vs_srv_at_home_only, same
+    cache and flag override)'
+  notes: 'ARM 0 = the general day absence switched OFF, everything else at the base_bs.yml default
+    state (the far-commuter commute_day_state of ADR-0104 stays ON). The overlay override is the
+    only flag difference to arm 1; scale block and data directory are the arm-1 ones (see that
+    manifest). The cache is a fresh cp -al hardlink copy of the arm-4 cache cache_bs_100pct_pb4,
+    made by the chain script immediately before the run.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'Population NOT re-synthesised (cache hits from the arm-4 copy): 1,130,516 persons,
+    3,662,925 pre-assignment trips for 1,001,503 persons. With the draw off, the reporting-day view
+    holds 3,636,198 rows for 995,671 persons (the 4,470 commute-absent far commuters of ADR-0104
+    have no rows). Every n_* is a SAMPLE count at sampling_rate 1.0.'
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: 'Times CEST: 17:21:19 -> 19:09:03 (1 h 48 min), log ~/b370_arm0.log, exit 0, started by
+    ~/b370_chain.sh right after arm 1. Stages EXECUTED: the arm-1 list (documentation.meta_output,
+    synthesis.population.spatial.primary.candidates,
+    braunschweig.synthesis.locations.education_gravity,
+    braunschweig.locations.synthesis.replacement_education_gravity,
+    braunschweig.synthesis.commute_day.state_stage, braunschweig.synthesis.commute_day.trips_day_stage,
+    braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    braunschweig.analysis.synthesis.work_participation_by_kreis,
+    braunschweig.synthesis.commute_day.activities_day_stage,
+    braunschweig.synthesis.locations.secondary_chainsolvers -- success rate 0.9998, 956,889 of
+    957,097 problems fully placed --, braunschweig.synthesis.commute_day.spatial_locations_day,
+    braunschweig.synthesis.commute_day.output_day) PLUS braunschweig.synthesis.day_absence.absence_stage
+    in its disabled form ("[day absence] day_absence_enabled is false -- every one of the 1130516
+    persons is present."), because trips_day_stage declares the stage unconditionally and gates
+    on the flag in execute. ZERO error markers in the whole log. The at_home_only follow-up
+    (~/b370_arm0_aho.log, exit 0) executed plan_structure_vs_srv only, everything else a cache hit.'
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+  notes: 'COMPLETE, exit 0. The OFF path is byte-identical to arm 4 on the reporting-day trip
+    table (md5 equal), and this run provides the first plan-structure numbers of the base state on
+    the REPORTING-DAY view, which the arm-4 manifest did not have (it read the pre-assignment view).
+    It is the baseline every arm-1 and arm-2 delta of this ladder is quoted against.'
+environment: server
+validation:
+- metric: 'BYTE IDENTITY of the OFF path against arm 4 (ADR-0110 Consequences, pre-registered:
+    "The OFF arm must be byte-identical to arm 4 on trips.final")'
+  reference: 'felix:~/pb4_data/output_bs_100pct_pb4/braunschweig_100pct_pb4_trips.csv (arm 4,
+    manifest participation-universe-controls-arm4-100pct-2026-09-08), md5
+    8a46d5eedc4f18fa8ff2cc0e16b028cc'
+  result: 'MET EXACTLY. md5 of braunschweig_100pct_b370_arm0_trips.csv =
+    8a46d5eedc4f18fa8ff2cc0e16b028cc, identical to the arm-4 file, over 190,821,549 bytes. The
+    whole #370 package (a new unconditional stage declaration in trips_day_stage, the union rule in
+    build_day_trips, the persons.csv column mechanism, the MATSim attribute, the analysis-stage
+    universe handling and the plan_structure_trips_view switch) therefore leaves the OFF trip
+    table bit-for-bit unchanged on a live 100 % population, which is what the unit test
+    tests/test_commute_day_stages.py::test_trips_day_stage_off_off_returns_the_identical_object
+    pins on synthetic data. The comparison is restricted to trips.csv on purpose: arm 4 measured
+    plan structure on the pre-assignment view, so its headline.csv is NOT comparable to this one.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/run_log_excerpts.txt'
+- metric: 'Plan structure of the base state on the REPORTING-DAY view (first measurement; the
+    OFF baseline of the ladder), segment all, universe at_home_zero'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv, at_home_zero,
+    segment all (n 18,223)'
+  result: 'MEASURED. mobility_rate 0.8819 vs 0.8437 = +3.82 pp (the arm-4 manifest quoted +4.4 pp on
+    the pre-assignment view; the 0.6 pp between the two OFF numbers is the far-commuter absent
+    state of ADR-0104, which the reporting-day view applies and the pre-assignment view does not);
+    share_trips_0 0.1181 vs 0.1563 = -3.82 pp; trips_per_person 3.2216 vs 3.1865;
+    trips_per_mobile_person 3.6529 vs 3.7767; participation_work 0.3382 (+0.67 pp), education
+    0.1752 (-0.09), shop 0.2177 (-6.17), leisure 0.3756 (-0.76), escort 0.1010 (+0.18), other
+    0.2529 (+8.17); purpose_share_shop -3.02 pp, purpose_share_other +4.04 pp. The +3.8 pp mobility
+    overshoot is the away-from-home mass the model had no concept of before #370 (SrV counts 4.98
+    % of persons as away the whole day); the shop/other gap is the purpose-labelling problem of
+    issue #373, untouched here.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/headline.csv'
+- metric: 'Plan structure of the base state on the at_home_only universe (the OFF baseline for
+    pre-registered row 5 of ADR-0110), segment all'
+  reference: 'srv2023_plan_structure_reference.csv, universe at_home_only, segment all (n 17,269)'
+  result: 'MEASURED by the analysis-only follow-up. With the draw off no model person is away from
+    home, so the model side is the full 1,002,871 in-scope persons and only the SrV side changes
+    universe: mobility_rate 0.8819 vs 0.8879 (-0.60 pp), share_trips_0 0.1181 vs 0.1121 (+0.60),
+    participation_work 0.3382 vs 0.3489 (-1.07), education 0.1752 vs 0.1853 (-1.01), shop 0.2177 vs
+    0.2940 (-7.63), leisure 0.3756 vs 0.4032 (-2.77), escort 0.1010 vs 0.1044 (-0.34), other 0.2529
+    vs 0.1801 (+7.28), trips_per_person 3.2216 vs 3.3534. These are the values the arm-1 row 5
+    deltas are measured against.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/at_home_only_comparison.csv'
+- metric: 'ADR-0104 check 1 -- employed persons with a work trip (ZGB, employed attribute basis)'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv, zgb row,
+    srv_share_work_trip = 0.6511223931 (n 8,016)'
+  result: 'MEASURED, identical to arm 4 as it must be: 360,910 of 535,757 employed persons with a
+    work trip = 0.6736, delta +2.25 pp (tolerance +/- 3 pp, regional aggregate); reporting-day
+    states at_workplace 0.673 / home 0.013 / absent 0.008 / no_workplace 0.306; 0 of 535,757
+    employed persons set to absent by the general draw (n_absent_general 0 in every Kreis row).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/commute_day_state_shares.csv'
+- metric: 'Reporting-day composition diagnostics with the draw off (the control values for the
+    arm-1 union diagnostics)'
+  reference: 'braunschweig.synthesis.commute_day.plan_replacement.build_day_trips diagnostics; no
+    external reference'
+  result: 'MEASURED. 7,379 far commuters replaced (+21,313 / -48,040 trips), 4,470 commute-absent
+    (n_persons_absent_general 0, n_persons_absent_both 0, n_trips_removed_general 0), 1,356 of the
+    7,379 donors immobile (18.4 %), 0 home persons unmatched; escort diagnostics 0 of 4,470 absent
+    persons with an escort leg and 0 of 185,532 present children with an absent escorter, i.e. the
+    far-commuter absent state alone never removes an escort leg. Synthetic home closure 226,471
+    trips = 6.23 % of 3,636,198 trips, 22.7 % of the 995,671 mobile persons.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/run_log_excerpts.txt'
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm0_100pct_2026-09-09/ --
+  comparison.csv, headline.csv, by_kreis.csv, closure.csv, accepted_deviations.csv,
+  plan_structure_vs_srv_{summary.md,provenance.json}, work_participation_by_kreis.csv,
+  commute_day_state_shares.csv, commute_day_state_phase_a_{summary.md,provenance.json},
+  run_log_excerpts.txt (incl. the two md5 lines), and the at_home_only follow-up as
+  at_home_only_{comparison.csv,headline.csv,summary.md,provenance.json}'
+- 'felix:~/b370_data/output_bs_100pct_b370_arm0/ (incl. analysis/plan_structure_vs_srv_at_home_only),
+  ~/b370_data/cache_bs_100pct_b370_arm0/'
+- 'felix:~/b370_arm0.yml, ~/b370_arm0_aho.yml, ~/b370_chain.sh, ~/b370_aho_chain.sh,
+  ~/b370_arm0.log, ~/b370_arm0_aho.log'
+issues:
+- '#370'
+decisions:
+- ADR-0110
+- ADR-0104
+notes: 'This arm exists for two reasons: to prove the OFF path byte-identical on a live population
+  (row 1) and to give the ladder an OFF baseline on the same reporting-day view the ON arms are
+  measured on (row 2). Do not compare its headline.csv to the arm-4 headline.csv: same code state
+  for everything that matters, different analysis view.'
+source: 'Arm 0 (day_absence_enabled false, otherwise base_bs.yml defaults) of the pre-registered A/B
+  ladder of ADR-0110, run at 100 % on a hardlink copy of the arm-4 cache from the detached worktree
+  at 9184f594, measured by braunschweig.analysis.synthesis.plan_structure_vs_srv (reporting-day
+  view, at_home_zero primary and at_home_only sensitivity) and
+  braunschweig.analysis.synthesis.work_participation_by_kreis (issue #370; #370 SDD plan Task 10)'

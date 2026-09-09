@@ -1,0 +1,4 @@
+deviation,metric,model,srv,delta_pp,n_srv,note
+open_end_days,share_mobile_last_to_home,0.0,0.02238939139999996,-2.238939139999996,18223,closed plans by decision (issue #367; ADR in the stage record's decisions)
+open_start_days,share_mobile_first_from_home,0.0,0.02186043230000001,-2.186043230000001,18223,closed plans by decision (issue #367; ADR in the stage record's decisions)
+single_trip_days,share_trips_1,0.0008146611079590495,0.005847443426,-0.503278231804095,18223,closed plans by decision (issue #367; ADR in the stage record's decisions)

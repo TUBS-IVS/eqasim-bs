@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-09-09T14:12:27.382371+00:00",
+  "git_commit": "9184f594+dirty",
+  "parameters": {
+    "detour_factor": 1.3,
+    "max_unmatched_home_share": 0.05,
+    "max_unresolved_destination_share": 0.05,
+    "edge_tolerance_km": 5.0,
+    "sampling_rate": 1.0,
+    "output_subdir": "analysis/commute_day_state_phase_a",
+    "commute_day_state_enabled": true,
+    "check_1_tolerance_pp": 3.0,
+    "max_states_outside_employed_share": 0.05,
+    "day_absence_enabled": true
+  },
+  "inputs": {
+    "srv_work_participation": "eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv",
+    "n_srv_rows": 9,
+    "vg250_layer": "vg250_krs (braunschweig.analysis.spatial.load_vg250_layer)",
+    "n_kreis_centroids": 400,
+    "n_ba_flow_pairs": 48340,
+    "stages": [
+      "synthesis.population.enriched",
+      "synthesis.population.trips.final",
+      "braunschweig.synthesis.commute_day.state_stage",
+      "synthesis.population.spatial.home.locations",
+      "synthesis.population.spatial.primary.locations",
+      "braunschweig.locations.work",
+      "data.spatial.municipalities",
+      "braunschweig.data.census.pendler",
+      "braunschweig.synthesis.day_absence.absence_stage"
+    ]
+  },
+  "counts": {
+    "participation": {
+      "n_persons_total": 1130516,
+      "n_employed_total": 535757,
+      "n_employed_missing_flag": 0,
+      "n_home_unmatched": 0,
+      "n_outside_zgb": 0,
+      "n_employed_in_zgb": 535757,
+      "n_with_work_trip": 341597
+    },
+    "work": {
+      "n_workers_input": 390724,
+      "n_no_home_geometry": 0,
+      "n_home_kreis_unmatched": 0,
+      "n_no_workplace_row": 0,
+      "n_nan_distance": 0,
+      "n_workers": 390724,
+      "n_external": 50128,
+      "n_no_destination_kreis": 0,
+      "n_no_workplace_row_kept": 0,
+      "n_malformed_destination_commune": 0,
+      "unresolved_destination_rate": 0.0,
+      "n_internal_commune_unknown": 0
+    },
+    "distance_classes": {
+      "n_classified": 390724,
+      "n_unclassified": 0
+    },
+    "external_destinations": {
+      "n_ext_workers": 50128,
+      "n_pairs": 645,
+      "n_pairs_without_centroid": 0,
+      "n_pairs_without_ba_flow": 0
+    },
+    "commute_day_states": {
+      "n_persons_total": 1130516,
+      "n_employed_total": 535757,
+      "n_employed_missing_flag": 0,
+      "n_home_unmatched": 0,
+      "n_outside_zgb": 0,
+      "n_employed_in_zgb": 535757,
+      "n_states": 390724,
+      "n_workers_in_employed_universe": 372052,
+      "n_states_outside_employed_universe": 0,
+      "share_states_outside_employed_universe": 0.0,
+      "n_workers_not_employed": 18672,
+      "share_workers_not_employed": 0.04778820855642346,
+      "n_absent_general": 28826
+    }
+  },
+  "results": {
+    "near_class_edge_share": 0.42338069839579856,
+    "ext_class_agreement_share": 0.8261849664857963,
+    "unresolved_destination_rate": 0.0
+  }
+}

@@ -1,0 +1,259 @@
+id: general-day-absence-arm1-100pct-2026-09-09
+date: '2026-09-09'
+repository:
+  commit: 9184f594
+  branch: feature/i370-general-day-absence
+  notes: 'Head of PR #387, merged into main as ada06b61 on 2026-09-09 with an IDENTICAL tree
+    ("git diff --stat ada06b61 9184f594" is empty), so this run measures exactly the code that is on
+    main. The server holds a DETACHED worktree ~/wt-b370 created with "git worktree add --detach
+    ~/wt-b370 origin/feature/i370-general-day-absence" at 9184f594 (the user authorised the push on
+    2026-09-09). The run records pipeline_commit "9184f594+dirty"; the dirt is EXCLUSIVELY the
+    eqasim-data symlink swap ("git status --short -- braunschweig scripts configs tests docs"
+    returns zero entries on the server). No code was changed during the run.'
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - 'felix:~/b370_arm1.yml (scale and paths only; content reproduced in notes)'
+  - 'felix:~/b370_smoke.yml (the harness smoke: the same scale block and working directory with
+    the run list reduced to braunschweig.synthesis.day_absence.absence_stage; it computed the
+    absence stage ONCE, 15:56:02-15:56:08 CEST, and the arm-1 run then loaded that cache entry,
+    hash cb2a892e)'
+  - 'felix:~/b370_arm1_aho.yml (analysis-only follow-up, 19:25-19:27 CEST: run list reduced to
+    braunschweig.analysis.synthesis.plan_structure_vs_srv with plan_structure_srv_universe
+    at_home_only and plan_structure_output_subdir analysis/plan_structure_vs_srv_at_home_only, same
+    cache; trips.final a cache hit)'
+  notes: 'ARM 1 IS THE BASE CONFIG DEFAULT STATE: no flag of the package is overridden.
+    day_absence_enabled true, day_absence_household_stage_enabled true,
+    day_absence_max_band_deviation_pp 1.0, random_seed 1234 plus the fixed DAY_ABSENCE_SEED_OFFSET
+    7351 of braunschweig.synthesis.day_absence.absence. The overlay is scale and paths only:
+    working_directory eqasim-data/cache_bs_100pct_b370_arm1 (a cp -al hardlink copy of the arm-4
+    cache cache_bs_100pct_pb4, so every stage this package does not devalidate is a cache hit),
+    output_path eqasim-data/output_bs_100pct_b370_arm1, analysis_working_directory = the cache,
+    output_prefix braunschweig_100pct_b370_arm1_, matsim_last_iteration 0, popsim work_dir
+    eqasim-data/popsim_work_pb4 (UNCHANGED from arm 4 on purpose: the work_dir is part of the
+    popsim stage hash, and a first smoke that renamed it triggered a PopulationSim re-run, which
+    was killed and the directory name restored), max_cells 750, num_workers 3, importance_profile
+    optimized_2026_06_30, sampling_rate 1.0, cache_share_export false, cache_share_recompute [],
+    eqasim_version "2.3.1", run list [synthesis.output,
+    braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    braunschweig.analysis.synthesis.work_participation_by_kreis]. The DATA DIRECTORY
+    ~/b370_data/data was built as for arm 4: every top-level input tree except braunschweig
+    symlinked from ~/eqasim-bs/eqasim-data/data, braunschweig hardlink-copied, then the checkout
+    committed tables overlaid with "cp -a --remove-destination", so the two new SrV tables
+    srv2023_absence_by_age_band.csv and srv2023_absence_household_by_size.csv (dated 15:39) were
+    present before the first stage ran.'
+sampling:
+  rate: 100%
+  scope: ZGB-8
+  notes: 'The population was NOT re-synthesised: popsim.stage, trips_stage and every other upstream
+    stage were cache hits from the arm-4 hardlink copy, so persons, households and the
+    pre-assignment trip table are IDENTICAL to arm 4 (1,130,516 persons, 3,662,925 pre-assignment
+    trips for 1,001,503 persons). The absence draw marked 57,060 persons absent (5.05 %) and the
+    reporting-day trip table (synthesis.population.trips.final) holds 3,455,184 rows for 945,826
+    persons. Every n_* is a SAMPLE count at sampling_rate 1.0, never expanded.'
+pipeline:
+  targets:
+  - synthesis.output
+  - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.work_participation_by_kreis
+  notes: 'Times CEST. Smoke (absence stage only): 15:56:02 -> 15:56:08, log ~/b370_smoke.log
+    (a first smoke attempt with a renamed popsim work_dir is kept as
+    ~/b370_smoke_attempt1_wrong_workdir.log and produced nothing). Arm run: 15:58:14 -> 17:21:19
+    (1 h 23 min), log ~/b370_arm1.log, exit 0. Stages EXECUTED (everything else a cache hit):
+    documentation.meta_output, synthesis.population.spatial.primary.candidates,
+    braunschweig.synthesis.locations.education_gravity,
+    braunschweig.locations.synthesis.replacement_education_gravity,
+    braunschweig.synthesis.commute_day.state_stage, braunschweig.synthesis.commute_day.trips_day_stage,
+    braunschweig.analysis.synthesis.plan_structure_vs_srv,
+    braunschweig.analysis.synthesis.work_participation_by_kreis,
+    braunschweig.synthesis.commute_day.activities_day_stage,
+    braunschweig.synthesis.locations.secondary_chainsolvers (62 shards, success rate 0.9998 =
+    907,233 of 907,410 problems fully placed), braunschweig.synthesis.commute_day.spatial_locations_day,
+    braunschweig.synthesis.commute_day.output_day. ZERO error markers in the whole log
+    (grep -cE "Traceback|FileNotFoundError|MemoryError|Killed|CRITICAL" = 0). The arm-0 run of the
+    same chain (manifest general-day-absence-arm0-100pct-2026-09-09) executed the identical stage
+    list plus the absence stage in its disabled form, and its trips.csv is byte-identical to the
+    arm-4 trips.csv, so the recomputation of the upstream-looking location stages did not change
+    the trip table when the draw is off. The at_home_only follow-up (~/b370_arm1_aho.log, exit 0)
+    executed plan_structure_vs_srv only.'
+classification:
+- ab_test
+- validation
+status:
+  execution: completed
+  notes: 'COMPLETE, exit 0, all three targets written plus the at_home_only follow-up. ALL FIVE
+    bounded pre-registered rows of ADR-0110 are MET (mobility rate, per-band absent share,
+    household clustering, employed with a work trip on the ADR-0104 check-1 basis, participation_*
+    unchanged on at_home_only). The per-size row is REPORTED as pre-registered, not gated, and shows
+    the singles over-absence ADR-0110 names as a limitation (issue #388, arm 3 of this ladder).'
+environment: server
+validation:
+- metric: 'PRE-REGISTERED ROW 1 (ADR-0110 Consequences) -- mobility rate, segment all, universe
+    at_home_zero, reporting-day view'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv, universe
+    at_home_zero, segment all, mobility_rate = 0.8437 (n 18,223)'
+  result: 'MET. 0.8378, delta -0.59 pp against a pre-registered bound of within +/- 1.0 pp. Arm 0
+    on the SAME reporting-day view (this run ladder, manifest arm0) sits at 0.8819 = +3.82 pp; the
+    arm-4 manifest quoted +4.4 pp because plan_structure_vs_srv then read the PRE-ASSIGNMENT view
+    (the far-commuter absent state of ADR-0104 alone is worth the 0.6 pp difference between the
+    two OFF numbers). share_trips_0 moves accordingly: 0.1622 against SrV 0.1563 (+0.59 pp), from
+    0.1181 (-3.82 pp) in arm 0. The rate is met by CONSTRUCTION of the draw (the per-band SrV
+    absence rates are its parameters), so this row proves the draw is wired through to the
+    reporting-day view at the right level, not that anything was independently predicted.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/headline.csv'
+- metric: 'PRE-REGISTERED ROW 2 -- absent share per age band (the individual-stage target)'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv (GEWICHT_P_ZENSUS):
+    0-5 3.34 %, 6-17 1.89 %, 18-29 8.31 %, 30-44 4.42 %, 45-64 4.89 %, 65-74 5.88 %, 75+ 5.81 %;
+    all 4.98 % (954 of 18,223)'
+  result: 'MET in every band, pre-registered bound within +/- 1.0 pp per band. Realised (model vs
+    SrV): 0-5 3.31 vs 3.34, 6-17 1.92 vs 1.89, 18-29 8.24 vs 8.31, 30-44 4.38 vs 4.42, 45-64 4.92
+    vs 4.89, 65-74 5.98 vs 5.88, 75+ 5.82 vs 5.81; the largest deviation is 0.10 pp (65-74). Total
+    57,060 of 1,130,516 persons absent = 5.05 % against 4.98 %. The per-band guard
+    (day_absence_max_band_deviation_pp 1.0) did not fire and the household-stage overshoot guard
+    did not fire either (no band had r_hh above r). Sampling noise only, as the two-stage residual
+    is exact in expectation.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/run_log_excerpts.txt'
+- metric: 'PRE-REGISTERED ROW 3 -- share of absent persons living in a fully absent household
+    (the reason the household stage exists)'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_absence_household_by_size.csv, header line
+    "# Clustering": 0.5585 person-weighted (0.4937 unweighted, 471 of 954), computed by
+    braunschweig.calibration.srv_absence.clustering_share'
+  result: 'MET, at the upper end of the pre-registered 45-65 % band: 63.7 %. Of the 57,060 absent
+    persons, 30,690 were drawn by the household stage and 26,370 by the individual stage. The
+    share sits 7.9 pp ABOVE the SrV value for a mechanical reason: an individual-stage draw on a
+    SINGLE-PERSON household also produces a fully absent household, so every one of the individual
+    draws that fell on the 229,534 singles counts towards clustering on top of the household stage.
+    That is the per-size limitation ADR-0110 names (row 6 below) and what issue #388 changes; an
+    individual-only draw at the same band rates would have landed far below the band (ADR-0110
+    rejected alternative), and arm 2 of this ladder measures that.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/run_log_excerpts.txt'
+- metric: 'PRE-REGISTERED ROW 4 -- employed persons with a work trip on the ADR-0104 check-1 basis
+    (population employed attribute, ZGB home Kreis), the reporting-day view'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_work_participation_by_kreis.csv, zgb row,
+    srv_share_work_trip = 0.6511223931 (n 8,016)'
+  result: 'MET on the pre-registered basis, and a second SrV basis is reported because it reads
+    differently. Check 1: 341,597 of 535,757 employed persons with a work trip = 0.6376, delta
+    -1.35 pp against a bound of within +/- 1.5 pp, from arm 0 (= arm 4) 0.6736 = +2.25 pp. The
+    general absence draw set 28,826 of the 535,757 employed persons (5.38 %) to absent
+    (work_participation_by_kreis apply_general_absence, folded into the absent share: at_workplace
+    0.637 / home 0.013 / absent 0.061 / no_workplace 0.289). On the plan-structure reference for
+    the same idea -- srv2023_plan_structure_reference.csv, at_home_zero, segment group_employed,
+    participation_work = 0.6694 (n 8,306) -- the model sits at 0.6360 = -3.34 pp (arm 0 +0.26 pp).
+    The two SrV references differ by 1.8 pp because they define "employed" and the denominator
+    differently (ADR-0104 check 1 against the ADR-0109 plan-structure segment, see note (3) of the
+    arm-4 manifest); the pre-registration named the check-1 basis, so the row is met, and the
+    plan-structure reading is recorded here so nobody has to rediscover it. Per Kreis the check-1
+    delta ranges from -0.26 pp (03101) to +4.43 pp (03154), inside the +/- 3 pp tolerance
+    except 03153 (+3.74) and 03154 (+4.43); the tolerance is a regional aggregate only.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/commute_day_state_shares.csv'
+- metric: 'PRE-REGISTERED ROW 5 -- participation_* on the at_home_only universe (model side
+    restricted: the 57,060 absent persons leave BOTH sides of the comparison), segment all'
+  reference: 'srv2023_plan_structure_reference.csv, universe at_home_only, segment all (n 17,269):
+    participation_work 0.3489, education 0.1853, shop 0.2940, leisure 0.4032, escort 0.1044, other
+    0.1801; mobility_rate 0.8879; pre-registered expectation "unchanged within +/- 0.5 pp" against
+    arm 0 on the same universe'
+  result: 'MET. Arm 1 against arm 0 on at_home_only (both measured by the analysis-only follow-up
+    invocations, model persons 1,073,456 with 952,179 in scope for arm 1 against 1,130,516 /
+    1,002,871 for arm 0): participation_work 0.3371 vs 0.3382 (-0.11 pp), education 0.1787 vs
+    0.1752 (+0.35), shop 0.2168 vs 0.2177 (-0.10), leisure 0.3753 vs 0.3756 (-0.02), escort 0.1018
+    vs 0.1010 (+0.08), other 0.2523 vs 0.2529 (-0.06); mobility_rate 0.8824 vs 0.8819 (+0.04),
+    trips_per_person 3.2241 vs 3.2216. The largest move is 0.35 pp (education), inside the 0.5 pp
+    band, which confirms the draw is independent of the trip pattern within a band as ADR-0110
+    assumes (the small education move is the band composition: the 18-29 band has the highest
+    absence rate). Against SrV on this universe the deltas are the arm-0 ones within a third of a
+    point: work -1.18 pp, education -0.66, shop -7.73, leisure -2.79, escort -0.26, other +7.22,
+    mobility -0.55 -- the shop/other gap of issue #373 in its universe-clean form. The three
+    ADR-0109 controlled segments also stay put: group_employed participation_work 0.6723 (-3.10 pp
+    vs SrV at_home_only 0.7033; arm 0 -3.13), group_school_age_6_17_not_employed
+    participation_education 0.9304 (+0.89, unchanged), group_child_0_5 participation_education
+    0.6855 (+0.70; arm 0 +0.77).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/at_home_only_comparison.csv'
+- metric: 'PRE-REGISTERED ROW 6 -- absence rate by household size class (REPORTED, not targeted,
+    ruling R11 of the #370 SDD plan)'
+  reference: 'No per-size PERSON-level SrV rate is committed on main as of this record; the
+    committed table srv2023_absence_household_by_size.csv carries the HOUSEHOLD-level share of fully
+    absent households (size 1 5.29 %, 2 3.40 %, 3 1.31 %, 4 1.49 %, 5+ 0.18 %). Issue #388 (branch
+    feature/i388-absence-residual-min-household-size, not merged when this was written) adds the
+    person-level rates: 5.14 / 5.87 / 5.43 / 4.16 / 1.75 % for sizes 1..5+ -- quoted here as
+    values from that branch, to be read from its committed table once merged.'
+  result: 'REPORTED. Realised person-level absence by household size class: 1: 7.61 % (n 229,534),
+    2: 5.85 % (n 368,370), 3: 3.15 % (n 213,918), 4: 3.76 % (n 211,912), 5+: 3.13 % (n 106,782).
+    Against the #388 person-level rates this is +2.5 pp for singles, roughly on target for size 2,
+    -2.3 pp for size 3, -0.4 pp for size 4 and +1.4 pp for size 5+ -- exactly the pattern ADR-0110
+    states as the known limitation (singles over-, larger households under-absent within a band
+    while the band rates hold). It is measured here for the first time and is the baseline arm 3
+    (#388) is compared against.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/run_log_excerpts.txt'
+- metric: 'Participation and purpose shares on at_home_zero (NOT pre-registered as bounded rows;
+    the pre-registration put participation on at_home_only precisely because at_home_zero moves
+    mechanically)'
+  reference: 'srv2023_plan_structure_reference.csv, at_home_zero, segment all'
+  result: 'MEASURED, arm 1 against SrV (arm 0 in brackets): participation_work 0.3201, -1.15 pp
+    (+0.67); education 0.1697, -0.64 (-0.09); shop 0.2058, -7.36 (-6.17); leisure 0.3564, -2.68
+    (-0.76); escort 0.0967, -0.25 (+0.18); other 0.2396, +6.84 (+8.17); trips_per_person 3.0612
+    vs 3.1865 (arm 0 3.2216); trips_per_mobile_person 3.6539 vs 3.7767 (unchanged from arm 0
+    3.6529, as expected: absence removes whole days, not trips within a day). Every participation
+    falls by roughly the absence share times its own level, because an absent person contributes
+    zero to every purpose on this universe; shop and other keep the sign and size that make them
+    the targets of issue #373 (purpose correctness), which this package does not touch. None of
+    these rows is a stop-the-ladder signal under ADR-0110: row 5 above is the wrong-way test for
+    participation, and it is met.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/comparison.csv'
+- metric: 'Composition with the far-commuter commute_day_state (ADR-0104) and the escort
+    diagnostics of the spec (section 2.1 point 4, ruling R10)'
+  reference: 'braunschweig.synthesis.commute_day.plan_replacement.build_day_trips diagnostics; no
+    external reference'
+  result: 'MEASURED. Trip-less persons in the reporting-day view: 61,314 = 57,060 generally absent
+    + 4,470 commute-absent - 216 counted in both (n_persons_absent_both); 227,966 trips removed in
+    total, 181,474 of them by the general absence; 7,008 far commuters replaced (+20,225 trips),
+    1,289 of them (18.4 %) with an immobile home-office donor and 6 (0.1 %) with a travelling donor
+    that had no rows; 0 home persons unmatched. Escort: 4,869 of the 61,314 absent persons (7.94 %)
+    carry an escort leg on their original trips, and 2,006 of 185,532 present children (1.08 %) live
+    in a household with an absent member who carried an escort leg (household-level PROXY for a
+    linked escorter, the chainsolver link does not exist at this stage) -- the size of the
+    escort-coherence gap issue #385 (passive escort phase 2) is meant to close. Synthetic home
+    closure unchanged: 214,385 closure trips = 6.20 % of trips and 22.7 % of mobile persons, against
+    6.23 % and 22.7 % in arm 0.'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/run_log_excerpts.txt'
+artifacts:
+- 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm1_100pct_2026-09-09/ -- the
+  committed aggregate: comparison.csv, headline.csv, by_kreis.csv, closure.csv,
+  accepted_deviations.csv, plan_structure_vs_srv_{summary.md,provenance.json},
+  work_participation_by_kreis.csv, commute_day_state_shares.csv,
+  commute_day_state_phase_a_{summary.md,provenance.json}, run_log_excerpts.txt (the absence-stage
+  lines from the smoke log, the reporting-day diagnostics, the check-1 lines, the stage list, the
+  error-marker count and the md5 lines), and the at_home_only follow-up as
+  at_home_only_{comparison.csv,headline.csv,summary.md,provenance.json}. The two report files of
+  each stage carry their stage name because both stages write generic summary.md and
+  provenance.json names.'
+- 'felix:~/b370_data/output_bs_100pct_b370_arm1/ (persons, households, trips, activities,
+  vehicles, vehicle_types, the GeoPackages and the analysis directories incl.
+  plan_structure_vs_srv_at_home_only), ~/b370_data/cache_bs_100pct_b370_arm1/, ~/b370_data/data/'
+- 'felix:~/b370_arm1.yml, ~/b370_smoke.yml, ~/b370_arm1_aho.yml (overlays), ~/b370_chain.sh (the
+  arm 1 -> 0 -> 2 chain), ~/b370_aho_chain.sh, ~/b370_smoke.log, ~/b370_arm1.log, ~/b370_arm1_aho.log'
+issues:
+- '#370'
+- '#388'
+- '#373'
+- '#385'
+decisions:
+- ADR-0110
+- ADR-0104
+- ADR-0109
+notes: 'HOW TO READ THIS MANIFEST. (1) Rows 1 and 2 are met BY CONSTRUCTION: the SrV band rates are
+  the parameters of the draw, so meeting them proves the wiring (draw -> reporting-day view ->
+  analysis), not predictive power. Row 3 (clustering), row 4 (check 1) and row 5 (participation on
+  at_home_only) are the rows the design could have missed. (2) The at_home_zero participations fall
+  mechanically when 5 % of persons lose their day; the fair participation comparison is
+  at_home_only, where the absent persons are removed from both sides (row 5). (3) Arm 0 of this
+  ladder, not the arm-4 manifest, is the OFF baseline for every delta quoted here: arm 4 was
+  measured on the pre-assignment view. (4) The per-size row shows the limitation ADR-0110 states; it
+  is the motivation of issue #388 and is compared, not corrected, here. (5) The absence stage ran
+  once in the harness smoke and was a cache hit in the arm run; its log lines therefore come from
+  ~/b370_smoke.log and the cache hash cb2a892e ties the two together.'
+source: 'Arm 1 (base_bs.yml defaults: two-stage general day-absence draw ON) of the pre-registered
+  A/B ladder of ADR-0110, run at 100 % on a hardlink copy of the arm-4 cache from a detached
+  worktree at the pushed PR #387 head 9184f594 (tree-identical to main ada06b61), measured by
+  braunschweig.analysis.synthesis.plan_structure_vs_srv (reporting-day view, universe at_home_zero
+  primary and at_home_only sensitivity) and braunschweig.analysis.synthesis.work_participation_by_kreis
+  against the committed SrV references (issue #370; #370 SDD plan Task 10)'
