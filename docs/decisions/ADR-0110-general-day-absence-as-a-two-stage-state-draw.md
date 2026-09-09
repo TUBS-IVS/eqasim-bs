@@ -356,8 +356,15 @@
      project convention (CLAUDE.md) applies to the FIX, not to a bypass of it, since the CODE
      default of `draw_absence` itself stays 1 so every existing direct caller (and the pre-#388
      test suite) is unaffected unless it opts in via the stage. Setting the key to **1** restores
-     the PR #387 behaviour BYTE-IDENTICALLY (pinned by a dedicated test comparing the full output
-     frame against the same call without the keyword).
+     the PR #387 behaviour: the residual expression itself is textually the PR #387 one, kept
+     verbatim in `_residual_probability_legacy`; a golden-hash regression test
+     (`test_individual_stage_min_household_size_1_matches_the_ada06b61_golden_hash`) pins the
+     `individual_stage_min_household_size=1` OUTPUT byte-for-byte against a hash computed offline
+     from the PR #387 merge commit `ada06b61` itself, not merely against this branch's own code;
+     and a separate keyword-vs-default test
+     (`test_individual_stage_min_household_size_1_is_byte_identical_to_the_default`) pins that
+     `draw_absence`'s CODE default is 1 (calling it with the keyword `=1` reproduces calling it
+     without the keyword, exactly).
   4. **Retained limitation.** The gate fixes the per-size mis-fit for households BELOW the
      threshold (singles, at the default) by excluding them from the residual pool; it does NOT make
      the draw fit a per-size person-level absence rate for households AT OR ABOVE the threshold --

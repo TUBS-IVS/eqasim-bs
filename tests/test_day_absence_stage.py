@@ -181,3 +181,12 @@ def test_individual_stage_min_household_size_of_2_5_raises_naming_the_key():
                        _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: 2.5}))
     with pytest.raises(ValueError, match=S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE):
         S.execute(context)
+
+
+def test_individual_stage_min_household_size_accepts_a_numpy_integer():
+    """Final-review fix wave, MINOR finding 4: a config value can round-trip through a
+    numpy/pandas-backed loader as numpy.int64 rather than plain int; only isinstance(..., int) was
+    accepted before, which would have rejected a perfectly valid numpy integer."""
+    out = S.execute(_context({"synthesis.population.enriched": _enriched()},
+                             _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: np.int64(2)})))
+    assert out["diagnostics"]["individual_stage_min_household_size"] == 2

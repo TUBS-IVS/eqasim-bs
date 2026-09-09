@@ -61,10 +61,12 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   existing direct caller of the pure module is unaffected unless it opts in via this stage. Gates
   eligibility for the individual residual stage: eligible = present & (household_size >=
   threshold), household_size being the UNCLIPPED member count, not the capped
-  household_size_class. Logged per size class as "size k: realised x.xx% vs SrV y.yy% (delta
-  z.zz pp)" (against draw_absence''s by_size_class diagnostic) and the ineligible share as
-  "n/total (x.xx%) persons are present but ineligible for the individual stage (household size
-  below day_absence_individual_stage_min_household_size=k)".
+  household_size_class. Logged per age band as "band b: realised x.xx% vs reference y.yy%
+  (n=N, n_eligible=E)" (final-review fix wave, MINOR finding 5), per size class as "size k:
+  realised x.xx% vs SrV y.yy% (delta z.zz pp, n=N)" (against draw_absence''s by_size_class
+  diagnostic) and the ineligible share as "n/total (x.xx%) persons are present but ineligible
+  for the individual stage (household size below
+  day_absence_individual_stage_min_household_size=k)".
 
   Draw rule (absence.draw_absence): every household gets size_class = min(household size, 5)
   (household_size_class.HOUSEHOLD_SIZE_CLASS_TOP) via braunschweig.calibration.srv_absence
@@ -83,9 +85,13 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   person in the band is drawn absent_individual with that probability; the person draw vector
   itself is still drawn for EVERY person regardless of eligibility (a mask applied on top, never a
   re-draw), so the random stream a downstream person consumes never shifts merely because of who
-  is eligible. A band whose target cannot be reached because no present person remains eligible
-  (target_n > absent_hh_n and n_eligible == 0) logs a WARNING naming the band, rather than
-  silently under-shooting. An overshoot (r_hh(a) > r(a), checked directly rather than only via a negative
+  is eligible. A band whose ELIGIBLE pool is too small to cover the residual shortfall
+  (target_n - absent_hh_n > n_eligible -- final-review fix wave, Important finding 1: this
+  subsumes the earlier n_eligible == 0 -only check and additionally catches a PARTIALLY filled
+  pool that still under-shoots after the residual clips to 1.0) logs a WARNING naming the band,
+  target_n, absent_hh_n, n_eligible and the shortfall in persons, rather than silently
+  under-shooting; n_bands_unreachable counts how many bands this happened to. An overshoot
+  (r_hh(a) > r(a), checked directly rather than only via a negative
   residual, so a band FULLY absorbed by the household stage -- r_hh(a) == 1.0 -- is caught too,
   since the division-by-zero guard there would otherwise bypass the residual formula and silently
   skip the WARNING) sets the residual to 0 and logs a WARNING naming the band and both rates
@@ -107,7 +113,9 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   (day_absence_individual_stage_min_household_size, issue #388). Diagnostics
   (absence.draw_absence, ON path): n_persons, n_households, n_absent_household,
   n_absent_individual, n_absent_total, share_absent_total,
-  share_absent_in_fully_absent_households, n_bands_overshoot, household_stage (bool),
+  share_absent_in_fully_absent_households, n_bands_overshoot, n_bands_unreachable (issue #388,
+  final-review fix wave: count of bands whose eligible pool was too small to cover the residual
+  shortfall), household_stage (bool),
   individual_stage_min_household_size (int, issue #388), n_persons_ineligible_individual_stage
   (issue #388), by_band (per-band n, reference_rate, realised_household_rate, residual_p,
   realised_rate, n_eligible_present [issue #388]), by_size_class (per household_size_class 1..5,

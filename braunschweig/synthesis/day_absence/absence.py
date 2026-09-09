@@ -14,9 +14,10 @@ Every person gets ``day_absence_state`` in {present, absent_household, absent_in
    overshoot is WARNED) kept BYTE-IDENTICAL in :func:`_residual_probability_legacy`; a higher
    threshold routes non-eligible households out of the residual pool via the general
    :func:`_residual_probability_eligible` expression, WARNING when a band's target cannot be
-   reached because no present person remains eligible (issue #388: this is what makes the
-   individual-stage residual scientifically defensible for households below the SrV-observed size
-   at which the household-level clustering effect was measured). In expectation the per-band rates
+   reached because the eligible pool is too small -- empty OR merely insufficient to cover the
+   shortfall (issue #388: this is what makes the individual-stage residual scientifically
+   defensible for households below the SrV-observed size at which the household-level clustering
+   effect was measured). In expectation the per-band rates
    equal the SrV rates while the household clustering (56 % of absent persons in fully absent
    households) is reproduced by construction. Pure pandas/numpy; no file I/O apart from the
    reference loader.
@@ -130,7 +131,13 @@ def load_absence_reference(srv_dir: str) -> AbsenceReference:
         raise ValueError(f"{_LOG_TAG} {ABSENCE_HOUSEHOLD_TABLE} must carry a rate for size classes {expected}")
     # Person-level reporting reference (issue #388): NaN IS accepted here (an empty size class
     # would report NaN), unlike p_all_absent_by_size above, which the household draw itself
-    # consumes and which must therefore never be NaN.
+    # consumes and which must therefore never be NaN. An older by-size table (pre-#388) has no
+    # p_absent_person column at all; check its presence up front rather than let a bare KeyError
+    # surface from the column lookup below.
+    if "p_absent_person" not in by_size.columns:
+        raise ValueError(f"{_LOG_TAG} {ABSENCE_HOUSEHOLD_TABLE} lacks the p_absent_person column "
+                         "(added by issue #388); re-run scripts/extract_srv_absence.py to "
+                         "regenerate the table with the person-level reporting reference")
     persons_by_size = by_size.set_index("size_class")["p_absent_person"]
     if sorted(persons_by_size.index.tolist()) != expected:
         raise ValueError(f"{_LOG_TAG} {ABSENCE_HOUSEHOLD_TABLE} must carry a p_absent_person entry "
@@ -195,9 +202,11 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     because of who is eligible. At the default ``1`` every present person is eligible and the
     residual is computed with :func:`_residual_probability_legacy` (byte-identical to PR #387); at
     any higher threshold the residual is computed with the general
-    :func:`_residual_probability_eligible` over the eligible pool only, and a band whose target
-    cannot be reached because no present person remains eligible logs a WARNING rather than
-    silently under-shooting.
+    :func:`_residual_probability_eligible` over the eligible pool only, and a band whose eligible
+    pool is too small to cover the shortfall (``target_n - absent_hh_n > n_eligible``, which
+    includes -- but is not limited to -- an EMPTY eligible pool) logs a WARNING naming the
+    shortfall rather than silently under-shooting; ``diagnostics["n_bands_unreachable"]`` counts
+    how many bands this happened to.
     """
     missing = [c for c in ("person_id", "household_id", "age") if c not in persons.columns]
     if missing:
@@ -231,7 +240,7 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     is_present = ~is_hh_absent
     is_eligible = is_present & (household_size >= individual_stage_min_household_size)
 
-    residual_by_band, by_band, n_overshoot = {}, {}, 0
+    residual_by_band, by_band, n_overshoot, n_unreachable = {}, {}, 0, 0
     for label in AGE_BAND_LABELS:
         in_band = (p["age_band"] == label).to_numpy()
         n_band = int(in_band.sum())
@@ -258,8 +267,22 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
             n_overshoot += 1
             logger.warning("%s band %s: household stage realised %.2f%% > reference %.2f%% (overshoot); "
                            "residual set to 0", _LOG_TAG, label, 100 * realised_hh, 100 * target)
-        if target_n > absent_hh_n and n_eligible == 0:
-            logger.warning("%s band %s cannot reach its target: no eligible present person", _LOG_TAG, label)
+        # Generalised unreachable-target check (final-review fix wave, Important finding 1): the
+        # original condition only fired at n_eligible == 0, but a PARTIALLY filled eligible pool
+        # under-shoots exactly the same way -- e.g. 1,000 singles + 10 couples at a 10% band rate
+        # with individual_stage_min_household_size=2 clips the residual to 1.0 (every one of the
+        # 20 eligible persons drawn absent) and still realises only ~2%, with nothing logged under
+        # the old n_eligible == 0 check alone. `target_n - absent_hh_n > n_eligible` subsumes that
+        # old check (n_eligible == 0 makes it `target_n > absent_hh_n`) and additionally catches
+        # this partial-pool shortfall. Unreachable under individual_stage_min_household_size == 1,
+        # where n_eligible == n_band - absent_hh_n always (every present person eligible), so
+        # target_n - absent_hh_n - n_eligible == target_n - n_band == n_band * (target - 1) <= 0.
+        shortfall = target_n - absent_hh_n - n_eligible
+        if shortfall > 0:
+            n_unreachable += 1
+            logger.warning("%s band %s cannot reach its target: target_n=%.2f, absent_hh_n=%d, "
+                           "n_eligible=%d (shortfall %.2f persons)", _LOG_TAG, label, target_n,
+                           absent_hh_n, n_eligible, shortfall)
         residual_by_band[label] = residual
         by_band[label] = {"n": n_band, "reference_rate": target, "realised_household_rate": realised_hh,
                           "residual_p": residual, "n_eligible_present": n_eligible}
@@ -317,7 +340,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
                    "n_absent_total": n_abs, "share_absent_total": float(n_abs / max(len(out), 1)),
                    "share_absent_in_fully_absent_households": share_clustered,
-                   "n_bands_overshoot": n_overshoot, "household_stage": bool(household_stage),
+                   "n_bands_overshoot": n_overshoot, "n_bands_unreachable": n_unreachable,
+                   "household_stage": bool(household_stage),
                    "individual_stage_min_household_size": int(individual_stage_min_household_size),
                    "n_persons_ineligible_individual_stage": n_persons_ineligible_individual_stage,
                    "by_band": by_band, "by_size_class": by_size_class}
@@ -326,6 +350,7 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                 "class (REPORTED, not targeted -- see ADR-0110 Assumptions) %s", _LOG_TAG, n_abs,
                 len(out), 100.0 * diagnostics["share_absent_total"], diagnostics["n_absent_household"],
                 diagnostics["n_absent_individual"], 100.0 * share_clustered if n_abs else float("nan"),
-                {b: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}%" for b, v in by_band.items()},
+                {b: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}% "
+                    f"(n_eligible={v['n_eligible_present']})" for b, v in by_band.items()},
                 {sc: f"{100 * v['realised_rate']:.2f}% (n={v['n']})" for sc, v in by_size_class.items()})
     return out, diagnostics

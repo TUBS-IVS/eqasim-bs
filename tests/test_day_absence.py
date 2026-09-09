@@ -1,3 +1,5 @@
+import hashlib
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -98,6 +100,21 @@ def test_load_reference_reads_the_committed_tables_by_column_name():
     assert 0.045 < ref.p_absent_person_by_size[1] < 0.06
 
 
+def test_load_reference_raises_a_named_error_on_a_by_size_table_without_the_person_column(tmp_path):
+    """Final-review fix wave, MINOR finding 2: an older srv2023_absence_household_by_size.csv
+    (pre-#388) has no p_absent_person column; the bare KeyError this used to raise gave no clue
+    which table or column was at fault. Assert a named ValueError instead."""
+    import os
+    by_age = pd.DataFrame({"band": list(D.AGE_BAND_LABELS) + ["all"],
+                           "p_absent": [0.05] * (len(D.AGE_BAND_LABELS) + 1)})
+    by_age.to_csv(os.path.join(str(tmp_path), D.ABSENCE_BY_AGE_TABLE), index=False)
+    # The pre-#388 by-size table shape: no p_absent_person / n_persons_unweighted / etc. columns.
+    by_size = pd.DataFrame({"size_class": [1, 2, 3, 4, 5], "p_all_absent": [0.05] * 5})
+    by_size.to_csv(os.path.join(str(tmp_path), D.ABSENCE_HOUSEHOLD_TABLE), index=False)
+    with pytest.raises(ValueError, match="p_absent_person"):
+        D.load_absence_reference(str(tmp_path))
+
+
 def test_plan_replacement_present_general_matches_absence_state():
     # Ruling R4 (issue #370, Task 4): plan_replacement keeps a LOCAL "present" constant rather
     # than importing this package (to avoid a cross-package import from commute_day to
@@ -186,6 +203,31 @@ def test_individual_stage_min_household_size_1_is_byte_identical_to_the_default(
     assert diag_without["n_persons_ineligible_individual_stage"] == 0
 
 
+def test_individual_stage_min_household_size_1_matches_the_ada06b61_golden_hash():
+    """Final-review fix wave, MINOR finding 3: the sibling byte-identity test above only compares
+    the CURRENT code against itself (keyword=1 vs default), which proves the default is 1 but says
+    nothing about PR #387's actual output. This test pins against PR #387 itself.
+
+    GOLDEN_HASH was computed OFFLINE (not by this test) by running the PR #387 merge commit's
+    version of this module -- `git show ada06b61:braunschweig/synthesis/day_absence/absence.py`,
+    written to a scratch file outside this worktree and imported under the module name
+    `absence_ada06b61` -- against this SAME fixture (`_persons()` default, `_reference()`
+    defaults: p_band=0.10, p_size={1: 0.5, 2..5: 0.0}) and `np.random.RandomState(13)`, serialised
+    exactly as below. Reproducing that computation: `git show ada06b61:...absence.py` into an
+    isolated module, construct its two-field `AbsenceReference` with the same p_band/p_size, call
+    `draw_absence(persons, ref, np.random.RandomState(13))` (no keyword -- #388 did not exist yet),
+    and hash the same serialisation. This test itself only re-derives the CURRENT code's hash and
+    compares it to that pre-computed ada06b61 constant -- it does not re-run ada06b61's code."""
+    GOLDEN_HASH_ADA06B61 = "30157d69d5e0e3903041d8b5b3bfd3432190ddc2d2989938dbb977a6c65eef98"
+    ref = _reference(p_band=0.10, p_size={1: 0.5, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    persons = _persons()
+    out, _diag = D.draw_absence(persons, ref, np.random.RandomState(13),
+                                individual_stage_min_household_size=1)
+    serialised = out.sort_values("person_id").reset_index(drop=True)[list(D.ABSENCE_COLUMNS)] \
+        .to_csv(index=False).encode()
+    assert hashlib.sha256(serialised).hexdigest() == GOLDEN_HASH_ADA06B61
+
+
 def test_residual_probability_legacy_and_eligible_agree_when_every_present_person_is_eligible():
     """The byte-identity claim rests on this algebraic identity: substituting target_n = target *
     n_band and realised_hh = absent_hh_n / n_band into the general eligible-pool formula recovers
@@ -219,6 +261,40 @@ def test_cannot_reach_target_warns_when_no_eligible_present_person_remains(caplo
     assert diag["by_band"]["30-44"]["n_eligible_present"] == 0
     assert (out["day_absence_state"] == D.STATE_PRESENT).all()
     assert "cannot reach its target" in caplog.text
+    assert diag["n_bands_unreachable"] >= 1
+
+
+def test_cannot_reach_target_warns_for_a_partially_filled_eligible_pool(caplog):
+    """Final-review fix wave, Important finding 1: the earlier condition (``n_eligible == 0``
+    only) missed a PARTIALLY filled eligible pool that is still too small to cover the residual.
+    Reviewer's probe: 1,000 singles + 10 couples, band rate 0.10,
+    individual_stage_min_household_size=2 -- the residual clips to 1.0 (every one of the 20
+    eligible persons is drawn absent) and the band still only realises ~1.96 % against a 10 %
+    target, which the old n_eligible == 0 check alone would never have flagged."""
+    rows = []
+    pid = 0
+    household_id = 0
+    for _ in range(1000):  # 1,000 singles, household_size=1, never eligible at threshold 2
+        rows.append({"person_id": pid, "household_id": household_id, "age": 40})
+        pid += 1
+        household_id += 1
+    for _ in range(10):  # 10 couples, household_size=2, the only eligible persons
+        rows.append({"person_id": pid, "household_id": household_id, "age": 35}); pid += 1
+        rows.append({"person_id": pid, "household_id": household_id, "age": 36}); pid += 1
+        household_id += 1
+    persons = pd.DataFrame(rows)
+    ref = _reference(p_band=0.10, p_size={1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    with caplog.at_level("WARNING"):
+        out, diag = D.draw_absence(persons, ref, np.random.RandomState(23),
+                                   individual_stage_min_household_size=2)
+    band = diag["by_band"]["30-44"]
+    assert band["n_eligible_present"] == 20
+    assert band["residual_p"] == pytest.approx(1.0)
+    realised = (out["day_absence_state"] != D.STATE_PRESENT).mean()
+    assert abs(realised - 20 / 1020) < 1e-9  # deterministic: residual 1.0 means every draw fires
+    assert diag["n_bands_unreachable"] >= 1
+    assert "cannot reach its target" in caplog.text
+    assert "shortfall" in caplog.text
 
 
 def test_individual_stage_min_household_size_diagnostics_are_reported():

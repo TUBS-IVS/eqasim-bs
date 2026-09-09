@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import logging
+import numbers
 import os
 
 import numpy as np
@@ -112,14 +113,16 @@ def _validate_individual_stage_min_household_size(raw_value):
 
     ``int(raw_value)`` alone would silently TRUNCATE a non-integral float (e.g. ``2.7`` -> ``2``),
     hiding a likely configuration typo (CLAUDE.md "fail early", "no silent fallbacks") -- only a
-    plain ``int`` (never ``bool``, which is technically an ``int`` subtype but not a meaningful
-    household-size count) or a ``float`` with no fractional part (e.g. ``2.0``) is accepted.
+    ``numbers.Integral`` (covers plain ``int`` AND numpy integer types such as ``numpy.int64``, e.g.
+    when a config value has round-tripped through a numpy/pandas-backed loader; never ``bool``,
+    which is technically an ``int`` subtype but not a meaningful household-size count) or a
+    ``float``/``numpy.floating`` with no fractional part (e.g. ``2.0``) is accepted.
     """
     error = ValueError(f"{_LOG_TAG} {KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE} must be an integer >= 1, "
                        f"got {raw_value!r}")
-    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (numbers.Integral, numbers.Real)):
         raise error
-    if isinstance(raw_value, float) and not raw_value.is_integer():
+    if not isinstance(raw_value, numbers.Integral) and not float(raw_value).is_integer():
         raise error
     value = int(raw_value)
     if value < 1:
@@ -134,7 +137,7 @@ def execute(context):
     :func:`braunschweig.synthesis.day_absence.absence.draw_absence` (``n_persons``,
     ``n_households``, ``n_absent_household``, ``n_absent_individual``, ``n_absent_total``,
     ``share_absent_total``, ``share_absent_in_fully_absent_households``, ``n_bands_overshoot``,
-    ``household_stage``, ``individual_stage_min_household_size``,
+    ``n_bands_unreachable``, ``household_stage``, ``individual_stage_min_household_size``,
     ``n_persons_ineligible_individual_stage``, ``by_band``, ``by_size_class``) plus
     ``n_band_guard_hits`` (see the deviation guard below). On the OFF path: ``{"enabled": False}``
     only.
@@ -164,6 +167,12 @@ def execute(context):
         f"{_LOG_TAG} the absence frame must carry exactly one row per person")
     n_guard_hits = 0
     for band, cell in diagnostics["by_band"].items():
+        # Compact per-band line (final-review fix wave, MINOR finding 5): includes
+        # n_eligible_present so the individual-stage eligibility gate's effect on each band is
+        # visible even when the deviation guard below does not fire.
+        logger.info("%s band %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d)", _LOG_TAG,
+                   band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
+                   cell["n_eligible_present"])
         if cell["n"] >= MIN_PERSONS_FOR_BAND_GUARD:
             deviation_pp = 100.0 * (cell["realised_rate"] - cell["reference_rate"])
             if abs(deviation_pp) > max_dev_pp:
@@ -174,8 +183,9 @@ def execute(context):
     # Fallback-transparency logging for the individual-stage eligibility gate (issue #388, CLAUDE.md
     # "no silent fallbacks"): a per-size-class realised-vs-SrV comparison and the ineligible share.
     for size_class, cell in diagnostics["by_size_class"].items():
-        logger.info("%s size %d: realised %.2f%% vs SrV %.2f%% (delta %.2f pp)", _LOG_TAG, size_class,
-                   100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["delta_pp"])
+        logger.info("%s size %d: realised %.2f%% vs SrV %.2f%% (delta %.2f pp, n=%d)", _LOG_TAG,
+                   size_class, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"],
+                   cell["delta_pp"], cell["n"])
     n_total = diagnostics["n_persons"]
     n_ineligible = diagnostics["n_persons_ineligible_individual_stage"]
     ineligible_rate = n_ineligible / n_total if n_total else float("nan")
