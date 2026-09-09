@@ -210,18 +210,20 @@ STATE_COLUMN = "commute_day_state"
 #: workers of that code whose person exists in the population but is not flagged ``employed``.
 #: They are outside the SrV universe, so they enter no share above; the count is reported so a
 #: reader can see how far the model's worker cohort reaches beyond the employed one.
-#: ``n_absent_general`` (issue #370, ADR-0104 Task 7) is a COUNT beside ``n_workers``, never a
-#: denominator: the employed persons of that code whose commute-day state was OVERRIDDEN to
-#: ``absent`` by the general day-absence draw (:func:`apply_general_absence`), INCLUDING any of
-#: them with no assigned workplace at all -- folding them out of ``share_no_workplace`` and into
-#: ``share_absent``, which is why ``n_workers`` can be larger than "employed persons with an
-#: assigned workplace" once this column is non-zero. It makes that contribution traceable rather
-#: than hidden inside a state the workplace draw never actually produced.
+#: ``n_absent_general`` (issue #370, ADR-0104 Task 7, APPENDED at the end so the pre-existing
+#: column order stays stable -- no repo consumer reads this CSV positionally) is a COUNT beside
+#: ``n_workers``, never a denominator: the employed persons of that code whose commute-day state
+#: was OVERRIDDEN to ``absent`` by the general day-absence draw (:func:`apply_general_absence`),
+#: INCLUDING any of them with no assigned workplace at all -- folding them out of
+#: ``share_no_workplace`` and into ``share_absent``, which is why ``n_workers`` can be larger
+#: than "employed persons with an assigned workplace" once this column is non-zero. It makes that
+#: contribution traceable rather than hidden inside a state the workplace draw never actually
+#: produced.
 STATE_SHARE_COLUMNS = (
-    "code", "n_workers", "n_workers_not_employed", "n_absent_general", "share_at_workplace",
+    "code", "n_workers", "n_workers_not_employed", "share_at_workplace",
     "share_home", "share_absent", "share_no_workplace", "n_employed",
     "share_employed_no_work_trip", "srv_share_home_office_day", "srv_share_work_trip",
-    "srv_share_neither", "delta_no_work_trip_pp",
+    "srv_share_neither", "delta_no_work_trip_pp", "n_absent_general",
 )
 #: Share column for employed persons without an assigned workplace (no drawn state).
 NO_WORKPLACE_SHARE = "share_no_workplace"
@@ -538,9 +540,12 @@ def apply_general_absence(state_by_person: pd.Series, absent_person_ids: set) ->
     """
     out = state_by_person.copy()
     mask = out.index.isin(list(absent_person_ids))
+    n_overridden = int(mask.sum())
+    n_total = len(out)
     out[mask] = "absent"
-    LOGGER.info("%s general absence folded into check 1: %d/%d employed persons set to absent",
-               _LOG_TAG, int(mask.sum()), len(out))
+    LOGGER.info(
+        "%s general absence folded into check 1: %d/%d employed persons (%.2f%%) set to absent",
+        _LOG_TAG, n_overridden, n_total, 100.0 * _rate(n_overridden, n_total))
     return out
 
 
@@ -800,10 +805,13 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
                              general_absent_by_code.get(code, 0)) for code in ZGB_KREISE]
     rows.append(_state_share_row(ZGB_ROW_CODE, employed, sum(not_employed_by_code.values()),
                                  n_absent_general_total))
+    # Column order here is cosmetic only: the function's actual output order is fixed by the
+    # final `out[list(STATE_SHARE_COLUMNS)]` selection below, which appends n_absent_general at
+    # the end (issue #370 review: keep the pre-existing schema order stable).
     table = pd.DataFrame(rows, columns=["code", "n_workers", "n_workers_not_employed",
-                                        "n_absent_general", "n_employed"]
+                                        "n_employed"]
                          + [f"share_{state}" for state in COMMUTE_DAY_STATES]
-                         + [NO_WORKPLACE_SHARE])
+                         + [NO_WORKPLACE_SHARE, "n_absent_general"])
 
     reference = participation[["code", "n_employed", "share_no_work_trip",
                                "srv_share_home_office_day", "srv_share_work_trip",
@@ -827,14 +835,16 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
         - (out["srv_share_home_office_day"] + out["srv_share_neither"]))
 
     zgb_row = out[out["code"] == ZGB_ROW_CODE].iloc[0]
+    n_employed_zgb = int(zgb_row["n_employed"])
+    n_absent_general_zgb = int(zgb_row["n_absent_general"])
     LOGGER.info(
         "%s reporting-day states over %d ZGB EMPLOYED persons (%d with an assigned workplace, "
-        "%d of them set to 'absent' by the general day-absence draw): at_workplace %s / home %s "
-        "/ absent %s / no_workplace %s (SrV work_trip %s / home_office_day %s / neither %s); "
-        "employed without a work trip %s vs SrV remainder, delta %s pp (tolerance +/- %.1f pp, "
-        "regional aggregate only)",
-        _LOG_TAG, int(zgb_row["n_employed"]), int(zgb_row["n_workers"]),
-        int(zgb_row["n_absent_general"]),
+        "%d/%d (%.2f%%) of them set to 'absent' by the general day-absence draw): at_workplace "
+        "%s / home %s / absent %s / no_workplace %s (SrV work_trip %s / home_office_day %s / "
+        "neither %s); employed without a work trip %s vs SrV remainder, delta %s pp (tolerance "
+        "+/- %.1f pp, regional aggregate only)",
+        _LOG_TAG, n_employed_zgb, int(zgb_row["n_workers"]),
+        n_absent_general_zgb, n_employed_zgb, 100.0 * _rate(n_absent_general_zgb, n_employed_zgb),
         _fmt(zgb_row["share_at_workplace"]), _fmt(zgb_row["share_home"]),
         _fmt(zgb_row["share_absent"]), _fmt(zgb_row[NO_WORKPLACE_SHARE]),
         _fmt(zgb_row["srv_share_work_trip"]), _fmt(zgb_row["srv_share_home_office_day"]),

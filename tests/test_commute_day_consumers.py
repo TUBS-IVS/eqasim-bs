@@ -872,14 +872,18 @@ def test_commute_day_state_shares_accepts_a_precomputed_employed_universe():
 # all). WP.apply_general_absence() performs the override; commute_day_state_shares() applies it
 # to the whole employed universe BEFORE the per-Kreis shares are summed.
 
-def test_apply_general_absence_overrides_only_the_generally_absent_persons():
+def test_apply_general_absence_overrides_only_the_generally_absent_persons(caplog):
     state_by_person = pd.Series(["at_workplace", "home", np.nan], index=[1, 2, 3])
-    out = WP.apply_general_absence(state_by_person, {2, 3})
+    with caplog.at_level("INFO"):
+        out = WP.apply_general_absence(state_by_person, {2, 3})
     assert out.loc[1] == "at_workplace"
     assert out.loc[2] == "absent"
     assert out.loc[3] == "absent"
     # Pure function: the input series is untouched.
     assert pd.isna(state_by_person.loc[3])
+    # CLAUDE.md "Fallback transparency": the override is logged as a RATE, not a bare count.
+    assert "2/3" in caplog.text
+    assert "66.67%" in caplog.text
 
 
 def test_commute_day_state_shares_folds_a_generally_absent_worker_into_absent():
