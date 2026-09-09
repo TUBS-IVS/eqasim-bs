@@ -393,6 +393,70 @@ def _many_persons_fixture(n_persons=300, n_extra_columns=120, n_trips_per_person
     return trips, states, matches
 
 
+# ---------------------------------------------------------------------------
+# General day absence composition (issue #370, Task 4)
+# ---------------------------------------------------------------------------
+
+def test_general_absence_removes_rows_and_is_counted_separately():
+    # p1 is at_workplace (untouched by the commute model) and p3 is already commute-absent; both
+    # are ALSO marked generally absent here, so this exercises the "general-only" removal (p1) and
+    # the overlap counter (p3, already counted by the commute-absent path) in one test.
+    trips = _trips_fixture()
+    general = pd.DataFrame({
+        "person_id":         ["p1", "p3"],
+        "day_absence_state": ["absent_household", "absent_individual"],
+    })
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED, general_absence=general)
+
+    assert "p1" not in set(day_trips["person_id"])
+    assert diagnostics["n_persons_absent_general"] == 2
+    assert diagnostics["n_persons_absent_both"] == 1  # p3 is both commute- and generally absent
+    assert diagnostics["n_trips_removed_general"] == int((trips["person_id"] == "p1").sum())
+    assert (diagnostics["n_persons_absent_total"] == diagnostics["n_persons_absent_commute"]
+            + diagnostics["n_persons_absent_general"] - diagnostics["n_persons_absent_both"])
+
+
+def test_general_absence_none_is_byte_identical_to_the_previous_signature():
+    trips = _trips_fixture()
+    states, matches, donor_trips = _states_fixture(), _matches_fixture(), _donor_trips_fixture()
+    a, diagnostics_a = plan_replacement.build_day_trips(
+        trips, states, matches, donor_trips, random_seed=RANDOM_SEED)
+    b, diagnostics_b = plan_replacement.build_day_trips(
+        trips, states, matches, donor_trips, random_seed=RANDOM_SEED, general_absence=None)
+    pd.testing.assert_frame_equal(a, b)
+    assert diagnostics_a["n_persons_absent"] == diagnostics_b["n_persons_absent_commute"]
+    assert diagnostics_b["n_persons_absent_general"] == 0
+    assert diagnostics_b["n_persons_absent_both"] == 0
+    assert diagnostics_b["n_trips_removed_general"] == 0
+    assert diagnostics_b["n_persons_absent_total"] == diagnostics_b["n_persons_absent_commute"]
+
+
+def test_general_absence_requires_the_two_columns():
+    trips = _trips_fixture()
+    with pytest.raises(ValueError, match="general_absence"):
+        plan_replacement.build_day_trips(
+            trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+            random_seed=RANDOM_SEED, general_absence=pd.DataFrame({"person_id": [1]}))
+
+
+def test_general_absence_excludes_a_matched_home_person_from_the_splice():
+    # p2 is 'home' and matched to donor d1 in the base fixture; marking them ALSO generally absent
+    # must suppress the donor splice entirely (they must never receive donor rows and then have
+    # them removed again) -- the exclusion happens BEFORE the splice loop runs.
+    trips = _trips_fixture()
+    general = pd.DataFrame({"person_id": ["p2"], "day_absence_state": ["absent_individual"]})
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED, general_absence=general)
+
+    assert "p2" not in set(day_trips["person_id"])
+    assert diagnostics["n_persons_replaced"] == 0     # p2 excluded from the splice, not replaced
+    assert diagnostics["n_trips_added"] == 0
+    assert diagnostics["n_persons_absent_general"] == 1
+
+
 def test_build_day_trips_emits_no_pandas_performance_warning():
     """Ruling R8: 657,888 PerformanceWarnings in one run made that run's log 254 MB."""
     import warnings

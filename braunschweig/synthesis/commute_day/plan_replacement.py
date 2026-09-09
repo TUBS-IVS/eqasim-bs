@@ -1,10 +1,19 @@
-"""Reporting-day plan replacement (ADR-0104, issue #244, Phase B Task 3).
+"""Reporting-day plan replacement (ADR-0104, issue #244, Phase B Task 3; issue #370, Task 4).
 
 Turns a ``commute_day_state`` draw (:mod:`state`) and a donor match
 (:mod:`matching`) into the actual reporting-day trips table, one row per (person, trip) in the
 ``synthesis.population.trips`` CONTRACT (:data:`braunschweig.popsim.trips_stage.CONTRACT`). Pure
 module: no file I/O, no synpp stage -- exercised only against tiny synthetic frames in
 ``tests/test_commute_day_plan_replacement.py``.
+
+Since issue #370 (Task 4) it ALSO composes the general day-absence draw
+(:mod:`braunschweig.synthesis.day_absence.absence`) on top of the commute-day state: a person
+generally absent from the reporting day (``day_absence_state`` other than "present") loses their
+rows exactly like a commute-day ``absent`` person, whether or not they even have a commute-day
+state at all (a non-worker can be generally absent too). The two absence reasons are counted
+separately (``n_persons_absent_commute`` / ``n_persons_absent_general`` / ``_both`` / ``_total`` in
+``diagnostics``, see :func:`build_day_trips`) so a run can report the overlap rather than only the
+union.
 
 Per person, by ``commute_day_state``:
 
@@ -63,6 +72,13 @@ STATE_ABSENT = "absent"
 STATE_HOME = "home"
 STATE_AT_WORKPLACE = "at_workplace"
 
+#: The "present" value of a ``general_absence`` frame's ``day_absence_state`` column, i.e.
+#: ``braunschweig.synthesis.day_absence.absence.STATE_PRESENT`` duplicated as a local constant.
+#: Importing it directly would create a cross-package import from ``commute_day`` to
+#: ``day_absence`` (issue #370, Task 4), which this module intentionally avoids; the two
+#: constants are pinned equal by ``tests/test_day_absence.py``.
+STATE_PRESENT_GENERAL = "present"
+
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
@@ -110,7 +126,8 @@ def _replaced_rows(donor_blocks, person_ids, other_extra_columns):
 
 def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataFrame,
                     donor_trips: pd.DataFrame, *, random_seed: int,
-                    donor_attributes: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
+                    donor_attributes: pd.DataFrame = None,
+                    general_absence: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
     """Build the reporting-day trips table from a state draw and a donor match.
 
     ``trips`` -- the pre-assignment ``synthesis.population.trips`` table (CONTRACT columns plus
@@ -126,14 +143,32 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     by ``trips_day_stage``. Without it every donor absent from ``donor_trips`` is counted as
     ``n_donors_without_trips``, as before ruling R9.
 
+    ``general_absence`` -- OPTIONAL (issue #370, Task 4):
+    :func:`braunschweig.synthesis.day_absence.absence_stage` output's ``"absence"`` frame, needing
+    ``person_id`` and ``day_absence_state``; every person whose state is not
+    :data:`STATE_PRESENT_GENERAL` is treated as absent from the reporting day next to the
+    commute-day ``absent`` persons, and their rows are removed the same way. A generally absent
+    person who is ALSO a matched ``home`` person does NOT receive a spliced donor day -- they are
+    excluded from the matched set BEFORE the splice loop runs, so no donor rows are ever built for
+    them, and are counted under ``n_persons_absent_general`` (not ``n_persons_replaced``). With
+    ``general_absence=None`` (the default) this function behaves EXACTLY as before Task 4: no
+    person is generally absent and every new diagnostics key reports the pre-Task-4 value (0 for
+    the general-only counters, the ``n_persons_absent`` value for ``n_persons_absent_commute`` /
+    ``n_persons_absent_total``).
+
     Returns ``(day_trips, diagnostics)``. ``diagnostics``: ``n_persons_replaced`` (``home``
-    persons with a donor match -- including a donor whose own day has ZERO trips, i.e. a fully
-    immobile home-office day: that person legitimately ends up with no rows, which is the
-    correct outcome, not an error), ``n_persons_absent``, ``n_trips_removed`` (original rows
-    dropped, for both replaced and absent persons), ``n_trips_added`` (donor rows spliced in),
-    ``n_home_unmatched``, ``n_extra_columns_nulled`` (count of DISTINCT extra input columns
-    nulled on replaced rows, see the module docstring), and -- ruling R9 -- the SPLIT of the
-    matched persons whose ``donor_id`` has no rows at all in ``donor_trips``:
+    persons with a donor match, general absence excluded -- including a donor whose own day has
+    ZERO trips, i.e. a fully immobile home-office day: that person legitimately ends up with no
+    rows, which is the correct outcome, not an error), ``n_persons_absent`` (commute-absent
+    persons; kept for backward compatibility, identical to ``n_persons_absent_commute``),
+    ``n_persons_absent_commute``, ``n_persons_absent_general``, ``n_persons_absent_both`` (the
+    overlap of the two), ``n_persons_absent_total`` (the union), ``n_trips_removed`` (original
+    rows dropped, for both replaced and absent persons), ``n_trips_removed_general`` (the subset
+    of those rows removed ONLY because of general absence, i.e. excluding persons already
+    commute-absent, so the two removal reasons are never double-counted), ``n_trips_added``
+    (donor rows spliced in), ``n_home_unmatched``, ``n_extra_columns_nulled`` (count of DISTINCT
+    extra input columns nulled on replaced rows, see the module docstring), and -- ruling R9 --
+    the SPLIT of the matched persons whose ``donor_id`` has no rows at all in ``donor_trips``:
 
     * ``n_donors_immobile`` / ``share_donors_immobile`` -- the donor pool flags the donor
       ``is_immobile`` (no row in the raw MiD Wege file at all), an immobile home-office day.
@@ -157,6 +192,11 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     _require_columns(matches, ("person_id", "donor_id"), "matches frame")
     _require_columns(donor_trips, ("donor_id",) + tuple(c for c in CONTRACT if c != "person_id"),
                      "donor_trips frame")
+    general_absent_persons = set()
+    if general_absence is not None:
+        _require_columns(general_absence, ("person_id", "day_absence_state"), "general_absence frame")
+        general_absent_persons = set(
+            general_absence.loc[general_absence["day_absence_state"] != STATE_PRESENT_GENERAL, "person_id"])
     n_duplicated_matches = int(matches["person_id"].duplicated().sum())
     if n_duplicated_matches > 0:
         raise ValueError(
@@ -172,21 +212,32 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     other_extra_columns = [c for c in input_columns if c not in known_columns]
     output_columns = list(CONTRACT) + [c for c in input_columns if c not in CONTRACT]
 
-    absent_persons = set(state_by_person.index[state_by_person == STATE_ABSENT])
+    commute_absent_persons = set(state_by_person.index[state_by_person == STATE_ABSENT])
     home_persons = set(state_by_person.index[state_by_person == STATE_HOME])
-    matched_home_persons = home_persons & set(donor_by_person.index)
-    unmatched_home_persons = home_persons - matched_home_persons
+    matched_home_persons_by_donor = home_persons & set(donor_by_person.index)
+    # Ruling (issue #370, Task 4): a generally absent person must not receive a spliced donor day
+    # even if the state draw matched them to one -- they are removed like any other absent person,
+    # not replaced. Excluding them from the matched set BEFORE the splice loop below (rather than
+    # splicing then discarding) means no donor block is ever built for them, and they are counted
+    # once, under n_persons_absent_general.
+    matched_home_persons = matched_home_persons_by_donor - general_absent_persons
+    unmatched_home_persons = home_persons - matched_home_persons_by_donor
 
-    n_persons_absent = len(absent_persons)
+    absent_persons = commute_absent_persons | general_absent_persons
+    n_persons_absent = len(commute_absent_persons)  # unchanged meaning: commute-absent persons.
     n_home_unmatched = len(unmatched_home_persons)
 
-    # Rows dropped entirely: absent persons (no rows at all) and matched home persons (replaced
-    # below). Everyone else -- at_workplace, unmatched-home, and persons never given a state at
-    # all -- keeps their original rows completely unchanged.
+    # Rows dropped entirely: absent persons (commute- or generally-absent, no rows at all) and
+    # matched home persons (replaced below). Everyone else -- at_workplace, unmatched-home, and
+    # persons never given a state at all -- keeps their original rows completely unchanged.
     persons_to_remove = absent_persons | matched_home_persons
     kept_rows = trips.loc[~trips["person_id"].isin(persons_to_remove)].copy()
 
     n_trips_removed = int(trips["person_id"].isin(persons_to_remove).sum())
+    # Trips removed BECAUSE OF general absence specifically: persons already counted under the
+    # commute-absent removal are excluded here, so the two removal reasons are never double-counted.
+    n_trips_removed_general = int(
+        trips["person_id"].isin(general_absent_persons - commute_absent_persons).sum())
 
     donor_groups = {donor_id: group.sort_values("trip_index").reset_index(drop=True)
                     for donor_id, group in donor_trips.groupby("donor_id", sort=False)}
@@ -261,8 +312,13 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     share_donors_immobile = n_donors_immobile / max(n_matched, 1)
     diagnostics = {
         "n_persons_replaced": n_matched,
-        "n_persons_absent": n_persons_absent,
+        "n_persons_absent": n_persons_absent,           # unchanged meaning: commute-absent persons
+        "n_persons_absent_commute": n_persons_absent,
+        "n_persons_absent_general": len(general_absent_persons),
+        "n_persons_absent_both": len(commute_absent_persons & general_absent_persons),
+        "n_persons_absent_total": len(absent_persons),
         "n_trips_removed": n_trips_removed,
+        "n_trips_removed_general": n_trips_removed_general,
         "n_trips_added": n_trips_added,
         "n_home_unmatched": n_home_unmatched,
         "n_extra_columns_nulled": n_extra_columns_nulled,
@@ -282,6 +338,8 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         n_donors_immobile, n_matched, 100.0 * share_donors_immobile,
         n_donors_without_trips, n_matched, 100.0 * share_donors_without_trips,
         n_persons_absent, n_home_unmatched, n_extra_columns_nulled)
+    logger.info("%s %d persons generally absent (%d of them also commute-absent)", _LOG_TAG,
+                len(general_absent_persons), len(commute_absent_persons & general_absent_persons))
     if n_donors_unknown_trip_count > 0:
         logger.warning(
             "%s %d matched donor(s) with no rows in donor_trips are ALSO absent from the donor "

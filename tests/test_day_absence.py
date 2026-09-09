@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from braunschweig.synthesis.commute_day import plan_replacement
 from braunschweig.synthesis.day_absence import absence as D
 
 
@@ -88,6 +89,13 @@ def test_load_reference_reads_the_committed_tables_by_column_name():
     assert set(ref.p_absent_by_band) == set(D.AGE_BAND_LABELS)
     assert set(ref.p_all_absent_by_size) == {1, 2, 3, 4, 5}
     assert 0.01 < ref.p_absent_by_band["6-17"] < 0.03 and 0.07 < ref.p_absent_by_band["18-29"] < 0.10
+
+
+def test_plan_replacement_present_general_matches_absence_state():
+    # Ruling R4 (issue #370, Task 4): plan_replacement keeps a LOCAL "present" constant rather
+    # than importing this package (to avoid a cross-package import from commute_day to
+    # day_absence); this pin catches the two constants drifting apart silently.
+    assert plan_replacement.STATE_PRESENT_GENERAL == D.STATE_PRESENT
 
 
 def test_reference_missing_size_class_or_band_raises():
