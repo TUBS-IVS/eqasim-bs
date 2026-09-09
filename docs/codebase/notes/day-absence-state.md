@@ -22,13 +22,31 @@ unlike the commute-day-state model, which only ever states a *worker*.
    (`srv_absence.household_size_class`); a single uniform draw against the
    committed `p_all_absent_by_size` (`srv2023_absence_household_by_size.csv`)
    marks the WHOLE household `absent_household`.
-2. **Individual residual stage.** For every age band `a`
-   (`srv_absence.AGE_BAND_LABELS`), the residual probability
-   `p_individual(a) = max(0, (r(a) - r_hh(a)) / (1 - r_hh(a)))` is computed
+2. **Individual residual stage.** Restricted to ELIGIBLE present persons
+   (issue #388, ADR-0110 Amendment 1): `eligible = present &
+   (household_size >= individual_stage_min_household_size)`, where
+   `household_size` is the UNCLIPPED member count, not the capped
+   `household_size_class`. Rationale: for a single-person household "whole
+   household absent" IS "person absent", so the household stage alone
+   already realises the SrV single-person rate; an individual residual on
+   top of that would over-absent singles. For every age band `a`
+   (`srv_absence.AGE_BAND_LABELS`), the residual probability is computed
    from the committed per-band rate `r(a)` (`srv2023_absence_by_age_band.csv`)
    and `r_hh(a)`, the rate the household stage ALREADY realised in that band
-   on THIS draw. Every still-present person in the band is then drawn
-   `absent_individual` at that probability.
+   on THIS draw, but now over the ELIGIBLE pool only:
+   `p_individual(a) = clip((r(a) * n(a) - absent_hh_n(a)) / n_eligible(a), 0, 1)`
+   (`absence._residual_probability_eligible`). At the CODE default
+   `individual_stage_min_household_size=1` every present person is eligible
+   and the expression reduces to PR #387's `(r(a) - r_hh(a)) / (1 - r_hh(a))`,
+   kept byte-identical in `absence._residual_probability_legacy` rather than
+   routed through the general formula. Every ELIGIBLE still-present person in
+   the band is then drawn `absent_individual` at that probability; the person
+   draw vector itself is still drawn for EVERY person regardless of
+   eligibility (a mask on top, never a re-draw), so the random stream a
+   downstream person consumes never shifts merely because of who is eligible.
+   A band whose target cannot be reached because it has no eligible present
+   person left (small households already absorbing the whole band) logs a
+   WARNING naming the band, rather than silently under-shooting.
 
 The two stages together hit the committed per-band rates in expectation while
 reproducing the household clustering (55.8 % of absent persons live in a
@@ -42,6 +60,18 @@ already fully absorbed (`r_hh(a) == 1.0`) hits the division-by-zero guard
 before a negative residual would ever appear, and a residual-only check would
 silently swallow that case.
 
+**Retained limitation (ADR-0110 Amendment 1, issue #388).** The eligibility
+gate fixes the per-size mis-fit for households BELOW the threshold (singles,
+at the default) by excluding them from the residual pool; it does not make
+the draw fit a per-size person-level absence rate for households AT OR ABOVE
+the threshold -- the residual is still computed once per age band over the
+whole eligible pool, not separately per household-size class within that
+pool. `draw_absence`'s `by_size_class` diagnostic (`reference_rate` /
+`delta_pp` against `AbsenceReference.p_absent_person_by_size`, the SrV
+PERSON-level rate committed in `srv2023_absence_household_by_size.csv`,
+issue #388) remains REPORTED for transparency, never a target the draw is
+tuned against, for sizes >= the threshold.
+
 One seeded RNG stream per run
 (`numpy.random.RandomState(random_seed + DAY_ABSENCE_SEED_OFFSET)`,
 `DAY_ABSENCE_SEED_OFFSET = 7351`), households sorted by `household_id` and
@@ -51,7 +81,8 @@ not depend on the input frame's row order.
 ## The stage (`absence_stage.py`)
 
 Owns only the synpp plumbing: config keys (`day_absence_enabled`,
-`day_absence_household_stage_enabled`, `day_absence_max_band_deviation_pp`),
+`day_absence_household_stage_enabled`, `day_absence_max_band_deviation_pp`,
+`day_absence_individual_stage_min_household_size`),
 loading the two committed reference tables, and the per-band deviation guard
 (bands with `>= 1,000` persons whose realised share deviates from the
 reference by more than `day_absence_max_band_deviation_pp` WARN). With the

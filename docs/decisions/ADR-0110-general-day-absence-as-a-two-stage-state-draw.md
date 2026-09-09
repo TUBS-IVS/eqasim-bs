@@ -317,3 +317,85 @@
   result, and the feature record's `validation.state` is `unvalidated` until Task 10 of the SDD
   plan runs it and records a manifest. Convergence of a MATSim run is not validation and is not
   claimed here.
+- **Amendment 1 (2026-09-09, issue #388): the individual residual stage is restricted to
+  households at or above a configurable size.** This amendment supersedes the "Household-size
+  marginals are not targeted" limitation recorded above (Consequences and Assumptions) for
+  single-person households; it does not reopen or rewrite that text, which stands as originally
+  written for the reasoning it documents.
+  1. **The limitation.** As recorded above, the household stage draws one Bernoulli outcome per
+     HOUSEHOLD, independent of its size, so a single-person household is absorbed into that draw
+     directly while a member of a large household needs several co-members to also draw absent
+     before the whole household counts -- singles are systematically OVER-absent and members of
+     large households UNDER-absent relative to each other within an age band, even though the
+     band-level rate holds in expectation. For a SINGLE-person household specifically, "the whole
+     household is absent" and "this person is absent" are the SAME event, so the household stage
+     alone already realises the SrV single-person person-level rate for that size class
+     (`srv2023_absence_household_by_size.csv`'s `p_absent_person`, size 1: 5.14 %, issue #388's
+     addition to the committed reference; data record `srv2023_absence_household_by_size`); any
+     individual residual drawn on top of that necessarily over-absents singles further.
+  2. **The rule.** `braunschweig.synthesis.day_absence.absence.draw_absence` gains the keyword
+     `individual_stage_min_household_size` (CODE default 1, today's PR #387 behaviour); the stage
+     `braunschweig.synthesis.day_absence.absence_stage` gains the config key
+     `day_absence_individual_stage_min_household_size` (CONFIGURED default 2 in
+     `configs/base_bs.yml`, validated as an integer >= 1). Eligibility for the individual residual
+     stage becomes `eligible = present & (household_size >= individual_stage_min_household_size)`,
+     where `household_size` is the UNCLIPPED member count (not the capped
+     `household_size_class`). The person draw vector is still drawn for EVERY person exactly as
+     before; eligibility is applied as a MASK on top of it, never a re-draw, so the random stream a
+     downstream person consumes never shifts merely because of who is eligible. At the threshold's
+     CODE default of 1 every present person is eligible and the residual is computed with the PR
+     #387 expression, kept byte-identical in `_residual_probability_legacy`; at the CONFIGURED
+     default of 2 (or any higher threshold) the residual over the eligible pool only is computed
+     with the general expression `_residual_probability_eligible`
+     (`clip((r(a) * n(a) - absent_hh_n(a)) / n_eligible(a), 0, 1)`), and a band whose target cannot
+     be reached because no present person remains eligible logs a WARNING naming the band, rather
+     than silently under-shooting (`n_persons_ineligible_individual_stage`,
+     `by_band[a]["n_eligible_present"]` diagnostics).
+  3. **The new default.** `day_absence_individual_stage_min_household_size` defaults to **2** in
+     `configs/base_bs.yml` (residual applied only to multi-person households): the default-ON
+     project convention (CLAUDE.md) applies to the FIX, not to a bypass of it, since the CODE
+     default of `draw_absence` itself stays 1 so every existing direct caller (and the pre-#388
+     test suite) is unaffected unless it opts in via the stage. Setting the key to **1** restores
+     the PR #387 behaviour BYTE-IDENTICALLY (pinned by a dedicated test comparing the full output
+     frame against the same call without the keyword).
+  4. **Retained limitation.** The gate fixes the per-size mis-fit for households BELOW the
+     threshold (singles, at the default) by excluding them from the residual pool; it does NOT make
+     the draw fit a per-size person-level absence rate for households AT OR ABOVE the threshold --
+     the residual is still computed once per age band over the whole eligible pool, not separately
+     per household-size class within that pool. `draw_absence`'s `by_size_class` diagnostic
+     (`reference_rate` / `delta_pp` against the newly committed `p_absent_person_by_size`) remains
+     REPORTED for transparency, never a target the draw is tuned against, for sizes >= the
+     threshold -- the original ruling R11 limitation is narrowed to this residual scope, not
+     removed.
+  5. **Pre-registered arm 3 (server, cached population; not run as part of this documentation
+     task).** Arm 3 = ADR-0110's arm 1 (ON, two-stage, the default) plus this amendment's default
+     (`day_absence_individual_stage_min_household_size: 2`, already the base config default, so no
+     override is needed to run it). Measured with the same `plan_structure_vs_srv` /
+     `work_participation_by_kreis` stages as the original A/B, plus `draw_absence`'s
+     `by_size_class` diagnostic read directly:
+
+     | metric | SrV | expected arm 3 (ASSUMPTION) |
+     |---|---|---|
+     | singles' realised person-level absence (household size 1) | 5.14 % (`p_absent_person`, size 1) | within +/- 0.6 pp of 5.14 % |
+     | absent persons in fully absent households (clustering) | 55.8 % | closer to 55.8 % than arm 1's realised value |
+     | absent share per age band | table in Context above | unchanged within +/- 1.0 pp per band (the eligibility gate must not move the band-level fit, which the residual formula still targets exactly) |
+     | absence rate by household size class, sizes 2-5 (hold-out, not gated) | `p_absent_person`: 5.87 %, 5.43 %, 4.16 %, 1.75 % | reported via `by_size_class`, no tolerance -- the retained limitation above means these are NOT expected to match closely, only recorded for transparency |
+
+     A metric moving the wrong way (singles' fit not improving, band rates moving outside
+     tolerance, or clustering moving away from 55.8 %) stops the ladder for diagnosis, the same
+     pre-registration discipline as the original A/B.
+  6. **Evidence.** Issue **#388**; code
+     `braunschweig/synthesis/day_absence/absence.py` (`_residual_probability_legacy`,
+     `_residual_probability_eligible`, `individual_stage_min_household_size` keyword),
+     `braunschweig/synthesis/day_absence/absence_stage.py`
+     (`KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE`,
+     `_validate_individual_stage_min_household_size`),
+     `braunschweig/calibration/srv_absence.py` (`BY_SIZE_COLUMNS`'s `n_persons_unweighted`,
+     `n_absent_persons_unweighted`, `p_absent_person`), `scripts/extract_srv_absence.py`; tests
+     `tests/test_srv_absence.py`, `tests/test_day_absence.py`, `tests/test_day_absence_stage.py`;
+     feature record `docs/registry/features/general_day_absence.yml`; stage record
+     `docs/registry/stages/braunschweig.synthesis.day_absence.absence_stage.yml`; data record
+     `docs/registry/data/srv2023_absence_household_by_size.yml`; contributor note
+     `docs/codebase/notes/day-absence-state.md`. No run has executed this amendment's default as of
+     this record; arm 3 above is a plan, not a result, exactly as the original A/B was when ADR-0110
+     was first written.
