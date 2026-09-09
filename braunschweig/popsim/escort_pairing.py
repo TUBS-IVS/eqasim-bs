@@ -11,6 +11,13 @@ LAZILY there to avoid a cycle with this module's ``trips.mid_time_seconds`` impo
 pairing into the child's actual purpose (the adult's destination purpose). Pure pandas; no file
 I/O, no MATSim dependency.
 
+The adult candidate pool excludes legs whose own W_ZWECK is itself PASSIVE_W_ZWECK (Ruling
+C-R8): a person who is being passively escorted on a leg cannot simultaneously be the escorting
+adult for that leg (they need an escort themselves), and PASSIVE_W_ZWECK is not a real
+destination purpose that ``trips.map_purpose`` could resolve the child onto anyway. A household
+where every code-13-eligible-age member's legs are themselves code 13 therefore has NO eligible
+adult candidate at all, not a spurious self-pairing.
+
 Tie-breaking, most to least specific (all ties are possible because MiD only resolves
 departure time to the minute): (1) the smallest absolute gap in minutes between the passive
 leg and the candidate adult leg; (2) among equal gaps, the candidate whose wegkm_imp matches
@@ -71,13 +78,20 @@ def pair_passive_legs(
     """Pair every W_ZWECK == 13 (passive escort) leg with the nearest same-household adult leg.
 
     For each passive leg, candidate adult legs are every OTHER household member's leg with a
-    valid departure time and HP_ALTER >= adult_min_age. The candidate with the smallest
-    departure-time gap wins; see the module docstring for the deterministic tie-break order.
-    A passive leg is PAIRED only if a candidate exists AND its gap is <= max_gap_minutes;
-    otherwise it is UNPAIRED_NO_ADULT (no eligible adult leg in the household at all),
-    UNPAIRED_GAP (an adult leg exists but the nearest one is farther than max_gap_minutes), or
+    valid departure time, HP_ALTER >= adult_min_age, and a W_ZWECK other than PASSIVE_W_ZWECK
+    (module docstring, Ruling C-R8). The candidate with the smallest departure-time gap wins;
+    see the module docstring for the deterministic tie-break order. A passive leg is PAIRED
+    only if a candidate exists AND its gap is <= max_gap_minutes; otherwise it is
+    UNPAIRED_NO_ADULT (no eligible adult leg in the household at all), UNPAIRED_GAP (an
+    eligible adult leg exists but the nearest one is farther than max_gap_minutes), or
     UNPAIRED_NO_TIME (the passive leg itself has no valid departure time, e.g. a MiD "keine
-    Angabe" code).
+    Angabe" code). Status is derived from three explicit per-leg facts -- own time valid, any
+    eligible adult leg in the household, any eligible adult leg within the gap -- each computed
+    over EVERY passive leg rather than inferred from whether a leg happens to survive an
+    intermediate join; a passive leg that is its household's only age-eligible member (a
+    single-occupant household, or the sole adult also having a non-13 leg of their own) would
+    otherwise have every one of its join candidates removed as a self-match and silently keep a
+    default status instead of correctly reporting UNPAIRED_NO_ADULT.
 
     Args:
         wege: MiD Wege (trip) records, at least REQUIRED_COLUMNS; one row per leg. Not mutated.
@@ -94,7 +108,8 @@ def pair_passive_legs(
           ``adult_w_zweck_counts`` maps EVERY adult W_ZWECK code seen among paired legs to its
           count (no code is filtered out, including codes not otherwise handled downstream --
           see CLAUDE.md "Fallback transparency": an unexpected code must be visible, not
-          silently dropped).
+          silently dropped). PASSIVE_W_ZWECK never appears in this mapping because it is
+          excluded from the adult candidate pool in the first place.
 
     Raises:
         KeyError: If ``wege`` is missing one or more REQUIRED_COLUMNS.
@@ -134,7 +149,9 @@ def pair_passive_legs(
         "distance_km": distance_km[is_passive].values,
     })
 
-    is_adult = pd.to_numeric(out["HP_ALTER"], errors="coerce") >= adult_min_age
+    # Adult candidate pool: household members old enough to count as an escorting adult, on a
+    # leg that is NOT itself PASSIVE_W_ZWECK -- see the module docstring and Ruling C-R8.
+    is_adult = (pd.to_numeric(out["HP_ALTER"], errors="coerce") >= adult_min_age) & (out["W_ZWECK"] != PASSIVE_W_ZWECK)
     adult_legs = pd.DataFrame({
         "H_ID": out.loc[is_adult, "H_ID"].values,
         "adult_P_ID": out.loc[is_adult, "P_ID"].values,
@@ -147,18 +164,25 @@ def pair_passive_legs(
     # produce a spurious NaN-gap candidate; drop it rather than let it silently win a tie.
     adult_legs = adult_legs[adult_legs["adult_departure_minutes"].notna()]
 
-    has_no_time = passive_legs["departure_minutes"].isna()
-    candidates = passive_legs[~has_no_time].merge(adult_legs, on="H_ID", how="left")
-    # Exclude the passive person's own legs from its own candidate pool (relevant only if the
-    # passive person itself happens to satisfy the adult-age threshold); keep unmatched rows
-    # (adult_P_ID is NaN, i.e. no adult leg exists in the household at all) so the "no adult"
-    # case below still gets exactly one row per passive leg.
-    candidates = candidates[(candidates["adult_P_ID"] != candidates["P_ID"]) | candidates["adult_P_ID"].isna()]
-    candidates["gap_minutes"] = (candidates["departure_minutes"] - candidates["adult_departure_minutes"]).abs()
-    candidates["distance_mismatch"] = (candidates["distance_km"] != candidates["adult_distance_km"]).astype(int)
+    has_own_time = passive_legs["departure_minutes"].notna()
+    candidates = passive_legs[has_own_time].merge(adult_legs, on="H_ID", how="left")
+    # A person cannot escort themselves: drop candidate rows that are the passive person's own
+    # OTHER legs (relevant only if that same person also satisfies the adult-age threshold).
+    # This must NOT be the only mechanism that decides "no eligible adult in the household": if
+    # EVERY merged row for a passive leg happens to be a self-match (e.g. a single-occupant
+    # household, or a lone household adult who also has a non-13 leg of their own), filtering
+    # those rows out would empty the group entirely, and relying on group survival to signal
+    # "no adult" would leave such a leg silently stuck on whatever status was set beforehand
+    # (this was a Critical bug: the leg kept the initial UNPAIRED_NO_TIME default even though
+    # its own departure time was valid). The three facts computed below therefore reindex over
+    # EVERY row of passive_legs instead of relying on which rows survive this filter.
+    is_self_match = (candidates["adult_P_ID"] == candidates["P_ID"]) & candidates["adult_P_ID"].notna()
+    eligible = candidates[~is_self_match & candidates["adult_P_ID"].notna()].copy()
+    eligible["gap_minutes"] = (eligible["departure_minutes"] - eligible["adult_departure_minutes"]).abs()
+    eligible["distance_mismatch"] = (eligible["distance_km"] != eligible["adult_distance_km"]).astype(int)
 
     best_candidate = (
-        candidates.sort_values(
+        eligible.sort_values(
             ["row_index", "gap_minutes", "distance_mismatch", "adult_P_ID", "adult_W_ID"],
             na_position="last",
         )
@@ -166,15 +190,22 @@ def pair_passive_legs(
         .set_index("row_index")
     )
 
+    # Fact 1: does the passive leg itself have a valid departure time?
+    own_time_valid = pd.Series(False, index=passive_legs["row_index"])
+    own_time_valid.loc[passive_legs.loc[has_own_time, "row_index"]] = True
+    # Fact 2: does at least one eligible (non-self, non-passive-purpose) adult leg exist in the
+    # household at all, regardless of gap? True exactly for the row_index values that produced
+    # at least one row in `eligible` -- an existence check, not a "did a row survive" heuristic.
+    has_eligible_adult = pd.Series(False, index=passive_legs["row_index"])
+    has_eligible_adult.loc[best_candidate.index] = True
+
     status = pd.Series(STATUS_UNPAIRED_NO_TIME, index=passive_legs["row_index"], dtype=object)
-    has_adult_candidate = best_candidate["adult_P_ID"].notna()
-    is_paired = has_adult_candidate & (best_candidate["gap_minutes"] <= max_gap_minutes)
-    status.loc[best_candidate.index[~has_adult_candidate]] = STATUS_UNPAIRED_NO_ADULT
-    status.loc[best_candidate.index[has_adult_candidate & ~is_paired]] = STATUS_UNPAIRED_GAP
-    status.loc[best_candidate.index[is_paired]] = STATUS_PAIRED
+    status.loc[own_time_valid & ~has_eligible_adult] = STATUS_UNPAIRED_NO_ADULT
+    status.loc[best_candidate.index[best_candidate["gap_minutes"] > max_gap_minutes]] = STATUS_UNPAIRED_GAP
+    status.loc[best_candidate.index[best_candidate["gap_minutes"] <= max_gap_minutes]] = STATUS_PAIRED
     out.loc[status.index, "passive_pair_status"] = status.values
 
-    paired = best_candidate[is_paired]
+    paired = best_candidate[best_candidate["gap_minutes"] <= max_gap_minutes]
     out.loc[paired.index, "passive_pair_adult_w_zweck"] = paired["adult_W_ZWECK"].values
     out.loc[paired.index, "passive_pair_adult_p_id"] = paired["adult_P_ID"].values
     out.loc[paired.index, "passive_pair_adult_w_id"] = paired["adult_W_ID"].values
@@ -206,10 +237,11 @@ def pair_passive_legs(
     )
     if share_paired < WARN_PAIRED_SHARE:
         logger.warning(
-            "%s only %.1f%% of passive legs could be paired with an adult leg (raw MiD B1 reference: "
-            "94.8%% within 15 min, see the module docstring); check HP_ALTER, the W_SZS/W_SZM time "
-            "columns and the H_ID household join before trusting the passive-leg purposes downstream",
-            _LOG_TAG, 100.0 * share_paired,
+            "%s only %d/%d (%.1f%%) passive legs could be paired with an adult leg (raw MiD B1 "
+            "reference: 94.8%% within 15 min, see the module docstring); check HP_ALTER, the "
+            "W_SZS/W_SZM time columns and the H_ID household join before trusting the "
+            "passive-leg purposes downstream",
+            _LOG_TAG, n_paired, n_passive, 100.0 * share_paired,
         )
 
     return out, diagnostics
