@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement
 
@@ -118,6 +119,42 @@ def test_home_person_with_match_gets_donor_chain_renumbered():
     assert diagnostics["n_trips_removed"] == 2 + 2  # p2's original 2 rows + p3's (absent) 2 rows
     assert diagnostics["n_trips_added"] == 3
     assert diagnostics["n_extra_columns_nulled"] == 1
+
+
+def test_recomputed_offset_column_is_not_nulled_or_counted_as_an_extra():
+    """Ruling A-R8 (issue #123 review fix round 1).
+
+    Once the trips frame carries OFFSET_COLUMN (issue #123, Phase 0 Task 1), it must be treated
+    as a RECOMPUTED column, not as a genuine "no donor-side value" extra: apply_per_person_jitter
+    overwrites it for every replaced row a few lines after ``_replaced_rows`` would otherwise have
+    nulled it, so nulling it first only inflated ``n_extra_columns_nulled`` by one for a null
+    nobody ever observes in the output. This fixture adds ``OFFSET_COLUMN`` on top of the
+    pre-existing trips fixture (which already has ONE genuine extra column, ``raw_mid_extra``) and
+    checks: ``n_extra_columns_nulled`` stays at the pre-existing count (still 1, not 2); the
+    replaced person's recorded offset is non-null and IDENTICAL for every trip in the chain (one
+    draw per person, per the jitter formula); and ``departure_time - OFFSET_COLUMN`` reproduces
+    the rounded DONOR departure -- i.e. Task 1's raw-plus-offset decomposition contract still
+    holds across a donor splice, not only inside ``apply_per_person_jitter`` itself.
+    """
+    trips = _trips_fixture()
+    # Arbitrary pre-existing values for the untouched/kept rows -- irrelevant to this test, which
+    # only checks what happens to the REPLACED person p2's offset.
+    trips[OFFSET_COLUMN] = 0.0
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED)
+
+    # Unchanged from test_home_person_with_match_gets_donor_chain_renumbered above: OFFSET_COLUMN
+    # must NOT add a second nulled extra column on top of raw_mid_extra.
+    assert diagnostics["n_extra_columns_nulled"] == 1
+
+    p2_rows = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert p2_rows[OFFSET_COLUMN].notna().all()
+    assert p2_rows[OFFSET_COLUMN].nunique() == 1   # one draw, shared by every trip in the chain
+
+    donor_departure = _donor_trips_fixture().sort_values("trip_index")["departure_time"].to_numpy()
+    recovered_departure = (p2_rows["departure_time"] - p2_rows[OFFSET_COLUMN]).to_numpy()
+    assert np.allclose(recovered_departure, np.round(donor_departure))
 
 
 def test_home_person_without_match_is_unchanged_and_counted():

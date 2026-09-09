@@ -30,7 +30,12 @@ Per person, by ``commute_day_state``:
   ``trips`` table carries beyond the CONTRACT plus ``euclidean_distance`` and ``trip_key`` (raw
   MiD extras the donor pool intentionally does not carry, see ``donor_pool.donor_trips``) is set
   to ``NaN`` on the replaced rows -- there is no donor-side value to copy, and inventing one would
-  violate CLAUDE.md's ban on invented data. The per-person departure-time jitter
+  violate CLAUDE.md's ban on invented data -- EXCEPT the columns in :data:`_RECOMPUTED_COLUMNS`
+  (currently only :data:`braunschweig.popsim.departure_time_model.OFFSET_COLUMN`), which the
+  per-person jitter below RECOMPUTES for the receiving person a few lines later and which must
+  therefore never be nulled in between (ruling A-R8, issue #123 review fix round 1: nulling then
+  immediately overwriting inflated ``n_extra_columns_nulled`` by one without ever producing an
+  observable null). The per-person departure-time jitter
   (:func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`) is applied EXACTLY ONCE,
   across all replaced rows together, keyed by the RECEIVING person_id (ruling R2) -- the donor's
   own chain was built by :func:`donor_pool.donor_trips` WITHOUT that jitter for precisely this
@@ -52,6 +57,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
 logger = logging.getLogger(__name__)
@@ -61,6 +67,17 @@ _LOG_TAG = "[commute day plan replacement]"
 #: Extra columns a donor trips frame is documented to carry beyond the CONTRACT (see
 #: ``donor_pool.donor_trips``): copied verbatim onto replaced rows, never nulled.
 _DONOR_EXTRA_COLUMNS = ("euclidean_distance", "trip_key")
+
+#: Columns that ``apply_per_person_jitter`` (and, from Task 4 onward, ``apply_departure_time_model``)
+#: RECOMPUTES on the replaced rows from the RECEIVING person's own random draw, regardless of
+#: whatever value the donor's own chain carried for them -- so, unlike a genuine "no donor-side
+#: value" extra column, nulling them first only to have that jitter/model call overwrite them a
+#: few lines later would inflate ``n_extra_columns_nulled`` by one for a null that is never
+#: actually observable in the output (ruling A-R8, issue #123 review fix round 1). Declared as an
+#: explicit tuple -- not derived from ``apply_per_person_jitter``'s signature -- so Task 4's
+#: ``apply_departure_time_model`` can extend it with its own recomputed columns without touching
+#: the nulling logic below; keep it generic (not a single hard-coded name check) for that reason.
+_RECOMPUTED_COLUMNS = (OFFSET_COLUMN,)
 
 #: Share of matched donors with zero rows in ``donor_trips`` -- EXCLUDING the donors the donor
 #: pool flags ``is_immobile`` (ruling R9) -- above which the replacement warns: what remains after
@@ -186,8 +203,11 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     of those rows removed ONLY because of general absence, i.e. excluding persons already
     commute-absent, so the two removal reasons are never double-counted), ``n_trips_added``
     (donor rows spliced in), ``n_home_unmatched``, ``n_extra_columns_nulled`` (count of DISTINCT
-    extra input columns nulled on replaced rows, see the module docstring), and -- ruling R9 --
-    the SPLIT of the matched persons whose ``donor_id`` has no rows at all in ``donor_trips``:
+    extra input columns nulled on replaced rows, see the module docstring; columns in
+    :data:`_RECOMPUTED_COLUMNS` -- e.g. ``OFFSET_COLUMN`` -- are EXCLUDED from both the nulling
+    and this count, because the per-person jitter/model recomputes them for the receiving person
+    rather than leaving them null, ruling A-R8), and -- ruling R9 -- the SPLIT of the matched
+    persons whose ``donor_id`` has no rows at all in ``donor_trips``:
 
     * ``n_donors_immobile`` / ``share_donors_immobile`` -- the donor pool flags the donor
       ``is_immobile`` (no row in the raw MiD Wege file at all), an immobile home-office day.
@@ -247,7 +267,11 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     donor_by_person = matches.set_index("person_id")["donor_id"]
 
     input_columns = list(trips.columns)
-    known_columns = set(CONTRACT) | set(_DONOR_EXTRA_COLUMNS)
+    # _RECOMPUTED_COLUMNS is excluded here (not just from the nulling below): those columns are
+    # never a "no donor-side value" gap in the first place, since apply_per_person_jitter
+    # overwrites them for every replaced row a few lines below regardless of what NaN-filling
+    # would have written (ruling A-R8).
+    known_columns = set(CONTRACT) | set(_DONOR_EXTRA_COLUMNS) | set(_RECOMPUTED_COLUMNS)
     other_extra_columns = [c for c in input_columns if c not in known_columns]
     output_columns = list(CONTRACT) + [c for c in input_columns if c not in CONTRACT]
 

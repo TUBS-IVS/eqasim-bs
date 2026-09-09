@@ -38,14 +38,54 @@ def half_width_minutes(minute_of_hour: np.ndarray) -> np.ndarray:
     Parameters
     ----------
     minute_of_hour:
-        Integer (or integer-valued) minute-of-hour, e.g. ``departure_seconds // 60 % 60``.
+        Integer-VALUED minute-of-hour (``[0, 60)``), e.g. ``departure_seconds // 60 % 60``. An
+        integer-valued float such as ``30.0`` is accepted; a genuinely fractional minute (e.g.
+        ``7.5``), a NaN, or a negative value is OUT OF CONTRACT -- see ``Raises`` below -- because
+        silently mapping any of them to a half-width of ``0.0`` (the previous behaviour) would
+        hide an upstream bug (an un-normalised minute-of-day, a bad join, a NaN time that should
+        have been caught earlier) behind a plausible-looking "exact report" result (CLAUDE.md's
+        ban on silent fallbacks).
 
     Returns
     -------
     np.ndarray
         Half-widths in minutes, same shape as ``minute_of_hour``.
+
+    Raises
+    ------
+    ValueError
+        If any element of ``minute_of_hour`` is NaN, negative, or not integer-valued. The message
+        names this function and the offending count as ``n/total`` for each violated condition
+        (checked in that order: NaN, then negative, then non-integer, so a NaN element is reported
+        once, as NaN, not also under the other two checks).
     """
-    minute_of_hour = np.asarray(minute_of_hour)
+    minute_of_hour = np.asarray(minute_of_hour, dtype=float)
+    total = minute_of_hour.size
+
+    n_nan = int(np.isnan(minute_of_hour).sum())
+    if n_nan > 0:
+        raise ValueError(
+            f"half_width_minutes: {n_nan}/{total} minute_of_hour value(s) are NaN; the "
+            "reporting-precision half-width cannot be looked up for an unknown minute-of-hour "
+            "(fix upstream: the reported time this was derived from must be non-NaN before "
+            "calling half_width_minutes)."
+        )
+    n_negative = int((minute_of_hour < 0).sum())
+    if n_negative > 0:
+        raise ValueError(
+            f"half_width_minutes: {n_negative}/{total} minute_of_hour value(s) are negative; "
+            "minute_of_hour must be in [0, 60) (out of contract for this function -- normalise "
+            "the caller's minute-of-hour with `% 60` before calling)."
+        )
+    is_non_integer = ~np.isclose(minute_of_hour, np.round(minute_of_hour))
+    n_non_integer = int(is_non_integer.sum())
+    if n_non_integer > 0:
+        raise ValueError(
+            f"half_width_minutes: {n_non_integer}/{total} minute_of_hour value(s) are not "
+            "integer-valued (e.g. a fractional minute such as 7.5); minute_of_hour must be a "
+            "whole number of minutes (an integer-VALUED float such as 30.0 is accepted)."
+        )
+
     half_width = np.zeros(minute_of_hour.shape, dtype=float)
     half_width[minute_of_hour % 5 == 0] = FIVE_MINUTE_HALF_WIDTH_MINUTES
     half_width[minute_of_hour % 15 == 0] = QUARTER_HOUR_HALF_WIDTH_MINUTES
@@ -71,6 +111,15 @@ def deround_minutes_of_day(minutes_of_day: np.ndarray, rng: np.random.RandomStat
         ``offset`` -- the offset actually drawn for each element, in minutes, ``U(-h, +h)`` where
         ``h`` is that element's :func:`half_width_minutes`; ``0.0`` for an exact (to-the-minute)
         report.
+
+    Raises
+    ------
+    ValueError
+        If any element of ``minutes_of_day`` is NaN or not integer-valued -- propagated from
+        :func:`half_width_minutes` (called internally on ``minutes_of_day % 60.0``). A negative
+        ``minutes_of_day`` is NOT itself rejected here: ``% 60.0`` always folds it into ``[0, 60)``
+        before the half-width lookup, so this function's own contract on the sign of
+        ``minutes_of_day`` is the caller's responsibility, not this module's.
     """
     minutes_of_day = np.asarray(minutes_of_day, dtype=float)
     half_width = half_width_minutes(minutes_of_day % 60.0)

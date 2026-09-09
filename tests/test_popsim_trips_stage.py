@@ -69,6 +69,45 @@ def test_jitter_records_the_applied_offset_per_person():
     assert (n_distinct_offsets_per_person == 1).all()   # one draw per person, shared by every trip
 
 
+def test_jitter_output_matches_the_pre_task_1_golden_values():
+    """Golden-master regression (issue #123 review fix round 1, item 3).
+
+    Pins ``departure_time``/``arrival_time`` against values produced by the PRE-#123
+    ``apply_per_person_jitter`` -- i.e. the code as it existed at commit ``3acd382d``, BEFORE this
+    feature added the ``OFFSET_COLUMN`` write -- so that a future reordering of the offset write
+    relative to the existing round/shift lines (or any other accidental change to the RNG
+    consumption or rounding of the pre-existing columns) fails LOUDLY here, rather than passing
+    silently because ``test_jitter_records_the_applied_offset_per_person`` above only checks
+    internal self-consistency (offset vs. departure_time), not an independent reference.
+
+    Provenance of the pinned values: ``braunschweig/popsim/trips_stage.py`` at commit
+    ``3acd382d`` (the branch's base commit, immediately before Task 1) was extracted with
+    ``git show 3acd382d:braunschweig/popsim/trips_stage.py`` into a scratch file under
+    ``.../scratchpad/trips_stage_golden_3acd382d.py``, imported under the module name
+    ``trips_stage_golden_3acd382d`` (distinct from ``braunschweig.popsim.trips_stage``) via
+    ``importlib.util.spec_from_file_location``, and its ``apply_per_person_jitter`` was run ONCE
+    on the fixture and seed below; the printed ``departure_time``/``arrival_time`` lists were
+    copied verbatim into this test. The scratch file is not part of the repository -- only the
+    resulting pinned literals are committed.
+    """
+    fixture = pd.DataFrame({
+        "person_id":      ["p1", "p1", "p2", "p2", "p2", "p3"],
+        "departure_time": [8 * 3600.0, 17 * 3600.0, 7 * 3600.0, 12 * 3600.0, 18 * 3600.0, 600.0],
+        "arrival_time":   [8 * 3600.0 + 900.0, 17 * 3600.0 + 900.0,
+                           7 * 3600.0 + 600.0, 12 * 3600.0 + 600.0, 18 * 3600.0 + 600.0,
+                           900.0],
+    })
+    seed = 20260910
+
+    out = trips_stage.apply_per_person_jitter(fixture.copy(), random_seed=seed)
+
+    # Pinned from the 3acd382d (pre-#123) apply_per_person_jitter -- see the docstring above.
+    expected_departure_time = [27337.0, 59737.0, 26689.0, 44689.0, 66289.0, 622.0]
+    expected_arrival_time = [28237.0, 60637.0, 27289.0, 45289.0, 66889.0, 922.0]
+    assert out["departure_time"].tolist() == expected_departure_time
+    assert out["arrival_time"].tolist() == expected_arrival_time
+
+
 # ---------------------------------------------------------------------------
 # Task 2.3 C: absolute plan-time bound + NaN-free guarantee in trips_stage.run.
 # ---------------------------------------------------------------------------
