@@ -88,3 +88,16 @@ def test_load_reference_reads_the_committed_tables_by_column_name():
     assert set(ref.p_absent_by_band) == set(D.AGE_BAND_LABELS)
     assert set(ref.p_all_absent_by_size) == {1, 2, 3, 4, 5}
     assert 0.01 < ref.p_absent_by_band["6-17"] < 0.03 and 0.07 < ref.p_absent_by_band["18-29"] < 0.10
+
+
+def test_reference_missing_size_class_or_band_raises():
+    # Six of the seven bands: the last one ("75+") is missing.
+    bands_missing_one = {b: 0.1 for b in D.AGE_BAND_LABELS[:-1]}
+    with pytest.raises(ValueError, match="p_absent_by_band"):
+        D.AbsenceReference(p_absent_by_band=bands_missing_one,
+                          p_all_absent_by_size={k: 0.1 for k in range(1, 6)})
+    # Size classes 1-4 only: class 5 is missing.
+    sizes_missing_one = {k: 0.1 for k in range(1, 5)}
+    with pytest.raises(ValueError, match="p_all_absent_by_size"):
+        D.AbsenceReference(p_absent_by_band={b: 0.1 for b in D.AGE_BAND_LABELS},
+                          p_all_absent_by_size=sizes_missing_one)

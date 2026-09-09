@@ -41,10 +41,55 @@ ABSENCE_COLUMNS = ("person_id", "household_id", "day_absence_state", "age_band",
                    "household_size_class", "p_household", "p_individual", "reason")
 
 
+def _check_reference_coverage(name: str, values: dict, expected_keys: set) -> None:
+    """Raise unless ``values`` covers exactly ``expected_keys`` with every rate in [0, 1].
+
+    Called from :meth:`AbsenceReference.__post_init__` so an incomplete or out-of-range reference
+    fails at construction rather than surfacing later as a silently mapped NaN inside the
+    probability draw (the "scalar-default-when-map-missing" pattern CLAUDE.md forbids).
+    """
+    missing = sorted(expected_keys - set(values), key=str)
+    extra = sorted(set(values) - expected_keys, key=str)
+    if missing or extra:
+        raise ValueError(f"{_LOG_TAG} {name} must cover exactly {sorted(expected_keys, key=str)}; "
+                         f"missing {missing}, unexpected {extra}")
+    out_of_range = {k: v for k, v in values.items() if not (0.0 <= float(v) <= 1.0)}
+    if out_of_range:
+        raise ValueError(f"{_LOG_TAG} {name} values must be in [0, 1]; out of range: {out_of_range}")
+
+
+def _map_size_class_probability(size_classes: pd.Series, table: dict) -> pd.Series:
+    """Map ``household_size_class`` -> ``p_all_absent_by_size``; raise on an uncovered class.
+
+    ``AbsenceReference`` is a frozen dataclass, but its dict fields stay mutable after
+    construction, so this is a second, point-of-use guard against the same missing-key failure
+    mode ``__post_init__`` already checks: a plain ``Series.map`` would turn a missing size class
+    into a silent NaN (``NaN < probability`` is False, so the household would be "never absent"
+    with no signal that anything went wrong); this raises instead.
+    """
+    mapped = size_classes.map(table).astype(float)
+    if mapped.isna().any():
+        missing = sorted(set(size_classes[mapped.isna()].unique().tolist()))
+        raise ValueError(f"{_LOG_TAG} p_all_absent_by_size has no rate for household size "
+                         f"class(es) {missing}; every class 1..{HOUSEHOLD_SIZE_CLASS_TOP} must be covered")
+    return mapped
+
+
 @dataclass(frozen=True)
 class AbsenceReference:
+    """Household-size and age-band absence rates behind :func:`draw_absence`.
+
+    ``p_absent_by_band`` must cover exactly ``AGE_BAND_LABELS`` and ``p_all_absent_by_size``
+    exactly the size classes ``1..HOUSEHOLD_SIZE_CLASS_TOP``, every rate in [0, 1]; checked eagerly
+    in ``__post_init__`` (see :func:`_check_reference_coverage`).
+    """
     p_absent_by_band: dict
     p_all_absent_by_size: dict
+
+    def __post_init__(self) -> None:
+        _check_reference_coverage("p_absent_by_band", self.p_absent_by_band, set(AGE_BAND_LABELS))
+        _check_reference_coverage("p_all_absent_by_size", self.p_all_absent_by_size,
+                                  set(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1)))
 
 
 def load_absence_reference(srv_dir: str) -> AbsenceReference:
@@ -92,11 +137,12 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     p["household_size_class"] = household_size_class(sizes.values)
 
     households = p.drop_duplicates("household_id")[["household_id", "household_size_class"]].reset_index(drop=True)
-    p_hh = (households["household_size_class"].map(reference.p_all_absent_by_size).astype(float)
+    p_hh = (_map_size_class_probability(households["household_size_class"], reference.p_all_absent_by_size)
             if household_stage else pd.Series(0.0, index=households.index))
     u_hh = rng.random_sample(len(households))
     hh_absent = pd.Series(u_hh < p_hh.to_numpy(), index=households["household_id"].values)
-    p["p_household"] = p["household_size_class"].map(reference.p_all_absent_by_size).astype(float) if household_stage else 0.0
+    p["p_household"] = (_map_size_class_probability(p["household_size_class"], reference.p_all_absent_by_size)
+                        if household_stage else 0.0)
     is_hh_absent = p["household_id"].map(hh_absent).astype(bool).to_numpy()
 
     residual_by_band, by_band, n_overshoot = {}, {}, 0
@@ -125,9 +171,12 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
 
     state = np.full(len(p), STATE_PRESENT, dtype=object)
     reason = np.full(len(p), REASON_PRESENT, dtype=object)
-    state[is_hh_absent] = STATE_ABSENT_HOUSEHOLD; reason[is_hh_absent] = REASON_HOUSEHOLD
-    state[is_ind_absent] = STATE_ABSENT_INDIVIDUAL; reason[is_ind_absent] = REASON_INDIVIDUAL
-    p["day_absence_state"] = state; p["reason"] = reason
+    state[is_hh_absent] = STATE_ABSENT_HOUSEHOLD
+    reason[is_hh_absent] = REASON_HOUSEHOLD
+    state[is_ind_absent] = STATE_ABSENT_INDIVIDUAL
+    reason[is_ind_absent] = REASON_INDIVIDUAL
+    p["day_absence_state"] = state
+    p["reason"] = reason
     out = p[list(ABSENCE_COLUMNS)]
 
     absent = out["day_absence_state"] != STATE_PRESENT
@@ -135,7 +184,9 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         in_band = out["age_band"] == label
         by_band[label]["realised_rate"] = float(absent[in_band].mean()) if in_band.any() else float("nan")
     n_abs = int(absent.sum())
-    hh_all_absent = out.groupby("household_id")["day_absence_state"].transform(lambda s: (s != STATE_PRESENT).all())
+    # Vectorised over households (a per-household Python-level lambda does not scale to a full
+    # population): a household is fully absent iff every member's `absent` flag is True.
+    hh_all_absent = absent.groupby(out["household_id"]).transform("all")
     share_clustered = float((absent & hh_all_absent).sum() / n_abs) if n_abs else float("nan")
     diagnostics = {"n_persons": int(len(out)), "n_households": int(len(households)),
                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
