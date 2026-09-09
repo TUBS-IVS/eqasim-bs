@@ -328,9 +328,9 @@ DEFAULT_W_ZWECK_10_AS_LEISURE = True
 # omits it keeps today's behaviour.
 #
 # THE ONE STATEMENT of this flag's two defaults (referenced, never repeated, elsewhere): the
-# CODE / DECLARED default is False; the PRODUCTION value true is set in configs/base_bs.yml by
-# task 7 of issue #372 and IS NOT THERE YET -- until that task lands, a production run leaves the
-# feature off. The declared default is False, like KEY_ESCORT_PASSIVE_EDUCATION's above and
+# CODE / DECLARED default is False; the PRODUCTION value true is set in configs/base_bs.yml (added
+# by task 7 of issue #372 together with ADR-0112), so a config that does NOT compose that base
+# leaves the feature off. The declared default is False, like KEY_ESCORT_PASSIVE_EDUCATION's above and
 # unlike KEY_W_ZWECK_10_AS_LEISURE's, because this flag REQUIRES escort_purpose, whose own
 # declared default is False: a True declared default would make the declared default SET
 # internally inconsistent -- a config that sets nothing would abort inside

@@ -37,6 +37,7 @@ features:
 - parallel_chainsolvers
 - secondary_distance_by_purpose
 - secondary_srv_location_types
+- w_zwd_codeplan_sentinels
 decisions:
 - ADR-0026
 - ADR-0027
@@ -44,3 +45,21 @@ decisions:
 - ADR-0075
 - ADR-0076
 - ADR-0096
+- ADR-0113
+notes: >-
+  W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
+  chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
+  imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.popsim.distance_distributions) and deciders.py's _build_leisure_subtype_decider /
+  _build_other_subtype_decider re-read it through the single-argument execute-context form to select
+  purpose_subtype.leisure_spec(...) / other_errand_spec(...). With the flag on, the two NO-DETAIL
+  W_ZWD codes 799 "Freizeit k.A." and 699 "Erledigung k.A." are sentinels instead of group members,
+  so they leave the ESTIMATION universe (numerator and denominator) and are imputed like every other
+  sentinel leg; with it off both selectors return the unflagged spec BY IDENTITY. Both build-time log
+  lines append "(codeplan no-detail sentinels: on/off)", so the active spec is readable in the run
+  log. braunschweig.popsim.purpose_subtype is imported at this package's module level solely so it
+  can be listed in _HELPER_MODULES and hashed by validate() (controller ruling C-R15): the deciders
+  reach it only through function-level imports, so a group-boundary edit with no textual change here
+  would otherwise have been served from a stale cache. This stage carries no seed, so toggling the
+  flag recomputes only the secondary location choice and the distance distributions -- which is why
+  it is the cheap arm B of the ADR-0113 A/B.

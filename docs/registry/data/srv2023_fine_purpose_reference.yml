@@ -1,0 +1,82 @@
+dataset: srv2023_fine_purpose_reference
+title: SrV 2023 fine-purpose mix, lengths and durations within shop / errand / leisure
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown.
+  Wolfsburg (03103) is not surveyed by SrV, the same caveat every SrV-derived table in this
+  codebase carries.
+crs: null
+roles:
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_fine_purpose_reference.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>. Reads SrV2023_Wege.csv
+    (V_ZWECK, GEWICHT_W_ZENSUS, MITTL_WERKTAG, GIS_LAENGE_GUELTIG, E_DAUER); the definitions live in
+    the pure module braunschweig/calibration/srv_fine_purpose.py. The raw microdata is local-only
+    (data record srv2023_raw) and never committed.
+  script: scripts/extract_srv_fine_purpose_reference.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Ships committed with every clone, exactly like the sibling SrV aggregates of issues #368/#369
+    (e.g. srv2023_work_by_employment, srv2023_absence_by_age_band), so it is not listed in
+    scripts/verify_braunschweig_inputs.py. Definitions and invariants are covered by
+    tests/test_srv_fine_purpose.py (28 tests on tiny synthetic frames).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); the raw SciUse delivery is restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: every delivered SrV trip whose V_ZWECK is one of the MEASURED fine codes -- shop 8, 9;
+  other_errand 10, 11; leisure 13, 14, 15, 16, 17, 18 -- i.e. 19,106 of 58,148 delivered trips
+  (32.86 %). Trips of the other delivered purposes (work 1-2, education 3-7, escort 12, home 19,
+  70 "Sonstiges", -10 "Unplausibel") are out of scope and dropped; a V_ZWECK in NEITHER map makes
+  the extraction RAISE, so a new purpose code cannot enter a silent bucket. Universe guards raise
+  rather than adapt: every trip must have MITTL_WERKTAG == 1 (average-weekday Tuesday-Thursday
+  delivery) and a positive GEWICHT_W_ZENSUS (0 violations in the 2026-09-10 extraction).
+
+  Weight: GEWICHT_W_ZENSUS (trip expansion to Zensus 2022 counts). The stratum-internal GEWICHT_W
+  must not be used across strata (ADR-0055). share_within_coarse is WEIGHTED; n_unweighted is the
+  plain row count.
+
+  Coverage: GIS length valid (> 0 km) for 14,639/19,106 trips (76.62 %; 4,467 carry the codebook's
+  -7 "Berechnung nicht moeglich"), duration valid for 19,028/19,106 (99.59 %). Such a trip is
+  EXCLUDED from the percentiles but KEPT in n_unweighted and in share_within_coarse -- only its
+  distance or duration is unknown, not the trip. Its MiD counterpart
+  (mid2023_w_zwd_group_reference) has 100 % usable wegkm_imp, so a MEDIAN comparison between the
+  two rests on different coverage; the committed comparison states this as a caveat.
+
+  Value labels come from the SrV 2023 codebook SrV2023_Datenkodierung_SciUse.xlsx (sheet
+  'Tabelle1', variable V_ZWECK, value labels in column F, cells F8236-F8256); German umlauts are
+  transliterated (ae/oe/ue/ss) to keep the module ASCII, with the source cell recorded beside each
+  code so the original spelling stays traceable.
+notes: |
+  MEASUREMENT REFERENCE, stated as such in its own header: not a PopulationSim control target and
+  not a validated calibration target -- no synthesis, location or distribution stage reads it and
+  nothing is re-estimated from it. Its only consumer is scripts/compare_purpose_subtypes_srv.py,
+  which joins it with the MiD counterpart mid2023_w_zwd_group_reference through the crosswalk
+  braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE (grades exact / approximate /
+  aggregate_only) and writes the committed comparison
+  eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}.
+
+  The crosswalk exactness is an explicit ASSUMPTION -- a reading of the two codebooks' value
+  labels, not a published or validated crosswalk (ADR-0113 Assumptions). Two structural asymmetries
+  bound every leisure comparison: SrV 18 "Andere Freizeitaktivitaet" is 17.96 % of SrV leisure
+  trips and maps to no MiD group, and the MiD group leisure_excursion has no SrV counterpart, so
+  the four leisure share_srv values do not sum to 1. The committed comparison therefore reports the
+  leisure rows under BOTH denominators (raw and renormalised) and names the one threshold crossing
+  it produces.
+
+  Evidence base of ADR-0113 / issue #242 (feature record w_zwd_codeplan_sentinels). Sibling SrV
+  aggregates: srv2023_work_participation, srv2023_absence_by_age_band, srv2023_reference_tables.

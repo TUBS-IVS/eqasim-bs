@@ -31,12 +31,16 @@ inputs:
 - mid2023_b1
 features:
 - commute_day_state
+- escort_passive_from_adult
+- purpose_main_fold_code_10
 decisions:
 - ADR-0104
 - ADR-0106
 - ADR-0107
 - ADR-0108
 - ADR-0109
+- ADR-0111
+- ADR-0112
 notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
   other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
   directory braunschweig.popsim.trips_stage reads, so both stages can never point at different
@@ -199,4 +203,17 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   tests/test_commute_day_stages.py (the stage''s I/O, OFF path, cache-token behaviour incl. the
   deferred config-key module, missing-column guard, the forwarding of every declared flag, the
   gating of the three filters by the plan-source keys, and the fail-fast raise when an active
-  filter''s MiD column is absent).'
+  filter''s MiD column is absent).
+
+
+  PURPOSE CORRECTNESS (issues #373 / #372, ADR-0111 / ADR-0112, feature records
+  purpose_main_fold_code_10 and escort_passive_from_adult): the parity rule above -- a replaced
+  day must follow the SAME purpose vocabulary as the day it replaces -- extends to the three new
+  trip-build keys, which this stage therefore declares and reads with the same shared constants
+  from braunschweig.popsim.stage.config_keys and passes into build_home_office_donor_pool (and
+  from there into BOTH build_closure_dwell_model and donor_trips): w_zweck_10_as_leisure,
+  escort_passive_from_adult and escort_passive_pair_max_gap_minutes. Two consequences for the raw
+  read: WEGE_COLUMNS gained HP_ALTER unconditionally (the pairing needs the household member''s
+  age, and loading it under the flag would make the raw read depend on the configuration), and
+  braunschweig.popsim.escort_pairing joined _HELPER_MODULES, so an edit to the pairing rule
+  invalidates this stage''s cache token exactly as an edit to donor_pool.py does.'

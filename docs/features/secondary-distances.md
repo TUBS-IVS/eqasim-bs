@@ -74,15 +74,23 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   clipped at 200 km) found a ~25x spread inside `leisure` (dog-walk-class legs ~4 km
   vs a 45-100 km excursion tail) and a ~3x spread inside the errand share of `other`
   (W_ZWECK=5, 5-9 km vs 11-16 km).
-- **Taxonomy (measured donor means; grouping criterion is the measured W_ZWD distance
-  clustering, NOT a codeplan-confirmed semantic label -- the MiD 2023 codeplan xlsx
-  was not available during implementation, so every per-code semantic label carries a
-  `label to verify (codeplan)` marker in `braunschweig/popsim/purpose_subtype.py`; do
-  not cite these as "visit friends" / "dog walk" etc. without resolving that marker
-  first).** Two boundary codes are explicitly provisional and documented in the module
-  docstring with their reassignment rule: W_ZWD 799 (`leisure_activity`; would move to
-  the sentinel set if the codeplan shows it is a no-assignment code) and W_ZWD 601
-  (`other_errand_short`; would move to `other_errand_long`).
+- **Taxonomy (grouping criterion was the measured W_ZWD distance clustering; the
+  semantic labels are now VERIFIED against the codeplan).** The MiD 2023 codeplan xlsx
+  was not available during implementation, so every per-code label originally carried a
+  `label to verify (codeplan)` marker. Issue #242 / ADR-0113 read the codeplan
+  (`MiD2023_Codeplaene_B1_Standard_v1.1.xlsx`, sheet Wege, `W_ZWD`): every group
+  member's label is now written into `braunschweig/popsim/purpose_subtype.py`, no
+  marker is left, and the grouping is confirmed plausible under those labels. The two
+  provisional boundary codes are resolved: **W_ZWD 799** ("Freizeit k.A.") is a
+  NO-DETAIL code and moves to the leisure sentinel set under
+  `purpose_subtype_codeplan_sentinels` (as does 699 "Erledigung k.A." in
+  `other_errand_long`), while **W_ZWD 601** ("Arztbesuch/medizinisch") STAYS in
+  `other_errand_short` with 602 -- which is also how the SrV crosswalk pairs it (SrV
+  `V_ZWECK` 10 "Behoerdengang, Arztbesuch"). Code 999 has no label in the verified
+  excerpt and remains a sentinel on that basis, stated as such in the module. The
+  group tables below show the DEFAULT (flag-off) membership; feature record
+  `w_zwd_codeplan_sentinels` carries the production state and ADR-0113 the reasoning
+  and the committed SrV comparison.
 
   | leisure group | W_ZWD codes | measured mean | placement |
   |---|---|---|---|

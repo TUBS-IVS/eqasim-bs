@@ -1,0 +1,184 @@
+feature: escort_passive_from_adult
+title: Passive escort legs take the purpose of the paired same-household adult leg
+area: behavior
+description: 'Gives a PAIRED MiD passive escort leg (W_ZWECK 13, the escorted child''s own leg;
+  100 % minors) the purpose derived from the accompanying adult''s W_ZWECK, instead of the flat
+  "every code-13 leg is education" relabel of escort_passive_education (#256, ADR-0072). Issue
+  #372, ADR-0112. An UNPAIRED leg keeps the previous rule, counted and logged.
+
+  Pairing (pure module braunschweig/popsim/escort_pairing.py, pair_passive_legs): the leg of a
+  same-household person aged >= adult_min_age (18) whose departure is nearest in time, within
+  escort_passive_pair_max_gap_minutes (default 15.0 min). Ties resolve smallest gap -> equal
+  wegkm_imp with the passive leg -> lowest adult P_ID -> lowest W_ID; status precedence is
+  own-time invalidity first (unpaired_no_time > unpaired_no_adult > unpaired_gap), and an adult
+  leg whose own W_ZWECK is 13 is excluded from the candidate pool (a person being escorted cannot
+  be the escorter). Purpose rule (trips.PASSIVE_PURPOSE_BY_ADULT_W_ZWECK, applied in map_purpose
+  AFTER the escort block so it only overwrites what it could pair): adult 4 -> shop, 5 -> other,
+  7/14/15/16 -> leisure, 10 -> leisure if w_zweck_10_as_leisure else other (ADR-0111), 8/9 ->
+  home, 6 -> the existing passive rule (the child IS being brought to its own activity), 1/2/3 ->
+  other, 99 -> other, a missing or unknown adult code -> DEFAULT_PURPOSE, WARNed and counted. Five
+  passive_pair_* traceability columns travel with the trip table.
+
+  Measured on the production leg universe (rbW legs excluded, leading arrive-home leg dropped --
+  the same universe the trip build keeps, controller ruling C-R12; committed
+  eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv): 10,339/10,905 = 94.81 % of
+  the passive legs pair within 15 minutes, and the resulting W_GEW purpose fold is education
+  0.2065 (of which 0.1432 pairs with an active escort leg and 0.0632 stays unpaired), leisure
+  0.3494, other 0.1625, shop 0.1589, home 0.1228, escort 0.0000 -- i.e. 79.4 % of the passive mass
+  leaves education, and 12.3 % of it is a trip HOME that used to be modelled as a school trip.
+
+  Requires escort_purpose: map_purpose raises ValueError naming BOTH keys when this flag is on and
+  escort_purpose is off. Because of that dependency the CODE and DECLARED default is False
+  (controller ruling C-R9, mirroring escort_passive_education) and the production ON state is
+  realised ONLY by the configs/base_bs.yml line. The seed follows the same rule on the same leg
+  universe (mid.participation.derive_education_flag_seed via
+  _wege_without_non_education_passive_legs and trips.legs_kept_by_the_trip_build), so the
+  education_by_age control counts exactly the code-13 legs the plan realises as education
+  (ADR-0109''s principle). The escort validation reference follows too:
+  trip_coherence.apply_escort_active_adjustment MOVES the passive Begleitung remainder onto the
+  measured fold purposes, mass-preservingly, instead of dropping it (controller ruling C-R11). ENTD
+  rejects both keys (no W_ZWECK vocabulary, no household/time columns to pair on). With the flag
+  false every stage is byte-identical to the #256 behaviour.'
+stages:
+- synthesis.population.trips
+- data.census.filtered
+- synthesis.population.spatial.secondary.distance_distributions
+- braunschweig.synthesis.commute_day.home_office_donors_stage
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - escort_passive_from_adult
+introduced:
+  issue: '#372'
+  pr: null
+  adr: ADR-0112
+detail_doc: docs/features/escort-purpose.md
+code_paths:
+- braunschweig/popsim/escort_pairing.py
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/mid/participation.py
+- braunschweig/popsim/mid/seed_loading.py
+- braunschweig/popsim/mid/donor.py
+- braunschweig/popsim/sources/base.py
+- braunschweig/popsim/sources/mid.py
+- braunschweig/popsim/sources/entd.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/analysis/population_validation/trip_coherence.py
+- braunschweig/analysis/population_validation/run_population_validation.py
+- scripts/derive_escort_w_zweck_split.py
+- scripts/measure_trip_coherence.py
+evidence:
+  tests:
+  - tests/test_escort_pairing.py
+  - tests/test_popsim_trips.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_participation_universe_controls.py
+  - tests/test_escort_validation.py
+  - tests/test_derive_escort_w_zweck_split.py
+  - tests/test_commute_day_donor_pool.py
+  - tests/test_popsim_stage_validate_token.py
+  - tests/test_popsim_open_config.py
+  - tests/test_trips_adapter_signature_parity.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_trips.py::test_passive_from_adult_off_is_byte_identical_to_passive_education
+    note: 'The named test drives map_purpose over the same household frame with the flag off and
+      asserts the #256 result (every code-13 leg education) unchanged. The pairing is not even
+      constructed on the OFF path: the escort_passive_from_adult block -- including the lazy import
+      of escort_pairing -- is skipped entirely, so no MiD column beyond the pre-existing ones is
+      touched and no rng is involved anywhere (the pairing is deterministic by its four-level tie
+      rule, so neither path can shift a random stream). The CODE default of every keyword in the
+      chain (map_purpose, expand_persons_to_trips, build_trip_table, build_validated_trip_table,
+      trips_stage.run, build_closure_dwell_model, donor_pool.donor_trips/build_home_office_donor_pool,
+      distance_distributions.run, derive_education_flag_seed) is False, so an omitting caller is
+      byte-identical by construction. That the flag REACHES the builders is pinned separately
+      (tests/test_popsim_trips.py::test_build_validated_trip_table_threads_escort_passive_from_adult_to_map_purpose;
+      tests/test_participation_universe_controls.py forwards it through both seed loaders and both
+      branches of popsim.stage._build_populationsim_seed). One behaviour change is NOT flag-gated
+      and is deliberate: HP_ALTER became a required column of mid.donor.load_mid_wege and of
+      home_office_donors_stage.WEGE_COLUMNS, so an older MiD extract without it now fails at LOAD
+      time naming the column instead of pairing nothing silently.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[escort pairing]'
+    note: 'Two instruments, both explicit rates. (1) pair_passive_legs logs n_paired/n_passive with
+      the share, the three unpaired reasons (no_time / no_adult / gap) and the adult-W_ZWECK
+      distribution of the pairs, and WARNs below 80 % paired, naming the 94.8 % raw-MiD reference --
+      a collapsed or empty pairing is the signature of a broken household/time join. (2) map_purpose
+      logs the paired share with its weighting basis, the resulting PURPOSE DISTRIBUTION of the
+      relabelled legs (a distribution collapsed onto one purpose is what a broken pairing looks
+      like when the count alone still looks healthy), the number of unpaired legs and which rule
+      they kept, and the full pairing diagnostics dict. The FALLBACK here is the unpaired leg
+      keeping the escort_passive_education rule, and it is a counted rate, never silent; a missing
+      or unknown adult code is counted separately and WARNed rather than mapped quietly.
+      derive_education_flag_seed logs how many code-13 legs left the education code set and how many
+      stayed, and derive_passive_education_share RAISES when a pairing column is absent instead of
+      returning a share of 1.0 (which would be today''s flat relabel dressed up as a measurement).
+      Primary-path tests exist, not only fallback ones: the map_purpose test asserts shop/home/
+      education on a real household frame, the seed test asserts "noedu" under the flag and "edu"
+      without it, and tests/test_escort_pairing.py exercises all four tie levels and all three
+      unpaired reasons. No rate has been observed on a RUN yet (validation.state below).'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
+    note: 'Regenerated additively by scripts/derive_escort_w_zweck_split.py (data record
+      mid2023_reference_tables): every pre-existing column and cell is unchanged and the row set is
+      unchanged; the code_13 row gains code_13_to_<purpose>_share_under_pairing for each fold
+      member. A VALIDATION reference, not a control target: no synthesis stage reads it; its
+      consumer is braunschweig.analysis.population_validation.trip_coherence
+      (load_passive_purpose_fold -> apply_escort_active_adjustment). The header discloses the flag
+      values the derivation assumed and the exact universe (10,905 passive legs the trip build
+      keeps), so a run configured differently cannot be scored against it unknowingly. The fold is
+      measured on MiD DONOR legs, not on the synthetic population -- see the assumption in
+      ADR-0112.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured on a population. ADR-0112''s pre-registered A/B (Consequences section)
+    specifies arm A (this flag plus w_zweck_10_as_leisure, one PopulationSim run) against
+    sub-project B''s arm 1, with six rows: paired share of code-13 legs from the run log (reference
+    0.9481 committed, expected >= 0.90), the realised purpose fold of the relabelled legs against
+    the committed fold, education participation of children 0-5 (arm-4 baseline: model 0.6862 vs
+    SrV 0.6558 = +3.04 pp, expected to move DOWN toward the reference), the education->education
+    same-purpose repeats (10,253 reported in issue #329), the W1 begleitung escort share (expected
+    unchanged -- the active side is untouched) and the share of former passive legs that become
+    trips HOME (committed fold 0.1228). To be run as Task 9 of the #373/#372/#242 SDD plan.'
+  note: 'No run has executed this code as of this record (the documentation task is written before
+    the A/B). validation.state is unvalidated, not measured_vs_reference: the committed split table
+    is a DONOR-side measurement of what MiD says the escorted children did, not a measurement of
+    the model''s output, and CLAUDE.md forbids calling the second the first. The 0-5 education
+    baseline quoted above is read from the committed artefact of
+    participation-universe-controls-arm4-100pct-2026-09-08, a run made BEFORE this feature existed.
+    Do not cite ADR-0112''s A/B table as a result until a run manifest records it.'
+assessment:
+  status: pending
+  pending_reason: 'The pre-registered A/B (ADR-0112 Consequences, Task 9 of the SDD plan) has not
+    run. Two things specifically need a live population before any verdict: whether the realised
+    purpose fold of the relabelled legs matches the donor-side committed fold after the synthesis
+    re-weighting (the residual bias documented in trip_coherence.apply_escort_active_adjustment),
+    and how the education_by_age control reacts once the model''s supply of 0-5 education legs
+    shrinks -- the control target is unchanged, so it will pull more children onto education
+    diaries.'
+notes: 'Part of the escort purpose family (feature record escort_purpose, ADR-0072/ADR-0073, feature
+  doc docs/features/escort-purpose.md, which carries this rule''s method section); this record owns
+  the passive side, escort_purpose owns the active side and the location machinery. Sibling records
+  of the same package: purpose_main_fold_code_10 (ADR-0111 -- the flag this one READS to decide what
+  a child paired with an adult code-10 leg gets; both are arm A) and w_zwd_codeplan_sentinels
+  (ADR-0113, arm B). The second config key of this feature,
+  escort_passive_pair_max_gap_minutes (unit: minutes, valid > 0, default 15.0, production 15), is a
+  parameter rather than a switch and is therefore not listed under production.flags; its default is
+  pinned equal across its three homes by
+  tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes. Phase 2 --
+  anchoring the child''s joint activity at the ADULT''s chosen secondary location -- is deliberately
+  NOT in this feature and is tracked as issue #385. The threading list and the single-home rule for
+  purpose flags live once, in docs/codebase/notes/mid-purpose-mapping.md.'

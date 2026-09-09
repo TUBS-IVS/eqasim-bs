@@ -319,6 +319,33 @@ Enabling a replacement together with the control it replaces — or a replacemen
 while `employment_status_kreis_control` is off — fails at **config time** with a
 `ValueError` naming both keys, rather than double-constraining the same persons.
 
+**MiD purpose-mapping keys (`popsim_mid` only).** Four more keys decide which eqasim
+purpose a MiD leg gets and which W_ZWD detail codes the secondary subtype models
+estimate from (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113; feature
+records `purpose_main_fold_code_10`, `escort_passive_from_adult`,
+`w_zwd_codeplan_sentinels`). They are **flat** keys — no
+`braunschweig.population.popsim.` prefix, like `escort_purpose` /
+`escort_passive_education` — and, as always, their defaults live only in
+`configs/base_bs.yml`. All four are default ON there and every OFF path is
+byte-identical.
+
+| Key (flat, no prefix) | Default | Effect |
+|---|---|---|
+| `w_zweck_10_as_leisure` | `true` | Maps MiD `W_ZWECK` 10 "anderer Zweck" to `leisure` instead of `other`, following MiD's own main-purpose derivation `hwzweck1` (which folds code 10 to 6 Freizeit for 100 % of the legs, committed `mid2023_w_zweck_by_hwzweck1.csv`). Applies to the plan, the `leisure_participation` seed, the secondary distance layers and the home-office donor pool together. |
+| `escort_passive_from_adult` | `true` | Gives a passive escort leg (`W_ZWECK` 13, the escorted child's own leg) the purpose of the same-household adult leg it is paired with, instead of the flat "education" relabel; an unpaired leg keeps `escort_passive_education`. **Requires `escort_purpose`** (raises at trip-build time naming both keys otherwise). |
+| `escort_passive_pair_max_gap_minutes` | `15` (minutes, > 0) | Pairing window for the key above: an adult leg farther than this from the child's departure leaves the leg unpaired. Inert while `escort_passive_from_adult` is `false`. |
+| `purpose_subtype_codeplan_sentinels` | `true` | Treats the two MiD W_ZWD no-detail codes 799 (`Freizeit k.A.`) and 699 (`Erledigung k.A.`) as sentinels of the leisure / other-errand subtype models rather than as members of `leisure_activity` / `other_errand_long`, per the verified codeplan. Affects the secondary subtype deciders and their distance layers only — not the trip build. |
+
+`w_zweck_10_as_leisure`, `escort_passive_from_adult` and
+`escort_passive_pair_max_gap_minutes` need MiD's `W_ZWECK` vocabulary and (for the
+pairing) the household, age and departure-time columns, so the ENTD donor source
+**rejects** any non-default value; the two `popsim_open` fixture configs set them
+explicitly. `purpose_subtype_codeplan_sentinels` needs no such rejection — the trip
+build never reads it. See
+[`docs/codebase/notes/mid-purpose-mapping.md`](docs/codebase/notes/mid-purpose-mapping.md)
+for where the MiD purpose vocabulary is produced and which consumers must read the
+same flags.
+
 **Local open-data smokes** (no restricted MiD data needed):
 
 ```powershell

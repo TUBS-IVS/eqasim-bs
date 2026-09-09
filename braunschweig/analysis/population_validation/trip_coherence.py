@@ -349,7 +349,7 @@ def load_passive_purpose_fold(data_path: str) -> dict:
 
     Raises ``KeyError`` naming the derivation script when the pinned CSV carries no fold
     columns (an older committed table), and ``ValueError`` when the fold does not sum to 1 --
-    never a substituted default, which would silently restore the un-narrowed issue-#256
+    never a substituted default, which would silently restore the unredistributed issue-#256
     reference while the report claimed the pairing was accounted for.
     """
     table = _load_escort_split_table(data_path)

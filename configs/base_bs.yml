@@ -79,6 +79,22 @@ config:
   # own leg; 100% minors) become the child's own education trip at their own
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
+  # MiD W_ZWECK 10 'anderer Zweck' follows MiD's own main-purpose fold (hwzweck1 = 6
+  # Freizeit for 100 % of the legs, committed mid2023_w_zweck_by_hwzweck1.csv, ADR-0111):
+  # -> 'leisure' in the plan AND in the leisure participation seed. false = 'other'.
+  w_zweck_10_as_leisure: true
+  # Passive escort legs (W_ZWECK 13, the escorted child's own leg) take the purpose of
+  # the same-household adult leg departing within escort_passive_pair_max_gap_minutes
+  # (94.8 % of the legs pair within 15 min; 12.3 % of the passive mass ends as a trip
+  # HOME with the adult -- committed fold in mid2023_escort_w_zweck_split.csv). Adult
+  # Bringen/Holen (6) and unpaired legs keep the escort_passive_education rule.
+  # Requires escort_purpose. ADR-0112. false = every code-13 leg -> education.
+  escort_passive_from_adult: true
+  # Unit: minutes; valid range > 0. Inert while escort_passive_from_adult is false.
+  escort_passive_pair_max_gap_minutes: 15
+  # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
+  # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
+  purpose_subtype_codeplan_sentinels: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
   # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs

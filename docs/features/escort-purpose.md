@@ -86,10 +86,63 @@ W_ZWECK {6, 13}) is a dedicated plan-level activity purpose behind
    distance-distributions stage so the `escort` distance layer becomes
    active-only (code 6).
 
+## Passive leg purpose (ADR-0112)
+`escort_passive_from_adult` (issue #372; code default OFF, `true` in
+configs/base_bs.yml; requires `escort_purpose`) replaces the flat "every
+W_ZWECK 13 leg is education" relabel of point 5 above for the legs it can
+pair. Method:
+
+1. **Pairing** (pure module `braunschweig/popsim/escort_pairing.py`,
+   `pair_passive_legs`, run on the RAW Wege frame inside `map_purpose`): each
+   code-13 leg is paired with the leg of a same-household person aged >=
+   `adult_min_age` (18) whose departure time is nearest, if the gap is within
+   `escort_passive_pair_max_gap_minutes` (default 15). Ties resolve in this
+   order: smallest gap -> the candidate whose `wegkm_imp` equals the passive
+   leg's (a shared distance is the only independent signal that two legs are
+   the same trip; a missing value counts as a mismatch) -> lowest adult `P_ID`
+   -> lowest `W_ID`. A leg whose own `W_ZWECK` is 13 never enters the adult
+   candidate pool (a person being escorted cannot be the escorter). Status
+   precedence is own-time invalidity first (`unpaired_no_time` >
+   `unpaired_no_adult` > `unpaired_gap`), so no leg can fall through to a
+   default. The paired share, the three unpaired reasons and the adult purpose
+   distribution are logged; below 80 % paired the module WARNs.
+2. **Purpose rule** (`trips.PASSIVE_PURPOSE_BY_ADULT_W_ZWECK`, applied AFTER
+   the escort block so it only overwrites what it could pair): adult 4 ->
+   `shop`, 5 -> `other`, 7/14/15/16 -> `leisure`, 10 -> `leisure` if
+   `w_zweck_10_as_leisure` else `other` (ADR-0111), 8/9 -> `home`, 6 -> the
+   existing passive rule (the child IS being brought to its own activity;
+   `education` under `escort_passive_education`), 1/2/3 -> `other` (a child at
+   the adult's workplace has no anchor of its own -- an ASSUMPTION, stated in
+   ADR-0112), 99 -> `other`. An unpaired leg keeps the existing rule. A missing
+   or unknown adult code is counted, WARNed and mapped to `DEFAULT_PURPOSE`,
+   never mapped quietly. Five `passive_pair_*` columns travel with the trip
+   table so a downstream analysis can see WHICH adult leg a purpose came from.
+3. **Seed consistency**: `mid.participation.derive_education_flag_seed` applies
+   the SAME pairing and rule on the SAME leg universe (the frame is reduced
+   with `trips.legs_kept_by_the_trip_build` BEFORE pairing, so a leg the trip
+   build drops also leaves the adult candidate pool), so the `education_by_age`
+   controls see the education legs the plan realises (ADR-0109's principle).
+4. **Reference**: `scripts/derive_escort_w_zweck_split.py` derives the passive
+   legs' purpose FOLD from the same raw pairing into the pinned
+   `mid2023_escort_w_zweck_split.csv` (columns
+   `code_13_to_<purpose>_share_under_pairing`, `code_13` row), measured on the
+   production leg universe with every assumed flag disclosed in the header.
+   `trip_coherence.apply_escort_active_adjustment` MOVES the passive Begleitung
+   remainder onto those measured purposes (mass-preserving; it raises when the
+   fold does not sum to 1) instead of dropping it. The fold is measured on MiD
+   DONOR legs, not on the synthetic population -- the residual bias that leaves
+   is documented on that function.
+
+Phase 2 -- anchoring the child's joint activity at the ADULT's chosen secondary
+location (the inverse of the #201 household link) -- is deliberately NOT part of
+this rule and is tracked as issue #385.
+
 ## Validation
 With `escort_passive_education` ON the model's `escort` purpose is active-only,
 so the W1 scoring uses the active-adjusted target (begleitung x active_share;
-the passive remainder folds into ausbildung), guarded on begleitung actually
+the passive remainder folds into ausbildung -- with `escort_passive_from_adult`
+ON it is instead redistributed, mass-preservingly, over the measured fold
+purposes of the section above), guarded on begleitung actually
 being scored, and the W12 escort MEAN-length reference swaps to the pinned
 `code_6` row. There is currently NO band-level code-13 distance check (the
 pinned CSV carries the bands; no consumer is wired yet). The 10% report shows
@@ -117,5 +170,7 @@ instead of crashing or silently scoring a table that carries no
 active/passive split.
 
 ## Follow-ups
-#241 (MiD W_ZWECK 14-16/99 mapping gap), #242 (SrV subtype re-validation).
-#243 was folded into this feature (education-type split).
+#241 (MiD W_ZWECK 14-16/99 mapping gap, ADR-0091) and #242 (SrV subtype
+re-validation, measured and committed under ADR-0113) are done; #372 is the
+passive-leg rule documented above (ADR-0112). #243 was folded into this feature
+(education-type split). Still open: #385 (Phase 2 joint location).

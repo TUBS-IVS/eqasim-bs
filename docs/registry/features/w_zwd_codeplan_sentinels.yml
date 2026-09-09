@@ -1,0 +1,154 @@
+feature: w_zwd_codeplan_sentinels
+title: W_ZWD no-detail codes (799, 699) are subtype sentinels, labels verified against the codeplan
+area: secondary
+description: 'Moves the two MiD W_ZWD NO-DETAIL codes out of their subtype group and into their
+  spec''s sentinel set: 799 "Freizeit k.A." (was in leisure_activity) and 699 "Erledigung k.A."
+  (was in other_errand_long). Issue #242, ADR-0113. The W_ZWD subtype models of issue #127 were
+  built without the MiD codeplan and carried a literal "label to verify (codeplan)" marker on every
+  group, plus the module''s own reassignment rule for exactly this case; the codeplan
+  (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet Wege, W_ZWD) has now been read, every group
+  member''s label is verified in the module, the semantic grouping is confirmed (including the 601
+  boundary question: "Arztbesuch/medizinisch" belongs with 602 in other_errand_short, which is also
+  what SrV V_ZWECK 10 pairs it with), and code 999 stays a sentinel with the module stating that its
+  label is not in the verified excerpt rather than inventing one.
+
+  Mechanism: LEISURE_SPEC_CODEPLAN / OTHER_ERRAND_SPEC_CODEPLAN are derived from the UNCHANGED
+  LEISURE_SPEC / OTHER_ERRAND_SPEC by moving the one code; the selectors
+  purpose_subtype.leisure_spec(codeplan_sentinels) / other_errand_spec(...) return the unflagged
+  object BY IDENTITY when the flag is off, so the OFF path is byte-identical by construction rather
+  than by re-deriving an equal object. A sentinel leg leaves the ESTIMATION universe entirely
+  (numerator and denominator, like every other sentinel) and is still IMPUTED a group at application
+  time. Both consumers read the SAME key from one constant pair in
+  braunschweig.popsim.stage.config_keys: braunschweig.synthesis.locations.secondary_chainsolvers
+  (the subtype deciders'' estimation, via deciders.py''s two builders) and
+  braunschweig.popsim.distance_distributions (the subtype DISTANCE-layer donor pools, run() steps
+  8/9) -- threading only one would make the two disagree about what leisure_activity means.
+
+  Size, from the committed mid2023_w_zwd_group_reference.csv header (weekday non-rbW legs): 799 =
+  5,230 legs (labelled leisure legs 64,012 flag-off vs 58,782 flag-on; 8.2 % of the labelled leisure
+  legs, 5.1 % of all 102,558 leisure legs) and 699 = 2,060 legs (22,524 vs 20,464; 9.1 % of the
+  labelled errand legs, 3.1 % of all 66,755). The estimated group probabilities therefore shift and
+  the imputed share rises (leisure sentinel share 37.58 % -> 42.68 %, errand 66.26 % -> 69.34 %),
+  which is why the change is flag-gated like every other population change. No group boundary is
+  re-estimated and no other code moves. This is NOT a trip-build flag (trips_stage never reads it),
+  so it is deliberately absent from ENTD_REJECTED_KEYS.'
+stages:
+- synthesis.population.spatial.secondary.locations
+- synthesis.population.spatial.secondary.distance_distributions
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - purpose_subtype_codeplan_sentinels
+introduced:
+  issue: '#242'
+  pr: null
+  adr: ADR-0113
+detail_doc: docs/features/secondary-distances.md
+code_paths:
+- braunschweig/popsim/purpose_subtype.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/calibration/srv_fine_purpose.py
+- scripts/extract_mid_w_zwd_groups.py
+- scripts/extract_srv_fine_purpose_reference.py
+- scripts/compare_purpose_subtypes_srv.py
+evidence:
+  tests:
+  - tests/test_purpose_subtype.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  - tests/test_srv_fine_purpose.py
+  - tests/test_extract_mid_w_zwd_groups.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_purpose_subtype.py::test_default_specs_are_unchanged
+    note: 'Byte-identity here is object IDENTITY, which is stronger than an equality golden and is
+      pinned as such: test_default_specs_are_unchanged asserts LEISURE_SPEC / OTHER_ERRAND_SPEC are
+      untouched by the codeplan variants, and
+      tests/test_purpose_subtype.py::test_leisure_spec_selector_off_path_is_identity /
+      ::test_other_errand_spec_selector_off_path_is_identity assert leisure_spec(False) IS
+      LEISURE_SPEC and other_errand_spec(False) IS OTHER_ERRAND_SPEC, so the OFF path cannot drift
+      into an equal-but-different object. The consumer side is pinned too:
+      tests/test_distance_distributions_subtypes.py::test_codeplan_sentinels_default_is_off_byte_identical
+      (run()''s own keyword default is False, so a direct caller keeps today''s donor pools) and the
+      OFF/ON decider pairs
+      tests/test_secondary_chainsolvers_subtypes.py::test_build_leisure_subtype_decider_codeplan_sentinels_off_labels_799_as_activity
+      / ::test_build_other_subtype_decider_codeplan_sentinels_off_labels_699_as_long. Four
+      estimation goldens (two per purpose, OFF and ON) pin the resulting marginals arithmetically on
+      hand-designed synthetic frames. No rng draw is affected by the spec choice itself; the group
+      probabilities it feeds do change on the ON path, which is the point of the flag.'
+  fallback_rate:
+    instrumented: true
+    log_marker: 'codeplan no-detail sentinels'
+    note: 'Both subtype deciders'' existing build-time log lines ("leisure subtype: marginal shares
+      ..." / "other subtype: coarse marginal shares ...") append "(codeplan no-detail sentinels:
+      on/off)", so which spec a run estimated from is readable in the log rather than inferred from
+      the config. The rate this feature MOVES is the labelled-vs-sentinel share, which both
+      consumers already log per purpose and which the committed reference table records for both
+      settings (37.58 % -> 42.68 % sentinel legs for leisure, 66.26 % -> 69.34 % for other-errand).
+      No NEW fallback path is introduced: a sentinel leg follows the pre-existing
+      estimate-on-labelled / impute-onto-100 % mechanism, and estimate_group_probabilities'' existing
+      "zero labelled legs" ValueError is what fires if a group is ever left with only no-detail
+      legs -- exercised directly by the two ON-path decider tests on all-799 / all-699 fixtures, so
+      the guard raises loudly instead of building a decider from nothing.'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
+    note: 'Per subtype group, the W_GEW share among LABELLED legs of its purpose plus wegkm_imp
+      p25/p50/p75, measured under BOTH settings of this flag (spec_variant default / codeplan);
+      written by scripts/extract_mid_w_zwd_groups.py, which imports the specs from purpose_subtype
+      rather than retyping them (data record mid2023_w_zwd_group_reference). Its regional
+      counterpart is eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv (data
+      record srv2023_fine_purpose_reference) and the committed comparison of the two is
+      eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}.
+      All three are MEASUREMENT references, stated as such in their own headers: no synthesis,
+      location or distribution stage reads them, nothing is re-estimated from them, and they compare
+      two SURVEY mixes -- not the model against reality.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured on a population. The committed SrV comparison
+    (purpose_subtype_vs_srv_2026-09-10/comparison.csv) measures the MiD group mix against the SrV
+    fine-purpose mix under both settings -- delta_pp default -> codeplan: shop_daily +7.90 -> +7.90
+    (exact), shop_non_daily -7.90 -> -7.90 (exact), other_errand_short -8.22 -> -4.44 (approximate),
+    other_errand_long +8.22 -> +4.44 (approximate), leisure_visit -7.01 -> -6.10 (exact),
+    leisure_local -6.62 -> -4.47 (approximate), leisure_activity +26.12 -> +22.72 (approximate),
+    leisure_excursion no SrV counterpart. Under the committed rule
+    (candidate_for_reestimation = exactness == "exact" and abs(delta_pp) > 10) NO group is flagged;
+    leisure_visit (default variant) does cross the threshold under the RENORMALISED reading
+    (-10.88 pp), which the summary reports by name without applying it. ADR-0113''s pre-registered
+    A/B (arm B = arm A + this flag, no PopulationSim re-run) then measures the REALISED leisure and
+    other-errand subtype shares and their distance medians against the codeplan rows of the
+    committed reference: Task 9 of the #373/#372/#242 SDD plan.'
+  note: 'No run has executed this code as of this record, and the committed comparison is NOT a
+    validation of the model: it compares two survey-derived mixes (MiD national vs SrV Braunschweig
+    + RGB), with the crosswalk exactness itself an explicit ASSUMPTION (a reading of two codebooks,
+    not a published crosswalk) and the leisure denominators structurally asymmetric. validation.state
+    stays unvalidated until an arm-B run manifest records the model''s own realised subtype shares
+    against the codeplan reference rows.'
+assessment:
+  status: pending
+  pending_reason: 'The arm-B A/B (ADR-0113 Consequences, Task 9 of the SDD plan) has not run, so the
+    realised subtype shares and the subtype-conditional distances of the synthetic population have
+    not been compared against the codeplan estimation rows. One owner decision is also open and
+    deliberately NOT taken inside a measurement task (issue-first): whether the
+    candidate_for_reestimation rule should be defined on the renormalised delta for purposes whose
+    crosswalk is asymmetric -- if it were, leisure_visit (default variant, -10.88 pp) would become a
+    re-estimation candidate.'
+notes: 'Sibling records of the same package: purpose_main_fold_code_10 (ADR-0111) and
+  escort_passive_from_adult (ADR-0112), which together form arm A; this flag is arm B and is cheap
+  (no seed column changes, so PopulationSim does not re-run -- only the secondary location and
+  distance-distribution stages recompute). The subtype models themselves belong to the feature
+  record secondary_distance_by_purpose (#127, ADR-0026/ADR-0057) and their method is documented in
+  docs/features/secondary-distances.md; this record owns only the codeplan verification and the
+  sentinel move. braunschweig.popsim.purpose_subtype is folded into
+  secondary_chainsolvers._HELPER_MODULES (controller ruling C-R15) so a future group-boundary edit
+  cannot be served from a stale chainsolver cache; braunschweig.popsim.distance_distributions still
+  has no validate() at all -- a known, parked gap, its config keys do enter the stage hash.'

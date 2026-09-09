@@ -32,5 +32,24 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: null
-notes: 'The only MiD content in the repository: small aggregate tables (P9/P12.1/P13/P17.1/P24.1/T43/W1/W12/H4/H7...)
-  that every reference comparison and CDF override reads.'
+notes: |
+  The only MiD content in the repository: small aggregate tables (P9/P12.1/P13/P17.1/P24.1/T43/W1/W12/H4/H7...)
+  that every reference comparison and CDF override reads. The expected_path glob also covers the
+  MiD aggregates DERIVED in-repo from the raw B1 delivery; those that carry their own provenance,
+  universe and consumers have their own record and are not described here:
+  mid2023_license_by_sex_cohort, mid2023_workday_location, mid2023_cars_by_rs7_haustyp,
+  mid2023_bikes_by_rs7_haustyp, mid2023_w_zweck_by_hwzweck1 and mid2023_w_zwd_group_reference.
+
+  mid2023_escort_w_zweck_split.csv (script scripts/derive_escort_w_zweck_split.py, W_GEW-weighted
+  over all MiD escort legs, n = 52,553) is one of the derived tables that has no separate record and
+  therefore lives here. Issue #372 / ADR-0112 extended it ADDITIVELY -- every pre-existing column,
+  row and cell is unchanged: the code_13 row gains one code_13_to_<eqasim purpose>_share_under_pairing
+  column per fold member, i.e. the W_GEW purpose fold of the passive escort legs once
+  escort_passive_from_adult pairs each with the accompanying adult''s leg. The new columns are
+  measured on the PRODUCTION leg universe (the 10,905 passive legs the trip build keeps -- rbW legs
+  excluded, leading arrive-home leg dropped -- and an adult candidate pool filtered the same way),
+  not on the raw table, and the file''s own header discloses every flag value the derivation assumed
+  plus the pairing rate, so a run configured differently cannot be scored against it unknowingly.
+  Consumer: braunschweig.analysis.population_validation.trip_coherence (load_passive_purpose_fold ->
+  apply_escort_active_adjustment); the fold is measured on MiD DONOR legs, not on the synthetic
+  population (assumption recorded in ADR-0112).

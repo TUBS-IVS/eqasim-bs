@@ -1,0 +1,79 @@
+dataset: mid2023_w_zwd_group_reference
+title: MiD 2023 W_ZWD subtype-group mix and leg lengths, under both sentinel settings
+provider: derived in-repo from the restricted MiD 2023 B1 scientific-use delivery
+vintage: 2023 survey year (MiD 2023 B1 Standard delivery)
+geography: national (Germany); the MiD B1 delivery carries no regional restriction. Its SrV
+  counterpart (srv2023_fine_purpose_reference) is Braunschweig + RGB, so every comparison of the
+  two mixes a regional with a survey-instrument effect -- stated as a caveat in the committed
+  comparison and in ADR-0113.
+crs: null
+roles:
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_w_zwd_groups.py --raw <MiD2023 B1 CSV dir>
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>. Reads MiD2023_Wege.csv
+    (W_ZWECK, W_ZWD, W_GEW, W_RBW, kernwo, wegkm_imp); the group definitions are IMPORTED from
+    braunschweig.popsim.purpose_subtype (leisure_spec / other_errand_spec) and
+    braunschweig.popsim.shop_subtype, never retyped, so the table cannot describe a grouping the
+    model does not use. The raw microdata is local-only, restricted, and never committed.
+  script: scripts/extract_mid_w_zwd_groups.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Ships committed with every clone (git add -f, per the .gitignore allowlist convention for
+    eqasim-data/data/braunschweig/mid/mid2023_*.csv), so it is not listed in
+    scripts/verify_braunschweig_inputs.py. The extraction's own invariants and the identity of the
+    imported specs are covered by tests/test_extract_mid_w_zwd_groups.py (19 tests on synthetic
+    frames that use the REAL W_ZWD codes).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); the raw MiD B1 delivery is restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: weekday legs (kernwo in (1, 2, 3)), non-rbW (W_RBW != 1) -- 738,546 of 1,087,393 raw
+  Wege rows (67.92 %), the same filter as mid2023_w_zweck_by_hwzweck1, whose constants the script
+  imports. Weight: W_GEW. The extraction RAISES on a missing or non-positive weight (0 rows in the
+  2026-09-10 run) and reports per-column NaN coercion counts (all 0) in the header.
+
+  The share is CONDITIONAL ON A LEG BEING LABELLED: only legs whose W_ZWD is a member of one of the
+  spec's groups enter numerator AND denominator, exactly as
+  purpose_subtype.estimate_group_probabilities does. Labelled coverage is 59.90 % (shop), 33.74 %
+  (other_errand, default variant) and 62.42 % (leisure, default variant); the rest carry a design
+  sentinel (2202 PAPI, 4402 child under 14, 7704/7705, 599/699/799/999). This is the universe the
+  model ESTIMATES on -- the right comparison for "the mix the model reproduces" -- but it is NOT
+  the mix of all MiD legs of a purpose.
+
+  spec_variant: the two settings of purpose_subtype_codeplan_sentinels ('default' = flag off,
+  'codeplan' = flag on, in which W_ZWD 799 and 699 are sentinels instead of group members; the shop
+  split has no codeplan variant, so its two blocks are identical by construction). Labelled counts
+  per variant: leisure 64,012 -> 58,782 legs, other_errand 22,524 -> 20,464 (the 5,230 legs of code
+  799 and the 2,060 of code 699 leaving estimation), shop 46,096 unchanged.
+
+  Distance percentiles are computed on wegkm_imp with the MiD missing-value codes (>= 9994,
+  braunschweig.popsim.diary_facts.WEGKM_CODE_MIN) EXCLUDED from the percentiles but kept in
+  n_unweighted; this delivery carries no such code at all (0 legs in every group), so the primary
+  path has 100 % coverage and the counter exists so a future delivery cannot pass silently.
+notes: |
+  MEASUREMENT REFERENCE, stated as such in its own header: not a control target and not a validated
+  calibration target -- no synthesis, location or distribution stage reads it and nothing is
+  re-estimated from it. Its only consumer is scripts/compare_purpose_subtypes_srv.py, which joins it
+  with the SrV counterpart srv2023_fine_purpose_reference through the crosswalk
+  braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE and writes the committed comparison
+  eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}.
+
+  Evidence base of ADR-0113 and of the feature record w_zwd_codeplan_sentinels (issue #242): the
+  labelled-count difference between the two variants is what the no-detail sentinel move costs the
+  estimation universe, and the codeplan rows are the reference the arm-B A/B measures the realised
+  subtype shares against. Sibling committed MiD aggregate of the same package:
+  mid2023_w_zweck_by_hwzweck1.
