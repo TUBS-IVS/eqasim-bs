@@ -22,6 +22,7 @@ import pytest
 from braunschweig.analysis import plan_structure as P
 from braunschweig.analysis.synthesis import plan_structure_vs_srv as S
 from braunschweig.calibration import srv_plan_structure as SRV
+from braunschweig.synthesis.day_absence.absence import STATE_ABSENT_INDIVIDUAL, STATE_PRESENT
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(REPO_ROOT, "eqasim-data", "data")
@@ -73,6 +74,18 @@ def _model_homes_mostly_unmatched():
     """``assign_geographies`` output for a broken VG250 join: only one household resolves."""
     return pd.DataFrame({"household_id": [10, 20, 30],
                          "ars5": ["03101", None, None]})
+
+
+def _absence_frame(absent_ids=()):
+    """Absence-stage-shaped frame (issue #370): one row per person_id in ``_model_persons()``.
+
+    Only the two columns :func:`braunschweig.synthesis.day_absence.absence.absent_person_ids`
+    reads are needed here.
+    """
+    person_ids = _model_persons()["person_id"]
+    state = [STATE_ABSENT_INDIVIDUAL if pid in absent_ids else STATE_PRESENT
+            for pid in person_ids]
+    return pd.DataFrame({"person_id": person_ids, "day_absence_state": state})
 
 
 def _reference_two_rows(universe=SRV.UNIVERSE_AT_HOME_ZERO):
@@ -165,6 +178,22 @@ def test_harmonise_model_raises_on_a_trip_without_a_person():
     trips.loc[0, "person_id"] = 99
     with pytest.raises(ValueError, match="99"):
         P.harmonise_model(_model_persons(), trips, _model_homes())
+
+
+def test_harmonise_model_marks_absent_persons_away_from_home():
+    """issue #370: a person id in ``absent_person_ids`` is away_from_home / not reported_at_home.
+
+    The default (``absent_person_ids=None``) must keep every person at home, reproducing the
+    pre-#370 at_home_zero-only behaviour asserted by
+    ``test_harmonise_model_yields_the_srv_comparison_schema``.
+    """
+    persons, _ = P.harmonise_model(_model_persons(), _model_trips(), _model_homes(),
+                                   absent_person_ids={2})
+    by_pid = persons.set_index("pid")
+    assert bool(by_pid.loc[2, "away_from_home"]) is True
+    assert bool(by_pid.loc[2, "reported_at_home"]) is False
+    assert not by_pid.loc[[1, 3, 4], "away_from_home"].any()
+    assert by_pid.loc[[1, 3, 4], "reported_at_home"].all()
 
 
 # --------------------------------------------------------------------------- compare
@@ -277,18 +306,27 @@ def test_accepted_deviation_note_names_the_issue_not_a_placeholder_adr_id():
 # --------------------------------------------------------------------------- stage
 
 class _ConfigureRecorder:
-    """synpp ConfigurationContext stand-in: records declared stages and config defaults."""
+    """synpp ConfigurationContext stand-in: records declared stages and config defaults.
 
-    def __init__(self):
+    ``config`` optionally carries a configured-value override per key (issue #370, Task 6): real
+    synpp's ``ConfigurationContext.config(key, default)`` returns the CONFIGURED value when one
+    is set, not the default, and ``plan_structure_vs_srv.configure`` branches its stage
+    declarations on ``KEY_TRIPS_VIEW`` / ``KEY_DAY_ABSENCE_ENABLED`` -- a recorder that always
+    returned the default could never exercise that branch.
+    """
+
+    def __init__(self, config=None):
         self.stages = []
         self.config_keys = {}
+        self._config = dict(config) if config else {}
 
     def stage(self, name, alias=None, **kwargs):
         self.stages.append(name)
 
     def config(self, key, default=None):
-        self.config_keys[key] = default
-        return default
+        value = self._config.get(key, default)
+        self.config_keys[key] = value
+        return value
 
 
 class _FakeContext:
@@ -318,21 +356,32 @@ class _FakeContext:
         self.info[key] = value
 
 
-def _stage_context(tmp_path, data_path=DATA_PATH, subdir="analysis/plan_structure_vs_srv"):
+def _stage_context(tmp_path, data_path=DATA_PATH, subdir="analysis/plan_structure_vs_srv",
+                   universe=SRV.UNIVERSE_AT_HOME_ZERO, absent_ids=()):
+    """A stub execute() context, keyed by the LOCAL alias names ``configure`` declares.
+
+    ``"trips"`` (not ``"synthesis.population.trips"``): ``configure`` aliases the reporting-day
+    view to ``trips`` (issue #370, Task 6), and the real ``ExecuteContext.stage()`` resolves by
+    that alias, not the underlying stage name. The absence-stage stub defaults to nobody absent,
+    so a test that does not care about day-absence keeps the pre-#370 at_home_zero-only numbers.
+    """
     return _FakeContext(
         stages={
             "synthesis.population.enriched": _model_persons(),
-            "synthesis.population.trips": _model_trips(),
+            "trips": _model_trips(),
             "synthesis.population.spatial.home.locations": _model_homes().assign(
                 geometry=[None, None, None]),
+            S.ABSENCE_STAGE: {"absence": _absence_frame(absent_ids)},
         },
         config={
             "output_path": str(tmp_path),
             "data_path": str(data_path),
             "sampling_rate": 1.0,
             S.KEY_SUBDIR: subdir,
-            S.KEY_UNIVERSE: SRV.UNIVERSE_AT_HOME_ZERO,
+            S.KEY_UNIVERSE: universe,
             S.KEY_MAX_UNMATCHED_HOME_SHARE: S.DEFAULT_MAX_UNMATCHED_HOME_SHARE,
+            S.KEY_TRIPS_VIEW: S.DEFAULT_TRIPS_VIEW,
+            S.KEY_DAY_ABSENCE_ENABLED: True,
         },
         cache_path=tmp_path / "cache",
     )
@@ -348,36 +397,82 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     """
     from braunschweig.analysis import plan_structure, spatial
     from braunschweig.calibration import srv_plan_structure
+    from braunschweig.synthesis.day_absence import absence as day_absence
 
-    assert set(S._HELPER_MODULES) == {plan_structure, srv_plan_structure}
+    assert set(S._HELPER_MODULES) == {plan_structure, srv_plan_structure, day_absence}
     assert S._DEFERRED_HELPER_MODULE_NAMES == ("braunschweig.analysis.spatial",)
 
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0        # md5 hex digest
     assert token == S.validate(None)                       # deterministic
-    # The token really depends on the deferred module's source, not only on the two direct
-    # helpers: hashing the three sources by hand must reproduce it.
+    # The token really depends on the deferred module's source, not only on the direct helpers:
+    # hashing the four sources by hand must reproduce it.
     import hashlib
     import inspect
     expected = hashlib.md5()
-    for module in (plan_structure, srv_plan_structure, spatial):
+    for module in (plan_structure, srv_plan_structure, day_absence, spatial):
         expected.update(inspect.getsource(module).encode("utf-8"))
     assert token == expected.hexdigest()
 
 
 def test_configure_declares_every_stage_and_config_key_execute_reads():
+    """Default parameters: the FINAL reporting-day view, with the day-absence stage attached."""
     recorder = _ConfigureRecorder()
     S.configure(recorder)
 
     assert "synthesis.population.enriched" in recorder.stages
-    assert "synthesis.population.trips" in recorder.stages
+    assert "synthesis.population.trips.final" in recorder.stages
+    assert "synthesis.population.trips" not in recorder.stages
+    assert S.ABSENCE_STAGE in recorder.stages
     assert "synthesis.population.spatial.home.locations" in recorder.stages
     assert recorder.config_keys[S.KEY_SUBDIR] == S.DEFAULT_SUBDIR
     assert recorder.config_keys[S.KEY_UNIVERSE] == S.DEFAULT_UNIVERSE
     assert (recorder.config_keys[S.KEY_MAX_UNMATCHED_HOME_SHARE]
             == S.DEFAULT_MAX_UNMATCHED_HOME_SHARE)
+    assert recorder.config_keys[S.KEY_TRIPS_VIEW] == S.DEFAULT_TRIPS_VIEW
+    assert recorder.config_keys[S.KEY_DAY_ABSENCE_ENABLED] is True
     for key in ("output_path", "data_path", "sampling_rate"):
         assert key in recorder.config_keys
+
+
+def test_configure_declares_the_final_view_by_default_and_the_pre_assignment_view_on_request():
+    """issue #370, Task 6: ``plan_structure_trips_view`` picks the trips stage AND its alias."""
+    rec = _ConfigureRecorder()
+    S.configure(rec)
+    assert "synthesis.population.trips.final" in rec.stages
+    assert "synthesis.population.trips" not in rec.stages
+
+    rec2 = _ConfigureRecorder(config={S.KEY_TRIPS_VIEW: "pre_assignment"})
+    S.configure(rec2)
+    assert "synthesis.population.trips" in rec2.stages
+    assert "synthesis.population.trips.final" not in rec2.stages
+
+
+def test_configure_declares_the_absence_stage_only_for_the_final_view_with_the_flag_on():
+    """The absence stage is read only when BOTH the reporting-day view AND the flag are on.
+
+    The pre-assignment view never carries the general-absence removal (Task 4's
+    ``trips_day_stage`` already applies it before the ``.final`` alias is resolved), and
+    ``day_absence_enabled=False`` must not pull the absence stage into the DAG for a run that
+    never reads it.
+    """
+    rec_default = _ConfigureRecorder()
+    S.configure(rec_default)
+    assert S.ABSENCE_STAGE in rec_default.stages
+
+    rec_pre_assignment = _ConfigureRecorder(config={S.KEY_TRIPS_VIEW: "pre_assignment"})
+    S.configure(rec_pre_assignment)
+    assert S.ABSENCE_STAGE not in rec_pre_assignment.stages
+
+    rec_disabled = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False})
+    S.configure(rec_disabled)
+    assert S.ABSENCE_STAGE not in rec_disabled.stages
+
+
+def test_configure_raises_on_an_unknown_trips_view():
+    rec = _ConfigureRecorder(config={S.KEY_TRIPS_VIEW: "no_such_view"})
+    with pytest.raises(ValueError, match="no_such_view"):
+        S.configure(rec)
 
 
 def test_execute_writes_the_comparison_against_the_committed_reference(tmp_path, monkeypatch):
@@ -430,6 +525,13 @@ def test_execute_writes_the_comparison_against_the_committed_reference(tmp_path,
     assert provenance["inputs"]["reference_path"] == reference_path
     assert provenance["model"]["kreise_model_only"] == ["03103"]
     assert provenance["model"]["n_persons_in_scope"] == 3
+    # issue #370, Task 6: nobody is absent in the default stub, so the reporting-day view
+    # metadata is recorded but the away-from-home count is zero.
+    assert provenance["parameters"]["trips_view"] == S.DEFAULT_TRIPS_VIEW
+    assert provenance["parameters"]["day_absence_enabled"] is True
+    assert provenance["model"]["n_persons_away_from_home"] == 0
+    assert provenance["model"]["n_persons_excluded_away"] == 0
+    assert S.DEFAULT_TRIPS_VIEW in (out_dir / "summary.md").read_text(encoding="utf-8")
 
     assert set(result) == {"comparison", "headline", "by_kreis", "closure",
                            "accepted_deviations"}
@@ -495,3 +597,89 @@ def test_execute_raises_on_an_unknown_universe(tmp_path):
     context._config[S.KEY_UNIVERSE] = "no_such_universe"
     with pytest.raises(ValueError, match="no_such_universe"):
         S.execute(context)
+
+
+# --------------------------------------------------------------------------- day absence (#370)
+
+def test_execute_excludes_absent_persons_from_the_model_side_under_at_home_only(
+        tmp_path, monkeypatch):
+    """universe=at_home_only removes away-from-home persons before SRV.person_level.
+
+    Person 2 (Salzgitter, 03102, SrV-surveyed) is marked away by the absence-stage stub. Under
+    ``at_home_only`` they must be dropped from the model side entirely -- never counted as a
+    zero-trip present person -- and the exclusion must be visible in provenance.json (CLAUDE.md
+    fallback transparency: an excluded population must be counted, not silently absorbed).
+    Persons 1 and 3 (both 03101) remain the in-scope 'all' segment; person 4 (Wolfsburg) stays
+    out of scope regardless of the absence draw.
+    """
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    context = _stage_context(tmp_path, universe=SRV.UNIVERSE_AT_HOME_ONLY, absent_ids={2})
+    S.execute(context)
+
+    out_dir = tmp_path / "analysis" / "plan_structure_vs_srv"
+    provenance = json.loads((out_dir / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["parameters"]["srv_universe"] == SRV.UNIVERSE_AT_HOME_ONLY
+    assert provenance["model"]["n_persons_away_from_home"] == 1
+    assert provenance["model"]["n_persons_excluded_away"] == 1
+    assert provenance["model"]["n_persons_total"] == 3          # 4 minus the excluded person
+    assert provenance["model"]["n_persons_in_scope"] == 2       # persons 1 and 3, both 03101
+    assert provenance["model"]["n_persons_out_of_scope"] == 1   # person 4, Wolfsburg
+
+    headline = pd.read_csv(out_dir / "headline.csv")
+    n_persons = headline[headline["metric"] == "n_persons_unweighted"].iloc[0]
+    assert n_persons["model"] == 2
+
+
+def test_warns_when_at_home_zero_is_compared_without_the_absence_model(tmp_path, monkeypatch,
+                                                                        caplog):
+    """at_home_zero + day_absence_enabled=False: the model has no away-from-home state at all,
+    while the reference universe counts an away person as a zero-trip person -- a WARNING must
+    flag this universe mismatch (CLAUDE.md fallback transparency: never silently compare two
+    different definitions of the reporting day)."""
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    context = _stage_context(tmp_path, universe=SRV.UNIVERSE_AT_HOME_ZERO)
+    context._config[S.KEY_DAY_ABSENCE_ENABLED] = False
+    with caplog.at_level("WARNING"):
+        S.execute(context)
+    assert any("universe" in record.getMessage() for record in caplog.records
+              if record.levelname == "WARNING")
+
+
+def test_does_not_warn_when_at_home_zero_is_compared_with_the_absence_model_on(
+        tmp_path, monkeypatch, caplog):
+    """The same universe pairing with the absence model ON must not raise the mismatch warning."""
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    context = _stage_context(tmp_path, universe=SRV.UNIVERSE_AT_HOME_ZERO)
+    with caplog.at_level("WARNING"):
+        S.execute(context)
+    assert not any("universe" in record.getMessage() for record in caplog.records
+                  if record.levelname == "WARNING")
+
+
+def test_warns_on_at_home_zero_with_the_pre_assignment_view_even_with_the_flag_on(
+        tmp_path, monkeypatch, caplog):
+    """The pre_assignment view never carries the absence draw, regardless of the flag value.
+
+    ``day_absence_enabled`` staying at its True default must not silence the universe-mismatch
+    warning when the view itself never applies the draw (the flag alone does not mean the model
+    side actually has away-from-home information).
+    """
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    context = _stage_context(tmp_path, universe=SRV.UNIVERSE_AT_HOME_ZERO)
+    context._config[S.KEY_TRIPS_VIEW] = "pre_assignment"
+    with caplog.at_level("WARNING"):
+        S.execute(context)
+    assert any("universe" in record.getMessage() for record in caplog.records
+              if record.levelname == "WARNING")

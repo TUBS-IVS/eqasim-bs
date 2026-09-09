@@ -31,6 +31,48 @@ counted, logged and excluded from the head-to-head universe; above
 VG250 / household join must not produce a well-formed report that silently describes only part
 of the population.
 
+Reporting-day view and the general day-absence draw (issue #370)
+------------------------------------------------------------------
+``plan_structure_trips_view`` (:data:`KEY_TRIPS_VIEW`, default :data:`DEFAULT_TRIPS_VIEW`
+``"final"``) picks which trips stage the model side is harmonised from:
+
+* ``"final"`` -- the REPORTING-DAY view ``synthesis.population.trips.final``, i.e. what MATSim
+  actually simulates (commute-day replacement and the general day-absence removal already
+  applied, per their own flags). This is the default because a plan-structure comparison
+  should describe the day that is run, not an intermediate one.
+* ``"pre_assignment"`` -- the pre-assignment view ``synthesis.population.trips``, for a
+  comparison that predates ADR-0104 / issue #370 or that deliberately wants the day BEFORE any
+  reporting-day replacement.
+
+Independent of the view, ``day_absence_enabled`` (:data:`KEY_DAY_ABSENCE_ENABLED`, same key and
+default as every other consumer of :data:`ABSENCE_STAGE`) controls whether the general
+day-absence draw's away-from-home persons are marked on the model side at all: only with the
+``"final"`` view AND this flag on is :data:`ABSENCE_STAGE` read, and
+:func:`braunschweig.analysis.plan_structure.harmonise_model` gets their person ids, so
+``away_from_home`` / ``reported_at_home`` reflect the draw instead of the pre-#370 "always at
+home" default.
+
+That, in turn, decides what the two SrV universes (``plan_structure_srv_universe``,
+:data:`~braunschweig.calibration.srv_plan_structure.UNIVERSE_AT_HOME_ZERO` /
+:data:`~braunschweig.calibration.srv_plan_structure.UNIVERSE_AT_HOME_ONLY`) actually compare:
+
+* ``at_home_zero`` (default) -- every model person counts, an away-from-home person as a
+  zero-trip person (exactly the pre-#370 behaviour, since ``synthesis.population.trips.final``
+  already has no trips for an absent person). Comparing this universe WITHOUT the day-absence
+  model switched on is a silent universe mismatch -- the model then has no away-from-home
+  concept at all while the reference still counts its away respondents as zero-trip -- so the
+  stage logs a WARNING naming both sides.
+* ``at_home_only`` -- away-from-home persons are EXCLUDED from the model side entirely, before
+  :func:`~braunschweig.calibration.srv_plan_structure.person_level`, mirroring exactly how the
+  reference's own ``at_home_only`` universe is built
+  (:func:`~braunschweig.calibration.srv_plan_structure.build_reference`). The excluded count is
+  recorded as ``n_persons_excluded_away`` in ``provenance.json``, never silently absorbed.
+
+``provenance.json`` and ``summary.md`` always record ``trips_view``, ``day_absence_enabled``
+and ``n_persons_away_from_home`` (the away-from-home count on the model side BEFORE any
+``at_home_only`` exclusion), regardless of universe, so a reader can tell which reporting-day
+view and which absence state the numbers describe.
+
 Outputs, under ``<output_path>/<plan_structure_output_subdir>/``:
 
 * ``comparison.csv`` -- the full long comparison (segment, metric, model, srv, delta_pp,
@@ -62,6 +104,8 @@ from braunschweig import provenance as run_provenance
 from braunschweig.analysis import plan_structure as P
 from braunschweig.calibration import srv_distance_targets as T
 from braunschweig.calibration import srv_plan_structure as SRV
+from braunschweig.synthesis.day_absence import absence as _day_absence
+from braunschweig.synthesis.day_absence.absence import absent_person_ids
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.plan_structure_vs_srv")
 
@@ -70,6 +114,22 @@ _LOG_TAG = "[plan_structure_vs_srv]"
 KEY_SUBDIR = "plan_structure_output_subdir"
 KEY_UNIVERSE = "plan_structure_srv_universe"
 KEY_MAX_UNMATCHED_HOME_SHARE = "plan_structure_max_unmatched_home_share"
+#: Which trips stage the model side is harmonised from (issue #370, Task 6): the REPORTING-DAY
+#: view (default) or the pre-assignment one. See the module docstring section "Reporting-day
+#: view and the general day-absence draw".
+KEY_TRIPS_VIEW = "plan_structure_trips_view"
+DEFAULT_TRIPS_VIEW = "final"
+#: Whether the general day-absence draw's away-from-home persons are marked on the model side.
+#: Same key and default as every other consumer of :data:`ABSENCE_STAGE`
+#: (``braunschweig.synthesis.day_absence.absence_stage.KEY_ENABLED``,
+#: ``braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED``,
+#: ``braunschweig.synthesis.commute_day.output_day.KEY_DAY_ABSENCE_ENABLED``): reusing the
+#: identical name lets ONE config value gate all of them together.
+KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
+DEFAULT_DAY_ABSENCE_ENABLED = True
+#: The general day-absence synpp stage this module reads when the ``"final"`` view AND
+#: :data:`KEY_DAY_ABSENCE_ENABLED` are both on.
+ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 
 DEFAULT_SUBDIR = "analysis/plan_structure_vs_srv"
 #: Above this share of persons whose home point resolves to no Kreis the stage RAISES; 5%
@@ -100,7 +160,12 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: synpp hashes only THIS module's source, so the helper modules that define the
 #: harmonisation and every metric must be folded into the validation token; without them an
 #: edit to a metric would silently serve a cached comparison built by the old code.
-_HELPER_MODULES = (P, SRV)
+#: ``_day_absence`` is folded in because this module directly imports
+#: :func:`~braunschweig.synthesis.day_absence.absence.absent_person_ids` (issue #370, Task 6):
+#: the :data:`ABSENCE_STAGE` dependency already invalidates this stage's synpp cache when the
+#: absence stage's OWN output changes, but hashing the pure helper here too costs nothing and
+#: keeps "over-hash rather than under-hash" uniform across every direct import in this file.
+_HELPER_MODULES = (P, SRV, _day_absence)
 #: Imported inside validate() rather than at module level, exactly as execute() does: a
 #: top-level import of braunschweig.analysis.spatial pulls geopandas and the VG250 access into
 #: every import of this stage. Its ``assign_geographies`` decides EVERY person's home Kreis and
@@ -137,7 +202,22 @@ def validate(context):
 
 def configure(context):
     context.stage("synthesis.population.enriched")
-    context.stage("synthesis.population.trips")
+    # issue #370, Task 6: KEY_TRIPS_VIEW picks the reporting-day view ("final", default) or the
+    # pre-assignment one, aliased to the LOCAL name "trips" so execute() need not branch on the
+    # view again. Only the "final" view carries the general day-absence removal, so the absence
+    # stage is declared (and later read) ONLY when both it and the flag are on -- a run using the
+    # pre-assignment view, or with the flag off, must not pull the absence stage into its DAG.
+    trips_view = context.config(KEY_TRIPS_VIEW, DEFAULT_TRIPS_VIEW)
+    if trips_view == "final":
+        context.stage("synthesis.population.trips.final", alias="trips")
+    elif trips_view == "pre_assignment":
+        context.stage("synthesis.population.trips", alias="trips")
+    else:
+        raise ValueError(f"{_LOG_TAG} {KEY_TRIPS_VIEW} must be 'final' or 'pre_assignment', "
+                         f"got {trips_view!r}")
+    absence_on = bool(context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED))
+    if trips_view == "final" and absence_on:
+        context.stage(ABSENCE_STAGE)
     context.stage("synthesis.population.spatial.home.locations")
     context.config("output_path")
     context.config("data_path")
@@ -268,6 +348,11 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
         "",
         "## Comparison universe",
         "",
+        f"Reporting-day trips view: {parameters.get('trips_view')} "
+        f"(day_absence_enabled={parameters.get('day_absence_enabled')}); "
+        f"{model.get('n_persons_away_from_home')} model person(s) marked away from home by "
+        f"the general day-absence draw, {model.get('n_persons_excluded_away')} of them "
+        f"excluded from the model side under universe '{parameters.get('srv_universe')}'.",
         f"Head-to-head Kreise (SrV-surveyed): {', '.join(inputs.get('kreise_in_scope', []))}.",
         f"Model persons in scope: {model.get('n_persons_in_scope')} of "
         f"{model.get('n_persons_total')} "
@@ -359,6 +444,14 @@ def execute(context):
     output_path = context.config("output_path")
     sampling_rate = float(context.config("sampling_rate"))
     max_unmatched_home_share = float(context.config(KEY_MAX_UNMATCHED_HOME_SHARE))
+    trips_view = context.config(KEY_TRIPS_VIEW)
+    absence_on = bool(context.config(KEY_DAY_ABSENCE_ENABLED))
+    # The absence draw is actually consulted only for the "final" (reporting-day) view AND with
+    # the flag on -- the same condition configure() used to decide whether to declare
+    # ABSENCE_STAGE at all. The pre_assignment view has no away-from-home information on the
+    # model side REGARDLESS of the flag, so this, not the raw flag, is what "the model has no
+    # away-from-home state" actually means below.
+    absence_applied = trips_view == "final" and absence_on
     out_dir = os.path.join(output_path, subdir)
 
     # The reference is loaded FIRST: a missing or unusable reference must abort before any
@@ -366,16 +459,57 @@ def execute(context):
     reference = load_reference(data_path, universe)
     kreise_in_scope = reference_kreise(reference)
 
+    # issue #370: at_home_zero counts an away-from-home person as a zero-trip person, which
+    # matches the reporting-day trips view (an absent person already has no trip there) ONLY
+    # when the day-absence draw was actually applied. Without it the model has no away-from-home
+    # concept at all, so this universe pairing silently compares two different definitions of
+    # the reporting day unless flagged (CLAUDE.md "Fallback transparency").
+    if universe == SRV.UNIVERSE_AT_HOME_ZERO and not absence_applied:
+        LOGGER.warning(
+            "%s universe=%r without the day-absence draw applied (%s=%s, trips_view=%s): the "
+            "model side has no away-from-home state at all, while the reference universe "
+            "counts an away-from-home person as a zero-trip person -- compare against "
+            "universe=%r or enable %s on the 'final' trips view for a like-for-like universe",
+            _LOG_TAG, universe, KEY_DAY_ABSENCE_ENABLED, absence_on, trips_view,
+            SRV.UNIVERSE_AT_HOME_ONLY, KEY_DAY_ABSENCE_ENABLED)
+
     df_persons = context.stage("synthesis.population.enriched")
-    df_trips = context.stage("synthesis.population.trips")
+    df_trips = context.stage("trips")
     df_home = context.stage("synthesis.population.spatial.home.locations")
+
+    # ABSENCE_STAGE was declared in configure() iff absence_applied -- fetching it otherwise
+    # would be an undeclared-stage error in real synpp.
+    absent_ids = absent_person_ids(context.stage(ABSENCE_STAGE)["absence"]) \
+        if absence_applied else None
+
     LOGGER.info("%s parameters: universe=%s, sampling_rate=%.4f, "
-                "max_unmatched_home_share=%.3f, kreise_in_scope=%s; writing to %s", _LOG_TAG,
-                universe, sampling_rate, max_unmatched_home_share, list(kreise_in_scope),
-                out_dir)
+                "max_unmatched_home_share=%.3f, trips_view=%s, day_absence_enabled=%s, "
+                "kreise_in_scope=%s; writing to %s", _LOG_TAG,
+                universe, sampling_rate, max_unmatched_home_share, trips_view, absence_on,
+                list(kreise_in_scope), out_dir)
 
     homes = spatial.assign_geographies(df_home[["household_id", "geometry"]])
-    persons, trips = P.harmonise_model(df_persons, df_trips, homes)
+    persons, trips = P.harmonise_model(df_persons, df_trips, homes,
+                                       absent_person_ids=absent_ids)
+    n_persons_away_from_home = int(persons["away_from_home"].sum())
+
+    # issue #370: at_home_only additionally EXCLUDES away-from-home persons from the model side,
+    # mirroring exactly how the reference's own at_home_only universe is built
+    # (SRV.build_reference: `persons[persons["reported_at_home"]]`). Trips are restricted to the
+    # same persons afterwards -- SRV.person_level raises on a trip whose person is not in the
+    # person frame.
+    n_persons_excluded_away = 0
+    if universe == SRV.UNIVERSE_AT_HOME_ONLY:
+        n_before_exclusion = len(persons)
+        persons = persons[~persons["away_from_home"]].reset_index(drop=True)
+        trips = trips[trips["pid"].isin(set(persons["pid"]))].reset_index(drop=True)
+        n_persons_excluded_away = n_before_exclusion - len(persons)
+        LOGGER.info(
+            "%s universe %s: excluded %d/%d away-from-home persons (%.2f%%) from the model "
+            "side before SRV.person_level", _LOG_TAG, universe, n_persons_excluded_away,
+            n_before_exclusion,
+            100.0 * n_persons_excluded_away / n_before_exclusion if n_before_exclusion
+            else float("nan"))
 
     per = SRV.person_level(persons, trips)
     # ONE string view of the home Kreis, used for every comparison below: the reference's
@@ -431,6 +565,10 @@ def execute(context):
             "output_subdir": subdir,
             "sampling_rate": sampling_rate,
             "max_unmatched_home_share": max_unmatched_home_share,
+            # issue #370, Task 6: which reporting-day view fed the model side and whether the
+            # general day-absence draw's away-from-home persons were marked on it.
+            "trips_view": trips_view,
+            "day_absence_enabled": absence_on,
         },
         "inputs": {
             "reference_path": reference_path(data_path),
@@ -445,6 +583,10 @@ def execute(context):
             "n_persons_out_of_scope": n_persons_out_of_scope,
             "n_persons_no_kreis": n_persons_no_kreis,
             "share_persons_no_kreis": unmatched_home_share,
+            # issue #370, Task 6: away-from-home count BEFORE any at_home_only exclusion, and
+            # how many of them that exclusion then dropped (0 under at_home_zero).
+            "n_persons_away_from_home": n_persons_away_from_home,
+            "n_persons_excluded_away": n_persons_excluded_away,
             "n_trips_total": int(len(trips)),
             "n_trips_in_scope": int(trips["pid"].isin(set(per_in_scope["pid"])).sum()),
             # The in-scope Kreise are an INPUT fact (they come from the reference table) and

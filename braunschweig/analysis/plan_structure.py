@@ -15,12 +15,21 @@ report.
 
 Universe of the model side
 --------------------------
-Every synthetic person exists and starts the reporting day at home, so the model matches the
-reference's PRIMARY universe ``at_home_zero`` (a person without a trip is a legitimate
-immobile person counted with 0 trips, not missing data). The harmonised person frame
-therefore carries ``away_from_home = False`` and ``reported_at_home = True`` for every
-person -- the two SrV-side universe flags, stated explicitly rather than left blank so a
-reader can see which universe the model side claims.
+Every synthetic person exists and starts the reporting day at home UNLESS the general
+day-absence draw (:mod:`braunschweig.synthesis.day_absence.absence`, issue #370) marks them
+away: :func:`harmonise_model` takes the set of away-from-home person ids and sets
+``away_from_home`` / ``reported_at_home`` (its exact complement) accordingly. With no such set
+(the default, ``absent_person_ids=None``) every person stays at home, reproducing the pre-#370
+behaviour and matching the reference's PRIMARY universe ``at_home_zero`` (a person without a
+trip is a legitimate immobile person counted with 0 trips, not missing data) -- the two
+SrV-side universe flags are stated explicitly rather than left blank so a reader can see which
+universe the model side claims. The comparison stage
+(:mod:`braunschweig.analysis.synthesis.plan_structure_vs_srv`) decides, via its
+``plan_structure_srv_universe`` config, whether the ``at_home_only`` universe additionally
+EXCLUDES the away persons from the model side before
+:func:`~braunschweig.calibration.srv_plan_structure.person_level` -- see that stage's module
+docstring for the two universes and the warning it logs when they are compared without the
+absence model switched on.
 
 Weights
 -------
@@ -130,7 +139,8 @@ def is_share_metric(metric: str) -> bool:
 # --------------------------------------------------------------------------- harmonisation
 
 def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
-                    homes_with_ars5: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+                    homes_with_ars5: pd.DataFrame,
+                    absent_person_ids: set | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Harmonise the eqasim person/trip frames to the SrV comparison schema.
 
     Parameters
@@ -145,6 +155,15 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
         ``braunschweig.analysis.spatial.assign_geographies`` output; must carry
         ``household_id`` and :data:`KREIS_COLUMN`. Duplicate household rows are removed
         (the sjoin can emit several rows for a home on a polygon boundary) and counted.
+    absent_person_ids:
+        Person ids marked away from home by the general day-absence draw
+        (:mod:`braunschweig.synthesis.day_absence.absence`, issue #370;
+        :func:`~braunschweig.synthesis.day_absence.absence.absent_person_ids`). ``None`` (the
+        default) marks nobody away, reproducing the pre-#370 at_home_zero-only behaviour.
+        When supplied, ``away_from_home`` is ``True`` for exactly these persons and
+        ``reported_at_home`` is its complement -- the two flags the SrV side's ``at_home_only``
+        universe restriction reads (:func:`~braunschweig.calibration.srv_plan_structure
+        .build_reference`).
 
     Returns
     -------
@@ -202,6 +221,13 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
         logger.warning("%s %d/%d persons carry a sex outside %s; they are in no sex segment",
                        _LOG_TAG, n_unmapped_sex, n_persons, list(SRV.SEXES))
 
+    # issue #370: away_from_home comes from the general day-absence draw's person ids when the
+    # caller supplies them, and is False for everyone otherwise -- the pre-#370 at_home_zero-only
+    # default. Vectorised (isin), not a per-row Python membership test: this runs over a
+    # full-scale population.
+    absent_ids = set() if absent_person_ids is None else set(absent_person_ids)
+    away_from_home = merged["person_id"].isin(absent_ids).values
+
     trip_counts = trips.groupby("person_id").size()
     out = pd.DataFrame({
         "pid": merged["person_id"].values,
@@ -211,9 +237,8 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
         "employed": merged["employed"].fillna(False).astype(bool).values,
         "kreis": merged[KREIS_COLUMN].values,
         "n_trips": merged["person_id"].map(trip_counts).fillna(0).astype(int).values,
-        # Every synthetic person exists and starts the day at home (universe at_home_zero).
-        "away_from_home": False,
-        "reported_at_home": True,
+        "away_from_home": away_from_home,
+        "reported_at_home": ~away_from_home,
     })
     out["age_band"] = pd.cut(out["age"], list(SRV.AGE_BINS),
                              labels=list(SRV.AGE_LABELS)).astype(str)
@@ -233,10 +258,12 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
     })
     harmonised_trips = (harmonised_trips.sort_values(["pid", "seq"])
                         [SRV.HARMONISED_TRIP_COLUMNS].reset_index(drop=True))
-    logger.info("%s harmonised %d persons (%d mobile, %.2f%%) and %d trips; invalid "
-                "departure time %d, invalid arrival time %d", _LOG_TAG, len(out),
-                int((out["n_trips"] > 0).sum()),
+    n_away = int(out["away_from_home"].sum())
+    logger.info("%s harmonised %d persons (%d mobile, %.2f%%; %d away from home, %.2f%%) and "
+                "%d trips; invalid departure time %d, invalid arrival time %d", _LOG_TAG,
+                len(out), int((out["n_trips"] > 0).sum()),
                 100.0 * (out["n_trips"] > 0).mean() if len(out) else float("nan"),
+                n_away, 100.0 * n_away / len(out) if len(out) else float("nan"),
                 len(harmonised_trips), int(harmonised_trips["dep_min"].isna().sum()),
                 int(harmonised_trips["arr_min"].isna().sum()))
     return out, harmonised_trips
