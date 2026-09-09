@@ -100,6 +100,10 @@ def _pairing_wege():
         "W_SZS":     [8, 12, 8, 12, 20],
         "W_SZM":     [0, 0, 0, 0, 0],
         "HP_ALTER":  [35, 35, 5, 5, 5],
+        # The two TRIP-BUILD leg filters read these; every fixture leg is a direct diary leg of
+        # a diary that starts at home, so both filters drop nothing here (fix round 1).
+        "W_RBW":     [0, 0, 0, 0, 0],
+        "W_SO1":     [1, 809, 1, 809, 809],
     })
 
 
@@ -108,9 +112,45 @@ def test_passive_education_share_counts_active_escort_pairs_and_unpaired_legs():
     share, stats = derive_passive_education_share(_pairing_wege())
     # passive weight 4.0: 2.0 paired to the ACTIVE escort leg, 1.0 paired to shop, 1.0 unpaired.
     assert stats["n_passive"] == 3 and stats["n_paired"] == 2
+    assert stats["n_passive_raw"] == 3          # nothing dropped by the two leg filters here
     assert stats["share_paired_to_active_escort"] == pytest.approx(0.5)
     assert stats["share_unpaired"] == pytest.approx(0.25)
     assert share == pytest.approx(0.75)
+
+
+def test_passive_purpose_fold_sums_to_one_and_names_every_destination():
+    """Fix round 1, IMPORTANT 1 (ruling C-R11): the committed reference must carry the FULL
+    fold, not only the education member, so trip_coherence can move the W1 mass instead of
+    dropping it."""
+    from scripts.derive_escort_w_zweck_split import (
+        derive_passive_education_share, passive_fold_purposes)
+    _share, stats = derive_passive_education_share(_pairing_wege())
+    fold = stats["fold"]
+    assert set(fold) == set(passive_fold_purposes())
+    assert sum(fold.values()) == pytest.approx(1.0)
+    assert fold["education"] == pytest.approx(0.75)   # 0.5 active-escort pair + 0.25 unpaired
+    assert fold["shop"] == pytest.approx(0.25)        # the 12:00 leg pairs with the adult's shop leg
+    assert all(fold[purpose] == pytest.approx(0.0)
+               for purpose in fold if purpose not in {"education", "shop"})
+
+
+def test_passive_education_share_pairs_on_the_trip_builds_leg_universe():
+    """Fix round 1, IMPORTANT 3: an rbW summary leg that would win the pairing on the raw table
+    must not, because the trip build drops it before map_purpose pairs."""
+    from scripts.derive_escort_w_zweck_split import derive_passive_education_share
+    wege = _pairing_wege()
+    # Turn the adult's ACTIVE escort leg (08:00, the one the first child leg pairs with) into an
+    # rbW summary record: with the filter ON it disappears and the child is left unpaired
+    # (education by the passive rule); with the filter OFF it still wins and gives education too,
+    # so make the difference visible through n_paired.
+    wege.loc[(wege["P_ID"] == 1) & (wege["W_ID"] == 1), "W_RBW"] = 1
+    filtered_share, filtered = derive_passive_education_share(wege, exclude_rbw_legs=True)
+    raw_share, raw = derive_passive_education_share(wege, exclude_rbw_legs=False,
+                                                    drop_leading_arrive_home_leg=False)
+    assert filtered["n_paired"] == 1 and raw["n_paired"] == 2
+    assert filtered["share_unpaired"] == pytest.approx(0.75)
+    assert raw["share_unpaired"] == pytest.approx(0.25)
+    assert filtered_share == pytest.approx(raw_share)   # both routes still read as education here
 
 
 def test_passive_education_share_raises_when_a_pairing_column_is_missing():

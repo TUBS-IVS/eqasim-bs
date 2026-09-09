@@ -534,6 +534,7 @@ def _derive_participation_seed_columns(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``load_mid_seed``.
 
@@ -572,6 +573,16 @@ def _derive_participation_seed_columns(
     reason: they were added after the two no-default flags, and the default reproduces the
     pre-#372 seed byte-identically.
 
+    ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
+    ``drop_leading_arrive_home_leg`` value into that SAME derivation, where it (with
+    ``exclude_rbw_legs``) defines the leg universe the passive-escort pairing runs on --
+    the plan's universe, not the raw table's (controller ruling C-R12). It is spelled
+    distinctly from the ``drop_leading_arrive_home_leg`` parameter of the trip_class
+    derivation next door, which exists only on the ``project_completed_seed`` path and
+    subtracts the dropped leg from a COUNT: same config key, two different consumers, and
+    a shared parameter name would suggest the legacy path's trip_class seed had started
+    reading it too (it has not; that path stays byte-identical).
+
     Returns: the persons frame with one derived column per active purpose plus the active
     universe seed columns (MUST be reassigned).
     Mutates: nothing in place; reads ``MiD2023_Wege.csv`` from ``mid_dir`` when at
@@ -605,6 +616,7 @@ def _derive_participation_seed_columns(
                 escort_passive_from_adult=escort_passive_from_adult,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure,
                 passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -686,6 +698,7 @@ def _derive_projected_participation_seed_columns(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``project_completed_seed``.
 
@@ -719,6 +732,16 @@ def _derive_projected_participation_seed_columns(
     purpose). Keyword-only WITH defaults here, like ``w_zweck_10_as_leisure`` and for the same
     reason: they were added after the two no-default flags, and the default reproduces the
     pre-#372 seed byte-identically.
+
+    ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
+    ``drop_leading_arrive_home_leg`` value into that SAME derivation, where it (with
+    ``exclude_rbw_legs``) defines the leg universe the passive-escort pairing runs on --
+    the plan's universe, not the raw table's (controller ruling C-R12). It is spelled
+    distinctly from the ``drop_leading_arrive_home_leg`` parameter of the trip_class
+    derivation next door, which exists only on the ``project_completed_seed`` path and
+    subtracts the dropped leg from a COUNT: same config key, two different consumers, and
+    a shared parameter name would suggest the legacy path's trip_class seed had started
+    reading it too (it has not; that path stays byte-identical).
 
     Returns: the persons frame with one derived column per active purpose plus the active
     universe seed columns (MUST be reassigned).
@@ -762,6 +785,7 @@ def _derive_projected_participation_seed_columns(
                 escort_passive_from_adult=escort_passive_from_adult,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure,
                 passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -819,6 +843,7 @@ def load_mid_seed(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -965,6 +990,7 @@ def load_mid_seed(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
     households = _join_hh_type5_column(households, persons, columns)
     _hh_extra, _person_extra = _split_kreis_entries_by_level(effective_kreis_entries)
@@ -991,6 +1017,7 @@ def project_completed_seed(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -1143,6 +1170,7 @@ def project_completed_seed(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
 
     households = _join_hh_type5_column(households, persons, columns)

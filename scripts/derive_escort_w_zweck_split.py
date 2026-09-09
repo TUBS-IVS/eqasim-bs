@@ -49,8 +49,40 @@ ESCORT_CODES = (6, 13)
 #: active/passive split itself reads (issue #372): the household/person/leg keys, the departure
 #: time and the member's age (``escort_pairing.REQUIRED_COLUMNS``).
 PAIRING_COLUMNS_NEEDED = ("H_ID", "P_ID", "W_ID", "W_SZS", "W_SZM", "HP_ALTER")
-#: Name of the derived column added to the committed table (issue #372, ADR-0112).
+#: Extra raw MiD Wege columns the two TRIP-BUILD leg filters need on top of the pairing's own
+#: (``trips.rbw_leg_mask`` / ``trips.leading_arrive_home_leg_index``).
+LEG_FILTER_COLUMNS_NEEDED = ("W_RBW", "W_SO1")
+#: Name of the derived column added to the committed table (issue #372, ADR-0112). It is the
+#: EDUCATION member of the fold below, kept under its original name so the existing consumer
+#: (``trip_coherence.load_passive_education_share``) is unaffected.
 PASSIVE_EDUCATION_SHARE_COLUMN = "code_13_to_education_share_under_pairing"
+#: Column name for each member of the passive-leg purpose fold (fix round 1, ruling C-R11).
+PASSIVE_FOLD_COLUMN_TEMPLATE = "code_13_to_{purpose}_share_under_pairing"
+#: The trip-build flag values every committed number below is derived under. Written into the CSV
+#: header so a reader never has to guess which configuration the reference describes; they are
+#: the PRODUCTION values (configs/base_bs.yml, plus the trips_stage defaults).
+DERIVATION_FLAGS = {
+    "escort_purpose": True,
+    "escort_passive_education": True,
+    "escort_passive_from_adult": True,
+    "w_zweck_10_as_leisure": True,
+    "exclude_rbw_legs": True,
+    "drop_leading_arrive_home_leg": True,
+}
+
+
+def passive_fold_purposes() -> tuple:
+    """The eqasim purposes a passive escort leg can receive, DERIVED from the model's own tables.
+
+    The destinations ``trips.PASSIVE_PURPOSE_BY_ADULT_W_ZWECK`` can produce, plus the two the
+    passive rule itself produces (``education`` under ``escort_passive_education``, ``escort``
+    otherwise) and ``trips.DEFAULT_PURPOSE`` for the unknown-code fallback. Sorted, so the
+    committed column order is deterministic. Derived rather than hardcoded: a future edit to the
+    mapping table must not silently leave a purpose out of the committed fold.
+    """
+    from braunschweig.popsim import trips
+    return tuple(sorted(set(trips.PASSIVE_PURPOSE_BY_ADULT_W_ZWECK.values())
+                        | {"education", "escort", trips.DEFAULT_PURPOSE}))
 # Band edges/columns mirror the committed mid2023_W12_triplength_by_purpose.csv.
 BAND_EDGES = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, float("inf")]
 BAND_COLUMNS = ["d_unter_0_5km", "d_0_5_1km", "d_1_2km", "d_2_5km", "d_5_10km",
@@ -136,9 +168,11 @@ def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return table, stats
 
 
-def derive_passive_education_share(df: pd.DataFrame, *, max_gap_minutes: float | None = None
-                                   ) -> tuple[float, dict]:
-    """W_GEW share of the passive escort legs that stay EDUCATION under the pairing (#372).
+def derive_passive_education_share(
+    df: pd.DataFrame, *, max_gap_minutes: float | None = None,
+    exclude_rbw_legs: bool = True, drop_leading_arrive_home_leg: bool = True,
+) -> tuple[float, dict]:
+    """W_GEW purpose fold of the passive escort legs under the pairing (#372, fix round 1).
 
     With ``escort_passive_from_adult`` on, a W_ZWECK-13 leg is realised as ``education`` by
     ``trips.map_purpose`` in exactly two cases: it is PAIRED with an adult leg that is itself an
@@ -146,26 +180,42 @@ def derive_passive_education_share(df: pd.DataFrame, *, max_gap_minutes: float |
     own Kita/school), or it stays UNPAIRED and therefore keeps the ``escort_passive_education``
     relabel. Every other paired leg follows the adult onto shop / home / leisure / other.
 
-    The share is computed by running the REAL pairing
+    Everything is computed by running the REAL pairing
     (``escort_pairing.pair_passive_legs``) and the REAL purpose derivation
-    (``trips.passive_purpose_for_pairs``) on the raw Wege, never by re-deriving the rule here, so
-    the committed reference cannot drift away from what the model does.
+    (``trips.passive_purpose_for_pairs``), never by re-deriving the rules here, so the committed
+    reference cannot drift away from what the model does. For the same reason the legs are first
+    reduced to the ones the trip build KEEPS (``trips.legs_kept_by_the_trip_build``): production
+    drops the rbW summary legs and the leading arrive-home leg BEFORE ``map_purpose`` pairs, so a
+    reference derived on the raw table would describe a universe no run ever has (fix round 1,
+    IMPORTANT 3).
+
+    ASSUMPTIONS, all disclosed in the committed CSV header: ``escort_passive_education`` and
+    ``w_zweck_10_as_leisure`` are taken as True (their production values) when the paired adult's
+    code is turned into the child's purpose. ``escort_passive_education`` decides what an adult
+    ACTIVE escort leg gives the child (education vs escort) and therefore moves mass between two
+    fold members; ``w_zweck_10_as_leisure`` moves adult code-10 mass between leisure and other.
+    Neither can change the education total for any other adult code.
 
     Args:
-        df: raw MiD Wege with ``W_ZWECK``, ``W_GEW`` and PAIRING_COLUMNS_NEEDED. ``W_ZWECK`` must
-            already be numeric (``main()`` coerces).
+        df: MiD Wege with ``W_ZWECK``, ``W_GEW``, PAIRING_COLUMNS_NEEDED and (for the active
+            filters) LEG_FILTER_COLUMNS_NEEDED. ``W_ZWECK`` must already be numeric (``main()``
+            coerces).
         max_gap_minutes: the pairing window in minutes; ``None`` uses the model's own default.
+        exclude_rbw_legs / drop_leading_arrive_home_leg: the trip build's leg-drop flags,
+            defaulting to their PRODUCTION values, applied through the shared trips.py helpers.
 
     Returns:
         ``(share, stats)``. ``share`` is the W_GEW-weighted share of code-13 legs realised as
-        education, in [0, 1]; ``stats`` carries ``n_passive``, ``n_paired``, ``share_paired``,
-        the two components ``share_paired_to_active_escort`` / ``share_unpaired`` (so the
-        headline number can be read, not just believed) and ``max_gap_minutes``.
+        education, in [0, 1]. ``stats`` carries ``n_passive`` / ``n_passive_raw`` (after and
+        before the leg filters), ``n_paired``, ``share_paired``, the two education components
+        ``share_paired_to_active_escort`` / ``share_unpaired`` (so the headline number can be
+        read, not just believed), ``fold`` (purpose -> W_GEW share, summing to 1 over the
+        passive legs) and ``max_gap_minutes``.
 
     Raises:
-        KeyError: if a column the pairing needs is absent (no silent skip: a missing column would
-            leave every leg unpaired and the share silently at 1.0, i.e. exactly today's flat
-            education relabel dressed up as a measurement).
+        KeyError: if a column the pairing or a live filter needs is absent (no silent skip: a
+            missing pairing column would leave every leg unpaired and the share silently at 1.0,
+            i.e. exactly today's flat education relabel dressed up as a measurement).
     """
     from braunschweig.popsim import trips
     from braunschweig.popsim.escort_pairing import (
@@ -174,26 +224,62 @@ def derive_passive_education_share(df: pd.DataFrame, *, max_gap_minutes: float |
     )
 
     gap = DEFAULT_MAX_GAP_MINUTES if max_gap_minutes is None else float(max_gap_minutes)
-    missing = [column for column in REQUIRED_COLUMNS + ("W_GEW",) if column not in df.columns]
+    needed = REQUIRED_COLUMNS + ("W_GEW",)
+    if exclude_rbw_legs:
+        needed += ("W_RBW",)
+    if drop_leading_arrive_home_leg:
+        needed += ("W_SO1",)
+    missing = [column for column in needed if column not in df.columns]
     if missing:
         raise KeyError(
             f"[derive_escort_w_zweck_split] the passive-escort pairing needs column(s) {missing}, "
             f"absent from the Wege frame (has {list(df.columns)}).")
 
-    weights = pd.to_numeric(df["W_GEW"], errors="coerce").fillna(0.0).to_numpy()
-    is_passive = (df["W_ZWECK"] == PASSIVE_W_ZWECK).to_numpy()
+    n_passive_raw = int((df["W_ZWECK"] == PASSIVE_W_ZWECK).sum())
+    # The SAME reduction the trip build applies before map_purpose pairs (ruling C-R12 / #372
+    # fix round 1 IMPORTANT 3): applied to the whole frame, so a dropped leg also leaves the
+    # ADULT candidate pool.
+    legs = trips.legs_kept_by_the_trip_build(
+        df, exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
+
+    weights = pd.to_numeric(legs["W_GEW"], errors="coerce").fillna(0.0).to_numpy()
+    is_passive = (legs["W_ZWECK"] == PASSIVE_W_ZWECK).to_numpy()
     passive_weight = float(weights[is_passive].sum())
     if not passive_weight > 0:
         raise ValueError(
             "[derive_escort_w_zweck_split] total passive-escort (W_ZWECK "
             f"{PASSIVE_W_ZWECK}) weight is zero; the education share is undefined.")
 
-    paired_frame, diagnostics = pair_passive_legs(df, max_gap_minutes=gap)
+    paired_frame, diagnostics = pair_passive_legs(legs, max_gap_minutes=gap)
     is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
     realised = trips.passive_purpose_for_pairs(
         paired_frame.loc[is_paired, "passive_pair_adult_w_zweck"],
-        escort_passive_education=True, w_zweck_10_as_leisure=True)
-    paired_education = np.zeros(len(df), dtype=bool)
+        escort_passive_education=DERIVATION_FLAGS["escort_passive_education"],
+        w_zweck_10_as_leisure=DERIVATION_FLAGS["w_zweck_10_as_leisure"])
+
+    # Purpose of EVERY passive leg: the paired ones from the adult, the unpaired ones from the
+    # escort_passive_education rule -- exactly map_purpose's two branches.
+    unpaired_purpose = "education" if DERIVATION_FLAGS["escort_passive_education"] else "escort"
+    purpose_per_leg = np.full(len(legs), "", dtype=object)
+    purpose_per_leg[is_passive] = unpaired_purpose
+    purpose_per_leg[np.flatnonzero(is_paired)] = realised
+
+    fold = {}
+    for purpose in passive_fold_purposes():
+        selected = is_passive & (purpose_per_leg == purpose)
+        fold[purpose] = float(weights[selected].sum() / passive_weight)
+    fold_total = sum(fold.values())
+    if abs(fold_total - 1.0) > 1e-9:
+        # Not a rounding guard but a coverage guard: a purpose missing from
+        # passive_fold_purposes() would silently shrink the fold and, downstream, silently
+        # move W1 mass nowhere (CLAUDE.md: no silent fallbacks).
+        raise ValueError(
+            f"[derive_escort_w_zweck_split] the passive purpose fold sums to {fold_total!r}, not "
+            f"1.0; a purpose produced by the pairing is missing from passive_fold_purposes() "
+            f"(got {sorted(set(purpose_per_leg[is_passive]))}).")
+
+    paired_education = np.zeros(len(legs), dtype=bool)
     paired_education[np.flatnonzero(is_paired)[realised == "education"]] = True
     unpaired = is_passive & ~is_paired
 
@@ -201,13 +287,15 @@ def derive_passive_education_share(df: pd.DataFrame, *, max_gap_minutes: float |
     share_unpaired = float(weights[unpaired].sum() / passive_weight)
     stats = {
         "n_passive": int(diagnostics["n_passive"]),
+        "n_passive_raw": n_passive_raw,
         "n_paired": int(diagnostics["n_paired"]),
         "share_paired": float(diagnostics["share_paired"]),
         "share_paired_to_active_escort": share_paired_to_active_escort,
         "share_unpaired": share_unpaired,
+        "fold": fold,
         "max_gap_minutes": gap,
     }
-    return share_paired_to_active_escort + share_unpaired, stats
+    return fold["education"], stats
 
 
 def main(argv=None) -> int:
@@ -221,19 +309,24 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     df = pd.read_csv(args.wege, sep=_sniff_separator(args.wege),
-                     usecols=["W_ZWECK", "W_GEW", "wegkm_imp", *PAIRING_COLUMNS_NEEDED],
+                     usecols=["W_ZWECK", "W_GEW", "wegkm_imp", *PAIRING_COLUMNS_NEEDED,
+                              *LEG_FILTER_COLUMNS_NEEDED],
                      low_memory=False)
     df["W_ZWECK"] = pd.to_numeric(df["W_ZWECK"], errors="coerce")
     table, stats = derive_split(df)
     # The pairing runs on the WHOLE Wege frame (it needs every household member's legs, not only
     # the escort ones), so it is derived from df rather than from derive_split's escort subset.
     passive_education_share, pairing_stats = derive_passive_education_share(
-        df, max_gap_minutes=args.max_gap_minutes)
-    # Only the code_13 row carries the share: it is a share WITHIN the passive legs, so writing
-    # it on code_6 or on "both" would invite it being read as a share of all escort legs.
-    table[PASSIVE_EDUCATION_SHARE_COLUMN] = [
-        "", round(passive_education_share, 4), "",
-    ]
+        df, max_gap_minutes=args.max_gap_minutes,
+        exclude_rbw_legs=DERIVATION_FLAGS["exclude_rbw_legs"],
+        drop_leading_arrive_home_leg=DERIVATION_FLAGS["drop_leading_arrive_home_leg"])
+    # Only the code_13 row carries the fold: these are shares WITHIN the passive legs, so writing
+    # them on code_6 or on "both" would invite them being read as shares of all escort legs. The
+    # education member keeps its original column name (PASSIVE_EDUCATION_SHARE_COLUMN).
+    for purpose, share in pairing_stats["fold"].items():
+        column = (PASSIVE_EDUCATION_SHARE_COLUMN if purpose == "education"
+                  else PASSIVE_FOLD_COLUMN_TEMPLATE.format(purpose=purpose))
+        table[column] = ["", round(share, 4), ""]
 
     if stats["weight_coercion_failures"] > 0:
         print(f"WARNING [derive_escort_w_zweck_split] W_GEW coercion failures: "
@@ -248,14 +341,25 @@ def main(argv=None) -> int:
         f"# (wegkm_imp >= 0, < 1000 km) cover {stats['length_coverage_weighted']:.4f} of the escort weight.\n"
         f"# weight_coercion_failures={stats['weight_coercion_failures']}.\n"
         "# Band columns follow mid2023_W12_triplength_by_purpose.csv (row-%).\n"
-        f"# {PASSIVE_EDUCATION_SHARE_COLUMN} (code_13 row only; issue #372, ADR-0112): W_GEW share\n"
-        "# of the passive (code 13) legs still realised as education once escort_passive_from_adult\n"
-        "# pairs each with the accompanying adult's leg. Components: paired with an ACTIVE escort leg\n"
-        f"# {pairing_stats['share_paired_to_active_escort']:.4f} + left unpaired and therefore kept\n"
-        f"# on the escort_passive_education rule {pairing_stats['share_unpaired']:.4f}. Pairing rate:\n"
-        f"# {pairing_stats['n_paired']}/{pairing_stats['n_passive']} legs "
+        "# code_13_to_<purpose>_share_under_pairing (code_13 row only; issue #372, ADR-0112):\n"
+        "# the W_GEW purpose FOLD of the passive (code 13) legs once escort_passive_from_adult\n"
+        "# pairs each with the accompanying adult's leg and gives it that adult's purpose; the\n"
+        "# education member keeps the name code_13_to_education_share_under_pairing. The columns\n"
+        "# sum to 1 over the passive legs. The education member decomposes into\n"
+        f"# {pairing_stats['share_paired_to_active_escort']:.4f} paired with an ACTIVE escort leg\n"
+        f"# + {pairing_stats['share_unpaired']:.4f} left unpaired (kept on the "
+        "escort_passive_education rule).\n"
+        f"# Pairing rate: {pairing_stats['n_paired']}/{pairing_stats['n_passive']} legs "
         f"({pairing_stats['share_paired']:.4f}) within "
         f"{pairing_stats['max_gap_minutes']:.0f} min.\n"
+        f"# Universe: the {pairing_stats['n_passive']} passive legs the TRIP BUILD keeps, out of "
+        f"{pairing_stats['n_passive_raw']} in the\n"
+        "# raw table; the adult candidate pool is filtered the same way, so this describes the\n"
+        "# production leg universe, not the raw one.\n"
+        "# ASSUMED trip-build flags (the PRODUCTION values: configs/base_bs.yml + the trips_stage\n"
+        "# defaults). These numbers do NOT describe a run configured differently:\n"
+        + "".join(f"#   {key} = {value}\n" for key, value in DERIVATION_FLAGS.items())
+        + f"#   escort_passive_pair_max_gap_minutes = {pairing_stats['max_gap_minutes']:.0f}\n"
         "# Generated by scripts/derive_escort_w_zweck_split.py; regenerate there, never edit.\n"
     )
     with open(args.output, "w", encoding="utf-8", newline="") as handle:

@@ -342,10 +342,10 @@ _MINI_PERSONS = (
     "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1;P_BKAT\n"
     "11;1;1.0;40;1;1;1;5;1\n12;2;1.0;12;2;1;1;1;7\n13;3;1.0;50;1;1;1;5;7\n")
 _MINI_WEGE = (
-    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
-    "1;11;101;1;4;8;0;8;30;5.0;30;0;1\n"
-    "2;12;102;13;1;9;0;9;20;2.0;20;0;1\n"
-    "3;13;103;1;4;8;0;8;30;5.0;30;1;1\n")
+    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+    "1;11;101;1;4;8;0;8;30;5.0;30;0;1;40\n"
+    "2;12;102;13;1;9;0;9;20;2.0;20;0;1;40\n"
+    "3;13;103;1;4;8;0;8;30;5.0;30;1;1;40\n")
 
 
 def _write_mini_mid(tmp: Path, *, with_wege: bool = True):
@@ -362,10 +362,10 @@ def _write_mini_mid(tmp: Path, *, with_wege: bool = True):
 # string-keyed for the same reason). The raw-MiD path above keeps numeric ids because
 # load_mid_seed reads BOTH sides from the CSVs.
 _DONOR_WEGE = (
-    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
-    "h1;p11;101;1;4;8;0;8;30;5.0;30;0;1\n"
-    "h2;p12;102;13;1;9;0;9;20;2.0;20;0;1\n"
-    "h3;p13;103;1;4;8;0;8;30;5.0;30;1;1\n")
+    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+    "h1;p11;101;1;4;8;0;8;30;5.0;30;0;1;40\n"
+    "h2;p12;102;13;1;9;0;9;20;2.0;20;0;1;40\n"
+    "h3;p13;103;1;4;8;0;8;30;5.0;30;1;1;40\n")
 
 
 def _completed_donor_frames():
@@ -808,3 +808,33 @@ def test_education_flag_keeps_an_unpaired_passive_leg_as_education():
         persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
         escort_passive_from_adult=True)
     assert out["education_flag"].tolist() == ["noedu", "edu"]
+
+
+def test_education_flag_pairing_uses_the_trip_builds_leg_universe():
+    """Fix round 1, IMPORTANT 2 (controller ruling C-R12): the nearest adult leg in the raw
+    table is an rbW summary leg the trip build DROPS, so the seed must pair with the runner-up
+    (the adult's Kita drop-off) exactly as the plan does -- and read the child as 'edu'.
+
+    With the raw (unfiltered) universe the rbW work leg would win on time and the child would be
+    seeded 'noedu', i.e. the seed and the plan would describe different days."""
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "HP_ALTER": [35, 5], "anzwege1": [2, 1],
+        "member_imputed": [False, False],
+        "source_H_ID": [1, 1], "source_P_ID": [1, 2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 2], "W_ID": [1, 2, 1],
+        # The adult's rbW leg departs in the same minute as the child's passive leg; the real
+        # Bringen/Holen leg (W_ZWECK 6) is five minutes later.
+        "W_ZWECK": [1, 6, 13], "W_RBW": [1, 0, 0],
+        "W_SZS": [8, 8, 8], "W_SZM": [0, 5, 0], "HP_ALTER": [35, 35, 5],
+        "W_SO1": [1, 809, 1]})
+    kept = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert kept["education_flag"].tolist() == ["noedu", "edu"]
+    # Control: on the RAW universe the rbW leg wins the pairing and the child loses education.
+    raw = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=False,
+        escort_passive_from_adult=True)
+    assert raw["education_flag"].tolist() == ["noedu", "noedu"]

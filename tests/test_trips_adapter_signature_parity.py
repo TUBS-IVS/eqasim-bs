@@ -15,6 +15,8 @@ These tests pin the parity so the next parameter cannot stop one layer short.
 """
 import inspect
 
+import pytest
+
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.sources.base import PopsimSource
 from braunschweig.popsim.sources.entd import EntdSource
@@ -93,3 +95,18 @@ def test_mid_adapter_forwards_the_round_trip_flag_to_the_implementation(monkeypa
     assert result == "sentinel"
     assert seen["explicit_round_trip_purposes"] is False
     assert seen["random_seed"] == 42
+
+
+@pytest.mark.parametrize("keyword,value,key_in_message", [
+    ("escort_passive_from_adult", True, "escort_passive_from_adult"),
+    ("passive_pair_max_gap_minutes", 20.0, "escort_passive_pair_max_gap_minutes"),
+])
+def test_entd_adapter_rejects_each_passive_escort_keyword_by_name(keyword, value, key_in_message):
+    """Fix round 1 (m9): accepting the keyword is not enough -- the ENTD donor has no MiD
+    W_ZWECK 13 and no household diary to pair against, so a non-default value must RAISE with
+    a message naming the CONFIG key to change (CLAUDE.md: no silent no-ops)."""
+    with pytest.raises(ValueError) as excinfo:
+        EntdSource().build_trips(persons=None, donor_trips=None, random_seed=1,
+                                 **{keyword: value})
+    assert key_in_message in str(excinfo.value)
+    assert "popsim_open" in str(excinfo.value)

@@ -697,6 +697,8 @@ def configure(context):
     # the popsim stage's education_flag KREIS-control seed, the distance layers and the
     # commute-day donor pool must all see the SAME value this trip build uses, or they disagree
     # on which code-13 legs are education and the seed describes a different day than the plan.
+    # Declared default False; the production true is added to configs/base_bs.yml by task 7
+    # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
     context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
     context.config("braunschweig.population.popsim.mid_dir")

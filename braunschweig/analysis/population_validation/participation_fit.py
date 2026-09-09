@@ -73,7 +73,9 @@ filter and no ``escort_passive_education`` W_ZWECK-13 relabelling, so a
 ``derive_education_flag_seed``'s realised-plan definition -- the exact
 seed-vs-realised-plan mismatch that module's own docstring names as the defect
 those functions exist to remove, just reached via the report's trip schema
-instead of via the control's seed. Nor does it apply ``w_zweck_10_as_leisure``
+instead of via the control's seed. Nor does it apply ``escort_passive_from_adult``
+(issue #372, ADR-0112), under which a paired W_ZWECK-13 leg takes the accompanying
+adult's purpose instead of education. Nor does it apply ``w_zweck_10_as_leisure``
 (issue #373, ADR-0111): a code-10 leg on the raw ``W_ZWECK`` schema stays
 "other" here regardless of that flag's value, so a "leisure" rate reported
 from the raw schema can likewise disagree with the realised plan's leisure

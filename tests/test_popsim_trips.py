@@ -508,3 +508,50 @@ def test_build_validated_trip_table_threads_escort_passive_from_adult_to_map_pur
         escort_passive_from_adult=False)
     assert table_on[table_on["trip_index"] == 0].iloc[0]["following_purpose"] == "shop"
     assert table_off[table_off["trip_index"] == 0].iloc[0]["following_purpose"] == "education"
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 fix round 1.
+# ---------------------------------------------------------------------------
+
+def test_passive_purpose_for_pairs_counts_a_missing_adult_code_instead_of_raising(caplog):
+    """IMPORTANT 4: a NaN adult W_ZWECK must reach the counted, named fallback the docstring
+    promises, not raise IntCastingNaNError out of an astype(int)."""
+    import logging
+    codes = np.array([4.0, np.nan, 77.0])
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.trips"):
+        out = trips.passive_purpose_for_pairs(codes, escort_passive_education=True,
+                                              w_zweck_10_as_leisure=True)
+    assert out.tolist() == ["shop", trips.DEFAULT_PURPOSE, trips.DEFAULT_PURPOSE]
+    joined = " ".join(record.getMessage() for record in caplog.records)
+    assert "[77]" in joined and "1 leg(s) with no adult code at all" in joined
+
+
+def test_legs_kept_by_the_trip_build_matches_what_expand_persons_to_trips_keeps():
+    """IMPORTANT 2/3: the seed and the reference derivations must reduce the raw Wege to
+    exactly the legs the trip build turns into plan legs -- pinned against the real builder."""
+    persons = pd.DataFrame({"person_id": ["A"], "H_ID": [1], "P_ID": [1]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 1], "W_ID": [1, 2, 3],
+        # leg 1 is a leading arrive-home leg, leg 2 an rbW summary leg, leg 3 a real one.
+        "W_ZWECK": [8, 1, 4], "hvm_imp": [4, 4, 4],
+        "W_SZS": [6, 8, 17], "W_SZM": [0, 0, 0], "W_AZS": [6, 8, 17], "W_AZM": [30, 30, 20],
+        "W_RBW": [0, 1, 0], "W_SO1": [2, 809, 809],
+    })
+    kept = trips.legs_kept_by_the_trip_build(
+        wege, exclude_rbw_legs=True, drop_leading_arrive_home_leg=True)
+    assert kept["W_ID"].tolist() == [3]
+    built = trips.expand_persons_to_trips(
+        persons, wege, exclude_rbw_legs=True, drop_leading_arrive_home_leg=True)
+    assert sorted(built["W_ID"].tolist()) == sorted(kept["W_ID"].tolist())
+
+
+def test_legs_kept_by_the_trip_build_is_a_no_op_with_both_flags_off():
+    wege = pd.DataFrame({
+        "H_ID": [1], "P_ID": [1], "W_ID": [1], "W_ZWECK": [8],
+        "W_RBW": [1], "W_SO1": [2],
+    })
+    pd.testing.assert_frame_equal(
+        trips.legs_kept_by_the_trip_build(
+            wege, exclude_rbw_legs=False, drop_leading_arrive_home_leg=False),
+        wege)

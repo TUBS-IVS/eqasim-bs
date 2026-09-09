@@ -262,6 +262,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EXCLUDE_RBW_LEGS,
     KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    KEY_ESCORT_PASSIVE_FROM_ADULT,
     KEY_PT_TICKET_KREIS_CONTROL,
     KEY_PT_TICKET_NEVER_GROUP,
     KEY_IMPORTANCE_PROFILE,
@@ -279,7 +280,6 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_LOGGING,
     KEY_MAX_CELLS,
     KEY_MID,
-    KEY_ESCORT_PASSIVE_FROM_ADULT,
     KEY_OWNERSHIP_GRID,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     KEY_PLACEMENT_INCOME,
@@ -877,7 +877,8 @@ def configure(context):
     # keys + defaults braunschweig.popsim.trips_stage declares: the education_flag KREIS-control
     # seed must count exactly the code-13 legs the trip build realises as education, or a child
     # the plan sends shopping with the adult is still seeded "edu" -- the same seed-vs-plan
-    # mismatch class the three flags above exist to close.
+    # mismatch class the three flags above exist to close. Declared default False; the production
+    # true is added to configs/base_bs.yml by task 7 (see config_keys for the one statement).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
     context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
     if context.config(KEY_INCOME_KC, True):
@@ -1478,6 +1479,14 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     completed-donor diary facts. All five are inert unless a participation(-universe)
     KREIS control is active.
 
+    ``drop_leading_arrive_home_leg`` therefore reaches BOTH branches too, but by two DIFFERENT
+    routes and for two different consumers: as itself into ``project_completed_seed`` (where the
+    trip_class seed subtracts the dropped leg from a count, ruling R20), and as
+    ``education_flag_drop_leading_arrive_home_leg`` into both seed loaders, where -- together
+    with ``exclude_rbw_legs`` -- it defines the leg universe the education_flag seed's
+    passive-escort pairing runs on (controller ruling C-R12). The legacy branch's trip_class
+    seed still never sees it, so that path stays byte-identical.
+
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
     files with MiD column names (H_ID/H_GEW/HP_ALTER/HP_SEX/P_GEW).
@@ -1542,6 +1551,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1565,6 +1575,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (

@@ -327,15 +327,16 @@ DEFAULT_W_ZWECK_10_AS_LEISURE = True
 # build_trip_table / trips_stage.run keyword arguments stays False so a direct caller/test that
 # omits it keeps today's behaviour.
 #
-# The DECLARED default is False, like KEY_ESCORT_PASSIVE_EDUCATION's above and unlike
-# KEY_W_ZWECK_10_AS_LEISURE's: this flag REQUIRES escort_purpose, whose own declared default is
-# False, so a True declared default would make the declared default SET internally inconsistent
-# -- a config that sets nothing would abort inside braunschweig.popsim.trips_stage after the full
-# PopulationSim balancing, which is exactly the failure issue #373 fix round 1 found and the
-# ENTD_REJECTED_KEYS guard below exists to prevent. The PRODUCTION default is ON:
-# configs/base_bs.yml sets escort_passive_from_adult: true next to escort_purpose: true and
-# escort_passive_education: true (issue #372 task 7), the same way escort_passive_education is
-# switched on today.
+# THE ONE STATEMENT of this flag's two defaults (referenced, never repeated, elsewhere): the
+# CODE / DECLARED default is False; the PRODUCTION value true is set in configs/base_bs.yml by
+# task 7 of issue #372 and IS NOT THERE YET -- until that task lands, a production run leaves the
+# feature off. The declared default is False, like KEY_ESCORT_PASSIVE_EDUCATION's above and
+# unlike KEY_W_ZWECK_10_AS_LEISURE's, because this flag REQUIRES escort_purpose, whose own
+# declared default is False: a True declared default would make the declared default SET
+# internally inconsistent -- a config that sets nothing would abort inside
+# braunschweig.popsim.trips_stage after the full PopulationSim balancing, which is exactly the
+# failure issue #373 fix round 1 found and the ENTD_REJECTED_KEYS guard below exists to prevent.
+# The same split applies to KEY_PASSIVE_PAIR_MAX_GAP_MINUTES below.
 KEY_ESCORT_PASSIVE_FROM_ADULT = "escort_passive_from_adult"
 DEFAULT_ESCORT_PASSIVE_FROM_ADULT = False
 # Maximum |departure-time gap| in MINUTES between a passive escort leg and the adult leg it is

@@ -141,6 +141,81 @@ ADULT_ESCORT_W_ZWECK = 6
 DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
 
 
+#: MiD W_ZWECK codes that mean "arrived at home" -- the destination a LEADING arrive-home leg
+#: has (see :func:`leading_arrive_home_leg_index`). Same two codes ``PURPOSE_BY_W_ZWECK`` maps to
+#: ``"home"``, derived from it so the two can never disagree.
+HOME_W_ZWECK = frozenset(code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == "home")
+#: MiD ``W_SO1`` (start situation of the reporting day's first recorded leg) = 2: the day begins
+#: mid-trip and the first RECORDED leg only ARRIVES home, i.e. it precedes the observed window.
+LEADING_ARRIVE_HOME_W_SO1 = 2
+#: MiD ``W_RBW`` = 1: a "regelmaessiger beruflicher Weg" SUMMARY record, not an individually
+#: reported diary leg (see ``time_imputation``'s module docstring for the audited background).
+RBW_LEG_FLAG = 1
+
+
+def rbw_leg_mask(wege: pd.DataFrame, *, rbw_col: str = "W_RBW") -> pd.Series:
+    """Boolean mask of the rbW summary legs the trip build drops under ``exclude_rbw_legs``.
+
+    The ONE definition of "this leg is an rbW summary record", used both by
+    :func:`expand_persons_to_trips` (which drops them and counts the donors it empties) and by
+    :func:`legs_kept_by_the_trip_build` (which the SEED derivations and the reference-derivation
+    scripts use to reproduce the plan's leg universe). Raises ``KeyError`` naming the column when
+    it is absent, rather than reading a missing flag as "not rbW".
+    """
+    if rbw_col not in wege.columns:
+        raise KeyError(f"[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column '{rbw_col}'")
+    return wege[rbw_col] == RBW_LEG_FLAG
+
+
+def leading_arrive_home_leg_index(
+    wege: pd.DataFrame, *, household_col: str = "H_ID", person_col: str = "P_ID",
+    trip_col: str = "W_ID", so1_col: str = "W_SO1", zweck_col: str = "W_ZWECK",
+) -> pd.Index:
+    """Index labels of the leading "arrive home from elsewhere" legs the trip build drops.
+
+    A person's FIRST leg (by ``trip_col``) qualifies when it both arrives home
+    (``zweck_col`` in :data:`HOME_W_ZWECK`) and started elsewhere
+    (``so1_col`` == :data:`LEADING_ARRIVE_HOME_W_SO1`): such a leg is not the diary's actual
+    first trip but a leftover record from before the observed window. The ONE definition, shared
+    exactly like :func:`rbw_leg_mask`. Raises ``KeyError`` when ``so1_col`` is absent.
+    """
+    if so1_col not in wege.columns:
+        raise KeyError(
+            f"[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column '{so1_col}'")
+    ordered = wege.sort_values([household_col, person_col, trip_col])
+    first = ordered.groupby([household_col, person_col], sort=False).head(1)
+    return first.index[(first[so1_col] == LEADING_ARRIVE_HOME_W_SO1)
+                       & first[zweck_col].isin(HOME_W_ZWECK)]
+
+
+def legs_kept_by_the_trip_build(
+    wege: pd.DataFrame, *, exclude_rbw_legs: bool, drop_leading_arrive_home_leg: bool,
+    household_col: str = "H_ID", person_col: str = "P_ID", trip_col: str = "W_ID",
+) -> pd.DataFrame:
+    """``wege`` reduced to the legs the trip build actually turns into plan legs.
+
+    Applies :func:`rbw_leg_mask` and then :func:`leading_arrive_home_leg_index`, in the SAME
+    order :func:`expand_persons_to_trips` applies them (the second rule reads "the person's first
+    remaining leg", so the order is load-bearing). Every consumer that must reason about the
+    realised plan on the RAW Wege table -- the ``education_flag`` seed's passive-escort pairing
+    (``mid.participation``) and the committed-reference derivation
+    (``scripts/derive_escort_w_zweck_split.py``) -- goes through this function instead of
+    re-implementing the two rules, so a seed or a pinned reference cannot describe a different
+    day than the plan (issue #372 fix round 1, controller rulings C-R12 / IMPORTANT 3).
+
+    Does NOT log the emptied-donor counters :func:`expand_persons_to_trips` reports: those are
+    about the SYNTHETIC persons' plans and need a persons frame, which the seed/reference callers
+    do not have here. Returns a filtered view/copy; ``wege`` is not mutated.
+    """
+    out = wege
+    if exclude_rbw_legs:
+        out = out[~rbw_leg_mask(out)]
+    if drop_leading_arrive_home_leg:
+        out = out.drop(index=leading_arrive_home_leg_index(
+            out, household_col=household_col, person_col=person_col, trip_col=trip_col))
+    return out
+
+
 def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
                               w_zweck_10_as_leisure: bool) -> np.ndarray:
     """The passive escort legs' purposes, derived from their paired adults' ``W_ZWECK`` codes.
@@ -163,11 +238,20 @@ def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
     Returns:
         ``np.ndarray`` of purpose strings, one per input code, in input order.
 
-    A code outside the table falls back to :data:`DEFAULT_PURPOSE`, COUNTED and NAMED in a
-    warning (CLAUDE.md fallback transparency): every code the codeplan documents is mapped, so
-    an unknown code means a NEW MiD code that must be added explicitly.
+    A code outside the table -- including a MISSING one -- falls back to :data:`DEFAULT_PURPOSE`,
+    COUNTED and NAMED in a warning (CLAUDE.md fallback transparency): every code the codeplan
+    documents is mapped, so an unknown code means a NEW MiD code that must be added explicitly.
+
+    ``explicit_round_trip_purposes`` is deliberately NOT threaded in: it is True in production
+    and inert there, and its pre-#241 arm would send the ADULT's own leg for W_ZWECK 14/15/16
+    back to ``"other"`` while this table still gives the child ``"leisure"`` -- an asymmetry that
+    only matters on that A/B arm, where ``escort_passive_from_adult`` is not used. Thread it if
+    the two flags are ever combined.
     """
-    codes = pd.Series(np.asarray(adult_codes)).astype(int)
+    # to_numeric(errors="coerce"), NOT astype(int): a NaN adult code (an unpaired row slipping
+    # in, or a delivery with a blank W_ZWECK) would otherwise raise IntCastingNaNError instead of
+    # reaching the counted, named fallback this function's contract promises.
+    codes = pd.to_numeric(pd.Series(np.asarray(adult_codes)), errors="coerce")
     passive_rule = "education" if escort_passive_education else "escort"
     purpose = codes.map(PASSIVE_PURPOSE_BY_ADULT_W_ZWECK)
     purpose = purpose.where(codes != ADULT_ESCORT_W_ZWECK, passive_rule)
@@ -175,10 +259,17 @@ def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
                             LEISURE_PURPOSE if w_zweck_10_as_leisure else DEFAULT_PURPOSE)
     unknown = purpose.isna()
     if bool(unknown.any()):
+        # dropna() before sorting: a NaN code cannot be compared with an int, and it is reported
+        # by its own count rather than as a sortable "code".
+        # int(): to_numeric yields float64 as soon as one code is missing, and a codeplan code
+        # reported as "77.0" reads like a different value than the "77" the codeplan documents.
+        unknown_codes = sorted(int(code) for code in codes[unknown].dropna().unique())
+        n_missing = int(codes[unknown].isna().sum())
         logger.warning(
             "[popsim.trips] passive pairing: adult W_ZWECK code(s) %s are not in "
-            "PASSIVE_PURPOSE_BY_ADULT_W_ZWECK; %d legs fall back to %r",
-            sorted(codes[unknown].unique().tolist()), int(unknown.sum()), DEFAULT_PURPOSE)
+            "PASSIVE_PURPOSE_BY_ADULT_W_ZWECK (plus %d leg(s) with no adult code at all); "
+            "%d legs fall back to %r",
+            unknown_codes, n_missing, int(unknown.sum()), DEFAULT_PURPOSE)
     return purpose.fillna(DEFAULT_PURPOSE).to_numpy()
 
 
@@ -814,9 +905,10 @@ def expand_persons_to_trips(
 
     n_referenced = len(referenced_donors)
     if exclude_rbw_legs:
-        if "W_RBW" not in wege_in.columns:
-            raise KeyError("[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column 'W_RBW'")
-        is_rbw = wege_in["W_RBW"] == 1
+        # The rule itself lives in rbw_leg_mask (the ONE definition the seed derivations and the
+        # reference-derivation scripts also use); only the emptied-donor counters below are
+        # specific to this call site.
+        is_rbw = rbw_leg_mask(wege_in)
         n_referenced_before = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in[~is_rbw]
         n_emptied = n_referenced_before - _n_referenced_donors_with_legs(wege_in)
@@ -830,11 +922,11 @@ def expand_persons_to_trips(
                            "should have been remapped upstream (completed_donor) -- check the flags are "
                            "consistent", n_emptied)
     if drop_leading_arrive_home_leg:
-        if "W_SO1" not in wege_in.columns:
-            raise KeyError("[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column 'W_SO1'")
-        ordered = wege_in.sort_values([household_col, person_col, trip_col])
-        first = ordered.groupby([household_col, person_col], sort=False).head(1)
-        drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
+        # Same split as above: leading_arrive_home_leg_index owns the rule, this call site owns
+        # the counters. n_first is the population the drop RATE below is reported over.
+        drop_idx = leading_arrive_home_leg_index(
+            wege_in, household_col=household_col, person_col=person_col, trip_col=trip_col)
+        n_first = wege_in[[household_col, person_col]].drop_duplicates().shape[0]
         n_referenced_before_arrive_home = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in.drop(index=drop_idx)
         n_emptied_arrive_home = (
@@ -842,7 +934,7 @@ def expand_persons_to_trips(
         )
         logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege); "
                     "referenced donor persons emptied by the drop: %d/%d (%.2f%%)",
-                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1),
+                    len(drop_idx), 100.0 * len(drop_idx) / max(n_first, 1),
                     n_emptied_arrive_home, n_referenced,
                     100.0 * n_emptied_arrive_home / max(n_referenced, 1))
         if n_emptied_arrive_home:

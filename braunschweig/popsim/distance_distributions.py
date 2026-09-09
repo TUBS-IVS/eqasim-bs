@@ -633,6 +633,8 @@ def configure(context):
     # declared with the SHARED key/default constants for the same reason: a passive leg
     # the trip build sends to "shop" must contribute to the SHOP distance distribution,
     # not to the education one, or the sampler draws its distance from the wrong layer.
+    # Declared default False; the production true is added to configs/base_bs.yml by task 7
+    # (see config_keys for the one statement of both defaults).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
     context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
 

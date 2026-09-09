@@ -205,11 +205,12 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
     silently dropping that remainder would corrupt the total. Default False
     keeps the original W1 target byte-identical.
 
-    ``escort_passive_from_adult=True`` (issue #372, ADR-0112) narrows that fold:
+    ``escort_passive_from_adult=True`` (issue #372, ADR-0112) replaces that fold:
     the model then gives a PAIRED passive leg the accompanying adult's purpose,
-    so only the pinned
-    ``code_13_to_education_share_under_pairing`` fraction of the passive
-    remainder is education at all. Only meaningful together with
+    so the passive remainder is spread over the W1 purposes the pinned
+    ``code_13_to_<purpose>_share_under_pairing`` columns name (education AND
+    einkauf / freizeit / heimweg / sonstiges), mass-preservingly, instead of all
+    landing on ausbildung. Only meaningful together with
     ``escort_passive_education=True`` (without it the model has no
     passive-to-education fold to narrow); raises ``ValueError`` otherwise rather
     than silently ignoring the flag. Default False keeps the issue-#256
@@ -239,56 +240,72 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
                 f"{scored_purposes!r}.")
         shares = dict(raw)
         active_share = load_escort_active_share(data_path)
-        passive_education_share = (
-            load_passive_education_share(data_path) if escort_passive_from_adult else 1.0)
+        passive_purpose_fold = (
+            load_passive_purpose_fold(data_path) if escort_passive_from_adult else None)
         shares = apply_escort_active_adjustment(
-            shares, active_share, passive_education_share=passive_education_share)
+            shares, active_share, passive_purpose_fold=passive_purpose_fold)
         raw = {p: shares[p] for p in scored_purposes}
         LOGGER.info(
             "Trip coherence W1 target adjusted for escort_passive_education "
             "(issue #256): begleitung scaled to active share %.4f (pinned MiD "
-            "escort W_ZWECK split); %.4f of the passive remainder folded into "
-            "ausbildung (escort_passive_from_adult=%s, issue #372)",
-            active_share, passive_education_share, escort_passive_from_adult)
+            "escort W_ZWECK split); the passive remainder was moved to %s "
+            "(escort_passive_from_adult=%s, issue #372)",
+            active_share,
+            passive_purpose_fold if passive_purpose_fold is not None else {"ausbildung": 1.0},
+            escort_passive_from_adult)
     return renormalize_scored(raw, scored_purposes=scored_purposes)
 
 
 def apply_escort_active_adjustment(shares: dict, active_share: float, *,
-                                   passive_education_share: float = 1.0) -> dict:
+                                   passive_purpose_fold: dict | None = None) -> dict:
     """W1 shares adjusted for escort_passive_education (issue #256): the model's
     escort purpose is ACTIVE-only, while published W1 Begleitung contains both
     sides (MiD folds W_ZWECK 13 into Begleitung). Scale begleitung to the active
     share and fold the passive remainder into ausbildung (the passive legs ARE
     education trips in the model). Returns a fresh dict.
 
-    ``passive_education_share`` (issue #372, ADR-0112) is the fraction of the passive
-    remainder the model still realises as education once
-    ``escort_passive_from_adult`` gives a PAIRED passive leg the accompanying
-    adult's purpose; the pinned value is
-    ``mid2023_escort_w_zweck_split.csv``'s ``code_13_to_education_share_under_pairing``.
-    The default 1.0 is the issue-#256 behaviour (every passive leg is education) and is
-    mass-preserving.
+    ``passive_purpose_fold`` (issue #372, ADR-0112) says WHERE the passive remainder goes
+    once ``escort_passive_from_adult`` gives a PAIRED passive leg the accompanying adult's
+    purpose: a mapping ``{MiD W1 purpose -> share of the remainder}`` whose values must sum
+    to 1. The pinned fold is the ``code_13_to_<purpose>_share_under_pairing`` column family
+    of ``mid2023_escort_w_zweck_split.csv``, translated to W1 names by
+    :func:`load_passive_purpose_fold`. ``None`` (the default) means the issue-#256 behaviour,
+    ``{"ausbildung": 1.0}``.
 
-    ASSUMPTION for a value BELOW 1.0: the rest of the passive remainder is NOT
-    re-assigned to a specific W1 purpose here, so it leaves the adjusted shares and
-    ``renormalize_scored`` spreads it proportionally over the scored purposes. The
-    model actually sends those legs to shop / home / leisure / other (home is not a
-    scored W1 purpose at all), and the pinned split table resolves only the education
-    fraction, not the full destination distribution -- allocating the remainder to
-    einkauf / freizeit by any other rule would be an invented reference value, which
-    CLAUDE.md forbids. The magnitude is bounded by
-    ``W1_begleitung * (1 - active_share) * (1 - passive_education_share)``.
+    Mass-preserving in every case, which is the point (fix round 1, ruling C-R11): an
+    earlier version folded only the education fraction into ``ausbildung`` and let the rest
+    fall out of the target entirely, so ``renormalize_scored`` spread it proportionally over
+    ALL scored purposes -- biasing ``arbeit`` upward and starving exactly the two purposes
+    (``einkauf``, ``freizeit``) the model actually sends those legs to. Destinations W1 does
+    not score (``heimweg`` for the child riding home with the adult, ``sonstiges``) are
+    placed on their own keys here and then dropped by the caller's restriction to
+    ``scored_purposes`` -- the same treatment the W1 row's own heimweg/sonstiges mass gets,
+    and the same treatment the REALISED side gives those trips
+    (:func:`purpose_distribution` excludes home destinations before renormalising).
+
+    Residual bias, stated rather than hidden: the fold is measured on the MiD donor legs,
+    so it describes the donors' passive-escort destinations, not the synthetic population's
+    (which differ wherever the synthesis re-weights households). Its direction is therefore
+    the direction of that re-weighting and is not signed a priori; its magnitude is bounded
+    by ``W1_begleitung * (1 - active_share)``, i.e. by the passive share of Begleitung.
     """
     if not 0.0 < active_share <= 1.0:
         raise ValueError(f"active_share must be in (0, 1], got {active_share}.")
-    if not 0.0 <= passive_education_share <= 1.0:
+    fold = {"ausbildung": 1.0} if passive_purpose_fold is None else dict(passive_purpose_fold)
+    if any(share < 0.0 for share in fold.values()):
+        raise ValueError(f"passive_purpose_fold shares must be >= 0, got {fold}.")
+    total = sum(fold.values())
+    if abs(total - 1.0) > 1e-6:
+        # A fold that does not sum to 1 would silently create or destroy W1 mass -- the very
+        # defect this parameter replaced (CLAUDE.md: no silent fallbacks).
         raise ValueError(
-            f"passive_education_share must be in [0, 1], got {passive_education_share}.")
+            f"passive_purpose_fold must sum to 1 over its destinations, got {total} for {fold}.")
     out = dict(shares)
     begleitung = out.get("begleitung", 0.0)
     out["begleitung"] = begleitung * active_share
-    out["ausbildung"] = (out.get("ausbildung", 0.0)
-                         + begleitung * (1.0 - active_share) * passive_education_share)
+    remainder = begleitung * (1.0 - active_share)
+    for purpose, share in fold.items():
+        out[purpose] = out.get(purpose, 0.0) + remainder * share
     return out
 
 
@@ -317,6 +334,50 @@ def load_escort_active_share(data_path: str) -> float:
     ``_load_escort_split_table``)."""
     table = _load_escort_split_table(data_path)
     return float(table.loc["code_6", "share_weighted"])
+
+
+def load_passive_purpose_fold(data_path: str) -> dict:
+    """The passive escort legs' purpose fold, in MiD W1 names, from the pinned split CSV.
+
+    Reads every ``code_13_to_<eqasim purpose>_share_under_pairing`` column of the ``code_13``
+    row (issue #372, ADR-0112, fix round 1) and translates the eqasim purpose to its W1 name
+    through :data:`EQASIM_TO_MID_PURPOSE`, so ``shop`` becomes ``einkauf`` and ``home``
+    becomes ``heimweg``. The result is what :func:`apply_escort_active_adjustment` moves the
+    passive Begleitung remainder onto.
+
+    Raises ``KeyError`` naming the derivation script when the pinned CSV carries no fold
+    columns (an older committed table), and ``ValueError`` when the fold does not sum to 1 --
+    never a substituted default, which would silently restore the un-narrowed issue-#256
+    reference while the report claimed the pairing was accounted for.
+    """
+    table = _load_escort_split_table(data_path)
+    prefix, suffix = "code_13_to_", "_share_under_pairing"
+    fold = {}
+    for column in table.columns:
+        if not (column.startswith(prefix) and column.endswith(suffix)):
+            continue
+        eqasim_purpose = column[len(prefix):-len(suffix)]
+        if eqasim_purpose not in EQASIM_TO_MID_PURPOSE:
+            raise KeyError(
+                f"Pinned escort W_ZWECK split CSV has a fold column {column!r} for the unknown "
+                f"eqasim purpose {eqasim_purpose!r}; EQASIM_TO_MID_PURPOSE must be extended "
+                "before the reference can be used.")
+        value = float(table.loc["code_13", column])
+        fold[EQASIM_TO_MID_PURPOSE[eqasim_purpose]] = fold.get(
+            EQASIM_TO_MID_PURPOSE[eqasim_purpose], 0.0) + value
+    if not fold:
+        raise KeyError(
+            "Pinned escort W_ZWECK split CSV has no code_13_to_<purpose>_share_under_pairing "
+            "columns; regenerate it with scripts/derive_escort_w_zweck_split.py (issue #372), "
+            "do not edit it by hand.")
+    total = sum(fold.values())
+    if abs(total - 1.0) > 1e-3:
+        raise ValueError(
+            f"The pinned passive purpose fold sums to {total}, not 1; regenerate "
+            "mid2023_escort_w_zweck_split.csv with scripts/derive_escort_w_zweck_split.py.")
+    # Renormalise the 4-decimal rounding of the committed table away, so the caller's own
+    # exact sum-to-1 guard cannot trip on a rounding artefact.
+    return {purpose: share / total for purpose, share in fold.items()}
 
 
 def load_passive_education_share(data_path: str) -> float:

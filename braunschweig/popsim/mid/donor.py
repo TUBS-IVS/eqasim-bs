@@ -127,6 +127,11 @@ MID_WEGE_REQUIRED_COLS = (
     # the audited rbW background) and W_SO1 (first-trip start location code) feed
     # diary_facts.compute_diary_facts; both exist in the MiD 2023 B1 Wege file.
     "W_RBW", "W_SO1",
+    # HP_ALTER (the household member's age, repeated on every leg) decides who counts as the
+    # accompanying ADULT in the passive-escort pairing (escort_pairing.REQUIRED_COLUMNS, issue
+    # #372). Required rather than optional so a delivery without it fails at LOAD time with a
+    # message naming the column, instead of deep inside map_purpose after the balancing.
+    "HP_ALTER",
 )
 
 
