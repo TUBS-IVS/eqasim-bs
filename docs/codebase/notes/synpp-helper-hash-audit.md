@@ -20,6 +20,19 @@
 > stages, and — the substantive change — the number of stages whose `validate()`
 > hashes Python source at all rose from **5 to 16**.
 >
+> **One gap the re-audit found was fixed in the same change:**
+> `braunschweig.popsim.trips_stage` imported `ROUTED_DETOUR_FACTOR` from
+> `braunschweig.constants` at module level without hashing it, so editing the detour
+> factor left a warm cache serving trips built with the old value. That module is now in
+> its `_HELPER_MODULES`, pinned by
+> `test_trips_stage_token_covers_the_project_detour_constant`, and the stage is back in
+> category (b). It was fixed rather than only inventoried because this branch had already
+> devalidated that stage for other reasons, so closing it cost no additional cache. The
+> identical `braunschweig.constants` gap in
+> `braunschweig.synthesis.commute_day.state_stage` is DELIBERATELY still open for exactly
+> that reason: fixing it would devalidate a stage whose cache is currently warm. That is a
+> cache decision, not a judgement that the gap is harmless.
+>
 > **The live authority is the gate, not this file.**
 > `tests/test_synpp_helper_hash_invariant.py` enforces the narrower
 > **own-package-siblings-only** slice (a stage's helper submodules living in its
@@ -161,11 +174,12 @@ files were scanned in total across the five roots; 240 of them define both
 `braunschweig` 84 — the ten new stages are all under `braunschweig`.)
 
 Category totals from the re-run: **(a) 144** stages with no first-party helper,
-**(b) 7** with helpers and complete coverage, **(c) 89** with helpers and no or
+**(b) 8** with helpers and complete coverage, **(c) 88** with helpers and no or
 incomplete coverage. The 2026-08-14 figures were 143 / 2 / 86; category (b)
 grew because the `braunschweig.synthesis.commute_day` family and
 `braunschweig.analysis.cordon_validation` added source-hashing `validate()`
-hooks that cover their whole required set.
+hooks that cover their whole required set, and because `trips_stage`'s
+`braunschweig.constants` gap was closed (see the banner).
 
 ## Category (a) — no first-party helpers (143 stages)
 
@@ -183,11 +197,12 @@ since by definition there is nothing left uncovered:
 - **matsim** (11): `matsim.output`, `matsim.runtime.eqasim`, `matsim.runtime.git`, `matsim.runtime.java`, `matsim.runtime.maven`, `matsim.runtime.pt2matsim`, `matsim.scenario.supply.gtfs`, `matsim.scenario.supply.osm`, `matsim.scenario.supply.processed`, `matsim.simulation.prepare` *(vendored `matsim.simulation.prepare`; the BS override `braunschweig.matsim.simulation.prepare` is a separate stage, listed under category (c)/(d) below)*, `matsim.simulation.run`
 - **synthesis** (22): `synthesis.locations.education`, `synthesis.locations.home.addresses`, `synthesis.locations.home.locations`, `synthesis.locations.home.output`, `synthesis.locations.secondary`, `synthesis.locations.work`, `synthesis.output`, `synthesis.population.activities`, `synthesis.population.income.selected`, `synthesis.population.projection.ipu`, `synthesis.population.projection.reweighted`, `synthesis.population.sampled`, `synthesis.population.spatial.commute_distance`, `synthesis.population.spatial.home.zones`, `synthesis.population.spatial.locations`, `synthesis.population.spatial.primary.locations`, `synthesis.population.spatial.secondary.distance_distributions`, `synthesis.population.trips`, `synthesis.vehicles.cars.default`, `synthesis.vehicles.cars.fleet_sampling`, `synthesis.vehicles.passengers.default`, `synthesis.vehicles.vehicles`
 
-## Category (b) — has helpers, fully covered (7 stages, 2026-09-09)
+## Category (b) — has helpers, fully covered (8 stages, 2026-09-09)
 
 | Stage | Path | Required helpers | Covered | Uncovered |
 |---|---|---|---|---|
 | `braunschweig.popsim.stage` | `braunschweig/popsim/stage/__init__.py` | 45 | 54 | none |
+| `braunschweig.popsim.trips_stage` | `braunschweig/popsim/trips_stage.py` | 7 | 17 | none |
 | `braunschweig.gravity.model` | `braunschweig/gravity/model.py` | 9 | 9 | none |
 | `braunschweig.analysis.cordon_validation` | `braunschweig/analysis/cordon_validation.py` | 3 | 3 | none |
 | `braunschweig.synthesis.commute_day.activities_day_stage` | `.../commute_day/activities_day_stage.py` | 1 | 1 | none |
@@ -195,10 +210,11 @@ since by definition there is nothing left uncovered:
 | `braunschweig.synthesis.commute_day.spatial_locations_day` | `.../commute_day/spatial_locations_day.py` | 2 | 2 | none |
 | `braunschweig.synthesis.commute_day.trips_day_stage` | `.../commute_day/trips_day_stage.py` | 1 | 1 | none |
 
-`braunschweig.popsim.trips_stage` has LEFT this category: it now requires 7 helpers
-(it was 4) and covers 16, but `braunschweig.constants` — which carries
-`ROUTED_DETOUR_FACTOR`, a value the trip table depends on — is imported and not
-hashed. It is listed under (c) below.
+`braunschweig.popsim.trips_stage` nearly left this category: it now requires 7
+helpers (it was 4), and `braunschweig.constants` -- which carries
+`ROUTED_DETOUR_FACTOR`, a value the trip table depends on -- was imported and not
+hashed. That gap was closed in the same change as this re-audit, so it stays in
+(b) with 7 required and 17 covered.
 
 ### The sixteen source-hashing stages and their mechanical coverage
 
@@ -218,10 +234,10 @@ inventories rather than fixes.
 | `braunschweig.synthesis.commute_day.output_day` | 2 | 2 | none |
 | `braunschweig.synthesis.commute_day.spatial_locations_day` | 2 | 2 | none |
 | `braunschweig.synthesis.commute_day.trips_day_stage` | 1 | 1 | none |
-| `braunschweig.popsim.trips_stage` | 7 | 16 | `braunschweig.constants` |
+| `braunschweig.popsim.trips_stage` | 7 | 17 | none (`braunschweig.constants` closed by this change) |
 | `braunschweig.popsim.completed_donor` | 7 | 7 | `braunschweig.popsim.mid`, `braunschweig.popsim.stage` (both parent packages reached for names; the leaf `stage.config_keys` and `mid.donor` ARE covered) |
 | `braunschweig.synthesis.commute_day.home_office_donors_stage` | 10 | 8 | `braunschweig.popsim.mid.csv_format`, `braunschweig.popsim.mid.donor` |
-| `braunschweig.synthesis.commute_day.state_stage` | 5 | 2 | `braunschweig.calibration.commute_day_state_reference`, `braunschweig.constants`, `braunschweig.popsim.chain_matching` |
+| `braunschweig.synthesis.commute_day.state_stage` | 5 | 2 | `braunschweig.calibration.commute_day_state_reference`, `braunschweig.constants`, `braunschweig.popsim.chain_matching` -- the `constants` entry is the SAME defect closed in `trips_stage`, left open only because this stage's cache is warm |
 | `braunschweig.analysis.synthesis.plan_structure_vs_srv` | 5 | 3 | `braunschweig.calibration.srv_distance_targets`, `braunschweig.provenance` |
 | `braunschweig.analysis.synthesis.work_participation_by_kreis` | 6 | 1 | `braunschweig.analysis.spatial`, `braunschweig.calibration.commute_day_state_reference`, `braunschweig.calibration.srv_distance_targets`, `braunschweig.calibration.srv_work_participation`, `braunschweig.provenance` |
 | `braunschweig.synthesis.locations.secondary_candidates` | 2 | 0 | `braunschweig.synthesis.locations.landuse_candidates`, `braunschweig.synthesis.locations.secondary_chainsolvers` |
@@ -267,10 +283,11 @@ rather than invented as a fifth category.
 > the re-run. Regenerate the names with
 > `python scripts/audit_synpp_helper_hash.py . --json <out.json>` and read the
 > `required_helpers` / `uncovered` fields, rather than trusting a name below to still
-> be in this category. Two known movements since 2026-08-14:
-> `braunschweig.gravity.model` LEFT for category (b) (issue #289), and
-> `braunschweig.popsim.trips_stage` JOINED (its new `braunschweig.constants` import is
-> outside its token).
+> be in this category. One known movement since 2026-08-14:
+> `braunschweig.gravity.model` LEFT for category (b) (issue #289).
+> `braunschweig.popsim.trips_stage` would have JOINED -- its `braunschweig.constants`
+> import sat outside its token -- but that gap was closed in the same change as this
+> re-audit, so it remains in (b).
 
 37 of these are reachable in the resolved production config (see
 "Prioritisation"); those are listed first, sorted by name. The remaining 49

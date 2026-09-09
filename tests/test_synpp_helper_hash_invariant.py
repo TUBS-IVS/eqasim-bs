@@ -784,3 +784,41 @@ def test_trips_stage_declares_a_validate_token_over_its_helpers():
         assert required in names, required
     token = trips_stage.validate(None)
     assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+
+
+def test_trips_stage_token_covers_the_project_detour_constant(monkeypatch):
+    """``braunschweig.constants`` must feed trips_stage's token.
+
+    The stage imports ``ROUTED_DETOUR_FACTOR`` from it at module level and converts every
+    routed MiD trip length to a straight-line distance with it, so the constant's value is
+    part of the trip table. It was in NEITHER helper tuple, which is the same hazard this
+    module's other tests exist for and exactly what the #327 helper-hash re-audit surfaced:
+    change the detour factor and a warm cache serves trips built with the old one.
+
+    The monkeypatch is what makes this a coverage test rather than a spelling test: it
+    replaces the module's SOURCE as ``validate()`` reads it, so the token must move. A test
+    that only asserted the name appears in a tuple would still pass if the tuple were read
+    but never digested.
+    """
+    import inspect as inspect_module
+
+    import braunschweig.constants as constants_module
+    import braunschweig.popsim.trips_stage as trips_stage
+
+    names = ({m.__name__ for m in trips_stage._HELPER_MODULES}
+             | set(trips_stage._DEFERRED_HELPER_MODULE_NAMES))
+    assert "braunschweig.constants" in names
+
+    before = trips_stage.validate(None)
+    real_getsource = inspect_module.getsource
+
+    def _patched_getsource(obj):
+        if obj is constants_module:
+            return real_getsource(obj) + "\n# token discrimination probe\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(trips_stage.inspect, "getsource", _patched_getsource)
+    after = trips_stage.validate(None)
+    assert after != before, (
+        "editing braunschweig.constants left trips_stage's token unchanged, so a warm "
+        "cache would serve trips built with the previous ROUTED_DETOUR_FACTOR")

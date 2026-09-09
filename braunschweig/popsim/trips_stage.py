@@ -27,6 +27,7 @@ import pandas as pd
 from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import plan_validation as _plan_validation
+from braunschweig import constants as _constants
 from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
 from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
@@ -52,11 +53,19 @@ logger = logging.getLogger(__name__)
 # and therefore which diaries this stage builds trips from, so a change there changes
 # this stage's input semantics; over-hashing only costs a cache rebuild, while
 # under-hashing silently serves stale trips (the 2026-08-19 hazard above).
+# braunschweig.constants carries ROUTED_DETOUR_FACTOR, with which this stage converts every
+# routed MiD trip length to the straight-line distance it writes -- so the constant's VALUE
+# is part of the trip table, and an edit to it must rebuild these trips. It sits in
+# _HELPER_MODULES rather than the deferred names below because the import site decides the
+# tuple (module level -> module object) and this one is module level, at the top of this
+# file. Found by the #327 helper-hash re-audit: it was in neither tuple, so changing the
+# detour factor would have left a warm cache serving trips built with the old one.
 _HELPER_MODULES = (
     popsim_trips,
     _plan_validation,
     _closure_dwell,
     _diary_facts,
+    _constants,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
