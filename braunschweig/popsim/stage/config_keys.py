@@ -83,6 +83,12 @@ KEY_IMPORTANCE_PROFILE = "braunschweig.population.popsim.importance_profile"
 # trip-modelling concern, irrelevant to the population's employment/education/HH
 # composition; "off" enlarges the donor pool (reduces IPU weight concentration).
 KEY_SEED_DAY_FILTER = "braunschweig.population.popsim.seed_day_filter"
+# The value braunschweig.popsim.completed_donor declares this key with. Named here rather
+# than typed as a literal at the declaration site for the reason the whole DEFAULT_* half of
+# this module exists: completed_donor hashes THIS module in its
+# _DEFERRED_HELPER_MODULE_NAMES, so a changed declared default devalidates the cached donor
+# instead of serving one built under the old option surface.
+DEFAULT_SEED_DAY_FILTER = "default"
 # Spatial income tilt (Nettokaltmiete GAMMA layer): default ON per project rule.
 # When ON, applies a within-Kreis income redistribution scaled by the per-cell
 # net cold rent index (renters) or Eigentümerquote index (owners), preserving the
@@ -190,6 +196,9 @@ KEY_EBIKE_SEED_COLUMN = "braunschweig.population.popsim.ebike_seed_column"
 # (project rule: new features default on).  When OFF, the donor build is
 # byte-identical to today (weekday (1,2,3) filter only, no remap).
 KEY_WEEKEND_PLAN_MATCH = "braunschweig.population.popsim.weekend_plan_match"
+# ON per the project rule for new features; see DEFAULT_SEED_DAY_FILTER for why the value
+# is named here instead of typed at completed_donor's declaration site.
+DEFAULT_WEEKEND_PLAN_MATCH = True
 
 # Diary plan match (issue #365, plan-structure-fix Task 3): when a synthetic
 # person's plan source has no realisable MiD diary (no-diary code 803

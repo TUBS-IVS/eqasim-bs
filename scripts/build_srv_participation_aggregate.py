@@ -47,6 +47,18 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
 
+# Raw SrV CSVs are semicolon-separated, decimal-comma, cp1252-encoded -- the SAME read
+# options the newer SrV extractors declare (scripts/extract_srv_kreis_tables.py,
+# scripts/extract_srv_participation_universe.py), stated once here instead of repeated at
+# each read_csv call. This script read them as latin-1 until the #368 review noticed the
+# divergence. The two encodings differ only in bytes 0x80-0x9F, which in these files occur
+# ONLY in the free-text V_OEV_FK_SONST_VRB / E_OEV_FK_SONST ticket fields ("9 EUR Ticket":
+# 0x80 = euro sign, 0x96 = en dash) that this aggregate does not read -- so the correction
+# is behaviour-neutral here, verified by an A/B run whose output was byte-identical to the
+# committed srv2023_participation_by_kreis.csv. cp1252 is nonetheless the right reading:
+# under latin-1 those two bytes decode to C1 control characters.
+CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_srv_participation_aggregate")
 
@@ -159,9 +171,7 @@ def load_kreis_by_hhnr(households_path: Path) -> pd.Series:
         Kreis (5-digit ARS str) indexed by HHNR.
     """
     households = pd.read_csv(
-        households_path, sep=";", decimal=",", encoding="latin-1", low_memory=False,
-        usecols=["HHNR", "AGS"],
-    )
+        households_path, usecols=["HHNR", "AGS"], **CSV_READ_KWARGS)
     households["kreis"] = households["AGS"].astype(str).str.zfill(8).str[:5]
     return households.set_index("HHNR")["kreis"]
 
@@ -205,9 +215,7 @@ def main(argv=None) -> int:
     log.info("derived Kreis for %d households", len(kreis_by_hhnr))
 
     log.info("reading %s", personen_path)
-    persons = pd.read_csv(
-        personen_path, sep=";", decimal=",", encoding="latin-1", low_memory=False
-    )
+    persons = pd.read_csv(personen_path, **CSV_READ_KWARGS)
     log.info("read %d persons", len(persons))
 
     # Attach the Kreis (real 5-digit ARS, derived from the household AGS) via
@@ -223,7 +231,7 @@ def main(argv=None) -> int:
         )
 
     log.info("reading %s", wege_path)
-    wege = pd.read_csv(wege_path, sep=";", decimal=",", encoding="latin-1", low_memory=False)
+    wege = pd.read_csv(wege_path, **CSV_READ_KWARGS)
     log.info("read %d trips", len(wege))
 
     # Filter to average weekday

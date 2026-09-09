@@ -88,9 +88,9 @@ limitations: |
   Weight: GEWICHT_P_ZENSUS (person expansion to Zensus 2022 counts; the stratum-internal
   GEWICHT_P must not be used across strata, ADR-0055). Kreis: first 5 digits of the zero-padded
   8-digit household AGS joined via HHNR - never the survey design stratum ST_CODE.
-  Kreis-code-to-name mapping (canonical: braunschweig.analysis.spatial.ZGB8): 03101
-  Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154
-  Helmstedt, 03157 Peine, 03158 Wolfenbuettel.
+  Kreis-code-to-name mapping: braunschweig.analysis.spatial.ZGB8 (the single home; the
+  pairs are deliberately not repeated here). Row/column convention:
+  docs/codebase/notes/srv-kreis-table-conventions.md.
 
   Wolfsburg (03103) is NOT surveyed by SrV and has no row (the convention of
   srv2023_participation_by_kreis.csv, whose consumer scripts/build_participation_target.py fills

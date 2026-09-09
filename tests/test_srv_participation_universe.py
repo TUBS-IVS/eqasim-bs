@@ -99,14 +99,21 @@ def test_universe_raises_on_an_unexpected_negative_trip_count():
         spu.prepare_universe_persons(persons, households)
 
 
-def test_universe_raises_on_a_non_numeric_trip_count():
+@pytest.mark.parametrize("non_numeric", ["not stated", "n/a", "", "  "])
+def test_universe_raises_on_a_non_numeric_trip_count(non_numeric):
     """Controller ruling R16: a non-numeric E_ANZ_WEGE coerces to NaN, which passes both
     'NaN < 0' and 'NaN == -7' as False -- the person would stay in the universe with an unknown
     reporting-day state and appear in NO exclusion class. It must raise, not slip through.
+
+    Parametrised over several shapes of "not a number" -- a word, an abbreviation, an empty
+    cell and a whitespace-only cell -- because the guard must key on the COERCION result,
+    not on any particular text. The raw SrV file spells this state as a German label, which
+    is deliberately not the test value: a guard that matched the label rather than the NaN
+    would pass with that one string and let every other non-numeric cell through.
     """
     persons, wege, households = _raw()
     persons["E_ANZ_WEGE"] = persons["E_ANZ_WEGE"].astype(object)
-    persons.loc[2, "E_ANZ_WEGE"] = "keine Angabe"
+    persons.loc[2, "E_ANZ_WEGE"] = non_numeric
     with pytest.raises(ValueError, match="non-numeric E_ANZ_WEGE"):
         spu.prepare_universe_persons(persons, households)
 

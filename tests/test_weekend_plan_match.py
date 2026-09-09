@@ -1,4 +1,6 @@
 # tests/test_weekend_plan_match.py
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -618,9 +620,15 @@ def test_match_person_never_relaxes_a_hard_key():
     assert h_soft == 50
 
 
-def test_match_person_falls_back_to_the_whole_pool_when_no_donor_shares_the_hard_key():
+def test_match_person_falls_back_to_the_whole_pool_when_no_donor_shares_the_hard_key(caplog):
     """No donor of the target's employment class -> the whole-pool fallback still
-    returns a donor (never raises); the CALLER counts the crossing."""
+    returns a donor (never raises); the CALLER counts the crossing.
+
+    The fallback's own log line is asserted here because this branch is the ONLY origin of
+    a hard-key boundary crossing: it is what makes a crossing visible in a run log at all
+    (project rule: no silent fallbacks). The line must name the hard key(s) that could not
+    be honoured, otherwise a crossing in a 100 % run cannot be attributed to a key.
+    """
     weekday = pd.DataFrame({
         "H_ID": [50, 51], "P_ID": [1, 1],
         "HP_ALTER": [40, 41], "HP_SEX": [1, 1],
@@ -630,10 +638,56 @@ def test_match_person_falls_back_to_the_whole_pool_when_no_donor_shares_the_hard
     target = pd.Series({
         "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
     })
-    h, p, level = wpm.match_person(
-        target, weekday, rng=np.random.RandomState(0), hard_keys=frozenset({"employed"}))
+    with caplog.at_level(logging.DEBUG, logger="braunschweig.popsim.weekend_plan_match"):
+        h, p, level = wpm.match_person(
+            target, weekday, rng=np.random.RandomState(0),
+            hard_keys=frozenset({"employed"}))
     assert (h, p) in {(50, 1), (51, 1)}
     assert level == len(wpm.PERSON_KEYS_BY_PRIORITY) - 1
+
+    fallback_lines = [r.getMessage() for r in caplog.records
+                      if "whole-pool size-only fallback" in r.getMessage()]
+    assert len(fallback_lines) == 1, caplog.text
+    # The hard key that could not be honoured is named, and so is the donor drawn.
+    assert "no donor shares the hard key(s) ['employed']" in fallback_lines[0]
+    assert f"drew weekday ({h}, {p})" in fallback_lines[0]
+
+
+def test_the_whole_pool_fallback_line_is_a_hard_key_only_event(caplog):
+    """Discrimination for the assertion above: WITHOUT hard keys the line never appears.
+
+    A target that mismatches every one of the five soft keys still does NOT reach the
+    fallback: once the ladder has dropped them all, the mask is the unrestricted pool, so
+    the ordinary branch returns a donor at the maximum relaxation level. The fallback is
+    therefore reachable only when a HARD key excludes every donor -- which is what makes
+    the line above a reliable count of boundary crossings, and what the assertion above
+    would not prove on its own if the line were emitted on every fully relaxed match.
+    """
+    weekday = pd.DataFrame({
+        "H_ID": [50], "P_ID": [1], "HP_ALTER": [40], "HP_SEX": [2],
+        "P_FSCHEIN": [2], "P_TAET": [11], "P_FKARTE": [2], "P_GEW": [1.0],
+    })
+    target = pd.Series({
+        "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
+    })
+    # Guard the guard: the HIGHEST-priority key must mismatch. The ladder drops keys from
+    # the lowest priority upward, so a mismatch on the key that is dropped LAST forces
+    # every rung to fail and ``active`` to empty completely -- without that, "no fallback
+    # line" would hold for the trivial reason that an earlier rung already matched.
+    donor_keys = wpm._person_keys(weekday).iloc[0]
+    target_keys = wpm._person_keys(pd.DataFrame([target])).iloc[0]
+    top_priority_key = wpm.PERSON_KEYS_BY_PRIORITY[0]
+    assert donor_keys[top_priority_key] != target_keys[top_priority_key]
+
+    with caplog.at_level(logging.DEBUG, logger="braunschweig.popsim.weekend_plan_match"):
+        h, p, level = wpm.match_person(target, weekday, rng=np.random.RandomState(0))
+
+    assert (h, p) == (50, 1)
+    # Maximum relaxation: every soft key was dropped, i.e. the ladder DID run to the
+    # bottom rung and still returned through the ordinary branch.
+    assert level == len(wpm.PERSON_KEYS_BY_PRIORITY)
+    assert not [r for r in caplog.records
+                if "whole-pool size-only fallback" in r.getMessage()], caplog.text
 
 
 def test_match_person_rejects_an_unknown_hard_key():
@@ -646,9 +700,15 @@ def test_match_person_rejects_an_unknown_hard_key():
     target = pd.Series({
         "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
     })
-    with pytest.raises(ValueError, match="employment"):
+    # Match the GUARD's own wording, not the echoed typo: "employment" appears in the
+    # message only because the bad key is echoed back, so matching on it would also pass
+    # if some unrelated ValueError mentioning the word were raised instead of this guard.
+    with pytest.raises(ValueError, match="unknown hard match key") as excinfo:
         wpm.match_person(target, weekday, rng=np.random.RandomState(0),
                          hard_keys=frozenset({"employment"}))
+    # The offending key AND the valid set are both named, so the message is actionable.
+    assert "employment" in str(excinfo.value)
+    assert str(list(wpm.PERSON_KEYS_BY_PRIORITY)) in str(excinfo.value)
 
 
 def test_hard_keys_do_not_change_the_number_of_rng_draws():
@@ -673,5 +733,10 @@ def test_hard_keys_do_not_change_the_number_of_rng_draws():
     assert soft_state[0] == hard_state[0]
     assert (soft_state[1] == hard_state[1]).all()
     assert soft_state[2:] == hard_state[2:]
-    # ...and the guard is not a no-op on this fixture: it moves most of the donors.
-    assert sum(1 for s, h in zip(soft, hard) if s[:2] != h[:2]) > 0
+    # ...and the guard is not a no-op on this fixture: it moves most of the donors. The
+    # measured figure on this fixture is 28 of 50; the floor is deliberately well below
+    # that (fixture edits may move it) but far enough above zero that the "different
+    # selection" half of this test keeps its meaning -- a bare "> 0" would still pass if a
+    # regression reduced the guard's effect to a single donor.
+    n_moved = sum(1 for s, h in zip(soft, hard) if s[:2] != h[:2])
+    assert n_moved >= 10, f"the hard key moved only {n_moved} of {len(targets)} donors"

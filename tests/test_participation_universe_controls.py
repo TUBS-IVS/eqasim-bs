@@ -763,3 +763,121 @@ def test_age_range_denominator_raises_on_a_partially_covered_band():
     message = str(excinfo.value)
     assert "6, 7, 8, 9" in message
     assert "8 of the 24" in message
+
+
+# --- The per-Kreis denominator cache is keyed on the EFFECTIVE band (#368 minor T1-3) ---
+
+
+def test_age_band_by_entry_name_reads_the_bands_off_age_universe_entries(monkeypatch):
+    """The band map the stage keys its denominator cache on comes from
+    ``age_universe_entries``, never from a second reading of the entries' raw fields.
+
+    ``age_universe_entries`` is the single home of the "which entries have an age universe,
+    and over which years" rule that ``universe_age_census_columns`` (the parquet load set)
+    also reads. Deriving the denominator band a second time is exactly how the load set and
+    the denominator drifted apart before this package's critical fix, so this test pins the
+    map to that one predicate: a monkeypatched predicate must move the map with it.
+    """
+    from braunschweig.popsim.stage import controls_builder
+
+    entry = _entry(6, 17)
+    assert controls_builder.age_band_by_entry_name((entry,)) == {"edu_test": (6, 17)}
+
+    # Shift the predicate's answer: a map that re-read entry.min_age / entry.max_age
+    # itself would still report (6, 17) here.
+    monkeypatch.setattr(controls_builder, "age_universe_entries",
+                        lambda entries, **kwargs: ((entry, 3, 4),))
+    assert controls_builder.age_band_by_entry_name((entry,)) == {"edu_test": (3, 4)}
+
+
+def test_coinciding_universes_share_one_denominator_band():
+    """Two entries describing the SAME universe must map to ONE band, so the stage computes
+    that per-Kreis total once instead of once per entry.
+
+    An omitted ``min_age`` means "from age 0" -- ``age_universe_entries`` normalises it --
+    so an entry declaring ``(None, 5)`` and one declaring ``(0, 5)`` are the same universe.
+    Keying the stage's denominator cache on the RAW ``(min_age, max_age)`` pair made those
+    two DISTINCT keys and recomputed the identical single-year sum for the second entry;
+    keying it on the band returned here cannot.
+    """
+    from dataclasses import replace
+
+    from braunschweig.popsim.stage import controls_builder
+
+    omitted = replace(_entry(None, 5), name="omitted_lower")
+    explicit = replace(_entry(0, 5), name="explicit_lower")
+    bands = controls_builder.age_band_by_entry_name((omitted, explicit))
+
+    assert bands == {"omitted_lower": (0, 5), "explicit_lower": (0, 5)}
+    # One distinct band -> one cache key -> one computation.
+    assert len(set(bands.values())) == 1
+
+
+def test_education_seed_labels_do_not_depend_on_the_category_tuple_order(monkeypatch):
+    """Reordering ``EDUCATION_FLAG_CATEGORIES`` must not invert the seed.
+
+    The tuple is a CATEGORY ORDER: it fixes which target CSV column belongs to which
+    control category. The seed's two LABELS are a different fact, and taking them by
+    positional unpack from that tuple silently coupled the two -- a display-driven reorder
+    to ``("noedu", "edu")`` would have labelled every education participant ``noedu``,
+    with the control targets still keyed the other way round. Named constants decouple
+    them, so a reversed tuple leaves the seed's labels exactly where they were.
+    """
+    from braunschweig.popsim import kreis_attribute_control as kac
+    from braunschweig.popsim.mid import participation
+
+    persons, wege = _persons_wege()
+    expected = ["noedu", "edu", "noedu", "noedu", "noedu"]
+    assert derive_education_flag_seed_labels(persons, wege) == expected
+
+    monkeypatch.setattr(kac, "EDUCATION_FLAG_CATEGORIES",
+                        tuple(reversed(kac.EDUCATION_FLAG_CATEGORIES)))
+    # raising=False: the seed module no longer binds the tuple at all, which is precisely
+    # the decoupling under test -- but reverse it wherever it is still bound, so this test
+    # would still discriminate if the import came back.
+    monkeypatch.setattr(participation, "EDUCATION_FLAG_CATEGORIES",
+                        tuple(reversed(kac.EDUCATION_FLAG_CATEGORIES)), raising=False)
+    assert derive_education_flag_seed_labels(persons, wege) == expected
+
+
+def derive_education_flag_seed_labels(persons, wege):
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+
+    return derive_education_flag_seed(
+        persons, wege, escort_passive_education=False, exclude_rbw_legs=True
+    )["education_flag"].tolist()
+
+
+def test_the_band_map_reproduces_the_previous_inline_formula_for_every_production_entry():
+    """The band map must be VALUE-identical to the inline derivation it replaced.
+
+    The stage used to derive each entry's denominator band at the call site as
+    ``(min_age or 0, max_age or SINGLE_YEAR_MAX_AGE)``. Reading it from
+    ``age_band_by_entry_name`` instead is a refactor, and the per-Kreis denominators it
+    feeds go into the PopulationSim work-dir batch signature
+    (``stage.batch_cache.compute_batch_config_signature`` hashes the kreis target table's
+    CONTENT). A band that moved by even one year would therefore not just change a control
+    target -- it would purge every completed batch of a warm work_dir. This pins the
+    equivalence over the real REGISTRY rather than over a fixture.
+    """
+    from braunschweig.popsim.stage import active_kreis_entries
+    from braunschweig.popsim.stage.controls_builder import (
+        SINGLE_YEAR_MAX_AGE, age_band_by_entry_name)
+    from tests.test_kreis_control_stage_wiring import _FakeContext
+
+    # Empty overrides -> every toggle at its declared default (the production state).
+    active = active_kreis_entries(_FakeContext({}), "mid")
+    bands = age_band_by_entry_name(active)
+    expected = {
+        control.name: (0 if control.min_age is None else int(control.min_age),
+                       int(SINGLE_YEAR_MAX_AGE) if control.max_age is None
+                       else int(control.max_age))
+        for control in active
+        if control.level == "person"
+        and not (control.min_age is None and control.max_age is None)
+    }
+    assert bands == expected
+    # Guard the guard: the production registry really does declare age universes, so the
+    # comparison above is not two empty dicts.
+    assert set(bands) >= {"employment_status", "work_by_employment",
+                          "education_0_5", "education_6_17", "education_18plus"}

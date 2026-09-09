@@ -40,7 +40,8 @@ from braunschweig.popsim import trips
 # entry's categories and the target CSV's share columns must be one ordered list. That
 # module imports only ``attributes`` + numpy/pandas, so this import creates no cycle.
 from braunschweig.popsim.kreis_attribute_control import (
-    EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_CATEGORIES, WORK_BY_EMPLOYMENT_CATEGORIES,
+    EDUCATION_AGE_BOUNDS, EDUCATION_FLAG_LABEL_EDUCATION,
+    EDUCATION_FLAG_LABEL_NO_EDUCATION, WORK_BY_EMPLOYMENT_CATEGORIES,
     WORK_BY_EMPLOYMENT_MIN_AGE_YEARS)
 # The 803/804 diary non-response codes are DECLARED by the diary plan match (the module
 # that decides which of them are remapped and which are kept); the seed guard below must
@@ -708,7 +709,11 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     flag = _plan_source_flag(persons, wege, codes, exclude_rbw_legs=exclude_rbw_legs,
                              household_id=household_id, person_id=person_id,
                              name="education_flag")
-    edu_label, noedu_label = EDUCATION_FLAG_CATEGORIES
+    # Named labels, NOT a positional unpack of EDUCATION_FLAG_CATEGORIES: that tuple is the
+    # category ORDER the target CSV columns are read in, and reordering it must not be able
+    # to invert which label means "has an education leg".
+    edu_label = EDUCATION_FLAG_LABEL_EDUCATION
+    noedu_label = EDUCATION_FLAG_LABEL_NO_EDUCATION
     out = persons.copy()
     out["education_flag"] = np.where(flag.to_numpy() == 1, edu_label, noedu_label)
     if "HP_ALTER" in out.columns:

@@ -167,9 +167,18 @@ WORK_BY_EMPLOYMENT_CATEGORIES = ("employed_work", "employed_nowork", "nonemploye
 WORK_BY_EMPLOYMENT_MIN_AGE_YEARS = 14
 
 # The two labels of the education_flag seed column: whether the realised plan contains a
-# direct education leg. Used by every education-by-age-range entry below (they differ only
-# in their age universe, not in their categories).
-EDUCATION_FLAG_CATEGORIES = ("edu", "noedu")
+# direct education leg. Named INDIVIDUALLY because two different facts hang off them: the
+# seed derivation (mid.participation.derive_education_flag_seed) needs to know WHICH label
+# means "has an education leg", while EDUCATION_FLAG_CATEGORIES below fixes the CATEGORY
+# ORDER the target CSV columns are read in. Taking the seed's labels by positional unpack
+# from the tuple coupled the two, so a display-driven reorder of the tuple would have
+# inverted the seed while the targets stayed keyed the other way round (#368 review minor).
+EDUCATION_FLAG_LABEL_EDUCATION = "edu"
+EDUCATION_FLAG_LABEL_NO_EDUCATION = "noedu"
+# Category order for every education-by-age-range entry below (they differ only in their
+# age universe, not in their categories). DERIVED from the labels, never re-typed.
+EDUCATION_FLAG_CATEGORIES = (
+    EDUCATION_FLAG_LABEL_EDUCATION, EDUCATION_FLAG_LABEL_NO_EDUCATION)
 
 # Inclusive age bounds (min_age, max_age) of the education-by-age-range control universes;
 # `None` as the upper bound means "no upper bound" (KreisAttributeControl.max_age = None).

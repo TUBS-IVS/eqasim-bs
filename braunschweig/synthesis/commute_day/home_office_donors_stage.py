@@ -64,6 +64,15 @@ DEFAULT_ENABLED = True
 #: declares -- the donor's day must be built by exactly the same rules as the synthetic
 #: population's day, or a replaced day would follow a different purpose/mode vocabulary than the
 #: one it replaces (ruling R2, see ``donor_pool.donor_trips``).
+#:
+#: These three are RE-TYPED here rather than imported from
+#: ``braunschweig.popsim.stage.config_keys`` (which is where ``escort_passive_education``'s
+#: canonical pair lives) because they must be module ATTRIBUTES, while that module is imported
+#: lazily inside ``configure()``/``execute()`` to keep the heavy popsim stage package out of this
+#: module's import time. The resulting duplication is therefore deliberate and is ENFORCED to
+#: agree, not merely asserted in prose: ``tests/test_trip_flag_declaration_parity.py`` compares
+#: every declaring stage's declared default against the canonical value. Change a value there,
+#: never only here.
 KEY_ESCORT_PURPOSE = "escort_purpose"
 DEFAULT_ESCORT_PURPOSE = False
 KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"

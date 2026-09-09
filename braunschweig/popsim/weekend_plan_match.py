@@ -198,6 +198,12 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
                                    pool["P_GEW"].to_numpy(), rng=rng)
             return h, p, level
         if not active:
+            # Reached only when hard_mask excludes EVERY donor: with no hard keys an empty
+            # `active` leaves the mask unrestricted, so the branch above returns first.
+            # This line is therefore a reliable per-crossing record of a hard-key boundary
+            # being given up (tests/test_weekend_plan_match.py pins both halves). The
+            # hard_note conditional is kept as defence for a future caller that could make
+            # the branch reachable without hard keys.
             h, p = weighted_choice(list(zip(weekday_persons["H_ID"], weekday_persons["P_ID"])),
                                    weekday_persons["P_GEW"].to_numpy(), rng=rng)
             hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
