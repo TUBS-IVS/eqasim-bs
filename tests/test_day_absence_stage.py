@@ -60,7 +60,8 @@ def _enriched():
 
 def _config(**overrides):
     base = {"random_seed": 1234, "data_path": DATA_PATH, S.KEY_ENABLED: True,
-            S.KEY_HOUSEHOLD_STAGE: True, S.KEY_MAX_BAND_DEVIATION_PP: 1.0}
+            S.KEY_HOUSEHOLD_STAGE: True, S.KEY_MAX_BAND_DEVIATION_PP: 1.0,
+            S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: S.DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE}
     base.update(overrides); return base
 
 
@@ -68,7 +69,14 @@ def test_configure_declares_exactly_the_documented_inputs():
     recorder = _ConfigureRecorder(); S.configure(recorder)
     assert recorder.stages == ["synthesis.population.enriched"]
     assert set(recorder.config_keys) == {"random_seed", "data_path", S.KEY_ENABLED, S.KEY_HOUSEHOLD_STAGE,
-                                         S.KEY_MAX_BAND_DEVIATION_PP}
+                                         S.KEY_MAX_BAND_DEVIATION_PP,
+                                         S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE}
+
+
+def test_configure_declares_the_individual_stage_min_household_size_default():
+    recorder = _ConfigureRecorder(); S.configure(recorder)
+    assert recorder.config_keys[S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE] == 2
+    assert S.DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE == 2
 
 
 def test_on_path_returns_one_row_per_person_with_the_documented_columns():
@@ -124,7 +132,8 @@ def test_band_deviation_guard_fires_when_realised_and_reference_diverge(monkeypa
     })
     reference = D.AbsenceReference(
         p_absent_by_band={band: (0.05 if band == "30-44" else 0.0) for band in D.AGE_BAND_LABELS},
-        p_all_absent_by_size={1: 1.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+        p_all_absent_by_size={1: 1.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0},
+        p_absent_person_by_size={k: float("nan") for k in range(1, 6)})
     monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: reference)
 
     with caplog.at_level("WARNING", logger=S.logger.name):
@@ -148,3 +157,18 @@ def test_off_frame_has_the_same_dtypes_and_derived_attributes_as_the_on_frame():
     off_sorted = off.sort_values("person_id").reset_index(drop=True)
     assert (on_sorted["age_band"] == off_sorted["age_band"]).all()
     assert (on_sorted["household_size_class"] == off_sorted["household_size_class"]).all()
+
+
+# --- Issue #388: day_absence_individual_stage_min_household_size -------------------------------
+
+def test_individual_stage_min_household_size_default_is_passed_through_to_the_draw():
+    out = S.execute(_context({"synthesis.population.enriched": _enriched()}, _config()))
+    assert out["diagnostics"]["individual_stage_min_household_size"] == 2
+    assert "n_persons_ineligible_individual_stage" in out["diagnostics"]
+
+
+def test_individual_stage_min_household_size_of_zero_raises_naming_the_key():
+    context = _context({"synthesis.population.enriched": _enriched()},
+                       _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: 0}))
+    with pytest.raises(ValueError, match=S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE):
+        S.execute(context)
