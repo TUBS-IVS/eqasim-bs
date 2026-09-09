@@ -1,0 +1,76 @@
+dataset: srv2023_participation
+title: SrV 2023 trip-participation shares per Kreis (work / education / leisure / escort,
+  committed aggregate)
+provider: derived in-repo from SrV 2023 Braunschweig + Regionalverband Grossraum Braunschweig
+  scientific-use microdata
+vintage: 2023 survey year
+geography: |
+  Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); 7 kreis rows plus one 03ZGB
+  total row (level = "kreis" / "total"). Wolfsburg (03103) is not surveyed by SrV and has no
+  row; its consumer scripts/build_participation_target.py fills it from the region total and
+  must document that as an assumption. Row/column convention and the one divergent sibling
+  table are described in docs/codebase/notes/srv-kreis-table-conventions.md. Kreis-code-to-name
+  mapping lives in braunschweig.analysis.spatial.ZGB8.
+crs: null
+roles:
+- control
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/build_srv_participation_aggregate.py
+    [--data <eqasim-data/data/braunschweig>] [--out-dir <srv dir>]. Reads
+    SrV2023_Haushalte.csv (AGS), SrV2023_Personen.csv (GEWICHT_P_ZENSUS, MITTL_WERKTAG) and
+    SrV2023_Wege.csv (E_ZWECK_9) from srv2023_raw. The raw microdata is local-only and never
+    committed. Verified 2026-09-09: a fresh run reproduces the committed file byte-identically.
+  script: scripts/build_srv_participation_aggregate.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed with the
+    checkout, so there is nothing for a contributor to download or check the presence of. It IS
+    reproducible from the raw delivery, and that reproduction was checked on 2026-09-09.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (derived from a restricted scientific-use source)
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The raw SrV scientific-use microdata is restricted and must not be redistributed; these
+    per-Kreis aggregate shares are not.
+limitations: |
+  Construct: participation = the GEWICHT_P_ZENSUS-weighted share of persons with AT LEAST ONE
+  leg of the given purpose on the reporting day. Purposes map from E_ZWECK_9 as work = {1, 2},
+  education = {3, 4}, leisure = {7}, escort = {6}. Universe: persons with MITTL_WERKTAG == 1
+  (average weekday, Tue-Thu). Kreis is the first 5 digits of the zero-padded 8-digit household
+  AGS joined via HHNR, never the survey design stratum ST_CODE. Weight is the Zensus expansion
+  weight, not the stratum-internal GEWICHT_P (ADR-0055).
+  DELIBERATELY NOT FILTERED on E_WEG_GUELTIG. That raw column marks a leg invalid when its
+  length was not reported or exceeded 100 km -- per the SrV codebook, "Gueltiger Weg (Angaben
+  zu Dauer und Laenge vorhanden, Laenge < 100 km)". It judges whether a leg's LENGTH is
+  usable, while this table asks only whether a leg HAPPENED, so filtering on it would recode a
+  length item-nonresponse as travel nonresponse. Measured on the 2023 delivery: it flags 3,198
+  of 58,148 legs (5.50%), of which 2,714 (85%) merely lack a reported length and 353 (11%) are
+  genuine legs of 100 km or more; filtering would lower every ZGB share -- work -1.85 pp,
+  education -1.25 pp, leisure -2.15 pp, escort -0.50 pp. A distance or duration aggregate is
+  the opposite case and SHOULD filter on it. The sibling extractors
+  scripts/extract_srv_participation_universe.py and scripts/extract_srv_work_participation.py
+  follow the same rule for the same reason.
+  Sample sizes per Kreis run from 1,761 (Helmstedt) to 4,519 (Braunschweig) unweighted persons,
+  16,223 in the 03ZGB total.
+notes: |
+  used_by is absent because that field lists STAGE ids and no pipeline stage reads this file.
+  Its consumer is scripts/build_participation_target.py, which turns these shares into the
+  committed target2026_<purpose>_participation_by_kreis.csv control targets.
+  Of the four purposes, only leisure and escort still feed ACTIVE controls: Plan B (issue #368,
+  ADR-0109) replaced work_participation with work_by_employment and education_participation
+  with education_by_age, and configs/base_bs.yml sets both replaced toggles to "off". The work
+  and education columns here are therefore currently a reference, not a control input; the
+  active tables are datasets srv2023_work_by_employment and srv2023_education_by_age.

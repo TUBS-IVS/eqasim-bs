@@ -15,6 +15,13 @@ universe, the employed set, the purpose sets, the age bands, the invariants -- l
 CLI and the provenance header. Each written file carries an ``# Exclusions:`` line produced by
 the builder, so the exclusion counts live IN the committed file and not only in a run log.
 
+Legs are NOT filtered on E_WEG_GUELTIG, deliberately and consistently with
+scripts/build_srv_participation_aggregate.py (see its docstring for the measured effect).
+That column judges whether a leg's LENGTH is usable -- it flags 5.5% of legs, 85% of them
+merely for an unreported length -- while these two tables ask only whether a person made a
+work or education leg. Filtering it would recode a length item-nonresponse as travel
+nonresponse. A distance or duration aggregate is the opposite case and should filter.
+
 Usage (eqasim env, from a worktree; point --raw at the local raw directory):
     python scripts/extract_srv_participation_universe.py \
         --raw C:/Users/bienzeisler/Documents/GitHub/eqasim-bs/eqasim-data/data/braunschweig/srv/srv2023_raw \

@@ -26,6 +26,14 @@ Purpose mapping (SrV E_ZWECK_9):
 
 Filtered universe: persons with MITTL_WERKTAG == 1 (average weekday, Di-Do).
 
+Legs are NOT filtered on E_WEG_GUELTIG, deliberately. That column marks a leg invalid
+when its LENGTH was not reported (85% of the 5.5% it flags) or exceeded 100 km -- it
+judges the usability of the length, not whether a leg happened. This aggregate only asks
+whether a person made a leg of a given purpose, so filtering on it would recode a
+length item-nonresponse as travel nonresponse and drop real trips: measured on the 2023
+delivery it would lower every share (ZGB work -1.85 pp, education -1.25, leisure -2.15,
+escort -0.50). A DISTANCE or duration aggregate is the opposite case and should filter.
+
 Output (committed): eqasim-data/data/braunschweig/srv/srv2023_participation_by_kreis.csv
 with columns code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
 and float share columns work, education, leisure, escort (PURPOSE dict order).
