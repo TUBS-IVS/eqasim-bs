@@ -45,8 +45,10 @@ def main(argv=None) -> int:
     ap.add_argument("--escort-passive-education", dest="escort_passive_education",
                     action="store_true", default=False)
     # Issue #372: pass through when the population was ALSO built with
-    # escort_passive_from_adult ON, so the W1 passive-to-ausbildung fold is narrowed to the
-    # share of passive legs the pairing still realises as education. Kept symmetric with
+    # escort_passive_from_adult ON, so the W1 passive remainder is redistributed over the
+    # purposes the pairing actually gives those legs (ausbildung, einkauf, freizeit,
+    # heimweg, sonstiges) in the measured proportions of the pinned split table, instead of
+    # all landing on ausbildung. Kept symmetric with
     # braunschweig/analysis/population_validation/run_population_validation.py: the same
     # population must not be scored against two different references depending on which
     # entry point the reader used.

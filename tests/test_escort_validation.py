@@ -113,18 +113,3 @@ def test_w1_scored_target_requires_passive_education_for_the_pairing_flag():
     with pytest.raises(ValueError, match="escort_passive_from_adult"):
         tc.w1_scored_target("unused", scored_purposes=tc.SCORED_MID_PURPOSES_WITH_ESCORT,
                             escort_passive_education=False, escort_passive_from_adult=True)
-
-
-def test_load_passive_education_share_reads_the_pinned_column():
-    """The share must come from the committed table (never a literal): it is a measured
-    reference, and CLAUDE.md forbids inventing one."""
-    from pathlib import Path
-    data_path = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
-    share = tc.load_passive_education_share(data_path)
-    assert 0.0 <= share <= 1.0
-    # Independent read of the same committed cell, so a wrong row/column lookup fails here.
-    table = pd.read_csv(
-        f"{data_path}/braunschweig/mid/mid2023_escort_w_zweck_split.csv", comment="#"
-    ).set_index("w_zweck")
-    assert share == pytest.approx(
-        float(table.loc["code_13", "code_13_to_education_share_under_pairing"]))

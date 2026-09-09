@@ -99,11 +99,13 @@ def _parse_args(argv):
     ap.add_argument("--escort-passive-education", dest="escort_passive_education",
                     action="store_true", default=False)
     # Issue #372: pass through when the population was also built with
-    # escort_passive_from_adult ON, so the W1 passive-to-ausbildung fold is narrowed to
-    # the share of passive legs the pairing still realises as education (pinned
-    # mid2023_escort_w_zweck_split.csv). Requires --escort-passive-education (the flag it
-    # narrows); trip_coherence.w1_scored_target raises otherwise. Default False keeps the
-    # report byte-identical.
+    # escort_passive_from_adult ON, so the W1 passive remainder is redistributed over the
+    # purposes the pairing actually gives those legs (ausbildung, einkauf, freizeit,
+    # heimweg, sonstiges) in the measured proportions of the pinned
+    # mid2023_escort_w_zweck_split.csv, instead of all landing on ausbildung. Requires
+    # --escort-passive-education (the flag that splits the passive side off Begleitung);
+    # trip_coherence.w1_scored_target raises otherwise. Default False keeps the report
+    # byte-identical.
     ap.add_argument("--escort-passive-from-adult", dest="escort_passive_from_adult",
                     action="store_true", default=False)
     ns = ap.parse_args(argv)

@@ -290,7 +290,7 @@ def load_mid_wege(
     missing = [c for c in MID_WEGE_REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError(
-            f"MiD Wege file is missing required columns: {missing}. "
+            f"MiD Wege file {wege_path} is missing required columns: {missing}. "
             f"Available columns: {list(df.columns[:20])} ..."
         )
     return df

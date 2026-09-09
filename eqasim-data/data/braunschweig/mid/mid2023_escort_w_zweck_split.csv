@@ -16,8 +16,12 @@
 # Universe: the 10905 passive legs the TRIP BUILD keeps, out of 10905 in the
 # raw table; the adult candidate pool is filtered the same way, so this describes the
 # production leg universe, not the raw one.
-# ASSUMED trip-build flags (the PRODUCTION values: configs/base_bs.yml + the trips_stage
-# defaults). These numbers do NOT describe a run configured differently:
+# The two decomposition figures above are rounded independently of the row value, so
+# their sum can differ from it by one unit in the last place.
+# ASSUMED flag values (the INTENDED production state; escort_passive_from_adult: true is
+# added to configs/base_bs.yml by Task 7 of issue #372 and is not there yet, so a run
+# made before that task does NOT match these numbers -- nor does any run configured
+# differently):
 #   escort_purpose = True
 #   escort_passive_education = True
 #   escort_passive_from_adult = True
