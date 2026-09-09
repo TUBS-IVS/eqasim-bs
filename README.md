@@ -221,6 +221,7 @@ tables keep all reference comparisons working.
 | SrV participation-universe aggregates (committed) | `python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run | `braunschweig/srv/srv2023_work_by_employment_by_kreis.csv`, `braunschweig/srv/srv2023_education_by_age_by_kreis.csv` — build-time inputs of the participation-universe targets below, not read at run time |
 | Participation-universe Kreis targets (committed) | `python scripts/build_participation_universe_targets.py` (no raw data: reads the two SrV aggregates above and the committed `target2026_employment_status_by_kreis.csv`) | `braunschweig/targets/target2026_work_by_employment_by_kreis.csv`, `braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv` — read by the popsim stage whenever the controls of issue #368 are on (the default) |
 | MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below). The model's own run-time donor pool (data record `mid2023_home_office_day_donors`) has no separate file: it is rebuilt fresh from the raw MiD delivery on every run. | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
+| SrV general day-absence aggregates (committed) | `python scripts/extract_srv_absence.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run and are read at run time by the general day-absence model (ADR-0110, below) | `braunschweig/srv/srv2023_absence_by_age_band.csv`, `braunschweig/srv/srv2023_absence_household_by_size.csv` |
 
 Two diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):
@@ -354,12 +355,18 @@ trip that day:
 | `commute_day_absent_share_far` | `1.0` (share, `0`–`1`) | Share of not-kept far workers that become `absent` rather than `home`. **ASSUMPTION**: no observed rate exists; the pre-registered sensitivity check (ADR-0104) also runs this at `0.6`. |
 | `commute_day_max_not_replaceable_share` | `0.5` (share, `0`–`1`) | Guard: above this share of the `home` cohort without any donor at any coarsening level, the model raises rather than silently reporting a home share governed by donor-pool gaps. |
 | `cds_max_states_outside_employed_share` | `0.05` (share, `0`–`1`; code default of the analysis stage, not set in `configs/base_bs.yml`) | Diagnostic guard on `braunschweig.analysis.synthesis.work_participation_by_kreis`'s Check 1: raises above this share of drawn states falling outside the employed universe (an id-join defect, not a measurement). |
+| `day_absence_enabled` | `true` | General day absence (issue #370, ADR-0110), independent of the commute-day-state model above: every person draws a reporting-day absence state from the committed SrV 2023 tables (household stage, then an individual residual per age band). `false` leaves every person `present` and every `.final` stage byte-identical to the pre-#370 reporting day. |
+| `day_absence_household_stage_enabled` | `true` | `false` runs an individual-only draw at the SrV band rates (the pre-registered sensitivity arm); the household stage is what reproduces the observed household clustering of absent persons. |
+| `day_absence_max_band_deviation_pp` | `1.0` (percentage points) | Guard: a band with `>= 1,000` persons whose realised absence share deviates from the SrV reference by more than this WARNS (a broken join or reference mismatch, not a target). |
 
 The drawn state is exported as the `commute_day_state` column of `persons.csv` (empty for a
-person without an assigned workplace) and, in the MATSim population, as the person attribute
-`commuteDayState` (written only for persons that carry a state). See
+person without an assigned workplace), as `day_absence_state` (`present` / `absent_household` /
+`absent_individual`, always present) and, in the MATSim population, as the person attributes
+`commuteDayState` (written only for persons that carry a state) and `dayAbsenceState`. See
 [`docs/codebase/notes/commute-day-two-view-trips.md`](docs/codebase/notes/commute-day-two-view-trips.md)
-for the two-view trips architecture this model relies on.
+for the two-view trips architecture this model relies on and
+[`docs/codebase/notes/day-absence-state.md`](docs/codebase/notes/day-absence-state.md) for the
+general day-absence draw and how it composes with the commute-day state.
 
 ## Outputs
 

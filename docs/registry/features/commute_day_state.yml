@@ -345,4 +345,10 @@ notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restric
   "Amendments to the design" section records the three corrections Phase A forced on the design
   before this feature was built). Cache cost, deliberate (ADR-0104 Consequences): the .final alias
   switch devalidates secondary locations and everything downstream ONCE, even with the flag OFF,
-  on the order of hours at 100% scale.'
+  on the order of hours at 100% scale.
+
+  Since issue #370 (ADR-0110), the reporting-day trips also compose with an INDEPENDENT
+  general_day_absence draw (a person is trip-less when commute_day_state == "absent" OR the
+  general draw''s day_absence_state != "present"); the composition rule lives ONCE, in
+  braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s general_absence keyword
+  -- see the feature record general_day_absence, never copied here.'

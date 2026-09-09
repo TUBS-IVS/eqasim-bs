@@ -281,6 +281,26 @@
    "braunschweig.synthesis.student_incommuters"
   ],
   [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.analysis.synthesis.work_participation_by_kreis"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "matsim.scenario.population"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "synthesis.output"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "synthesis.population.trips.final"
+  ],
+  [
    "braunschweig.synthesis.incommuters",
    "braunschweig.analysis.cordon_validation"
   ],
@@ -746,6 +766,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.synthesis.day_absence.absence_stage"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.synthesis.incommuters"
   ],
   [
@@ -783,6 +807,10 @@
   [
    "synthesis.population.enriched",
    "synthesis.population.spatial.primary.candidates"
+  ],
+  [
+   "synthesis.population.enriched",
+   "synthesis.population.trips.final"
   ],
   [
    "synthesis.population.enriched",
@@ -938,10 +966,6 @@
   ],
   [
    "synthesis.population.trips",
-   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
-  ],
-  [
-   "synthesis.population.trips",
    "braunschweig.synthesis.commute_day.state_stage"
   ],
   [
@@ -963,6 +987,10 @@
   [
    "synthesis.population.trips",
    "synthesis.population.trips.final"
+  ],
+  [
+   "synthesis.population.trips.final",
+   "braunschweig.analysis.synthesis.plan_structure_vs_srv"
   ],
   [
    "synthesis.population.trips.final",
@@ -1044,6 +1072,7 @@
   "braunschweig.synthesis.commute_day.home_office_donors_stage",
   "braunschweig.synthesis.commute_day.state_stage",
   "braunschweig.synthesis.cordon_gates",
+  "braunschweig.synthesis.day_absence.absence_stage",
   "braunschweig.synthesis.incommuters",
   "braunschweig.synthesis.locations.education_gravity",
   "braunschweig.synthesis.locations.secondary_candidates",

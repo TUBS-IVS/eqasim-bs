@@ -183,16 +183,25 @@ def _states(values=("at_workplace", "home")):
                          "reason": ["kept", "redrawn"]})
 
 
-def _output_context(enabled, states=None):
+def _absence(values=("present", "absent_household", "absent_individual")):
+    """Absence-stage stub: EXACTLY one row per person (unlike ``_states``, which is worker-only --
+    ``braunschweig.synthesis.day_absence.absence_stage`` draws a state for every enriched
+    person, on both the enabled and the disabled path)."""
+    return pd.DataFrame({"person_id": [1, 2, 3], "day_absence_state": list(values)})
+
+
+def _output_context(enabled, states=None, absence_enabled=False, absence=None):
     recorder = _recorder(OUTPUT, config={"mode_choice": False})
     stages = {
         DAY_TRIPS_STAGE: pd.DataFrame({"person_id": [1], "trip_index": [0]}),
         DAY_ACTIVITIES_STAGE: pd.DataFrame({"person_id": [1], "activity_index": [0]}),
         ENRICHED_STAGE: _enriched_persons(),
         STATE_STAGE: {"states": states if states is not None else _states()},
+        OUTPUT.ABSENCE_STAGE: {"absence": absence if absence is not None else _absence()},
     }
     return _StubContext(recorder, stages=stages,
-                        config={OUTPUT.KEY_ENABLED: enabled, "mode_choice": False})
+                        config={OUTPUT.KEY_ENABLED: enabled, "mode_choice": False,
+                                OUTPUT.KEY_DAY_ABSENCE_ENABLED: absence_enabled})
 
 
 def test_output_day_declares_the_reporting_day_view_and_the_state_stage():
@@ -200,26 +209,40 @@ def test_output_day_declares_the_reporting_day_view_and_the_state_stage():
     assert DAY_TRIPS_STAGE in recorder.stages
     assert DAY_ACTIVITIES_STAGE in recorder.stages
     assert STATE_STAGE in recorder.stages
+    assert OUTPUT.ABSENCE_STAGE in recorder.stages
     assert TRIPS_STAGE not in recorder.stages
     assert ACTIVITIES_STAGE not in recorder.stages
     assert recorder.config_keys[OUTPUT.KEY_ENABLED] is True
+    assert recorder.config_keys[OUTPUT.KEY_DAY_ABSENCE_ENABLED] is True
     # The vendored writer's own dependencies stay declared.
     for name in (ENRICHED_STAGE, "synthesis.vehicles.vehicles",
                  "synthesis.population.spatial.locations", "documentation.meta_output"):
         assert name in recorder.stages
 
 
+def test_output_day_declares_no_stage_for_either_flag_off():
+    recorder = _recorder(OUTPUT, config={"mode_choice": False, OUTPUT.KEY_ENABLED: False,
+                                         OUTPUT.KEY_DAY_ABSENCE_ENABLED: False})
+    assert STATE_STAGE not in recorder.stages
+    assert OUTPUT.ABSENCE_STAGE not in recorder.stages
+
+
 def test_output_day_off_hands_the_enriched_frame_through_untouched(monkeypatch):
-    context = _output_context(enabled=False)
+    # Both flags off: the enriched frame reaches the vendored writer as the SAME object, with
+    # neither optional column added.
+    context = _output_context(enabled=False, absence_enabled=False)
     execute_recorder = _ExecuteRecorder(result=None)
     monkeypatch.setattr(OUTPUT.base, "execute", execute_recorder)
     OUTPUT.execute(context)
 
     persons = execute_recorder.context.stage(ENRICHED_STAGE)
+    assert persons is context.stage(ENRICHED_STAGE)
     assert OUTPUT.STATE_COLUMN not in persons.columns
+    assert OUTPUT.ABSENCE_STATE_COLUMN not in persons.columns
     # The vendored column selection therefore returns the legacy list -> byte-identical CSV.
     columns = select_person_output_columns(persons.columns, "is_urban_resident")
     assert OUTPUT.STATE_COLUMN not in columns
+    assert OUTPUT.ABSENCE_STATE_COLUMN not in columns
 
 
 def test_output_day_on_appends_the_state_column_last(monkeypatch):
@@ -239,6 +262,24 @@ def test_output_day_on_appends_the_state_column_last(monkeypatch):
     # The day view reaches the vendored writer under the PRE-ASSIGNMENT names it reads.
     assert shim.stage(TRIPS_STAGE) is context.stage(DAY_TRIPS_STAGE)
     assert shim.stage(ACTIVITIES_STAGE) is context.stage(DAY_ACTIVITIES_STAGE)
+
+
+def test_output_day_on_appends_the_day_absence_state_column_last(monkeypatch):
+    # Isolate the absence merge from the commute-day one (KEY_ENABLED off) to prove the two
+    # flags are independent, exactly like braunschweig.synthesis.commute_day.trips_day_stage.
+    context = _output_context(enabled=False, absence_enabled=True)
+    execute_recorder = _ExecuteRecorder(result=None)
+    monkeypatch.setattr(OUTPUT.base, "execute", execute_recorder)
+    OUTPUT.execute(context)
+
+    shim = execute_recorder.context
+    persons = shim.stage(ENRICHED_STAGE)
+    assert list(persons["person_id"]) == [1, 2, 3]
+    assert list(persons[OUTPUT.ABSENCE_STATE_COLUMN]) == [
+        "present", "absent_household", "absent_individual"]
+    assert OUTPUT.STATE_COLUMN not in persons.columns
+    columns = select_person_output_columns(persons.columns, "is_urban_resident")
+    assert columns[-1] == OUTPUT.ABSENCE_STATE_COLUMN
 
 
 def test_output_day_shim_forwards_an_unknown_name_to_the_real_context(monkeypatch):
@@ -263,6 +304,31 @@ def test_attach_commute_day_state_refuses_an_existing_column():
     persons["commute_day_state"] = "at_workplace"
     with pytest.raises(ValueError, match="already carries"):
         OUTPUT.attach_commute_day_state(persons, _states())
+
+
+def test_attach_day_absence_state_raises_when_no_person_matches():
+    persons = _enriched_persons()
+    orphans = pd.DataFrame({"person_id": [901, 902, 903],
+                            "day_absence_state": ["present", "absent_household",
+                                                  "absent_individual"]})
+    with pytest.raises(ValueError, match="broken person_id join"):
+        OUTPUT.attach_day_absence_state(persons, orphans)
+
+
+def test_attach_day_absence_state_refuses_an_existing_column():
+    persons = _enriched_persons()
+    persons["day_absence_state"] = "present"
+    with pytest.raises(ValueError, match="already carries"):
+        OUTPUT.attach_day_absence_state(persons, _absence())
+
+
+def test_attach_day_absence_state_covers_every_person():
+    """Unlike the worker-only commute state, EVERY enriched person carries an absence state."""
+    persons = _enriched_persons()
+    merged = OUTPUT.attach_day_absence_state(persons, _absence())
+    assert merged[OUTPUT.ABSENCE_STATE_COLUMN].notna().all()
+    assert list(merged[OUTPUT.ABSENCE_STATE_COLUMN]) == [
+        "present", "absent_household", "absent_individual"]
 
 
 # --------------------------------------------------------------------------- static declarations
@@ -295,15 +361,67 @@ def test_matsim_population_declares_the_day_view_and_the_state_stage():
     assert POP.DAY_TRIPS_STAGE in recorder.stages
     assert POP.DAY_ACTIVITIES_STAGE in recorder.stages
     assert POP.STATE_STAGE in recorder.stages
+    assert POP.ABSENCE_STAGE in recorder.stages
     assert recorder.config_keys[POP.KEY_COMMUTE_DAY_STATE_ENABLED] is True
+    assert recorder.config_keys[POP.KEY_DAY_ABSENCE_ENABLED] is True
 
     # OFF (every configs/fixtures/* config): the whole donor/state chain stays out of the DAG,
     # while the reporting-day aliases -- pass-throughs there -- are still declared.
     disabled = _ConfigureRecorder(config={"cordon_enabled": False,
-                                          POP.KEY_COMMUTE_DAY_STATE_ENABLED: False})
+                                          POP.KEY_COMMUTE_DAY_STATE_ENABLED: False,
+                                          POP.KEY_DAY_ABSENCE_ENABLED: False})
     POP.configure(disabled)
     assert POP.STATE_STAGE not in disabled.stages
+    assert POP.ABSENCE_STAGE not in disabled.stages
     assert POP.DAY_TRIPS_STAGE in disabled.stages
+
+
+def test_pop_attach_day_absence_state_merges_and_logs_coverage(caplog):
+    """Unlike the worker-only commute state, EVERY resident person carries an absence state."""
+    from braunschweig.matsim.scenario import population as POP
+
+    persons = _enriched_persons()
+    with caplog.at_level("INFO"):
+        merged = POP.attach_day_absence_state(persons, _absence())
+    assert list(merged[POP.ABSENCE_STATE_COLUMN]) == [
+        "present", "absent_household", "absent_individual"]
+    assert "dayAbsenceState" in caplog.text
+    assert "3/3" in caplog.text
+
+
+def test_pop_attach_day_absence_state_raises_when_no_person_matches():
+    from braunschweig.matsim.scenario import population as POP
+
+    persons = _enriched_persons()
+    orphans = pd.DataFrame({"person_id": [901, 902, 903],
+                            "day_absence_state": ["present", "absent_household",
+                                                  "absent_individual"]})
+    with pytest.raises(ValueError, match="broken person_id join"):
+        POP.attach_day_absence_state(persons, orphans)
+
+
+def test_pop_attach_day_absence_state_refuses_an_existing_column():
+    from braunschweig.matsim.scenario import population as POP
+
+    persons = _enriched_persons()
+    persons["day_absence_state"] = "present"
+    with pytest.raises(ValueError, match="already carries"):
+        POP.attach_day_absence_state(persons, _absence())
+
+
+def test_matsim_population_validate_hashes_the_vendored_base_module():
+    """Important finding 8 (final-review fix wave): the MATSim writer wrapper had NO validate()
+    at all before this fix, so an edit to the vendored ``matsim.scenario.population`` writer left
+    a stale cached ``plans.xml.gz`` in place. Same pin as ``test_overrides_hash_the_vendored_base_
+    module`` for OUTPUT/LOCATIONS/ACTIVITIES, applied to the MATSim population wrapper."""
+    from braunschweig.matsim.scenario import population as POP
+
+    assert POP.base in POP._HELPER_MODULES, (
+        "braunschweig.matsim.scenario.population must hash the vendored matsim.scenario."
+        "population module in _HELPER_MODULES, otherwise an edit to the vendored writer leaves "
+        "a stale cached plans.xml.gz")
+    assert POP.validate(None) == POP.validate(None)
+    assert len(POP.validate(None)) == 32   # md5 hexdigest
 
 
 def test_matsim_population_load_raw_never_reads_the_pre_assignment_frames():
@@ -418,6 +536,90 @@ def test_matsim_writer_emits_commute_day_state_only_for_persons_that_have_one():
     pop.add_person(writer_off, _person(pop.PERSON_FIELDS), [activity], [], [],
                    person_fields=pop.PERSON_FIELDS)
     assert "commuteDayState" not in writer_off.attributes
+
+
+def test_matsim_writer_emits_day_absence_state_only_for_persons_that_have_one():
+    """``dayAbsenceState`` is additive: absent column -> no attribute, NaN -> no attribute."""
+    from matsim.scenario import population as pop
+
+    df_off = pd.DataFrame({field: [0] for field in pop.PERSON_FIELDS})
+    assert pop.effective_person_fields(df_off) == pop.PERSON_FIELDS
+
+    df_on = df_off.copy()
+    df_on["day_absence_state"] = "absent_household"
+    fields_on = pop.effective_person_fields(df_on)
+    assert fields_on == pop.PERSON_FIELDS + ["day_absence_state"]
+
+    class _StubWriter:
+        def __init__(self):
+            self.attributes = {}
+
+        def start_person(self, *args, **kwargs):
+            pass
+
+        def start_attributes(self):
+            pass
+
+        def end_attributes(self):
+            pass
+
+        def end_person(self, *args, **kwargs):
+            pass
+
+        def start_plan(self, *args, **kwargs):
+            pass
+
+        def end_plan(self, *args, **kwargs):
+            pass
+
+        def add_attribute(self, key, _type, value):
+            self.attributes[key] = value
+
+        def yes_no(self, value):
+            return "yes" if value else "no"
+
+        def location(self, *args, **kwargs):
+            return None
+
+        def add_activity(self, *args, **kwargs):
+            pass
+
+        def add_leg(self, *args, **kwargs):
+            pass
+
+    class _Geometry:
+        x = 0.0
+        y = 0.0
+
+    def _person(fields, state=None):
+        row = {field: 0 for field in fields}
+        row.update(person_id=1, household_id=1, household_income="2600-3000", sex="female",
+                   employed="yes", high_income=False, is_urban_resident=False,
+                   has_pt_subscription=False, has_license=True,
+                   pt_subscription_type="never_pt", household_income_eur=3000.0)
+        if "day_absence_state" in fields:
+            row["day_absence_state"] = state
+        return tuple(row[field] for field in fields)
+
+    activity = {field: 0 for field in pop.ACTIVITY_FIELDS}
+    activity.update(person_id=1, purpose="home", start_time=float("nan"),
+                    end_time=float("nan"), location_id=-1, geometry=_Geometry())
+    activity = tuple(activity[field] for field in pop.ACTIVITY_FIELDS)
+
+    writer_on = _StubWriter()
+    pop.add_person(writer_on, _person(fields_on, "absent_household"), [activity], [], [],
+                   person_fields=fields_on)
+    assert writer_on.attributes.get("dayAbsenceState") == "absent_household"
+
+    writer_nan = _StubWriter()
+    pop.add_person(writer_nan, _person(fields_on, float("nan")), [activity], [], [],
+                   person_fields=fields_on)
+    assert "dayAbsenceState" not in writer_nan.attributes
+
+    writer_off = _StubWriter()
+    pop.add_person(writer_off, _person(pop.PERSON_FIELDS), [activity], [], [],
+                   person_fields=pop.PERSON_FIELDS)
+    assert "dayAbsenceState" not in writer_off.attributes
 
 
 def test_overrides_hash_the_vendored_base_module():
@@ -674,6 +876,106 @@ def test_commute_day_state_shares_accepts_a_precomputed_employed_universe():
     pd.testing.assert_frame_equal(shared, recomputed)
     # The shared frame must not be mutated by either call (the state column is added on a copy).
     assert WP.STATE_COLUMN not in employed.columns
+
+
+# ------------------------------------------------------ general day absence (issue #370, Task 7)
+#
+# The general day-absence draw (braunschweig.synthesis.day_absence.absence_stage, ADR-0110) is a
+# full-day, all-purpose absence and therefore takes precedence over the reporting-day commute
+# state: a generally absent employed person makes no home->work trip today whatever the
+# commute-day model drew for them (or failed to draw, if they have no assigned workplace at
+# all). WP.apply_general_absence() performs the override; commute_day_state_shares() applies it
+# to the whole employed universe BEFORE the per-Kreis shares are summed.
+
+def test_apply_general_absence_overrides_only_the_generally_absent_persons(caplog):
+    state_by_person = pd.Series(["at_workplace", "home", np.nan], index=[1, 2, 3])
+    with caplog.at_level("INFO"):
+        out = WP.apply_general_absence(state_by_person, {2, 3})
+    assert out.loc[1] == "at_workplace"
+    assert out.loc[2] == "absent"
+    assert out.loc[3] == "absent"
+    # Pure function: the input series is untouched.
+    assert pd.isna(state_by_person.loc[3])
+    # CLAUDE.md "Fallback transparency": the override is logged as a RATE, not a bare count.
+    assert "2/3" in caplog.text
+    assert "66.67%" in caplog.text
+
+
+def test_commute_day_state_shares_folds_a_generally_absent_worker_into_absent():
+    """Person 1 is drawn 'at_workplace' by the commute-day model but is generally absent all
+    day -- the override must move exactly one person from at_workplace to absent, and report it
+    in n_absent_general, while the four shares still sum to 1."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+
+    baseline = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    zgb_baseline = baseline[baseline["code"] == WP.ZGB_ROW_CODE].iloc[0]
+
+    stats = {}
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                        general_absent_person_ids={1}, stats=stats)
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["share_absent"] == pytest.approx(zgb_baseline["share_absent"] + 1.0 / 8.0)
+    assert zgb["share_at_workplace"] == pytest.approx(
+        zgb_baseline["share_at_workplace"] - 1.0 / 8.0)
+    assert zgb["n_absent_general"] == 1
+    assert stats["n_absent_general"] == 1
+    kreis = table[table["code"] == "03101"].iloc[0]
+    assert kreis["n_absent_general"] == 1
+    assert (zgb["share_at_workplace"] + zgb["share_home"] + zgb["share_absent"]
+            + zgb[WP.NO_WORKPLACE_SHARE]) == pytest.approx(1.0)
+
+
+def test_commute_day_state_shares_counts_a_generally_absent_person_without_a_workplace_as_absent():
+    """An employed person WITHOUT an assigned workplace (no drawn state at all) who is generally
+    absent must count as 'absent', not fall into share_no_workplace."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+
+    baseline = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    zgb_baseline = baseline[baseline["code"] == WP.ZGB_ROW_CODE].iloc[0]
+
+    # Person 5 is employed (_EMPLOYED_IDS) but carries no drawn state (absent from
+    # _WORKER_STATES) -- the "no workplace" remainder -- and is generally absent all day.
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                        general_absent_person_ids={5})
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["share_absent"] == pytest.approx(zgb_baseline["share_absent"] + 1.0 / 8.0)
+    assert zgb[WP.NO_WORKPLACE_SHARE] == pytest.approx(
+        zgb_baseline[WP.NO_WORKPLACE_SHARE] - 1.0 / 8.0)
+    assert zgb["n_absent_general"] == 1
+    # The override supplies a determined state where the model had none, so n_workers rises too.
+    assert zgb["n_workers"] == zgb_baseline["n_workers"] + 1
+
+
+def test_commute_day_state_shares_default_none_leaves_the_table_unchanged():
+    """general_absent_person_ids=None (the default) is a strict no-op: every caller that
+    predates issue #370 keeps its old output, including a zeroed n_absent_general column."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+    without_kwarg = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    with_none = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                            general_absent_person_ids=None)
+    pd.testing.assert_frame_equal(without_kwarg, with_none)
+    assert (without_kwarg["n_absent_general"] == 0).all()
+
+
+def test_commute_day_state_shares_warns_when_the_general_absence_draw_matches_nobody(caplog):
+    """CLAUDE.md 'Fallback transparency': a non-empty absence draw that overlaps NO employed
+    person in this universe most likely signals a person_id join defect, not a real population
+    fact, and must be logged loudly rather than silently reporting n_absent_general == 0."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+    with caplog.at_level("WARNING"):
+        table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                            general_absent_person_ids={901, 902})
+    assert "join defect" in caplog.text.lower()
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["n_absent_general"] == 0
 
 
 def test_commute_day_state_shares_rejects_an_unknown_state():

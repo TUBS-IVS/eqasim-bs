@@ -41,10 +41,12 @@ features:
 - home_closure_model
 - diary_plan_match
 - rbw_leg_convention
+- general_day_absence
 decisions:
 - ADR-0106
 - ADR-0107
 - ADR-0108
+- ADR-0110
 notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   comparison.csv (long: segment, metric, model, srv, delta_pp, n_srv), headline.csv (the "all"
   segment of the same table), by_kreis.csv (the kreis_* rows plus the model-only Kreise),
@@ -74,4 +76,21 @@ notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   braunschweig/calibration/srv_plan_structure.py, because synpp hashes only the stage module
   itself and a metric edit would otherwise serve a stale cached comparison.
   Unit tests: tests/test_plan_structure_vs_srv.py (the stage test runs against the REAL
-  committed reference, only the VG250 access is stubbed).'
+  committed reference, only the VG250 access is stubbed).
+
+  General day absence (issue #370, ADR-0110): the new config key plan_structure_trips_view
+  (KEY_TRIPS_VIEW, "final" default / "pre_assignment") picks which trips stage the model side is
+  harmonised from, aliased to the local name "trips" so execute() need not branch on the view
+  again. Only with the "final" view AND day_absence_enabled (KEY_DAY_ABSENCE_ENABLED, same key and
+  default as every other consumer of braunschweig.synthesis.day_absence.absence_stage) is that
+  stage declared and read: its away-from-home person ids reach
+  braunschweig.analysis.plan_structure.harmonise_model''s absent_person_ids keyword, which sets
+  away_from_home / reported_at_home so the at_home_only universe restriction (mirroring
+  srv_plan_structure.build_reference) can be applied on the model side too. Composition rule and
+  the universe-mismatch WARNING (at_home_zero without the draw applied) are documented once in the
+  feature record general_day_absence and the note docs/codebase/notes/day-absence-state.md, not
+  repeated here. provenance.json/summary.md always record trips_view, day_absence_enabled and
+  n_persons_away_from_home regardless of universe. Evidence:
+  tests/test_plan_structure_vs_srv.py::test_configure_declares_the_absence_stage_only_for_the_final_view_with_the_flag_on,
+  ::test_warns_when_at_home_zero_is_compared_without_the_absence_model,
+  ::test_execute_excludes_absent_persons_from_the_model_side_under_at_home_only.'

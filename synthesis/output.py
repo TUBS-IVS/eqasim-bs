@@ -22,9 +22,14 @@ import numpy as np
 # plan-source diary facts by braunschweig.popsim.enriched_adapter. They document why
 # a person's realised plan can be short or empty, so analyses can separate those
 # persons from genuinely immobile ones.
+#
+# day_absence_state -- present/absent_household/absent_individual (issue #370, ADR-0110) -- is
+# the general day-absence draw for EVERY enriched person, merged in by
+# braunschweig.synthesis.commute_day.output_day from
+# braunschweig.synthesis.day_absence.absence_stage. Independent of commute_day_state.
 PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status", "employment_status",
                                   "rbw_legs_count", "rbw_distance_km",
-                                  "commute_day_state")
+                                  "commute_day_state", "day_absence_state")
 
 
 def select_person_output_columns(available_columns, residency_col):

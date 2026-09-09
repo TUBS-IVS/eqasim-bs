@@ -387,7 +387,10 @@ def test_configure_declares_the_documented_stages_and_defaults():
 
     trips = _ConfigureRecorder()
     TRIPS.configure(trips)
-    assert set(trips.stages) == {"synthesis.population.trips", STATE_STAGE, DONOR_STAGE}
+    assert set(trips.stages) == {"synthesis.population.trips", STATE_STAGE, DONOR_STAGE,
+                                 TRIPS.ABSENCE_STAGE, "synthesis.population.enriched"}
+    assert trips.config_keys[TRIPS.KEY_ENABLED] is TRIPS.DEFAULT_ENABLED
+    assert trips.config_keys[TRIPS.KEY_DAY_ABSENCE_ENABLED] is TRIPS.DEFAULT_DAY_ABSENCE_ENABLED
 
     activities = _ConfigureRecorder()
     ACT.configure(activities)
@@ -844,6 +847,7 @@ def test_state_stage_lets_a_person_with_an_education_location_keep_such_a_donor(
 def _trips_day_stages(states, trips=None):
     return {
         "synthesis.population.trips": _trips() if trips is None else trips,
+        "synthesis.population.enriched": _persons(),
         STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
         DONOR_STAGE: (_donor_attributes(), _donor_trips(), {"enabled": True}),
     }
@@ -861,8 +865,41 @@ def _states_frame(rows):
 def test_trips_day_stage_off_returns_the_identical_object():
     trips = _trips()
     context = _context(TRIPS, stages=_trips_day_stages(_states_frame([]), trips=trips),
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: False})
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: False,
+                               TRIPS.KEY_DAY_ABSENCE_ENABLED: False})
     assert TRIPS.execute(context) is trips
+
+
+def test_trips_day_stage_off_off_returns_the_identical_object():
+    """Both flags false, driven the way the SDD brief spells the case out (issue #370, Task 4)."""
+    trips = _trips()
+    context = _context(TRIPS, stages={"synthesis.population.trips": trips},
+                       config={TRIPS.KEY_ENABLED: False, TRIPS.KEY_DAY_ABSENCE_ENABLED: False,
+                               "random_seed": 1})
+    assert TRIPS.execute(context) is trips
+
+
+def test_trips_day_stage_absence_only_removes_absent_persons():
+    """commute_day_state_enabled OFF, day_absence_enabled ON: only the general-absence removal
+    applies, through EMPTY commute-day placeholders (no state/donor stage output is touched)."""
+    trips = _trips()
+    person_ids = sorted(trips["person_id"].unique())
+    absence = pd.DataFrame({
+        "person_id": person_ids,
+        "day_absence_state": ["absent_individual"] + ["present"] * (len(person_ids) - 1),
+    })
+    context = _context(TRIPS, stages={"synthesis.population.trips": trips,
+                                      "synthesis.population.enriched": _persons(),
+                                      TRIPS.ABSENCE_STAGE: {"absence": absence,
+                                                            "diagnostics": {"enabled": True}}},
+                       config={TRIPS.KEY_ENABLED: False, TRIPS.KEY_DAY_ABSENCE_ENABLED: True,
+                               "random_seed": 1})
+
+    out = TRIPS.execute(context)
+
+    removed_person = absence["person_id"].iloc[0]
+    assert removed_person not in set(out["person_id"])
+    assert len(out) == len(trips) - int((trips["person_id"] == removed_person).sum())
 
 
 def test_trips_day_stage_on_replaces_only_the_home_persons():
@@ -876,7 +913,8 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
         {"person_id": 6, "commute_day_state": "home", "donor_id": None},
     ])
     context = _context(TRIPS, stages=_trips_day_stages(states, trips=trips),
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True})
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True,
+                               TRIPS.KEY_DAY_ABSENCE_ENABLED: False})
 
     day_trips = TRIPS.execute(context)
 
@@ -892,6 +930,27 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
             trips[trips["person_id"] == person_id][list(day_trips.columns)].reset_index(drop=True))
     # The CONTRACT columns stay first, as the pre-assignment view has them.
     assert list(day_trips.columns)[:len(CONTRACT)] == CONTRACT
+
+
+def test_trips_day_stage_both_on_removes_commute_and_general_absent_persons():
+    """Both flags True (issue #370): the commute-absent and generally-absent removals compose,
+    each removing its own person while leaving everyone else's row count unchanged."""
+    trips = _trips()
+    states = _states_frame([{"person_id": 4, "commute_day_state": "absent"}])
+    absence = pd.DataFrame({"person_id": [7], "day_absence_state": ["absent_household"]})
+    stages = dict(_trips_day_stages(states, trips=trips))
+    stages[TRIPS.ABSENCE_STAGE] = {"absence": absence, "diagnostics": {"enabled": True}}
+    context = _context(TRIPS, stages=stages,
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True,
+                               TRIPS.KEY_DAY_ABSENCE_ENABLED: True})
+
+    out = TRIPS.execute(context)
+
+    assert 4 not in set(out["person_id"])   # commute-absent
+    assert 7 not in set(out["person_id"])   # generally absent
+    for person_id in (1, 2, 3, 5, 6):
+        assert (len(out[out["person_id"] == person_id])
+                == len(trips[trips["person_id"] == person_id]))
 
 
 def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(caplog):
@@ -910,10 +969,12 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
         {"person_id": 1, "commute_day_state": "home", "donor_id": "d4", "coarsening_level": 0},
     ])
     stages = {"synthesis.population.trips": _trips(),
+              "synthesis.population.enriched": _persons(),
               STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
               DONOR_STAGE: (attributes, donor_trips, {"enabled": True})}
     context = _context(TRIPS, stages=stages,
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True})
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True,
+                               TRIPS.KEY_DAY_ABSENCE_ENABLED: False})
 
     with caplog.at_level("WARNING",
                          logger="braunschweig.synthesis.commute_day.plan_replacement"):

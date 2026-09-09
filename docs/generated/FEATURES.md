@@ -45,6 +45,7 @@ may only name run manifests (no run, no claim).
 | [freight_assumptions](../registry/features/freight_assumptions.yml) | freight | active | ON | A/i/i | 0 | -- | none | assumption | unvalidated | pending |
 | [freight_longhaul_v3](../registry/features/freight_longhaul_v3.yml) | freight | active | ON | A/-/- | 4 | not claimed | none | assumption | unvalidated | pending |
 | [full_analysis](../registry/features/full_analysis.yml) | analysis | active | ON | A/s/s | 1 | -- | none | none | unvalidated | pending |
+| [general_day_absence](../registry/features/general_day_absence.yml) | behavior | active | ON | A/-/- | 8 | proven | marker | committed | unvalidated | pending |
 | [gravity_od](../registry/features/gravity_od.yml) | work | active | ON | A/A/A | 4 | -- | none | none | unvalidated | pending |
 | [gravity_slope_by_rs7](../registry/features/gravity_slope_by_rs7.yml) | work | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [home_closure_model](../registry/features/home_closure_model.yml) | behavior | active | ON | A/i/- | 5 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |

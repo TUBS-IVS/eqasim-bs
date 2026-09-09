@@ -43,6 +43,24 @@ config:
   # of the pre-assignment stages here -- drawing states without replacing the day would write a
   # commuteDayState attribute that contradicts the plan it is attached to.
   commute_day_state_enabled: false
+  # General day absence (issue #370, ADR-0110): OFF for this workflow (ruling R13, correcting an
+  # earlier wrong premise that no synthesis.population.trips.final alias existed here at all --
+  # it DOES, see below): synthesis.population.trips.final IS aliased, to the bare pre-assignment
+  # stage braunschweig.popsim.trips_stage (NOT day-absence-aware), but matsim.scenario.population
+  # is ALSO aliased below, to the braunschweig wrapper, which gates its OWN declaration/read of
+  # braunschweig.synthesis.day_absence.absence_stage on THIS flag independently of the
+  # trips.final alias. With the true default the wrapper would merge a dayAbsenceState attribute
+  # onto persons whose trips are never removed -- the exact mismatch closed for
+  # config_popsim_mid_braunschweig.yml's own day_absence_enabled gap (final-review fix wave,
+  # Important finding 1) -- so false is NECESSARY here, not merely set for parity with
+  # commute_day_state_enabled.
+  day_absence_enabled: false
+  # braunschweig.analysis.synthesis.plan_structure_vs_srv defaults to the "final" reporting-day
+  # trips view, which does not exist as a distinct alias in this config (see above); pre_assignment
+  # is the view this workflow actually has, so if that stage is ever added to `run:` here it
+  # compares the day this population actually carries rather than aliasing to a stage this
+  # config does not wire.
+  plan_structure_trips_view: pre_assignment
   processes: 8
 
   # ENTD 2008 is the HTS and the donor survey for popsim_open.

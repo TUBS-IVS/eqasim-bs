@@ -78,6 +78,10 @@ from braunschweig.analysis.json_output import json_safe as _json_safe
 from braunschweig.calibration import commute_day_state_reference as R
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
 from braunschweig.calibration.srv_work_participation import load_srv_work_participation
+# Aliased (not "from ... import absent_person_ids") because commute_day_state_shares()'s new
+# keyword argument is itself named general_absent_person_ids and apply_general_absence() below
+# takes a same-named parameter absent_person_ids -- importing the bare name would shadow both.
+from braunschweig.synthesis.day_absence import absence as _day_absence
 
 LOGGER = logging.getLogger("braunschweig.analysis.synthesis.work_participation_by_kreis")
 
@@ -95,6 +99,22 @@ KEY_EDGE_TOLERANCE_KM = "cds_edge_tolerance_km"
 #: written at all (rather than written as a table of constants).
 KEY_COMMUTE_DAY_STATE_ENABLED = "commute_day_state_enabled"
 DEFAULT_COMMUTE_DAY_STATE_ENABLED = True
+#: Whether the general day-absence draw (issue #370, ADR-0110) overrides check 1's
+#: per-employed-person state to 'absent' before the shares are summed (see
+#: :func:`apply_general_absence`). Same key and default as every other consumer of
+#: :data:`ABSENCE_STAGE` (``braunschweig.synthesis.day_absence.absence_stage.KEY_ENABLED``,
+#: ``braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED``,
+#: ``braunschweig.synthesis.commute_day.output_day.KEY_DAY_ABSENCE_ENABLED``,
+#: ``braunschweig.analysis.synthesis.plan_structure_vs_srv.KEY_DAY_ABSENCE_ENABLED``): reusing
+#: the identical name lets ONE config value gate all of them together.
+KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
+DEFAULT_DAY_ABSENCE_ENABLED = True
+#: The general day-absence synpp stage, declared (and read) ONLY when BOTH
+#: :data:`KEY_COMMUTE_DAY_STATE_ENABLED` and :data:`KEY_DAY_ABSENCE_ENABLED` are on -- check 1
+#: needs the drawn states anyway, so a run with the state model off already skips check 1 (and
+#: therefore the absence override) entirely, and a run with the absence draw off must not pull
+#: this stage into its DAG for an override it would never apply.
+ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 #: Above this share of the state frame that cannot be RESOLVED against the population at all --
 #: no ``synthesis.population.enriched`` row, or an employed person whose home resolves to no ZGB
 #: Kreis -- the check-1 table RAISES. The join from the drawn states onto the employed persons is
@@ -190,11 +210,22 @@ STATE_COLUMN = "commute_day_state"
 #: workers of that code whose person exists in the population but is not flagged ``employed``.
 #: They are outside the SrV universe, so they enter no share above; the count is reported so a
 #: reader can see how far the model's worker cohort reaches beyond the employed one.
+#: ``n_absent_general`` (issue #370, ADR-0104 Task 7, APPENDED at the end so the pre-existing
+#: column order stays stable -- no repo consumer reads this CSV positionally) is a COUNT beside
+#: ``n_workers``, never a denominator: EVERY generally absent employed person of that code
+#: (:func:`apply_general_absence`'s mask), INCLUDING any of them with no assigned workplace at all
+#: -- folding them out of ``share_no_workplace`` and into ``share_absent``, which is why
+#: ``n_workers`` can be larger than "employed persons with an assigned workplace" once this column
+#: is non-zero -- AND including any of them whose commute-day state was ALREADY ``absent`` (a
+#: commute-day far commuter): the override is a no-op for that subset (``absent`` -> ``absent``),
+#: but they are still counted here, so ``n_absent_general`` is not a proxy for "persons the
+#: override actually changed". It makes the general-absence contribution traceable rather than
+#: hidden inside a state the workplace draw never actually produced.
 STATE_SHARE_COLUMNS = (
-    "code", "n_workers", "n_workers_not_employed", "share_at_workplace", "share_home",
-    "share_absent", "share_no_workplace", "n_employed", "share_employed_no_work_trip",
-    "srv_share_home_office_day", "srv_share_work_trip", "srv_share_neither",
-    "delta_no_work_trip_pp",
+    "code", "n_workers", "n_workers_not_employed", "share_at_workplace",
+    "share_home", "share_absent", "share_no_workplace", "n_employed",
+    "share_employed_no_work_trip", "srv_share_home_office_day", "srv_share_work_trip",
+    "srv_share_neither", "delta_no_work_trip_pp", "n_absent_general",
 )
 #: Share column for employed persons without an assigned workplace (no drawn state).
 NO_WORKPLACE_SHARE = "share_no_workplace"
@@ -235,8 +266,16 @@ def configure(context):
     # so a workflow running with the model off never carries the donor/state chain in its DAG
     # for a table this stage would not write anyway.
     context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
-    if context.config(KEY_COMMUTE_DAY_STATE_ENABLED):
+    commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
+    if commute_day_state_enabled:
         context.stage("braunschweig.synthesis.commute_day.state_stage")
+    # issue #370, Task 7: the general day-absence draw overrides check 1's per-employed-person
+    # state before the shares are summed (see apply_general_absence), so the absence stage is
+    # declared ONLY when check 1 itself will be produced (commute_day_state_enabled) AND the
+    # absence draw is on -- see ABSENCE_STAGE for why.
+    day_absence_enabled = bool(context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED))
+    if commute_day_state_enabled and day_absence_enabled:
+        context.stage(ABSENCE_STAGE)
     context.stage("synthesis.population.spatial.home.locations")
     context.stage("synthesis.population.spatial.primary.locations")
     # The workplace pool is declared under its CONCRETE name, not under the
@@ -260,7 +299,8 @@ def configure(context):
     context.config(KEY_MAX_UNRESOLVED_DESTINATION_SHARE, DEFAULT_MAX_UNRESOLVED_DESTINATION_SHARE)
     context.config(KEY_EDGE_TOLERANCE_KM, DEFAULT_EDGE_TOLERANCE_KM)
     context.config(KEY_MAX_STATES_OUTSIDE_SHARE, DEFAULT_MAX_STATES_OUTSIDE_SHARE)
-    # KEY_COMMUTE_DAY_STATE_ENABLED is declared above, where the state stage is gated on it.
+    # KEY_COMMUTE_DAY_STATE_ENABLED and KEY_DAY_ABSENCE_ENABLED are declared above, where the
+    # state stage and the absence stage are gated on them.
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -487,21 +527,51 @@ def compare_participation(model, srv_table):
 
 # ------------------------------------------------------------------ reporting-day states (check 1)
 
-def _state_share_row(code, subset, n_workers_not_employed=0):
+def apply_general_absence(state_by_person: pd.Series, absent_person_ids: set) -> pd.Series:
+    """Override the per-employed-person state to 'absent' for generally absent persons.
+
+    ``state_by_person`` is the check-1 employed-universe ``commute_day_state`` column, indexed
+    by ``person_id`` (NaN for an employed person without an assigned workplace, see
+    :func:`_state_share_row`); ``absent_person_ids`` is
+    :func:`braunschweig.synthesis.day_absence.absence.absent_person_ids`'s output (issue #370,
+    ADR-0110). The general day-absence draw is a full-day, all-purpose absence and therefore
+    takes precedence over the reporting-day commute-day-state draw -- including for an employed
+    person WITHOUT an assigned workplace, who would otherwise be counted under
+    :data:`NO_WORKPLACE_SHARE` although they in fact make no home->work trip on the reporting
+    day. Pure function; ``state_by_person`` is not mutated.
+    """
+    out = state_by_person.copy()
+    mask = out.index.isin(list(absent_person_ids))
+    n_overridden = int(mask.sum())
+    n_total = len(out)
+    out[mask] = "absent"
+    LOGGER.info(
+        "%s general absence folded into check 1: %d/%d employed persons (%.2f%%) set to absent",
+        _LOG_TAG, n_overridden, n_total, 100.0 * _rate(n_overridden, n_total))
+    return out
+
+
+def _state_share_row(code, subset, n_workers_not_employed=0, n_absent_general=0):
     """One row of the state-share table, over ``subset``'s EMPLOYED persons.
 
     ``subset`` is the employed cohort of one code (see :func:`_employed_with_home_kreis`) with a
     ``commute_day_state`` column that is missing for every employed person WITHOUT an assigned
-    workplace. Each of the three state shares and :data:`NO_WORKPLACE_SHARE` therefore divides
-    by ``len(subset)`` = ``n_employed``, the universe the SrV reference is defined on, and the
-    four sum to 1. ``n_workers`` is reported as a COUNT beside them, never as a denominator, and
-    so is ``n_workers_not_employed`` (ruling R6, see :data:`STATE_SHARE_COLUMNS`), which is
-    supplied by the caller because those persons are by definition NOT in ``subset``.
+    workplace, UNLESS the general day-absence draw overrode it to ``'absent'``
+    (:func:`apply_general_absence`, issue #370, ADR-0104 Task 7) -- in which case it counts as a
+    worker with a determined state, not as a no-workplace remainder. Each of the three state
+    shares and :data:`NO_WORKPLACE_SHARE` therefore divides by ``len(subset)`` = ``n_employed``,
+    the universe the SrV reference is defined on, and the four sum to 1. ``n_workers`` is
+    reported as a COUNT beside them, never as a denominator, and so are
+    ``n_workers_not_employed`` (ruling R6, see :data:`STATE_SHARE_COLUMNS`) and
+    ``n_absent_general``, both supplied by the caller: the former because those persons are by
+    definition NOT in ``subset``, the latter because it counts a SUBSET of ``subset`` that this
+    function cannot itself distinguish once the override has already been applied.
     """
     n_employed = int(len(subset))
     n_workers = int(subset[STATE_COLUMN].notna().sum())
     row = {"code": code, "n_workers": n_workers, "n_employed": n_employed,
-           "n_workers_not_employed": int(n_workers_not_employed)}
+           "n_workers_not_employed": int(n_workers_not_employed),
+           "n_absent_general": int(n_absent_general)}
     for state in COMMUTE_DAY_STATES:
         # No employed person: a share is undefined, not zero (same convention as
         # _participation_row -- never substitute a value for an absent measurement).
@@ -551,7 +621,7 @@ def workers_not_employed(states, persons, homes_with_ars5):
 def commute_day_state_shares(states, persons, homes_with_ars5, participation,
                              max_unmatched_home_share=DEFAULT_MAX_UNMATCHED_HOME_SHARE,
                              max_states_outside_employed_share=DEFAULT_MAX_STATES_OUTSIDE_SHARE,
-                             stats=None, employed=None):
+                             stats=None, employed=None, general_absent_person_ids=None):
     """ADR-0104 check 1: realised reporting-day state shares per home Kreis, against SrV 2023.
 
     **Denominator (the defect this function exists to avoid re-introducing).** Every share is
@@ -608,6 +678,19 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
     ``employed``, when given, is the already-computed universe from
     :func:`_employed_with_home_kreis` (the stage computes it ONCE per run and hands the same
     frame to both tables); when ``None`` it is computed here from ``persons`` / ``homes_with_ars5``.
+
+    ``general_absent_person_ids`` (issue #370, ADR-0104 Task 7) is
+    :func:`~braunschweig.synthesis.day_absence.absence.absent_person_ids`'s output, or ``None``
+    (the default) to leave every state exactly as drawn -- the OFF path (the general day-absence
+    draw is disabled) and every caller that predates it behave identically to before. When given,
+    :func:`apply_general_absence` overrides the employed universe's state to ``'absent'`` for
+    every person in the set BEFORE the per-Kreis split below, so the override folds into every
+    row (per-Kreis and zgb) consistently; the count of persons it actually moved is reported per
+    code as ``n_absent_general``. If the set is non-empty but overrides NOBODY in the employed
+    universe, that is logged as a WARNING (CLAUDE.md "Fallback transparency"): a real population
+    almost always has at least one generally absent employed person, so a zero overlap most
+    likely means a person_id join defect between :data:`ABSENCE_STAGE` and this stage, not a
+    genuine absence of overlap.
     ``stats``, if a dict, receives the counts.
     """
     _require_columns(states, ("person_id", "commute_day_state"), "the commute-day state frame")
@@ -688,18 +771,49 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
             "outside the ZGB; the check-1 shares would otherwise describe a cohort the state "
             "model largely does not cover")
 
+    # issue #370 (ADR-0104 Task 7): the general day-absence draw is a full-day, all-purpose
+    # absence and takes precedence over the reporting-day commute state -- including for an
+    # employed person WITHOUT an assigned workplace, who would otherwise -- wrongly -- fall into
+    # NO_WORKPLACE_SHARE rather than share_absent. Applied to the WHOLE employed universe BEFORE
+    # the per-Kreis split below, so every row (per-Kreis and zgb) reflects it consistently; this
+    # can raise n_workers for anyone it moves out of the no-workplace remainder, which is correct
+    # here -- they now HAVE a determined commute-day state, even though the workplace draw never
+    # assigned them one.
+    general_absent_by_code, n_absent_general_total = {}, 0
+    if general_absent_person_ids is not None:
+        general_absent_mask = employed["person_id"].isin(general_absent_person_ids)
+        n_absent_general_total = int(general_absent_mask.sum())
+        if len(general_absent_person_ids) > 0 and n_absent_general_total == 0:
+            LOGGER.warning(
+                "%s the general day-absence draw (%s) marks %d person(s) absent, but none of "
+                "them is an employed ZGB person in this check-1 universe -- this likely signals "
+                "a person_id join defect (e.g. a dtype drift) between that stage and this one, "
+                "not a population in which nobody generally absent is also employed",
+                _LOG_TAG, ABSENCE_STAGE, len(general_absent_person_ids))
+        employed[STATE_COLUMN] = apply_general_absence(
+            employed.set_index("person_id")[STATE_COLUMN], general_absent_person_ids
+        ).reindex(employed["person_id"]).to_numpy()
+        general_absent_by_code = employed.loc[
+            general_absent_mask & employed["ars5"].isin(ZGB_KREISE), "ars5"
+        ].value_counts().to_dict()
+
     # Per-code counts of the not-employed workers, over the eight ZGB Kreise only; the zgb row is
     # exactly their union, the same convention every other count in this table follows. Workers
     # whose home resolves to no ZGB Kreis are in the TOTAL above but in no row here.
     not_employed_by_code = not_employed.loc[
         not_employed["ars5"].isin(ZGB_KREISE), "ars5"].value_counts().to_dict()
     rows = [_state_share_row(code, employed[employed["ars5"] == code],
-                             not_employed_by_code.get(code, 0)) for code in ZGB_KREISE]
-    rows.append(_state_share_row(ZGB_ROW_CODE, employed, sum(not_employed_by_code.values())))
+                             not_employed_by_code.get(code, 0),
+                             general_absent_by_code.get(code, 0)) for code in ZGB_KREISE]
+    rows.append(_state_share_row(ZGB_ROW_CODE, employed, sum(not_employed_by_code.values()),
+                                 n_absent_general_total))
+    # Column order here is cosmetic only: the function's actual output order is fixed by the
+    # final `out[list(STATE_SHARE_COLUMNS)]` selection below, which appends n_absent_general at
+    # the end (issue #370 review: keep the pre-existing schema order stable).
     table = pd.DataFrame(rows, columns=["code", "n_workers", "n_workers_not_employed",
                                         "n_employed"]
                          + [f"share_{state}" for state in COMMUTE_DAY_STATES]
-                         + [NO_WORKPLACE_SHARE])
+                         + [NO_WORKPLACE_SHARE, "n_absent_general"])
 
     reference = participation[["code", "n_employed", "share_no_work_trip",
                                "srv_share_home_office_day", "srv_share_work_trip",
@@ -723,12 +837,16 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
         - (out["srv_share_home_office_day"] + out["srv_share_neither"]))
 
     zgb_row = out[out["code"] == ZGB_ROW_CODE].iloc[0]
+    n_employed_zgb = int(zgb_row["n_employed"])
+    n_absent_general_zgb = int(zgb_row["n_absent_general"])
     LOGGER.info(
-        "%s reporting-day states over %d ZGB EMPLOYED persons (%d with an assigned workplace): "
-        "at_workplace %s / home %s / absent %s / no_workplace %s (SrV work_trip %s / "
-        "home_office_day %s / neither %s); employed without a work trip %s vs SrV remainder, "
-        "delta %s pp (tolerance +/- %.1f pp, regional aggregate only)",
-        _LOG_TAG, int(zgb_row["n_employed"]), int(zgb_row["n_workers"]),
+        "%s reporting-day states over %d ZGB EMPLOYED persons (%d with an assigned workplace, "
+        "%d/%d (%.2f%%) of them set to 'absent' by the general day-absence draw): at_workplace "
+        "%s / home %s / absent %s / no_workplace %s (SrV work_trip %s / home_office_day %s / "
+        "neither %s); employed without a work trip %s vs SrV remainder, delta %s pp (tolerance "
+        "+/- %.1f pp, regional aggregate only)",
+        _LOG_TAG, n_employed_zgb, int(zgb_row["n_workers"]),
+        n_absent_general_zgb, n_employed_zgb, 100.0 * _rate(n_absent_general_zgb, n_employed_zgb),
         _fmt(zgb_row["share_at_workplace"]), _fmt(zgb_row["share_home"]),
         _fmt(zgb_row["share_absent"]), _fmt(zgb_row[NO_WORKPLACE_SHARE]),
         _fmt(zgb_row["srv_share_work_trip"]), _fmt(zgb_row["srv_share_home_office_day"]),
@@ -741,7 +859,8 @@ def commute_day_state_shares(states, persons, homes_with_ars5, participation,
                      n_states_outside_employed_universe=n_states_outside,
                      share_states_outside_employed_universe=float(share_outside),
                      n_workers_not_employed=n_workers_not_employed,
-                     share_workers_not_employed=float(share_workers_not_employed))
+                     share_workers_not_employed=float(share_workers_not_employed),
+                     n_absent_general=n_absent_general_total)
     return out[list(STATE_SHARE_COLUMNS)]
 
 
@@ -1263,6 +1382,7 @@ def _state_shares_section(state_shares):
     n_employed = int(row["n_employed"])
     n_workers = int(row["n_workers"])
     n_workers_not_employed = int(row["n_workers_not_employed"])
+    n_absent_general = int(row["n_absent_general"])
     lines = ["", "## Check 1 (ADR-0104): reporting-day states vs SrV -- tolerance +/- 3 pp on "
              "the regional aggregate only (ASSUMPTION, pre-registered)", "",
              "DENOMINATOR: every model share below, and every SrV share it is compared to, is a "
@@ -1301,6 +1421,11 @@ def _state_shares_section(state_shares):
              "are excluded from every",
              "share in this section; they are reported so the gap between the two cohorts stays "
              "visible.", "",
+             f"The general day-absence draw (issue #370) marks {n_absent_general} employed "
+             f"person(s) 'absent' before the shares above were computed -- including any of "
+             f"them without an assigned workplace, who would otherwise have been counted as "
+             f"no_workplace, and any of them already 'absent' as a commute-day far commuter, "
+             f"for whom the override has no effect (column n_absent_general).", "",
              "| quantity (share of employed persons) | model | SrV 2023 | delta (pp) | "
              "+/- 3 pp |", "|---|---|---|---|---|"]
     for label, model_share, srv_share in pairs:
@@ -1378,7 +1503,13 @@ json_safe = _json_safe
 #: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shared
 #: strict-JSON writer decides how provenance.json represents a missing measurement, which is
 #: part of this stage's output and is no longer visible in this module's own source.
-_HELPER_MODULES = (_json_output,)
+#: ``_day_absence`` is folded in because :func:`execute` directly calls
+#: :func:`~braunschweig.synthesis.day_absence.absence.absent_person_ids` (issue #370, Task 7): the
+#: :data:`ABSENCE_STAGE` dependency already invalidates the cache when the absence stage's OWN
+#: output changes, but hashing the pure helper here too keeps "over-hash rather than under-hash"
+#: uniform across every direct import in this module (same reasoning as
+#: ``braunschweig.analysis.synthesis.plan_structure_vs_srv._HELPER_MODULES``).
+_HELPER_MODULES = (_json_output, _day_absence)
 
 
 def write_outputs(directory, participation, distance_classes, ext_table, per_person,
@@ -1509,6 +1640,13 @@ def execute(context):
     commute_day_state_enabled = bool(context.config(KEY_COMMUTE_DAY_STATE_ENABLED))
     df_states = (context.stage("braunschweig.synthesis.commute_day.state_stage")["states"]
                  if commute_day_state_enabled else None)
+    # issue #370, Task 7: same gate configure() used to decide whether to declare ABSENCE_STAGE --
+    # reading it unconditionally would fail on a workflow that runs with either flag off.
+    day_absence_enabled = bool(context.config(KEY_DAY_ABSENCE_ENABLED))
+    day_absence_applied = commute_day_state_enabled and day_absence_enabled
+    general_absent_person_ids = (
+        _day_absence.absent_person_ids(context.stage(ABSENCE_STAGE)["absence"])
+        if day_absence_applied else None)
     df_work_locations = context.stage("braunschweig.locations.work")
     df_municipalities = context.stage("data.spatial.municipalities")
     df_ba_flows = context.stage("braunschweig.data.census.pendler")
@@ -1524,10 +1662,10 @@ def execute(context):
 
     LOGGER.info(
         "%s parameters: detour_factor=%.3f, max_unmatched_home_share=%.3f, "
-        "max_unresolved_destination_share=%.3f, edge_tolerance_km=%.2f, sampling_rate=%.4f; "
-        "writing to %s",
+        "max_unresolved_destination_share=%.3f, edge_tolerance_km=%.2f, sampling_rate=%.4f, "
+        "day_absence_enabled=%s; writing to %s",
         _LOG_TAG, detour_factor, max_unmatched_home_share, max_unresolved_destination_share,
-        edge_tolerance_km, sampling_rate, out_dir)
+        edge_tolerance_km, sampling_rate, day_absence_enabled, out_dir)
 
     srv_dir = os.path.join(data_path, "braunschweig", "srv")
     srv_table = load_srv_work_participation(srv_dir)
@@ -1567,7 +1705,8 @@ def execute(context):
             df_states, df_persons, homes, participation,
             max_unmatched_home_share=max_unmatched_home_share,
             max_states_outside_employed_share=max_states_outside_employed_share,
-            stats=state_stats, employed=employed)
+            stats=state_stats, employed=employed,
+            general_absent_person_ids=general_absent_person_ids)
     else:
         LOGGER.info("%s %s is false -- no reporting-day state table is written (every worker "
                     "carries the same placeholder state)", _LOG_TAG,
@@ -1603,6 +1742,7 @@ def execute(context):
             "commute_day_state_enabled": commute_day_state_enabled,
             "check_1_tolerance_pp": CHECK_1_TOLERANCE_PP,
             "max_states_outside_employed_share": max_states_outside_employed_share,
+            "day_absence_enabled": day_absence_enabled,
         },
         "inputs": {
             "srv_work_participation": os.path.join(
@@ -1617,7 +1757,7 @@ def execute(context):
                 "synthesis.population.spatial.home.locations",
                 "synthesis.population.spatial.primary.locations",
                 "braunschweig.locations.work", "data.spatial.municipalities",
-                "braunschweig.data.census.pendler",
+                "braunschweig.data.census.pendler", ABSENCE_STAGE,
             ],
         },
         "counts": {
