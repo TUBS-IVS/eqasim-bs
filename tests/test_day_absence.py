@@ -181,7 +181,7 @@ def test_individual_stage_min_household_size_1_is_byte_identical_to_the_default(
     with_keyword, diag_with = D.draw_absence(persons, ref, np.random.RandomState(13),
                                              individual_stage_min_household_size=1)
     without_keyword, diag_without = D.draw_absence(persons, ref, np.random.RandomState(13))
-    pd.testing.assert_frame_equal(with_keyword, without_keyword)
+    pd.testing.assert_frame_equal(with_keyword, without_keyword, check_exact=True)
     assert diag_with["n_persons_ineligible_individual_stage"] == 0
     assert diag_without["n_persons_ineligible_individual_stage"] == 0
 

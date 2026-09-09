@@ -107,6 +107,26 @@ def _disabled_frame(persons):
         "p_household": 0.0, "p_individual": 0.0, "reason": REASON_DISABLED})[list(ABSENCE_COLUMNS)]
 
 
+def _validate_individual_stage_min_household_size(raw_value):
+    """Validate ``day_absence_individual_stage_min_household_size``: a genuine integer >= 1.
+
+    ``int(raw_value)`` alone would silently TRUNCATE a non-integral float (e.g. ``2.7`` -> ``2``),
+    hiding a likely configuration typo (CLAUDE.md "fail early", "no silent fallbacks") -- only a
+    plain ``int`` (never ``bool``, which is technically an ``int`` subtype but not a meaningful
+    household-size count) or a ``float`` with no fractional part (e.g. ``2.0``) is accepted.
+    """
+    error = ValueError(f"{_LOG_TAG} {KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE} must be an integer >= 1, "
+                       f"got {raw_value!r}")
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+        raise error
+    if isinstance(raw_value, float) and not raw_value.is_integer():
+        raise error
+    value = int(raw_value)
+    if value < 1:
+        raise error
+    return value
+
+
 def execute(context):
     """Draw the general day-absence state of every enriched person.
 
@@ -129,15 +149,8 @@ def execute(context):
     random_seed = int(context.config("random_seed"))
     household_stage = bool(context.config(KEY_HOUSEHOLD_STAGE))
     max_dev_pp = float(context.config(KEY_MAX_BAND_DEVIATION_PP))
-    raw_min_household_size = context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE)
-    try:
-        individual_stage_min_household_size = int(raw_min_household_size)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{_LOG_TAG} {KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE} must be an integer >= 1, "
-                         f"got {raw_min_household_size!r}") from error
-    if individual_stage_min_household_size < 1:
-        raise ValueError(f"{_LOG_TAG} {KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE} must be an integer >= 1, "
-                         f"got {raw_min_household_size!r}")
+    individual_stage_min_household_size = _validate_individual_stage_min_household_size(
+        context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE))
     reference = load_absence_reference(os.path.join(str(context.config("data_path")), *SRV_SUBDIR))
     logger.info("%s parameters: household_stage=%s, %s=%d, random_seed=%d (+%d offset), reference bands %s, "
                 "sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
@@ -166,9 +179,10 @@ def execute(context):
     n_total = diagnostics["n_persons"]
     n_ineligible = diagnostics["n_persons_ineligible_individual_stage"]
     ineligible_rate = n_ineligible / n_total if n_total else float("nan")
-    logger.info("%s %d/%d persons (%.4f rate) are present but ineligible for the individual stage "
-               "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total, ineligible_rate,
-               KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE, individual_stage_min_household_size)
+    logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
+               "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
+               100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+               individual_stage_min_household_size)
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
     diagnostics["n_band_guard_hits"] = n_guard_hits

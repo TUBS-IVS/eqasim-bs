@@ -172,3 +172,12 @@ def test_individual_stage_min_household_size_of_zero_raises_naming_the_key():
                        _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: 0}))
     with pytest.raises(ValueError, match=S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE):
         S.execute(context)
+
+
+def test_individual_stage_min_household_size_of_2_5_raises_naming_the_key():
+    """int(2.5) == 2 would silently truncate a non-integral config value into a plausible-looking
+    household size; this must raise rather than accept a rounded/truncated result."""
+    context = _context({"synthesis.population.enriched": _enriched()},
+                       _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: 2.5}))
+    with pytest.raises(ValueError, match=S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE):
+        S.execute(context)
