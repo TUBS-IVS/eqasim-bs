@@ -863,6 +863,102 @@ def test_commute_day_state_shares_accepts_a_precomputed_employed_universe():
     assert WP.STATE_COLUMN not in employed.columns
 
 
+# ------------------------------------------------------ general day absence (issue #370, Task 7)
+#
+# The general day-absence draw (braunschweig.synthesis.day_absence.absence_stage, ADR-0110) is a
+# full-day, all-purpose absence and therefore takes precedence over the reporting-day commute
+# state: a generally absent employed person makes no home->work trip today whatever the
+# commute-day model drew for them (or failed to draw, if they have no assigned workplace at
+# all). WP.apply_general_absence() performs the override; commute_day_state_shares() applies it
+# to the whole employed universe BEFORE the per-Kreis shares are summed.
+
+def test_apply_general_absence_overrides_only_the_generally_absent_persons():
+    state_by_person = pd.Series(["at_workplace", "home", np.nan], index=[1, 2, 3])
+    out = WP.apply_general_absence(state_by_person, {2, 3})
+    assert out.loc[1] == "at_workplace"
+    assert out.loc[2] == "absent"
+    assert out.loc[3] == "absent"
+    # Pure function: the input series is untouched.
+    assert pd.isna(state_by_person.loc[3])
+
+
+def test_commute_day_state_shares_folds_a_generally_absent_worker_into_absent():
+    """Person 1 is drawn 'at_workplace' by the commute-day model but is generally absent all
+    day -- the override must move exactly one person from at_workplace to absent, and report it
+    in n_absent_general, while the four shares still sum to 1."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+
+    baseline = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    zgb_baseline = baseline[baseline["code"] == WP.ZGB_ROW_CODE].iloc[0]
+
+    stats = {}
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                        general_absent_person_ids={1}, stats=stats)
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["share_absent"] == pytest.approx(zgb_baseline["share_absent"] + 1.0 / 8.0)
+    assert zgb["share_at_workplace"] == pytest.approx(
+        zgb_baseline["share_at_workplace"] - 1.0 / 8.0)
+    assert zgb["n_absent_general"] == 1
+    assert stats["n_absent_general"] == 1
+    kreis = table[table["code"] == "03101"].iloc[0]
+    assert kreis["n_absent_general"] == 1
+    assert (zgb["share_at_workplace"] + zgb["share_home"] + zgb["share_absent"]
+            + zgb[WP.NO_WORKPLACE_SHARE]) == pytest.approx(1.0)
+
+
+def test_commute_day_state_shares_counts_a_generally_absent_person_without_a_workplace_as_absent():
+    """An employed person WITHOUT an assigned workplace (no drawn state at all) who is generally
+    absent must count as 'absent', not fall into share_no_workplace."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+
+    baseline = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    zgb_baseline = baseline[baseline["code"] == WP.ZGB_ROW_CODE].iloc[0]
+
+    # Person 5 is employed (_EMPLOYED_IDS) but carries no drawn state (absent from
+    # _WORKER_STATES) -- the "no workplace" remainder -- and is generally absent all day.
+    table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                        general_absent_person_ids={5})
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["share_absent"] == pytest.approx(zgb_baseline["share_absent"] + 1.0 / 8.0)
+    assert zgb[WP.NO_WORKPLACE_SHARE] == pytest.approx(
+        zgb_baseline[WP.NO_WORKPLACE_SHARE] - 1.0 / 8.0)
+    assert zgb["n_absent_general"] == 1
+    # The override supplies a determined state where the model had none, so n_workers rises too.
+    assert zgb["n_workers"] == zgb_baseline["n_workers"] + 1
+
+
+def test_commute_day_state_shares_default_none_leaves_the_table_unchanged():
+    """general_absent_person_ids=None (the default) is a strict no-op: every caller that
+    predates issue #370 keeps its old output, including a zeroed n_absent_general column."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+    without_kwarg = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation)
+    with_none = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                            general_absent_person_ids=None)
+    pd.testing.assert_frame_equal(without_kwarg, with_none)
+    assert (without_kwarg["n_absent_general"] == 0).all()
+
+
+def test_commute_day_state_shares_warns_when_the_general_absence_draw_matches_nobody(caplog):
+    """CLAUDE.md 'Fallback transparency': a non-empty absence draw that overlaps NO employed
+    person in this universe most likely signals a person_id join defect, not a real population
+    fact, and must be logged loudly rather than silently reporting n_absent_general == 0."""
+    persons = _check_1_persons()
+    homes = _check_1_homes(persons)
+    participation = _participation_table(persons, homes, share_no_work_trip=0.35)
+    with caplog.at_level("WARNING"):
+        table = WP.commute_day_state_shares(_check_1_states(), persons, homes, participation,
+                                            general_absent_person_ids={901, 902})
+    assert "join defect" in caplog.text.lower()
+    zgb = table[table["code"] == WP.ZGB_ROW_CODE].iloc[0]
+    assert zgb["n_absent_general"] == 0
+
+
 def test_commute_day_state_shares_rejects_an_unknown_state():
     persons = _check_1_persons(employed_ids=(1,), extra_not_employed=())
     homes = _check_1_homes(persons)
