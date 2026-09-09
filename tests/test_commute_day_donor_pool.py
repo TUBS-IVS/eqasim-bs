@@ -195,6 +195,31 @@ def test_donor_trips_hands_the_resample_a_sex_column_without_mixed_types(monkeyp
     assert attributes["sex"].isna().any()
 
 
+def test_donor_trips_forwards_w_zweck_10_as_leisure(monkeypatch):
+    """w_zweck_10_as_leisure must reach build_validated_trip_table (issue #373 fix
+    round 1, Important finding 3c) -- accepting the keyword on donor_trips is not
+    enough if it never reaches the builder that actually calls map_purpose."""
+    captured = {}
+    real_builder = donor_pool.build_validated_trip_table
+
+    def capturing_builder(persons, wege, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        return real_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_builder)
+
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(),
+                                             _wege_fixture())
+    donor_pool.donor_trips(
+        donors, attributes, _wege_fixture(), random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True, w_zweck_10_as_leisure=True,
+    )
+    assert captured["w_zweck_10_as_leisure"] is True
+
+
 def test_build_home_office_donor_pool_diagnostics_and_shapes():
     persons = _persons_fixture()
     wege = _wege_fixture()

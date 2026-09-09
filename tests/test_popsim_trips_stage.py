@@ -500,3 +500,33 @@ def test_run_threads_closure_dwell_min_obs(monkeypatch):
     trips_stage.run(persons, wege, random_seed=1, closure_dwell_model="empirical",
                     closure_dwell_min_obs=7, exclude_rbw_legs=True)
     assert seen["min_obs"] == 7
+
+
+def test_run_forwards_w_zweck_10_as_leisure_to_both_builders(monkeypatch):
+    """w_zweck_10_as_leisure must reach BOTH internal builders run() calls: the
+    empirical closure-dwell donor table (build_closure_dwell_model) and the main
+    validated trip table (popsim_trips.build_validated_trip_table) -- issue #373
+    fix round 1, Important finding 3b. Forwarding it to only one would let the
+    dwell pools disagree with the purpose vocabulary of the table they feed (see
+    build_closure_dwell_model's own docstring)."""
+    from braunschweig.popsim import trips as popsim_trips
+
+    seen = {}
+    original_dwell = trips_stage.build_closure_dwell_model
+
+    def dwell_spy(*args, **kwargs):
+        seen["dwell_model"] = kwargs.get("w_zweck_10_as_leisure")
+        return original_dwell(*args, **kwargs)
+
+    original_build = popsim_trips.build_validated_trip_table
+
+    def build_spy(*args, **kwargs):
+        seen["build_validated_trip_table"] = kwargs.get("w_zweck_10_as_leisure")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(trips_stage, "build_closure_dwell_model", dwell_spy)
+    monkeypatch.setattr(popsim_trips, "build_validated_trip_table", build_spy)
+    persons, wege = _persons_and_wege_with_rbw()
+    trips_stage.run(persons, wege, random_seed=1, w_zweck_10_as_leisure=True)
+    assert seen["dwell_model"] is True
+    assert seen["build_validated_trip_table"] is True

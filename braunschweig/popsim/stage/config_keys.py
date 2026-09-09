@@ -311,6 +311,30 @@ DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 KEY_W_ZWECK_10_AS_LEISURE = "w_zweck_10_as_leisure"
 DEFAULT_W_ZWECK_10_AS_LEISURE = True
 
+# MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
+# build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
+# each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the
+# MiD-specific codings (W_RBW rbW-leg flag, W_SO1 diary start situation, W_ZWECK purpose
+# vocabulary) or the MiD Wege table the empirical closure dwell is estimated from.
+#
+# Defined ONCE so a newly REJECTED keyword cannot silently reopen the bug issue #373 fix
+# round 1 found: two popsim_open fixtures (config_popsim_open_braunschweig.yml,
+# config_smoke_popsim_open_mini.yml) silently missed the w_zweck_10_as_leisure override
+# this key's own addition required (it defaults to True, EntdSource.build_trips rejects
+# True), so both configurations aborted inside braunschweig.popsim.trips_stage AFTER the
+# full PopulationSim balancing. EntdSource.build_trips' rejection checks read this SAME
+# dict for their comparison values (deferred import -- see that module's docstring for
+# why config_keys cannot be imported at ITS module level), and
+# tests/test_popsim_open_config.py's popsim_open config-parity guard reads it too, so a
+# future MiD-only rejection (e.g. issue #373 task 4's two passive-escort keywords) is
+# enforced on every popsim_open fixture automatically.
+ENTD_REJECTED_KEYS: dict[str, object] = {
+    KEY_EXCLUDE_RBW_LEGS: False,
+    KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
+    KEY_CLOSURE_DWELL_MODEL: "fixed_1h",
+    KEY_W_ZWECK_10_AS_LEISURE: False,
+}
+
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).
 # economic_status keeps its historical key; the S1c additions get their own keys.

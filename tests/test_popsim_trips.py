@@ -379,3 +379,30 @@ def test_map_purpose_passive_education_rates_logged(caplog):
     # active 3 legs weight 3.0 (50.0%), passive 1 leg weight 3.0 (50.0%)
     assert "escort_passive_education ON" in joined
     assert "passive" in joined and "education" in joined
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 fix round 1, Important finding 3a: w_zweck_10_as_leisure must reach
+# map_purpose through the FULL builder chain (build_validated_trip_table ->
+# build_trip_table -> expand_persons_to_trips -> map_purpose), not just be
+# exercised directly against map_purpose (test_w_zweck_hwzweck1_fold.py).
+# ---------------------------------------------------------------------------
+
+def test_build_validated_trip_table_threads_w_zweck_10_as_leisure_to_map_purpose():
+    """A single W_ZWECK-10 leg must resolve to following_purpose 'leisure' when the
+    flag is on and 'other' when it is off, through the full builder chain."""
+    persons = pd.DataFrame({
+        "person_id": ["A_1_0_1", "A_1_0_1"], "H_ID": [1, 1], "P_ID": [1, 1],
+    })
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 1], "W_ID": [1, 2],
+        "W_ZWECK": [10, 8], "hvm_imp": [4, 4],
+        "W_SZS": [8, 17], "W_SZM": [0, 0], "W_AZS": [8, 17], "W_AZM": [30, 20],
+    })
+    table_on, _ = trips.build_validated_trip_table(persons, wege, w_zweck_10_as_leisure=True)
+    table_off, _ = trips.build_validated_trip_table(persons, wege, w_zweck_10_as_leisure=False)
+
+    first_on = table_on[table_on["trip_index"] == 0].iloc[0]
+    first_off = table_off[table_off["trip_index"] == 0].iloc[0]
+    assert first_on["following_purpose"] == "leisure"
+    assert first_off["following_purpose"] == "other"

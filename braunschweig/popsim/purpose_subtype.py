@@ -321,11 +321,24 @@ LEISURE_GROUPS = {
 LEISURE_SENTINELS = frozenset({2202, 4402, 599, 999, 503, 603, 605})
 # Defensive addition (issue #373, ADR-0111): 7704 "kein Einkaufs-, Erledigungs-, oder
 # Freizeitweg" and 7705 "Weg ohne Info zum Wegezweck" (codebook labels, MiD2023_
-# Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD). W_ZWECK 10 ("anderer
-# Zweck") legs relabelled to "leisure" under w_zweck_10_as_leisure carry sentinel-only
-# W_ZWD codes (their W_ZWD is always a sentinel per ADR-0111), so if LEISURE_SPEC's
-# zweck_values is ever widened to include code 10, these two codes must already be
-# excluded rather than tripping code_coverage_guard's unmapped-code error.
+# Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD). LEISURE_SPEC's
+# zweck_values is {7} only, so a code-10 leg's OWN row never reaches ESTIMATION here
+# (estimate_group_probabilities / code_coverage_guard read only W_ZWECK == 7 rows);
+# these two sentinels guard a FUTURE widening of zweck_values to include 10, so such a
+# widening could not silently trip the coverage guard on a code-10 leg's sentinel-only
+# W_ZWD.
+#
+# That is true for ESTIMATION only -- it does NOT mean code-10 legs are unaffected by
+# w_zweck_10_as_leisure at APPLICATION time. distance_distributions.run()'s
+# leisure_subtype_split step filters on following_purpose == "leisure" (the eqasim-
+# mapped purpose, not the raw W_ZWECK); under the flag that set INCLUDES code-10 legs.
+# ASSUMPTION (measured in the #373 A/B, not a defect this task fixes): because a
+# code-10 leg's own W_ZWD is always a sentinel and never a LEISURE_GROUPS code, it
+# contributes to neither a subtype-specific distance layer nor the subtype-ASSIGNMENT
+# model (estimated on code-7 legs only, via LEISURE_ZWECK={7}) -- every synthetic
+# "leisure" activity therefore draws its subtype AND its subtype-specific distance
+# from the code-7 subtype mix and the code-7 subtype distance layers, regardless of
+# whether the underlying donor leg was originally W_ZWECK 7 or 10.
 LEISURE_SENTINELS |= {7704, 7705}
 
 OTHER_ERRAND_ZWECK = frozenset({5})   # private Erledigung, label to verify (codeplan)

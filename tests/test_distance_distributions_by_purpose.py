@@ -313,3 +313,23 @@ def test_escort_passive_education_relabels_w_zweck_13_to_education():
     assert "education" in out
     assert _count_legs(out, "education") == 1  # the single relabelled W_ZWECK=13 leg
     assert _count_legs(out, "escort") == 2      # only the two active W_ZWECK=6 legs
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 fix round 1, Important finding 3c: w_zweck_10_as_leisure must reach
+# the map_purpose() call inside run()'s purpose-harmonisation step.
+# ---------------------------------------------------------------------------
+
+def test_run_forwards_w_zweck_10_as_leisure_to_map_purpose(monkeypatch):
+    from braunschweig.popsim import distance_distributions as dd
+
+    captured = {}
+    real_map_purpose = dd.map_purpose
+
+    def spy(*args, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        return real_map_purpose(*args, **kwargs)
+
+    monkeypatch.setattr(dd, "map_purpose", spy)
+    dd.run(_synthetic_wege(), w_zweck_10_as_leisure=True)
+    assert captured["w_zweck_10_as_leisure"] is True

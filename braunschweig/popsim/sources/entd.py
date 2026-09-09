@@ -441,21 +441,34 @@ class EntdSource:
         donor has no MiD W_ZWECK column at all, so there is no code 10 to remap and
         a popsim_open run believing the remap happened would be a silent no-op
         masquerading as an applied flag.
+
+        The four checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
+        deferred import, like every other ``config_keys`` reference from this
+        package -- see that module's own docstring for why it cannot be imported at
+        THIS module's level) rather than a second hand-typed literal, so this
+        rejection surface and the popsim_open config-parity guard
+        (``tests/test_popsim_open_config.py``) can never silently drift apart
+        (issue #373 fix round 1).
         """
-        if w_zweck_10_as_leisure:
+        from braunschweig.popsim.stage.config_keys import (
+            ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL,
+            KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+            KEY_W_ZWECK_10_AS_LEISURE,
+        )
+        if w_zweck_10_as_leisure != ENTD_REJECTED_KEYS[KEY_W_ZWECK_10_AS_LEISURE]:
             raise ValueError(
                 "[popsim.sources.entd] w_zweck_10_as_leisure=True is not supported for the "
                 "ENTD donor (no MiD W_ZWECK column, so there is no code 10 to remap); set "
                 "w_zweck_10_as_leisure to False for popsim_open runs."
             )
-        if exclude_rbw_legs:
+        if exclude_rbw_legs != ENTD_REJECTED_KEYS[KEY_EXCLUDE_RBW_LEGS]:
             raise NotImplementedError(
                 "[popsim.sources.entd] exclude_rbw_legs=True is not supported for the "
                 "ENTD donor (no rbW leg coding: the MiD 'W_RBW' column has no ENTD "
                 "pendant); set braunschweig.population.popsim.exclude_rbw_legs to False "
                 "for popsim_open runs."
             )
-        if drop_leading_arrive_home_leg:
+        if drop_leading_arrive_home_leg != ENTD_REJECTED_KEYS[KEY_DROP_LEADING_ARRIVE_HOME_LEG]:
             raise NotImplementedError(
                 "[popsim.sources.entd] drop_leading_arrive_home_leg=True is not supported "
                 "for the ENTD donor (no start-situation coding: the MiD 'W_SO1' column has "
@@ -463,7 +476,7 @@ class EntdSource:
                 "braunschweig.population.popsim.drop_leading_arrive_home_leg to False for "
                 "popsim_open runs."
             )
-        if closure_dwell_model != "fixed_1h":
+        if closure_dwell_model != ENTD_REJECTED_KEYS[KEY_CLOSURE_DWELL_MODEL]:
             raise NotImplementedError(
                 f"[popsim.sources.entd] closure_dwell_model={closure_dwell_model!r} is not "
                 "supported for the ENTD donor (the empirical dwell pools are built from a "
