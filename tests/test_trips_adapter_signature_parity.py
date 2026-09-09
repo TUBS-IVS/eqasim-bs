@@ -45,11 +45,13 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         "exclude_rbw_legs", "drop_leading_arrive_home_leg", "closure_dwell_model",
         "closure_dwell_min_obs",
         # Added 2026-09-09 (purpose correctness, issue #373 task 2): W_ZWECK 10 ("anderer
-        # Zweck") -> leisure, following MiD's own hwzweck1 fold (ADR-0111). Controller
-        # ruling C-R3: the passive-escort keywords (escort_passive_from_adult,
-        # passive_pair_max_gap_minutes) come in Task 4 -- adding only this one keeps the
-        # suite green at every commit instead of red until Task 4 lands.
+        # Zweck") -> leisure, following MiD's own hwzweck1 fold (ADR-0111).
         "w_zweck_10_as_leisure",
+        # Added 2026-09-09 (purpose correctness, issue #372 task 4, controller ruling C-R3):
+        # a PAIRED passive escort leg (MiD W_ZWECK 13) takes the accompanying adult's purpose
+        # (ADR-0112), with the pairing's time window in minutes. trips_stage.execute reads and
+        # passes both, so all four layers must carry them.
+        "escort_passive_from_adult", "passive_pair_max_gap_minutes",
     }
 
 

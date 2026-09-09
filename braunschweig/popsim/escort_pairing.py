@@ -85,7 +85,12 @@ def pair_passive_legs(
     UNPAIRED_NO_ADULT (no eligible adult leg in the household at all), UNPAIRED_GAP (an
     eligible adult leg exists but the nearest one is farther than max_gap_minutes), or
     UNPAIRED_NO_TIME (the passive leg itself has no valid departure time, e.g. a MiD "keine
-    Angabe" code). Status is derived from three explicit per-leg facts -- own time valid, any
+    Angabe" code). When more than one of those could apply, the reported status follows a fixed
+    precedence, most to least fundamental: own-time invalidity (UNPAIRED_NO_TIME) first, then no
+    eligible adult leg in the household (UNPAIRED_NO_ADULT), then the nearest one being out of
+    range (UNPAIRED_GAP) -- so each leg is reported under the FIRST reason that already made
+    pairing impossible, never under a later one that is merely a consequence of it. Status is
+    derived from three explicit per-leg facts -- own time valid, any
     eligible adult leg in the household, any eligible adult leg within the gap -- each computed
     over EVERY passive leg rather than inferred from whether a leg happens to survive an
     intermediate join; a passive leg that is its household's only age-eligible member (a

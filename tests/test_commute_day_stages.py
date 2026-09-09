@@ -311,6 +311,10 @@ def _write_raw_mid(directory):
         # later ones, mirroring tests/test_completed_donor_stage.py).
         "W_RBW": [0, 0, 0, 0, 0, 0],
         "W_SO1": [1, 809, 1, 809, 1, 809],
+        # The MiD Wege file repeats the household member's age on every leg; the stage loads it
+        # (WEGE_COLUMNS) because the passive-escort pairing needs it to decide who counts as the
+        # accompanying ADULT (issue #372). Matches the persons frame above leg by leg.
+        "HP_ALTER": [40, 40, 35, 35, 50, 50],
     })
     households = pd.DataFrame({"H_ID": [1, 2], "H_GR": [2, 3], "H_ANZAUTO": [1, 0]})
     persons.to_csv(os.path.join(directory, DONORS.PERSONS_FILE), index=False)

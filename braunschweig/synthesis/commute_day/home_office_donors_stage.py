@@ -38,6 +38,7 @@ import pandas as pd
 from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import diary_plan_match as _diary_plan_match
+from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim import trips_stage as _trips_stage
@@ -70,6 +71,9 @@ KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
 DEFAULT_ESCORT_PASSIVE_EDUCATION = False
 KEY_EXPLICIT_ROUND_TRIP_PURPOSES = "explicit_round_trip_purposes"
 DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES = True
+#: Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112). Key names and
+#: defaults are imported from ``braunschweig.popsim.stage.config_keys`` (the SHARED constants),
+#: never re-typed here -- same rule as ``w_zweck_10_as_leisure`` below.
 #: W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111). Key name and default are
 #: imported from ``braunschweig.popsim.stage.config_keys`` (the SHARED constants), never
 #: re-typed here -- see the plan-structure-keys note below for why every stage that reads
@@ -128,8 +132,13 @@ DONOR_FILTER_REQUIRED_COLUMNS = (
 )
 #: MiD Wege columns: exactly what the trip-table builder needs (imported from the single
 #: committed definition, never re-typed) plus ``wegkm`` -- the raw trip length the
-#: commute-distance fallback reads (``commute_day_state_reference.first_work_trip_length_km``).
-WEGE_COLUMNS = tuple(MID_WEGE_REQUIRED_COLS) + ("wegkm",)
+#: commute-distance fallback reads (``commute_day_state_reference.first_work_trip_length_km``)
+#: and ``HP_ALTER``, the household member's age the passive-escort pairing needs to decide who
+#: counts as the accompanying ADULT (``escort_pairing.REQUIRED_COLUMNS``, issue #372). HP_ALTER
+#: is loaded unconditionally rather than only under ``escort_passive_from_adult``: the column
+#: exists in the MiD 2023 B1 Wege delivery, and a column set that changed with a flag would make
+#: the raw read depend on the configuration for one column only.
+WEGE_COLUMNS = tuple(MID_WEGE_REQUIRED_COLS) + ("wegkm", "HP_ALTER")
 #: MiD household columns: ``H_GR`` (household size, binned by the matching module) and
 #: ``H_ANZAUTO`` (car ownership).
 HOUSEHOLD_COLUMNS = ("H_ID", "H_GR", "H_ANZAUTO")
@@ -156,10 +165,12 @@ TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column 
 #: ``trips_stage`` and ``closure_dwell`` shape the synthesised chain closure's dwell time (the
 #: donor pool builds the same empirical model the production trip build uses); ``diary_facts``
 #: classifies the rbW-only diaries and ``diary_plan_match`` owns the MiD codes the donor filters
-#: read (issue #374). Over-hashing only costs a cache rebuild; under-hashing silently serves a
-#: stale pool.
+#: read (issue #374); ``escort_pairing`` decides which adult leg each passive escort leg is paired
+#: with and therefore the purpose the donor's child leg receives under
+#: ``escort_passive_from_adult`` (issue #372). Over-hashing only costs a cache rebuild;
+#: under-hashing silently serves a stale pool.
 _HELPER_MODULES = (_donor_pool, _popsim_trips, _plan_validation, _trips_stage, _closure_dwell,
-                   _diary_facts, _diary_plan_match)
+                   _diary_facts, _diary_plan_match, _escort_pairing)
 #: Modules hashed by NAME because they are imported inside ``configure()``/``execute()`` rather
 #: than at module level (see the config-key block above). Written as string LITERALS, like
 #: every other stage's deferred list: ``tests/test_synpp_helper_hash_invariant.py`` resolves
@@ -172,11 +183,13 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.popsim.stage.config_keys",)
 def configure(context):
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DIARY_PLAN_MATCH,
-        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+        DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config(KEY_MID_DIR)
     context.config(KEY_ESCORT_PURPOSE, DEFAULT_ESCORT_PURPOSE)
@@ -187,6 +200,8 @@ def configure(context):
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, _trips_stage.DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
@@ -328,8 +343,9 @@ def execute(context):
     """
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     if not bool(context.config(KEY_ENABLED)):
         logger.info("%s %s is false -- returning an empty donor pool (no raw MiD is read).",
@@ -368,6 +384,8 @@ def execute(context):
         closure_dwell_model=str(context.config(KEY_CLOSURE_DWELL_MODEL)),
         closure_dwell_min_obs=int(context.config(KEY_CLOSURE_DWELL_MIN_OBS)),
         w_zweck_10_as_leisure=bool(context.config(KEY_W_ZWECK_10_AS_LEISURE)),
+        escort_passive_from_adult=bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT)),
+        passive_pair_max_gap_minutes=float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES)),
         **filter_flags,
     )
 

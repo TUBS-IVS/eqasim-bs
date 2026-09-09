@@ -723,8 +723,69 @@ def derive_work_by_employment_seed(persons, wege, *, exclude_rbw_legs,
     return out
 
 
+def _wege_without_non_education_passive_legs(
+    wege, *, escort_passive_education: bool, w_zweck_10_as_leisure: bool,
+    passive_pair_max_gap_minutes: float,
+):
+    """``wege`` minus the passive escort legs the TRIP BUILD will not realise as education.
+
+    Under ``escort_passive_from_adult`` (issue #372, ADR-0112) a PAIRED W_ZWECK-13 leg takes the
+    accompanying adult's purpose, which is ``"education"`` only when that adult leg is itself an
+    ACTIVE escort leg (``trips.ADULT_ESCORT_W_ZWECK``); an UNPAIRED one keeps the
+    ``escort_passive_education`` relabel. Removing exactly the legs that resolve to something
+    else -- rather than re-deciding which codes count -- keeps this seed and
+    ``trips.map_purpose`` on ONE derivation (:func:`trips.passive_purpose_for_pairs`), so they
+    cannot drift into describing different days (the mismatch class this package exists to
+    remove; see the section header above).
+
+    Args:
+        wege: the donor MiD Wege table; must carry ``escort_pairing.REQUIRED_COLUMNS``.
+        escort_passive_education / w_zweck_10_as_leisure: the trip-build flags for THIS run,
+            forwarded verbatim to :func:`trips.passive_purpose_for_pairs`.
+            ``w_zweck_10_as_leisure`` cannot change the education answer (adult code 10 resolves
+            to leisure or other, never education) but is threaded rather than assumed, so the
+            seed's derivation stays literally the trip build's.
+        passive_pair_max_gap_minutes: the pairing window in MINUTES.
+
+    Returns:
+        A filtered COPY of ``wege`` (never mutated in place). Logs the kept/dropped split as an
+        explicit rate (CLAUDE.md fallback transparency): a run where every code-13 leg is dropped,
+        or none is, almost always means the pairing did not work rather than real behaviour.
+    """
+    from braunschweig.popsim.escort_pairing import (
+        PASSIVE_W_ZWECK, REQUIRED_COLUMNS, STATUS_PAIRED, pair_passive_legs,
+    )
+    missing = [column for column in REQUIRED_COLUMNS if column not in wege.columns]
+    if missing:
+        raise KeyError(
+            f"derive_education_flag_seed: escort_passive_from_adult is ON but the Wege frame "
+            f"lacks the column(s) {missing} the passive-escort pairing needs (has "
+            f"{list(wege.columns)}); the seed cannot be built from the same legs the trip build "
+            "realises.")
+    paired, _diagnostics = pair_passive_legs(
+        wege, max_gap_minutes=passive_pair_max_gap_minutes)
+    is_paired = (paired["passive_pair_status"] == STATUS_PAIRED).to_numpy()
+    realised_purpose = trips.passive_purpose_for_pairs(
+        paired.loc[is_paired, "passive_pair_adult_w_zweck"],
+        escort_passive_education=escort_passive_education,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+    drop_index = paired.index[is_paired][realised_purpose != "education"]
+    n_passive = int((wege["W_ZWECK"] == PASSIVE_W_ZWECK).sum())
+    logger.info(
+        "[popsim.mid] education_flag seed, escort_passive_from_adult ON: %d/%d passive escort "
+        "legs (W_ZWECK %d) are realised as a NON-education purpose by the paired adult and are "
+        "dropped from the education code set; %d stay education (paired with an active escort "
+        "leg, or unpaired and kept on the escort_passive_education rule).",
+        len(drop_index), n_passive, PASSIVE_W_ZWECK, n_passive - len(drop_index))
+    return wege.drop(index=drop_index)
+
+
 def derive_education_flag_seed(persons, wege, *, escort_passive_education,
-                               exclude_rbw_legs, household_id="H_ID", person_id="P_ID"):
+                               exclude_rbw_legs, escort_passive_from_adult: bool = False,
+                               w_zweck_10_as_leisure: bool = False,
+                               passive_pair_max_gap_minutes: float =
+                               trips.DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                               household_id="H_ID", person_id="P_ID"):
     """Derive the ``education_flag`` seed column (``EDUCATION_FLAG_CATEGORIES``:
     ``edu`` / ``noedu``).
 
@@ -733,7 +794,10 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     (``{3, 11, 12}``), plus :data:`PASSIVE_ESCORT_W_ZWECK` iff
     ``escort_passive_education`` -- exactly the vocabulary ``trips.map_purpose`` gives the
     plan under the same flag. A static code set would seed an escorted child's Kita leg as
-    non-education while the plan realises it as education (issue #256).
+    non-education while the plan realises it as education (issue #256). Under
+    ``escort_passive_from_adult`` (issue #372) the code-13 legs are further narrowed to the
+    ones the pairing actually resolves to education, because the plan then sends the rest to
+    the accompanying adult's purpose instead (shop, home, leisure, ...).
 
     Args:
         escort_passive_education: the value of the ``escort_passive_education``
@@ -742,6 +806,19 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
         exclude_rbw_legs: forwarded verbatim to
             :func:`compute_has_direct_purpose_leg` (controller ruling R8); keyword-only
             with no default for the same reason.
+        escort_passive_from_adult: the value of the ``escort_passive_from_adult`` trip-build
+            flag for THIS run (issue #372, ADR-0112). When True, the code-13 legs the pairing
+            resolves to a NON-education purpose are removed from the counted legs first (see
+            :func:`_wege_without_non_education_passive_legs`), so the seed counts exactly the
+            legs the plan realises as education. Inert while ``escort_passive_education`` is
+            False (there is then no code-13 leg in the code set to begin with).
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag for
+            THIS run (issue #373, ADR-0111), forwarded to the pairing's purpose derivation.
+            Inert for the education answer; threaded rather than assumed.
+        passive_pair_max_gap_minutes: the pairing window in MINUTES (config key
+            ``escort_passive_pair_max_gap_minutes``); inert while ``escort_passive_from_adult``
+            is False. These three have DEFAULTS, unlike the two flags above, because they were
+            added later: the default reproduces the pre-#372 seed byte-identically.
 
     Logs the ``edu`` share as a count AND a rate per education-by-age band
     (``EDUCATION_AGE_BOUNDS``), i.e. per control universe, so a band whose seed cannot
@@ -753,6 +830,11 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     codes = set(PARTICIPATION_W_ZWECK["education"])
     if escort_passive_education:
         codes = codes | {PASSIVE_ESCORT_W_ZWECK}
+        if escort_passive_from_adult:
+            wege = _wege_without_non_education_passive_legs(
+                wege, escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+                passive_pair_max_gap_minutes=passive_pair_max_gap_minutes)
     flag = _plan_source_flag(persons, wege, codes, exclude_rbw_legs=exclude_rbw_legs,
                              household_id=household_id, person_id=person_id,
                              name="education_flag")

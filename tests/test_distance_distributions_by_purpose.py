@@ -333,3 +333,24 @@ def test_run_forwards_w_zweck_10_as_leisure_to_map_purpose(monkeypatch):
     monkeypatch.setattr(dd, "map_purpose", spy)
     dd.run(_synthetic_wege(), w_zweck_10_as_leisure=True)
     assert captured["w_zweck_10_as_leisure"] is True
+
+
+def test_run_forwards_the_passive_escort_pairing_keywords_to_map_purpose(monkeypatch):
+    """The distance layer must map the passive escort legs the way the plan does (issue #372
+    task 4), or a leg the plan sends to "shop" draws its distance from the education layer."""
+    from braunschweig.popsim import distance_distributions as dd
+
+    captured = {}
+    real_map_purpose = dd.map_purpose
+
+    def capturing_map_purpose(wege, **kwargs):
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        kwargs["escort_passive_from_adult"] = False
+        return real_map_purpose(wege, **kwargs)
+
+    monkeypatch.setattr(dd, "map_purpose", capturing_map_purpose)
+    dd.run(_synthetic_wege(), escort_purpose=True, escort_passive_from_adult=True,
+           passive_pair_max_gap_minutes=20.0)
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 20.0

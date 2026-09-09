@@ -415,6 +415,8 @@ class EntdSource:
         closure_dwell_model: str = "fixed_1h",
         closure_dwell_min_obs: int = 30,
         w_zweck_10_as_leisure: bool = False,
+        escort_passive_from_adult: bool = False,
+        passive_pair_max_gap_minutes: float = 15.0,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -442,7 +444,17 @@ class EntdSource:
         a popsim_open run believing the remap happened would be a silent no-op
         masquerading as an applied flag.
 
-        The four checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
+        ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes``
+        (issue #372, ADR-0112) are rejected on a non-default value for the same
+        reason: the pairing needs the MiD W_ZWECK 13 code plus the household id,
+        member age and departure time of a MiD household diary, none of which the
+        ENTD frames carry. The GAP is rejected alongside the flag (controller
+        ruling C-R7) although the flag's own rejection already guarantees no
+        pairing happens: unlike ``closure_dwell_min_obs``, nothing else names the
+        gap, so a deliberately tuned value would otherwise sit silently inert in a
+        popsim_open config.
+
+        The six checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
         deferred import, like every other ``config_keys`` reference from this
         package -- see that module's own docstring for why it cannot be imported at
         THIS module's level) rather than a second hand-typed literal, so this
@@ -452,9 +464,24 @@ class EntdSource:
         """
         from braunschweig.popsim.stage.config_keys import (
             ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL,
-            KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+            KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+            KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
             KEY_W_ZWECK_10_AS_LEISURE,
         )
+        if escort_passive_from_adult != ENTD_REJECTED_KEYS[KEY_ESCORT_PASSIVE_FROM_ADULT]:
+            raise ValueError(
+                "[popsim.sources.entd] escort_passive_from_adult=True is not supported for "
+                "the ENTD donor (no MiD W_ZWECK 13 passive escort leg, and no household "
+                "diary with the member ages and departure times the pairing needs); set "
+                "escort_passive_from_adult to False for popsim_open runs."
+            )
+        if passive_pair_max_gap_minutes != ENTD_REJECTED_KEYS[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES]:
+            raise ValueError(
+                "[popsim.sources.entd] escort_passive_pair_max_gap_minutes="
+                f"{passive_pair_max_gap_minutes!r} is not supported for the ENTD donor (the "
+                "passive-escort pairing it sizes cannot run at all here); leave it at "
+                f"{ENTD_REJECTED_KEYS[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES]!r} for popsim_open runs."
+            )
         if w_zweck_10_as_leisure != ENTD_REJECTED_KEYS[KEY_W_ZWECK_10_AS_LEISURE]:
             raise ValueError(
                 "[popsim.sources.entd] w_zweck_10_as_leisure=True is not supported for the "

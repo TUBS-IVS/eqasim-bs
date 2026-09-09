@@ -763,3 +763,48 @@ def test_age_range_denominator_raises_on_a_partially_covered_band():
     message = str(excinfo.value)
     assert "6, 7, 8, 9" in message
     assert "8 of the 24" in message
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 task 4: the education_flag seed must count exactly the code-13 legs the
+# trip build realises as education under escort_passive_from_adult -- a child paired
+# with a SHOPPING adult goes shopping, not to their own Kita.
+# ---------------------------------------------------------------------------
+
+def _passive_escort_persons_wege():
+    """One household: a shopping adult and a 5-year-old whose ONLY leg is passive escort
+    (W_ZWECK 13) departing in the same minute as the adult's shopping leg."""
+    persons = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "HP_ALTER": [35, 5], "anzwege1": [1, 1],
+        "member_imputed": [False, False],
+        "source_H_ID": [1, 1], "source_P_ID": [1, 2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 1],
+        "W_ZWECK": [4, 13], "W_RBW": [0, 0],
+        "W_SZS": [8, 8], "W_SZM": [0, 0], "HP_ALTER": [35, 5]})
+    return persons, wege
+
+
+def test_education_flag_follows_the_paired_adults_purpose_under_escort_passive_from_adult():
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _passive_escort_persons_wege()
+    without_pairing = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True)
+    with_pairing = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert without_pairing["education_flag"].tolist() == ["noedu", "edu"]
+    assert with_pairing["education_flag"].tolist() == ["noedu", "noedu"]
+
+
+def test_education_flag_keeps_an_unpaired_passive_leg_as_education():
+    """An UNPAIRED code-13 leg keeps the escort_passive_education relabel, exactly as
+    map_purpose does -- the seed must not silently drop it."""
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _passive_escort_persons_wege()
+    # Move the adult's leg five hours away: no candidate within the pairing window.
+    wege.loc[wege["P_ID"] == 1, "W_SZS"] = 13
+    out = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert out["education_flag"].tolist() == ["noedu", "edu"]

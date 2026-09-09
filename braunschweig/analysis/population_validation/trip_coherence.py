@@ -180,7 +180,7 @@ def _zgb_overall_row(data_path, table):
 
 
 def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
-                     escort_passive_education=False):
+                     escort_passive_education=False, escort_passive_from_adult=False):
     """MiD W1 (Wege je Zweck) ZGB-overall target, restricted and re-normalised to
     ``scored_purposes`` (default: {arbeit, ausbildung, einkauf, freizeit}). Pass
     ``scored_purposes=SCORED_MID_PURPOSES_WITH_ESCORT`` to additionally include
@@ -203,7 +203,22 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
     fold DOES fire, ``"ausbildung"`` must also be in ``scored_purposes`` (the
     passive remainder folds into it) -- raises ``ValueError`` otherwise, since
     silently dropping that remainder would corrupt the total. Default False
-    keeps the original W1 target byte-identical."""
+    keeps the original W1 target byte-identical.
+
+    ``escort_passive_from_adult=True`` (issue #372, ADR-0112) narrows that fold:
+    the model then gives a PAIRED passive leg the accompanying adult's purpose,
+    so only the pinned
+    ``code_13_to_education_share_under_pairing`` fraction of the passive
+    remainder is education at all. Only meaningful together with
+    ``escort_passive_education=True`` (without it the model has no
+    passive-to-education fold to narrow); raises ``ValueError`` otherwise rather
+    than silently ignoring the flag. Default False keeps the issue-#256
+    behaviour byte-identical."""
+    if escort_passive_from_adult and not escort_passive_education:
+        raise ValueError(
+            "w1_scored_target: escort_passive_from_adult=True requires "
+            "escort_passive_education=True -- it narrows that flag's passive-to-ausbildung "
+            "fold, and there is nothing to narrow without it.")
     row = _zgb_overall_row(data_path, "mid2023_W1")
     raw = {p: float(row[p]) for p in scored_purposes}
     # Presence guard: without 'begleitung' in scored_purposes there is no
@@ -224,28 +239,56 @@ def w1_scored_target(data_path, scored_purposes=SCORED_MID_PURPOSES,
                 f"{scored_purposes!r}.")
         shares = dict(raw)
         active_share = load_escort_active_share(data_path)
-        shares = apply_escort_active_adjustment(shares, active_share)
+        passive_education_share = (
+            load_passive_education_share(data_path) if escort_passive_from_adult else 1.0)
+        shares = apply_escort_active_adjustment(
+            shares, active_share, passive_education_share=passive_education_share)
         raw = {p: shares[p] for p in scored_purposes}
         LOGGER.info(
             "Trip coherence W1 target adjusted for escort_passive_education "
             "(issue #256): begleitung scaled to active share %.4f (pinned MiD "
-            "escort W_ZWECK split); passive remainder folded into ausbildung",
-            active_share)
+            "escort W_ZWECK split); %.4f of the passive remainder folded into "
+            "ausbildung (escort_passive_from_adult=%s, issue #372)",
+            active_share, passive_education_share, escort_passive_from_adult)
     return renormalize_scored(raw, scored_purposes=scored_purposes)
 
 
-def apply_escort_active_adjustment(shares: dict, active_share: float) -> dict:
+def apply_escort_active_adjustment(shares: dict, active_share: float, *,
+                                   passive_education_share: float = 1.0) -> dict:
     """W1 shares adjusted for escort_passive_education (issue #256): the model's
     escort purpose is ACTIVE-only, while published W1 Begleitung contains both
     sides (MiD folds W_ZWECK 13 into Begleitung). Scale begleitung to the active
     share and fold the passive remainder into ausbildung (the passive legs ARE
-    education trips in the model). Mass-preserving; returns a fresh dict."""
+    education trips in the model). Returns a fresh dict.
+
+    ``passive_education_share`` (issue #372, ADR-0112) is the fraction of the passive
+    remainder the model still realises as education once
+    ``escort_passive_from_adult`` gives a PAIRED passive leg the accompanying
+    adult's purpose; the pinned value is
+    ``mid2023_escort_w_zweck_split.csv``'s ``code_13_to_education_share_under_pairing``.
+    The default 1.0 is the issue-#256 behaviour (every passive leg is education) and is
+    mass-preserving.
+
+    ASSUMPTION for a value BELOW 1.0: the rest of the passive remainder is NOT
+    re-assigned to a specific W1 purpose here, so it leaves the adjusted shares and
+    ``renormalize_scored`` spreads it proportionally over the scored purposes. The
+    model actually sends those legs to shop / home / leisure / other (home is not a
+    scored W1 purpose at all), and the pinned split table resolves only the education
+    fraction, not the full destination distribution -- allocating the remainder to
+    einkauf / freizeit by any other rule would be an invented reference value, which
+    CLAUDE.md forbids. The magnitude is bounded by
+    ``W1_begleitung * (1 - active_share) * (1 - passive_education_share)``.
+    """
     if not 0.0 < active_share <= 1.0:
         raise ValueError(f"active_share must be in (0, 1], got {active_share}.")
+    if not 0.0 <= passive_education_share <= 1.0:
+        raise ValueError(
+            f"passive_education_share must be in [0, 1], got {passive_education_share}.")
     out = dict(shares)
     begleitung = out.get("begleitung", 0.0)
     out["begleitung"] = begleitung * active_share
-    out["ausbildung"] = out.get("ausbildung", 0.0) + begleitung * (1.0 - active_share)
+    out["ausbildung"] = (out.get("ausbildung", 0.0)
+                         + begleitung * (1.0 - active_share) * passive_education_share)
     return out
 
 
@@ -274,6 +317,29 @@ def load_escort_active_share(data_path: str) -> float:
     ``_load_escort_split_table``)."""
     table = _load_escort_split_table(data_path)
     return float(table.loc["code_6", "share_weighted"])
+
+
+def load_passive_education_share(data_path: str) -> float:
+    """W_GEW share of the PASSIVE (W_ZWECK 13) MiD escort legs the model still realises as
+    education once ``escort_passive_from_adult`` pairs each with the accompanying adult's
+    leg, from the pinned mid2023_escort_w_zweck_split.csv ``code_13`` row (issue #372,
+    ADR-0112).
+
+    Raises ``KeyError`` naming the derivation script when the pinned CSV predates the column
+    (an older committed table), and ``ValueError`` when the value is not a share in [0, 1] --
+    never a substituted default, which would silently restore the un-narrowed issue-#256
+    reference while the report claimed the pairing was accounted for."""
+    table = _load_escort_split_table(data_path)
+    column = "code_13_to_education_share_under_pairing"
+    if column not in table.columns:
+        raise KeyError(
+            f"Pinned escort W_ZWECK split CSV has no {column!r} column; regenerate it with "
+            "scripts/derive_escort_w_zweck_split.py (issue #372), do not edit it by hand.")
+    value = float(table.loc["code_13", column])
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"{column} must be a share in [0, 1], got {value} in the pinned escort split CSV.")
+    return value
 
 
 def load_escort_active_length_reference(data_path: str) -> dict:
@@ -823,7 +889,8 @@ def build_trip_coherence_report(persons, trips, data_path,
                                 segment_cols=DEFAULT_SEGMENT_COLS,
                                 person_id_col="person_id",
                                 purpose_col="following_purpose",
-                                escort_passive_education=False):
+                                escort_passive_education=False,
+                                escort_passive_from_adult=False):
     """Assemble the trip-coherence report comparing the donor-derived activity
     chains against MiD W1 (purpose) and P36_1 (mobility) targets.
 
@@ -834,6 +901,12 @@ def build_trip_coherence_report(persons, trips, data_path,
     ``w1_scored_target`` / ``w12_mean_length_target``). Only has an effect when
     the synthetic distribution actually carries ``begleitung`` (escort_purpose
     ON upstream); default False keeps the report byte-identical.
+
+    ``escort_passive_from_adult=True`` (issue #372, ADR-0112) additionally narrows
+    the W1 passive-to-ausbildung fold to the share of passive legs the pairing
+    still realises as education (see ``w1_scored_target``). The W12 escort LENGTH
+    target is untouched by it: that target already describes the ACTIVE (W_ZWECK 6)
+    legs only, which the pairing does not move.
 
     Returns a dict with:
       - ``mobility``: {overall_rate, target_rate, abs_delta}
@@ -863,7 +936,8 @@ def build_trip_coherence_report(persons, trips, data_path,
     scored = scored_mid_purposes(synth_distribution)
     realized = renormalize_scored(synth_distribution, scored_purposes=scored)
     target_pur = w1_scored_target(data_path, scored_purposes=scored,
-                                  escort_passive_education=escort_passive_education)
+                                  escort_passive_education=escort_passive_education,
+                                  escort_passive_from_adult=escort_passive_from_adult)
     abs_delta_pp = {
         p: abs(realized.get(p, float("nan")) - target_pur[p]) * 100.0
         for p in target_pur

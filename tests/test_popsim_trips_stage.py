@@ -530,3 +530,36 @@ def test_run_forwards_w_zweck_10_as_leisure_to_both_builders(monkeypatch):
     trips_stage.run(persons, wege, random_seed=1, w_zweck_10_as_leisure=True)
     assert seen["dwell_model"] is True
     assert seen["build_validated_trip_table"] is True
+
+
+def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monkeypatch):
+    """Same requirement as w_zweck_10_as_leisure above for the two passive-escort keywords
+    (issue #372 task 4): the empirical dwell pools are stratified by following_purpose, so a
+    donor table built WITHOUT the pairing would send every relabelled passive leg's draw into
+    the education pool while the main table puts it in shop/home/leisure."""
+    from braunschweig.popsim import trips as popsim_trips
+
+    seen = {}
+    original_dwell = trips_stage.build_closure_dwell_model
+
+    def dwell_spy(*args, **kwargs):
+        seen["dwell_flag"] = kwargs.get("escort_passive_from_adult")
+        seen["dwell_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        return original_dwell(*args, **kwargs)
+
+    original_build = popsim_trips.build_validated_trip_table
+
+    def build_spy(*args, **kwargs):
+        seen["build_flag"] = kwargs.get("escort_passive_from_adult")
+        seen["build_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(trips_stage, "build_closure_dwell_model", dwell_spy)
+    monkeypatch.setattr(popsim_trips, "build_validated_trip_table", build_spy)
+    persons, wege = _persons_and_wege_with_rbw()
+    wege = wege.assign(HP_ALTER=40)
+    trips_stage.run(persons, wege, random_seed=1, escort_purpose=True,
+                    escort_passive_education=True, escort_passive_from_adult=True,
+                    passive_pair_max_gap_minutes=20.0)
+    assert seen["dwell_flag"] is True and seen["build_flag"] is True
+    assert seen["dwell_gap"] == 20.0 and seen["build_gap"] == 20.0

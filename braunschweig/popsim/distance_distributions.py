@@ -88,7 +88,8 @@ from synthesis.population.spatial.secondary.distance_distributions import (
 )
 
 from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
-from braunschweig.popsim.trips import map_mode, map_purpose, mid_time_seconds
+from braunschweig.popsim.trips import (
+    DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, map_mode, map_purpose, mid_time_seconds)
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +229,9 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         escort_purpose: bool = False,
         explicit_round_trip_purposes: bool = True,
         escort_passive_education: bool = False,
-        w_zweck_10_as_leisure: bool = False) -> dict:
+        w_zweck_10_as_leisure: bool = False,
+        escort_passive_from_adult: bool = False,
+        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -288,6 +291,18 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         the ``"leisure"`` purpose instead of ``"other"`` (forwarded to
         ``map_purpose``), following MiD's own hwzweck1 fold. Default False
         keeps the OFF path byte-identical.
+    escort_passive_from_adult:
+        When True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        (forwarded to ``map_purpose``), so those legs land in the distance
+        layer of the purpose the plan actually gives them instead of all in
+        ``education``. Requires ``escort_purpose=True`` and the MiD Wege
+        columns the pairing needs (``H_ID``/``P_ID``/``W_ID``/``W_SZS``/
+        ``W_SZM``/``HP_ALTER``; ``load_mid_wege`` loads all of them). Default
+        False keeps the OFF path byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for that pairing; inert unless
+        ``escort_passive_from_adult`` is True.
 
     Returns
     -------
@@ -334,6 +349,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
@@ -592,7 +609,9 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 def configure(context):
     """Declare stage dependencies: MiD Wege path + random_seed + purpose/shop flags."""
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
@@ -610,6 +629,12 @@ def configure(context):
     # trip build does, or a "leisure" distance distribution is built from a
     # different set of legs than the plan actually realises.
     context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
+    # declared with the SHARED key/default constants for the same reason: a passive leg
+    # the trip build sends to "shop" must contribute to the SHOP distance distribution,
+    # not to the education one, or the sampler draws its distance from the wrong layer.
+    context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
 
 
 def execute(context):
@@ -621,7 +646,10 @@ def execute(context):
     can consume it without modification.
     """
     from braunschweig.popsim import mid as mid_module
-    from braunschweig.popsim.stage.config_keys import KEY_W_ZWECK_10_AS_LEISURE
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE,
+    )
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     by_purpose = context.config("secondary_distance_by_purpose")
@@ -631,6 +659,8 @@ def execute(context):
     escort_purpose = context.config("escort_purpose")
     escort_passive_education = context.config("escort_passive_education")
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
+    escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
+    passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -648,4 +678,6 @@ def execute(context):
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     )

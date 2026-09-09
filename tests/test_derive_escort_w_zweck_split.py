@@ -76,3 +76,46 @@ def test_split_median_argument_order():
     table, _ = derive_split(df)
     t = table.set_index("w_zweck")
     assert t.loc["code_6", "median_km"] == pytest.approx(9.0)
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 task 4: the share of code-13 legs that STAY education once the pairing
+# gives a paired child the accompanying adult's purpose (ADR-0112).
+# ---------------------------------------------------------------------------
+
+def _pairing_wege():
+    """One household, three passive legs, one adult per case.
+
+    P_ID 2 (age 5) has three code-13 legs: 08:00 pairs with the adult's ACTIVE escort leg
+    (W_ZWECK 6 -> stays education), 12:00 pairs with the adult's SHOP leg (-> shop), 20:00
+    pairs with nothing within the window (-> stays education by the passive rule).
+    """
+    return pd.DataFrame({
+        "H_ID":      [1, 1, 1, 1, 1],
+        "P_ID":      [1, 1, 2, 2, 2],
+        "W_ID":      [1, 2, 1, 2, 3],
+        "W_ZWECK":   [6, 4, 13, 13, 13],
+        "W_GEW":     [1.0, 1.0, 2.0, 1.0, 1.0],
+        "wegkm_imp": [1.0, 1.0, 1.0, 1.0, 1.0],
+        "W_SZS":     [8, 12, 8, 12, 20],
+        "W_SZM":     [0, 0, 0, 0, 0],
+        "HP_ALTER":  [35, 35, 5, 5, 5],
+    })
+
+
+def test_passive_education_share_counts_active_escort_pairs_and_unpaired_legs():
+    from scripts.derive_escort_w_zweck_split import derive_passive_education_share
+    share, stats = derive_passive_education_share(_pairing_wege())
+    # passive weight 4.0: 2.0 paired to the ACTIVE escort leg, 1.0 paired to shop, 1.0 unpaired.
+    assert stats["n_passive"] == 3 and stats["n_paired"] == 2
+    assert stats["share_paired_to_active_escort"] == pytest.approx(0.5)
+    assert stats["share_unpaired"] == pytest.approx(0.25)
+    assert share == pytest.approx(0.75)
+
+
+def test_passive_education_share_raises_when_a_pairing_column_is_missing():
+    """No silent skip: without HP_ALTER nothing pairs and the share would read 1.0 --
+    today's flat education relabel dressed up as a measurement."""
+    from scripts.derive_escort_w_zweck_split import derive_passive_education_share
+    with pytest.raises(KeyError, match="HP_ALTER"):
+        derive_passive_education_share(_pairing_wege().drop(columns=["HP_ALTER"]))

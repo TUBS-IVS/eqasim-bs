@@ -6,6 +6,7 @@ Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -406,3 +407,104 @@ def test_build_validated_trip_table_threads_w_zweck_10_as_leisure_to_map_purpose
     first_off = table_off[table_off["trip_index"] == 0].iloc[0]
     assert first_on["following_purpose"] == "leisure"
     assert first_off["following_purpose"] == "other"
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 task 4: escort_passive_from_adult -- a PAIRED passive escort leg
+# (MiD W_ZWECK 13) takes the purpose derived from the accompanying adult's
+# W_ZWECK instead of the flat escort_passive_education "education" relabel.
+# ---------------------------------------------------------------------------
+
+def _household_wege():
+    """Two households: H1 has a shopping/escorting/home adult plus a 5-year-old with two
+    passive legs; H2 has a 7-year-old whose passive leg has no adult leg to pair with."""
+    return pd.DataFrame({
+        "H_ID": [1, 1, 1, 1, 1, 2], "P_ID": [1, 1, 1, 2, 2, 2], "W_ID": [1, 2, 3, 1, 2, 1],
+        "W_ZWECK": [4, 6, 8, 13, 13, 13], "W_SZS": [8, 12, 13, 8, 13, 9], "W_SZM": [0, 0, 0, 0, 0, 0],
+        "HP_ALTER": [35, 35, 35, 5, 5, 7], "W_GEW": [1.0] * 6,
+    })
+
+
+def test_passive_from_adult_takes_the_adult_purpose_home_and_keeps_the_passive_rule_for_adult_escort():
+    out = trips.map_purpose(_household_wege(), escort_purpose=True, escort_passive_education=True,
+                            escort_passive_from_adult=True)
+    child = out[out["P_ID"] == 2].sort_values(["H_ID", "W_ID"])["purpose"].tolist()
+    assert child == ["shop", "home", "education"]     # 8:00 with the shopping adult, 13:00 home with the adult, unpaired -> passive rule
+
+
+def test_passive_from_adult_off_is_byte_identical_to_passive_education():
+    wege = _household_wege()
+    a = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True)
+    b = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=False)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_passive_from_adult_requires_escort_purpose():
+    with pytest.raises(ValueError, match="escort_passive_from_adult"):
+        trips.map_purpose(_household_wege(), escort_passive_from_adult=True)
+
+
+def test_adult_work_pairs_become_other_and_adult_code_10_follows_the_leisure_flag():
+    codes = np.array([1, 2, 3, 10, 10, 99])
+    on = trips.passive_purpose_for_pairs(codes, escort_passive_education=True, w_zweck_10_as_leisure=True)
+    off = trips.passive_purpose_for_pairs(codes, escort_passive_education=True, w_zweck_10_as_leisure=False)
+    assert on.tolist() == ["other", "other", "other", "leisure", "leisure", "other"]
+    assert off.tolist()[3] == "other"
+
+
+def test_passive_from_adult_carries_the_pairing_columns_and_logs_the_rates(caplog):
+    """CLAUDE.md fallback transparency: the paired/unpaired split, the basis of the share and
+    the resulting purpose distribution must be observable, not implicit in the output frame."""
+    import logging
+    from braunschweig.popsim.escort_pairing import PAIRING_COLUMNS, STATUS_PAIRED
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        out = trips.map_purpose(_household_wege(), escort_purpose=True,
+                                escort_passive_education=True, escort_passive_from_adult=True)
+    for column in PAIRING_COLUMNS:
+        assert column in out.columns
+    assert (out["passive_pair_status"] == STATUS_PAIRED).sum() == 2
+    joined = " ".join(record.getMessage() for record in caplog.records)
+    assert "escort_passive_from_adult ON" in joined
+    assert "2/3" in joined and "W_GEW-weighted" in joined
+    assert "1 unpaired" in joined
+
+
+def test_passive_from_adult_requires_the_pairing_columns_with_a_clear_message():
+    """map_purpose runs on the raw Wege frame, so the household/age/time columns the pairing
+    needs must be present; a missing one must name itself instead of failing deep inside."""
+    wege = _household_wege().drop(columns=["HP_ALTER"])
+    with pytest.raises(ValueError, match="HP_ALTER"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True)
+
+
+def test_passive_pair_gap_default_agrees_across_its_three_homes():
+    """The 15-minute default lives in escort_pairing (the module that owns the pairing); the
+    trip-build keyword default and the synpp config default repeat the literal because neither
+    module can import it (leaf / cycle constraints). Pin the three together."""
+    from braunschweig.popsim import escort_pairing
+    from braunschweig.popsim.stage.config_keys import DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
+    assert trips.DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES == escort_pairing.DEFAULT_MAX_GAP_MINUTES
+    assert DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES == escort_pairing.DEFAULT_MAX_GAP_MINUTES
+
+
+def test_build_validated_trip_table_threads_escort_passive_from_adult_to_map_purpose():
+    """The flag must survive the FULL builder chain (build_validated_trip_table ->
+    build_trip_table -> expand_persons_to_trips -> map_purpose), like w_zweck_10_as_leisure."""
+    persons = pd.DataFrame({"person_id": ["A_1_0_2"], "H_ID": [1], "P_ID": [2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 2], "W_ID": [1, 2, 1],
+        "W_ZWECK": [4, 8, 13], "hvm_imp": [4, 4, 3],
+        "W_SZS": [8, 17, 8], "W_SZM": [0, 0, 0],
+        "W_AZS": [8, 17, 8], "W_AZM": [30, 20, 30],
+        "HP_ALTER": [35, 35, 5], "W_GEW": [1.0, 1.0, 1.0],
+    })
+    table_on, _ = trips.build_validated_trip_table(
+        persons, wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=True)
+    table_off, _ = trips.build_validated_trip_table(
+        persons, wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=False)
+    assert table_on[table_on["trip_index"] == 0].iloc[0]["following_purpose"] == "shop"
+    assert table_off[table_off["trip_index"] == 0].iloc[0]["following_purpose"] == "education"
