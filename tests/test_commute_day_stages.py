@@ -930,6 +930,27 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
     assert list(day_trips.columns)[:len(CONTRACT)] == CONTRACT
 
 
+def test_trips_day_stage_both_on_removes_commute_and_general_absent_persons():
+    """Both flags True (issue #370): the commute-absent and generally-absent removals compose,
+    each removing its own person while leaving everyone else's row count unchanged."""
+    trips = _trips()
+    states = _states_frame([{"person_id": 4, "commute_day_state": "absent"}])
+    absence = pd.DataFrame({"person_id": [7], "day_absence_state": ["absent_household"]})
+    stages = dict(_trips_day_stages(states, trips=trips))
+    stages[TRIPS.ABSENCE_STAGE] = {"absence": absence, "diagnostics": {"enabled": True}}
+    context = _context(TRIPS, stages=stages,
+                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True,
+                               TRIPS.KEY_DAY_ABSENCE_ENABLED: True})
+
+    out = TRIPS.execute(context)
+
+    assert 4 not in set(out["person_id"])   # commute-absent
+    assert 7 not in set(out["person_id"])   # generally absent
+    for person_id in (1, 2, 3, 5, 6):
+        assert (len(out[out["person_id"] == person_id])
+                == len(trips[trips["person_id"] == person_id]))
+
+
 def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(caplog):
     """Ruling R9 wiring: the stage must hand the donor ATTRIBUTES to the replacement.
 

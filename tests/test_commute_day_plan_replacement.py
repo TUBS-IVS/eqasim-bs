@@ -457,6 +457,31 @@ def test_general_absence_excludes_a_matched_home_person_from_the_splice():
     assert diagnostics["n_persons_absent_general"] == 1
 
 
+def test_general_absence_excludes_an_unmatched_home_person_from_n_home_unmatched(caplog):
+    # p4 is 'home' WITHOUT a donor match in the base fixture -- counted in n_home_unmatched and
+    # kept UNCHANGED there (see test_home_person_without_match_is_unchanged_and_counted). Marking
+    # them ALSO generally absent must remove their rows like any other absent person: they must
+    # drop out of n_home_unmatched (not be double-counted as "kept unchanged" while their rows are
+    # actually gone) and must not trigger the "keep their ORIGINAL day unchanged" warning.
+    trips = _trips_fixture()
+    baseline_trips, baseline_diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(), random_seed=RANDOM_SEED)
+    assert "p4" in set(baseline_trips["person_id"])
+    assert baseline_diagnostics["n_home_unmatched"] == 1
+
+    general = pd.DataFrame({"person_id": ["p4"], "day_absence_state": ["absent_individual"]})
+    caplog.clear()  # drop the baseline call's own "1 home person(s) unmatched" warning above.
+    with caplog.at_level("WARNING", logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        day_trips, diagnostics = plan_replacement.build_day_trips(
+            trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+            random_seed=RANDOM_SEED, general_absence=general)
+
+    assert "p4" not in set(day_trips["person_id"])
+    assert diagnostics["n_home_unmatched"] == baseline_diagnostics["n_home_unmatched"] - 1
+    assert diagnostics["n_persons_absent_general"] == 1
+    assert not any("keep their ORIGINAL" in message for message in caplog.messages)
+
+
 def test_build_day_trips_emits_no_pandas_performance_warning():
     """Ruling R8: 657,888 PerformanceWarnings in one run made that run's log 254 MB."""
     import warnings

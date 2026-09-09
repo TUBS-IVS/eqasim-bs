@@ -219,9 +219,13 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     # even if the state draw matched them to one -- they are removed like any other absent person,
     # not replaced. Excluding them from the matched set BEFORE the splice loop below (rather than
     # splicing then discarding) means no donor block is ever built for them, and they are counted
-    # once, under n_persons_absent_general.
+    # once, under n_persons_absent_general. The SAME exclusion applies to the unmatched-home set
+    # right below: a home person WITHOUT a donor who is ALSO generally absent has their rows
+    # removed like any other absent person, not kept unchanged, so they must not be counted in
+    # n_home_unmatched -- otherwise the "keep their ORIGINAL day unchanged" warning below would
+    # misdescribe their actual outcome (their rows are in fact gone).
     matched_home_persons = matched_home_persons_by_donor - general_absent_persons
-    unmatched_home_persons = home_persons - matched_home_persons_by_donor
+    unmatched_home_persons = home_persons - matched_home_persons_by_donor - general_absent_persons
 
     absent_persons = commute_absent_persons | general_absent_persons
     n_persons_absent = len(commute_absent_persons)  # unchanged meaning: commute-absent persons.
