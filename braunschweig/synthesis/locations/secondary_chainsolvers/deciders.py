@@ -201,13 +201,15 @@ def _build_leisure_subtype_decider(context, random_seed: int):
         leisure_spec,
         tt_band,
     )
+    from braunschweig.popsim.stage.config_keys import KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
     from braunschweig.popsim.trips import map_mode, mid_time_seconds
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     # Execute-context config() takes the key alone (declared in configure()
-    # with default True; shared with distance_distributions, see the
-    # docstring note above).
-    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
+    # with default True; the key name is IMPORTED, not retyped, because
+    # distance_distributions declares the identical key -- see the docstring
+    # note above and config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
     # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
@@ -303,9 +305,6 @@ def _build_other_subtype_decider(context, random_seed: int):
         return None
 
     escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
-    # Same flag/default as _build_leisure_subtype_decider and
-    # distance_distributions -- see the docstring note above.
-    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
@@ -316,7 +315,13 @@ def _build_other_subtype_decider(context, random_seed: int):
         other_errand_spec,
         tt_band,
     )
+    from braunschweig.popsim.stage.config_keys import KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
     from braunschweig.popsim.trips import PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds
+
+    # Same flag/default as _build_leisure_subtype_decider and
+    # distance_distributions -- the key name is IMPORTED, not retyped (see the
+    # docstring note above and config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")

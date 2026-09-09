@@ -538,6 +538,34 @@ def test_configure_declares_codeplan_sentinels_default_true():
     assert ctx.registered["purpose_subtype_codeplan_sentinels"] is True
 
 
+def test_purpose_subtype_codeplan_sentinels_default_agrees_across_its_two_homes():
+    """The key/default lives ONCE in config_keys
+    (KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS / DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS);
+    this stage's configure() and braunschweig.popsim.distance_distributions.configure()
+    both import and declare it with that SAME constant (issue #242 Task 5 fix round 1,
+    plan Global Constraint "config keys ... single home") -- mirrors
+    tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes
+    for the analogous passive-pair-gap key. Pin that BOTH configure() calls actually
+    resolve to the imported constant (key string AND default value), not a re-typed
+    literal that only happens to match today."""
+    from braunschweig.popsim import distance_distributions
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    )
+
+    chainsolvers_ctx = _FakeContext()
+    sc.configure(chainsolvers_ctx)
+    distance_ctx = _FakeContext()
+    distance_distributions.configure(distance_ctx)
+
+    assert chainsolvers_ctx.registered[KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS] == \
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
+    assert distance_ctx.registered[KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS] == \
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
+    assert chainsolvers_ctx.registered[KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS] == \
+        distance_ctx.registered[KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS]
+
+
 # ---------------------------------------------------------------------------
 # Decider construction: synthetic (non-MiD-file) Wege frames via a
 # monkeypatched braunschweig.popsim.mid.load_mid_wege, mirroring the synthetic

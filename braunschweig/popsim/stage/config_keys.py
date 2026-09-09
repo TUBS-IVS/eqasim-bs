@@ -352,6 +352,27 @@ DEFAULT_ESCORT_PASSIVE_FROM_ADULT = False
 KEY_PASSIVE_PAIR_MAX_GAP_MINUTES = "escort_passive_pair_max_gap_minutes"
 DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
 
+# W_ZWD codeplan no-detail sentinel treatment (issue #242 Task 5, ADR-0113): moves the
+# two NO-DETAIL ("keine Angabe") W_ZWD codes -- 799 "Freizeit k.A." (in
+# purpose_subtype.LEISURE_GROUPS["leisure_activity"]) and 699 "Erledigung k.A." (in
+# purpose_subtype.OTHER_ERRAND_GROUPS["other_errand_long"]) -- out of their group and
+# into their spec's sentinel set (purpose_subtype.leisure_spec() /
+# other_errand_spec()). NOT a trip-build flag (trips_stage never reads it, so it is
+# absent from ENTD_REJECTED_KEYS below); it only governs which purpose_subtype.
+# SubtypeSpec two DOWNSTREAM MiD-only consumers estimate from. Declared with this
+# exact unprefixed key name and this exact default by BOTH
+# braunschweig.popsim.distance_distributions.configure (the leisure_activity /
+# other_errand_long DISTANCE-layer donor pool, run() Steps 8/9) and
+# braunschweig.synthesis.locations.secondary_chainsolvers.configure (the leisure/
+# other subtype deciders' ESTIMATION, re-read via the single-argument execute-context
+# form inside deciders.py's _build_leisure_subtype_decider /
+# _build_other_subtype_decider) -- all three sites import this constant rather than
+# retyping the key string, so they cannot silently resolve different keys or
+# defaults. Default True (project rule: new features default on); the production
+# value is also set in configs/base_bs.yml (issue #242 Task 7).
+KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = "purpose_subtype_codeplan_sentinels"
+DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True
+
 # MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
 # build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
 # each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the

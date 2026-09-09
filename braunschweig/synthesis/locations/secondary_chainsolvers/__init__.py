@@ -64,6 +64,14 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
+# Imported at module level (not deferred, unlike deciders.py's own per-function
+# imports of this module) SOLELY so it is a module OBJECT this file can list in
+# _HELPER_MODULES below (controller ruling C-R15, issue #242): the stage
+# estimates its leisure/other subtype deciders from purpose_subtype's groups/
+# specs, so a change confined to that module (e.g. a future group boundary
+# edit) must devalidate this stage's synpp cache too, not just deciders.py's
+# own source.
+from braunschweig.popsim import purpose_subtype  # noqa: F401  (cache-hash only)
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -250,7 +258,15 @@ def __getattr__(name):
 # only hashes THIS file's source (inspect.getsource of the stage module), so
 # without the validate() hook below a change confined to a helper submodule
 # would silently reuse the stale cached stage output on a partial rerun.
-# Every submodule extracted from this package MUST be listed here.
+# Every submodule extracted from this package MUST be listed here, PLUS
+# purpose_subtype (controller ruling C-R15, issue #242): it is not one of
+# THIS package's own submodules -- it lives in braunschweig.popsim and is
+# imported only inside deciders.py's decider builders (deferred) -- but the
+# leisure/other subtype deciders are ESTIMATED from its LEISURE_SPEC /
+# OTHER_ERRAND_SPEC / leisure_spec() / other_errand_spec(), so a
+# purpose_subtype-only edit (e.g. a future group boundary change) must
+# devalidate this stage's cache too, exactly like a change confined to one of
+# the submodules below would.
 _HELPER_MODULES: Tuple[Any, ...] = (
     activity_types,
     candidate_columns,
@@ -261,6 +277,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     fallback,
     parallel_solving,
     plans,
+    purpose_subtype,
     reporting,
     results,
     solver_defaults,
@@ -409,17 +426,21 @@ def configure(context):
     # Task 5, ADR-0113): W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung
     # k.A.") carry no usable subtype signal, so ON excludes them from
     # ESTIMATION via purpose_subtype.leisure_spec / other_errand_spec (read by
-    # _build_leisure_subtype_decider / _build_other_subtype_decider below).
-    # SHARED with braunschweig.popsim.distance_distributions, which ALSO
-    # declares this key with the identical default -- see that module's
-    # configure() for why both stages must resolve the SAME value (the
-    # leisure_activity / other_errand_long distance-layer donor pool must
-    # exclude exactly the legs the decider's estimation excludes). Declared
-    # UNCONDITIONALLY (like the two split flags above) so an all-flags-off
-    # config never needs it; inert while both subtype splits are OFF. Default
-    # True (project rule: new features default on); the production value is
-    # also set in configs/base_bs.yml (issue #242 Task 7).
-    context.config("purpose_subtype_codeplan_sentinels", True)
+    # _build_leisure_subtype_decider / _build_other_subtype_decider below, via
+    # the SAME imported key). Key/default declared ONCE in config_keys (see
+    # that module's comment on KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS) and
+    # imported here rather than retyped, because
+    # braunschweig.popsim.distance_distributions ALSO declares this exact key
+    # -- both stages must resolve the SAME value (the leisure_activity /
+    # other_errand_long distance-layer donor pool must exclude exactly the
+    # legs the decider's estimation excludes). Declared UNCONDITIONALLY (like
+    # the two split flags above) so an all-flags-off config never needs it;
+    # inert while both subtype splits are OFF. The production value is also
+    # set in configs/base_bs.yml (issue #242 Task 7).
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    )
+    context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
 
     # Escort as dedicated activity purpose (issue #201). The decider draws one
     # location TYPE per escort leg from the SrV-derived weights; defaults are

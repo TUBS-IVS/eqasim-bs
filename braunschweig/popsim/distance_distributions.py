@@ -639,8 +639,9 @@ def configure(context):
     """Declare stage dependencies: MiD Wege path + random_seed + purpose/shop flags."""
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_ESCORT_PASSIVE_FROM_ADULT,
-        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
@@ -651,19 +652,19 @@ def configure(context):
     context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
     # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
-    # Task 5, ADR-0113). SHARED with
-    # braunschweig.synthesis.locations.secondary_chainsolvers, which ALSO
-    # declares this key with the identical default -- see that stage's
-    # configure() for why both stages must resolve the SAME value (the
+    # Task 5, ADR-0113). Key/default declared ONCE in config_keys (see that
+    # module's comment on KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS) and imported
+    # here rather than retyped, because
+    # braunschweig.synthesis.locations.secondary_chainsolvers ALSO declares
+    # this exact key -- both stages must resolve the SAME value (the
     # leisure_activity / other_errand_long donor pool built here must exclude
     # exactly the legs the chainsolver deciders' estimation excludes, or a leg
     # placed under one label draws its distance from a donor pool built for a
     # different label). Declared UNCONDITIONALLY (like the two split flags
     # above) so an all-flags-off config never needs it; inert unless
-    # leisure_subtype_split or other_subtype_split is also True. Default True
-    # (project rule: new features default on); the production value is also
-    # set in configs/base_bs.yml (issue #242 Task 7).
-    context.config("purpose_subtype_codeplan_sentinels", True)
+    # leisure_subtype_split or other_subtype_split is also True. The
+    # production value is also set in configs/base_bs.yml (issue #242 Task 7).
+    context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
     context.config("escort_purpose", False)
     context.config("escort_passive_education", False)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
@@ -693,7 +694,7 @@ def execute(context):
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.stage.config_keys import (
         KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
     )
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
@@ -701,7 +702,7 @@ def execute(context):
     shop_daily_split = context.config("secondary_shop_daily_split")
     leisure_subtype_split = context.config("secondary_leisure_subtype_split")
     other_subtype_split = context.config("secondary_other_subtype_split")
-    codeplan_sentinels = bool(context.config("purpose_subtype_codeplan_sentinels"))
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
     escort_purpose = context.config("escort_purpose")
     escort_passive_education = context.config("escort_passive_education")
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
