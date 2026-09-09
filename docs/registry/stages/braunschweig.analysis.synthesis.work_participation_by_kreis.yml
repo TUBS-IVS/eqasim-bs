@@ -51,8 +51,10 @@ inputs:
 - vg250_ew
 features:
 - commute_day_state_measurement
+- general_day_absence
 decisions:
 - ADR-0104
+- ADR-0110
 notes: 'Writes six files (seven with the reporting-day state model on, see the check-1
   paragraph at the end) under <output_path>/<cds_output_subdir>/ (default
   analysis/commute_day_state_phase_a): work_participation_by_kreis.csv (code, n_employed,
@@ -143,4 +145,24 @@ notes: 'Writes six files (seven with the reporting-day state model on, see the c
   definitional identity. delta_no_work_trip_pp compares the model''s share of employed persons
   without a work trip against the SUM of the two SrV remainder shares, the only decomposition
   the two universes share. With the model off no state table and no check-1 section are produced
-  at all, rather than a table of constants that would only look like a measurement.'
+  at all, rather than a table of constants that would only look like a measurement.
+
+  General day absence (issue #370, ADR-0110, Task 7): when check 1 is produced
+  (commute_day_state_enabled) AND day_absence_enabled is also on, this stage additionally reads
+  braunschweig.synthesis.day_absence.absence_stage and overrides the drawn commute_day_state to
+  "absent" for every generally absent EMPLOYED person before the per-Kreis shares are summed
+  (apply_general_absence) -- the general day-absence draw is a full-day, all-purpose absence and
+  therefore takes precedence over the reporting-day commute-day-state draw, including for an
+  employed person the model never assigned a workplace to (folded out of share_no_workplace and
+  into share_absent). The count of persons the override actually moved is appended as
+  n_absent_general in commute_day_state_shares.csv (present, as 0, even when the absence draw is
+  off, so the column schema never depends on the flag -- ruling R9 of the #370 SDD plan). A
+  non-empty absence draw that overrides nobody in the employed universe WARNS (CLAUDE.md
+  "Fallback transparency"): a real population almost always has at least one generally absent
+  employed person, so a zero overlap most likely signals a person_id join defect between the
+  absence stage and this one. Composition rule documented once in the feature record
+  general_day_absence and the note docs/codebase/notes/day-absence-state.md. Evidence:
+  tests/test_work_participation_by_kreis.py::test_apply_general_absence_overrides_only_the_generally_absent_persons,
+  ::test_commute_day_state_shares_folds_a_generally_absent_worker_into_absent,
+  ::test_commute_day_state_shares_counts_a_generally_absent_person_without_a_workplace_as_absent,
+  ::test_commute_day_state_shares_warns_when_the_general_absence_draw_matches_nobody.'

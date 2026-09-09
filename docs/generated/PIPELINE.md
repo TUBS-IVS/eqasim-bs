@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 99 stages, 249 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 100 stages, 255 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -158,6 +158,7 @@ flowchart LR
 | `braunschweig.synthesis.commute_day.home_office_donors_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.commute_day.state_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.cordon_gates` | cordon | x | x | -- |
+| `braunschweig.synthesis.day_absence.absence_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.incommuters` | cordon | x | x | -- |
 | `braunschweig.synthesis.locations.education_gravity` | education | x | x | -- |
 | `braunschweig.synthesis.locations.secondary_candidates` | secondary | x | -- | -- |

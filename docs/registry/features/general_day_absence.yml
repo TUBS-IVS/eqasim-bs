@@ -1,0 +1,180 @@
+feature: general_day_absence
+title: General reporting-day absence (two-stage SrV-anchored state draw)
+area: behavior
+description: 'Gives EVERY synthetic person a reporting-day absence state,
+  day_absence_state in {present, absent_household, absent_individual}, so the model can
+  represent the 4.98 % of SrV 2023 respondents who were away from home over the WHOLE
+  reporting day (E_ANZ_WEGE == -7) -- a state the synthetic population previously had no
+  concept of at all, since every person exists and starts the day at home (issue #370,
+  ADR-0110). Two seeded stages in braunschweig.synthesis.day_absence.absence
+  (braunschweig.synthesis.day_absence.absence_stage): a HOUSEHOLD draw marks a whole
+  household absent_household with probability p_household(size_class) (committed
+  srv2023_absence_household_by_size.csv, by household size 1..5+); an INDIVIDUAL residual
+  draw then marks every still-present person absent_individual per age band, at the
+  probability needed so the committed per-band rate (srv2023_absence_by_age_band.csv) is
+  met IN EXPECTATION net of what the household stage already realised in that band. This
+  reproduces both the SrV per-band absence rates and the SrV household clustering (55.8 %
+  of absent persons live in a fully absent household), which an individual-only draw at the
+  same rates could not (the chance of an independent draw absorbing an entire household is
+  three orders of magnitude below the observed clustering).
+
+  Independent of employment, workplace assignment, and the pre-existing far-commuter
+  commute_day_state model of ADR-0104/#244 (a person can be both a commute-day "absent" far
+  commuter and a general-absence absent_household/absent_individual at once). The two states
+  compose in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
+  general_absence keyword: a person is trip-less in the reporting-day view when
+  commute_day_state == "absent" OR day_absence_state != "present" -- the union, counted three
+  ways (commute-only, general-only, both) in the stage''s diagnostics. The drawn state is
+  exported as the day_absence_state column of persons.csv (via the existing
+  PERSON_OPTIONAL_OUTPUT_COLUMNS mechanism, present for every person -- unlike
+  commute_day_state''s worker-only coverage) and, in the MATSim population, as the person
+  attribute dayAbsenceState. braunschweig.analysis.synthesis.plan_structure_vs_srv can
+  additionally restrict its model side to the SrV at_home_only universe (mirroring the
+  ADR-0109 participation-control universe) once the draw is applied, and
+  braunschweig.analysis.synthesis.work_participation_by_kreis folds a generally absent
+  employed person into ADR-0104 check 1''s absent share rather than leaving them a
+  no-workplace remainder. With day_absence_enabled false every person is present and every
+  consumer stage is byte-identical to before this feature existed.'
+stages:
+- braunschweig.synthesis.day_absence.absence_stage
+- synthesis.population.trips.final
+- synthesis.output
+- matsim.scenario.population
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
+- braunschweig.analysis.synthesis.work_participation_by_kreis
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - day_absence_enabled
+introduced:
+  issue: 370
+  pr: null
+  adr: ADR-0110
+code_paths:
+- braunschweig/calibration/srv_absence.py
+- scripts/extract_srv_absence.py
+- braunschweig/synthesis/day_absence/absence.py
+- braunschweig/synthesis/day_absence/absence_stage.py
+- braunschweig/synthesis/commute_day/plan_replacement.py
+- braunschweig/synthesis/commute_day/trips_day_stage.py
+- synthesis/output.py
+- braunschweig/synthesis/commute_day/output_day.py
+- matsim/scenario/population.py
+- braunschweig/matsim/scenario/population.py
+- braunschweig/analysis/synthesis/plan_structure_vs_srv.py
+- braunschweig/analysis/plan_structure.py
+- braunschweig/analysis/synthesis/work_participation_by_kreis.py
+evidence:
+  tests:
+  - tests/test_srv_absence.py
+  - tests/test_day_absence.py
+  - tests/test_day_absence_stage.py
+  - tests/test_commute_day_plan_replacement.py
+  - tests/test_commute_day_stages.py
+  - tests/test_commute_day_consumers.py
+  - tests/test_plan_structure_vs_srv.py
+  - tests/test_work_participation_by_kreis.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_commute_day_stages.py::test_trips_day_stage_off_off_returns_the_identical_object
+    note: 'day_absence_enabled defaults true in configs/base_bs.yml; every OFF-path claim is proven
+      by a dedicated test, not merely asserted: the absence stage itself marks every person
+      present/reason=disabled without reading either committed reference table
+      (tests/test_day_absence_stage.py::test_off_path_marks_everyone_present_without_reading_any_file),
+      the reporting-day trips stage returns the pre-assignment frame BY IDENTITY when BOTH flags
+      are false, driven exactly the way the SDD brief spells the case out
+      (tests/test_commute_day_stages.py::test_trips_day_stage_off_off_returns_the_identical_object,
+      distinct from the pre-existing commute-day-only identity test
+      test_trips_day_stage_off_returns_the_identical_object), the output writer emits no
+      day_absence_state column when the flag is off (implicit in
+      test_output_day_on_appends_the_day_absence_state_column_last only running the ON path; the
+      OFF path is the untouched-frame branch already covered by the sibling commute_day_state OFF
+      tests), and the MATSim writer emits dayAbsenceState only for persons that have one, never a
+      substituted value, when the absence stage is declared
+      (tests/test_commute_day_consumers.py::test_matsim_writer_emits_day_absence_state_only_for_persons_that_have_one).
+      configs/fixtures/config_popsim_open_braunschweig.yml and
+      configs/fixtures/config_smoke_popsim_open_mini.yml additionally set day_absence_enabled:
+      false explicitly (ruling R2 of the #370 SDD plan) for parity with commute_day_state_enabled,
+      although neither fixture aliases synthesis.population.trips.final to a day-absence-aware
+      stage at all, so the flag has no consumer to disable there either way; the plain DAG
+      non-wiring is what actually keeps popsim_open and simple_ipf_open byte-identical (same
+      precedent as commute_day_state_enabled''s "redundant but explicit" fixture setting, see
+      docs/codebase/notes/commute-day-two-view-trips.md).'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[day absence]'
+    note: 'The central marker (braunschweig/synthesis/day_absence/absence.py and absence_stage.py,
+      verified present in source) instruments every guard the draw itself owns: (1)
+      AbsenceReference.__post_init__ / _check_reference_coverage RAISE (not merely warn) unless
+      each committed table covers EXACTLY its expected keys (the seven age bands, the five
+      household size classes) with every rate in [0, 1] -- a missing band or size class must never
+      silently become a NaN residual (CLAUDE.md "scalar-default-when-map-missing"); (2) the
+      household-stage overshoot guard (draw_absence) WARNS, naming the band and both rates, when
+      the household stage alone already exceeds a band''s reference rate (r_hh(a) > r(a)), which
+      would otherwise force a negative residual; (3) the per-band deviation guard
+      (day_absence_max_band_deviation_pp, default 1.0 pp, absence_stage.execute) WARNS for any band
+      with >= 1,000 persons whose realised absence share deviates from the reference by more than
+      the threshold, naming both rates and the deviation -- a guard against a broken reference join
+      or a reference-table drift, not a target the draw is tuned to hit exactly.
+
+      Two further guards live in DOWNSTREAM consumers under their OWN log tags (not [day absence],
+      listed here because they exist specifically to make this feature''s composition observable,
+      the same cross-tag convention commute_day_state''s fallback_rate note uses):
+      braunschweig.analysis.synthesis.work_participation_by_kreis (tag [commute_day_state])
+      WARNS when a non-empty general-absence draw overrides NOBODY in the employed universe
+      (apply_general_absence) -- a real population almost always has at least one generally absent
+      employed person, so a zero overlap most likely signals a person_id join defect between the
+      absence stage and this one; braunschweig.analysis.synthesis.plan_structure_vs_srv (tag
+      [plan_structure_vs_srv]) WARNS when universe=at_home_zero is compared WITHOUT the absence
+      draw applied (day_absence_enabled false, or the pre_assignment trips view) -- the model then
+      has no away-from-home concept at all while the SrV at_home_zero reference still counts such
+      persons as zero-trip, the same "universe trap" ADR-0109 named for the participation controls,
+      here in its plan-structure form.
+
+      No run has executed this code yet (validation.state below), so every rate above is a design
+      guard verified by unit tests on synthetic data, not yet measured on a live population; the
+      pre-registered A/B of ADR-0110''s Consequences section is what will produce the first
+      measured fallback/guard rates.'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv
+    note: SrV 2023 age-band absence rates (03ZGB, GEWICHT_P_ZENSUS), the per-band target of the
+      individual residual stage and of the per-band deviation guard; its sibling
+      eqasim-data/data/braunschweig/srv/srv2023_absence_household_by_size.csv (GEWICHT_HH_ZENSUS)
+      is the household-size target of the household stage (data records
+      srv2023_absence_by_age_band / srv2023_absence_household_by_size). Both are a
+      VALIDATION-ANCHORED DRAW REFERENCE, never a PopulationSim control target -- no synthesis or
+      location stage's demand distribution is controlled to these shares.
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured. ADR-0110''s pre-registered A/B (Consequences section) specifies three
+    arms (OFF; ON two-stage; ON individual-only sensitivity) and five metrics (mobility rate,
+    per-band absent share, household-clustering share, employed-with-work-trip share on
+    at_home_zero, participation_* on at_home_only) against explicit tolerance bands, to be run as
+    Task 10 of the #370 SDD plan on the cached arm-4 population.'
+  note: 'No run has executed this code as of this record (Task 8, the documentation task, is
+    written before Task 10, the A/B run). validation.state is unvalidated, not
+    measured_vs_reference, per CLAUDE.md "convergence is not validation" and "no invented
+    reference values": the SrV tables the draw is anchored to are committed evidence for the
+    DESIGN, not a measurement of the MODEL''s output. Do not cite the pre-registered A/B table in
+    ADR-0110 as a result until a run manifest under docs/runs/ records it and this record is
+    updated to point at it.'
+assessment:
+  status: pending
+  pending_reason: 'The pre-registered A/B (ADR-0110 Consequences, Task 10 of the #370 SDD plan)
+    has not run; nothing has been measured on a live population yet, so there is no basis to
+    assess the feature''s realised behaviour, only its designed and unit-tested one.'
+notes: 'Composes with the commute_day_state feature (docs/registry/features/commute_day_state.yml),
+  which carries a one-sentence pointer back to this record for the composition rule -- the rule
+  itself lives ONCE, in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
+  general_absence keyword, and in the contributor note docs/codebase/notes/day-absence-state.md.
+  Decision record: ADR-0110 (general day absence as a two-stage state draw) -- it carries the SrV
+  evidence tables, the rejected alternatives (MiD P_STREISE as a donor, an individual-only default,
+  raising the trip_class immobility target, per-Kreis rates) and the named assumptions this record
+  does not repeat.'

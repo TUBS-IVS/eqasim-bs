@@ -31,8 +31,10 @@ inputs:
 - mid2023_home_office_day_donors
 features:
 - commute_day_state
+- general_day_absence
 decisions:
 - ADR-0104
+- ADR-0110
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
@@ -74,4 +76,30 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   default. Evidence: tests/test_commute_day_plan_replacement.py (the pure replacement rules,
   primary-method coverage of each commute_day_state branch) and tests/test_commute_day_stages.py
   (test_trips_day_stage_off_returns_the_identical_object, test_trips_day_stage_on_replaces_only_the_home_persons,
-  test_matches_from_states_keeps_only_home_persons_with_a_donor).'
+  test_matches_from_states_keeps_only_home_persons_with_a_donor).
+
+  General day absence (issue #370, ADR-0110): the general day-absence draw is INDEPENDENT of the
+  commute-day-state model above, gated by its own config key day_absence_enabled
+  (trips_day_stage.KEY_DAY_ABSENCE_ENABLED, same default true) and read from the new stage
+  braunschweig.synthesis.day_absence.absence_stage
+  (docs/registry/stages/braunschweig.synthesis.day_absence.absence_stage.yml). Composition rule,
+  seed and diagnostics all live in plan_replacement.build_day_trips''s general_absence keyword,
+  documented once in the feature record general_day_absence and the contributor note
+  docs/codebase/notes/day-absence-state.md -- not repeated here. trips_day_stage.configure()
+  declares braunschweig.synthesis.day_absence.absence_stage UNCONDITIONALLY, the same
+  always-declared-dependency trade-off state_stage/home_office_donors_stage already made for
+  commute_day_state_enabled (the test-harness stub context used across
+  tests/test_commute_day_stages.py does not resolve a config value at configure() time, so a
+  conditional declare would never be recorded there); the gating on both flags happens in
+  execute(). With BOTH flags false the stage still returns the pre-assignment frame BY IDENTITY,
+  covered by the dedicated identity test
+  tests/test_commute_day_stages.py::test_trips_day_stage_off_off_returns_the_identical_object.
+  configs/fixtures/config_popsim_open_braunschweig.yml and
+  configs/fixtures/config_smoke_popsim_open_mini.yml also set day_absence_enabled: false
+  explicitly (ruling R2 of the #370 SDD plan): both alias synthesis.population.trips.final to
+  their own pre-assignment trips stage directly, with no day-absence-aware stage in between, so
+  the flag has no consumer there either way -- set for parity with commute_day_state_enabled, not
+  because it changes the DAG. configs/fixtures/config_local_braunschweig_25pct.yml
+  (simple_ipf_open) leaves day_absence_enabled at its code default for the identical reason: that
+  fixture''s synthesis.population.trips.final alias is likewise the bare pre-assignment stage, so
+  the flag remains unreachable there regardless of its value.'
