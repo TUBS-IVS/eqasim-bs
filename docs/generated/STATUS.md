@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 90 | stages: 124 | datasets: 73 | ADRs: 116 | run manifests: 39
+- Features: 87 | stages: 125 | datasets: 73 | ADRs: 113 | run manifests: 37
 
 ## Population synthesis
 
@@ -62,7 +62,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Passive escort legs take the purpose of the paired same-household adult leg](../registry/features/escort_passive_from_adult.yml) | active | ON | A/i/- | unvalidated | [#372](https://github.com/TUBS-IVS/eqasim-bs/issues/372) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
-| [General reporting-day absence (two-stage SrV-anchored state draw)](../registry/features/general_day_absence.yml) | active | ON | A/-/- | measured_vs_reference (`general-day-absence-arm0-100pct-2026-09-09`, `general-day-absence-arm1-100pct-2026-09-09`) | [#370](https://github.com/TUBS-IVS/eqasim-bs/issues/370) |
+| [General reporting-day absence (two-stage SrV-anchored state draw)](../registry/features/general_day_absence.yml) | active | ON | A/-/- | unvalidated | [#370](https://github.com/TUBS-IVS/eqasim-bs/issues/370) |
 | [Home-end closure with an observed dwell, counted in the seed (#367)](../registry/features/home_closure_model.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#367](https://github.com/TUBS-IVS/eqasim-bs/issues/367) |
 | [MiD W_ZWECK 10 "anderer Zweck" follows MiD's own main-purpose fold (leisure)](../registry/features/purpose_main_fold_code_10.yml) | active | ON | A/i/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [rbW legs are movement within the work activity (#366)](../registry/features/rbw_leg_convention.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#366](https://github.com/TUBS-IVS/eqasim-bs/issues/366) |
@@ -123,10 +123,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Building potentials — secondary](../registry/features/building_potentials_secondary.yml) | active | ON | A/i/i | unvalidated |  |
 | [Calibration: Tier-3 detour/circuity curve](../registry/features/detour_circuity_curve.yml) | supported | off | i/i/i | unvalidated |  |
-| [leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype](../registry/features/leisure_unspecified_subtype.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
-| [exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose, and a design code can never become a distance](../registry/features/no_answer_codes_excluded.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [Calibration: purpose-resolved secondary](../registry/features/secondary_distance_by_purpose.yml) | active | ON | A/i/i | unvalidated |  |
-| [secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders estimate on the weekday diary universe](../registry/features/secondary_mid_weekday_universe.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [SrV-grounded secondary location types for leisure/other (#262)](../registry/features/secondary_srv_location_types.yml) | active | ON | A/-/- | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | [#262](https://github.com/TUBS-IVS/eqasim-bs/issues/262) |
 | [W_ZWD no-detail codes (799, 699) are subtype sentinels, labels verified against the codeplan](../registry/features/w_zwd_codeplan_sentinels.yml) | active | ON | A/-/- | unvalidated | [#242](https://github.com/TUBS-IVS/eqasim-bs/issues/242) |
 
@@ -164,7 +161,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-3 stage(s), 3 in the production DAG. Datasets: `srv2023_plan_structure_reference`
+4 stage(s), 4 in the production DAG. Datasets: `srv2023_plan_structure_reference`, `srv2023_reference_tables`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

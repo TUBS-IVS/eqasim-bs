@@ -754,6 +754,10 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.departure_time_vs_srv"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.analysis.synthesis.plan_structure_vs_srv"
   ],
   [
@@ -990,6 +994,10 @@
   ],
   [
    "synthesis.population.trips.final",
+   "braunschweig.analysis.synthesis.departure_time_vs_srv"
+  ],
+  [
+   "synthesis.population.trips.final",
    "braunschweig.analysis.synthesis.plan_structure_vs_srv"
   ],
   [
@@ -1035,6 +1043,7 @@
   "braunschweig.analysis.reference.srv.commute_distance",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
@@ -1136,6 +1145,7 @@
   "braunschweig.analysis.cordon_validation",
   "braunschweig.analysis.simwrapper_export",
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
+  "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
