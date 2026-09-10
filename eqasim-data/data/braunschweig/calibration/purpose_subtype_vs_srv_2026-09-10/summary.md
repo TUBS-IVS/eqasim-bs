@@ -18,17 +18,17 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `f9dd787d` |
+| code state (--source-commit) | `7d7640a5` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |
 
-The code state above is the commit that added the `residual` crosswalk grade (issue #373,
-ADR-0115): MiD `leisure_unspecified` and SrV `V_ZWECK` 18 are now reported as a pair and
-excluded from the comparable universe on both sides. The SrV reference is unchanged; the
-MiD reference gained the spec variant `codeplan_unspecified` while its existing `default`
-and `codeplan` data rows stayed byte-identical, so every pre-existing measured value below
-is unchanged and what is new is that variant's block and the residual row.
+The code state above is the code state at generation: the 8-character hash of the
+eqasim-bs commit whose code produced this file. The measured numbers come from the two
+committed reference tables named above and from nothing else -- this script reads no raw
+survey file. A `residual` pair (MiD `leisure_unspecified` and SrV `V_ZWECK` 18, issue
+#373, ADR-0115) is reported below but excluded from the comparable universe on both
+sides.
 
 ### Flag settings
 
