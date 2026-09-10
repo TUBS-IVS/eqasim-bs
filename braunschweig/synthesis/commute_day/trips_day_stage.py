@@ -40,6 +40,7 @@ from braunschweig.calibration import reported_time_precision as _reported_time_p
 from braunschweig.calibration import srv_departure_times as _srv_departure_times
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement
 from braunschweig.synthesis.commute_day.plan_replacement import (DepartureTimeSettings,
@@ -52,13 +53,18 @@ _LOG_TAG = "[commute day trips]"
 #: Pure modules whose source this stage's cache token must cover (see :func:`validate`): every
 #: plan-replacement rule lives in ``plan_replacement``, not here, and since issue #123 Task 4 the
 #: replaced rows' start times come from ``departure_time_model``. ``validate()`` hashes these
-#: NON-transitively, so the three modules ``departure_time_model`` itself imports and whose
-#: content decides the realised times -- the reporting-precision half widths, the reference
-#: table's bin geometry, and the harmonised group rule the mapping cell is keyed on -- are named
-#: here too. (``braunschweig.popsim.attributes`` is deliberately absent: only
-#: ``persons_from_mid_schema`` reads it, and this stage uses the SYNTHETIC-schema adapter.)
+#: NON-transitively, so the four CROSS-PACKAGE modules ``departure_time_model`` itself imports at
+#: module level, and whose content decides the realised times, are named here too: the
+#: reporting-precision half widths, the reference table's bin geometry, the harmonised group rule
+#: the mapping cell is keyed on, and ``plan_validation`` -- whose ``MAX_PLAN_TIME_SECONDS`` is the
+#: upper bound the spliced offsets are CLIPPED to on the derounded/srv_mapped branch, so moving it
+#: moves this stage's times. None of the four is an own-package sibling, so
+#: ``tests/test_synpp_helper_hash_invariant.py`` (scoped to own-package siblings) cannot catch a
+#: missing one -- this comment is the guard. (``braunschweig.popsim.attributes`` is deliberately
+#: absent: only ``persons_from_mid_schema`` reads it, and this stage uses the SYNTHETIC-schema
+#: adapter.)
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
-                   _srv_departure_times, _srv_plan_structure)
+                   _srv_departure_times, _srv_plan_structure, _plan_validation)
 
 KEY_ENABLED = "commute_day_state_enabled"
 DEFAULT_ENABLED = True

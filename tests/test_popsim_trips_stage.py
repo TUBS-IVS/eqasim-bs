@@ -729,10 +729,16 @@ def test_run_default_is_byte_identical_on_contract_columns():
     Provenance of the pinned values: ``braunschweig/popsim/trips_stage.py`` at commit
     ``eff5720c`` (this branch's Task 3 tip, immediately before Task 4 rewired the call) was run
     ONCE on the fixture and seed below with a scratch script; the printed ``departure_time`` /
-    ``arrival_time`` lists were copied verbatim. The scratch script is not part of the
-    repository -- only the pinned literals are committed. Only CONTRACT columns are compared:
-    the extras a run carries beyond the contract (raw MiD columns, ``trip_key``, the recorded
-    offset) are not part of the downstream contract this pin protects.
+    ``arrival_time`` / ``departure_time_offset_seconds`` lists were copied verbatim, and
+    re-measured identical on the Task 4 commit ``ac7fc89c``. The scratch script is not part of
+    the repository -- only the pinned literals are committed.
+
+    Beyond the CONTRACT columns this also pins ``OFFSET_COLUMN`` (fix round 1): it is the
+    recorded decomposition ``departure_time = raw_departure_time + offset`` that every later
+    analysis of this feature reads, so a model that shifted the times correctly but recorded a
+    different offset would still be a defect -- and one the contract-only comparison could not
+    see. The remaining extras (raw MiD columns, ``trip_key``) are deliberately NOT pinned: they
+    are pass-through donor data, not something this dispatch can change.
     """
     persons, wege = _persons_and_wege_with_person_attributes()
     out = trips_stage.run(persons, wege, random_seed=20260910)
@@ -747,10 +753,15 @@ def test_run_default_is_byte_identical_on_contract_columns():
     assert out["arrival_time"].tolist() == [
         20737.0, 60937.0, 28189.0, 63889.0, 31267.0, 62467.0,
         24400.0, 61900.0, 25370.0, 61970.0, 31332.0, 63432.0]
-    # The explicit default must reproduce the implicit one, contract columns included.
+    assert out[trips_stage.OFFSET_COLUMN].tolist() == [
+        -1463.0, -1463.0, 1489.0, 1489.0, 67.0, 67.0,
+        -500.0, -500.0, -430.0, -430.0, 1032.0, 1032.0]
+    # The explicit default must reproduce the implicit one, contract columns and the recorded
+    # offset included.
     explicit = trips_stage.run(persons, wege, random_seed=20260910,
                                departure_time_model="eqasim_uniform")
-    pd.testing.assert_frame_equal(out[trips_stage.CONTRACT], explicit[trips_stage.CONTRACT])
+    pinned = trips_stage.CONTRACT + [trips_stage.OFFSET_COLUMN]
+    pd.testing.assert_frame_equal(out[pinned], explicit[pinned])
 
 
 def test_run_with_srv_mapped_uses_the_model():

@@ -232,12 +232,12 @@ def _apply_departure_time(replaced: pd.DataFrame, *, random_seed: int,
         min_reference_n=int(settings.min_reference_n),
         min_model_n=int(settings.min_model_n),
         max_median_shift_hours=float(settings.max_median_shift_hours))
+    # format_level_split already carries the `unmapped n/total (rate)` term, so it is not
+    # repeated here (same wording as trips_stage._log_departure_time_model's line).
     logger.info(
         "%s departure-time model on the replaced rows: %s -- %d person(s), %d trip row(s); "
-        "mapping level: %s; unmapped %d/%d", _LOG_TAG, diagnostics["model"],
-        diagnostics["n_persons"], diagnostics["n_trips"],
-        _departure_time_model.format_level_split(diagnostics),
-        diagnostics["n_persons_unmapped"], diagnostics["n_persons"])
+        "mapping level: %s", _LOG_TAG, diagnostics["model"], diagnostics["n_persons"],
+        diagnostics["n_trips"], _departure_time_model.format_level_split(diagnostics))
     return replaced, diagnostics
 
 

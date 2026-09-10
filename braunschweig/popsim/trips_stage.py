@@ -431,13 +431,13 @@ def _log_departure_time_model(diagnostics: dict) -> None:
     at ``unmapped`` kept the donor's own start time, i.e. the SrV calibration did NOT happen for
     them, and that must be visible where the trip table is reported). The split string comes from
     :func:`braunschweig.popsim.departure_time_model.format_level_split`, the single home of that
-    formatting, so this line and the model's own can never disagree.
+    formatting, so this line and the model's own can never disagree -- and it ALREADY carries the
+    ``unmapped n/total (rate)`` term, so this line does not repeat it.
     """
     logger.info(
         "[trips_stage] departure-time model: %s -- %d person(s), %d trip row(s); mapping level: "
-        "%s; unmapped %d/%d", diagnostics["model"], diagnostics["n_persons"],
-        diagnostics["n_trips"], _departure_time_model.format_level_split(diagnostics),
-        diagnostics["n_persons_unmapped"], diagnostics["n_persons"])
+        "%s", diagnostics["model"], diagnostics["n_persons"], diagnostics["n_trips"],
+        _departure_time_model.format_level_split(diagnostics))
 
 
 def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:

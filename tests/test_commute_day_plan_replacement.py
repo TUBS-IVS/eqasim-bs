@@ -7,6 +7,7 @@ byte-identical to the input (ruling R2).
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 
 import numpy as np
@@ -746,7 +747,12 @@ def test_the_settings_use_the_receiving_persons_attributes_not_the_donors():
 
 def test_the_departure_time_settings_are_frozen():
     """A frozen dataclass: the settings are read by the replacement and reported in the run log,
-    so they must not be mutated between the two."""
+    so they must not be mutated between the two.
+
+    The expected exception is ``dataclasses.FrozenInstanceError`` specifically (fix round 1): a
+    bare ``Exception`` would also pass if the assignment failed for an unrelated reason -- e.g.
+    the attribute having been renamed -- and would then no longer prove the class is frozen.
+    """
     settings = _departure_time_settings(model="eqasim_uniform")
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         settings.model = "srv_mapped"
