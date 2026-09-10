@@ -180,17 +180,23 @@ def test_srv_mapped_is_rank_preserving():
 
 
 def test_srv_mapped_interpolates_uniformly_within_the_reference_bin():
-    """All reference mass in one 15-min bin: n persons must spread over that bin at the
-    (i + 0.5) / n quantiles, i.e. evenly, not all pile up on the bin's lower edge."""
+    """All reference mass in one 15-min bin: n persons must spread over that bin at their mid-rank
+    quantiles in the rung's ranking base, i.e. evenly, not all pile up on the bin's lower edge.
+
+    Here the base is the mapped set itself (no ranking context, ruling A-R20), so the i-th of the
+    four persons is at ``(#below + 0.5 * #ties + 0.5) / (n + 1) = i / 5`` -- the person ties with
+    their own value in the base. The pre-A-R20 no-context convention was ``(i - 0.5) / n``; the two
+    differ by at most half a base step and the unified one is what BOTH call sites now use.
+    """
     table, _ = M.apply_departure_time_model(_table(4), _persons(4), model=M.MODEL_SRV_MAPPED,
                                             random_seed=1, reference=_reference(),
                                             min_reference_n=100, min_model_n=1)
     first = np.sort(table[table["trip_index"] == 0]["departure_time"].to_numpy())
-    expected = np.array([30.125, 30.375, 30.625, 30.875]) * 900.0
+    expected = np.array([30.2, 30.4, 30.6, 30.8]) * 900.0
     # 1 s tolerance: the per-person offset is rounded to whole seconds before it is applied, and
     # the de-rounding cancels out of `derounding + mapping` only up to float cancellation.
     assert np.abs(first - expected).max() <= 1.0
-    assert np.abs(np.diff(first) - 225.0).max() <= 1.0      # evenly spread, not on the bin edge
+    assert np.abs(np.diff(first) - 180.0).max() <= 1.0      # evenly spread, not on the bin edge
 
 
 def test_coarsening_falls_back_to_all_all_and_counts_unmapped():
@@ -243,9 +249,10 @@ def test_a_thin_model_cell_climbs_the_ladder_instead_of_dropping_out():
     assert diag["n_persons_by_level"]["purpose_all"] == 55 and diag["share_unmapped"] == 0.0
     first = table[table["trip_index"] == 0]
     assert ((first["departure_time"] >= 20 * 900) & (first["departure_time"] < 21 * 900)).all()
-    # ONE common rank order over the pooled set: 55 persons spread evenly across the target bin.
+    # ONE common base at the pooled rung: the 55 education persons (every group of that purpose,
+    # ruling A-R20) spread evenly across the target bin at i / 56.
     ordered = np.sort(first["departure_time"].to_numpy())
-    assert np.abs(np.diff(ordered) - 900.0 / 55.0).max() <= 1.0
+    assert np.abs(np.diff(ordered) - 900.0 / 56.0).max() <= 1.0
 
 
 def test_unmapped_only_when_even_the_pooled_model_set_is_too_thin():
@@ -663,34 +670,76 @@ def test_a_thin_target_set_is_ranked_in_the_population_instead_of_in_itself():
 
 
 def test_a_target_lands_where_an_equally_placed_population_person_lands():
-    """Rank preservation, and consistency with the ladder's own ``(i - 0.5) / n``.
+    """Ruling A-R20, measured on the COMMITTED ``(employed, work)`` reference rather than on a
+    one-bin fixture: with the same base values, the two call sites place a person IDENTICALLY.
 
-    1,000 population persons with distinct off-grid (de-rounding-free) first departures are mapped
-    by the ordinary whole-population path. Two TARGET persons are then given the 250th and the
-    750th of those very times and mapped against the same 1,000 as their ranking context: each
-    must land within a second of the population person it ties with -- the context formula
-    ``(#below + 0.5 * #ties + 0.5) / (N + 1)`` evaluates to ``i / (N + 1)`` there, which differs
-    from ``(i - 0.5) / N`` by at most half a context step -- and the earlier target must keep its
-    order relative to the later one.
+    1,000 population persons on a first work leg are mapped by the whole-population path (their
+    own set as the base), and the same 1,000 raw times are then handed to a second run as a
+    ranking context whose targets are those same times. Every departure is off the five-minute
+    grid, so both sides de-round by exactly 0 and only the BASE RULE and the quantile formula can
+    differ.
+
+    Why <= 1 s is a real assertion here and not a property of the fixture: on this committed cell
+    the pre-A-R20 convention difference alone -- ``i / (N + 1)`` against ``(i - 0.5) / N`` -- moves
+    a person by a median of 3.8 s and by up to 77 min in the sparse late tail (measured with
+    ``_inverse_cdf`` on the cell's own ``share_derounded`` column, N = 1,000). A tolerance of one
+    second therefore only holds if both call sites compute the SAME quantile in the SAME base.
     """
-    values = _off_grid_seconds(1000)
-    population, _ = M.apply_departure_time_model(
-        _table_with_departures(values), _persons(1000), model=M.MODEL_SRV_MAPPED, random_seed=1,
-        reference=_reference(), min_reference_n=100, min_model_n=1000)
-    population_first = population[population["trip_index"] == 0].set_index("person_id")
+    values = _off_grid_seconds(1000, start_minute=361)
+    trips = _table_with_departures(values, purpose="work")
+    persons = pd.DataFrame({"person_id": range(1000), "age": 40, "employed": True})
+    reference = M.load_departure_time_reference(SRV_DIR)
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=reference,
+                     min_reference_n=200, min_model_n=1000)
 
-    targets, diagnostics = M.apply_departure_time_model(
-        _table_with_departures([values[249], values[749]]), _persons(2),
-        model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(), min_reference_n=100,
-        min_model_n=50, ranking_context=_ranking_context(values=values))
-    assert diagnostics["cells"][("education", "school_age_6_17_not_employed")]["level"] \
-        == "purpose_group"
+    population, population_diagnostics = M.apply_departure_time_model(trips.copy(), persons,
+                                                                      **arguments)
+    context = M.build_ranking_context(trips.assign(**{M.OFFSET_COLUMN: 0.0}), persons)
+    targets, target_diagnostics = M.apply_departure_time_model(trips.copy(), persons,
+                                                               ranking_context=context, **arguments)
+    for diagnostics in (population_diagnostics, target_diagnostics):
+        assert diagnostics["cells"][("work", "employed")]["level"] == "purpose_group"
+
+    population_first = (population[population["trip_index"] == 0]
+                        .set_index("person_id")["departure_time"])
     target_first = targets[targets["trip_index"] == 0].set_index("person_id")["departure_time"]
+    difference = (population_first - target_first).abs()
+    assert difference.max() <= 1.0
+    # Rank preservation over the whole set, not just for a pair: the mapped order is the reported
+    # order, at both call sites.
+    assert target_first.is_monotonic_increasing and population_first.is_monotonic_increasing
 
-    assert target_first.loc[0] < target_first.loc[1]                     # order preserved
-    for target_person, population_person in ((0, 249), (1, 749)):
-        assert abs(float(target_first.loc[target_person])
-                   - float(population_first.loc[population_person, "departure_time"])) <= 1.0
+
+def test_the_de_rounding_realisation_is_the_only_residual_difference_between_the_call_sites():
+    """ADR-0114 Assumption 10b, MEASURED. The trip build and the splice de-round the same reported
+    times from different positions of the model's stream, so a person's rank INSIDE their reported
+    quarter hour differs between the two runs. On quarter-hour reports (1,000 employed work
+    persons, 17 distinct clock times, the committed ``(employed, work)`` reference) that moves a
+    person by a median of 44 s and a 90th percentile of 263 s, but by up to 262 min for the few
+    persons who land in the reference's sparse late tail, where a small rank change is a large
+    time change.
+
+    The test asserts the BULK (a stated bound on the median, an order of magnitude above the
+    measured 44 s) and deliberately does NOT bound the maximum: the tail figure is a measured
+    property of this fixture, reported so nobody reads "the same person, the same placement" as an
+    exact guarantee -- it is not a scientific bound and no source states one.
+    """
+    values = [5 * 3600 + (index % 17) * 900.0 for index in range(1000)]
+    trips = _table_with_departures(values, purpose="work")
+    persons = pd.DataFrame({"person_id": range(1000), "age": 40, "employed": True})
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1,
+                     reference=M.load_departure_time_reference(SRV_DIR),
+                     min_reference_n=200, min_model_n=1000)
+
+    population, _ = M.apply_departure_time_model(trips.copy(), persons, **arguments)
+    context = M.build_ranking_context(trips.assign(**{M.OFFSET_COLUMN: 0.0}), persons)
+    targets, _ = M.apply_departure_time_model(trips.copy(), persons, ranking_context=context,
+                                              **arguments)
+    difference = (population[population["trip_index"] == 0].set_index("person_id")["departure_time"]
+                  - targets[targets["trip_index"] == 0].set_index("person_id")["departure_time"]
+                  ).abs()
+    assert difference.median() <= 600.0            # measured 44 s; the bound is an order above it
+    assert difference.max() > 60.0                 # the residual is REAL, not a rounding artefact
 
 
 def test_the_ranking_context_result_does_not_depend_on_its_row_order():
@@ -708,10 +757,13 @@ def test_the_ranking_context_result_does_not_depend_on_its_row_order():
     pd.testing.assert_frame_equal(ordered_out, shuffled_out, check_exact=True)
 
 
-def test_no_ranking_context_is_byte_identical_to_not_passing_one():
-    """The OFF path of ruling A-R18: ``ranking_context=None`` is the pre-A-R18 behaviour, and the
-    whole-population trip build (which passes no context at all) must not move by a single
-    second."""
+def test_without_a_ranking_context_the_mapped_set_is_its_own_base():
+    """``ranking_context=None`` (what the whole-population trip build passes) must be exactly the
+    same call as omitting the argument, and the base is then the MODEL set under the same per-rung
+    rule (ruling A-R20): the cell's own 100 persons here, reported as ``n_context`` /
+    ``n_context_pooled`` so the cell report always states what a quantile was computed in.
+    ``n_ranking_context`` stays ``None`` -- it says where the base came FROM, and 0 there would
+    read as "the base was empty"."""
     arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(),
                      min_reference_n=100, min_model_n=10)
     without, diagnostics_without = M.apply_departure_time_model(_table(), _persons(), **arguments)
@@ -720,9 +772,9 @@ def test_no_ranking_context_is_byte_identical_to_not_passing_one():
     pd.testing.assert_frame_equal(without, explicit, check_exact=True)
     assert diagnostics_without == diagnostics_explicit
     cell = diagnostics_without["cells"][("education", "school_age_6_17_not_employed")]
-    # None, never 0: "no ranking context" must not be readable as "the base was empty".
-    assert cell["n_context"] is None and cell["n_context_pooled"] is None
+    assert cell["n_context"] == 100 and cell["n_context_pooled"] == 100
     assert diagnostics_without["n_ranking_context"] is None
+    assert "the model set itself" in M.format_ranking_base(diagnostics_without)
 
 
 def test_a_pooled_rung_is_gated_and_ranked_by_the_pooled_context():
@@ -813,3 +865,145 @@ def test_build_ranking_context_raises_on_a_missing_column_or_person():
     trips[M.OFFSET_COLUMN] = 0.0
     with pytest.raises(ValueError, match="no attribute row"):
         M.build_ranking_context(trips, persons.iloc[:2])
+
+
+# ---------------------------------------------------------------------------
+# ONE base rule at both call sites (ruling A-R20, fix round 1 of item 7).
+# A rung's ranking base is the MODEL POPULATION of that rung's own key -- the cell at rung 1, every
+# person of that purpose (thick groups included) at rung 2, everyone at rung 3 -- at BOTH call
+# sites: with a ranking_context it is the population's, without one the model set is its own
+# context. Ranking the still-pending persons among THEMSELVES at a pooled rung (the pre-A-R20
+# no-context path) placed the same person hours away from where the other call site placed them.
+# ---------------------------------------------------------------------------
+
+def _work_reference(peak_bin=26, pooled_low=24, pooled_high=48, n_unweighted=500):
+    """A three-rung work reference: ``(employed, work)`` with all its mass in ``peak_bin``, the
+    pooled ``(all groups, work)`` cell UNIFORM over ``[pooled_low, pooled_high)`` (6:00-12:00 by
+    default) and the fully pooled ``("all", "all")`` cell likewise.
+
+    The uniform pooled rung is what makes a rank VISIBLE as a time: a person's quantile maps
+    linearly onto the six-hour window, so two call sites that rank the same person differently are
+    minutes or hours apart rather than inside one quarter hour.
+    """
+    pooled = {b: 1.0 / (pooled_high - pooled_low) for b in range(pooled_low, pooled_high)}
+    rows = []
+    for segment, purpose, shares in (("employed", "work", {peak_bin: 1.0}),
+                                     ("all", "work", pooled),
+                                     ("all", "all", pooled)):
+        for b in range(M.N_BINS):
+            rows.append({"universe": "at_home_zero", "segment": segment, "purpose": purpose,
+                         "position": "first", "bin_15min": b,
+                         "share_derounded": shares.get(b, 0.0),
+                         "share_as_reported": shares.get(b, 0.0), "n_unweighted": n_unweighted})
+    return pd.DataFrame(rows)
+
+
+def _mixed_work_population():
+    """The reviewer's example: 1,000 employed persons departing 6:01-6:17 and 50 thin-group
+    persons (20 seniors, 30 non-employed adults) departing 10:01-10:50, all on a first WORK leg.
+
+    Returns ``(trips, persons, thin_person_ids)``. Every departure time is off the five-minute
+    grid, so the reporting-precision rule de-rounds it by exactly 0 and the two call sites can be
+    compared to the second (the de-rounding REALISATION is the one thing that legitimately still
+    differs between them -- see the consistency test below, which measures it).
+    """
+    values = _off_grid_seconds(1000, start_minute=361) + _off_grid_seconds(50, start_minute=601)
+    trips = _table_with_departures(values, purpose="work")
+    persons = pd.DataFrame({
+        "person_id": range(1050),
+        "age": [40] * 1000 + [70] * 20 + [40] * 30,
+        "employed": [True] * 1000 + [False] * 50,
+    })
+    return trips, persons, list(range(1000, 1050))
+
+
+def test_both_call_sites_place_a_thin_group_in_the_same_ranking_base():
+    """Ruling A-R20 (fix round 1). The 50 thin-group persons climb to the ``(work, all groups)``
+    rung at BOTH call sites, and their placement there must be the same person by person: that
+    rung's base is every WORK person of the model population (the 1,000 employed included),
+    whether the population arrives as the mapped set (the trip build, no context) or as a ranking
+    context (the reporting-day splice).
+
+    Before A-R20 the no-context path ranked the 50 among THEMSELVES, so they spread across the
+    whole uniform six-hour pooled reference, while the context path -- correctly ranking them
+    behind 1,000 earlier persons -- placed them in its last minutes: the two call sites modelled
+    the same person's morning hours apart.
+    """
+    trips, persons, thin_ids = _mixed_work_population()
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_work_reference(),
+                     min_reference_n=100, min_model_n=50)
+
+    build, build_diagnostics = M.apply_departure_time_model(trips.copy(), persons, **arguments)
+
+    thin_trips = trips[trips["person_id"].isin(thin_ids)].reset_index(drop=True)
+    thin_persons = persons[persons["person_id"].isin(thin_ids)]
+    context = M.build_ranking_context(trips.assign(**{M.OFFSET_COLUMN: 0.0}), persons)
+    splice, splice_diagnostics = M.apply_departure_time_model(
+        thin_trips, thin_persons, ranking_context=context, **arguments)
+
+    for diagnostics in (build_diagnostics, splice_diagnostics):
+        for group in ("senior_65plus_not_employed", "adult_18_64_not_employed"):
+            assert diagnostics["cells"][("work", group)]["level"] == "purpose_all"
+
+    build_first = (build[build["person_id"].isin(thin_ids) & (build["trip_index"] == 0)]
+                   .set_index("person_id")["departure_time"])
+    splice_first = splice[splice["trip_index"] == 0].set_index("person_id")["departure_time"]
+    difference = (build_first - splice_first).abs()
+    assert difference.max() <= 1.0, (
+        "the two call sites place the same thin-group person up to %.1f min apart"
+        % (difference.max() / 60.0))
+
+
+def test_a_pooled_rung_ranks_the_thin_persons_among_every_person_of_that_purpose():
+    """The base rule stated directly on the no-context path: at the ``(purpose, all)`` rung the
+    thin persons' quantiles come from a base of 1,050 -- every work person of the model set -- not
+    from the 50 pending ones. Since those 50 are the LATEST departures of that base, the uniform
+    pooled reference must place every one of them in the last 5 % of its 6:00-12:00 window, never
+    spread across the whole window.
+    """
+    trips, persons, thin_ids = _mixed_work_population()
+    table, diagnostics = M.apply_departure_time_model(
+        trips, persons, model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_work_reference(),
+        min_reference_n=100, min_model_n=50)
+
+    cell = diagnostics["cells"][("work", "senior_65plus_not_employed")]
+    assert cell["level"] == "purpose_all"
+    assert cell["n_model"] == 20                    # its own persons: still the thin group
+    assert cell["n_model_pooled"] == 50             # the pending persons mapped together
+    assert cell["n_context"] == 20                  # the cell's own base
+    assert cell["n_context_pooled"] == 1050         # the rung's base: every work person
+    thin_first = table[table["person_id"].isin(thin_ids) & (table["trip_index"] == 0)]
+    window_start, window_end = 24 * 900.0, 48 * 900.0
+    assert (thin_first["departure_time"] > window_end - 0.05 * (window_end - window_start)).all()
+
+
+def test_min_model_n_below_one_still_needs_a_non_empty_base():
+    """Review Minor 2: the model side clamps ``min_model_n`` to >= 1 exactly as the reference side
+    clamps ``min_reference_n``. Without the clamp, ``min_model_n=0`` would make a rung whose base
+    is EMPTY "usable", and every person of that cell would be handed the quantile 0.5/(0+1) --
+    a silent collapse of the whole cell onto the reference's median.
+    """
+    context = _ranking_context(n=600, purpose="work", group="employed")
+    table, diagnostics = M.apply_departure_time_model(
+        _table(30), _persons(30), model=M.MODEL_SRV_MAPPED, random_seed=1,
+        reference=_reference(), min_reference_n=100, min_model_n=0, ranking_context=context)
+
+    # The persons' own cell (education, school_age...) has NO context person at all, and neither
+    # has the (education, all) rung; only the fully pooled rung has a base, so that is where they
+    # map -- bin 32, not the bin-30 cell whose empty base a min_model_n of 0 would have accepted.
+    cell = diagnostics["cells"][("education", "school_age_6_17_not_employed")]
+    assert cell["level"] == "all_all" and cell["n_context"] == 0
+    first = table[table["trip_index"] == 0]["departure_time"]
+    assert ((first >= 32 * 900) & (first < 33 * 900)).all()
+
+
+def test_a_ranking_context_with_a_duplicate_person_is_rejected():
+    """Review Minor 3: one row per person, or the base double-counts that person and the
+    de-rounding draw is not the one the person's own row deserves. Duplicates come from a broken
+    join, which must fail loudly rather than quietly reweight the distribution."""
+    context = _ranking_context(n=10)
+    duplicated = pd.concat([context, context.iloc[:3]], ignore_index=True)
+    with pytest.raises(ValueError, match="3 duplicate person_id"):
+        M.apply_departure_time_model(_table(4), _persons(4), model=M.MODEL_SRV_MAPPED,
+                                     random_seed=1, reference=_reference(), min_reference_n=100,
+                                     min_model_n=1, ranking_context=duplicated)

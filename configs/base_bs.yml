@@ -176,9 +176,10 @@ config:
   # SrV legs (unweighted) a reference cell needs before the ladder maps onto it.
   departure_time_mapping_min_reference_n: 200
   # Persons a ladder rung's RANKING BASE needs before the rung is used (else the thin
-  # cell climbs to the next rung). The base is the whole population at both call sites:
-  # the mapped set itself in the trip build, the population ranking context in the
-  # commute-day plan replacement, whose spliced set is far smaller (ADR-0114, A-R18).
+  # cell climbs to the next rung). One rule at both call sites: the base is the model
+  # population of that rung's own key -- the mapped set itself in the trip build, the
+  # population ranking context in the commute-day plan replacement, whose spliced set is
+  # far smaller (ADR-0114, rulings A-R18 / A-R20).
   departure_time_mapping_min_model_n: 50
   # WARN threshold on a mapping cell's median |shift|, in hours; offsets are never
   # clipped to it.

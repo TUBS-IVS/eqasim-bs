@@ -256,7 +256,7 @@ def _apply_departure_time(replaced: pd.DataFrame, *, random_seed: int,
     # quantile was computed in.
     logger.info(
         "%s departure-time model on the replaced rows: %s -- %d person(s), %d trip row(s); "
-        "mapping level: %s; ranked in %s", _LOG_TAG, diagnostics["model"],
+        "mapping level: %s; ranking base from %s", _LOG_TAG, diagnostics["model"],
         diagnostics["n_persons"], diagnostics["n_trips"],
         _departure_time_model.format_level_split(diagnostics),
         _departure_time_model.format_ranking_base(diagnostics))

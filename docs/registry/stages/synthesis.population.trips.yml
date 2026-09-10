@@ -98,9 +98,9 @@ notes: >-
   EntdSource, see below) -- declared default eqasim_uniform, production srv_mapped in
   configs/base_bs.yml. The other three -- departure_time_mapping_min_reference_n (200, unit:
   unweighted SrV observations), departure_time_mapping_min_model_n (50, unit: persons, sizing a
-  ladder rung RANKING BASE, which at this call site is the mapped set itself because that set IS
-  the whole population -- this stage passes no ranking context, see ruling A-R18 and the
-  synthesis.population.trips.final record) and
+  ladder rung RANKING BASE -- the model population of that rung own key, which at this call site
+  is the mapped set itself because that set IS the whole population; this stage passes no ranking
+  context, see rulings A-R18 / A-R20 and the synthesis.population.trips.final record) and
   departure_time_mapping_max_median_shift_hours (2.0, unit: hours) -- are deliberately NOT
   MiD-only: they are MODEL PARAMETERS that only size the srv_mapped coarsening ladder, a mapping
   the model-key rejection already forbids on the ENTD path, so they are inert-and-accepted there

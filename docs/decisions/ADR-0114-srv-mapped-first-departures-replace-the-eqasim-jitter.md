@@ -107,9 +107,10 @@
      `(first purpose x harmonised group)` cell, applied as one further WHOLE-CHAIN offset. Thin
      cells climb a coarsening ladder `(purpose, group) -> (purpose, all) -> (all, all) ->
      unmapped` whose rungs are gated by `departure_time_mapping_min_reference_n` (200) on the
-     reference side and `departure_time_mapping_min_model_n` (50) on the rung's RANKING BASE (the
-     mapped set itself, or the population ranking context of ruling A-R18 where one is given --
-     see Consequences); a cell whose median absolute shift exceeds
+     reference side and `departure_time_mapping_min_model_n` (50, clamped to >= 1) on the size of
+     the rung's RANKING BASE -- the model population of that rung's own key, whether it arrives as
+     the mapped set or as a ranking context (rulings A-R18 / A-R20, see Consequences); a cell whose
+     median absolute shift exceeds
      `departure_time_mapping_max_median_shift_hours` (2.0) WARNS, as does an unmapped share above
      5 % and a coarsened share above 25 %. The chain shift preserves trip and activity durations
      bitwise.
@@ -118,7 +119,8 @@
      `plan_replacement.build_day_trips` on the spliced home-office chains of the reporting-day
      view (ADR-0104), keyed by the RECEIVING person's group and the donor chain's first purpose --
      the generalisation of ADR-0104's "jitter exactly once, keyed by the receiving person" rule --
-     and RANKED in the population's own distribution of that cell (ruling A-R18, Consequences).
+     and RANKED in the population's own distribution of that rung's key -- the same base rule the
+     trip build follows (rulings A-R18 / A-R20, Consequences).
      Times do not feed the location assignment, so the two-view architecture is untouched.
      `EntdSource.build_trips` REJECTS a non-default `departure_time_model` naming the key (the
      ENTD path has no SrV cell structure), the same treatment ADR-0111/ADR-0112's MiD-only keys
@@ -197,28 +199,51 @@
     A hold-out metric deteriorating beyond its bound stops the ladder for diagnosis (no fix
     stacking). The OFF arm must reproduce today's times byte-identically, which four tests already
     pin at the dispatch, the stage, the plan replacement and against the pre-#123 golden values
-    (feature record `departure_time_model`). Task 8 must additionally RECORD the share of persons
-    whose `P_TAET` was item non-response (99) and therefore IMPUTED by `attributes.map_employed`
-    -- the group input every consumer now shares (Assumption 9, ruling A-R17) -- so the run
-    manifest states how many persons' harmonised group rests on an imputed rather than an observed
-    employment code.
-  - **One threshold, one ranking base: the spliced set is ranked in the POPULATION (ruling
-    A-R18).** A quantile mapping needs a distribution to rank a person IN, and that base was
-    originally the MAPPED SET -- right for the trip build, whose set IS the population, wrong for
-    the plan replacement, whose set is only the spliced home-office persons split by
+    (feature record `departure_time_model`). Task 8 must additionally RECORD two things per run.
+    (i) The share of persons whose `P_TAET` was item non-response (99) and therefore IMPUTED by
+    `attributes.map_employed` -- the group input every consumer now shares (Assumption 9, ruling
+    A-R17) -- so the run manifest states how many persons' harmonised group rests on an imputed
+    rather than an observed employment code. (ii) The REPORTING-DAY stage's realised per-level
+    split together with `n_context` and `n_context_pooled` per cell (ruling A-R20): the level alone
+    no longer says what a quantile means, since a cell mapped at `purpose_group` in a base of
+    eleven persons and one mapped in a base of thousands are different claims, and both counts are
+    already in that stage's log.
+  - **One threshold, ONE ranking-base rule at both call sites (rulings A-R18 and A-R20).** A
+    quantile mapping needs a distribution to rank a person IN, and that base was originally the
+    MAPPED SET -- right for the trip build, whose set IS the population, wrong for the plan
+    replacement, whose set is only the spliced home-office persons split by
     `(first purpose x group)`. At small sampling rates those cells coarsened to `all_all` or
     stayed unmapped although the population had thousands of persons in the same cell, and a rank
     among a handful of persons is not a meaningful quantile in the first place. The root cause was
-    therefore the RANKING BASE, not the threshold. `apply_departure_time_model` now takes an
-    optional `ranking_context` -- the population's RAW first departures per cell
-    (`departure_time - departure_time_offset_seconds` of each person's first pre-assignment trip,
-    `build_ranking_context`), which `trips_day_stage` builds from the pre-assignment view and the
-    enriched persons it already reads. A target person's quantile is its mid-rank in that base,
-    `(#below + 0.5 * #ties + 0.5) / (N + 1)`; the ladder's `min_model_n` gate reads the rung's
-    CONTEXT size, `min_reference_n` is unchanged, the context is never itself mapped, and no
-    second threshold exists. The trip build passes no context and is byte-identical to before.
-    Both call sites log their realised level split AND their ranking base, and the validation run
-    records the reporting-day stage's realised split.
+    therefore the RANKING BASE, not the threshold.
+
+    The rule now holds at EVERY rung at BOTH call sites: **a rung's ranking base is the model
+    population of that rung's own key** -- the person's `(purpose, group)` cell at rung 1, every
+    person of that purpose at rung 2 (the groups that already mapped at rung 1 included), everyone
+    at rung 3. The targets at a rung are still the still-pending persons; only the base is keyed on
+    the rung. `apply_departure_time_model` takes an optional `ranking_context` -- the population's
+    RAW first departures per cell (`departure_time - departure_time_offset_seconds` of each
+    person's first pre-assignment trip, `build_ranking_context`), which `trips_day_stage` builds
+    from the pre-assignment view and the enriched persons it already reads, lazily and only when a
+    day will actually be spliced; without one the mapped set is its own base, which is what the
+    trip build passes. A person's quantile is their mid-rank in that base,
+    `(#below + 0.5 * #ties + 0.5) / (N + 1)`; `min_model_n` sizes the base (clamped to >= 1, so a
+    rung with an EMPTY base is never usable and no cell collapses onto the reference median),
+    `min_reference_n` is unchanged, a supplied context is never itself mapped, and no second
+    threshold exists.
+
+    The first attempt unified only the SPLICE side and left the no-context path ranking the
+    still-pending persons among themselves at a pooled rung. That made a person's quantile depend
+    on which OTHER cells happened to be thin in the run, and the two call sites then placed the
+    same person up to **339 min apart** on a 1,050-person synthetic example (20 seniors + 30
+    non-employed adults behind 1,000 employed persons; measured by
+    `tests/test_departure_time_model.py::test_both_call_sites_place_a_thin_group_in_the_same_ranking_base`
+    before the fix). With the rule above the same example agrees to within a second.
+
+    Both call sites log their realised level split AND where their base came from (one shared
+    renderer, `format_ranking_base`), and every cell reports `n_context` / `n_context_pooled` next
+    to `n_model` / `n_model_pooled` -- the persons a cell was ranked AMONG next to the persons
+    mapped WITH it. The validation run records the reporting-day stage's realised split.
   - **Nothing has run.** Every number in this record is either the committed SrV tables or an
     ad-hoc 2026-09-09 measurement labelled as such; the feature record's `validation.state` is
     `unvalidated` with `runs: []` until Task 8 records a manifest under `docs/runs/`.
@@ -254,20 +279,33 @@
      plan replacement / comparison stage. `persons_from_mid_schema` is kept as a TESTED UTILITY,
      not a production call site.
   10. **The ranking base of the spliced persons is the population's RAW first departures,
-     de-rounded by this model's own seeded stream (ruling A-R18).** Two assumptions sit in that
-     sentence. (a) RAW, i.e. `departure_time - departure_time_offset_seconds` of the person's
-     first PRE-ASSIGNMENT trip, is the comparable scale: the realised times of that view have
-     already been de-rounded and mapped, so ranking a donor's reported time against them would
-     compare two different scales. A spliced person's OWN pre-assignment row stays in the context
-     (it is one row of a population-wide distribution, and it describes a different day than the
-     donor chain being placed on them). (b) The context de-rounding is an INDEPENDENT realisation
-     of the same reporting-precision rule, not a replay of the draw the trip build made for those
-     same persons: the draw exists only to break the reporting grid's ties within +/- 7.5 min, so
-     the base's distribution is the same in law while individual values differ by less than the
-     reporting cell they came from. The quantile formula `(#below + 0.5 * #ties + 0.5) / (N + 1)`
-     is the mid-rank plotting position; at a context member it equals `i / (N + 1)`, which differs
-     from the ladder's own `(i - 0.5) / n` by at most half a context step, so a spliced person
-     lands where an equally placed population person landed.
+     de-rounded by this model's own seeded stream (rulings A-R18 / A-R20).** Two assumptions sit
+     in that sentence. **(a)** RAW, i.e. `departure_time - departure_time_offset_seconds` of the
+     person's first PRE-ASSIGNMENT trip, is the comparable scale: the realised times of that view
+     have already been de-rounded and mapped, so ranking a donor's reported time against them
+     would compare two different scales. A spliced person's OWN pre-assignment row stays in the
+     context (it is one row of a population-wide distribution, and it describes a different day
+     than the donor chain being placed on them). **(b)** The context de-rounding is an INDEPENDENT
+     realisation of the same reporting-precision rule, not a replay of the draw the trip build
+     made for those same persons: the draw exists only to break the reporting grid's ties within
+     +/- 7.5 min, so the base's distribution is the same in law while individual values differ by
+     less than the reporting cell they came from.
+
+     Since A-R20 the base RULE and the quantile formula are identical at both call sites, so (b)
+     is the ONLY thing that still separates them, and its size is a MEASURED property of the
+     fixtures below, not a bound (no source states one):
+
+     | measurement (committed `(employed, work)` cell, 1,000 persons, `tests/test_departure_time_model.py`) | median | p90 | max |
+     |---|---|---|---|
+     | identical bases (off-grid reports, de-rounding exactly 0) -- `::test_a_target_lands_where_an_equally_placed_population_person_lands` | 0 s | 0 s | 0 s |
+     | independently de-rounded bases (quarter-hour reports) -- `::test_the_de_rounding_realisation_is_the_only_residual_difference_between_the_call_sites` | 44 s | 263 s | 262 min |
+
+     Read it as: negligible in the bulk, but a person who lands in the reference's SPARSE LATE
+     TAIL can move by hours, because there a small rank change is a large time change. The same
+     order of magnitude applies to any half-step of plotting position: `i / (N + 1)` against
+     `(i - 0.5) / N` on that same cell is a median of 3.8 s at N = 1,000 but up to 77 min in the
+     tail, and at N = 50 a median of 75 s -- which is why the two call sites had to be unified on
+     ONE formula rather than on "close enough".
   11. The purposes the mapping cells are keyed on are the CORRECTED ones of ADR-0111 (W_ZWECK 10
      folds to leisure) and ADR-0112 (a paired passive escort leg takes the adult's purpose), and
      the population the model runs on carries the general day-absence state of ADR-0110 (an absent

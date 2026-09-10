@@ -199,8 +199,8 @@ def _empty_donor_trips():
     return pd.DataFrame({column: pd.Series(dtype=object) for column in columns})
 
 
-def _departure_time_settings(context, persons: pd.DataFrame,
-                             trips: pd.DataFrame) -> DepartureTimeSettings:
+def _departure_time_settings(context, persons: pd.DataFrame, trips: pd.DataFrame,
+                             n_replaced: int) -> DepartureTimeSettings:
     """Build the :class:`DepartureTimeSettings` for this run from the four declared config keys.
 
     The SrV reference is loaded through
@@ -210,14 +210,24 @@ def _departure_time_settings(context, persons: pd.DataFrame,
     ``persons`` is the enriched population (ruling A-R13); the plan replacement restricts it to
     the replaced persons itself.
 
-    The RANKING CONTEXT (ruling A-R18) is built here, from the PRE-ASSIGNMENT ``trips`` view and
-    those same enriched persons, for ``srv_mapped`` only -- the two other models rank nothing, and
-    the dispatch rejects a context they would ignore, exactly as ``load_reference_for_model``
-    returns no reference for them. It is the POPULATION's raw first departures per mapping cell,
-    so a spliced person's quantile is computed in the population's distribution of their cell
-    rather than among the handful of home-office persons this run happened to replace. Nothing
-    circular is introduced: the context reads only the pre-assignment view's RAW (pre-model) times
-    and the person attributes this stage already depends on.
+    The RANKING CONTEXT (rulings A-R18 / A-R20) is built here, from the PRE-ASSIGNMENT ``trips``
+    view and those same enriched persons. It is the POPULATION's raw first departures per mapping
+    cell, so a spliced person's quantile is computed in the population's distribution of their
+    cell -- the same base the pre-assignment trip build ranks in -- rather than among the handful
+    of home-office persons this run happened to replace. Nothing circular is introduced: the
+    context reads only the pre-assignment view's RAW (pre-model) times and the person attributes
+    this stage already depends on.
+
+    It is built LAZILY, on two conditions, and the log line says which of them decided:
+
+    * ``srv_mapped`` only -- the two other models rank nothing, and the dispatch REJECTS a context
+      they would ignore, exactly as ``load_reference_for_model`` returns no reference for them;
+    * ``n_replaced > 0`` -- with nothing spliced the model never runs, so a groupby over the whole
+      population's trips would be pure cost.
+
+    The reference is still resolved FIRST and unconditionally: a misconfigured run (an unknown
+    model, or ``srv_mapped`` without its committed table) must abort whenever this stage runs at
+    all, not only when the state draw happens to produce a replaced person.
     """
     from braunschweig.popsim.stage.config_keys import (
         KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
@@ -233,9 +243,12 @@ def _departure_time_settings(context, persons: pd.DataFrame,
     # population's trips.
     reference = _departure_time_model.load_reference_for_model(
         context.config("data_path"), model, config_key=KEY_DEPARTURE_TIME_MODEL)
-    ranking_context = None
+    ranking_context, base_reason = None, "this model ranks nothing"
     if model == _departure_time_model.MODEL_SRV_MAPPED:
-        ranking_context = _departure_time_model.build_ranking_context(trips, persons)
+        if n_replaced > 0:
+            ranking_context = _departure_time_model.build_ranking_context(trips, persons)
+        else:
+            base_reason = "no person is spliced in this run, so the model never runs"
     settings = DepartureTimeSettings(
         model=model,
         reference=reference,
@@ -248,8 +261,9 @@ def _departure_time_settings(context, persons: pd.DataFrame,
                 "min_model_n=%d, max_median_shift_hours=%.2f); ranking context: %s", _LOG_TAG,
                 settings.model, settings.min_reference_n, settings.min_model_n,
                 settings.max_median_shift_hours,
-                "none (this model ranks nothing)" if ranking_context is None
-                else "%d population person(s)" % len(ranking_context))
+                "not built (%s)" % base_reason if ranking_context is None
+                else "%d population person(s), for %d person(s) to be spliced"
+                     % (len(ranking_context), n_replaced))
     return settings
 
 
@@ -290,8 +304,11 @@ def execute(context):
     # Resolved on BOTH remaining paths, including the absence-only one where nothing is spliced
     # and the model therefore never runs: a misconfigured model (unknown name, or srv_mapped
     # without its committed reference) must abort whenever this stage runs at all, not only when
-    # the state draw happens to produce a replaced person.
-    departure_time = _departure_time_settings(context, persons, trips)
+    # the state draw happens to produce a replaced person. The ranking context, by contrast, is
+    # built only when the match count says at least one day WILL be spliced (ruling A-R20 fix
+    # round, review Minor 7) -- it costs a groupby over the whole population's trips and is read
+    # by nothing when no chain is replaced.
+    departure_time = _departure_time_settings(context, persons, trips, len(matches))
     # Ruling R9: the attributes carry n_trips, which is what lets build_day_trips tell an
     # EXPECTED immobile donor day (n_trips == 0) apart from a donor_id join failure -- both look
     # like "no rows for this donor" in donor_trips alone.

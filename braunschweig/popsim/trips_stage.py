@@ -432,12 +432,18 @@ def _log_departure_time_model(diagnostics: dict) -> None:
     them, and that must be visible where the trip table is reported). The split string comes from
     :func:`braunschweig.popsim.departure_time_model.format_level_split`, the single home of that
     formatting, so this line and the model's own can never disagree -- and it ALREADY carries the
-    ``unmapped n/total (rate)`` term, so this line does not repeat it.
+    ``unmapped n/total (rate)`` term, so this line does not repeat it. The RANKING BASE is named
+    next to it from the equally shared
+    :func:`braunschweig.popsim.departure_time_model.format_ranking_base` (ruling A-R20): this
+    stage passes no ranking context because its mapped set IS the whole population, and saying so
+    explicitly is what lets a reader compare this line with the reporting-day stage's, which does
+    pass one.
     """
     logger.info(
         "[trips_stage] departure-time model: %s -- %d person(s), %d trip row(s); mapping level: "
-        "%s", diagnostics["model"], diagnostics["n_persons"], diagnostics["n_trips"],
-        _departure_time_model.format_level_split(diagnostics))
+        "%s; ranking base from %s", diagnostics["model"], diagnostics["n_persons"],
+        diagnostics["n_trips"], _departure_time_model.format_level_split(diagnostics),
+        _departure_time_model.format_ranking_base(diagnostics))
 
 
 def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:

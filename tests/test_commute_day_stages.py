@@ -1133,7 +1133,7 @@ def test_trips_day_stage_builds_the_ranking_context_from_the_pre_assignment_trip
     stages = _trips_day_stages(_home_person_states(), trips=trips)
     mapped_context = _context(TRIPS, stages=stages, config=_trips_day_config(
         **{KEY_DEPARTURE_TIME_MODEL: "srv_mapped"}))
-    settings = TRIPS._departure_time_settings(mapped_context, _persons(), trips)
+    settings = TRIPS._departure_time_settings(mapped_context, _persons(), trips, n_replaced=1)
 
     context = settings.ranking_context
     assert list(context.columns) == list(RANKING_CONTEXT_COLUMNS)
@@ -1149,7 +1149,16 @@ def test_trips_day_stage_builds_the_ranking_context_from_the_pre_assignment_trip
     assert by_person.loc[1, "group"] == "employed"
 
     uniform_context = _context(TRIPS, stages=stages, config=_trips_day_config())
-    assert TRIPS._departure_time_settings(uniform_context, _persons(), trips).ranking_context is None
+    assert TRIPS._departure_time_settings(uniform_context, _persons(), trips,
+                                          n_replaced=1).ranking_context is None
+
+    # Review Minor 7: built LAZILY -- with nothing spliced the model never runs, so the groupby
+    # over the whole population's trips is not paid. The reference stays resolved either way (the
+    # missing-reference test below still aborts a run that splices nobody).
+    assert TRIPS._departure_time_settings(
+        _context(TRIPS, stages=stages,
+                 config=_trips_day_config(**{KEY_DEPARTURE_TIME_MODEL: "srv_mapped"})),
+        _persons(), trips, n_replaced=0).ranking_context is None
 
 
 def test_trips_day_stage_srv_mapped_raises_naming_the_key_when_the_reference_is_missing(tmp_path):

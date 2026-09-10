@@ -786,8 +786,10 @@ def test_the_ranking_context_maps_a_spliced_set_too_thin_to_rank_itself(caplog):
     alone, diagnostics_alone = plan_replacement.build_day_trips(
         *args, random_seed=RANDOM_SEED,
         departure_time=_departure_time_settings(min_model_n=50))
-    assert diagnostics_alone["departure_time"]["cells"][("work", "employed")]["level"] \
-        == "unmapped"
+    alone_cell = diagnostics_alone["departure_time"]["cells"][("work", "employed")]
+    assert alone_cell["level"] == "unmapped"
+    # Without a context the replaced person IS the whole base -- one person, so no rung is usable.
+    assert alone_cell["n_context"] == 1
     assert diagnostics_alone["departure_time"]["n_ranking_context"] is None
 
     context = _population_ranking_context()
@@ -799,8 +801,9 @@ def test_the_ranking_context_maps_a_spliced_set_too_thin_to_rank_itself(caplog):
     cell = diagnostics["departure_time"]["cells"][("work", "employed")]
     assert cell["level"] == "purpose_group"
     assert cell["n_model"] == 1 and cell["n_context"] == 500
+    assert cell["n_context_pooled"] == 500          # the base actually ranked in at that rung
     assert diagnostics["departure_time"]["n_ranking_context"] == 500
-    assert "ranked in the population's 500 first departure(s)" in caplog.text
+    assert "ranking base from a ranking context of 500 population person(s)" in caplog.text
     # The mapping actually moved the day: the same spliced chain now starts somewhere the
     # unmapped (de-rounding-only) run cannot reach.
     assert (ranked[ranked["person_id"] == "p2"]["departure_time"].tolist()

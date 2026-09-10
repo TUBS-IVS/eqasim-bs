@@ -201,17 +201,24 @@ notes: 'Pipelines. popsim_open is inactive, not not_used: its trip build DOES re
   tests/test_synpp_helper_hash_invariant.py polices own-package siblings only, so the
   cross-package entries are the ones a future edit could silently lose.
 
-  Ranking base (ruling A-R18, ADR-0114 Consequences/Assumption 10). A quantile map needs a
-  distribution to rank a person IN. That base is the MAPPED SET, which is the population at the
-  trip build but only the spliced home-office persons at the plan replacement -- at small sampling
-  rates those cells coarsened to all_all or stayed unmapped although the population had thousands
-  of persons in the same cell, and a rank among a handful is not a meaningful quantile.
-  apply_departure_time_model therefore takes an optional ranking_context (the population raw first
-  departures per cell, departure_time minus departure_time_offset_seconds of each person first
-  pre-assignment trip, built by build_ranking_context); trips_day_stage builds it from the
-  pre-assignment view and the enriched persons it already reads and passes it in
-  DepartureTimeSettings. A target quantile is its mid-rank in that base, (#below + 0.5 * #ties +
-  0.5) / (N + 1); departure_time_mapping_min_model_n gates the rung CONTEXT size,
-  departure_time_mapping_min_reference_n is unchanged, the context is never itself mapped and
-  there is no second threshold. Without a context (the trip build) the behaviour is byte-identical
-  to before. Both call sites log their realised level split AND their ranking base.'
+  Ranking base, ONE rule at both call sites (rulings A-R18 / A-R20, ADR-0114
+  Consequences/Assumption 10). A quantile map needs a distribution to rank a person IN, and a rung
+  ranking base is the MODEL POPULATION OF THAT RUNG OWN KEY: the (purpose, group) cell at rung 1,
+  every person of that purpose at rung 2 (the groups that already mapped at rung 1 included),
+  everyone at rung 3. The targets at a rung remain the still-pending persons; only the base is
+  keyed on the rung, so a person placement never depends on which other cells happened to be thin
+  in the run. Where that population comes from is the only difference between the call sites: the
+  trip build passes no context because its mapped set IS the population, while the plan
+  replacement passes the population raw first departures per cell (departure_time minus
+  departure_time_offset_seconds of each person first pre-assignment trip, built by
+  build_ranking_context and handed over in DepartureTimeSettings) because its own set is only the
+  spliced home-office persons -- without it those cells coarsened to all_all or stayed unmapped
+  although the population had thousands of persons in the same cell, and a rank among a handful is
+  not a meaningful quantile. A person quantile is their mid-rank in the rung base, (#below + 0.5 *
+  #ties + 0.5) / (N + 1), so two placements agree exactly when the bases agree;
+  departure_time_mapping_min_model_n sizes that base (clamped to at least 1, so a rung with an
+  empty base is never usable and no cell collapses onto the reference median),
+  departure_time_mapping_min_reference_n is unchanged, a supplied context is never itself mapped
+  (and duplicate person_id rows are rejected), and there is no second threshold. Both call sites
+  log their realised level split and where their base came from in one shared vocabulary, and
+  every cell reports n_context / n_context_pooled next to n_model / n_model_pooled.'

@@ -127,21 +127,35 @@ without a new decision record.
 
 ## The ranking base: whose distribution is a person ranked in?
 
-A quantile map needs a distribution to rank a person IN, and by default that is
-the MAPPED SET itself, as described above. That is right for the trip build,
-whose mapped set IS the whole population, and wrong for the reporting-day
-splice, whose set is only the replaced home-office persons, split further by
-`(first purpose x group)`: at a smoke or a 1 % scale those cells coarsen to
-`all_all` or stay unmapped although the population has thousands of persons in
-the same cell -- and a rank among a handful of persons is not a meaningful
-quantile anyway. The root cause is the RANKING BASE, not `min_model_n` (ruling
-A-R18, ADR-0114 Consequences).
+A quantile map needs a distribution to rank a person IN, and there is ONE rule
+for it (rulings A-R18 / A-R20, ADR-0114 Consequences):
 
-`apply_departure_time_model(..., ranking_context=<frame>)` therefore takes an
-optional base with `RANKING_CONTEXT_COLUMNS` -- `person_id`,
-`raw_first_departure_seconds`, `purpose`, `group`, one row per POPULATION
-person -- built by `build_ranking_context(trips, persons)` from the
-PRE-ASSIGNMENT trips view and the population's own attributes:
+> **A rung's ranking base is the model population of that rung's own key** --
+> the person's `(purpose, group)` cell at rung 1, every person of that purpose at
+> rung 2 (the groups that already mapped at rung 1 included), everyone at rung 3.
+
+The TARGETS at a rung are still the still-pending persons; only the base is keyed
+on the rung. Two properties follow. The base can only GROW as the ladder
+coarsens, which is the least a coarsening ladder should do; and a person's
+placement depends on their own value and the rung's base alone, never on which
+OTHER cells happened to be thin in this run.
+
+Where that population comes from is the one difference between the two call
+sites:
+
+* the **trip build** passes no `ranking_context`, so the MAPPED SET is its own
+  base. Correct, because its set IS the whole synthetic population.
+* the **reporting-day splice** passes one, because its set is only the replaced
+  home-office persons split by `(first purpose x group)`: at a smoke or a 1 %
+  scale those cells would coarsen to `all_all` or stay unmapped although the
+  population has thousands of persons in the same cell -- and a rank among a
+  handful of persons is not a meaningful quantile anyway.
+
+`apply_departure_time_model(..., ranking_context=<frame>)` takes that base with
+`RANKING_CONTEXT_COLUMNS` -- `person_id`, `raw_first_departure_seconds`,
+`purpose`, `group`, exactly one row per POPULATION person -- built by
+`build_ranking_context(trips, persons)` from the PRE-ASSIGNMENT trips view and
+the population's own attributes:
 
 * the value is the RAW time, `departure_time - departure_time_offset_seconds`
   of the person's first trip, i.e. the reported grid time before any model ran.
@@ -152,21 +166,24 @@ PRE-ASSIGNMENT trips view and the population's own attributes:
   `person_id`), so a context never shifts the targets' own draws and a shuffled
   context frame produces identical output. ASSUMPTION: this is an independent
   realisation of the same rule, not a replay of the trip build's draw for those
-  persons (ADR-0114 Assumption 10).
-* each target's quantile is its mid-rank in the base,
-  `(#below + 0.5 * #ties + 0.5) / (N + 1)`. It is rank-preserving among the
-  targets (a monotone function of the target's own value), strictly inside
-  `(0, 1)`, and at a context member it equals `i / (N + 1)` -- within half a
-  context step of the ladder's own `(i - 0.5) / n`, so a spliced person lands
-  where an equally placed population person landed.
-* the targets NEVER enter the base, and the base is never itself mapped.
-* `min_model_n` gates the rung's CONTEXT cell instead of the pooled targets;
-  `min_reference_n` is untouched. There is deliberately no second threshold.
+  persons, and since A-R20 it is the ONLY thing that still differs between the
+  two call sites (ADR-0114 Assumption 10b carries the measured size: a median of
+  44 s, up to hours in the reference's sparse tail).
+* each person's quantile is their mid-rank in the rung's base,
+  `(#below + 0.5 * #ties + 0.5) / (N + 1)` -- rank-preserving (a monotone
+  function of the person's own value) and strictly inside `(0, 1)`. Two
+  placements agree EXACTLY when the bases agree, whether or not the person is
+  themselves in the base.
+* a SUPPLIED context is never itself mapped, and duplicate `person_id` rows are
+  rejected (they would double-count a person and draw two de-roundings).
+* `min_model_n` sizes the base, clamped to at least 1 -- an empty base would
+  otherwise hand every person the quantile 0.5 and collapse the whole cell onto
+  the reference's median. `min_reference_n` is untouched, and there is
+  deliberately no second threshold.
 
-Without a context nothing changes, byte for byte, which is why the trip build
-passes none. A context handed to `derounded` or `eqasim_uniform` RAISES: those
-models rank nothing, and a caller believing a base is in effect when it is not
-is the hidden defect the fallback-transparency rule exists to stop.
+A context handed to `derounded` or `eqasim_uniform` RAISES: those models rank
+nothing, and a caller believing a base is in effect when it is not is the hidden
+defect the fallback-transparency rule exists to stop.
 
 ## The coarsening ladder
 
@@ -176,9 +193,9 @@ is the hidden defect the fallback-transparency rule exists to stop.
 * the REFERENCE cell of that rung exists, is non-empty (`n_unweighted > 0` with
   finite shares -- an empty committed cell means "no reference", never a zero
   distribution) and has `n_unweighted >= min_reference_n`; AND
-* the rung's RANKING BASE reaches `min_model_n` -- the MODEL persons pooled at
-  that rung without a ranking context, the rung's CONTEXT cell with one (see
-  "The ranking base" above).
+* the rung's RANKING BASE holds at least `max(min_model_n, 1)` persons (see
+  "The ranking base" above -- the base is keyed on the rung, not on whichever
+  cells happened to be pending).
 
 Pooling is what makes the ladder more than a reference lookup: rung 2 pools
 every group of that purpose that could not take rung 1 and ranks them JOINTLY,
@@ -188,13 +205,16 @@ calibrated, which is exactly why the level split is logged rather than
 summarised as a single success count.
 
 Per cell the report carries `level`, `n_model` (the cell's own persons),
-`n_model_pooled` (the persons ranked together at the rung it mapped at; for an
+`n_model_pooled` (the persons MAPPED together at the rung it mapped at; for an
 unmapped cell, the size of the LAST pooled attempt, so a reader sees how far it
-was from the threshold), `n_context` / `n_context_pooled` (the same two counts on
-the ranking base, `None` when no context was given -- never `0`, which would read
-as "the base was empty"), `n_reference`, `median_shift_min` and
-`median_abs_shift_min`. The run-level `n_ranking_context` and the shared
-renderer `format_ranking_base` say which base a run used at all.
+was from the threshold), `n_context` / `n_context_pooled` (the cell's own base
+and the base it was actually ranked AMONG at that rung -- population persons with
+a supplied context, model persons without one), `n_reference`,
+`median_shift_min` and `median_abs_shift_min`. The run-level
+`n_ranking_context` (`None` when the model set was its own base) and the shared
+renderer `format_ranking_base` say where the base came from; the per-rung sizes
+are the per-cell `n_context_pooled`, which is why the run-level line points at
+them instead of naming one number.
 
 Guards, all under the log tag `[departure time]` and all rendered as
 `n/total (rate)` by the single helper `format_level_split`:
@@ -232,7 +252,9 @@ Guards, all under the log tag `[departure time]` and all rendered as
    and only those, are the persons whose day this call SHIFTS. What they are
    RANKED IN is the settings' `ranking_context`, which `trips_day_stage` builds
    with `build_ranking_context` from the pre-assignment trips and the same
-   enriched persons (ruling A-R18; see "The ranking base" above).
+   enriched persons -- lazily, only when the match count says a day will actually
+   be spliced, while the reference is resolved unconditionally so a misconfigured
+   run still aborts (rulings A-R18 / A-R20; see "The ranking base" above).
    `departure_time=None` keeps the plain jitter byte-identically.
 
 **ONE attribute source, at every call site (ruling A-R17, final fix wave item
@@ -247,11 +269,13 @@ same person calibrated in one group and measured in another.
 `persons_from_mid_schema` is kept as a TESTED UTILITY (fixture construction and
 the direct unit tests of the dispatch), not a production call site any more.
 
-`min_model_n` governs both call sites, and since ruling A-R18 it sizes the same
-thing at both: the RANKING BASE, which is the population either way (the mapped
-set in the trip build, the ranking context at the splice). Each call site still
-logs its realised level split AND its base separately -- read both before
-trusting a `srv_mapped` run.
+`min_model_n` governs both call sites, and since rulings A-R18 / A-R20 it sizes
+the same thing at both: the RANKING BASE of a rung, which is the population
+either way (the mapped set in the trip build, the ranking context at the
+splice). Each call site logs its realised level split and where its base came
+from in one shared vocabulary (`format_ranking_base`), and every cell reports
+`n_context` / `n_context_pooled` -- read the level TOGETHER with the base size
+before trusting a `srv_mapped` run.
 
 The reference is loaded ONCE per stage by
 `departure_time_model.load_reference_for_model(data_path, model, config_key=...)`

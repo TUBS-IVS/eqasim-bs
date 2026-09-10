@@ -141,14 +141,16 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   plan). The mapping cell is keyed by the RECEIVING person group and the DONOR chain first
   purpose, and the persons handed to the model are RESTRICTED to the replaced set, because those
   and only those are the persons whose day this stage shifts. What they are RANKED IN is a
-  separate input, the ranking context of ruling A-R18: this stage builds it with
+  separate input, the ranking context of rulings A-R18 / A-R20: this stage builds it with
   departure_time_model.build_ranking_context from the PRE-ASSIGNMENT trips view it already reads
   and the same enriched persons, so a spliced person quantile is computed in the population
-  distribution of their cell (raw first departures, departure_time minus
-  departure_time_offset_seconds) rather than among the few home-office persons this run replaced;
-  departure_time_mapping_min_model_n then gates the rung context size, and the reference is
-  resolved BEFORE the context is built so a misconfigured run aborts on the configuration rather
-  than after a groupby over the whole population.
+  distribution of that rung key (raw first departures, departure_time minus
+  departure_time_offset_seconds) -- the same base rule the pre-assignment trip build ranks in --
+  rather than among the few home-office persons this run replaced;
+  departure_time_mapping_min_model_n then sizes that base. Two ordering rules: the reference is
+  resolved FIRST and unconditionally, so a misconfigured run aborts on the configuration rather
+  than after a groupby over the whole population, and the context is built LAZILY, only when the
+  match count says at least one day will actually be spliced (nothing reads it otherwise).
   departure_time=None keeps apply_per_person_jitter byte-identically, and OFFSET_COLUMN stays in
   _RECOMPUTED_COLUMNS so it is neither nulled nor counted as an extra column on replaced rows
   (the model overwrites it a few lines later). The model diagnostics are returned under
@@ -160,6 +162,9 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   popsim.plan_validation (its MAX_PLAN_TIME_SECONDS is the upper clip bound), all five
   CROSS-package and therefore invisible to tests/test_synpp_helper_hash_invariant.py, which
   polices own-package siblings only. The stage log line names the realised coarsening-level split
-  AND the ranking base it was computed in (departure_time_model.format_ranking_base) -- read both
-  before trusting a srv_mapped reporting day. The mechanism itself lives once in
+  AND where the ranking base came from (departure_time_model.format_ranking_base, the same
+  renderer braunschweig.popsim.trips_stage uses, so the two stage lines share one vocabulary),
+  while the per-rung base SIZES are the per-cell n_context / n_context_pooled of the model
+  diagnostics -- read the level TOGETHER with those counts before trusting a srv_mapped reporting
+  day, and record both in the run manifest (ADR-0114, Task 8). The mechanism itself lives once in
   docs/codebase/notes/departure-time-model.md.'
