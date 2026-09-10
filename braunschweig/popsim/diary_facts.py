@@ -11,6 +11,13 @@ import logging
 import numpy as np
 import pandas as pd
 
+# The ONE definition of "this leg is an rbW summary record" (module docstring on
+# rbw_leg_mask): used both by the trip build's own leg-drop step and, here, by
+# compute_diary_facts, so the two can never silently disagree on which legs are rbW.
+# Safe at module level -- trips.py (and its own top-level import, data.hts.hts) does not
+# import diary_facts, directly or transitively, so there is no import cycle.
+from braunschweig.popsim.trips import rbw_leg_mask
+
 logger = logging.getLogger(__name__)
 
 HOME_ZWECK = frozenset({8, 9})
@@ -52,7 +59,7 @@ def compute_diary_facts(wege, *, household_id="H_ID", person_id="P_ID", trip_id=
         raise KeyError(f"compute_diary_facts: Wege frame lacks required column(s) {missing}")
     keys = [household_id, person_id]
     w = wege[keys + [trip_id] + list(REQUIRED_WEGE_COLUMNS)].sort_values(keys + [trip_id])
-    is_rbw = w["W_RBW"] == 1
+    is_rbw = rbw_leg_mask(w)
     km = pd.to_numeric(w["wegkm_imp"], errors="coerce")
     coded = km.isna() | (km >= WEGKM_CODE_MIN)
     n_coded_rbw = int((coded & is_rbw).sum())

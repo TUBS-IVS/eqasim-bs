@@ -47,6 +47,45 @@ def test_compute_diary_facts_requires_each_column(column):
         df_mod.compute_diary_facts(_wege().drop(columns=[column]))
 
 
+def test_rbw_mask_matches_trips_rbw_leg_mask_including_nan():
+    """diary_facts used to spell the rbW rule inline (``W_RBW == 1``) instead of using the
+    shared home ``trips.rbw_leg_mask`` (issue #373 cleanup wave, item 5). Both formulations
+    must agree even when W_RBW is NaN (a coded/unreadable value): pandas' ``NaN == 1`` is
+    False, matching ``rbw_leg_mask``'s own comparison, so a leg with unreadable W_RBW is
+    NOT rbW either way -- pinned here rather than assumed."""
+    from braunschweig.popsim import trips
+
+    wege = pd.concat([_wege(), pd.DataFrame({
+        "H_ID": [3], "P_ID": [1], "W_ID": [1], "W_ZWECK": [1],
+        "W_RBW": [np.nan], "W_SO1": [1], "wegkm_imp": [1.0],
+    })], ignore_index=True)
+    inline_mask = wege["W_RBW"] == 1
+    shared_mask = trips.rbw_leg_mask(wege)
+    pd.testing.assert_series_equal(inline_mask, shared_mask, check_names=False)
+
+
+def test_compute_diary_facts_output_unchanged_on_the_module_fixture():
+    """Byte-identical output pin (CLAUDE.md 'preserve existing behaviour'): switching the
+    internal rbW rule from the inline ``W_RBW == 1`` comparison to ``trips.rbw_leg_mask``
+    must not change compute_diary_facts' result on the module's own fixture. Captured from
+    the pre-fix implementation (2026-09-10)."""
+    facts = df_mod.compute_diary_facts(_wege())
+    expected = pd.DataFrame(
+        {
+            "n_direct_legs": [2, 2, 0],
+            "n_rbw_legs": [2, 0, 2],
+            "rbw_distance_km": [25.0, 0.0, 7.0],
+            "first_so1": [1, 2, -1],
+            "first_direct_zweck": [1, 8, -1],
+            "last_direct_zweck": [8, 4, -1],
+            "ends_at_home": [True, False, False],
+            "starts_arriving_home": [False, True, False],
+        },
+        index=pd.MultiIndex.from_tuples([(1, 1), (1, 2), (2, 1)], names=["H_ID", "P_ID"]),
+    )
+    pd.testing.assert_frame_equal(facts, expected, check_dtype=False)
+
+
 def test_attach_plan_source_facts_uses_source_keys_and_fills_missing():
     facts = df_mod.compute_diary_facts(_wege())
     persons = pd.DataFrame({
