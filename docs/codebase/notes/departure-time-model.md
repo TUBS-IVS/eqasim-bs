@@ -106,12 +106,27 @@ person)`; the group rule is `srv_plan_structure.harmonised_group`, the same one
 the committed reference is segmented by, and the purpose is the leg's
 DESTINATION purpose, again the same side the reference uses.
 
-Within a cell the model's de-rounded first departures are sorted (stable sort
-over persons in `person_id` order, so ties break by `person_id`) and the i-th of
-n takes quantile `(i - 0.5) / n` through the inverse CDF of that cell's
-cumulated 15-minute `share_derounded` column, LINEAR inside the 15-minute bin so
-a cell does not collapse onto a 15-minute comb. The mapping offset is
-`target - de-rounded first departure`; the total offset is
+Per rung the model has a RANKING BASE -- the model population, or a supplied
+ranking context, of that rung's key (see
+[The ranking base](#the-ranking-base-whose-distribution-is-a-person-ranked-in)
+below, which owns that rule). Every target's quantile is its MID-RANK in that
+base,
+
+```
+q = (#{base values below the target} + 0.5 * #{ties} + 0.5) / (N_base + 1)
+```
+
+taken through the inverse CDF of the rung's cumulated 15-minute
+`share_derounded` column, LINEAR inside the 15-minute bin so a cell does not
+collapse onto a 15-minute comb. A person who is themselves in the base -- every
+person mapped at rung 1, where the base IS their own cell -- ties with their own
+value and so lands at `i / (N + 1)`. Two targets between the same two base
+values share a quantile, which is the base's granularity of `1 / (N + 1)`. No
+sort over the targets is needed or performed: `q` is a monotone function of the
+target's own value in a base the whole rung shares, so the reported order is
+preserved and the result cannot depend on any row or dict iteration order.
+
+The mapping offset is `target - de-rounded first departure`; the total offset is
 `de-rounding + mapping`. The de-rounding therefore cancels out of the total for
 a mapped person by construction -- its job is to place the person INSIDE the
 reported quarter hour before ranking, which is what breaks the ties between the

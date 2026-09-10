@@ -114,6 +114,20 @@
      `departure_time_mapping_max_median_shift_hours` (2.0) WARNS, as does an unmapped share above
      5 % and a coarsened share above 25 %. The chain shift preserves trip and activity durations
      bitwise.
+
+     **Plotting position: a deliberate deviation from spec 2.2 (ruling A-R21).** The spec states
+     the quantile as `(i - 0.5) / n` over the mapped set. The implementation instead uses the
+     MID-RANK in the rung's ranking base, `(#below + 0.5 * #ties + 0.5) / (N + 1)`, which for a
+     person contained in their own base (everybody mapped at rung 1) is `i / (N + 1)` -- half a
+     base step away from the spec's value. It was chosen because it is the ONE formula that both
+     call sites can share: a target ranked in a base it is not part of (the spliced persons against
+     the population's ranking context) has no `i` of its own, while `(#below + 0.5 * #ties + 0.5) /
+     (N + 1)` is defined for both and gives the SAME answer whenever the bases agree, which is what
+     makes the trip build and the splice place a person identically (rulings A-R18 / A-R20). The
+     cost is the half step, and it is negligible in the bulk: on the committed `(employed, work)`
+     cell the two conventions differ by a median of 3.8 s at N = 1,000 (Assumption 10b, which also
+     records that in the reference's SPARSE TAIL, or at small N, such a half step can reach tens of
+     minutes -- the reason one shared formula matters more than which of the two it is).
   3. **Where it runs.** Exactly twice: in `braunschweig.popsim.trips_stage.run` on the
      pre-assignment view for the whole population, and in
      `plan_replacement.build_day_trips` on the spliced home-office chains of the reporting-day
@@ -302,10 +316,11 @@
 
      Read it as: negligible in the bulk, but a person who lands in the reference's SPARSE LATE
      TAIL can move by hours, because there a small rank change is a large time change. The same
-     order of magnitude applies to any half-step of plotting position: `i / (N + 1)` against
-     `(i - 0.5) / N` on that same cell is a median of 3.8 s at N = 1,000 but up to 77 min in the
-     tail, and at N = 50 a median of 75 s -- which is why the two call sites had to be unified on
-     ONE formula rather than on "close enough".
+     order of magnitude applies to any half-step of plotting position: `i / (N + 1)` -- the
+     implemented one, ruling A-R21, see Decision point 2 -- against the spec's `(i - 0.5) / N` on
+     that same cell is a median of 3.8 s at N = 1,000 but up to 77 min in the tail, and at N = 50 a
+     median of 75 s. That is why the two call sites had to be unified on ONE formula rather than on
+     "close enough", and why the half step the deviation costs is stated rather than rounded away.
   11. The purposes the mapping cells are keyed on are the CORRECTED ones of ADR-0111 (W_ZWECK 10
      folds to leisure) and ADR-0112 (a paired passive escort leg takes the adult's purpose), and
      the population the model runs on carries the general day-absence state of ADR-0110 (an absent
