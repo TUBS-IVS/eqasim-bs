@@ -45,6 +45,18 @@ def _reference(peak_bin=30, n_unweighted=500):
     return pd.DataFrame(rows)
 
 
+def _reference_with_pooled_purpose(peak_bin=20):
+    """:func:`_reference` plus the (segment "all", purpose "education") rung, peaking in
+    ``peak_bin`` (5:00-5:15 by default) -- a third quarter hour, so the rung a cell actually took
+    is identifiable from the mapped departure alone."""
+    pooled = pd.DataFrame([{"universe": "at_home_zero", "segment": "all", "purpose": "education",
+                            "position": "first", "bin_15min": b,
+                            "share_derounded": 1.0 if b == peak_bin else 0.0,
+                            "share_as_reported": 1.0 if b == peak_bin else 0.0,
+                            "n_unweighted": 500} for b in range(M.N_BINS)])
+    return pd.concat([_reference(), pooled], ignore_index=True)
+
+
 def _mid_persons(n=100):
     """MiD-schema person attributes: 10-year-olds with P_TAET 9 (pupil, not employed)."""
     return pd.DataFrame({"person_id": range(n), "HP_ALTER": [10] * n, "P_TAET": [9] * n})
@@ -203,13 +215,7 @@ def test_coarsening_falls_back_to_all_all_and_counts_unmapped():
 def test_coarsening_uses_the_purpose_all_segment_before_the_pooled_cell():
     """A (purpose, group) cell that is missing but whose (purpose, "all" segment) cell exists
     must take the purpose_all rung, not fall through to ("all", "all")."""
-    reference = pd.concat([
-        _reference(),
-        pd.DataFrame([{"universe": "at_home_zero", "segment": "all", "purpose": "education",
-                       "position": "first", "bin_15min": b,
-                       "share_derounded": 1.0 if b == 20 else 0.0,
-                       "share_as_reported": 1.0 if b == 20 else 0.0, "n_unweighted": 500}
-                      for b in range(M.N_BINS)])], ignore_index=True)
+    reference = _reference_with_pooled_purpose()
     persons = M.persons_from_mid_schema(_mid_persons().assign(P_TAET=1, HP_ALTER=40))
     table, diag = M.apply_departure_time_model(_table(), persons, model=M.MODEL_SRV_MAPPED,
                                                random_seed=1, reference=reference,
@@ -219,11 +225,38 @@ def test_coarsening_uses_the_purpose_all_segment_before_the_pooled_cell():
     assert ((first["departure_time"] >= 20 * 900) & (first["departure_time"] < 21 * 900)).all()
 
 
-def test_a_thin_model_cell_is_left_unmapped_and_counted():
-    table, diag = M.apply_departure_time_model(_table(4), _persons(4), model=M.MODEL_SRV_MAPPED,
-                                               random_seed=1, reference=_reference(),
+def test_a_thin_model_cell_climbs_the_ladder_instead_of_dropping_out():
+    """Ruling A-R11 / spec 2.2: coarsening is triggered by a thin MODEL cell too. Ten school-age
+    education persons (below min_model_n = 50) must JOIN the other thin education persons at the
+    (education, "all") rung and be mapped there -- not left with the donor's own start times --
+    and be ranked WITHIN that pooled set of 55."""
+    persons = _persons(55)
+    persons.loc[persons.index[10:], "age"] = 70        # 10 school-age + 45 senior, both thin
+    table, diag = M.apply_departure_time_model(_table(55), persons, model=M.MODEL_SRV_MAPPED,
+                                               random_seed=1,
+                                               reference=_reference_with_pooled_purpose(),
                                                min_reference_n=100, min_model_n=50)
-    assert diag["cells"][("education", "school_age_6_17_not_employed")]["level"] == "unmapped"
+    thin = diag["cells"][("education", "school_age_6_17_not_employed")]
+    assert thin["level"] == "purpose_all" and thin["n_model"] == 10
+    assert thin["n_model_pooled"] == 55 and thin["n_reference"] == 500
+    assert diag["cells"][("education", "senior_65plus_not_employed")]["n_model"] == 45
+    assert diag["n_persons_by_level"]["purpose_all"] == 55 and diag["share_unmapped"] == 0.0
+    first = table[table["trip_index"] == 0]
+    assert ((first["departure_time"] >= 20 * 900) & (first["departure_time"] < 21 * 900)).all()
+    # ONE common rank order over the pooled set: 55 persons spread evenly across the target bin.
+    ordered = np.sort(first["departure_time"].to_numpy())
+    assert np.abs(np.diff(ordered) - 900.0 / 55.0).max() <= 1.0
+
+
+def test_unmapped_only_when_even_the_pooled_model_set_is_too_thin():
+    """Four persons: their own cell, the (education, "all") rung and the ("all", "all") rung all
+    pool the same four persons, so no rung reaches min_model_n=50 and they stay unmapped."""
+    table, diag = M.apply_departure_time_model(_table(4), _persons(4), model=M.MODEL_SRV_MAPPED,
+                                               random_seed=1,
+                                               reference=_reference_with_pooled_purpose(),
+                                               min_reference_n=100, min_model_n=50)
+    cell = diag["cells"][("education", "school_age_6_17_not_employed")]
+    assert cell["level"] == "unmapped" and cell["n_reference"] == 0
     assert diag["share_unmapped"] == 1.0 and (table[M.OFFSET_COLUMN].abs() <= 450).all()
 
 
@@ -253,6 +286,19 @@ def test_median_shift_guard_warns_naming_the_cell_and_both_medians(caplog):
     assert "median" in caplog.text and "school_age_6_17_not_employed" in caplog.text
     cell = diag["cells"][("education", "school_age_6_17_not_employed")]
     assert cell["median_abs_shift_min"] > 120.0 and cell["median_shift_min"] > 120.0
+
+
+def test_a_mostly_coarsened_run_warns_with_the_level_split(caplog):
+    """Observability guard: when most persons are calibrated against a POOLED reference rather
+    than their own cell, the log must say so with n/total and the per-level split."""
+    persons = _persons(55)
+    persons.loc[persons.index[10:], "age"] = 70
+    with caplog.at_level("WARNING"):
+        M.apply_departure_time_model(_table(55), persons, model=M.MODEL_SRV_MAPPED, random_seed=1,
+                                     reference=_reference_with_pooled_purpose(),
+                                     min_reference_n=100, min_model_n=50)
+    assert "mapped BELOW their own" in caplog.text and "55/55" in caplog.text
+    assert "purpose_all 55/55" in caplog.text
 
 
 def test_unmapped_share_above_the_threshold_warns(caplog):
@@ -335,6 +381,22 @@ def test_clip_keeps_departures_non_negative():
     table, diag = M.apply_departure_time_model(midnight, _persons(20).iloc[::4].copy(),
                                                model=M.MODEL_DEROUNDED, random_seed=2)
     assert diag["n_clipped_lower"] >= 1 and (table["departure_time"] >= 0).all()
+
+
+def test_the_lower_clip_uses_the_persons_earliest_departure_not_the_first_trip_row():
+    """An unordered chain (trip_index 0 is NOT the earliest departure) must still come out
+    non-negative: the clip bound is the per-person MINIMUM departure over all rows."""
+    unordered = pd.DataFrame({
+        "person_id": ["p", "p"], "trip_index": [0, 1],
+        "departure_time": [900.0, 120.0],           # 0:15 reported first, a 0:02 row behind it
+        "arrival_time": [1500.0, 720.0],
+        "preceding_purpose": ["home", "other"], "following_purpose": ["other", "home"],
+    })
+    persons = pd.DataFrame({"person_id": ["p"], "age": [40], "employed": [True]})
+    table, diag = M.apply_departure_time_model(unordered, persons, model=M.MODEL_DEROUNDED,
+                                               random_seed=6)      # draws -303 s, below -120
+    assert diag["n_clipped_lower"] == 1                     # the -450..+450 draw fell below -120
+    assert (table["departure_time"] >= 0).all() and table["departure_time"].min() == 0.0
 
 
 # --------------------------------------------------------------------------- dispatch
@@ -444,6 +506,16 @@ def test_load_departure_time_reference_rejects_shares_that_do_not_sum_to_one(tmp
     table.loc[broken, "share_derounded"] = 0.9
     table.to_csv(tmp_path / "srv2023_departure_time_reference.csv", index=False)
     with pytest.raises(ValueError, match="sum"):
+        M.load_departure_time_reference(str(tmp_path))
+
+
+def test_load_departure_time_reference_rejects_a_varying_n_unweighted(tmp_path):
+    """``n_unweighted`` is a per-cell count repeated on every bin row; a varying value means two
+    cells' rows were merged, which would make every threshold decision depend on row order."""
+    table = _reference()
+    table.loc[(table["segment"] == "all") & (table["bin_15min"] == 7), "n_unweighted"] = 12
+    table.to_csv(tmp_path / "srv2023_departure_time_reference.csv", index=False)
+    with pytest.raises(ValueError, match="n_unweighted"):
         M.load_departure_time_reference(str(tmp_path))
 
 

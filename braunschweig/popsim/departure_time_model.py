@@ -118,6 +118,14 @@ REFERENCE_SUM_TOLERANCE = 1e-6
 #: happen, which must never pass silently (CLAUDE.md fallback transparency).
 UNMAPPED_SHARE_WARN_THRESHOLD = 0.05
 
+#: Above this share of persons mapped BELOW the most specific rung (i.e. at ``purpose_all``,
+#: ``all_all`` or not at all), ``srv_mapped`` logs a WARNING naming the per-level split. Such a run
+#: has calibrated most persons against a POOLED distribution rather than their own
+#: (purpose, group) one, which is a weaker claim and must be visible in the log.
+#: ASSUMPTION: 0.25 is an observability threshold chosen to surface a ladder that is doing most of
+#: the work -- it is NOT a scientific bound, and no source states one.
+COARSENED_SHARE_WARN = 0.25
+
 #: Above this share of persons whose MiD ``P_TAET`` is missing or outside the substantive code
 #: range (and are therefore grouped as NOT employed), :func:`persons_from_mid_schema` warns.
 UNKNOWN_TAET_WARN_THRESHOLD = 0.10
@@ -235,8 +243,9 @@ def person_groups(persons: pd.DataFrame) -> pd.Series:
 def _validate_reference_frame(reference: pd.DataFrame, source: str) -> None:
     """Validate the departure-time reference: position, dense bins, and shares summing to 1.
 
-    Checked per ``(segment, purpose)`` cell: exactly the bins ``0..N_BINS-1``, each once; and,
-    for a cell with ``n_unweighted > 0``, a finite ``share_derounded`` summing to 1 within
+    Checked per ``(segment, purpose)`` cell: exactly the bins ``0..N_BINS-1``, each once; one
+    single ``n_unweighted`` value across those rows (it is a per-cell count, repeated per bin);
+    and, for a cell with ``n_unweighted > 0``, a finite ``share_derounded`` summing to 1 within
     :data:`REFERENCE_SUM_TOLERANCE`. A cell with ``n_unweighted == 0`` is legitimately EMPTY (the
     builder emits it with NaN shares rather than dropping it) and means "no reference for this
     cell" -- the coarsening ladder skips it; it is never read as a zero distribution.
@@ -262,6 +271,16 @@ def _validate_reference_frame(reference: pd.DataFrame, source: str) -> None:
                 % (source, segment, purpose, len(bins), N_BINS, N_BINS - 1,
                    sorted(set(expected_bins) - set(bins))[:5],
                    sorted({b for b in bins if bins.count(b) > 1})[:5]))
+        # n_unweighted is a per-CELL count repeated on every bin row; a varying value means the
+        # rows of two different cells were merged (or the file was hand-edited), which would make
+        # every threshold decision below depend on which row happened to be read first.
+        counts = cell["n_unweighted"].unique()
+        if len(counts) != 1:
+            raise ValueError(
+                "departure_time_model: departure-time reference (%s) cell segment=%s purpose=%s "
+                "carries %d different n_unweighted value(s) %s across its %d bin rows; the count "
+                "is a per-cell property and must be identical on every bin"
+                % (source, segment, purpose, len(counts), sorted(counts.tolist())[:5], N_BINS))
         if int(cell["n_unweighted"].iloc[0]) <= 0:
             continue                       # legitimately empty cell -- see the docstring
         total = float(cell["share_derounded"].sum())
@@ -407,44 +426,77 @@ def _inverse_cdf(quantiles: np.ndarray, shares: np.ndarray) -> np.ndarray:
     return (bins + within) * BIN_MINUTES * 60.0
 
 
+def _rung_is_usable(entry, min_reference_n: int) -> bool:
+    """Whether a ladder rung's REFERENCE side can be mapped onto: the cell exists, carries at
+    least ``min_reference_n`` unweighted observations, and is not the EMPTY cell the builder emits
+    with NaN shares (``n_unweighted`` 0) -- an empty cell means "no reference for this cell" and is
+    never read as a zero distribution."""
+    if entry is None:
+        return False
+    shares, n_reference = entry
+    if n_reference < max(min_reference_n, 1):
+        return False
+    return bool(np.isfinite(shares).all()) and bool(shares.sum() > 0)
+
+
 def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.DataFrame, *,
                                   min_reference_n: int, min_model_n: int):
     """Rank-preserving quantile mapping of de-rounded first departures onto the SrV reference.
 
-    Within a cell, the person with the k-th smallest de-rounded first departure receives the k-th
-    ``(k + 0.5) / n`` quantile of that cell's reference distribution: the ORDER of the persons is
-    preserved exactly, only the spacing is re-shaped to the survey's. The reference cell is chosen
-    by the coarsening ladder ``(purpose, group) -> (purpose, all groups) -> (all purposes, all
-    groups) -> unmapped`` (:data:`LEVEL_LABELS`), taking the first rung that has a non-empty
-    reference with at least ``min_reference_n`` unweighted observations; a cell with fewer than
-    ``min_model_n`` model persons is not mapped at all (mapping a handful of persons onto a
-    distribution would re-shape noise).
+    The person with the k-th smallest de-rounded first departure of a mapping set receives that
+    set's ``(k + 0.5) / n`` reference quantile: the ORDER of the persons is preserved exactly,
+    only the spacing is re-shaped to the survey's.
+
+    Coarsening ladder (spec ``2026-09-09-departure-time-srv-mapping-design.md`` section 2.2,
+    ruling A-R11) -- ``(purpose, group) -> (purpose, all groups) -> (all purposes, all groups) ->
+    unmapped`` (:data:`LEVEL_LABELS`). A rung is taken when BOTH sides are thick enough:
+
+    * the REFERENCE cell of that rung exists, is non-empty and has ``n_unweighted >=
+      min_reference_n`` (:func:`_rung_is_usable`), and
+    * the MODEL persons POOLED at that rung number at least ``min_model_n``.
+
+    Pooling is what makes a thin cell CLIMB rather than drop out: the ``(purpose, "all")`` rung
+    pools the model persons of every group that was too thin (or had no usable reference) for its
+    own ``(purpose, group)`` rung, and the ``("all", "all")`` rung pools everyone still unplaced.
+    Ten school-age education persons are therefore ranked TOGETHER with the other thin education
+    persons against the pooled education reference, instead of being left with the donor's own
+    start times. Only a person for whom no rung is usable at all stays ``unmapped``. This matters
+    scientifically: with a per-cell gate a smaller sample would silently calibrate a smaller share
+    of the population, so the calibrated share would depend on the sample rate far more than the
+    ladder makes unavoidable.
+
+    Ranking happens WITHIN the pooled model set of the rung a person maps at, over the union of
+    every contributing cell, so the pooled set has ONE common rank order. Determinism: a rung's
+    positions are sorted ascending (the values arrive in ``person_id`` order) and the rank sort is
+    stable, so ties in the de-rounded time are broken by ``person_id`` and the result depends
+    neither on the input table's row order nor on any dict iteration order.
 
     Parameters
     ----------
     first_departure_seconds:
-        De-rounded first departure per person, in seconds, ORDERED BY ``person_id`` -- the sort
-        below is stable, so ties in the de-rounded time are broken by person_id and the result is
-        reproducible independently of the input table's row order.
+        De-rounded first departure per person, in seconds, ORDERED BY ``person_id``.
     cells:
         ``(purpose, group)`` tuple per person, aligned element-wise with the values.
     reference:
         The ``position == "first"`` reference frame (:func:`load_departure_time_reference`).
     min_reference_n:
-        Minimum ``n_unweighted`` of a reference cell for it to be used.
+        Minimum ``n_unweighted`` of a rung's reference cell for that rung to be usable.
     min_model_n:
-        Minimum number of model persons in a cell for the mapping to be applied at all.
+        Minimum number of model persons POOLED at a rung for that rung to be usable.
 
     Returns
     -------
     (offsets_seconds, cell_report):
         ``offsets_seconds`` -- the MAPPING offset per person (0 for an unmapped person; the
         caller adds the de-rounding offset).
-        ``cell_report`` -- ``{(purpose, group): {"n_model", "n_reference", "level",
-        "median_shift_min", "median_abs_shift_min"}}``; the median shift is reported per cell so a
-        caller can guard on it (:func:`apply_departure_time_model` warns above
-        ``max_median_shift_hours``) -- the offsets themselves are NEVER clipped here, since a
-        large shift is a finding about the donor, not something to hide.
+        ``cell_report`` -- one entry per ORIGINAL ``(purpose, group)`` cell:
+        ``{"n_model", "n_model_pooled", "n_reference", "level", "median_shift_min",
+        "median_abs_shift_min"}``. ``n_model`` counts the cell's OWN persons, ``n_model_pooled``
+        the persons ranked together at the rung it mapped at (the two are equal at
+        ``purpose_group`` level); the medians are over the cell's own persons, so a caller can
+        guard per cell (:func:`apply_departure_time_model` warns above ``max_median_shift_hours``)
+        -- the offsets themselves are NEVER clipped here, since a large shift is a finding about
+        the donor, not something to hide.
     """
     values = np.asarray(first_departure_seconds, dtype=float)
     cell_tuples = [(str(purpose), str(group)) for purpose, group in cells]
@@ -459,38 +511,62 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
         return offsets, report
 
     reference_cells = _reference_cells(reference, source="reference frame")
-    grouped = pd.DataFrame({"purpose": [cell[0] for cell in cell_tuples],
-                            "group": [cell[1] for cell in cell_tuples]})
-    for cell, positions in grouped.groupby(["purpose", "group"], sort=True).indices.items():
-        purpose = cell[0]
-        ladder = ((cell, LEVEL_PURPOSE_GROUP),
-                  ((purpose, SEGMENT_ALL), LEVEL_PURPOSE_ALL),
-                  ((PURPOSE_ALL, SEGMENT_ALL), LEVEL_ALL_ALL))
-        chosen = None
-        if positions.size >= min_model_n:
-            for key, level in ladder:
-                entry = reference_cells.get(key)
-                if entry is None:
-                    continue
-                shares, n_reference = entry
-                # An EMPTY reference cell (n_unweighted 0, NaN shares) means "no reference", never
-                # a zero distribution -- skip to the next rung.
-                if n_reference < max(min_reference_n, 1) or not np.isfinite(shares).all() \
-                        or not shares.sum() > 0:
-                    continue
-                chosen = (shares, n_reference, level)
-                break
-        if chosen is None:
-            report[cell] = {"n_model": int(positions.size), "n_reference": 0,
-                            "level": LEVEL_UNMAPPED, "median_shift_min": 0.0,
-                            "median_abs_shift_min": 0.0}
-            continue
-        shares, n_reference, level = chosen
-        order = positions[np.argsort(values[positions], kind="stable")]
+    positions_by_cell = pd.DataFrame(
+        {"purpose": [cell[0] for cell in cell_tuples],
+         "group": [cell[1] for cell in cell_tuples]}).groupby(["purpose", "group"],
+                                                              sort=True).indices
+
+    # ---- rung 1: the person's own (purpose, group) cell
+    rung_by_cell = {}                       # cell -> (level, reference key)
+    pending = sorted(positions_by_cell)     # cells not yet placed on a rung
+    for cell in list(pending):
+        if (_rung_is_usable(reference_cells.get(cell), min_reference_n)
+                and positions_by_cell[cell].size >= min_model_n):
+            rung_by_cell[cell] = (LEVEL_PURPOSE_GROUP, cell)
+            pending.remove(cell)
+
+    # ---- rung 2: (purpose, "all") -- pools every still-pending group of that purpose
+    by_purpose = {}
+    for cell in pending:
+        by_purpose.setdefault(cell[0], []).append(cell)
+    for purpose, purpose_cells in sorted(by_purpose.items()):
+        key = (purpose, SEGMENT_ALL)
+        pooled = sum(positions_by_cell[cell].size for cell in purpose_cells)
+        if _rung_is_usable(reference_cells.get(key), min_reference_n) and pooled >= min_model_n:
+            for cell in purpose_cells:
+                rung_by_cell[cell] = (LEVEL_PURPOSE_ALL, key)
+                pending.remove(cell)
+
+    # ---- rung 3: ("all", "all") -- pools everyone still unplaced
+    pooled_key = (PURPOSE_ALL, SEGMENT_ALL)
+    pooled = sum(positions_by_cell[cell].size for cell in pending)
+    if _rung_is_usable(reference_cells.get(pooled_key), min_reference_n) and pooled >= min_model_n:
+        for cell in list(pending):
+            rung_by_cell[cell] = (LEVEL_ALL_ALL, pooled_key)
+            pending.remove(cell)
+
+    # ---- map each rung's POOLED model set in one common rank order
+    cells_by_rung = {}
+    for cell, rung in rung_by_cell.items():
+        cells_by_rung.setdefault(rung, []).append(cell)
+    n_pooled_by_cell = {}
+    for (level, key), rung_cells in sorted(cells_by_rung.items()):
+        rung_positions = np.sort(np.concatenate([positions_by_cell[cell]
+                                                 for cell in sorted(rung_cells)]))
+        shares, _n_reference = reference_cells[key]
+        order = rung_positions[np.argsort(values[rung_positions], kind="stable")]
         quantiles = (np.arange(order.size) + 0.5) / order.size
         offsets[order] = _inverse_cdf(quantiles, shares) - values[order]
+        for cell in rung_cells:
+            n_pooled_by_cell[cell] = int(rung_positions.size)
+
+    for cell, positions in sorted(positions_by_cell.items()):
+        level, key = rung_by_cell.get(cell, (LEVEL_UNMAPPED, None))
         report[cell] = {
-            "n_model": int(positions.size), "n_reference": int(n_reference), "level": level,
+            "n_model": int(positions.size),
+            "n_model_pooled": n_pooled_by_cell.get(cell, int(positions.size)),
+            "n_reference": int(reference_cells[key][1]) if key is not None else 0,
+            "level": level,
             "median_shift_min": float(np.median(offsets[positions]) / 60.0),
             "median_abs_shift_min": float(np.median(np.abs(offsets[positions])) / 60.0),
         }
@@ -608,6 +684,12 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     departure = pd.to_numeric(table["departure_time"], errors="coerce").to_numpy(dtype=float)
     arrival = pd.to_numeric(table["arrival_time"], errors="coerce").to_numpy(dtype=float)
     first_departure = departure[first_position]
+    # The CLIP bounds are taken from the per-person extremes over ALL rows, not from the first
+    # trip_index row and its chain: a chain whose rows are not ordered by departure time (an
+    # upstream defect, but one this model must not turn into a negative time) would otherwise get
+    # a lower bound that leaves its true earliest departure below zero.
+    earliest_departure = (pd.Series(departure).groupby(table["person_id"].to_numpy()).min()
+                          .reindex(person_order).to_numpy(dtype=float))
     last_arrival = (pd.Series(arrival).groupby(table["person_id"].to_numpy()).max()
                     .reindex(person_order).to_numpy(dtype=float))
 
@@ -655,13 +737,15 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     # exact half seconds, and float addition is not associative), changing that person's trip and
     # activity durations by a second -- durations are this model's hold-out dimension and must not
     # move at all. It also makes `departure_time - OFFSET_COLUMN` reproduce the pre-model time
-    # exactly rather than up to a rounding tie.
+    # exactly -- but only for WHOLE-SECOND input times: np.round is half-to-even, so for a raw time
+    # with a fractional part the recovered value is the rounded raw time, not the raw time itself
+    # (this pipeline's trip tables carry whole seconds, so the distinction is theoretical here).
     offset = np.round(derounding + mapping)
 
     # ---- guards: keep the shifted chain inside [0, MAX_PLAN_TIME_SECONDS]
     # Whole-second bounds (ceil/floor), applied AFTER the rounding above, so the clipped offset is
     # itself an integer and the bound holds exactly rather than up to half a second.
-    lower_bound = np.ceil(-first_departure)                          # first departure >= 0
+    lower_bound = np.ceil(-earliest_departure)                       # earliest departure >= 0
     upper_bound = np.floor(MAX_PLAN_TIME_SECONDS - last_arrival)     # last arrival <= plan bound
     above = np.isfinite(upper_bound) & (offset > upper_bound)
     offset = np.where(above, upper_bound, offset)
@@ -683,10 +767,16 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     shifted_departure = table["departure_time"].to_numpy(dtype=float)
     shifted_arrival = table["arrival_time"].to_numpy(dtype=float)
     finite = np.isfinite(shifted_departure) & np.isfinite(shifted_arrival)
-    assert (shifted_departure[finite] >= 0.0).all(), (
-        "departure_time must be non-negative after the departure-time model; check the lower clip")
-    assert (shifted_arrival[finite] >= 0.0).all(), (
-        "arrival_time must be non-negative after the departure-time model")
+    # A raise, not an assert: `python -O` strips asserts, and a negative time silently entering the
+    # MATSim plans is exactly the class of defect this check exists to stop.
+    n_negative_departure = int((shifted_departure[finite] < 0.0).sum())
+    n_negative_arrival = int((shifted_arrival[finite] < 0.0).sum())
+    if n_negative_departure or n_negative_arrival:
+        raise ValueError(
+            "departure_time_model: %d/%d departure time(s) and %d/%d arrival time(s) are negative "
+            "after the model; the lower clip (offset >= -earliest departure per person) should "
+            "make this impossible -- do not use this trip table"
+            % (n_negative_departure, len(table), n_negative_arrival, len(table)))
 
     diagnostics = {
         "model": model, "n_persons": n_persons, "n_trips": len(table), "cells": cell_report,
@@ -704,18 +794,33 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
 def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_finite: int) -> int:
     """Log every count as ``n/total (rate)`` under :data:`_LOG_TAG` and return the number of cells
     that tripped the median-shift guard (CLAUDE.md fallback transparency: a mapping that did not
-    happen, or happened far too violently, must never pass silently)."""
+    happen, or happened far too violently, must never pass silently).
+
+    Two of the thresholds here -- :data:`UNMAPPED_SHARE_WARN_THRESHOLD` and
+    :data:`COARSENED_SHARE_WARN` -- are OBSERVABILITY assumptions, not scientific bounds: they
+    decide when a run's ladder behaviour is loud enough to look at, and nothing else. Only
+    ``max_median_shift_hours`` is a caller-configured parameter."""
     n_persons = diagnostics["n_persons"]
     model = diagnostics["model"]
     logger.info("%s model=%s: %d person(s), %d trip row(s) shifted", _LOG_TAG, model, n_persons,
                 diagnostics["n_trips"])
 
+    levels = ""
     if diagnostics["n_persons_by_level"]:
         levels = ", ".join(
             "%s %d/%d (%.1f%%)" % (label, diagnostics["n_persons_by_level"][label], n_persons,
                                    100.0 * diagnostics["n_persons_by_level"][label] / n_persons)
             for label in LEVEL_LABELS)
         logger.info("%s mapping level: %s", _LOG_TAG, levels)
+        n_coarsened = sum(diagnostics["n_persons_by_level"][label]
+                          for label in (LEVEL_PURPOSE_ALL, LEVEL_ALL_ALL, LEVEL_UNMAPPED))
+        if n_coarsened / n_persons > COARSENED_SHARE_WARN:
+            logger.warning(
+                "%s %d/%d person(s) (%.1f%%) were mapped BELOW their own (purpose, group) cell -- "
+                "above the %.0f%% threshold. Their start times are calibrated against a POOLED "
+                "reference (or not at all), which is a weaker claim than a per-cell calibration; "
+                "level split: %s", _LOG_TAG, n_coarsened, n_persons,
+                100.0 * n_coarsened / n_persons, 100.0 * COARSENED_SHARE_WARN, levels)
     if diagnostics["n_persons_without_first_departure"]:
         logger.warning(
             "%s %d/%d person(s) (%.2f%%) have no first departure and were left unshifted; a "
@@ -733,10 +838,10 @@ def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_fini
 
     n_over_guard = 0
     for (purpose, group), entry in sorted(diagnostics["cells"].items()):
-        logger.info("%s cell purpose=%s group=%s: level=%s n_model=%d n_reference=%d "
-                    "median shift %.1f min (median |shift| %.1f min)", _LOG_TAG, purpose, group,
-                    entry["level"], entry["n_model"], entry["n_reference"],
-                    entry["median_shift_min"], entry["median_abs_shift_min"])
+        logger.info("%s cell purpose=%s group=%s: level=%s n_model=%d (pooled at that rung %d) "
+                    "n_reference=%d median shift %.1f min (median |shift| %.1f min)", _LOG_TAG,
+                    purpose, group, entry["level"], entry["n_model"], entry["n_model_pooled"],
+                    entry["n_reference"], entry["median_shift_min"], entry["median_abs_shift_min"])
         if entry["level"] == LEVEL_UNMAPPED:
             continue
         if entry["median_abs_shift_min"] > max_median_shift_hours * 60.0:
