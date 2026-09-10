@@ -306,17 +306,20 @@ def test_the_third_variant_sentinel_count_covers_only_the_code_7_legs():
 def test_a_code_10_leg_carrying_a_real_detail_code_is_counted_and_warned(caplog):
     """Fallback transparency (CLAUDE.md, MANDATORY): the W_ZWECK group OVERRIDES the detail code,
     and the spec ASSUMES code-10 legs carry only design sentinels. A leg where that does not hold
-    is relabelled, so the count and the rate must be surfaced rather than happening silently."""
+    is relabelled, so the count and the rate must be surfaced rather than happening silently.
+
+    The extraction reports the counts per (purpose, spec variant) in its own INFO line; the
+    WARNING comes from purpose_subtype.label_legs, the one place the override is computed."""
     caplog.set_level("INFO")
     table, _ = M.build_group_reference(_wege(extra=[_leg(10, 701, 12.0)]))
     unspecified = _row(table, "codeplan_unspecified", "leisure_unspecified")
     assert int(unspecified["n_unweighted"]) == 3          # the 701 leg is NOT a leisure_visit leg
     assert int(_row(table, "codeplan_unspecified", "leisure_visit")["n_unweighted"]) == 2
     messages = [record.getMessage() for record in caplog.records]
-    assert any("3 by W_ZWECK group" in message and "1 of those overriding" in message
-               for message in messages), messages
+    assert any("codeplan_unspecified" in message and "3 by W_ZWECK group" in message
+               and "1 of those overriding" in message for message in messages), messages
     warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
-    assert any("1/3 legs labelled by a W_ZWECK group (33.33%)" in message
+    assert any("[purpose_subtype:leisure] 1/3 legs labelled by a W_ZWECK group (33.3%)" in message
                and "relabelled by the W_ZWECK group" in message for message in warnings), warnings
 
 
@@ -325,3 +328,39 @@ def test_no_override_warning_when_the_code_10_legs_carry_only_sentinels(caplog):
     M.build_group_reference(_wege())
     assert not [record for record in caplog.records if record.levelname == "WARNING"
                 and "relabelled by the W_ZWECK group" in record.getMessage()]
+
+
+def test_every_spec_variant_has_a_description_and_vice_versa():
+    """Both the committed header and the comparison summary render EVERY variant from
+    SPEC_VARIANT_DESCRIPTIONS, so an undescribed variant would print an unexplained block and a
+    description without a variant would be dead text. The module raises at import time; this
+    test states the invariant next to the data it protects."""
+    assert set(M.SPEC_VARIANT_DESCRIPTIONS) == set(M.SPEC_VARIANTS)
+    assert all(M.SPEC_VARIANT_DESCRIPTIONS[variant].strip() for variant in M.SPEC_VARIANTS)
+
+
+def test_build_group_reference_labels_through_the_shared_helper(monkeypatch):
+    """One labelling rule, one implementation (issue #373 review, ruling R10): the extraction
+    must route every (variant, purpose) block through purpose_subtype.label_legs instead of
+    re-deriving the zweck-first precedence, otherwise the committed reference could describe a
+    mix the estimation never sees."""
+    calls = []
+    real = P.label_legs
+
+    def recording(purpose_legs, spec):
+        calls.append((spec.purpose_label, len(purpose_legs)))
+        return real(purpose_legs, spec)
+
+    monkeypatch.setattr(M, "label_legs", recording)
+    table, _ = M.build_group_reference(_wege())
+    assert len(calls) == 3 * len(M.SPEC_VARIANTS)          # three purposes per spec variant
+    # The leisure universe widens from W_ZWECK {7} (8 legs) to {7, 10} (10 legs) in the third
+    # variant -- the helper sees the widened frame, not a locally filtered one.
+    assert calls.count(("leisure", 8)) == 2
+    assert calls.count(("leisure", 10)) == 1
+    # The table's group sizes are the helper's own labels, not a re-derived copy.
+    labelled, _, _ = real(_wege()[_wege()["W_ZWECK"].isin({7, 10})],
+                          P.LEISURE_SPEC_CODEPLAN_UNSPECIFIED)
+    expected = labelled["_group"].value_counts().to_dict()
+    block = table[(table["spec_variant"] == "codeplan_unspecified") & (table["purpose"] == "leisure")]
+    assert dict(zip(block["group"], block["n_unweighted"].astype(int))) == expected

@@ -50,7 +50,7 @@ from braunschweig.calibration.srv_fine_purpose import QUANTILE_PROBABILITIES  # 
 from braunschweig.popsim.diary_facts import WEGKM_CODE_MIN  # noqa: E402
 from braunschweig.popsim.mid.csv_format import detect_csv_separator  # noqa: E402
 from braunschweig.popsim.purpose_subtype import (  # noqa: E402
-    SubtypeSpec, code_coverage_guard, leisure_spec, other_errand_spec,
+    SubtypeSpec, code_coverage_guard, label_legs, leisure_spec, other_errand_spec,
 )
 from braunschweig.popsim.shop_subtype import (  # noqa: E402
     SHOP_DAILY_W_ZWD, SHOP_DETAIL_MISSING, SHOP_NONDAILY_W_ZWD,
@@ -121,6 +121,16 @@ SHOP_SPEC = SubtypeSpec(
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("extract_mid_w_zwd_groups")
 _LOG_TAG = "[mid w_zwd groups]"
+
+if set(SPEC_VARIANT_DESCRIPTIONS) != set(SPEC_VARIANTS):
+    # The committed header and the comparison summary both render EVERY variant from this dict,
+    # so a variant without a description would produce an unexplained block, and a description
+    # without a variant would be dead text nothing renders. Checked at import, not at run time.
+    raise ValueError(
+        "%s SPEC_VARIANT_DESCRIPTIONS must describe exactly the variants of SPEC_VARIANTS; "
+        "undescribed: %s; described but not a variant: %s"
+        % (_LOG_TAG, sorted(set(SPEC_VARIANTS) - set(SPEC_VARIANT_DESCRIPTIONS)),
+           sorted(set(SPEC_VARIANT_DESCRIPTIONS) - set(SPEC_VARIANTS))))
 
 
 def specs_for_variant(variant: str) -> tuple:
@@ -226,44 +236,24 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
             code_coverage_guard(filtered, spec)
             purpose_legs = filtered[filtered["W_ZWECK"].isin(spec.zweck_values)]
 
-            # Labelling mirrors purpose_subtype.estimate_group_probabilities EXACTLY: a
-            # W_ZWECK-defined group (spec.zweck_groups) wins over the W_ZWD detail group, because
-            # such a leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115). With an
-            # empty zweck_groups this reduces to the previous "label by W_ZWD group code" rule.
-            code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
-            zweck_to_group = {code: name for name, codes in spec.zweck_groups.items()
-                              for code in codes}
-            by_zweck = purpose_legs["W_ZWECK"].map(zweck_to_group)
-            by_detail = purpose_legs["W_ZWD"].map(code_to_group)
-            label = by_zweck.where(by_zweck.notna(), by_detail)
-            labelled_mask = label.notna()
-            labelled = purpose_legs[labelled_mask].copy()
-            # Positional assignment: the labels are taken in row order and do not depend on the
-            # index of `label` matching the index of `labelled`.
-            labelled["_group"] = label[labelled_mask].to_numpy()
+            # ONE labelling rule for the whole model: purpose_subtype.label_legs is what
+            # estimate_group_probabilities uses too (zweck group first, then W_ZWD detail group),
+            # so this reference cannot describe a mix the estimation does not see. label_legs also
+            # emits the WARNING when a W_ZWECK group overrides a valid detail code.
+            labelled, n_by_zweck, n_zweck_override = label_legs(purpose_legs, spec)
 
             n_purpose, n_labelled = len(purpose_legs), len(labelled)
-            n_by_zweck = int(by_zweck.notna().sum())
             # A leg whose W_ZWECK puts it in a zweck group is LABELLED, not excluded, even though
             # its W_ZWD is a design sentinel -- counting it as a sentinel would report a group's
             # own legs as an exclusion in the committed coverage header.
-            n_sentinel = int((purpose_legs["W_ZWD"].isin(spec.sentinels) & ~by_zweck.notna()).sum())
-            n_zweck_override = int((by_zweck.notna() & by_detail.notna()).sum())
+            n_sentinel = int((purpose_legs["W_ZWD"].isin(spec.sentinels)
+                              & ~purpose_legs["W_ZWECK"].isin(spec.zweck_group_codes)).sum())
             logger.info("%s %s/%s: labelled %d/%d legs (%.2f%%), sentinel %d (%.2f%%), "
                         "%d by W_ZWECK group (%d of those overriding a valid W_ZWD group code)",
                         _LOG_TAG, spec.purpose_label, variant, n_labelled, n_purpose,
                         100.0 * n_labelled / n_purpose if n_purpose else float("nan"),
                         n_sentinel, 100.0 * n_sentinel / n_purpose if n_purpose else float("nan"),
                         n_by_zweck, n_zweck_override)
-            if n_zweck_override:
-                logger.warning(
-                    "%s %s/%s: %d/%d legs labelled by a W_ZWECK group (%.2f%%) ALSO carry a valid "
-                    "W_ZWD group code and were relabelled by the W_ZWECK group. The spec ASSUMES "
-                    "such legs carry only design sentinels (MiD 2023: 2202 / 7704 / 4402); a "
-                    "non-zero rate means real detail-coded legs are being moved into the W_ZWECK "
-                    "group, so the measured mix below is not the one the spec intends.",
-                    _LOG_TAG, spec.purpose_label, variant, n_zweck_override, n_by_zweck,
-                    100.0 * n_zweck_override / n_by_zweck)
             if n_labelled == 0:
                 raise ValueError(
                     "%s %s/%s: no labelled leg at all; the primary (W_ZWD group / W_ZWECK group) "
@@ -349,10 +339,26 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         % list(KERNWO_WEEKDAY_CODES),
         "#   (W_RBW != %d) -- the same filter as scripts/extract_mid_w_zweck_hwzweck1.py, whose"
         % RBW_SUMMARY_LEG_CODE,
-        "#   constants this script imports. Within a purpose only LABELLED legs (a W_ZWD code that",
-        "#   is a member of one of the spec's groups) enter the share, exactly as",
-        "#   purpose_subtype.estimate_group_probabilities does; sentinel legs are excluded from",
-        "#   numerator AND denominator.",
+        "#   constants this script imports. A purpose's universe is the legs whose W_ZWECK is in",
+        "#   its spec's zweck_values, and only LABELLED legs of that universe enter the share --",
+        "#   exactly as purpose_subtype.estimate_group_probabilities does, through the very same",
+        "#   purpose_subtype.label_legs helper. A leg is LABELLED either by a W_ZWD code that is a",
+        "#   member of one of the spec's groups, or by a W_ZWECK-defined group (spec.zweck_groups),",
+        "#   which wins over the detail code. Sentinel legs are excluded from numerator AND",
+        "#   denominator; a leg labelled by a W_ZWECK group is NOT a sentinel leg even though its",
+        "#   W_ZWD is a design sentinel, so it is counted as labelled, not as an exclusion.",
+    ]
+    for variant in SPEC_VARIANTS:
+        for spec in specs_for_variant(variant):
+            if spec.zweck_groups:
+                lines += _comment_paragraph(
+                    "A W_ZWECK-defined group also WIDENS the purpose universe: under '%s' the %s "
+                    "universe is W_ZWECK %s instead of the %s of the other variants, and the added "
+                    "legs are labelled %s."
+                    % (variant, spec.purpose_label, sorted(spec.zweck_values),
+                       sorted(set(spec.zweck_values) - set(spec.zweck_group_codes)),
+                       ", ".join(sorted(spec.zweck_groups))))
+    lines += [
         "# Weights: W_GEW (MiD trip expansion weight).",
         "# spec_variant: which combination of the two subtype config keys",
         "#   (purpose_subtype_codeplan_sentinels, leisure_unspecified_subtype) a row was measured",

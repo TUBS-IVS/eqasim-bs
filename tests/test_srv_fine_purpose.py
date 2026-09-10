@@ -561,7 +561,8 @@ def test_the_residual_row_is_excluded_from_the_comparable_mass_on_both_sides():
 def test_every_subtype_group_of_the_crosswalk_has_a_row_in_every_variant():
     comparison = build_comparison(_srv_reference(), _mid_reference())
     for variant, block in comparison.groupby("spec_variant"):
-        assert set(block["subtype_group"]) >= set(F.SUBTYPE_TO_SRV_FINE) - ({"leisure_unspecified"} if variant != "codeplan_unspecified" else set())
+        exempt = {"leisure_unspecified"} if variant != "codeplan_unspecified" else set()
+        assert set(block["subtype_group"]) >= set(F.SUBTYPE_TO_SRV_FINE) - exempt
 
 
 def test_a_residual_group_absent_from_a_variant_is_skipped_and_logged(caplog):

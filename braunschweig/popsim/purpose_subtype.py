@@ -59,10 +59,12 @@ The fifth leisure subtype (issue #373, ADR-0115):
     was W_ZWECK 10 -- to draw from the code-7 subtype mix and the code-7 subtype distance
     layers.
 
-    The assumption is CHECKED, not trusted: ``estimate_group_probabilities`` counts the legs a
-    W_ZWECK group labelled although their W_ZWD is a valid group code (the "overriding" count
-    in its info line) and warns with that count and rate whenever it is non-zero, so a
-    delivery in which code-10 legs do carry real detail codes cannot pass silently.
+    The assumption is CHECKED, not trusted: :func:`label_legs` -- the one place the labelling
+    rule lives, shared by ``estimate_group_probabilities`` and the committed-reference
+    extraction ``scripts/extract_mid_w_zwd_groups.py`` -- counts the legs a W_ZWECK group
+    labelled although their W_ZWD is a valid group code (the "overriding" count) and warns with
+    that count and rate whenever it is non-zero, so a delivery in which code-10 legs do carry
+    real detail codes cannot pass silently.
 
     ``LEISURE_SPEC_UNSPECIFIED`` / ``LEISURE_SPEC_CODEPLAN_UNSPECIFIED`` (selected via
     ``leisure_spec``'s ``unspecified_subtype`` argument, config key
@@ -192,6 +194,19 @@ class SubtypeSpec:
             codes |= set(group_code_set)
         return frozenset(codes)
 
+    @property
+    def zweck_group_codes(self) -> frozenset:
+        """Union of all W_ZWECK codes across all `zweck_groups`, empty when there are none.
+
+        A leg whose W_ZWECK is in this set is labelled by its zweck group whatever its
+        `group_col` value is, so it is never an unlabelled sentinel leg even when its detail
+        code is one (see :func:`label_legs`).
+        """
+        codes: set = set()
+        for zweck_code_set in self.zweck_groups.values():
+            codes |= set(zweck_code_set)
+        return frozenset(codes)
+
 
 def _require_columns(mid_wege: pd.DataFrame, purpose_label: str, required_columns) -> None:
     missing = [column for column in required_columns if column not in mid_wege.columns]
@@ -202,12 +217,82 @@ def _require_columns(mid_wege: pd.DataFrame, purpose_label: str, required_column
         )
 
 
+def label_legs(purpose_legs: pd.DataFrame, spec: SubtypeSpec) -> tuple:
+    """Label one purpose's legs with their subtype group -- the ONE labelling rule of this model.
+
+    Both consumers of the rule call this: :func:`estimate_group_probabilities` (which turns the
+    labels into P(group | mode, tt_band)) and ``scripts/extract_mid_w_zwd_groups.py`` (which turns
+    them into the committed MiD group reference). Having a single implementation is what
+    guarantees the committed reference describes the mix the estimation actually sees; two copies
+    of the precedence rule could drift apart without any test noticing (issue #373 review, ruling
+    R10).
+
+    A W_ZWECK-defined group (``spec.zweck_groups``) wins over the detail-code group, because such
+    a leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115; see the module
+    docstring). The assumption is not trusted blindly: ``n_override`` counts the legs where it
+    does NOT hold -- a zweck-group leg whose ``group_col`` value IS a valid group code, i.e. one
+    the detail code could have labelled -- and a non-zero count is WARNed about here, in the one
+    place the condition is computed. With an empty ``zweck_groups`` this reduces exactly to the
+    previous "label by ``group_col``" rule and ``n_by_zweck == n_override == 0``.
+
+    Parameters
+    ----------
+    purpose_legs : DataFrame
+        The legs of ONE purpose, ALREADY filtered to ``spec.zweck_values`` -- both callers filter
+        first because they report their coverage rates against that universe. Required columns:
+        ``W_ZWECK`` and ``spec.group_col``.
+    spec : SubtypeSpec
+        Defines the detail-code groups, the W_ZWECK-code groups and the sentinel codes.
+
+    Returns
+    -------
+    tuple[DataFrame, int, int]
+        ``(labelled, n_by_zweck, n_override)``. ``labelled`` is a COPY of the labelled rows of
+        ``purpose_legs``, in their original row order, with an added ``_group`` column holding the
+        group name. Unlabelled legs (sentinels and any code the spec does not know) are dropped;
+        ``code_coverage_guard`` is what turns the latter into an error, not this function.
+    """
+    _require_columns(purpose_legs, spec.purpose_label, ("W_ZWECK", spec.group_col))
+
+    code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
+    zweck_to_group = {code: name for name, codes in spec.zweck_groups.items() for code in codes}
+    by_zweck = purpose_legs["W_ZWECK"].map(zweck_to_group)
+    by_detail = purpose_legs[spec.group_col].map(code_to_group)
+    label = by_zweck.where(by_zweck.notna(), by_detail)
+    labelled_mask = label.notna()
+
+    labelled = purpose_legs[labelled_mask].copy()
+    # Positional assignment (`.to_numpy()`): the group labels are taken in row order and do not
+    # depend on the index of `label` matching the index of `labelled`.
+    labelled["_group"] = label[labelled_mask].to_numpy()
+
+    by_zweck_mask = by_zweck.notna()
+    n_by_zweck = int(by_zweck_mask.sum())
+    n_override = int((by_zweck_mask & by_detail.notna()).sum())
+    if n_override:
+        logger.warning(
+            "[purpose_subtype:%s] %d/%d legs labelled by a W_ZWECK group (%.1f%%) ALSO carry a "
+            "valid %s group code and were relabelled by the W_ZWECK group. The spec ASSUMES such "
+            "legs carry only design sentinels (MiD 2023: 2202 / 7704 / 4402); a non-zero rate "
+            "means that assumption does not hold for this delivery, so the measured mix moves "
+            "real detail-coded legs into the W_ZWECK group. Check spec.zweck_groups against the "
+            "data before trusting it.",
+            spec.purpose_label, n_override, n_by_zweck, 100.0 * n_override / n_by_zweck,
+            spec.group_col,
+        )
+    return labelled, n_by_zweck, n_override
+
+
 def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, min_obs: int = 30):
     """P(group | mode, tt_band) and the overall marginal P(group), W_GEW-weighted.
 
     Mirrors shop_subtype.estimate_daily_probability, generalised from a single daily/
     non-daily flag to an arbitrary set of named groups (spec.group_names, i.e. the
     spec.groups detail-code groups plus the spec.zweck_groups W_ZWECK-code groups).
+
+    The labelling itself is NOT implemented here: it is delegated to :func:`label_legs`, which
+    the committed-reference extraction calls too, so the estimated mix and the measured
+    reference cannot rest on two different precedence rules.
 
     Parameters
     ----------
@@ -234,27 +319,9 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
     group_col = spec.group_col
     purpose_legs = mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)]
 
-    # A W_ZWECK-defined group (spec.zweck_groups) wins over the detail-code group, because such a
-    # leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115; see the module
-    # docstring). The assumption is not trusted blindly: n_override below counts the legs where it
-    # does NOT hold -- a zweck-group leg whose group_col value IS a valid group code, i.e. one the
-    # detail code could have labelled -- and those are warned about. With an empty zweck_groups
-    # this reduces exactly to the previous "label by group_col" rule.
-    code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
-    zweck_to_group = {code: name for name, codes in spec.zweck_groups.items() for code in codes}
-    by_zweck = purpose_legs["W_ZWECK"].map(zweck_to_group)
-    by_detail = purpose_legs[group_col].map(code_to_group)
-    label = by_zweck.where(by_zweck.notna(), by_detail)
-    labelled_mask = label.notna()
-
-    labelled = purpose_legs[labelled_mask].copy()
-    # Positional assignment (`.to_numpy()`): the group labels are taken in row order and do not
-    # depend on the index of `label` matching the index of `labelled`.
-    labelled["_group"] = label[labelled_mask].to_numpy()
-
-    by_zweck_mask = by_zweck.notna()
-    n_by_zweck = int(by_zweck_mask.sum())
-    n_override = int((by_zweck_mask & by_detail.notna()).sum())
+    # ONE labelling rule for the whole model (zweck group first, then detail code), shared with
+    # scripts/extract_mid_w_zwd_groups.py; label_legs also emits the override warning.
+    labelled, n_by_zweck, n_override = label_legs(purpose_legs, spec)
 
     total_purpose_legs = len(purpose_legs)
     labelled_share = (len(labelled) / total_purpose_legs) if total_purpose_legs else 0.0
@@ -264,16 +331,6 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
         spec.purpose_label, len(labelled), total_purpose_legs, 100.0 * labelled_share, group_col,
         n_by_zweck, n_override, group_col,
     )
-    if n_override:
-        logger.warning(
-            "[purpose_subtype:%s] %d/%d legs labelled by a W_ZWECK group (%.1f%%) ALSO carry a "
-            "valid %s group code and were relabelled by the W_ZWECK group. The spec ASSUMES such "
-            "legs carry only design sentinels (MiD 2023: 2202 / 7704 / 4402); a non-zero rate "
-            "means that assumption does not hold for this delivery, so the estimated mix moves "
-            "real detail-coded legs into the W_ZWECK group. Check spec.zweck_groups against the "
-            "data before trusting it.",
-            spec.purpose_label, n_override, n_by_zweck, 100.0 * n_override / n_by_zweck, group_col,
-        )
 
     if labelled.empty:
         raise ValueError(

@@ -52,7 +52,15 @@ from braunschweig.popsim.stage.config_keys import (  # noqa: E402
     DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
 )
-from scripts.extract_mid_w_zwd_groups import SPEC_VARIANT_DESCRIPTIONS  # noqa: E402
+#: The spec-variant vocabulary and its prose live in the extraction script, which OWNS them and
+#: writes the same sentences into the MiD reference's own header; importing them here is what
+#: keeps this summary from describing a variant differently. Note that importing that module also
+#: runs ITS module-level logging.basicConfig before the one below -- both call it with the same
+#: level and format, and basicConfig is a no-op once the root logger has handlers, so the
+#: effective logging configuration is identical whichever module is imported first.
+from scripts.extract_mid_w_zwd_groups import (  # noqa: E402
+    SPEC_VARIANT_DESCRIPTIONS, SPEC_VARIANTS,
+)
 
 #: Names of the config-default constants, rendered into the summary beside their values so the
 #: summary cannot drift away from the code the way hard-coded prose would.
@@ -464,17 +472,22 @@ def _render_variant_bullets(comparison: pd.DataFrame) -> list:
     not know raises rather than being described vaguely: it would mean this summary is reading a
     reference table written by an incompatible code state.
     """
+    present = set(comparison["spec_variant"].astype(str))
+    unknown = sorted(present - set(SPEC_VARIANT_DESCRIPTIONS))
+    if unknown:
+        raise ValueError(
+            f"[compare_purpose_subtypes_srv] the MiD reference carries spec variant(s) {unknown}, "
+            f"which scripts/extract_mid_w_zwd_groups.py does not describe (known: "
+            f"{sorted(SPEC_VARIANT_DESCRIPTIONS)}). Regenerate the reference with the current "
+            "extraction code, or add the variant there -- the summary must not describe a variant "
+            "it cannot name.")
     lines = []
-    for variant in sorted(comparison["spec_variant"].astype(str).unique()):
-        if variant not in SPEC_VARIANT_DESCRIPTIONS:
-            raise ValueError(
-                f"[compare_purpose_subtypes_srv] the MiD reference carries spec variant "
-                f"'{variant}', which scripts/extract_mid_w_zwd_groups.py does not describe "
-                f"(known: {sorted(SPEC_VARIANT_DESCRIPTIONS)}). Regenerate the reference with the "
-                "current extraction code, or add the variant there -- the summary must not "
-                "describe a variant it cannot name.")
-        lines += textwrap.wrap("* `%s` -- %s" % (variant, SPEC_VARIANT_DESCRIPTIONS[variant]),
-                               width=88, subsequent_indent="  ")
+    # SPEC_VARIANTS order (flags switched on one after the other), not alphabetical: the bullets
+    # then read as a progression instead of putting 'codeplan' before 'default'.
+    for variant in SPEC_VARIANTS:
+        if variant in present:
+            lines += textwrap.wrap("* `%s` -- %s" % (variant, SPEC_VARIANT_DESCRIPTIONS[variant]),
+                                   width=88, subsequent_indent="  ")
     return lines
 
 
@@ -678,8 +691,12 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
     lines += _render_sensitivity_section(comparison)
     lines += _render_residual_section(comparison)
 
-    largest = comparison.dropna(subset=["delta_pp"]).reindex(
-        comparison["delta_pp"].abs().sort_values(ascending=False).index).dropna(subset=["delta_pp"])
+    # `residual` rows are EXCLUDED from this ranking (issue #373 review, ruling R11): their delta
+    # differences two leftovers that sit at different levels of the two questionnaires, so ranking
+    # them beside the graded pairs would invite reading a taxonomy artefact as the largest finding.
+    # They have their own section, which reports them in full.
+    rankable = comparison[comparison["exactness"] != "residual"].dropna(subset=["delta_pp"])
+    largest = rankable.reindex(rankable["delta_pp"].abs().sort_values(ascending=False).index)
     lines += [
         "",
         "## Largest differences regardless of exactness",
@@ -687,9 +704,9 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "Reported so that a large gap under an `approximate` crosswalk is visible rather than",
         "hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares, so a",
         "row of an asymmetric purpose is read against a denominator the other survey does not",
-        "share; and a `residual` row differences two leftovers that sit at different levels of the",
-        "two questionnaires, which the section above spells out. The grade is printed with each",
-        "row for exactly that reason.",
+        "share -- the grade is printed with each row for exactly that reason. `residual` rows are",
+        "left out of this ranking: their delta differences two leftovers that sit at different",
+        "levels of the two questionnaires, and the section above reports them in full instead.",
         "",
     ]
     for _, row in largest.head(3).iterrows():

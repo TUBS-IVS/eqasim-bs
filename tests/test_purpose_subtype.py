@@ -470,3 +470,96 @@ def test_no_override_warning_when_code_10_legs_carry_only_sentinels(caplog):
     overrides = [message for message in _warning_messages(caplog)
                  if _OVERRIDE_WARNING_MARKER in message]
     assert not overrides, overrides
+
+
+# --------------------------------------------------------------- label_legs (issue #373, R10)
+# The labelling rule has exactly ONE implementation, shared by estimate_group_probabilities and
+# scripts/extract_mid_w_zwd_groups.py. These tests exercise it directly, so a change to the
+# precedence or to the override counting is caught here rather than only through its two callers.
+
+
+def _leisure_purpose_legs(spec):
+    """The code-10 fixture restricted to the spec's own W_ZWECK universe, as callers pass it."""
+    frame = _frame_with_code_10_legs()
+    return frame[frame["W_ZWECK"].isin(spec.zweck_values)]
+
+
+def test_label_legs_prefers_the_zweck_group_and_keeps_row_order():
+    spec = ps.LEISURE_SPEC_UNSPECIFIED
+    purpose_legs = _leisure_purpose_legs(spec)
+    labelled, n_by_zweck, n_override = ps.label_legs(purpose_legs, spec)
+
+    # All seven legs are labelled: four by their W_ZWD group, three by the W_ZWECK group whose
+    # design sentinels (2202 / 7704 / 4402) no W_ZWD group would have labelled.
+    assert list(labelled["_group"]) == ["leisure_visit", "leisure_visit", "leisure_local",
+                                        "leisure_local", ps.LEISURE_UNSPECIFIED_GROUP,
+                                        ps.LEISURE_UNSPECIFIED_GROUP,
+                                        ps.LEISURE_UNSPECIFIED_GROUP]
+    # Row order preserved and the labels aligned with the rows they describe.
+    assert list(labelled["W_ZWD"]) == [701, 701, 710, 706, 2202, 7704, 4402]
+    assert n_by_zweck == 3 and n_override == 0
+    # A copy, never a view: the caller's frame keeps its columns.
+    assert "_group" not in purpose_legs.columns
+
+
+def test_label_legs_counts_a_zweck_group_overriding_a_valid_detail_code(caplog):
+    spec = ps.LEISURE_SPEC_UNSPECIFIED
+    frame = _frame_with_code_10_legs()
+    frame.loc[len(frame)] = (10, 708, "car", 600.0, 1.0)     # 708 IS a leisure_excursion code
+    purpose_legs = frame[frame["W_ZWECK"].isin(spec.zweck_values)]
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.purpose_subtype"):
+        labelled, n_by_zweck, n_override = ps.label_legs(purpose_legs, spec)
+
+    assert n_by_zweck == 4 and n_override == 1
+    assert list(labelled["_group"]).count(ps.LEISURE_UNSPECIFIED_GROUP) == 4
+    assert "leisure_excursion" not in set(labelled["_group"])
+    messages = _warning_messages(caplog)
+    assert any(_OVERRIDE_WARNING_MARKER in message and "1/4" in message and "25.0%" in message
+               for message in messages), messages
+
+
+def test_label_legs_without_zweck_groups_is_the_plain_detail_code_rule(caplog):
+    """OFF path: with an empty zweck_groups the helper must reduce exactly to "label by the
+    detail code", report zero W_ZWECK-group legs and emit no override warning."""
+    spec = ps.LEISURE_SPEC
+    purpose_legs = _leisure_purpose_legs(spec)          # W_ZWECK 7 only
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.purpose_subtype"):
+        labelled, n_by_zweck, n_override = ps.label_legs(purpose_legs, spec)
+
+    assert n_by_zweck == 0 and n_override == 0
+    assert list(labelled["_group"]) == ["leisure_visit", "leisure_visit", "leisure_local",
+                                        "leisure_local"]
+    assert not [message for message in _warning_messages(caplog)
+                if _OVERRIDE_WARNING_MARKER in message]
+
+
+def test_label_legs_drops_unlabelled_legs_and_requires_its_columns():
+    spec = ps.LEISURE_SPEC
+    frame = pd.DataFrame({"W_ZWECK": [7, 7], "W_ZWD": [701, 2202],
+                          "mode": ["car"] * 2, "travel_time": [600.0] * 2, "W_GEW": [1.0] * 2})
+    labelled, n_by_zweck, n_override = ps.label_legs(frame, spec)
+    assert list(labelled["_group"]) == ["leisure_visit"]     # the sentinel leg is unlabelled
+    assert n_by_zweck == 0 and n_override == 0
+    with pytest.raises(ValueError, match="W_ZWD"):
+        ps.label_legs(frame.drop(columns=["W_ZWD"]), spec)
+
+
+def test_zweck_group_codes_is_the_union_of_the_zweck_groups():
+    assert ps.LEISURE_SPEC.zweck_group_codes == frozenset()
+    assert ps.LEISURE_SPEC_UNSPECIFIED.zweck_group_codes == ps.LEISURE_UNSPECIFIED_ZWECK
+    assert ps.LEISURE_SPEC_CODEPLAN_UNSPECIFIED.zweck_group_codes == ps.LEISURE_UNSPECIFIED_ZWECK
+
+
+def test_estimation_labels_through_the_shared_helper(monkeypatch):
+    """estimate_group_probabilities must not re-derive the precedence rule locally."""
+    calls = []
+    real = ps.label_legs
+
+    def recording(purpose_legs, spec):
+        calls.append((spec.purpose_label, len(purpose_legs)))
+        return real(purpose_legs, spec)
+
+    monkeypatch.setattr(ps, "label_legs", recording)
+    ps.estimate_group_probabilities(_frame_with_code_10_legs(), ps.LEISURE_SPEC_UNSPECIFIED,
+                                    min_obs=1)
+    assert calls == [("leisure", 7)]
