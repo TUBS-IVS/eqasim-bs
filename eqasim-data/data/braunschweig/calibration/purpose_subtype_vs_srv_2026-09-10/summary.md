@@ -18,38 +18,57 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `7a066c41` |
+| code state (--source-commit) | `bf4db05a` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |
 
-The code state above is the commit that moved the candidate rule onto the comparable
-universe and made the flag group-level across the spec variants (issue #242 item 8, owner
-decision 2026-09-10). Both reference tables are unchanged, so every measured data row of
-`comparison.csv` is unchanged; what changed is the meaning of
-`candidate_for_reestimation` and the two added columns `delta_pp_comparable` and
-`candidate_variants`.
+The code state above is the commit that added the `residual` crosswalk grade (issue #373,
+ADR-0115): MiD `leisure_unspecified` and SrV `V_ZWECK` 18 are now reported as a pair and
+excluded from the comparable universe on both sides. The SrV reference is unchanged; the
+MiD reference gained the spec variant `codeplan_unspecified` while its existing `default`
+and `codeplan` data rows stayed byte-identical, so every pre-existing measured value below
+is unchanged and what is new is that variant's block and the residual row.
 
 ### Flag settings
 
-Both settings of the `purpose_subtype_codeplan_sentinels` config key are measured and
-reported side by side, as the `spec_variant` column:
+The MiD reference measures several combinations of the `purpose_subtype_codeplan_sentinels`
+and `leisure_unspecified_subtype` config keys side by side, as the `spec_variant`
+column. The variants present in the file it was given, described in the words of the
+extraction script that wrote it (`SPEC_VARIANT_DESCRIPTIONS`):
 
-* `default`  -- `LEISURE_SPEC` / `OTHER_ERRAND_SPEC` (flag OFF): W_ZWD 799 stays in
-  `leisure_activity`, 699 stays in `other_errand_long`.
-* `codeplan` -- `LEISURE_SPEC_CODEPLAN` / `OTHER_ERRAND_SPEC_CODEPLAN` (flag ON): the two
-  no-detail codes are sentinels and leave estimation entirely.
+* `codeplan` -- purpose_subtype_codeplan_sentinels ON, leisure_unspecified_subtype OFF
+  (the _CODEPLAN variants, ADR-0113): 799 and 699 become sentinels and leave estimation
+  entirely; W_ZWECK 10 legs are still not measured.
+* `codeplan_unspecified` -- both keys ON -- the PRODUCTION composition since issue #373
+  (ADR-0115): the _CODEPLAN variants plus the fifth, W_ZWECK-defined leisure group
+  leisure_unspecified, which holds the W_ZWECK 10 'anderer Zweck' legs that
+  w_zweck_10_as_leisure realises as leisure (ADR-0111). The leisure denominator here is
+  the labelled W_ZWECK 7 legs PLUS all W_ZWECK 10 legs, so the four W_ZWD groups' raw
+  shares all shrink by ONE common factor while their shares WITHIN the comparable
+  universe are unchanged from the codeplan variant. The shop and other-errand blocks are
+  identical to the codeplan variant's.
+* `default` -- purpose_subtype_codeplan_sentinels OFF and leisure_unspecified_subtype
+  OFF (LEISURE_SPEC / OTHER_ERRAND_SPEC): the no-detail codes W_ZWD 799 'Freizeit k.A.'
+  and 699 'Erledigung k.A.' are ordinary members of leisure_activity /
+  other_errand_long, and W_ZWECK 10 'anderer Zweck' legs are not measured at all.
 
-The shop split (`shop_daily` / `shop_non_daily`) has no codeplan variant, so its two rows
-are identical by construction. The code default read out of
-`braunschweig/popsim/stage/config_keys.py` at generation time is
-`DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True`, i.e. the `codeplan` rows describe the
-default-configured behaviour; the `default` rows describe the flag switched off.
+The shop split (`shop_daily` / `shop_non_daily`) is the same in every variant, so its
+rows repeat by construction. The code defaults read out of
+`braunschweig/popsim/stage/config_keys.py` at generation time are
+
+* `DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True`
+  (config key `purpose_subtype_codeplan_sentinels`).
+* `DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True`
+  (config key `leisure_unspecified_subtype`).
+
+so the variant that matches BOTH defaults describes the default-configured behaviour and
+the others describe one or both keys switched off.
 
 ### Candidate rule (verbatim)
 
 ```
-candidate_for_reestimation = (exactness == "exact") and any over spec variants of (abs(delta_pp_comparable) > 10); delta_pp_comparable = delta_pp_renormalised where the purpose is asymmetric, else delta_pp
+candidate_for_reestimation = (exactness == "exact") and any over spec variants of (abs(delta_pp_comparable) > 10); delta_pp_comparable = delta_pp_renormalised where the purpose is asymmetric, else delta_pp, and EMPTY for a row outside the comparable universe (grade not in exact + approximate)
 ```
 
 The flag marks a group whose two shares differ by more than
@@ -78,6 +97,15 @@ model consequence is DISTANCE. It is a pointer for a later decision, not a decis
 | leisure_local | codeplan | leisure | 14, 16 | approximate | 21538 | 0.3626 | 3997 | 0.4073 | -4.5 | 2.94 | (14:1.998, 16:1.385) |
 | leisure_activity | codeplan | leisure | 13, 17 | approximate | 25650 | 0.4253 | 1843 | 0.1981 | +22.7 | 4.75 | (13:4.140, 17:3.226) |
 | leisure_excursion | codeplan | leisure | - | aggregate_only | 3591 | 0.0581 | n/a | n/a | n/a | 36.18 | n/a |
+| shop_daily | codeplan_unspecified | shop | 8 | exact | 35647 | 0.7934 | 4541 | 0.7144 | +7.9 | 1.90 | 1.62 |
+| shop_non_daily | codeplan_unspecified | shop | 9 | exact | 10449 | 0.2066 | 1789 | 0.2856 | -7.9 | 3.80 | 2.70 |
+| other_errand_short | codeplan_unspecified | other_errand | 10 | approximate | 10257 | 0.5140 | 1873 | 0.5583 | -4.4 | 2.94 | 3.71 |
+| other_errand_long | codeplan_unspecified | other_errand | 11 | approximate | 10207 | 0.4860 | 1451 | 0.4417 | +4.4 | 3.90 | 2.29 |
+| leisure_visit ** | codeplan_unspecified | leisure | 15 | exact | 8003 | 0.0874 | 1912 | 0.2150 | -12.8 | 4.90 | 3.30 |
+| leisure_local | codeplan_unspecified | leisure | 14, 16 | approximate | 21538 | 0.2058 | 3997 | 0.4073 | -20.1 | 2.94 | (14:1.998, 16:1.385) |
+| leisure_activity | codeplan_unspecified | leisure | 13, 17 | approximate | 25650 | 0.2414 | 1843 | 0.1981 | +4.3 | 4.75 | (13:4.140, 17:3.226) |
+| leisure_excursion | codeplan_unspecified | leisure | - | aggregate_only | 3591 | 0.0330 | n/a | n/a | n/a | 36.18 | n/a |
+| leisure_unspecified | codeplan_unspecified | leisure | 18 | residual | 39429 | 0.4324 | 1700 | 0.1796 | +25.3 | 3.26 | 2.96 |
 | shop_daily | default | shop | 8 | exact | 35647 | 0.7934 | 4541 | 0.7144 | +7.9 | 1.90 | 1.62 |
 | shop_non_daily | default | shop | 9 | exact | 10449 | 0.2066 | 1789 | 0.2856 | -7.9 | 3.80 | 2.70 |
 | other_errand_short | default | other_errand | 10 | approximate | 10257 | 0.4762 | 1873 | 0.5583 | -8.2 | 2.94 | 3.71 |
@@ -93,7 +121,7 @@ recomputed from committed percentile rows (see `median_km_srv_components`).
 
 ## Candidates flagged
 
-* `leisure_visit` (exact): comparable delta default -10.9 pp, codeplan -9.9 pp; crossing variant(s): `default`. Raw deltas default -7.0 pp, codeplan -6.1 pp.
+* `leisure_visit` (exact): comparable delta default -10.9 pp, codeplan -9.9 pp, codeplan_unspecified -9.9 pp; crossing variant(s): `default`. Raw deltas default -7.0 pp, codeplan -6.1 pp, codeplan_unspecified -12.8 pp.
 
 A candidate triggers no re-estimation here: the owner decides from the arm-B
 measurement of the REALISED share (feature record `w_zwd_codeplan_sentinels.yml`).
@@ -115,6 +143,9 @@ surveys pair up, what fraction is this group?".
 | leisure_visit | codeplan | exact | 0.1540 | 0.2150 | -6.1 | 0.1635 | 0.2621 | -9.9 |
 | leisure_local | codeplan | approximate | 0.3626 | 0.4073 | -4.5 | 0.3850 | 0.4964 | -11.1 |
 | leisure_activity | codeplan | approximate | 0.4253 | 0.1981 | +22.7 | 0.4515 | 0.2415 | +21.0 |
+| leisure_visit | codeplan_unspecified | exact | 0.0874 | 0.2150 | -12.8 | 0.1635 | 0.2621 | -9.9 |
+| leisure_local | codeplan_unspecified | approximate | 0.2058 | 0.4073 | -20.1 | 0.3850 | 0.4964 | -11.1 |
+| leisure_activity | codeplan_unspecified | approximate | 0.2414 | 0.1981 | +4.3 | 0.4515 | 0.2415 | +21.0 |
 | leisure_visit | default | exact | 0.1449 | 0.2150 | -7.0 | 0.1533 | 0.2621 | -10.9 |
 | leisure_local | default | approximate | 0.3411 | 0.4073 | -6.6 | 0.3608 | 0.4964 | -13.6 |
 | leisure_activity | default | approximate | 0.4594 | 0.1981 | +26.1 | 0.4859 | 0.2415 | +24.4 |
@@ -124,25 +155,65 @@ row(s) the raw and the comparable delta fall on OPPOSITE sides of the 10 pp
 threshold, so the raw reading alone would give a different answer; the committed
 `candidate_for_reestimation` flag reads the comparable delta, as the rule above says.
 
+* `leisure_visit` (codeplan_unspecified): raw -12.8 pp (above) -> comparable -9.9 pp (below).
 * `leisure_visit` (default): raw -7.0 pp (below) -> comparable -10.9 pp (above).
+
+## Residual legs (reported, not compared)
+
+Both surveys keep a leftover category for a leisure leg whose activity the respondent
+did not name, and the crosswalk pairs them under the grade `residual`. The pair is shown
+here in full -- shares, unweighted counts and medians on both sides -- and is EXCLUDED
+from the comparable universe on BOTH sides, so it enters neither renormalised mass,
+carries no `delta_pp_comparable`, and can never be a `candidate_for_reestimation`.
+
+| subtype group | variant | SrV codes | share MiD | n MiD | share SrV | n SrV | median km MiD | median km SrV |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| leisure_unspecified | codeplan_unspecified | 18 | 0.4324 | 39429 | 0.1796 | 1700 | 3.26 | 2.96 |
+
+**Why the two shares must not be differenced.** The pair is the same KIND of leg --
+leisure without a nameable activity -- but not the same SIZE. MiD W_ZWECK 10 "anderer
+Zweck" is a TOP-LEVEL answer (the respondent did not even choose "Freizeit"); it becomes
+a leisure leg only through the `w_zweck_10_as_leisure` fold (ADR-0111), and it is a
+leisure SUBTYPE only through `leisure_unspecified` (ADR-0115). SrV `V_ZWECK` 18 "Andere
+Freizeitaktivitaet" is a sixth option offered AFTER five named leisure activities. A
+respondent therefore reaches the two categories by different routes, so the difference of
+the two shares is not a regional or behavioural finding; it is reported so that neither
+residual is invisible.
+
+**The two medians are different measures.** `median km SrV` is a computed GIS route
+length (`GIS_LAENGE_GUELTIG`), available only for the trips where it could be computed;
+`median km MiD` is the reported/imputed leg distance `wegkm_imp`, present for every
+labelled leg of this delivery. The two are not interchangeable, and their difference also
+carries whatever the GIS-computability selection does.
+
+**This is a survey-vs-survey measurement, not a model measurement.** What share of the
+MODEL's leisure activities ends up in `leisure_unspecified` is a different quantity, and
+it is measured by arm C of the pre-registered A/B (arm B plus `leisure_unspecified_subtype`
+true), not by this table.
 
 ## Largest differences regardless of exactness
 
 Reported so that a large gap under an `approximate` crosswalk is visible rather than
-hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares.
+hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares, so a
+row of an asymmetric purpose is read against a denominator the other survey does not
+share; and a `residual` row differences two leftovers that sit at different levels of the
+two questionnaires, which the section above spells out. The grade is printed with each
+row for exactly that reason.
 
 * `leisure_activity` (default, approximate): MiD 0.4594 vs SrV 0.1981, delta +26.1 pp.
+* `leisure_unspecified` (codeplan_unspecified, residual): MiD 0.4324 vs SrV 0.1796, delta +25.3 pp.
 * `leisure_activity` (codeplan, approximate): MiD 0.4253 vs SrV 0.1981, delta +22.7 pp.
-* `other_errand_short` (default, approximate): MiD 0.4762 vs SrV 0.5583, delta -8.2 pp.
 
 ## Caveats that limit how far these numbers carry
 
 1. **Different denominators inside `leisure`.** The SrV leisure share is taken over the
-   fine codes 13-18, which include 18 "Andere Freizeitaktivitaet" -- a residual that the
-   crosswalk maps to no subtype group. The MiD leisure share is taken over the LABELLED
-   legs of W_ZWECK 7, which include `leisure_excursion` -- a group SrV codes nowhere.
-   The four leisure `share_srv` values therefore do not sum to 1, and neither mix is a
-   subset of the other.
+   fine codes 13-18; the MiD leisure share is taken over the LABELLED legs of W_ZWECK 7
+   (plus, in the production variant, the W_ZWECK 10 legs). Each side therefore carries
+   mass the comparable universe leaves out: on the SrV side the residual code 18 "Andere
+   Freizeitaktivitaet", on the MiD side `leisure_excursion` (a group SrV codes nowhere)
+   and, in the production variant, the residual group `leisure_unspecified`. The
+   comparable rows consequently do not sum to 1 on EITHER side, and neither mix is a
+   subset of the other -- which is what the comparable-universe reading exists to handle.
 2. **The MiD share is conditional on being labelled.** A large share of MiD legs carry a
    design sentinel instead of a W_ZWD detail code (PAPI interview, child under 14); those
    legs are excluded from the denominator, exactly as the estimation excludes them. The
@@ -151,9 +222,10 @@ hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares
    estimated on; SrV 2023 here is the Braunschweig + RGB delivery only. A difference
    mixes a regional effect with a survey-instrument effect and cannot be attributed to
    either from this table alone.
-4. **`approximate` and `aggregate_only` rows are not evidence of a defect.** They are
-   reported for completeness; only `exact` rows feed the candidate flag, on the
-   comparable delta.
+4. **`approximate`, `residual` and `aggregate_only` rows are not evidence of a defect.**
+   They are reported for completeness; only `exact` rows feed the candidate flag, on the
+   comparable delta. A `residual` row is additionally outside the comparable universe on
+   both sides (see the section above).
 5. **`other_errand_short` is graded `approximate`, not `exact`** (issue #242 Task 6
    review, ruling C-R16), for two independent reasons: the labels overlap the other
    member of the pair -- MiD W_ZWD 602 "Behoerde, Bank, Post" feeds
