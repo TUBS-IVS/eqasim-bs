@@ -10,6 +10,7 @@ selectors.
 from __future__ import annotations
 
 import inspect
+import logging
 
 import numpy as np
 import pandas as pd
@@ -428,3 +429,44 @@ def test_code_coverage_guard_raises_on_unknown_w_zwd_of_a_code_10_leg():
     frame.loc[len(frame)] = (10, 123, "car", 600.0, 1.0)
     with pytest.raises(ValueError, match="123"):
         ps.code_coverage_guard(frame, ps.LEISURE_SPEC_UNSPECIFIED)
+
+
+# A zweck group labels its legs whatever their W_ZWD says, which is only defensible while those
+# legs really carry no usable detail code (the ASSUMPTION stated in the module docstring). The
+# two tests below pin that estimation MEASURES the assumption instead of relying on it: a
+# W_ZWECK-group leg carrying a real group code is counted as an override and warned about.
+_OVERRIDE_WARNING_MARKER = "relabelled by the W_ZWECK group"
+
+
+def _warning_messages(caplog) -> list:
+    return [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_zweck_group_overriding_a_valid_detail_code_is_counted_and_warned(caplog):
+    # One of the three code-10 legs carries 708 (a leisure_excursion code) instead of a design
+    # sentinel -- the case the spec assumes does not occur.
+    frame = _frame_with_code_10_legs()
+    frame.loc[frame.index[-1], "W_ZWD"] = 708
+
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.purpose_subtype"):
+        _, marginal = ps.estimate_group_probabilities(
+            frame, ps.LEISURE_SPEC_UNSPECIFIED, min_obs=1)
+
+    # The W_ZWECK group still wins: the 708 leg is leisure_unspecified, not leisure_excursion.
+    assert marginal[ps.LEISURE_UNSPECIFIED_GROUP] == pytest.approx(3 / 7)
+    assert marginal["leisure_excursion"] == pytest.approx(0.0)
+
+    # ... but the override is reported loudly, with its count and rate (1 of 3 zweck-group legs).
+    messages = _warning_messages(caplog)
+    assert any(_OVERRIDE_WARNING_MARKER in message for message in messages), messages
+    assert any("1/3" in message and "33.3%" in message for message in messages), messages
+
+
+def test_no_override_warning_when_code_10_legs_carry_only_sentinels(caplog):
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.purpose_subtype"):
+        ps.estimate_group_probabilities(
+            _frame_with_code_10_legs(), ps.LEISURE_SPEC_UNSPECIFIED, min_obs=1)
+
+    overrides = [message for message in _warning_messages(caplog)
+                 if _OVERRIDE_WARNING_MARKER in message]
+    assert not overrides, overrides
