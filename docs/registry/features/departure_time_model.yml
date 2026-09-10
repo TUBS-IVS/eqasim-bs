@@ -119,10 +119,16 @@ evidence:
       ASSUMPTION and not a scientific bound, stated as such in the constant''s docstring), the
       per-cell level / n_model / n_model_pooled / n_reference and both medians, the
       median-absolute-shift guard (WARN above departure_time_mapping_max_median_shift_hours), the
-      lower/upper clip counts and clip-bound conflicts, persons without a first departure, the
-      sub-minute-residue count of the de-rounding, and the unknown-P_TAET rate of the MiD person
-      adapter (WARN above 10 %, treated as not employed -- a documented ASSUMPTION, not an
-      imputation). Two further guards refuse rather than fall back: a missing committed reference
+      lower/upper clip counts and clip-bound conflicts, persons without a first departure, and the
+      sub-minute-residue count of the de-rounding. The unknown-P_TAET rate (WARN above 10 %,
+      treated as not employed -- a documented ASSUMPTION, not an imputation) is logged by
+      persons_from_mid_schema, which is no longer a production call site (ruling A-R17, final fix
+      wave item 1: every production call site now uses persons_from_synthetic_schema on the
+      population''s own IMPUTED employed instead), so that specific line no longer fires on a live
+      run -- it remains exercised by the direct unit tests of the adapter. Task 8''s run manifest
+      should instead record the P_TAET=99 IMPUTATION rate of attributes.map_employed, the group
+      input every call site now shares (ADR-0114 Consequences, Assumption 9). Two further guards
+      refuse rather than fall back: a missing committed reference
       raises naming BOTH the expected path and the config key (load_reference_for_model, one
       helper for both stages, so both fail identically), and a reference cell that is not dense
       over the 112 bins, whose n_unweighted varies within the cell, or whose share columns do not

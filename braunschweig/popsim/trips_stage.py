@@ -64,8 +64,8 @@ from braunschweig.popsim.departure_time_model import (
     DEFAULT_MAX_MEDIAN_SHIFT_HOURS as DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
     DEFAULT_MIN_MODEL_N as DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
     DEFAULT_MIN_REFERENCE_N as DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
-    MODEL_EQASIM_UNIFORM, MODELS, OFFSET_COLUMN, apply_departure_time_model,
-    persons_from_mid_schema)
+    MODEL_EQASIM_UNIFORM, MODEL_SRV_MAPPED, MODELS, OFFSET_COLUMN, apply_departure_time_model,
+    persons_from_synthetic_schema)
 # The passive-escort pairing gap default lives with the trip build (braunschweig.popsim.trips)
 # and is re-exported through it here rather than re-typed, so this stage and map_purpose can
 # never disagree on the threshold a run uses when the config leaves it unset.
@@ -653,13 +653,26 @@ def run(
     # from same-cell donors so no NaN time and no multi-day timestamp survives.
     resample_cell_col = _resolve_resample_cell_col(persons)
     # Built HERE, before the expensive dwell-model estimation and trip build below, so a persons
-    # frame without the MiD person attributes the model needs (HP_ALTER / P_TAET) fails within
-    # seconds instead of after the whole table has been assembled. Built ONLY for the models that
-    # consume it: the eqasim_uniform path must not start requiring those columns on a frame that
-    # never carried them (a popsim_mid unit fixture, for instance).
+    # frame without the age/employed columns the model needs fails within seconds instead of
+    # after the whole table has been assembled. Built ONLY for srv_mapped, the one model that
+    # picks a mapping cell (final fix wave item 2 -- derounded uses no group at all): neither the
+    # eqasim_uniform nor the derounded path may start requiring those columns on a frame that never
+    # carried them (a popsim_mid unit fixture, for instance).
+    #
+    # ADAPTER (ruling A-R17, final fix wave item 1): the persons frame reaching this function is
+    # the popsim-assembled SYNTHETIC persons frame (``synthesis.population.sampled`` -- ``age``
+    # from ``braunschweig.popsim.expand.map_demographics``, ``employed`` IMPUTED by
+    # ``braunschweig.popsim.assembly.map_mid_person_attributes`` ->
+    # ``braunschweig.popsim.attributes.map_employed``), so it is adapted with
+    # :func:`persons_from_synthetic_schema` -- the SAME adapter
+    # ``braunschweig.synthesis.commute_day.plan_replacement`` and
+    # ``braunschweig.analysis.synthesis.departure_time_vs_srv`` already used. Previously this
+    # adapted with :func:`persons_from_mid_schema` (raw ``P_TAET``, NO imputation), which grouped
+    # an unknown-employment person differently than the other two consumers measure them -- see
+    # ADR-0114 Assumption 9.
     model_persons = None
-    if departure_time_model != MODEL_EQASIM_UNIFORM:
-        model_persons = persons_from_mid_schema(persons)
+    if departure_time_model == MODEL_SRV_MAPPED:
+        model_persons = persons_from_synthetic_schema(persons)
     # Built BEFORE the trip table: the empirical model must see the donor diaries
     # as reported, i.e. before any synthetic closure has been appended to them.
     dwell_model = build_closure_dwell_model(

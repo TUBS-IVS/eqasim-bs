@@ -169,8 +169,17 @@ def persons_from_mid_schema(persons: pd.DataFrame) -> pd.DataFrame:
     """Adapt MiD-schema person attributes to the harmonised frame :func:`person_groups` consumes.
 
     ``HP_ALTER`` -> ``age`` and ``P_TAET in`` :data:`braunschweig.popsim.attributes.EMPLOYED_TAET`
-    -> ``employed`` (ruling A-R7). This is the adapter for the popsim trip build, whose person
-    frame carries the raw MiD columns.
+    -> ``employed`` (ruling A-R7). NOT a production call site (ruling A-R17, final fix wave): the
+    whole-branch review found that using this adapter for the popsim trip build while
+    :func:`persons_from_synthetic_schema` (fed by the IMPUTED
+    :func:`braunschweig.popsim.attributes.map_employed`) served the reporting-day plan replacement
+    and the comparison stage let the SAME person be grouped differently at different call sites --
+    an unknown-``P_TAET`` person is NOT employed here, but the population's own imputed
+    ``employed`` may resolve the opposite way. :func:`braunschweig.popsim.trips_stage.run` now
+    adapts the SAME synthetic-population schema as every other consumer (see
+    :func:`persons_from_synthetic_schema`); this function is kept as a TESTED UTILITY (fixture
+    construction for the direct unit tests of :func:`apply_departure_time_model` below), not a
+    production call site.
 
     ASSUMPTION: a missing or non-response ``P_TAET`` (99, NaN, anything outside the substantive
     1..17 range) is treated as NOT employed here, i.e. that person is grouped by age instead. This
@@ -230,13 +239,20 @@ def person_groups(persons: pd.DataFrame) -> pd.Series:
 
     Delegates to :func:`braunschweig.calibration.srv_plan_structure.harmonised_group`, which is
     the SAME rule the SrV reference was segmented by -- the model's mapping cell and the
-    reference's segment must be produced by one function or they can silently disagree.
+    reference's segment must be produced by one function or they can silently disagree. Ruling
+    A-R17 (final fix wave): one function is not enough on its own -- every production call site
+    (the pre-assignment trip build, the reporting-day plan replacement, the comparison stage) must
+    also feed it the SAME harmonised INPUT, :func:`persons_from_synthetic_schema` on the
+    synthetic-population schema (whose ``employed`` is the IMPUTED
+    :func:`braunschweig.popsim.attributes.map_employed`, not a raw MiD code read without
+    imputation), so the same person is never calibrated in one group and measured in another.
 
     Parameters
     ----------
     persons:
         Harmonised person frame with ``person_id``, ``age`` and ``employed`` -- see
-        :func:`persons_from_mid_schema` / :func:`persons_from_synthetic_schema`.
+        :func:`persons_from_synthetic_schema` (the production adapter at every call site) /
+        :func:`persons_from_mid_schema` (a tested utility only, see its docstring).
 
     Raises
     ------
@@ -637,9 +653,12 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
         leg's destination purpose).
     persons:
         HARMONISED person attributes (``person_id``, ``age``, ``employed``) covering every person
-        in ``table`` -- see :func:`persons_from_mid_schema` /
-        :func:`persons_from_synthetic_schema` (ruling A-R7). Unused by ``eqasim_uniform``, which
-        delegates unchanged.
+        in ``table`` -- see :func:`persons_from_synthetic_schema` (the production adapter at every
+        call site, ruling A-R17) / :func:`persons_from_mid_schema` (a tested utility only, no
+        longer a production call site). REQUIRED only for ``srv_mapped``, the one model that picks
+        a mapping cell (final fix wave item 2); ``eqasim_uniform`` (delegates unchanged) and
+        ``derounded`` (draws only from the reporting-precision rule) never read this argument, so
+        neither needs full person-attribute coverage.
     model:
         One of :data:`MODELS`.
     random_seed:
@@ -667,7 +686,8 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     ------
     ValueError
         If ``model`` is unknown, ``srv_mapped`` is requested without a ``reference``, a required
-        column is missing, or a person in ``table`` has no attribute row in ``persons``.
+        column is missing, or -- for ``srv_mapped`` only, the one model that groups persons -- a
+        person in ``table`` has no attribute row in ``persons``.
     """
     if model not in MODELS:
         raise ValueError(
@@ -722,14 +742,20 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     last_arrival = (pd.Series(arrival).groupby(table["person_id"].to_numpy()).max()
                     .reindex(person_order).to_numpy(dtype=float))
 
-    groups = person_groups(persons).reindex(person_order)
-    n_missing_attributes = int(groups.isna().sum())
-    if n_missing_attributes:
-        examples = groups.index[groups.isna()][:5].tolist()
-        raise ValueError(
-            "departure_time_model: %d/%d person(s) in the trip table have no attribute row in the "
-            "persons frame (e.g. %s); the departure-time model needs age/employment for every "
-            "person to pick a mapping cell" % (n_missing_attributes, n_persons, examples))
+    # Groups are needed ONLY by srv_mapped, the one model that picks a mapping cell: derounded
+    # draws only from the reporting-precision rule and never reads persons at all (final fix wave
+    # item 2 -- a run without full person-attribute coverage must not be blocked from the
+    # de-rounding-only model, which uses no group information whatsoever).
+    groups = None
+    if model == MODEL_SRV_MAPPED:
+        groups = person_groups(persons).reindex(person_order)
+        n_missing_attributes = int(groups.isna().sum())
+        if n_missing_attributes:
+            examples = groups.index[groups.isna()][:5].tolist()
+            raise ValueError(
+                "departure_time_model: %d/%d person(s) in the trip table have no attribute row in "
+                "the persons frame (e.g. %s); the departure-time model needs age/employment for "
+                "every person to pick a mapping cell" % (n_missing_attributes, n_persons, examples))
 
     # ---- (i) de-rounding: the only random draw of this model
     has_first_departure = np.isfinite(first_departure)

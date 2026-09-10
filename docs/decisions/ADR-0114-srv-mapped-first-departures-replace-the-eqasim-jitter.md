@@ -194,7 +194,11 @@
     A hold-out metric deteriorating beyond its bound stops the ladder for diagnosis (no fix
     stacking). The OFF arm must reproduce today's times byte-identically, which four tests already
     pin at the dispatch, the stage, the plan replacement and against the pre-#123 golden values
-    (feature record `departure_time_model`).
+    (feature record `departure_time_model`). Task 8 must additionally RECORD the share of persons
+    whose `P_TAET` was item non-response (99) and therefore IMPUTED by `attributes.map_employed`
+    -- the group input every consumer now shares (Assumption 9, ruling A-R17) -- so the run
+    manifest states how many persons' harmonised group rests on an imputed rather than an observed
+    employment code.
   - **`min_model_n` governs both call sites (known limitation).** The same threshold (50) gates
     the whole-population trip build and the much smaller spliced home-office set of the plan
     replacement, so at small sampling rates the spliced chains coarsen or stay unmapped while the
@@ -222,8 +226,19 @@
   8. `COARSENED_SHARE_WARN` (0.25) and `UNMAPPED_SHARE_WARN_THRESHOLD` (0.05) are OBSERVABILITY
      thresholds, not scientific bounds; only `departure_time_mapping_max_median_shift_hours` is
      caller-set.
-  9. A MiD person whose `P_TAET` is unknown is treated as not employed for the group rule (no
-     imputation here); the rate is logged and warned above 10 %.
+  9. **The group input is ONE attribute source at every call site (ruling A-R17, final fix wave
+     item 1).** The harmonised group a person is calibrated in (`braunschweig.popsim.
+     departure_time_model.person_groups`) is fed by the population's own IMPUTED `employed`
+     (`braunschweig.popsim.attributes.map_employed`, which imputes an unknown `P_TAET`=99 from the
+     valid pool within the same age group) via `persons_from_synthetic_schema`, at the
+     pre-assignment trip build (`trips_stage.run`), the reporting-day plan replacement
+     (`plan_replacement.build_day_trips`) AND the comparison stage
+     (`departure_time_vs_srv.execute`) alike -- so the analysis measures the SAME groups the model
+     was calibrated against. The whole-branch review found the trip build had instead used
+     `persons_from_mid_schema` (raw `P_TAET`, NO imputation, an unknown code treated as NOT
+     employed), which could put the SAME person in a different group at the trip build than at the
+     plan replacement / comparison stage. `persons_from_mid_schema` is kept as a TESTED UTILITY,
+     not a production call site.
   10. `min_model_n` is assumed adequate for BOTH call sites (see the limitation above).
   11. The purposes the mapping cells are keyed on are the CORRECTED ones of ADR-0111 (W_ZWECK 10
      folds to leisure) and ADR-0112 (a paired passive escort leg takes the adult's purpose), and

@@ -157,7 +157,11 @@ DURATION_COLUMNS = ["segment", "purpose", "band", "share_model", "share_srv", "d
 #: the tolerance lives once, next to the builder that normalises the committed shares
 #: (:data:`braunschweig.calibration.srv_departure_times.REFERENCE_SUM_TOLERANCE`, which
 #: ``departure_time_model`` re-exports under the same name), so this module cannot accept a
-#: reference cell the model's own loader rejects, or the other way round.
+#: reference cell the model's own loader rejects, or the other way round. Since final fix wave
+#: item 4 the sum-to-1 check itself is delegated entirely to
+#: :func:`braunschweig.calibration.srv_departure_times.validate_departure_time_table` (called from
+#: :func:`_reference_cells`), so this alias is no longer READ here; it is kept as the identity
+#: :func:`test_the_tolerance_constant_has_exactly_one_home` pins.
 SHARE_SUM_TOLERANCE = SRVDT.REFERENCE_SUM_TOLERANCE
 
 #: Below this share of legs with a usable raw MiD time the raw column of the decomposition
@@ -477,40 +481,37 @@ def decomposition(frame: pd.DataFrame) -> pd.DataFrame:
 def _reference_cells(reference: pd.DataFrame) -> dict:
     """``(segment, purpose, position) -> (derounded, as_reported, n_unweighted)`` vectors.
 
+    Structural validity -- dense bins per cell, ONE ``n_unweighted`` per cell, both share columns
+    summing to 1 within :data:`SHARE_SUM_TOLERANCE` -- is delegated ENTIRELY to
+    :func:`braunschweig.calibration.srv_departure_times.validate_departure_time_table`, the SAME
+    shared validator :func:`load_departure_time_reference` already runs at load time (final fix
+    wave item 4): this function used to re-implement the identical dense-bin and sum-to-1 checks a
+    second time, which could only ever agree with the shared validator by construction and cost a
+    second maintenance site if it ever drifted. ``bin_comparison`` (this function's only caller)
+    is, however, reachable with a frame that never went through the shared loader -- several tests
+    below hand it a hand-built reference directly -- so the validator is called HERE too, rather
+    than only trusted to have run upstream.
+
     A cell whose ``n_unweighted`` is 0 (the builder's EMPTY-cell encoding, NaN shares on every
     bin) is returned with ``None`` vectors so callers skip it explicitly instead of reading NaN
-    as a distribution. A non-empty cell whose shares do not sum to 1 RAISES: ``emd_on_bands``
-    assumes normalised inputs, so an un-normalised cell would return a number that looks like a
-    distance but is not one.
+    as a distribution.
     """
     required = ["segment", "purpose", "position", "bin_15min", "share_derounded",
                 "share_as_reported", "n_unweighted"]
     _require_columns(reference, required, "departure-time reference")
+    # positions=None: unlike the model's own loader this comparison keeps all three positions
+    # (later/all are the hold-out dimensions), so no restriction is imposed here either.
+    SRVDT.validate_departure_time_table(reference, positions=None,
+                                        source="reference frame (bin_comparison)")
     cells = {}
     for key, cell in reference.groupby(["segment", "purpose", "position"], sort=False):
         ordered = cell.sort_values("bin_15min")
-        bins = ordered["bin_15min"].tolist()
-        if bins != list(range(SRVDT.N_BINS)):
-            raise ValueError(
-                "departure-time reference cell segment=%s purpose=%s position=%s carries %d bin "
-                "row(s) instead of the dense %d bins 0..%d; the committed table must be dense "
-                "over bin_15min" % (key + (len(bins), SRVDT.N_BINS, SRVDT.N_BINS - 1)))
         n_unweighted = int(ordered["n_unweighted"].iloc[0])
         if n_unweighted <= 0:
             cells[key] = (None, None, n_unweighted)
             continue
-        vectors = []
-        for column in ("share_derounded", "share_as_reported"):
-            values = ordered[column].to_numpy(dtype=float)
-            total = float(np.sum(values))
-            if not np.isfinite(total) or abs(total - 1.0) > SHARE_SUM_TOLERANCE:
-                raise ValueError(
-                    "departure-time reference cell segment=%s purpose=%s position=%s has "
-                    "n_unweighted=%d but its %s values sum to %r instead of 1.0 (tolerance %g); "
-                    "emd_on_bands requires normalised inputs"
-                    % (key + (n_unweighted, column, total, SHARE_SUM_TOLERANCE)))
-            vectors.append(values)
-        cells[key] = (vectors[0], vectors[1], n_unweighted)
+        cells[key] = (ordered["share_derounded"].to_numpy(dtype=float),
+                      ordered["share_as_reported"].to_numpy(dtype=float), n_unweighted)
     return cells
 
 

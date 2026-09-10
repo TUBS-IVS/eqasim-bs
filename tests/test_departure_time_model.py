@@ -350,9 +350,18 @@ def test_a_person_without_a_first_departure_is_counted_and_left_alone():
 
 
 def test_persons_missing_attributes_raise_naming_the_count():
+    """``derounded`` needs NO group at all (final fix wave item 2 -- it draws only from the
+    reporting-precision rule): a persons frame missing rows for half the table must NOT block
+    it. Only ``srv_mapped``, the one model that picks a mapping cell, raises."""
+    out, diag = M.apply_departure_time_model(_table(4), _persons(2), model=M.MODEL_DEROUNDED,
+                                             random_seed=3)
+    assert diag["model"] == M.MODEL_DEROUNDED and diag["cells"] == {}
+    assert (out[M.OFFSET_COLUMN].abs() <= 450).all()
+
     with pytest.raises(ValueError, match="attribute"):
-        M.apply_departure_time_model(_table(4), _persons(2), model=M.MODEL_DEROUNDED,
-                                     random_seed=3)
+        M.apply_departure_time_model(_table(4), _persons(2), model=M.MODEL_SRV_MAPPED,
+                                     random_seed=3, reference=_reference(),
+                                     min_reference_n=100, min_model_n=1)
 
 
 # --------------------------------------------------------------------------- clipping

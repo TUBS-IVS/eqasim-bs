@@ -686,12 +686,17 @@ SRV_REFERENCE_DIR = os.path.join(
 def _persons_and_wege_with_person_attributes():
     """Six employed persons, each with a home -> work -> home chain on a quarter-hour clock time.
 
-    Unlike the fixtures above, the PERSONS frame carries the MiD person attributes
-    ``HP_ALTER`` / ``P_TAET`` that
-    :func:`braunschweig.popsim.departure_time_model.persons_from_mid_schema` needs to pick a
-    mapping cell (ruling A-R7): all six are employed adults, so their harmonised group is
-    ``employed`` and -- their first leg being a work leg -- their reference cell is
-    ``(employed, work)``, which the committed SrV table fills with 4,649 unweighted observations.
+    Unlike the fixtures above, the PERSONS frame carries the harmonised ``age`` / ``employed``
+    columns that
+    :func:`braunschweig.popsim.departure_time_model.persons_from_synthetic_schema` needs to pick a
+    mapping cell (ruling A-R7 / A-R17, final fix wave item 1: ``trips_stage.run`` adapts the SAME
+    synthetic-population schema the plan replacement and the analysis stage use -- not the MiD
+    schema -- so all three consumers group a person identically): all six are employed adults, so
+    their harmonised group is ``employed`` and -- their first leg being a work leg -- their
+    reference cell is ``(employed, work)``, which the committed SrV table fills with 4,649
+    unweighted observations. ``HP_ALTER`` / ``P_TAET`` are kept alongside ``age`` / ``employed``
+    (the same values) so the fixture also stays usable if some other code path still reads the raw
+    MiD columns.
     """
     persons = pd.DataFrame({
         "person_id": [1, 2, 3, 4, 5, 6],
@@ -699,6 +704,8 @@ def _persons_and_wege_with_person_attributes():
         "P_ID": [1, 1, 1, 1, 1, 1],
         "HP_ALTER": [40, 41, 42, 43, 44, 45],
         "P_TAET": [1, 1, 1, 1, 1, 1],
+        "age": [40, 41, 42, 43, 44, 45],
+        "employed": [True, True, True, True, True, True],
         "ZENSUS100m": ["c1"] * 6,
     })
     rows = []
@@ -731,7 +738,32 @@ def test_run_default_is_byte_identical_on_contract_columns():
     ONCE on the fixture and seed below with a scratch script; the printed ``departure_time`` /
     ``arrival_time`` / ``departure_time_offset_seconds`` lists were copied verbatim, and
     re-measured identical on the Task 4 commit ``ac7fc89c``. The scratch script is not part of
-    the repository -- only the pinned literals are committed.
+    the repository -- only the pinned literals are committed. ``eff5720c`` is BRANCH-INTERNAL (a
+    commit that exists only on ``feature/i123-departure-time-model``'s own history, created by
+    rebasing this branch's Tasks 1-3 onto the stacked sibling branch's tip -- see the SDD ledger
+    ``.superpowers/sdd/2026-09-09-departure-time-srv-mapping/progress.md``), not a commit anyone
+    outside this branch can check out; the PRE-BRANCH identity of ``run()`` for the eqasim_uniform
+    path -- i.e. that this whole feature changed nothing about the jitter itself -- is proven
+    SEPARATELY, one level below the full ``run()`` pipeline pinned here, by the jitter-level golden
+    ``test_jitter_output_matches_the_pre_task_1_golden_values`` above, pinned against
+    ``apply_per_person_jitter`` at commit ``3acd382d`` (this branch's OWN pre-Task-1 base, which
+    predates the stacked-branch rebase).
+
+    Final fix wave item 5 re-derivation: ``4774d988`` is the tip of the sibling branch this
+    branch was rebased onto (the TRUE pre-``feature/i123-departure-time-model`` state of
+    ``trips_stage.py``, reachable independently of this branch) and is byte-identical to
+    ``3acd382d`` for this file (``git diff 3acd382d 4774d988 -- braunschweig/popsim/trips_stage.py``
+    is empty). ``git diff 4774d988 eff5720c -- braunschweig/popsim/trips_stage.py`` shows the
+    Task 1-3 changes are PURELY ADDITIVE for the path this test exercises: new imports/docstrings,
+    and the ``OFFSET_COLUMN`` write appended AFTER the pre-existing shift/round lines of
+    ``apply_per_person_jitter`` -- ``run()``'s own body is untouched between the two commits. Every
+    module ``run()`` calls into for this fixture (``braunschweig/popsim/trips.py``,
+    ``plan_validation.py``, ``closure_dwell.py``, ``escort_pairing.py``, ``diary_facts.py``) is
+    ALSO unchanged between ``4774d988`` and the current ``HEAD`` (empty diffs, checked directly).
+    The literals pinned below are therefore exactly what ``4774d988``'s ``trips_stage.py`` would
+    also have produced on this fixture -- re-running the scratch script was unnecessary because the
+    diff proves equivalence more rigorously than a single re-execution would -- so ``4774d988`` is
+    cited alongside ``eff5720c`` as the pre-branch source.
 
     Beyond the CONTRACT columns this also pins ``OFFSET_COLUMN`` (fix round 1): it is the
     recorded decomposition ``departure_time = raw_departure_time + offset`` that every later

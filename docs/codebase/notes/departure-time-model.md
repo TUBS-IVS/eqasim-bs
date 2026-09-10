@@ -157,17 +157,21 @@ Guards, all under the log tag `[departure time]` and all rendered as
 | median absolute shift of a cell | `departure_time_mapping_max_median_shift_hours` (2.0 h) | WARN naming the cell, both medians, `n_model`, `n_reference` and the level; offsets are NOT clipped |
 | persons without a first departure | any | counted, warned, offset 0, counted as unmapped |
 | lower / upper clip, clip conflict | see above | counted, conflict warned |
-| unknown MiD `P_TAET` in the adapter | `UNKNOWN_TAET_WARN_THRESHOLD` = 0.10 | INFO below / WARN above; treated as not employed (documented ASSUMPTION, no imputation) |
+| unknown MiD `P_TAET` in `persons_from_mid_schema` (tested utility only, not a production call site -- see "Where it runs" below) | `UNKNOWN_TAET_WARN_THRESHOLD` = 0.10 | INFO below / WARN above; treated as not employed (documented ASSUMPTION, no imputation) |
 
 ## Where it runs: exactly two call sites
 
 1. **`braunschweig.popsim.trips_stage.run`** -- the PRE-ASSIGNMENT trips view,
-   for the whole population. The persons frame is the sampled MiD one, adapted
-   by `persons_from_mid_schema` (`HP_ALTER` -> `age`,
-   `P_TAET in braunschweig.popsim.attributes.EMPLOYED_TAET` -> `employed`); the
-   adaptation happens at the TOP of `run()`, so a schema gap fails in seconds
-   instead of after the trip build. Times do not feed the location assignment,
-   so mapping them here does not disturb the two-view architecture.
+   for the whole population. The persons frame is the popsim-assembled
+   SYNTHETIC persons frame (`synthesis.population.sampled` -- `age` from
+   `braunschweig.popsim.expand.map_demographics`, `employed` IMPUTED by
+   `braunschweig.popsim.assembly.map_mid_person_attributes` ->
+   `braunschweig.popsim.attributes.map_employed`), adapted by
+   `persons_from_synthetic_schema`, built ONLY for `srv_mapped` (`derounded`
+   uses no group at all); the adaptation happens at the TOP of `run()`, so a
+   schema gap fails in seconds instead of after the trip build. Times do not
+   feed the location assignment, so mapping them here does not disturb the
+   two-view architecture.
 2. **`braunschweig.synthesis.commute_day.plan_replacement.build_day_trips(...,
    departure_time=DepartureTimeSettings(...))`**, called by
    `trips_day_stage` -- the spliced home-office chains of the reporting-day
@@ -180,6 +184,18 @@ Guards, all under the log tag `[departure time]` and all rendered as
    population would give the replaced persons a quantile computed against people
    this call is not touching. `departure_time=None` keeps the plain jitter
    byte-identically.
+
+**ONE attribute source, at every call site (ruling A-R17, final fix wave item
+1).** Both call sites above, and the comparison stage below, now feed
+`person_groups` the SAME harmonised input: `persons_from_synthetic_schema` on
+the population's own `age` / IMPUTED `employed`. Before the final fix wave,
+`trips_stage.run` instead used `persons_from_mid_schema` (raw MiD `P_TAET`, NO
+imputation), so a person whose `P_TAET` was unknown could be grouped as
+NOT-employed at the trip build while the SAME person's imputed `employed` (used
+by the plan replacement and the comparison stage) resolved differently -- the
+same person calibrated in one group and measured in another.
+`persons_from_mid_schema` is kept as a TESTED UTILITY (fixture construction and
+the direct unit tests of the dispatch), not a production call site any more.
 
 Known limitation (ADR-0114 Assumptions): `min_model_n` governs BOTH call sites,
 so at small sampling rates the much smaller spliced set coarsens or stays
@@ -197,9 +213,13 @@ module, not in either stage, so both stages fail with the same message.
 
 ## Configuration
 
-Four flat, MiD-only keys, declared by both stages from the single constant pair
-in `braunschweig.popsim.stage.config_keys` so the two stages cannot disagree
-about a name or a default:
+Four flat keys, declared by both stages from the single constant pair in
+`braunschweig.popsim.stage.config_keys` so the two stages cannot disagree about
+a name or a default. Only `departure_time_model` itself is MiD-only (rejected
+by `EntdSource`, see below); the three numeric keys are MODEL PARAMETERS that
+only size the `srv_mapped` coarsening ladder -- a mapping the model-key
+rejection already forbids on the ENTD path -- so they are accepted and ignored
+there rather than rejected (final fix wave item 3).
 
 | key | code default | production value (`configs/base_bs.yml`) |
 |---|---|---|

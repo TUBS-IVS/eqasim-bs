@@ -173,8 +173,15 @@ config:
   # SrV start times are a CALIBRATION target, later trips and activity durations are the
   # hold-out validation (analysis/departure_time_vs_srv). 'eqasim_uniform' = today.
   departure_time_model: srv_mapped
+  # SrV legs (unweighted) a reference cell needs before the ladder maps onto it.
   departure_time_mapping_min_reference_n: 200
+  # Model persons a ladder rung needs pooled before it is used (else the thin set climbs
+  # to the next rung) -- governs BOTH the whole-population trip build AND the much
+  # smaller spliced home-office set of the commute-day plan replacement (known
+  # limitation, ADR-0114).
   departure_time_mapping_min_model_n: 50
+  # WARN threshold on a mapping cell's median |shift|, in hours; offsets are never
+  # clipped to it.
   departure_time_mapping_max_median_shift_hours: 2.0
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
