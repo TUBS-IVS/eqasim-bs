@@ -89,12 +89,20 @@ import pandas as pd
 from synthesis.population.spatial.secondary.distance_distributions import (
     calculate_bounds,
 )
+# Module OBJECT of the same default-stage import above (in addition to the named
+# `calculate_bounds` import): needed so validate()'s _HELPER_MODULES tuple can hash its
+# source. Checked for an import cycle: this module has no first-party imports at all
+# (only numpy/pandas), so binding it here is safe.
+from synthesis.population.spatial.secondary import (
+    distance_distributions as _default_distance_distributions,
+)
 
 # Module OBJECTS (in addition to the named imports below): needed so validate()'s
 # _HELPER_MODULES tuple can hash their source via inspect.getsource. escort_pairing is
 # imported here even though this file never calls it directly -- trips.map_purpose does,
 # under escort_passive_from_adult -- for exactly the reason trips_stage.py hashes it (see
 # the _HELPER_MODULES comment below).
+from braunschweig import constants as _constants
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import time_imputation as _time_imputation
 from braunschweig.popsim import trips as _trips
@@ -126,21 +134,36 @@ from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 # decides WHICH adult leg a passive escort leg (W_ZWECK 13) is paired with under
 # escort_passive_from_adult, and therefore which purpose -- and so which distance layer --
 # that leg's distance value lands in; this module never calls it directly, trips.map_purpose
-# does, exactly as for trips_stage.py.
+# does, exactly as for trips_stage.py. constants owns ROUTED_DETOUR_FACTOR, which scales
+# EVERY distance value this stage produces (Step 4 below); the default-stage
+# distance_distributions module owns calculate_bounds, the quantile-binning logic this
+# stage reuses verbatim (Step 6). Both are OUT-OF-PACKAGE (not under braunschweig.popsim),
+# so the own-package-sibling coverage gate (tests/test_synpp_helper_hash_invariant.py)
+# does not require them, but they shape the output just as directly as the own-package
+# helpers above and are checked for import cycles (neither has any first-party import).
 _HELPER_MODULES = (
     _trips,
     _time_imputation,
     _escort_pairing,
+    _constants,
+    _default_distance_distributions,
 )
 # Imported LAZILY inside run()/configure()/execute() (to avoid an unconditional import cost
 # when the shop/leisure/other subtype splits are off, and -- for config_keys -- a heavy
 # top-level import of the popsim stage package), so they are hashed by dotted module name via
 # importlib rather than as a bound module object, mirroring trips_stage.py's own deferred
-# tuple. mid.load_mid_wege is this stage's only data source; purpose_subtype/shop_subtype
-# define the W_ZWD subtype groupings the leisure/shop/other subtype splits are built from;
-# config_keys is the shared home of the four purpose-package config keys this stage declares.
+# tuple. mid.load_mid_wege is this stage's only data source; mid.donor is named SEPARATELY
+# from the mid package because mid/__init__.py only RE-EXPORTS load_mid_wege
+# (`from .donor import load_mid_wege`) -- inspect.getsource of the package object hashes
+# only __init__.py's own text (the import statement), never donor.py's function body where
+# load_mid_wege is actually defined, mirroring the identical mid.donor entry
+# braunschweig.popsim.completed_donor.py already carries for the same transitive reason.
+# purpose_subtype/shop_subtype define the W_ZWD subtype groupings the leisure/shop/other
+# subtype splits are built from; config_keys is the shared home of the four purpose-package
+# config keys this stage declares.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.mid",
+    "braunschweig.popsim.mid.donor",
     "braunschweig.popsim.purpose_subtype",
     "braunschweig.popsim.shop_subtype",
     "braunschweig.popsim.stage.config_keys",

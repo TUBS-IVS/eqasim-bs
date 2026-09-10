@@ -623,6 +623,31 @@ def test_map_purpose_pairing_candidate_mask_index_mismatch_raises():
                           escort_passive_from_adult=True, pairing_candidate_mask=bad_mask)
 
 
+def test_map_purpose_pairing_candidate_mask_with_nan_raises():
+    """MINOR 6 (cleanup wave fix round): pd.Series.astype(bool) casts NaN to True, which would
+    silently ADD a leg to the pairing's candidate universe instead of failing loudly -- pinned
+    against the real (pre-fix) behaviour: mask.astype(bool) on [True, nan, False] gives
+    [True, True, False], no exception at all."""
+    wege = _pairing_mask_fixture()
+    mask = pd.Series([True, np.nan, False], index=wege.index)
+    with pytest.raises(ValueError, match=r"\[popsim\.trips\].*[Nn]a[Nn]"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True, pairing_candidate_mask=mask)
+
+
+def test_map_purpose_pairing_candidate_mask_duplicate_index_raises():
+    """MINOR 7 (cleanup wave fix round): a duplicate-labelled Wege index used to raise an
+    opaque pandas error ('Must have equal len keys and value when setting with an iterable')
+    deep inside the masked branch's .loc assignment; it must instead raise a clear,
+    [popsim.trips]-tagged ValueError naming the number of duplicate labels up front."""
+    wege = _pairing_mask_fixture()
+    wege.index = [0, 0, 2]  # duplicate label 0
+    mask = pd.Series([True, True, False], index=wege.index)
+    with pytest.raises(ValueError, match=r"\[popsim\.trips\].*duplicate"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True, pairing_candidate_mask=mask)
+
+
 def test_map_purpose_pairing_candidate_mask_excludes_the_passive_leg_itself_keeps_the_passive_rule():
     """A passive leg OUTSIDE the mask is not considered for pairing at all -- it keeps the
     existing passive rule (the escort_passive_education relabel), exactly like an unpaired
@@ -634,3 +659,32 @@ def test_map_purpose_pairing_candidate_mask_excludes_the_passive_leg_itself_keep
     child = out[out["P_ID"] == 2].iloc[0]
     assert child["purpose"] == "education"
     assert pd.isna(child["passive_pair_status"])
+
+
+def test_map_purpose_masked_branch_share_paired_uses_the_same_denominator_as_n_passive(caplog):
+    """MINOR 5 (cleanup wave fix round): the masked branch's summary log mixed denominators --
+    the W_GEW-weighted share_paired's denominator (is_passive_leg) covered ALL passive legs in
+    the frame, while n_passive (the mask-internal count pair_passive_legs reports) covered only
+    the ones inside the mask. A passive leg OUTSIDE the mask (never even a pairing candidate)
+    silently dragged the reported share DOWN. Both must be computed over the SAME set -- the
+    pairing's candidate universe -- and the message must name that set."""
+    import logging
+
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 2, 3], "W_ID": [1, 1, 1],
+        "W_ZWECK": [6, 13, 13], "W_SZS": [8, 8, 8], "W_SZM": [0, 0, 0],
+        "HP_ALTER": [35, 5, 5], "W_GEW": [1.0, 2.0, 3.0],
+    })
+    # Only the FIRST passive leg (P_ID=2) sits inside the pairing's candidate universe; the
+    # second (P_ID=3) is excluded entirely, e.g. a leg the trip build would drop.
+    mask = pd.Series([True, True, False], index=wege.index)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        out = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                                escort_passive_from_adult=True, pairing_candidate_mask=mask)
+    # P_ID=2 pairs with the adult's active escort leg (same minute); P_ID=3 is not even a
+    # candidate and keeps the escort_passive_education rule.
+    assert out.loc[out["P_ID"] == 2, "purpose"].iloc[0] == "education"
+    joined = " ".join(record.getMessage() for record in caplog.records)
+    assert "1/1 passive legs" in joined  # n_paired/n_passive, BOTH mask-internal
+    assert "100.00%" in joined
+    assert "inside the pairing's candidate universe" in joined

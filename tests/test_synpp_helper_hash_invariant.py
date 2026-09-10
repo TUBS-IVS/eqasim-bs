@@ -784,7 +784,20 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
     trips.py / purpose_subtype.py / shop_subtype.py / escort_pairing.py served a STALE
     cached distance distribution on a partial rerun -- the config VALUE is hashed via the
     stage's declared keys, but the RULE CODE inside those helper modules was not (issue
-    #373 task 1, the same class of gap trips_stage.py closed for the trip build itself)."""
+    #373 task 1, the same class of gap trips_stage.py closed for the trip build itself).
+
+    ``braunschweig.popsim.mid.donor`` is required in ADDITION to
+    ``braunschweig.popsim.mid`` (cleanup wave fix round, IMPORTANT 1): the package
+    __init__ only RE-EXPORTS ``load_mid_wege`` (``from .donor import load_mid_wege``),
+    so ``inspect.getsource`` of the package object hashes __init__.py's own text --
+    the import statement -- never donor.py's function body where load_mid_wege is
+    actually defined (the same own-package-transitive gap
+    braunschweig.popsim.completed_donor.py already closes for the same module, via
+    the identical mid.load_completed_donor / mid.load_mid_wege transitive path).
+    braunschweig.constants (ROUTED_DETOUR_FACTOR scales EVERY distance value this
+    stage produces) and synthesis.population.spatial.secondary.distance_distributions
+    (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE
+    inputs that shape the output and must be hashed for the same reason."""
     import braunschweig.popsim.distance_distributions as distance_distributions
 
     assert hasattr(distance_distributions, "validate")
@@ -792,8 +805,35 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
              | set(distance_distributions._DEFERRED_HELPER_MODULE_NAMES))
     for required in ("braunschweig.popsim.trips", "braunschweig.popsim.time_imputation",
                      "braunschweig.popsim.escort_pairing", "braunschweig.popsim.mid",
+                     "braunschweig.popsim.mid.donor",
                      "braunschweig.popsim.purpose_subtype", "braunschweig.popsim.shop_subtype",
-                     "braunschweig.popsim.stage.config_keys"):
+                     "braunschweig.popsim.stage.config_keys", "braunschweig.constants",
+                     "synthesis.population.spatial.secondary.distance_distributions"):
         assert required in names, required
     token = distance_distributions.validate(None)
     assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+
+
+def test_distance_distributions_validate_token_changes_when_mid_donor_source_changes(monkeypatch):
+    """Demonstrates the IMPORTANT-1 gap directly: hashing the mid PACKAGE object is not
+    enough to detect a change to mid/donor.py (where load_mid_wege actually lives) --
+    the digest must change when donor.py's source changes. Patches inspect.getsource so
+    it returns perturbed text ONLY for the braunschweig.popsim.mid.donor module object,
+    leaving every other module's hashed source untouched."""
+    import inspect
+
+    import braunschweig.popsim.distance_distributions as distance_distributions
+    from braunschweig.popsim.mid import donor as mid_donor
+
+    token_before = distance_distributions.validate(None)
+
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is mid_donor:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    token_after = distance_distributions.validate(None)
+    assert token_before != token_after

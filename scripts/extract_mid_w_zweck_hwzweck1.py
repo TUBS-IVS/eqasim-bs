@@ -38,13 +38,15 @@ WEGE_FILE = "MiD2023_Wege.csv"
 #: draws from the same weekday sample logic). IMPORTED from the PopulationSim seed's own day
 #: filter (``braunschweig.popsim.seed.MID_SEED_COLUMNS.day_filter_values``, the same name
 #: ``scripts/derive_escort_w_zweck_split.py`` imports it as) rather than re-typed as a literal
-#: tuple: a re-typed copy can silently drift from the seed's actual weekday-code universe, which
-#: is exactly what happened here until issue #373's cleanup wave (the two committed MiD Wege
-#: aggregates, this script's and derive_escort_w_zweck_split.py's, must describe the SAME leg
-#: universe). ``seed.WEEKDAY_KERNWO`` is the module's OWN alias for the same value; either name
-#: would do, ``MID_SEED_COLUMNS.day_filter_values`` matches the sibling script's import exactly.
-#: Kept as ``KERNWO_WEEKDAY_CODES`` (not renamed) because ``scripts/extract_mid_w_zwd_groups.py``
-#: imports this exact name from this module.
+#: tuple: until issue #373's cleanup wave this module WAS re-typed as a bare ``(1, 2, 3)`` --
+#: not yet DRIFTED from the seed's actual value (both were literally ``(1, 2, 3)``), but a
+#: re-typed copy has no mechanism to notice a future change to the seed's weekday-code
+#: universe, which is exactly the silent-drift risk importing the single home removes (the two
+#: committed MiD Wege aggregates, this script's and derive_escort_w_zweck_split.py's, must
+#: describe the SAME leg universe). ``seed.WEEKDAY_KERNWO`` is the module's OWN alias for the
+#: same value; either name would do, ``MID_SEED_COLUMNS.day_filter_values`` matches the sibling
+#: script's import exactly. Kept as ``KERNWO_WEEKDAY_CODES`` (not renamed) because
+#: ``scripts/extract_mid_w_zwd_groups.py`` imports this exact name from this module.
 KERNWO_WEEKDAY_CODES = MID_SEED_COLUMNS.day_filter_values
 #: W_RBW == 1 marks a route-break summary leg (Ruecken/Bogen-Weg fragment introduced by MiD's own
 #: route-splitting), not a genuine, independently reported trip purpose; excluded so the fold is

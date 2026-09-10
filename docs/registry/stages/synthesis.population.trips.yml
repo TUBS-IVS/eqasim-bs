@@ -57,8 +57,8 @@ notes: >-
   Zweck" to leisure, following MiD's own hwzweck1 fold; escort_passive_from_adult (declared default
   FALSE, production true in configs/base_bs.yml -- it REQUIRES escort_purpose, whose declared
   default is false, so a true declared default would make the declared default set internally
-  inconsistent and abort after the full PopulationSim balancing) gives a PAIRED passive escort leg
-  (W_ZWECK 13) the purpose of the accompanying adult's leg, with escort_passive_pair_max_gap_minutes
+  inconsistent) gives a PAIRED passive escort leg (W_ZWECK 13) the purpose of the accompanying
+  adult's leg, with escort_passive_pair_max_gap_minutes
   (unit: minutes, default 15.0) the pairing window. Ruling C-R22 (issue #373 cleanup wave): this
   stage's OWN configure() now ALSO raises ValueError naming BOTH keys when
   escort_passive_from_adult is on and escort_purpose is off, so synpp fails the whole DAG before

@@ -28,8 +28,11 @@ description: 'Gives a PAIRED MiD passive escort leg (W_ZWECK 13, the escorted ch
   0.2451, other 0.1804, shop 0.1778, home 0.1283, escort 0.0000 -- i.e. 73.2 % of the passive mass
   leaves education, and 12.8 % of it is a trip HOME that used to be modelled as a school trip.
 
-  Requires escort_purpose: map_purpose raises ValueError naming BOTH keys when this flag is on and
-  escort_purpose is off. Because of that dependency the CODE and DECLARED default is False
+  Requires escort_purpose: braunschweig.popsim.trips_stage.configure() raises ValueError naming
+  BOTH keys when this flag is on and escort_purpose is off, so synpp fails the whole DAG before
+  any stage executes (ruling C-R22, cleanup wave fix round); map_purpose keeps the identical
+  check as a backstop for any direct caller outside this stage''s configure()/execute() contract.
+  Because of that dependency the CODE and DECLARED default is False
   (controller ruling C-R9, mirroring escort_passive_education) and the production ON state is
   realised ONLY by the configs/base_bs.yml line. The seed follows the same rule on the same leg
   universe (mid.participation.derive_education_flag_seed via

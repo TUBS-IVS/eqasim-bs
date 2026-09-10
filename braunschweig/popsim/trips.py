@@ -563,6 +563,29 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                     "mismatched index); the mask restricts which passive AND candidate-adult "
                     "legs the pairing considers, so a misaligned index would silently pair "
                     "the wrong rows.")
+            # MINOR 7 fix (cleanup wave fix round): a duplicate-labelled index makes the
+            # `.loc[paired_frame.index, column] = ...` assignment below raise an opaque pandas
+            # error ("Must have equal len keys and value when setting with an iterable") --
+            # fail loudly and name the count up front instead, since `.loc` by label requires
+            # a unique index to mean what this function assumes it means.
+            if out.index.has_duplicates:
+                duplicate_labels = out.index[out.index.duplicated(keep=False)].unique()
+                raise ValueError(
+                    f"[popsim.trips] escort_passive_from_adult: the Wege frame's index has "
+                    f"{len(duplicate_labels)} duplicate label(s) (e.g. "
+                    f"{sorted(duplicate_labels.tolist())[:10]}); pairing_candidate_mask "
+                    "restricts rows by index label via .loc, which requires a unique index. "
+                    "Call reset_index(drop=True) on the Wege frame before map_purpose.")
+            # MINOR 6 fix (cleanup wave fix round): pd.Series.astype(bool) casts NaN to True
+            # (NaN is a nonzero float), which would silently ADD a leg to the pairing's
+            # candidate universe instead of failing loudly -- fail before that cast can happen.
+            if pairing_candidate_mask.isna().any():
+                n_nan = int(pairing_candidate_mask.isna().sum())
+                raise ValueError(
+                    f"[popsim.trips] escort_passive_from_adult: pairing_candidate_mask has "
+                    f"{n_nan} NaN value(s); astype(bool) would silently cast a NaN to True, "
+                    "including that leg in the pairing's candidate universe by accident. "
+                    "Every entry must be an actual True/False.")
             mask = pairing_candidate_mask.astype(bool)
             candidates = out.loc[mask]
             paired_frame, pairing = pair_passive_legs(
@@ -598,7 +621,22 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                     100.0 * n_outside_mask / n_passive_total if n_passive_total else 0.0,
                     "education" if escort_passive_education else "escort",
                 )
-        is_passive_leg = (out[zweck_col] == PASSIVE_W_ZWECK).to_numpy()
+        # MINOR 5 fix (cleanup wave fix round): restrict the RATE denominator to the exact
+        # same set n_paired/n_passive already count over -- the whole frame when
+        # pairing_candidate_mask is None (today's behaviour, byte-identical: pairing_universe
+        # is then all-True, so this is a no-op), or the mask itself otherwise. Computing
+        # is_passive_leg over the WHOLE frame while n_passive came from pair_passive_legs'
+        # OWN mask-internal count (the masked branch above) silently understated share_paired
+        # whenever a passive leg outside the mask carried weight: that leg was never even a
+        # pairing candidate, so it must not inflate the denominator of "share of the legs the
+        # pairing actually considered that got paired".
+        if pairing_candidate_mask is None:
+            pairing_universe = np.ones(len(out), dtype=bool)
+            universe_description = "in the Wege frame"
+        else:
+            pairing_universe = mask.to_numpy()
+            universe_description = "inside the pairing's candidate universe"
+        is_passive_leg = (out[zweck_col] == PASSIVE_W_ZWECK).to_numpy() & pairing_universe
         if "W_GEW" in out.columns:
             weights = out["W_GEW"].astype(float).to_numpy()
             passive_weight = float(weights[is_passive_leg].sum())
@@ -612,10 +650,10 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
         # same code), which the count alone would not show.
         distribution = out.loc[is_paired, "purpose"].value_counts().to_dict()
         logger.info(
-            "[popsim.trips] escort_passive_from_adult ON: %d/%d passive legs (%.2f%% %s) take "
+            "[popsim.trips] escort_passive_from_adult ON: %d/%d passive legs %s (%.2f%% %s) take "
             "the paired adult's purpose %s; %d unpaired legs keep the passive rule (%r). "
             "Pairing outcome: %s",
-            n_paired, n_passive, 100.0 * share_paired, basis, distribution,
+            n_paired, n_passive, universe_description, 100.0 * share_paired, basis, distribution,
             n_passive - n_paired, "education" if escort_passive_education else "escort",
             {key: value for key, value in pairing.items() if key != "share_paired"},
         )

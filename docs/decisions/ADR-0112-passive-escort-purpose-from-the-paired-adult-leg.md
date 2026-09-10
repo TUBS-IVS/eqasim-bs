@@ -79,12 +79,16 @@
      counted and WARNed about, never silently mapped. Five `passive_pair_*` traceability columns
      (status, adult `W_ZWECK`, adult `P_ID`/`W_ID`, gap in minutes) travel with the trip table so a
      downstream analysis can see WHICH adult leg a purpose came from.
-  3. **Requires `escort_purpose`.** `map_purpose` raises `ValueError` naming BOTH keys when
-     `escort_passive_from_adult` is on and `escort_purpose` is off (without a dedicated escort
-     purpose there is no passive side to re-derive). Because of that dependency the DECLARED/CODE
-     default of this flag is `False` (controller ruling C-R9, mirroring `escort_passive_education`):
-     a `True` declared default would make the declared default set internally inconsistent and abort
-     inside `braunschweig.popsim.trips_stage` AFTER the full PopulationSim balancing. The production
+  3. **Requires `escort_purpose`.** `braunschweig.popsim.trips_stage.configure()` raises
+     `ValueError` naming BOTH keys when `escort_passive_from_adult` is on and `escort_purpose` is
+     off (ruling C-R22, cleanup wave fix round), so synpp fails the whole DAG before any stage
+     executes; `map_purpose` keeps the identical check as a backstop for a direct caller outside
+     this stage's `configure()`/`execute()` contract (without a dedicated escort purpose there is
+     no passive side to re-derive). Because of that dependency the DECLARED/CODE default of this
+     flag is `False` (controller ruling C-R9, mirroring `escort_passive_education`): a `True`
+     declared default would still be inconsistent with `escort_purpose`'s own `False` declared
+     default -- before the C-R22 fix this only surfaced inside `map_purpose`, i.e. AFTER the full
+     PopulationSim balancing; now `configure()` itself aborts before any stage runs. The production
      ON state is realised ONLY by the `configs/base_bs.yml` line this record's package adds --
      `braunschweig/popsim/stage/config_keys.py` carries the single statement of both defaults.
   4. **The pairing window is a configured parameter**, `escort_passive_pair_max_gap_minutes` (unit:
@@ -207,17 +211,17 @@
      child's purpose agrees with the adult's and the omission is inert. It would bite only on the
      pre-#241 A/B arm (flag OFF), where the adult's own leg reverts to `other` while the child would
      still receive `leisure`; that arm does not use `escort_passive_from_adult`.
-  7. **Cleanup wave (issue #373 task 2, ruling C-R20/C-R21):** `braunschweig.popsim.distance_distributions.run`
+  7. **Every household member with `HP_ALTER >= adult_min_age` counts as an adult**, without a guard
+     against coded age values. It holds on this delivery (max `HP_ALTER` 85, no missing values), but
+     the pairing would silently treat a future top-code or missing-value code above the threshold as
+     an adult; the module reads the column as delivered rather than validating a code range.
+  8. **Cleanup wave (issue #373 task 2, ruling C-R20/C-R21):** `braunschweig.popsim.distance_distributions.run`
      used to pair on the UNFILTERED Wege frame while the trip build pairs on
      `trips.legs_kept_by_the_trip_build`'s output (assumption 5's 6,386 vs 6,384 gap); it now takes a
      `map_purpose(..., pairing_candidate_mask=...)` built from the SAME helper and the SAME
      `exclude_rbw_legs`/`drop_leading_arrive_home_leg` config keys the trip build reads, so the two
      stages' pairings agree on which legs exist to be paired. The DISTANCE POOL itself is unaffected
      -- every leg still contributes a distance under whichever purpose it resolves to.
-  7. **Every household member with `HP_ALTER >= adult_min_age` counts as an adult**, without a guard
-     against coded age values. It holds on this delivery (max `HP_ALTER` 85, no missing values), but
-     the pairing would silently treat a future top-code or missing-value code above the threshold as
-     an adult; the module reads the column as delivered rather than validating a code range.
 - **Evidence:** issue **#372**; related **ADR-0072 / ADR-0073** (#201/#256/#257: the escort purpose
   family, the passive-as-education rule this replaces for paired legs, the SrV `V_ZWECK_BHOL`
   destination mix), **ADR-0109** / #368 (seed and plan must count the same legs), **ADR-0111** (the

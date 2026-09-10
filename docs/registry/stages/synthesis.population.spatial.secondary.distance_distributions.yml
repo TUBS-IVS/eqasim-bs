@@ -45,13 +45,22 @@ notes: >-
   purpose_subtype.leisure_spec(...).groups / other_errand_spec(...).groups, so the no-detail codes
   W_ZWD 799/699 leave the donor pool exactly when the chainsolver decider stops labelling legs into
   their group -- threading only one of the two would make the stages disagree about what
-  leisure_activity means. Gap CLOSED (issue #373 task 1, cleanup wave): this stage now declares
-  validate() with _HELPER_MODULES = (trips, time_imputation, escort_pairing) and
-  _DEFERRED_HELPER_MODULE_NAMES = (mid, purpose_subtype, shop_subtype, stage.config_keys), so an edit
-  to any of those helper modules -- not only to the four declared config VALUES above -- devalidates
-  the cached distance distributions (tests/test_synpp_helper_hash_invariant.py's
-  ALLOWED_VIOLATIONS entry for this stage was removed once the gate confirmed full own-package
-  coverage). Second gap CLOSED (issue #373 task 2, ruling C-R20/C-R21, cleanup wave): this stage now
+  leisure_activity means. Gap CLOSED (issue #373 task 1, cleanup wave, corrected in fix round 1):
+  this stage now declares validate() with _HELPER_MODULES = (trips, time_imputation,
+  escort_pairing, constants, the default synthesis.population.spatial.secondary.
+  distance_distributions module) and _DEFERRED_HELPER_MODULE_NAMES = (mid, mid.donor,
+  purpose_subtype, shop_subtype, stage.config_keys), so an edit to any of those helper modules --
+  not only to the four declared config VALUES above -- devalidates the cached distance
+  distributions (tests/test_synpp_helper_hash_invariant.py's ALLOWED_VIOLATIONS entry for this
+  stage was removed once the gate confirmed full own-package coverage). mid.donor is named
+  SEPARATELY from mid (fix round 1, IMPORTANT 1): the mid package __init__ only RE-EXPORTS
+  load_mid_wege, so hashing the package object alone hashes __init__.py's own text, never
+  donor.py's function body where load_mid_wege is actually defined -- the same transitive gap
+  braunschweig.popsim.completed_donor.py already closes for the identical module. constants
+  (ROUTED_DETOUR_FACTOR scales every distance value) and the default distance_distributions
+  module (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE inputs
+  hashed for the same reason; both were checked for import cycles (neither has any first-party
+  import) before being added. Second gap CLOSED (issue #373 task 2, ruling C-R20/C-R21, cleanup wave): this stage now
   ALSO declares braunschweig.population.popsim.exclude_rbw_legs and .drop_leading_arrive_home_leg
   (the same shared key/default constants braunschweig.popsim.trips_stage declares; production
   default true/true, configs/base_bs.yml), and run() forwards a
@@ -61,4 +70,4 @@ notes: >-
   the pairing's candidate universe is restricted; every leg still contributes a distance under
   whichever purpose it resolves to. The effect is bounded and small -- 6,386 pairs unfiltered vs
   6,384 filtered on the weekday legs, measured 2026-09-10 while regenerating
-  mid2023_escort_w_zweck_split.csv (ADR-0112 Assumptions 5 and 7).
+  mid2023_escort_w_zweck_split.csv (ADR-0112 Assumptions 5 and 8).

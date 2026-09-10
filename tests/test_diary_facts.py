@@ -65,25 +65,26 @@ def test_rbw_mask_matches_trips_rbw_leg_mask_including_nan():
 
 
 def test_compute_diary_facts_output_unchanged_on_the_module_fixture():
-    """Byte-identical output pin (CLAUDE.md 'preserve existing behaviour'): switching the
-    internal rbW rule from the inline ``W_RBW == 1`` comparison to ``trips.rbw_leg_mask``
-    must not change compute_diary_facts' result on the module's own fixture. Captured from
-    the pre-fix implementation (2026-09-10)."""
+    """Byte-identical output pin, INCLUDING dtype (CLAUDE.md 'preserve existing behaviour'):
+    switching the internal rbW rule from the inline ``W_RBW == 1`` comparison to
+    ``trips.rbw_leg_mask`` must not change compute_diary_facts' result on the module's own
+    fixture -- not even its column dtypes (the int columns are int32, per the astype(int)
+    casts in compute_diary_facts). Captured from the pre-fix implementation (2026-09-10)."""
     facts = df_mod.compute_diary_facts(_wege())
     expected = pd.DataFrame(
         {
-            "n_direct_legs": [2, 2, 0],
-            "n_rbw_legs": [2, 0, 2],
+            "n_direct_legs": np.array([2, 2, 0], dtype=np.int32),
+            "n_rbw_legs": np.array([2, 0, 2], dtype=np.int32),
             "rbw_distance_km": [25.0, 0.0, 7.0],
-            "first_so1": [1, 2, -1],
-            "first_direct_zweck": [1, 8, -1],
-            "last_direct_zweck": [8, 4, -1],
+            "first_so1": np.array([1, 2, -1], dtype=np.int32),
+            "first_direct_zweck": np.array([1, 8, -1], dtype=np.int32),
+            "last_direct_zweck": np.array([8, 4, -1], dtype=np.int32),
             "ends_at_home": [True, False, False],
             "starts_arriving_home": [False, True, False],
         },
         index=pd.MultiIndex.from_tuples([(1, 1), (1, 2), (2, 1)], names=["H_ID", "P_ID"]),
     )
-    pd.testing.assert_frame_equal(facts, expected, check_dtype=False)
+    pd.testing.assert_frame_equal(facts, expected, check_dtype=True)
 
 
 def test_attach_plan_source_facts_uses_source_keys_and_fills_missing():

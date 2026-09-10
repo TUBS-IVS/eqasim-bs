@@ -1071,3 +1071,112 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
     }
     assert captured["load_mid_seed"] == expected
     assert captured["project_completed_seed"] == expected
+
+
+class _StopAtSeedBuild(Exception):
+    """Sentinel raised by the capturing _build_populationsim_seed stub below, so
+    execute() never reaches the (real, expensive, unmocked) PopulationSim batching
+    that follows the seed build."""
+
+
+def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(monkeypatch):
+    """Issue #373 cleanup wave fix round, IMPORTANT 3: the two tests above pin the PRIVATE
+    _build_populationsim_seed function directly, which proves nothing about whether
+    braunschweig.popsim.stage.execute() itself actually resolves the three config keys and
+    forwards their VALUES into that call. This test drives the PUBLIC execute() entry point
+    with a config stub carrying non-default values for the three flags.
+
+    Every OTHER step execute() performs before the seed build (path/scope/RNG resolution,
+    donor-source resolution, control-set/KREIS-control assembly, 100 m cell loading and
+    grid-column injection) is monkeypatched to a trivial stand-in: none of those steps reads
+    or forwards the flags under test, and reproducing their own real behaviour here would only
+    duplicate tests/test_popsim_stage_*.py and tests/test_execute_context_config_contract.py
+    without adding coverage of the forwarding path this test targets. The stub context is
+    STRICT (raises on any key not explicitly stubbed), so an accidentally-unmocked step that
+    tries to read a real config key fails loudly here rather than silently reading a wrong
+    default. _build_populationsim_seed itself is replaced by a capturing stub that raises a
+    private sentinel exception immediately after recording its kwargs, so execute() never
+    reaches the real (and here entirely unmocked) PopulationSim batching that follows.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+
+    class _StrictExecuteContext:
+        """synpp's real ExecuteContext.config() contract: single-arg, no default; an
+        undeclared/unstubbed key must fail loudly, not silently return a placeholder."""
+
+        def __init__(self, values):
+            self._values = values
+
+        def config(self, key):
+            if key not in self._values:
+                raise AssertionError(
+                    f"unexpected context.config({key!r}) call -- either a step this test "
+                    "meant to mock away was not mocked, or the stub is missing a key")
+            return self._values[key]
+
+    values = {
+        popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
+        popsim_stage.KEY_DIARY_PLAN_MATCH: False,
+        popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
+        popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
+        popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
+        # The three flags under test -- all NON-DEFAULT (the pure function's own keyword
+        # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0), so a
+        # forwarding regression that silently falls back to the callee's default is caught
+        # by a value mismatch below, not just a missing-kwarg KeyError.
+        popsim_stage.KEY_W_ZWECK_10_AS_LEISURE: True,
+        popsim_stage.KEY_ESCORT_PASSIVE_FROM_ADULT: True,
+        popsim_stage.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+    }
+    context = _StrictExecuteContext(values)
+
+    class _Source:
+        name = "mid"
+
+    monkeypatch.setattr(
+        popsim_stage, "_read_stage_paths",
+        lambda ctx: ("cells.csv", "mid_dir", "controls.csv", "settings.yaml",
+                    "logging.yaml", "popsimprep", "uv"))
+    monkeypatch.setattr(
+        popsim_stage, "_read_batching_and_scope_config",
+        lambda ctx: (10, 1, "work_dir", [], "mid", False, False))
+    monkeypatch.setattr(
+        popsim_stage, "_create_seeded_rngs",
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
+    monkeypatch.setattr(popsim_stage, "_resolve_source", lambda source_name: _Source())
+    monkeypatch.setattr(
+        popsim_stage, "_read_control_config",
+        lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))
+    monkeypatch.setattr(
+        popsim_stage, "_build_control_frame",
+        lambda *args, **kwargs: (pd.DataFrame(), []))
+    monkeypatch.setattr(
+        popsim_stage, "_load_tier3_kreis_controls",
+        lambda ctx, control_tiers, controls_source, source_name, kreise: (None, None, set()))
+    monkeypatch.setattr(
+        popsim_stage, "_resolve_cell_load_columns", lambda *args, **kwargs: [])
+    monkeypatch.setattr(popsim_stage.mid, "load_control_cells", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(popsim_stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_add_aggregated_control_columns", lambda cells, *args, **kwargs: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_inject_employment_grid_columns", lambda ctx, cells, *args, **kwargs: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_inject_ownership_grid_columns", lambda ctx, cells, *args, **kwargs: cells)
+
+    captured = {}
+
+    def capturing_build_populationsim_seed(*args, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        raise _StopAtSeedBuild()
+
+    monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
+
+    with pytest.raises(_StopAtSeedBuild):
+        popsim_stage.execute(context)
+
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
