@@ -689,6 +689,9 @@ def test_the_tolerance_constant_has_exactly_one_home():
     from braunschweig.popsim import departure_time_model as M
 
     assert M.REFERENCE_SUM_TOLERANCE is SRVDT.REFERENCE_SUM_TOLERANCE
+    # The analysis module's SHARE_SUM_TOLERANCE is an alias of the same object, not a
+    # third literal: this stage validates the very cells the model maps from.
+    assert D.SHARE_SUM_TOLERANCE is SRVDT.REFERENCE_SUM_TOLERANCE
 
 
 def _write_duration_csv(root, table):

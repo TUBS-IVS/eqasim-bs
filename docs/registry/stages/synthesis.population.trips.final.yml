@@ -29,12 +29,15 @@ resolves_to:
   popsim_mid: braunschweig.synthesis.commute_day.trips_day_stage
 inputs:
 - mid2023_home_office_day_donors
+- srv2023_departure_time_reference
 features:
 - commute_day_state
 - general_day_absence
+- departure_time_model
 decisions:
 - ADR-0104
 - ADR-0110
+- ADR-0114
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
@@ -119,4 +122,38 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   day_absence_enabled at its code default for the identical no-consumer reason: it aliases
   neither matsim.scenario.population nor synthesis.population.trips.final to anything
   day-absence-aware (the .final alias there is the bare pre-assignment stage
-  synthesis.population.trips), so the flag remains unreachable there regardless of its value.'
+  synthesis.population.trips), so the flag remains unreachable there regardless of its value.
+
+
+  DEPARTURE-TIME MODEL, SECOND CALL SITE (issues #123 / #384, ADR-0114, feature record
+  departure_time_model). The spliced rows of this stage are the ONLY place besides
+  braunschweig.popsim.trips_stage.run where a departure time is shifted, because the home-office
+  donor pool deliberately leaves its days un-jittered so a donor day is never shifted twice
+  (ADR-0104). trips_day_stage therefore declares the SAME four keys as the pre-assignment stage
+  (departure_time_model, departure_time_mapping_min_reference_n, departure_time_mapping_min_model_n,
+  departure_time_mapping_max_median_shift_hours, all from braunschweig.popsim.stage.config_keys,
+  plus data_path) and passes them, with the loaded reference, into
+  plan_replacement.build_day_trips as a frozen DepartureTimeSettings; the reference comes from
+  the SAME helper both stages use (departure_time_model.load_reference_for_model), so a missing
+  file fails identically here and there, naming the path and the key. No new stage dependency was
+  needed: the harmonised group is built by persons_from_synthetic_schema from the
+  synthesis.population.enriched frame this stage already reads (ruling A-R13 of the #123 SDD
+  plan). The mapping cell is keyed by the RECEIVING person group and the DONOR chain first
+  purpose, and the persons handed to the model are RESTRICTED to the replaced set, because the
+  quantile mapping ranks a cell persons against each other -- passing the whole population would
+  give a replaced person a quantile computed against people this call is not touching.
+  departure_time=None keeps apply_per_person_jitter byte-identically, and OFFSET_COLUMN stays in
+  _RECOMPUTED_COLUMNS so it is neither nulled nor counted as an extra column on replaced rows
+  (the model overwrites it a few lines later). The model diagnostics are returned under
+  diagnostics["departure_time"] (None on the jitter path and when nothing was replaced -- never a
+  substituted empty report) and the stage logs the model name plus the coarsening-level split via
+  the shared departure_time_model.format_level_split. _HELPER_MODULES gained departure_time_model,
+  calibration.reported_time_precision, calibration.srv_departure_times,
+  calibration.srv_plan_structure (it supplies the group rule the mapping cell is keyed on) and
+  popsim.plan_validation (its MAX_PLAN_TIME_SECONDS is the upper clip bound), all five
+  CROSS-package and therefore invisible to tests/test_synpp_helper_hash_invariant.py, which
+  polices own-package siblings only. Known limitation, documented in ADR-0114 rather than
+  repeated here: departure_time_mapping_min_model_n governs BOTH call sites, so at small sampling
+  rates the much smaller spliced set coarsens or stays unmapped -- read this stage own level-split
+  log line before trusting a srv_mapped reporting day. The mechanism itself lives once in
+  docs/codebase/notes/departure-time-model.md.'

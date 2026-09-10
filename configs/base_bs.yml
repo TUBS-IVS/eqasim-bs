@@ -163,6 +163,19 @@ config:
   # and any residual on top over-absents singles. 2 (default) = residual only on
   # multi-person households; 1 = the PR #387 behaviour (byte-identical).
   day_absence_individual_stage_min_household_size: 2
+  # Departure-time model (ADR-0114). eqasim shifts every person's day by one uniform
+  # offset in +/-min(30 min, first departure) to break the survey's reporting grid; that
+  # is four times wider than the grid (quarter-hour / 5-minute reports) and flattened the
+  # school peak (+9 pp into hour 6 on the raw pool). 'derounded' draws the offset inside
+  # the reporting-precision cell of the first departure; 'srv_mapped' (default) then maps
+  # the first departure rank-preservingly onto the de-rounded SrV 2023 distribution of the
+  # person's (first purpose x group) cell and shifts the whole chain by the result -- the
+  # SrV start times are a CALIBRATION target, later trips and activity durations are the
+  # hold-out validation (analysis/departure_time_vs_srv). 'eqasim_uniform' = today.
+  departure_time_model: srv_mapped
+  departure_time_mapping_min_reference_n: 200
+  departure_time_mapping_min_model_n: 50
+  departure_time_mapping_max_median_shift_hours: 2.0
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location

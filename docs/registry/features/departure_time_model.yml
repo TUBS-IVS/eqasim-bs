@@ -1,0 +1,202 @@
+feature: departure_time_model
+title: Departure-time model (precision-aware de-rounding and SrV first-departure mapping)
+area: behavior
+description: 'Replaces the inherited eqasim "Diversify departure times" jitter -- one uniform
+  offset per person in +/- min(1800 s, first departure), reproduced exactly by
+  braunschweig.popsim.trips_stage.apply_per_person_jitter -- by a configurable model with three
+  modes behind one dispatch (braunschweig.popsim.departure_time_model.apply_departure_time_model,
+  config key departure_time_model; issues #123 / #384, ADR-0114). eqasim_uniform is the unchanged
+  jitter and the byte-identical OFF path (the CODE default); derounded draws one per-person offset
+  inside the REPORTING-PRECISION cell of the person''s first departure (+/- 7.5 min for a
+  quarter-hour report, +/- 2.5 min for a five-minute report, 0 for a to-the-minute one --
+  braunschweig/calibration/reported_time_precision.py), i.e. the survey''s actual precision
+  instead of an inherited constant four times wider than it; srv_mapped (the production value in
+  configs/base_bs.yml) then maps that de-rounded first departure RANK-PRESERVINGLY onto the
+  de-rounded SrV 2023 first-departure distribution of the person''s (first purpose x harmonised
+  group) cell and shifts the whole chain by the result.
+
+  In every mode the person''s WHOLE chain moves by ONE whole-second offset, so trip and activity
+  durations are bitwise unchanged, and every mode records the offset it applied as the trips
+  column departure_time_offset_seconds (OFFSET_COLUMN) so a realised time can be decomposed
+  without re-deriving anything from the RNG stream. Thin mapping cells climb a coarsening ladder
+  ((purpose, group) -> (purpose, all) -> (all, all) -> unmapped) gated by
+  departure_time_mapping_min_reference_n on the reference side and
+  departure_time_mapping_min_model_n on the pooled model side; an unmapped person keeps only the
+  de-rounding. The model runs at exactly TWO call sites: braunschweig.popsim.trips_stage.run (the
+  pre-assignment view, whole population) and
+  braunschweig.synthesis.commute_day.plan_replacement.build_day_trips (the spliced home-office
+  chains of the reporting-day view, keyed by the RECEIVING person''s group and the donor chain''s
+  first purpose -- the generalisation of ADR-0104''s "jitter exactly once, keyed by the receiving
+  person"). EntdSource.build_trips REJECTS a non-default departure_time_model naming the key (the
+  ENTD path has no SrV cell structure) and both popsim_open fixtures set eqasim_uniform
+  explicitly. The mechanism -- precision rule, mapping, ladder, offset column, call sites, guards
+  -- is documented ONCE in docs/codebase/notes/departure-time-model.md; WHY it exists and what was
+  rejected is ADR-0114.
+
+  Scope, and the limit of what a good fit proves: ONLY the first departure is calibrated. The SrV
+  first-departure distribution is the model''s CALIBRATION TARGET, so reproducing it demonstrates
+  that the wiring, cells and ladder work -- never that the model predicts departure behaviour.
+  Later-trip departures, activity durations and per-Kreis structure are the HOLD-OUT dimensions,
+  measured by braunschweig.analysis.synthesis.departure_time_vs_srv, which labels every EMD row
+  calibrated or holdout for exactly this reason.'
+stages:
+- synthesis.population.trips
+- synthesis.population.trips.final
+- braunschweig.analysis.synthesis.departure_time_vs_srv
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - departure_time_model
+  - departure_time_mapping_min_reference_n
+  - departure_time_mapping_min_model_n
+  - departure_time_mapping_max_median_shift_hours
+introduced:
+  issue: 123
+  pr: null
+  adr: ADR-0114
+code_paths:
+- braunschweig/calibration/reported_time_precision.py
+- braunschweig/calibration/srv_departure_times.py
+- scripts/extract_srv_departure_times.py
+- braunschweig/popsim/departure_time_model.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/sources/base.py
+- braunschweig/popsim/sources/mid.py
+- braunschweig/popsim/sources/entd.py
+- braunschweig/synthesis/commute_day/plan_replacement.py
+- braunschweig/synthesis/commute_day/trips_day_stage.py
+- braunschweig/analysis/departure_time.py
+- braunschweig/analysis/synthesis/departure_time_vs_srv.py
+evidence:
+  tests:
+  - tests/test_reported_time_precision.py
+  - tests/test_srv_departure_times.py
+  - tests/test_departure_time_model.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_commute_day_plan_replacement.py
+  - tests/test_commute_day_stages.py
+  - tests/test_departure_time_vs_srv.py
+  - tests/test_trips_adapter_signature_parity.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_trips_stage.py::test_run_default_is_byte_identical_on_contract_columns
+    note: 'departure_time_model declares the OFF value eqasim_uniform as its CODE default
+      (braunschweig.popsim.stage.config_keys.DEFAULT_DEPARTURE_TIME_MODEL) and configs/base_bs.yml
+      sets srv_mapped, so the OFF path is what a caller or a fixture that does not compose the
+      production base gets. It is proven at all four levels rather than asserted once: the
+      DISPATCH delegates to apply_per_person_jitter and returns an equal frame
+      (tests/test_departure_time_model.py::test_eqasim_uniform_is_byte_identical_to_apply_per_person_jitter);
+      the STAGE reproduces pinned golden values on CONTRACT + OFFSET_COLUMN, including the offset
+      literals, computed at eff5720c before the dispatch was rewired
+      (tests/test_popsim_trips_stage.py::test_run_default_is_byte_identical_on_contract_columns,
+      the test named above); the PRE-#123 jitter itself is pinned against values extracted from
+      trips_stage.py at 3acd382d, the branch base
+      (tests/test_popsim_trips_stage.py::test_jitter_output_matches_the_pre_task_1_golden_values);
+      and the PLAN REPLACEMENT keeps the jitter byte-identically both without settings and with
+      explicit eqasim_uniform settings, which is what the stage actually passes in production
+      (tests/test_commute_day_plan_replacement.py::test_departure_time_none_keeps_the_eqasim_jitter_byte_identically
+      and ::test_eqasim_uniform_settings_are_byte_identical_to_no_settings_at_all). The one column
+      that legitimately CHANGES on the OFF path is the new departure_time_offset_seconds, which
+      apply_per_person_jitter now records for the offset it was already applying (no new RNG draw,
+      no reordering of the existing shift-and-round lines); it is an extra column and
+      synthesis.output selects its columns explicitly, so trips.csv is unchanged.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[departure time]'
+    note: 'The marker (braunschweig/popsim/departure_time_model.py, verified present in source)
+      carries every rate the model owns, each as n/total (rate) via the single helper
+      format_level_split, which both stages reuse so a stage line and the model line can never
+      disagree: the per-level split of the coarsening ladder (purpose_group / purpose_all /
+      all_all / unmapped), the unmapped count (those persons kept the donor''s own start time --
+      the SrV calibration did NOT happen for them; WARN above UNMAPPED_SHARE_WARN_THRESHOLD =
+      0.05), the coarsened share (WARN above COARSENED_SHARE_WARN = 0.25, an observability
+      ASSUMPTION and not a scientific bound, stated as such in the constant''s docstring), the
+      per-cell level / n_model / n_model_pooled / n_reference and both medians, the
+      median-absolute-shift guard (WARN above departure_time_mapping_max_median_shift_hours), the
+      lower/upper clip counts and clip-bound conflicts, persons without a first departure, the
+      sub-minute-residue count of the de-rounding, and the unknown-P_TAET rate of the MiD person
+      adapter (WARN above 10 %, treated as not employed -- a documented ASSUMPTION, not an
+      imputation). Two further guards refuse rather than fall back: a missing committed reference
+      raises naming BOTH the expected path and the config key (load_reference_for_model, one
+      helper for both stages, so both fail identically), and a reference cell that is not dense
+      over the 112 bins, whose n_unweighted varies within the cell, or whose share columns do not
+      sum to 1 raises naming the cell (srv_departure_times.validate_departure_time_table). The
+      analysis stage adds its own instrumentation under its own tag -- raw-time coverage,
+      skipped-cell counts, clip counts -- see the stage record
+      braunschweig.analysis.synthesis.departure_time_vs_srv. No run has executed this model yet
+      (validation.state below), so every rate above is a unit-tested design guard, not a measured
+      production figure.'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_departure_time_reference.csv
+    note: 'SrV 2023 BS+RGB de-rounded departure-time distribution per segment x purpose x position
+      x 15-minute bin (data record srv2023_departure_time_reference). Position first is the
+      CALIBRATION TARGET the srv_mapped model maps onto; positions later/all and the sibling table
+      eqasim-data/data/braunschweig/srv/srv2023_activity_duration_reference.csv (data record
+      srv2023_activity_duration_reference) are the HOLD-OUT reference, read only by the analysis
+      stage. Neither is a PopulationSim control target: no synthesis or location stage is
+      controlled to these shares.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured. ADR-0114''s pre-registered A/B (Consequences section) specifies three
+    arms (0: eqasim_uniform = today; 1: derounded; 2: srv_mapped) and five rows -- the hour-6
+    share of first education legs of 6-17-year-olds, the first-trip 15-minute EMD against the
+    de-rounded SrV reference per (purpose, group) cell with n_srv >= 200 (the CALIBRATED
+    dimension), the later-trip 15-minute EMD per purpose and the activity-duration bands per
+    purpose (both HOLD-OUT), and the unmapped share -- against explicit tolerance bands, to be run
+    as Task 8 of the #123 SDD plan on a cached population. Every expected value in that table is
+    labelled an ASSUMPTION in the record.'
+  note: 'No run has executed this model as of this record (the documentation task is written
+    before the A/B run). validation.state is unvalidated, not measured_vs_reference, per CLAUDE.md
+    "convergence is not validation" and "no invented reference values": the committed SrV table is
+    evidence for the DESIGN and, for srv_mapped, the CALIBRATION TARGET itself -- a model output
+    matching a distribution it was fitted to is not a validation result. The hold-out rows
+    (later-trip EMD, activity durations) are what could produce one. Do not cite the pre-registered
+    A/B table in ADR-0114 as a result until a run manifest under docs/runs/ records it and this
+    record is updated to point at it.'
+assessment:
+  status: pending
+  pending_reason: 'The pre-registered A/B (ADR-0114 Consequences, Task 8 of the #123 SDD plan) has
+    not run; nothing has been measured on a live population, so there is no basis to assess the
+    realised behaviour of the model -- only its designed and unit-tested one, including the
+    realised coarsening-level split, which is only observable on a full-scale run.'
+notes: 'Pipelines. popsim_open is inactive, not not_used: its trip build DOES read
+  departure_time_model (braunschweig.popsim.trips_stage resolves synthesis.population.trips
+  there), but EntdSource.build_trips rejects any non-default value via
+  config_keys.ENTD_REJECTED_KEYS, so both committed fixtures
+  (configs/fixtures/config_popsim_open_braunschweig.yml,
+  configs/fixtures/config_smoke_popsim_open_mini.yml) set departure_time_model: eqasim_uniform
+  explicitly and the model itself never runs there; the three numeric keys are model parameters,
+  not MiD-only keys, and are deliberately NOT rejected. simple_ipf_open is not_used: it keeps the
+  upstream ENTD statistical matching for synthesis.population.trips, which reads none of these
+  keys, and it aliases synthesis.population.trips.final to the bare pre-assignment stage.
+
+  Composition. The model runs on the population produced by the general day-absence draw
+  (feature general_day_absence, ADR-0110 -- an absent person has no trips to shift) and on the
+  corrected purposes of ADR-0111 / ADR-0112 (features purpose_main_fold_code_10,
+  escort_passive_from_adult), which the mapping CELL is keyed on; its measured effects are
+  therefore not separable from those decisions. The second call site is the reporting-day splice
+  of the commute_day_state feature, whose record carries a one-sentence pointer here -- the rule
+  itself lives once, in plan_replacement.build_day_trips''s departure_time keyword and in
+  docs/codebase/notes/departure-time-model.md.
+
+  Cache. braunschweig.popsim.trips_stage and
+  braunschweig.synthesis.commute_day.trips_day_stage fold the model module and its cross-package
+  helpers into their _HELPER_MODULES hash (validate() hashes non-transitively), so an edit to the
+  model, the precision rule, the reference builder, the group rule or the plan-time bound
+  devalidates synthesis.population.trips and everything downstream -- but NOT PopulationSim.
+  tests/test_synpp_helper_hash_invariant.py polices own-package siblings only, so the
+  cross-package entries are the ones a future edit could silently lose.
+
+  Known limitation (ADR-0114 Consequences/Assumptions): departure_time_mapping_min_model_n governs
+  BOTH call sites, so at small sampling rates the much smaller spliced set coarsens or stays
+  unmapped where the whole-population build maps at purpose_group. Both call sites log their own
+  level split. Whether the splice needs its own threshold is an open question, deliberately not
+  answered in this package.'

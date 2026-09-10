@@ -38,9 +38,12 @@ pipelines:
   simple_ipf_open: not_used
 production: true
 inputs:
-- srv2023_reference_tables
-features: []
-decisions: []
+- srv2023_departure_time_reference
+- srv2023_activity_duration_reference
+features:
+- departure_time_model
+decisions:
+- ADR-0114
 notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
   decomposition.csv (segment, purpose, position, hour, share_raw, share_pre_offset,
   share_realised, n_raw, n -- dense over hours 0..27 for all 144 cells), comparison.csv
@@ -132,4 +135,16 @@ notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
   ::test_execute_refuses_a_trips_frame_without_the_offset_column,
   ::test_decomposition_share_raw_is_nan_when_the_cell_has_no_raw_time,
   ::test_bin_comparison_skips_cells_where_either_side_is_empty,
-  ::test_emd_table_labels_the_first_position_calibrated_and_the_others_holdout.'
+  ::test_emd_table_labels_the_first_position_calibrated_and_the_others_holdout.
+
+
+  REFERENCES AND ROLES. inputs names the two per-table data records
+  (srv2023_departure_time_reference, srv2023_activity_duration_reference) rather than the generic
+  srv2023_reference_tables glob, so the provenance, de-rounding seed, universe and exclusion
+  counts of each committed file are one lookup away. Which side of each comparison is CALIBRATED
+  and which is HOLD-OUT is stated in those records and in ADR-0114 -- position first of the
+  departure-time table is the target the srv_mapped model was fitted to (so matching it evidences
+  wiring, never behaviour), positions later/all and the entire activity-duration table are the
+  hold-out. The model this stage measures is the feature record departure_time_model, whose
+  validation.state stays unvalidated with runs [] until a manifest under docs/runs/ records the
+  pre-registered A/B; nothing this stage writes may be cited as validation before that.'

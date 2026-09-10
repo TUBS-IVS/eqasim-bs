@@ -153,9 +153,12 @@ DURATION_COLUMNS = ["segment", "purpose", "band", "share_model", "share_srv", "d
                     "n_model", "n_srv"]
 
 #: A reference cell's two share columns must each sum to 1 before they can be fed to
-#: ``emd_on_bands`` (which assumes normalised inputs). Same tolerance as the model module's
-#: reference validation.
-SHARE_SUM_TOLERANCE = 1e-6
+#: ``emd_on_bands`` (which assumes normalised inputs). This is an ALIAS, not a second copy:
+#: the tolerance lives once, next to the builder that normalises the committed shares
+#: (:data:`braunschweig.calibration.srv_departure_times.REFERENCE_SUM_TOLERANCE`, which
+#: ``departure_time_model`` re-exports under the same name), so this module cannot accept a
+#: reference cell the model's own loader rejects, or the other way round.
+SHARE_SUM_TOLERANCE = SRVDT.REFERENCE_SUM_TOLERANCE
 
 #: Below this share of legs with a usable raw MiD time the raw column of the decomposition
 #: describes only a minority of the day and the stage WARNS. It is not an error: the

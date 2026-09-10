@@ -20,6 +20,8 @@ production: true
 resolves_to:
   popsim_mid: braunschweig.popsim.trips_stage
   popsim_open: braunschweig.popsim.trips_stage
+inputs:
+- srv2023_departure_time_reference
 features:
 - escort_purpose
 - escort_passive_from_adult
@@ -27,6 +29,7 @@ features:
 - no_answer_codes_excluded
 - purpose_main_fold_code_10
 - rbw_leg_convention
+- departure_time_model
 decisions:
 - ADR-0072
 - ADR-0073
@@ -35,6 +38,7 @@ decisions:
 - ADR-0111
 - ADR-0112
 - ADR-0117
+- ADR-0114
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -88,3 +92,31 @@ notes: >-
   carry no wegkm_imp. Byte-identical on the 2026-09 delivery, which carries no impossible value
   in 1,087,393 rows. This stage does NOT change how a W_ZWECK 99 leg is mapped -- it keeps the
   purpose "other", because the trip is real; only the ESTIMATIONS exclude it (ADR-0117 Decision 2).
+  DEPARTURE-TIME MODEL (issues #123 / #384, ADR-0114, feature record departure_time_model): four
+  further flat MiD-only keys are declared and read here, again from the shared constant pair in
+  braunschweig.popsim.stage.config_keys -- departure_time_model (declared default eqasim_uniform,
+  production srv_mapped in configs/base_bs.yml), departure_time_mapping_min_reference_n (200,
+  unit: unweighted SrV observations), departure_time_mapping_min_model_n (50, unit: persons) and
+  departure_time_mapping_max_median_shift_hours (2.0, unit: hours), the last three inert unless
+  the model is srv_mapped. run() dispatches through
+  braunschweig.popsim.departure_time_model.apply_departure_time_model instead of calling
+  apply_per_person_jitter directly; execute() resolves the model FIRST and loads the committed
+  SrV reference (data record srv2023_departure_time_reference) via load_reference_for_model, which
+  raises naming both the expected path and the config key rather than running uncalibrated. The
+  persons frame is adapted at the TOP of run() by persons_from_mid_schema (HP_ALTER -> age,
+  P_TAET in attributes.EMPLOYED_TAET -> employed), so a schema gap fails in seconds and only for
+  models that consume it. EVERY model -- eqasim_uniform included -- writes the per-person offset
+  it applied as the new column departure_time_offset_seconds (OFFSET_COLUMN, declared in
+  departure_time_model and re-exported here); synthesis.output selects its columns explicitly, so
+  trips.csv is unchanged. The stage logs the model name and the coarsening-level split via
+  departure_time_model.format_level_split ("[trips_stage] departure-time model: ... mapping level:
+  ..."), the model logs its own per-cell detail under [departure time]. EntdSource.build_trips
+  REJECTS a non-default departure_time_model (config_keys.ENTD_REJECTED_KEYS) because the ENTD
+  trip build never reaches the model at all; the three numeric keys are model parameters and are
+  deliberately NOT rejected, and both popsim_open fixtures set departure_time_model:
+  eqasim_uniform explicitly. _HELPER_MODULES gained departure_time_model plus the four modules it
+  imports at module level (calibration.reported_time_precision, calibration.srv_departure_times,
+  calibration.srv_plan_structure, popsim.attributes) because validate() hashes non-transitively;
+  the last four are CROSS-package, which tests/test_synpp_helper_hash_invariant.py cannot police.
+  The mechanism itself -- precision rule, mapping, ladder, guards, the second call site in the
+  reporting-day view -- lives once in docs/codebase/notes/departure-time-model.md.

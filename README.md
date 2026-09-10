@@ -222,6 +222,7 @@ tables keep all reference comparisons working.
 | Participation-universe Kreis targets (committed) | `python scripts/build_participation_universe_targets.py` (no raw data: reads the two SrV aggregates above and the committed `target2026_employment_status_by_kreis.csv`) | `braunschweig/targets/target2026_work_by_employment_by_kreis.csv`, `braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv` — read by the popsim stage whenever the controls of issue #368 are on (the default) |
 | MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below). The model's own run-time donor pool (data record `mid2023_home_office_day_donors`) has no separate file: it is rebuilt fresh from the raw MiD delivery on every run. | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
 | SrV general day-absence aggregates (committed) | `python scripts/extract_srv_absence.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run and are read at run time by the general day-absence model (ADR-0110, below) | `braunschweig/srv/srv2023_absence_by_age_band.csv`, `braunschweig/srv/srv2023_absence_household_by_size.csv` |
+| SrV departure-time + activity-duration references (committed) | `python scripts/extract_srv_departure_times.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run. The departure-time table is read at run time by the departure-time model (ADR-0114, `departure_time_model: srv_mapped`), which aborts naming the path and the config key if it is missing; both are read by the `departure_time_vs_srv` analysis stage | `braunschweig/srv/srv2023_departure_time_reference.csv`, `braunschweig/srv/srv2023_activity_duration_reference.csv` |
 
 Two diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):
@@ -355,6 +356,33 @@ them, and `popsim_open` keeps the ENTD distance CDFs instead of estimating on Mi
 [`docs/codebase/notes/mid-purpose-mapping.md`](docs/codebase/notes/mid-purpose-mapping.md)
 for where the MiD purpose vocabulary is produced and which consumers must read the
 same flags.
+
+**Departure-time model keys (`popsim_mid` only).** Four more flat keys decide WHEN a
+synthetic person's day starts (issues #123 / #384, ADR-0114, feature record
+`departure_time_model`). They replace the inherited eqasim jitter — one uniform offset
+per person in +/-min(30 min, first departure) — by a model that de-rounds the reported
+first departure inside its actual reporting-precision cell and, by default, maps it onto
+the committed SrV 2023 first-departure distribution of the person's (purpose × group)
+cell. The whole chain moves by one offset, so trip and activity durations are unchanged.
+The DECLARED (stage) default of `departure_time_model` is **`eqasim_uniform`** — the
+byte-identical OFF path — so a configuration that does not compose this base keeps
+today's behaviour:
+
+| Key (flat, no prefix) | Value in `configs/base_bs.yml` | Effect |
+|---|---|---|
+| `departure_time_model` | `srv_mapped` (DECLARED default `eqasim_uniform`) | `eqasim_uniform` = the inherited +/-min(30 min, first departure) jitter; `derounded` = one offset drawn inside the reporting-precision cell of the first departure (+/-7.5 min on the quarter hour, +/-2.5 min on the five-minute grid, 0 for a to-the-minute report); `srv_mapped` = `derounded` plus a rank-preserving quantile mapping of the first departure onto the de-rounded SrV 2023 distribution of the person's cell. The ENTD donor source **rejects** any non-default value (no SrV cell structure); both `popsim_open` fixtures set `eqasim_uniform` explicitly. |
+| `departure_time_mapping_min_reference_n` | `200` (unweighted SrV observations) | A reference cell below this count is too thin to map onto; the model climbs the coarsening ladder `(purpose, group)` → `(purpose, all)` → `(all, all)` → unmapped. Inert unless the model is `srv_mapped`. |
+| `departure_time_mapping_min_model_n` | `50` (persons) | The pooled model-side count a ladder rung needs before it is used; below it at every rung the person stays unmapped and keeps only the de-rounding. **Governs both call sites** (the whole-population trip build and the much smaller spliced home-office set), so small scales coarsen more — the realised level split is logged per call site. Inert unless the model is `srv_mapped`. |
+| `departure_time_mapping_max_median_shift_hours` | `2.0` (hours) | Guard: a mapping cell whose median absolute shift exceeds this WARNS, naming the cell, both medians and the level. Offsets are never clipped to it — it flags a suspect cell, it does not silently fix one. |
+
+The SrV first-departure distribution is the model's **calibration target**, so reproducing
+it proves the wiring, not the behaviour; later-trip departures and activity durations are
+the hold-out, measured by the analysis stage
+`braunschweig.analysis.synthesis.departure_time_vs_srv` (report under
+`analysis/departure_time_vs_srv/`). See
+[`docs/codebase/notes/departure-time-model.md`](docs/codebase/notes/departure-time-model.md)
+for the mechanism, the two call sites and why the older `dep_hour_share_*` rows of
+`plan_structure_vs_srv` are biased by construction.
 
 **Local open-data smokes** (no restricted MiD data needed):
 
