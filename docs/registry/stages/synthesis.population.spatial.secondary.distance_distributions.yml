@@ -51,12 +51,14 @@ notes: >-
   to any of those helper modules -- not only to the four declared config VALUES above -- devalidates
   the cached distance distributions (tests/test_synpp_helper_hash_invariant.py's
   ALLOWED_VIOLATIONS entry for this stage was removed once the gate confirmed full own-package
-  coverage). Second known gap, still pre-existing and NOT fixed here: this stage declares NEITHER
-  braunschweig.population.popsim.exclude_rbw_legs NOR
-  .drop_leading_arrive_home_leg, so its map_purpose call pairs passive escort legs on the
-  UNFILTERED Wege frame while the trip build pairs on the filtered one. A passive leg whose nearest
-  adult leg is an rbW summary leg or a leading arrive-home leg can therefore land in a different
-  purpose's distance layer than the purpose the plan realises. The effect is bounded and small --
-  6,386 pairs unfiltered vs 6,384 filtered on the weekday legs, measured 2026-09-10 while
-  regenerating mid2023_escort_w_zweck_split.csv -- and it is proposed as an issue rather than
-  changed here, because threading the two keys would widen this stage's declared key set.
+  coverage). Second gap CLOSED (issue #373 task 2, ruling C-R20/C-R21, cleanup wave): this stage now
+  ALSO declares braunschweig.population.popsim.exclude_rbw_legs and .drop_leading_arrive_home_leg
+  (the same shared key/default constants braunschweig.popsim.trips_stage declares; production
+  default true/true, configs/base_bs.yml), and run() forwards a
+  trips.legs_kept_by_the_trip_build-derived pairing_candidate_mask to the new
+  trips.map_purpose(pairing_candidate_mask=...) keyword, so its passive-escort pairing's candidate
+  universe agrees with the trip build's. The DISTANCE POOL itself is unaffected by this mask -- only
+  the pairing's candidate universe is restricted; every leg still contributes a distance under
+  whichever purpose it resolves to. The effect is bounded and small -- 6,386 pairs unfiltered vs
+  6,384 filtered on the weekday legs, measured 2026-09-10 while regenerating
+  mid2023_escort_w_zweck_split.csv (ADR-0112 Assumptions 5 and 7).

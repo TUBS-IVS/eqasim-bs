@@ -207,6 +207,13 @@
      child's purpose agrees with the adult's and the omission is inert. It would bite only on the
      pre-#241 A/B arm (flag OFF), where the adult's own leg reverts to `other` while the child would
      still receive `leisure`; that arm does not use `escort_passive_from_adult`.
+  7. **Cleanup wave (issue #373 task 2, ruling C-R20/C-R21):** `braunschweig.popsim.distance_distributions.run`
+     used to pair on the UNFILTERED Wege frame while the trip build pairs on
+     `trips.legs_kept_by_the_trip_build`'s output (assumption 5's 6,386 vs 6,384 gap); it now takes a
+     `map_purpose(..., pairing_candidate_mask=...)` built from the SAME helper and the SAME
+     `exclude_rbw_legs`/`drop_leading_arrive_home_leg` config keys the trip build reads, so the two
+     stages' pairings agree on which legs exist to be paired. The DISTANCE POOL itself is unaffected
+     -- every leg still contributes a distance under whichever purpose it resolves to.
   7. **Every household member with `HP_ALTER >= adult_min_age` counts as an adult**, without a guard
      against coded age values. It holds on this delivery (max `HP_ALTER` 85, no missing values), but
      the pairing would silently treat a future top-code or missing-value code above the threshold as

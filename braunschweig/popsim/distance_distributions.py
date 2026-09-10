@@ -307,6 +307,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        exclude_rbw_legs: bool = False,
+        drop_leading_arrive_home_leg: bool = False,
         codeplan_sentinels: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
@@ -379,6 +381,29 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     passive_pair_max_gap_minutes:
         Maximum |departure-time gap| in MINUTES for that pairing; inert unless
         ``escort_passive_from_adult`` is True.
+    exclude_rbw_legs:
+    drop_leading_arrive_home_leg:
+        Issue #373 task 2 (ruling C-R20/C-R21). Restrict the passive-escort
+        pairing's CANDIDATE UNIVERSE (both the passive legs it may pair and
+        the adult legs it may pair them with) to
+        ``trips.legs_kept_by_the_trip_build(mid_wege, exclude_rbw_legs=...,
+        drop_leading_arrive_home_leg=...)``, forwarded to ``map_purpose`` as
+        ``pairing_candidate_mask``. The trip build itself already drops these
+        legs BEFORE it pairs (they never reach ``map_purpose`` there), so its
+        pairing naturally agrees with these flags; this stage keeps every leg
+        for its OWN distance pool (which is UNAFFECTED by these two flags --
+        they only narrow which legs the PAIRING considers), so without this
+        it could pair a passive leg to a leg the plan never realises (an
+        excluded rbW summary leg or a dropped leading arrive-home leg),
+        landing the leg's distance under a purpose the plan does not give it.
+        Both default False (matching every other flag's code default in this
+        function; the byte-identical direct-call behaviour, with the pairing
+        considering every leg); ``configure()``/``execute()`` read the SAME
+        shared ``KEY_EXCLUDE_RBW_LEGS`` / ``KEY_DROP_LEADING_ARRIVE_HOME_LEG``
+        constants ``braunschweig.popsim.trips_stage`` declares, whose
+        production default (``configs/base_bs.yml``) is True for both, so a
+        full pipeline run resolves the SAME value the trip build uses. Inert
+        unless ``escort_passive_from_adult`` is also True.
     codeplan_sentinels:
         When True (issue #242 Task 5, ADR-0113), the leisure_subtype_split /
         other_subtype_split donor pools above are built from
@@ -435,6 +460,34 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
     df = mid_wege.copy()
 
+    # --- Step 0b: restrict the passive-escort pairing's candidate universe -----
+    # (issue #373 task 2, ruling C-R20/C-R21). Built BEFORE map_purpose (which does
+    # the actual pairing) and BEFORE the primary/secondary filter below, from the
+    # SAME helper the trip build's own leg-drop step uses -- see the run() docstring's
+    # exclude_rbw_legs/drop_leading_arrive_home_leg entry for the full rationale. A
+    # mask is only constructed when at least one flag is True, so the default
+    # (both False) leaves pairing_candidate_mask at None and map_purpose takes its
+    # byte-identical OFF path (no mask ever built or passed).
+    pairing_candidate_mask = None
+    if exclude_rbw_legs or drop_leading_arrive_home_leg:
+        kept = _trips.legs_kept_by_the_trip_build(
+            df, exclude_rbw_legs=exclude_rbw_legs,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        )
+        pairing_candidate_mask = pd.Series(df.index.isin(kept.index), index=df.index)
+        n_total_legs = len(df)
+        n_candidate_legs = int(pairing_candidate_mask.sum())
+        logger.info(
+            "[popsim.distance_distributions] pairing_candidate_mask "
+            "(exclude_rbw_legs=%s, drop_leading_arrive_home_leg=%s): %d/%d legs "
+            "(%.1f%%) form the passive-escort pairing's candidate universe; the "
+            "DISTANCE POOL itself is unaffected by this mask -- every leg still "
+            "contributes its distance under whichever purpose it resolves to.",
+            exclude_rbw_legs, drop_leading_arrive_home_leg,
+            n_candidate_legs, n_total_legs,
+            100.0 * n_candidate_legs / n_total_legs if n_total_legs else 0.0,
+        )
+
     # --- Step 1: map mode and purpose from MiD codes. ----------------------
     df = map_mode(map_purpose(
         df, escort_purpose=escort_purpose,
@@ -443,6 +496,7 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        pairing_candidate_mask=pairing_candidate_mask,
     ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
@@ -713,9 +767,11 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 def configure(context):
     """Declare stage dependencies: MiD Wege path + random_seed + purpose/shop flags."""
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_W_ZWECK_10_AS_LEISURE,
-        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config("braunschweig.population.popsim.mid_dir")
@@ -756,6 +812,14 @@ def configure(context):
     # (see config_keys for the one statement of both defaults).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
     context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # Passive-escort pairing candidate universe (issue #373 task 2, ruling C-R20/C-R21):
+    # the SAME shared key/default constants braunschweig.popsim.trips_stage declares, so
+    # this stage's pairing agrees with the trip build's about which legs even exist to be
+    # paired (see run()'s exclude_rbw_legs/drop_leading_arrive_home_leg docstring entry).
+    # Declaring them here does NOT change this stage's own leg-drop behaviour -- the
+    # distance pool still includes every leg regardless of these two flags' value.
+    context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
 
 
 def execute(context):
@@ -768,7 +832,8 @@ def execute(context):
     """
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.stage.config_keys import (
-        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
     )
 
@@ -783,6 +848,8 @@ def execute(context):
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
     passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
+    exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -802,5 +869,7 @@ def execute(context):
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         codeplan_sentinels=codeplan_sentinels,
     )

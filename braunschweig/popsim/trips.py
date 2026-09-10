@@ -302,6 +302,7 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 w_zweck_10_as_leisure: bool = False,
                 escort_passive_from_adult: bool = False,
                 passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                pairing_candidate_mask: pd.Series | None = None,
                 ) -> pd.DataFrame:
     """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
 
@@ -360,6 +361,36 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
         paired with an adult leg; forwarded verbatim to ``pair_passive_legs``.
         Inert unless ``escort_passive_from_adult`` is True. Default
         :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
+    pairing_candidate_mask:
+        Issue #373 task 2 (ruling C-R20/C-R21). Optional boolean ``pd.Series``,
+        indexed IDENTICALLY to ``wege`` (raises ``ValueError`` otherwise),
+        restricting which legs the passive-escort PAIRING may consider -- as
+        both a possible passive leg AND a possible candidate adult leg -- to
+        ``wege[pairing_candidate_mask]``. Inert unless
+        ``escort_passive_from_adult`` is True.
+
+        This caller (``braunschweig.popsim.trips_stage`` via
+        ``expand_persons_to_trips``) already restricts ``wege`` to
+        :func:`legs_kept_by_the_trip_build` BEFORE calling this function, so
+        its own pairing naturally sees only the legs the plan will realise.
+        A caller that must keep every leg in its OWN output -- for example
+        ``braunschweig.popsim.distance_distributions``, whose distance pool
+        must include every leg regardless of the trip build's leg-drop flags
+        -- has no such pre-filter to rely on, so without this mask its pairing
+        could pick a leg the plan never realises (an excluded rbW summary leg
+        or a dropped leading arrive-home leg) as the nearest-in-time adult
+        candidate, resolving a purpose the plan does not.
+
+        A passive leg OUTSIDE the mask is not considered for pairing at all
+        and keeps the existing passive rule (the ``escort_passive_education``
+        relabel applied above), exactly like an UNPAIRED leg -- the mask
+        narrows the universe the pairing runs on, it does not change what an
+        excluded leg's purpose falls back to. The DISTANCE POOL (or whatever
+        else the caller does with ``wege``) is entirely unaffected by this
+        mask: only the pairing's candidate universe is restricted, every row
+        of ``wege`` is still returned. Default ``None`` reproduces today's
+        behaviour byte-identically (the pairing considers every row of
+        ``wege``).
 
     Returns
     -------
@@ -500,19 +531,73 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 "so the household id, the member's age and the departure time needed to find the "
                 "accompanying adult's leg must all still be present; load them or set "
                 "escort_passive_from_adult to False.")
-        paired_frame, pairing = pair_passive_legs(
-            out, max_gap_minutes=passive_pair_max_gap_minutes)
-        is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
-        out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
-            paired_frame.loc[is_paired, "passive_pair_adult_w_zweck"],
-            escort_passive_education=escort_passive_education,
-            w_zweck_10_as_leisure=w_zweck_10_as_leisure)
-        # Carried as extras so a downstream analysis can see WHICH adult leg a child's purpose
-        # came from, and why an unpaired leg kept the passive rule.
-        for column in PAIRING_COLUMNS:
-            out[column] = paired_frame[column].values
-        n_paired = int(is_paired.sum())
-        n_passive = int(pairing["n_passive"])
+
+        if pairing_candidate_mask is None:
+            # Today's behaviour, kept BYTE-IDENTICAL: the pairing considers every leg in
+            # `out` as both a possible passive leg and a possible candidate adult leg.
+            paired_frame, pairing = pair_passive_legs(
+                out, max_gap_minutes=passive_pair_max_gap_minutes)
+            is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
+            out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
+                paired_frame.loc[is_paired, "passive_pair_adult_w_zweck"],
+                escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+            # Carried as extras so a downstream analysis can see WHICH adult leg a child's
+            # purpose came from, and why an unpaired leg kept the passive rule.
+            for column in PAIRING_COLUMNS:
+                out[column] = paired_frame[column].values
+            n_paired = int(is_paired.sum())
+            n_passive = int(pairing["n_passive"])
+        else:
+            # Issue #373 task 2 (ruling C-R20/C-R21): restrict the pairing's CANDIDATE
+            # UNIVERSE -- both the passive legs it tries to pair and the adult legs it may
+            # pair them with -- to pairing_candidate_mask, without dropping any row from
+            # `out` itself (see the parameter's docstring above for why a caller like
+            # distance_distributions.run needs this: it must keep every leg for its own
+            # distance pool, but its pairing should agree with the trip build's about which
+            # legs even exist to be paired).
+            if not pairing_candidate_mask.index.equals(out.index):
+                raise ValueError(
+                    "[popsim.trips] escort_passive_from_adult: pairing_candidate_mask must "
+                    "be indexed identically to the Wege frame passed to map_purpose (got a "
+                    "mismatched index); the mask restricts which passive AND candidate-adult "
+                    "legs the pairing considers, so a misaligned index would silently pair "
+                    "the wrong rows.")
+            mask = pairing_candidate_mask.astype(bool)
+            candidates = out.loc[mask]
+            paired_frame, pairing = pair_passive_legs(
+                candidates, max_gap_minutes=passive_pair_max_gap_minutes)
+            paired_status = paired_frame["passive_pair_status"] == STATUS_PAIRED
+            is_paired_series = pd.Series(False, index=out.index)
+            is_paired_series.loc[paired_status.index[paired_status]] = True
+            is_paired = is_paired_series.to_numpy()
+            out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
+                paired_frame.loc[paired_status, "passive_pair_adult_w_zweck"],
+                escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+            # Every leg OUTSIDE the mask was never considered for pairing at all -- its
+            # PAIRING_COLUMNS stay NaN (like a leg the None-mask path never sees any
+            # differently than an unpaired one), distinguishing "not considered" from
+            # "considered but unpaired" only via the (still available) mask itself.
+            for column in PAIRING_COLUMNS:
+                out[column] = np.nan
+            out["passive_pair_status"] = out["passive_pair_status"].astype(object)
+            for column in PAIRING_COLUMNS:
+                out.loc[paired_frame.index, column] = paired_frame[column].values
+            n_paired = int(is_paired.sum())
+            n_passive = int(pairing["n_passive"])
+            n_passive_total = int((out[zweck_col] == PASSIVE_W_ZWECK).sum())
+            n_outside_mask = n_passive_total - n_passive
+            if n_outside_mask:
+                logger.info(
+                    "[popsim.trips] escort_passive_from_adult pairing_candidate_mask ON: %d/%d "
+                    "passive legs (%.1f%%) sit OUTSIDE the pairing's candidate universe and are "
+                    "not considered for pairing at all -- they keep the existing passive rule "
+                    "(%r).",
+                    n_outside_mask, n_passive_total,
+                    100.0 * n_outside_mask / n_passive_total if n_passive_total else 0.0,
+                    "education" if escort_passive_education else "escort",
+                )
         is_passive_leg = (out[zweck_col] == PASSIVE_W_ZWECK).to_numpy()
         if "W_GEW" in out.columns:
             weights = out["W_GEW"].astype(float).to_numpy()

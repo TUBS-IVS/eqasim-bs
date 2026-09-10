@@ -354,3 +354,138 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_map_purpose(monkeyp
            passive_pair_max_gap_minutes=20.0)
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 20.0
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 task 2 (ruling C-R20/C-R21): the passive-escort pairing's candidate
+# universe must follow the trip build's leg-drop flags (exclude_rbw_legs /
+# drop_leading_arrive_home_leg), or a passive leg whose nearest-in-time adult leg
+# is a leg the trip build actually drops resolves a purpose the plan never
+# realises. The DISTANCE POOL itself must stay untouched by those flags -- only
+# the pairing's candidate universe is restricted.
+# ---------------------------------------------------------------------------
+
+def _leg_drop_pairing_fixture():
+    """One household: the adult's FIRST leg is a leading arrive-home leg (dropped by
+    drop_leading_arrive_home_leg) departing the SAME minute as the child's passive leg;
+    the adult's SECOND leg is the real active escort (Bringen/Holen) leg 5 minutes later.
+    The child also has a leading LEISURE leg so its passive leg's preceding_purpose is
+    non-primary regardless of which purpose the pairing gives it (otherwise a "home"
+    <-> "home" or "home" <-> "education" trip would be excluded by run()'s Step 5
+    primary-only filter before the bug/fix distinction is even observable)."""
+    return pd.DataFrame({
+        "H_ID": [1, 1, 1, 1], "P_ID": [1, 1, 2, 2], "W_ID": [1, 2, 1, 2],
+        "W_ZWECK": [8, 6, 7, 13],
+        "hvm_imp": [4, 4, 1, 1],
+        "wegkm_imp": [2.0, 3.0, 1.5, 3.5],
+        "W_SZS": [8, 8, 7, 8], "W_SZM": [0, 5, 0, 0],
+        "W_AZS": [8, 8, 7, 8], "W_AZM": [10, 20, 30, 10],
+        "W_SO1": [2, 809, 809, 809], "HP_ALTER": [35, 35, 5, 5], "W_GEW": [1.0] * 4,
+    })
+
+
+def test_run_pairs_on_the_unfiltered_frame_when_the_leg_drop_flags_are_off():
+    """Code default (both leg-drop flags False, byte-identical to before this fix): the
+    pairing considers the leading arrive-home leg (gap 0 min) as a candidate even though
+    the trip build would drop it, so the child's passive leg is mis-paired to 'home'."""
+    from braunschweig.popsim.distance_distributions import run
+
+    out = run(_leg_drop_pairing_fixture(), by_purpose=True, escort_purpose=True,
+             escort_passive_education=True, escort_passive_from_adult=True)
+    assert _count_legs(out, "home") == 1
+    assert _count_legs(out, "education") == 0
+
+
+def test_run_restricts_the_pairing_to_the_trip_builds_candidate_universe_when_leg_drop_flags_are_on():
+    """With drop_leading_arrive_home_leg=True (the production default, configs/base_bs.yml),
+    the pairing's candidate universe excludes the dropped leading arrive-home leg, so the
+    child's passive leg pairs with the active escort leg instead and lands under
+    'education' -- matching what the trip build itself would realise. The distance POOL
+    is unaffected: all 4 legs (2 primary-excluded, 2 secondary) are processed exactly as
+    before; only the pairing's candidate universe changed."""
+    from braunschweig.popsim.distance_distributions import run
+
+    out = run(_leg_drop_pairing_fixture(), by_purpose=True, escort_purpose=True,
+             escort_passive_education=True, escort_passive_from_adult=True,
+             exclude_rbw_legs=False, drop_leading_arrive_home_leg=True)
+    assert _count_legs(out, "home") == 0
+    assert _count_legs(out, "education") == 1
+    # The escort leg (adult, W_ZWECK 6) is still present under "escort".
+    assert _count_legs(out, "escort") == 1
+
+
+def test_run_forwards_the_leg_drop_flags_as_a_pairing_candidate_mask(monkeypatch):
+    """The mask passed to map_purpose must be built from
+    trips.legs_kept_by_the_trip_build with the SAME two flags, not re-derived."""
+    from braunschweig.popsim import distance_distributions as dd
+
+    captured = {}
+    real_map_purpose = dd.map_purpose
+
+    def capturing_map_purpose(wege, **kwargs):
+        captured["pairing_candidate_mask"] = kwargs.get("pairing_candidate_mask")
+        return real_map_purpose(wege, **kwargs)
+
+    monkeypatch.setattr(dd, "map_purpose", capturing_map_purpose)
+    df = _leg_drop_pairing_fixture()
+    dd.run(df, escort_purpose=True, escort_passive_education=True,
+          escort_passive_from_adult=True, exclude_rbw_legs=False,
+          drop_leading_arrive_home_leg=True)
+    mask = captured["pairing_candidate_mask"]
+    assert mask is not None
+    assert isinstance(mask, pd.Series)
+    # The adult's leading arrive-home leg (row 0, H_ID=1/P_ID=1/W_ID=1) must be excluded;
+    # every other leg stays a candidate.
+    assert mask.loc[0] == False  # noqa: E712 (explicit bool compare reads clearer here)
+    assert mask.drop(index=0).all()
+
+
+def test_run_leg_drop_flags_off_by_default_leaves_map_purpose_mask_none(monkeypatch):
+    """Code default False/False: run() must not build a mask at all (pairing_candidate_mask
+    stays None), so map_purpose takes its byte-identical OFF path."""
+    from braunschweig.popsim import distance_distributions as dd
+
+    captured = {}
+    real_map_purpose = dd.map_purpose
+
+    def capturing_map_purpose(wege, **kwargs):
+        captured["pairing_candidate_mask"] = kwargs.get("pairing_candidate_mask")
+        return real_map_purpose(wege, **kwargs)
+
+    monkeypatch.setattr(dd, "map_purpose", capturing_map_purpose)
+    dd.run(_leg_drop_pairing_fixture(), escort_purpose=True, escort_passive_education=True,
+          escort_passive_from_adult=True)
+    assert captured["pairing_candidate_mask"] is None
+
+
+class _RecordingConfigureContext:
+    """Minimal synpp ConfigurationContext stand-in that records config() lookups.
+
+    Same shape as the stand-in in tests/test_popsim_trips_stage.py
+    (_RecordingConfigureContext) and tests/test_completed_donor_stage.py.
+    """
+
+    def __init__(self):
+        self.calls = {}
+
+    def config(self, key, default=None):
+        self.calls[key] = default
+        return default
+
+    def stage(self, name, alias=None, **kwargs):
+        pass
+
+
+def test_configure_declares_the_shared_leg_drop_keys_with_the_production_defaults():
+    """Must match braunschweig.popsim.trips_stage's own declaration of the SAME keys
+    exactly (default True/True, configs/base_bs.yml), or a full pipeline run could
+    resolve two different values for the SAME config key across the two stages."""
+    from braunschweig.popsim import distance_distributions as dd
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+    )
+
+    ctx = _RecordingConfigureContext()
+    dd.configure(ctx)
+    assert ctx.calls[KEY_EXCLUDE_RBW_LEGS] is True
+    assert ctx.calls[KEY_DROP_LEADING_ARRIVE_HOME_LEG] is True

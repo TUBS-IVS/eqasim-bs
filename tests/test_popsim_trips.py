@@ -555,3 +555,82 @@ def test_legs_kept_by_the_trip_build_is_a_no_op_with_both_flags_off():
         trips.legs_kept_by_the_trip_build(
             wege, exclude_rbw_legs=False, drop_leading_arrive_home_leg=False),
         wege)
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 task 2 (ruling C-R20/C-R21): map_purpose's pairing_candidate_mask.
+#
+# The trip build pairs passive escort legs on the legs it has ALREADY dropped
+# (exclude_rbw_legs / drop_leading_arrive_home_leg run before map_purpose inside
+# expand_persons_to_trips). A caller that must keep every leg for its own purpose
+# (distance_distributions.run needs the full distance pool) has no such pre-filter
+# to rely on, so it needs a way to restrict the PAIRING's candidate universe
+# without dropping any row from its own output.
+# ---------------------------------------------------------------------------
+
+def _pairing_mask_fixture():
+    """One household: the adult's FIRST leg is a leading arrive-home leg (dropped by
+    drop_leading_arrive_home_leg) departing the SAME minute as the child's passive leg;
+    the adult's SECOND leg is the real active escort (Bringen/Holen) leg 5 minutes later.
+    Unrestricted, the nearest-in-time candidate for the child's passive leg is the
+    (about to be dropped) leading arrive-home leg."""
+    return pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 2], "W_ID": [1, 2, 1],
+        "W_ZWECK": [8, 6, 13], "W_SZS": [8, 8, 8], "W_SZM": [0, 5, 0],
+        "W_SO1": [2, 809, 809], "HP_ALTER": [35, 35, 5], "W_GEW": [1.0, 1.0, 1.0],
+    })
+
+
+def test_map_purpose_pairing_candidate_mask_restricts_the_candidate_universe():
+    """Without the mask, the child pairs with the leading arrive-home leg (gap 0 min,
+    W_ZWECK 8 -> 'home'). With the mask reduced to legs_kept_by_the_trip_build (which
+    drops that leading arrive-home leg), only the active escort leg (W_ZWECK 6) survives
+    as a candidate, and escort_passive_education gives the child 'education' instead --
+    matching what the trip build itself would realise for the same Wege."""
+    wege = _pairing_mask_fixture()
+    unrestricted = trips.map_purpose(
+        wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=True)
+    child_unrestricted = unrestricted[unrestricted["P_ID"] == 2].iloc[0]["purpose"]
+    assert child_unrestricted == "home"
+
+    kept = trips.legs_kept_by_the_trip_build(
+        wege, exclude_rbw_legs=False, drop_leading_arrive_home_leg=True)
+    mask = pd.Series(wege.index.isin(kept.index), index=wege.index)
+    restricted = trips.map_purpose(
+        wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=True, pairing_candidate_mask=mask)
+    child_restricted = restricted[restricted["P_ID"] == 2].iloc[0]["purpose"]
+    assert child_restricted == "education"
+
+
+def test_map_purpose_pairing_candidate_mask_none_is_byte_identical_to_omitting_it():
+    """None (the default) must be indistinguishable from not passing the keyword at all --
+    the OFF path for every existing caller of map_purpose."""
+    wege = _pairing_mask_fixture()
+    a = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True)
+    b = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True, pairing_candidate_mask=None)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_map_purpose_pairing_candidate_mask_index_mismatch_raises():
+    wege = _pairing_mask_fixture()
+    bad_mask = pd.Series([True, True], index=[0, 1])
+    with pytest.raises(ValueError, match="pairing_candidate_mask"):
+        trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                          escort_passive_from_adult=True, pairing_candidate_mask=bad_mask)
+
+
+def test_map_purpose_pairing_candidate_mask_excludes_the_passive_leg_itself_keeps_the_passive_rule():
+    """A passive leg OUTSIDE the mask is not considered for pairing at all -- it keeps the
+    existing passive rule (the escort_passive_education relabel), exactly like an unpaired
+    leg, rather than the mask only narrowing which ADULT legs it may pair with."""
+    wege = _pairing_mask_fixture()
+    mask = pd.Series([True, True, False], index=wege.index)  # child's own leg excluded
+    out = trips.map_purpose(wege, escort_purpose=True, escort_passive_education=True,
+                            escort_passive_from_adult=True, pairing_candidate_mask=mask)
+    child = out[out["P_ID"] == 2].iloc[0]
+    assert child["purpose"] == "education"
+    assert pd.isna(child["passive_pair_status"])
