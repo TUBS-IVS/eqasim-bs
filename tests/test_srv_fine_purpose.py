@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.calibration import srv_fine_purpose as F
-from scripts.compare_purpose_subtypes_srv import build_comparison
+from scripts.compare_purpose_subtypes_srv import _render_sensitivity_section, build_comparison
 
 
 def _trips(**overrides) -> pd.DataFrame:
@@ -409,6 +409,49 @@ def test_flag_follows_the_comparable_delta_not_the_raw_one():
     assert abs(visit["delta_pp"]) < 10.0
     assert visit["delta_pp_comparable"] > 10.0
     assert bool(visit["candidate_for_reestimation"])
+
+
+def test_a_comparable_grade_without_srv_codes_raises_instead_of_renormalising_to_nan(monkeypatch):
+    """A grade in COMPARABLE_EXACTNESS must map to at least one SrV fine code. Otherwise its
+    share_srv is NaN, which a plain sum would SKIP: the block would renormalise against a
+    denominator that omits the group, while the group's own delta_pp_comparable fell back to the
+    raw delta. That is a crosswalk defect and must raise, naming the purpose and the group."""
+    broken = dict(F.SUBTYPE_TO_SRV_FINE, leisure_activity=((), "approximate"))
+    monkeypatch.setattr(F, "SUBTYPE_TO_SRV_FINE", broken)
+    with pytest.raises(ValueError, match="leisure_activity"):
+        build_comparison(_srv_reference(), _mid_reference())
+
+
+def test_the_crossing_list_reports_a_row_the_raw_reading_would_have_flagged():
+    """The two readings can disagree in BOTH directions, so the crossing list must be the XOR of
+    the two threshold tests. Here SrV codes a large unmapped residual (18 = 0.30, comparable mass
+    0.70) while MiD maps 0.90: leisure_visit is 0.40 - 0.25 = +15.0 pp raw (above the threshold)
+    but 0.40/0.90 - 0.25/0.70 = +8.7 pp comparable (below), so the flag does NOT fire and the
+    section must list the row rather than claim that no row changes side."""
+    srv = _srv_reference()
+    for code, share in ((13, 0.05), (14, 0.15), (15, 0.25), (16, 0.15), (17, 0.10), (18, 0.30)):
+        srv.loc[srv["fine_code"] == code, "share_within_coarse"] = share
+    mid = _mid_reference()
+    mid.loc[mid["group"] == "leisure_visit", "share_within_purpose"] = 0.40
+    mid.loc[mid["group"] == "leisure_local", "share_within_purpose"] = 0.25
+    comparison = build_comparison(srv, mid)
+    visit = comparison[(comparison["subtype_group"] == "leisure_visit")
+                       & (comparison["spec_variant"] == "default")].iloc[0]
+    assert abs(visit["delta_pp"]) > F.CANDIDATE_DELTA_PP_THRESHOLD
+    assert abs(visit["delta_pp_comparable"]) < F.CANDIDATE_DELTA_PP_THRESHOLD
+    assert not bool(visit["candidate_for_reestimation"])
+    section = "\n".join(_render_sensitivity_section(comparison))
+    assert "No row changes side" not in section
+    assert "* `leisure_visit` (default): raw +15.0 pp (above) -> comparable +8.7 pp (below)." \
+        in section
+
+
+def test_the_crossing_list_is_empty_when_both_readings_agree():
+    """Base fixture: leisure_visit is below the threshold on both readings (+5.0 pp raw, +7.3 pp
+    comparable), and the approximate rows never enter the list."""
+    section = "\n".join(_render_sensitivity_section(build_comparison(_srv_reference(),
+                                                                     _mid_reference())))
+    assert "No row changes side of the 10 pp threshold between the two readings." in section
 
 
 def test_comparison_covers_every_subtype_group_and_variant():

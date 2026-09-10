@@ -150,8 +150,10 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
     ------
     ValueError
         If a subtype group of :data:`SUBTYPE_TO_SRV_FINE` is missing from the MiD reference for
-        some spec variant, if a mapped fine code is missing from the SrV reference, or if the MiD
-        purpose disagrees with the coarse purpose of the mapped SrV codes.
+        some spec variant, if a mapped fine code is missing from the SrV reference, if the MiD
+        purpose disagrees with the coarse purpose of the mapped SrV codes, or if a group graded
+        :data:`srv_fine_purpose.COMPARABLE_EXACTNESS` maps to no SrV fine code at all (see
+        :func:`_add_renormalised_columns`).
     """
     srv = srv_reference.set_index("fine_code")
     rows = []
@@ -223,6 +225,21 @@ def _add_renormalised_columns(comparison: pd.DataFrame) -> pd.DataFrame:
         comparison[column] = float("nan")
     comparable = comparison["exactness"].isin(F.COMPARABLE_EXACTNESS)
     for (variant, purpose), block in comparison[comparable].groupby(["spec_variant", "purpose"]):
+        # A comparable grade that maps to no SrV fine code carries share_srv NaN. Summing would
+        # NOT surface it (pandas skips NaN), so the block would silently renormalise against a
+        # denominator that omits the group, while the group's own renormalised delta stayed NaN
+        # and its delta_pp_comparable fell back to the raw delta. That is a crosswalk defect, not
+        # a data gap, so it must raise rather than be repaired here.
+        incomplete = block[block[["share_mid", "share_srv"]].isna().any(axis=1)]
+        if not incomplete.empty:
+            offending = sorted(incomplete["subtype_group"].unique())
+            raise ValueError(
+                f"[compare_purpose_subtypes_srv] the comparable mass of purpose '{purpose}' "
+                f"(spec variant '{variant}') cannot be formed: subtype group(s) {offending} carry "
+                "no share on one side, although a grade in COMPARABLE_EXACTNESS "
+                f"({' / '.join(F.COMPARABLE_EXACTNESS)}) must map to at least one SrV fine code. "
+                "Fix SUBTYPE_TO_SRV_FINE -- give the group its codes or grade it aggregate_only "
+                "-- rather than renormalising against a denominator that omits it.")
         mid_mass, srv_mass = float(block["share_mid"].sum()), float(block["share_srv"].sum())
         symmetric = (abs(mid_mass - 1.0) <= MAPPED_MASS_TOLERANCE
                      and abs(srv_mass - 1.0) <= MAPPED_MASS_TOLERANCE)
@@ -289,6 +306,11 @@ def _join(names) -> str:
     return ", ".join("`%s`" % name for name in names)
 
 
+def _threshold_side(delta_pp) -> str:
+    """Which side of :data:`srv_fine_purpose.CANDIDATE_DELTA_PP_THRESHOLD` a delta falls on."""
+    return "above" if abs(delta_pp) > F.CANDIDATE_DELTA_PP_THRESHOLD else "below"
+
+
 def _purposes_by_mapped_mass(comparison: pd.DataFrame) -> tuple:
     """Split the purposes into (symmetric, asymmetric) by whether renormalisation changes them.
 
@@ -318,8 +340,9 @@ def _render_candidate_bullets(flagged: pd.DataFrame) -> list:
         comparable = ", ".join("%s %s pp" % (row.spec_variant,
                                              _fmt(row.delta_pp_comparable, "+.1f"))
                                for row in ordered)
-        raw = " / ".join(_fmt(row.delta_pp, "+.1f") for row in ordered)
-        lines.append("* `%s` (%s): comparable delta %s; crossing variant(s): %s. Raw deltas %s pp."
+        raw = ", ".join("%s %s pp" % (row.spec_variant, _fmt(row.delta_pp, "+.1f"))
+                        for row in ordered)
+        lines.append("* `%s` (%s): comparable delta %s; crossing variant(s): %s. Raw deltas %s."
                      % (group, block["exactness"].iloc[0], comparable,
                         _join(crossing) or "(none)", raw))
     return lines
@@ -363,26 +386,31 @@ def _render_sensitivity_section(comparison: pd.DataFrame) -> list:
             _fmt(row["share_srv_renormalised"], ".4f"),
             _fmt(row["delta_pp_renormalised"], "+.1f")))
 
-    crossings = rows[(rows["exactness"] == "exact")
-                     & (rows["delta_pp"].abs() <= F.CANDIDATE_DELTA_PP_THRESHOLD)
-                     & (rows["delta_pp_renormalised"].abs() > F.CANDIDATE_DELTA_PP_THRESHOLD)]
+    # The two readings disagree in BOTH directions: a row can be within the threshold raw and
+    # beyond it comparable (the raw reading would have missed a candidate) or the other way round
+    # (the raw reading would have flagged one). The mask is therefore the XOR of the two threshold
+    # tests, so it matches the heading below instead of reporting only one of the two directions.
+    raw_beyond = rows["delta_pp"].abs() > F.CANDIDATE_DELTA_PP_THRESHOLD
+    comparable_beyond = rows["delta_pp_renormalised"].abs() > F.CANDIDATE_DELTA_PP_THRESHOLD
+    crossings = rows[(rows["exactness"] == "exact") & (raw_beyond != comparable_beyond)]
     lines.append("")
     if crossings.empty:
         lines.append("No row changes side of the %.0f pp threshold between the two readings."
                      % F.CANDIDATE_DELTA_PP_THRESHOLD)
     else:
         lines += [
-            "**Rows whose flag differs between the two readings.** The following `exact` row(s) are",
-            "within the %.0f pp threshold on the RAW delta and beyond it on the comparable one, so"
+            "**Rows whose flag differs between the two readings.** For the following `exact`",
+            "row(s) the raw and the comparable delta fall on OPPOSITE sides of the %.0f pp"
             % F.CANDIDATE_DELTA_PP_THRESHOLD,
-            "the raw reading alone would have missed them; the committed",
+            "threshold, so the raw reading alone would give a different answer; the committed",
             "`candidate_for_reestimation` flag reads the comparable delta, as the rule above says.",
             "",
         ]
         for _, row in crossings.iterrows():
-            lines.append("* `%s` (%s): %+.1f pp raw -> %+.1f pp comparable."
+            lines.append("* `%s` (%s): raw %+.1f pp (%s) -> comparable %+.1f pp (%s)."
                          % (row["subtype_group"], row["spec_variant"], row["delta_pp"],
-                            row["delta_pp_renormalised"]))
+                            _threshold_side(row["delta_pp"]), row["delta_pp_renormalised"],
+                            _threshold_side(row["delta_pp_renormalised"])))
     return lines
 
 
@@ -629,7 +657,11 @@ def main(argv=None) -> int:
                      "candidate_variants lists\n"
                      "#   the spec variant(s) in which the group crosses the threshold "
                      "('|'-joined, EMPTY when none);\n"
-                     "#   the flag is GROUP-level, so every row of a crossing group carries both.\n")
+                     "#   the flag is GROUP-level, so every row of a crossing group carries both. "
+                     "A consumer must read an\n"
+                     "#   EMPTY candidate_variants field as 'no crossing variant': pandas reads "
+                     "it back as NaN, so\n"
+                     "#   fillna('') restores the value this script wrote.\n")
         handle.write("# MEASUREMENT ONLY -- not a validation and not a control target; see "
                      "summary.md for the caveats.\n")
         handle.write("# Generated by scripts/compare_purpose_subtypes_srv.py; regenerate there, "
