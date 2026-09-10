@@ -100,6 +100,12 @@ config:
   # with their own distance layer instead of being imputed one of the four W_ZWD groups
   # (ADR-0115). Requires w_zweck_10_as_leisure. false = four groups.
   leisure_unspecified_subtype: true
+  # The secondary distance layers and the three MiD subtype deciders estimate on the WEEKDAY
+  # DIARY universe -- the seed's own day filter and no rbW summary records, 67.9 % of the
+  # delivered MiD Wege rows -- instead of every delivered row incl. weekends (ADR-0116). The
+  # synthetic day IS a weekday, and the committed MiD reference tables measure the same
+  # universe. false = the pre-ADR-0116 all-day estimation.
+  secondary_mid_weekday_legs_only: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
   # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs

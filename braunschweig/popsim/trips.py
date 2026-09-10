@@ -225,8 +225,10 @@ def legs_kept_by_the_trip_build(
 #: (issue #373, ADR-0116).
 WEEKDAY_DIARY_KERNWO = tuple(MID_SEED_COLUMNS.day_filter_values)
 
-#: Columns the weekday diary universe is defined on; named in the error message so a delivery
-#: that cannot express the universe fails with the column, not with a silently wider universe.
+#: The two MiD Wege columns the weekday diary universe is defined on: the reporting-day code and
+#: the rbW summary flag. Single source for both names -- the universe helpers check exactly these
+#: (the first one overridable per call) and RAISE naming the missing one, so a delivery that
+#: cannot express the universe fails instead of silently widening it.
 WEEKDAY_DIARY_COLUMNS = ("kernwo", "W_RBW")
 
 
@@ -250,15 +252,29 @@ def weekday_diary_leg_mask(wege: pd.DataFrame, *, kernwo_col: str = "kernwo") ->
     universe must never be applied silently to a frame that cannot express it (a missing
     ``kernwo`` would otherwise read as "every leg is a weekday leg").
     """
-    for column in (kernwo_col, "W_RBW"):
+    is_weekday, is_rbw = _weekday_and_rbw_masks(wege, kernwo_col=kernwo_col)
+    return is_weekday & ~is_rbw
+
+
+def _weekday_and_rbw_masks(wege: pd.DataFrame, *, kernwo_col: str) -> tuple:
+    """``(is_weekday, is_rbw)`` for the weekday diary universe -- the ONE place both are built.
+
+    Kept private and shared by :func:`weekday_diary_leg_mask` and
+    :func:`restrict_to_weekday_diary_legs` so the universe rule is expressed once and each
+    caller walks the frame once: the public mask needs the conjunction, the logging wrapper
+    needs the two drop reasons separately.
+    """
+    rbw_col = WEEKDAY_DIARY_COLUMNS[1]          # the rbW summary flag of the universe
+    universe_columns = (kernwo_col, rbw_col)
+    for column in universe_columns:
         if column not in wege.columns:
             raise ValueError(
                 f"[popsim.trips] the weekday diary universe needs the MiD Wege column "
-                f"{column!r} (universe columns: {WEEKDAY_DIARY_COLUMNS}); it is absent from "
+                f"{column!r} (universe columns: {universe_columns}); it is absent from "
                 f"the frame (present: {list(wege.columns[:20])} ...)."
             )
     is_weekday = pd.to_numeric(wege[kernwo_col], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
-    return is_weekday & ~rbw_leg_mask(wege)
+    return is_weekday, rbw_leg_mask(wege, rbw_col=rbw_col)
 
 
 def restrict_to_weekday_diary_legs(wege: pd.DataFrame, *, log_tag: str) -> pd.DataFrame:
@@ -276,12 +292,14 @@ def restrict_to_weekday_diary_legs(wege: pd.DataFrame, *, log_tag: str) -> pd.Da
 
     Returns a filtered view/copy; ``wege`` is not mutated.
     """
-    mask = weekday_diary_leg_mask(wege)   # raises when a universe column is absent
-    is_weekday = pd.to_numeric(wege["kernwo"], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
+    # One pass: the shared helper builds both masks (and raises when a universe column is
+    # absent), the conjunction is the universe and the two complements are the drop reasons.
+    is_weekday, is_rbw = _weekday_and_rbw_masks(wege, kernwo_col="kernwo")
+    mask = is_weekday & ~is_rbw
     n_total = len(wege)
     n_kept = int(mask.sum())
     n_non_weekday = int((~is_weekday).sum())
-    n_rbw = int((is_weekday & rbw_leg_mask(wege)).sum())
+    n_rbw = int((is_weekday & is_rbw).sum())
     logger.info(
         "%s weekday diary universe: kept %d/%d legs (%.1f%%); dropped %d non-weekday "
         "(kernwo outside %s), %d rbW summary records",

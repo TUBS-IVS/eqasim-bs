@@ -160,11 +160,16 @@ _HELPER_MODULES = (
 # braunschweig.popsim.completed_donor.py already carries for the same transitive reason.
 # purpose_subtype/shop_subtype define the W_ZWD subtype groupings the leisure/shop/other
 # subtype splits are built from; config_keys is the shared home of the four purpose-package
-# config keys this stage declares.
+# config keys this stage declares. seed owns the model's WEEKDAY DEFINITION (ADR-0116):
+# trips.WEEKDAY_DIARY_KERNWO READS seed.MID_SEED_COLUMNS.day_filter_values, so under
+# secondary_mid_weekday_legs_only every layer this stage builds depends on that constant --
+# and hashing trips' own source cannot see a change on the other side of that import, the
+# same one-edge-further-out reason the chainsolver stage hashes trips itself.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.mid",
     "braunschweig.popsim.mid.donor",
     "braunschweig.popsim.purpose_subtype",
+    "braunschweig.popsim.seed",
     "braunschweig.popsim.shop_subtype",
     "braunschweig.popsim.stage.config_keys",
 )
@@ -484,7 +489,10 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         legs BEFORE it pairs (they never reach ``map_purpose`` there), so its
         pairing naturally agrees with these flags; this stage keeps every leg
         for its OWN distance pool (which is UNAFFECTED by these two flags --
-        they only narrow which legs the PAIRING considers), so without this
+        they only narrow which legs the PAIRING considers; ``weekday_legs_only``
+        is the one keyword that DOES narrow the pool, in Step 0a, and because it
+        runs first it also removes those legs from the pairing universe below
+        regardless of these two flags), so without this
         it could pair a passive leg to a leg the plan never realises (an
         excluded rbW summary leg or a dropped leading arrive-home leg),
         landing the leg's distance under a purpose the plan does not give it.
@@ -599,6 +607,17 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     # helper logs the kept rate with both drop reasons and raises on an empty result or a
     # missing kernwo/W_RBW column (those two are required ONLY on this path, which is why
     # they are not in REQUIRED_COLUMNS).
+    #
+    # Filtering HERE, before the chain is re-derived, has a second effect that is intended
+    # rather than tolerated (ADR-0116 Consequences, controller ruling W5): Step 2 derives
+    # preceding_purpose per (H_ID, P_ID) chain from the legs still in the frame, and Step 5
+    # then excludes the trips whose BOTH ends are primary activities -- so a chain that
+    # contained a dropped leg (a weekend leg, or an rbW summary record sitting inside an
+    # otherwise kept diary) has its preceding purposes re-derived without it, and the set of
+    # primary-both trips excluded can change with it. Under exclude_rbw_legs=true
+    # (production) the trip build drops those very rbW records from the plans, so
+    # re-deriving the chain without them moves this donor pool CLOSER to the plan's own leg
+    # universe. Do not move this block after Step 2 without meeting that reasoning.
     if weekday_legs_only:
         df = _trips.restrict_to_weekday_diary_legs(
             df, log_tag="[popsim.distance_distributions]")

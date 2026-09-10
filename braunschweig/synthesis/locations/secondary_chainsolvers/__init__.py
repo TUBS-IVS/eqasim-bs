@@ -79,6 +79,12 @@ from braunschweig.popsim import purpose_subtype  # noqa: F401  (cache-hash only)
 # edge is invisible to both the purpose_subtype entry above and the
 # own-package-sibling coverage gate (tests/test_synpp_helper_hash_invariant.py).
 from braunschweig.popsim import trips  # noqa: F401  (cache-hash only)
+# seed owns the model's WEEKDAY DEFINITION (ADR-0116): trips.WEEKDAY_DIARY_KERNWO READS
+# seed.MID_SEED_COLUMNS.day_filter_values, and under secondary_mid_weekday_legs_only the
+# three MiD subtype deciders of this stage are estimated on exactly that universe. Hashed
+# for the same one-edge-further-out reason as trips above -- hashing trips' own source
+# cannot see a change to the seed's day filter.
+from braunschweig.popsim import seed  # noqa: F401  (cache-hash only)
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -290,6 +296,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     purpose_subtype,
     reporting,
     results,
+    seed,
     solver_defaults,
     srv_candidates,
     srv_location_types,

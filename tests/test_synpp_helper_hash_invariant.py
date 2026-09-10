@@ -807,6 +807,7 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
                      "braunschweig.popsim.escort_pairing", "braunschweig.popsim.mid",
                      "braunschweig.popsim.mid.donor",
                      "braunschweig.popsim.purpose_subtype", "braunschweig.popsim.shop_subtype",
+                     "braunschweig.popsim.seed",
                      "braunschweig.popsim.stage.config_keys", "braunschweig.constants",
                      "synthesis.population.spatial.secondary.distance_distributions"):
         assert required in names, required
@@ -837,3 +838,51 @@ def test_distance_distributions_validate_token_changes_when_mid_donor_source_cha
     monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
     token_after = distance_distributions.validate(None)
     assert token_before != token_after
+
+
+def test_distance_distributions_token_changes_when_the_seed_day_filter_source_changes(monkeypatch):
+    """The model's WEEKDAY DEFINITION lives in braunschweig.popsim.seed (ADR-0116).
+
+    Under ``secondary_mid_weekday_legs_only`` every layer this stage builds is estimated on
+    ``trips.weekday_diary_leg_mask``, whose ``WEEKDAY_DIARY_KERNWO`` READS
+    ``seed.MID_SEED_COLUMNS.day_filter_values``. Hashing trips' own source cannot see a change
+    on the other side of that import, so an edit to the seed's day filter would otherwise serve
+    stale cached distance layers -- the same one-edge-further-out gap the mid.donor test below
+    demonstrates for the loader.
+    """
+    import inspect
+
+    import braunschweig.popsim.distance_distributions as distance_distributions
+    from braunschweig.popsim import seed as popsim_seed
+
+    token_before = distance_distributions.validate(None)
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is popsim_seed:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    assert distance_distributions.validate(None) != token_before
+
+
+def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_changes(monkeypatch):
+    """Same weekday-definition edge for the stage that ESTIMATES the three MiD subtype deciders
+    on that universe (ADR-0116): braunschweig.popsim.seed must be inside this stage's token."""
+    import inspect
+
+    import braunschweig.synthesis.locations.secondary_chainsolvers as chainsolvers
+    from braunschweig.popsim import seed as popsim_seed
+
+    assert popsim_seed in chainsolvers._HELPER_MODULES
+    token_before = chainsolvers.validate(None)
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is popsim_seed:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(chainsolvers.inspect, "getsource", patched_getsource)
+    assert chainsolvers.validate(None) != token_before

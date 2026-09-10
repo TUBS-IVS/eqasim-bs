@@ -100,11 +100,13 @@ def test_per_group_distance_summary_zero_weight_group_raises():
 
 
 def test_subtype_donor_mean_km_range_covers_every_subtype_group():
-    # The in-sample sanity ranges must cover every subtype group a run can
-    # realise (no silent gaps): the seven groups of the design spec's Taxonomy
-    # tables plus "leisure_unspecified", the fifth leisure subtype added by
-    # issue #373 / ADR-0115 (its range is an ad-hoc measurement, see the dict's
-    # own comment).
+    # The in-sample sanity pins must cover every subtype group a run can realise
+    # (no silent gaps): the four leisure groups of issue #127 plus
+    # "leisure_unspecified" (the fifth leisure subtype, issue #373 / ADR-0115)
+    # and the three "other" groups. Since ADR-0116 all eight are POINT pins from
+    # one ad-hoc measurement on the weekday diary universe -- the frame each
+    # layer is built from -- not the ranges the 2026-07-09 design spec's
+    # taxonomy tables carried; see the dict's own comment for frame and date.
     expected_groups = {
         "leisure_local", "leisure_visit", "leisure_activity", "leisure_excursion",
         "leisure_unspecified",
