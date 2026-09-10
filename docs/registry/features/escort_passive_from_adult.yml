@@ -132,10 +132,12 @@ evidence:
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
-    note: 'Regenerated additively by scripts/derive_escort_w_zweck_split.py (data record
-      mid2023_reference_tables): every pre-existing column and cell is unchanged and the row set is
-      unchanged; the code_13 row gains code_13_to_<purpose>_share_under_pairing for each fold
-      member. A VALIDATION reference, not a control target: no synthesis stage reads it; its
+    note: 'Written by scripts/derive_escort_w_zweck_split.py (data record
+      mid2023_reference_tables): the code_13 row carries one
+      code_13_to_<purpose>_share_under_pairing column per fold member. The WHOLE table -- the
+      code_6 and "both" rows included -- was re-derived on the weekday universe on 2026-09-10
+      (ruling C-R18), so every value moved with the universe; the four tests that pinned the
+      previous values are re-pinned. A VALIDATION reference, not a control target: no synthesis stage reads it; its
       consumer is braunschweig.analysis.population_validation.trip_coherence
       (load_passive_purpose_fold -> apply_escort_active_adjustment). The header discloses the flag
       values the derivation assumed and the exact universe (the weekday reporting days the seed keeps,

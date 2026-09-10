@@ -11,9 +11,11 @@ LAZILY there to avoid a cycle with this module's ``trips.mid_time_seconds`` impo
 pairing into the child's actual purpose (the adult's destination purpose). Pure pandas; no file
 I/O, no MATSim dependency.
 
-Those three figures are the ALL-DAYS raw measurement. On the universe a production run actually
-has -- the weekday reporting days the PopulationSim seed keeps, after the trip build's leg
-filters -- the committed reference
+Those three figures are an ad-hoc measurement on the RAW weekday legs (the 6,759 code-13 legs with
+a valid departure time; ADR-0112 Context), before the trip build's leg filters and before this
+module's own adult-pool exclusions. On the universe a production run actually has -- the weekday
+reporting days the PopulationSim seed keeps, after the trip build's leg filters -- the committed
+reference
 ``eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv`` measures 6,384/6,781 =
 94.15 % paired within 15 minutes (regenerated 2026-09-10, ruling C-R18); that is the rate the
 low-pairing WARNING below cites.

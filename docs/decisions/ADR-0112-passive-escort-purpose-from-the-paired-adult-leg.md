@@ -193,8 +193,24 @@
      validation reference is a donor-side reference.
   5. **18 years is the adult threshold and 15 minutes the window** -- both configured, both chosen
      from the pairing-rate curve above (91.9 % / 93.3 % / 94.8 % / 95.9 % at 0 / 5 / 15 / 30 min on
-     the raw weekday legs; 94.15 % at 15 min once the trip build's leg filters are applied, committed),
-     which flattens after 15 minutes; no external source prescribes either.
+     the raw weekday legs), which flattens after 15 minutes; no external source prescribes either.
+     The committed rate is 94.15 % rather than the raw 94.8 % for three reasons that are NOT
+     decomposed here: the denominator differs (the committed rate is over ALL 6,781 weekday passive
+     legs, including the 22 with no usable departure time, while the ad-hoc figure is over the 6,759
+     with a valid one), this module excludes adult candidate legs whose own `W_ZWECK` is 13
+     (controller ruling C-R8), and the trip build's leg filters remove a further two pairs
+     (6,386 -> 6,384 on the weekday legs). The leg filters alone are therefore the SMALLEST of the
+     three effects.
+  6. **`explicit_round_trip_purposes` is deliberately NOT threaded into
+     `trips.passive_purpose_for_pairs`** (reasoning on that function's docstring): with the flag ON
+     -- its production value -- an adult W_ZWECK 14/15/16 leg is `leisure` on both sides, so the
+     child's purpose agrees with the adult's and the omission is inert. It would bite only on the
+     pre-#241 A/B arm (flag OFF), where the adult's own leg reverts to `other` while the child would
+     still receive `leisure`; that arm does not use `escort_passive_from_adult`.
+  7. **Every household member with `HP_ALTER >= adult_min_age` counts as an adult**, without a guard
+     against coded age values. It holds on this delivery (max `HP_ALTER` 85, no missing values), but
+     the pairing would silently treat a future top-code or missing-value code above the threshold as
+     an adult; the module reads the column as delivered rather than validating a code range.
 - **Evidence:** issue **#372**; related **ADR-0072 / ADR-0073** (#201/#256/#257: the escort purpose
   family, the passive-as-education rule this replaces for paired legs, the SrV `V_ZWECK_BHOL`
   destination mix), **ADR-0109** / #368 (seed and plan must count the same legs), **ADR-0111** (the

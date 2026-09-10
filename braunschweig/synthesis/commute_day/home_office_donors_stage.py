@@ -132,13 +132,13 @@ DONOR_FILTER_REQUIRED_COLUMNS = (
 )
 #: MiD Wege columns: exactly what the trip-table builder needs (imported from the single
 #: committed definition, never re-typed) plus ``wegkm`` -- the raw trip length the
-#: commute-distance fallback reads (``commute_day_state_reference.first_work_trip_length_km``)
-#: and ``HP_ALTER``, the household member's age the passive-escort pairing needs to decide who
-#: counts as the accompanying ADULT (``escort_pairing.REQUIRED_COLUMNS``, issue #372). HP_ALTER
-#: is loaded unconditionally rather than only under ``escort_passive_from_adult``: the column
-#: exists in the MiD 2023 B1 Wege delivery, and a column set that changed with a flag would make
-#: the raw read depend on the configuration for one column only.
-WEGE_COLUMNS = tuple(MID_WEGE_REQUIRED_COLS) + ("wegkm", "HP_ALTER")
+#: commute-distance fallback reads (``commute_day_state_reference.first_work_trip_length_km``).
+#: ``HP_ALTER``, the household member's age the passive-escort pairing needs to decide who counts
+#: as the accompanying ADULT (``escort_pairing.REQUIRED_COLUMNS``, issue #372), needs no entry
+#: here: ``MID_WEGE_REQUIRED_COLS`` requires it, unconditionally rather than under
+#: ``escort_passive_from_adult``, so that a delivery without it fails at LOAD time naming the
+#: column instead of deep inside map_purpose, and so that the raw read never depends on a flag.
+WEGE_COLUMNS = tuple(MID_WEGE_REQUIRED_COLS) + ("wegkm",)
 #: MiD household columns: ``H_GR`` (household size, binned by the matching module) and
 #: ``H_ANZAUTO`` (car ownership).
 HOUSEHOLD_COLUMNS = ("H_ID", "H_GR", "H_ANZAUTO")

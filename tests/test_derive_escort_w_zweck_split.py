@@ -216,3 +216,56 @@ def test_day_filter_raises_when_the_day_column_is_absent():
         DAY_FILTER_COLUMN, filter_reporting_day_legs)
     with pytest.raises(KeyError, match=DAY_FILTER_COLUMN):
         filter_reporting_day_legs(_day_filter_wege().drop(columns=[DAY_FILTER_COLUMN]))
+
+
+# ---------------------------------------------------------------------------
+# Final-review fix wave: DERIVATION_FLAGS claims to carry "the PRODUCTION values", but nothing
+# in the script reads configs/base_bs.yml. Pin the claim against the composed production config,
+# so a flag flipped there without regenerating this reference fails loudly instead of leaving the
+# committed table describing a configuration no run has.
+# ---------------------------------------------------------------------------
+
+def _composed_production_config():
+    """The canonical production config (ADR-0077): the fixed base + the 100 % scale overlay."""
+    from pathlib import Path
+
+    from braunschweig.config_compose import compose
+
+    repo_root = Path(__file__).resolve().parents[1]
+    merged = compose(str(repo_root / "configs" / "base_bs.yml"),
+                     str(repo_root / "configs" / "overlays" / "test_100pct.yml"))
+    return merged["config"]
+
+
+def test_derivation_flags_match_the_composed_production_config():
+    from scripts.derive_escort_w_zweck_split import DERIVATION_FLAGS
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
+    )
+
+    config = _composed_production_config()
+    # The trip-build flags are FLAT keys; the two leg-drop flags carry the popsim prefix. Both key
+    # names come from config_keys (never re-typed), the same single home every stage reads.
+    expected = {
+        "escort_purpose": config["escort_purpose"],
+        "escort_passive_education": config["escort_passive_education"],
+        "escort_passive_from_adult": config["escort_passive_from_adult"],
+        "w_zweck_10_as_leisure": config["w_zweck_10_as_leisure"],
+        "exclude_rbw_legs": config[KEY_EXCLUDE_RBW_LEGS],
+        "drop_leading_arrive_home_leg": config[KEY_DROP_LEADING_ARRIVE_HOME_LEG],
+    }
+    assert DERIVATION_FLAGS == expected, (
+        "the committed escort split was derived under DERIVATION_FLAGS, which the header calls the "
+        "production values; regenerate the table (scripts/derive_escort_w_zweck_split.py) when a "
+        "production flag changes")
+
+
+def test_derivation_gap_default_matches_the_composed_production_config():
+    """The pairing window is not in DERIVATION_FLAGS (it is a CLI argument defaulting to the
+    model's own constant), so pin it against the production value separately."""
+    from braunschweig.popsim.escort_pairing import DEFAULT_MAX_GAP_MINUTES
+    from braunschweig.popsim.stage.config_keys import KEY_PASSIVE_PAIR_MAX_GAP_MINUTES
+
+    config = _composed_production_config()
+    assert float(config[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES]) == pytest.approx(
+        float(DEFAULT_MAX_GAP_MINUTES))

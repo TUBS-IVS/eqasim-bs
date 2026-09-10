@@ -326,13 +326,15 @@ records `purpose_main_fold_code_10`, `escort_passive_from_adult`,
 `w_zwd_codeplan_sentinels`). They are **flat** keys — no
 `braunschweig.population.popsim.` prefix, like `escort_purpose` /
 `escort_passive_education` — and, as always, their defaults live only in
-`configs/base_bs.yml`. All four are ON there and every OFF path is byte-identical;
-where a key's CODE default differs from that value, the table says so.
+`configs/base_bs.yml`. All four are ON there and every OFF path is byte-identical.
+Where a key's DECLARED (stage) default differs from the value below, the table says
+so; the KEYWORD defaults inside the Python builders are always the OFF value, so a
+direct caller that omits a flag keeps the pre-feature behaviour.
 
 | Key (flat, no prefix) | Value in `configs/base_bs.yml` | Effect |
 |---|---|---|
 | `w_zweck_10_as_leisure` | `true` | Maps MiD `W_ZWECK` 10 "anderer Zweck" to `leisure` instead of `other`, following MiD's own main-purpose derivation `hwzweck1` (which folds code 10 to 6 Freizeit for 100 % of the legs, committed `mid2023_w_zweck_by_hwzweck1.csv`). Applies to the plan, the `leisure_participation` seed, the secondary distance layers and the home-office donor pool together. |
-| `escort_passive_from_adult` | `true` | Gives a passive escort leg (`W_ZWECK` 13, the escorted child's own leg) the purpose of the same-household adult leg it is paired with, instead of the flat "education" relabel; an unpaired leg keeps `escort_passive_education`. **Requires `escort_purpose`** (raises at trip-build time naming both keys otherwise), which is why its CODE default is `false` — a configuration that does not compose this base leaves the feature off. |
+| `escort_passive_from_adult` | `true` | Gives a passive escort leg (`W_ZWECK` 13, the escorted child's own leg) the purpose of the same-household adult leg it is paired with, instead of the flat "education" relabel; an unpaired leg keeps `escort_passive_education`. **Requires `escort_purpose`** (raises at trip-build time naming both keys otherwise), which is why its DECLARED (stage) default is `false` — a configuration that does not compose this base leaves the feature off. |
 | `escort_passive_pair_max_gap_minutes` | `15` (minutes, > 0) | Pairing window for the key above: an adult leg farther than this from the child's departure leaves the leg unpaired. Inert while `escort_passive_from_adult` is `false`. |
 | `purpose_subtype_codeplan_sentinels` | `true` | Treats the two MiD W_ZWD no-detail codes 799 (`Freizeit k.A.`) and 699 (`Erledigung k.A.`) as sentinels of the leisure / other-errand subtype models rather than as members of `leisure_activity` / `other_errand_long`, per the verified codeplan. Affects the secondary subtype deciders and their distance layers only — not the trip build. |
 

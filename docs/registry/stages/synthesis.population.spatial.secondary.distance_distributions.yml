@@ -49,4 +49,12 @@ notes: >-
   synpp cache token covers only the resolved values of its declared config keys and its own module
   source, not an edit to a helper module it imports (trips.py, escort_pairing.py, purpose_subtype.py).
   Changing any of the four keys therefore DOES invalidate it; changing a rule inside those helpers
-  without touching a declared value does not.
+  without touching a declared value does not. Second known gap, also pre-existing and also NOT
+  fixed here: this stage declares NEITHER braunschweig.population.popsim.exclude_rbw_legs NOR
+  .drop_leading_arrive_home_leg, so its map_purpose call pairs passive escort legs on the
+  UNFILTERED Wege frame while the trip build pairs on the filtered one. A passive leg whose nearest
+  adult leg is an rbW summary leg or a leading arrive-home leg can therefore land in a different
+  purpose's distance layer than the purpose the plan realises. The effect is bounded and small --
+  6,386 pairs unfiltered vs 6,384 filtered on the weekday legs, measured 2026-09-10 while
+  regenerating mid2023_escort_w_zweck_split.csv -- and it is proposed as an issue rather than
+  changed here, because threading the two keys would widen this stage's declared key set.
