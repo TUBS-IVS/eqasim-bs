@@ -21,8 +21,10 @@ beside the regional SrV fine-purpose reference. NOT a control target and NOT a v
 calibration target: no stage reads it, and nothing is re-estimated from it here.
 
 Filter and weights follow ``scripts/extract_mid_w_zweck_hwzweck1.py`` exactly -- its weekday and
-rbW constants are IMPORTED rather than repeated, so the two committed MiD Wege aggregates cannot
-silently drift onto different leg universes.
+rbW constants are IMPORTED rather than repeated, and the leg universe itself is applied through
+``braunschweig.popsim.trips.weekday_diary_leg_mask`` (the ONE definition, which the model's own
+MiD estimations use as well; ADR-0116), so the two committed MiD Wege aggregates cannot silently
+drift onto different leg universes -- nor onto a different universe than the estimation.
 
 Usage (eqasim env, from a worktree; point --raw at the local raw directory):
     python scripts/extract_mid_w_zwd_groups.py \
@@ -55,6 +57,7 @@ from braunschweig.popsim.purpose_subtype import (  # noqa: E402
 from braunschweig.popsim.shop_subtype import (  # noqa: E402
     SHOP_DAILY_W_ZWD, SHOP_DETAIL_MISSING, SHOP_NONDAILY_W_ZWD,
 )
+from braunschweig.popsim.trips import weekday_diary_leg_mask  # noqa: E402
 from scripts.extract_mid_w_zweck_hwzweck1 import (  # noqa: E402
     KERNWO_WEEKDAY_CODES, RBW_SUMMARY_LEG_CODE,
 )
@@ -151,7 +154,14 @@ def specs_for_variant(variant: str) -> tuple:
 
 
 def filter_weekday_legs(wege: pd.DataFrame) -> tuple:
-    """Weekday, non-rbW legs -- the same universe as scripts/extract_mid_w_zweck_hwzweck1.py.
+    """The WEEKDAY DIARY universe -- weekday, non-rbW legs.
+
+    The universe itself is NOT defined here: the mask comes from
+    ``braunschweig.popsim.trips.weekday_diary_leg_mask``, the ONE definition the model's own
+    MiD estimations apply as well (the secondary distance layers and the three subtype
+    deciders, under ``secondary_mid_weekday_legs_only``; ADR-0116), and the sibling extraction
+    ``scripts/extract_mid_w_zweck_hwzweck1.py`` calls the same helper -- so this committed
+    reference and the estimation it is compared against cannot describe different days.
 
     Returns ``(filtered, diagnostics)``. The diagnostics carry the raw and kept leg counts and,
     per column, how many values became NaN under the ``errors="coerce"`` numeric coercion: a
@@ -183,8 +193,7 @@ def filter_weekday_legs(wege: pd.DataFrame) -> tuple:
             % (_LOG_TAG, n_invalid_weight, n_total,
                100.0 * n_invalid_weight / n_total if n_total else float("nan")))
 
-    filtered = frame[frame["kernwo"].isin(KERNWO_WEEKDAY_CODES)
-                     & (frame["W_RBW"] != RBW_SUMMARY_LEG_CODE)]
+    filtered = frame[weekday_diary_leg_mask(frame)]
     logger.info("%s kept %d/%d legs (%.2f%%) after the weekday (kernwo in %s) and non-rbW "
                 "(W_RBW != %d) filter", _LOG_TAG, len(filtered), n_total,
                 100.0 * len(filtered) / n_total if n_total else float("nan"),
@@ -336,14 +345,17 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "#   reads it, and nothing is re-estimated from it.",
         "# Universe: weekday legs (kernwo in %s) that are not route-break summary legs"
         % list(KERNWO_WEEKDAY_CODES),
-        "#   (W_RBW != %d) -- the same filter as scripts/extract_mid_w_zweck_hwzweck1.py, whose"
-        % RBW_SUMMARY_LEG_CODE,
-        "#   constants this script imports. A purpose's universe is the legs whose W_ZWECK is in",
+        "#   (W_RBW != %d) -- the WEEKDAY DIARY universe of" % RBW_SUMMARY_LEG_CODE,
+        "#   braunschweig.popsim.trips.weekday_diary_leg_mask, applied through that ONE helper",
+        "#   (scripts/extract_mid_w_zweck_hwzweck1.py, whose constants this script imports, calls",
+        "#   it too). A purpose's universe is the legs whose W_ZWECK is in",
         "#   its spec's zweck_values, and only LABELLED legs of that universe enter the share,",
         "#   labelled by the very same purpose_subtype.label_legs helper the model's estimation",
-        "#   uses. The labelling RULE is shared; the leg UNIVERSE is NOT: the subtype decider and",
-        "#   the distance layers label EVERY delivered Wege row (no kernwo / W_RBW filter), so",
-        "#   their shares differ from the WEEKDAY shares measured here (ADR-0115). A leg is",
+        "#   uses. Both the labelling RULE and the leg UNIVERSE are shared with the estimation:",
+        "#   the subtype deciders and the distance layers apply the SAME weekday_diary_leg_mask",
+        "#   under secondary_mid_weekday_legs_only (ADR-0116, which closes the two-universe",
+        "#   difference ADR-0115 recorded); with that flag off they label every delivered Wege",
+        "#   row instead and their shares differ from the WEEKDAY shares measured here. A leg is",
         "#   LABELLED either by a W_ZWD code that is a member of one of the spec's groups, or by a",
         "#   W_ZWECK-defined group (spec.zweck_groups), which wins over the detail code.",
         "#   Sentinel legs are excluded from numerator AND",

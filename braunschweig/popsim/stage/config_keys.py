@@ -385,6 +385,25 @@ DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True
 KEY_LEISURE_UNSPECIFIED_SUBTYPE = "leisure_unspecified_subtype"
 DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 
+# secondary_mid_weekday_legs_only (issue #373, ADR-0116): the secondary distance layers
+# (braunschweig.popsim.distance_distributions, ALL layers -- aggregate, per-purpose and every
+# subtype layer) and the three MiD-based subtype deciders
+# (braunschweig.synthesis.locations.secondary_chainsolvers.deciders) estimate on the WEEKDAY
+# diary universe -- the seed's own day filter and no rbW summary records
+# (braunschweig.popsim.trips.weekday_diary_leg_mask) -- instead of every delivered MiD Wege row.
+# The synthetic population IS a weekday, and the committed MiD reference tables measure that
+# same universe, so without this a Tuesday plan drew its leisure types and distances partly from
+# weekend diaries (ADR-0115 "Two universes"). Both stages must resolve the SAME value: the
+# decider labels a leg and the layer supplies that label's donor pool, so a config in which they
+# disagreed would pair a label from one universe with a pool from the other -- hence the single
+# home here and the imported constants in both configure() calls. Default True (project rule:
+# new features default on); the CODE default of distance_distributions.run's keyword stays False
+# so a direct caller/test that omits it keeps today's behaviour. NOT a trip-build key -> not in
+# ENTD_REJECTED_KEYS (same reasoning as KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS: popsim_open keeps
+# the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
+KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
+DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+
 # MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
 # build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
 # each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the

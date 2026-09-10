@@ -44,11 +44,24 @@ _OTHER_ESCORT_KM = 3.0
 # ADR-0115). Distinct from every constant above so the layer's "values" array
 # identifies the group unambiguously.
 _LEISURE_UNSPECIFIED_KM = 27.0
+# Legs OUTSIDE the weekday diary universe (issue #373, ADR-0116): a WEEKEND leg
+# (kernwo outside the seed's day filter) and an rbW SUMMARY record (W_RBW == 1).
+# Both carry a distance no in-universe group uses, so a layer built under
+# weekday_legs_only=True can be checked for their absence unambiguously.
+_WEEKEND_KM = 66.0
+_RBW_KM = 77.0
 
 
 def _add_rows(rows: list, row_id_start: int, *, w_zweck: int, w_zwd: int | None,
-              wegkm: float, n: int = 15, include_w_zwd: bool = True) -> int:
-    """Append n synthetic Wege rows with fixed purpose/detail/distance; return next row id."""
+              wegkm: float, n: int = 15, include_w_zwd: bool = True,
+              kernwo: int = 2, w_rbw: int = 0) -> int:
+    """Append n synthetic Wege rows with fixed purpose/detail/distance; return next row id.
+
+    ``kernwo`` / ``w_rbw`` carry the two columns the weekday diary universe reads
+    (``trips.weekday_diary_leg_mask``); the defaults put every row INSIDE that universe
+    (a weekday reporting day, not an rbW summary record), so a fixture that does not
+    mention them is unaffected by ``weekday_legs_only``.
+    """
     row_id = row_id_start
     for _ in range(n):
         row = {
@@ -58,6 +71,7 @@ def _add_rows(rows: list, row_id_start: int, *, w_zweck: int, w_zwd: int | None,
             "wegkm_imp": wegkm,
             "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
             "W_GEW": 1.0,
+            "kernwo": kernwo, "W_RBW": w_rbw,
         }
         if include_w_zwd:
             row["W_ZWD"] = w_zwd
@@ -67,7 +81,8 @@ def _add_rows(rows: list, row_id_start: int, *, w_zweck: int, w_zwd: int | None,
 
 
 def _make_subtype_wege(*, include_w_zwd: bool = True,
-                       include_code_10: bool = False) -> pd.DataFrame:
+                       include_code_10: bool = False,
+                       include_weekend_and_rbw: bool = False) -> pd.DataFrame:
     """Synthetic Wege frame covering all leisure and other subtype groups.
 
     W_ZWECK codes: 7 = leisure, 5 = other/errand, 6 = other/escort (see
@@ -76,9 +91,34 @@ def _make_subtype_wege(*, include_w_zwd: bool = True,
     become leisure only under ``w_zweck_10_as_leisure`` and carry the design
     sentinel W_ZWD 2202 ("Zweck nicht zuordenbar") rather than a leisure
     detail code -- the fifth leisure subtype (issue #373, ADR-0115).
+
+    With ``include_weekend_and_rbw`` the frame additionally carries legs OUTSIDE
+    the weekday diary universe (issue #373, ADR-0116) -- weekend legs
+    (``kernwo`` 6) at ``_WEEKEND_KM`` and rbW summary records (``W_RBW`` 1) at
+    ``_RBW_KM``, spread over shop, leisure and other so EVERY layer the stage
+    builds has an out-of-universe leg that ``weekday_legs_only=True`` must drop.
     """
     rows: list = []
     row_id = 0
+    if include_weekend_and_rbw:
+        # Shop legs exist ONLY in this branch (the base fixture has none): a weekday
+        # daily leg and a WEEKEND non-daily leg, so the shop layers are covered too.
+        row_id = _add_rows(rows, row_id, w_zweck=4, w_zwd=501, wegkm=2.0,
+                           include_w_zwd=include_w_zwd)
+        row_id = _add_rows(rows, row_id, w_zweck=4, w_zwd=502, wegkm=_WEEKEND_KM,
+                           include_w_zwd=include_w_zwd, kernwo=6)
+        # Weekend legs of every other purpose the fixture covers.
+        for weekend_zweck, weekend_zwd in ((7, 708), (5, 601), (6, 7704)):
+            row_id = _add_rows(rows, row_id, w_zweck=weekend_zweck, w_zwd=weekend_zwd,
+                               wegkm=_WEEKEND_KM, include_w_zwd=include_w_zwd, kernwo=6)
+        # rbW summary records: a weekday reporting day, but not an individually
+        # reported diary leg.
+        for rbw_zweck, rbw_zwd in ((7, 706), (5, 603)):
+            row_id = _add_rows(rows, row_id, w_zweck=rbw_zweck, w_zwd=rbw_zwd,
+                               wegkm=_RBW_KM, include_w_zwd=include_w_zwd, w_rbw=1)
+        if include_code_10:
+            row_id = _add_rows(rows, row_id, w_zweck=10, w_zwd=2202, wegkm=_WEEKEND_KM,
+                               include_w_zwd=include_w_zwd, kernwo=6)
     if include_code_10:
         row_id = _add_rows(rows, row_id, w_zweck=10, w_zwd=2202,
                            wegkm=_LEISURE_UNSPECIFIED_KM,
@@ -417,3 +457,80 @@ def test_leisure_unspecified_empty_leisure_universe_logs_no_nan_rate(caplog):
     assert any("leisure subtype leisure_unspecified: 0/0 leisure legs (no leisure legs)" in message
                for message in messages), messages
     assert not any("nan" in message.lower() for message in messages), messages
+
+
+# ---------------------------------------------------------------------------
+# The WEEKDAY DIARY universe (issue #373, ADR-0116): every layer this stage
+# builds describes ONE synthetic weekday, so under weekday_legs_only the donor
+# legs are the seed's weekday diaries without rbW summary records
+# (trips.weekday_diary_leg_mask). The keyword defaults to False, which keeps the
+# direct-call behaviour byte-identical to before.
+# ---------------------------------------------------------------------------
+
+_WEEKEND_M = _WEEKEND_KM * 1000.0 / DETOUR_FACTOR
+_RBW_M = _RBW_KM * 1000.0 / DETOUR_FACTOR
+
+_ALL_LAYER_FLAGS = dict(by_purpose=True, leisure_subtype_split=True,
+                        other_subtype_split=True, shop_daily_split=True,
+                        leisure_unspecified_subtype=True, w_zweck_10_as_leisure=True)
+
+
+def _layer_values(layer: dict) -> set:
+    """Every distance value in one {mode: {bounds, distributions}} layer."""
+    return {float(value)
+            for mode_layer in layer.values()
+            for distribution in mode_layer["distributions"]
+            for value in distribution["values"]}
+
+
+def test_weekday_legs_only_drops_weekend_and_rbw_legs_from_every_layer():
+    wege = _make_subtype_wege(include_code_10=True, include_weekend_and_rbw=True)
+    out = run(wege, weekday_legs_only=True, **_ALL_LAYER_FLAGS)
+    assert len(out) > 1
+    for key, layer in out.items():
+        assert not ({_WEEKEND_M, _RBW_M} & _layer_values(layer)), key
+
+
+def test_weekday_legs_only_off_keeps_the_weekend_and_rbw_legs():
+    """The OFF path is today's behaviour: an out-of-universe leg still contributes
+    its distance, so the ON-path assertion above is a real difference and not a
+    fixture that lacks those legs in the first place."""
+    wege = _make_subtype_wege(include_code_10=True, include_weekend_and_rbw=True)
+    out = run(wege, weekday_legs_only=False, **_ALL_LAYER_FLAGS)
+    seen = set()
+    for layer in out.values():
+        seen |= _layer_values(layer)
+    assert {_WEEKEND_M, _RBW_M} <= seen
+
+
+def test_weekday_legs_only_default_false_is_byte_identical_to_today():
+    wege = _make_subtype_wege(include_code_10=True, include_weekend_and_rbw=True)
+    omitted = run(wege, **_ALL_LAYER_FLAGS)
+    explicit_off = run(wege, weekday_legs_only=False, **_ALL_LAYER_FLAGS)
+    assert _serialise(omitted) == _serialise(explicit_off)
+
+
+def test_weekday_legs_only_logs_the_kept_rate(caplog):
+    """No silent filter: the stage must report how many legs the universe kept and
+    why the others went (CLAUDE.md "Fallback transparency")."""
+    wege = _make_subtype_wege(include_code_10=True, include_weekend_and_rbw=True)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        run(wege, weekday_legs_only=True, **_ALL_LAYER_FLAGS)
+    assert "[popsim.distance_distributions] weekday diary universe" in caplog.text
+    assert "non-weekday" in caplog.text and "rbW" in caplog.text
+
+
+def test_weekday_legs_only_raises_when_the_universe_column_is_absent():
+    """kernwo/W_RBW are required only when the keyword is ON; the failure must name
+    the missing column instead of silently keeping every leg."""
+    wege = _make_subtype_wege().drop(columns=["kernwo"])
+    with pytest.raises(ValueError, match="kernwo"):
+        run(wege, by_purpose=True, weekday_legs_only=True)
+
+
+def test_weekday_legs_only_off_needs_no_universe_column():
+    """The OFF path must not start requiring the two columns (every existing direct
+    caller, e.g. the by-purpose fixtures, has neither)."""
+    wege = _make_subtype_wege().drop(columns=["kernwo", "W_RBW"])
+    out = run(wege, by_purpose=True, leisure_subtype_split=True)
+    assert "leisure" in out

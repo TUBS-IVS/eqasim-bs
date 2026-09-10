@@ -25,7 +25,9 @@ from pathlib import Path
 import pandas as pd
 
 from braunschweig.popsim.mid.csv_format import detect_csv_separator
-from braunschweig.popsim.seed import MID_SEED_COLUMNS
+from braunschweig.popsim.trips import (
+    RBW_LEG_FLAG, WEEKDAY_DIARY_KERNWO, weekday_diary_leg_mask,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_RAW_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "popsim" / "mid2023_raw"
@@ -35,23 +37,22 @@ WEGE_FILE = "MiD2023_Wege.csv"
 
 #: Weekday legs only (Kernwochentage Di/Mi/Do); mirrors the weekday-trip convention used by the
 #: other committed MiD Wege aggregates in this repository (e.g. mid2023_escort_w_zweck_split.csv
-#: draws from the same weekday sample logic). IMPORTED from the PopulationSim seed's own day
-#: filter (``braunschweig.popsim.seed.MID_SEED_COLUMNS.day_filter_values``, the same name
-#: ``scripts/derive_escort_w_zweck_split.py`` imports it as) rather than re-typed as a literal
-#: tuple: until issue #373's cleanup wave this module WAS re-typed as a bare ``(1, 2, 3)`` --
-#: not yet DRIFTED from the seed's actual value (both were literally ``(1, 2, 3)``), but a
-#: re-typed copy has no mechanism to notice a future change to the seed's weekday-code
-#: universe, which is exactly the silent-drift risk importing the single home removes (the two
-#: committed MiD Wege aggregates, this script's and derive_escort_w_zweck_split.py's, must
-#: describe the SAME leg universe). ``seed.WEEKDAY_KERNWO`` is the module's OWN alias for the
-#: same value; either name would do, ``MID_SEED_COLUMNS.day_filter_values`` matches the sibling
-#: script's import exactly. Kept as ``KERNWO_WEEKDAY_CODES`` (not renamed) because
+#: draws from the same weekday sample logic). IMPORTED from the model's ONE weekday-universe
+#: definition (``braunschweig.popsim.trips.WEEKDAY_DIARY_KERNWO``, which itself reads the
+#: PopulationSim seed's own day filter ``seed.MID_SEED_COLUMNS.day_filter_values``) rather than
+#: re-typed as a literal tuple: until issue #373's cleanup wave this module WAS re-typed as a
+#: bare ``(1, 2, 3)`` -- not yet DRIFTED from the seed's actual value (both were literally
+#: ``(1, 2, 3)``), but a re-typed copy has no mechanism to notice a future change to the
+#: weekday-code universe, which is exactly the silent-drift risk importing the single home
+#: removes (the committed MiD Wege aggregates and the model's own estimation must describe the
+#: SAME leg universe -- ADR-0116). Kept as ``KERNWO_WEEKDAY_CODES`` (not renamed) because
 #: ``scripts/extract_mid_w_zwd_groups.py`` imports this exact name from this module.
-KERNWO_WEEKDAY_CODES = MID_SEED_COLUMNS.day_filter_values
+KERNWO_WEEKDAY_CODES = WEEKDAY_DIARY_KERNWO
 #: W_RBW == 1 marks a route-break summary leg (Ruecken/Bogen-Weg fragment introduced by MiD's own
 #: route-splitting), not a genuine, independently reported trip purpose; excluded so the fold is
 #: computed over real legs only, matching how downstream trip construction filters W_RBW.
-RBW_SUMMARY_LEG_CODE = 1
+#: Imported (``trips.RBW_LEG_FLAG``) for the same single-home reason as the weekday codes above.
+RBW_SUMMARY_LEG_CODE = RBW_LEG_FLAG
 REQUIRED_COLUMNS = ["W_ZWECK", "hwzweck1", "W_GEW", "W_RBW", "kernwo"]
 
 
@@ -68,15 +69,19 @@ def _git_commit_hash() -> str:
 def derive_fold_table(wege: pd.DataFrame) -> pd.DataFrame:
     """Compute the W_GEW-weighted W_ZWECK x hwzweck1 row-share table.
 
-    Filters to weekday legs (``kernwo in KERNWO_WEEKDAY_CODES``) and drops route-break summary
-    legs (``W_RBW == RBW_SUMMARY_LEG_CODE``), matching the filter documented in the module header
-    and the committed CSV. ``share_weighted`` is the W_GEW share of each (w_zweck, hwzweck1) pair
-    within its w_zweck total, so the rows for one w_zweck sum to 1.0.
+    Restricts the legs to the WEEKDAY DIARY universe -- weekday legs (``kernwo in
+    KERNWO_WEEKDAY_CODES``) that are not route-break summary legs (``W_RBW ==
+    RBW_SUMMARY_LEG_CODE``) -- through ``braunschweig.popsim.trips.weekday_diary_leg_mask``,
+    the ONE definition of that universe the model's own estimation stages apply as well
+    (ADR-0116), so this evidence table and the estimation it informs cannot describe
+    different days. The filter is documented in the module header and in the committed CSV.
+    ``share_weighted`` is the W_GEW share of each (w_zweck, hwzweck1) pair within its w_zweck
+    total, so the rows for one w_zweck sum to 1.0.
     """
     wege = wege.copy()
     for column in ("W_ZWECK", "hwzweck1", "W_GEW", "W_RBW", "kernwo"):
         wege[column] = pd.to_numeric(wege[column], errors="coerce")
-    filtered = wege[wege["kernwo"].isin(KERNWO_WEEKDAY_CODES) & (wege["W_RBW"] != RBW_SUMMARY_LEG_CODE)]
+    filtered = wege[weekday_diary_leg_mask(wege)]
     if len(filtered) == 0:
         raise ValueError(
             "[extract_mid_w_zweck_hwzweck1] no legs left after the weekday/non-rbW filter; "

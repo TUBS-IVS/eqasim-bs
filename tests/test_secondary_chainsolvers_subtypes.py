@@ -609,7 +609,14 @@ def test_purpose_subtype_codeplan_sentinels_default_agrees_across_its_two_homes(
 # ---------------------------------------------------------------------------
 
 
-def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15):
+def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15, kernwo=2, w_rbw=0):
+    """Append n synthetic Wege rows; return the next row id.
+
+    ``kernwo`` / ``w_rbw`` carry the two columns the weekday diary universe reads
+    (``braunschweig.popsim.trips.weekday_diary_leg_mask``, issue #373 / ADR-0116); the
+    defaults put every row INSIDE that universe, so a fixture that does not mention them
+    estimates the same table whether ``secondary_mid_weekday_legs_only`` is on or off.
+    """
     row_id = row_id_start
     for _ in range(n):
         rows.append({
@@ -619,6 +626,7 @@ def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15):
             "wegkm_imp": wegkm,
             "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
             "W_GEW": 1.0,
+            "kernwo": kernwo, "W_RBW": w_rbw,
         })
         row_id += 1
     return row_id
@@ -1441,3 +1449,161 @@ def test_leisure_unspecified_offer_is_inert_when_the_flag_is_off():
             check_names=False,
             obj=f"the inert leisure_unspecified offer changed {column!r}",
         )
+
+
+# ---------------------------------------------------------------------------
+# The WEEKDAY DIARY universe of the three MiD-based deciders (issue #373,
+# ADR-0116): the synthetic population is a weekday, so P(group | mode, tt_band)
+# must be estimated on the seed's weekday diaries without rbW summary records
+# (trips.weekday_diary_leg_mask), not on every delivered Wege row. The flag
+# (config_keys.KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY) is read one-argument inside
+# each builder, so a _FakeContext override carries it here.
+# ---------------------------------------------------------------------------
+
+def _weekday_flag(value: bool) -> dict:
+    from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY
+    return {KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY: value}
+
+
+def _shop_weekday_vs_weekend_wege():
+    """40 WEEKDAY daily-shop legs (W_ZWD 501) and 200 WEEKEND non-daily ones (502).
+
+    With the weekday universe applied, P(daily) == 1.0 -> the decider is fully
+    deterministic; without it the weekend legs dominate the marginal, so
+    "shop_non_daily" appears in the drawn sequence.
+    """
+    rows = []
+    row_id = _add_rows(rows, 0, w_zweck=4, w_zwd=501, wegkm=2.0, n=40)
+    _add_rows(rows, row_id, w_zweck=4, w_zwd=502, wegkm=30.0, n=200, kernwo=6)
+    return pd.DataFrame(rows)
+
+
+def _leisure_weekday_vs_weekend_wege():
+    """40 WEEKDAY excursion legs (W_ZWD 708) and 200 WEEKEND local ones (706)."""
+    rows = []
+    row_id = _add_rows(rows, 0, w_zweck=7, w_zwd=708, wegkm=80.0, n=40)
+    _add_rows(rows, row_id, w_zweck=7, w_zwd=706, wegkm=5.0, n=200, kernwo=6)
+    return pd.DataFrame(rows)
+
+
+def _other_weekday_vs_rbw_wege():
+    """40 WEEKDAY errand-short legs (W_ZWECK 5 / W_ZWD 601) and 200 rbW ESCORT
+    summary records (W_ZWECK 6, W_RBW 1) -- the second drop reason of the
+    universe, so the deciders are pinned against both halves of it."""
+    rows = []
+    row_id = _add_rows(rows, 0, w_zweck=5, w_zwd=601, wegkm=6.0, n=40)
+    _add_rows(rows, row_id, w_zweck=6, w_zwd=7704, wegkm=3.0, n=200, w_rbw=1)
+    return pd.DataFrame(rows)
+
+
+_DECIDER_CALLS = [("car", float(tt)) for tt in range(100, 2000, 137)]
+
+
+def test_shop_decider_estimates_on_the_weekday_universe_when_the_flag_is_on(monkeypatch):
+    ctx = _decider_context({"secondary_shop_daily_split": True, **_weekday_flag(True)},
+                           monkeypatch, _shop_weekday_vs_weekend_wege())
+    decide = sc._build_shop_subtype_decider(ctx, random_seed=1)
+    assert {decide(mode, tt) for mode, tt in _DECIDER_CALLS} == {"shop_daily"}
+
+
+def test_shop_decider_uses_the_weekend_legs_when_the_flag_is_off(monkeypatch):
+    ctx = _decider_context({"secondary_shop_daily_split": True, **_weekday_flag(False)},
+                           monkeypatch, _shop_weekday_vs_weekend_wege())
+    decide = sc._build_shop_subtype_decider(ctx, random_seed=1)
+    assert "shop_non_daily" in {decide(mode, tt) for mode, tt in _DECIDER_CALLS}
+
+
+def test_leisure_decider_estimates_on_the_weekday_universe_when_the_flag_is_on(monkeypatch):
+    ctx = _decider_context({"secondary_leisure_subtype_split": True, **_weekday_flag(True)},
+                           monkeypatch, _leisure_weekday_vs_weekend_wege())
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert {decide(mode, tt) for mode, tt in _DECIDER_CALLS} == {"leisure_excursion"}
+
+
+def test_leisure_decider_uses_the_weekend_legs_when_the_flag_is_off(monkeypatch):
+    ctx = _decider_context({"secondary_leisure_subtype_split": True, **_weekday_flag(False)},
+                           monkeypatch, _leisure_weekday_vs_weekend_wege())
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert "leisure_local" in {decide(mode, tt) for mode, tt in _DECIDER_CALLS}
+
+
+def test_other_decider_estimates_on_the_weekday_universe_when_the_flag_is_on(monkeypatch):
+    ctx = _decider_context({"secondary_other_subtype_split": True, **_weekday_flag(True)},
+                           monkeypatch, _other_weekday_vs_rbw_wege())
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert {decide(mode, tt) for mode, tt in _DECIDER_CALLS} == {"other_errand_short"}
+
+
+def test_other_decider_uses_the_rbw_legs_when_the_flag_is_off(monkeypatch):
+    ctx = _decider_context({"secondary_other_subtype_split": True, **_weekday_flag(False)},
+                           monkeypatch, _other_weekday_vs_rbw_wege())
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert "other_escort" in {decide(mode, tt) for mode, tt in _DECIDER_CALLS}
+
+
+def test_deciders_log_the_kept_rate_of_the_weekday_universe(monkeypatch, caplog):
+    """Every one of the three builders must report the universe it estimated on
+    (kept n/total plus both drop reasons) -- no silent filter."""
+    import logging
+
+    cases = (
+        ({"secondary_shop_daily_split": True}, sc._build_shop_subtype_decider,
+         _shop_weekday_vs_weekend_wege(), "shop subtype"),
+        ({"secondary_leisure_subtype_split": True}, sc._build_leisure_subtype_decider,
+         _leisure_weekday_vs_weekend_wege(), "leisure subtype"),
+        ({"secondary_other_subtype_split": True}, sc._build_other_subtype_decider,
+         _other_weekday_vs_rbw_wege(), "other subtype"),
+    )
+    for overrides, builder, wege, tag in cases:
+        caplog.clear()
+        ctx = _decider_context({**overrides, **_weekday_flag(True)}, monkeypatch, wege)
+        with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+            builder(ctx, random_seed=1)
+        assert tag in caplog.text, tag
+        assert "weekday diary universe: kept 40/240" in caplog.text, tag
+        assert "non-weekday" in caplog.text and "rbW" in caplog.text, tag
+
+
+def test_shop_decider_pinned_share_needs_no_mid_frame():
+    """The pinned-share branch skips the MiD estimation entirely, so the weekday
+    universe must not be applied there (it would demand a frame that is never
+    loaded)."""
+    ctx = _FakeContext({"secondary_shop_daily_split": True,
+                        "secondary_shop_daily_share": 0.42,
+                        "secondary_distance_min_obs": 30,
+                        **_weekday_flag(True)})
+    decide = sc._build_shop_subtype_decider(ctx, random_seed=1)
+    assert decide("car", 600.0) in ("shop_daily", "shop_non_daily")
+    assert "braunschweig.population.popsim.mid_dir" not in ctx.registered
+
+
+def test_configure_declares_secondary_mid_weekday_legs_only_default_true():
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered[KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY] is True
+    assert DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY is True
+
+
+def test_secondary_mid_weekday_legs_only_default_agrees_across_its_two_homes():
+    """Both stages that estimate on MiD must resolve the SAME key and default: the
+    distance layers and the deciders describe one universe, and a config in which
+    they disagreed would label a leg from one universe and give it a donor pool
+    from the other (mirrors the codeplan-sentinels parity test above)."""
+    from braunschweig.popsim import distance_distributions
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+
+    chainsolvers_ctx = _FakeContext()
+    sc.configure(chainsolvers_ctx)
+    distance_ctx = _FakeContext()
+    distance_distributions.configure(distance_ctx)
+
+    assert chainsolvers_ctx.registered[KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY] == \
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY
+    assert distance_ctx.registered[KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY] == \
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY

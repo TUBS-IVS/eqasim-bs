@@ -18,6 +18,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.seed import MID_SEED_COLUMNS
 from data.hts import hts
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,86 @@ def legs_kept_by_the_trip_build(
         out = out.drop(index=leading_arrive_home_leg_index(
             out, household_col=household_col, person_col=person_col, trip_col=trip_col))
     return out
+
+
+#: The model's ONE weekday definition: the SAME day filter the PopulationSim seed applies
+#: (``seed.MID_SEED_COLUMNS.day_filter_values``, the MiD ``kernwo`` core-week codes; the seed
+#: module's own alias for the value set is ``seed.WEEKDAY_KERNWO``). Read from the seed rather
+#: than re-typed, so a change to the model's weekday universe cannot leave a second, silently
+#: stale copy behind. Every MiD-based estimation of a WEEKDAY quantity uses this universe
+#: (issue #373, ADR-0116).
+WEEKDAY_DIARY_KERNWO = tuple(MID_SEED_COLUMNS.day_filter_values)
+
+#: Columns the weekday diary universe is defined on; named in the error message so a delivery
+#: that cannot express the universe fails with the column, not with a silently wider universe.
+WEEKDAY_DIARY_COLUMNS = ("kernwo", "W_RBW")
+
+
+def weekday_diary_leg_mask(wege: pd.DataFrame, *, kernwo_col: str = "kernwo") -> pd.Series:
+    """Boolean mask of the legs that form the WEEKDAY DIARY universe.
+
+    True where the reporting day is in :data:`WEEKDAY_DIARY_KERNWO` AND the leg is not an rbW
+    summary record (:func:`rbw_leg_mask`). This is the ONE definition of "the leg universe of
+    one synthetic weekday" (issue #373, ADR-0116), shared by the secondary distance layers
+    (``braunschweig.popsim.distance_distributions``), the three MiD-based subtype deciders
+    (``braunschweig.synthesis.locations.secondary_chainsolvers.deciders``) and the two committed
+    MiD reference extractions (``scripts/extract_mid_w_zwd_groups.py``,
+    ``scripts/extract_mid_w_zweck_hwzweck1.py``), so a reference and the estimation it is
+    compared against can never describe different days.
+
+    ``kernwo_col`` values are coerced to numeric (a CSV delivery may hand the codes over as
+    text); an uncoercible value counts as NOT weekday rather than raising, because a leg whose
+    reporting day cannot be read must not be admitted to a weekday universe.
+
+    Raises ``ValueError`` naming the column when ``kernwo_col`` or ``W_RBW`` is absent: the
+    universe must never be applied silently to a frame that cannot express it (a missing
+    ``kernwo`` would otherwise read as "every leg is a weekday leg").
+    """
+    for column in (kernwo_col, "W_RBW"):
+        if column not in wege.columns:
+            raise ValueError(
+                f"[popsim.trips] the weekday diary universe needs the MiD Wege column "
+                f"{column!r} (universe columns: {WEEKDAY_DIARY_COLUMNS}); it is absent from "
+                f"the frame (present: {list(wege.columns[:20])} ...)."
+            )
+    is_weekday = pd.to_numeric(wege[kernwo_col], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
+    return is_weekday & ~rbw_leg_mask(wege)
+
+
+def restrict_to_weekday_diary_legs(wege: pd.DataFrame, *, log_tag: str) -> pd.DataFrame:
+    """``wege`` reduced to the weekday diary universe, with the kept rate logged.
+
+    Applies :func:`weekday_diary_leg_mask` and logs ``kept n/total (rate)`` together with the
+    two drop reasons at INFO -- a filter that shrinks an estimation universe must never be
+    silent (CLAUDE.md "Fallback transparency"). The two reasons PARTITION the dropped legs:
+    ``non-weekday`` counts every leg outside the day filter (rbW or not) and ``rbW`` counts the
+    weekday legs dropped for being summary records, so kept + non-weekday + rbW == total.
+
+    Raises ``ValueError`` when nothing is kept: a stage that would estimate on an empty frame
+    must stop rather than fall back to something else (an empty result here means the delivery's
+    ``kernwo`` / ``W_RBW`` contents are not what the universe assumes).
+
+    Returns a filtered view/copy; ``wege`` is not mutated.
+    """
+    mask = weekday_diary_leg_mask(wege)   # raises when a universe column is absent
+    is_weekday = pd.to_numeric(wege["kernwo"], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
+    n_total = len(wege)
+    n_kept = int(mask.sum())
+    n_non_weekday = int((~is_weekday).sum())
+    n_rbw = int((is_weekday & rbw_leg_mask(wege)).sum())
+    logger.info(
+        "%s weekday diary universe: kept %d/%d legs (%.1f%%); dropped %d non-weekday "
+        "(kernwo outside %s), %d rbW summary records",
+        log_tag, n_kept, n_total, 100.0 * n_kept / n_total if n_total else float("nan"),
+        n_non_weekday, list(WEEKDAY_DIARY_KERNWO), n_rbw,
+    )
+    if n_kept == 0:
+        raise ValueError(
+            f"{log_tag} the weekday diary universe is EMPTY: none of {n_total} legs is a "
+            f"weekday (kernwo in {list(WEEKDAY_DIARY_KERNWO)}) non-rbW leg; check the kernwo "
+            "and W_RBW contents of the MiD delivery."
+        )
+    return wege[mask]
 
 
 def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,

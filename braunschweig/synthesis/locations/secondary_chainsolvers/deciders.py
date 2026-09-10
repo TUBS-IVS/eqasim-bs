@@ -60,6 +60,16 @@ def _build_shop_subtype_decider(context, random_seed: int):
     MiD-estimated table with a flat marginal share (used to pin the share); when
     None the MiD conditional table is used. The labelled fraction is logged (no
     silent fallback).
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY. Applied only in the estimation branch --
+    the pinned-share branch loads no MiD frame at all. This is the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the shop_daily /
+    shop_non_daily distance layers, and both must resolve the same value or a leg
+    labelled here would draw its distance from a pool built on another universe.
     """
     if not context.config("secondary_shop_daily_split"):
         return None
@@ -72,7 +82,9 @@ def _build_shop_subtype_decider(context, random_seed: int):
         impute_subtype,
         tt_band,
     )
-    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+    from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY
+    from braunschweig.popsim.trips import (
+        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
 
     pinned_share = context.config("secondary_shop_daily_share")
     min_obs = int(context.config("secondary_distance_min_obs"))
@@ -92,6 +104,12 @@ def _build_shop_subtype_decider(context, random_seed: int):
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
         mid_dir = context.config("braunschweig.population.popsim.mid_dir")
         mid_wege = mid_module.load_mid_wege(mid_dir)
+        # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
+        # execute-context read of the key declared in configure(). Applied BEFORE map_mode /
+        # the time derivation / the estimation, so every downstream count is on that universe.
+        if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+            mid_wege = restrict_to_weekday_diary_legs(
+                mid_wege, log_tag="[braunschweig.secondary_chainsolvers] shop subtype")
         # estimate_daily_probability needs columns: W_ZWECK, mode, travel_time,
         # W_ZWD, W_GEW. map_mode derives "mode" from hvm_imp; travel_time is
         # arrival - departure in seconds (the same derivation the distance
@@ -212,6 +230,16 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     spec maps to neither a group nor a sentinel RAISES here instead of being
     dropped into the unlabelled share. ``_build_other_subtype_decider`` is
     unchanged in this respect (pre-existing since issue #127).
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY -- weekend leisure carries more
+    excursions and visits, so the all-day mix over-states them (ADR-0115 "Two
+    universes"). Again the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
+    distance layers, and both must resolve the same value.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
@@ -225,8 +253,10 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     )
     from braunschweig.popsim.stage.config_keys import (
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
-    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+    from braunschweig.popsim.trips import (
+        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     # Execute-context config() takes the key alone (declared in configure()
@@ -239,6 +269,13 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); same one-argument
+    # execute-context form and same imported-key rule as the two flags above. Applied BEFORE
+    # map_mode / the time derivation / the coverage guard / the estimation, so the labelled
+    # share and the cell coverage this builder logs describe the universe it estimated on.
+    if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+        mid_wege = restrict_to_weekday_diary_legs(
+            mid_wege, log_tag="[braunschweig.secondary_chainsolvers] leisure subtype")
     # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
     # W_ZWD. map_mode derives "mode" from hvm_imp; travel_time is arrival -
     # departure in seconds (the same derivation as the shop decider / the
@@ -338,6 +375,15 @@ def _build_other_subtype_decider(context, random_seed: int):
     for the other-errand subtype distance layer -- both must resolve the same
     value or a leg labelled ``other_errand_long`` here would draw its distance
     from a donor pool that still includes the excluded 699 legs.
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY. Both composed stages estimate on that
+    one frame, and it is the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the matching
+    distance layers.
     """
     if not context.config("secondary_other_subtype_split"):
         return None
@@ -353,8 +399,11 @@ def _build_other_subtype_decider(context, random_seed: int):
         other_errand_spec,
         tt_band,
     )
-    from braunschweig.popsim.stage.config_keys import KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
-    from braunschweig.popsim.trips import PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+    from braunschweig.popsim.trips import (
+        PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
 
     # Same flag/default as _build_leisure_subtype_decider and
     # distance_distributions -- the key name is IMPORTED, not retyped (see the
@@ -364,6 +413,13 @@ def _build_other_subtype_decider(context, random_seed: int):
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
+    # execute-context read of the key declared in configure(). Applied BEFORE map_mode / the
+    # time derivation, so BOTH composed estimation stages below (the coarse W_ZWECK split and
+    # the W_ZWD errand short/long split) read the same weekday frame.
+    if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+        mid_wege = restrict_to_weekday_diary_legs(
+            mid_wege, log_tag="[braunschweig.secondary_chainsolvers] other subtype")
     mid_wege = map_mode(mid_wege)
     dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
     arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")

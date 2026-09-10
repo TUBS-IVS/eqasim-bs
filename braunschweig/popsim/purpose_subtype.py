@@ -226,12 +226,16 @@ def label_legs(purpose_legs: pd.DataFrame, spec: SubtypeSpec) -> tuple:
     the model; two copies of the precedence rule could drift apart without any test noticing
     (issue #373 review, ruling R10).
 
-    The shared rule does NOT make the two callers' numbers equal, because their leg UNIVERSES
-    differ: the estimation labels every MiD Wege row the stage loads (``mid.load_mid_wege``, no
-    weekday and no route-break filter), while the extraction labels the WEEKDAY non-rbW legs
-    only (``kernwo`` in {1, 2, 3}, ``W_RBW`` != 1). The measured shares therefore differ between
-    them -- the committed reference measures the WEEKDAY mix, not the mix the decider estimates
-    on (issue #373 final review, ruling R13; ADR-0115).
+    Whether the two callers' numbers are equal depends on their leg UNIVERSES, which the
+    labelling rule does not fix. The extraction always labels the WEEKDAY non-rbW legs only
+    (``kernwo`` in {1, 2, 3}, ``W_RBW`` != 1 -- ``trips.weekday_diary_leg_mask``). The
+    ESTIMATION labels the same universe when ``secondary_mid_weekday_legs_only`` is on (the
+    production default since ADR-0116, which applies that very helper in
+    ``distance_distributions.run`` and in the three subtype deciders), and every MiD Wege row
+    the stage loads (``mid.load_mid_wege``, no weekday and no route-break filter) when it is
+    off -- in which case the committed reference measures the WEEKDAY mix and not the mix the
+    decider estimates on (issue #373 final review, ruling R13; ADR-0115, closed by ADR-0116).
+    Residual differences under the flag are ``run()``'s own validity filters, not the universe.
 
     A W_ZWECK-defined group (``spec.zweck_groups``) wins over the detail-code group, because such
     a leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115; see the module

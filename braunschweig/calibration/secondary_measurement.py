@@ -67,43 +67,46 @@ def w12_band_shares(distances_km) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 # In-sample sanity reference means for the leisure/other W_ZWD subtype split.
-# NOT a validated external target (CLAUDE.md "No invented reference values"):
-# these are the measured, W_GEW-weighted MiD 2023 donor means cited in the
-# design spec's Taxonomy tables --
-# docs/superpowers/specs/2026-07-09-wzwd-leisure-errand-split-design.md
-# (issue #127) -- except "leisure_unspecified", whose own source is named at its
-# entry below. Comparing a model's REALISED (in-sample) mean against the SAME
-# donor data used to build the model's subtype split is a sanity check only;
-# it must never be reported as a pass/fail validation gate.
+# NOT validated external targets (CLAUDE.md "No invented reference values"):
+# every entry is an AD-HOC MEASUREMENT on the raw MiD 2023 B1 Wege delivery,
+# taken on 2026-09-10 and recorded in ADR-0116 (issue #373). Comparing a model's
+# REALISED (in-sample) mean against the SAME donor data the model's subtype split
+# was built from is a sanity check only; it must never be reported as a pass/fail
+# validation gate. The entries are POINT pins ``(m, m)``, not judgement bands:
+# they say "this is the donor mean of that pool", nothing about tolerance.
+#
+# FRAME (all eight entries, re-measured together for ADR-0116): the donor pool
+# each layer is actually built from -- the per-group frame
+# braunschweig.popsim.distance_distributions.run() itself selects under the
+# production flag set of configs/base_bs.yml WITH secondary_mid_weekday_legs_only
+# ON, i.e. the WEEKDAY DIARY universe (trips.weekday_diary_leg_mask: kernwo in
+# the seed's day filter, W_RBW != 1), then run()'s own travel-time validity and
+# primary-both filters, then the group's own legs. Before ADR-0116 the layers
+# were estimated on EVERY delivered Wege row; those all-day values (and the n of
+# each) are listed in ADR-0116 for the OFF path, and the pins here would have to
+# move back to them if secondary_mid_weekday_legs_only were switched off.
+#
+# ROUTE of the measurement (so it can be repeated exactly): run() was called on
+# the raw delivery with the module-level layer builder _build_mode_distributions
+# replaced by the identity and "wegkm_imp" appended to the module's
+# _OPTIONAL_COLUMNS, so run() returned its OWN per-group frames (the group
+# selection is run()'s code, not a replica) carrying the raw MiD distance.
+# MEASUREMENT on each frame: W_GEW-weighted mean of wegkm_imp, design codes
+# (>= 9994) excluded -- none of these legs carries one -- clipped at 200 km.
+# "other_escort" is the ONE exception to the flag set: with escort_purpose ON
+# (production) no W_ZWECK-6 leg reaches following_purpose "other", so that group
+# is empty and run() skips its layer (it is realised only with escort_purpose
+# OFF, where the group is exactly the 35,288 weekday code-6 legs); its pin is
+# therefore measured with escort_purpose -- and the two flags requiring it -- OFF.
 SUBTYPE_DONOR_MEAN_KM_RANGE: dict = {
-    "leisure_local": (4.0, 7.0),
-    "leisure_visit": (19.1, 19.1),
-    "leisure_activity": (10.0, 18.0),
-    "leisure_excursion": (45.0, 100.0),
-    # leisure_unspecified (issue #373, ADR-0115) has no spec Taxonomy table
-    # entry: the group was defined after that spec, so the value below is an
-    # AD-HOC MEASUREMENT recorded in ADR-0115, taken on 2026-09-10 from the raw
-    # MiD 2023 B1 Wege delivery, not a figure carried over from a document.
-    # FRAME: the donor pool the layer is actually built from --
-    # braunschweig.popsim.distance_distributions.run's own "leisure_unspecified"
-    # layer under the production flag set. That is EVERY delivered Wege row
-    # (mid.load_mid_wege: no weekday and no route-break filter), mapped by
-    # trips.map_purpose with w_zweck_10_as_leisure, kept only where a travel
-    # time is available and where the two leg ends are not both primary
-    # activities, then following_purpose == "leisure" and W_ZWECK in
-    # purpose_subtype.LEISURE_UNSPECIFIED_ZWECK. MEASUREMENT on that frame:
-    # wegkm_imp < 9994 (design codes; none of these legs carries one), clipped
-    # at 200 km, W_GEW-weighted mean -> 12.7 km over n = 54,658 legs.
-    # The WEEKDAY reference universe of scripts/extract_mid_w_zwd_groups.py
-    # yields 12.0 km over n = 39,429 legs instead (issue #373 task 3 report):
-    # the SAME method on a DIFFERENT universe (kernwo in {1, 2, 3}, W_RBW != 1),
-    # not a different measurement rule. The band is pinned on the layer's own
-    # universe because that is the pool a realised leg draws from. Like every
-    # other entry here this is an IN-SAMPLE donor mean, never a validation gate.
-    "leisure_unspecified": (12.7, 12.7),
-    "other_errand_short": (5.0, 9.0),
-    "other_errand_long": (11.0, 16.0),
-    "other_escort": (4.5, 8.5),
+    "leisure_local": (5.5, 5.5),            # n = 21,538 weekday legs
+    "leisure_visit": (17.1, 17.1),          # n =  8,003
+    "leisure_activity": (9.9, 9.9),         # n = 25,650
+    "leisure_excursion": (68.0, 68.0),      # n =  3,591
+    "leisure_unspecified": (12.0, 12.0),    # n = 39,429
+    "other_errand_short": (7.6, 7.6),       # n = 10,257
+    "other_errand_long": (10.1, 10.1),      # n = 10,207
+    "other_escort": (7.0, 7.0),             # n = 35,288 (escort_purpose OFF, see above)
 }
 
 

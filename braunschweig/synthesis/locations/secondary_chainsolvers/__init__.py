@@ -453,10 +453,23 @@ def configure(context):
     # set in configs/base_bs.yml (issue #242 Task 7).
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
-        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
-        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
+    # The WEEKDAY DIARY estimation universe of the three MiD-based subtype deciders (issue
+    # #373, ADR-0116): ON reduces the MiD Wege frame each of _build_shop_subtype_decider /
+    # _build_leisure_subtype_decider / _build_other_subtype_decider estimates on to the
+    # seed's own weekday diaries without rbW summary records
+    # (braunschweig.popsim.trips.weekday_diary_leg_mask), because the legs they label belong
+    # to a synthetic WEEKDAY. Declared with the SAME imported key/default constants
+    # braunschweig.popsim.distance_distributions declares (which applies the identical
+    # universe to the DISTANCE layers) -- both stages must resolve the same value, or a leg
+    # labelled from one universe would draw its distance from a pool built on another.
+    # Declared UNCONDITIONALLY (like the two split flags above) so an all-flags-off config
+    # never needs it; inert while all three subtype splits are OFF (no decider is built).
+    context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
     # The fifth leisure subtype (issue #373, ADR-0115): W_ZWECK-10 legs
     # ("anderer Zweck") are leisure under w_zweck_10_as_leisure but carry no
     # leisure W_ZWD detail code, so ON gives them their own estimated group

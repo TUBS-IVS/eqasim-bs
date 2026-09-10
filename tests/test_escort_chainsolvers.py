@@ -323,6 +323,11 @@ def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeyp
         # errand rows (601, 603), so the OFF value keeps this test's original
         # pre-Task-5 intent.
         "purpose_subtype_codeplan_sentinels": False,
+        # issue #373 / ADR-0116: read unconditionally by _build_other_subtype_decider too.
+        # OFF here because this mini fixture carries no kernwo / W_RBW columns at all --
+        # the weekday diary universe cannot be expressed on it (and would raise, by design),
+        # and this test is about the escort_purpose group drop, not about the leg universe.
+        "secondary_mid_weekday_legs_only": False,
     })
     decide = sc._build_other_subtype_decider(ctx, random_seed=3)
     outcomes = {decide("car", 600.0) for _ in range(200)}

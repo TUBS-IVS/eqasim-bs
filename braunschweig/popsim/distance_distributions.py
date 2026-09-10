@@ -400,7 +400,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         exclude_rbw_legs: bool = False,
         drop_leading_arrive_home_leg: bool = False,
         codeplan_sentinels: bool = False,
-        leisure_unspecified_subtype: bool = False) -> dict:
+        leisure_unspecified_subtype: bool = False,
+        weekday_legs_only: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -528,6 +529,26 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         flag is inert and its value cannot contradict anything. An empty group
         is logged as a WARNING rather than skipped silently. Default False
         keeps this function's OFF path byte-identical.
+    weekday_legs_only:
+        When True (issue #373, ADR-0116), EVERY layer this function builds is
+        estimated on the WEEKDAY DIARY universe -- the legs of
+        ``trips.weekday_diary_leg_mask``: the reporting day is in the
+        PopulationSim seed's own day filter (``trips.WEEKDAY_DIARY_KERNWO``) and
+        the leg is not an rbW summary record. The synthetic population IS a
+        weekday and the committed MiD reference tables measure that same
+        universe, so without this the layers describe a mixture of weekdays and
+        weekends (ADR-0115 "Two universes"). Applied in Step 0a, BEFORE the
+        pairing mask of Step 0b and before the purpose mapping, so the aggregate,
+        the per-purpose and every subtype layer share ONE universe. Requires the
+        MiD Wege columns ``kernwo`` and ``W_RBW``; they are deliberately NOT in
+        ``REQUIRED_COLUMNS`` (they are needed only under this flag), and the
+        helper raises naming the missing column. Default False keeps this
+        function's OFF path byte-identical; ``configure()`` / ``execute()`` read
+        the shared ``KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY`` constant (production
+        default True), which
+        ``braunschweig.synthesis.locations.secondary_chainsolvers`` declares too
+        so the deciders' ESTIMATION universe and these layers' donor universe
+        cannot diverge.
 
     Returns
     -------
@@ -567,6 +588,20 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         )
 
     df = mid_wege.copy()
+
+    # --- Step 0a: the weekday diary universe (issue #373, ADR-0116). ----------
+    # Every layer this stage builds describes ONE synthetic weekday, so the donor legs are
+    # the seed's weekday diaries without rbW summary records -- the SAME universe the
+    # committed MiD reference tables measure (scripts/extract_mid_w_zwd_groups.py, whose
+    # filter calls the very same helper). Applied BEFORE the pairing mask of Step 0b and
+    # before the purpose mapping of Step 1, so the aggregate, the per-purpose and every
+    # subtype layer are built from one universe rather than a half-filtered mixture. The
+    # helper logs the kept rate with both drop reasons and raises on an empty result or a
+    # missing kernwo/W_RBW column (those two are required ONLY on this path, which is why
+    # they are not in REQUIRED_COLUMNS).
+    if weekday_legs_only:
+        df = _trips.restrict_to_weekday_diary_legs(
+            df, log_tag="[popsim.distance_distributions]")
 
     # --- Step 0b: restrict the passive-escort pairing's candidate universe -----
     # (issue #373 task 2, ruling C-R20/C-R21). Built BEFORE map_purpose (which does
@@ -895,11 +930,13 @@ def configure(context):
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
@@ -985,6 +1022,16 @@ def configure(context):
     # distance pool still includes every leg regardless of these two flags' value.
     context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116). Same shared-key reasoning
+    # as the codeplan sentinels and the fifth leisure subtype above:
+    # braunschweig.synthesis.locations.secondary_chainsolvers declares this identical key for
+    # its three MiD-based subtype deciders, and the two must resolve the SAME value -- the
+    # decider labels a leg and this stage builds that label's donor pool, so a disagreement
+    # would pair a label estimated on one leg universe with distances drawn from another.
+    # Declared UNCONDITIONALLY (like the split flags above) so an all-flags-off config never
+    # needs it; it applies to every layer this stage builds, including the aggregate one.
+    context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+                   DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
 
 
 def execute(context):
@@ -1000,7 +1047,8 @@ def execute(context):
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
@@ -1017,6 +1065,8 @@ def execute(context):
     passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    # One-argument execute-context read (the key and its default are declared in configure()).
+    weekday_legs_only = bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -1040,4 +1090,5 @@ def execute(context):
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         codeplan_sentinels=codeplan_sentinels,
         leisure_unspecified_subtype=leisure_unspecified_subtype,
+        weekday_legs_only=weekday_legs_only,
     )

@@ -364,3 +364,51 @@ def test_build_group_reference_labels_through_the_shared_helper(monkeypatch):
     expected = labelled["_group"].value_counts().to_dict()
     block = table[(table["spec_variant"] == "codeplan_unspecified") & (table["purpose"] == "leisure")]
     assert dict(zip(block["group"], block["n_unweighted"].astype(int))) == expected
+
+
+def test_filter_weekday_legs_uses_the_shared_universe_helper(monkeypatch):
+    """One universe, one implementation (issue #373, ADR-0116): the committed reference and
+    the model's own estimation (braunschweig.popsim.distance_distributions, the three MiD
+    subtype deciders) must read the SAME leg universe, so this script's filter goes through
+    braunschweig.popsim.trips.weekday_diary_leg_mask instead of re-deriving the kernwo/W_RBW
+    rule. Pinned twice: the name this module holds IS the helper (identity), and the filter
+    actually calls it (monkeypatch)."""
+    from braunschweig.popsim import trips
+
+    assert M.weekday_diary_leg_mask is trips.weekday_diary_leg_mask
+
+    calls = []
+    real = trips.weekday_diary_leg_mask
+
+    def recording(frame, **kwargs):
+        calls.append(len(frame))
+        return real(frame, **kwargs)
+
+    monkeypatch.setattr(M, "weekday_diary_leg_mask", recording)
+    filtered, diagnostics = M.filter_weekday_legs(_wege())
+    assert calls == [18]
+    assert len(filtered) == 18 == diagnostics["n_legs_after_weekday_rbw"]
+
+
+def test_filter_weekday_legs_result_is_unchanged_by_the_shared_helper():
+    """The universe itself must not move: the same fixture, the same kept legs and the same
+    diagnostics as before the helper was shared (the committed tables are regenerated and
+    proven byte-identical for the same reason)."""
+    wege = _wege(extra=[dict(_leg(4, 501, 1.0), kernwo=4),          # weekend leg
+                        dict(_leg(4, 501, 1.0), W_RBW=1)])          # rbW summary leg
+    filtered, diagnostics = M.filter_weekday_legs(wege)
+    assert diagnostics["n_legs_raw"] == 20
+    assert diagnostics["n_legs_after_weekday_rbw"] == 18 == len(filtered)
+    assert set(filtered["kernwo"]) == {M.KERNWO_WEEKDAY_CODES[0]}
+    assert set(filtered["W_RBW"]) == {0}
+
+
+def test_kernwo_weekday_codes_is_the_shared_universe_definition():
+    """The two extraction scripts' exported constant must BE the helper's value set, so a
+    script importing KERNWO_WEEKDAY_CODES cannot describe a different weekday than the model
+    (scripts/extract_mid_w_zwd_groups.py imports it from
+    scripts/extract_mid_w_zweck_hwzweck1.py)."""
+    from braunschweig.popsim import trips
+
+    assert tuple(M.KERNWO_WEEKDAY_CODES) == trips.WEEKDAY_DIARY_KERNWO
+    assert M.RBW_SUMMARY_LEG_CODE == trips.RBW_LEG_FLAG

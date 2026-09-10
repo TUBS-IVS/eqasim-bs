@@ -14,7 +14,14 @@ import pandas as pd
 
 
 def _synthetic_wege():
-    """Minimal MiD Wege frame with the REQUIRED_COLUMNS the stage needs."""
+    """Minimal MiD Wege frame with the REQUIRED_COLUMNS the stage needs.
+
+    ``kernwo`` / ``W_RBW`` put every leg INSIDE the weekday diary universe (a
+    weekday reporting day, no rbW summary record -- see
+    braunschweig.popsim.trips.weekday_diary_leg_mask), so this frame is
+    unaffected by ``weekday_legs_only``; the out-of-universe legs live in
+    :func:`_wege_with_weekend_and_rbw_legs` below.
+    """
     n = 400
     rng = np.random.default_rng(0)
     return pd.DataFrame({
@@ -30,6 +37,8 @@ def _synthetic_wege():
         "W_AZM": rng.integers(0, 60, n),
         "W_GEW": rng.uniform(0.5, 2.0, size=n),
         "W_ZWD": rng.choice([501, 502, 7704], size=n),
+        "kernwo": 2,
+        "W_RBW": 0,
     })
 
 
@@ -489,3 +498,68 @@ def test_configure_declares_the_shared_leg_drop_keys_with_the_production_default
     dd.configure(ctx)
     assert ctx.calls[KEY_EXCLUDE_RBW_LEGS] is True
     assert ctx.calls[KEY_DROP_LEADING_ARRIVE_HOME_LEG] is True
+
+
+# ---------------------------------------------------------------------------
+# The WEEKDAY DIARY universe (issue #373, ADR-0116) on the AGGREGATE and the
+# per-purpose layer: the filter runs before the purpose mapping, so it reaches
+# every layer this stage builds, not only the subtype layers (which
+# tests/test_distance_distributions_subtypes.py covers).
+# ---------------------------------------------------------------------------
+
+_OUT_OF_UNIVERSE_KM = 66.0
+_DETOUR_FACTOR = 1.3
+_OUT_OF_UNIVERSE_M = _OUT_OF_UNIVERSE_KM * 1000.0 / _DETOUR_FACTOR
+
+
+def _wege_with_weekend_and_rbw_legs():
+    """The base frame plus 40 legs OUTSIDE the weekday diary universe: 20 weekend
+    legs (kernwo 6) and 20 rbW summary records (W_RBW 1), all at a distance no
+    in-universe leg carries, so their presence in a layer is unambiguous."""
+    base = _synthetic_wege()
+    extra = base.iloc[:40].copy()
+    extra["W_ID"] = np.arange(1000, 1040)
+    extra["wegkm_imp"] = _OUT_OF_UNIVERSE_KM
+    extra["kernwo"] = [6] * 20 + [2] * 20
+    extra["W_RBW"] = [0] * 20 + [1] * 20
+    return pd.concat([base, extra], ignore_index=True)
+
+
+def test_weekday_legs_only_drops_them_from_the_aggregate_and_purpose_layers():
+    from braunschweig.popsim.distance_distributions import run
+
+    w = _wege_with_weekend_and_rbw_legs()
+    aggregate = run(w, by_purpose=False, weekday_legs_only=True)
+    for mode_layer in aggregate.values():
+        for distribution in mode_layer["distributions"]:
+            assert _OUT_OF_UNIVERSE_M not in set(distribution["values"])
+
+    by_purpose = run(w, by_purpose=True, weekday_legs_only=True)
+    for purpose, layer in by_purpose.items():
+        for mode_layer in layer.values():
+            for distribution in mode_layer["distributions"]:
+                assert _OUT_OF_UNIVERSE_M not in set(distribution["values"]), purpose
+
+
+def test_weekday_legs_only_off_keeps_them_in_the_aggregate_layer():
+    """The OFF path is today's behaviour; without this the test above could pass on
+    a frame that never had an out-of-universe leg."""
+    from braunschweig.popsim.distance_distributions import run
+
+    w = _wege_with_weekend_and_rbw_legs()
+    aggregate = run(w, by_purpose=False, weekday_legs_only=False)
+    seen = {float(value)
+            for mode_layer in aggregate.values()
+            for distribution in mode_layer["distributions"]
+            for value in distribution["values"]}
+    assert _OUT_OF_UNIVERSE_M in seen
+
+
+def test_weekday_legs_only_defaults_to_false():
+    """The keyword's CODE default is False, so every existing direct caller keeps
+    today's all-day behaviour (the production value is set in the config)."""
+    import inspect
+
+    from braunschweig.popsim.distance_distributions import run
+
+    assert inspect.signature(run).parameters["weekday_legs_only"].default is False

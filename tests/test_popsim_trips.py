@@ -688,3 +688,72 @@ def test_map_purpose_masked_branch_share_paired_uses_the_same_denominator_as_n_p
     assert "1/1 passive legs" in joined  # n_paired/n_passive, BOTH mask-internal
     assert "100.00%" in joined
     assert "inside the pairing's candidate universe" in joined
+
+
+# ---------------------------------------------------------------------------
+# The WEEKDAY DIARY universe (issue #373, ADR-0116): the one definition of the
+# leg universe every MiD-based estimation of a weekday quantity must use -- the
+# seed's own day filter plus the rbW exclusion, in ONE function shared by the
+# secondary distance layers, the three MiD subtype deciders and the two
+# committed-reference extraction scripts.
+# ---------------------------------------------------------------------------
+
+
+def test_weekday_diary_kernwo_is_the_seed_day_filter_not_a_retyped_copy():
+    """The model has ONE weekday definition; the helper must READ it from the seed
+    (MID_SEED_COLUMNS.day_filter_values, the value PopulationSim actually filters the
+    seed on) rather than re-type a literal that cannot notice a change there."""
+    from braunschweig.popsim.seed import MID_SEED_COLUMNS, WEEKDAY_KERNWO
+
+    assert trips.WEEKDAY_DIARY_KERNWO == tuple(MID_SEED_COLUMNS.day_filter_values)
+    # The seed's own alias for the same value set; pinned equal so a future edit that
+    # touches only one of the two homes is caught here.
+    assert tuple(WEEKDAY_KERNWO) == trips.WEEKDAY_DIARY_KERNWO
+
+
+def test_weekday_diary_leg_mask_keeps_weekday_non_rbw_legs_only():
+    wege = pd.DataFrame({"kernwo": [1, 2, 3, 4, 7, 2], "W_RBW": [0, 0, 1, 0, 0, 0]})
+    mask = trips.weekday_diary_leg_mask(wege)
+    assert list(mask) == [True, True, False, False, False, True]
+
+
+def test_weekday_diary_leg_mask_raises_when_a_universe_column_is_missing():
+    """The universe must never be applied silently to a frame that cannot express it:
+    a missing kernwo would otherwise read as "every leg is a weekday leg"."""
+    with pytest.raises(ValueError, match="kernwo"):
+        trips.weekday_diary_leg_mask(pd.DataFrame({"W_RBW": [0]}))
+    with pytest.raises(ValueError, match="W_RBW"):
+        trips.weekday_diary_leg_mask(pd.DataFrame({"kernwo": [1]}))
+
+
+def test_weekday_diary_leg_mask_coerces_a_text_kernwo_column():
+    """A CSV delivery may hand kernwo over as text; the codes must still be recognised
+    (and an uncoercible value counts as non-weekday rather than raising)."""
+    wege = pd.DataFrame({"kernwo": ["1", "6", "keine Angabe"], "W_RBW": [0, 0, 0]})
+    assert list(trips.weekday_diary_leg_mask(wege)) == [True, False, False]
+
+
+def test_restrict_to_weekday_diary_legs_logs_the_rate_and_raises_on_an_empty_result(caplog):
+    import logging
+
+    wege = pd.DataFrame({"kernwo": [1, 6, 2], "W_RBW": [0, 0, 1], "x": [1, 2, 3]})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        kept = trips.restrict_to_weekday_diary_legs(wege, log_tag="[t]")
+    assert list(kept["x"]) == [1]
+    assert "1/3" in caplog.text and "1 non-weekday" in caplog.text and "1 rbW" in caplog.text
+    with pytest.raises(ValueError, match="weekday diary universe"):
+        trips.restrict_to_weekday_diary_legs(wege[wege["kernwo"] == 6], log_tag="[t]")
+
+
+def test_restrict_to_weekday_diary_legs_drop_reasons_partition_the_dropped_legs(caplog):
+    """The two reported reasons must add up with the kept count to the total, so the log
+    line can be read as a partition instead of two overlapping counts."""
+    import logging
+
+    wege = pd.DataFrame({"kernwo": [2, 2, 6, 6, 3], "W_RBW": [0, 1, 0, 1, 0]})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        kept = trips.restrict_to_weekday_diary_legs(wege, log_tag="[t]")
+    # kept 2 (the two weekday non-rbW legs), 2 non-weekday (kernwo 6, rbW or not), 1 rbW.
+    assert len(kept) == 2
+    assert "kept 2/5" in caplog.text
+    assert "2 non-weekday" in caplog.text and "1 rbW" in caplog.text
