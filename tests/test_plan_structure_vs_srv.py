@@ -720,3 +720,24 @@ def test_warns_on_at_home_zero_with_the_pre_assignment_view_even_with_the_flag_o
         S.execute(context)
     assert any("universe" in record.getMessage() for record in caplog.records
               if record.levelname == "WARNING")
+
+
+def test_summary_points_at_the_unbiased_fifteen_minute_comparison(tmp_path, monkeypatch):
+    """issue #123: the dep_hour_share_* rows are biased at the hour boundary.
+
+    They compare DE-ROUNDED model times with AS-REPORTED SrV times at hour resolution, so the
+    survey's rounding spike sits exactly on a bucket edge. The summary must say so and name the
+    stage that measures the same thing without that bias, otherwise a reader has no way to know
+    the hour-level rows are not the best available comparison.
+    """
+    from braunschweig.analysis import spatial
+
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: _model_homes())
+    S.execute(_stage_context(tmp_path))
+    summary = (tmp_path / "analysis" / "plan_structure_vs_srv"
+              / "summary.md").read_text(encoding="utf-8")
+
+    assert "hour boundary" in summary
+    assert "analysis/departure_time_vs_srv/" in summary
+    assert "dep_hour_share_*" in summary

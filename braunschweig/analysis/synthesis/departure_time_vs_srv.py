@@ -64,9 +64,11 @@ import pandas as pd
 from braunschweig import provenance as run_provenance
 from braunschweig.analysis import departure_time as D
 from braunschweig.analysis import plan_structure as _plan_structure
+from braunschweig.calibration import metrics as _metrics
 from braunschweig.calibration import srv_departure_times as SRVDT
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim.departure_time_model import (
     OFFSET_COLUMN, person_groups, persons_from_synthetic_schema)
 from braunschweig.popsim.stage import config_keys as _config_keys
@@ -114,14 +116,22 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: synpp hashes only THIS module's source, so every module that shapes the comparison must be
 #: folded into the validation token or an edit to a metric would silently serve a cached report
 #: built by the old code. ``departure_time`` is the whole model side; ``srv_departure_times``
-#: owns the bin geometry, the segment/purpose/position taxonomy and the duration bands that BOTH
-#: sides are expressed in; ``srv_plan_structure`` owns the harmonised group rule and the
-#: duration bound; ``plan_structure`` owns the purpose harmonisation this module imports;
-#: ``departure_time_model`` owns ``OFFSET_COLUMN`` and ``person_groups``, i.e. the column the
-#: decomposition reads and the segment every cell is keyed on. ``reported_time_precision`` is
-#: deliberately NOT hashed: this stage de-rounds nothing (the committed reference is already
-#: de-rounded), so its half widths cannot change any number written here.
-_HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model)
+#: owns the bin geometry, the segment/purpose/position taxonomy, the duration bands and the two
+#: table validators that BOTH sides are expressed in; ``srv_plan_structure`` owns the harmonised
+#: group rule and the duration bound; ``plan_structure`` owns the purpose harmonisation this
+#: module imports; ``departure_time_model`` owns ``OFFSET_COLUMN`` and ``person_groups``, i.e.
+#: the column the decomposition reads and the segment every cell is keyed on; ``metrics`` owns
+#: ``emd_on_bands``, which produces EVERY value in emd.csv; and ``popsim.trips`` owns
+#: ``mid_time_seconds``, whose design-code rule decides which legs have a usable raw time and
+#: therefore share_raw, n_raw and the whole raw-time coverage figure. The last two are
+#: CROSS-PACKAGE imports that the own-package hash invariant (tests/
+#: test_synpp_helper_hash_invariant.py) cannot catch, so they are listed here deliberately --
+#: ``braunschweig.popsim.trips_stage`` hashes ``popsim.trips`` for the same reason.
+#: ``reported_time_precision`` is deliberately NOT hashed: this stage de-rounds nothing (the
+#: committed reference is already de-rounded), so its half widths cannot change any number
+#: written here.
+_HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
+                   _metrics, _popsim_trips)
 
 
 def validate(context):
@@ -227,6 +237,10 @@ def load_departure_time_reference(data_path: str) -> pd.DataFrame:
     path = departure_time_reference_path(data_path)
     table = _restrict_universe(
         _load_committed(path, SRVDT.DEPARTURE_TIME_COLUMNS, "departure-time reference"), path)
+    # The SAME validator the model's own loader runs (which additionally restricts the table to
+    # position "first"); here all three positions are kept, because later/all are the hold-out
+    # dimensions. One validator, so a table one loader accepts the other cannot reject.
+    SRVDT.validate_departure_time_table(table, positions=SRVDT.POSITIONS, source=path)
     LOGGER.info("%s departure-time reference: %d row(s), %d cell(s) from %s", _LOG_TAG,
                 len(table), int(table.groupby(["segment", "purpose", "position"]).ngroups), path)
     return table
@@ -238,6 +252,7 @@ def load_activity_duration_reference(data_path: str) -> pd.DataFrame:
     table = _restrict_universe(
         _load_committed(path, SRVDT.ACTIVITY_DURATION_COLUMNS, "activity-duration reference"),
         path)
+    SRVDT.validate_activity_duration_table(table, source=path)
     LOGGER.info("%s activity-duration reference: %d row(s), %d cell(s) from %s", _LOG_TAG,
                 len(table), int(table.groupby(["segment", "purpose"]).ngroups), path)
     return table
@@ -350,11 +365,34 @@ def summary_markdown(decomposition, emd, durations, headline, provenance) -> str
         "`n_raw` in decomposition.csv is that column's denominator per cell, and a cell without "
         "any raw time carries NaN rather than a fabricated zero.",
         "",
+        "### Reading the decomposition",
+        "",
+        "The two steps mean different things: `pre_offset -> realised` is the departure-time "
+        "model and nothing else, while `raw -> pre_offset` is everything the trip build did "
+        "before it (the midnight-crossing and inconsistent-chain repairs of `fix_trip_times`, "
+        "the unfixable-plan resampling, and on the reporting-day view the donor day a spliced "
+        "home-office chain brought with it).",
+        "The two sides also run on different clocks: the raw MiD report is decoded on a 0-23 h "
+        "clock while the trip build's times are on a 0-47 h one, so a leg the repair moved past "
+        "midnight appears at hour 0-3 in `raw` and at hour 24-27 in the other two; "
+        "`n_legs_raw_pre_offset_differ_by_24h` counts exactly those legs "
+        f"({model.get('n_legs_raw_pre_offset_differ_by_24h')} of the "
+        f"{model.get('n_legs_with_raw_time')} legs with a raw time), and `n_hours_clipped_raw` "
+        "is structurally always 0 because the raw column cannot reach hour 28.",
+        "So compare `raw` against the other two columns WITHIN a clock day, and read the hour "
+        "24-27 rows of `pre_offset`/`realised` as the after-midnight tail that the raw column "
+        "folds back onto hours 0-3.",
+        "",
         "## Calibrated dimension (first departure of a chain)",
         "",
         "The `srv_mapped` model maps exactly this distribution, so a small distance here is a "
         "FIT, not independent evidence. Reported for both reference views: the de-rounded one "
         "is the behavioural target, the as-reported one still carries the survey's clock grid.",
+        "",
+        f"EMD scale: the mean absolute difference of the two cumulative distributions over the "
+        f"first {SRVDT.N_BINS - 1} of the {SRVDT.N_BINS} 15-minute bands, so moving all mass "
+        f"across the whole day is 1.0 and moving it by one 15-minute bin is "
+        f"1/{SRVDT.N_BINS - 1} = {1.0 / (SRVDT.N_BINS - 1):.4f}.",
         "",
     ]
     calibrated = emd[emd["dimension"] == D.DIMENSION_CALIBRATED].sort_values(
@@ -492,6 +530,11 @@ def execute(context):
             "share_legs_with_raw_time": float(frame.attrs["share_legs_with_raw_time"]),
             "raw_columns_present": bool(frame.attrs["raw_columns_present"]),
             "n_legs_without_offset": int(frame.attrs["n_legs_without_offset"]),
+            # Two clocks: legs fix_trip_times moved past midnight, whose raw value is 24 h below
+            # their pre-offset one with nothing wrong. See summary.md's "Reading the
+            # decomposition" note and the departure_time module docstring.
+            "n_legs_raw_pre_offset_differ_by_24h":
+                int(frame.attrs["n_legs_raw_pre_offset_differ_by_24h"]),
             "n_headline_legs": n_headline_legs,
         },
         "decomposition": {

@@ -9,7 +9,31 @@ Three questions, one module:
    reported MiD time (``W_SZS``/``W_SZM`` through
    :func:`braunschweig.popsim.trips.mid_time_seconds`) that gives a THREE-way view of the same
    leg -- raw / pre-offset / realised -- and :func:`decomposition` reports the hourly profile of
-   all three side by side. Where the three differ is exactly where the model acted.
+   all three side by side.
+
+   The two differences mean DIFFERENT things and must not be read as one:
+   ``pre_offset -> realised`` is the departure-time MODEL and nothing else, while
+   ``raw -> pre_offset`` is everything the TRIP BUILD did before the model ran -- the
+   midnight-crossing and inconsistent-chain repairs of ``data.hts.hts.fix_trip_times``, the
+   unfixable-plan resampling of :mod:`braunschweig.popsim.plan_validation`, and, on the
+   reporting-day view, the donor day a spliced home-office chain brought with it. Attributing a
+   raw-to-pre-offset shift to the model would credit (or blame) it for a repair it never made.
+
+Two clocks
+----------
+``mid_time_seconds`` decodes the MiD report on a 0..23 h clock: it returns NaN for anything
+outside that range, because a value outside it is a design code (99, 701), not a time. The trip
+build's times are on a 0..47 h clock instead -- ``fix_trip_times`` shifts a midnight-crossing leg
+and every following leg of that chain by +24 h so a chain stays monotone. A leg repaired that way
+therefore appears at hour 0-3 in the ``raw`` column and at hour 24-27 in ``pre_offset`` /
+``realised``, a full 24 h apart, with no error anywhere: the two columns are simply not on the
+same clock. Two consequences a reader must know. First, ``n_hours_clipped_raw`` is structurally
+always 0 -- the raw column cannot reach hour 28 -- so it says nothing about after-midnight
+behaviour. Second, the size of a raw-vs-pre-offset difference is not a shift size until the 24 h
+cases are separated out, which is what ``n_legs_raw_pre_offset_differ_by_24h`` counts (a
+difference within one minute of exactly 1440 min). Compare the raw column with the other two
+WITHIN a clock day; treat the hour 24-27 rows of the pre-offset and realised columns as the
+after-midnight tail the raw column folds back onto hours 0-3.
 2. **Does the realised start-time distribution match SrV?** :func:`bin_comparison` puts the
    model's realised departures into the SAME 15-minute bins the committed reference uses and
    :func:`emd_table` scores each ``(segment, purpose, position)`` cell against BOTH reference
@@ -62,12 +86,11 @@ import pandas as pd
 from braunschweig.calibration import metrics
 from braunschweig.calibration import srv_departure_times as SRVDT
 from braunschweig.calibration import srv_plan_structure as SRV
-# _harmonise_purpose maps an eqasim purpose column onto the seven harmonised purposes and WARNS
+# harmonise_purpose maps an eqasim purpose column onto the seven harmonised purposes and WARNS
 # with the share of unmapped values. It is imported rather than re-implemented so both model-side
-# comparisons (plan structure and departure times) map purposes by ONE rule; it is private to
-# plan_structure only in the sense that no stage calls it directly. plan_structure is hashed in
-# the stage's validation token for exactly this reason.
-from braunschweig.analysis.plan_structure import _harmonise_purpose as harmonise_purpose
+# comparisons (plan structure and departure times) map purposes by ONE rule; plan_structure is
+# hashed in the stage's validation token for exactly this reason.
+from braunschweig.analysis.plan_structure import harmonise_purpose
 # The MiD raw-time decoder, including the design-code handling (99 "keine Angabe", 701 "rbW")
 # that makes a coded report NaN instead of a bogus clock time. One decoder, one rule.
 from braunschweig.popsim.trips import mid_time_seconds
@@ -89,6 +112,14 @@ MODEL_TRIP_COLUMNS = ("person_id", "trip_index", "departure_time", "arrival_time
 
 SECONDS_PER_MINUTE = 60.0
 MINUTES_PER_HOUR = 60.0
+#: One clock day in minutes -- the exact offset ``data.hts.hts.fix_trip_times`` adds to a
+#: midnight-crossing chain, and therefore the raw-vs-pre-offset difference such a leg shows.
+MINUTES_PER_DAY = 1440.0
+#: How far from exactly :data:`MINUTES_PER_DAY` a raw-vs-pre-offset difference may sit and still
+#: be counted as the midnight shift rather than a genuine time change. One minute: the raw MiD
+#: report has minute resolution, and no repair or model produces a shift within a minute of 24 h
+#: by any other route.
+MIDNIGHT_SHIFT_TOLERANCE_MINUTES = 1.0
 
 #: The comparison taxonomy, taken from the reference builder rather than re-typed.
 SEGMENTS = SRVDT.SEGMENTS
@@ -278,11 +309,31 @@ def harmonise_model_times(persons: pd.DataFrame, trips: pd.DataFrame, groups: pd
     else:
         logger.info(message, *arguments)
 
+    # Two clocks (see the module docstring): a leg that fix_trip_times moved past midnight sits
+    # 24 h below its pre-offset time in the raw column, with nothing wrong anywhere. Counting
+    # those legs explicitly is what keeps the remaining raw-vs-pre-offset differences readable as
+    # actual shifts -- and it is the only way to see the after-midnight tail at all, since the raw
+    # column cannot reach hour 28 and n_hours_clipped_raw is therefore structurally 0.
+    difference = (frame["pre_offset_dep_min"] - frame["raw_dep_min"]).abs()
+    is_midnight_shift = (np.isfinite(difference)
+                         & ((difference - MINUTES_PER_DAY).abs()
+                            <= MIDNIGHT_SHIFT_TOLERANCE_MINUTES))
+    n_midnight = int(is_midnight_shift.sum())
+    if n_midnight:
+        logger.info(
+            "%s %d/%d leg(s) with a raw time (%.2f%% of them) sit exactly %g h below their "
+            "pre-offset time: fix_trip_times moved them past midnight, so their raw value is on "
+            "the 0-23 h clock while pre_offset/realised are on the 0-47 h one -- not a shift the "
+            "departure-time model made", _LOG_TAG, n_midnight, n_raw,
+            100.0 * n_midnight / n_raw if n_raw else float("nan"),
+            MINUTES_PER_DAY / MINUTES_PER_HOUR)
+
     frame.attrs["n_legs"] = n_legs
     frame.attrs["n_legs_with_raw_time"] = n_raw
     frame.attrs["share_legs_with_raw_time"] = share_raw
     frame.attrs["raw_columns_present"] = raw_columns_present
     frame.attrs["n_legs_without_offset"] = n_without_offset
+    frame.attrs["n_legs_raw_pre_offset_differ_by_24h"] = n_midnight
     return frame
 
 
@@ -478,10 +529,10 @@ def bin_comparison(frame: pd.DataFrame, reference: pd.DataFrame) -> pd.DataFrame
     """
     reference_cells = _reference_cells(reference)
 
-    # Legs whose realised time is not finite are dropped BEFORE binning: _bin_from_minutes
+    # Legs whose realised time is not finite are dropped BEFORE binning: bin_from_minutes
     # would turn a NaN into a garbage integer bin and count it as clipped.
     work = frame[np.isfinite(frame["realised_dep_min"])].copy()
-    bins, n_clipped = SRVDT._bin_from_minutes(work["realised_dep_min"].to_numpy(dtype=float))
+    bins, n_clipped = SRVDT.bin_from_minutes(work["realised_dep_min"].to_numpy(dtype=float))
     work["bin_15min"] = bins
     counts = _counts_by(work, "bin_15min")
 

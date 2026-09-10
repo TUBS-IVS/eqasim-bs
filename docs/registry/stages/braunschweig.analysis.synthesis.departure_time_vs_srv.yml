@@ -34,8 +34,8 @@ code:
 - braunschweig/analysis/departure_time.py
 pipelines:
   popsim_mid: active
-  popsim_open: supported
-  simple_ipf_open: supported
+  popsim_open: not_used
+  simple_ipf_open: not_used
 production: true
 inputs:
 - srv2023_reference_tables
@@ -82,15 +82,46 @@ notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
   (FileNotFoundError naming the path and the regeneration script). summary.md reports what was
   MEASURED against this reference and never claims a validated or hit target.
 
+  PIPELINES: popsim_mid only. The default trips view is synthesis.population.trips.final, which
+  the record of that stage marks not_used in popsim_open and simple_ipf_open (it is absent from
+  both DAG snapshots), so this comparison cannot run there either.
+
+  TWO CLOCKS (fix-round finding): braunschweig.popsim.trips.mid_time_seconds decodes the MiD
+  report on a 0..23 h clock (anything outside is a design code, not a time), while the trip
+  build''s own times are on a 0..47 h clock because data.hts.hts.fix_trip_times shifts a
+  midnight-crossing chain by +24 h. A leg repaired that way therefore sits at hour 0-3 in the raw
+  column and at hour 24-27 in pre_offset/realised, with nothing wrong, and n_hours_clipped_raw is
+  structurally always 0. The count of such legs (a raw-vs-pre-offset difference within one minute
+  of 1440) is reported as n_legs_raw_pre_offset_differ_by_24h in provenance.json and in the log,
+  and summary.md carries a "Reading the decomposition" note stating the two clocks, that
+  raw -> pre_offset is the TRIP BUILD (fix_trip_times repairs, unfixable-plan resampling, the
+  spliced donor day) while pre_offset -> realised is the departure-time MODEL, and how to read the
+  two columns against each other.
+
   validate() hashes braunschweig/analysis/departure_time.py plus
   braunschweig/analysis/plan_structure.py (the purpose harmonisation this module imports),
-  braunschweig/calibration/srv_departure_times.py, braunschweig/calibration/srv_plan_structure.py
-  and braunschweig/popsim/departure_time_model.py, because synpp hashes only the stage module
-  itself and an edit to any of them would otherwise serve a stale cached comparison.
+  braunschweig/calibration/srv_departure_times.py, braunschweig/calibration/srv_plan_structure.py,
+  braunschweig/popsim/departure_time_model.py, braunschweig/calibration/metrics.py (emd_on_bands
+  produces every value in emd.csv) and braunschweig/popsim/trips.py (mid_time_seconds decides
+  which legs have a usable raw time and therefore share_raw, n_raw and the coverage figure). The
+  last two are CROSS-PACKAGE imports that the own-package hash invariant
+  (tests/test_synpp_helper_hash_invariant.py) cannot catch, so they are listed deliberately --
+  braunschweig.popsim.trips_stage hashes braunschweig/popsim/trips.py for the same reason.
   braunschweig/calibration/reported_time_precision.py is deliberately NOT hashed: this stage
   de-rounds nothing (the committed reference is already de-rounded), so its half widths cannot
   change any number it writes. The stage reads cached synthesis stages only (no MATSim), so it
   runs on a cached population.
+
+  ONE VALIDATOR PER COMMITTED TABLE: both loaders of the departure-time table -- this stage''s
+  (all three positions) and departure_time_model.load_departure_time_reference (position first
+  only, the sole position the model may map from) -- run
+  braunschweig.calibration.srv_departure_times.validate_departure_time_table, which owns
+  REFERENCE_SUM_TOLERANCE and checks dense bins 0..111 per cell, one n_unweighted per cell and
+  BOTH share columns summing to 1 (an n_unweighted 0 cell is legitimately empty and skipped).
+  The activity-duration table is validated the same way at load by
+  validate_activity_duration_table (bands exactly DURATION_BAND_LABELS per cell, shares summing
+  to 1). Two validators could have accepted different files, so that a table the model mapped
+  from was rejected by the report meant to describe it.
 
   Unit tests: tests/test_departure_time_vs_srv.py -- the stage tests run against the REAL
   committed references (srv2023_departure_time_reference.csv,

@@ -156,6 +156,13 @@ DEPARTURE_TIME_COLUMNS = ["universe", "segment", "purpose", "position", "bin_15m
                           "share_derounded", "share_as_reported", "n_unweighted"]
 ACTIVITY_DURATION_COLUMNS = ["universe", "segment", "purpose", "band", "share", "n_unweighted"]
 
+#: How far a cell's share column may deviate from 1.0 before a committed table is rejected.
+#: It lives HERE, with the builder that normalises those shares, and is imported by every
+#: consumer (``braunschweig.popsim.departure_time_model``,
+#: ``braunschweig.analysis.synthesis.departure_time_vs_srv``): a second copy could drift and make
+#: one loader accept a table another rejects.
+REFERENCE_SUM_TOLERANCE = 1e-6
+
 
 def _require_columns(frame: pd.DataFrame, required, name: str) -> None:
     missing = [c for c in required if c not in frame.columns]
@@ -226,13 +233,145 @@ def _classify_dep_min(dep_min: pd.Series) -> dict:
     }
 
 
-def _bin_from_minutes(minutes: np.ndarray):
+def bin_from_minutes(minutes: np.ndarray):
     """``floor(minutes / BIN_MINUTES)`` clipped into ``[0, N_BINS - 1]``; returns
-    ``(bins, n_clipped)`` -- the count of values the clip actually changed."""
+    ``(bins, n_clipped)`` -- the count of values the clip actually changed.
+
+    Public because the MODEL side of the comparison
+    (:mod:`braunschweig.analysis.departure_time`) must bin its realised departures by exactly
+    this rule: two sides binned by two implementations could silently disagree at a bin edge.
+    Callers must drop non-finite values first -- a NaN survives ``floor``/``clip`` and would be
+    cast to a garbage integer bin and counted as clipped.
+    """
     raw_bin = np.floor(np.asarray(minutes, dtype=float) / BIN_MINUTES)
     clipped = np.clip(raw_bin, 0, N_BINS - 1)
     n_clipped = int((raw_bin != clipped).sum())
     return clipped.astype(int), n_clipped
+
+
+#: Historical private name, kept as an alias so existing call sites keep working.
+_bin_from_minutes = bin_from_minutes
+
+
+def validate_departure_time_table(frame: pd.DataFrame, *, positions=None, source=None) -> None:
+    """Validate a committed departure-time table: positions, dense bins, per-cell sums.
+
+    The ONE validator both loaders of this table use --
+    :func:`braunschweig.popsim.departure_time_model.load_departure_time_reference` (which filters
+    to ``position == "first"``, the only position the MODEL may consume) and
+    :func:`braunschweig.analysis.synthesis.departure_time_vs_srv.load_departure_time_reference`
+    (which keeps all three, because ``later``/``all`` are the comparison's hold-out dimensions).
+    Two validators could accept different tables, so that a file the model happily mapped from
+    was rejected by the report that is supposed to describe it, or worse the other way round.
+
+    Checked per ``(segment, purpose, position)`` cell: exactly the bins ``0..N_BINS-1``, each
+    once; ONE ``n_unweighted`` value across those rows (it is a per-cell count repeated per bin,
+    so a varying value means two cells' rows were merged or the file was hand-edited); and, for a
+    cell with ``n_unweighted > 0``, finite ``share_derounded`` AND ``share_as_reported`` each
+    summing to 1 within :data:`REFERENCE_SUM_TOLERANCE`. Both share columns are checked because
+    both are read: the model maps onto the de-rounded one, the comparison scores against both.
+
+    A cell with ``n_unweighted == 0`` is legitimately EMPTY -- the builder emits it with NaN
+    shares rather than dropping it (review ruling A-R9) -- and means "no reference for this
+    cell"; it is skipped here and must never be read as a zero distribution.
+
+    Parameters
+    ----------
+    frame:
+        The table to validate; must carry :data:`DEPARTURE_TIME_COLUMNS`.
+    positions:
+        The exact set of ``position`` values the caller expects, e.g. ``("first",)`` for the
+        model. ``None`` accepts whatever the table carries (but still groups cells by position).
+    source:
+        Path or description named in every error message, so a malformed table is diagnosable
+        from the message alone.
+
+    Raises
+    ------
+    ValueError
+        Naming the offending cell and what was expected.
+    """
+    where = source if source is not None else "departure-time reference"
+    _require_columns(frame, DEPARTURE_TIME_COLUMNS, "departure-time reference (%s)" % where)
+    if positions is not None:
+        found = set(frame["position"].unique())
+        if found != set(positions):
+            raise ValueError(
+                "departure-time reference (%s) carries position(s) %s, expected exactly %s; the "
+                "model consumes '%s' only (positions 'later'/'all' are hold-out references and "
+                "must never enter the mapping), while the comparison stage consumes all three"
+                % (where, sorted(found), sorted(positions), POSITIONS[0]))
+
+    expected_bins = list(range(N_BINS))
+    for key, cell in frame.groupby(["segment", "purpose", "position"], sort=True):
+        bins = sorted(cell["bin_15min"].tolist())
+        if bins != expected_bins:
+            raise ValueError(
+                "departure-time reference (%s) cell segment=%s purpose=%s position=%s carries %d "
+                "bin(s) instead of the dense %d bins 0..%d (missing %s, duplicated %s)"
+                % ((where,) + key + (len(bins), N_BINS, N_BINS - 1,
+                                     sorted(set(expected_bins) - set(bins))[:5],
+                                     sorted({b for b in bins if bins.count(b) > 1})[:5])))
+        counts = cell["n_unweighted"].unique()
+        if len(counts) != 1:
+            raise ValueError(
+                "departure-time reference (%s) cell segment=%s purpose=%s position=%s carries %d "
+                "different n_unweighted value(s) %s across its %d bin rows; the count is a "
+                "per-cell property and must be identical on every bin"
+                % ((where,) + key + (len(counts), sorted(counts.tolist())[:5], N_BINS)))
+        n_unweighted = int(counts[0])
+        if n_unweighted <= 0:
+            continue                       # legitimately empty cell -- see the docstring
+        for column in ("share_derounded", "share_as_reported"):
+            total = float(cell[column].sum())
+            if not np.isfinite(total) or abs(total - 1.0) > REFERENCE_SUM_TOLERANCE:
+                raise ValueError(
+                    "departure-time reference (%s) cell segment=%s purpose=%s position=%s has "
+                    "n_unweighted=%d but its %s values sum to %r instead of 1.0 (tolerance %g)"
+                    % ((where,) + key + (n_unweighted, column, total, REFERENCE_SUM_TOLERANCE)))
+
+
+def validate_activity_duration_table(frame: pd.DataFrame, *, source=None) -> None:
+    """Validate a committed activity-duration table: dense bands and per-cell sums.
+
+    Checked per ``(segment, purpose)`` cell: exactly the bands
+    :data:`DURATION_BAND_LABELS`, each once (the builder emits a cell dense over bands or omits
+    the combination entirely, so a partial cell means the file was truncated or hand-edited);
+    ONE ``n_unweighted`` value; and, for ``n_unweighted > 0``, finite ``share`` values summing to
+    1 within :data:`REFERENCE_SUM_TOLERANCE`. A silently short cell would make a comparison's
+    model side sum to 1 against a reference side that does not, and the resulting deltas would
+    look like a measured difference.
+
+    Raises ``ValueError`` naming the offending cell.
+    """
+    where = source if source is not None else "activity-duration reference"
+    _require_columns(frame, ACTIVITY_DURATION_COLUMNS,
+                     "activity-duration reference (%s)" % where)
+    expected_bands = sorted(DURATION_BAND_LABELS)
+    for key, cell in frame.groupby(["segment", "purpose"], sort=True):
+        bands = sorted(cell["band"].astype(str).tolist())
+        if bands != expected_bands:
+            raise ValueError(
+                "activity-duration reference (%s) cell segment=%s purpose=%s carries band(s) %s "
+                "instead of exactly %s (missing %s, duplicated %s)"
+                % ((where,) + key + (bands, list(DURATION_BAND_LABELS),
+                                     sorted(set(expected_bands) - set(bands)),
+                                     sorted({b for b in bands if bands.count(b) > 1}))))
+        counts = cell["n_unweighted"].unique()
+        if len(counts) != 1:
+            raise ValueError(
+                "activity-duration reference (%s) cell segment=%s purpose=%s carries %d "
+                "different n_unweighted value(s) %s; the count is a per-cell property"
+                % ((where,) + key + (len(counts), sorted(counts.tolist())[:5])))
+        n_unweighted = int(counts[0])
+        if n_unweighted <= 0:
+            continue
+        total = float(cell["share"].sum())
+        if not np.isfinite(total) or abs(total - 1.0) > REFERENCE_SUM_TOLERANCE:
+            raise ValueError(
+                "activity-duration reference (%s) cell segment=%s purpose=%s has n_unweighted=%d "
+                "but its share values sum to %r instead of 1.0 (tolerance %g)"
+                % ((where,) + key + (n_unweighted, total, REFERENCE_SUM_TOLERANCE)))
 
 
 def _dense_bin_rows(segment_label: str, purpose_label: str, position_label: str,

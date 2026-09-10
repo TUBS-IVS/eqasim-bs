@@ -63,7 +63,8 @@ from braunschweig.calibration import reported_time_precision as reported_precisi
 from braunschweig.calibration import srv_plan_structure
 from braunschweig.calibration.srv_departure_times import (BIN_MINUTES, DEPARTURE_TIME_COLUMNS,
                                                           DEPARTURE_TIME_TABLE, N_BINS,
-                                                          PURPOSE_ALL)
+                                                          PURPOSE_ALL, REFERENCE_SUM_TOLERANCE,
+                                                          validate_departure_time_table)
 from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.plan_validation import MAX_PLAN_TIME_SECONDS
 
@@ -124,9 +125,10 @@ REFERENCE_POSITION = "first"
 #: is imported from that module as ``PURPOSE_ALL`` so the two files cannot disagree.
 SEGMENT_ALL = "all"
 
-#: Tolerance for the "``share_derounded`` sums to 1" check on a non-empty reference cell (the
-#: committed table is written with full float precision, so the residual is ~1e-11).
-REFERENCE_SUM_TOLERANCE = 1e-6
+#: Tolerance for the "a cell's shares sum to 1" check, re-exported from
+#: ``braunschweig.calibration.srv_departure_times`` (which owns it, next to the builder that
+#: normalises those shares) so this module and the analysis stage cannot drift apart on what
+#: counts as a valid committed table. Kept under its historical name for existing callers.
 
 #: Above this share of persons that could not be mapped, ``srv_mapped`` logs a WARNING: a high
 #: unmapped share means most persons kept the donor's own start times and the mapping did NOT
@@ -256,55 +258,18 @@ def person_groups(persons: pd.DataFrame) -> pd.Series:
 
 # --------------------------------------------------------------------------- reference table
 def _validate_reference_frame(reference: pd.DataFrame, source: str) -> None:
-    """Validate the departure-time reference: position, dense bins, and shares summing to 1.
+    """Validate the departure-time reference for MODEL consumption.
 
-    Checked per ``(segment, purpose)`` cell: exactly the bins ``0..N_BINS-1``, each once; one
-    single ``n_unweighted`` value across those rows (it is a per-cell count, repeated per bin);
-    and, for a cell with ``n_unweighted > 0``, a finite ``share_derounded`` summing to 1 within
-    :data:`REFERENCE_SUM_TOLERANCE`. A cell with ``n_unweighted == 0`` is legitimately EMPTY (the
-    builder emits it with NaN shares rather than dropping it) and means "no reference for this
-    cell" -- the coarsening ladder skips it; it is never read as a zero distribution.
+    Delegates the whole structural check -- dense bins per cell, one ``n_unweighted`` per cell,
+    both share columns summing to 1 within
+    :data:`~braunschweig.calibration.srv_departure_times.REFERENCE_SUM_TOLERANCE`, an empty cell
+    legitimately skipped -- to
+    :func:`braunschweig.calibration.srv_departure_times.validate_departure_time_table`, the ONE
+    validator this table has. Only the ``positions`` restriction is this module's own: the model
+    may consume :data:`REFERENCE_POSITION` and nothing else, because ``later``/``all`` are the
+    hold-out references of the comparison stage and must never enter the mapping.
     """
-    _require_columns(reference, ["segment", "purpose", "bin_15min", "share_derounded",
-                                 "n_unweighted"], "departure-time reference (%s)" % source)
-    if "position" in reference.columns:
-        positions = set(reference["position"].unique())
-        if positions != {REFERENCE_POSITION}:
-            raise ValueError(
-                "departure_time_model: departure-time reference (%s) carries position(s) %s; the "
-                "model consumes position '%s' only -- filter it with "
-                "load_departure_time_reference (positions 'later'/'all' are hold-out references "
-                "and must never enter the mapping)"
-                % (source, sorted(positions), REFERENCE_POSITION))
-    expected_bins = list(range(N_BINS))
-    for (segment, purpose), cell in reference.groupby(["segment", "purpose"], sort=True):
-        bins = sorted(cell["bin_15min"].tolist())
-        if bins != expected_bins:
-            raise ValueError(
-                "departure_time_model: departure-time reference (%s) cell segment=%s purpose=%s "
-                "carries %d bin(s) instead of the dense %d bins 0..%d (missing %s, duplicated %s)"
-                % (source, segment, purpose, len(bins), N_BINS, N_BINS - 1,
-                   sorted(set(expected_bins) - set(bins))[:5],
-                   sorted({b for b in bins if bins.count(b) > 1})[:5]))
-        # n_unweighted is a per-CELL count repeated on every bin row; a varying value means the
-        # rows of two different cells were merged (or the file was hand-edited), which would make
-        # every threshold decision below depend on which row happened to be read first.
-        counts = cell["n_unweighted"].unique()
-        if len(counts) != 1:
-            raise ValueError(
-                "departure_time_model: departure-time reference (%s) cell segment=%s purpose=%s "
-                "carries %d different n_unweighted value(s) %s across its %d bin rows; the count "
-                "is a per-cell property and must be identical on every bin"
-                % (source, segment, purpose, len(counts), sorted(counts.tolist())[:5], N_BINS))
-        if int(cell["n_unweighted"].iloc[0]) <= 0:
-            continue                       # legitimately empty cell -- see the docstring
-        total = float(cell["share_derounded"].sum())
-        if not np.isfinite(total) or abs(total - 1.0) > REFERENCE_SUM_TOLERANCE:
-            raise ValueError(
-                "departure_time_model: departure-time reference (%s) cell segment=%s purpose=%s "
-                "has n_unweighted=%d but its share_derounded values sum to %r instead of 1.0 "
-                "(tolerance %g)" % (source, segment, purpose, int(cell["n_unweighted"].iloc[0]),
-                                    total, REFERENCE_SUM_TOLERANCE))
+    validate_departure_time_table(reference, positions=(REFERENCE_POSITION,), source=source)
 
 
 def load_departure_time_reference(srv_dir: str) -> pd.DataFrame:

@@ -430,15 +430,31 @@ def test_configure_raises_on_an_unknown_trips_view():
 
 
 def test_validate_hashes_the_pure_module_and_the_reference_builders():
+    """The cache token must cover every module that produces a number in the report.
+
+    ``metrics`` and ``popsim.trips`` are CROSS-PACKAGE imports, which the own-package hash
+    invariant (tests/test_synpp_helper_hash_invariant.py) cannot catch: ``emd_on_bands``
+    produces every value in emd.csv, and ``mid_time_seconds``'s design-code rule decides which
+    legs have a usable raw time and therefore share_raw, n_raw and the coverage figure.
+    """
     from braunschweig.analysis import departure_time, plan_structure
-    from braunschweig.calibration import srv_departure_times, srv_plan_structure
+    from braunschweig.calibration import metrics, srv_departure_times, srv_plan_structure
     from braunschweig.popsim import departure_time_model
+    from braunschweig.popsim import trips as popsim_trips
 
     assert set(S._HELPER_MODULES) == {departure_time, plan_structure, srv_departure_times,
-                                      srv_plan_structure, departure_time_model}
+                                      srv_plan_structure, departure_time_model, metrics,
+                                      popsim_trips}
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0
     assert token == S.validate(None)
+    # The token really is the md5 over those seven sources, in the declared order.
+    import hashlib
+    import inspect
+    expected = hashlib.md5()
+    for module in S._HELPER_MODULES:
+        expected.update(inspect.getsource(module).encode("utf-8"))
+    assert token == expected.hexdigest()
 
 
 # --------------------------------------------------------------------------- stage: execute
@@ -519,3 +535,200 @@ def test_the_segments_and_purposes_are_the_reference_builder_s_own():
     assert D.PURPOSES == SRVDT.PURPOSES_WITH_ALL
     assert D.POSITIONS == SRVDT.POSITIONS
     assert D.SEGMENTS[0] == "all" and set(D.SEGMENTS[1:]) == set(SRV.GROUPS)
+
+
+# ------------------------------------------------------------------- two clocks (fix round 1)
+
+def test_a_midnight_shifted_leg_is_counted_not_read_as_a_model_shift():
+    """``mid_time_seconds`` decodes on a 0-23 h clock, the trip build's times on a 0-47 h one.
+
+    ``hts.fix_trip_times`` shifts a midnight-crossing chain by +24 h, so such a leg's raw value
+    sits exactly 1440 min below its pre-offset one with nothing wrong anywhere. Counting those
+    legs is what keeps the remaining raw-vs-pre-offset differences readable as actual shifts.
+    """
+    trips = _model_trips()
+    # Person 2's second leg is repaired to 1:00 the next day (25:00 on the build's clock) while
+    # its MiD report still reads 1:00 (W_SZS 1).
+    last = (trips["person_id"] == 2) & (trips["trip_index"] == 1)
+    trips.loc[last, "departure_time"] = 25 * HOUR
+    trips.loc[last, "arrival_time"] = 25.25 * HOUR
+    trips.loc[last, "W_SZS"] = 1
+    trips.loc[last, "W_SZM"] = 0
+
+    frame = D.harmonise_model_times(_model_persons(), trips, _model_groups())
+    assert frame.attrs["n_legs_raw_pre_offset_differ_by_24h"] == 1
+
+    row = frame[(frame["pid"] == 2) & (frame["seq"] == 1)].iloc[0]
+    assert row["raw_dep_min"] == pytest.approx(60.0)              # hour 1 on the MiD clock
+    assert row["realised_dep_min"] == pytest.approx(25 * 60.0)    # hour 25 on the build's clock
+
+    # The raw column structurally cannot reach hour 28, so its clip counter stays 0 even though
+    # the same leg sits in hour 25 on the other two columns.
+    table = D.decomposition(frame)
+    assert table.attrs["n_hours_clipped_raw"] == 0
+    cell = table[(table["segment"] == "all") & (table["purpose"] == "home")
+                 & (table["position"] == D.POSITION_LATER)].set_index("hour")
+    assert cell.loc[1, "share_raw"] > 0.0
+    assert cell.loc[25, "share_realised"] > 0.0
+
+
+def test_an_unshifted_leg_is_not_counted_as_a_midnight_shift():
+    frame = _harmonised()
+    assert frame.attrs["n_legs_raw_pre_offset_differ_by_24h"] == 0
+
+
+def test_summary_explains_the_two_clocks_and_the_emd_scale(tmp_path):
+    trips = _model_trips()
+    last = (trips["person_id"] == 2) & (trips["trip_index"] == 1)
+    trips.loc[last, "departure_time"] = 25 * HOUR
+    trips.loc[last, "arrival_time"] = 25.25 * HOUR
+    trips.loc[last, "W_SZS"] = 1
+    trips.loc[last, "W_SZM"] = 0
+
+    S.execute(_stage_context(tmp_path, trips=trips))
+    out_dir = tmp_path / "analysis" / "departure_time_vs_srv"
+    summary = (out_dir / "summary.md").read_text(encoding="utf-8")
+
+    # The two clocks, the counter and how to read the decomposition -- generated, not typed.
+    assert "Reading the decomposition" in summary
+    assert "0-23 h" in summary and "0-47 h" in summary
+    assert "fix_trip_times" in summary
+    assert "n_hours_clipped_raw" in summary
+    assert "n_legs_raw_pre_offset_differ_by_24h" in summary
+    assert "(1 of the 4 legs with a raw time)" in summary
+    # The EMD scale, so a reader can size a distance without opening metrics.py.
+    assert "EMD scale" in summary
+    assert "1/111 = 0.0090" in summary
+
+    provenance = json.loads((out_dir / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["model"]["n_legs_raw_pre_offset_differ_by_24h"] == 1
+
+
+# --------------------------------------------------------- one validator per committed table
+
+def _valid_departure_time_csv(root, mutate=None):
+    """Write a minimal but STRUCTURALLY VALID committed departure-time table under ``root``.
+
+    ``root`` is the ``data_path``; the file lands at ``<root>/braunschweig/srv/...`` so the stage
+    loader (which takes the data path) and the model loader (which takes the srv directory) can
+    both be pointed at the same file.
+    """
+    rows = []
+    for position in SRVDT.POSITIONS:
+        for b in range(SRVDT.N_BINS):
+            rows.append({"universe": SRVDT.UNIVERSE, "segment": "all",
+                         "purpose": SRVDT.PURPOSE_ALL, "position": position, "bin_15min": b,
+                         "share_derounded": 1.0 if b == 30 else 0.0,
+                         "share_as_reported": 1.0 if b == 30 else 0.0, "n_unweighted": 400})
+    table = pd.DataFrame(rows, columns=SRVDT.DEPARTURE_TIME_COLUMNS)
+    if mutate is not None:
+        table = mutate(table)
+    srv_dir = root / "braunschweig" / "srv"
+    srv_dir.mkdir(parents=True, exist_ok=True)
+    table.to_csv(srv_dir / SRVDT.DEPARTURE_TIME_TABLE, index=False)
+    return srv_dir
+
+
+def _drop_a_bin(table):
+    first = (table["position"] == "first") & (table["bin_15min"] == 5)
+    return table.drop(table[first].index)
+
+
+def _break_the_derounded_sum(table):
+    table.loc[(table["position"] == "first") & (table["bin_15min"] == 30),
+              "share_derounded"] = 0.9
+    return table
+
+
+def _break_the_as_reported_sum(table):
+    table.loc[(table["position"] == "first") & (table["bin_15min"] == 30),
+              "share_as_reported"] = 0.9
+    return table
+
+
+def _vary_n_unweighted(table):
+    table.loc[(table["position"] == "first") & (table["bin_15min"] == 7), "n_unweighted"] = 12
+    return table
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (_drop_a_bin, "bin"),
+    (_break_the_derounded_sum, "sum"),
+    (_break_the_as_reported_sum, "share_as_reported"),
+    (_vary_n_unweighted, "n_unweighted"),
+])
+def test_both_loaders_reject_the_same_corrupt_departure_time_table(tmp_path, mutate, match):
+    """ONE validator, so a table one loader accepts the other cannot reject.
+
+    The model's loader keeps ``position == "first"`` (the only position it may map from) and the
+    stage's keeps all three, but both run
+    ``srv_departure_times.validate_departure_time_table``. Every corruption below sits in a
+    ``first`` cell so BOTH loaders actually see it.
+    """
+    from braunschweig.popsim import departure_time_model as M
+
+    srv_dir = _valid_departure_time_csv(tmp_path, mutate)
+    with pytest.raises(ValueError, match=match):
+        S.load_departure_time_reference(str(tmp_path))
+    with pytest.raises(ValueError, match=match):
+        M.load_departure_time_reference(str(srv_dir))
+
+
+def test_both_loaders_accept_the_same_valid_departure_time_table(tmp_path):
+    from braunschweig.popsim import departure_time_model as M
+
+    srv_dir = _valid_departure_time_csv(tmp_path)
+    stage_side = S.load_departure_time_reference(str(tmp_path))
+    model_side = M.load_departure_time_reference(str(srv_dir))
+    assert set(stage_side["position"]) == set(SRVDT.POSITIONS)
+    assert set(model_side["position"]) == {"first"}
+
+
+def test_the_tolerance_constant_has_exactly_one_home():
+    """A second copy could drift and make one loader accept what another rejects."""
+    from braunschweig.popsim import departure_time_model as M
+
+    assert M.REFERENCE_SUM_TOLERANCE is SRVDT.REFERENCE_SUM_TOLERANCE
+
+
+def _write_duration_csv(root, table):
+    srv_dir = root / "braunschweig" / "srv"
+    srv_dir.mkdir(parents=True, exist_ok=True)
+    table.to_csv(srv_dir / SRVDT.ACTIVITY_DURATION_TABLE, index=False)
+    return srv_dir
+
+
+def _valid_duration_table():
+    return pd.DataFrame({
+        "universe": [SRVDT.UNIVERSE] * len(SRVDT.DURATION_BAND_LABELS),
+        "segment": ["employed"] * len(SRVDT.DURATION_BAND_LABELS),
+        "purpose": ["work"] * len(SRVDT.DURATION_BAND_LABELS),
+        "band": list(SRVDT.DURATION_BAND_LABELS),
+        "share": [0.1, 0.1, 0.2, 0.2, 0.2, 0.2],
+        "n_unweighted": [500] * len(SRVDT.DURATION_BAND_LABELS),
+    }, columns=SRVDT.ACTIVITY_DURATION_COLUMNS)
+
+
+def test_the_activity_duration_loader_rejects_a_cell_with_a_missing_band(tmp_path):
+    table = _valid_duration_table()
+    _write_duration_csv(tmp_path, table[table["band"] != "1-2h"])
+    with pytest.raises(ValueError, match="band"):
+        S.load_activity_duration_reference(str(tmp_path))
+
+
+def test_the_activity_duration_loader_rejects_shares_that_do_not_sum_to_one(tmp_path):
+    table = _valid_duration_table()
+    table.loc[table["band"] == "8h+", "share"] = 0.9
+    _write_duration_csv(tmp_path, table)
+    with pytest.raises(ValueError) as error:
+        S.load_activity_duration_reference(str(tmp_path))
+    message = str(error.value)
+    assert "sum" in message
+    # The message names the offending cell, so a malformed table is diagnosable from it alone.
+    assert "employed" in message and "work" in message
+
+
+def test_the_activity_duration_loader_accepts_a_valid_table(tmp_path):
+    _write_duration_csv(tmp_path, _valid_duration_table())
+    table = S.load_activity_duration_reference(str(tmp_path))
+    assert len(table) == len(SRVDT.DURATION_BAND_LABELS)
