@@ -84,6 +84,24 @@ def test_the_missing_distance_bound_is_the_shared_repository_constant():
     assert M.DISTANCE_MISSING_CODE_MIN == WEGKM_CODE_MIN
 
 
+def test_kernwo_weekday_codes_is_the_seed_day_filter_not_a_retyped_copy():
+    """Issue #373 cleanup wave, item 4: KERNWO_WEEKDAY_CODES used to be re-typed as a literal
+    ``(1, 2, 3)`` in scripts/extract_mid_w_zweck_hwzweck1.py (which this module imports it
+    FROM), independently of braunschweig.popsim.seed.WEEKDAY_KERNWO / MID_SEED_COLUMNS.
+    day_filter_values -- the single home scripts/derive_escort_w_zweck_split.py already
+    imports it from. A re-typed copy can silently drift onto a different weekday-code
+    universe than the PopulationSim seed actually keeps, which would make the two committed
+    MiD Wege aggregates (this module's and derive_escort_w_zweck_split.py's) describe
+    different leg universes without either script noticing. KERNWO_WEEKDAY_CODES is kept as
+    an ALIAS (not renamed) for the callers that import this exact name."""
+    from braunschweig.popsim.seed import MID_SEED_COLUMNS
+    from scripts import extract_mid_w_zweck_hwzweck1
+
+    assert extract_mid_w_zweck_hwzweck1.KERNWO_WEEKDAY_CODES is MID_SEED_COLUMNS.day_filter_values
+    # M (this module) imports the alias FROM extract_mid_w_zweck_hwzweck1 -- same object, not a copy.
+    assert M.KERNWO_WEEKDAY_CODES is extract_mid_w_zweck_hwzweck1.KERNWO_WEEKDAY_CODES
+
+
 # --------------------------------------------------------------- universe and guards
 
 

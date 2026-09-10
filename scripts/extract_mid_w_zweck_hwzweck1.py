@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from braunschweig.popsim.mid.csv_format import detect_csv_separator
+from braunschweig.popsim.seed import MID_SEED_COLUMNS
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_RAW_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "popsim" / "mid2023_raw"
@@ -34,8 +35,17 @@ WEGE_FILE = "MiD2023_Wege.csv"
 
 #: Weekday legs only (Kernwochentage Di/Mi/Do); mirrors the weekday-trip convention used by the
 #: other committed MiD Wege aggregates in this repository (e.g. mid2023_escort_w_zweck_split.csv
-#: draws from the same weekday sample logic).
-KERNWO_WEEKDAY_CODES = (1, 2, 3)
+#: draws from the same weekday sample logic). IMPORTED from the PopulationSim seed's own day
+#: filter (``braunschweig.popsim.seed.MID_SEED_COLUMNS.day_filter_values``, the same name
+#: ``scripts/derive_escort_w_zweck_split.py`` imports it as) rather than re-typed as a literal
+#: tuple: a re-typed copy can silently drift from the seed's actual weekday-code universe, which
+#: is exactly what happened here until issue #373's cleanup wave (the two committed MiD Wege
+#: aggregates, this script's and derive_escort_w_zweck_split.py's, must describe the SAME leg
+#: universe). ``seed.WEEKDAY_KERNWO`` is the module's OWN alias for the same value; either name
+#: would do, ``MID_SEED_COLUMNS.day_filter_values`` matches the sibling script's import exactly.
+#: Kept as ``KERNWO_WEEKDAY_CODES`` (not renamed) because ``scripts/extract_mid_w_zwd_groups.py``
+#: imports this exact name from this module.
+KERNWO_WEEKDAY_CODES = MID_SEED_COLUMNS.day_filter_values
 #: W_RBW == 1 marks a route-break summary leg (Ruecken/Bogen-Weg fragment introduced by MiD's own
 #: route-splitting), not a genuine, independently reported trip purpose; excluded so the fold is
 #: computed over real legs only, matching how downstream trip construction filters W_RBW.
