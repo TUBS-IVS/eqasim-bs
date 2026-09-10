@@ -18,14 +18,17 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `f2574fe6` |
+| code state (--source-commit) | `4ce40707` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |
 
-The code state above is the commit that introduced the extraction and comparison code;
-header text, the exactness grade of `other_errand_short` and the renormalised columns
-were updated in the following fix-round commit, and the measured data rows are unchanged.
+The code state above is the commit that moved the candidate rule onto the comparable
+universe and made the flag group-level across the spec variants (issue #242 item 8, owner
+decision 2026-09-10). Both reference tables are unchanged, so every measured data row of
+`comparison.csv` is unchanged; what changed is the meaning of
+`candidate_for_reestimation` and the two added columns `delta_pp_comparable` and
+`candidate_variants`.
 
 ### Flag settings
 
@@ -46,13 +49,22 @@ default-configured behaviour; the `default` rows describe the flag switched off.
 ### Candidate rule (verbatim)
 
 ```
-candidate_for_reestimation = (exactness == "exact") and (abs(delta_pp) > 10)
+candidate_for_reestimation = (exactness == "exact") and any over spec variants of (abs(delta_pp_comparable) > 10); delta_pp_comparable = delta_pp_renormalised where the purpose is asymmetric, else delta_pp
 ```
 
 The flag marks a group whose two shares differ by more than
-10 percentage points AND whose crosswalk is graded `exact`, i.e. where the difference
-cannot be explained away as a taxonomy mismatch. It is a pointer for a later decision,
-not a decision.
+10 percentage points on the COMPARABLE universe -- each side renormalised to the mass
+of the rows both surveys name concretely (`exact`, `approximate`) -- AND whose crosswalk is graded
+`exact`, i.e. where the difference cannot be explained away as a taxonomy mismatch.
+The flag is GROUP-level across the spec variants: a group that crosses the threshold in
+at least one variant is flagged on every one of its rows and `candidate_variants` names
+the crossing variants, because the group is the unit of a possible re-estimation and a
+1 pp difference between the variants must not give two answers for one group.
+
+ASSUMPTION: the 10 pp threshold is a practical relevance line, not a derived bound. The
+sampling standard error of an SrV within-leisure share with n ~ 1,900 is about 1 pp, so
+the threshold decides relevance, not significance; and it measures SHARES, while the
+model consequence is DISTANCE. It is a pointer for a later decision, not a decision.
 
 ## Comparison
 
@@ -62,7 +74,7 @@ not a decision.
 | shop_non_daily | codeplan | shop | 9 | exact | 10449 | 0.2066 | 1789 | 0.2856 | -7.9 | 3.80 | 2.70 |
 | other_errand_short | codeplan | other_errand | 10 | approximate | 10257 | 0.5140 | 1873 | 0.5583 | -4.4 | 2.94 | 3.71 |
 | other_errand_long | codeplan | other_errand | 11 | approximate | 10207 | 0.4860 | 1451 | 0.4417 | +4.4 | 3.90 | 2.29 |
-| leisure_visit | codeplan | leisure | 15 | exact | 8003 | 0.1540 | 1912 | 0.2150 | -6.1 | 4.90 | 3.30 |
+| leisure_visit ** | codeplan | leisure | 15 | exact | 8003 | 0.1540 | 1912 | 0.2150 | -6.1 | 4.90 | 3.30 |
 | leisure_local | codeplan | leisure | 14, 16 | approximate | 21538 | 0.3626 | 3997 | 0.4073 | -4.5 | 2.94 | (14:1.998, 16:1.385) |
 | leisure_activity | codeplan | leisure | 13, 17 | approximate | 25650 | 0.4253 | 1843 | 0.1981 | +22.7 | 4.75 | (13:4.140, 17:3.226) |
 | leisure_excursion | codeplan | leisure | - | aggregate_only | 3591 | 0.0581 | n/a | n/a | n/a | 36.18 | n/a |
@@ -70,7 +82,7 @@ not a decision.
 | shop_non_daily | default | shop | 9 | exact | 10449 | 0.2066 | 1789 | 0.2856 | -7.9 | 3.80 | 2.70 |
 | other_errand_short | default | other_errand | 10 | approximate | 10257 | 0.4762 | 1873 | 0.5583 | -8.2 | 2.94 | 3.71 |
 | other_errand_long | default | other_errand | 11 | approximate | 12267 | 0.5238 | 1451 | 0.4417 | +8.2 | 3.92 | 2.29 |
-| leisure_visit | default | leisure | 15 | exact | 8003 | 0.1449 | 1912 | 0.2150 | -7.0 | 4.90 | 3.30 |
+| leisure_visit ** | default | leisure | 15 | exact | 8003 | 0.1449 | 1912 | 0.2150 | -7.0 | 4.90 | 3.30 |
 | leisure_local | default | leisure | 14, 16 | approximate | 21538 | 0.3411 | 3997 | 0.4073 | -6.6 | 2.94 | (14:1.998, 16:1.385) |
 | leisure_activity | default | leisure | 13, 17 | approximate | 30880 | 0.4594 | 1843 | 0.1981 | +26.1 | 4.75 | (13:4.140, 17:3.226) |
 | leisure_excursion | default | leisure | - | aggregate_only | 3591 | 0.0546 | n/a | n/a | n/a | 36.18 | n/a |
@@ -81,23 +93,22 @@ recomputed from committed percentile rows (see `median_km_srv_components`).
 
 ## Candidates flagged
 
-None under the rule above: no `exact` crosswalk differs by more than 10 pp on the
-RAW shares.
+* `leisure_visit` (exact): comparable delta default -10.9 pp, codeplan -9.9 pp; crossing variant(s): `default`. Raw deltas -7.0 / -6.1 pp.
 
-That headline holds without qualification only for the purposes whose crosswalk
-covers the whole mass on BOTH sides -- here `other_errand`, `shop`. For `leisure` the two denominators are
-asymmetric, and the sensitivity section below shows what the same comparison says
-once each side is renormalised to its mapped mass.
+A candidate triggers no re-estimation here: the owner decides from the arm-B
+measurement of the REALISED share (feature record `w_zwd_codeplan_sentinels.yml`).
 
-## Sensitivity to the leisure denominator
+## Comparable-universe reading (feeds the flag)
 
-For `leisure` the crosswalk does not cover the same activity mass on the two sides, so the raw
-shares are conditional on different things. Renormalising each side to its own MAPPED
-mass -- the share the crosswalk actually pairs up -- gives the second reading below.
-Neither reading is 'the' right one: the raw shares answer "what fraction of the
-purpose's trips is this group?", the renormalised ones answer "among the trips the two
-surveys pair up, what fraction is this group?". They are reported side by side because
-the answer to the candidate question can differ between them.
+Where a purpose is ASYMMETRIC -- the two surveys do not name the same activity mass --
+the raw shares are conditional on different universes and cannot be differenced as they
+stand; here that is `leisure`. The comparable reading divides each side by its OWN
+comparable mass -- the mass of the rows graded `exact`, `approximate` -- and it is THIS reading
+that feeds the candidate flag (`delta_pp_comparable` is the renormalised delta here and
+the raw delta where a purpose is symmetric and the renormalisation is the identity). The
+raw shares are kept beside it as information: they answer "what fraction of the
+purpose's trips is this group?", the comparable ones answer "among the trips the two
+surveys pair up, what fraction is this group?".
 
 | subtype group | variant | exactness | share MiD | share SrV | delta pp | share MiD renorm. | share SrV renorm. | delta pp renorm. |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -108,12 +119,12 @@ the answer to the candidate question can differ between them.
 | leisure_local | default | approximate | 0.3411 | 0.4073 | -6.6 | 0.3608 | 0.4964 | -13.6 |
 | leisure_activity | default | approximate | 0.4594 | 0.1981 | +26.1 | 0.4859 | 0.2415 | +24.4 |
 
-**The renormalisation moves the following `exact` row(s) ACROSS the 10 pp
-threshold.** The committed `candidate_for_reestimation` flag stays on the RAW delta,
-because that is what the rule above says; this list is the reason the headline is
-reported per purpose rather than as one sentence.
+**Rows whose flag differs between the two readings.** The following `exact` row(s) are
+within the 10 pp threshold on the RAW delta and beyond it on the comparable one, so
+the raw reading alone would have missed them; the committed
+`candidate_for_reestimation` flag reads the comparable delta, as the rule above says.
 
-* `leisure_visit` (default): -7.0 pp raw -> -10.9 pp renormalised.
+* `leisure_visit` (default): -7.0 pp raw -> -10.9 pp comparable.
 
 ## Largest differences regardless of exactness
 
@@ -141,7 +152,8 @@ hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares
    mixes a regional effect with a survey-instrument effect and cannot be attributed to
    either from this table alone.
 4. **`approximate` and `aggregate_only` rows are not evidence of a defect.** They are
-   reported for completeness; only `exact` rows feed the candidate flag.
+   reported for completeness; only `exact` rows feed the candidate flag, on the
+   comparable delta.
 5. **`other_errand_short` is graded `approximate`, not `exact`** (issue #242 Task 6
    review, ruling C-R16), for two independent reasons: the labels overlap the other
    member of the pair -- MiD W_ZWD 602 "Behoerde, Bank, Post" feeds
