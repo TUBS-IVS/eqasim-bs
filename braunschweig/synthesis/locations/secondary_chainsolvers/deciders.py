@@ -205,12 +205,20 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     SAME flag ``braunschweig.popsim.distance_distributions.run`` reads for the
     matching distance layer, and both stages' ``configure()`` refuse the
     ``leisure_unspecified_subtype`` / ``w_zweck_10_as_leisure`` contradiction.
+
+    Coverage guard (issue #373 final review, ruling R14): before estimating,
+    ``purpose_subtype.code_coverage_guard`` is applied to the prepared frame,
+    so a W_ZWD code observed on a leg of the spec's W_ZWECK universe that the
+    spec maps to neither a group nor a sentinel RAISES here instead of being
+    dropped into the unlabelled share. ``_build_other_subtype_decider`` is
+    unchanged in this respect (pre-existing since issue #127).
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
+        code_coverage_guard,
         estimate_group_probabilities,
         leisure_spec,
         tt_band,
@@ -242,8 +250,18 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
     mid_wege = mid_wege.assign(travel_time=tt)
 
-    cell_probs, marginal = estimate_group_probabilities(
-        mid_wege, leisure_spec(codeplan_sentinels, unspecified_subtype), min_obs=min_obs)
+    spec = leisure_spec(codeplan_sentinels, unspecified_subtype)
+    # Coverage guard BEFORE the estimation (issue #373 final review M-4, ruling R14), on the
+    # very frame the estimation reads: a W_ZWD code that is neither a group member nor a
+    # declared sentinel of `spec` would otherwise be dropped into the unlabelled share, so the
+    # estimated mix would rest on fewer legs than the delivery has and the only trace would be a
+    # lower labelled share in the log line below. Cheap: one pass over the leisure legs of the
+    # frame that is already in memory. ASYMMETRY, deliberate: _build_other_subtype_decider does
+    # NOT guard its specs (pre-existing since issue #127); widening the guard there is a
+    # separate change and is out of this scope (stated in ADR-0115).
+    code_coverage_guard(mid_wege, spec)
+
+    cell_probs, marginal = estimate_group_probabilities(mid_wege, spec, min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "

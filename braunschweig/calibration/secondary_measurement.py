@@ -82,13 +82,25 @@ SUBTYPE_DONOR_MEAN_KM_RANGE: dict = {
     "leisure_excursion": (45.0, 100.0),
     # leisure_unspecified (issue #373, ADR-0115) has no spec Taxonomy table
     # entry: the group was defined after that spec, so the value below is an
-    # AD-HOC MEASUREMENT taken on 2026-09-10 from the raw MiD 2023 B1 Wege
-    # delivery (recorded in ADR-0115), not a figure carried over from a
-    # document. Universe: kernwo in {1, 2, 3} (weekday), W_RBW != 1 (non-rbW),
-    # W_ZWECK == 10, wegkm_imp < 9994 (design codes excluded) clipped at
-    # 200 km, W_GEW-weighted mean -> 12.0 km over n = 39,429 legs. Like every
+    # AD-HOC MEASUREMENT recorded in ADR-0115, taken on 2026-09-10 from the raw
+    # MiD 2023 B1 Wege delivery, not a figure carried over from a document.
+    # FRAME: the donor pool the layer is actually built from --
+    # braunschweig.popsim.distance_distributions.run's own "leisure_unspecified"
+    # layer under the production flag set. That is EVERY delivered Wege row
+    # (mid.load_mid_wege: no weekday and no route-break filter), mapped by
+    # trips.map_purpose with w_zweck_10_as_leisure, kept only where a travel
+    # time is available and where the two leg ends are not both primary
+    # activities, then following_purpose == "leisure" and W_ZWECK in
+    # purpose_subtype.LEISURE_UNSPECIFIED_ZWECK. MEASUREMENT on that frame:
+    # wegkm_imp < 9994 (design codes; none of these legs carries one), clipped
+    # at 200 km, W_GEW-weighted mean -> 12.7 km over n = 54,658 legs.
+    # The WEEKDAY reference universe of scripts/extract_mid_w_zwd_groups.py
+    # yields 12.0 km over n = 39,429 legs instead (issue #373 task 3 report):
+    # the SAME method on a DIFFERENT universe (kernwo in {1, 2, 3}, W_RBW != 1),
+    # not a different measurement rule. The band is pinned on the layer's own
+    # universe because that is the pool a realised leg draws from. Like every
     # other entry here this is an IN-SAMPLE donor mean, never a validation gate.
-    "leisure_unspecified": (12.0, 12.0),
+    "leisure_unspecified": (12.7, 12.7),
     "other_errand_short": (5.0, 9.0),
     "other_errand_long": (11.0, 16.0),
     "other_escort": (4.5, 8.5),

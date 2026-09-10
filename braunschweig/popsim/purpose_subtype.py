@@ -222,10 +222,16 @@ def label_legs(purpose_legs: pd.DataFrame, spec: SubtypeSpec) -> tuple:
 
     Both consumers of the rule call this: :func:`estimate_group_probabilities` (which turns the
     labels into P(group | mode, tt_band)) and ``scripts/extract_mid_w_zwd_groups.py`` (which turns
-    them into the committed MiD group reference). Having a single implementation is what
-    guarantees the committed reference describes the mix the estimation actually sees; two copies
-    of the precedence rule could drift apart without any test noticing (issue #373 review, ruling
-    R10).
+    them into the committed MiD group reference). One implementation means ONE labelling rule for
+    the model; two copies of the precedence rule could drift apart without any test noticing
+    (issue #373 review, ruling R10).
+
+    The shared rule does NOT make the two callers' numbers equal, because their leg UNIVERSES
+    differ: the estimation labels every MiD Wege row the stage loads (``mid.load_mid_wege``, no
+    weekday and no route-break filter), while the extraction labels the WEEKDAY non-rbW legs
+    only (``kernwo`` in {1, 2, 3}, ``W_RBW`` != 1). The measured shares therefore differ between
+    them -- the committed reference measures the WEEKDAY mix, not the mix the decider estimates
+    on (issue #373 final review, ruling R13; ADR-0115).
 
     A W_ZWECK-defined group (``spec.zweck_groups``) wins over the detail-code group, because such
     a leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115; see the module

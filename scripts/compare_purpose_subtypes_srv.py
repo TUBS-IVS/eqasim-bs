@@ -177,8 +177,9 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
         If a subtype group of :data:`SUBTYPE_TO_SRV_FINE` whose grade is NOT ``residual`` is
         missing from the MiD reference for some spec variant, if a mapped fine code is missing
         from the SrV reference, if the MiD purpose disagrees with the coarse purpose of the mapped
-        SrV codes, or if a group graded :data:`srv_fine_purpose.COMPARABLE_EXACTNESS` maps to no
-        SrV fine code at all (see :func:`_add_renormalised_columns`).
+        SrV codes, if a group graded :data:`srv_fine_purpose.COMPARABLE_EXACTNESS` maps to no
+        SrV fine code at all, or if a purpose's comparable mass is zero on either side (both see
+        :func:`_add_renormalised_columns`).
     """
     srv = srv_reference.set_index("fine_code")
     rows = []
@@ -260,6 +261,14 @@ def _add_renormalised_columns(comparison: pd.DataFrame) -> pd.DataFrame:
     conditional distributions become comparable. Rows of any other grade are never renormalised --
     they are, by definition, unmapped mass on their own side, whether or not they carry an SrV fine
     code (a grade that has a code but no comparable counterpart must not enter the denominator).
+
+    Raises
+    ------
+    ValueError
+        If a comparable row of a block carries no share on one side (a crosswalk defect, see the
+        per-row check below), or if a block's comparable mass is zero or negative on either side
+        (nothing to renormalise against; leaving the block alone would silently hand every one of
+        its groups the RAW delta under a column named comparable).
     """
     comparison = comparison.copy()
     for column in ("share_mid_renormalised", "share_srv_renormalised", "delta_pp_renormalised"):
@@ -287,7 +296,21 @@ def _add_renormalised_columns(comparison: pd.DataFrame) -> pd.DataFrame:
         logger.info("%s/%s: comparable mass MiD %.4f, SrV %.4f -- %s", variant, purpose, mid_mass,
                     srv_mass, "symmetric, renormalisation is the identity (columns left empty)"
                     if symmetric else "ASYMMETRIC, renormalised columns filled")
-        if symmetric or mid_mass <= 0 or srv_mass <= 0:
+        # A comparable universe with no mass on one side cannot be renormalised, and skipping it
+        # would leave an ASYMMETRIC block un-renormalised, so every group of it would fall back to
+        # its RAW delta under a column named comparable -- the cross-universe comparison this rule
+        # exists to prevent, silently. Like the per-row NaN guard above, this is a data or
+        # crosswalk defect (an empty purpose on one side, or a crosswalk pointing at fine codes
+        # that carry no mass), never a legitimate state, so it raises.
+        if mid_mass <= 0.0 or srv_mass <= 0.0:
+            raise ValueError(
+                f"[compare_purpose_subtypes_srv] the comparable mass of purpose '{purpose}' "
+                f"(spec variant '{variant}') is zero or negative on at least one side: "
+                f"MiD {mid_mass:.4f}, SrV {srv_mass:.4f}. The comparable rows (grades "
+                f"{' / '.join(F.COMPARABLE_EXACTNESS)}) of a purpose must carry mass on BOTH "
+                "sides; check the two reference tables for an empty purpose and "
+                "SUBTYPE_TO_SRV_FINE for fine codes that carry none.")
+        if symmetric:
             continue
         share_mid = comparison.loc[block.index, "share_mid"] / mid_mass
         share_srv = comparison.loc[block.index, "share_srv"] / srv_mass
@@ -584,12 +607,12 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "| SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |",
         "| MiD weights | `W_GEW` (trip expansion weight) |",
         "",
-        "The code state above is the commit that added the `residual` crosswalk grade (issue #373,",
-        "ADR-0115): MiD `leisure_unspecified` and SrV `V_ZWECK` 18 are now reported as a pair and",
-        "excluded from the comparable universe on both sides. The SrV reference is unchanged; the",
-        "MiD reference gained the spec variant `codeplan_unspecified` while its existing `default`",
-        "and `codeplan` data rows stayed byte-identical, so every pre-existing measured value below",
-        "is unchanged and what is new is that variant's block and the residual row.",
+        "The code state above is the code state at generation: the 8-character hash of the",
+        "eqasim-bs commit whose code produced this file. The measured numbers come from the two",
+        "committed reference tables named above and from nothing else -- this script reads no raw",
+        "survey file. A `residual` pair (MiD `leisure_unspecified` and SrV `V_ZWECK` 18, issue",
+        "#373, ADR-0115) is reported below but excluded from the comparable universe on both",
+        "sides.",
         "",
         "### Flag settings",
         "",
@@ -785,15 +808,11 @@ def main(argv=None) -> int:
                      "mix (issue #242 Task 6).\n")
         handle.write("# Sources: %s ; %s\n" % (args.srv_reference.as_posix(),
                                                args.mid_reference.as_posix()))
-        handle.write("# Code state: eqasim-bs %s (the commit that added the 'residual' crosswalk "
-                     "grade), crosswalk\n"
-                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. The SrV "
-                     "reference is unchanged\n"
-                     "#   and the MiD reference's default / codeplan data rows are unchanged; what "
-                     "is new is the MiD\n"
-                     "#   spec variant codeplan_unspecified and the residual row pairing MiD "
-                     "leisure_unspecified with\n"
-                     "#   SrV V_ZWECK 18.\n" % source_commit)
+        handle.write("# Code state at generation: eqasim-bs %s (--source-commit, 8-character hash "
+                     "of the\n"
+                     "#   eqasim-bs commit whose code produced this file), crosswalk\n"
+                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE.\n"
+                     % source_commit)
         handle.write("# Rule: %s\n" % CANDIDATE_RULE)
         handle.write("# Renormalised columns (share_mid_renormalised, share_srv_renormalised, "
                      "delta_pp_renormalised): each\n"

@@ -1240,6 +1240,37 @@ def test_leisure_decider_log_line_names_both_spec_flags(monkeypatch, capsys):
     assert "unspecified subtype: on" in out
 
 
+def test_leisure_decider_raises_on_an_unknown_w_zwd_code(monkeypatch):
+    """Final review M-4 (ruling R14): the decider runs
+    ``purpose_subtype.code_coverage_guard`` on the prepared frame before estimating.
+
+    A W_ZWD code the leisure spec knows neither as a group member nor as a sentinel would
+    otherwise be dropped into the unlabelled share -- the estimated mix would silently rest on
+    fewer legs than the data has, and the labelled-share log line is the only trace. The guard
+    turns that into a stage-time error naming the code."""
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=706, wegkm=5.0, n=40)    # leisure_local, a known code
+    _add_rows(rows, 100, w_zweck=7, w_zwd=123, wegkm=5.0, n=5)   # neither a group nor a sentinel
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+
+    with pytest.raises(ValueError, match="123"):
+        sc._build_leisure_subtype_decider(ctx, random_seed=1)
+
+
+def test_leisure_decider_builds_when_every_leisure_code_is_covered(monkeypatch):
+    """The other side of the guard: a frame whose leisure W_ZWD codes are all group members or
+    sentinels (2202 is a design sentinel of every leisure spec) still builds a decider."""
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=706, wegkm=5.0, n=40)     # leisure_local
+    _add_rows(rows, 100, w_zweck=7, w_zwd=2202, wegkm=5.0, n=5)   # sentinel, unlabelled by design
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context({"secondary_leisure_subtype_split": True}, monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert decide("car", 600.0) == "leisure_local"
+
+
 def test_configure_declares_leisure_unspecified_subtype_default_true():
     ctx = _FakeContext()
     sc.configure(ctx)

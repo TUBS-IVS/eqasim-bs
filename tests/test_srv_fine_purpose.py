@@ -456,6 +456,30 @@ def test_a_comparable_grade_without_srv_codes_raises_instead_of_renormalising_to
         build_comparison(_srv_reference(), _mid_reference())
 
 
+def test_a_comparable_block_with_zero_mass_on_one_side_raises():
+    """Final review M-2: a comparable block whose mass is 0 on one side must RAISE, not fall
+    through un-renormalised.
+
+    Every comparable leisure row of the SrV side carries share 0.0 here (the whole leisure mass
+    sits on the residual code 18), so the SrV comparable mass is 0 while the MiD one is 0.90. The
+    block is therefore asymmetric, but dividing by 0 is impossible: the previous code skipped it
+    silently, which left the renormalised columns empty for an ASYMMETRIC block and let
+    delta_pp_comparable fall back to the raw delta -- the very cross-universe comparison the
+    comparable-universe rule exists to prevent. A comparable universe with no mass on one side is
+    a data or crosswalk defect, so the message must name the purpose, the spec variant and both
+    masses."""
+    srv = _srv_reference()
+    named_leisure = srv["fine_code"].isin([13, 14, 15, 16, 17])
+    srv.loc[named_leisure, "share_within_coarse"] = 0.0
+    srv.loc[srv["fine_code"] == 18, "share_within_coarse"] = 1.0
+
+    with pytest.raises(ValueError, match="comparable mass of purpose 'leisure'"):
+        build_comparison(srv, _mid_reference())
+
+    with pytest.raises(ValueError, match="MiD 0.9000, SrV 0.0000"):
+        build_comparison(srv, _mid_reference())
+
+
 def test_the_crossing_list_reports_a_row_the_raw_reading_would_have_flagged():
     """The two readings can disagree in BOTH directions, so the crossing list must be the XOR of
     the two threshold tests. Here SrV codes a large unmapped residual (18 = 0.30, comparable mass
