@@ -104,9 +104,14 @@ def _bounded_problems_mixed():
 # ---------------------------------------------------------------------------
 
 
-def test_leisure_subtype_activities_match_purpose_subtype_leisure_groups():
-    from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS
-    assert set(sc.LEISURE_SUBTYPE_ACTIVITIES) == set(LEISURE_GROUPS)
+def test_leisure_subtype_activities_match_the_full_leisure_vocabulary():
+    """The chainsolver vocabulary must carry EVERY name the widest leisure spec
+    can label -- the four W_ZWD groups plus the W_ZWECK-defined
+    "leisure_unspecified" group (issue #373, ADR-0115). A name missing here is
+    silently dropped by _extract_locations and never counted in subtype_stats."""
+    from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS, leisure_spec
+    assert set(sc.LEISURE_SUBTYPE_ACTIVITIES) == set(leisure_spec(True, True).group_names)
+    assert set(LEISURE_GROUPS) < set(sc.LEISURE_SUBTYPE_ACTIVITIES)
 
 
 def test_other_subtype_activities_match_errand_groups_plus_escort():
@@ -127,24 +132,48 @@ def test_activity_potential_column_covers_all_subtype_activities():
 def test_extract_locations_secondary_acts_includes_all_new_subtypes():
     """_extract_locations must not silently drop a subtype-tagged leg."""
     rdf = pd.DataFrame({
-        "unique_person_id": ["9#0"] * 5,
-        "unique_leg_id": [f"9#0#{i}" for i in range(5)],
+        "unique_person_id": ["9#0"] * 6,
+        "unique_leg_id": [f"9#0#{i}" for i in range(6)],
         "to_act_type": [
-            "leisure_local", "leisure_excursion",
+            "leisure_local", "leisure_excursion", "leisure_unspecified",
             "other_errand_short", "other_escort", "other",
         ],
-        "to_x": [0.0, 10.0, 20.0, 30.0, 40.0],
-        "to_y": [0.0, 10.0, 20.0, 30.0, 40.0],
-        "to_act_identifier": ["L1", "L2", "L3", "L4", "L5"],
+        "to_x": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        "to_y": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        "to_act_identifier": ["L1", "L2", "L3", "L4", "L5", "L6"],
     })
-    meta = [{"problem_idx": 0, "person_id": 9, "activity_index": 5, "n_secondary": 5}]
+    meta = [{"problem_idx": 0, "person_id": 9, "activity_index": 6, "n_secondary": 6}]
     secondary = gpd.GeoDataFrame(
-        {"location_id": ["L1", "L2", "L3", "L4", "L5"]},
-        geometry=[geo.Point(x, x) for x in (0, 10, 20, 30, 40)],
+        {"location_id": ["L1", "L2", "L3", "L4", "L5", "L6"]},
+        geometry=[geo.Point(x, x) for x in (0, 10, 20, 30, 40, 50)],
         crs="EPSG:25832",
     )
     df_loc, df_conv = sc._extract_locations(rdf, meta, secondary, crs="EPSG:25832")
-    assert list(df_loc["person_id"]) == [9] * 5
+    assert list(df_loc["person_id"]) == [9] * 6
+    assert "to_act_type" not in df_loc.columns
+    assert list(df_conv["valid"]) == [True]
+
+
+def test_extract_locations_maps_leisure_unspecified_back_to_leisure():
+    """A frame of ONLY leisure_unspecified legs must survive intact: the fifth
+    subtype is a chainsolver-internal placement activity that maps back to the
+    eqasim "leisure" purpose exactly like the other four (issue #373)."""
+    rdf = pd.DataFrame({
+        "unique_person_id": ["7#0"] * 2,
+        "unique_leg_id": ["7#0#0", "7#0#1"],
+        "to_act_type": ["leisure_unspecified", "leisure_unspecified"],
+        "to_x": [0.0, 10.0],
+        "to_y": [0.0, 10.0],
+        "to_act_identifier": ["L1", "L2"],
+    })
+    meta = [{"problem_idx": 0, "person_id": 7, "activity_index": 2, "n_secondary": 2}]
+    secondary = gpd.GeoDataFrame(
+        {"location_id": ["L1", "L2"]},
+        geometry=[geo.Point(x, x) for x in (0, 10)],
+        crs="EPSG:25832",
+    )
+    df_loc, df_conv = sc._extract_locations(rdf, meta, secondary, crs="EPSG:25832")
+    assert list(df_loc["person_id"]) == [7, 7]
     assert "to_act_type" not in df_loc.columns
     assert list(df_conv["valid"]) == [True]
 
@@ -348,16 +377,19 @@ def _leisure_other_split_candidates():
     )
 
 
-def test_build_locations_df_leisure_subtype_split_emits_four_activities():
+def test_build_locations_df_leisure_subtype_split_emits_every_subtype_activity():
     out = sc._build_locations_df(
         _leisure_other_split_candidates(), with_potentials=True,
         leisure_subtype_split=True,
     )
-    assert out.loc[0, "activities"] == "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
-    # All four subtypes share the SAME pot_leisure value (no per-subtype
+    assert out.loc[0, "activities"] == (
+        "leisure_local; leisure_visit; leisure_activity; leisure_excursion; "
+        "leisure_unspecified"
+    )
+    # All five subtypes share the SAME pot_leisure value (no per-subtype
     # potential yet) -- this is also a regression check for the duplicate
     # "pot_leisure" column selection bug (see _build_locations_df docstring).
-    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
+    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0; 4.0"
     # sec_1 offers only "other" (unaffected by leisure_subtype_split).
     assert out.loc[1, "activities"] == "other"
 
@@ -379,7 +411,10 @@ def test_build_locations_df_leisure_and_other_split_together():
         _leisure_other_split_candidates(), with_potentials=True,
         leisure_subtype_split=True, other_subtype_split=True,
     )
-    assert out.loc[0, "activities"] == "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
+    assert out.loc[0, "activities"] == (
+        "leisure_local; leisure_visit; leisure_activity; leisure_excursion; "
+        "leisure_unspecified"
+    )
     assert out.loc[1, "activities"] == "other_errand_short; other_errand_long; other_escort; other"
 
 
@@ -897,9 +932,11 @@ def test_build_locations_df_leisure_visit_building_potential_targets_pot_visit_r
         leisure_subtype_split=True, leisure_visit_building_potential=True,
     )
     # sec_0: leisure_visit dropped (offers_visit is False there); the other
-    # three leisure groups are unaffected (still keyed on offers_leisure).
-    assert out.loc[0, "activities"] == "leisure_local; leisure_activity; leisure_excursion"
-    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0"
+    # leisure groups are unaffected (still keyed on offers_leisure).
+    assert out.loc[0, "activities"] == (
+        "leisure_local; leisure_activity; leisure_excursion; leisure_unspecified"
+    )
+    assert out.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
     # sec_1: unaffected ("other" only).
     assert out.loc[1, "activities"] == "other"
     # sec_res_2: the ONLY row offering leisure_visit, at its pot_visit value.
@@ -936,9 +973,11 @@ def test_build_locations_df_leisure_visit_building_potential_off_byte_identical(
     )
     pd.testing.assert_frame_equal(explicit_off, default)
     # Task-4 behaviour preserved: leisure_visit still shares pot_leisure.
-    assert explicit_off.loc[0, "activities"] == \
-        "leisure_local; leisure_visit; leisure_activity; leisure_excursion"
-    assert explicit_off.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0"
+    assert explicit_off.loc[0, "activities"] == (
+        "leisure_local; leisure_visit; leisure_activity; leisure_excursion; "
+        "leisure_unspecified"
+    )
+    assert explicit_off.loc[0, "potentials"] == "4.0; 4.0; 4.0; 4.0; 4.0"
 
 
 def test_visit_column_constants():
@@ -1120,3 +1159,138 @@ def test_excursion_boundary_clip_end_to_end_on_synthetic_scenario():
     assert share == pytest.approx(1.0)
     message = sc._excursion_boundary_clip_summary(n_clipped, n_total)
     assert "2/2" in message and "WARNING: " in message
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 / ADR-0115: leisure_unspecified, the fifth leisure subtype.
+#
+# MiD W_ZWECK 10 legs are leisure under w_zweck_10_as_leisure but carry no
+# leisure W_ZWD detail code, so the four-group decider could only impute one of
+# the W_ZWD groups onto them. leisure_unspecified_subtype makes them their own
+# group with their own distance layer; the flag REQUIRES the fold (both
+# configure() calls raise otherwise).
+# ---------------------------------------------------------------------------
+
+
+def test_leisure_unspecified_leg_draws_from_its_own_distance_layer():
+    layered = {
+        "leisure_unspecified": _single_value_distribution(77000.0),  # distinct value
+        "leisure": _single_value_distribution(1000.0),               # aggregate
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    df, meta, unbounded, stats, _desired_by_category = sc._build_plans_df(
+        _leisure_problem(), layered, 2.0, np.random.RandomState(1),
+        leisure_subtype_decider=lambda mode, tt: "leisure_unspecified",
+    )
+    rows = df[df["to_act_type"] == "leisure_unspecified"]
+    assert len(rows) == 1
+    # Drawn from the DISTINCT leisure_unspecified CDF, not the aggregate one.
+    assert rows.iloc[0]["distance_meters"] == 77000.0
+    assert stats["leisure_unspecified"] == 1
+    assert stats["leisure_distance_layer_fallback"] == 0
+
+
+def test_leisure_decider_returns_the_fifth_group_when_the_flag_is_on(monkeypatch):
+    # Every leisure leg is a W_ZWECK-10 leg (W_ZWD 2202 is the design sentinel
+    # such legs carry) -> the leisure_unspecified marginal is 1.0 and the
+    # decider is deterministic regardless of the draw.
+    rows = []
+    _add_rows(rows, 0, w_zweck=10, w_zwd=2202, wegkm=3.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_leisure_subtype_split": True, "leisure_unspecified_subtype": True},
+        monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    for tt in (100.0, 500.0, 900.0, 2000.0):
+        assert decide("car", tt) == "leisure_unspecified"
+
+
+def test_leisure_decider_ignores_code_10_legs_when_the_flag_is_off(monkeypatch):
+    # Same code-10 legs plus ordinary W_ZWD-708 excursion legs. With the flag
+    # OFF the spec's W_ZWECK universe is {7} only, so the code-10 legs are not
+    # part of the estimation at all and leisure_excursion keeps a 1.0 marginal.
+    rows = []
+    _add_rows(rows, 0, w_zweck=10, w_zwd=2202, wegkm=3.0, n=40)
+    _add_rows(rows, 100, w_zweck=7, w_zwd=708, wegkm=80.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_leisure_subtype_split": True, "leisure_unspecified_subtype": False},
+        monkeypatch, wege)
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    for tt in (100.0, 500.0, 900.0, 2000.0):
+        assert decide("car", tt) == "leisure_excursion"
+
+
+def test_leisure_decider_log_line_names_both_spec_flags(monkeypatch, capsys):
+    rows = []
+    _add_rows(rows, 0, w_zweck=10, w_zwd=2202, wegkm=3.0, n=40)
+    wege = pd.DataFrame(rows)
+    ctx = _decider_context(
+        {"secondary_leisure_subtype_split": True, "leisure_unspecified_subtype": True},
+        monkeypatch, wege)
+
+    sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    out = capsys.readouterr().out
+    assert "leisure subtype: marginal shares" in out
+    assert "codeplan no-detail sentinels: off" in out
+    assert "unspecified subtype: on" in out
+
+
+def test_configure_declares_leisure_unspecified_subtype_default_true():
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered["leisure_unspecified_subtype"] is True
+
+
+def test_leisure_unspecified_subtype_default_agrees_across_its_two_homes():
+    """Key and default live ONCE in config_keys; both consuming stages import
+    that pair rather than retyping it, so they can never resolve different
+    values (the decider's estimation vocabulary and the distance layer built
+    for it must describe the same legs)."""
+    from braunschweig.popsim import distance_distributions
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+    )
+
+    chainsolvers_ctx = _FakeContext()
+    sc.configure(chainsolvers_ctx)
+    distance_ctx = _FakeContext()
+    distance_distributions.configure(distance_ctx)
+
+    assert chainsolvers_ctx.registered[KEY_LEISURE_UNSPECIFIED_SUBTYPE] == \
+        DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE
+    assert distance_ctx.registered[KEY_LEISURE_UNSPECIFIED_SUBTYPE] == \
+        DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE
+
+
+def test_configure_raises_for_unspecified_on_without_the_fold():
+    """Both stages must refuse the contradiction at CONFIGURE time: with the
+    fold off no W_ZWECK-10 leg is leisure, so the leisure_unspecified class
+    would be estimated but never realised."""
+    from braunschweig.popsim import distance_distributions
+
+    for configure in (distance_distributions.configure, sc.configure):
+        ctx = _FakeContext({
+            "leisure_unspecified_subtype": True,
+            "w_zweck_10_as_leisure": False,
+        })
+        with pytest.raises(ValueError, match="w_zweck_10_as_leisure"):
+            configure(ctx)
+
+
+def test_configure_accepts_unspecified_off_without_the_fold():
+    """The OFF value must stay compatible with a fold-off configuration (the
+    popsim_open fixtures set w_zweck_10_as_leisure false)."""
+    from braunschweig.popsim import distance_distributions
+
+    for configure in (distance_distributions.configure, sc.configure):
+        ctx = _FakeContext({
+            "leisure_unspecified_subtype": False,
+            "w_zweck_10_as_leisure": False,
+        })
+        configure(ctx)
+        assert ctx.registered["leisure_unspecified_subtype"] is False

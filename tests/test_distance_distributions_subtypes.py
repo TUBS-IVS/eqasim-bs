@@ -18,12 +18,15 @@ Scenarios:
 
 from __future__ import annotations
 
+import json
 import logging
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from braunschweig.popsim.distance_distributions import run
+from braunschweig.popsim.distance_distributions import (
+    _build_leisure_unspecified_layer, run)
 from braunschweig.popsim.purpose_subtype import OTHER_ERRAND_GROUPS, LEISURE_GROUPS
 
 DETOUR_FACTOR = 1.3
@@ -37,6 +40,10 @@ _LEISURE_EXCURSION_KM = 80.0  # distinct from every other group's distance below
 _OTHER_ERRAND_SHORT_KM = 6.0
 _OTHER_ERRAND_LONG_KM = 12.0
 _OTHER_ESCORT_KM = 3.0
+# W_ZWECK 10 ("anderer Zweck") legs: the fifth leisure subtype (issue #373,
+# ADR-0115). Distinct from every constant above so the layer's "values" array
+# identifies the group unambiguously.
+_LEISURE_UNSPECIFIED_KM = 27.0
 
 
 def _add_rows(rows: list, row_id_start: int, *, w_zweck: int, w_zwd: int | None,
@@ -59,14 +66,23 @@ def _add_rows(rows: list, row_id_start: int, *, w_zweck: int, w_zwd: int | None,
     return row_id
 
 
-def _make_subtype_wege(*, include_w_zwd: bool = True) -> pd.DataFrame:
+def _make_subtype_wege(*, include_w_zwd: bool = True,
+                       include_code_10: bool = False) -> pd.DataFrame:
     """Synthetic Wege frame covering all leisure and other subtype groups.
 
     W_ZWECK codes: 7 = leisure, 5 = other/errand, 6 = other/escort (see
-    braunschweig.popsim.trips.PURPOSE_BY_W_ZWECK).
+    braunschweig.popsim.trips.PURPOSE_BY_W_ZWECK). With ``include_code_10``
+    the frame additionally carries W_ZWECK 10 ("anderer Zweck") legs, which
+    become leisure only under ``w_zweck_10_as_leisure`` and carry the design
+    sentinel W_ZWD 2202 ("Zweck nicht zuordenbar") rather than a leisure
+    detail code -- the fifth leisure subtype (issue #373, ADR-0115).
     """
     rows: list = []
     row_id = 0
+    if include_code_10:
+        row_id = _add_rows(rows, row_id, w_zweck=10, w_zwd=2202,
+                           wegkm=_LEISURE_UNSPECIFIED_KM,
+                           include_w_zwd=include_w_zwd)      # leisure_unspecified
     row_id = _add_rows(rows, row_id, w_zweck=7, w_zwd=706, wegkm=_LEISURE_LOCAL_KM,
                         include_w_zwd=include_w_zwd)       # leisure_local
     row_id = _add_rows(rows, row_id, w_zweck=7, w_zwd=701, wegkm=_LEISURE_VISIT_KM,
@@ -274,3 +290,109 @@ def test_codeplan_sentinels_default_is_off_byte_identical():
                                          explicit_off[purpose][mode]["distributions"]):
                 np.testing.assert_array_equal(d_default["values"], d_off["values"])
                 np.testing.assert_array_equal(d_default["weights"], d_off["weights"])
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 / ADR-0115: leisure_unspecified, the fifth leisure subtype.
+#
+# MiD W_ZWECK 10 ("anderer Zweck") legs become leisure via w_zweck_10_as_leisure
+# but never carry a leisure W_ZWD detail code, so under leisure_subtype_split
+# alone they reach only the aggregate "leisure" fallback layer.
+# leisure_unspecified_subtype gives them their own layer, defined by the RAW
+# W_ZWECK code (purpose_subtype.LEISURE_UNSPECIFIED_ZWECK) rather than by W_ZWD.
+# ---------------------------------------------------------------------------
+
+_LEISURE_UNSPECIFIED_M = _LEISURE_UNSPECIFIED_KM * 1000.0 / DETOUR_FACTOR
+
+
+def _run(*, include_code_10: bool = False, include_w_zwd: bool = True, **run_kwargs) -> dict:
+    """Build the synthetic Wege frame and call run() on the purpose layer."""
+    wege = _make_subtype_wege(include_w_zwd=include_w_zwd, include_code_10=include_code_10)
+    return run(wege, by_purpose=True, **run_kwargs)
+
+
+def _serialise(obj) -> str:
+    """Stable text form of one distance layer, for the OFF-path identity check.
+
+    numpy arrays and scalars are rendered via ``tolist()``; ``sort_keys`` makes
+    the mode/bin ordering irrelevant, so a difference in the string is a
+    difference in the numbers, not in dict iteration order.
+    """
+    return json.dumps(
+        obj, sort_keys=True,
+        default=lambda o: o.tolist() if hasattr(o, "tolist") else list(o),
+    )
+
+
+def test_leisure_unspecified_layer_contains_only_the_code_10_legs_distance():
+    out = _run(leisure_subtype_split=True, leisure_unspecified_subtype=True,
+               w_zweck_10_as_leisure=True, include_code_10=True)
+    values = {v for d in out["leisure_unspecified"]["car"]["distributions"] for v in d["values"]}
+    assert values == {_LEISURE_UNSPECIFIED_M}
+
+
+def test_leisure_unspecified_flag_off_leaves_every_layer_byte_identical():
+    on = _run(leisure_subtype_split=True, leisure_unspecified_subtype=True,
+              w_zweck_10_as_leisure=True, include_code_10=True)
+    off = _run(leisure_subtype_split=True, leisure_unspecified_subtype=False,
+               w_zweck_10_as_leisure=True, include_code_10=True)
+    assert "leisure_unspecified" in on and "leisure_unspecified" not in off
+    for key in off:
+        # four W_ZWD layers + the aggregate + every other purpose unchanged
+        assert _serialise(on[key]) == _serialise(off[key]), (
+            f"turning leisure_unspecified_subtype on changed the {key!r} layer"
+        )
+
+
+def test_leisure_unspecified_layer_requires_the_w_zweck_column():
+    """The raw W_ZWECK column DEFINES the group, so its absence must raise.
+
+    W_ZWECK is in REQUIRED_COLUMNS and is kept through the Step-5 column
+    selection via _OPTIONAL_COLUMNS, so run() can never reach the layer builder
+    without it -- the guard is defensive and is therefore exercised by calling
+    the builder directly rather than through run().
+    """
+    df = pd.DataFrame({
+        "following_purpose": ["leisure"],
+        "W_ZWD": [2202],
+        "mode": ["car"],
+        "travel_time": [600.0],
+        "distance": [_LEISURE_UNSPECIFIED_M],
+        "weight": [1.0],
+    })
+    with pytest.raises(ValueError, match="W_ZWECK"):
+        _build_leisure_unspecified_layer(df)
+
+
+def test_leisure_unspecified_without_the_fold_warns_and_builds_no_layer(caplog):
+    """With w_zweck_10_as_leisure off no code-10 leg is leisure, so the layer
+    has zero legs: it must not be built, and the emptiness must be LOUD (the
+    fallback-transparency rule) rather than silently absent."""
+    with caplog.at_level(logging.WARNING, logger="braunschweig.popsim.distance_distributions"):
+        out = _run(leisure_subtype_split=True, leisure_unspecified_subtype=True,
+                   w_zweck_10_as_leisure=False, include_code_10=True)
+    assert "leisure_unspecified" not in out
+    assert any("w_zweck_10_as_leisure" in record.message for record in caplog.records), (
+        "a zero-leg leisure_unspecified layer must warn and name the fold flag"
+    )
+
+
+def test_leisure_unspecified_rate_is_logged_against_the_leisure_universe(caplog):
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.distance_distributions"):
+        _run(leisure_subtype_split=True, leisure_unspecified_subtype=True,
+             w_zweck_10_as_leisure=True, include_code_10=True)
+    messages = [record.getMessage() for record in caplog.records]
+    # 15 code-10 legs out of 15 + 4 x 15 = 75 leisure legs.
+    assert any("leisure subtype leisure_unspecified: 15/75" in message for message in messages), (
+        f"expected an explicit primary-vs-universe rate log line, got: {messages}"
+    )
+
+
+def test_leisure_unspecified_needs_no_w_zwd_column():
+    """The group is defined by the raw W_ZWECK code, so -- like other_escort --
+    it is still built when the W_ZWD detail column is entirely absent."""
+    out = _run(leisure_subtype_split=True, leisure_unspecified_subtype=True,
+               w_zweck_10_as_leisure=True, include_code_10=True, include_w_zwd=False)
+    assert "leisure_unspecified" in out
+    for group_name in LEISURE_GROUPS:
+        assert group_name not in out

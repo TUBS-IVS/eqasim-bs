@@ -72,6 +72,13 @@ from braunschweig.calibration.secondary_measurement import boundary_clip_share
 # edit) must devalidate this stage's synpp cache too, not just deciders.py's
 # own source.
 from braunschweig.popsim import purpose_subtype  # noqa: F401  (cache-hash only)
+# Same reason, one edge further out (issue #373, ADR-0115): purpose_subtype
+# derives LEISURE_UNSPECIFIED_ZWECK from trips.W_ZWECK_OTHER_CODE, so an edit
+# confined to trips changes which legs this stage's leisure_unspecified group
+# covers. inspect.getsource hashes only a module's OWN text, so that cross-package
+# edge is invisible to both the purpose_subtype entry above and the
+# own-package-sibling coverage gate (tests/test_synpp_helper_hash_invariant.py).
+from braunschweig.popsim import trips  # noqa: F401  (cache-hash only)
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -266,7 +273,10 @@ def __getattr__(name):
 # OTHER_ERRAND_SPEC / leisure_spec() / other_errand_spec(), so a
 # purpose_subtype-only edit (e.g. a future group boundary change) must
 # devalidate this stage's cache too, exactly like a change confined to one of
-# the submodules below would.
+# the submodules below would. PLUS trips (issue #373, ADR-0115) for the same
+# reason one edge further out: purpose_subtype derives LEISURE_UNSPECIFIED_ZWECK
+# from trips.W_ZWECK_OTHER_CODE, and hashing purpose_subtype's own source cannot
+# see a change on the other side of that import.
 _HELPER_MODULES: Tuple[Any, ...] = (
     activity_types,
     candidate_columns,
@@ -283,6 +293,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     solver_defaults,
     srv_candidates,
     srv_location_types,
+    trips,
 )
 
 
@@ -438,9 +449,37 @@ def configure(context):
     # inert while both subtype splits are OFF. The production value is also
     # set in configs/base_bs.yml (issue #242 Task 7).
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
+    # The fifth leisure subtype (issue #373, ADR-0115): W_ZWECK-10 legs
+    # ("anderer Zweck") are leisure under w_zweck_10_as_leisure but carry no
+    # leisure W_ZWD detail code, so ON gives them their own estimated group
+    # ("leisure_unspecified") in _build_leisure_subtype_decider instead of
+    # imputing one of the four W_ZWD groups onto them. Declared with the SAME
+    # imported key/default constants braunschweig.popsim.distance_distributions
+    # declares (which builds the matching DISTANCE layer) -- both stages must
+    # resolve the same value, or a leg labelled here finds no layer built for it.
+    # w_zweck_10_as_leisure is a TRIP-BUILD key (owned by
+    # braunschweig.popsim.trips_stage) and is declared here only to make the
+    # requirement checkable at configure time; this stage never applies it.
+    leisure_unspecified_subtype = context.config(
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
+    w_zweck_10_as_leisure = context.config(
+        KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Configure-time contradiction guard, same shape as the C-R22 guard in
+    # braunschweig.popsim.trips_stage.configure and the identical guard in
+    # braunschweig.popsim.distance_distributions.configure: synpp fails the whole
+    # DAG before any stage executes instead of after hours of upstream compute.
+    if bool(leisure_unspecified_subtype) and not bool(w_zweck_10_as_leisure):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_LEISURE_UNSPECIFIED_SUBTYPE}: true "
+            f"requires {KEY_W_ZWECK_10_AS_LEISURE}: true -- with the fold off no W_ZWECK-10 leg "
+            "is leisure, so the leisure_unspecified class would be estimated but never realised. "
+            f"Set both or disable {KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
+        )
 
     # Escort as dedicated activity purpose (issue #201). The decider draws one
     # location TYPE per escort leg from the SrV-derived weights; defaults are

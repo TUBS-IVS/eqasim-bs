@@ -169,8 +169,10 @@ def _build_leisure_subtype_decider(context, random_seed: int):
 
     Sibling to ``_build_shop_subtype_decider``. Returns a callable
     ``(mode: str, travel_time_s: float) -> str``, one of
-    ``LEISURE_SUBTYPE_ACTIVITIES`` (the ``purpose_subtype.LEISURE_GROUPS``
-    keys), when ``secondary_leisure_subtype_split`` is ON, else ``None`` (the
+    ``LEISURE_SUBTYPE_ACTIVITIES`` (the ``group_names`` of the leisure spec the
+    two flags below select -- the four ``purpose_subtype.LEISURE_GROUPS`` keys,
+    plus ``leisure_unspecified`` when ``leisure_unspecified_subtype`` is ON),
+    when ``secondary_leisure_subtype_split`` is ON, else ``None`` (the
     byte-identical OFF path). ``P(group | mode, tt_band)`` is estimated from
     the MiD 2023 Wege survey via
     ``braunschweig.popsim.purpose_subtype.estimate_group_probabilities`` (Task
@@ -191,6 +193,18 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     subtype distance layer -- both must resolve the same value or a leg
     labelled ``leisure_activity`` here would draw its distance from a donor
     pool that still includes the excluded 799 legs.
+
+    The fifth leisure subtype (issue #373, ADR-0115): when the
+    ``leisure_unspecified_subtype`` config flag is ON, estimation uses a spec
+    whose leisure universe additionally covers the RAW W_ZWECK-10 legs
+    ("anderer Zweck") as their own group ``leisure_unspecified``, instead of
+    leaving them outside the estimation entirely. Those legs are leisure only
+    under ``w_zweck_10_as_leisure`` and carry no leisure W_ZWD detail code, so
+    without this group no W_ZWD grouping can describe them and the decider
+    would impute one of the four named groups onto them. This is again the
+    SAME flag ``braunschweig.popsim.distance_distributions.run`` reads for the
+    matching distance layer, and both stages' ``configure()`` refuse the
+    ``leisure_unspecified_subtype`` / ``w_zweck_10_as_leisure`` contradiction.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
@@ -201,7 +215,9 @@ def _build_leisure_subtype_decider(context, random_seed: int):
         leisure_spec,
         tt_band,
     )
-    from braunschweig.popsim.stage.config_keys import KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    )
     from braunschweig.popsim.trips import map_mode, mid_time_seconds
 
     min_obs = int(context.config("secondary_distance_min_obs"))
@@ -210,6 +226,9 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     # distance_distributions declares the identical key -- see the docstring
     # note above and config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
     codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
+    # Same one-argument execute-context form and same imported-key rule for the
+    # fifth leisure group (issue #373, ADR-0115).
+    unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
     # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
@@ -224,12 +243,13 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     mid_wege = mid_wege.assign(travel_time=tt)
 
     cell_probs, marginal = estimate_group_probabilities(
-        mid_wege, leisure_spec(codeplan_sentinels), min_obs=min_obs)
+        mid_wege, leisure_spec(codeplan_sentinels, unspecified_subtype), min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
         + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
-        + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'})"
+        + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'}"
+        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'})"
     )
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)

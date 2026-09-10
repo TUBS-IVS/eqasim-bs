@@ -99,11 +99,15 @@ def test_per_group_distance_summary_zero_weight_group_raises():
         per_group_distance_summary(df, "group", "distance_km", weight_column="weight")
 
 
-def test_subtype_donor_mean_km_range_covers_all_seven_groups():
-    # Cited-from-spec sanity ranges must cover every subtype group named in
-    # the design spec's Taxonomy tables (no silent gaps).
+def test_subtype_donor_mean_km_range_covers_every_subtype_group():
+    # The in-sample sanity ranges must cover every subtype group a run can
+    # realise (no silent gaps): the seven groups of the design spec's Taxonomy
+    # tables plus "leisure_unspecified", the fifth leisure subtype added by
+    # issue #373 / ADR-0115 (its range is an ad-hoc measurement, see the dict's
+    # own comment).
     expected_groups = {
         "leisure_local", "leisure_visit", "leisure_activity", "leisure_excursion",
+        "leisure_unspecified",
         "other_errand_short", "other_errand_long", "other_escort",
     }
     assert set(SUBTYPE_DONOR_MEAN_KM_RANGE.keys()) == expected_groups

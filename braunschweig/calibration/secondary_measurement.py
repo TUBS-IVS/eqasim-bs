@@ -71,7 +71,8 @@ def w12_band_shares(distances_km) -> np.ndarray:
 # these are the measured, W_GEW-weighted MiD 2023 donor means cited in the
 # design spec's Taxonomy tables --
 # docs/superpowers/specs/2026-07-09-wzwd-leisure-errand-split-design.md
-# (issue #127). Comparing a model's REALISED (in-sample) mean against the SAME
+# (issue #127) -- except "leisure_unspecified", whose own source is named at its
+# entry below. Comparing a model's REALISED (in-sample) mean against the SAME
 # donor data used to build the model's subtype split is a sanity check only;
 # it must never be reported as a pass/fail validation gate.
 SUBTYPE_DONOR_MEAN_KM_RANGE: dict = {
@@ -79,6 +80,15 @@ SUBTYPE_DONOR_MEAN_KM_RANGE: dict = {
     "leisure_visit": (19.1, 19.1),
     "leisure_activity": (10.0, 18.0),
     "leisure_excursion": (45.0, 100.0),
+    # leisure_unspecified (issue #373, ADR-0115) has no spec Taxonomy table
+    # entry: the group was defined after that spec, so the value below is an
+    # AD-HOC MEASUREMENT taken on 2026-09-10 from the raw MiD 2023 B1 Wege
+    # delivery (recorded in ADR-0115), not a figure carried over from a
+    # document. Universe: kernwo in {1, 2, 3} (weekday), W_RBW != 1 (non-rbW),
+    # W_ZWECK == 10, wegkm_imp < 9994 (design codes excluded) clipped at
+    # 200 km, W_GEW-weighted mean -> 12.0 km over n = 39,429 legs. Like every
+    # other entry here this is an IN-SAMPLE donor mean, never a validation gate.
+    "leisure_unspecified": (12.0, 12.0),
     "other_errand_short": (5.0, 9.0),
     "other_errand_long": (11.0, 16.0),
     "other_escort": (4.5, 8.5),
