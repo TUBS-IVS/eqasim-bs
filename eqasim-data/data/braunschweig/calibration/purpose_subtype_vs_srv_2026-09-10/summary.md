@@ -18,7 +18,7 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `4ce40707` |
+| code state (--source-commit) | `7a066c41` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |
@@ -93,7 +93,7 @@ recomputed from committed percentile rows (see `median_km_srv_components`).
 
 ## Candidates flagged
 
-* `leisure_visit` (exact): comparable delta default -10.9 pp, codeplan -9.9 pp; crossing variant(s): `default`. Raw deltas -7.0 / -6.1 pp.
+* `leisure_visit` (exact): comparable delta default -10.9 pp, codeplan -9.9 pp; crossing variant(s): `default`. Raw deltas default -7.0 pp, codeplan -6.1 pp.
 
 A candidate triggers no re-estimation here: the owner decides from the arm-B
 measurement of the REALISED share (feature record `w_zwd_codeplan_sentinels.yml`).
@@ -119,12 +119,12 @@ surveys pair up, what fraction is this group?".
 | leisure_local | default | approximate | 0.3411 | 0.4073 | -6.6 | 0.3608 | 0.4964 | -13.6 |
 | leisure_activity | default | approximate | 0.4594 | 0.1981 | +26.1 | 0.4859 | 0.2415 | +24.4 |
 
-**Rows whose flag differs between the two readings.** The following `exact` row(s) are
-within the 10 pp threshold on the RAW delta and beyond it on the comparable one, so
-the raw reading alone would have missed them; the committed
+**Rows whose flag differs between the two readings.** For the following `exact`
+row(s) the raw and the comparable delta fall on OPPOSITE sides of the 10 pp
+threshold, so the raw reading alone would give a different answer; the committed
 `candidate_for_reestimation` flag reads the comparable delta, as the rule above says.
 
-* `leisure_visit` (default): -7.0 pp raw -> -10.9 pp comparable.
+* `leisure_visit` (default): raw -7.0 pp (below) -> comparable -10.9 pp (above).
 
 ## Largest differences regardless of exactness
 
