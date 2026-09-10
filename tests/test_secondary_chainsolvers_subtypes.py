@@ -1269,12 +1269,13 @@ def test_leisure_unspecified_subtype_default_agrees_across_its_two_homes():
 
 def test_configure_raises_for_unspecified_on_without_the_fold():
     """Both stages must refuse the contradiction at CONFIGURE time: with the
-    fold off no W_ZWECK-10 leg is leisure, so the leisure_unspecified class
-    would be estimated but never realised."""
+    leisure subtype split ON and the fold off, no W_ZWECK-10 leg is leisure, so
+    the leisure_unspecified class would be estimated but never realised."""
     from braunschweig.popsim import distance_distributions
 
     for configure in (distance_distributions.configure, sc.configure):
         ctx = _FakeContext({
+            "secondary_leisure_subtype_split": True,
             "leisure_unspecified_subtype": True,
             "w_zweck_10_as_leisure": False,
         })
@@ -1282,15 +1283,130 @@ def test_configure_raises_for_unspecified_on_without_the_fold():
             configure(ctx)
 
 
-def test_configure_accepts_unspecified_off_without_the_fold():
-    """The OFF value must stay compatible with a fold-off configuration (the
-    popsim_open fixtures set w_zweck_10_as_leisure false)."""
+def test_configure_guard_is_scoped_to_the_leisure_subtype_split():
+    """Ruling R8: with the split OFF the flag is inert (no leisure subtype is
+    estimated and no subtype layer is built), so its value cannot contradict the
+    fold and neither stage may refuse the configuration. This is the case the
+    two popsim_open fixtures are in: they set w_zweck_10_as_leisure false and
+    never set the split, so they must resolve without touching the new key."""
     from braunschweig.popsim import distance_distributions
 
     for configure in (distance_distributions.configure, sc.configure):
         ctx = _FakeContext({
-            "leisure_unspecified_subtype": False,
+            "secondary_leisure_subtype_split": False,
+            "leisure_unspecified_subtype": True,
             "w_zweck_10_as_leisure": False,
         })
         configure(ctx)
-        assert ctx.registered["leisure_unspecified_subtype"] is False
+        assert ctx.registered["leisure_unspecified_subtype"] is True
+
+
+def test_configure_accepts_unspecified_off_without_the_fold():
+    """The OFF value must stay compatible with a fold-off configuration, split
+    on or off."""
+    from braunschweig.popsim import distance_distributions
+
+    for split in (False, True):
+        for configure in (distance_distributions.configure, sc.configure):
+            ctx = _FakeContext({
+                "secondary_leisure_subtype_split": split,
+                "leisure_unspecified_subtype": False,
+                "w_zweck_10_as_leisure": False,
+            })
+            configure(ctx)
+            assert ctx.registered["leisure_unspecified_subtype"] is False
+
+
+def _strip_activity_from_locations(locations_df, activity_name: str):
+    """Test-only: drop one activity (and its aligned potential) from a
+    chainsolver locations frame's "; "-joined ``activities``/``potentials``
+    strings, leaving a frame identical to what _build_locations_df would have
+    produced if that name were not in LEISURE_SUBTYPE_ACTIVITIES at all."""
+    stripped = locations_df.copy()
+    activities, potentials = [], []
+    for activity_string, potential_string in zip(stripped["activities"], stripped["potentials"]):
+        names = [name for name in str(activity_string).split("; ") if name]
+        values = [value for value in str(potential_string).split("; ") if value]
+        assert len(names) == len(values), "activities and potentials must stay aligned"
+        kept = [(name, value) for name, value in zip(names, values) if name != activity_name]
+        activities.append("; ".join(name for name, _ in kept))
+        potentials.append("; ".join(value for _, value in kept))
+    stripped["activities"] = activities
+    stripped["potentials"] = potentials
+    return stripped
+
+
+def _inert_offer_candidates():
+    """Four leisure-offering buildings at distinct distances and potentials, so
+    the solver has a real choice to make between them."""
+    return gpd.GeoDataFrame(
+        {
+            "location_id": [f"sec_{i}" for i in range(4)],
+            "offers_shop": [False] * 4,
+            "offers_leisure": [True] * 4,
+            "offers_other": [False] * 4,
+            "pot_shop": [0.0] * 4,
+            "pot_shop_daily": [0.0] * 4,
+            "pot_shop_non_daily": [0.0] * 4,
+            "pot_leisure": [4.0, 2.0, 7.0, 5.0],
+            "pot_other": [0.0] * 4,
+        },
+        geometry=[geo.Point(x, x) for x in (0, 400, 900, 1400)],
+        crs="EPSG:25832",
+    )
+
+
+def test_leisure_unspecified_offer_is_inert_when_the_flag_is_off():
+    """Ruling R9: LEISURE_SUBTYPE_ACTIVITIES carries the fifth name
+    unconditionally, so with leisure_unspecified_subtype OFF every
+    leisure-offering building still emits an extra ``leisure_unspecified`` offer
+    at the shared pot_leisure value. No leg can be tagged with that name while
+    the flag is off, so the offer must be unable to change any placement: solve
+    the same problems against the frame WITH the extra offer and against the
+    same frame with it stripped, and require identical placed locations,
+    coordinates, potentials and distances."""
+    cs = pytest.importorskip("chainsolvers")
+
+    with_offer = sc._build_locations_df(
+        _inert_offer_candidates(), with_potentials=True, leisure_subtype_split=True)
+    assert "leisure_unspecified" in with_offer.loc[0, "activities"], (
+        "the OFF path is expected to emit the inert fifth offer -- that is what "
+        "this test exists to prove harmless"
+    )
+    without_offer = _strip_activity_from_locations(with_offer, "leisure_unspecified")
+    assert "leisure_unspecified" not in without_offer.loc[0, "activities"]
+
+    layered = {
+        "leisure_excursion": _flat_distribution(),
+        "leisure": _flat_distribution(),
+        "shop": _flat_distribution(),
+        "other": _flat_distribution(),
+    }
+    problems = [dict(problem, person_id=200 + i) for i, problem in enumerate(
+        _leisure_problem() * 3)]
+
+    def solve(locations_df):
+        # The decider stands in for the flag-OFF decider: it can never return
+        # the fifth name (leisure_spec(cp, False) does not define that group).
+        plans_df, _meta, _unbounded, stats, _desired = sc._build_plans_df(
+            problems, layered, 2.0, np.random.RandomState(3),
+            leisure_subtype_decider=lambda mode, tt: "leisure_excursion",
+        )
+        assert stats["leisure_unspecified"] == 0
+        ctx = cs.setup(locations_df=locations_df, solver="carla", rng_seed=7)
+        return cs.solve(
+            ctx=ctx, plans_df=plans_df.drop(columns=["_leg_index", "_problem_idx"]))[0]
+
+    result_with = solve(with_offer)
+    result_without = solve(without_offer)
+
+    for column in ("to_act_identifier", "to_x", "to_y", "to_act_potential",
+                   "distance_meters", "to_act_type"):
+        # assert_series_equal, not list ==: the home legs carry NaN potentials
+        # and NaN never compares equal to itself.
+        pd.testing.assert_series_equal(
+            result_with[column].reset_index(drop=True),
+            result_without[column].reset_index(drop=True),
+            check_names=False,
+            obj=f"the inert leisure_unspecified offer changed {column!r}",
+        )

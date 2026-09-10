@@ -396,3 +396,24 @@ def test_leisure_unspecified_needs_no_w_zwd_column():
     assert "leisure_unspecified" in out
     for group_name in LEISURE_GROUPS:
         assert group_name not in out
+
+
+def test_leisure_unspecified_empty_leisure_universe_logs_no_nan_rate(caplog):
+    """An empty leisure universe has no rate; the line must say so rather than
+    print "nan%", which reads as a broken computation and hides the real finding
+    (there were no leisure legs to split at all)."""
+    df = pd.DataFrame({
+        "following_purpose": ["shop"],
+        "W_ZWECK": [4],
+        "W_ZWD": [501],
+        "mode": ["car"],
+        "travel_time": [600.0],
+        "distance": [1000.0],
+        "weight": [1.0],
+    })
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.distance_distributions"):
+        assert _build_leisure_unspecified_layer(df) is None
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("leisure subtype leisure_unspecified: 0/0 leisure legs (no leisure legs)" in message
+               for message in messages), messages
+    assert not any("nan" in message.lower() for message in messages), messages

@@ -431,7 +431,10 @@ def configure(context):
     # all subtypes of the same purpose for now, see _ACTIVITY_POTENTIAL_COLUMN).
     # The eqasim output purpose stays "leisure" / "other"; the subtype is
     # internal to the chainsolver. OFF (default) is byte-identical.
-    context.config("secondary_leisure_subtype_split", False)
+    # Captured because the leisure_unspecified_subtype guard below is scoped to it
+    # (the fifth subtype only exists inside the leisure subtype split); re-used by
+    # the mid_dir block further down rather than read twice.
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
     # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
     # Task 5, ADR-0113): W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung
@@ -473,10 +476,19 @@ def configure(context):
     # braunschweig.popsim.trips_stage.configure and the identical guard in
     # braunschweig.popsim.distance_distributions.configure: synpp fails the whole
     # DAG before any stage executes instead of after hours of upstream compute.
-    if bool(leisure_unspecified_subtype) and not bool(w_zweck_10_as_leisure):
+    #
+    # SCOPED to secondary_leisure_subtype_split (ruling R8): with the split off no
+    # leisure subtype is ever estimated, so leisure_unspecified_subtype is inert
+    # and cannot contradict the fold -- config_keys says the same ("effective only
+    # with secondary_leisure_subtype_split on"). An unscoped raise would abort
+    # every split-off configuration that legitimately sets w_zweck_10_as_leisure
+    # false (the two popsim_open fixtures do) over a flag that does nothing there.
+    if (bool(leisure_subtype_split) and bool(leisure_unspecified_subtype)
+            and not bool(w_zweck_10_as_leisure)):
         raise ValueError(
             f"[braunschweig.secondary_chainsolvers] {KEY_LEISURE_UNSPECIFIED_SUBTYPE}: true "
-            f"requires {KEY_W_ZWECK_10_AS_LEISURE}: true -- with the fold off no W_ZWECK-10 leg "
+            f"requires {KEY_W_ZWECK_10_AS_LEISURE}: true when "
+            "secondary_leisure_subtype_split is on -- with the fold off no W_ZWECK-10 leg "
             "is leisure, so the leisure_unspecified class would be estimated but never realised. "
             f"Set both or disable {KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
         )
@@ -503,7 +515,8 @@ def configure(context):
     # subtype split is ON, so non-real configs that leave all three flags off
     # never require the local-only MiD delivery.
     shop_daily_split = context.config("secondary_shop_daily_split")
-    leisure_subtype_split = context.config("secondary_leisure_subtype_split")
+    # leisure_subtype_split is already bound above (captured where it is declared,
+    # for the leisure_unspecified_subtype guard).
     other_subtype_split = context.config("secondary_other_subtype_split")
     if shop_daily_split or leisure_subtype_split or other_subtype_split:
         context.config("braunschweig.population.popsim.mid_dir")

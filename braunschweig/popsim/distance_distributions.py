@@ -368,10 +368,16 @@ def _build_leisure_unspecified_layer(df: pd.DataFrame) -> dict | None:
 
     leisure_df = df[df["following_purpose"] == "leisure"]
     unspecified_df = leisure_df[leisure_df["W_ZWECK"].isin(LEISURE_UNSPECIFIED_ZWECK)]
+    # An empty leisure universe has no rate, so say that instead of printing
+    # "nan%" -- a NaN in a rate line reads as a broken computation and hides the
+    # real finding (there were no leisure legs to split at all).
+    rate_text = (
+        f"({100.0 * len(unspecified_df) / len(leisure_df):.1f}%)" if len(leisure_df)
+        else "(no leisure legs)"
+    )
     logger.info(
-        "[popsim.distance_distributions] leisure subtype %s: %d/%d leisure legs (%.1f%%)",
-        LEISURE_UNSPECIFIED_GROUP, len(unspecified_df), len(leisure_df),
-        100.0 * len(unspecified_df) / len(leisure_df) if len(leisure_df) else float("nan"),
+        "[popsim.distance_distributions] leisure subtype %s: %d/%d leisure legs %s",
+        LEISURE_UNSPECIFIED_GROUP, len(unspecified_df), len(leisure_df), rate_text,
     )
     if not len(unspecified_df):
         logger.warning(
@@ -516,10 +522,12 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         defined by W_ZWECK, not by W_ZWD -- it is built whether or not the
         W_ZWD column is present (mirroring ``other_escort``). Requires
         ``leisure_subtype_split`` (the subtype layers only exist there) and,
-        to be non-empty, ``w_zweck_10_as_leisure``; ``configure()`` refuses the
-        latter contradiction before any stage runs. An empty group is logged as
-        a WARNING rather than skipped silently. Default False keeps this
-        function's OFF path byte-identical.
+        to be non-empty, ``w_zweck_10_as_leisure``; ``configure()`` refuses
+        that latter contradiction before any stage runs, but only while
+        ``secondary_leisure_subtype_split`` is on -- with the split off this
+        flag is inert and its value cannot contradict anything. An empty group
+        is logged as a WARNING rather than skipped silently. Default False
+        keeps this function's OFF path byte-identical.
 
     Returns
     -------
@@ -807,6 +815,12 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         # Deliberately OUTSIDE the W_ZWD branch above: this group is defined by
         # the RAW W_ZWECK code, not by a detail code, so -- exactly like
         # "other_escort" in Step 9 -- it is still built when W_ZWD is absent.
+        # It differs from Step 9 in the other direction: Step 9 warns and SKIPS
+        # when W_ZWECK is absent, because its split is one optional refinement of
+        # a layer ("other") that exists either way, whereas here the flag being
+        # on IS the request for this layer and there is no W_ZWD path that could
+        # still produce it -- so a missing W_ZWECK RAISES rather than silently
+        # leaving every code-10 leg on the aggregate fallback.
         if leisure_unspecified_subtype:
             from braunschweig.popsim.purpose_subtype import LEISURE_UNSPECIFIED_GROUP
 
@@ -893,7 +907,9 @@ def configure(context):
     context.config("random_seed")
     context.config("secondary_distance_by_purpose", False)
     context.config("secondary_shop_daily_split", False)
-    context.config("secondary_leisure_subtype_split", False)
+    # Captured because the leisure_unspecified_subtype guard below is scoped to it
+    # (the fifth subtype only exists inside the leisure subtype layers).
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
     # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
     # Task 5, ADR-0113). Key/default declared ONCE in config_keys (see that
@@ -936,12 +952,22 @@ def configure(context):
     # leisure_unspecified class would be estimated by the chainsolver decider but
     # never have a donor pool here -- a silently empty layer, exactly what the
     # fallback-transparency rule forbids.
-    if bool(leisure_unspecified_subtype) and not bool(w_zweck_10_as_leisure):
+    #
+    # SCOPED to secondary_leisure_subtype_split (ruling R8): without the split
+    # there are no leisure subtype layers at all, so leisure_unspecified_subtype
+    # is inert and its value cannot contradict anything -- config_keys states the
+    # same ("effective only with secondary_leisure_subtype_split on"). Raising
+    # unscoped would abort every split-off configuration that legitimately sets
+    # w_zweck_10_as_leisure false (the popsim_open fixtures do), for a flag that
+    # does nothing there.
+    if (bool(leisure_subtype_split) and bool(leisure_unspecified_subtype)
+            and not bool(w_zweck_10_as_leisure)):
         raise ValueError(
             f"[popsim.distance_distributions] {KEY_LEISURE_UNSPECIFIED_SUBTYPE}: true requires "
-            f"{KEY_W_ZWECK_10_AS_LEISURE}: true -- with the fold off no W_ZWECK-10 leg is leisure, "
-            "so the leisure_unspecified class would be estimated but never realised. Set both or "
-            f"disable {KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
+            f"{KEY_W_ZWECK_10_AS_LEISURE}: true when secondary_leisure_subtype_split is on -- "
+            "with the fold off no W_ZWECK-10 leg is leisure, so the leisure_unspecified class "
+            f"would be estimated but never realised. Set both or disable "
+            f"{KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
         )
     # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
     # declared with the SHARED key/default constants for the same reason: a passive leg

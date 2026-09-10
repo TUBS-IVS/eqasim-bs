@@ -304,16 +304,6 @@ config:
   braunschweig.population.popsim.drop_leading_arrive_home_leg: false
   braunschweig.population.popsim.closure_dwell_model: fixed_1h
   w_zweck_10_as_leisure: false
-  # leisure_unspecified_subtype (issue #373, ADR-0115) is NOT an
-  # EntdSource.build_trips-rejected key -- it is not a trip-build flag at all --
-  # but it REQUIRES w_zweck_10_as_leisure, and both
-  # braunschweig.popsim.distance_distributions.configure and
-  # braunschweig.synthesis.locations.secondary_chainsolvers.configure (the stage
-  # this config aliases synthesis.population.spatial.secondary.locations to)
-  # refuse that contradiction at CONFIGURE time. Its declared default is true, so
-  # leaving it out here would abort the DAG before any stage runs. Set OFF
-  # explicitly, the same convention this block uses for the keys above.
-  leisure_unspecified_subtype: false
   # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
   # also FLAT keys. The pairing needs MiD W_ZWECK 13 plus a household diary with
   # member ages and departure times, none of which ENTD has, so EntdSource.build_trips
