@@ -25,8 +25,10 @@ description: 'Gives the MiD W_ZWECK 10 "anderer Zweck" legs -- leisure legs of t
   codes) plus group_names / zweck_group_codes; the shared helper purpose_subtype.label_legs applies
   ONE labelling rule for both callers (the decider estimation and the reference extraction), with
   the W_ZWECK group winning over the W_ZWD detail code. leisure_spec(codeplan_sentinels,
-  unspecified_subtype) returns one of four module constants BY IDENTITY, so the OFF path is
-  byte-identical by construction. braunschweig.popsim.distance_distributions builds the fifth layer
+  unspecified_subtype) returns one of four module constants BY IDENTITY, so the spec-selection and
+  estimation OFF path is byte-identical by construction (the run OUTPUT is identical too; the
+  candidate frame and one log line are not -- see evidence.off_path_byte_identical).
+  braunschweig.popsim.distance_distributions builds the fifth layer
   in Step 8b via _build_leisure_unspecified_layer (outside the W_ZWD branch -- the group is defined
   by the raw W_ZWECK code -- and raising rather than skipping when W_ZWECK is absent), and
   braunschweig.synthesis.locations.secondary_chainsolvers estimates the fifth group in
