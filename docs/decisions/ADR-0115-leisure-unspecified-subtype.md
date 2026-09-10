@@ -33,8 +33,10 @@
   | `leisure_excursion` | 3,591 | 0.0330 | 9.73 / 36.18 / 108.43 |
   | **`leisure_unspecified`** | **39,429** | **0.4324** | **1.27 / 3.26 / 9.50** |
 
-  So the code-10 legs are 43.24 % of the labelled leisure mass the production spec estimates on,
-  and their distance profile differs from every named group except `leisure_local` -- their p75
+  So the code-10 legs are 43.24 % of the labelled leisure mass on the WEEKDAY reference universe
+  (the committed row above). The decider estimates on ALL MiD Wege rows, where the marginal is
+  about 0.39 (0.3867; ad-hoc probe 2026-09-10, final review -- see the "Two universes" consequence
+  below). Their distance profile differs from every named group except `leisure_local` -- their p75
   (9.5 km) is nearly twice `leisure_local`'s (4.9 km) while their p50 (3.26 km) sits between
   `leisure_local` and `leisure_visit`. Their distance information is complete
   (`n_missing_distance = 0` for all 39,429 legs). The same file's Coverage header records the
@@ -53,8 +55,11 @@
   `P(group | mode, tt_band)` on the LABELLED code-7 legs and imputes one of the four `W_ZWD`
   groups onto EVERY synthetic leisure activity; the leg then draws its desired distance from that
   group's layer (`distance_distributions.run`, Step 8). The code-10 legs enter only the aggregate
-  `leisure` layer, which the split never reaches. A third to a half of the model's leisure legs
-  therefore drew their distance from layers estimated on other legs.
+  `leisure` layer, which the split never reaches. Their share of the leisure universe -- the mass
+  that therefore drew its distance from layers estimated on OTHER legs -- has two denominators,
+  and both are named here because they differ: **31.1 % of the `W_GEW` mass of all `W_ZWECK`
+  {7, 10} weekday legs** (ad-hoc probe, 2026-09-10) and **43.24 % of the LABELLED weekday
+  reference mass** (the committed row above, which is conditional on a leg being labelled).
 
   **Ad-hoc probes, 2026-09-10, not reproduced by committed code** (quoted only where the argument
   below needs them, and labelled as such wherever they appear):
@@ -93,7 +98,15 @@
      `zweck_group_codes`. One shared helper, `purpose_subtype.label_legs`, implements the
      labelling rule for BOTH callers (`estimate_group_probabilities` and the reference extraction
      `scripts/extract_mid_w_zwd_groups.py`): the zweck group wins over the `W_ZWD` detail code.
-     `code_coverage_guard` and `impute_groups` are unchanged.
+     `code_coverage_guard` and `impute_groups` are unchanged as FUNCTIONS, and the guard is now
+     CALLED on both sides of the rule (final review M-4, ruling R14): the reference extraction
+     called it already, and `_build_leisure_subtype_decider` now calls it on the prepared frame
+     before estimating, so an unknown `W_ZWD` code on a leg of the spec's `W_ZWECK` universe
+     raises in the stage instead of being dropped into the unlabelled share. Measured on the
+     2026-09-10 raw delivery: the guard passes for all four leisure specs (no unmapped code on
+     the full-year universe). `_build_other_subtype_decider` is deliberately UNCHANGED -- it has
+     never guarded its specs (pre-existing since issue #127) and widening it there is a separate
+     change, out of this decision's scope.
   3. **Spec selection.** `leisure_spec(codeplan_sentinels, unspecified_subtype=False)` returns one
      of four module constants BY IDENTITY (`LEISURE_SPEC`, `LEISURE_SPEC_CODEPLAN`,
      `LEISURE_SPEC_UNSPECIFIED`, `LEISURE_SPEC_CODEPLAN_UNSPECIFIED`), the two new ones built from
@@ -132,12 +145,25 @@
      excursion clip report ignores it. It never uses the residential `pot_visit` pool. With the
      flag off the name exists and counts 0.
   9. **Sanity range.** `secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"]`
-     is the point `(12.0, 12.0)` km. AD-HOC MEASUREMENT taken on 2026-09-10 on the local-only raw
-     MiD 2023 B1 `MiD2023_Wege.csv`, universe `kernwo in {1, 2, 3}` (weekday), `W_RBW != 1`
-     (non-rbW), `W_ZWECK == 10`, `wegkm_imp < 9994` clipped at 200 km, `W_GEW`-weighted:
-     `np.average(w["wegkm_imp"].clip(upper=200.0), weights=w["W_GEW"])` = 12.00732 km over
-     n = 39,429 legs. Like every other entry of that dict it is an IN-SAMPLE donor mean and never
-     a validation gate.
+     is the point `(12.7, 12.7)` km. AD-HOC MEASUREMENT of 2026-09-10 on the local-only raw MiD
+     2023 B1 `MiD2023_Wege.csv`, taken on the frame the LAYER is built from (final review I-1,
+     ruling R13): `distance_distributions.run`'s own `"leisure_unspecified"` layer under the
+     production flag set, i.e. every delivered Wege row (`mid.load_mid_wege`; no `kernwo` and no
+     `W_RBW` filter), mapped by `trips.map_purpose` with `w_zweck_10_as_leisure`, reduced to the
+     legs with a usable travel time and to those whose two ends are not both primary activities,
+     then `following_purpose == "leisure"` and `W_ZWECK` in `LEISURE_UNSPECIFIED_ZWECK`. On that
+     frame, `wegkm_imp < 9994` (design codes; none of these legs carries one) clipped at 200 km,
+     `W_GEW`-weighted: **12.69505 km over n = 54,658 legs**. The measurement was taken twice
+     independently -- once from `run()`'s own layer arrays (`values` reconverted to km by
+     `* DETOUR_FACTOR / 1000`, `weights` = `W_GEW`) and once from a replication of the stage's
+     Steps 1-5 -- and the two agree to 1e-10 km.
+
+     The WEEKDAY reference universe of `scripts/extract_mid_w_zwd_groups.py` gives 12.00732 km
+     over n = 39,429 legs instead (`kernwo in {1, 2, 3}`, `W_RBW != 1`, `W_ZWECK == 10`, same
+     filters otherwise; issue #373 task 3). That is the SAME method on a DIFFERENT universe, not
+     a different measurement rule, and the band is pinned on the layer's own universe because
+     that is the pool a realised leg actually draws from. Like every other entry of that dict it
+     is an IN-SAMPLE donor mean and never a validation gate.
   10. **Measurement package: the residual pair.** `srv_fine_purpose.EXACTNESS_VALUES` gains the
       grade `residual` and `SUBTYPE_TO_SRV_FINE["leisure_unspecified"] = ((18,), "residual")`;
       `COMPARABLE_EXACTNESS = ("exact", "approximate")`. A `residual` pair is REPORTED in full
@@ -161,9 +187,10 @@
     (rejected).** It has to GUESS which named group a leg without a detail belongs to, and it
     destroys an observed class whose distance profile differs from every named one but
     `leisure_local` (committed percentiles in Context).
-  - **Leave the code-10 legs in the aggregate layer only, i.e. the status quo (rejected).** A
-    third to a half of the model's leisure legs keep drawing their desired distance from layers
-    estimated on other legs, and their own complete distance information stays unused.
+  - **Leave the code-10 legs in the aggregate layer only, i.e. the status quo (rejected).** The
+    share named in Context (31.1 % of the whole weekday leisure universe, ad-hoc; 43.24 % of the
+    labelled weekday reference mass, committed row) keeps drawing its desired distance from layers
+    estimated on other legs, and its own complete distance information stays unused.
   - **Map `leisure_unspecified` <-> SrV 18 as `approximate` and keep both inside the comparable
     universe (rejected).** The residual SIZES are instrument artefacts (0.4324 vs 0.1796 on the
     committed rows); including them would re-introduce exactly the denominator problem the
@@ -184,6 +211,31 @@
     deliberately NOT a separate issue, because the decision has an owner, a measurement and a
     written home already.
 - **Consequences:**
+  - **Two universes (final review I-1, ruling R13).** The leisure subtype DECIDER and the
+    distance LAYERS estimate on every MiD Wege row their stage loads (`mid.load_mid_wege`), while
+    the committed reference `mid2023_w_zwd_group_reference.csv` measures the WEEKDAY non-rbW legs
+    (`filter_weekday_legs`). The mismatch is PRE-EXISTING -- the #127 layers and deciders have
+    never been weekday-filtered -- and this decision does not change either universe. It does
+    change what the records claim: on the all-day universe the production `leisure_unspecified`
+    marginal is about 0.387 and the clipped donor mean about 12.7 km, against 0.4324 and 12.0 km
+    on the weekday reference universe (ad-hoc probe 2026-09-10, final review). Consequently the
+    arm-C rows below compare the realised shares against the DECIDER's own printed marginals
+    (an IN-SAMPLE comparison on the estimation universe) and quote the weekday reference rows as
+    CONTEXT only; a cross-universe comparison would show a difference even for a perfectly
+    correct model. Whether the decider and the layers SHOULD be weekday-filtered is a model
+    decision for the owner, recorded in the assessment of the feature record
+    `docs/registry/features/leisure_unspecified_subtype.yml` (deliberately not a new issue: it
+    has an owner, a measurement and a written home).
+  - **The OFF path is output-identical, not byte-identical.** With `leisure_unspecified_subtype`
+    off no leg can be tagged with the fifth name, so placement, distances, purposes and the RNG
+    streams are identical to the pre-feature run
+    (`tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off`
+    solves the same problems twice at one seed and asserts identical identifiers, coordinates,
+    potentials, distances and activity types). Two artefacts DO differ and are recorded rather
+    than hidden: the candidate frame carries one inert `leisure_unspecified` offer per
+    leisure-offering building when the SrV location types are off (the vocabulary
+    `LEISURE_SUBTYPE_ACTIVITIES` is unconditional by design, ruling R9), and the decider's
+    build-time log line gains the `unspecified subtype: on|off` suffix.
   - **Cache devalidation is CHEAP and bounded.** Both
     `synthesis.population.spatial.secondary.distance_distributions` and
     `synthesis.population.spatial.secondary.locations` recompute: each declares the new config
@@ -202,9 +254,9 @@
 
     | metric | baseline | reference | expected in arm C (ASSUMPTION) |
     |---|---|---|---|
-    | realised `leisure_unspecified` share of leisure legs | arm B (0 by construction) | the decider's own build-time marginal, printed by the chainsolver stage (IN-SAMPLE) | within 2 pp of that marginal |
-    | realised per-group leisure mean distances | arm B | `secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE` (in-sample sanity bands; `leisure_unspecified` = 12.0-12.0 km) | inside the band, sanity check only |
-    | realised per-group leisure distance medians | arm B | `mid2023_w_zwd_group_reference.csv`, `codeplan_unspecified` rows (`km_p50`) | shift < 1 km per named group |
+    | realised `leisure_unspecified` share of leisure legs | arm B (0 by construction) | the decider's own build-time marginal, printed by the chainsolver stage (IN-SAMPLE, all-day estimation universe) | within 2 pp of that marginal |
+    | realised per-group leisure mean distances | arm B | `secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE` (in-sample sanity bands; `leisure_unspecified` = 12.7-12.7 km, measured on the LAYER's own all-day donor frame, Decision 9; the seven older entries are the 2026-07-09 spec taxonomy figures) | inside the band, sanity check only |
+    | realised per-group leisure distance medians | arm B | `mid2023_w_zwd_group_reference.csv`, `codeplan_unspecified` rows (`km_p50`) -- the WEEKDAY reference universe, so this is a CROSS-UNIVERSE comparison and a difference is expected even for a correct model | shift < 1 km per named group |
     | realised whole-leisure distance median | arm B | direction only | moves DOWN versus arm B |
     | `candidate_for_reestimation` cells | 1 (`leisure_visit`, committed comparison) | the committed rule | still 1 -- a survey-mix result, unaffected by any run |
 

@@ -192,9 +192,9 @@
 
     | metric | baseline | reference | expected in arm B (ASSUMPTION) |
     |---|---|---|---|
-    | realised leisure subtype shares | arm A | `mid2023_w_zwd_group_reference.csv`, `codeplan` rows | within 2 pp per group of the codeplan estimation shares |
-    | realised other-errand subtype shares | arm A | same file | within 2 pp per group |
-    | subtype-conditional distance medians | arm A | same file (`km_p50`) | shift < 1 km per group |
+    | realised leisure subtype shares | arm A | the DECIDER's own build-time marginals, printed by the chainsolver stage (IN-SAMPLE, its all-day estimation universe); the `codeplan` rows of `mid2023_w_zwd_group_reference.csv` are the WEEKDAY reference quoted as context | within 2 pp per group of the decider's printed marginals |
+    | realised other-errand subtype shares | arm A | the same decider's printed marginals (the second estimation stage of `_build_other_subtype_decider`) | within 2 pp per group |
+    | subtype-conditional distance medians | arm A | `mid2023_w_zwd_group_reference.csv` (`km_p50`) -- the WEEKDAY reference universe, so this is a CROSS-UNIVERSE comparison (see Assumption 3) | shift < 1 km per group |
     | `candidate_for_reestimation` cells | 1 (`leisure_visit`, committed comparison) | the stated rule | still 1 (`leisure_visit`) -- a survey-mix result, unaffected by any run |
 
     A metric moving the wrong way stops the ladder. Every "expected" cell is an ASSUMPTION until a
@@ -215,9 +215,18 @@
   2. **MiD is national, the SrV delivery is Braunschweig + RGB**, so every delta mixes a regional
      effect with a survey-instrument effect and cannot be attributed to either from these tables.
   3. **The MiD share is conditional on a leg being LABELLED** (30.7-62.4 % of a purpose's legs are;
-     the rest carry a design sentinel). That is the universe the model estimates on, so it is the
-     right comparison for "the mix the model reproduces", but it is NOT the mix of all MiD legs of
-     that purpose.
+     the rest carry a design sentinel), and on the WEEKDAY non-rbW universe of the extraction
+     (`kernwo in {1, 2, 3}`, `W_RBW != 1`). The labelled condition is the same one the model's
+     estimation applies, but the weekday condition is NOT: the subtype deciders and the distance
+     layers estimate on every MiD Wege row their stage loads (final review I-1, ruling R13;
+     pre-existing since issue #127, unchanged by this record). So the committed rows are not the
+     mix of all MiD legs of a purpose AND not the mix the decider estimates on. The arm-B rows
+     above therefore compare the realised shares against the decider's own printed marginals and
+     quote these rows as context: a cross-universe comparison would show a difference even for a
+     perfectly correct model -- on the `codeplan` composition the two universes differ by -3.22 pp
+     on `leisure_activity` (all-day marginal 0.3930 vs committed weekday row 0.4253), +1.80 pp on
+     `leisure_visit`, +1.05 pp on `leisure_local` and +0.38 pp on `leisure_excursion` (ad-hoc
+     probe 2026-09-10, final review; not reproduced by committed code).
   4. **The leisure comparison is structurally asymmetric** (SrV 18 outside the comparable universe,
      `leisure_excursion` without a counterpart), so the four leisure `share_srv` values do not sum
      to 1. BOTH readings stay committed -- `delta_pp` raw as information, `delta_pp_comparable` on

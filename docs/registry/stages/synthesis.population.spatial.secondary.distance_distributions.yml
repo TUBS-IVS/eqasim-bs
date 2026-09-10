@@ -53,7 +53,7 @@ notes: >-
   escort_pairing, constants, the default synthesis.population.spatial.secondary.
   distance_distributions module) and _DEFERRED_HELPER_MODULE_NAMES = (mid, mid.donor,
   purpose_subtype, shop_subtype, stage.config_keys), so an edit to any of those helper modules --
-  not only to the four declared config VALUES above -- devalidates the cached distance
+  not only to the five declared purpose-package config VALUES above -- devalidates the cached distance
   distributions (tests/test_synpp_helper_hash_invariant.py's ALLOWED_VIOLATIONS entry for this
   stage was removed once the gate confirmed full own-package coverage). mid.donor is named
   SEPARATELY from mid (fix round 1, IMPORTANT 1): the mid package __init__ only RE-EXPORTS

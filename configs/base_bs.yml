@@ -95,10 +95,10 @@ config:
   # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
   # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
   purpose_subtype_codeplan_sentinels: true
-  # MiD W_ZWECK 10 leisure legs (no W_ZWD detail, 43.2 % of the labelled leisure mass of the
-  # production spec variant) form the fifth leisure subtype 'leisure_unspecified' with their own
-  # distance layer instead of being imputed one of the four W_ZWD groups (ADR-0115). Requires
-  # w_zweck_10_as_leisure. false = four groups.
+  # MiD W_ZWECK 10 leisure legs (no W_ZWD detail, 43.2 % of the labelled leisure mass on the
+  # committed weekday reference universe) form the fifth leisure subtype 'leisure_unspecified'
+  # with their own distance layer instead of being imputed one of the four W_ZWD groups
+  # (ADR-0115). Requires w_zweck_10_as_leisure. false = four groups.
   leisure_unspecified_subtype: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of

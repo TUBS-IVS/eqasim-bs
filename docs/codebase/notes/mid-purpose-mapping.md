@@ -78,6 +78,18 @@ every consumer of the purpose vocabulary at once, or it is not added.
    ruling C-R18. `tests/test_derive_escort_w_zweck_split.py::test_day_filter_values_are_the_seeds_own_constant`
    pins the shared constant.
 
+   **Corollary, and an open model question.** The rule binds the committed AGGREGATE, not the
+   ESTIMATION: the W_ZWD subtype deciders
+   (`secondary_chainsolvers.deciders`) and the secondary distance layers
+   (`braunschweig.popsim.distance_distributions`) estimate on every MiD Wege row
+   `mid.load_mid_wege` returns -- no reporting-day and no route-break filter -- while
+   `mid2023_w_zwd_group_reference.csv` is measured on the weekday non-rbW legs. So a record must
+   never present that table as the mix the model estimates on (it differs: about 0.387 vs 0.4324
+   for `leisure_unspecified`, ad-hoc probe 2026-09-10). The mismatch is pre-existing (issue #127)
+   and whether the deciders and layers should be weekday-filtered is an owner decision recorded
+   in the assessment of `docs/registry/features/leisure_unspecified_subtype.yml`; ADR-0115
+   Consequences ("Two universes") carries the measurement.
+
 ## Threading list (as of ADR-0111 / ADR-0112 / ADR-0113)
 
 Trip-build flags -- `escort_purpose`, `escort_passive_education`,

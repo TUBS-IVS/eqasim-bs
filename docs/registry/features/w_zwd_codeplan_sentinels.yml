@@ -129,19 +129,25 @@ validation:
     the default variant (comparable -10.88 pp; codeplan -9.86 pp, codeplan_unspecified -9.86 pp;
     candidate_variants = "default"), and it is the only flagged group. ADR-0113''s pre-registered
     A/B (arm B = arm A + this flag, no PopulationSim re-run) then measures the REALISED leisure and
-    other-errand subtype shares and their distance medians against the codeplan rows of the
-    committed reference: Task 9 of the #373/#372/#242 SDD plan.'
+    other-errand subtype shares against the DECIDER''s own printed marginals: Task 9 of the
+    #373/#372/#242 SDD plan. The codeplan rows of the committed reference are quoted there as
+    CONTEXT, not as the comparison base, because the reference measures the WEEKDAY non-rbW legs
+    while the decider and the distance layers estimate on every delivered MiD Wege row (two
+    universes, pre-existing since #127; ADR-0113 Assumption 3 and ADR-0115 Consequences carry the
+    measured difference).'
   note: 'No run has executed this code as of this record, and the committed comparison is NOT a
     validation of the model: it compares two survey-derived mixes (MiD national vs SrV Braunschweig
     + RGB), with the crosswalk exactness itself an explicit ASSUMPTION (a reading of two codebooks,
     not a published crosswalk) and the leisure denominators structurally asymmetric. validation.state
     stays unvalidated until an arm-B run manifest records the model''s own realised subtype shares
-    against the codeplan reference rows.'
+    against the decider''s printed marginals (with the codeplan reference rows as context; see the
+    metric above on the two leg universes).'
 assessment:
   status: pending
   pending_reason: 'The arm-B A/B (ADR-0113 Consequences, Task 9 of the SDD plan) has not run, so the
     realised subtype shares and the subtype-conditional distances of the synthetic population have
-    not been compared against the codeplan estimation rows. The owner decision that was open here is
+    not been compared against the decider''s printed marginals (the committed codeplan rows are the
+    weekday reference and are context there, not the base -- ADR-0113 Assumption 3). The owner decision that was open here is
     TAKEN (2026-09-10, ADR-0113 Decision 4/6, reasoning in ADR-0115): the candidate rule is defined
     on the COMPARABLE universe, group-level across the spec variants, and leisure_visit IS flagged
     via the default variant. Being flagged still triggers no re-estimation -- what remains open is

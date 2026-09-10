@@ -98,7 +98,7 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   | `leisure_visit` | 701 | 19.1 km | `potential_visit` (residential, NEW) |
   | `leisure_activity` | 702, 703, 704, 707, 720, 721, 799 | ~10-18 km | `potential_leisure` |
   | `leisure_excursion` | 708, 709, 722 | 45-100 km | `potential_leisure` (boundary-clip share logged) |
-  | `leisure_unspecified` | none -- raw `W_ZWECK` 10 | 12.0 km (ad-hoc, in-sample) | `potential_leisure` |
+  | `leisure_unspecified` | none -- raw `W_ZWECK` 10 | 12.7 km (ad-hoc, in-sample, on the layer's own donor frame) | `potential_leisure` |
 
   The FIFTH leisure group is not a `W_ZWD` grouping at all
   ([ADR-0115](../decisions/ADR-0115-leisure-unspecified-subtype.md), flag
@@ -110,9 +110,12 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   `purpose_subtype.label_legs`, which lets a `W_ZWECK` group win over a detail code and counts how
   often that happens), get their own distance layer (Step 8b, built outside the `W_ZWD` branch),
   and are placed on the generic `pot_leisure` -- never on the residential `pot_visit` pool. They
-  are 43.24 % of the labelled leisure mass under the production spec variant, with `wegkm_imp`
-  p25/p50/p75 = 1.27 / 3.26 / 9.50 km (committed `mid2023_w_zwd_group_reference.csv`, spec variant
-  `codeplan_unspecified`).
+  are 43.24 % of the labelled leisure mass on the committed reference's WEEKDAY non-rbW universe,
+  with `wegkm_imp` p25/p50/p75 = 1.27 / 3.26 / 9.50 km (committed
+  `mid2023_w_zwd_group_reference.csv`, spec variant `codeplan_unspecified`). Note the two leg
+  universes: the decider and the layers estimate on every delivered MiD Wege row, where the same
+  share is about 0.387 and the clipped donor mean about 12.7 km rather than 12.0 km (pre-existing
+  since #127; ADR-0115 Consequences "Two universes").
 
   | other group | definition | measured mean | placement |
   |---|---|---|---|
@@ -185,7 +188,7 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
 | `secondary_distance_by_purpose` | `false` | Tier 1 purpose x mode distributions (popsim_mid) |
 | `secondary_shop_daily_split` | `false` | Tier 2 shop daily/non-daily split + placement |
 | `secondary_shop_daily_share` | `null` | Pin the daily share; `null` = derive from MiD W_GEW |
-| `secondary_leisure_subtype_split` | `false` | Tier 2 leisure 4-group split (distance only) |
+| `secondary_leisure_subtype_split` | `false` | Tier 2 leisure split (distance only): the four W_ZWD leisure groups (plus the W_ZWECK-defined fifth when `leisure_unspecified_subtype` is on) |
 | `secondary_other_subtype_split` | `false` | Tier 2 other/errand 4-group split (distance only) |
 | `leisure_visit_building_potential` | `false` | Places `leisure_visit` legs on residential `pot_visit`; requires `secondary_leisure_subtype_split` |
 | `secondary_distance_min_obs` | `30` | Sparse-cell fallback threshold (legs per cell) |

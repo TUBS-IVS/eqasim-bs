@@ -93,4 +93,11 @@ notes: >-
   braunschweig.popsim.trips joined _HELPER_MODULES in the same wave (ruling R7), because
   purpose_subtype now builds LEISURE_UNSPECIFIED_ZWECK from trips.W_ZWECK_OTHER_CODE and
   inspect.getsource hashes a module's OWN text only, so the new edge would otherwise have been
-  invisible to the cache token.
+  invisible to the cache token. Also from the same wave (final review M-4, ruling R14):
+  _build_leisure_subtype_decider calls purpose_subtype.code_coverage_guard on the prepared MiD
+  frame before estimating, so a W_ZWD code observed on a leg of the spec's W_ZWECK universe that
+  the spec maps to neither a group nor a sentinel makes THIS STAGE raise instead of the code being
+  dropped into the unlabelled share. Measured on the 2026-09-10 raw delivery, the guard passes for
+  all four leisure specs. The sibling _build_other_subtype_decider is deliberately unchanged (it
+  has never guarded its specs, pre-existing since issue #127), so the same class of defect in an
+  errand or coarse "other" spec is still only visible as a lower labelled share in the log.

@@ -8,10 +8,18 @@ description: 'Gives the MiD W_ZWECK 10 "anderer Zweck" legs -- leisure legs of t
 
   Size and profile, from the committed mid2023_w_zwd_group_reference.csv (spec_variant
   codeplan_unspecified, the production composition; share_within_purpose is the W_GEW share among
-  LABELLED legs of the purpose): n = 39,429 legs, share 0.4324, wegkm_imp p25/p50/p75 =
-  1.27 / 3.26 / 9.50 km, n_missing_distance 0. The distance profile differs from every named group
-  except leisure_local (p75 9.50 vs 4.90 km), so before this feature roughly two fifths of the
-  labelled leisure mass drew its desired distance from layers estimated on other legs.
+  LABELLED legs of the purpose, on the extraction''s WEEKDAY non-rbW universe): n = 39,429 legs,
+  share 0.4324, wegkm_imp p25/p50/p75 = 1.27 / 3.26 / 9.50 km, n_missing_distance 0. The distance
+  profile differs from every named group except leisure_local (p75 9.50 vs 4.90 km), so before
+  this feature the W_ZWECK-10 legs (about 31 % of the weekday leisure mass W_ZWECK {7, 10},
+  ad-hoc probe 2026-09-10) drew their distances from layers estimated on the labelled code-7 legs.
+
+  TWO UNIVERSES (ADR-0115 Consequences, final review ruling R13): the decider and the distance
+  layers estimate on every MiD Wege row their stage loads, while this reference measures the
+  WEEKDAY non-rbW legs -- the labelling rule is shared, the universe is not. On the all-day
+  universe the marginal is about 0.387 and the donor mean about 12.7 km (against 0.4324 and
+  12.0 km on the weekday universe). The mismatch is pre-existing (the #127 layers and deciders
+  were never weekday-filtered) and is not changed here.
 
   Mechanism: purpose_subtype.SubtypeSpec gains zweck_groups (group name -> frozenset of raw W_ZWECK
   codes) plus group_names / zweck_group_codes; the shared helper purpose_subtype.label_legs applies
@@ -46,7 +54,7 @@ production:
   - leisure_unspecified_subtype
 introduced:
   issue: '#373'
-  pr: pending
+  pr: null
   adr: ADR-0115
 detail_doc: docs/features/secondary-distances.md
 code_paths:
@@ -69,9 +77,15 @@ evidence:
   - tests/test_extract_mid_w_zwd_groups.py
   - tests/test_secondary_subtype_validation.py
   off_path_byte_identical:
-    claimed: 'true'
-    test: tests/test_distance_distributions_subtypes.py::test_leisure_unspecified_flag_off_leaves_every_layer_byte_identical
-    note: 'The named test serialises every layer of run()''s output (bounds, values, weights, cdf,
+    claimed: 'false'
+    test: tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off
+    note: 'Run OUTPUT identical with the flag off (placement, distances, purposes; test
+      tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off),
+      but NOT byte-identical: the candidate frame carries one inert leisure_unspecified offer per
+      leisure building when the SrV location types are off, and the decider log line gains a
+      suffix. Details of both sides follow.
+      tests/test_distance_distributions_subtypes.py::test_leisure_unspecified_flag_off_leaves_every_layer_byte_identical
+      serialises every layer of run()''s output (bounds, values, weights, cdf,
       sort_keys=True) with the keyword ON and OFF and asserts every pre-existing layer -- the four
       W_ZWD leisure layers, the aggregate leisure layer and all other purposes -- is identical.
       The spec side is object IDENTITY, which is stronger than an equality golden:
@@ -82,14 +96,15 @@ evidence:
       ::test_estimation_without_the_zweck_group_is_unchanged_by_code_10_legs (a frame WITH code-10
       legs gives the same cell_probs and marginal as the same frame filtered to W_ZWECK 7) and by
       tests/test_secondary_chainsolvers_subtypes.py::test_leisure_decider_ignores_code_10_legs_when_the_flag_is_off.
-      TWO deliberate OFF-path changes are NOT byte-identical and are recorded here rather than
+      THREE deliberate OFF-path changes are NOT byte-identical and are recorded here rather than
       hidden: (1) the labelling log line always carries the "(N of them by W_ZWECK group)" suffix,
       printing 0 when the spec has no zweck group -- that is what makes the new path observable;
-      (2) LEISURE_SUBTYPE_ACTIVITIES has five names unconditionally, so with the flag off
-      _build_locations_df emits a fifth, inert leisure_unspecified offer on every leisure-offering
-      building and subtype_stats carries a zero entry. No leg can be tagged with the name while the
-      flag is off, and
-      tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off
+      (2) the decider''s build-time marginal line gains the "(codeplan no-detail sentinels:
+      on|off, unspecified subtype: on|off)" suffix; (3) LEISURE_SUBTYPE_ACTIVITIES has five names
+      unconditionally, so with the flag off _build_locations_df emits a fifth, inert
+      leisure_unspecified offer on every leisure-offering building and subtype_stats carries a zero
+      entry (production never sees that offer -- it is emitted only where the SrV location types
+      are off). No leg can be tagged with the name while the flag is off, and the named test
       solves the same problems twice at one rng_seed -- once against the frame with the extra offer
       and once against the same frame with it stripped -- and asserts identical identifiers,
       coordinates, potentials, distances and activity types.'
@@ -132,19 +147,27 @@ validation:
   metric: 'Not yet measured on a population. What is measured today is survey-vs-survey and
     in-sample: the committed MiD reference gives the group n = 39,429, share 0.4324 within the
     labelled leisure mass and wegkm_imp p25/p50/p75 = 1.27 / 3.26 / 9.50 km under the production
-    spec variant; the committed comparison pairs it with SrV V_ZWECK 18 (n 1,700, share 0.1796, GIS
-    median 2.956 km) as a reported-but-not-comparable residual; and
-    secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] = (12.0, 12.0) km is an
-    AD-HOC in-sample donor mean measured on 2026-09-10 on the raw MiD Wege delivery (universe
-    kernwo in {1,2,3}, W_RBW != 1, W_ZWECK == 10, wegkm_imp < 9994 clipped at 200 km, W_GEW-weighted;
-    n = 39,429; command recorded in ADR-0115), a sanity band and never a validation gate. Arm C of
+    spec variant, on its WEEKDAY non-rbW universe; the committed comparison pairs it with SrV
+    V_ZWECK 18 (n 1,700, share 0.1796, GIS median 2.956 km) as a reported-but-not-comparable
+    residual; and
+    secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] = (12.7, 12.7) km is an
+    AD-HOC in-sample donor mean measured on 2026-09-10 on the frame the LAYER is built from (the
+    all-day donor pool of distance_distributions.run: every delivered Wege row, w_zweck_10_as_leisure
+    mapping, travel-time and primary-both filters, then W_ZWECK 10 leisure legs; wegkm_imp < 9994
+    clipped at 200 km, W_GEW-weighted; n = 54,658; frame and command recorded in ADR-0115
+    Decision 9), a sanity band and never a validation gate. The weekday reference universe gives
+    12.0 km over n = 39,429 for the same quantity -- same method, different universe. Arm C of
     the pre-registered A/B (ADR-0115 Consequences) is what would compare the model''s REALISED
     leisure_unspecified share and distances against these rows.'
   note: 'No run has executed this code as of this record. Nothing here compares the model against
     observed behaviour: the MiD reference is the donor survey the model estimates FROM (an in-sample
     comparison at best), and the SrV residual is a different instrument on a different universe -- a
-    regional context row, explicitly not a target. validation.state stays unvalidated until an arm-C
-    run manifest records the realised share and distances.'
+    regional context row, explicitly not a target. The reference is also measured on a DIFFERENT LEG
+    UNIVERSE than the estimation (weekday non-rbW vs every delivered Wege row; ADR-0115
+    Consequences, "Two universes"), so an arm-C comparison reads the realised shares against the
+    decider''s own printed marginals and treats the committed rows as context.
+    validation.state stays unvalidated until an arm-C run manifest records the realised share and
+    distances.'
 assessment:
   status: pending
   pending_reason: 'Arm C of the pre-registered A/B (ADR-0115 Consequences) has not run, so the
@@ -156,7 +179,13 @@ assessment:
     unset). A second, related decision is deliberately parked on the same measurement rather than on
     an issue: whether the leisure_visit level should be regionally anchored at all (ADR-0115 rejects
     age-conditioning, PopulationSim controls and raking for now and defers the level decision to the
-    arm-B measurement of the realised share).'
+    arm-B measurement of the realised share). A THIRD decision is parked here by the final review
+    (ruling R13) and is the owner''s to take: whether the subtype decider and the distance layers
+    should be WEEKDAY-filtered like the committed reference is. Today they estimate on every
+    delivered MiD Wege row (pre-existing since #127), which is why the two universes disagree
+    (all-day marginal about 0.387 and donor mean about 12.7 km vs 0.4324 and 12.0 km on the
+    weekday reference universe; ADR-0115 Consequences). Changing it would move every subtype
+    layer, not just this group, so it is a model decision and not a fix -- no issue was opened.'
 notes: 'Sibling records of the same wave: purpose_main_fold_code_10 (ADR-0111) provides the fold
   this feature depends on -- without w_zweck_10_as_leisure there are no code-10 leisure legs at all
   and both stages refuse the combination at configure time -- and w_zwd_codeplan_sentinels

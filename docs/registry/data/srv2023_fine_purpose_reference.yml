@@ -27,8 +27,9 @@ verification:
   notes: |
     Ships committed with every clone, exactly like the sibling SrV aggregates of issues #368/#369
     (e.g. srv2023_work_by_employment, srv2023_absence_by_age_band), so it is not listed in
-    scripts/verify_braunschweig_inputs.py. Definitions and invariants are covered by
-    tests/test_srv_fine_purpose.py (28 tests on tiny synthetic frames).
+    scripts/verify_braunschweig_inputs.py. Definitions, invariants and the comparison rules built
+    on them are covered by tests/test_srv_fine_purpose.py (43 tests on tiny synthetic frames;
+    count from pytest --collect-only, 2026-09-10).
 requirements:
   synthesis: not_needed
   matsim: not_needed
@@ -66,17 +67,30 @@ notes: |
   not a validated calibration target -- no synthesis, location or distribution stage reads it and
   nothing is re-estimated from it. Its only consumer is scripts/compare_purpose_subtypes_srv.py,
   which joins it with the MiD counterpart mid2023_w_zwd_group_reference through the crosswalk
-  braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE (grades exact / approximate /
-  aggregate_only) and writes the committed comparison
+  braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE and writes the committed comparison
   eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}.
 
-  The crosswalk exactness is an explicit ASSUMPTION -- a reading of the two codebooks' value
-  labels, not a published or validated crosswalk (ADR-0113 Assumptions). Two structural asymmetries
-  bound every leisure comparison: SrV 18 "Andere Freizeitaktivitaet" is 17.96 % of SrV leisure
-  trips and maps to no MiD group, and the MiD group leisure_excursion has no SrV counterpart, so
-  the four leisure share_srv values do not sum to 1. The committed comparison therefore reports the
-  leisure rows under BOTH denominators (raw and renormalised) and names the one threshold crossing
-  it produces.
+  The crosswalk grades are exact / approximate / residual / aggregate_only. exact and approximate
+  form the COMPARABLE universe (activities both surveys name concretely); the other two stay
+  outside it on their own side. SrV 18 "Andere Freizeitaktivitaet" is paired with the MiD group
+  leisure_unspecified under the grade RESIDUAL (issue #373, ADR-0115): the pair is REPORTED in full
+  -- shares, counts and medians on both sides -- but excluded from the comparable universe on BOTH
+  sides, carries no delta_pp_comparable and can never be a candidate, because the two are the same
+  KIND of leg (leisure without a nameable activity) and not the same SIZE (MiD W_ZWECK 10 is a
+  top-level answer, SrV 18 a sixth option after five named leisure activities; 17.96 % of SrV
+  leisure trips vs 43.24 % of the labelled MiD leisure mass). aggregate_only stays for the MiD
+  group leisure_excursion, which SrV does not code at all.
 
-  Evidence base of ADR-0113 / issue #242 (feature record w_zwd_codeplan_sentinels). Sibling SrV
-  aggregates: srv2023_work_participation, srv2023_absence_by_age_band, srv2023_reference_tables.
+  The crosswalk exactness is an explicit ASSUMPTION -- a reading of the two codebooks' value
+  labels, not a published or validated crosswalk (ADR-0113 Assumptions). Because of the two
+  asymmetries above the four named leisure share_srv values do not sum to 1, so the committed
+  comparison reports the leisure rows under BOTH denominators (raw delta_pp as information,
+  delta_pp_comparable on the comparable universe) and the CANDIDATE FLAG reads the comparable one:
+  group-level, true when a group is graded exact and abs(delta_pp_comparable) > 10 pp in at least
+  one spec variant (ADR-0113 Decision 4/6, owner decision of 2026-09-10). On the committed tables
+  leisure_visit is the one flagged group, via the default variant.
+
+  Evidence base of ADR-0113 / issue #242 (feature record w_zwd_codeplan_sentinels) and of
+  ADR-0115 / issue #373 (feature record leisure_unspecified_subtype, which owns the residual pair).
+  Sibling SrV aggregates: srv2023_work_participation, srv2023_absence_by_age_band,
+  srv2023_reference_tables.
