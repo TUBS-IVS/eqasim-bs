@@ -14,6 +14,13 @@ Two independent flags gate what is composed into the reporting day:
 * ``day_absence_enabled`` (:data:`KEY_DAY_ABSENCE_ENABLED`) -- the general day-absence draw
   (issue #370), read from :data:`ABSENCE_STAGE`.
 
+Since issue #123 Task 4 (ADR-0114) the stage also selects the START-TIME model applied to the
+SPLICED rows, from the same four ``departure_time_*`` config keys the pre-assignment trip build
+(``braunschweig.popsim.trips_stage``) reads -- both must resolve the same model, or a home-office
+person's day would follow a different start-time distribution than everybody else's. The receiving
+persons' attributes come from the ALREADY declared ``synthesis.population.enriched`` frame (ruling
+A-R13), so no second population stage enters this stage's DAG.
+
 With BOTH flags FALSE the stage returns the pre-assignment frame ITSELF (the very same object, not
 a copy), so the reporting-day view is byte-identical to the pre-assignment one and the alias is a
 pure pass-through. With only one flag on, the other input is replaced by an empty placeholder
@@ -29,17 +36,29 @@ import logging
 
 import pandas as pd
 
+from braunschweig.calibration import reported_time_precision as _reported_time_precision
+from braunschweig.calibration import srv_departure_times as _srv_departure_times
+from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
+from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement
-from braunschweig.synthesis.commute_day.plan_replacement import build_day_trips
+from braunschweig.synthesis.commute_day.plan_replacement import (DepartureTimeSettings,
+                                                                 build_day_trips)
 
 logger = logging.getLogger(__name__)
 
 _LOG_TAG = "[commute day trips]"
 
-#: Pure module whose source this stage's cache token must cover (see :func:`validate`): every
-#: plan-replacement rule lives there, not here.
-_HELPER_MODULES = (_plan_replacement,)
+#: Pure modules whose source this stage's cache token must cover (see :func:`validate`): every
+#: plan-replacement rule lives in ``plan_replacement``, not here, and since issue #123 Task 4 the
+#: replaced rows' start times come from ``departure_time_model``. ``validate()`` hashes these
+#: NON-transitively, so the three modules ``departure_time_model`` itself imports and whose
+#: content decides the realised times -- the reporting-precision half widths, the reference
+#: table's bin geometry, and the harmonised group rule the mapping cell is keyed on -- are named
+#: here too. (``braunschweig.popsim.attributes`` is deliberately absent: only
+#: ``persons_from_mid_schema`` reads it, and this stage uses the SYNTHETIC-schema adapter.)
+_HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
+                   _srv_departure_times, _srv_plan_structure)
 
 KEY_ENABLED = "commute_day_state_enabled"
 DEFAULT_ENABLED = True
@@ -102,6 +121,31 @@ def configure(context):
     context.config("random_seed")
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
     context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
+    # Departure-time model of the SPLICED rows (issue #123 Task 4, ADR-0114). Declared with the
+    # SAME four shared constants braunschweig.popsim.trips_stage declares, so the reporting day
+    # and the pre-assignment day it is built from always resolve the same start-time model --
+    # two different models would give a home-office person a day drawn from a different
+    # start-time distribution than everybody else's.
+    #
+    # Ruling A-R13: NO synthesis.population.sampled dependency is added for the receiving
+    # persons' attributes. synthesis.population.enriched -- already declared above for the
+    # escort-coherence diagnostic -- carries the harmonised ``age`` / ``employed`` columns the
+    # SYNTHETIC-schema adapter needs, so declaring a second population stage would only widen
+    # this stage's DAG for data it already has.
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+        DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MODEL,
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+    context.config(KEY_DEPARTURE_TIME_MODEL, DEFAULT_DEPARTURE_TIME_MODEL)
+    context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N)
+    context.config(KEY_DEPARTURE_TIME_MIN_MODEL_N, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N)
+    context.config(KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+                   DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)
+    # Root of the committed reference data; the SrV departure-time reference the "srv_mapped"
+    # model maps onto is read from <data_path>/braunschweig/srv in execute().
+    context.config("data_path")
 
 
 def matches_from_states(states):
@@ -145,6 +189,39 @@ def _empty_donor_trips():
     return pd.DataFrame({column: pd.Series(dtype=object) for column in columns})
 
 
+def _departure_time_settings(context, persons: pd.DataFrame) -> DepartureTimeSettings:
+    """Build the :class:`DepartureTimeSettings` for this run from the four declared config keys.
+
+    The SrV reference is loaded through
+    :func:`braunschweig.popsim.departure_time_model.load_reference_for_model`, the same helper
+    the pre-assignment trip build uses, so a missing file aborts BOTH stages with the same
+    message naming the path and the key -- never a silent fall back to the eqasim jitter.
+    ``persons`` is the enriched population (ruling A-R13); the plan replacement restricts it to
+    the replaced persons itself.
+    """
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+    model = str(context.config(KEY_DEPARTURE_TIME_MODEL))
+    if model not in _departure_time_model.MODELS:
+        raise ValueError(
+            f"{_LOG_TAG} {KEY_DEPARTURE_TIME_MODEL}={model!r} is not a known departure-time "
+            f"model; expected one of {list(_departure_time_model.MODELS)}.")
+    settings = DepartureTimeSettings(
+        model=model,
+        reference=_departure_time_model.load_reference_for_model(
+            context.config("data_path"), model, config_key=KEY_DEPARTURE_TIME_MODEL),
+        min_reference_n=int(context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N)),
+        min_model_n=int(context.config(KEY_DEPARTURE_TIME_MIN_MODEL_N)),
+        max_median_shift_hours=float(context.config(KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)),
+        persons=persons)
+    logger.info("%s departure-time model for the spliced rows: %s (min_reference_n=%d, "
+                "min_model_n=%d, max_median_shift_hours=%.2f)", _LOG_TAG, settings.model,
+                settings.min_reference_n, settings.min_model_n, settings.max_median_shift_hours)
+    return settings
+
+
 def execute(context):
     trips = context.stage("synthesis.population.trips")
     commute_on = bool(context.config(KEY_ENABLED))
@@ -179,6 +256,11 @@ def execute(context):
         states, matches, donor_trips, donor_attributes = (
             empty_states(), empty_matches(), _empty_donor_trips(), None)
 
+    # Resolved on BOTH remaining paths, including the absence-only one where nothing is spliced
+    # and the model therefore never runs: a misconfigured model (unknown name, or srv_mapped
+    # without its committed reference) must abort whenever this stage runs at all, not only when
+    # the state draw happens to produce a replaced person.
+    departure_time = _departure_time_settings(context, persons)
     # Ruling R9: the attributes carry n_trips, which is what lets build_day_trips tell an
     # EXPECTED immobile donor day (n_trips == 0) apart from a donor_id join failure -- both look
     # like "no rows for this donor" in donor_trips alone.
@@ -186,7 +268,8 @@ def execute(context):
                                              random_seed=int(context.config("random_seed")),
                                              donor_attributes=donor_attributes,
                                              general_absence=general_absence,
-                                             persons=persons)
+                                             persons=persons,
+                                             departure_time=departure_time)
     logger.info("%s reporting-day trips: %d rows for %d persons (from %d rows for %d persons); "
                 "%s=%s, %s=%s; diagnostics: %s", _LOG_TAG, len(day_trips),
                 day_trips["person_id"].nunique(), len(trips), trips["person_id"].nunique(),

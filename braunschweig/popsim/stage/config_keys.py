@@ -403,6 +403,54 @@ DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 # the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
 KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
 DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+# Departure-time (start-time) model of the trip build and of the commute-day plan replacement
+# (issue #123, ADR-0114): which of the three models in
+# braunschweig.popsim.departure_time_model.MODELS shapes a person's FIRST departure --
+# "eqasim_uniform" (the unchanged eqasim +/- min(1800 s, first departure) jitter), "derounded"
+# (de-round inside the survey's own reporting grid) or "srv_mapped" (de-round, then quantile-map
+# rank-preservingly onto the committed SrV first-departure distribution of that person's
+# (purpose x harmonised group) cell). A FLAT key (like escort_passive_education /
+# w_zweck_10_as_leisure), declared with this exact unprefixed name by every stage that reads it:
+# braunschweig.popsim.trips_stage and braunschweig.synthesis.commute_day.trips_day_stage. Both
+# must resolve the SAME value, or the pre-assignment day and the reporting day would be built
+# with different start-time models.
+#
+# THE ONE STATEMENT of this flag's two defaults: the CODE / DECLARED default is
+# "eqasim_uniform", i.e. the byte-identical OFF path -- a change of realised departure times must
+# be an explicit, flagged decision, and the OFF path is also what EntdSource.build_trips accepts
+# (see ENTD_REJECTED_KEYS below). The PRODUCTION value "srv_mapped" is set in configs/base_bs.yml
+# by task 6 of issue #123, so a config that does NOT compose that base leaves the model off.
+#
+# The value is repeated here as a literal rather than imported from
+# braunschweig.popsim.departure_time_model.MODEL_EQASIM_UNIFORM because THIS module is a leaf by
+# contract (see the module docstring: no imports from this package); the two homes are pinned
+# equal by tests/test_popsim_trips_stage.py::
+# test_departure_time_model_default_agrees_with_the_model_module -- the same treatment
+# DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES gets above.
+KEY_DEPARTURE_TIME_MODEL = "departure_time_model"
+DEFAULT_DEPARTURE_TIME_MODEL = "eqasim_uniform"
+
+# The three PARAMETERS of the srv_mapped model's coarsening ladder and its median-shift guard
+# (braunschweig.popsim.departure_time_model.quantile_map_first_departures /
+# apply_departure_time_model own the semantics; these constants only state the values the stages
+# declare them with). All three are inert unless KEY_DEPARTURE_TIME_MODEL is "srv_mapped".
+# Unlike the model key itself they are NOT MiD-only, so they are deliberately absent from
+# ENTD_REJECTED_KEYS: they size a mapping the model-key rejection already forbids on that path.
+#
+# Minimum unweighted SrV observations a reference cell must carry for the ladder to map onto it.
+# Unit: persons (unweighted survey observations). Valid range: >= 1.
+KEY_DEPARTURE_TIME_MIN_REFERENCE_N = "departure_time_mapping_min_reference_n"
+DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N = 200
+# Minimum number of MODEL persons pooled at a ladder rung for that rung to be used; a thinner
+# set climbs to the next rung instead of being ranked against the reference on its own.
+# Unit: persons (synthetic). Valid range: >= 1.
+KEY_DEPARTURE_TIME_MIN_MODEL_N = "departure_time_mapping_min_model_n"
+DEFAULT_DEPARTURE_TIME_MIN_MODEL_N = 50
+# Cell-level observability guard: a mapping cell whose median |shift| exceeds this is WARNED
+# about, naming the cell and both its medians. Unit: hours. Valid range: > 0. The offsets are
+# never clipped to it -- a large shift is a finding about the donor, not something to hide.
+KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS = "departure_time_mapping_max_median_shift_hours"
+DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS = 2.0
 
 # exclude_no_answer_purpose_legs (issue #373 follow-up, ADR-0117): MiD legs whose MAIN purpose is
 # the no-answer code W_ZWECK 99 ("keine Angabe", trips.W_ZWECK_NO_ANSWER_CODE) are excluded from
@@ -443,6 +491,14 @@ DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = True
 # closure_dwell_min_obs, which is accepted-and-ignored because it only sizes cells of a model the
 # closure_dwell_model rejection already forbids building; a tuned gap has no such second guard
 # naming it, and the parity guard over this dict is what keeps every popsim_open fixture honest.
+#
+# KEY_DEPARTURE_TIME_MODEL (issue #123 task 4) is listed for the same reason: the ENTD trip build
+# (braunschweig.popsim.sources.entd_trips.build_trips) has its own eqasim jitter call and never
+# reaches braunschweig.popsim.trips_stage.run, where the departure-time model is applied, so a
+# non-default model configured for a popsim_open run would be silently unapplied. Its three
+# NUMERIC parameters are deliberately NOT listed: they only size a mapping this rejection already
+# forbids, which is the closure_dwell_min_obs treatment rather than the passive-pair-gap one --
+# the model key itself names them in its message, so no tuned threshold can pass unnoticed.
 ENTD_REJECTED_KEYS: dict[str, object] = {
     KEY_EXCLUDE_RBW_LEGS: False,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
@@ -450,6 +506,7 @@ ENTD_REJECTED_KEYS: dict[str, object] = {
     KEY_W_ZWECK_10_AS_LEISURE: False,
     KEY_ESCORT_PASSIVE_FROM_ADULT: False,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    KEY_DEPARTURE_TIME_MODEL: DEFAULT_DEPARTURE_TIME_MODEL,
 }
 
 

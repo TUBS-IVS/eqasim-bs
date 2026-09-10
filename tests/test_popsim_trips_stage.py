@@ -8,6 +8,7 @@ jitter preserves within-person trip ordering.
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 import pandas as pd
@@ -669,3 +670,193 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monke
                     passive_pair_max_gap_minutes=20.0)
     assert seen["dwell_flag"] is True and seen["build_flag"] is True
     assert seen["dwell_gap"] == 20.0 and seen["build_gap"] == 20.0
+
+
+# ---------------------------------------------------------------------------
+# Departure-time model (issue #123 Task 4, ADR-0114): the trip build applies one of the three
+# start-time models of braunschweig.popsim.departure_time_model instead of calling the eqasim
+# per-person jitter directly. The CODE default stays "eqasim_uniform", i.e. byte-identical.
+# ---------------------------------------------------------------------------
+
+SRV_REFERENCE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "eqasim-data", "data", "braunschweig", "srv")
+
+
+def _persons_and_wege_with_person_attributes():
+    """Six employed persons, each with a home -> work -> home chain on a quarter-hour clock time.
+
+    Unlike the fixtures above, the PERSONS frame carries the MiD person attributes
+    ``HP_ALTER`` / ``P_TAET`` that
+    :func:`braunschweig.popsim.departure_time_model.persons_from_mid_schema` needs to pick a
+    mapping cell (ruling A-R7): all six are employed adults, so their harmonised group is
+    ``employed`` and -- their first leg being a work leg -- their reference cell is
+    ``(employed, work)``, which the committed SrV table fills with 4,649 unweighted observations.
+    """
+    persons = pd.DataFrame({
+        "person_id": [1, 2, 3, 4, 5, 6],
+        "H_ID": [10, 20, 30, 40, 50, 60],
+        "P_ID": [1, 1, 1, 1, 1, 1],
+        "HP_ALTER": [40, 41, 42, 43, 44, 45],
+        "P_TAET": [1, 1, 1, 1, 1, 1],
+        "ZENSUS100m": ["c1"] * 6,
+    })
+    rows = []
+    for index, household_id in enumerate([10, 20, 30, 40, 50, 60]):
+        hour, minute = 6 + index % 3, (index % 4) * 15
+        rows += [
+            {"H_ID": household_id, "P_ID": 1, "W_ID": 1, "W_ZWECK": 1, "hvm_imp": 4,
+             "W_SZS": hour, "W_SZM": minute, "W_AZS": hour, "W_AZM": minute + 10,
+             "wegkm_imp": 12.0, "wegmin_imp1": 10.0, "W_GEW": 1.0},
+            {"H_ID": household_id, "P_ID": 1, "W_ID": 2, "W_ZWECK": 8, "hvm_imp": 4,
+             "W_SZS": 17, "W_SZM": 0, "W_AZS": 17, "W_AZM": 20,
+             "wegkm_imp": 12.0, "wegmin_imp1": 20.0, "W_GEW": 1.0},
+        ]
+    return persons, pd.DataFrame(rows)
+
+
+def test_run_default_is_byte_identical_on_contract_columns():
+    """Golden-master regression for the OFF path (issue #123 Task 4).
+
+    ``trips_stage.run`` no longer calls ``apply_per_person_jitter`` directly -- it dispatches
+    through ``departure_time_model.apply_departure_time_model``, whose ``eqasim_uniform`` branch
+    delegates back to that very function. This test pins the CONTRACT columns of a default
+    ``run()`` call against values produced by the code as it existed BEFORE that dispatch was
+    introduced, so a change in the RNG consumption, in the rounding, or in the order of the
+    shift relative to the rest of ``run()`` fails loudly here instead of silently moving every
+    departure time in the pipeline.
+
+    Provenance of the pinned values: ``braunschweig/popsim/trips_stage.py`` at commit
+    ``eff5720c`` (this branch's Task 3 tip, immediately before Task 4 rewired the call) was run
+    ONCE on the fixture and seed below with a scratch script; the printed ``departure_time`` /
+    ``arrival_time`` lists were copied verbatim. The scratch script is not part of the
+    repository -- only the pinned literals are committed. Only CONTRACT columns are compared:
+    the extras a run carries beyond the contract (raw MiD columns, ``trip_key``, the recorded
+    offset) are not part of the downstream contract this pin protects.
+    """
+    persons, wege = _persons_and_wege_with_person_attributes()
+    out = trips_stage.run(persons, wege, random_seed=20260910)
+
+    assert list(out.columns)[:len(trips_stage.CONTRACT)] == trips_stage.CONTRACT
+    assert out["person_id"].tolist() == [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]
+    assert out["trip_index"].tolist() == [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+    # Pinned from trips_stage.run at eff5720c (pre-Task-4) -- see the docstring above.
+    assert out["departure_time"].tolist() == [
+        20137.0, 59737.0, 27589.0, 62689.0, 30667.0, 61267.0,
+        23800.0, 60700.0, 24770.0, 60770.0, 30732.0, 62232.0]
+    assert out["arrival_time"].tolist() == [
+        20737.0, 60937.0, 28189.0, 63889.0, 31267.0, 62467.0,
+        24400.0, 61900.0, 25370.0, 61970.0, 31332.0, 63432.0]
+    # The explicit default must reproduce the implicit one, contract columns included.
+    explicit = trips_stage.run(persons, wege, random_seed=20260910,
+                               departure_time_model="eqasim_uniform")
+    pd.testing.assert_frame_equal(out[trips_stage.CONTRACT], explicit[trips_stage.CONTRACT])
+
+
+def test_run_with_srv_mapped_uses_the_model():
+    """``departure_time_model="srv_mapped"`` maps the fixture's first departures onto the
+    COMMITTED SrV reference cell of their (purpose, group), and shifts the whole chain with it.
+
+    ``departure_time_min_model_n=1`` is passed because the six-person fixture is far below the
+    production ``min_model_n`` default of 50; without it every person would legitimately stay
+    unmapped and the test would assert nothing about the mapping. The reference side keeps its
+    production threshold (the ``(employed, work)`` cell carries 4,649 observations).
+    """
+    from braunschweig.popsim.departure_time_model import (BIN_MINUTES, OFFSET_COLUMN,
+                                                          load_departure_time_reference)
+
+    reference = load_departure_time_reference(SRV_REFERENCE_DIR)
+    persons, wege = _persons_and_wege_with_person_attributes()
+    out = trips_stage.run(persons, wege, random_seed=20260910,
+                          departure_time_model="srv_mapped",
+                          departure_time_reference=reference,
+                          departure_time_min_model_n=1)
+
+    assert OFFSET_COLUMN in out.columns
+    first = out[out["trip_index"] == 0]
+    assert (first["following_purpose"] == "work").all()
+    # Every first departure must land in a 15-minute bin the (employed, work) reference cell
+    # actually carries mass in -- i.e. inside the SrV support, not merely somewhere plausible.
+    cell = reference[(reference["segment"] == "employed") & (reference["purpose"] == "work")]
+    support = set(cell.loc[cell["share_derounded"] > 0.0, "bin_15min"].astype(int))
+    bins = (first["departure_time"] // (BIN_MINUTES * 60)).astype(int)
+    assert set(bins) <= support, f"mapped bins {sorted(set(bins))} outside the SrV support"
+    # The chain moves rigidly: both trips of a person carry the SAME recorded offset, and the
+    # trip duration is untouched (the model's hold-out dimension).
+    assert (out.groupby("person_id")[OFFSET_COLUMN].nunique() == 1).all()
+    assert np.allclose(out["arrival_time"] - out["departure_time"], out["trip_duration"])
+    # The mapping actually happened: the offsets are not merely the de-rounding draw, whose
+    # half-width on a quarter-hour report is 450 s.
+    assert (out[OFFSET_COLUMN].abs() > 450.0).any()
+
+
+def test_run_rejects_an_unknown_departure_time_model():
+    persons, wege = _persons_and_wege_with_person_attributes()
+    with pytest.raises(ValueError, match="unknown model"):
+        trips_stage.run(persons, wege, random_seed=1, departure_time_model="quantile")
+
+
+def test_trips_stage_configure_registers_the_departure_time_keys():
+    from braunschweig.popsim.stage import (
+        DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+        DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MODEL,
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)
+    assert ctx.calls[KEY_DEPARTURE_TIME_MODEL] == DEFAULT_DEPARTURE_TIME_MODEL == "eqasim_uniform"
+    assert ctx.calls[KEY_DEPARTURE_TIME_MIN_REFERENCE_N] == DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N
+    assert ctx.calls[KEY_DEPARTURE_TIME_MIN_MODEL_N] == DEFAULT_DEPARTURE_TIME_MIN_MODEL_N
+    assert (ctx.calls[KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS]
+            == DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)
+    # The reference lives under data_path; the stage must declare that key to read it.
+    assert "data_path" in ctx.calls
+
+
+def test_departure_time_model_default_agrees_with_the_model_module():
+    """``config_keys`` is a leaf by contract, so it repeats the OFF model name as a literal --
+    pin it equal to the model module's own constant (same treatment as the passive-escort gap
+    default), or the two homes can silently disagree on what "off" means."""
+    from braunschweig.popsim.departure_time_model import MODEL_EQASIM_UNIFORM
+    from braunschweig.popsim.stage.config_keys import DEFAULT_DEPARTURE_TIME_MODEL
+
+    assert DEFAULT_DEPARTURE_TIME_MODEL == MODEL_EQASIM_UNIFORM
+
+
+def test_execute_raises_naming_the_key_when_the_srv_reference_is_missing(tmp_path):
+    """No silent fallback to ``eqasim_uniform``: a configured ``srv_mapped`` run whose committed
+    reference is not under ``data_path`` must ABORT with a message naming both the expected path
+    and the config key that requires it (CLAUDE.md fallback transparency)."""
+    from braunschweig.popsim.stage.config_keys import KEY_DEPARTURE_TIME_MODEL
+
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)
+    values = dict(ctx.calls)
+    values.update({"random_seed": 1, "data_path": str(tmp_path),
+                   KEY_DEPARTURE_TIME_MODEL: "srv_mapped",
+                   "braunschweig.population.popsim.mid_dir": str(tmp_path)})
+
+    class _ExecuteContext:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            raise AssertionError(f"stage {name!r} must not be read before the reference check")
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        trips_stage.execute(_ExecuteContext())
+    message = str(excinfo.value)
+    assert KEY_DEPARTURE_TIME_MODEL in message
+    assert str(tmp_path) in message
+
+
+def test_entd_source_rejects_the_departure_time_model():
+    """The ENTD trip build has its own jitter path and never reaches ``trips_stage.run``, so a
+    non-default model must RAISE naming the key rather than sit silently unapplied."""
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(ValueError, match="departure_time_model"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            departure_time_model="srv_mapped",
+        )

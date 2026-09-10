@@ -7,6 +7,8 @@ byte-identical to the input (ruling R2).
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -610,3 +612,141 @@ def test_build_day_trips_emits_no_pandas_performance_warning():
     assert list(first_person["is_last_trip"]) == [False, False, True]
     assert first_person["raw_mid_extra_0"].isna().all()
     assert list(first_person["mode"]) == ["bike", "bike", "bike"]
+
+
+# ---------------------------------------------------------------------------
+# Departure-time model on the spliced home-office chains (issue #123 Task 4, ADR-0114).
+# The replaced rows carry a DONOR's day placed on a RECEIVING person, so the start-time model
+# must be applied with the RECEIVING person's own attributes (ruling A-R7); ``departure_time=None``
+# keeps today's eqasim jitter byte-identically.
+# ---------------------------------------------------------------------------
+
+SRV_REFERENCE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "eqasim-data", "data", "braunschweig", "srv")
+
+
+def _receiving_persons():
+    """Synthetic-schema attributes for the fixture's persons: p2 (the replaced one) is an
+    employed adult, so its mapping cell is ``(employed, <first purpose of the donor chain>)``."""
+    return pd.DataFrame({
+        "person_id": ["p1", "p2", "p3", "p4", "p5"],
+        "household_id": [1, 2, 3, 4, 5],
+        "age": [40, 41, 42, 43, 44],
+        "employed": [True, True, True, True, False],
+    })
+
+
+def _departure_time_settings(model="srv_mapped", **overrides):
+    from braunschweig.popsim.departure_time_model import load_departure_time_reference
+
+    settings = dict(
+        model=model,
+        reference=load_departure_time_reference(SRV_REFERENCE_DIR) if model == "srv_mapped" else None,
+        min_reference_n=200, min_model_n=1, max_median_shift_hours=2.0,
+        persons=_receiving_persons())
+    settings.update(overrides)
+    return plan_replacement.DepartureTimeSettings(**settings)
+
+
+def test_replaced_rows_use_the_departure_time_model_when_settings_are_given():
+    """With settings the replaced rows go through ``apply_departure_time_model`` instead of the
+    eqasim jitter: the offset is recorded once per person, the whole donor chain moves rigidly,
+    the first departure lands inside the SrV support of the receiving person's cell, and no
+    untouched row is affected."""
+    from braunschweig.popsim.departure_time_model import BIN_MINUTES
+
+    trips = _trips_fixture()
+    # The real pre-assignment table always carries the recorded offset (trips_stage.run writes
+    # it); build_day_trips only keeps output columns the INPUT frame has, so a fixture without
+    # it would silently drop the very column this test reads.
+    trips[OFFSET_COLUMN] = 0.0
+    settings = _departure_time_settings()
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED, departure_time=settings)
+
+    p2_rows = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert len(p2_rows) == 3
+    assert p2_rows[OFFSET_COLUMN].nunique() == 1          # one offset for the whole chain
+    donor = _donor_trips_fixture().sort_values("trip_index").reset_index(drop=True)
+    offset = float(p2_rows[OFFSET_COLUMN].iloc[0])
+    assert np.allclose(p2_rows["departure_time"], np.round(donor["departure_time"] + offset))
+    assert np.allclose(p2_rows["arrival_time"], np.round(donor["arrival_time"] + offset))
+
+    # The donor's first leg goes to "work" and p2 is employed, so the mapping cell is
+    # (employed, work); the mapped first departure must sit in a bin that cell has mass in.
+    cell = settings.reference[(settings.reference["segment"] == "employed")
+                              & (settings.reference["purpose"] == "work")]
+    support = set(cell.loc[cell["share_derounded"] > 0.0, "bin_15min"].astype(int))
+    assert int(p2_rows["departure_time"].iloc[0] // (BIN_MINUTES * 60)) in support
+    # The model ran and reported itself, so a run log can state which model produced the day.
+    assert diagnostics["departure_time"]["model"] == "srv_mapped"
+    assert diagnostics["departure_time"]["n_persons"] == 1
+
+    # Untouched persons keep their original rows exactly.
+    untouched = ["p1", "p4", "p5"]
+    pd.testing.assert_frame_equal(
+        day_trips[day_trips["person_id"].isin(untouched)][list(trips.columns)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True),
+        trips[trips["person_id"].isin(untouched)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True))
+
+
+def test_departure_time_none_keeps_the_eqasim_jitter_byte_identically():
+    """The default (``departure_time=None``) must reproduce the pre-Task-4 output exactly, so
+    turning the model off is a genuine no-op rather than "close enough"."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED)
+    b, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=None)
+    pd.testing.assert_frame_equal(a, b)
+
+    # ... and it IS the eqasim jitter, not a model that happens to agree: the same donor rows
+    # jittered directly with the same seed give the same times.
+    expected = plan_replacement.apply_per_person_jitter(
+        _donor_trips_fixture().sort_values("trip_index").reset_index(drop=True)
+        .assign(person_id="p2"), RANDOM_SEED)
+    p2_rows = a[a["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert p2_rows["departure_time"].tolist() == expected["departure_time"].tolist()
+
+
+def test_eqasim_uniform_settings_are_byte_identical_to_no_settings_at_all():
+    """The reporting-day stage ALWAYS passes settings, so its OFF path is
+    ``DepartureTimeSettings(model="eqasim_uniform")`` -- which must produce exactly the frame the
+    pre-Task-4 ``departure_time=None`` call produced, or turning the feature off would still move
+    every spliced home-office day."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED)
+    b, diagnostics = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(model="eqasim_uniform"))
+    pd.testing.assert_frame_equal(a, b)
+    assert diagnostics["departure_time"]["model"] == "eqasim_uniform"
+
+
+def test_the_settings_use_the_receiving_persons_attributes_not_the_donors():
+    """Ruling A-R7: the mapping cell comes from the RECEIVING person. Two runs that differ ONLY
+    in the receiving person's age (school-age vs employed adult) must map the same donor chain
+    into different reference cells, i.e. produce different times."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    adult = _departure_time_settings()
+    child_persons = _receiving_persons()
+    child_persons.loc[child_persons["person_id"] == "p2", ["age", "employed"]] = [10, False]
+    child = _departure_time_settings(persons=child_persons)
+
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=adult)
+    b, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=child)
+    p2_a = a[a["person_id"] == "p2"]["departure_time"].tolist()
+    p2_b = b[b["person_id"] == "p2"]["departure_time"].tolist()
+    assert p2_a != p2_b
+
+
+def test_the_departure_time_settings_are_frozen():
+    """A frozen dataclass: the settings are read by the replacement and reported in the run log,
+    so they must not be mutated between the two."""
+    settings = _departure_time_settings(model="eqasim_uniform")
+    with pytest.raises(Exception):
+        settings.model = "srv_mapped"

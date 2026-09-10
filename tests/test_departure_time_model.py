@@ -522,3 +522,42 @@ def test_load_departure_time_reference_rejects_a_varying_n_unweighted(tmp_path):
 def test_load_departure_time_reference_reports_a_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError, match="srv2023_departure_time_reference.csv"):
         M.load_departure_time_reference(str(tmp_path))
+
+
+# --------------------------------------------------------------------------- Task 4 re-review
+def test_an_unmapped_cell_reports_the_size_of_its_last_pooled_attempt():
+    """Task 3 re-review observation (a): an unmapped cell used to report ``n_model_pooled ==
+    n_model`` although it never pooled at all, which reads as "this cell was ranked alone" when
+    in fact the LAST rung attempt pooled every still-unplaced person. Reporting that attempt's
+    size instead lets a reader see how far the cell actually was from ``min_model_n``."""
+    persons = _persons(55)
+    persons.loc[persons.index[10:], "age"] = 70        # 10 school-age + 45 senior, both thin
+    _table_out, diag = M.apply_departure_time_model(
+        _table(55), persons, model=M.MODEL_SRV_MAPPED, random_seed=1,
+        reference=_reference_with_pooled_purpose(), min_reference_n=100, min_model_n=100)
+
+    school = diag["cells"][("education", "school_age_6_17_not_employed")]
+    senior = diag["cells"][("education", "senior_65plus_not_employed")]
+    assert school["level"] == "unmapped" and senior["level"] == "unmapped"
+    assert school["n_model"] == 10 and senior["n_model"] == 45
+    # Both cells were pooled TOGETHER at the last attempt (the ("all", "all") rung): 55 persons,
+    # still below min_model_n = 100 -- that distance is exactly what the diagnostic must show.
+    assert school["n_model_pooled"] == 55 and senior["n_model_pooled"] == 55
+
+
+def test_a_malformed_arrival_before_the_earliest_departure_raises():
+    """The lower clip bounds the offset by the person's earliest DEPARTURE, so a malformed row
+    whose ARRIVAL precedes that departure can still be pushed below zero by a large negative
+    mapping offset. The post-shift check must RAISE (never an assert -- ``python -O`` strips
+    those) rather than let a negative time reach the MATSim plans.
+
+    The fixture maps 60 school-age education persons onto a reference peaking in bin 0 (00:00 -
+    00:15), so every offset is about -7 h, and row 0's arrival is set to 100 s after midnight --
+    far below its own person's 7:00 first departure, which is what the lower clip protects.
+    """
+    table = _table(60)
+    table.loc[0, "arrival_time"] = 100.0
+    with pytest.raises(ValueError, match="negative after the model"):
+        M.apply_departure_time_model(table, _persons(60), model=M.MODEL_SRV_MAPPED,
+                                     random_seed=1, reference=_reference(peak_bin=0),
+                                     min_reference_n=100, min_model_n=1)

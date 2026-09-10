@@ -35,11 +35,16 @@ Per person, by ``commute_day_state``:
   per-person jitter below RECOMPUTES for the receiving person a few lines later and which must
   therefore never be nulled in between (ruling A-R8, issue #123 review fix round 1: nulling then
   immediately overwriting inflated ``n_extra_columns_nulled`` by one without ever producing an
-  observable null). The per-person departure-time jitter
-  (:func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`) is applied EXACTLY ONCE,
+  observable null). The departure-time model
+  (:func:`braunschweig.popsim.departure_time_model.apply_departure_time_model`, issue #123 Task
+  4 -- by default the unchanged per-person jitter
+  :func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`) is applied EXACTLY ONCE,
   across all replaced rows together, keyed by the RECEIVING person_id (ruling R2) -- the donor's
   own chain was built by :func:`donor_pool.donor_trips` WITHOUT that jitter for precisely this
   reason (applying it twice would double-jitter the same donor day once copied onto a person).
+  Which model runs is selected by the OPTIONAL ``departure_time`` argument of
+  :func:`build_day_trips` (a :class:`DepartureTimeSettings`); with ``None`` the replaced rows
+  get today's jitter byte-identically.
 * ``home`` WITHOUT a donor match (:func:`matching.match_home_office_donors` found no replaceable
   cell) -- the person's original rows are kept UNCHANGED and counted in
   ``diagnostics["n_home_unmatched"]``; ADR-0104 leaves it to the state stage (a later Phase B
@@ -52,12 +57,16 @@ the input ``trips`` table's remaining columns in their original relative order.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
+from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.popsim.departure_time_model import (MODEL_EQASIM_UNIFORM, OFFSET_COLUMN,
+                                                      apply_departure_time_model,
+                                                      persons_from_synthetic_schema)
 from braunschweig.popsim.trips_stage import CONTRACT, apply_per_person_jitter
 
 logger = logging.getLogger(__name__)
@@ -108,6 +117,44 @@ ESCORT_PURPOSE = "escort"
 CHILD_MAX_AGE_YEARS = 17
 
 
+@dataclasses.dataclass(frozen=True)
+class DepartureTimeSettings:
+    """Everything :func:`build_day_trips` needs to run a departure-time model on replaced rows.
+
+    Grouped into one FROZEN object rather than five loose keyword arguments because the five
+    values are only ever meaningful together: the model name decides whether the reference and
+    the three thresholds are read at all, and a caller that passed four of the five would be
+    configuring a model that silently used a default for the fifth. Frozen so the settings a run
+    logs are provably the settings it applied.
+
+    Attributes
+    ----------
+    model:
+        One of :data:`braunschweig.popsim.departure_time_model.MODELS`.
+    reference:
+        The ``position == "first"`` SrV reference frame, REQUIRED for ``"srv_mapped"`` and
+        ``None`` otherwise (:func:`~braunschweig.popsim.departure_time_model.load_departure_time_reference`).
+    min_reference_n, min_model_n:
+        Thresholds of the ``"srv_mapped"`` coarsening ladder (unweighted reference observations
+        per cell / model persons pooled at a rung).
+    max_median_shift_hours:
+        Median-|shift| warning threshold per mapping cell, in HOURS.
+    persons:
+        The RECEIVING population's attributes (``person_id``, ``age``, ``employed``) -- the
+        synthetic-population schema, adapted by
+        :func:`~braunschweig.popsim.departure_time_model.persons_from_synthetic_schema`. Ruling
+        A-R7: a spliced donor day is calibrated against the cell of the person who EXECUTES it,
+        never the donor's own, so this frame must describe the receiving persons.
+    """
+
+    model: str = MODEL_EQASIM_UNIFORM
+    reference: pd.DataFrame = None
+    min_reference_n: int = _departure_time_model.DEFAULT_MIN_REFERENCE_N
+    min_model_n: int = _departure_time_model.DEFAULT_MIN_MODEL_N
+    max_median_shift_hours: float = _departure_time_model.DEFAULT_MAX_MEDIAN_SHIFT_HOURS
+    persons: pd.DataFrame = None
+
+
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
@@ -152,11 +199,54 @@ def _replaced_rows(donor_blocks, person_ids, other_extra_columns):
     return replaced
 
 
+def _apply_departure_time(replaced: pd.DataFrame, *, random_seed: int,
+                          settings: DepartureTimeSettings):
+    """Apply the configured start-time model to the replaced rows and report what it did.
+
+    With ``settings=None`` this is exactly today's ``apply_per_person_jitter`` call, so the
+    default path is byte-identical; with settings the model runs on the RECEIVING persons
+    restricted to the replaced set -- restricted because
+    :func:`~braunschweig.popsim.departure_time_model.apply_departure_time_model` ranks a mapping
+    cell's persons AGAINST EACH OTHER, so handing it the whole population would rank the replaced
+    persons among people whose day this call is not touching and give them a different quantile
+    than the set actually being calibrated.
+
+    Returns ``(replaced, diagnostics)``; ``diagnostics`` is ``None`` on the jitter path (no model
+    ran, and a substituted empty report would read as "the model found nothing to do").
+    """
+    if settings is None:
+        return apply_per_person_jitter(replaced, random_seed), None
+    model_persons = None
+    if settings.model != MODEL_EQASIM_UNIFORM:
+        if settings.persons is None:
+            raise ValueError(
+                f"{_LOG_TAG} departure_time.model={settings.model!r} needs the RECEIVING "
+                "persons' attributes (person_id, age, employed) to pick a mapping cell, but "
+                "DepartureTimeSettings.persons is None (ruling A-R7).")
+        model_persons = persons_from_synthetic_schema(settings.persons)
+        model_persons = model_persons[
+            model_persons["person_id"].isin(replaced["person_id"].unique())]
+    replaced, diagnostics = apply_departure_time_model(
+        replaced, model_persons,
+        model=settings.model, random_seed=random_seed, reference=settings.reference,
+        min_reference_n=int(settings.min_reference_n),
+        min_model_n=int(settings.min_model_n),
+        max_median_shift_hours=float(settings.max_median_shift_hours))
+    logger.info(
+        "%s departure-time model on the replaced rows: %s -- %d person(s), %d trip row(s); "
+        "mapping level: %s; unmapped %d/%d", _LOG_TAG, diagnostics["model"],
+        diagnostics["n_persons"], diagnostics["n_trips"],
+        _departure_time_model.format_level_split(diagnostics),
+        diagnostics["n_persons_unmapped"], diagnostics["n_persons"])
+    return replaced, diagnostics
+
+
 def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataFrame,
                     donor_trips: pd.DataFrame, *, random_seed: int,
                     donor_attributes: pd.DataFrame = None,
                     general_absence: pd.DataFrame = None,
-                    persons: pd.DataFrame = None) -> tuple[pd.DataFrame, dict]:
+                    persons: pd.DataFrame = None,
+                    departure_time: DepartureTimeSettings = None) -> tuple[pd.DataFrame, dict]:
     """Build the reporting-day trips table from a state draw and a donor match.
 
     ``trips`` -- the pre-assignment ``synthesis.population.trips`` table (CONTRACT columns plus
@@ -191,6 +281,17 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     ``day_trips`` frame are unaffected by whether it is given. With ``persons=None`` (the
     default) that one diagnostic is ``None`` and is logged as "not computed" rather than a
     substituted 0, so a caller can tell "nobody" apart from "not measured".
+
+    ``departure_time`` -- OPTIONAL (issue #123, Task 4, ADR-0114): a
+    :class:`DepartureTimeSettings` selecting the START-TIME model applied to the REPLACED rows.
+    With ``None`` (the default) the replaced rows get today's eqasim per-person jitter
+    byte-identically; with settings they go through
+    :func:`braunschweig.popsim.departure_time_model.apply_departure_time_model` using the
+    RECEIVING persons' attributes (ruling A-R7), so a spliced donor day starts where the SrV
+    distribution of the person who executes it says -- not where the donor's diary happened to
+    start. Either way the model runs EXACTLY ONCE, on the replaced rows only (ruling R2). The
+    model's own diagnostics are returned under the ``"departure_time"`` key and logged with the
+    per-level split, so a run can state which model produced its reporting day.
 
     Returns ``(day_trips, diagnostics)``. ``diagnostics``: ``n_persons_replaced`` (``home``
     persons with a donor match, general absence excluded -- including a donor whose own day has
@@ -355,13 +456,15 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     n_trips_added = sum(len(block) for block in donor_blocks)
     n_extra_columns_nulled = len(other_extra_columns) if donor_blocks else 0
 
+    departure_time_diagnostics = None
     if donor_blocks:
         replaced = _replaced_rows(donor_blocks, replaced_person_ids, other_extra_columns)
         replaced = replaced.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
-        # Ruling R2: the per-person jitter is applied EXACTLY ONCE here, on the replaced rows
+        # Ruling R2: the start-time model is applied EXACTLY ONCE here, on the replaced rows
         # only, keyed by the RECEIVING person_id -- never on the donor's own chain (donor_pool
         # deliberately omits it) and never on untouched rows.
-        replaced = apply_per_person_jitter(replaced, random_seed)
+        replaced, departure_time_diagnostics = _apply_departure_time(
+            replaced, random_seed=random_seed, settings=departure_time)
         result = pd.concat([kept_rows, replaced], ignore_index=True, sort=False)
     else:
         # No rows to splice in at all (no home persons, no matches, or every matched donor was
@@ -434,6 +537,9 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
         "share_donors_immobile": float(share_donors_immobile),
         "n_absent_with_escort_leg": n_absent_with_escort_leg,
         "n_children_with_absent_escorter": n_children_with_absent_escorter,
+        # None on the jitter path and when nothing was replaced at all -- never a substituted
+        # empty report, which would read as "the model ran and found nothing".
+        "departure_time": departure_time_diagnostics,
     }
 
     logger.info(

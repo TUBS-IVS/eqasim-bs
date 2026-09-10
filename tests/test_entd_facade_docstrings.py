@@ -100,6 +100,12 @@ _EXPECTED_SIGNATURES = {
     # ValueError -- the ENTD frames carry neither the MiD W_ZWECK 13 passive leg nor the
     # household diary (member age + departure time) the pairing needs, and the gap is
     # rejected alongside the flag so a tuned window cannot sit silently inert (ruling C-R7).
+    # The five departure_time_* keywords were added 2026-09-10 (departure-time model, issue #123
+    # task 4, ADR-0114) for the same reason: trips_stage.execute passes all five to every source
+    # adapter. EntdSource ACCEPTS and REJECTS the MODEL with a ValueError -- its trips come from
+    # entd_trips.build_trips, which applies the eqasim jitter itself and never reaches the model
+    # -- while the loaded reference and the three thresholds are accepted and ignored, the
+    # closure_dwell_min_obs treatment (they only size a mapping the model rejection forbids).
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
@@ -111,7 +117,12 @@ _EXPECTED_SIGNATURES = {
         "closure_dwell_min_obs: 'int' = 30, "
         "w_zweck_10_as_leisure: 'bool' = False, "
         "escort_passive_from_adult: 'bool' = False, "
-        "passive_pair_max_gap_minutes: 'float' = 15.0) -> 'pd.DataFrame'"
+        "passive_pair_max_gap_minutes: 'float' = 15.0, "
+        "departure_time_model: 'str' = 'eqasim_uniform', "
+        "departure_time_reference: 'pd.DataFrame' = None, "
+        "departure_time_min_reference_n: 'int' = 200, "
+        "departure_time_min_model_n: 'int' = 50, "
+        "departure_time_max_median_shift_hours: 'float' = 2.0) -> 'pd.DataFrame'"
     ),
 }
 

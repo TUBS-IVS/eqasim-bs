@@ -202,6 +202,12 @@ config:
   # sit silently inert here (see ENTD_REJECTED_KEYS).
   escort_passive_from_adult: false
   escort_passive_pair_max_gap_minutes: 15.0
+  # Departure-time model (issue #123, ADR-0114), also a FLAT key. The ENTD trip build applies
+  # the eqasim per-person jitter in braunschweig.popsim.sources.entd_trips and never reaches
+  # the model in braunschweig.popsim.trips_stage.run, so EntdSource.build_trips rejects any
+  # other value (see ENTD_REJECTED_KEYS). Its three numeric parameters are NOT rejected -- they
+  # only size a mapping this key already forbids -- so they are left at their defaults here.
+  departure_time_model: eqasim_uniform
 
   # --- Feature flags --------------------------------------------------------
   education_gravity_enabled: false

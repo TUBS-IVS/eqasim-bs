@@ -54,6 +54,14 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         # (ADR-0112), with the pairing's time window in minutes. trips_stage.execute reads and
         # passes both, so all four layers must carry them.
         "escort_passive_from_adult", "passive_pair_max_gap_minutes",
+        # Added 2026-09-10 (departure-time model, issue #123 task 4, controller ruling A-R6):
+        # which start-time model the trip build applies (ADR-0114), the loaded SrV reference
+        # frame the srv_mapped model maps onto, and the three thresholds of its coarsening
+        # ladder / median-shift guard. trips_stage.execute reads all five and passes them to
+        # source.build_trips, so all four layers must carry them.
+        "departure_time_model", "departure_time_reference",
+        "departure_time_min_reference_n", "departure_time_min_model_n",
+        "departure_time_max_median_shift_hours",
     }
 
 

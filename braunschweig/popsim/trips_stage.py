@@ -18,6 +18,15 @@ OFFSET_COLUMN (rounded to whole seconds, the same rounding as departure_time/arr
 later analysis can decompose a jittered time as departure_time = raw_departure_time + offset
 without re-deriving the offset from the RNG stream. This is purely an additional output column;
 the OFF/default jitter values (departure_time, arrival_time) are unchanged.
+
+Since issue #123 Task 4 (ADR-0114) that jitter is no longer called directly: run() dispatches
+through braunschweig.popsim.departure_time_model.apply_departure_time_model, selected by the
+``departure_time_model`` config key. Its default "eqasim_uniform" delegates straight back to
+apply_per_person_jitter below, so the default path stays byte-identical; "derounded" replaces the
+uniform draw by the survey's own reporting precision, and "srv_mapped" additionally quantile-maps
+the first departure onto the committed SrV first-departure distribution of the person's
+(purpose x harmonised group) cell. In every model the whole chain moves by ONE offset, so trip
+and activity durations are untouched.
 """
 
 from __future__ import annotations
@@ -30,6 +39,10 @@ import logging
 import numpy as np
 import pandas as pd
 
+from braunschweig.calibration import reported_time_precision as _reported_time_precision
+from braunschweig.calibration import srv_departure_times as _srv_departure_times
+from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
+from braunschweig.popsim import attributes as _attributes
 from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import diary_facts as _diary_facts
@@ -47,7 +60,12 @@ from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellM
 # the cross-file own-package-import guard (tests/test_synpp_helper_hash_invariant.py) fails, and
 # a rename of OFFSET_COLUMN's string value would otherwise silently change this stage's output
 # column name without invalidating the cached trip table (the 2026-08-19 hazard class again).
-from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
+from braunschweig.popsim.departure_time_model import (
+    DEFAULT_MAX_MEDIAN_SHIFT_HOURS as DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+    DEFAULT_MIN_MODEL_N as DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+    DEFAULT_MIN_REFERENCE_N as DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
+    MODEL_EQASIM_UNIFORM, MODELS, OFFSET_COLUMN, apply_departure_time_model,
+    persons_from_mid_schema)
 # The passive-escort pairing gap default lives with the trip build (braunschweig.popsim.trips)
 # and is re-exported through it here rather than re-typed, so this stage and map_purpose can
 # never disagree on the threshold a run uses when the config leaves it unset.
@@ -86,14 +104,22 @@ _HELPER_MODULES = (
     # stage's trip purposes without changing trips.py, so it is hashed for exactly the reason
     # trips.py itself is.
     _escort_pairing,
-    # departure_time_model currently holds only OFFSET_COLUMN (issue #123, Phase 0 Task 1); hashed
-    # here because apply_per_person_jitter WRITES that name as a column, so a rename would silently
-    # change this stage's output schema without invalidating the cache. From Task 3 onward the
-    # module also gains apply_departure_time_model and its dispatch, which trips_stage does not
-    # call directly (the departure-time model calls INTO trips_stage.apply_per_person_jitter, not
-    # the other way around) -- but hashing it now costs nothing and avoids a second silent gap
-    # later when that logic lands.
+    # departure_time_model owns OFFSET_COLUMN (whose string value IS this stage's output column
+    # name) AND, since Task 3 of issue #123, apply_departure_time_model -- which run() now calls
+    # for every trip table, so it decides every realised departure and arrival time. A rename or
+    # a changed model rule there must devalidate this stage's cached trips.
     _departure_time_model,
+    # The four modules departure_time_model itself imports at module level. validate() hashes
+    # _HELPER_MODULES NON-transitively (inspect.getsource of each named module only), so hashing
+    # departure_time_model does NOT cover them: an edit to the reporting-precision half widths,
+    # to the reference table's bin geometry, to the harmonised group rule the mapping cell is
+    # keyed on, or to EMPLOYED_TAET would otherwise change every departure time this stage
+    # produces while its cache happily served the old table (the 2026-08-19 hazard class).
+    # Over-hashing costs a rebuild; under-hashing serves stale trips.
+    _reported_time_precision,
+    _srv_departure_times,
+    _srv_plan_structure,
+    _attributes,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -396,6 +422,24 @@ def _log_closure_share(table: pd.DataFrame) -> None:
     )
 
 
+def _log_departure_time_model(diagnostics: dict) -> None:
+    """Log WHICH start-time model produced this trip table and, for ``srv_mapped``, at which
+    level of the coarsening ladder each person was calibrated.
+
+    The model logs its own per-cell detail under its own logger; this line exists so the STAGE's
+    log states the model and the level split too (CLAUDE.md fallback transparency: a person left
+    at ``unmapped`` kept the donor's own start time, i.e. the SrV calibration did NOT happen for
+    them, and that must be visible where the trip table is reported). The split string comes from
+    :func:`braunschweig.popsim.departure_time_model.format_level_split`, the single home of that
+    formatting, so this line and the model's own can never disagree.
+    """
+    logger.info(
+        "[trips_stage] departure-time model: %s -- %d person(s), %d trip row(s); mapping level: "
+        "%s; unmapped %d/%d", diagnostics["model"], diagnostics["n_persons"],
+        diagnostics["n_trips"], _departure_time_model.format_level_split(diagnostics),
+        diagnostics["n_persons_unmapped"], diagnostics["n_persons"])
+
+
 def apply_per_person_jitter(table: pd.DataFrame, random_seed: int) -> pd.DataFrame:
     """Apply the eqasim per-person departure-time jitter to a trips table.
 
@@ -493,6 +537,11 @@ def run(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    departure_time_model: str = MODEL_EQASIM_UNIFORM,
+    departure_time_reference: pd.DataFrame = None,
+    departure_time_min_reference_n: int = DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
+    departure_time_min_model_n: int = DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+    departure_time_max_median_shift_hours: float = DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -557,6 +606,40 @@ def run(
         ``escort_passive_pair_max_gap_minutes``); inert while
         ``escort_passive_from_adult`` is False. Default
         :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
+    departure_time_model:
+        which START-TIME model shapes the person's first departure (issue #123,
+        ADR-0114): one of
+        :data:`braunschweig.popsim.departure_time_model.MODELS`. The default
+        ``"eqasim_uniform"`` delegates to :func:`apply_per_person_jitter` and is
+        byte-identical to the pre-#123 behaviour; ``"derounded"`` de-rounds the
+        reported first departure inside the survey's own reporting grid; and
+        ``"srv_mapped"`` additionally quantile-maps it, rank-preservingly within
+        the person's ``(first purpose x harmonised group)`` cell, onto the
+        committed SrV first-departure distribution. Whatever the model, the
+        WHOLE chain of a person moves by ONE offset, so trip and activity
+        durations (the model's hold-out dimension) are untouched. Config key
+        ``departure_time_model``; the production value is set in
+        configs/base_bs.yml (see ``braunschweig.popsim.stage.config_keys.
+        KEY_DEPARTURE_TIME_MODEL`` for the ONE statement of both defaults).
+    departure_time_reference:
+        the ``position == "first"`` SrV reference frame
+        (:func:`braunschweig.popsim.departure_time_model.load_departure_time_reference`),
+        REQUIRED for ``"srv_mapped"`` and ignored by the other two models. Passed
+        as a loaded frame rather than a path so this function stays free of file
+        I/O; :func:`execute` loads it from ``data_path``.
+    departure_time_min_reference_n:
+        minimum unweighted SrV observations a reference cell must carry for the
+        ``srv_mapped`` coarsening ladder to map onto it (config key
+        ``departure_time_mapping_min_reference_n``). Unit: observations.
+    departure_time_min_model_n:
+        minimum number of MODEL persons pooled at a ladder rung for that rung to
+        be used; a thinner set climbs to the next rung (config key
+        ``departure_time_mapping_min_model_n``). Unit: persons.
+    departure_time_max_median_shift_hours:
+        a mapping cell whose median |shift| exceeds this is WARNED about, naming
+        the cell (config key
+        ``departure_time_mapping_max_median_shift_hours``). Unit: hours. The
+        offsets are never clipped to it.
 
     Returns
     -------
@@ -569,6 +652,14 @@ def run(
     # Resample unfixable persons (e.g. NaN-time rbW/kA records, MiD codes 701/99)
     # from same-cell donors so no NaN time and no multi-day timestamp survives.
     resample_cell_col = _resolve_resample_cell_col(persons)
+    # Built HERE, before the expensive dwell-model estimation and trip build below, so a persons
+    # frame without the MiD person attributes the model needs (HP_ALTER / P_TAET) fails within
+    # seconds instead of after the whole table has been assembled. Built ONLY for the models that
+    # consume it: the eqasim_uniform path must not start requiring those columns on a frame that
+    # never carried them (a popsim_mid unit fixture, for instance).
+    model_persons = None
+    if departure_time_model != MODEL_EQASIM_UNIFORM:
+        model_persons = persons_from_mid_schema(persons)
     # Built BEFORE the trip table: the empirical model must see the donor diaries
     # as reported, i.e. before any synthetic closure has been appended to them.
     dwell_model = build_closure_dwell_model(
@@ -646,11 +737,23 @@ def run(
         )
 
     # --------------------------------------------------------------------------
-    # Per-person departure-time jitter.
-    # Delegates to the shared apply_per_person_jitter (factored so the ENTD
-    # adapter can call the same formula without duplication).
+    # Per-person departure-time model (issue #123, ADR-0114).
+    # The "eqasim_uniform" default dispatches straight back into the shared
+    # apply_per_person_jitter above, so the OFF path stays byte-identical; the
+    # other two models replace the uninformative uniform draw by the survey's own
+    # reporting precision, optionally followed by the SrV quantile mapping.
     # --------------------------------------------------------------------------
-    table = apply_per_person_jitter(table, random_seed=random_seed)
+    # model_persons was built at the top of this function (fail fast on a schema mismatch).
+    table, departure_time_diagnostics = apply_departure_time_model(
+        table, model_persons,
+        model=departure_time_model,
+        random_seed=random_seed,
+        reference=departure_time_reference,
+        min_reference_n=int(departure_time_min_reference_n),
+        min_model_n=int(departure_time_min_model_n),
+        max_median_shift_hours=float(departure_time_max_median_shift_hours),
+    )
+    _log_departure_time_model(departure_time_diagnostics)
 
     # Absolute plan-time bound (final backstop): midnight-crossing repairs may
     # legitimately push times past 24h, but PlanValidator classifies any person
@@ -692,11 +795,15 @@ def configure(context):
     # The shared key/default constants every stage that reads these flags declares them
     # with (braunschweig.popsim.stage.config_keys is the single home for both halves).
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+        DEFAULT_DEPARTURE_TIME_MIN_MODEL_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
+        DEFAULT_DEPARTURE_TIME_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
         DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
-        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+        KEY_DEPARTURE_TIME_MIN_MODEL_N, KEY_DEPARTURE_TIME_MIN_REFERENCE_N,
+        KEY_DEPARTURE_TIME_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_W_ZWECK_10_AS_LEISURE,
@@ -762,6 +869,22 @@ def configure(context):
             "(without a dedicated escort purpose there is no passive side to re-derive from "
             "the accompanying adult's leg); set both keys consistently."
         )
+    # Departure-time model (issue #123, ADR-0114): declared with the SHARED key/default
+    # constants for the same reason the flags above are -- the reporting-day plan replacement
+    # (braunschweig.synthesis.commute_day.trips_day_stage) reads the SAME four keys, and the
+    # pre-assignment day and the reporting day must be built with the SAME start-time model or
+    # a spliced home-office chain would follow a different start-time distribution than the day
+    # it replaces. Declared default "eqasim_uniform" (byte-identical); the production value is
+    # added to configs/base_bs.yml by task 6 (see config_keys.KEY_DEPARTURE_TIME_MODEL for the
+    # ONE statement of both defaults).
+    context.config(KEY_DEPARTURE_TIME_MODEL, DEFAULT_DEPARTURE_TIME_MODEL)
+    context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N)
+    context.config(KEY_DEPARTURE_TIME_MIN_MODEL_N, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N)
+    context.config(KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+                   DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)
+    # Root of the committed reference data; the SrV departure-time reference the "srv_mapped"
+    # model maps onto is read from <data_path>/braunschweig/srv in execute().
+    context.config("data_path")
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -778,6 +901,26 @@ def configure(context):
 
 def execute(context):
     from braunschweig.popsim import sources
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+
+    # Resolved FIRST, before any upstream stage output is pulled in: a misconfigured
+    # departure-time model (unknown name, or srv_mapped without its committed reference) must
+    # abort immediately rather than after the donor tables and the whole trip build.
+    departure_time_model_name = str(context.config(KEY_DEPARTURE_TIME_MODEL))
+    if departure_time_model_name not in MODELS:
+        raise ValueError(
+            f"[trips_stage] {KEY_DEPARTURE_TIME_MODEL}={departure_time_model_name!r} is not a "
+            f"known departure-time model; expected one of {list(MODELS)}.")
+    departure_time_reference = _departure_time_model.load_reference_for_model(
+        context.config("data_path"), departure_time_model_name,
+        config_key=KEY_DEPARTURE_TIME_MODEL)
+    departure_time_min_reference_n = int(context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N))
+    departure_time_min_model_n = int(context.config(KEY_DEPARTURE_TIME_MIN_MODEL_N))
+    departure_time_max_median_shift_hours = float(
+        context.config(KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS))
 
     persons = context.stage("persons")
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
@@ -832,4 +975,9 @@ def execute(context):
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        departure_time_model=departure_time_model_name,
+        departure_time_reference=departure_time_reference,
+        departure_time_min_reference_n=departure_time_min_reference_n,
+        departure_time_min_model_n=departure_time_min_model_n,
+        departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
     )

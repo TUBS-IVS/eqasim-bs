@@ -40,7 +40,12 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             drop_leading_arrive_home_leg=False, closure_dwell_model="fixed_1h",
             closure_dwell_min_obs=30, w_zweck_10_as_leisure=False,
             escort_passive_from_adult=False,
-            passive_pair_max_gap_minutes=15.0) -> trips:
+            passive_pair_max_gap_minutes=15.0,
+            departure_time_model="eqasim_uniform",
+            departure_time_reference=None,
+            departure_time_min_reference_n=200,
+            departure_time_min_model_n=50,
+            departure_time_max_median_shift_hours=2.0) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -61,6 +66,12 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
     (issue #372, ADR-0112), with ``passive_pair_max_gap_minutes`` the pairing's
     time window in minutes; both are MiD-specific and must be REJECTED on a
     non-default value by an adapter that cannot pair.
+    ``departure_time_model`` selects the START-TIME model applied to the finished
+    chains (issue #123, ADR-0114) and ``departure_time_reference`` carries the
+    loaded SrV reference the ``"srv_mapped"`` model maps onto, with the three
+    ``departure_time_min_*`` / ``departure_time_max_median_shift_hours``
+    thresholds parameterising it; an adapter that cannot apply the model must
+    REJECT a non-default model value.
 """
 
 from __future__ import annotations
@@ -194,6 +205,11 @@ class PopsimSource(Protocol):
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        departure_time_model: str = "eqasim_uniform",
+        departure_time_reference: pd.DataFrame = None,
+        departure_time_min_reference_n: int = 200,
+        departure_time_min_model_n: int = 50,
+        departure_time_max_median_shift_hours: float = 2.0,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -255,6 +271,29 @@ class PopsimSource(Protocol):
             while ``escort_passive_from_adult`` is False, but an adapter that
             rejects the flag must reject a non-default gap too, so a
             deliberately tuned value cannot pass silently unapplied.
+        departure_time_model:
+            which START-TIME model shapes each person's first departure (issue
+            #123, ADR-0114): one of
+            :data:`braunschweig.popsim.departure_time_model.MODELS`. The default
+            ``"eqasim_uniform"`` is the unchanged eqasim per-person jitter. An
+            adapter that cannot apply the other models must REJECT a non-default
+            value naming the config key rather than silently applying the jitter
+            anyway -- the caller would otherwise believe a start-time
+            calibration happened that never did.
+        departure_time_reference:
+            the loaded ``position == "first"`` SrV reference frame
+            (:func:`braunschweig.popsim.departure_time_model.load_departure_time_reference`),
+            REQUIRED for ``"srv_mapped"`` and ignored by the other models. Passed
+            as a frame, not a path, so no adapter performs file I/O for it.
+        departure_time_min_reference_n / departure_time_min_model_n:
+            thresholds of the ``srv_mapped`` coarsening ladder (minimum
+            unweighted reference observations per cell / minimum model persons
+            pooled at a rung). Inert for an adapter that only supports
+            ``"eqasim_uniform"``, which never maps.
+        departure_time_max_median_shift_hours:
+            cell-level observability guard of the ``srv_mapped`` mapping, in
+            HOURS; a cell whose median |shift| exceeds it is warned about. Inert
+            for the same reason.
 
         Returns
         -------

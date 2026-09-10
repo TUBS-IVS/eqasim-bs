@@ -90,6 +90,16 @@ MODELS = (MODEL_EQASIM_UNIFORM, MODEL_DEROUNDED, MODEL_SRV_MAPPED)
 #: stream (ruling A-R2; the value was verified unused elsewhere in the repository).
 DEPARTURE_TIME_SEED_OFFSET = 7361
 
+#: CODE defaults of the three ``srv_mapped`` parameters, stated ONCE here (this module owns the
+#: mapping) and used as the keyword defaults of :func:`apply_departure_time_model` and of
+#: :func:`braunschweig.popsim.trips_stage.run`. The config-key module
+#: :mod:`braunschweig.popsim.stage.config_keys` repeats them as literals because it is a leaf by
+#: contract; the two homes are pinned equal by ``tests/test_popsim_trips_stage.py``.
+#: Unit: unweighted SrV observations / synthetic persons / hours. Valid range: >= 1, >= 1, > 0.
+DEFAULT_MIN_REFERENCE_N = 200
+DEFAULT_MIN_MODEL_N = 50
+DEFAULT_MAX_MEDIAN_SHIFT_HOURS = 2.0
+
 #: Coarsening ladder of the quantile mapping, most specific first: the person's own
 #: ``(purpose, group)`` reference cell, then that purpose pooled over all groups, then the fully
 #: pooled cell; ``unmapped`` means no rung was usable (too few reference observations, too few
@@ -100,6 +110,11 @@ LEVEL_PURPOSE_ALL = "purpose_all"
 LEVEL_ALL_ALL = "all_all"
 LEVEL_UNMAPPED = "unmapped"
 LEVEL_LABELS = (LEVEL_PURPOSE_GROUP, LEVEL_PURPOSE_ALL, LEVEL_ALL_ALL, LEVEL_UNMAPPED)
+
+#: Subdirectory of a run's ``data_path`` holding the committed SrV reference tables. Stated here
+#: (next to :func:`load_departure_time_reference`, which consumes it) so every stage that loads
+#: the reference resolves the SAME directory instead of re-typing the two path segments.
+SRV_SUBDIR = ("braunschweig", "srv")
 
 #: Reference position consumed by the model: the person's FIRST trip of the day (the calibrated
 #: target; "later"/"all" are hold-out -- see the module docstring).
@@ -336,6 +351,44 @@ def load_departure_time_reference(srv_dir: str) -> pd.DataFrame:
     return first
 
 
+def load_reference_for_model(data_path, model: str, *, config_key: str):
+    """The reference a run's ``model`` needs, loaded from ``<data_path>/braunschweig/srv``.
+
+    Returns ``None`` for every model that consumes no reference (``eqasim_uniform``,
+    ``derounded``) -- loading one for them would make a run fail on a file it never reads. For
+    ``srv_mapped`` a MISSING file aborts the run with a message naming BOTH the expected path and
+    ``config_key``, the config key that required it; there is deliberately no fall back to
+    ``eqasim_uniform``, because a run configured for the SrV start-time calibration that silently
+    produced un-calibrated departure times is exactly the hidden defect CLAUDE.md's
+    fallback-transparency rule exists to stop.
+
+    Shared by every stage that resolves the model from config
+    (:mod:`braunschweig.popsim.trips_stage`,
+    :mod:`braunschweig.synthesis.commute_day.trips_day_stage`) so all of them fail identically.
+
+    Parameters
+    ----------
+    data_path:
+        The run's ``data_path`` config value (root of the committed reference data).
+    model:
+        The configured model name -- one of :data:`MODELS`.
+    config_key:
+        The config key ``model`` was read from, quoted in the error message so the reader knows
+        which setting to change.
+    """
+    if model != MODEL_SRV_MAPPED:
+        return None
+    srv_dir = os.path.join(str(data_path), *SRV_SUBDIR)
+    try:
+        return load_departure_time_reference(srv_dir)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            "departure_time_model: %s=%r requires the committed SrV departure-time reference "
+            "under %s, which was not found: %s Set %s to '%s' to run without the SrV start-time "
+            "calibration -- it is never dropped silently."
+            % (config_key, model, srv_dir, error, config_key, MODEL_EQASIM_UNIFORM)) from error
+
+
 def _reference_cells(reference: pd.DataFrame, source: str) -> dict:
     """``{(purpose, segment): (share_derounded per bin, n_unweighted)}`` -- validated and ordered
     by ``bin_15min`` so the array index IS the bin index."""
@@ -493,7 +546,11 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
         ``{"n_model", "n_model_pooled", "n_reference", "level", "median_shift_min",
         "median_abs_shift_min"}``. ``n_model`` counts the cell's OWN persons, ``n_model_pooled``
         the persons ranked together at the rung it mapped at (the two are equal at
-        ``purpose_group`` level); the medians are over the cell's own persons, so a caller can
+        ``purpose_group`` level). For an UNMAPPED cell -- which by definition never pooled --
+        ``n_model_pooled`` is the size of the LAST pooled ATTEMPT, i.e. of the ``("all", "all")``
+        set that cell was part of, so a reader sees how far that attempt was from
+        ``min_model_n`` instead of a copy of the cell's own size that reads as "ranked alone".
+        The medians are over the cell's own persons, so a caller can
         guard per cell (:func:`apply_departure_time_model` warns above ``max_median_shift_hours``)
         -- the offsets themselves are NEVER clipped here, since a large shift is a finding about
         the donor, not something to hide.
@@ -545,11 +602,17 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
             rung_by_cell[cell] = (LEVEL_ALL_ALL, pooled_key)
             pending.remove(cell)
 
+    # A cell still pending here is UNMAPPED: it never pooled, so reporting its own size as
+    # n_model_pooled would read as "this cell was ranked alone against a reference". What it
+    # actually was part of is the LAST pooled ATTEMPT -- the ("all", "all") set assembled just
+    # above -- and reporting THAT size is what lets a reader see how far the attempt was from
+    # min_model_n (Task 4, folding in the Task 3 re-review observation).
+    n_pooled_by_cell = {cell: int(pooled) for cell in pending}
+
     # ---- map each rung's POOLED model set in one common rank order
     cells_by_rung = {}
     for cell, rung in rung_by_cell.items():
         cells_by_rung.setdefault(rung, []).append(cell)
-    n_pooled_by_cell = {}
     for (level, key), rung_cells in sorted(cells_by_rung.items()):
         rung_positions = np.sort(np.concatenate([positions_by_cell[cell]
                                                  for cell in sorted(rung_cells)]))
@@ -586,8 +649,9 @@ def _empty_diagnostics(model: str, n_persons: int, n_trips: int) -> dict:
 
 def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, model: str,
                                random_seed: int, reference: pd.DataFrame = None,
-                               min_reference_n: int = 200, min_model_n: int = 50,
-                               max_median_shift_hours: float = 2.0):
+                               min_reference_n: int = DEFAULT_MIN_REFERENCE_N,
+                               min_model_n: int = DEFAULT_MIN_MODEL_N,
+                               max_median_shift_hours: float = DEFAULT_MAX_MEDIAN_SHIFT_HOURS):
     """Apply one of the three departure-time models to a trip table (see the module docstring).
 
     Every person's whole chain is shifted by ONE offset -- ``derounding + mapping`` for
@@ -791,6 +855,25 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     return table, diagnostics
 
 
+def format_level_split(diagnostics: dict) -> str:
+    """``"purpose_group 90/100 (90.0%), ..."`` -- the mapping-level split as explicit rates.
+
+    Stated ONCE here and rendered by every caller that reports a run's departure-time model
+    (:func:`_log_diagnostics` below, :mod:`braunschweig.popsim.trips_stage` and
+    :mod:`braunschweig.synthesis.commute_day.plan_replacement`), so a stage log and the model's
+    own log can never describe the same run with two different level vocabularies. Returns
+    ``"not applicable (no mapping)"`` for a model that maps nothing (``eqasim_uniform``,
+    ``derounded``), which must not be readable as "nothing was unmapped".
+    """
+    n_persons = diagnostics["n_persons"]
+    if not diagnostics["n_persons_by_level"] or n_persons == 0:
+        return "not applicable (no mapping)"
+    return ", ".join(
+        "%s %d/%d (%.1f%%)" % (label, diagnostics["n_persons_by_level"][label], n_persons,
+                               100.0 * diagnostics["n_persons_by_level"][label] / n_persons)
+        for label in LEVEL_LABELS)
+
+
 def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_finite: int) -> int:
     """Log every count as ``n/total (rate)`` under :data:`_LOG_TAG` and return the number of cells
     that tripped the median-shift guard (CLAUDE.md fallback transparency: a mapping that did not
@@ -807,10 +890,7 @@ def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_fini
 
     levels = ""
     if diagnostics["n_persons_by_level"]:
-        levels = ", ".join(
-            "%s %d/%d (%.1f%%)" % (label, diagnostics["n_persons_by_level"][label], n_persons,
-                                   100.0 * diagnostics["n_persons_by_level"][label] / n_persons)
-            for label in LEVEL_LABELS)
+        levels = format_level_split(diagnostics)
         logger.info("%s mapping level: %s", _LOG_TAG, levels)
         n_coarsened = sum(diagnostics["n_persons_by_level"][label]
                           for label in (LEVEL_PURPOSE_ALL, LEVEL_ALL_ALL, LEVEL_UNMAPPED))
@@ -838,7 +918,8 @@ def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_fini
 
     n_over_guard = 0
     for (purpose, group), entry in sorted(diagnostics["cells"].items()):
-        logger.info("%s cell purpose=%s group=%s: level=%s n_model=%d (pooled at that rung %d) "
+        logger.info("%s cell purpose=%s group=%s: level=%s n_model=%d (pooled %d at that rung, "
+                    "or at the LAST attempt when unmapped) "
                     "n_reference=%d median shift %.1f min (median |shift| %.1f min)", _LOG_TAG,
                     purpose, group, entry["level"], entry["n_model"], entry["n_model_pooled"],
                     entry["n_reference"], entry["median_shift_min"], entry["median_abs_shift_min"])
