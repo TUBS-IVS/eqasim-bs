@@ -1,15 +1,22 @@
 """SrV 2023 departure-time and activity-duration references (issue #123, Phase 0 Task 2).
 
 Builds the two committed aggregate tables that the departure-time model (Task 3,
-``braunschweig.popsim.departure_time_model``) reads to replace eqasim's uninformative uniform
-per-person jitter: ``srv2023_departure_time_reference.csv`` (the 15-minute departure-bin
-distribution of a person's FIRST trip, LATER trips, and ALL trips, per harmonised purpose and
-person group) and ``srv2023_activity_duration_reference.csv`` (the duration-band distribution of
-the activity that follows a trip). Both are VALIDATION-AND-CALIBRATION references built on the
-same LOCAL-ONLY SrV 2023 "Braunschweig und RGB" scientific-use microdata as
-``srv_plan_structure.py``: the departure-time table is the CALIBRATED dimension of the
-departure-time model (spec ``2026-09-09-departure-time-srv-mapping-design.md`` section 2.2), the
-activity-duration table is a HOLD-OUT reference (durations are never touched by the model).
+``braunschweig.popsim.departure_time_model``) and the planned analysis stage
+``braunschweig.analysis.synthesis.departure_time_vs_srv`` (spec
+``2026-09-09-departure-time-srv-mapping-design.md`` section 2.1.3) both read:
+``srv2023_departure_time_reference.csv`` (the 15-minute departure-bin distribution of a person's
+FIRST trip, LATER trips, and ALL trips, per harmonised purpose and person group) and
+``srv2023_activity_duration_reference.csv`` (the duration-band distribution of the activity that
+follows a trip). Both are built on the same LOCAL-ONLY SrV 2023 "Braunschweig und RGB"
+scientific-use microdata as ``srv_plan_structure.py``.
+
+Calibration vs. validation (spec section 2.2, review ruling A-R9): within the departure-time
+table, position ``"first"`` is the model's CALIBRATED target -- ``srv_mapped`` quantile-maps a
+person's de-rounded FIRST departure onto this distribution's ``(purpose, group)`` cell. Positions
+``"later"`` / ``"all"``, and the ENTIRE activity-duration table, are the model's HOLD-OUT
+(validation) reference: later trips follow the donor's own durations and are never mapped: a
+faithful "later"/duration match is evidence the model has not distorted anything it was not meant
+to touch, not something the model is calibrated against.
 
 The module is a pure builder over already-harmonised SrV person/trip frames (no file-system
 access, no synpp dependency); ``scripts/extract_srv_departure_times.py`` is the only caller that
@@ -30,21 +37,38 @@ departure or arrival time cannot be observed for a person who reported no trip a
 
 Segments: ``"all"`` plus the five harmonised employment x life-phase groups of
 ``srv_plan_structure.GROUPS`` (:data:`SEGMENTS`) -- no age-band, sex or Kreis segments, because the
-departure-time model's mapping cell (spec 2.2) is keyed on (purpose, group) only.
+departure-time model's mapping cell (spec 2.2) is keyed on (purpose, group) only. A harmonised
+person whose ``group`` is not one of :data:`braunschweig.calibration.srv_plan_structure.GROUPS`
+makes it impossible to place that person's legs into a specific-group segment, so both table
+builders RAISE naming the offending value rather than silently leaving that person out of every
+group segment while still counting them under ``"all"`` (review ruling A-R10 fix round 1).
+
+Purposes: :data:`PURPOSE_ALL` (``"all"``, ALL legs of the segment/position pooled regardless of
+purpose) plus the seven named purposes of ``srv_plan_structure.PURPOSES``
+(:data:`PURPOSES_WITH_ALL`). The pooled purpose exists so the departure-time model's coarsening
+ladder for a thin cell -- ``(purpose, group) -> (purpose, "all" segment) -> ("all" purpose, "all"
+segment)`` (spec 2.2) -- is fully reachable on the COMMITTED table, not only computable from the
+raw microdata at model-build time. A leg whose destination purpose is
+``srv_plan_structure.UNKNOWN_PURPOSE`` (``harmonise_srv`` does NOT exclude these -- it merely
+cannot map the raw SrV code to one of the seven named purposes, and still counts the leg as a
+trip) is therefore EXCLUDED from every named-purpose cell (it cannot be attributed to a specific
+purpose) but INCLUDED in the purpose-``"all"`` pooled cells (its departure time and, where
+measurable, its following activity's duration are both still valid observations) -- counted and
+logged, never silently dropped (CLAUDE.md fallback transparency); see the ``n_legs_unknown_purpose_*``
+keys on the returned tables' ``DataFrame.attrs``.
 
 De-rounding (issue #123, Task 1 rule, ``braunschweig.calibration.reported_time_precision``): a
 reported departure minute is de-rounded ONCE per leg by drawing an offset uniformly inside its
 reporting-precision cell (+/- 7.5 min for a quarter-hour report, +/- 2.5 min for a five-minute
 report, 0 for an exact report); the SAME offset is reused wherever that leg contributes to the
-table (its own segment AND the "all" segment; its own position AND the "all" position), so
-:func:`departure_time_table` draws the offsets ONCE, over every valid leg, with the ``rng`` the
-caller passes in (the extraction script seeds it with :data:`SRV_DEROUNDING_SEED` so the committed
-table is reproducible). A leg whose ``dep_min`` is NaN, negative, or not integer-valued cannot be
-de-rounded (``reported_time_precision.deround_minutes_of_day`` raises on exactly those inputs), so
-this module filters such legs out BEFORE calling it and counts the exclusion -- see the
-``n_legs_excluded_*`` keys on the returned table's ``DataFrame.attrs`` (CLAUDE.md's fallback
-transparency rule: an exclusion this module makes is never silent, whether or not it is later
-surfaced by a caller).
+table (its own segment AND the "all" segment; its own purpose-cell AND the purpose-"all" pooled
+cell; its own position AND the "all" position), so :func:`departure_time_table` draws the offsets
+ONCE, over every valid leg, with the ``rng`` the caller passes in (the extraction script seeds it
+with :data:`SRV_DEROUNDING_SEED` so the committed table is reproducible). A leg whose ``dep_min``
+is NaN, negative, or not integer-valued cannot be de-rounded
+(``reported_time_precision.deround_minutes_of_day`` raises on exactly those inputs), so this
+module filters such legs out BEFORE calling it and counts the exclusion -- see the
+``n_legs_excluded_*`` keys on ``DataFrame.attrs``.
 
 Departure-time binning: :data:`BIN_MINUTES` (15) x :data:`N_BINS` (112) covers 0-28 h, wide enough
 for the small share of trips SrV records past midnight (a "25:30" reported departure). A bin index
@@ -52,19 +76,19 @@ computed from a departure outside that window is CLIPPED into ``[0, N_BINS - 1]`
 (``n_bins_clipped_derounded`` / ``n_bins_clipped_as_reported`` on ``attrs``) rather than dropped,
 so the leg's weight is not silently lost from its (segment, purpose, position) denominator.
 
-Table shape: :func:`departure_time_table` is SPARSE -- for a given (segment, purpose, position)
-only the bins that carry non-zero weight in EITHER ``share_derounded`` or ``share_as_reported``
-get a row (a bin with zero weight in one of the two columns and non-zero in the other still gets
-one row, with an explicit 0.0, never a missing row); this keeps the file a manageable size given
-112 possible bins. :func:`activity_duration_table` is DENSE -- every (segment, purpose) group with
-at least one measured activity emits all six of :data:`DURATION_BAND_LABELS`, most of them 0.0,
-because there are only six bands and a consumer should not have to special-case a missing one. A
-(segment, purpose[, position]) combination with zero contributing legs is OMITTED from both tables
-entirely (never emitted as an all-NaN placeholder row): unlike the plan-structure reference's fixed
-segment x metric grid, here the grid of purposes that occur at all per segment is itself
-informative (a manufactured NaN row for, say, "child_0_5 x work" would misrepresent a cell that is
-empty by construction, not an unrelated failure to compute a metric), and the departure-time
-model's own coarsening ladder (spec 2.2) is exactly what handles a thin or absent cell downstream.
+Table shape (review ruling A-R9, fix round 1 -- Task 3's ``load_departure_time_reference``
+validates exactly this): :func:`departure_time_table` is DENSE over ``bin_15min`` -- EVERY
+(segment, purpose, position) cell carries all :data:`N_BINS` bins, 0.0 included, never omitted. A
+cell with zero contributing legs is still EMITTED, with ``n_unweighted`` 0 and BOTH share columns
+NaN for all its bins (never a fabricated 0.0, never a dropped row) -- the same "always emit the
+fixed key, let the metric go NaN when the group is empty" convention as
+``srv_absence.build_absence_household_by_size``'s per-size-class rows.
+:func:`activity_duration_table` is DENSE over ``band`` for any (segment, purpose) that has at
+least one included leg (only six bands, so a consumer should not have to special-case a missing
+one) but, unlike the departure-time table, a (segment, purpose) combination with ZERO contributing
+legs is OMITTED entirely (not emitted as an all-NaN placeholder): Task 3 does not read this table
+programmatically (it is a hold-out reference, read by humans and the analysis stage), and the
+purpose grid that occurs at all per segment is itself informative here.
 
 Activity duration: reuses ``srv_plan_structure.WORK_ACTIVITY_MAX_H`` (20 h) as the plausibility
 ceiling for EVERY purpose, not only "work" (the original convention in ``srv_plan_structure`` was
@@ -100,10 +124,16 @@ ACTIVITY_DURATION_TABLE = "srv2023_activity_duration_reference.csv"
 BIN_MINUTES = 15
 N_BINS = 112
 
-#: Trip position within a person's reporting day: "first" = the person's seq-minimum trip,
-#: "later" = every other trip, "all" = both combined (so a (segment, purpose) cell can be read
-#: either split by position or pooled, from the same table).
+#: Trip position within a person's reporting day: "first" = the person's seq-minimum trip
+#: (the model's CALIBRATED target), "later" = every other trip, "all" = both combined (all three
+#: are HOLD-OUT except "first" -- see the module docstring).
 POSITIONS = ("first", "later", "all")
+
+#: Pooled purpose: every leg of the segment/position, regardless of its own purpose (including an
+#: unknown destination purpose) -- see the module docstring for why this exists and what it
+#: includes. Combined with the seven named purposes of srv_plan_structure.PURPOSES.
+PURPOSE_ALL = "all"
+PURPOSES_WITH_ALL = (PURPOSE_ALL,) + SRV.PURPOSES
 
 #: Activity-duration bands (hours); the upper edge is +inf so every in-range duration (see
 #: WORK_ACTIVITY_MAX_H below) falls into exactly one band.
@@ -134,15 +164,23 @@ def _require_columns(frame: pd.DataFrame, required, name: str) -> None:
 
 
 def _attach_group(trips: pd.DataFrame, persons: pd.DataFrame, caller: str) -> pd.DataFrame:
-    """Left-join ``group`` from ``persons`` onto ``trips`` by ``pid``, raising on an orphan.
+    """Left-join ``group`` from ``persons`` onto ``trips`` by ``pid``, validating both sides.
 
-    A trip whose person is not in ``persons`` would otherwise be silently dropped from every
-    segment (it can never match a group) while still counting towards ``n_legs_total`` -- raising
-    here mirrors ``srv_plan_structure.person_level``'s identical guard.
+    Raises if ``persons`` has a duplicate ``pid`` (a merge would silently multiply rows), if any
+    non-missing ``group`` value falls outside ``srv_plan_structure.GROUPS`` (review ruling A-R10:
+    such a person would otherwise be silently absent from every specific-segment bucket while
+    still counted under "all", with no indication anything was wrong), or if a trip's ``pid`` is
+    not in ``persons`` at all (mirrors ``srv_plan_structure.person_level``'s identical guard).
     """
     if persons["pid"].duplicated().any():
         duplicates = persons.loc[persons["pid"].duplicated(), "pid"].tolist()
         raise ValueError("%s: persons frame has duplicate pid value(s) %s" % (caller, duplicates))
+    unrecognised = sorted(set(persons["group"].dropna().unique()) - set(SRV.GROUPS))
+    if unrecognised:
+        raise ValueError(
+            "%s: persons frame has group value(s) %s outside srv_plan_structure.GROUPS %s; every "
+            "harmonised person must belong to one of the defined employment/life-phase groups"
+            % (caller, unrecognised, list(SRV.GROUPS)))
     merged = trips.merge(persons[["pid", "group"]], on="pid", how="left")
     orphaned = int(merged["group"].isna().sum())
     if orphaned:
@@ -157,6 +195,15 @@ def _segment_masks(group: pd.Series):
     yield "all", pd.Series(True, index=group.index)
     for segment in SRV.GROUPS:
         yield segment, group == segment
+
+
+def _purpose_masks(purpose: pd.Series):
+    """(purpose_label, boolean mask over legs) pairs: PURPOSE_ALL (every leg, unknown-purpose
+    destinations included) + one per named purpose of srv_plan_structure.PURPOSES (an
+    unknown-purpose leg never matches a named mask -- see the module docstring)."""
+    yield PURPOSE_ALL, pd.Series(True, index=purpose.index)
+    for named in SRV.PURPOSES:
+        yield named, purpose == named
 
 
 def _classify_dep_min(dep_min: pd.Series) -> dict:
@@ -188,26 +235,66 @@ def _bin_from_minutes(minutes: np.ndarray):
     return clipped.astype(int), n_clipped
 
 
+def _dense_bin_rows(segment_label: str, purpose_label: str, position_label: str,
+                    subset: pd.DataFrame) -> list:
+    """The N_BINS rows of one (segment, purpose, position) cell, dense over ``bin_15min``.
+
+    An empty cell (``n_unweighted == 0``) or one whose legs carry zero total weight gets NaN in
+    both share columns for every bin -- never a fabricated 0.0, never a dropped row (review ruling
+    A-R9; see the module docstring's "Table shape" paragraph).
+    """
+    n_unweighted = len(subset)
+    total_weight = float(subset["weight"].sum()) if n_unweighted else 0.0
+    if n_unweighted == 0 or not total_weight > 0:
+        if n_unweighted and not total_weight > 0:
+            logger.warning(
+                "%s segment=%s purpose=%s position=%s has %d leg(s) but zero total weight; "
+                "shares recorded as NaN for the whole cell (cannot normalise over zero weight)",
+                _LOG_TAG, segment_label, purpose_label, position_label, n_unweighted)
+        return [{"universe": UNIVERSE, "segment": segment_label, "purpose": purpose_label,
+                 "position": position_label, "bin_15min": b, "share_derounded": float("nan"),
+                 "share_as_reported": float("nan"), "n_unweighted": n_unweighted}
+                for b in range(N_BINS)]
+    by_derounded = subset.groupby("bin_derounded")["weight"].sum() / total_weight
+    by_as_reported = subset.groupby("bin_as_reported")["weight"].sum() / total_weight
+    return [{"universe": UNIVERSE, "segment": segment_label, "purpose": purpose_label,
+             "position": position_label, "bin_15min": b,
+             "share_derounded": float(by_derounded.get(b, 0.0)),
+             "share_as_reported": float(by_as_reported.get(b, 0.0)), "n_unweighted": n_unweighted}
+            for b in range(N_BINS)]
+
+
 def departure_time_table(persons: pd.DataFrame, trips: pd.DataFrame,
                          rng: np.random.RandomState) -> pd.DataFrame:
-    """15-minute departure-bin distribution per (segment, purpose, position).
+    """15-minute departure-bin distribution per (segment, purpose, position), DENSE over bins.
 
     ``persons``/``trips`` are :func:`srv_plan_structure.harmonise_srv` output (or an
     equivalently-shaped hand-built fixture in tests). Every valid leg (a non-NaN, non-negative,
     integer-valued ``dep_min``) is de-rounded EXACTLY ONCE via
     ``reported_time_precision.deround_minutes_of_day(dep_min, rng)``; the same de-rounded value is
-    then reused for every (segment, purpose, position) combination that leg contributes to.
+    then reused for every (segment, purpose, position) combination that leg contributes to,
+    including the pooled ``PURPOSE_ALL`` cells.
 
-    Returns a long table with columns :data:`DEPARTURE_TIME_COLUMNS`, SPARSE over ``bin_15min``
-    (see the module docstring); shares are normalised within each (segment, purpose, position) so
-    that ``share_derounded`` and, independently, ``share_as_reported`` each sum to 1.0 over that
-    triple's rows. ``n_unweighted`` repeats the triple's unweighted leg count on every one of its
-    rows.
+    Returns a long table with columns :data:`DEPARTURE_TIME_COLUMNS`, DENSE over ``bin_15min``
+    (see the module docstring's "Table shape" paragraph -- every cell carries all
+    :data:`N_BINS` rows, an empty cell NaN throughout); shares are normalised within each
+    (segment, purpose, position) so that ``share_derounded`` and, independently,
+    ``share_as_reported`` each sum to 1.0 over that triple's non-NaN rows. ``n_unweighted``
+    repeats the triple's unweighted leg count on every one of its rows.
 
     Diagnostics (CLAUDE.md fallback transparency) are attached to ``DataFrame.attrs`` rather than
     changed into the return type, so the interface stays a plain DataFrame for callers that only
     want the table: ``n_legs_total``, ``n_legs_excluded_invalid_dep_min`` (+ the NaN / negative /
-    non-integer breakdown), ``n_bins_clipped_derounded``, ``n_bins_clipped_as_reported``.
+    non-integer breakdown), ``n_bins_clipped_derounded``, ``n_bins_clipped_as_reported``,
+    ``n_legs_unknown_purpose_raw`` / ``n_legs_unknown_purpose_valid_dep_min`` (legs whose
+    destination purpose ``harmonise_srv`` could not map to a named purpose -- excluded from every
+    named-purpose cell, included only in the ``PURPOSE_ALL`` pooled cells).
+
+    Raises
+    ------
+    ValueError
+        If ``persons`` has a duplicate ``pid``, a ``group`` value outside
+        ``srv_plan_structure.GROUPS``, or a trip references a ``pid`` not in ``persons``.
     """
     _require_columns(persons, ["pid", "weight", "group"], "persons")
     _require_columns(trips, ["pid", "seq", "weight", "purpose", "dep_min"], "trips")
@@ -235,6 +322,16 @@ def departure_time_table(persons: pd.DataFrame, trips: pd.DataFrame,
             n_total)
 
     valid = t[diagnostics["mask_valid"]].copy()
+
+    n_unknown_raw = int((t["purpose"] == SRV.UNKNOWN_PURPOSE).sum())
+    n_unknown_valid = int((valid["purpose"] == SRV.UNKNOWN_PURPOSE).sum())
+    logger.info(
+        "%s unknown-purpose (destination) legs: %d/%d raw (%.2f%%); %d of the %d valid-dep_min "
+        "legs are unknown-purpose -- excluded from every named-purpose cell, included only in "
+        "the purpose='%s' pooled cells", _LOG_TAG, n_unknown_raw, n_total,
+        100.0 * n_unknown_raw / n_total if n_total else float("nan"), n_unknown_valid, n_valid,
+        PURPOSE_ALL)
+
     dep_min = valid["dep_min"].to_numpy(dtype=float)
     derounded, _offset = RP.deround_minutes_of_day(dep_min, rng)
     valid["bin_derounded"], n_clip_derounded = _bin_from_minutes(derounded)
@@ -248,8 +345,7 @@ def departure_time_table(persons: pd.DataFrame, trips: pd.DataFrame,
 
     rows = []
     for segment_label, segment_mask in _segment_masks(valid["group"]):
-        for purpose in SRV.PURPOSES:
-            purpose_mask = valid["purpose"] == purpose
+        for purpose_label, purpose_mask in _purpose_masks(valid["purpose"]):
             for position_label in POSITIONS:
                 if position_label == "first":
                     position_mask = valid["is_first"]
@@ -258,26 +354,7 @@ def departure_time_table(persons: pd.DataFrame, trips: pd.DataFrame,
                 else:
                     position_mask = pd.Series(True, index=valid.index)
                 subset = valid[segment_mask & purpose_mask & position_mask]
-                n_unweighted = len(subset)
-                if n_unweighted == 0:
-                    continue
-                total_weight = float(subset["weight"].sum())
-                if not total_weight > 0:
-                    logger.warning(
-                        "%s segment=%s purpose=%s position=%s has %d leg(s) but zero total "
-                        "weight; skipped (cannot normalise a share over zero weight)", _LOG_TAG,
-                        segment_label, purpose, position_label, n_unweighted)
-                    continue
-                by_derounded = subset.groupby("bin_derounded")["weight"].sum() / total_weight
-                by_as_reported = subset.groupby("bin_as_reported")["weight"].sum() / total_weight
-                for b in sorted(set(by_derounded.index) | set(by_as_reported.index)):
-                    rows.append({
-                        "universe": UNIVERSE, "segment": segment_label, "purpose": purpose,
-                        "position": position_label, "bin_15min": int(b),
-                        "share_derounded": float(by_derounded.get(b, 0.0)),
-                        "share_as_reported": float(by_as_reported.get(b, 0.0)),
-                        "n_unweighted": n_unweighted,
-                    })
+                rows.extend(_dense_bin_rows(segment_label, purpose_label, position_label, subset))
 
     table = pd.DataFrame(rows, columns=DEPARTURE_TIME_COLUMNS)
     table.attrs["n_legs_total"] = n_total
@@ -287,6 +364,8 @@ def departure_time_table(persons: pd.DataFrame, trips: pd.DataFrame,
     table.attrs["n_legs_excluded_non_integer"] = diagnostics["n_non_integer"]
     table.attrs["n_bins_clipped_derounded"] = n_clip_derounded
     table.attrs["n_bins_clipped_as_reported"] = n_clip_as_reported
+    table.attrs["n_legs_unknown_purpose_raw"] = n_unknown_raw
+    table.attrs["n_legs_unknown_purpose_valid_dep_min"] = n_unknown_valid
     return table
 
 
@@ -295,9 +374,10 @@ def activity_duration_table(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.Da
 
     ``persons``/``trips`` are :func:`srv_plan_structure.harmonise_srv` output. The activity
     duration is the NEXT trip's ``dep_min`` minus the current trip's ``arr_min`` within the same
-    ``pid``; purpose is the current trip's DESTINATION purpose (the activity it leads into). No
-    de-rounding is applied (as-reported minutes only -- durations are the model's HOLD-OUT
-    dimension, never mapped).
+    ``pid``; purpose is the current trip's DESTINATION purpose (the activity it leads into),
+    including the pooled :data:`PURPOSE_ALL` (every purpose, unknown destinations included -- see
+    the module docstring). No de-rounding is applied (as-reported minutes only -- durations are
+    the model's HOLD-OUT dimension, never mapped).
 
     A trip with no following trip (the day's last trip) or a missing ``arr_min`` /
     following-``dep_min`` has no measurable duration and is excluded and counted
@@ -305,11 +385,20 @@ def activity_duration_table(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.Da
     ``[0, srv_plan_structure.WORK_ACTIVITY_MAX_H]`` hours is excluded and counted separately
     (``n_legs_excluded_out_of_range``) rather than clipped.
 
-    Returns a long table with columns :data:`ACTIVITY_DURATION_COLUMNS`, DENSE over ``band`` (see
-    the module docstring): every (segment, purpose) with at least one included leg emits all of
-    :data:`DURATION_BAND_LABELS`, ``share`` summing to 1.0. Diagnostics are attached to
-    ``DataFrame.attrs``: ``n_legs_total``, ``n_legs_excluded_no_next_or_missing_time``,
-    ``n_legs_excluded_out_of_range``, ``n_legs_included``.
+    Returns a long table with columns :data:`ACTIVITY_DURATION_COLUMNS`, DENSE over ``band`` for
+    every (segment, purpose) that has >= 1 included leg (a combination with zero legs is omitted
+    entirely -- see the module docstring's "Table shape" paragraph), ``share`` summing to 1.0.
+    Diagnostics are attached to ``DataFrame.attrs``: ``n_legs_total``,
+    ``n_legs_excluded_no_next_or_missing_time``, ``n_legs_excluded_out_of_range``,
+    ``n_legs_included``, ``n_legs_unknown_purpose_raw`` / ``n_legs_unknown_purpose_included``
+    (unknown-destination legs -- excluded from every named-purpose cell, included only in the
+    ``PURPOSE_ALL`` pooled cells).
+
+    Raises
+    ------
+    ValueError
+        If ``persons`` has a duplicate ``pid``, a ``group`` value outside
+        ``srv_plan_structure.GROUPS``, or a trip references a ``pid`` not in ``persons``.
     """
     _require_columns(persons, ["pid", "weight", "group"], "persons")
     _require_columns(trips, ["pid", "seq", "weight", "purpose", "dep_min", "arr_min"], "trips")
@@ -335,13 +424,22 @@ def activity_duration_table(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.Da
         len(measurable), SRV.WORK_ACTIVITY_MAX_H,
         100.0 * n_out_of_range / len(measurable) if len(measurable) else float("nan"), len(valid))
 
+    n_unknown_raw = int((t["purpose"] == SRV.UNKNOWN_PURPOSE).sum())
+    n_unknown_included = int((valid["purpose"] == SRV.UNKNOWN_PURPOSE).sum())
+    logger.info(
+        "%s unknown-purpose (destination) legs: %d/%d raw (%.2f%%); %d of the %d included legs "
+        "are unknown-purpose -- excluded from every named-purpose cell, included only in the "
+        "purpose='%s' pooled cells", _LOG_TAG, n_unknown_raw, n_total,
+        100.0 * n_unknown_raw / n_total if n_total else float("nan"), n_unknown_included,
+        len(valid), PURPOSE_ALL)
+
     valid["band"] = pd.cut(valid["duration_h"], bins=list(DURATION_BAND_EDGES_H),
                            labels=list(DURATION_BAND_LABELS), include_lowest=True)
 
     rows = []
     for segment_label, segment_mask in _segment_masks(valid["group"]):
-        for purpose in SRV.PURPOSES:
-            subset = valid[segment_mask & (valid["purpose"] == purpose)]
+        for purpose_label, purpose_mask in _purpose_masks(valid["purpose"]):
+            subset = valid[segment_mask & purpose_mask]
             n_unweighted = len(subset)
             if n_unweighted == 0:
                 continue
@@ -349,12 +447,12 @@ def activity_duration_table(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.Da
             if not total_weight > 0:
                 logger.warning(
                     "%s segment=%s purpose=%s has %d leg(s) but zero total weight; skipped",
-                    _LOG_TAG, segment_label, purpose, n_unweighted)
+                    _LOG_TAG, segment_label, purpose_label, n_unweighted)
                 continue
             by_band = subset.groupby("band", observed=False)["weight"].sum() / total_weight
             for band in DURATION_BAND_LABELS:
                 rows.append({
-                    "universe": UNIVERSE, "segment": segment_label, "purpose": purpose,
+                    "universe": UNIVERSE, "segment": segment_label, "purpose": purpose_label,
                     "band": band, "share": float(by_band.get(band, 0.0)),
                     "n_unweighted": n_unweighted,
                 })
@@ -364,4 +462,6 @@ def activity_duration_table(persons: pd.DataFrame, trips: pd.DataFrame) -> pd.Da
     table.attrs["n_legs_excluded_no_next_or_missing_time"] = n_no_next
     table.attrs["n_legs_excluded_out_of_range"] = n_out_of_range
     table.attrs["n_legs_included"] = len(valid)
+    table.attrs["n_legs_unknown_purpose_raw"] = n_unknown_raw
+    table.attrs["n_legs_unknown_purpose_included"] = n_unknown_included
     return table
