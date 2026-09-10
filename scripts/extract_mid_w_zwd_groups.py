@@ -3,17 +3,18 @@
 Reads the LOCAL raw MiD 2023 Wege table and writes one small aggregate table to ``--out-dir``
 (default ``eqasim-data/data/braunschweig/mid``):
 
-    mid2023_w_zwd_group_reference.csv   (W_GEW-weighted share of each W_ZWD subtype group among
-                                         the LABELLED legs of its purpose, plus weighted
-                                         wegkm_imp percentiles, for BOTH settings of
-                                         purpose_subtype_codeplan_sentinels)
+    mid2023_w_zwd_group_reference.csv   (W_GEW-weighted share of each subtype group among the
+                                         LABELLED legs of its purpose, plus weighted wegkm_imp
+                                         percentiles, for every spec variant in
+                                         :data:`SPEC_VARIANTS`)
 
 The groups are never re-typed here: they come from the specs the model itself estimates on --
 ``braunschweig.popsim.purpose_subtype.leisure_spec`` / ``other_errand_spec`` (whose ``_CODEPLAN``
-variants are exactly what the ``purpose_subtype_codeplan_sentinels`` flag selects) and
-``braunschweig.popsim.shop_subtype``'s daily/non-daily W_ZWD sets. The ``spec_variant`` column
-says which setting a row was measured under, so the flag's effect on the estimated mix is visible
-in the committed file instead of having to be re-derived.
+and ``_UNSPECIFIED`` variants are exactly what the ``purpose_subtype_codeplan_sentinels`` and
+``leisure_unspecified_subtype`` flags select) and ``braunschweig.popsim.shop_subtype``'s
+daily/non-daily W_ZWD sets. The ``spec_variant`` column says which flag combination a row was
+measured under, so each flag's effect on the estimated mix is visible in the committed file
+instead of having to be re-derived; :data:`SPEC_VARIANT_DESCRIPTIONS` states what each one is.
 
 Role: a MEASUREMENT REFERENCE for ``scripts/compare_purpose_subtypes_srv.py``, which puts it
 beside the regional SrV fine-purpose reference. NOT a control target and NOT a validated
@@ -34,6 +35,7 @@ import argparse
 import datetime as dt
 import logging
 import sys
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -73,11 +75,35 @@ GROUP_COLUMNS = ["purpose", "spec_variant", "group", "n_unweighted", "share_with
 #: percentiles (a reference percentile must not be pulled down by a substituted zero).
 DISTANCE_MISSING_CODE_MIN = WEGKM_CODE_MIN
 
-#: The two settings of the ``purpose_subtype_codeplan_sentinels`` config key
-#: (``braunschweig/popsim/stage/config_keys.py``): "default" = flag OFF (LEISURE_SPEC /
-#: OTHER_ERRAND_SPEC), "codeplan" = flag ON (the _CODEPLAN variants, in which the no-detail codes
-#: W_ZWD 799 "Freizeit k.A." and 699 "Erledigung k.A." are sentinels instead of group members).
-SPEC_VARIANTS = ("default", "codeplan")
+#: The measured settings of the two subtype config keys in
+#: ``braunschweig/popsim/stage/config_keys.py``. This tuple is the ONE place the variant
+#: vocabulary is defined: the committed file's header, the invariant checks and
+#: ``scripts/compare_purpose_subtypes_srv.py``'s summary all read it (and
+#: :data:`SPEC_VARIANT_DESCRIPTIONS`) rather than repeating the names.
+SPEC_VARIANTS = ("default", "codeplan", "codeplan_unspecified")
+
+#: What each spec variant measures, in one paragraph per variant. Rendered into the committed
+#: file's provenance header AND into the comparison summary, so the two artefacts cannot describe
+#: the same variant differently.
+SPEC_VARIANT_DESCRIPTIONS = {
+    "default":
+        "purpose_subtype_codeplan_sentinels OFF and leisure_unspecified_subtype OFF "
+        "(LEISURE_SPEC / OTHER_ERRAND_SPEC): the no-detail codes W_ZWD 799 'Freizeit k.A.' and "
+        "699 'Erledigung k.A.' are ordinary members of leisure_activity / other_errand_long, and "
+        "W_ZWECK 10 'anderer Zweck' legs are not measured at all.",
+    "codeplan":
+        "purpose_subtype_codeplan_sentinels ON, leisure_unspecified_subtype OFF (the _CODEPLAN "
+        "variants, ADR-0113): 799 and 699 become sentinels and leave estimation entirely; "
+        "W_ZWECK 10 legs are still not measured.",
+    "codeplan_unspecified":
+        "both keys ON -- the PRODUCTION composition since issue #373 (ADR-0115): the _CODEPLAN "
+        "variants plus the fifth, W_ZWECK-defined leisure group leisure_unspecified, which holds "
+        "the W_ZWECK 10 'anderer Zweck' legs that w_zweck_10_as_leisure realises as leisure "
+        "(ADR-0111). The leisure denominator here is the labelled W_ZWECK 7 legs PLUS all "
+        "W_ZWECK 10 legs, so the four W_ZWD groups' raw shares all shrink by ONE common factor "
+        "while their shares WITHIN the comparable universe are unchanged from the codeplan "
+        "variant. The shop and other-errand blocks are identical to the codeplan variant's.",
+}
 
 #: The shopping split of ``braunschweig.popsim.shop_subtype`` expressed as a SubtypeSpec so all
 #: three purposes go through ONE code path (coverage guard, labelled filter, weighted share). The
@@ -98,17 +124,20 @@ _LOG_TAG = "[mid w_zwd groups]"
 
 
 def specs_for_variant(variant: str) -> tuple:
-    """The three subtype specs measured under one ``purpose_subtype_codeplan_sentinels`` setting.
+    """The three subtype specs measured under one combination of the two subtype config keys.
 
-    The shopping spec is identical in both variants (the flag only moves the two no-detail codes
-    799 / 699 of the leisure and errand specs), so its rows repeat by construction -- reported
-    rather than suppressed, so a consumer can read every group under both variants uniformly.
+    The shopping spec is identical in every variant (neither key touches it), so its rows repeat
+    by construction -- reported rather than suppressed, so a consumer can read every group under
+    every variant uniformly. The same holds for the errand spec between "codeplan" and
+    "codeplan_unspecified", which differ only in the leisure spec's fifth, W_ZWECK-defined group.
     """
     if variant not in SPEC_VARIANTS:
         raise ValueError("%s unknown spec variant %r (known: %s)" % (_LOG_TAG, variant,
                                                                      list(SPEC_VARIANTS)))
-    codeplan_sentinels = variant == "codeplan"
-    return (SHOP_SPEC, other_errand_spec(codeplan_sentinels), leisure_spec(codeplan_sentinels))
+    codeplan_sentinels = variant in ("codeplan", "codeplan_unspecified")
+    unspecified_subtype = variant == "codeplan_unspecified"
+    return (SHOP_SPEC, other_errand_spec(codeplan_sentinels),
+            leisure_spec(codeplan_sentinels, unspecified_subtype))
 
 
 def filter_weekday_legs(wege: pd.DataFrame) -> tuple:
@@ -196,21 +225,51 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
             # an unmapped code would otherwise silently shrink the labelled denominator.
             code_coverage_guard(filtered, spec)
             purpose_legs = filtered[filtered["W_ZWECK"].isin(spec.zweck_values)]
-            labelled = purpose_legs[purpose_legs["W_ZWD"].isin(spec.group_codes)].copy()
+
+            # Labelling mirrors purpose_subtype.estimate_group_probabilities EXACTLY: a
+            # W_ZWECK-defined group (spec.zweck_groups) wins over the W_ZWD detail group, because
+            # such a leg is ASSUMED to carry no usable detail code (issue #373, ADR-0115). With an
+            # empty zweck_groups this reduces to the previous "label by W_ZWD group code" rule.
+            code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
+            zweck_to_group = {code: name for name, codes in spec.zweck_groups.items()
+                              for code in codes}
+            by_zweck = purpose_legs["W_ZWECK"].map(zweck_to_group)
+            by_detail = purpose_legs["W_ZWD"].map(code_to_group)
+            label = by_zweck.where(by_zweck.notna(), by_detail)
+            labelled_mask = label.notna()
+            labelled = purpose_legs[labelled_mask].copy()
+            # Positional assignment: the labels are taken in row order and do not depend on the
+            # index of `label` matching the index of `labelled`.
+            labelled["_group"] = label[labelled_mask].to_numpy()
+
             n_purpose, n_labelled = len(purpose_legs), len(labelled)
-            n_sentinel = int(purpose_legs["W_ZWD"].isin(spec.sentinels).sum())
-            logger.info("%s %s/%s: labelled %d/%d legs (%.2f%%), sentinel %d (%.2f%%)", _LOG_TAG,
-                        spec.purpose_label, variant, n_labelled, n_purpose,
+            n_by_zweck = int(by_zweck.notna().sum())
+            # A leg whose W_ZWECK puts it in a zweck group is LABELLED, not excluded, even though
+            # its W_ZWD is a design sentinel -- counting it as a sentinel would report a group's
+            # own legs as an exclusion in the committed coverage header.
+            n_sentinel = int((purpose_legs["W_ZWD"].isin(spec.sentinels) & ~by_zweck.notna()).sum())
+            n_zweck_override = int((by_zweck.notna() & by_detail.notna()).sum())
+            logger.info("%s %s/%s: labelled %d/%d legs (%.2f%%), sentinel %d (%.2f%%), "
+                        "%d by W_ZWECK group (%d of those overriding a valid W_ZWD group code)",
+                        _LOG_TAG, spec.purpose_label, variant, n_labelled, n_purpose,
                         100.0 * n_labelled / n_purpose if n_purpose else float("nan"),
-                        n_sentinel, 100.0 * n_sentinel / n_purpose if n_purpose else float("nan"))
+                        n_sentinel, 100.0 * n_sentinel / n_purpose if n_purpose else float("nan"),
+                        n_by_zweck, n_zweck_override)
+            if n_zweck_override:
+                logger.warning(
+                    "%s %s/%s: %d/%d legs labelled by a W_ZWECK group (%.2f%%) ALSO carry a valid "
+                    "W_ZWD group code and were relabelled by the W_ZWECK group. The spec ASSUMES "
+                    "such legs carry only design sentinels (MiD 2023: 2202 / 7704 / 4402); a "
+                    "non-zero rate means real detail-coded legs are being moved into the W_ZWECK "
+                    "group, so the measured mix below is not the one the spec intends.",
+                    _LOG_TAG, spec.purpose_label, variant, n_zweck_override, n_by_zweck,
+                    100.0 * n_zweck_override / n_by_zweck)
             if n_labelled == 0:
                 raise ValueError(
-                    "%s %s/%s: no labelled leg at all; the primary (W_ZWD group) path produced "
-                    "nothing, which almost always means a code or column mismatch rather than a "
-                    "real absence." % (_LOG_TAG, spec.purpose_label, variant))
+                    "%s %s/%s: no labelled leg at all; the primary (W_ZWD group / W_ZWECK group) "
+                    "path produced nothing, which almost always means a code or column mismatch "
+                    "rather than a real absence." % (_LOG_TAG, spec.purpose_label, variant))
 
-            code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
-            labelled["_group"] = labelled["W_ZWD"].map(code_to_group)
             weight_total = float(labelled["W_GEW"].astype(float).sum())
             distance_valid = (labelled["wegkm_imp"] < DISTANCE_MISSING_CODE_MIN) \
                 & labelled["wegkm_imp"].notna()
@@ -222,7 +281,7 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
                         100.0 * (n_labelled - n_missing_distance_purpose) / n_labelled,
                         n_missing_distance_purpose, DISTANCE_MISSING_CODE_MIN)
 
-            for group in sorted(spec.groups):
+            for group in spec.group_names:
                 member = labelled[labelled["_group"] == group]
                 weights = member["W_GEW"].astype(float)
                 share = float(weights.sum() / weight_total) if weight_total > 0 else float("nan")
@@ -239,6 +298,7 @@ def build_group_reference(wege: pd.DataFrame) -> tuple:
             diagnostics["%s/%s" % (variant, spec.purpose_label)] = {
                 "n_purpose_legs": n_purpose, "n_labelled": n_labelled, "n_sentinel": n_sentinel,
                 "n_missing_distance": n_missing_distance_purpose,
+                "n_by_zweck_group": n_by_zweck, "n_zweck_group_override": n_zweck_override,
             }
     return pd.DataFrame(rows, columns=GROUP_COLUMNS), diagnostics
 
@@ -258,17 +318,29 @@ def check_invariants(table: pd.DataFrame) -> None:
         raise ValueError("%s wegkm_imp percentiles are not monotone (p25 <= p50 <= p75)" % _LOG_TAG)
 
 
+def _comment_paragraph(text: str, *, indent: str = "#   ", hanging: str = "#     ",
+                       width: int = 96) -> list:
+    """Wrap one paragraph of prose into ``#``-prefixed header lines (first indented, rest hanging).
+
+    Used for the per-variant descriptions, which live in :data:`SPEC_VARIANT_DESCRIPTIONS` as
+    plain sentences so the SAME text can be rendered into the comparison summary.
+    """
+    return [(indent if index == 0 else hanging) + line
+            for index, line in enumerate(textwrap.wrap(text, width=width - len(hanging)))]
+
+
 def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
     """Provenance header of the MiD group reference (source, role, universe, coverage)."""
     lines = [
         "# Source: MiD 2023 Wege (LOCAL raw %s; national scientific-use delivery, never" % WEGE_FILE,
         "#   committed), generated by scripts/extract_mid_w_zwd_groups.py on %s."
         % dt.date.today().isoformat(),
-        "# Code state: eqasim-bs %s (the commit that introduced the extraction code); groups from"
+        "# Code state: eqasim-bs %s (the commit that added the codeplan_unspecified spec variant);"
         % source_commit,
-        "#   braunschweig.popsim.purpose_subtype (leisure_spec / other_errand_spec) and",
-        "#   braunschweig.popsim.shop_subtype -- imported, never retyped. Header text was updated",
-        "#   in the following fix-round commit; the measured data rows are unchanged.",
+        "#   groups from braunschweig.popsim.purpose_subtype (leisure_spec / other_errand_spec) and",
+        "#   braunschweig.popsim.shop_subtype -- imported, never retyped. The default / codeplan",
+        "#   data rows are unchanged from the previous generation of this file; the",
+        "#   codeplan_unspecified block is new.",
         "# Table: %s" % MID_GROUP_TABLE,
         "# Role: MEASUREMENT REFERENCE for scripts/compare_purpose_subtypes_srv.py (issue #242,",
         "#   sub-project C). NOT a control target and NOT a validated calibration target: no stage",
@@ -282,11 +354,14 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "#   purpose_subtype.estimate_group_probabilities does; sentinel legs are excluded from",
         "#   numerator AND denominator.",
         "# Weights: W_GEW (MiD trip expansion weight).",
-        "# spec_variant: the two settings of the purpose_subtype_codeplan_sentinels config key --",
-        "#   'default' = flag OFF (LEISURE_SPEC / OTHER_ERRAND_SPEC), 'codeplan' = flag ON (the",
-        "#   _CODEPLAN variants, in which the no-detail codes W_ZWD 799 'Freizeit k.A.' and 699",
-        "#   'Erledigung k.A.' are sentinels instead of group members). The shop split has no",
-        "#   codeplan variant, so its two blocks are identical by construction.",
+        "# spec_variant: which combination of the two subtype config keys",
+        "#   (purpose_subtype_codeplan_sentinels, leisure_unspecified_subtype) a row was measured",
+        "#   under. Rendered from SPEC_VARIANT_DESCRIPTIONS in the generating script, so this text",
+        "#   and the comparison summary's cannot drift apart:",
+    ]
+    for variant in SPEC_VARIANTS:
+        lines += _comment_paragraph("'%s' -- %s" % (variant, SPEC_VARIANT_DESCRIPTIONS[variant]))
+    lines += [
         "# Exclusions: n_legs_raw=%d (raw Wege-file row count), n_legs_after_weekday_rbw=%d "
         "(%.2f%% kept;" % (diagnostics["n_legs_raw"], diagnostics["n_legs_after_weekday_rbw"],
                            100.0 * diagnostics["n_legs_after_weekday_rbw"]
@@ -296,21 +371,28 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "#   W_GEW; the extraction RAISES if this is not 0), n_values_coerced_to_nan=%s (per raw "
         "column, values" % (diagnostics["n_values_coerced_to_nan"],),
         "#   that became NaN under the numeric coercion of the raw text).",
-        "# Coverage (labelled / sentinel / missing-distance legs per variant and purpose):",
+        "# Coverage (labelled / sentinel / missing-distance legs per variant and purpose). A leg",
+        "#   whose W_ZWECK puts it in a W_ZWECK-defined group (only leisure_unspecified today) is",
+        "#   LABELLED by that group and is therefore not counted as a sentinel; the extraction",
+        "#   WARNS whenever such a leg ALSO carries a valid W_ZWD group code (the 'overriding'",
+        "#   count below), because the group ASSUMES those legs carry design sentinels only:",
     ]
     for key in sorted(key for key, value in diagnostics.items()
                       if isinstance(value, dict) and "n_purpose_legs" in value):
         stats = diagnostics[key]
         n_purpose = stats["n_purpose_legs"]
         lines.append(
-            "#   %s: %d/%d legs labelled (%.2f%%), %d sentinel (%.2f%%), %d labelled legs carry a "
-            "wegkm_imp" % (key, stats["n_labelled"], n_purpose,
-                           100.0 * stats["n_labelled"] / n_purpose if n_purpose else float("nan"),
-                           stats["n_sentinel"],
-                           100.0 * stats["n_sentinel"] / n_purpose if n_purpose else float("nan"),
-                           stats["n_missing_distance"]))
-        lines.append("#     missing-value code (>= %.0f) and are excluded from the percentiles."
-                     % DISTANCE_MISSING_CODE_MIN)
+            "#   %s: %d/%d legs labelled (%.2f%%), %d sentinel (%.2f%%);"
+            % (key, stats["n_labelled"], n_purpose,
+               100.0 * stats["n_labelled"] / n_purpose if n_purpose else float("nan"),
+               stats["n_sentinel"],
+               100.0 * stats["n_sentinel"] / n_purpose if n_purpose else float("nan")))
+        lines.append("#     %d labelled legs carry a wegkm_imp missing-value code (>= %.0f) and are"
+                     % (stats["n_missing_distance"], DISTANCE_MISSING_CODE_MIN))
+        lines.append("#     excluded from the percentiles; %d were labelled by a W_ZWECK group "
+                     "(%d overriding a valid" % (stats["n_by_zweck_group"],
+                                                 stats["n_zweck_group_override"]))
+        lines.append("#     W_ZWD group code).")
     lines += [
         "# Columns: purpose, spec_variant, group (the subtype group name the model uses),",
         "#   n_unweighted (labelled legs of the group), share_within_purpose (W_GEW share among the",
@@ -319,8 +401,11 @@ def _header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
         "#   convention via srv_distance_targets.weighted_quantiles -- the same definition the SrV",
         "#   side uses, so the two are comparable), n_missing_distance (legs of the group excluded",
         "#   from the percentiles because wegkm_imp carries a missing-value code).",
-        "# Rows: %d = %d spec variants x the groups of the three purposes."
-        % (len(table), len(SPEC_VARIANTS)),
+        "# Rows: %d = %s"
+        % (len(table), " + ".join("%d (%s)" % (int((table["spec_variant"] == variant).sum()),
+                                               variant) for variant in SPEC_VARIANTS)),
+        "#   -- one row per (spec variant, purpose, group). The variants differ in row count",
+        "#   because only some of them define the W_ZWECK-defined leisure group.",
         "# Invariants (checked before writing, the extraction raises on a violation): the shares of",
         "#   each (spec_variant, purpose) block sum to 1 and lie inside [0, 1]; p25 <= p50 <= p75.",
         "# Generated by scripts/extract_mid_w_zwd_groups.py; regenerate there, never edit.",

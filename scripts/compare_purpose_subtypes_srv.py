@@ -6,8 +6,9 @@ Joins the two committed reference tables produced by the sibling extraction scri
         (regional SrV 2023 Braunschweig + RGB: share of each fine V_ZWECK code WITHIN its
          coarse purpose, GEWICHT_W_ZENSUS-weighted)
     eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
-        (national MiD 2023: share of each W_ZWD subtype group among the LABELLED legs of its
-         purpose, W_GEW-weighted, for both settings of purpose_subtype_codeplan_sentinels)
+        (national MiD 2023: share of each subtype group among the LABELLED legs of its purpose,
+         W_GEW-weighted, once per spec variant -- the measured combinations of the
+         purpose_subtype_codeplan_sentinels and leisure_unspecified_subtype config keys)
 
 on ``braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE`` and writes a comparison
 table plus a human-readable summary to ``--out-dir``.
@@ -36,6 +37,7 @@ import datetime as dt
 import logging
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -47,12 +49,19 @@ if str(REPO) not in sys.path:
 
 from braunschweig.calibration import srv_fine_purpose as F  # noqa: E402
 from braunschweig.popsim.stage.config_keys import (  # noqa: E402
-    DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
 )
+from scripts.extract_mid_w_zwd_groups import SPEC_VARIANT_DESCRIPTIONS  # noqa: E402
 
-#: Name of the config-default constant, rendered into the summary beside its value so the summary
-#: cannot drift away from the code the way hard-coded prose would.
-_CONFIG_DEFAULT_NAME = "DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS"
+#: Names of the config-default constants, rendered into the summary beside their values so the
+#: summary cannot drift away from the code the way hard-coded prose would.
+_CONFIG_DEFAULTS = (
+    ("DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS", KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+     DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS),
+    ("DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE", KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+     DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE),
+)
 
 SRV_REFERENCE_DEFAULT = (REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
                          / F.FINE_PURPOSE_TABLE)
@@ -72,8 +81,9 @@ COMPARISON_COLUMNS = ["subtype_group", "purpose", "spec_variant", "srv_fine_code
 #: Stated verbatim in the summary so the flag's meaning cannot drift away from the code.
 CANDIDATE_RULE = ("candidate_for_reestimation = (exactness == \"exact\") and any over spec "
                   "variants of (abs(delta_pp_comparable) > %.0f); delta_pp_comparable = "
-                  "delta_pp_renormalised where the purpose is asymmetric, else delta_pp"
-                  % F.CANDIDATE_DELTA_PP_THRESHOLD)
+                  "delta_pp_renormalised where the purpose is asymmetric, else delta_pp, and "
+                  "EMPTY for a row outside the comparable universe (grade not in %s)"
+                  % (F.CANDIDATE_DELTA_PP_THRESHOLD, " + ".join(F.COMPARABLE_EXACTNESS)))
 
 #: A purpose's comparable mass may miss 1.0 by at most this much before the renormalised columns
 #: are filled. Floating-point noise on a purpose whose comparable groups exhaust both sides must
@@ -143,29 +153,52 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
         number twice.
 
         ``delta_pp_comparable`` is the delta the flag reads (the renormalised one where filled,
-        else the raw one) and ``candidate_variants`` names the spec variants in which the group
-        crosses the threshold; see :func:`_add_comparable_delta_and_flag`.
+        else the raw one; EMPTY for a row outside the comparable universe) and
+        ``candidate_variants`` names the spec variants in which the group crosses the threshold;
+        see :func:`_add_comparable_delta_and_flag`.
+
+        A group graded ``residual`` is emitted only for the spec variants whose MiD spec defines
+        it; its absence from the others is logged, not raised (the MiD ``leisure_unspecified``
+        group exists only in the production variant). Its shares, counts and medians are built
+        exactly like any other mapped group's -- what the grade changes is that the row stays out
+        of the comparable mass on both sides and can never be a candidate.
 
     Raises
     ------
     ValueError
-        If a subtype group of :data:`SUBTYPE_TO_SRV_FINE` is missing from the MiD reference for
-        some spec variant, if a mapped fine code is missing from the SrV reference, if the MiD
-        purpose disagrees with the coarse purpose of the mapped SrV codes, or if a group graded
-        :data:`srv_fine_purpose.COMPARABLE_EXACTNESS` maps to no SrV fine code at all (see
-        :func:`_add_renormalised_columns`).
+        If a subtype group of :data:`SUBTYPE_TO_SRV_FINE` whose grade is NOT ``residual`` is
+        missing from the MiD reference for some spec variant, if a mapped fine code is missing
+        from the SrV reference, if the MiD purpose disagrees with the coarse purpose of the mapped
+        SrV codes, or if a group graded :data:`srv_fine_purpose.COMPARABLE_EXACTNESS` maps to no
+        SrV fine code at all (see :func:`_add_renormalised_columns`).
     """
     srv = srv_reference.set_index("fine_code")
     rows = []
     for spec_variant, variant_rows in mid_reference.groupby("spec_variant", sort=True):
         mid = variant_rows.set_index("group")
         missing = sorted(set(F.SUBTYPE_TO_SRV_FINE) - set(mid.index))
-        if missing:
+        # A `residual` group exists only in the spec variants that define it (the MiD
+        # leisure_unspecified group is a W_ZWECK-defined group of the production spec only), so
+        # its absence is legitimate -- but never silent: the skipped pair is logged with its
+        # grade. Every other grade must be measured in every variant, or the comparison would
+        # drop a group without saying so.
+        absent_residual = [group for group in missing
+                           if F.SUBTYPE_TO_SRV_FINE[group][1] == "residual"]
+        unexpectedly_missing = [group for group in missing if group not in absent_residual]
+        if unexpectedly_missing:
             raise ValueError(
                 f"[compare_purpose_subtypes_srv] MiD reference variant '{spec_variant}' has no row "
-                f"for subtype group(s) {missing}; every group of SUBTYPE_TO_SRV_FINE must be "
-                "measured, otherwise the comparison would silently omit it.")
+                f"for subtype group(s) {unexpectedly_missing}; every group of SUBTYPE_TO_SRV_FINE "
+                "must be measured in every spec variant unless its grade is 'residual', otherwise "
+                "the comparison would silently omit it.")
+        for group in absent_residual:
+            logger.info("MiD reference variant '%s' has no row for the residual group '%s' "
+                        "(grade %r); its spec does not define the group, so no comparison row is "
+                        "emitted for that pair", spec_variant, group,
+                        F.SUBTYPE_TO_SRV_FINE[group][1])
         for group, (fine_codes, exactness) in F.SUBTYPE_TO_SRV_FINE.items():
+            if group in absent_residual:
+                continue
             mid_row = mid.loc[group]
             unknown = [code for code in fine_codes if code not in srv.index]
             if unknown:
@@ -262,11 +295,18 @@ def _add_comparable_delta_and_flag(comparison: pd.DataFrame) -> pd.DataFrame:
     A group is a candidate when its crosswalk is ``exact`` and ``abs(delta_pp_comparable)`` exceeds
     ``CANDIDATE_DELTA_PP_THRESHOLD`` in at least one spec variant; every row of the group carries the
     flag and the ``|``-joined list of crossing variants, so a reader of one variant's row still
-    sees that the group crossed elsewhere (spec 2.1.3).
+    sees that the group crossed elsewhere (spec 2.1.3). ``delta_pp_comparable`` is filled only for
+    rows INSIDE the comparable universe (:data:`srv_fine_purpose.COMPARABLE_EXACTNESS`); an
+    ``aggregate_only`` or ``residual`` row carries NaN there by construction.
     """
     comparison = comparison.copy()
+    # Only a row INSIDE the comparable universe has a comparable delta at all: an aggregate_only
+    # row has no SrV counterpart, and a residual row has one that is not the same size, so
+    # reporting its raw delta under the name "comparable" would say the opposite of what the
+    # grade means.
+    comparable = comparison["exactness"].isin(F.COMPARABLE_EXACTNESS)
     comparison["delta_pp_comparable"] = comparison["delta_pp_renormalised"].where(
-        comparison["delta_pp_renormalised"].notna(), comparison["delta_pp"])
+        comparison["delta_pp_renormalised"].notna(), comparison["delta_pp"].where(comparable))
     # Which reading each row's flag actually rests on, as a rate (CLAUDE.md "Fallback
     # transparency"): the raw delta is the intended value for a symmetric purpose, but a run in
     # which NO row reaches the renormalised reading would mean the comparable universe never
@@ -275,8 +315,9 @@ def _add_comparable_delta_and_flag(comparison: pd.DataFrame) -> pd.DataFrame:
     n_renormalised = int(comparison["delta_pp_renormalised"].notna().sum())
     n_defined = int(comparison["delta_pp_comparable"].notna().sum())
     logger.info("delta_pp_comparable: %d/%d rows renormalised (asymmetric purposes), %d raw "
-                "(symmetric purposes), %d undefined (no SrV counterpart)", n_renormalised, n_rows,
-                n_defined - n_renormalised, n_rows - n_defined)
+                "(symmetric purposes), %d undefined (outside the comparable universe: %s rows)",
+                n_renormalised, n_rows, n_defined - n_renormalised, n_rows - n_defined,
+                " / ".join(sorted(set(F.EXACTNESS_VALUES) - set(F.COMPARABLE_EXACTNESS))))
     comparison["candidate_for_reestimation"] = False
     comparison["candidate_variants"] = ""
     exact = comparison["exactness"] == "exact"
@@ -414,6 +455,88 @@ def _render_sensitivity_section(comparison: pd.DataFrame) -> list:
     return lines
 
 
+def _render_variant_bullets(comparison: pd.DataFrame) -> list:
+    """One bullet per spec variant PRESENT in the comparison, in the extraction script's words.
+
+    The description text is imported from ``scripts/extract_mid_w_zwd_groups.py``, which owns the
+    variant vocabulary and writes the same sentences into the MiD reference's own header, so the
+    two artefacts cannot describe one variant differently. A variant the extraction script does
+    not know raises rather than being described vaguely: it would mean this summary is reading a
+    reference table written by an incompatible code state.
+    """
+    lines = []
+    for variant in sorted(comparison["spec_variant"].astype(str).unique()):
+        if variant not in SPEC_VARIANT_DESCRIPTIONS:
+            raise ValueError(
+                f"[compare_purpose_subtypes_srv] the MiD reference carries spec variant "
+                f"'{variant}', which scripts/extract_mid_w_zwd_groups.py does not describe "
+                f"(known: {sorted(SPEC_VARIANT_DESCRIPTIONS)}). Regenerate the reference with the "
+                "current extraction code, or add the variant there -- the summary must not "
+                "describe a variant it cannot name.")
+        lines += textwrap.wrap("* `%s` -- %s" % (variant, SPEC_VARIANT_DESCRIPTIONS[variant]),
+                               width=88, subsequent_indent="  ")
+    return lines
+
+
+def _render_residual_section(comparison: pd.DataFrame) -> list:
+    """The ``residual`` pairs: reported side by side, deliberately outside the comparison.
+
+    Generated from the comparison table, so the numbers cannot drift away from the committed CSV.
+    Returns an empty list when the crosswalk grades no pair ``residual``.
+    """
+    rows = comparison[comparison["exactness"] == "residual"]
+    if rows.empty:
+        return []
+    lines = [
+        "",
+        "## Residual legs (reported, not compared)",
+        "",
+        "Both surveys keep a leftover category for a leisure leg whose activity the respondent",
+        "did not name, and the crosswalk pairs them under the grade `residual`. The pair is shown",
+        "here in full -- shares, unweighted counts and medians on both sides -- and is EXCLUDED",
+        "from the comparable universe on BOTH sides, so it enters neither renormalised mass,",
+        "carries no `delta_pp_comparable`, and can never be a `candidate_for_reestimation`.",
+        "",
+        "| subtype group | variant | SrV codes | share MiD | n MiD | share SrV | n SrV |"
+        " median km MiD | median km SrV |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for _, row in rows.iterrows():
+        median_srv = _fmt(row["median_km_srv"], ".2f")
+        if median_srv == "n/a" and row["median_km_srv_components"]:
+            median_srv = "(%s)" % _cell(row["median_km_srv_components"])
+        lines.append("| %s | %s | %s | %s | %d | %s | %s | %s | %s |" % (
+            row["subtype_group"], row["spec_variant"], _cell(row["srv_fine_codes"]) or "-",
+            _fmt(row["share_mid"], ".4f"), int(row["n_mid_unweighted"]),
+            _fmt(row["share_srv"], ".4f"), _fmt(row["n_srv_unweighted"], ".0f"),
+            _fmt(row["median_km_mid"], ".2f"), median_srv))
+    lines += [
+        "",
+        "**Why the two shares must not be differenced.** The pair is the same KIND of leg --",
+        "leisure without a nameable activity -- but not the same SIZE. MiD W_ZWECK 10 \"anderer",
+        "Zweck\" is a TOP-LEVEL answer (the respondent did not even choose \"Freizeit\"); it becomes",
+        "a leisure leg only through the `w_zweck_10_as_leisure` fold (ADR-0111), and it is a",
+        "leisure SUBTYPE only through `leisure_unspecified` (ADR-0115). SrV `V_ZWECK` 18 \"Andere",
+        "Freizeitaktivitaet\" is a sixth option offered AFTER five named leisure activities. A",
+        "respondent therefore reaches the two categories by different routes, so the difference of",
+        "the two shares is not a regional or behavioural finding; it is reported so that neither",
+        "residual is invisible.",
+        "",
+        "**The two medians are different measures.** `median km SrV` is a computed GIS route",
+        "length (`GIS_LAENGE_GUELTIG`), available only for the trips where it could be computed;",
+        "`median km MiD` is the reported/imputed leg distance `wegkm_imp`, present for every",
+        "labelled leg of this delivery. The two are not interchangeable, and their difference also",
+        "carries whatever the GIS-computability selection does.",
+        "",
+        "**This is a survey-vs-survey measurement, not a model measurement.** What share of the",
+        "MODEL's leisure activities ends up in `leisure_unspecified` is a different quantity, and",
+        "it is measured by arm C of the pre-registered A/B (arm B plus `%s`"
+        % KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+        "true), not by this table.",
+    ]
+    return lines
+
+
 def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_reference_path: Path,
                    source_commit: str, *, source_commit_from_flag: bool = False) -> str:
     """Human-readable, deliberately cautious summary of the comparison table.
@@ -448,30 +571,37 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "| SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |",
         "| MiD weights | `W_GEW` (trip expansion weight) |",
         "",
-        "The code state above is the commit that moved the candidate rule onto the comparable",
-        "universe and made the flag group-level across the spec variants (issue #242 item 8, owner",
-        "decision 2026-09-10). Both reference tables are unchanged, so every measured data row of",
-        "`comparison.csv` is unchanged; what changed is the meaning of",
-        "`candidate_for_reestimation` and the two added columns `delta_pp_comparable` and",
-        "`candidate_variants`.",
+        "The code state above is the commit that added the `residual` crosswalk grade (issue #373,",
+        "ADR-0115): MiD `leisure_unspecified` and SrV `V_ZWECK` 18 are now reported as a pair and",
+        "excluded from the comparable universe on both sides. The SrV reference is unchanged; the",
+        "MiD reference gained the spec variant `codeplan_unspecified` while its existing `default`",
+        "and `codeplan` data rows stayed byte-identical, so every pre-existing measured value below",
+        "is unchanged and what is new is that variant's block and the residual row.",
         "",
         "### Flag settings",
         "",
-        "Both settings of the `%s` config key are measured and"
+        "The MiD reference measures several combinations of the `%s`"
         % KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
-        "reported side by side, as the `spec_variant` column:",
+        "and `%s` config keys side by side, as the `spec_variant`"
+        % KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+        "column. The variants present in the file it was given, described in the words of the",
+        "extraction script that wrote it (`SPEC_VARIANT_DESCRIPTIONS`):",
         "",
-        "* `default`  -- `LEISURE_SPEC` / `OTHER_ERRAND_SPEC` (flag OFF): W_ZWD 799 stays in",
-        "  `leisure_activity`, 699 stays in `other_errand_long`.",
-        "* `codeplan` -- `LEISURE_SPEC_CODEPLAN` / `OTHER_ERRAND_SPEC_CODEPLAN` (flag ON): the two",
-        "  no-detail codes are sentinels and leave estimation entirely.",
+    ]
+    lines += _render_variant_bullets(comparison)
+    lines += [
         "",
-        "The shop split (`shop_daily` / `shop_non_daily`) has no codeplan variant, so its two rows",
-        "are identical by construction. The code default read out of",
-        "`braunschweig/popsim/stage/config_keys.py` at generation time is",
-        "`%s = %r`, i.e. the `codeplan` rows describe the"
-        % (_CONFIG_DEFAULT_NAME, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS),
-        "default-configured behaviour; the `default` rows describe the flag switched off.",
+        "The shop split (`shop_daily` / `shop_non_daily`) is the same in every variant, so its",
+        "rows repeat by construction. The code defaults read out of",
+        "`braunschweig/popsim/stage/config_keys.py` at generation time are",
+        "",
+    ]
+    for name, key, value in _CONFIG_DEFAULTS:
+        lines += ["* `%s = %r`" % (name, value), "  (config key `%s`)." % key]
+    lines += [
+        "",
+        "so the variant that matches BOTH defaults describes the default-configured behaviour and",
+        "the others describe one or both keys switched off.",
         "",
         "### Candidate rule (verbatim)",
         "",
@@ -546,6 +676,7 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         ]
 
     lines += _render_sensitivity_section(comparison)
+    lines += _render_residual_section(comparison)
 
     largest = comparison.dropna(subset=["delta_pp"]).reindex(
         comparison["delta_pp"].abs().sort_values(ascending=False).index).dropna(subset=["delta_pp"])
@@ -554,7 +685,11 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "## Largest differences regardless of exactness",
         "",
         "Reported so that a large gap under an `approximate` crosswalk is visible rather than",
-        "hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares.",
+        "hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares, so a",
+        "row of an asymmetric purpose is read against a denominator the other survey does not",
+        "share; and a `residual` row differences two leftovers that sit at different levels of the",
+        "two questionnaires, which the section above spells out. The grade is printed with each",
+        "row for exactly that reason.",
         "",
     ]
     for _, row in largest.head(3).iterrows():
@@ -566,11 +701,13 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "## Caveats that limit how far these numbers carry",
         "",
         "1. **Different denominators inside `leisure`.** The SrV leisure share is taken over the",
-        "   fine codes 13-18, which include 18 \"Andere Freizeitaktivitaet\" -- a residual that the",
-        "   crosswalk maps to no subtype group. The MiD leisure share is taken over the LABELLED",
-        "   legs of W_ZWECK 7, which include `leisure_excursion` -- a group SrV codes nowhere.",
-        "   The four leisure `share_srv` values therefore do not sum to 1, and neither mix is a",
-        "   subset of the other.",
+        "   fine codes 13-18; the MiD leisure share is taken over the LABELLED legs of W_ZWECK 7",
+        "   (plus, in the production variant, the W_ZWECK 10 legs). Each side therefore carries",
+        "   mass the comparable universe leaves out: on the SrV side the residual code 18 \"Andere",
+        "   Freizeitaktivitaet\", on the MiD side `leisure_excursion` (a group SrV codes nowhere)",
+        "   and, in the production variant, the residual group `leisure_unspecified`. The",
+        "   comparable rows consequently do not sum to 1 on EITHER side, and neither mix is a",
+        "   subset of the other -- which is what the comparable-universe reading exists to handle.",
         "2. **The MiD share is conditional on being labelled.** A large share of MiD legs carry a",
         "   design sentinel instead of a W_ZWD detail code (PAPI interview, child under 14); those",
         "   legs are excluded from the denominator, exactly as the estimation excludes them. The",
@@ -579,9 +716,10 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "   estimated on; SrV 2023 here is the Braunschweig + RGB delivery only. A difference",
         "   mixes a regional effect with a survey-instrument effect and cannot be attributed to",
         "   either from this table alone.",
-        "4. **`approximate` and `aggregate_only` rows are not evidence of a defect.** They are",
-        "   reported for completeness; only `exact` rows feed the candidate flag, on the",
-        "   comparable delta.",
+        "4. **`approximate`, `residual` and `aggregate_only` rows are not evidence of a defect.**",
+        "   They are reported for completeness; only `exact` rows feed the candidate flag, on the",
+        "   comparable delta. A `residual` row is additionally outside the comparable universe on",
+        "   both sides (see the section above).",
         "5. **`other_errand_short` is graded `approximate`, not `exact`** (issue #242 Task 6",
         "   review, ruling C-R16), for two independent reasons: the labels overlap the other",
         "   member of the pair -- MiD W_ZWD 602 \"Behoerde, Bank, Post\" feeds",
@@ -630,15 +768,15 @@ def main(argv=None) -> int:
                      "mix (issue #242 Task 6).\n")
         handle.write("# Sources: %s ; %s\n" % (args.srv_reference.as_posix(),
                                                args.mid_reference.as_posix()))
-        handle.write("# Code state: eqasim-bs %s (the commit that moved the candidate rule onto "
-                     "the comparable universe\n"
-                     "#   and made the flag group-level), crosswalk\n"
-                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. Both "
-                     "reference tables are\n"
-                     "#   unchanged, so every measured data row is unchanged; what changed is the "
-                     "meaning of\n"
-                     "#   candidate_for_reestimation and the two added comparable-universe "
-                     "columns.\n" % source_commit)
+        handle.write("# Code state: eqasim-bs %s (the commit that added the 'residual' crosswalk "
+                     "grade), crosswalk\n"
+                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. The SrV "
+                     "reference is unchanged\n"
+                     "#   and the MiD reference's default / codeplan data rows are unchanged; what "
+                     "is new is the MiD\n"
+                     "#   spec variant codeplan_unspecified and the residual row pairing MiD "
+                     "leisure_unspecified with\n"
+                     "#   SrV V_ZWECK 18.\n" % source_commit)
         handle.write("# Rule: %s\n" % CANDIDATE_RULE)
         handle.write("# Renormalised columns (share_mid_renormalised, share_srv_renormalised, "
                      "delta_pp_renormalised): each\n"
@@ -651,10 +789,19 @@ def main(argv=None) -> int:
                      "not code that activity\n"
                      "#   separately at all (never 0, which would read as 'none observed').\n"
                      % " + ".join(F.COMPARABLE_EXACTNESS))
+        handle.write("# exactness: the crosswalk grade (%s). A 'residual' row pairs\n"
+                     "#   the two surveys' leftover leisure categories: it is REPORTED in full but "
+                     "stays OUTSIDE the\n"
+                     "#   comparable universe on BOTH sides, so it carries no renormalised share "
+                     "and no\n"
+                     "#   delta_pp_comparable and can never be a candidate; it is emitted only for "
+                     "the spec variants\n"
+                     "#   whose MiD spec defines the group.\n" % ", ".join(F.EXACTNESS_VALUES))
         handle.write("# delta_pp_comparable / candidate_variants: delta_pp_comparable is the delta "
                      "the flag reads --\n"
-                     "#   delta_pp_renormalised where the purpose is asymmetric, else delta_pp. "
-                     "candidate_variants lists\n"
+                     "#   delta_pp_renormalised where the purpose is asymmetric, else delta_pp, and "
+                     "EMPTY for a row\n"
+                     "#   outside the comparable universe. candidate_variants lists\n"
                      "#   the spec variant(s) in which the group crosses the threshold "
                      "('|'-joined, EMPTY when none);\n"
                      "#   the flag is GROUP-level, so every row of a crossing group carries both. "

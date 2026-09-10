@@ -109,6 +109,11 @@ COARSE_PURPOSES = ("shop", "other_errand", "leisure")
 #:                        ("Einkauf taeglicher Bedarf" vs W_ZWD 501 "Einkauf taeglich").
 #: * ``approximate``    -- the two describe overlapping but not identical activities, so a
 #:                        difference may be a taxonomy artefact rather than a regional one.
+#: * ``residual``       -- both surveys have a leftover category for the SAME KIND of leg, but
+#:                        the two leftovers sit at different levels of their questionnaires, so
+#:                        they are not the same SIZE. The pair IS reported (shares, counts,
+#:                        medians) and is excluded from the comparable universe on BOTH sides;
+#:                        it can never be a re-estimation candidate.
 #: * ``aggregate_only`` -- SrV codes no counterpart at all; the group can only be compared
 #:                        against the coarse purpose as a whole, so no share is emitted.
 #:
@@ -143,13 +148,21 @@ SUBTYPE_TO_SRV_FINE = {
     # SrV 2023 codes no day-trip / holiday purpose at all (18 "Andere Freizeitaktivitaet" is a
     # residual, not an excursion code), so W_ZWD 708/709/722 have no fine counterpart.
     "leisure_excursion": ((), "aggregate_only"),
+    # MiD W_ZWECK 10 "anderer Zweck" (folded to leisure, ADR-0111; own subtype, ADR-0115) vs SrV 18
+    # "Andere Freizeitaktivitaet": the same KIND of leg -- leisure without a nameable activity -- but
+    # not the same SIZE (MiD: a top-level answer instead of "Freizeit"; SrV: a sixth option after
+    # five named ones), so the pair is REPORTED (shares, medians) and excluded from the comparable
+    # universe on both sides; it can never be a candidate.
+    "leisure_unspecified": ((18,), "residual"),
 }
 
-EXACTNESS_VALUES = ("exact", "approximate", "aggregate_only")
+EXACTNESS_VALUES = ("exact", "approximate", "residual", "aggregate_only")
 
 #: Exactness grades whose rows form the COMPARABLE universe of a purpose: activities both surveys
-#: name concretely. Rows of any other grade are unmapped mass on their own side (issue #242, owner
-#: decision 2026-09-10; spec 2026-09-10-leisure-unspecified-subtype-design.md section 2.1).
+#: name concretely. Rows of any other grade stay outside it and must not enter either denominator
+#: -- an ``aggregate_only`` row has no counterpart at all, and a ``residual`` row has one that is
+#: the same KIND but not the same SIZE (issue #242, owner decision 2026-09-10; issue #373 for the
+#: residual grade; spec 2026-09-10-leisure-unspecified-subtype-design.md section 2.1).
 COMPARABLE_EXACTNESS = ("exact", "approximate")
 
 #: A subtype group is flagged as a re-estimation CANDIDATE when its crosswalk is ``exact`` and the

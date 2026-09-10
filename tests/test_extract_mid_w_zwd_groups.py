@@ -23,7 +23,14 @@ def _leg(zweck: int, zwd: int, km: float, weight: float = 1.0) -> dict:
 
 
 def _wege(extra=()) -> pd.DataFrame:
-    """Two legs per group of all three purposes, so every block has a defined share."""
+    """Two legs per group of all three purposes, so every block has a defined share.
+
+    The two W_ZWECK 10 "anderer Zweck" legs carry only design sentinels (2202 "im PAPI nicht
+    erhoben", 7704 "kein Einkaufs-, Erledigungs-, oder Freizeitweg"), which is what the
+    ``leisure_unspecified`` group assumes; they are labelled by the W_ZWECK group in the
+    "codeplan_unspecified" variant and are invisible to the other two, whose leisure spec has
+    ``zweck_values == {7}``.
+    """
     legs = [
         _leg(4, 501, 1.0), _leg(4, 501, 3.0),        # shop_daily
         _leg(4, 502, 5.0), _leg(4, 505, 7.0),        # shop_non_daily
@@ -33,9 +40,16 @@ def _wege(extra=()) -> pd.DataFrame:
         _leg(7, 701, 3.0), _leg(7, 701, 4.0),        # leisure_visit
         _leg(7, 702, 5.0), _leg(7, 799, 6.0),        # leisure_activity (799 only in "default")
         _leg(7, 708, 40.0), _leg(7, 709, 60.0),      # leisure_excursion
+        _leg(10, 2202, 3.0), _leg(10, 7704, 2.5),    # leisure_unspecified (third variant only)
     ]
     legs.extend(extra)
     return pd.DataFrame(legs)
+
+
+def _wege_without_the_code_10_legs() -> pd.DataFrame:
+    """The same fixture with the W_ZWECK 10 legs removed -- the pre-issue-#373 leg universe."""
+    wege = _wege()
+    return wege[wege["W_ZWECK"] != 10].reset_index(drop=True)
 
 
 def _row(table: pd.DataFrame, variant: str, group: str) -> pd.Series:
@@ -62,6 +76,19 @@ def test_specs_for_variant_returns_the_task_5_spec_objects_by_identity():
     assert leisure_codeplan is P.leisure_spec(True)
     # The shop split has no codeplan variant: the very same object in both.
     assert shop_default is M.SHOP_SPEC and shop_codeplan is M.SHOP_SPEC
+
+
+def test_spec_variants_names_the_three_measured_settings():
+    """The third variant is the PRODUCTION composition: both flags on (issue #373, ADR-0115)."""
+    assert M.SPEC_VARIANTS == ("default", "codeplan", "codeplan_unspecified")
+    shop, errand, leisure = M.specs_for_variant("codeplan_unspecified")
+    assert shop is M.SHOP_SPEC
+    assert errand is P.OTHER_ERRAND_SPEC_CODEPLAN
+    assert leisure is P.LEISURE_SPEC_CODEPLAN_UNSPECIFIED
+    assert leisure is P.leisure_spec(True, True)
+    # The fifth group is defined by the RAW purpose code, not by a W_ZWD detail code.
+    assert leisure.zweck_groups == {P.LEISURE_UNSPECIFIED_GROUP: P.LEISURE_UNSPECIFIED_ZWECK}
+    assert P.LEISURE_UNSPECIFIED_GROUP in leisure.group_names
 
 
 def test_specs_for_variant_rejects_an_unknown_variant():
@@ -109,8 +136,8 @@ def test_filter_keeps_weekday_non_rbw_legs_and_reports_the_universe_counts():
     wege = _wege(extra=[dict(_leg(4, 501, 1.0), kernwo=4),          # weekend leg
                         dict(_leg(4, 501, 1.0), W_RBW=1)])          # route-break summary leg
     filtered, diagnostics = M.filter_weekday_legs(wege)
-    assert diagnostics["n_legs_raw"] == 18
-    assert diagnostics["n_legs_after_weekday_rbw"] == 16 == len(filtered)
+    assert diagnostics["n_legs_raw"] == 20
+    assert diagnostics["n_legs_after_weekday_rbw"] == 18 == len(filtered)
     assert diagnostics["n_legs_invalid_weight"] == 0
     assert diagnostics["n_values_coerced_to_nan"] == {c: 0 for c in M.REQUIRED_COLUMNS}
 
@@ -118,7 +145,7 @@ def test_filter_keeps_weekday_non_rbw_legs_and_reports_the_universe_counts():
 def test_filter_raises_on_a_non_positive_weight_and_names_the_rate():
     wege = _wege()
     wege.loc[0, "W_GEW"] = 0.0
-    with pytest.raises(ValueError, match=r"1/16 legs \(6.25%\) have a missing or non-positive W_GEW"):
+    with pytest.raises(ValueError, match=r"1/18 legs \(5.56%\) have a missing or non-positive W_GEW"):
         M.filter_weekday_legs(wege)
 
 
@@ -131,7 +158,7 @@ def test_filter_logs_the_coercion_rate_of_a_non_numeric_column(caplog):
     _, diagnostics = M.filter_weekday_legs(wege)
     assert diagnostics["n_values_coerced_to_nan"]["wegkm_imp"] == 1
     messages = [record.getMessage() for record in caplog.records]
-    assert any("1/16 values (6.25%) of column wegkm_imp" in message for message in messages), messages
+    assert any("1/18 values (5.56%) of column wegkm_imp" in message for message in messages), messages
 
 
 def test_build_raises_on_an_unmapped_w_zwd_code():
@@ -209,3 +236,92 @@ def test_check_invariants_rejects_a_block_whose_shares_do_not_sum_to_one():
     broken.loc[0, "share_within_purpose"] = broken.loc[0, "share_within_purpose"] + 0.1
     with pytest.raises(ValueError, match="share_within_purpose"):
         M.check_invariants(broken)
+
+
+# --------------------------------------------------------------- the third variant (issue #373)
+
+
+def test_the_third_variant_adds_the_w_zweck_defined_leisure_group():
+    """Five leisure rows summing to 1, the fifth measured on the two W_ZWECK 10 legs only.
+
+    Labelled leisure legs under `codeplan_unspecified`: seven code-7 legs (799 is a sentinel
+    here) plus the two code-10 legs, all weight 1.0, so every group's share is n/9. The
+    percentiles come from the two code-10 distances 2.5 km and 3.0 km alone: with equal weights
+    the Hazen midpoint CDF puts them at 0.25 and 0.75, so p25 = 2.5, p50 = 2.75, p75 = 3.0 --
+    values no other leg of the fixture could produce.
+    """
+    table, diagnostics = M.build_group_reference(_wege())
+    M.check_invariants(table)
+    block = table[(table["spec_variant"] == "codeplan_unspecified") & (table["purpose"] == "leisure")]
+    assert len(block) == 5
+    assert sorted(block["group"]) == ["leisure_activity", "leisure_excursion", "leisure_local",
+                                      "leisure_unspecified", "leisure_visit"]
+    assert block["share_within_purpose"].sum() == pytest.approx(1.0)
+    unspecified = _row(table, "codeplan_unspecified", "leisure_unspecified")
+    assert int(unspecified["n_unweighted"]) == 2
+    assert unspecified["share_within_purpose"] == pytest.approx(2.0 / 9.0)
+    assert unspecified["km_p25"] == pytest.approx(2.5)
+    assert unspecified["km_p50"] == pytest.approx(2.75)
+    assert unspecified["km_p75"] == pytest.approx(3.0)
+    assert int(unspecified["n_missing_distance"]) == 0
+    assert diagnostics["codeplan_unspecified/leisure"]["n_labelled"] == 9
+    assert diagnostics["codeplan_unspecified/leisure"]["n_purpose_legs"] == 10
+
+
+def test_the_third_variant_shrinks_the_named_groups_raw_shares_by_one_common_factor():
+    """The four W_ZWD groups keep exactly their legs; only the denominator grows (by the code-10
+    legs), so every named group's share is scaled by the same factor -- which is why their
+    comparable-universe shares in the SrV comparison are unchanged."""
+    table, _ = M.build_group_reference(_wege())
+    factor = 7.0 / 9.0
+    for group in ("leisure_local", "leisure_visit", "leisure_activity", "leisure_excursion"):
+        codeplan = _row(table, "codeplan", group)
+        third = _row(table, "codeplan_unspecified", group)
+        assert int(third["n_unweighted"]) == int(codeplan["n_unweighted"])
+        assert third["share_within_purpose"] == pytest.approx(
+            codeplan["share_within_purpose"] * factor)
+
+
+def test_the_first_two_variant_blocks_are_unchanged_by_the_code_10_legs():
+    """OFF-path identity: the `default` and `codeplan` specs have zweck_values == {7}, so a
+    W_ZWECK 10 leg cannot enter their purpose universe at all. The two blocks must therefore be
+    IDENTICAL to the ones the same fixture produces without any code-10 leg."""
+    with_code_10, _ = M.build_group_reference(_wege())
+    without_code_10, _ = M.build_group_reference(_wege_without_the_code_10_legs())
+    old_blocks = with_code_10[with_code_10["spec_variant"].isin(("default", "codeplan"))]
+    reference = without_code_10[without_code_10["spec_variant"].isin(("default", "codeplan"))]
+    assert old_blocks.reset_index(drop=True).equals(reference.reset_index(drop=True))
+
+
+def test_the_third_variant_sentinel_count_covers_only_the_code_7_legs():
+    """A code-10 leg carries a design sentinel but IS labelled (by its W_ZWECK group), so it is
+    not an exclusion and must not be counted as one -- otherwise the committed coverage header
+    would report the group's own legs as sentinel legs. Only the code-7 sentinel (799 under this
+    variant) remains."""
+    _, diagnostics = M.build_group_reference(_wege())
+    assert diagnostics["codeplan_unspecified/leisure"]["n_sentinel"] == 1
+    assert diagnostics["codeplan/leisure"]["n_sentinel"] == 1
+
+
+def test_a_code_10_leg_carrying_a_real_detail_code_is_counted_and_warned(caplog):
+    """Fallback transparency (CLAUDE.md, MANDATORY): the W_ZWECK group OVERRIDES the detail code,
+    and the spec ASSUMES code-10 legs carry only design sentinels. A leg where that does not hold
+    is relabelled, so the count and the rate must be surfaced rather than happening silently."""
+    caplog.set_level("INFO")
+    table, _ = M.build_group_reference(_wege(extra=[_leg(10, 701, 12.0)]))
+    unspecified = _row(table, "codeplan_unspecified", "leisure_unspecified")
+    assert int(unspecified["n_unweighted"]) == 3          # the 701 leg is NOT a leisure_visit leg
+    assert int(_row(table, "codeplan_unspecified", "leisure_visit")["n_unweighted"]) == 2
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("3 by W_ZWECK group" in message and "1 of those overriding" in message
+               for message in messages), messages
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert any("1/3 legs labelled by a W_ZWECK group (33.33%)" in message
+               and "relabelled by the W_ZWECK group" in message for message in warnings), warnings
+
+
+def test_no_override_warning_when_the_code_10_legs_carry_only_sentinels(caplog):
+    caplog.set_level("INFO")
+    M.build_group_reference(_wege())
+    assert not [record for record in caplog.records if record.levelname == "WARNING"
+                and "relabelled by the W_ZWECK group" in record.getMessage()]

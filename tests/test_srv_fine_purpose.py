@@ -249,26 +249,60 @@ def _srv_reference() -> pd.DataFrame:
     })
 
 
+#: MiD purpose of every subtype group the fixtures below measure.
+_MID_PURPOSES = {"shop_daily": "shop", "shop_non_daily": "shop",
+                 "other_errand_short": "other_errand", "other_errand_long": "other_errand",
+                 "leisure_local": "leisure", "leisure_visit": "leisure",
+                 "leisure_activity": "leisure", "leisure_excursion": "leisure",
+                 "leisure_unspecified": "leisure"}
+
+
+def _mid_rows(variant: str, shares: dict) -> list:
+    """One MiD-reference row per (variant, group), with constant counts and percentiles."""
+    return [{"purpose": _MID_PURPOSES[group], "spec_variant": variant, "group": group,
+             "n_unweighted": 50, "share_within_purpose": share, "km_p25": 1.0,
+             "km_p50": 2.0, "km_p75": 9.0, "n_missing_distance": 0}
+            for group, share in shares.items()]
+
+
 def _mid_reference() -> pd.DataFrame:
-    """Two-variant MiD reference. Leisure is asymmetric on both sides in the SrV fixture (code 18
-    unmapped) and here (leisure_excursion unmapped); the 'codeplan' variant moves leisure_visit
-    just below the raw threshold while the comparable delta stays above it."""
+    """Three-variant MiD reference. Leisure is asymmetric on both sides in the SrV fixture (code
+    18 is residual) and here (leisure_excursion unmapped); the 'codeplan' variant moves
+    leisure_visit just below the raw threshold while the comparable delta stays above it, and
+    'codeplan_unspecified' adds the fifth, W_ZWECK-defined leisure group `leisure_unspecified`
+    that only that variant's spec defines.
+
+    The third variant's leisure shares are deliberately NOT proportional to the codeplan ones, so
+    the brief's arithmetic (comparable MiD mass 0.20 + 0.23 + 0.17 = 0.60) stays readable; the
+    proportionality the REAL extraction produces is pinned separately by
+    :func:`test_the_residual_group_leaves_the_named_groups_comparable_shares_unchanged`.
+    """
     default = {"shop_daily": 0.8, "shop_non_daily": 0.2,
                "other_errand_short": 0.4, "other_errand_long": 0.6,
                "leisure_local": 0.30, "leisure_visit": 0.35,
                "leisure_activity": 0.25, "leisure_excursion": 0.10}
     codeplan = dict(default, leisure_visit=0.33, leisure_activity=0.27)
-    purposes = {"shop_daily": "shop", "shop_non_daily": "shop",
-                "other_errand_short": "other_errand", "other_errand_long": "other_errand",
-                "leisure_local": "leisure", "leisure_visit": "leisure",
-                "leisure_activity": "leisure", "leisure_excursion": "leisure"}
+    codeplan_unspecified = dict(codeplan, leisure_local=0.20, leisure_visit=0.23,
+                                leisure_activity=0.17, leisure_excursion=0.07,
+                                leisure_unspecified=0.33)
     rows = []
-    for variant, shares in (("default", default), ("codeplan", codeplan)):
-        for group, share in shares.items():
-            rows.append({"purpose": purposes[group], "spec_variant": variant, "group": group,
-                         "n_unweighted": 50, "share_within_purpose": share, "km_p25": 1.0,
-                         "km_p50": 2.0, "km_p75": 9.0, "n_missing_distance": 0})
+    for variant, shares in (("default", default), ("codeplan", codeplan),
+                            ("codeplan_unspecified", codeplan_unspecified)):
+        rows.extend(_mid_rows(variant, shares))
     return pd.DataFrame(rows)
+
+
+def _mid_reference_without_the_residual_variant() -> pd.DataFrame:
+    """The two W_ZWD-only variants of :func:`_mid_reference`.
+
+    Used by the tests whose documented arithmetic pins the raw-vs-comparable reading of exactly
+    ONE pair of variants: the third variant carries a different leisure mix, so leaving it in
+    would add a second crossing variant and the pinned numbers would describe only part of the
+    result. A residual group absent from EVERY variant is legitimate in its own right (it is
+    emitted only where a spec defines it), so this is also a valid input.
+    """
+    mid = _mid_reference()
+    return mid[mid["spec_variant"] != "codeplan_unspecified"].reset_index(drop=True)
 
 
 def test_comparison_sums_the_srv_shares_of_a_multi_code_group():
@@ -368,7 +402,7 @@ def test_candidate_flag_is_group_level_across_variants():
     srv = _srv_reference()
     srv.loc[srv["fine_code"] == 15, "share_within_coarse"] = 0.20
     srv.loc[srv["fine_code"] == 18, "share_within_coarse"] = 0.15
-    mid = _mid_reference()
+    mid = _mid_reference_without_the_residual_variant()
     mid.loc[(mid["spec_variant"] == "codeplan") & (mid["group"] == "leisure_visit"),
             "share_within_purpose"] = 0.25
     mid.loc[(mid["spec_variant"] == "codeplan") & (mid["group"] == "leisure_activity"),
@@ -400,7 +434,7 @@ def test_flag_follows_the_comparable_delta_not_the_raw_one():
     srv.loc[srv["fine_code"] == 15, "share_within_coarse"] = 0.27
     srv.loc[srv["fine_code"] == 16, "share_within_coarse"] = 0.13
     srv.loc[srv["fine_code"] == 18, "share_within_coarse"] = 0.15
-    mid = _mid_reference()
+    mid = _mid_reference_without_the_residual_variant()
     mid.loc[mid["group"] == "leisure_excursion", "share_within_purpose"] = 0.30
     mid.loc[mid["group"] == "leisure_local", "share_within_purpose"] = 0.10
     comparison = build_comparison(srv, mid)
@@ -431,7 +465,7 @@ def test_the_crossing_list_reports_a_row_the_raw_reading_would_have_flagged():
     srv = _srv_reference()
     for code, share in ((13, 0.05), (14, 0.15), (15, 0.25), (16, 0.15), (17, 0.10), (18, 0.30)):
         srv.loc[srv["fine_code"] == code, "share_within_coarse"] = share
-    mid = _mid_reference()
+    mid = _mid_reference_without_the_residual_variant()
     mid.loc[mid["group"] == "leisure_visit", "share_within_purpose"] = 0.40
     mid.loc[mid["group"] == "leisure_local", "share_within_purpose"] = 0.25
     comparison = build_comparison(srv, mid)
@@ -455,13 +489,133 @@ def test_the_crossing_list_is_empty_when_both_readings_agree():
 
 
 def test_comparison_covers_every_subtype_group_and_variant():
-    comparison = build_comparison(_srv_reference(), _mid_reference())
-    assert len(comparison) == 2 * len(F.SUBTYPE_TO_SRV_FINE)
+    mid = _mid_reference()
+    comparison = build_comparison(_srv_reference(), mid)
+    # One comparison row per MEASURED (variant, group) pair: the residual group exists only in
+    # the variant whose spec defines it, so the count is the MiD reference's own row count
+    # rather than variants x groups.
+    assert len(comparison) == len(mid)
     assert set(comparison["subtype_group"]) == set(F.SUBTYPE_TO_SRV_FINE)
-    assert set(comparison["spec_variant"]) == {"default", "codeplan"}
+    assert set(comparison["spec_variant"]) == {"default", "codeplan", "codeplan_unspecified"}
 
 
 def test_comparison_raises_when_a_subtype_group_is_missing_from_the_mid_reference():
+    """Only a ``residual`` group may be absent from a variant (see the two tests below); every
+    other grade must be measured in every variant, otherwise the comparison would silently omit
+    it. `leisure_visit` is `exact`, so dropping it must still raise."""
     mid = _mid_reference()
     with pytest.raises(ValueError, match="leisure_visit"):
         build_comparison(_srv_reference(), mid[mid["group"] != "leisure_visit"])
+
+
+# ------------------------------------------------------------------- residual grade (issue #373)
+
+
+def test_residual_pair_is_reported_but_never_comparable_nor_a_candidate():
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    row = comparison[(comparison["subtype_group"] == "leisure_unspecified")].iloc[0]
+    assert row["exactness"] == "residual" and row["srv_fine_codes"] == "18"
+    assert row["share_srv"] == pytest.approx(0.05) and row["share_mid"] == pytest.approx(0.33)
+    assert np.isfinite(row["delta_pp"])                       # reported
+    assert np.isnan(row["share_mid_renormalised"])            # not part of the comparable mass
+    assert not bool(row["candidate_for_reestimation"])
+    third = comparison[comparison["spec_variant"] == "codeplan_unspecified"].set_index("subtype_group")
+    # comparable MiD mass = 0.20 + 0.23 + 0.17 = 0.60 ; SrV = 0.95 (18 excluded)
+    assert third.loc["leisure_visit", "share_mid_renormalised"] == pytest.approx(0.23 / 0.60)
+    assert third.loc["leisure_visit", "share_srv_renormalised"] == pytest.approx(0.30 / 0.95)
+
+
+def test_a_residual_row_carries_the_srv_counterparts_counts_and_median():
+    """The pair is REPORTED in full -- share, unweighted n and median on both sides -- because
+    the point of the grade is to show the two residuals side by side; only the comparable
+    universe and the flag exclude it. `delta_pp_comparable` is EMPTY, not the raw delta: a row
+    outside the comparable universe has no comparable reading."""
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    row = comparison[comparison["subtype_group"] == "leisure_unspecified"].iloc[0]
+    assert int(row["n_srv_unweighted"]) == 100          # the SrV fixture's per-code row count
+    assert int(row["n_mid_unweighted"]) == 50
+    assert row["median_km_srv"] == pytest.approx(18.0)  # the fixture sets gis_km_p50 = fine code
+    assert row["median_km_mid"] == pytest.approx(2.0)
+    assert row["delta_pp"] == pytest.approx(100.0 * (0.33 - 0.05))
+    assert np.isnan(row["share_srv_renormalised"]) and np.isnan(row["delta_pp_renormalised"])
+    assert np.isnan(row["delta_pp_comparable"])
+    assert row["candidate_variants"] == ""
+
+
+def test_the_residual_row_is_excluded_from_the_comparable_mass_on_both_sides():
+    """SrV code 18 was already outside the comparable mass while it was mapped to nothing, and
+    the MiD residual group must be outside it too: the renormalised shares of the three
+    comparable leisure groups must sum to 1 on each side even though a residual row exists."""
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    third = comparison[comparison["spec_variant"] == "codeplan_unspecified"]
+    leisure = third[third["purpose"] == "leisure"]
+    assert leisure["share_mid_renormalised"].sum() == pytest.approx(1.0)
+    assert leisure["share_srv_renormalised"].sum() == pytest.approx(1.0)
+    # The three summands are exactly the comparable rows; the residual and the aggregate_only
+    # row contribute nothing because their renormalised shares are NaN.
+    assert int(leisure["share_mid_renormalised"].notna().sum()) == 3
+    assert set(leisure[leisure["share_mid_renormalised"].notna()]["exactness"]) \
+        == set(F.COMPARABLE_EXACTNESS)
+
+
+def test_every_subtype_group_of_the_crosswalk_has_a_row_in_every_variant():
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    for variant, block in comparison.groupby("spec_variant"):
+        assert set(block["subtype_group"]) >= set(F.SUBTYPE_TO_SRV_FINE) - ({"leisure_unspecified"} if variant != "codeplan_unspecified" else set())
+
+
+def test_a_residual_group_absent_from_a_variant_is_skipped_and_logged(caplog):
+    """A residual group is emitted only where the MiD spec defines it, so its absence from the
+    `default` / `codeplan` variants is legitimate -- but it must not be silent: the skipped
+    (variant, group) pair is logged with its grade."""
+    caplog.set_level("INFO", logger="compare_purpose_subtypes_srv")
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    for variant in ("default", "codeplan"):
+        block = comparison[comparison["spec_variant"] == variant]
+        assert set(block["subtype_group"]) == set(F.SUBTYPE_TO_SRV_FINE) - {"leisure_unspecified"}
+    messages = [record.getMessage() for record in caplog.records]
+    for variant in ("default", "codeplan"):
+        assert any("leisure_unspecified" in message and variant in message
+                   and "residual" in message for message in messages), messages
+
+
+def test_a_missing_group_of_any_other_grade_still_raises():
+    """The exemption is grade-specific, not "any group may be absent": dropping the
+    `aggregate_only` group from ONE variant must still raise."""
+    mid = _mid_reference()
+    dropped = mid[~((mid["spec_variant"] == "default") & (mid["group"] == "leisure_excursion"))]
+    with pytest.raises(ValueError, match="leisure_excursion"):
+        build_comparison(_srv_reference(), dropped)
+
+
+def test_the_residual_group_leaves_the_named_groups_comparable_shares_unchanged():
+    """On the real data the third variant differs from `codeplan` ONLY by a larger leisure
+    denominator (the labelled W_ZWECK 7 legs plus all W_ZWECK 10 legs): the four W_ZWD groups
+    keep exactly their legs, so their raw shares all shrink by ONE common factor and their
+    COMPARABLE shares are therefore identical to the codeplan variant's. Pinned on a fixture
+    built that way -- the module fixture is deliberately not proportional (see its docstring)."""
+    mid = _mid_reference()
+    unspecified_share = 0.25
+    proportional = mid[mid["spec_variant"] == "codeplan"].copy()
+    proportional["spec_variant"] = "codeplan_unspecified"
+    proportional.loc[proportional["purpose"] == "leisure", "share_within_purpose"] *= \
+        1.0 - unspecified_share
+    proportional = pd.concat(
+        [proportional,
+         pd.DataFrame(_mid_rows("codeplan_unspecified",
+                                {"leisure_unspecified": unspecified_share}))],
+        ignore_index=True)
+    rebuilt = pd.concat([mid[mid["spec_variant"] != "codeplan_unspecified"], proportional],
+                        ignore_index=True)
+    comparison = build_comparison(_srv_reference(), rebuilt)
+    codeplan = comparison[comparison["spec_variant"] == "codeplan"].set_index("subtype_group")
+    third = comparison[comparison["spec_variant"] == "codeplan_unspecified"].set_index("subtype_group")
+    for group in ("leisure_local", "leisure_visit", "leisure_activity"):
+        assert third.loc[group, "share_mid"] < codeplan.loc[group, "share_mid"]      # raw shrinks
+        assert third.loc[group, "share_mid_renormalised"] == \
+            pytest.approx(codeplan.loc[group, "share_mid_renormalised"])              # comparable does not
+        assert third.loc[group, "delta_pp_comparable"] == \
+            pytest.approx(codeplan.loc[group, "delta_pp_comparable"])
+    # leisure_excursion is aggregate_only: it has no comparable reading under either variant.
+    assert np.isnan(third.loc["leisure_excursion", "share_mid_renormalised"])
+    assert np.isnan(codeplan.loc["leisure_excursion", "share_mid_renormalised"])
