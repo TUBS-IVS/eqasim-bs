@@ -661,7 +661,7 @@ def configure(context):
     # table is built against the already-sampled and id-remapped synthetic population.
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
-    context.config("escort_purpose", False)
+    escort_purpose = context.config("escort_purpose", False)
     # escort_passive_education is declared with the SHARED key/default constants (final fix
     # wave, item 3), like the plan-structure flags below: the popsim stage reads the same
     # key so its education_flag control seed counts the same W_ZWECK codes as education
@@ -699,8 +699,24 @@ def configure(context):
     # on which code-13 legs are education and the seed describes a different day than the plan.
     # Declared default False; the production true is added to configs/base_bs.yml by task 7
     # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
-    context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    escort_passive_from_adult = context.config(
+        KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
     context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # Ruling C-R22 (issue #373 cleanup wave, item 6): trips.map_purpose already raises this
+    # exact contradiction ("escort_passive_from_adult requires escort_purpose"), but only at
+    # TRIP-BUILD time -- i.e. after synpp has already resolved and run every UPSTREAM stage,
+    # including the full PopulationSim balancing (potentially hours of compute). Repeating the
+    # check here, at CONFIGURE time, lets synpp fail the whole DAG before any stage executes,
+    # mirroring the config-time contradiction guard braunschweig.analysis.synthesis.
+    # plan_structure_vs_srv.configure() already uses for its own trips_view key. The
+    # map_purpose check is KEPT (not removed): it is the last line of defense for any caller
+    # that builds a trip table directly, outside this stage's configure()/execute() contract.
+    if escort_passive_from_adult and not escort_purpose:
+        raise ValueError(
+            f"[trips_stage] {KEY_ESCORT_PASSIVE_FROM_ADULT}=True requires escort_purpose=True "
+            "(without a dedicated escort purpose there is no passive side to re-derive from "
+            "the accompanying adult's leg); set both keys consistently."
+        )
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).

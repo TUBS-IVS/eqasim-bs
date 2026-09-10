@@ -424,6 +424,45 @@ def test_trips_stage_configure_registers_the_plan_structure_keys():
     assert ctx.calls[KEY_CLOSURE_DWELL_MODEL] == "empirical"
 
 
+# ---------------------------------------------------------------------------
+# Ruling C-R22 (issue #373 cleanup wave, item 6): map_purpose already raises
+# "escort_passive_from_adult requires escort_purpose" -- but only at TRIP-BUILD
+# time, i.e. after synpp has already run every upstream stage including the full
+# PopulationSim balancing. configure() must raise the SAME contradiction before
+# any stage executes, so a misconfigured run fails the DAG immediately.
+# ---------------------------------------------------------------------------
+
+def test_trips_stage_configure_raises_when_escort_passive_from_adult_without_escort_purpose():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": False, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    with pytest.raises(ValueError, match="escort_purpose"):
+        trips_stage.configure(ctx)
+
+
+def test_trips_stage_configure_names_both_keys_in_the_error():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": False, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    with pytest.raises(ValueError) as error:
+        trips_stage.configure(ctx)
+    assert "escort_purpose" in str(error.value)
+    assert KEY_ESCORT_PASSIVE_FROM_ADULT in str(error.value)
+
+
+def test_trips_stage_configure_allows_escort_passive_from_adult_with_escort_purpose():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": True, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    trips_stage.configure(ctx)  # must not raise
+
+
+def test_trips_stage_configure_default_flags_do_not_raise():
+    """Both flags default False, so a config that sets neither must configure cleanly."""
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)  # must not raise
+
+
 def test_entd_source_rejects_exclude_rbw_legs():
     from braunschweig.popsim.sources.entd import EntdSource
     with pytest.raises(NotImplementedError, match="exclude_rbw_legs"):

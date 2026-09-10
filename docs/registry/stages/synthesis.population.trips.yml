@@ -59,8 +59,14 @@ notes: >-
   default is false, so a true declared default would make the declared default set internally
   inconsistent and abort after the full PopulationSim balancing) gives a PAIRED passive escort leg
   (W_ZWECK 13) the purpose of the accompanying adult's leg, with escort_passive_pair_max_gap_minutes
-  (unit: minutes, default 15.0) the pairing window. map_purpose raises ValueError naming BOTH keys
-  when escort_passive_from_adult is on and escort_purpose is off. EntdSource.build_trips REJECTS a
+  (unit: minutes, default 15.0) the pairing window. Ruling C-R22 (issue #373 cleanup wave): this
+  stage's OWN configure() now ALSO raises ValueError naming BOTH keys when
+  escort_passive_from_adult is on and escort_purpose is off, so synpp fails the whole DAG before
+  any stage executes; map_purpose's own identical check is kept as the last line of defense for a
+  direct caller outside this stage's configure()/execute() contract (previously the ONLY check,
+  which meant a misconfigured run discovered the contradiction only at trip-build time, i.e. after
+  every upstream stage -- including the full PopulationSim balancing -- had already run).
+  EntdSource.build_trips REJECTS a
   non-default value for all three (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
   ENTD has neither a W_ZWECK vocabulary nor the household/time columns the pairing needs) and both
   popsim_open fixtures set the OFF values explicitly. The pairing runs on the RAW Wege frame inside
