@@ -201,8 +201,17 @@ notes: 'Pipelines. popsim_open is inactive, not not_used: its trip build DOES re
   tests/test_synpp_helper_hash_invariant.py polices own-package siblings only, so the
   cross-package entries are the ones a future edit could silently lose.
 
-  Known limitation (ADR-0114 Consequences/Assumptions): departure_time_mapping_min_model_n governs
-  BOTH call sites, so at small sampling rates the much smaller spliced set coarsens or stays
-  unmapped where the whole-population build maps at purpose_group. Both call sites log their own
-  level split. Whether the splice needs its own threshold is an open question, deliberately not
-  answered in this package.'
+  Ranking base (ruling A-R18, ADR-0114 Consequences/Assumption 10). A quantile map needs a
+  distribution to rank a person IN. That base is the MAPPED SET, which is the population at the
+  trip build but only the spliced home-office persons at the plan replacement -- at small sampling
+  rates those cells coarsened to all_all or stayed unmapped although the population had thousands
+  of persons in the same cell, and a rank among a handful is not a meaningful quantile.
+  apply_departure_time_model therefore takes an optional ranking_context (the population raw first
+  departures per cell, departure_time minus departure_time_offset_seconds of each person first
+  pre-assignment trip, built by build_ranking_context); trips_day_stage builds it from the
+  pre-assignment view and the enriched persons it already reads and passes it in
+  DepartureTimeSettings. A target quantile is its mid-rank in that base, (#below + 0.5 * #ties +
+  0.5) / (N + 1); departure_time_mapping_min_model_n gates the rung CONTEXT size,
+  departure_time_mapping_min_reference_n is unchanged, the context is never itself mapped and
+  there is no second threshold. Without a context (the trip build) the behaviour is byte-identical
+  to before. Both call sites log their realised level split AND their ranking base.'

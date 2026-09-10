@@ -121,11 +121,11 @@ CHILD_MAX_AGE_YEARS = 17
 class DepartureTimeSettings:
     """Everything :func:`build_day_trips` needs to run a departure-time model on replaced rows.
 
-    Grouped into one FROZEN object rather than five loose keyword arguments because the five
-    values are only ever meaningful together: the model name decides whether the reference and
-    the three thresholds are read at all, and a caller that passed four of the five would be
-    configuring a model that silently used a default for the fifth. Frozen so the settings a run
-    logs are provably the settings it applied.
+    Grouped into one FROZEN object rather than a row of loose keyword arguments because the values
+    are only ever meaningful together: the model name decides whether the reference, the ranking
+    context and the three thresholds are read at all, and a caller that passed all but one of them
+    would be configuring a model that silently used a default for the one it forgot. Frozen so the
+    settings a run logs are provably the settings it applied.
 
     Attributes
     ----------
@@ -145,6 +145,16 @@ class DepartureTimeSettings:
         :func:`~braunschweig.popsim.departure_time_model.persons_from_synthetic_schema`. Ruling
         A-R7: a spliced donor day is calibrated against the cell of the person who EXECUTES it,
         never the donor's own, so this frame must describe the receiving persons.
+    ranking_context:
+        The POPULATION's raw first departures per mapping cell (ruling A-R18,
+        :func:`~braunschweig.popsim.departure_time_model.build_ranking_context`), REQUIRED in
+        practice for ``"srv_mapped"`` here and ``None`` for every other model (the dispatch
+        rejects a context a model would ignore). The spliced set is only the replaced
+        home-office persons, so without this base a quantile would be computed among a handful of
+        them and thin cells would coarsen at small scales although the population has thousands
+        of persons in the same cell. ``None`` with ``"srv_mapped"`` is still accepted and means
+        "rank the replaced persons among themselves" -- the pre-A-R18 behaviour, and the reason
+        the realised ranking base is logged rather than assumed.
     """
 
     model: str = MODEL_EQASIM_UNIFORM
@@ -153,6 +163,7 @@ class DepartureTimeSettings:
     min_model_n: int = _departure_time_model.DEFAULT_MIN_MODEL_N
     max_median_shift_hours: float = _departure_time_model.DEFAULT_MAX_MEDIAN_SHIFT_HOURS
     persons: pd.DataFrame = None
+    ranking_context: pd.DataFrame = None
 
 
 def _require_columns(frame: pd.DataFrame, columns, what: str) -> None:
@@ -205,11 +216,17 @@ def _apply_departure_time(replaced: pd.DataFrame, *, random_seed: int,
 
     With ``settings=None`` this is exactly today's ``apply_per_person_jitter`` call, so the
     default path is byte-identical; with settings the model runs on the RECEIVING persons
-    restricted to the replaced set -- restricted because
-    :func:`~braunschweig.popsim.departure_time_model.apply_departure_time_model` ranks a mapping
-    cell's persons AGAINST EACH OTHER, so handing it the whole population would rank the replaced
-    persons among people whose day this call is not touching and give them a different quantile
-    than the set actually being calibrated.
+    restricted to the replaced set -- restricted because those, and only those, are the persons
+    whose day this call SHIFTS.
+
+    The distribution they are RANKED IN is a separate question, and the answer is
+    ``settings.ranking_context`` (ruling A-R18): the population's raw first departures per mapping
+    cell, which the model ranks the replaced persons against without ever mapping the context
+    itself. Ranking them among each other instead -- the pre-A-R18 behaviour, still reachable with
+    ``ranking_context=None`` -- makes a spliced person's quantile depend on how many other
+    home-office persons happen to share their cell in this run: at a smoke or a 1 % scale most
+    cells then coarsen to ``all_all`` or stay unmapped although the population has thousands of
+    persons in the same cell, and a rank among a handful is not a meaningful quantile anyway.
 
     Returns ``(replaced, diagnostics)``; ``diagnostics`` is ``None`` on the jitter path (no model
     ran, and a substituted empty report would read as "the model found nothing to do").
@@ -231,13 +248,18 @@ def _apply_departure_time(replaced: pd.DataFrame, *, random_seed: int,
         model=settings.model, random_seed=random_seed, reference=settings.reference,
         min_reference_n=int(settings.min_reference_n),
         min_model_n=int(settings.min_model_n),
-        max_median_shift_hours=float(settings.max_median_shift_hours))
+        max_median_shift_hours=float(settings.max_median_shift_hours),
+        ranking_context=settings.ranking_context)
     # format_level_split already carries the `unmapped n/total (rate)` term, so it is not
-    # repeated here (same wording as trips_stage._log_departure_time_model's line).
+    # repeated here (same wording as trips_stage._log_departure_time_model's line); the ranking
+    # base is named next to it (ruling A-R18) because the level split alone no longer says what a
+    # quantile was computed in.
     logger.info(
         "%s departure-time model on the replaced rows: %s -- %d person(s), %d trip row(s); "
-        "mapping level: %s", _LOG_TAG, diagnostics["model"], diagnostics["n_persons"],
-        diagnostics["n_trips"], _departure_time_model.format_level_split(diagnostics))
+        "mapping level: %s; ranked in %s", _LOG_TAG, diagnostics["model"],
+        diagnostics["n_persons"], diagnostics["n_trips"],
+        _departure_time_model.format_level_split(diagnostics),
+        _departure_time_model.format_ranking_base(diagnostics))
     return replaced, diagnostics
 
 
@@ -289,7 +311,10 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     :func:`braunschweig.popsim.departure_time_model.apply_departure_time_model` using the
     RECEIVING persons' attributes (ruling A-R7), so a spliced donor day starts where the SrV
     distribution of the person who executes it says -- not where the donor's diary happened to
-    start. Either way the model runs EXACTLY ONCE, on the replaced rows only (ruling R2). The
+    start. The settings' ``ranking_context`` (ruling A-R18) is the POPULATION distribution the
+    replaced persons' quantiles are computed in, so a thin spliced set no longer coarsens the
+    mapping; see :func:`_apply_departure_time`. Either way the model runs EXACTLY ONCE, on the
+    replaced rows only (ruling R2). The
     model's own diagnostics are returned under the ``"departure_time"`` key and logged with the
     per-level split, so a run can state which model produced its reporting day.
 

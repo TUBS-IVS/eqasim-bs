@@ -19,7 +19,11 @@ SPLICED rows, from the same four ``departure_time_*`` config keys the pre-assign
 (``braunschweig.popsim.trips_stage``) reads -- both must resolve the same model, or a home-office
 person's day would follow a different start-time distribution than everybody else's. The receiving
 persons' attributes come from the ALREADY declared ``synthesis.population.enriched`` frame (ruling
-A-R13), so no second population stage enters this stage's DAG.
+A-R13), so no second population stage enters this stage's DAG. For ``srv_mapped`` the stage also
+builds the model's RANKING CONTEXT (ruling A-R18) from that same enriched frame and the
+pre-assignment trips it is already reading: the POPULATION's raw first departures per mapping cell,
+so a spliced person's quantile is computed in the population's distribution of their cell instead
+of among the few home-office persons replaced in this run.
 
 With BOTH flags FALSE the stage returns the pre-assignment frame ITSELF (the very same object, not
 a copy), so the reporting-day view is byte-identical to the pre-assignment one and the alias is a
@@ -195,7 +199,8 @@ def _empty_donor_trips():
     return pd.DataFrame({column: pd.Series(dtype=object) for column in columns})
 
 
-def _departure_time_settings(context, persons: pd.DataFrame) -> DepartureTimeSettings:
+def _departure_time_settings(context, persons: pd.DataFrame,
+                             trips: pd.DataFrame) -> DepartureTimeSettings:
     """Build the :class:`DepartureTimeSettings` for this run from the four declared config keys.
 
     The SrV reference is loaded through
@@ -204,6 +209,15 @@ def _departure_time_settings(context, persons: pd.DataFrame) -> DepartureTimeSet
     message naming the path and the key -- never a silent fall back to the eqasim jitter.
     ``persons`` is the enriched population (ruling A-R13); the plan replacement restricts it to
     the replaced persons itself.
+
+    The RANKING CONTEXT (ruling A-R18) is built here, from the PRE-ASSIGNMENT ``trips`` view and
+    those same enriched persons, for ``srv_mapped`` only -- the two other models rank nothing, and
+    the dispatch rejects a context they would ignore, exactly as ``load_reference_for_model``
+    returns no reference for them. It is the POPULATION's raw first departures per mapping cell,
+    so a spliced person's quantile is computed in the population's distribution of their cell
+    rather than among the handful of home-office persons this run happened to replace. Nothing
+    circular is introduced: the context reads only the pre-assignment view's RAW (pre-model) times
+    and the person attributes this stage already depends on.
     """
     from braunschweig.popsim.stage.config_keys import (
         KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
@@ -214,17 +228,28 @@ def _departure_time_settings(context, persons: pd.DataFrame) -> DepartureTimeSet
         raise ValueError(
             f"{_LOG_TAG} {KEY_DEPARTURE_TIME_MODEL}={model!r} is not a known departure-time "
             f"model; expected one of {list(_departure_time_model.MODELS)}.")
+    # The reference is resolved BEFORE the context is built: a misconfigured run (a missing
+    # committed table) must abort on the configuration, not after a groupby over the whole
+    # population's trips.
+    reference = _departure_time_model.load_reference_for_model(
+        context.config("data_path"), model, config_key=KEY_DEPARTURE_TIME_MODEL)
+    ranking_context = None
+    if model == _departure_time_model.MODEL_SRV_MAPPED:
+        ranking_context = _departure_time_model.build_ranking_context(trips, persons)
     settings = DepartureTimeSettings(
         model=model,
-        reference=_departure_time_model.load_reference_for_model(
-            context.config("data_path"), model, config_key=KEY_DEPARTURE_TIME_MODEL),
+        reference=reference,
         min_reference_n=int(context.config(KEY_DEPARTURE_TIME_MIN_REFERENCE_N)),
         min_model_n=int(context.config(KEY_DEPARTURE_TIME_MIN_MODEL_N)),
         max_median_shift_hours=float(context.config(KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)),
-        persons=persons)
+        persons=persons,
+        ranking_context=ranking_context)
     logger.info("%s departure-time model for the spliced rows: %s (min_reference_n=%d, "
-                "min_model_n=%d, max_median_shift_hours=%.2f)", _LOG_TAG, settings.model,
-                settings.min_reference_n, settings.min_model_n, settings.max_median_shift_hours)
+                "min_model_n=%d, max_median_shift_hours=%.2f); ranking context: %s", _LOG_TAG,
+                settings.model, settings.min_reference_n, settings.min_model_n,
+                settings.max_median_shift_hours,
+                "none (this model ranks nothing)" if ranking_context is None
+                else "%d population person(s)" % len(ranking_context))
     return settings
 
 
@@ -266,7 +291,7 @@ def execute(context):
     # and the model therefore never runs: a misconfigured model (unknown name, or srv_mapped
     # without its committed reference) must abort whenever this stage runs at all, not only when
     # the state draw happens to produce a replaced person.
-    departure_time = _departure_time_settings(context, persons)
+    departure_time = _departure_time_settings(context, persons, trips)
     # Ruling R9: the attributes carry n_trips, which is what lets build_day_trips tell an
     # EXPECTED immobile donor day (n_trips == 0) apart from a donor_id join failure -- both look
     # like "no rows for this donor" in donor_trips alone.

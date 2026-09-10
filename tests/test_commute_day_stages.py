@@ -1119,6 +1119,39 @@ def test_trips_day_stage_srv_mapped_maps_the_spliced_chain_onto_the_srv_referenc
             trips[trips["person_id"] == person_id][list(mapped.columns)].reset_index(drop=True))
 
 
+def test_trips_day_stage_builds_the_ranking_context_from_the_pre_assignment_trips():
+    """Issue #123 cleanup item 7 (ruling A-R18): for ``srv_mapped`` the stage hands the plan
+    replacement the POPULATION's raw first departures per mapping cell, built from the
+    PRE-ASSIGNMENT trips view and the enriched persons it already reads -- so a spliced person's
+    quantile is computed in the population's distribution of their cell rather than among the few
+    home-office persons this run replaced. The other two models rank nothing and get no context.
+    """
+    from braunschweig.popsim.departure_time_model import OFFSET_COLUMN, RANKING_CONTEXT_COLUMNS
+    from braunschweig.popsim.stage.config_keys import KEY_DEPARTURE_TIME_MODEL
+
+    trips = _trips().assign(**{OFFSET_COLUMN: 120.0})
+    stages = _trips_day_stages(_home_person_states(), trips=trips)
+    mapped_context = _context(TRIPS, stages=stages, config=_trips_day_config(
+        **{KEY_DEPARTURE_TIME_MODEL: "srv_mapped"}))
+    settings = TRIPS._departure_time_settings(mapped_context, _persons(), trips)
+
+    context = settings.ranking_context
+    assert list(context.columns) == list(RANKING_CONTEXT_COLUMNS)
+    assert sorted(context["person_id"]) == [1, 2, 3, 4, 5, 6, 7]      # one row per person
+    by_person = context.set_index("person_id")
+    # Person 5's first leg is the escort trip at 27000 s; person 7 is the non-worker whose first
+    # leg goes shopping at 36000 s. The RAW time is the reported one, i.e. minus the offset a
+    # model already applied to the pre-assignment view.
+    assert by_person.loc[5, "purpose"] == "escort"
+    assert by_person.loc[5, "raw_first_departure_seconds"] == 27000.0 - 120.0
+    assert by_person.loc[7, "purpose"] == "shop"
+    assert by_person.loc[7, "group"] == "adult_18_64_not_employed"
+    assert by_person.loc[1, "group"] == "employed"
+
+    uniform_context = _context(TRIPS, stages=stages, config=_trips_day_config())
+    assert TRIPS._departure_time_settings(uniform_context, _persons(), trips).ranking_context is None
+
+
 def test_trips_day_stage_srv_mapped_raises_naming_the_key_when_the_reference_is_missing(tmp_path):
     """No silent fallback to the eqasim jitter: a configured ``srv_mapped`` reporting day whose
     reference is not under ``data_path`` must abort naming the path and the config key."""

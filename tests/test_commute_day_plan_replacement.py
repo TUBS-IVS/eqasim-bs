@@ -8,6 +8,7 @@ byte-identical to the input (ruling R2).
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 
 import numpy as np
@@ -756,3 +757,76 @@ def test_the_departure_time_settings_are_frozen():
     settings = _departure_time_settings(model="eqasim_uniform")
     with pytest.raises(dataclasses.FrozenInstanceError):
         settings.model = "srv_mapped"
+
+
+def _population_ranking_context(n=500, purpose="work", group="employed"):
+    """A POPULATION ranking base (ruling A-R18) for the replaced persons' cell: ``n`` population
+    persons with a raw first departure on the quarter-hour clock grid, in the cell the fixture's
+    donor chain and receiving person p2 resolve to ((work, employed))."""
+    return pd.DataFrame({
+        "person_id": ["pop%04d" % index for index in range(n)],
+        "raw_first_departure_seconds": [7 * 3600.0 + (index % 8) * 900.0 for index in range(n)],
+        "purpose": purpose, "group": group})
+
+
+def test_the_ranking_context_maps_a_spliced_set_too_thin_to_rank_itself(caplog):
+    """Ruling A-R18 (issue #123 cleanup item 7). At the PRODUCTION ``min_model_n`` of 50 a single
+    replaced person cannot be mapped at all when the replaced set is its own ranking base: the
+    cell fails every rung and the spliced day keeps the donor's own start time although the
+    population has hundreds of persons in that same (work, employed) cell.
+
+    With the population as the ranking base the same person maps at ``purpose_group``, and the
+    log line names the base -- a mapped quantile means nothing without knowing what it was
+    computed in.
+    """
+    trips = _trips_fixture()
+    trips[OFFSET_COLUMN] = 0.0
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+
+    alone, diagnostics_alone = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50))
+    assert diagnostics_alone["departure_time"]["cells"][("work", "employed")]["level"] \
+        == "unmapped"
+    assert diagnostics_alone["departure_time"]["n_ranking_context"] is None
+
+    context = _population_ranking_context()
+    with caplog.at_level(logging.INFO, logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        ranked, diagnostics = plan_replacement.build_day_trips(
+            *args, random_seed=RANDOM_SEED,
+            departure_time=_departure_time_settings(min_model_n=50, ranking_context=context))
+
+    cell = diagnostics["departure_time"]["cells"][("work", "employed")]
+    assert cell["level"] == "purpose_group"
+    assert cell["n_model"] == 1 and cell["n_context"] == 500
+    assert diagnostics["departure_time"]["n_ranking_context"] == 500
+    assert "ranked in the population's 500 first departure(s)" in caplog.text
+    # The mapping actually moved the day: the same spliced chain now starts somewhere the
+    # unmapped (de-rounding-only) run cannot reach.
+    assert (ranked[ranked["person_id"] == "p2"]["departure_time"].tolist()
+            != alone[alone["person_id"] == "p2"]["departure_time"].tolist())
+
+
+def test_the_ranking_context_never_changes_the_persons_whose_day_is_replaced():
+    """The context is a ranking BASE, never a work list: adding 500 population persons must not
+    give any of them a spliced day, nor touch a row of the persons this call does not replace."""
+    trips = _trips_fixture()
+    trips[OFFSET_COLUMN] = 0.0
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    alone, _ = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50))
+    ranked, diagnostics = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50,
+                                                ranking_context=_population_ranking_context()))
+
+    # The same persons appear either way (p3 is absent under both, and no pop* person appears).
+    assert set(ranked["person_id"]) == set(alone["person_id"])
+    assert diagnostics["departure_time"]["n_persons"] == 1        # only p2 was shifted
+    untouched = ["p1", "p4", "p5"]
+    pd.testing.assert_frame_equal(
+        ranked[ranked["person_id"].isin(untouched)][list(trips.columns)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True),
+        trips[trips["person_id"].isin(untouched)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True))

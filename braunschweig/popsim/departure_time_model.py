@@ -41,10 +41,25 @@ A-R9): ONLY the FIRST departure is calibrated. Later departures, trip durations 
 durations follow the donor diary and are the model's hold-out validation dimension -- they are
 never mapped here.
 
+Ranking base (ruling A-R18, issue #123 cleanup item 7): a quantile mapping needs a distribution to
+rank a person IN, and by default that distribution is the MAPPED SET itself. That is right for the
+pre-assignment trip build, whose mapped set IS the whole synthetic population, and wrong for the
+reporting-day plan replacement, whose set is only the spliced home-office persons, split further by
+``(first purpose x group)``: at a smoke or a 1 % scale a handful of persons per cell either coarsen
+to ``all_all`` or stay unmapped although the population has thousands of persons in that same cell
+-- and a rank among a handful is not a meaningful quantile anyway. The root cause is therefore the
+RANKING BASE, not the ``min_model_n`` threshold, so :func:`apply_departure_time_model` accepts an
+optional ``ranking_context``: the POPULATION's raw first departures per cell
+(:func:`build_ranking_context`), against which the target persons are quantile-mapped. The
+thinness of the target set then no longer matters and no second threshold is needed. Without a
+context the behaviour is unchanged, byte for byte.
+
 Seeding (ruling A-R2): the de-rounding draws come from
 ``np.random.RandomState(random_seed + DEPARTURE_TIME_SEED_OFFSET)``, so the model consumes its own
 RNG stream and cannot shift any other stage's draws; ``DEPARTURE_TIME_SEED_OFFSET`` was verified
-unused elsewhere in the repository on 2026-09-09.
+unused elsewhere in the repository on 2026-09-09. That ONE stream draws the TARGET persons'
+de-rounding first and the ``ranking_context``'s second (context rows sorted by ``person_id``), so
+adding a context leaves the targets' own de-rounding draws untouched.
 
 Import direction (ruling A-R3): :data:`OFFSET_COLUMN` is declared HERE, and ``trips_stage``
 imports it at module level and re-exports it under its historical name. This module therefore
@@ -120,6 +135,12 @@ SRV_SUBDIR = ("braunschweig", "srv")
 #: Reference position consumed by the model: the person's FIRST trip of the day (the calibrated
 #: target; "later"/"all" are hold-out -- see the module docstring).
 REFERENCE_POSITION = "first"
+
+#: Columns of the optional ``ranking_context`` frame (ruling A-R18): one row per POPULATION person,
+#: carrying that person's RAW first departure -- the reported grid time BEFORE any model, i.e.
+#: ``departure_time - OFFSET_COLUMN`` -- and the ``(purpose, group)`` mapping cell it belongs to.
+#: Built by :func:`build_ranking_context`; consumed by :func:`quantile_map_first_departures`.
+RANKING_CONTEXT_COLUMNS = ("person_id", "raw_first_departure_seconds", "purpose", "group")
 
 #: Pooled reference segment label (``srv_departure_times.SEGMENTS[0]``); the pooled PURPOSE label
 #: is imported from that module as ``PURPOSE_ALL`` so the two files cannot disagree.
@@ -270,6 +291,83 @@ def person_groups(persons: pd.DataFrame) -> pd.Series:
     groups = np.asarray(srv_plan_structure.harmonised_group(persons)).tolist()
     return pd.Series(groups, index=pd.Index(persons["person_id"].to_numpy(), name="person_id"),
                      name="group")
+
+
+# --------------------------------------------------------------------------- ranking context
+def build_ranking_context(trips: pd.DataFrame, persons: pd.DataFrame) -> pd.DataFrame:
+    """The POPULATION's RAW first departures per mapping cell -- the ranking base of ruling A-R18.
+
+    One row per person of ``trips``, with :data:`RANKING_CONTEXT_COLUMNS`:
+
+    * ``raw_first_departure_seconds`` -- the person's FIRST trip's ``departure_time`` MINUS
+      :data:`OFFSET_COLUMN`, i.e. the reported grid time before ANY departure-time model ran. The
+      raw time is what must be ranked: the realised times of the trips frame have already been
+      de-rounded and (under ``srv_mapped``) mapped onto the SrV distribution, so ranking a raw
+      donor time against them would compare two different scales.
+    * ``purpose`` -- the first trip's ``following_purpose`` (the leg's DESTINATION purpose, the
+      side the SrV reference is keyed on).
+    * ``group`` -- the person's harmonised group (:func:`person_groups` on
+      :func:`persons_from_synthetic_schema`, ruling A-R17), so the context's cells are produced by
+      exactly the same rule as the model's and the reference's.
+
+    Deliberately strict, with no drop-and-continue path: a person of ``trips`` without an attribute
+    row RAISES (the population frame must cover the population's own trips), and a non-finite or
+    negative raw time is rejected by :func:`quantile_map_first_departures` when the frame is
+    consumed. A ranking context silently missing rows would silently narrow the very distribution
+    it exists to widen (CLAUDE.md fallback transparency).
+
+    Parameters
+    ----------
+    trips:
+        The population's trips frame -- in a run the PRE-ASSIGNMENT view
+        ``synthesis.population.trips``, which carries :data:`OFFSET_COLUMN` because
+        :func:`braunschweig.popsim.trips_stage.run` wrote it. Needs ``person_id``, ``trip_index``,
+        ``departure_time``, :data:`OFFSET_COLUMN` and ``following_purpose``.
+    persons:
+        The population's person attributes in the SYNTHETIC-population schema (``person_id``,
+        ``age``, ``employed``) -- in a run ``synthesis.population.enriched`` (ruling A-R13).
+
+    Raises
+    ------
+    ValueError
+        If a required column is missing, or a person in ``trips`` has no attribute row in
+        ``persons`` (the message names the count and examples).
+    """
+    _require_columns(trips, ["person_id", "trip_index", "departure_time", OFFSET_COLUMN,
+                             "following_purpose"], "trips frame (ranking context)")
+    groups = person_groups(persons_from_synthetic_schema(persons))
+    positions = pd.DataFrame({
+        "person_id": trips["person_id"].to_numpy(),
+        "trip_index": pd.to_numeric(trips["trip_index"], errors="coerce").to_numpy(),
+        "position": np.arange(len(trips)),
+    }).sort_values(["person_id", "trip_index"], kind="stable")
+    first_position = positions.groupby("person_id", sort=True)["position"].first()
+    person_order = first_position.index.to_numpy()
+    first_position = first_position.to_numpy()
+
+    person_groups_ordered = groups.reindex(person_order)
+    n_missing = int(person_groups_ordered.isna().sum())
+    if n_missing:
+        examples = person_groups_ordered.index[person_groups_ordered.isna()][:5].tolist()
+        raise ValueError(
+            "departure_time_model.build_ranking_context: %d/%d person(s) in the trips frame have "
+            "no attribute row in the persons frame (e.g. %s); the ranking context needs every "
+            "population person's age/employment to place them in a mapping cell"
+            % (n_missing, person_order.size, examples))
+
+    departure = pd.to_numeric(trips["departure_time"], errors="coerce").to_numpy(dtype=float)
+    offset = pd.to_numeric(trips[OFFSET_COLUMN], errors="coerce").to_numpy(dtype=float)
+    context = pd.DataFrame({
+        "person_id": person_order,
+        "raw_first_departure_seconds": (departure - offset)[first_position],
+        "purpose": trips["following_purpose"].to_numpy()[first_position],
+        "group": person_groups_ordered.to_numpy(),
+    })
+    n_cells = int(context.groupby(["purpose", "group"], sort=False).ngroups) if len(context) else 0
+    logger.info("%s ranking context built from the population's trips: %d person(s) over %d "
+                "(purpose, group) cell(s), %d trip row(s) read", _LOG_TAG, len(context), n_cells,
+                len(trips))
+    return context
 
 
 # --------------------------------------------------------------------------- reference table
@@ -473,13 +571,101 @@ def _rung_is_usable(entry, min_reference_n: int) -> bool:
     return bool(np.isfinite(shares).all()) and bool(shares.sum() > 0)
 
 
+def _ranking_context_by_key(ranking_context: pd.DataFrame,
+                            rng: np.random.RandomState) -> dict:
+    """``{rung key: ascending de-rounded context values}`` for every rung the ladder can ask for.
+
+    The context is de-rounded by the SAME reporting-precision rule as the target persons
+    (:func:`derounding_offsets`), from the model's own RNG stream and with the rows sorted by
+    ``person_id``, so the base is reproducible for a given seed and independent of the frame's row
+    order. ASSUMPTION (ADR-0114): this is an INDEPENDENT realisation of the same de-rounding rule,
+    not a replay of the draw the pre-assignment trip build applied to the same persons -- the draw
+    only breaks the reporting grid's ties inside +/- 7.5 min, so the base's distribution is the
+    same in law while individual values differ by less than the reporting cell they came from.
+
+    Keys mirror the reference table's own: the person's own ``(purpose, group)`` cell, the pooled
+    ``(purpose, "all")`` cell over EVERY group of that purpose, and the fully pooled
+    ``("all", "all")`` cell over every person. A rung's base is therefore the population
+    distribution of exactly the reference cell that rung maps onto, and the base can only grow as
+    the ladder coarsens (``"all"`` is a reserved segment/purpose label of the committed reference,
+    never a real purpose or group, so the pooled keys cannot collide with a real cell).
+    """
+    _require_columns(ranking_context, list(RANKING_CONTEXT_COLUMNS), "ranking context")
+    ordered = ranking_context.sort_values("person_id", kind="stable")
+    values = pd.to_numeric(ordered["raw_first_departure_seconds"],
+                           errors="coerce").to_numpy(dtype=float)
+    n_nan = int(np.isnan(values).sum())
+    if n_nan:
+        raise ValueError(
+            "departure_time_model: %d/%d ranking-context raw first departure(s) are NaN or "
+            "non-numeric; every context person must carry the reported grid time "
+            "(departure_time - %s) their cell's distribution is built from"
+            % (n_nan, values.size, OFFSET_COLUMN))
+    n_negative = int((values < 0).sum())
+    if n_negative:
+        raise ValueError(
+            "departure_time_model: %d/%d ranking-context raw first departure(s) are negative; a "
+            "reported departure time cannot precede midnight of the reporting day (fix the "
+            "upstream trip build or the offset column it is derived from)"
+            % (n_negative, values.size))
+    derounded = values + derounding_offsets(values, rng) if values.size else values
+
+    frame = pd.DataFrame({"purpose": ordered["purpose"].astype(str).to_numpy(),
+                          "group": ordered["group"].astype(str).to_numpy(),
+                          "value": derounded})
+    by_key = {}
+    for (purpose, group), cell in frame.groupby(["purpose", "group"], sort=True):
+        by_key[(str(purpose), str(group))] = np.sort(cell["value"].to_numpy(dtype=float))
+    for purpose, cell in frame.groupby("purpose", sort=True):
+        by_key[(str(purpose), SEGMENT_ALL)] = np.sort(cell["value"].to_numpy(dtype=float))
+    by_key[(PURPOSE_ALL, SEGMENT_ALL)] = np.sort(derounded)
+    return by_key
+
+
+def _context_quantiles(values: np.ndarray, context_values: np.ndarray) -> np.ndarray:
+    """Mid-rank plotting position of each value in the ascending ``context_values``:
+    ``(#below + 0.5 * #ties + 0.5) / (N + 1)``.
+
+    Rank-preserving among the values by construction: ``#below + 0.5 * #ties`` is the value's
+    mid-rank in the context and is non-decreasing in the value, so two target persons can never
+    swap order (they CAN tie -- two targets falling between the same two context values receive
+    the same quantile, which is the base's granularity of ``1 / (N + 1)`` and the reason a FAT
+    context matters).
+
+    Consistent with the ladder's own ``(i - 0.5) / n`` convention: a value equal to the i-th of N
+    distinct context values gets ``i / (N + 1)``, which differs from ``(i - 0.5) / N`` by at most
+    ``1 / (2 * (N + 1))`` -- half a context step -- and coincides with it around the median. So a
+    target person lands where an equally placed POPULATION person landed, which is the whole point
+    of ranking against the population instead of against the handful of persons being mapped.
+
+    The ``+ 0.5`` numerator and the ``N + 1`` denominator also keep every quantile strictly inside
+    ``(0, 1)``: a target below (above) every context value must not collapse onto the reference's
+    lowest (highest) bin edge.
+    """
+    below = np.searchsorted(context_values, values, side="left")
+    at_or_below = np.searchsorted(context_values, values, side="right")
+    return (below + 0.5 * (at_or_below - below) + 0.5) / (context_values.size + 1.0)
+
+
 def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.DataFrame, *,
-                                  min_reference_n: int, min_model_n: int):
+                                  min_reference_n: int, min_model_n: int,
+                                  ranking_context: pd.DataFrame = None,
+                                  rng: np.random.RandomState = None):
     """Rank-preserving quantile mapping of de-rounded first departures onto the SrV reference.
 
-    The person with the k-th smallest de-rounded first departure of a mapping set receives that
-    set's ``(k + 0.5) / n`` reference quantile: the ORDER of the persons is preserved exactly,
-    only the spacing is re-shaped to the survey's.
+    Without a ``ranking_context`` the person with the k-th smallest de-rounded first departure of a
+    mapping set receives that set's ``(k + 0.5) / n`` reference quantile: the ORDER of the persons
+    is preserved exactly, only the spacing is re-shaped to the survey's. The mapped set is then its
+    own ranking base, which is what the pre-assignment trip build wants (its set IS the
+    population).
+
+    With a ``ranking_context`` (ruling A-R18) the ranking base is the POPULATION's raw first
+    departures instead (:func:`build_ranking_context`), de-rounded by :func:`_ranking_context_by_key`
+    from ``rng``; each target person's quantile is its mid-rank in that base
+    (:func:`_context_quantiles`), the targets themselves NEVER entering the base. This is what the
+    reporting-day plan replacement needs: its mapped set is only the spliced home-office persons,
+    so ranking them against each other both coarsens needlessly and computes a quantile among a
+    handful of persons.
 
     Coarsening ladder (spec ``2026-09-09-departure-time-srv-mapping-design.md`` section 2.2,
     ruling A-R11) -- ``(purpose, group) -> (purpose, all groups) -> (all purposes, all groups) ->
@@ -487,7 +673,10 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
 
     * the REFERENCE cell of that rung exists, is non-empty and has ``n_unweighted >=
       min_reference_n`` (:func:`_rung_is_usable`), and
-    * the MODEL persons POOLED at that rung number at least ``min_model_n``.
+    * the MODEL side of that rung numbers at least ``min_model_n`` -- the model persons POOLED at
+      the rung without a context, and the rung's CONTEXT cell with one (ruling A-R18: what has to
+      be thick enough is the distribution a person is ranked IN, and with a context that is the
+      population's, never the handful of persons being mapped).
 
     Pooling is what makes a thin cell CLIMB rather than drop out: the ``(purpose, "all")`` rung
     pools the model persons of every group that was too thin (or had no usable reference) for its
@@ -499,11 +688,22 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
     of the population, so the calibrated share would depend on the sample rate far more than the
     ladder makes unavoidable.
 
+    With a context the TARGETS still pool exactly like that -- every still-pending cell of a
+    purpose is mapped together at rung 2 -- but a rung's BASE is the context of that rung's own
+    key: the cell for rung 1, the whole purpose for rung 2, the whole population for rung 3. The
+    base is thus the population distribution of exactly the reference cell being mapped onto, and
+    it can only GROW as the ladder coarsens; pooling only the still-pending cells' context instead
+    could make a coarser rung's base SMALLER than a finer one's, which no coarsening ladder should
+    ever do.
+
     Ranking happens WITHIN the pooled model set of the rung a person maps at, over the union of
     every contributing cell, so the pooled set has ONE common rank order. Determinism: a rung's
     positions are sorted ascending (the values arrive in ``person_id`` order) and the rank sort is
     stable, so ties in the de-rounded time are broken by ``person_id`` and the result depends
-    neither on the input table's row order nor on any dict iteration order.
+    neither on the input table's row order nor on any dict iteration order. With a context the
+    common order is automatic (each target's quantile is a monotone function of its own value in a
+    base shared by the whole rung), and the base itself is sorted by ``person_id`` before the
+    de-rounding draw, so the result is again independent of every row order.
 
     Parameters
     ----------
@@ -516,7 +716,14 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
     min_reference_n:
         Minimum ``n_unweighted`` of a rung's reference cell for that rung to be usable.
     min_model_n:
-        Minimum number of model persons POOLED at a rung for that rung to be usable.
+        Minimum size of a rung's MODEL side -- the pooled model persons without a
+        ``ranking_context``, the rung's context cell with one.
+    ranking_context:
+        OPTIONAL population ranking base with :data:`RANKING_CONTEXT_COLUMNS`; ``None`` keeps the
+        mapped set as its own ranking base (today's behaviour, byte for byte).
+    rng:
+        ``np.random.RandomState`` for the context's de-rounding draw -- REQUIRED with a
+        ``ranking_context`` and unused without one.
 
     Returns
     -------
@@ -524,17 +731,27 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
         ``offsets_seconds`` -- the MAPPING offset per person (0 for an unmapped person; the
         caller adds the de-rounding offset).
         ``cell_report`` -- one entry per ORIGINAL ``(purpose, group)`` cell:
-        ``{"n_model", "n_model_pooled", "n_reference", "level", "median_shift_min",
-        "median_abs_shift_min"}``. ``n_model`` counts the cell's OWN persons, ``n_model_pooled``
-        the persons ranked together at the rung it mapped at (the two are equal at
-        ``purpose_group`` level). For an UNMAPPED cell -- which by definition never pooled --
+        ``{"n_model", "n_model_pooled", "n_context", "n_context_pooled", "n_reference", "level",
+        "median_shift_min", "median_abs_shift_min"}``. ``n_model`` counts the cell's OWN persons,
+        ``n_model_pooled`` the persons ranked together at the rung it mapped at (the two are equal
+        at ``purpose_group`` level). For an UNMAPPED cell -- which by definition never pooled --
         ``n_model_pooled`` is the size of the LAST pooled ATTEMPT, i.e. of the ``("all", "all")``
         set that cell was part of, so a reader sees how far that attempt was from
         ``min_model_n`` instead of a copy of the cell's own size that reads as "ranked alone".
+        ``n_context`` / ``n_context_pooled`` are the same two counts on the RANKING BASE -- the
+        cell's own context persons and the base actually ranked against (the last attempt's base,
+        the whole context, when unmapped) -- and are ``None`` when no context was given, which
+        must not be readable as "the base was empty".
         The medians are over the cell's own persons, so a caller can
         guard per cell (:func:`apply_departure_time_model` warns above ``max_median_shift_hours``)
         -- the offsets themselves are NEVER clipped here, since a large shift is a finding about
         the donor, not something to hide.
+
+    Raises
+    ------
+    ValueError
+        If the cells are not aligned with the values, or a ``ranking_context`` is given without an
+        ``rng`` (or with a malformed/invalid frame -- see :func:`_ranking_context_by_key`).
     """
     values = np.asarray(first_departure_seconds, dtype=float)
     cell_tuples = [(str(purpose), str(group)) for purpose, group in cells]
@@ -543,6 +760,11 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
             "departure_time_model.quantile_map_first_departures: %d cell(s) for %d value(s); the "
             "cells must be aligned element-wise with the first departures"
             % (len(cell_tuples), values.size))
+    if ranking_context is not None and rng is None:
+        raise ValueError(
+            "departure_time_model.quantile_map_first_departures: a ranking_context needs the "
+            "model's rng to de-round it (RandomState(random_seed + %d)); pass rng="
+            % DEPARTURE_TIME_SEED_OFFSET)
     offsets = np.zeros(values.size, dtype=float)
     report = {}
     if values.size == 0:
@@ -554,12 +776,29 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
          "group": [cell[1] for cell in cell_tuples]}).groupby(["purpose", "group"],
                                                               sort=True).indices
 
+    # The RANKING BASE per rung key (ruling A-R18): the population's de-rounded raw first
+    # departures with a context, nothing without one. `_empty_base` keeps the lookups below
+    # branch-free for a cell the context has no person in (n_context 0 -> that rung is not usable,
+    # exactly as an empty reference cell is not).
+    context_by_key = None if ranking_context is None else _ranking_context_by_key(
+        ranking_context, rng)
+    _empty_base = np.zeros(0, dtype=float)
+
+    def base_for(key):
+        """The ranking base of a rung, or an empty base when there is no context at all."""
+        return _empty_base if context_by_key is None else context_by_key.get(key, _empty_base)
+
+    def model_side_n(key, pooled_target_n):
+        """The count `min_model_n` gates: the rung's CONTEXT cell with a context, the pooled
+        target persons without one (the mapped set is then its own ranking base)."""
+        return pooled_target_n if context_by_key is None else int(base_for(key).size)
+
     # ---- rung 1: the person's own (purpose, group) cell
     rung_by_cell = {}                       # cell -> (level, reference key)
     pending = sorted(positions_by_cell)     # cells not yet placed on a rung
     for cell in list(pending):
         if (_rung_is_usable(reference_cells.get(cell), min_reference_n)
-                and positions_by_cell[cell].size >= min_model_n):
+                and model_side_n(cell, positions_by_cell[cell].size) >= min_model_n):
             rung_by_cell[cell] = (LEVEL_PURPOSE_GROUP, cell)
             pending.remove(cell)
 
@@ -570,7 +809,8 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
     for purpose, purpose_cells in sorted(by_purpose.items()):
         key = (purpose, SEGMENT_ALL)
         pooled = sum(positions_by_cell[cell].size for cell in purpose_cells)
-        if _rung_is_usable(reference_cells.get(key), min_reference_n) and pooled >= min_model_n:
+        if (_rung_is_usable(reference_cells.get(key), min_reference_n)
+                and model_side_n(key, pooled) >= min_model_n):
             for cell in purpose_cells:
                 rung_by_cell[cell] = (LEVEL_PURPOSE_ALL, key)
                 pending.remove(cell)
@@ -578,7 +818,8 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
     # ---- rung 3: ("all", "all") -- pools everyone still unplaced
     pooled_key = (PURPOSE_ALL, SEGMENT_ALL)
     pooled = sum(positions_by_cell[cell].size for cell in pending)
-    if _rung_is_usable(reference_cells.get(pooled_key), min_reference_n) and pooled >= min_model_n:
+    if (_rung_is_usable(reference_cells.get(pooled_key), min_reference_n)
+            and model_side_n(pooled_key, pooled) >= min_model_n):
         for cell in list(pending):
             rung_by_cell[cell] = (LEVEL_ALL_ALL, pooled_key)
             pending.remove(cell)
@@ -587,8 +828,10 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
     # n_model_pooled would read as "this cell was ranked alone against a reference". What it
     # actually was part of is the LAST pooled ATTEMPT -- the ("all", "all") set assembled just
     # above -- and reporting THAT size is what lets a reader see how far the attempt was from
-    # min_model_n (Task 4, folding in the Task 3 re-review observation).
+    # min_model_n (Task 4, folding in the Task 3 re-review observation). The same reading applies
+    # to the ranking base: the last attempt's base is the WHOLE context.
     n_pooled_by_cell = {cell: int(pooled) for cell in pending}
+    n_context_pooled_by_cell = {cell: int(base_for(pooled_key).size) for cell in pending}
 
     # ---- map each rung's POOLED model set in one common rank order
     cells_by_rung = {}
@@ -598,17 +841,29 @@ def quantile_map_first_departures(first_departure_seconds, cells, reference: pd.
         rung_positions = np.sort(np.concatenate([positions_by_cell[cell]
                                                  for cell in sorted(rung_cells)]))
         shares, _n_reference = reference_cells[key]
-        order = rung_positions[np.argsort(values[rung_positions], kind="stable")]
-        quantiles = (np.arange(order.size) + 0.5) / order.size
-        offsets[order] = _inverse_cdf(quantiles, shares) - values[order]
+        base = base_for(key)
+        if context_by_key is None:
+            order = rung_positions[np.argsort(values[rung_positions], kind="stable")]
+            quantiles = (np.arange(order.size) + 0.5) / order.size
+            offsets[order] = _inverse_cdf(quantiles, shares) - values[order]
+        else:
+            # Ranked in the POPULATION's distribution of this rung's cell, so the order among the
+            # targets follows from their values alone -- no sort over the targets is needed, and
+            # the whole rung shares one base (see _context_quantiles for the formula).
+            quantiles = _context_quantiles(values[rung_positions], base)
+            offsets[rung_positions] = _inverse_cdf(quantiles, shares) - values[rung_positions]
         for cell in rung_cells:
             n_pooled_by_cell[cell] = int(rung_positions.size)
+            n_context_pooled_by_cell[cell] = int(base.size)
 
     for cell, positions in sorted(positions_by_cell.items()):
         level, key = rung_by_cell.get(cell, (LEVEL_UNMAPPED, None))
         report[cell] = {
             "n_model": int(positions.size),
             "n_model_pooled": n_pooled_by_cell.get(cell, int(positions.size)),
+            "n_context": None if context_by_key is None else int(base_for(cell).size),
+            "n_context_pooled": (None if context_by_key is None
+                                 else n_context_pooled_by_cell.get(cell, 0)),
             "n_reference": int(reference_cells[key][1]) if key is not None else 0,
             "level": level,
             "median_shift_min": float(np.median(offsets[positions]) / 60.0),
@@ -625,14 +880,16 @@ def _empty_diagnostics(model: str, n_persons: int, n_trips: int) -> dict:
     return {"model": model, "n_persons": n_persons, "n_trips": n_trips, "cells": {},
             "n_persons_by_level": {}, "share_unmapped": float("nan"), "n_persons_unmapped": 0,
             "n_persons_without_first_departure": 0, "n_clipped_lower": 0, "n_clipped_upper": 0,
-            "n_clip_bound_conflicts": 0, "n_cells_over_median_shift_guard": 0}
+            "n_clip_bound_conflicts": 0, "n_cells_over_median_shift_guard": 0,
+            "n_ranking_context": None}
 
 
 def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, model: str,
                                random_seed: int, reference: pd.DataFrame = None,
                                min_reference_n: int = DEFAULT_MIN_REFERENCE_N,
                                min_model_n: int = DEFAULT_MIN_MODEL_N,
-                               max_median_shift_hours: float = DEFAULT_MAX_MEDIAN_SHIFT_HOURS):
+                               max_median_shift_hours: float = DEFAULT_MAX_MEDIAN_SHIFT_HOURS,
+                               ranking_context: pd.DataFrame = None):
     """Apply one of the three departure-time models to a trip table (see the module docstring).
 
     Every person's whole chain is shifted by ONE offset -- ``derounding + mapping`` for
@@ -672,6 +929,14 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
         A cell whose median |mapping shift| exceeds this is WARNED about, naming the cell and both
         its medians. The offsets are NOT clipped to it: a large shift means the donor's start
         times for that cell are far from the SrV ones, which is a finding to report, not to hide.
+    ranking_context:
+        OPTIONAL ranking base for ``srv_mapped`` (ruling A-R18): the POPULATION's raw first
+        departures per mapping cell, with :data:`RANKING_CONTEXT_COLUMNS` -- see
+        :func:`build_ranking_context`. Pass it wherever the mapped set is only a SUBSET of the
+        population (the reporting-day plan replacement's spliced home-office persons); the
+        pre-assignment trip build, whose mapped set IS the population, passes nothing and keeps
+        today's behaviour byte for byte. Rejected for the two models that map nothing, so a
+        caller cannot believe a context is in effect when it is not.
 
     Returns
     -------
@@ -679,20 +944,29 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
         ``diagnostics`` carries ``model``, ``n_persons``, ``n_trips``, the per-cell ``cells``
         report, ``n_persons_by_level`` / ``share_unmapped`` / ``n_persons_unmapped``,
         ``n_persons_without_first_departure``, ``n_clipped_lower`` / ``n_clipped_upper`` /
-        ``n_clip_bound_conflicts`` and ``n_cells_over_median_shift_guard``. Mapping-specific
-        entries are empty/NaN for the models that do no mapping.
+        ``n_clip_bound_conflicts``, ``n_cells_over_median_shift_guard`` and ``n_ranking_context``
+        (the number of population persons the targets were ranked against, ``None`` when no
+        context was given). Mapping-specific entries are empty/NaN for the models that do no
+        mapping.
 
     Raises
     ------
     ValueError
-        If ``model`` is unknown, ``srv_mapped`` is requested without a ``reference``, a required
-        column is missing, or -- for ``srv_mapped`` only, the one model that groups persons -- a
-        person in ``table`` has no attribute row in ``persons``.
+        If ``model`` is unknown, ``srv_mapped`` is requested without a ``reference``, a
+        ``ranking_context`` is passed for a model that maps nothing, a required column is missing,
+        or -- for ``srv_mapped`` only, the one model that groups persons -- a person in ``table``
+        has no attribute row in ``persons``.
     """
     if model not in MODELS:
         raise ValueError(
             "departure_time_model: unknown model %r; expected one of %s"
             % (model, list(MODELS)))
+    if ranking_context is not None and model != MODEL_SRV_MAPPED:
+        raise ValueError(
+            "departure_time_model: model %r maps nothing, so a ranking_context would have no "
+            "effect; only '%s' ranks persons in a distribution. Pass ranking_context=None for "
+            "this model rather than a base that is silently ignored."
+            % (model, MODEL_SRV_MAPPED))
 
     if model == MODEL_EQASIM_UNIFORM:
         # Lazy import (ruling A-R3): trips_stage imports THIS module at module level for
@@ -770,13 +1044,18 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
     n_persons_by_level = {}
     share_unmapped = float("nan")
     n_unmapped = 0
+    n_ranking_context = None if ranking_context is None else int(len(ranking_context))
     if model == MODEL_SRV_MAPPED:
         purposes = table["following_purpose"].to_numpy()[first_position]
         cells = list(zip(purposes[has_first_departure],
                          groups.to_numpy()[has_first_departure]))
+        # The SAME rng continues into the mapping: it draws the TARGETS' de-rounding above and the
+        # ranking context's below, so the model still consumes ONE seeded stream and a context
+        # cannot shift the targets' own draws (module docstring, ruling A-R2).
         mapped, cell_report = quantile_map_first_departures(
             first_departure[has_first_departure] + derounding[has_first_departure], cells,
-            reference, min_reference_n=min_reference_n, min_model_n=min_model_n)
+            reference, min_reference_n=min_reference_n, min_model_n=min_model_n,
+            ranking_context=ranking_context, rng=rng)
         mapping[has_first_departure] = mapped
         n_persons_by_level = {label: 0 for label in LEVEL_LABELS}
         for entry in cell_report.values():
@@ -840,6 +1119,7 @@ def apply_departure_time_model(table: pd.DataFrame, persons: pd.DataFrame, *, mo
         "n_persons_without_first_departure": n_without_first_departure,
         "n_clipped_lower": n_clipped_lower, "n_clipped_upper": n_clipped_upper,
         "n_clip_bound_conflicts": n_conflicts, "n_cells_over_median_shift_guard": 0,
+        "n_ranking_context": n_ranking_context,
     }
     diagnostics["n_cells_over_median_shift_guard"] = _log_diagnostics(
         diagnostics, max_median_shift_hours=max_median_shift_hours, n_finite=int(finite.sum()))
@@ -865,6 +1145,22 @@ def format_level_split(diagnostics: dict) -> str:
         for label in LEVEL_LABELS)
 
 
+def format_ranking_base(diagnostics: dict) -> str:
+    """``"the population's 12,345 first departure(s)"`` / ``"the mapped set itself"`` -- WHICH
+    distribution a run's persons were ranked in (ruling A-R18).
+
+    Stated ONCE here and rendered by :func:`_log_diagnostics` and by
+    :mod:`braunschweig.synthesis.commute_day.plan_replacement`, for the same reason
+    :func:`format_level_split` exists: the ranking base decides what a mapped quantile MEANS, so a
+    stage log and the model's own log must not describe it in two vocabularies. Never the bare
+    number 0 for "no context", which would read as "the base was empty".
+    """
+    n_context = diagnostics.get("n_ranking_context")
+    if n_context is None:
+        return "the mapped set itself (no ranking context)"
+    return "the population's %d first departure(s) (ranking context)" % n_context
+
+
 def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_finite: int) -> int:
     """Log every count as ``n/total (rate)`` under :data:`_LOG_TAG` and return the number of cells
     that tripped the median-shift guard (CLAUDE.md fallback transparency: a mapping that did not
@@ -882,7 +1178,8 @@ def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_fini
     levels = ""
     if diagnostics["n_persons_by_level"]:
         levels = format_level_split(diagnostics)
-        logger.info("%s mapping level: %s", _LOG_TAG, levels)
+        logger.info("%s mapping level: %s; ranked in %s", _LOG_TAG, levels,
+                    format_ranking_base(diagnostics))
         n_coarsened = sum(diagnostics["n_persons_by_level"][label]
                           for label in (LEVEL_PURPOSE_ALL, LEVEL_ALL_ALL, LEVEL_UNMAPPED))
         if n_coarsened / n_persons > COARSENED_SHARE_WARN:
@@ -903,17 +1200,24 @@ def _log_diagnostics(diagnostics: dict, *, max_median_shift_hours: float, n_fini
         logger.warning(
             "%s %d/%d person(s) (%.1f%%) stayed unmapped -- above the %.0f%% threshold. Those "
             "persons keep the donor's own first departure (de-rounded only), so the SrV start-time "
-            "calibration did NOT happen for them; check min_reference_n / min_model_n and the "
-            "reference's cell coverage", _LOG_TAG, diagnostics["n_persons_unmapped"], n_persons,
-            100.0 * share_unmapped, 100.0 * UNMAPPED_SHARE_WARN_THRESHOLD)
+            "calibration did NOT happen for them; check min_reference_n / min_model_n, the "
+            "reference's cell coverage and the ranking base (%s)", _LOG_TAG,
+            diagnostics["n_persons_unmapped"], n_persons, 100.0 * share_unmapped,
+            100.0 * UNMAPPED_SHARE_WARN_THRESHOLD, format_ranking_base(diagnostics))
 
     n_over_guard = 0
     for (purpose, group), entry in sorted(diagnostics["cells"].items()):
+        # The ranking base is per cell too (ruling A-R18): a cell mapped at purpose_group against
+        # a thin context is a different claim from one mapped against thousands of population
+        # persons, so the count belongs on the SAME line as the level.
+        context = ("no ranking context" if entry.get("n_context") is None else
+                   "n_context=%d (pooled %d)" % (entry["n_context"], entry["n_context_pooled"]))
         logger.info("%s cell purpose=%s group=%s: level=%s n_model=%d (pooled %d at that rung, "
-                    "or at the LAST attempt when unmapped) "
+                    "or at the LAST attempt when unmapped) %s "
                     "n_reference=%d median shift %.1f min (median |shift| %.1f min)", _LOG_TAG,
                     purpose, group, entry["level"], entry["n_model"], entry["n_model_pooled"],
-                    entry["n_reference"], entry["median_shift_min"], entry["median_abs_shift_min"])
+                    context, entry["n_reference"], entry["median_shift_min"],
+                    entry["median_abs_shift_min"])
         if entry["level"] == LEVEL_UNMAPPED:
             continue
         if entry["median_abs_shift_min"] > max_median_shift_hours * 60.0:

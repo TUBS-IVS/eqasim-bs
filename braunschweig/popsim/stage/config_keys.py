@@ -441,8 +441,12 @@ DEFAULT_DEPARTURE_TIME_MODEL = "eqasim_uniform"
 # Unit: persons (unweighted survey observations). Valid range: >= 1.
 KEY_DEPARTURE_TIME_MIN_REFERENCE_N = "departure_time_mapping_min_reference_n"
 DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N = 200
-# Minimum number of MODEL persons pooled at a ladder rung for that rung to be used; a thinner
-# set climbs to the next rung instead of being ranked against the reference on its own.
+# Minimum size of a ladder rung's MODEL side for that rung to be used; a thinner one climbs to the
+# next rung instead of being ranked against the reference on its own. The model side is the RANKING
+# BASE: the persons pooled at the rung where the mapped set is its own base (the whole-population
+# trip build), and the rung's cell of the POPULATION ranking context where one is given (the
+# reporting-day splice, ruling A-R18) -- so the key sizes the same thing, the distribution a person
+# is ranked in, at both call sites.
 # Unit: persons (synthetic). Valid range: >= 1.
 KEY_DEPARTURE_TIME_MIN_MODEL_N = "departure_time_mapping_min_model_n"
 DEFAULT_DEPARTURE_TIME_MIN_MODEL_N = 50

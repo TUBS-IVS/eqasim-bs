@@ -570,3 +570,246 @@ def test_a_malformed_arrival_before_the_earliest_departure_raises():
         M.apply_departure_time_model(table, _persons(60), model=M.MODEL_SRV_MAPPED,
                                      random_seed=1, reference=_reference(peak_bin=0),
                                      min_reference_n=100, min_model_n=1)
+
+
+# ---------------------------------------------------------------------------
+# The ranking context (ruling A-R18, issue #123 cleanup item 7).
+# The mapping is a quantile map, so it needs a distribution to rank a person IN. Ranking the
+# MAPPED SET is right for the whole-population trip build and wrong for the reporting-day splice,
+# whose set is a handful of home-office persons; ``ranking_context`` makes the POPULATION that
+# distribution instead. Without a context nothing changes, byte for byte.
+# ---------------------------------------------------------------------------
+
+def _ranking_context(values=None, n=2000, purpose="education",
+                     group="school_age_6_17_not_employed"):
+    """A population ranking base: one row per POPULATION person with that person's RAW first
+    departure (``departure_time - OFFSET_COLUMN``) and their mapping cell.
+
+    Defaults to ``n`` persons on the same quarter-hour clock grid as :func:`_table`, so the
+    context is de-rounded exactly like the target persons are.
+    """
+    if values is None:
+        values = [7 * 3600 + (i % 4) * 900 for i in range(n)]
+    return pd.DataFrame({"person_id": ["pop%05d" % i for i in range(len(values))],
+                         "raw_first_departure_seconds": [float(v) for v in values],
+                         "purpose": purpose, "group": group})
+
+
+def _table_with_departures(departures, purpose="education"):
+    """:func:`_table`'s two-trip chain per person, with each person's FIRST departure given
+    explicitly, so a test can place a reported time exactly where it needs it."""
+    rows = []
+    for person_id, departure in enumerate(departures):
+        departure = float(departure)
+        rows += [{"person_id": person_id, "trip_index": 0, "departure_time": departure,
+                  "arrival_time": departure + 900,
+                  "preceding_purpose": "home", "following_purpose": purpose},
+                 {"person_id": person_id, "trip_index": 1, "departure_time": departure + 6 * 3600,
+                  "arrival_time": departure + 6 * 3600 + 900,
+                  "preceding_purpose": purpose, "following_purpose": "home"}]
+    return pd.DataFrame(rows)
+
+
+def _off_grid_seconds(count, start_minute=361):
+    """``count`` ascending, distinct reported times whose MINUTE is off the five-minute grid.
+
+    The reporting-precision rule gives such a report half width 0, so the de-rounding is exactly
+    zero and a context-vs-target comparison is arithmetically exact rather than up to +/- 7.5 min.
+    All values stay inside one hour, so no chain approaches the plan-time clip.
+    """
+    values, minute = [], start_minute
+    while len(values) < count:
+        if minute % 5:
+            for second in range(60):
+                values.append(minute * 60.0 + second)
+                if len(values) == count:
+                    break
+        minute += 1
+    return values
+
+
+def test_a_thin_target_set_is_ranked_in_the_population_instead_of_in_itself():
+    """REPRODUCTION of the defect (Task 4 review Minor 4): 30 persons in ONE cell, a fat
+    reference (500 unweighted observations) and ``min_model_n=50``.
+
+    Without a context the 30 persons ARE the whole ranking base, so the cell fails every rung and
+    stays UNMAPPED -- they keep the donor's own start times although the population has 2,000
+    persons in exactly that cell and the whole-population trip build maps it at ``purpose_group``
+    (proved by ``test_srv_mapped_moves_every_first_departure_into_the_reference_cell_and_shifts_
+    the_chain``, which maps 100 persons against the same reference). The root cause is the RANKING
+    BASE, not the threshold: with the population as the base the same 30 persons map at
+    ``purpose_group`` and land in the reference's own quarter hour (bin 30), and the gate reads
+    the CONTEXT size.
+    """
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(),
+                     min_reference_n=100, min_model_n=50)
+    without, diagnostics_without = M.apply_departure_time_model(_table(30), _persons(30),
+                                                                **arguments)
+    assert diagnostics_without["cells"][("education", "school_age_6_17_not_employed")]["level"] \
+        == "unmapped"
+    assert diagnostics_without["share_unmapped"] == 1.0
+    assert (without[without["trip_index"] == 0]["departure_time"] < 30 * 900).any()
+
+    with_context, diagnostics = M.apply_departure_time_model(
+        _table(30), _persons(30), ranking_context=_ranking_context(), **arguments)
+    cell = diagnostics["cells"][("education", "school_age_6_17_not_employed")]
+    assert cell["level"] == "purpose_group"
+    assert cell["n_model"] == 30 and cell["n_context"] == 2000
+    assert cell["n_context_pooled"] == 2000 and cell["n_reference"] == 500
+    assert diagnostics["share_unmapped"] == 0.0
+    assert diagnostics["n_ranking_context"] == 2000
+    first = with_context[with_context["trip_index"] == 0]["departure_time"]
+    assert ((first >= 30 * 900) & (first < 31 * 900)).all()
+
+
+def test_a_target_lands_where_an_equally_placed_population_person_lands():
+    """Rank preservation, and consistency with the ladder's own ``(i - 0.5) / n``.
+
+    1,000 population persons with distinct off-grid (de-rounding-free) first departures are mapped
+    by the ordinary whole-population path. Two TARGET persons are then given the 250th and the
+    750th of those very times and mapped against the same 1,000 as their ranking context: each
+    must land within a second of the population person it ties with -- the context formula
+    ``(#below + 0.5 * #ties + 0.5) / (N + 1)`` evaluates to ``i / (N + 1)`` there, which differs
+    from ``(i - 0.5) / N`` by at most half a context step -- and the earlier target must keep its
+    order relative to the later one.
+    """
+    values = _off_grid_seconds(1000)
+    population, _ = M.apply_departure_time_model(
+        _table_with_departures(values), _persons(1000), model=M.MODEL_SRV_MAPPED, random_seed=1,
+        reference=_reference(), min_reference_n=100, min_model_n=1000)
+    population_first = population[population["trip_index"] == 0].set_index("person_id")
+
+    targets, diagnostics = M.apply_departure_time_model(
+        _table_with_departures([values[249], values[749]]), _persons(2),
+        model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(), min_reference_n=100,
+        min_model_n=50, ranking_context=_ranking_context(values=values))
+    assert diagnostics["cells"][("education", "school_age_6_17_not_employed")]["level"] \
+        == "purpose_group"
+    target_first = targets[targets["trip_index"] == 0].set_index("person_id")["departure_time"]
+
+    assert target_first.loc[0] < target_first.loc[1]                     # order preserved
+    for target_person, population_person in ((0, 249), (1, 749)):
+        assert abs(float(target_first.loc[target_person])
+                   - float(population_first.loc[population_person, "departure_time"])) <= 1.0
+
+
+def test_the_ranking_context_result_does_not_depend_on_its_row_order():
+    """Determinism: the context is sorted by ``person_id`` before its de-rounding draw, so a
+    shuffled context frame must produce exactly the same offsets -- otherwise the realised times
+    would depend on the row order of a frame nobody guarantees the order of."""
+    context = _ranking_context()
+    shuffled = context.sample(frac=1.0, random_state=7).reset_index(drop=True)
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(),
+                     min_reference_n=100, min_model_n=50)
+    ordered_out, _ = M.apply_departure_time_model(_table(30), _persons(30),
+                                                  ranking_context=context, **arguments)
+    shuffled_out, _ = M.apply_departure_time_model(_table(30), _persons(30),
+                                                   ranking_context=shuffled, **arguments)
+    pd.testing.assert_frame_equal(ordered_out, shuffled_out, check_exact=True)
+
+
+def test_no_ranking_context_is_byte_identical_to_not_passing_one():
+    """The OFF path of ruling A-R18: ``ranking_context=None`` is the pre-A-R18 behaviour, and the
+    whole-population trip build (which passes no context at all) must not move by a single
+    second."""
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(),
+                     min_reference_n=100, min_model_n=10)
+    without, diagnostics_without = M.apply_departure_time_model(_table(), _persons(), **arguments)
+    explicit, diagnostics_explicit = M.apply_departure_time_model(
+        _table(), _persons(), ranking_context=None, **arguments)
+    pd.testing.assert_frame_equal(without, explicit, check_exact=True)
+    assert diagnostics_without == diagnostics_explicit
+    cell = diagnostics_without["cells"][("education", "school_age_6_17_not_employed")]
+    # None, never 0: "no ranking context" must not be readable as "the base was empty".
+    assert cell["n_context"] is None and cell["n_context_pooled"] is None
+    assert diagnostics_without["n_ranking_context"] is None
+
+
+def test_a_pooled_rung_is_gated_and_ranked_by_the_pooled_context():
+    """The ladder still coarsens with a context, and the pooled rung's gate AND base are the
+    pooled CONTEXT: two thin target cells whose own (purpose, group) context is too small map at
+    ``purpose_all`` against the population's whole education distribution."""
+    persons = _persons(20)
+    persons.loc[persons.index[10:], "age"] = 70        # 10 school-age + 10 senior, both thin
+    senior_context = _ranking_context(n=400, group="senior_65plus_not_employed")
+    senior_context["person_id"] = ["ctx%05d" % i for i in range(len(senior_context))]
+    context = pd.concat([_ranking_context(n=600), senior_context], ignore_index=True)
+
+    table, diagnostics = M.apply_departure_time_model(
+        _table(20), persons, model=M.MODEL_SRV_MAPPED, random_seed=1,
+        reference=_reference_with_pooled_purpose(), min_reference_n=100, min_model_n=700,
+        ranking_context=context)
+
+    school = diagnostics["cells"][("education", "school_age_6_17_not_employed")]
+    senior = diagnostics["cells"][("education", "senior_65plus_not_employed")]
+    # Own cells: 600 / 400 context persons, both below min_model_n = 700 -> climb to (education,
+    # "all"), whose context pools all 1,000 and whose reference peaks in bin 20.
+    assert school["level"] == "purpose_all" and senior["level"] == "purpose_all"
+    assert school["n_context"] == 600 and senior["n_context"] == 400
+    assert school["n_context_pooled"] == 1000 and senior["n_context_pooled"] == 1000
+    first = table[table["trip_index"] == 0]["departure_time"]
+    assert ((first >= 20 * 900) & (first < 21 * 900)).all()
+
+
+def test_a_ranking_context_is_rejected_by_a_model_that_maps_nothing():
+    """A context handed to ``derounded`` or ``eqasim_uniform`` would be silently ignored -- and a
+    caller believing a base is in effect when it is not is exactly the hidden defect CLAUDE.md's
+    fallback-transparency rule exists to stop."""
+    for model in (M.MODEL_EQASIM_UNIFORM, M.MODEL_DEROUNDED):
+        with pytest.raises(ValueError, match="maps nothing"):
+            M.apply_departure_time_model(_table(4), _persons(4), model=model, random_seed=1,
+                                         ranking_context=_ranking_context(n=10))
+
+
+def test_the_ranking_context_is_validated_before_it_is_ranked_against():
+    """A malformed base fails loudly: a missing column, a NaN raw time (a person the offset column
+    could not decompose) and a negative one (an upstream trip-build defect) each RAISE naming the
+    count, rather than silently narrowing the distribution."""
+    arguments = dict(model=M.MODEL_SRV_MAPPED, random_seed=1, reference=_reference(),
+                     min_reference_n=100, min_model_n=10)
+    with pytest.raises(ValueError, match="ranking context is missing required column"):
+        M.apply_departure_time_model(
+            _table(4), _persons(4), ranking_context=_ranking_context(n=10).drop(columns=["group"]),
+            **arguments)
+    for bad_value, message in ((float("nan"), "are NaN or non-numeric"), (-60.0, "are negative")):
+        context = _ranking_context(n=10)
+        context.loc[0, "raw_first_departure_seconds"] = bad_value
+        with pytest.raises(ValueError, match=message):
+            M.apply_departure_time_model(_table(4), _persons(4), ranking_context=context,
+                                         **arguments)
+
+
+def test_build_ranking_context_derives_the_raw_first_departure_and_the_mapping_cell():
+    """The builder turns the POPULATION's trips plus its person attributes into the base: one row
+    per person, the FIRST trip's ``departure_time`` minus ``OFFSET_COLUMN`` (the reported grid
+    time before any model ran), the first trip's destination purpose and the harmonised group."""
+    trips = _table(3)
+    trips[M.OFFSET_COLUMN] = 120.0                       # a model already shifted every chain
+    persons = pd.DataFrame({"person_id": [0, 1, 2], "age": [10, 40, 70],
+                            "employed": [False, True, False]})
+    context = M.build_ranking_context(trips, persons)
+
+    assert list(context.columns) == list(M.RANKING_CONTEXT_COLUMNS)
+    assert context["person_id"].tolist() == [0, 1, 2]
+    # _table's first departures are 7:00, 7:15, 7:30 -- minus the 120 s offset already applied.
+    assert context["raw_first_departure_seconds"].tolist() == [7 * 3600 - 120.0,
+                                                               7 * 3600 + 900 - 120.0,
+                                                               7 * 3600 + 1800 - 120.0]
+    assert context["purpose"].tolist() == ["education"] * 3
+    assert context["group"].tolist() == ["school_age_6_17_not_employed", "employed",
+                                         "senior_65plus_not_employed"]
+
+
+def test_build_ranking_context_raises_on_a_missing_column_or_person():
+    """Both inputs are checked: the offset column (without it a raw time cannot be recovered at
+    all) and full person coverage (a population person with no attribute row cannot be placed in a
+    cell, and dropping them would silently narrow the base)."""
+    trips = _table(3)
+    persons = pd.DataFrame({"person_id": [0, 1, 2], "age": [10, 40, 70],
+                            "employed": [False, True, False]})
+    with pytest.raises(ValueError, match=M.OFFSET_COLUMN):
+        M.build_ranking_context(trips, persons)
+
+    trips[M.OFFSET_COLUMN] = 0.0
+    with pytest.raises(ValueError, match="no attribute row"):
+        M.build_ranking_context(trips, persons.iloc[:2])
