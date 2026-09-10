@@ -250,26 +250,25 @@ def _srv_reference() -> pd.DataFrame:
 
 
 def _mid_reference() -> pd.DataFrame:
-    """Minimal MiD reference: one 'default' variant row per subtype group."""
-    shares = {"shop_daily": 0.8, "shop_non_daily": 0.2,
-              "other_errand_short": 0.4, "other_errand_long": 0.6,
-              "leisure_local": 0.3, "leisure_visit": 0.35,
-              "leisure_activity": 0.25, "leisure_excursion": 0.10}
+    """Two-variant MiD reference. Leisure is asymmetric on both sides in the SrV fixture (code 18
+    unmapped) and here (leisure_excursion unmapped); the 'codeplan' variant moves leisure_visit
+    just below the raw threshold while the comparable delta stays above it."""
+    default = {"shop_daily": 0.8, "shop_non_daily": 0.2,
+               "other_errand_short": 0.4, "other_errand_long": 0.6,
+               "leisure_local": 0.30, "leisure_visit": 0.35,
+               "leisure_activity": 0.25, "leisure_excursion": 0.10}
+    codeplan = dict(default, leisure_visit=0.33, leisure_activity=0.27)
     purposes = {"shop_daily": "shop", "shop_non_daily": "shop",
                 "other_errand_short": "other_errand", "other_errand_long": "other_errand",
                 "leisure_local": "leisure", "leisure_visit": "leisure",
                 "leisure_activity": "leisure", "leisure_excursion": "leisure"}
-    return pd.DataFrame({
-        "purpose": [purposes[group] for group in shares],
-        "spec_variant": ["default"] * len(shares),
-        "group": list(shares),
-        "n_unweighted": [50] * len(shares),
-        "share_within_purpose": list(shares.values()),
-        "km_p25": [1.0] * len(shares),
-        "km_p50": [2.0] * len(shares),
-        "km_p75": [9.0] * len(shares),
-        "n_missing_distance": [0] * len(shares),
-    })
+    rows = []
+    for variant, shares in (("default", default), ("codeplan", codeplan)):
+        for group, share in shares.items():
+            rows.append({"purpose": purposes[group], "spec_variant": variant, "group": group,
+                         "n_unweighted": 50, "share_within_purpose": share, "km_p25": 1.0,
+                         "km_p50": 2.0, "km_p75": 9.0, "n_missing_distance": 0})
+    return pd.DataFrame(rows)
 
 
 def test_comparison_sums_the_srv_shares_of_a_multi_code_group():
@@ -285,30 +284,36 @@ def test_comparison_sums_the_srv_shares_of_a_multi_code_group():
 
 
 def test_comparison_flags_only_exact_groups_beyond_the_threshold():
-    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
-    # shop_daily: MiD 0.80 vs SrV 0.60 -> +20.0 pp, exact -> flagged.
-    assert comparison.loc["shop_daily", "delta_pp"] == pytest.approx(20.0)
-    assert bool(comparison.loc["shop_daily", "candidate_for_reestimation"])
-    # leisure_visit: MiD 0.35 vs SrV 0.30 -> +5.0 pp, exact but below the threshold.
-    assert comparison.loc["leisure_visit", "delta_pp"] == pytest.approx(5.0)
-    assert not bool(comparison.loc["leisure_visit", "candidate_for_reestimation"])
-    # other_errand_short/long: -12.0 / +12.0 pp, beyond the threshold but only "approximate"
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    default = comparison[comparison["spec_variant"] == "default"].set_index("subtype_group")
+    # shop_daily: MiD 0.80 vs SrV 0.60 -> +20.0 pp; shop is symmetric, so the comparable delta is
+    # the raw one and the exact group is flagged.
+    assert default.loc["shop_daily", "delta_pp"] == pytest.approx(20.0)
+    assert bool(default.loc["shop_daily", "candidate_for_reestimation"])
+    # leisure_visit: MiD 0.35 vs SrV 0.30 -> +5.0 pp raw, exact but below the threshold on the
+    # comparable universe too (+7.3 pp default, +5.1 pp codeplan).
+    assert default.loc["leisure_visit", "delta_pp"] == pytest.approx(5.0)
+    assert not bool(default.loc["leisure_visit", "candidate_for_reestimation"])
+    # other_errand_short/long: +10.0 / -10.0 pp, at the threshold and only "approximate"
     # (ruling C-R16), so neither is flagged.
-    assert comparison.loc["other_errand_short", "delta_pp"] == pytest.approx(10.0)
-    assert comparison.loc["other_errand_long", "delta_pp"] == pytest.approx(-10.0)
-    assert not bool(comparison.loc["other_errand_short", "candidate_for_reestimation"])
-    assert not bool(comparison.loc["other_errand_long", "candidate_for_reestimation"])
+    assert default.loc["other_errand_short", "delta_pp"] == pytest.approx(10.0)
+    assert default.loc["other_errand_long", "delta_pp"] == pytest.approx(-10.0)
+    assert not bool(default.loc["other_errand_short", "candidate_for_reestimation"])
+    assert not bool(default.loc["other_errand_long", "candidate_for_reestimation"])
 
 
 def test_comparison_leaves_an_aggregate_only_group_unflagged_with_no_srv_share():
-    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
-    row = comparison.loc["leisure_excursion"]
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    default = comparison[comparison["spec_variant"] == "default"].set_index("subtype_group")
+    row = default.loc["leisure_excursion"]
     assert row["exactness"] == "aggregate_only"
     assert np.isnan(row["share_srv"]) and np.isnan(row["delta_pp"])
     # EMPTY, not 0: SrV does not code the activity separately at all.
     assert np.isnan(row["n_srv_unweighted"])
     assert np.isnan(row["share_mid_renormalised"]) and np.isnan(row["delta_pp_renormalised"])
+    assert np.isnan(row["delta_pp_comparable"])
     assert not bool(row["candidate_for_reestimation"])
+    assert row["candidate_variants"] == ""
 
 
 def test_renormalised_columns_stay_empty_where_the_crosswalk_covers_the_whole_mass():
@@ -324,30 +329,90 @@ def test_renormalised_columns_stay_empty_where_the_crosswalk_covers_the_whole_ma
 def test_renormalised_columns_divide_each_side_by_its_own_mapped_mass():
     """leisure is asymmetric: MiD maps 0.90 of its mass (leisure_excursion is unmapped), SrV maps
     0.95 (fine code 18 is unmapped). Each side must be divided by ITS OWN mapped mass."""
-    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
-    row = comparison.loc["leisure_visit"]
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    default = comparison[comparison["spec_variant"] == "default"].set_index("subtype_group")
+    row = default.loc["leisure_visit"]
     assert row["share_mid_renormalised"] == pytest.approx(0.35 / 0.90)
     assert row["share_srv_renormalised"] == pytest.approx(0.30 / 0.95)
     assert row["delta_pp_renormalised"] == pytest.approx(100.0 * (0.35 / 0.90 - 0.30 / 0.95))
-    mapped = comparison[comparison["purpose"].eq("leisure")
-                        & comparison["srv_fine_codes"].astype(bool)]
+    mapped = default[default["purpose"].eq("leisure") & default["srv_fine_codes"].astype(bool)]
     assert mapped["share_mid_renormalised"].sum() == pytest.approx(1.0)
     assert mapped["share_srv_renormalised"].sum() == pytest.approx(1.0)
 
 
-def test_renormalisation_does_not_change_the_committed_candidate_flag():
-    """The flag is defined on the RAW delta; the renormalised columns are a reported sensitivity,
-    never a second, silently applied rule."""
-    comparison = build_comparison(_srv_reference(), _mid_reference()).set_index("subtype_group")
-    visit = comparison.loc["leisure_visit"]
-    assert abs(visit["delta_pp"]) <= F.CANDIDATE_DELTA_PP_THRESHOLD
-    assert not bool(visit["candidate_for_reestimation"])
+def test_comparable_mass_excludes_only_non_comparable_grades():
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    default = comparison[comparison["spec_variant"] == "default"].set_index("subtype_group")
+    # MiD comparable mass = 0.30 + 0.35 + 0.25 = 0.90 (excursion is aggregate_only); SrV = 0.95.
+    assert default.loc["leisure_visit", "share_mid_renormalised"] == pytest.approx(0.35 / 0.90)
+    assert default.loc["leisure_visit", "share_srv_renormalised"] == pytest.approx(0.30 / 0.95)
+    assert np.isnan(default.loc["leisure_excursion", "share_mid_renormalised"])
+    assert np.isnan(default.loc["shop_daily", "share_mid_renormalised"])   # symmetric: identity
+
+
+def test_delta_pp_comparable_is_the_renormalised_delta_where_filled_else_raw():
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    default = comparison[comparison["spec_variant"] == "default"].set_index("subtype_group")
+    assert default.loc["leisure_visit", "delta_pp_comparable"] == \
+        pytest.approx(default.loc["leisure_visit", "delta_pp_renormalised"])
+    assert default.loc["shop_daily", "delta_pp_comparable"] == \
+        pytest.approx(default.loc["shop_daily", "delta_pp"])
+    assert np.isnan(default.loc["leisure_excursion", "delta_pp_comparable"])
+
+
+def test_candidate_flag_is_group_level_across_variants():
+    """With SrV visit 0.20 and the unmapped code 18 at 0.15 (SrV comparable mass 0.85, so
+    share_srv_renormalised = 0.2353), the two variants land on opposite sides of the 10 pp line:
+    default 0.35/0.90 - 0.2353 = +15.4 pp, codeplan 0.25/0.90 - 0.2353 = +4.2 pp. The group is a
+    candidate because ONE variant crosses, and both of its rows say so."""
+    srv = _srv_reference()
+    srv.loc[srv["fine_code"] == 15, "share_within_coarse"] = 0.20
+    srv.loc[srv["fine_code"] == 18, "share_within_coarse"] = 0.15
+    mid = _mid_reference()
+    mid.loc[(mid["spec_variant"] == "codeplan") & (mid["group"] == "leisure_visit"),
+            "share_within_purpose"] = 0.25
+    mid.loc[(mid["spec_variant"] == "codeplan") & (mid["group"] == "leisure_activity"),
+            "share_within_purpose"] = 0.35
+    comparison = build_comparison(srv, mid)
+    visit = comparison[comparison["subtype_group"] == "leisure_visit"].set_index("spec_variant")
+    assert visit.loc["default", "delta_pp_comparable"] > 10.0
+    assert visit.loc["codeplan", "delta_pp_comparable"] < 10.0
+    # group-level: BOTH rows flagged, and the crossing variant is named on both.
+    assert bool(visit.loc["default", "candidate_for_reestimation"])
+    assert bool(visit.loc["codeplan", "candidate_for_reestimation"])
+    assert visit.loc["default", "candidate_variants"] == "default"
+    assert visit.loc["codeplan", "candidate_variants"] == "default"
+
+
+def test_only_exact_groups_can_be_candidates_on_the_comparable_delta():
+    comparison = build_comparison(_srv_reference(), _mid_reference())
+    approx = comparison[comparison["exactness"] != "exact"]
+    assert not approx["candidate_for_reestimation"].any()
+    assert (approx["candidate_variants"] == "").all()
+
+
+def test_flag_follows_the_comparable_delta_not_the_raw_one():
+    """The flag reads the comparable delta, not the raw one (owner decision 2026-09-10). SrV
+    leisure visit 0.27 with 16 at 0.13 and the unmapped 18 at 0.15 (comparable mass 0.80); MiD
+    excursion 0.30 with local 0.10 (comparable mass 0.70). Raw: 0.35 - 0.27 = +8.0 pp, below the
+    threshold. Comparable: 0.35/0.70 - 0.27/0.80 = 0.5000 - 0.3375 = +16.25 pp, above it."""
+    srv = _srv_reference()
+    srv.loc[srv["fine_code"] == 15, "share_within_coarse"] = 0.27
+    srv.loc[srv["fine_code"] == 16, "share_within_coarse"] = 0.13
+    srv.loc[srv["fine_code"] == 18, "share_within_coarse"] = 0.15
+    mid = _mid_reference()
+    mid.loc[mid["group"] == "leisure_excursion", "share_within_purpose"] = 0.30
+    mid.loc[mid["group"] == "leisure_local", "share_within_purpose"] = 0.10
+    comparison = build_comparison(srv, mid)
+    visit = comparison[(comparison["subtype_group"] == "leisure_visit")
+                       & (comparison["spec_variant"] == "default")].iloc[0]
+    assert abs(visit["delta_pp"]) < 10.0
+    assert visit["delta_pp_comparable"] > 10.0
+    assert bool(visit["candidate_for_reestimation"])
 
 
 def test_comparison_covers_every_subtype_group_and_variant():
-    mid = pd.concat([_mid_reference(), _mid_reference().assign(spec_variant="codeplan")],
-                    ignore_index=True)
-    comparison = build_comparison(_srv_reference(), mid)
+    comparison = build_comparison(_srv_reference(), _mid_reference())
     assert len(comparison) == 2 * len(F.SUBTYPE_TO_SRV_FINE)
     assert set(comparison["subtype_group"]) == set(F.SUBTYPE_TO_SRV_FINE)
     assert set(comparison["spec_variant"]) == {"default", "codeplan"}

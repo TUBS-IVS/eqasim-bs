@@ -147,9 +147,19 @@ SUBTYPE_TO_SRV_FINE = {
 
 EXACTNESS_VALUES = ("exact", "approximate", "aggregate_only")
 
-#: A subtype group is flagged as a re-estimation CANDIDATE when its MiD and SrV shares differ by
-#: more than this many percentage points AND the crosswalk is ``exact`` (issue #242 Task 6). The
-#: flag is a measurement signal, not a decision: nothing is re-estimated in this package.
+#: Exactness grades whose rows form the COMPARABLE universe of a purpose: activities both surveys
+#: name concretely. Rows of any other grade are unmapped mass on their own side (issue #242, owner
+#: decision 2026-09-10; spec 2026-09-10-leisure-unspecified-subtype-design.md section 2.1).
+COMPARABLE_EXACTNESS = ("exact", "approximate")
+
+#: A subtype group is flagged as a re-estimation CANDIDATE when its crosswalk is ``exact`` and the
+#: MiD and SrV shares differ by more than this many percentage points ON THE COMPARABLE UNIVERSE
+#: (each side renormalised to the mass of its :data:`COMPARABLE_EXACTNESS` rows) in at least one
+#: spec variant (issue #242; owner decision 2026-09-10). ASSUMPTION: the value is a practical
+#: relevance line, not a derived bound -- the sampling standard error of an SrV within-leisure
+#: share with n ~ 1,900 is about 1 pp, so the threshold decides relevance, not significance; and
+#: it measures SHARES while the model consequence is DISTANCE. The flag is a signal, never a
+#: decision: nothing is re-estimated in this package.
 CANDIDATE_DELTA_PP_THRESHOLD = 10.0
 
 # --------------------------------------------------------------------------- data conventions

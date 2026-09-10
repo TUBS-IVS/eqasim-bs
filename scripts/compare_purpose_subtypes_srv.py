@@ -67,15 +67,17 @@ COMPARISON_COLUMNS = ["subtype_group", "purpose", "spec_variant", "srv_fine_code
                       "n_mid_unweighted", "share_mid", "n_srv_unweighted", "share_srv", "delta_pp",
                       "share_mid_renormalised", "share_srv_renormalised", "delta_pp_renormalised",
                       "median_km_mid", "median_km_srv", "median_km_srv_components",
-                      "candidate_for_reestimation"]
+                      "candidate_for_reestimation", "delta_pp_comparable", "candidate_variants"]
 
 #: Stated verbatim in the summary so the flag's meaning cannot drift away from the code.
-CANDIDATE_RULE = ("candidate_for_reestimation = (exactness == \"exact\") and "
-                  "(abs(delta_pp) > %.0f)" % F.CANDIDATE_DELTA_PP_THRESHOLD)
+CANDIDATE_RULE = ("candidate_for_reestimation = (exactness == \"exact\") and any over spec "
+                  "variants of (abs(delta_pp_comparable) > %.0f); delta_pp_comparable = "
+                  "delta_pp_renormalised where the purpose is asymmetric, else delta_pp"
+                  % F.CANDIDATE_DELTA_PP_THRESHOLD)
 
-#: A purpose's mapped mass may miss 1.0 by at most this much before the renormalised columns are
-#: filled. Floating-point noise on a purpose whose groups exhaust both sides must not produce a
-#: spurious "sensitivity" reading.
+#: A purpose's comparable mass may miss 1.0 by at most this much before the renormalised columns
+#: are filled. Floating-point noise on a purpose whose comparable groups exhaust both sides must
+#: not produce a spurious asymmetry reading.
 MAPPED_MASS_TOLERANCE = 1e-9
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -130,14 +132,19 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
         so nothing is lost.
 
         ``share_mid_renormalised`` / ``share_srv_renormalised`` / ``delta_pp_renormalised`` are the
-        SENSITIVITY reading of a purpose whose two sides do not cover the same activity mass: each
-        side is divided by its own MAPPED mass, i.e. the share the crosswalk actually pairs up.
-        They are filled only for the mapped rows of a purpose whose mapped mass misses 1.0 on
-        either side by more than :data:`MAPPED_MASS_TOLERANCE` (in this data: ``leisure``, where
-        SrV code 18 "Andere Freizeitaktivitaet" is paired with nothing and MiD
-        ``leisure_excursion`` has no SrV counterpart), and are NaN everywhere else -- for a purpose
-        whose groups exhaust both sides the renormalisation is the identity and a filled column
-        would only invite reading the same number twice.
+        COMPARABLE-UNIVERSE reading of a purpose whose two sides do not cover the same activity
+        mass: each side is divided by its own COMPARABLE mass, i.e. the mass of the rows graded
+        :data:`srv_fine_purpose.COMPARABLE_EXACTNESS`. They are filled only for the comparable rows
+        of a purpose whose comparable mass misses 1.0 on either side by more than
+        :data:`MAPPED_MASS_TOLERANCE` (in this data: ``leisure``, where SrV code 18 "Andere
+        Freizeitaktivitaet" is paired with nothing and MiD ``leisure_excursion`` has no SrV
+        counterpart), and are NaN everywhere else -- for a purpose whose groups exhaust both sides
+        the renormalisation is the identity and a filled column would only invite reading the same
+        number twice.
+
+        ``delta_pp_comparable`` is the delta the flag reads (the renormalised one where filled,
+        else the raw one) and ``candidate_variants`` names the spec variants in which the group
+        crosses the threshold; see :func:`_add_comparable_delta_and_flag`.
 
     Raises
     ------
@@ -187,8 +194,6 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
                 share_srv, n_srv, components, median_srv, delta_pp = (
                     float("nan"), float("nan"), "", float("nan"), float("nan"))
 
-            candidate = bool(exactness == "exact" and np.isfinite(delta_pp)
-                             and abs(delta_pp) > F.CANDIDATE_DELTA_PP_THRESHOLD)
             rows.append({
                 "subtype_group": group, "purpose": mid_row["purpose"], "spec_variant": spec_variant,
                 "srv_fine_codes": "|".join(str(code) for code in fine_codes),
@@ -196,30 +201,32 @@ def build_comparison(srv_reference: pd.DataFrame, mid_reference: pd.DataFrame) -
                 "share_mid": share_mid, "n_srv_unweighted": n_srv, "share_srv": share_srv,
                 "delta_pp": delta_pp, "median_km_mid": float(mid_row["km_p50"]),
                 "median_km_srv": median_srv, "median_km_srv_components": components,
-                "candidate_for_reestimation": candidate,
             })
-    return _add_renormalised_columns(pd.DataFrame(rows, columns=COMPARISON_COLUMNS))
+    comparison = _add_renormalised_columns(pd.DataFrame(rows, columns=COMPARISON_COLUMNS))
+    return _add_comparable_delta_and_flag(comparison)
 
 
 def _add_renormalised_columns(comparison: pd.DataFrame) -> pd.DataFrame:
-    """Fill the mapped-mass sensitivity columns for the asymmetric purposes only.
+    """Fill the comparable-universe columns for the asymmetric purposes only (spec 2.1.1).
 
-    For each (spec variant, purpose) block the MAPPED mass is the share the crosswalk actually
-    pairs up: the sum of ``share_mid`` (resp. ``share_srv``) over the block's rows that carry at
-    least one SrV fine code. Where both masses are 1.0 the renormalisation is the identity and the
-    columns stay NaN; where they are not, each side is divided by its OWN mapped mass, so the two
-    conditional distributions become comparable. Rows without a mapped SrV code (``aggregate_only``)
-    are never renormalised -- they are, by definition, part of the unmapped mass.
+    For each (spec variant, purpose) block the COMPARABLE mass is the sum of ``share_mid`` (resp.
+    ``share_srv``) over the block's rows whose crosswalk grade is in
+    :data:`srv_fine_purpose.COMPARABLE_EXACTNESS`, i.e. the activities BOTH surveys name
+    concretely. Where both masses are 1.0 the renormalisation is the identity and the columns stay
+    NaN; where they are not, each side is divided by its OWN comparable mass, so the two
+    conditional distributions become comparable. Rows of any other grade are never renormalised --
+    they are, by definition, unmapped mass on their own side, whether or not they carry an SrV fine
+    code (a grade that has a code but no comparable counterpart must not enter the denominator).
     """
     comparison = comparison.copy()
     for column in ("share_mid_renormalised", "share_srv_renormalised", "delta_pp_renormalised"):
         comparison[column] = float("nan")
-    mapped = comparison["srv_fine_codes"].astype(str) != ""
-    for (variant, purpose), block in comparison[mapped].groupby(["spec_variant", "purpose"]):
+    comparable = comparison["exactness"].isin(F.COMPARABLE_EXACTNESS)
+    for (variant, purpose), block in comparison[comparable].groupby(["spec_variant", "purpose"]):
         mid_mass, srv_mass = float(block["share_mid"].sum()), float(block["share_srv"].sum())
         symmetric = (abs(mid_mass - 1.0) <= MAPPED_MASS_TOLERANCE
                      and abs(srv_mass - 1.0) <= MAPPED_MASS_TOLERANCE)
-        logger.info("%s/%s: mapped mass MiD %.4f, SrV %.4f -- %s", variant, purpose, mid_mass,
+        logger.info("%s/%s: comparable mass MiD %.4f, SrV %.4f -- %s", variant, purpose, mid_mass,
                     srv_mass, "symmetric, renormalisation is the identity (columns left empty)"
                     if symmetric else "ASYMMETRIC, renormalised columns filled")
         if symmetric or mid_mass <= 0 or srv_mass <= 0:
@@ -229,6 +236,41 @@ def _add_renormalised_columns(comparison: pd.DataFrame) -> pd.DataFrame:
         comparison.loc[block.index, "share_mid_renormalised"] = share_mid
         comparison.loc[block.index, "share_srv_renormalised"] = share_srv
         comparison.loc[block.index, "delta_pp_renormalised"] = 100.0 * (share_mid - share_srv)
+    return comparison
+
+
+def _add_comparable_delta_and_flag(comparison: pd.DataFrame) -> pd.DataFrame:
+    """delta_pp_comparable feeds the flag; the flag is GROUP-level across spec variants.
+
+    A group is a candidate when its crosswalk is ``exact`` and ``abs(delta_pp_comparable)`` exceeds
+    ``CANDIDATE_DELTA_PP_THRESHOLD`` in at least one spec variant; every row of the group carries the
+    flag and the ``|``-joined list of crossing variants, so a reader of one variant's row still
+    sees that the group crossed elsewhere (spec 2.1.3).
+    """
+    comparison = comparison.copy()
+    comparison["delta_pp_comparable"] = comparison["delta_pp_renormalised"].where(
+        comparison["delta_pp_renormalised"].notna(), comparison["delta_pp"])
+    # Which reading each row's flag actually rests on, as a rate (CLAUDE.md "Fallback
+    # transparency"): the raw delta is the intended value for a symmetric purpose, but a run in
+    # which NO row reaches the renormalised reading would mean the comparable universe never
+    # applied, which the log must show rather than hide.
+    n_rows = len(comparison)
+    n_renormalised = int(comparison["delta_pp_renormalised"].notna().sum())
+    n_defined = int(comparison["delta_pp_comparable"].notna().sum())
+    logger.info("delta_pp_comparable: %d/%d rows renormalised (asymmetric purposes), %d raw "
+                "(symmetric purposes), %d undefined (no SrV counterpart)", n_renormalised, n_rows,
+                n_defined - n_renormalised, n_rows - n_defined)
+    comparison["candidate_for_reestimation"] = False
+    comparison["candidate_variants"] = ""
+    exact = comparison["exactness"] == "exact"
+    crossing = exact & (comparison["delta_pp_comparable"].abs() > F.CANDIDATE_DELTA_PP_THRESHOLD)
+    for group, block in comparison[crossing].groupby("subtype_group"):
+        variants = "|".join(sorted(block["spec_variant"].astype(str).unique()))
+        rows = comparison["subtype_group"] == group
+        comparison.loc[rows, "candidate_for_reestimation"] = True
+        comparison.loc[rows, "candidate_variants"] = variants
+        logger.info("candidate %s: comparable delta beyond %.0f pp in variant(s) %s", group,
+                    F.CANDIDATE_DELTA_PP_THRESHOLD, variants)
     return comparison
 
 
@@ -250,7 +292,7 @@ def _join(names) -> str:
 def _purposes_by_mapped_mass(comparison: pd.DataFrame) -> tuple:
     """Split the purposes into (symmetric, asymmetric) by whether renormalisation changes them.
 
-    A purpose is SYMMETRIC when the crosswalk pairs up the whole mass on both sides, which
+    A purpose is SYMMETRIC when its comparable rows exhaust the whole mass on both sides, which
     :func:`_add_renormalised_columns` records by leaving the renormalised columns empty for it.
     """
     symmetric, asymmetric = set(), set()
@@ -259,8 +301,32 @@ def _purposes_by_mapped_mass(comparison: pd.DataFrame) -> tuple:
     return sorted(symmetric), sorted(asymmetric)
 
 
+def _render_candidate_bullets(flagged: pd.DataFrame) -> list:
+    """One bullet per FLAGGED GROUP (spec 2.1.3): every variant's comparable delta, then the raw.
+
+    The flag is group-level, so the unit of the bullet is the group, not the row: it reports the
+    comparable delta of EVERY spec variant of the group, names the variant(s) that actually cross
+    the threshold and repeats the raw deltas in the same variant order as information. The
+    crossing variants are listed first because they are the reason the group carries the flag.
+    Generated from the comparison table, so the numbers cannot drift away from the committed CSV.
+    """
+    lines = []
+    for group, block in flagged.groupby("subtype_group"):
+        crossing = [name for name in str(block["candidate_variants"].iloc[0]).split("|") if name]
+        ordered = sorted(block.itertuples(index=False),
+                         key=lambda row: (row.spec_variant not in crossing, row.spec_variant))
+        comparable = ", ".join("%s %s pp" % (row.spec_variant,
+                                             _fmt(row.delta_pp_comparable, "+.1f"))
+                               for row in ordered)
+        raw = " / ".join(_fmt(row.delta_pp, "+.1f") for row in ordered)
+        lines.append("* `%s` (%s): comparable delta %s; crossing variant(s): %s. Raw deltas %s pp."
+                     % (group, block["exactness"].iloc[0], comparable,
+                        _join(crossing) or "(none)", raw))
+    return lines
+
+
 def _render_sensitivity_section(comparison: pd.DataFrame) -> list:
-    """The mapped-mass sensitivity table for the asymmetric purposes (empty list if there is none).
+    """The comparable-universe table for the asymmetric purposes (empty list if there is none).
 
     Generated from the comparison table itself rather than written by hand, so the renormalised
     deltas cannot drift away from the committed CSV.
@@ -271,16 +337,19 @@ def _render_sensitivity_section(comparison: pd.DataFrame) -> list:
     _, asymmetric = _purposes_by_mapped_mass(comparison)
     lines = [
         "",
-        "## Sensitivity to the %s denominator" % " / ".join(asymmetric),
+        "## Comparable-universe reading (feeds the flag)",
         "",
-        "For %s the crosswalk does not cover the same activity mass on the two sides, so the raw"
+        "Where a purpose is ASYMMETRIC -- the two surveys do not name the same activity mass --",
+        "the raw shares are conditional on different universes and cannot be differenced as they",
+        "stand; here that is %s. The comparable reading divides each side by its OWN"
         % _join(asymmetric),
-        "shares are conditional on different things. Renormalising each side to its own MAPPED",
-        "mass -- the share the crosswalk actually pairs up -- gives the second reading below.",
-        "Neither reading is 'the' right one: the raw shares answer \"what fraction of the",
-        "purpose's trips is this group?\", the renormalised ones answer \"among the trips the two",
-        "surveys pair up, what fraction is this group?\". They are reported side by side because",
-        "the answer to the candidate question can differ between them.",
+        "comparable mass -- the mass of the rows graded %s -- and it is THIS reading"
+        % _join(F.COMPARABLE_EXACTNESS),
+        "that feeds the candidate flag (`delta_pp_comparable` is the renormalised delta here and",
+        "the raw delta where a purpose is symmetric and the renormalisation is the identity). The",
+        "raw shares are kept beside it as information: they answer \"what fraction of the",
+        "purpose's trips is this group?\", the comparable ones answer \"among the trips the two",
+        "surveys pair up, what fraction is this group?\".",
         "",
         "| subtype group | variant | exactness | share MiD | share SrV | delta pp | share MiD"
         " renorm. | share SrV renorm. | delta pp renorm. |",
@@ -299,19 +368,19 @@ def _render_sensitivity_section(comparison: pd.DataFrame) -> list:
                      & (rows["delta_pp_renormalised"].abs() > F.CANDIDATE_DELTA_PP_THRESHOLD)]
     lines.append("")
     if crossings.empty:
-        lines.append("No row changes side of the %.0f pp threshold under the renormalisation."
+        lines.append("No row changes side of the %.0f pp threshold between the two readings."
                      % F.CANDIDATE_DELTA_PP_THRESHOLD)
     else:
         lines += [
-            "**The renormalisation moves the following `exact` row(s) ACROSS the %.0f pp"
+            "**Rows whose flag differs between the two readings.** The following `exact` row(s) are",
+            "within the %.0f pp threshold on the RAW delta and beyond it on the comparable one, so"
             % F.CANDIDATE_DELTA_PP_THRESHOLD,
-            "threshold.** The committed `candidate_for_reestimation` flag stays on the RAW delta,",
-            "because that is what the rule above says; this list is the reason the headline is",
-            "reported per purpose rather than as one sentence.",
+            "the raw reading alone would have missed them; the committed",
+            "`candidate_for_reestimation` flag reads the comparable delta, as the rule above says.",
             "",
         ]
         for _, row in crossings.iterrows():
-            lines.append("* `%s` (%s): %+.1f pp raw -> %+.1f pp renormalised."
+            lines.append("* `%s` (%s): %+.1f pp raw -> %+.1f pp comparable."
                          % (row["subtype_group"], row["spec_variant"], row["delta_pp"],
                             row["delta_pp_renormalised"]))
     return lines
@@ -351,9 +420,12 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "| SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |",
         "| MiD weights | `W_GEW` (trip expansion weight) |",
         "",
-        "The code state above is the commit that introduced the extraction and comparison code;",
-        "header text, the exactness grade of `other_errand_short` and the renormalised columns",
-        "were updated in the following fix-round commit, and the measured data rows are unchanged.",
+        "The code state above is the commit that moved the candidate rule onto the comparable",
+        "universe and made the flag group-level across the spec variants (issue #242 item 8, owner",
+        "decision 2026-09-10). Both reference tables are unchanged, so every measured data row of",
+        "`comparison.csv` is unchanged; what changed is the meaning of",
+        "`candidate_for_reestimation` and the two added columns `delta_pp_comparable` and",
+        "`candidate_variants`.",
         "",
         "### Flag settings",
         "",
@@ -380,10 +452,21 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "```",
         "",
         "The flag marks a group whose two shares differ by more than",
-        "%.0f percentage points AND whose crosswalk is graded `exact`, i.e. where the difference"
+        "%.0f percentage points on the COMPARABLE universe -- each side renormalised to the mass"
         % F.CANDIDATE_DELTA_PP_THRESHOLD,
-        "cannot be explained away as a taxonomy mismatch. It is a pointer for a later decision,",
-        "not a decision.",
+        "of the rows both surveys name concretely (%s) -- AND whose crosswalk is graded"
+        % _join(F.COMPARABLE_EXACTNESS),
+        "`exact`, i.e. where the difference cannot be explained away as a taxonomy mismatch.",
+        "The flag is GROUP-level across the spec variants: a group that crosses the threshold in",
+        "at least one variant is flagged on every one of its rows and `candidate_variants` names",
+        "the crossing variants, because the group is the unit of a possible re-estimation and a",
+        "1 pp difference between the variants must not give two answers for one group.",
+        "",
+        "ASSUMPTION: the %.0f pp threshold is a practical relevance line, not a derived bound. The"
+        % F.CANDIDATE_DELTA_PP_THRESHOLD,
+        "sampling standard error of an SrV within-leisure share with n ~ 1,900 is about 1 pp, so",
+        "the threshold decides relevance, not significance; and it measures SHARES, while the",
+        "model consequence is DISTANCE. It is a pointer for a later decision, not a decision.",
         "",
         "## Comparison",
         "",
@@ -417,22 +500,22 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
     if len(flagged) == 0:
         symmetric, asymmetric = _purposes_by_mapped_mass(comparison)
         lines += [
-            "None under the rule above: no `exact` crosswalk differs by more than %.0f pp on the"
+            "None under the rule above: no `exact` crosswalk differs by more than %.0f pp in any"
             % F.CANDIDATE_DELTA_PP_THRESHOLD,
-            "RAW shares.",
+            "spec variant.",
             "",
-            "That headline holds without qualification only for the purposes whose crosswalk",
-            "covers the whole mass on BOTH sides -- here %s. For %s the two denominators are"
-            % (_join(symmetric) or "(none)", _join(asymmetric) or "(none)"),
-            "asymmetric, and the sensitivity section below shows what the same comparison says",
-            "once each side is renormalised to its mapped mass.",
+            "That headline already covers the purposes whose crosswalk does NOT pair up the whole",
+            "mass on both sides -- here %s, against the symmetric %s -- because the flag reads the"
+            % (_join(asymmetric) or "(none)", _join(symmetric) or "(none)"),
+            "comparable delta; the section below shows both readings side by side.",
         ]
     else:
-        for _, row in flagged.iterrows():
-            lines.append("* `%s` (%s): MiD %.4f vs SrV %.4f, delta %+.1f pp (n MiD %d, n SrV %s)."
-                         % (row["subtype_group"], row["spec_variant"], row["share_mid"],
-                            row["share_srv"], row["delta_pp"], int(row["n_mid_unweighted"]),
-                            _fmt(row["n_srv_unweighted"], ".0f")))
+        lines += _render_candidate_bullets(flagged)
+        lines += [
+            "",
+            "A candidate triggers no re-estimation here: the owner decides from the arm-B",
+            "measurement of the REALISED share (feature record `w_zwd_codeplan_sentinels.yml`).",
+        ]
 
     lines += _render_sensitivity_section(comparison)
 
@@ -469,7 +552,8 @@ def render_summary(comparison: pd.DataFrame, srv_reference_path: Path, mid_refer
         "   mixes a regional effect with a survey-instrument effect and cannot be attributed to",
         "   either from this table alone.",
         "4. **`approximate` and `aggregate_only` rows are not evidence of a defect.** They are",
-        "   reported for completeness; only `exact` rows feed the candidate flag.",
+        "   reported for completeness; only `exact` rows feed the candidate flag, on the",
+        "   comparable delta.",
         "5. **`other_errand_short` is graded `approximate`, not `exact`** (issue #242 Task 6",
         "   review, ruling C-R16), for two independent reasons: the labels overlap the other",
         "   member of the pair -- MiD W_ZWD 602 \"Behoerde, Bank, Post\" feeds",
@@ -518,24 +602,34 @@ def main(argv=None) -> int:
                      "mix (issue #242 Task 6).\n")
         handle.write("# Sources: %s ; %s\n" % (args.srv_reference.as_posix(),
                                                args.mid_reference.as_posix()))
-        handle.write("# Code state: eqasim-bs %s (the commit that introduced the extraction and "
-                     "comparison code), crosswalk\n"
-                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. Header, "
-                     "exactness-grade text and\n"
-                     "#   the renormalised columns were updated in the following fix-round commit; "
-                     "the measured data rows\n"
-                     "#   are unchanged.\n" % source_commit)
+        handle.write("# Code state: eqasim-bs %s (the commit that moved the candidate rule onto "
+                     "the comparable universe\n"
+                     "#   and made the flag group-level), crosswalk\n"
+                     "#   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. Both "
+                     "reference tables are\n"
+                     "#   unchanged, so every measured data row is unchanged; what changed is the "
+                     "meaning of\n"
+                     "#   candidate_for_reestimation and the two added comparable-universe "
+                     "columns.\n" % source_commit)
         handle.write("# Rule: %s\n" % CANDIDATE_RULE)
         handle.write("# Renormalised columns (share_mid_renormalised, share_srv_renormalised, "
                      "delta_pp_renormalised): each\n"
-                     "#   side divided by its own MAPPED mass. Filled ONLY for the mapped rows of "
-                     "a purpose whose crosswalk\n"
-                     "#   does not cover the whole mass on both sides (here: leisure); EMPTY "
-                     "elsewhere, where the\n"
-                     "#   renormalisation is the identity. n_srv_unweighted is EMPTY for an "
-                     "aggregate_only row, because SrV\n"
-                     "#   does not code that activity separately at all (never 0, which would "
-                     "read as 'none observed').\n")
+                     "#   side divided by its own COMPARABLE mass (the mass of the rows graded %s).\n"
+                     "#   Filled ONLY for the comparable rows of a purpose whose comparable mass "
+                     "does not cover the whole\n"
+                     "#   mass on both sides (here: leisure); EMPTY elsewhere, where the "
+                     "renormalisation is the identity.\n"
+                     "#   n_srv_unweighted is EMPTY for an aggregate_only row, because SrV does "
+                     "not code that activity\n"
+                     "#   separately at all (never 0, which would read as 'none observed').\n"
+                     % " + ".join(F.COMPARABLE_EXACTNESS))
+        handle.write("# delta_pp_comparable / candidate_variants: delta_pp_comparable is the delta "
+                     "the flag reads --\n"
+                     "#   delta_pp_renormalised where the purpose is asymmetric, else delta_pp. "
+                     "candidate_variants lists\n"
+                     "#   the spec variant(s) in which the group crosses the threshold "
+                     "('|'-joined, EMPTY when none);\n"
+                     "#   the flag is GROUP-level, so every row of a crossing group carries both.\n")
         handle.write("# MEASUREMENT ONLY -- not a validation and not a control target; see "
                      "summary.md for the caveats.\n")
         handle.write("# Generated by scripts/compare_purpose_subtypes_srv.py; regenerate there, "
