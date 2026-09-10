@@ -210,6 +210,13 @@
     `"[purpose_subtype:<purpose>] N/M (mode, tt_band) cells are below min_obs=30 and fall back to
     the marginal"` at INFO and WARNs when ALL cells are thin, and `impute_groups` logs
     `"[purpose_subtype] marginal fallback used for N/M legs (r%)"`. Arm D must record those rates.
+    MEASURED before any run (AD-HOC real-data smoke of 2026-09-10 on the raw delivery, with the
+    production flag set): on the weekday universe the leisure spec has **1 of 20** thin
+    `(mode, tt_band)` cells and the other-errand spec **2 of 19** -- so the effect this assumption
+    was about is small at the unchanged `min_obs = 30`. The same smoke reproduced every committed
+    donor pin of the table above from `run()`'s own layers and found the three deciders' marginals
+    EQUAL to the committed `codeplan_unspecified` reference rows to 0.000 pp, which is arm-D row 1
+    verified on the survey side (the model side still needs the run).
   - **The flag's CODE default is `True`, so the weekday universe is ACTIVE from the implementing
     commit in every configuration that leaves the key unset** -- `configs/base_bs.yml` sets it
     explicitly anyway. That is the project's "new features default on" rule, and it has one
