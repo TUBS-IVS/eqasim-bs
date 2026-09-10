@@ -18,7 +18,7 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `bf4db05a` |
+| code state (--source-commit) | `f9dd787d` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |
@@ -37,6 +37,10 @@ and `leisure_unspecified_subtype` config keys side by side, as the `spec_variant
 column. The variants present in the file it was given, described in the words of the
 extraction script that wrote it (`SPEC_VARIANT_DESCRIPTIONS`):
 
+* `default` -- purpose_subtype_codeplan_sentinels OFF and leisure_unspecified_subtype
+  OFF (LEISURE_SPEC / OTHER_ERRAND_SPEC): the no-detail codes W_ZWD 799 'Freizeit k.A.'
+  and 699 'Erledigung k.A.' are ordinary members of leisure_activity /
+  other_errand_long, and W_ZWECK 10 'anderer Zweck' legs are not measured at all.
 * `codeplan` -- purpose_subtype_codeplan_sentinels ON, leisure_unspecified_subtype OFF
   (the _CODEPLAN variants, ADR-0113): 799 and 699 become sentinels and leave estimation
   entirely; W_ZWECK 10 legs are still not measured.
@@ -48,10 +52,6 @@ extraction script that wrote it (`SPEC_VARIANT_DESCRIPTIONS`):
   shares all shrink by ONE common factor while their shares WITHIN the comparable
   universe are unchanged from the codeplan variant. The shop and other-errand blocks are
   identical to the codeplan variant's.
-* `default` -- purpose_subtype_codeplan_sentinels OFF and leisure_unspecified_subtype
-  OFF (LEISURE_SPEC / OTHER_ERRAND_SPEC): the no-detail codes W_ZWD 799 'Freizeit k.A.'
-  and 699 'Erledigung k.A.' are ordinary members of leisure_activity /
-  other_errand_long, and W_ZWECK 10 'anderer Zweck' legs are not measured at all.
 
 The shop split (`shop_daily` / `shop_non_daily`) is the same in every variant, so its
 rows repeat by construction. The code defaults read out of
@@ -196,13 +196,13 @@ true), not by this table.
 Reported so that a large gap under an `approximate` crosswalk is visible rather than
 hidden by the flag rule; such a gap is NOT by itself a defect signal. Raw shares, so a
 row of an asymmetric purpose is read against a denominator the other survey does not
-share; and a `residual` row differences two leftovers that sit at different levels of the
-two questionnaires, which the section above spells out. The grade is printed with each
-row for exactly that reason.
+share -- the grade is printed with each row for exactly that reason. `residual` rows are
+left out of this ranking: their delta differences two leftovers that sit at different
+levels of the two questionnaires, and the section above reports them in full instead.
 
 * `leisure_activity` (default, approximate): MiD 0.4594 vs SrV 0.1981, delta +26.1 pp.
-* `leisure_unspecified` (codeplan_unspecified, residual): MiD 0.4324 vs SrV 0.1796, delta +25.3 pp.
 * `leisure_activity` (codeplan, approximate): MiD 0.4253 vs SrV 0.1981, delta +22.7 pp.
+* `leisure_local` (codeplan_unspecified, approximate): MiD 0.2058 vs SrV 0.4073, delta -20.1 pp.
 
 ## Caveats that limit how far these numbers carry
 

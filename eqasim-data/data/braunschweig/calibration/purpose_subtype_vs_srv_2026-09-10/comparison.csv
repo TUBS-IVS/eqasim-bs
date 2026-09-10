@@ -1,6 +1,6 @@
 # Comparison of the MiD W_ZWD subtype mix with the SrV 2023 fine-purpose mix (issue #242 Task 6).
 # Sources: eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv ; eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
-# Code state: eqasim-bs bf4db05a (the commit that added the 'residual' crosswalk grade), crosswalk
+# Code state: eqasim-bs f9dd787d (the commit that added the 'residual' crosswalk grade), crosswalk
 #   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE. The SrV reference is unchanged
 #   and the MiD reference's default / codeplan data rows are unchanged; what is new is the MiD
 #   spec variant codeplan_unspecified and the residual row pairing MiD leisure_unspecified with
