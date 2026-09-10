@@ -113,9 +113,14 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   are 43.24 % of the labelled leisure mass on the committed reference's WEEKDAY non-rbW universe,
   with `wegkm_imp` p25/p50/p75 = 1.27 / 3.26 / 9.50 km (committed
   `mid2023_w_zwd_group_reference.csv`, spec variant `codeplan_unspecified`). Note the two leg
-  universes: the decider and the layers estimate on every delivered MiD Wege row, where the same
-  share is about 0.387 and the clipped donor mean about 12.7 km rather than 12.0 km (pre-existing
-  since #127; ADR-0115 Consequences "Two universes").
+  universes that ADR-0116 closed: the decider and the layers USED to estimate on every delivered
+  MiD Wege row, where the same share is about 0.387 and the clipped donor mean about 12.7 km rather
+  than 12.0 km (pre-existing since #127; ADR-0115 Consequences "Two universes"). Since
+  `secondary_mid_weekday_legs_only` (production true, ADR-0116) both stages estimate on the SAME
+  weekday non-rbW universe this reference measures -- one shared function,
+  `braunschweig.popsim.trips.weekday_diary_leg_mask` -- so the only remaining differences are
+  `run()`'s own validity filters (a usable travel time, and the two leg ends not both primary
+  activities). With the flag off the old mismatch is back.
 
   | other group | definition | measured mean | placement |
   |---|---|---|---|

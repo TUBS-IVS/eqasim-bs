@@ -14,12 +14,20 @@ description: 'Gives the MiD W_ZWECK 10 "anderer Zweck" legs -- leisure legs of t
   this feature the W_ZWECK-10 legs (about 31 % of the weekday leisure mass W_ZWECK {7, 10},
   ad-hoc probe 2026-09-10) drew their distances from layers estimated on the labelled code-7 legs.
 
-  TWO UNIVERSES (ADR-0115 Consequences, final review ruling R13): the decider and the distance
-  layers estimate on every MiD Wege row their stage loads, while this reference measures the
-  WEEKDAY non-rbW legs -- the labelling rule is shared, the universe is not. On the all-day
-  universe the marginal is about 0.387 and the donor mean about 12.7 km (against 0.4324 and
-  12.0 km on the weekday universe). The mismatch is pre-existing (the #127 layers and deciders
-  were never weekday-filtered) and is not changed here.
+  TWO UNIVERSES (ADR-0115 Consequences, final review ruling R13) -- CLOSED BY ADR-0116, feature
+  record secondary_mid_weekday_universe: the decider and the distance layers estimated on every
+  MiD Wege row their stage loads, while this reference measures the WEEKDAY non-rbW legs -- the
+  labelling rule was shared, the universe was not. On the all-day universe the marginal is about
+  0.387 and the donor mean about 12.7 km (against 0.4324 and 12.0 km on the weekday universe).
+  The mismatch was pre-existing (the #127 layers and deciders were never weekday-filtered) and
+  was not changed by ADR-0115. With secondary_mid_weekday_legs_only on (production true,
+  ADR-0116) the estimation and this committed reference share
+  braunschweig.popsim.trips.weekday_diary_leg_mask; the residual differences are the validity
+  filters of distance_distributions.run (a usable travel time, and the two leg ends not both
+  primary activities), not the universe. The sanity pin of this group moved with that decision:
+  secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] is now the weekday
+  point pin (12.0, 12.0) km, and the all-day value 12.7 km is recorded in ADR-0116 Consequences
+  for the OFF path.
 
   Mechanism: purpose_subtype.SubtypeSpec gains zweck_groups (group name -> frozenset of raw W_ZWECK
   codes) plus group_names / zweck_group_codes; the shared helper purpose_subtype.label_legs applies
@@ -152,22 +160,29 @@ validation:
     spec variant, on its WEEKDAY non-rbW universe; the committed comparison pairs it with SrV
     V_ZWECK 18 (n 1,700, share 0.1796, GIS median 2.956 km) as a reported-but-not-comparable
     residual; and
-    secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] = (12.7, 12.7) km is an
-    AD-HOC in-sample donor mean measured on 2026-09-10 on the frame the LAYER is built from (the
-    all-day donor pool of distance_distributions.run: every delivered Wege row, w_zweck_10_as_leisure
-    mapping, travel-time and primary-both filters, then W_ZWECK 10 leisure legs; wegkm_imp < 9994
-    clipped at 200 km, W_GEW-weighted; n = 54,658; frame and command recorded in ADR-0115
-    Decision 9), a sanity band and never a validation gate. The weekday reference universe gives
-    12.0 km over n = 39,429 for the same quantity -- same method, different universe. Arm C of
-    the pre-registered A/B (ADR-0115 Consequences) is what would compare the model''s REALISED
-    leisure_unspecified share and distances against these rows.'
+    secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] = (12.0, 12.0) km is an
+    AD-HOC in-sample donor mean measured on 2026-09-10 on the frame the LAYER is built from -- since
+    ADR-0116 the WEEKDAY donor pool of distance_distributions.run (weekday_diary_leg_mask, then the
+    w_zweck_10_as_leisure mapping, the travel-time and primary-both filters, then the W_ZWECK 10
+    leisure legs; wegkm_imp < 9994 clipped at 200 km, W_GEW-weighted; n = 39,429) -- a sanity band
+    and never a validation gate. The same method on the ALL-DAY universe gives 12.69505 km over
+    n = 54,658 (ADR-0115 Decision 9, which records the frame and the route; the value applies to a
+    run with secondary_mid_weekday_legs_only off, and ADR-0116 Consequences lists it beside the
+    other seven groups). Arm C of the pre-registered A/B (ADR-0115 Consequences) is what would
+    compare the model''s REALISED leisure_unspecified share and distances against these rows, and
+    arm D (ADR-0116 Consequences) is the arm on which the committed reference rows and the
+    estimation finally describe the same day.'
   note: 'No run has executed this code as of this record. Nothing here compares the model against
     observed behaviour: the MiD reference is the donor survey the model estimates FROM (an in-sample
     comparison at best), and the SrV residual is a different instrument on a different universe -- a
-    regional context row, explicitly not a target. The reference is also measured on a DIFFERENT LEG
-    UNIVERSE than the estimation (weekday non-rbW vs every delivered Wege row; ADR-0115
-    Consequences, "Two universes"), so an arm-C comparison reads the realised shares against the
-    decider''s own printed marginals and treats the committed rows as context.
+    regional context row, explicitly not a target. The reference WAS also measured on a DIFFERENT
+    LEG UNIVERSE than the estimation (weekday non-rbW vs every delivered Wege row; ADR-0115
+    Consequences, "Two universes"), which is why an arm-C comparison reads the realised shares
+    against the decider''s own printed marginals and treats the committed rows as context -- arm C
+    sets secondary_mid_weekday_legs_only false. That universe difference is CLOSED by ADR-0116
+    (feature record secondary_mid_weekday_universe): with the flag on, both sides apply
+    braunschweig.popsim.trips.weekday_diary_leg_mask and the residual differences are only the
+    validity filters of distance_distributions.run.
     validation.state stays unvalidated until an arm-C run manifest records the realised share and
     distances.'
 assessment:
@@ -181,14 +196,18 @@ assessment:
     unset). A second, related decision is deliberately parked on the same measurement rather than on
     an issue: whether the leisure_visit level should be regionally anchored at all (ADR-0115 rejects
     age-conditioning, PopulationSim controls and raking for now and defers the level decision to the
-    arm-B measurement of the realised share). A THIRD decision is parked here by the final review
-    (ruling R13) and is the owner''s to take: whether the subtype decider and the distance layers
-    should be WEEKDAY-filtered like the committed reference is. Today they estimate on every
-    delivered MiD Wege row (pre-existing since #127), which is why the two universes disagree
-    (all-day marginal about 0.387 and donor mean about 12.7 km vs 0.4324 and 12.0 km on the
-    weekday reference universe; ADR-0115 Consequences). Changing it would move every subtype
-    layer, not just this group, so it is a model decision and not a fix -- no issue was opened.'
-notes: 'Sibling records of the same wave: purpose_main_fold_code_10 (ADR-0111) provides the fold
+    arm-B measurement of the realised share). A THIRD decision was parked here by the final review
+    (ruling R13) -- whether the subtype decider and the distance layers should be WEEKDAY-filtered
+    like the committed reference is -- and it is now TAKEN (owner decision of 2026-09-10, ADR-0116):
+    yes, behind the flag secondary_mid_weekday_legs_only, production true, with its own feature
+    record secondary_mid_weekday_universe and its own arm D. It did move every subtype layer and not
+    just this group, which is why it is flag-gated and why this group''s sanity pin was re-measured
+    from 12.7 to 12.0 km. Nothing about that decision is pending here any more; what is still
+    pending in THIS record is only arm C.'
+notes: 'Sibling record of the same branch: secondary_mid_weekday_universe (ADR-0116) owns the
+  ESTIMATION UNIVERSE both consumers of this flag share and closes this record''s "Two universes"
+  statements; it is arm D of the same ladder. Sibling records of the same wave:
+  purpose_main_fold_code_10 (ADR-0111) provides the fold
   this feature depends on -- without w_zweck_10_as_leisure there are no code-10 leisure legs at all
   and both stages refuse the combination at configure time -- and w_zwd_codeplan_sentinels
   (ADR-0113) owns the codeplan sentinel move and the SrV measurement package whose comparable-

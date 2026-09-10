@@ -123,3 +123,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0112](../decisions/ADR-0112-passive-escort-purpose-from-the-paired-adult-leg.md) | 2026-09-10 | active | Passive escort legs take the purpose of the paired adult leg |
 | [ADR-0113](../decisions/ADR-0113-w-zwd-codeplan-verification-and-no-detail-sentinels.md) | 2026-09-10 | active | W_ZWD labels verified against the codeplan; the no-detail codes become sentinels |
 | [ADR-0115](../decisions/ADR-0115-leisure-unspecified-subtype.md) | 2026-09-10 | active | Leisure legs without a detail purpose form their own subtype |
+| [ADR-0116](../decisions/ADR-0116-secondary-weekday-universe.md) | 2026-09-10 | active | The secondary distance layers and the MiD subtype deciders estimate on the weekday diary universe |

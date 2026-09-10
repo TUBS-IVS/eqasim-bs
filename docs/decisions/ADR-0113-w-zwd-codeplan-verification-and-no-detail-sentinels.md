@@ -202,7 +202,12 @@
     stays `validation.state: unvalidated`. Arm B must set `leisure_unspecified_subtype: false`
     explicitly in its overlay: that key's CODE default is `True` (ADR-0115), so leaving it unset
     would make arm B carry the fifth leisure subtype as well and stop measuring this flag alone.
-    Arm C = arm B + `leisure_unspecified_subtype: true` (ADR-0115 Consequences).
+    Arm C = arm B + `leisure_unspecified_subtype: true` (ADR-0115 Consequences). The same rule
+    applies to a second key of the same package since
+    [ADR-0116](ADR-0116-secondary-weekday-universe.md): arms A, B and C must ALSO set
+    `secondary_mid_weekday_legs_only: false` explicitly (code default `True`), so arm B measures
+    this flag alone on the all-day estimation universe, and **arm D = arm C +
+    `secondary_mid_weekday_legs_only: true`**.
   - **The two committed reference tables are measurement references, never targets.** Both headers
     say so; no synthesis, location or distribution stage reads either, and their only consumer is
     `scripts/compare_purpose_subtypes_srv.py`.
@@ -217,16 +222,27 @@
   3. **The MiD share is conditional on a leg being LABELLED** (30.7-62.4 % of a purpose's legs are;
      the rest carry a design sentinel), and on the WEEKDAY non-rbW universe of the extraction
      (`kernwo in {1, 2, 3}`, `W_RBW != 1`). The labelled condition is the same one the model's
-     estimation applies, but the weekday condition is NOT: the subtype deciders and the distance
-     layers estimate on every MiD Wege row their stage loads (final review I-1, ruling R13;
-     pre-existing since issue #127, unchanged by this record). So the committed rows are not the
-     mix of all MiD legs of a purpose AND not the mix the decider estimates on. The arm-B rows
-     above therefore compare the realised shares against the decider's own printed marginals and
-     quote these rows as context: a cross-universe comparison would show a difference even for a
-     perfectly correct model -- on the `codeplan` composition the two universes differ by -3.22 pp
-     on `leisure_activity` (all-day marginal 0.3930 vs committed weekday row 0.4253), +1.80 pp on
-     `leisure_visit`, +1.05 pp on `leisure_local` and +0.38 pp on `leisure_excursion` (ad-hoc
-     probe 2026-09-10, final review; not reproduced by committed code).
+     estimation applies. The weekday condition was NOT, at the time this record was written: the
+     subtype deciders and the distance layers estimated on every MiD Wege row their stage loads
+     (final review I-1, ruling R13; pre-existing since issue #127, unchanged by this record). So
+     the committed rows were not the mix of all MiD legs of a purpose AND not the mix the decider
+     estimates on. The arm-B rows above therefore compare the realised shares against the
+     decider's own printed marginals and quote these rows as context: a cross-universe comparison
+     would show a difference even for a perfectly correct model -- on the `codeplan` composition
+     the two universes differ by -3.22 pp on `leisure_activity` (all-day marginal 0.3930 vs
+     committed weekday row 0.4253), +1.80 pp on `leisure_visit`, +1.05 pp on `leisure_local` and
+     +0.38 pp on `leisure_excursion` (ad-hoc probe 2026-09-10, final review; not reproduced by
+     committed code).
+
+     **CLOSED by [ADR-0116](ADR-0116-secondary-weekday-universe.md)** (same branch, owner decision
+     of 2026-09-10): with `secondary_mid_weekday_legs_only` on (production `true`), the estimation
+     and the committed reference share `braunschweig.popsim.trips.weekday_diary_leg_mask`, and the
+     residual differences are `run()`'s own validity filters (a usable travel time, and the two
+     leg ends not both primary activities), not the universe. Arm B keeps reading the decider's
+     printed marginals as its base because it is measured with that key set `false` (see the arm
+     note above); arm D of the ladder is the arm on which these committed rows and the estimation
+     finally describe the same day. The labelled condition of this assumption is unchanged either
+     way.
   4. **The leisure comparison is structurally asymmetric** (SrV 18 outside the comparable universe,
      `leisure_excursion` without a counterpart), so the four leisure `share_srv` values do not sum
      to 1. BOTH readings stay committed -- `delta_pp` raw as information, `delta_pp_comparable` on
@@ -238,7 +254,9 @@
   **ADR-0026 / ADR-0057** (purpose-resolved secondary distances), **ADR-0055** (`GEWICHT_W_ZENSUS`
   is the cross-stratum SrV weight), **ADR-0111** (the sibling flags of the same package),
   **ADR-0115** (issue #373: the fifth leisure subtype, the `residual` grade, the third spec variant
-  and the comparable-universe candidate rule this record now states in Decision 4). Spec
+  and the comparable-universe candidate rule this record now states in Decision 4) and
+  **ADR-0116** (issue #373, same branch: the weekday diary universe, which CLOSES the two-universe
+  half of Assumption 3 below and adds arm D to this ladder). Spec
   `docs/superpowers/specs/2026-09-09-purpose-correctness-design.md` sections 1.3 / 2.3 / 2.4 / 3.
   Committed data: `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` (data record
   `mid2023_w_zwd_group_reference`), `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv`

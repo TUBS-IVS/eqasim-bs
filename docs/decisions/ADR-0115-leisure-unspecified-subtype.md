@@ -164,6 +164,15 @@
      a different measurement rule, and the band is pinned on the layer's own universe because
      that is the pool a realised leg actually draws from. Like every other entry of that dict it
      is an IN-SAMPLE donor mean and never a validation gate.
+
+     **Superseded by [ADR-0116](ADR-0116-secondary-weekday-universe.md) (same branch,
+     2026-09-10):** the layer's own universe IS the weekday one under
+     `secondary_mid_weekday_legs_only` (production `true`), so this entry was re-measured to the
+     point pin `(12.0, 12.0)` and all eight entries of the dict now describe the weekday frame.
+     The all-day values above stay recorded here and in ADR-0116 Consequences as the OFF-path
+     figures -- which also means that on an arm that switches the key `false` (arms A-C of the
+     ladder) the printed sanity band is the weekday one while the donor pool is the all-day one;
+     that is a reporting mismatch of an in-sample band, never a gate.
   10. **Measurement package: the residual pair.** `srv_fine_purpose.EXACTNESS_VALUES` gains the
       grade `residual` and `SUBTYPE_TO_SRV_FINE["leisure_unspecified"] = ((18,), "residual")`;
       `COMPARABLE_EXACTNESS = ("exact", "approximate")`. A `residual` pair is REPORTED in full
@@ -211,21 +220,27 @@
     deliberately NOT a separate issue, because the decision has an owner, a measurement and a
     written home already.
 - **Consequences:**
-  - **Two universes (final review I-1, ruling R13).** The leisure subtype DECIDER and the
-    distance LAYERS estimate on every MiD Wege row their stage loads (`mid.load_mid_wege`), while
+  - **Two universes (final review I-1, ruling R13) -- CLOSED by
+    [ADR-0116](ADR-0116-secondary-weekday-universe.md).** The leisure subtype DECIDER and the
+    distance LAYERS estimated on every MiD Wege row their stage loads (`mid.load_mid_wege`), while
     the committed reference `mid2023_w_zwd_group_reference.csv` measures the WEEKDAY non-rbW legs
-    (`filter_weekday_legs`). The mismatch is PRE-EXISTING -- the #127 layers and deciders have
-    never been weekday-filtered -- and this decision does not change either universe. It does
-    change what the records claim: on the all-day universe the production `leisure_unspecified`
-    marginal is about 0.387 and the clipped donor mean about 12.7 km, against 0.4324 and 12.0 km
-    on the weekday reference universe (ad-hoc probe 2026-09-10, final review). Consequently the
-    arm-C rows below compare the realised shares against the DECIDER's own printed marginals
-    (an IN-SAMPLE comparison on the estimation universe) and quote the weekday reference rows as
-    CONTEXT only; a cross-universe comparison would show a difference even for a perfectly
-    correct model. Whether the decider and the layers SHOULD be weekday-filtered is a model
-    decision for the owner, recorded in the assessment of the feature record
-    `docs/registry/features/leisure_unspecified_subtype.yml` (deliberately not a new issue: it
-    has an owner, a measurement and a written home).
+    (`filter_weekday_legs`). The mismatch was PRE-EXISTING -- the #127 layers and deciders had
+    never been weekday-filtered -- and this decision changed neither universe. It did change what
+    the records claim: on the all-day universe the production `leisure_unspecified` marginal is
+    about 0.387 and the clipped donor mean about 12.7 km, against 0.4324 and 12.0 km on the
+    weekday reference universe (ad-hoc probe 2026-09-10, final review). **Closed by ADR-0116**
+    (same branch, owner decision of 2026-09-10): with `secondary_mid_weekday_legs_only` on
+    (production `true`), the estimation and the committed reference share
+    `braunschweig.popsim.trips.weekday_diary_leg_mask`; the residual differences are `run()`'s own
+    validity filters (a usable travel time, and the two leg ends not both primary activities), not
+    the universe. The arm-C rows below still read the DECIDER's own printed marginals as their
+    base, because arm C is measured with the new key set `false` (see the arm note there); on the
+    all-day OFF path the weekday reference rows remain CONTEXT only, since a cross-universe
+    comparison would show a difference even for a perfectly correct model. The model question
+    ruling R13 parked for the owner -- whether the decider and the layers SHOULD be
+    weekday-filtered -- is therefore ANSWERED (yes, behind one flag) and the answer lives in
+    ADR-0116 and in the feature record
+    `docs/registry/features/secondary_mid_weekday_universe.yml`.
   - **The OFF path is output-identical, not byte-identical.** With `leisure_unspecified_subtype`
     off no leg can be tagged with the fifth name, so placement, distances, purposes and the RNG
     streams are identical to the pre-feature run
@@ -249,14 +264,19 @@
     does. That is the project's "new features default on" rule working as intended, and it has
     one consequence for the pre-registered A/B: **arms A and B must set
     `leisure_unspecified_subtype: false` EXPLICITLY in their overlays**, because leaving the key
-    unset now means ON. Arm C = arm B + `leisure_unspecified_subtype: true` (or unset).
+    unset now means ON. Arm C = arm B + `leisure_unspecified_subtype: true` (or unset). Since
+    [ADR-0116](ADR-0116-secondary-weekday-universe.md) (same branch) the identical rule applies to
+    a second key of this package: **arms A, B and C must also set
+    `secondary_mid_weekday_legs_only: false` EXPLICITLY**, whose code default is likewise `True`,
+    and **arm D = arm C + `secondary_mid_weekday_legs_only: true`**. So the arm-C rows below are
+    measured on the ALL-DAY estimation universe by construction.
   - **Pre-registered A/B, arm C (server; NOTHING has run at the time this record is written).**
 
     | metric | baseline | reference | expected in arm C (ASSUMPTION) |
     |---|---|---|---|
     | realised `leisure_unspecified` share of leisure legs | arm B (0 by construction) | the decider's own build-time marginal, printed by the chainsolver stage (IN-SAMPLE, all-day estimation universe) | within 2 pp of that marginal |
-    | realised per-group leisure mean distances | arm B | `secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE` (in-sample sanity bands; `leisure_unspecified` = 12.7-12.7 km, measured on the LAYER's own all-day donor frame, Decision 9; the seven older entries are the 2026-07-09 spec taxonomy figures) | inside the band, sanity check only |
-    | realised per-group leisure distance medians | arm B | `mid2023_w_zwd_group_reference.csv`, `codeplan_unspecified` rows (`km_p50`) -- the WEEKDAY reference universe, so this is a CROSS-UNIVERSE comparison and a difference is expected even for a correct model | shift < 1 km per named group |
+    | realised per-group leisure mean distances | arm B | `secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE` (in-sample sanity bands). Since ADR-0116 all eight entries are point pins measured on the WEEKDAY frame (`leisure_unspecified` = 12.0-12.0 km), while arm C runs the all-day universe, whose own measured means are listed in ADR-0116 Consequences (`leisure_unspecified` 12.7 km) -- so in arm C the printed band and the donor pool are different universes | at the ALL-DAY value of ADR-0116's table, not at the printed pin; sanity check only, never a gate |
+    | realised per-group leisure distance medians | arm B | `mid2023_w_zwd_group_reference.csv`, `codeplan_unspecified` rows (`km_p50`) -- the WEEKDAY reference universe, so in arm C (all-day estimation, ADR-0116 off) this is a CROSS-UNIVERSE comparison and a difference is expected even for a correct model; arm D removes that difference | shift < 1 km per named group |
     | realised whole-leisure distance median | arm B | direction only | moves DOWN versus arm B |
     | `candidate_for_reestimation` cells | 1 (`leisure_visit`, committed comparison) | the committed rule | still 1 -- a survey-mix result, unaffected by any run |
 
@@ -300,7 +320,9 @@
   measurement review); **ADR-0111** (code 10 -> leisure), **ADR-0113** (codeplan sentinels, the
   SrV measurement package and -- edited in place by this wave -- the comparable-universe candidate
   rule), **ADR-0026 / ADR-0057** (purpose-resolved secondary distances), **ADR-0075** (SrV
-  location types own the placement substrate; the GIS-vs-desired level gap). Design spec
+  location types own the placement substrate; the GIS-vs-desired level gap) and **ADR-0116**
+  (same branch: the weekday diary universe, which CLOSES this record's "Two universes"
+  consequence and re-measured its Decision-9 pin). Design spec
   `docs/superpowers/specs/2026-09-10-leisure-unspecified-subtype-design.md` (sections 1, 2, 3, 5).
   Committed data:
   `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` (data record

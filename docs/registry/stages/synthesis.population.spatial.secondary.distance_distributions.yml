@@ -24,6 +24,7 @@ features:
 - leisure_unspecified_subtype
 - purpose_main_fold_code_10
 - secondary_distance_by_purpose
+- secondary_mid_weekday_universe
 - w_zwd_codeplan_sentinels
 decisions:
 - ADR-0026
@@ -32,6 +33,7 @@ decisions:
 - ADR-0112
 - ADR-0113
 - ADR-0115
+- ADR-0116
 notes: >-
   PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
   production implementation braunschweig.popsim.distance_distributions declares and reads five keys
@@ -97,3 +99,25 @@ notes: >-
   no leisure subtype layers at all and the key is inert, so a popsim_open fixture that never sets it
   is not aborted. purpose_subtype was already in _DEFERRED_HELPER_MODULE_NAMES, so the new group
   definition is covered by the cache hash without a new entry.
+
+
+  WEEKDAY DIARY UNIVERSE (issue #373, ADR-0116, feature record secondary_mid_weekday_universe):
+  this stage declares a SIXTH purpose-package key, secondary_mid_weekday_legs_only (declared
+  default true, key and default imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers; production true in configs/base_bs.yml),
+  and forwards it into run() as the keyword weekday_legs_only (keyword default False, so a direct
+  caller keeps the pre-feature behaviour). With it on, a new Step 0a reduces the donor frame to
+  trips.restrict_to_weekday_diary_legs(df) -- the seed's own day filter
+  (trips.WEEKDAY_DIARY_KERNWO reads seed.MID_SEED_COLUMNS.day_filter_values) and no rbW summary
+  records -- BEFORE the pairing mask of Step 0b and before the purpose mapping of Step 1, so the
+  aggregate, the per-purpose and every subtype layer are built from ONE universe (67.9 % of the
+  delivered rows on the 2026-09-10 MiD delivery). Because it filters before Step 2 re-derives
+  preceding_purpose, the set of primary-both trips Step 5 excludes can change with it; under
+  exclude_rbw_legs true that moves the pool closer to the plan's own leg universe (ADR-0116
+  Consequences, ruling W5). Log line: INFO "[popsim.distance_distributions] weekday diary universe:
+  kept %d/%d legs (%.1f%%); dropped %d non-weekday (kernwo outside [1, 2, 3]), %d rbW summary
+  records" -- the two reasons partition the dropped legs. The helper RAISES when kernwo or W_RBW is
+  absent (both are needed only on this path and are deliberately NOT in REQUIRED_COLUMNS) and when
+  the universe would be empty. Cache: braunschweig.popsim.seed was added to
+  _DEFERRED_HELPER_MODULE_NAMES because the weekday definition lives there and hashing trips cannot
+  see across that import (ruling W4).

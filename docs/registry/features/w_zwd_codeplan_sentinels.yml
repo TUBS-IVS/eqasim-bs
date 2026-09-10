@@ -132,9 +132,15 @@ validation:
     other-errand subtype shares against the DECIDER''s own printed marginals: Task 9 of the
     #373/#372/#242 SDD plan. The codeplan rows of the committed reference are quoted there as
     CONTEXT, not as the comparison base, because the reference measures the WEEKDAY non-rbW legs
-    while the decider and the distance layers estimate on every delivered MiD Wege row (two
-    universes, pre-existing since #127; ADR-0113 Assumption 3 and ADR-0115 Consequences carry the
-    measured difference).'
+    while arm B has the decider and the distance layers estimate on every delivered MiD Wege row
+    (two universes, pre-existing since #127; ADR-0113 Assumption 3 and ADR-0115 Consequences carry
+    the measured difference). That universe difference is CLOSED by ADR-0116 (feature record
+    secondary_mid_weekday_universe): with secondary_mid_weekday_legs_only on (production true) both
+    sides apply braunschweig.popsim.trips.weekday_diary_leg_mask and the residual differences are
+    only the validity filters of distance_distributions.run. Arms A, B and C set that key false
+    explicitly (its code default is True), so they still measure on the all-day universe; arm D of
+    the ladder is arm C plus this key, and it is the arm on which the committed codeplan rows and
+    the estimation finally describe the same day.'
   note: 'No run has executed this code as of this record, and the committed comparison is NOT a
     validation of the model: it compares two survey-derived mixes (MiD national vs SrV Braunschweig
     + RGB), with the crosswalk exactness itself an explicit ASSUMPTION (a reading of two codebooks,
@@ -155,7 +161,8 @@ assessment:
     decided from the arm-B measurement of the REALISED share, not from the survey-vs-survey tables.
     Arm B must set leisure_unspecified_subtype: false explicitly in its overlay, because that key''s
     code default is True (ADR-0115) and leaving it unset would change a second thing at the same
-    time.'
+    time; since ADR-0116 the same holds for secondary_mid_weekday_legs_only (code default True), so
+    arms A, B and C must set it false explicitly and arm D = arm C + that key.'
 notes: 'Sibling records of the same package: purpose_main_fold_code_10 (ADR-0111) and
   escort_passive_from_adult (ADR-0112), which together form arm A; this flag is arm B and is cheap
   (no seed column changes, so PopulationSim does not re-run -- only the secondary location and
@@ -167,4 +174,6 @@ notes: 'Sibling records of the same package: purpose_main_fold_code_10 (ADR-0111
   cannot be served from a stale chainsolver cache; braunschweig.popsim.distance_distributions gained
   its own validate() in the same wave (issue #373 task 1), which hashes purpose_subtype among its
   deferred helper modules, so the same protection now holds on the distance side. The fifth leisure
-  subtype added by ADR-0115 has its own record, leisure_unspecified_subtype.'
+  subtype added by ADR-0115 has its own record, leisure_unspecified_subtype, and the estimation
+  UNIVERSE both this flag''s consumers share is owned by secondary_mid_weekday_universe
+  (ADR-0116), which closes the two-universe caveat above.'

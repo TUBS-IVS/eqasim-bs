@@ -55,17 +55,33 @@ limitations: |
   (leisure, default variant); the rest carry a design sentinel (2202 PAPI, 4402 child under 14,
   7704/7705, 599/699/799/999).
 
-  TWO LEG UNIVERSES, and this table measures the WEEKDAY one. The labelled condition is the same
-  one the model applies, but the weekday/non-rbW condition is NOT: the subtype deciders
+  ONE LEG UNIVERSE since ADR-0116, and this table measures it. The universe is applied through the
+  single helper braunschweig.popsim.trips.weekday_diary_leg_mask (kernwo in the seed's own day
+  filter AND W_RBW != 1), which the extraction and -- under the production flag
+  secondary_mid_weekday_legs_only (default and production true) -- the subtype deciders
   (secondary_chainsolvers.deciders) and the distance layers
-  (braunschweig.popsim.distance_distributions) estimate on every MiD Wege row their stage loads
-  (mid.load_mid_wege) -- pre-existing since issue #127 and unchanged by issues #242/#373. So these
-  rows are neither the mix of all MiD legs of a purpose NOR the mix the model estimates on: on the
-  all-day universe the production leisure_unspecified marginal is about 0.387 against 0.4324 here,
-  and the clipped donor mean about 12.7 km against 12.0 km (ad-hoc probe 2026-09-10; ADR-0115
-  Consequences "Two universes", ADR-0113 Assumption 3, which also carry the per-group differences
-  on the codeplan composition). Comparisons of realised model shares therefore read the decider's
-  own printed marginals and quote these rows as context.
+  (braunschweig.popsim.distance_distributions) now share; the file header names the helper. The
+  residual difference between these rows and the deciders' printed marginals is the validity
+  filters of distance_distributions.run (a usable travel time; the two leg ends not both primary
+  activities), not the universe.
+
+  BEFORE ADR-0116 there were TWO universes: the labelled condition was the same one the model
+  applies but the weekday/non-rbW condition was not, because both stages estimated on every MiD
+  Wege row their stage loads (mid.load_mid_wege) -- pre-existing since issue #127 and unchanged by
+  issues #242/#373 until this decision. On that all-day universe the production
+  leisure_unspecified marginal is about 0.387 against 0.4324 here, and the clipped donor mean
+  about 12.7 km against 12.0 km (ad-hoc probe 2026-09-10; ADR-0115 Consequences "Two universes",
+  ADR-0113 Assumption 3, which also carry the per-group differences on the codeplan composition).
+  That is still the state on a run with secondary_mid_weekday_legs_only false -- arms A, B and C
+  of the pre-registered ladder -- where comparisons of realised model shares must read the
+  decider's own printed marginals and quote these rows as context only; arm D (ADR-0116) is the
+  arm on which the two sides describe the same day.
+
+  Provenance of the committed file: regenerated header-only on 2026-09-10 (--source-commit
+  f120d93d) so its Universe paragraph names the shared helper instead of the now-false sentence
+  "the labelling RULE is shared; the leg UNIVERSE is NOT". Its 25 data rows were proven
+  byte-identical across that regeneration (md5 e3eee749df76d75a5784399db3b6a467 on both sides
+  after stripping the header comments), so the change is provenance, not data.
 
   spec_variant: three settings of the two subtype config keys -- 'default' (both off), 'codeplan'
   (purpose_subtype_codeplan_sentinels on, so W_ZWD 799 and 699 are sentinels instead of group

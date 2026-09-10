@@ -78,17 +78,20 @@ every consumer of the purpose vocabulary at once, or it is not added.
    ruling C-R18. `tests/test_derive_escort_w_zweck_split.py::test_day_filter_values_are_the_seeds_own_constant`
    pins the shared constant.
 
-   **Corollary, and an open model question.** The rule binds the committed AGGREGATE, not the
-   ESTIMATION: the W_ZWD subtype deciders
+   **Corollary: one weekday universe, one function (ADR-0116).** The rule above binds the
+   committed AGGREGATE; the ESTIMATION used to ignore it -- the W_ZWD subtype deciders
    (`secondary_chainsolvers.deciders`) and the secondary distance layers
-   (`braunschweig.popsim.distance_distributions`) estimate on every MiD Wege row
-   `mid.load_mid_wege` returns -- no reporting-day and no route-break filter -- while
-   `mid2023_w_zwd_group_reference.csv` is measured on the weekday non-rbW legs. So a record must
-   never present that table as the mix the model estimates on (it differs: about 0.387 vs 0.4324
-   for `leisure_unspecified`, ad-hoc probe 2026-09-10). The mismatch is pre-existing (issue #127)
-   and whether the deciders and layers should be weekday-filtered is an owner decision recorded
-   in the assessment of `docs/registry/features/leisure_unspecified_subtype.yml`; ADR-0115
-   Consequences ("Two universes") carries the measurement.
+   (`braunschweig.popsim.distance_distributions`) estimated on every MiD Wege row
+   `mid.load_mid_wege` returns, with no reporting-day and no route-break filter, while
+   `mid2023_w_zwd_group_reference.csv` is measured on the weekday non-rbW legs (the shares
+   differ: about 0.387 vs 0.4324 for `leisure_unspecified`, ad-hoc probe 2026-09-10). Since
+   `secondary_mid_weekday_legs_only` (production true) BOTH sides go through the single universe
+   function `braunschweig.popsim.trips.weekday_diary_leg_mask` -- `kernwo` in
+   `WEEKDAY_DIARY_KERNWO` (read from `seed.MID_SEED_COLUMNS.day_filter_values`, never retyped)
+   and not an rbW summary record -- and both committed reference extractions call it too. So the
+   rule for a new MiD leg aggregate is: use that function, do not write a fourth filter. With the
+   flag off the old mismatch returns, which is why every record that quotes a share says which
+   universe it belongs to.
 
 ## Threading list (as of ADR-0111 / ADR-0112 / ADR-0113)
 
