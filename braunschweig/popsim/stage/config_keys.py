@@ -373,6 +373,18 @@ DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
 KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = "purpose_subtype_codeplan_sentinels"
 DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True
 
+# leisure_unspecified_subtype (issue #373, ADR-0115): MiD W_ZWECK 10 legs -- leisure via
+# w_zweck_10_as_leisure, never carrying a W_ZWD detail -- form the fifth leisure subtype
+# "leisure_unspecified" with its own distance layer instead of being imputed one of the four W_ZWD
+# groups. Read by braunschweig.popsim.distance_distributions (the layer) AND
+# braunschweig.synthesis.locations.secondary_chainsolvers (the decider); both must resolve the same
+# value. Effective only with secondary_leisure_subtype_split on; REQUIRES w_zweck_10_as_leisure
+# (both stages raise at configure time otherwise: with the fold off no code-10 leg is leisure, so
+# the class would be estimated but never realised). Not a trip-build key -> not in
+# ENTD_REJECTED_KEYS (same reasoning as KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+KEY_LEISURE_UNSPECIFIED_SUBTYPE = "leisure_unspecified_subtype"
+DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
+
 # MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
 # build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
 # each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the

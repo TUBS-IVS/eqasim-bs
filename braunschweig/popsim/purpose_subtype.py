@@ -45,17 +45,38 @@ Taxonomy provenance (LEISURE_SPEC / OTHER_ERRAND_SPEC, issue #127 Task 2):
     codes) rather than a leisure- or errand-specific meaning: excluding them keeps
     ESTIMATION from mislabelling a cross-purpose intrusion as if it were a genuine
     group member of the purpose being estimated.
+
+The fifth leisure subtype (issue #373, ADR-0115):
+    MiD W_ZWECK 10 "anderer Zweck" legs are realised as leisure by the
+    ``w_zweck_10_as_leisure`` trip-build flag (ADR-0111), but they carry NO W_ZWD detail
+    code -- only design sentinels (2202 "im PAPI nicht erhoben", 4402 "Kind unter 14
+    Jahren", 7704 "kein Einkaufs-, Erledigungs-, oder Freizeitweg"). The four W_ZWD groups
+    above therefore cannot label them, and estimating the leisure subtype mix on W_ZWECK 7
+    legs alone forces every synthetic leisure activity -- including the ones whose donor leg
+    was W_ZWECK 10 -- to draw from the code-7 subtype mix and the code-7 subtype distance
+    layers.
+
+    ``LEISURE_SPEC_UNSPECIFIED`` / ``LEISURE_SPEC_CODEPLAN_UNSPECIFIED`` (selected via
+    ``leisure_spec``'s ``unspecified_subtype`` argument, config key
+    ``leisure_unspecified_subtype``) instead give these legs their OWN subtype,
+    ``leisure_unspecified``, defined by the RAW purpose code rather than by the detail code
+    (``SubtypeSpec.zweck_groups``). This is an ASSUMPTION about grouping, not a measured
+    taxonomy claim: the group is not derived from a distance clustering like the four W_ZWD
+    groups, because there is no detail code to cluster on -- it simply keeps a class of legs
+    whose purpose detail MiD never observed from being imputed into a class whose distance
+    behaviour was measured on different legs.
 """
 from __future__ import annotations
 
 import logging
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.shop_subtype import TT_BANDS, tt_band  # noqa: F401 (re-exported for callers)
+from braunschweig.popsim.trips import W_ZWECK_OTHER_CODE
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +110,10 @@ class SubtypeSpec:
         while sentinel codes are a deliberate, documented exclusion.
     group_col : str
         Column in the MiD Wege table holding the detail code (default "W_ZWD").
+    zweck_groups : dict[str, frozenset[int]]
+        Groups defined by the RAW W_ZWECK code instead of the detail code (see the field
+        comment below and the module docstring). Empty by default, i.e. every group is a
+        `group_col` group unless a spec says otherwise.
     """
 
     purpose_label: str
@@ -96,6 +121,11 @@ class SubtypeSpec:
     groups: dict
     sentinels: frozenset
     group_col: str = "W_ZWD"
+    #: Groups defined by the RAW ``W_ZWECK`` code instead of the detail code (issue #373,
+    #: ADR-0115): group name -> frozenset of W_ZWECK codes. A leg whose W_ZWECK is in a zweck
+    #: group is labelled with that group whatever its ``group_col`` value says (such legs carry
+    #: only design sentinels in the MiD data). Every code must be in ``zweck_values``.
+    zweck_groups: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.groups:
@@ -116,6 +146,33 @@ class SubtypeSpec:
                 f"SubtypeSpec '{self.purpose_label}' has {self.group_col} code(s) {sorted(overlap)} in "
                 f"both a group and the sentinel set; a code cannot be both labelled and excluded."
             )
+
+        clash = set(self.zweck_groups) & set(self.groups)
+        if clash:
+            raise ValueError(
+                f"SubtypeSpec '{self.purpose_label}' zweck group name(s) {sorted(clash)} "
+                f"clash with a {self.group_col} group name."
+            )
+
+        seen: set = set()
+        for name, codes in self.zweck_groups.items():
+            outside = set(codes) - set(self.zweck_values)
+            if outside:
+                raise ValueError(
+                    f"SubtypeSpec '{self.purpose_label}' zweck group '{name}' has W_ZWECK "
+                    f"code(s) {sorted(outside)} outside zweck_values {sorted(self.zweck_values)}."
+                )
+            if seen & set(codes):
+                raise ValueError(
+                    f"SubtypeSpec '{self.purpose_label}' assigns W_ZWECK code(s) "
+                    f"{sorted(seen & set(codes))} to more than one zweck group."
+                )
+            seen |= set(codes)
+
+    @property
+    def group_names(self) -> list:
+        """Every group name the spec can label (W_ZWD groups and W_ZWECK groups), sorted."""
+        return sorted([*self.groups, *self.zweck_groups])
 
     @property
     def group_codes(self) -> frozenset:
@@ -139,7 +196,8 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
     """P(group | mode, tt_band) and the overall marginal P(group), W_GEW-weighted.
 
     Mirrors shop_subtype.estimate_daily_probability, generalised from a single daily/
-    non-daily flag to an arbitrary set of named groups (spec.groups).
+    non-daily flag to an arbitrary set of named groups (spec.group_names, i.e. the
+    spec.groups detail-code groups plus the spec.zweck_groups W_ZWECK-code groups).
 
     Parameters
     ----------
@@ -147,7 +205,8 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
         MiD Wege table. Required columns: W_ZWECK, mode, travel_time, W_GEW, and
         spec.group_col (default "W_ZWD").
     spec : SubtypeSpec
-        Defines the purpose, the groups, and the sentinel codes to exclude.
+        Defines the purpose, the groups (detail-code and W_ZWECK-code), and the sentinel
+        codes to exclude.
     min_obs : int
         Minimum row count for a (mode, tt_band) cell to receive its own estimate.
         Cells below this threshold are omitted from the result; callers fall back to
@@ -164,13 +223,29 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
 
     group_col = spec.group_col
     purpose_legs = mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)]
-    labelled = purpose_legs[purpose_legs[group_col].isin(spec.group_codes)].copy()
+
+    # A W_ZWECK-defined group (spec.zweck_groups) wins over the detail-code group: legs of such
+    # a purpose code carry only design sentinels in group_col, so the detail code cannot label
+    # them (issue #373, ADR-0115). With an empty zweck_groups this reduces exactly to the
+    # previous "label by group_col" rule.
+    code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
+    zweck_to_group = {code: name for name, codes in spec.zweck_groups.items() for code in codes}
+    by_zweck = purpose_legs["W_ZWECK"].map(zweck_to_group)
+    by_detail = purpose_legs[group_col].map(code_to_group)
+    label = by_zweck.where(by_zweck.notna(), by_detail)
+    labelled_mask = label.notna()
+
+    labelled = purpose_legs[labelled_mask].copy()
+    labelled["_group"] = label[labelled_mask].to_numpy()
+    n_by_zweck = int(by_zweck.notna().sum())
 
     total_purpose_legs = len(purpose_legs)
     labelled_share = (len(labelled) / total_purpose_legs) if total_purpose_legs else 0.0
     logger.info(
-        "[purpose_subtype:%s] labelled %d/%d legs (%.1f%%) with a known %s group code",
+        "[purpose_subtype:%s] labelled %d/%d legs (%.1f%%) with a known %s group code "
+        "(%d of them by W_ZWECK group)",
         spec.purpose_label, len(labelled), total_purpose_legs, 100.0 * labelled_share, group_col,
+        n_by_zweck,
     )
 
     if labelled.empty:
@@ -180,11 +255,9 @@ def estimate_group_probabilities(mid_wege: pd.DataFrame, spec: SubtypeSpec, *, m
             f"cannot estimate group probabilities from zero labelled observations."
         )
 
-    code_to_group = {code: name for name, codes in spec.groups.items() for code in codes}
-    labelled["_group"] = labelled[group_col].map(code_to_group)
     labelled["_band"] = labelled["travel_time"].map(tt_band)
 
-    group_names = sorted(spec.groups)
+    group_names = spec.group_names
     weights = labelled["W_GEW"].astype(float)
     weight_total = float(weights.sum())
 
@@ -325,6 +398,13 @@ def code_coverage_guard(mid_wege: pd.DataFrame, spec: SubtypeSpec) -> None:
 # codeplan (MiD2023_Codeplaene_B1_Standard_v1.1.xlsx, sheet "Wege", variable W_ZWD;
 # issue #242 Task 5) -- see the module docstring for the verification outcome.
 LEISURE_ZWECK = frozenset({7})
+#: MiD W_ZWECK 10 "anderer Zweck": folded to leisure by w_zweck_10_as_leisure (ADR-0111). These
+#: legs never carry a W_ZWD detail (only the design sentinels 2202 / 7704 / 4402), so they form
+#: their own W_ZWECK-defined subtype with their own distance layer (ADR-0115) instead of being
+#: imputed one of the four W_ZWD groups. The code itself is owned by
+#: braunschweig.popsim.trips.W_ZWECK_OTHER_CODE and imported, not retyped.
+LEISURE_UNSPECIFIED_GROUP = "leisure_unspecified"
+LEISURE_UNSPECIFIED_ZWECK = frozenset({W_ZWECK_OTHER_CODE})
 LEISURE_GROUPS = {
     # leisure_local (~4-7 km): 706 Restaurant/Gaststaette, 710 Spaziergang,
     # 711 Hund ausfuehren, 713 Kirche/Friedhof, 716 Begleitung von Kindern
@@ -453,6 +533,21 @@ def _move_code_to_sentinels(groups: dict, sentinels: frozenset, *, code: int,
     return new_groups, new_sentinels
 
 
+def _add_zweck_group(spec: SubtypeSpec, *, name: str, codes: frozenset) -> SubtypeSpec:
+    """Return ``spec`` with one additional W_ZWECK-defined group (issue #373, ADR-0115).
+
+    Copies every field of ``spec`` explicitly (SubtypeSpec is frozen), widening
+    ``zweck_values`` by ``codes`` so the new group's legs actually enter estimation and the
+    coverage guard, and adding ``name -> codes`` to ``zweck_groups``. ``groups``,
+    ``sentinels`` and ``group_col`` are carried over unchanged, so the derived spec differs
+    from its base in exactly the two fields the new group needs.
+    """
+    return SubtypeSpec(purpose_label=spec.purpose_label,
+                       zweck_values=frozenset(spec.zweck_values) | frozenset(codes),
+                       groups=spec.groups, sentinels=spec.sentinels, group_col=spec.group_col,
+                       zweck_groups={**spec.zweck_groups, name: frozenset(codes)})
+
+
 # Codeplan no-detail sentinel variants (issue #242 Task 5, ADR-0113): 799
 # "Freizeit k.A." and 699 "Erledigung k.A." are NO-DETAIL codes (see the module
 # docstring); these variants move them from their group into the sentinel set,
@@ -477,17 +572,41 @@ OTHER_ERRAND_SPEC_CODEPLAN = SubtypeSpec(
     sentinels=_OTHER_ERRAND_SENTINELS_CODEPLAN,
 )
 
+# leisure_unspecified variants (issue #373, ADR-0115): add the fifth, W_ZWECK-defined leisure
+# subtype -- W_ZWECK 10 "anderer Zweck" legs, which w_zweck_10_as_leisure realises as leisure but
+# which carry no W_ZWD detail -- on top of each of the two spec variants above, leaving every
+# W_ZWD group and sentinel exactly where its base spec has it.
+LEISURE_SPEC_UNSPECIFIED = _add_zweck_group(
+    LEISURE_SPEC, name=LEISURE_UNSPECIFIED_GROUP, codes=LEISURE_UNSPECIFIED_ZWECK)
+LEISURE_SPEC_CODEPLAN_UNSPECIFIED = _add_zweck_group(
+    LEISURE_SPEC_CODEPLAN, name=LEISURE_UNSPECIFIED_GROUP, codes=LEISURE_UNSPECIFIED_ZWECK)
 
-def leisure_spec(codeplan_sentinels: bool) -> SubtypeSpec:
-    """Select the leisure SubtypeSpec for the ``purpose_subtype_codeplan_sentinels``
-    config flag (issue #242 Task 5, ADR-0113).
 
-    Returns ``LEISURE_SPEC_CODEPLAN`` (799 "Freizeit k.A." excluded as a
-    NO-DETAIL sentinel) when ``codeplan_sentinels`` is True, else the
-    unchanged ``LEISURE_SPEC`` -- by IDENTITY (``leisure_spec(False) is
-    LEISURE_SPEC``), not a re-derived equivalent object, so the OFF path is
-    byte-identical to the pre-Task-5 behaviour by construction.
+def leisure_spec(codeplan_sentinels: bool, unspecified_subtype: bool = False) -> SubtypeSpec:
+    """Select the leisure SubtypeSpec for its two config flags,
+    ``purpose_subtype_codeplan_sentinels`` (issue #242 Task 5, ADR-0113) and
+    ``leisure_unspecified_subtype`` (issue #373, ADR-0115).
+
+    The 2x2 table of module constants returned, all by IDENTITY rather than as re-derived
+    equivalent objects:
+
+    =========================  =========================  =====================================
+    ``codeplan_sentinels``     ``unspecified_subtype``    returns
+    =========================  =========================  =====================================
+    False                      False                      ``LEISURE_SPEC``
+    True                       False                      ``LEISURE_SPEC_CODEPLAN``
+    False                      True                       ``LEISURE_SPEC_UNSPECIFIED``
+    True                       True                       ``LEISURE_SPEC_CODEPLAN_UNSPECIFIED``
+    =========================  =========================  =====================================
+
+    ``codeplan_sentinels`` moves 799 "Freizeit k.A." out of ``leisure_activity`` into the
+    sentinel set; ``unspecified_subtype`` adds the W_ZWECK-defined fifth group
+    ``leisure_unspecified``. Because the selection is by identity and both flags default to
+    the pre-feature value, the OFF/OFF path is byte-identical to the pre-Task-5 behaviour by
+    construction (``leisure_spec(False) is LEISURE_SPEC``).
     """
+    if unspecified_subtype:
+        return LEISURE_SPEC_CODEPLAN_UNSPECIFIED if codeplan_sentinels else LEISURE_SPEC_UNSPECIFIED
     return LEISURE_SPEC_CODEPLAN if codeplan_sentinels else LEISURE_SPEC
 
 

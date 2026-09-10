@@ -345,3 +345,86 @@ def test_other_errand_estimation_golden_on_spec_codeplan_sentinels():
     assert marginal == pytest.approx(expected)
     band = ps.tt_band(200.0)
     assert cell_probs[("car", band)] == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# Issue #373 (ADR-0115): W_ZWECK-defined subtype groups and the
+# "leisure_unspecified" fifth leisure subtype. MiD W_ZWECK 10 legs are folded to
+# leisure by w_zweck_10_as_leisure but never carry a W_ZWD detail code (only the
+# design sentinels), so they are labelled by their RAW purpose code instead of by
+# W_ZWD (SubtypeSpec.zweck_groups / LEISURE_SPEC_UNSPECIFIED).
+# ---------------------------------------------------------------------------
+
+
+def test_zweck_group_validation():
+    with pytest.raises(ValueError, match="zweck group"):
+        ps.SubtypeSpec("x", frozenset({7, 10}), {"a": frozenset({701})}, frozenset(),
+                       zweck_groups={"a": frozenset({10})})          # name clash
+    with pytest.raises(ValueError, match="zweck_values"):
+        ps.SubtypeSpec("x", frozenset({7}), {"a": frozenset({701})}, frozenset(),
+                       zweck_groups={"u": frozenset({10})})          # code outside zweck_values
+    with pytest.raises(ValueError, match="more than one zweck group"):
+        ps.SubtypeSpec("x", frozenset({7, 10, 11}), {"a": frozenset({701})}, frozenset(),
+                       zweck_groups={"u": frozenset({10}), "v": frozenset({10, 11})})
+
+
+def test_leisure_spec_selector_returns_the_four_constants_by_identity():
+    assert ps.leisure_spec(False) is ps.LEISURE_SPEC
+    assert ps.leisure_spec(False, False) is ps.LEISURE_SPEC
+    assert ps.leisure_spec(True) is ps.LEISURE_SPEC_CODEPLAN
+    assert ps.leisure_spec(False, True) is ps.LEISURE_SPEC_UNSPECIFIED
+    assert ps.leisure_spec(True, True) is ps.LEISURE_SPEC_CODEPLAN_UNSPECIFIED
+
+
+def test_unspecified_specs_add_only_the_zweck_group():
+    for base, spec in ((ps.LEISURE_SPEC, ps.LEISURE_SPEC_UNSPECIFIED),
+                       (ps.LEISURE_SPEC_CODEPLAN, ps.LEISURE_SPEC_CODEPLAN_UNSPECIFIED)):
+        assert spec.groups == base.groups and spec.sentinels == base.sentinels
+        assert spec.zweck_values == base.zweck_values | ps.LEISURE_UNSPECIFIED_ZWECK
+        assert spec.zweck_groups == {ps.LEISURE_UNSPECIFIED_GROUP: ps.LEISURE_UNSPECIFIED_ZWECK}
+        assert spec.group_names == sorted([*base.groups, ps.LEISURE_UNSPECIFIED_GROUP])
+    assert ps.LEISURE_SPEC.zweck_groups == {} and ps.LEISURE_SPEC.group_names == sorted(ps.LEISURE_GROUPS)
+
+
+def _frame_with_code_10_legs():
+    # 4 labelled code-7 legs (2 visit, 2 local) and 3 code-10 legs carrying design sentinels.
+    return pd.DataFrame({
+        "W_ZWECK": [7, 7, 7, 7, 10, 10, 10],
+        "W_ZWD": [701, 701, 710, 706, 2202, 7704, 4402],
+        "mode": ["car"] * 7, "travel_time": [600.0] * 7, "W_GEW": [1.0] * 7,
+    })
+
+
+def test_estimation_labels_code_10_legs_by_w_zweck_and_ignores_their_w_zwd():
+    cell_probs, marginal = ps.estimate_group_probabilities(
+        _frame_with_code_10_legs(), ps.LEISURE_SPEC_UNSPECIFIED, min_obs=1)
+    assert marginal[ps.LEISURE_UNSPECIFIED_GROUP] == pytest.approx(3 / 7)
+    assert marginal["leisure_visit"] == pytest.approx(2 / 7)
+    assert marginal["leisure_local"] == pytest.approx(2 / 7)
+    assert sum(marginal.values()) == pytest.approx(1.0)
+    assert set(cell_probs[("car", ps.tt_band(600.0))]) == set(ps.LEISURE_SPEC_UNSPECIFIED.group_names)
+
+
+def test_estimation_without_the_zweck_group_is_unchanged_by_code_10_legs():
+    frame = _frame_with_code_10_legs()
+    with_10, marginal_with_10 = ps.estimate_group_probabilities(frame, ps.LEISURE_SPEC, min_obs=1)
+    without_10, marginal_without = ps.estimate_group_probabilities(
+        frame[frame["W_ZWECK"] == 7], ps.LEISURE_SPEC, min_obs=1)
+    assert marginal_with_10 == marginal_without and with_10 == without_10
+    assert ps.LEISURE_UNSPECIFIED_GROUP not in marginal_with_10
+
+
+def test_code_coverage_guard_accepts_sentinel_only_code_10_legs():
+    # Under LEISURE_SPEC_UNSPECIFIED the guard reads W_ZWECK 10 legs too; their W_ZWD is
+    # always a design sentinel (2202 / 4402 / 7704), all already in LEISURE_SENTINELS, so
+    # widening zweck_values must not trip the guard.
+    ps.code_coverage_guard(_frame_with_code_10_legs(), ps.LEISURE_SPEC_UNSPECIFIED)
+
+
+def test_code_coverage_guard_raises_on_unknown_w_zwd_of_a_code_10_leg():
+    # The guard must stay loud for a code-10 leg carrying a W_ZWD the spec does not
+    # classify -- widening zweck_values must not open a silent NaN bucket.
+    frame = _frame_with_code_10_legs()
+    frame.loc[len(frame)] = (10, 123, "car", 600.0, 1.0)
+    with pytest.raises(ValueError, match="123"):
+        ps.code_coverage_guard(frame, ps.LEISURE_SPEC_UNSPECIFIED)
