@@ -8,8 +8,9 @@ which means every one of them has to be handed the SAME purpose flags. This note
 is the threading list and the standing rules that keep it true. It is a
 maintenance note, not a rationale: WHY each rule exists is in its ADR
 (ADR-0091 explicit codes, ADR-0072/ADR-0073 escort, ADR-0111 code 10,
-ADR-0112 passive escort, ADR-0113 W_ZWD sentinels), and the production state of
-each is its Feature Registry record.
+ADR-0112 passive escort, ADR-0113 W_ZWD sentinels, ADR-0115 the W_ZWECK-defined
+`leisure_unspecified` subtype), and the production state of each is its Feature
+Registry record.
 
 ## The defect class this exists to prevent
 
@@ -97,13 +98,22 @@ Trip-build flags -- `escort_purpose`, `escort_passive_education`,
 | `braunschweig/synthesis/commute_day/{home_office_donors_stage,donor_pool}.py` | `configure`, `execute`, `build_home_office_donor_pool`, `donor_trips` |
 | `braunschweig/analysis/population_validation/trip_coherence.py`, `run_population_validation.py`, `scripts/measure_trip_coherence.py` | the escort/W1 references, declared per report run rather than inferred |
 
-`purpose_subtype_codeplan_sentinels` is NOT a trip-build flag. It reaches exactly
-two consumers, which must move together or they disagree about what
-`leisure_activity` means: `braunschweig/synthesis/locations/secondary_chainsolvers/`
+`purpose_subtype_codeplan_sentinels` and `leisure_unspecified_subtype` are NOT
+trip-build flags. Each reaches exactly the same two consumers, which must move
+together or they disagree about what `leisure_activity` (respectively
+`leisure_unspecified`) means:
+`braunschweig/synthesis/locations/secondary_chainsolvers/`
 (`__init__.configure`, `deciders._build_leisure_subtype_decider` /
 `_build_other_subtype_decider` -- the ESTIMATION) and
-`braunschweig/popsim/distance_distributions.py` (`run()` steps 8/9 -- the subtype
+`braunschweig/popsim/distance_distributions.py` (`run()` steps 8/8b/9 -- the subtype
 DISTANCE-layer donor pools).
+
+A subtype group is normally defined by the `W_ZWD` DETAIL code, but a
+`purpose_subtype.SubtypeSpec` may also define a group by the RAW `W_ZWECK` code
+(`SubtypeSpec.zweck_groups`, applied by the shared helper `purpose_subtype.label_legs`,
+where a `W_ZWECK` group wins over the detail code); the only instance today is
+`leisure_unspecified` (`W_ZWECK` 10, issue #373 / ADR-0115), whose legs carry no
+leisure `W_ZWD` detail at all.
 
 ## Cache tokens that currently cover these rules
 
@@ -116,12 +126,15 @@ DISTANCE-layer donor pools).
 - `braunschweig.synthesis.locations.secondary_chainsolvers._HELPER_MODULES` includes
   `braunschweig.popsim.purpose_subtype` (imported at that package's module level
   solely so it is a hashable module object).
-- **Known gap:** `braunschweig.popsim.distance_distributions` has no `validate()` at
-  all, so only its declared config values and its own source are hashed. Changing a
-  purpose FLAG invalidates it; changing a rule inside `trips.py`,
-  `escort_pairing.py` or `purpose_subtype.py` without touching a declared value does
-  not. Parked, not fixed here -- see `synpp-helper-hash-audit.md` for the shared
-  register of these gaps.
+- `braunschweig.popsim.distance_distributions` gained its own `validate()` in the
+  purpose-correctness wave (issue #373): `_HELPER_MODULES` covers `trips`,
+  `time_imputation`, `escort_pairing`, `constants` and the default upstream
+  distance-distributions module, and `_DEFERRED_HELPER_MODULE_NAMES` covers `mid`,
+  `mid.donor`, `purpose_subtype`, `shop_subtype` and `stage.config_keys`, so a rule
+  change inside any of them now invalidates the cached distributions even when no
+  declared config value moved. This closes the gap this note previously recorded as
+  open; `synpp-helper-hash-audit.md` remains the shared register of the gaps that
+  are still open elsewhere.
 
 ## Where the vocabulary's evidence lives
 

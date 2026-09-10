@@ -1,0 +1,171 @@
+feature: leisure_unspecified_subtype
+title: 'leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype'
+area: secondary
+description: 'Gives the MiD W_ZWECK 10 "anderer Zweck" legs -- leisure legs of the model through
+  w_zweck_10_as_leisure (ADR-0111), but never carrying a W_ZWD leisure detail code -- their own
+  subtype group "leisure_unspecified" with its own distance layer, instead of imputing one of the
+  four W_ZWD groups onto them. Issue #373, ADR-0115.
+
+  Size and profile, from the committed mid2023_w_zwd_group_reference.csv (spec_variant
+  codeplan_unspecified, the production composition; share_within_purpose is the W_GEW share among
+  LABELLED legs of the purpose): n = 39,429 legs, share 0.4324, wegkm_imp p25/p50/p75 =
+  1.27 / 3.26 / 9.50 km, n_missing_distance 0. The distance profile differs from every named group
+  except leisure_local (p75 9.50 vs 4.90 km), so before this feature roughly two fifths of the
+  labelled leisure mass drew its desired distance from layers estimated on other legs.
+
+  Mechanism: purpose_subtype.SubtypeSpec gains zweck_groups (group name -> frozenset of raw W_ZWECK
+  codes) plus group_names / zweck_group_codes; the shared helper purpose_subtype.label_legs applies
+  ONE labelling rule for both callers (the decider estimation and the reference extraction), with
+  the W_ZWECK group winning over the W_ZWD detail code. leisure_spec(codeplan_sentinels,
+  unspecified_subtype) returns one of four module constants BY IDENTITY, so the OFF path is
+  byte-identical by construction. braunschweig.popsim.distance_distributions builds the fifth layer
+  in Step 8b via _build_leisure_unspecified_layer (outside the W_ZWD branch -- the group is defined
+  by the raw W_ZWECK code -- and raising rather than skipping when W_ZWECK is absent), and
+  braunschweig.synthesis.locations.secondary_chainsolvers estimates the fifth group in
+  deciders._build_leisure_subtype_decider. Both stages declare the key from the one constant pair in
+  braunschweig.popsim.stage.config_keys and both refuse, at configure time, the combination
+  leisure_unspecified_subtype true + w_zweck_10_as_leisure false while
+  secondary_leisure_subtype_split is on (with the fold off no code-10 leg is leisure, so the class
+  would be estimated and never realised); with the split off the flag is inert and the guard does
+  not fire. secondary_chainsolvers/activity_types.LEISURE_SUBTYPE_ACTIVITIES carries the fifth name
+  UNCONDITIONALLY (a vocabulary, not a flag): it maps to pot_leisure, is counted in subtype_stats,
+  is mapped back to the eqasim purpose "leisure" on the way out, and never uses the residential
+  pot_visit pool. Not a trip-build flag (trips_stage never reads it), so it is deliberately absent
+  from ENTD_REJECTED_KEYS.'
+stages:
+- synthesis.population.spatial.secondary.distance_distributions
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - leisure_unspecified_subtype
+introduced:
+  issue: '#373'
+  pr: pending
+  adr: ADR-0115
+detail_doc: docs/features/secondary-distances.md
+code_paths:
+- braunschweig/popsim/purpose_subtype.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/activity_types.py
+- braunschweig/calibration/secondary_measurement.py
+- braunschweig/calibration/srv_fine_purpose.py
+- scripts/extract_mid_w_zwd_groups.py
+- scripts/compare_purpose_subtypes_srv.py
+evidence:
+  tests:
+  - tests/test_purpose_subtype.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  - tests/test_srv_fine_purpose.py
+  - tests/test_extract_mid_w_zwd_groups.py
+  - tests/test_secondary_subtype_validation.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_distance_distributions_subtypes.py::test_leisure_unspecified_flag_off_leaves_every_layer_byte_identical
+    note: 'The named test serialises every layer of run()''s output (bounds, values, weights, cdf,
+      sort_keys=True) with the keyword ON and OFF and asserts every pre-existing layer -- the four
+      W_ZWD leisure layers, the aggregate leisure layer and all other purposes -- is identical.
+      The spec side is object IDENTITY, which is stronger than an equality golden:
+      tests/test_purpose_subtype.py::test_leisure_spec_selector_returns_the_four_constants_by_identity
+      pins leisure_spec(False) IS LEISURE_SPEC and leisure_spec(True) IS LEISURE_SPEC_CODEPLAN, and
+      ::test_unspecified_specs_add_only_the_zweck_group pins LEISURE_SPEC.zweck_groups == {} and
+      LEISURE_SPEC.group_names == sorted(LEISURE_GROUPS). The estimation side is pinned by
+      ::test_estimation_without_the_zweck_group_is_unchanged_by_code_10_legs (a frame WITH code-10
+      legs gives the same cell_probs and marginal as the same frame filtered to W_ZWECK 7) and by
+      tests/test_secondary_chainsolvers_subtypes.py::test_leisure_decider_ignores_code_10_legs_when_the_flag_is_off.
+      TWO deliberate OFF-path changes are NOT byte-identical and are recorded here rather than
+      hidden: (1) the labelling log line always carries the "(N of them by W_ZWECK group)" suffix,
+      printing 0 when the spec has no zweck group -- that is what makes the new path observable;
+      (2) LEISURE_SUBTYPE_ACTIVITIES has five names unconditionally, so with the flag off
+      _build_locations_df emits a fifth, inert leisure_unspecified offer on every leisure-offering
+      building and subtype_stats carries a zero entry. No leg can be tagged with the name while the
+      flag is off, and
+      tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off
+      solves the same problems twice at one rng_seed -- once against the frame with the extra offer
+      and once against the same frame with it stripped -- and asserts identical identifiers,
+      coordinates, potentials, distances and activity types.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.distance_distributions] leisure subtype'
+    note: 'Two markers, one per consumer; the declared one is the literal prefix of the distance
+      stage''s rate line (the group name is a %s substitution, so at run time it reads
+      "[popsim.distance_distributions] leisure subtype leisure_unspecified: <n>/<n_leisure> leisure
+      legs (<rate>%)" -- the PRIMARY count against the leisure universe it is carved out of). An
+      empty group logs a WARNING naming w_zweck_10_as_leisure and builds no layer instead of
+      silently sending every code-10 leg to the aggregate leisure fallback. On the estimation side
+      the decider''s build-time line "[braunschweig.secondary_chainsolvers] leisure subtype:
+      marginal shares ..." now ends with "(codeplan no-detail sentinels: on|off, unspecified
+      subtype: on|off)" and shows the fifth group''s marginal, so which spec a run estimated from is
+      readable in the log. The rule''s own central assumption is instrumented too:
+      purpose_subtype.label_legs counts how many legs a W_ZWECK group labelled although their W_ZWD
+      IS a valid group code, warns with the rate whenever that count is non-zero, and the same
+      counter is written into the committed reference header -- the 2026-09-10 regeneration measured
+      "39429 by W_ZWECK group (0 of those overriding a valid W_ZWD group code)".'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
+    note: 'The codeplan_unspecified rows are this feature''s reference block; its own row is
+      "leisure,codeplan_unspecified,leisure_unspecified,39429,0.4324209696,1.27,3.26,9.5,0". Its
+      regional CONTEXT (never a target) is the residual of the other survey,
+      eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv row
+      "leisure,18,Andere Freizeitaktivitaet,1700,0.1795671611,0.9893404658,2.95581787,7.414065784,15"
+      -- SrV V_ZWECK 18 "Andere Freizeitaktivitaet", 17.96 % of SrV leisure trips, GIS-length median
+      2.956 km. The two are paired under the crosswalk grade "residual" in
+      eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/comparison.csv and
+      are REPORTED but excluded from the comparable universe on BOTH sides: the same KIND of leg,
+      not the same SIZE (MiD 10 is a top-level answer, SrV 18 a sixth option after five named
+      leisure activities), so their raw difference of +25.29 pp is reported and must not be read as
+      a regional finding. All three tables are MEASUREMENT references that no synthesis, location or
+      distribution stage reads.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured on a population. What is measured today is survey-vs-survey and
+    in-sample: the committed MiD reference gives the group n = 39,429, share 0.4324 within the
+    labelled leisure mass and wegkm_imp p25/p50/p75 = 1.27 / 3.26 / 9.50 km under the production
+    spec variant; the committed comparison pairs it with SrV V_ZWECK 18 (n 1,700, share 0.1796, GIS
+    median 2.956 km) as a reported-but-not-comparable residual; and
+    secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE["leisure_unspecified"] = (12.0, 12.0) km is an
+    AD-HOC in-sample donor mean measured on 2026-09-10 on the raw MiD Wege delivery (universe
+    kernwo in {1,2,3}, W_RBW != 1, W_ZWECK == 10, wegkm_imp < 9994 clipped at 200 km, W_GEW-weighted;
+    n = 39,429; command recorded in ADR-0115), a sanity band and never a validation gate. Arm C of
+    the pre-registered A/B (ADR-0115 Consequences) is what would compare the model''s REALISED
+    leisure_unspecified share and distances against these rows.'
+  note: 'No run has executed this code as of this record. Nothing here compares the model against
+    observed behaviour: the MiD reference is the donor survey the model estimates FROM (an in-sample
+    comparison at best), and the SrV residual is a different instrument on a different universe -- a
+    regional context row, explicitly not a target. validation.state stays unvalidated until an arm-C
+    run manifest records the realised share and distances.'
+assessment:
+  status: pending
+  pending_reason: 'Arm C of the pre-registered A/B (ADR-0115 Consequences) has not run, so the
+    realised leisure_unspecified share and the realised leisure distance distribution of the
+    synthetic population have not been compared with the decider''s marginal or with the committed
+    codeplan_unspecified rows. Note for whoever configures that A/B: this key''s CODE default is
+    True, so arms A and B must set leisure_unspecified_subtype: false EXPLICITLY in their overlays
+    -- leaving it unset means ON -- while arm C = arm B + leisure_unspecified_subtype: true (or
+    unset). A second, related decision is deliberately parked on the same measurement rather than on
+    an issue: whether the leisure_visit level should be regionally anchored at all (ADR-0115 rejects
+    age-conditioning, PopulationSim controls and raking for now and defers the level decision to the
+    arm-B measurement of the realised share).'
+notes: 'Sibling records of the same wave: purpose_main_fold_code_10 (ADR-0111) provides the fold
+  this feature depends on -- without w_zweck_10_as_leisure there are no code-10 leisure legs at all
+  and both stages refuse the combination at configure time -- and w_zwd_codeplan_sentinels
+  (ADR-0113) owns the codeplan sentinel move and the SrV measurement package whose comparable-
+  universe candidate rule was decided in the same wave. The subtype models themselves belong to
+  secondary_distance_by_purpose (#127, ADR-0026/ADR-0057) and their method is documented in
+  docs/features/secondary-distances.md; this record owns only the fifth group. Toggling this key
+  recomputes exactly the two declared stages (each declares the key; both hash
+  braunschweig.popsim.purpose_subtype, and the chainsolver stage additionally hashes
+  braunschweig.popsim.trips since this wave, because LEISURE_UNSPECIFIED_ZWECK is built from
+  trips.W_ZWECK_OTHER_CODE) -- PopulationSim and the trip build are untouched, no seed column
+  changes, which is what makes arm C cheap.'

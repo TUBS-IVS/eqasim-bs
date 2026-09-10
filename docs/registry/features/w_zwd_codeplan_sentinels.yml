@@ -116,14 +116,18 @@ validation:
   runs: []
   metric: 'Not yet measured on a population. The committed SrV comparison
     (purpose_subtype_vs_srv_2026-09-10/comparison.csv) measures the MiD group mix against the SrV
-    fine-purpose mix under both settings -- delta_pp default -> codeplan: shop_daily +7.90 -> +7.90
-    (exact), shop_non_daily -7.90 -> -7.90 (exact), other_errand_short -8.22 -> -4.44 (approximate),
-    other_errand_long +8.22 -> +4.44 (approximate), leisure_visit -7.01 -> -6.10 (exact),
-    leisure_local -6.62 -> -4.47 (approximate), leisure_activity +26.12 -> +22.72 (approximate),
-    leisure_excursion no SrV counterpart. Under the committed rule
-    (candidate_for_reestimation = exactness == "exact" and abs(delta_pp) > 10) NO group is flagged;
-    leisure_visit (default variant) does cross the threshold under the RENORMALISED reading
-    (-10.88 pp), which the summary reports by name without applying it. ADR-0113''s pre-registered
+    fine-purpose mix under both settings -- raw delta_pp default -> codeplan: shop_daily
+    +7.90 -> +7.90 (exact), shop_non_daily -7.90 -> -7.90 (exact), other_errand_short
+    -8.22 -> -4.44 (approximate), other_errand_long +8.22 -> +4.44 (approximate), leisure_visit
+    -7.01 -> -6.10 (exact), leisure_local -6.62 -> -4.47 (approximate), leisure_activity
+    +26.12 -> +22.72 (approximate), leisure_excursion no SrV counterpart. The committed rule reads
+    the COMPARABLE universe, not the raw shares (ADR-0113 Decision 4/6, owner decision of
+    2026-09-10, recorded in ADR-0115): candidate_for_reestimation is group-level and true when a
+    group is graded "exact" and abs(delta_pp_comparable) > 10 in at least one spec variant, where
+    delta_pp_comparable renormalises each side to the mass of the rows both surveys name concretely
+    (exact + approximate) and is EMPTY outside that universe. Under it leisure_visit IS flagged, via
+    the default variant (comparable -10.88 pp; codeplan -9.86 pp, codeplan_unspecified -9.86 pp;
+    candidate_variants = "default"), and it is the only flagged group. ADR-0113''s pre-registered
     A/B (arm B = arm A + this flag, no PopulationSim re-run) then measures the REALISED leisure and
     other-errand subtype shares and their distance medians against the codeplan rows of the
     committed reference: Task 9 of the #373/#372/#242 SDD plan.'
@@ -137,11 +141,15 @@ assessment:
   status: pending
   pending_reason: 'The arm-B A/B (ADR-0113 Consequences, Task 9 of the SDD plan) has not run, so the
     realised subtype shares and the subtype-conditional distances of the synthetic population have
-    not been compared against the codeplan estimation rows. One owner decision is also open and
-    deliberately NOT taken inside a measurement task (issue-first): whether the
-    candidate_for_reestimation rule should be defined on the renormalised delta for purposes whose
-    crosswalk is asymmetric -- if it were, leisure_visit (default variant, -10.88 pp) would become a
-    re-estimation candidate.'
+    not been compared against the codeplan estimation rows. The owner decision that was open here is
+    TAKEN (2026-09-10, ADR-0113 Decision 4/6, reasoning in ADR-0115): the candidate rule is defined
+    on the COMPARABLE universe, group-level across the spec variants, and leisure_visit IS flagged
+    via the default variant. Being flagged still triggers no re-estimation -- what remains open is
+    the LEVEL question (should the leisure_visit share be regionally anchored at all), and that is
+    decided from the arm-B measurement of the REALISED share, not from the survey-vs-survey tables.
+    Arm B must set leisure_unspecified_subtype: false explicitly in its overlay, because that key''s
+    code default is True (ADR-0115) and leaving it unset would change a second thing at the same
+    time.'
 notes: 'Sibling records of the same package: purpose_main_fold_code_10 (ADR-0111) and
   escort_passive_from_adult (ADR-0112), which together form arm A; this flag is arm B and is cheap
   (no seed column changes, so PopulationSim does not re-run -- only the secondary location and
@@ -150,5 +158,7 @@ notes: 'Sibling records of the same package: purpose_main_fold_code_10 (ADR-0111
   docs/features/secondary-distances.md; this record owns only the codeplan verification and the
   sentinel move. braunschweig.popsim.purpose_subtype is folded into
   secondary_chainsolvers._HELPER_MODULES (controller ruling C-R15) so a future group-boundary edit
-  cannot be served from a stale chainsolver cache; braunschweig.popsim.distance_distributions still
-  has no validate() at all -- a known, parked gap, its config keys do enter the stage hash.'
+  cannot be served from a stale chainsolver cache; braunschweig.popsim.distance_distributions gained
+  its own validate() in the same wave (issue #373 task 1), which hashes purpose_subtype among its
+  deferred helper modules, so the same protection now holds on the distance side. The fifth leisure
+  subtype added by ADR-0115 has its own record, leisure_unspecified_subtype.'

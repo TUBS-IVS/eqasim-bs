@@ -54,7 +54,9 @@
   Issue #242 additionally asked whether the MiD-derived subtype mix is regionally plausible at all.
   SrV 2023 (Braunschweig + RGB) carries its own fine purposes (`V_ZWECK`) for shop, errand and
   leisure, so a crosswalk is possible for part of the taxonomy -- but only part: SrV 18 "Andere
-  Freizeitaktivitaet" is 17.96 % of SrV leisure trips and maps to no MiD group, and
+  Freizeitaktivitaet" is 17.96 % of SrV leisure trips and had no MiD counterpart when this package
+  was built (ADR-0115 pairs it with the new `leisure_unspecified` group under the `residual` grade:
+  reported, but deliberately outside the comparable universe on both sides), and
   `leisure_excursion` has no SrV counterpart at all.
 - **Decision:** Three things, one flag.
 
@@ -99,33 +101,54 @@
      among LABELLED legs of its purpose and `wegkm_imp` percentiles, under BOTH settings of the flag)
      and `eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}`.
      The crosswalk `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` grades every
-     mapping `exact` / `approximate` / `aggregate_only`, and the reporting rule is stated verbatim in
-     the committed summary: `candidate_for_reestimation = (exactness == "exact") and (abs(delta_pp) > 10)`.
-     **Nothing is re-estimated in this package**, and a flagged cell would become an issue only after
-     the owner's go.
+     mapping `exact` / `approximate` / `residual` / `aggregate_only` (the `residual` grade and the
+     third spec variant `codeplan_unspecified` were added by ADR-0115), and the reporting rule is
+     stated verbatim in the committed summary, `scripts/compare_purpose_subtypes_srv.CANDIDATE_RULE`:
 
-     Result (committed `comparison.csv`, `delta_pp` = MiD share minus SrV share, default / codeplan
-     variant): `shop_daily` +7.90 / +7.90 (exact) · `shop_non_daily` -7.90 / -7.90 (exact) ·
-     `other_errand_short` -8.22 / -4.44 (approximate) · `other_errand_long` +8.22 / +4.44
-     (approximate) · `leisure_visit` -7.01 / -6.10 (exact) · `leisure_local` -6.62 / -4.47
-     (approximate) · `leisure_activity` +26.12 / +22.72 (approximate) · `leisure_excursion` no SrV
-     counterpart. **No `exact` cell exceeds 10 pp, so no group is flagged** for re-estimation. The
-     flag ON (codeplan) variant is closer to SrV on all five cells whose delta moves at all (the two
-     shop cells cannot move -- the shop split has no codeplan variant -- and `leisure_excursion` has
-     no SrV counterpart).
+     ```
+     candidate_for_reestimation = (exactness == "exact") and any over spec variants of (abs(delta_pp_comparable) > 10); delta_pp_comparable = delta_pp_renormalised where the purpose is asymmetric, else delta_pp, and EMPTY for a row outside the comparable universe (grade not in exact + approximate)
+     ```
+
+     The flag therefore reads the COMPARABLE universe -- each side renormalised to the mass of the
+     rows both surveys name concretely (`exact` and `approximate`; a `residual` or `aggregate_only`
+     row is unmapped mass on its own side and carries no `delta_pp_comparable` at all) -- and it is
+     GROUP-level: a group whose comparable delta crosses the threshold in AT LEAST ONE spec variant
+     is flagged on every one of its rows, and `candidate_variants` names the crossing variants,
+     because the group is the unit of a possible re-estimation and a 1 pp difference between the
+     variants must not give two answers for one group. **Nothing is re-estimated in this package**,
+     and a flagged group triggers nothing automatic.
+
+     Result (committed `comparison.csv`, `default` / `codeplan` variant; `delta_pp` = raw MiD share
+     minus SrV share, `delta_pp_comparable` = the reading the flag uses -- identical to the raw one
+     wherever the block is symmetric, which is every shop and other-errand row): `shop_daily`
+     +7.90 / +7.90 (exact) · `shop_non_daily` -7.90 / -7.90 (exact) · `other_errand_short`
+     -8.22 / -4.44 (approximate) · `other_errand_long` +8.22 / +4.44 (approximate) ·
+     `leisure_visit` raw -7.01 / -6.10 but comparable **-10.88 / -9.86** (exact) · `leisure_local`
+     raw -6.62 / -4.47, comparable -13.56 / -11.15 (approximate) · `leisure_activity` raw
+     +26.12 / +22.72, comparable +24.44 / +21.00 (approximate) · `leisure_excursion` no SrV
+     counterpart. **`leisure_visit` is the one flagged group**, via the `default` variant (-10.88 pp
+     comparable, with `codeplan` -9.86 pp reported beside it); `leisure_local` and
+     `leisure_activity` are further from SrV still but are graded `approximate`, so the rule leaves
+     them unflagged by design. The flag ON (codeplan) variant is closer to SrV on all five cells
+     whose delta moves at all (the two shop cells cannot move -- the shop split has no codeplan
+     variant -- and `leisure_excursion` has no SrV counterpart).
   5. **`other_errand_short` is graded `approximate`, not `exact`** (controller ruling C-R16, a
      documented deviation from the plan's own interface block): the labels overlap the other member
      of the pair (MiD 602 "Behoerde, Bank, Post" sits in `other_errand_short` while SrV 11
      "Dienstleistungseinrichtung (z. B. Post, Bank, Friseur, Apotheke)" feeds `other_errand_long`),
      and with exactly two complementary groups `delta_short == -delta_long` identically, so the pair
      cannot carry two different grades for one and the same number.
-  6. **The leisure comparison is reported with BOTH denominators.** The mapped mass is symmetric for
-     shop (1.0000/1.0000) and errand (1.0000/1.0000) but not for leisure (MiD 0.9454 default /
-     0.9419 codeplan vs SrV 0.8204), so `comparison.csv` carries `share_*_renormalised` /
-     `delta_pp_renormalised` for the leisure rows and `summary.md` reports the threshold crossing by
-     name: `leisure_visit` (default) is -7.0 pp raw but **-10.9 pp renormalised**. The committed
-     `candidate_for_reestimation` flag stays on the RAW delta, because that is what the stated rule
-     computes; the crossing is REPORTED, never silently applied.
+  6. **The leisure comparison is reported with BOTH denominators, and the COMPARABLE one feeds the
+     flag.** The mapped mass is symmetric for shop (1.0000/1.0000) and errand (1.0000/1.0000) but
+     not for leisure (comparable mass MiD 0.9454 default / 0.9419 codeplan vs SrV 0.8204), so
+     `comparison.csv` carries `share_*_renormalised` / `delta_pp_renormalised` for the leisure rows.
+     The RAW delta is kept as information in `delta_pp`; the comparable reading is what
+     `candidate_for_reestimation` computes on (Decision 4), because two shares conditional on
+     different universes are not a difference. Consequence on the committed data:
+     **`leisure_visit` IS flagged**, via the `default` variant (-7.01 pp raw, -10.88 pp comparable;
+     `codeplan` -6.10 raw, -9.86 comparable). `summary.md` lists every row whose flag differs
+     between the two readings in both directions, so the choice of reading stays visible rather
+     than silently applied.
 - **Rejected alternatives:**
   - **Keep 799 and 699 as ordinary group members (the status quo, rejected).** They are "keine
     Angabe" codes: counting them as `leisure_activity` / `other_errand_long` inflates exactly those
@@ -134,15 +157,20 @@
     code silently voting for one group is the same defect class the sentinel mechanism exists to
     prevent.
   - **Re-estimate the group boundaries from the SrV fine purposes now (rejected for this package).**
-    The comparison flags nothing under the stated rule, the crosswalk exactness is an assumption (see
-    Assumptions), and MiD-national vs SrV-regional differences are confounded with the taxonomy. A
-    re-estimation would change the population on the strength of a measurement whose own caveats say
-    it cannot carry that weight. Issue-first: if the owner decides the candidate rule should use the
-    RENORMALISED delta for asymmetric purposes, `leisure_visit` becomes a candidate and that is a new
-    issue, not a silent change here.
-  - **Define the candidate rule on the renormalised delta (rejected here, owner decision).** Both
-    readings are committed; changing the rule inside the measurement task would have re-graded a
-    result while producing it.
+    The crosswalk exactness is an assumption (see Assumptions), and MiD-national vs SrV-regional
+    differences are confounded with the taxonomy. A re-estimation would change the population on the
+    strength of a measurement whose own caveats say it cannot carry that weight. The flag is now set
+    on `leisure_visit` (Decision 4/6), and it still triggers no re-estimation: the level decision is
+    taken from the arm-B measurement of the REALISED share, recorded in the feature record
+    `w_zwd_codeplan_sentinels.yml`.
+  - **Keep the raw-delta candidate rule (rejected 2026-09-10, owner decision recorded in ADR-0115).**
+    `candidate_for_reestimation = (exactness == "exact") and (abs(delta_pp) > 10)` on the raw
+    within-purpose shares compares two DIFFERENT universes wherever a purpose's crosswalk is
+    asymmetric, and it sits on a knife edge: `leisure_visit` is -7.0 pp raw (not a candidate) but
+    -10.9 pp on the comparable universe (a candidate), and the third spec variant added by ADR-0115
+    moves its raw delta to -12.8 pp while its comparable delta stays at -9.9 pp. A rule that depends
+    on 1 pp and on which spec variant one reads gives two answers for one group. Both readings stay
+    committed; only the flag moved.
   - **Grade `other_errand_short` `exact` as the plan specified (rejected).** The codebooks contradict
     it (Decision 5). The plan's grade was an assumption, and an assumption a source disproves is a
     correction, not a deviation to be argued away.
@@ -167,31 +195,41 @@
     | realised leisure subtype shares | arm A | `mid2023_w_zwd_group_reference.csv`, `codeplan` rows | within 2 pp per group of the codeplan estimation shares |
     | realised other-errand subtype shares | arm A | same file | within 2 pp per group |
     | subtype-conditional distance medians | arm A | same file (`km_p50`) | shift < 1 km per group |
-    | `candidate_for_reestimation` cells | 0 (committed comparison) | the stated rule | still 0 |
+    | `candidate_for_reestimation` cells | 1 (`leisure_visit`, committed comparison) | the stated rule | still 1 (`leisure_visit`) -- a survey-mix result, unaffected by any run |
 
     A metric moving the wrong way stops the ladder. Every "expected" cell is an ASSUMPTION until a
     run manifest records it; the feature record `docs/registry/features/w_zwd_codeplan_sentinels.yml`
-    stays `validation.state: unvalidated`.
+    stays `validation.state: unvalidated`. Arm B must set `leisure_unspecified_subtype: false`
+    explicitly in its overlay: that key's CODE default is `True` (ADR-0115), so leaving it unset
+    would make arm B carry the fifth leisure subtype as well and stop measuring this flag alone.
+    Arm C = arm B + `leisure_unspecified_subtype: true` (ADR-0115 Consequences).
   - **The two committed reference tables are measurement references, never targets.** Both headers
     say so; no synthesis, location or distribution stage reads either, and their only consumer is
     `scripts/compare_purpose_subtypes_srv.py`.
 - **Assumptions (explicit):**
   1. **The crosswalk grades are a READING of two codebooks, not a published or validated crosswalk**
      (`SUBTYPE_TO_SRV_FINE`'s own docstring says so). The `candidate_for_reestimation` flag inherits
-     that assumption; so does the "no exact cell above 10 pp" headline.
+     that assumption twice over: the grade decides which rows enter the comparable universe AND
+     which groups may be flagged at all, so the "`leisure_visit` is the one flagged group" result
+     rests on it.
   2. **MiD is national, the SrV delivery is Braunschweig + RGB**, so every delta mixes a regional
      effect with a survey-instrument effect and cannot be attributed to either from these tables.
   3. **The MiD share is conditional on a leg being LABELLED** (30.7-62.4 % of a purpose's legs are;
      the rest carry a design sentinel). That is the universe the model estimates on, so it is the
      right comparison for "the mix the model reproduces", but it is NOT the mix of all MiD legs of
      that purpose.
-  4. **The leisure comparison is structurally asymmetric** (SrV 18 unmapped, `leisure_excursion`
-     without a counterpart), so the four leisure `share_srv` values do not sum to 1; both readings
-     are committed and neither is declared the right one here.
+  4. **The leisure comparison is structurally asymmetric** (SrV 18 outside the comparable universe,
+     `leisure_excursion` without a counterpart), so the four leisure `share_srv` values do not sum
+     to 1. BOTH readings stay committed -- `delta_pp` raw as information, `delta_pp_comparable` on
+     the comparable universe -- and the comparable one is the reading the candidate flag uses
+     (Decision 4/6). That choice is itself an assumption: it asserts that the mass each survey does
+     NOT name concretely is an instrument artefact rather than a behavioural difference.
   5. **Code 999's meaning is unknown** and is treated as a sentinel on that basis.
 - **Evidence:** issue **#242**; related **#127** (the W_ZWD subtype models this verifies),
   **ADR-0026 / ADR-0057** (purpose-resolved secondary distances), **ADR-0055** (`GEWICHT_W_ZENSUS`
-  is the cross-stratum SrV weight), **ADR-0111** (the sibling flags of the same package). Spec
+  is the cross-stratum SrV weight), **ADR-0111** (the sibling flags of the same package),
+  **ADR-0115** (issue #373: the fifth leisure subtype, the `residual` grade, the third spec variant
+  and the comparable-universe candidate rule this record now states in Decision 4). Spec
   `docs/superpowers/specs/2026-09-09-purpose-correctness-design.md` sections 1.3 / 2.3 / 2.4 / 3.
   Committed data: `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` (data record
   `mid2023_w_zwd_group_reference`), `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv`

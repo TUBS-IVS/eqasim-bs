@@ -21,6 +21,7 @@ resolves_to:
   popsim_mid: braunschweig.popsim.distance_distributions
 features:
 - escort_passive_from_adult
+- leisure_unspecified_subtype
 - purpose_main_fold_code_10
 - secondary_distance_by_purpose
 - w_zwd_codeplan_sentinels
@@ -30,10 +31,12 @@ decisions:
 - ADR-0111
 - ADR-0112
 - ADR-0113
+- ADR-0115
 notes: >-
-  PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113): the production
-  implementation braunschweig.popsim.distance_distributions declares and reads four keys of the
-  purpose package, each imported from the shared constant pair in
+  PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
+  production implementation braunschweig.popsim.distance_distributions declares and reads five keys
+  of the purpose package (the fifth, leisure_unspecified_subtype, has its own paragraph at the end
+  of this note), each imported from the shared constant pair in
   braunschweig.popsim.stage.config_keys rather than retyped. Three of them are the trip-build flags
   the stage must agree with, because it maps the donor legs' purposes ITSELF (run()'s purpose
   harmonisation calls the same trips.map_purpose): w_zweck_10_as_leisure (so the leisure distance
@@ -71,3 +74,26 @@ notes: >-
   whichever purpose it resolves to. The effect is bounded and small -- 6,386 pairs unfiltered vs
   6,384 filtered on the weekday legs, measured 2026-09-10 while regenerating
   mid2023_escort_w_zweck_split.csv (ADR-0112 Assumptions 5 and 8).
+
+
+  FIFTH LEISURE SUBTYPE (issue #373, ADR-0115, feature record leisure_unspecified_subtype): this
+  stage declares a FIFTH purpose-package key, leisure_unspecified_subtype (declared default true,
+  key and default imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers; production true in configs/base_bs.yml),
+  and forwards it into run() as the keyword leisure_unspecified_subtype (its own keyword default is
+  False, so a direct caller keeps the pre-feature behaviour). With it on, a new Step 8b calls
+  _build_leisure_unspecified_layer(df) and adds the layer key "leisure_unspecified" next to the four
+  W_ZWD leisure layers -- deliberately OUTSIDE the W_ZWD-present branch, because the group is
+  defined by the raw W_ZWECK code (LEISURE_UNSPECIFIED_ZWECK, built from trips.W_ZWECK_OTHER_CODE)
+  exactly like other_escort in Step 9; an ABSENT W_ZWECK column raises rather than warning and
+  skipping, because the flag being on IS the request for this layer and no W_ZWD path could still
+  produce it. Log lines: INFO "[popsim.distance_distributions] leisure subtype %s: %d/%d leisure
+  legs %s" (the primary count against the leisure universe the group is carved out of; the rate
+  renders "(no leisure legs)" instead of "nan%" on an empty universe) and, when the group is empty,
+  WARNING "[popsim.distance_distributions] leisure subtype %s: 0 legs -- is w_zweck_10_as_leisure
+  on? The layer is not built." Configure-time guard (same shape as trips_stage's C-R22 guard, scoped
+  by ruling R8): leisure_unspecified_subtype true + w_zweck_10_as_leisure false raises a ValueError
+  naming both keys ONLY while secondary_leisure_subtype_split is on -- with the split off there are
+  no leisure subtype layers at all and the key is inert, so a popsim_open fixture that never sets it
+  is not aborted. purpose_subtype was already in _DEFERRED_HELPER_MODULE_NAMES, so the new group
+  definition is covered by the cache hash without a new entry.

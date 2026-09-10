@@ -98,6 +98,21 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   | `leisure_visit` | 701 | 19.1 km | `potential_visit` (residential, NEW) |
   | `leisure_activity` | 702, 703, 704, 707, 720, 721, 799 | ~10-18 km | `potential_leisure` |
   | `leisure_excursion` | 708, 709, 722 | 45-100 km | `potential_leisure` (boundary-clip share logged) |
+  | `leisure_unspecified` | none -- raw `W_ZWECK` 10 | 12.0 km (ad-hoc, in-sample) | `potential_leisure` |
+
+  The FIFTH leisure group is not a `W_ZWD` grouping at all
+  ([ADR-0115](../decisions/ADR-0115-leisure-unspecified-subtype.md), flag
+  `leisure_unspecified_subtype`, feature record `leisure_unspecified_subtype`): MiD `W_ZWECK` 10
+  "anderer Zweck" legs are leisure only through `w_zweck_10_as_leisure` (ADR-0111) and never carry
+  a leisure `W_ZWD` detail code, so no `W_ZWD` clustering can reach them and the four groups above
+  would have to be IMPUTED onto them. They are instead labelled by the raw `W_ZWECK` code
+  (`purpose_subtype.SubtypeSpec.zweck_groups`, applied by the shared helper
+  `purpose_subtype.label_legs`, which lets a `W_ZWECK` group win over a detail code and counts how
+  often that happens), get their own distance layer (Step 8b, built outside the `W_ZWD` branch),
+  and are placed on the generic `pot_leisure` -- never on the residential `pot_visit` pool. They
+  are 43.24 % of the labelled leisure mass under the production spec variant, with `wegkm_imp`
+  p25/p50/p75 = 1.27 / 3.26 / 9.50 km (committed `mid2023_w_zwd_group_reference.csv`, spec variant
+  `codeplan_unspecified`).
 
   | other group | definition | measured mean | placement |
   |---|---|---|---|

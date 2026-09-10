@@ -319,14 +319,14 @@ Enabling a replacement together with the control it replaces — or a replacemen
 while `employment_status_kreis_control` is off — fails at **config time** with a
 `ValueError` naming both keys, rather than double-constraining the same persons.
 
-**MiD purpose-mapping keys (`popsim_mid` only).** Four more keys decide which eqasim
+**MiD purpose-mapping keys (`popsim_mid` only).** Five more keys decide which eqasim
 purpose a MiD leg gets and which W_ZWD detail codes the secondary subtype models
-estimate from (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113; feature
-records `purpose_main_fold_code_10`, `escort_passive_from_adult`,
-`w_zwd_codeplan_sentinels`). They are **flat** keys — no
+estimate from (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115;
+feature records `purpose_main_fold_code_10`, `escort_passive_from_adult`,
+`w_zwd_codeplan_sentinels`, `leisure_unspecified_subtype`). They are **flat** keys — no
 `braunschweig.population.popsim.` prefix, like `escort_purpose` /
 `escort_passive_education` — and, as always, their defaults live only in
-`configs/base_bs.yml`. All four are ON there and every OFF path is byte-identical.
+`configs/base_bs.yml`. All five are ON there and every OFF path is byte-identical.
 Where a key's DECLARED (stage) default differs from the value below, the table says
 so; the KEYWORD defaults inside the Python builders are always the OFF value, so a
 direct caller that omits a flag keeps the pre-feature behaviour.
@@ -337,13 +337,14 @@ direct caller that omits a flag keeps the pre-feature behaviour.
 | `escort_passive_from_adult` | `true` | Gives a passive escort leg (`W_ZWECK` 13, the escorted child's own leg) the purpose of the same-household adult leg it is paired with, instead of the flat "education" relabel; an unpaired leg keeps `escort_passive_education`. **Requires `escort_purpose`** (raises naming both keys at **configure time** — `braunschweig.popsim.trips_stage.configure()` — so a misconfigured run fails before any stage executes, not just at trip-build time inside `map_purpose`, which still raises the same check for any direct caller outside this stage's contract), which is why its DECLARED (stage) default is `false` — a configuration that does not compose this base leaves the feature off. |
 | `escort_passive_pair_max_gap_minutes` | `15` (minutes, > 0) | Pairing window for the key above: an adult leg farther than this from the child's departure leaves the leg unpaired. Inert while `escort_passive_from_adult` is `false`. |
 | `purpose_subtype_codeplan_sentinels` | `true` | Treats the two MiD W_ZWD no-detail codes 799 (`Freizeit k.A.`) and 699 (`Erledigung k.A.`) as sentinels of the leisure / other-errand subtype models rather than as members of `leisure_activity` / `other_errand_long`, per the verified codeplan. Affects the secondary subtype deciders and their distance layers only — not the trip build. |
+| `leisure_unspecified_subtype` | `true` | Gives the MiD `W_ZWECK` 10 leisure legs — 43.2 % of the labelled leisure mass of the production spec variant, and carrying no W_ZWD detail code — the fifth leisure subtype `leisure_unspecified` with its own distance layer, instead of imputing one of the four W_ZWD groups onto them (ADR-0115). **Requires `w_zweck_10_as_leisure`** (both consumer stages raise at **configure time** naming both keys, whenever `secondary_leisure_subtype_split` is on). Affects the secondary subtype decider and the distance layers only — not the trip build. |
 
 `w_zweck_10_as_leisure`, `escort_passive_from_adult` and
 `escort_passive_pair_max_gap_minutes` need MiD's `W_ZWECK` vocabulary and (for the
 pairing) the household, age and departure-time columns, so the ENTD donor source
 **rejects** any non-default value; the two `popsim_open` fixture configs set them
-explicitly. `purpose_subtype_codeplan_sentinels` needs no such rejection — the trip
-build never reads it. See
+explicitly. `purpose_subtype_codeplan_sentinels` and `leisure_unspecified_subtype`
+need no such rejection — the trip build never reads either of them. See
 [`docs/codebase/notes/mid-purpose-mapping.md`](docs/codebase/notes/mid-purpose-mapping.md)
 for where the MiD purpose vocabulary is produced and which consumers must read the
 same flags.
