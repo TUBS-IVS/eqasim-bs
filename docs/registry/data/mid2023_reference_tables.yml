@@ -41,15 +41,19 @@ notes: |
   mid2023_bikes_by_rs7_haustyp, mid2023_w_zweck_by_hwzweck1 and mid2023_w_zwd_group_reference.
 
   mid2023_escort_w_zweck_split.csv (script scripts/derive_escort_w_zweck_split.py, W_GEW-weighted
-  over all MiD escort legs, n = 52,553) is one of the derived tables that has no separate record and
-  therefore lives here. Issue #372 / ADR-0112 extended it ADDITIVELY -- every pre-existing column,
+  over the MiD escort legs of the WEEKDAY reporting days the PopulationSim seed keeps, n = 42,069)
+  is one of the derived tables that has no separate record and therefore lives here. Issue #372 / ADR-0112 extended it ADDITIVELY -- every pre-existing column,
   row and cell is unchanged: the code_13 row gains one code_13_to_<eqasim purpose>_share_under_pairing
   column per fold member, i.e. the W_GEW purpose fold of the passive escort legs once
   escort_passive_from_adult pairs each with the accompanying adult''s leg. The new columns are
-  measured on the PRODUCTION leg universe (the 10,905 passive legs the trip build keeps -- rbW legs
-  excluded, leading arrive-home leg dropped -- and an adult candidate pool filtered the same way),
-  not on the raw table, and the file''s own header discloses every flag value the derivation assumed
-  plus the pairing rate, so a run configured differently cannot be scored against it unknowingly.
+  measured on the PRODUCTION universe (the 6,781 passive legs the trip build keeps out of the 6,781
+  weekday passive legs -- rbW legs excluded, leading arrive-home leg dropped -- and an adult
+  candidate pool filtered the same way), not on the raw table, and the file''s own header discloses
+  every flag value the derivation assumed plus the day universe, the exclusion cascade and the
+  pairing rate, so a run configured differently cannot be scored against it unknowingly. The whole
+  table (the code_6 and "both" rows included) was regenerated on that weekday universe on
+  2026-09-10 (ruling C-R18): every value moved, because the universe -- not the derivation --
+  changed; the raw all-days figures it previously carried described days no production run has.
   Consumer: braunschweig.analysis.population_validation.trip_coherence (load_passive_purpose_fold ->
   apply_escort_active_adjustment); the fold is measured on MiD DONOR legs, not on the synthetic
   population (assumption recorded in ADR-0112).

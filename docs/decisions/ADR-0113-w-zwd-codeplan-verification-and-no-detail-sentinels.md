@@ -72,16 +72,22 @@
      (`leisure_spec(False) is LEISURE_SPEC`), so the OFF path is byte-identical by construction
      rather than by re-deriving an equal object. A sentinel leg leaves the estimation universe
      entirely -- numerator AND denominator -- exactly as every other sentinel does; it is still
-     IMPUTED a group at application time, like the 31-42 % of legs that carry a design sentinel.
+     IMPUTED a group at application time, like every leg that carries a design sentinel -- 37.58 %
+     of leisure legs, 66.26 % of other-errand legs and 40.10 % of shop legs with the flag OFF,
+     rising to 42.68 % / 69.34 % / 40.10 % with it ON (committed Coverage header of
+     `mid2023_w_zwd_group_reference.csv`; shop has no codeplan variant).
   3. **Both consumers read the same key.** `braunschweig.synthesis.locations.secondary_chainsolvers`
      (the leisure/other subtype deciders' ESTIMATION, via `deciders.py`'s two builders) and
      `braunschweig.popsim.distance_distributions` (the leisure/other subtype DISTANCE-layer donor
      pools, `run()` steps 8/9) declare it from the one constant pair
      `config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS` / `DEFAULT_...`. Threading only one of them
      would make the two disagree about what `leisure_activity` means -- the decider would label a
-     leg into a group whose distance layer still contained the excluded legs. Both build-time log
-     lines append `(codeplan no-detail sentinels: on/off)`, so the active spec is visible in the run
-     log. This is NOT a trip-build flag (no `trips_stage` / ENTD path reads it), so it is
+     leg into a group whose distance layer still contained the excluded legs. The two DECIDERS'
+     build-time log lines (`deciders.py`, leisure and other-errand) append `(codeplan no-detail
+     sentinels: on/off)`, so the active spec is visible in the run log on the estimation side;
+     `braunschweig.popsim.distance_distributions` logs the pool sizes without the marker, so on
+     the distance side the setting has to be read from the resolved config (parked issue, no code
+     change here). This is NOT a trip-build flag (no `trips_stage` / ENTD path reads it), so it is
      deliberately absent from `ENTD_REJECTED_KEYS`. `braunschweig.popsim.purpose_subtype` is folded
      into `secondary_chainsolvers._HELPER_MODULES` (controller ruling C-R15) so a future
      group-boundary edit cannot be served from a stale chainsolver cache.

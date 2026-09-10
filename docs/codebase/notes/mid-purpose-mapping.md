@@ -63,6 +63,19 @@ every consumer of the purpose vocabulary at once, or it is not added.
    resolved config values, not the modules it imports; `_HELPER_MODULES` /
    `_DEFERRED_HELPER_MODULE_NAMES` plus the stage's `validate()` are what make a
    rule change invalidate the cache (see `synpp-helper-hash-audit.md`).
+6. **A committed MiD aggregate is measured on the universe a production run can
+   realise, and says so in its header.** Two filters make that universe: the
+   PopulationSim seed's reporting-day filter (only a weekday MiD diary can become a
+   plan source -- `seed.MID_SEED_COLUMNS.day_filter_col` / `.day_filter_values`, the
+   config key `braunschweig.population.popsim.seed_day_filter`) and, for anything
+   derived from the LEGS, the trip build's own drops
+   (`trips.legs_kept_by_the_trip_build`). Import both from their single home; never
+   re-type the kernwo set. This is rule 6 because it was learned the expensive way:
+   `mid2023_escort_w_zweck_split.csv` was first derived on ALL reporting days while
+   the sibling fold table used weekday legs, so two committed tables disagreed about
+   the same code-13 population (10,905 vs 6,781 legs) -- regenerated 2026-09-10,
+   ruling C-R18. `tests/test_derive_escort_w_zweck_split.py::test_day_filter_values_are_the_seeds_own_constant`
+   pins the shared constant.
 
 ## Threading list (as of ADR-0111 / ADR-0112 / ADR-0113)
 
@@ -117,5 +130,7 @@ by hand -- regenerate through the script named in each header):
 `eqasim-data/data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv` (the W_ZWECK x
 `hwzweck1` fold), `mid2023_escort_w_zweck_split.csv` (the active/passive split and
 the passive purpose fold under pairing) and `mid2023_w_zwd_group_reference.csv` (the
-subtype group mix under both sentinel settings), with their Data Registry records of
-the same names.
+subtype group mix under both sentinel settings). Data Registry: the first and the
+third have a record of the same name; the escort split has none of its own and is
+documented in the umbrella record `mid2023_reference_tables` (whose
+`storage.expected_path` glob `mid/mid2023_*.csv` covers it).

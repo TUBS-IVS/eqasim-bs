@@ -43,15 +43,16 @@
   | 3, 9, 99 | 2.0 % | rest |
 
   Only the adult-6 pairs are the case the current rule assumes. The committed reference table
-  measured on the PRODUCTION leg universe (`eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv`,
-  script `scripts/derive_escort_w_zweck_split.py`; rbW legs excluded and the leading arrive-home leg
-  dropped, exactly as the trip build does, controller ruling C-R12) states it as one number: with
-  pairing, the share of the passive mass that stays `education` is **0.2065** (of which 0.1432 pairs
-  with an active escort leg and 0.0632 stays unpaired and therefore keeps the existing rule), pairing
-  rate **10,339/10,905 legs = 0.9481** within 15 minutes. **79.4 % of the passive mass is currently
-  labelled `education` although the accompanying adult travelled for something else**, and 12.3 % of
-  it is a trip HOME being modelled as a school trip -- the mechanism behind the education->education
-  same-purpose repeats and the odd-hour school trips issue #372 reports.
+  measured on the PRODUCTION universe (`eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv`,
+  script `scripts/derive_escort_w_zweck_split.py`; the WEEKDAY reporting days the PopulationSim seed
+  keeps, then rbW legs excluded and the leading arrive-home leg dropped exactly as the trip build
+  does -- controller rulings C-R12 and C-R18) states it as one number: with pairing, the share of the
+  passive mass that stays `education` is **0.2684** (of which 0.1947 pairs with an active escort leg
+  and 0.0738 stays unpaired and therefore keeps the existing rule), pairing rate **6,384/6,781 legs
+  = 0.9415** within 15 minutes. **73.2 % of the passive mass is currently labelled `education`
+  although the accompanying adult travelled for something else**, and 12.8 % of it is a trip HOME
+  being modelled as a school trip -- the mechanism behind the education->education same-purpose
+  repeats and the odd-hour school trips issue #372 reports.
 - **Decision:** A flag, `escort_passive_from_adult`, gives a PAIRED code-13 leg the purpose derived
   from the accompanying adult's `W_ZWECK`; an UNPAIRED leg keeps the existing
   `escort_passive_education` rule. Production value `true` (`configs/base_bs.yml`), OFF path
@@ -67,7 +68,8 @@
      `W_ZWECK` is 13 is EXCLUDED from the candidate pool (controller ruling C-R8): a person who is
      themselves being escorted cannot be the escorter, and 13 is not a destination purpose the rule
      below could map. Paired share, the three unpaired reasons and the adult-`W_ZWECK` distribution
-     are logged; below 80 % paired the module WARNs, naming the 94.8 % raw-MiD reference.
+     are logged; below 80 % paired the module WARNs, naming the committed 94.2 % production-universe
+     reference.
   2. **Purpose rule (`trips.PASSIVE_PURPOSE_BY_ADULT_W_ZWECK` / `trips.passive_purpose_for_pairs`),
      applied inside `map_purpose` AFTER the existing escort block, so it only overwrites the legs it
      could pair:** adult 4 -> `shop`; 5 -> `other`; 7, 14, 15, 16 -> `leisure`; 10 -> `leisure` if
@@ -99,15 +101,15 @@
      pairing on the same universe. `trip_coherence.apply_escort_active_adjustment` MOVES the passive
      Begleitung remainder onto those measured purposes instead of dropping it (controller ruling
      C-R11): mass-preserving, raising when the fold does not sum to 1. The measured fold (W_GEW
-     shares over the 10,905 passive legs, committed):
+     shares over the 6,781 weekday passive legs, committed):
 
      | eqasim purpose | share | MiD W1 name |
      |---|---|---|
-     | leisure | 0.3494 | freizeit |
-     | education | 0.2065 | ausbildung |
-     | other | 0.1625 | sonstiges |
-     | shop | 0.1589 | einkauf |
-     | home | 0.1228 | heimweg |
+     | education | 0.2684 | ausbildung |
+     | leisure | 0.2451 | freizeit |
+     | other | 0.1804 | sonstiges |
+     | shop | 0.1778 | einkauf |
+     | home | 0.1283 | heimweg |
      | escort | 0.0000 | begleitung |
 
   7. **Every consumer reads the same two keys**, declared from one shared constant pair
@@ -123,8 +125,8 @@
      missing column must fail at LOAD time naming the column rather than silently pairing nothing.
 - **Rejected alternatives:**
   - **Keep every code-13 leg on `education` (the status quo of #256/ADR-0072, rejected).** It is
-    right for the 20.65 % of the passive mass the committed table attributes to education under
-    pairing and wrong for the other 79.35 %, including the 12.3 % that are trips HOME. Keeping it
+    right for the 26.84 % of the passive mass the committed table attributes to education under
+    pairing and wrong for the other 73.16 %, including the 12.8 % that are trips HOME. Keeping it
     also keeps a second-order defect: those legs are anchored at the child's school, so the
     secondary location model places a shopping or leisure destination at a Kita.
   - **Draw the destination for ALL passive legs from the SrV `V_ZWECK_BHOL` mix (rejected).**
@@ -164,12 +166,12 @@
 
     | metric | baseline | reference | expected after arm A (ASSUMPTION) |
     |---|---|---|---|
-    | paired share of code-13 legs (run log) | -- | 0.9481 committed (trip-build universe) | >= 0.90 |
+    | paired share of code-13 legs (run log) | -- | 0.9415 committed (weekday trip-build universe) | >= 0.90 |
     | purpose fold of the relabelled legs (run log) | -- | the committed fold table above | within a few pp of it |
     | education participation, children 0-5 | model 0.6862 = +3.04 pp (arm-4 `comparison.csv`, `at_home_zero`, segment `group_child_0_5`, n 1,081) | SrV 0.6558 | moves DOWN toward the reference |
     | education->education same-purpose repeats | 10,253 (issue #329, arm-1 report) | -- | the code-13 share of them disappears |
     | escort purpose share (W1 `begleitung`) | arm-1 report | MiD W1 8.0 % ZGB | unchanged (the ACTIVE side is untouched) |
-    | trips HOME among former passive legs | 0 by construction | committed fold 0.1228 | ~12 % of the passive mass |
+    | trips HOME among former passive legs | 0 by construction | committed fold 0.1283 | ~13 % of the passive mass |
 
     A metric moving the wrong way stops the ladder for diagnosis. Every "expected" cell is an
     ASSUMPTION until a run manifest records it; the feature record
@@ -190,7 +192,8 @@
      `W1_begleitung * (1 - active_share)`. Task 9 measures the realised fold; until then the
      validation reference is a donor-side reference.
   5. **18 years is the adult threshold and 15 minutes the window** -- both configured, both chosen
-     from the pairing-rate curve above (91.9 % / 93.3 % / 94.8 % / 95.9 % at 0 / 5 / 15 / 30 min),
+     from the pairing-rate curve above (91.9 % / 93.3 % / 94.8 % / 95.9 % at 0 / 5 / 15 / 30 min on
+     the raw weekday legs; 94.15 % at 15 min once the trip build's leg filters are applied, committed),
      which flattens after 15 minutes; no external source prescribes either.
 - **Evidence:** issue **#372**; related **ADR-0072 / ADR-0073** (#201/#256/#257: the escort purpose
   family, the passive-as-education rule this replaces for paired legs, the SrV `V_ZWECK_BHOL`

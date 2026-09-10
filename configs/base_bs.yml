@@ -85,7 +85,7 @@ config:
   w_zweck_10_as_leisure: true
   # Passive escort legs (W_ZWECK 13, the escorted child's own leg) take the purpose of
   # the same-household adult leg departing within escort_passive_pair_max_gap_minutes
-  # (94.8 % of the legs pair within 15 min; 12.3 % of the passive mass ends as a trip
+  # (94.2 % of the legs pair within 15 min; 12.8 % of the passive mass ends as a trip
   # HOME with the adult -- committed fold in mid2023_escort_w_zweck_split.csv). Adult
   # Bringen/Holen (6) and unpaired legs keep the escort_passive_education rule.
   # Requires escort_purpose. ADR-0112. false = every code-13 leg -> education.

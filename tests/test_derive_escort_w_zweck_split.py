@@ -159,3 +159,60 @@ def test_passive_education_share_raises_when_a_pairing_column_is_missing():
     from scripts.derive_escort_w_zweck_split import derive_passive_education_share
     with pytest.raises(KeyError, match="HP_ALTER"):
         derive_passive_education_share(_pairing_wege().drop(columns=["HP_ALTER"]))
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 fix round 1, ruling C-R18: every row of the committed table is measured on the
+# WEEKDAY reporting days the PopulationSim seed keeps, because only a weekday MiD diary can
+# become a synthetic person's plan source.
+# ---------------------------------------------------------------------------
+
+def _day_filter_wege():
+    """Two escort legs on a weekday reporting day, one on a weekend day."""
+    from scripts.derive_escort_w_zweck_split import DAY_FILTER_COLUMN, DAY_FILTER_VALUES
+    return pd.DataFrame({
+        "W_ZWECK": [6, 13, 6],
+        "W_GEW": [1.0, 1.0, 1.0],
+        "wegkm_imp": [1.0, 2.0, 3.0],
+        DAY_FILTER_COLUMN: [DAY_FILTER_VALUES[0], DAY_FILTER_VALUES[-1], 4],
+    })
+
+
+def test_day_filter_keeps_only_the_seeds_reporting_days():
+    from scripts.derive_escort_w_zweck_split import (
+        DAY_FILTER_COLUMN, DAY_FILTER_VALUES, filter_reporting_day_legs)
+    kept, diagnostics = filter_reporting_day_legs(_day_filter_wege())
+    assert diagnostics["n_legs_raw"] == 3 and diagnostics["n_legs_kept"] == 2
+    assert diagnostics["share_kept"] == pytest.approx(2 / 3)
+    assert diagnostics["n_day_not_numeric"] == 0
+    assert set(kept[DAY_FILTER_COLUMN]) <= set(DAY_FILTER_VALUES)
+    # The dropped weekend leg must not reach the split, i.e. the primary path is exercised:
+    table, stats = derive_split(kept)
+    assert stats["n_escort_legs"] == 2
+
+
+def test_day_filter_values_are_the_seeds_own_constant():
+    """Single home (ruling C-R18): the script must not re-type the kernwo set -- it reads the
+    PopulationSim seed's own day filter, so the two universes cannot drift apart."""
+    from braunschweig.popsim.seed import MID_SEED_COLUMNS, WEEKDAY_KERNWO
+    from scripts.derive_escort_w_zweck_split import DAY_FILTER_COLUMN, DAY_FILTER_VALUES
+    assert DAY_FILTER_COLUMN == MID_SEED_COLUMNS.day_filter_col
+    assert DAY_FILTER_VALUES == MID_SEED_COLUMNS.day_filter_values == WEEKDAY_KERNWO
+
+
+def test_day_filter_counts_non_numeric_days_and_raises_when_nothing_survives():
+    from scripts.derive_escort_w_zweck_split import (
+        DAY_FILTER_COLUMN, filter_reporting_day_legs)
+    wege = _day_filter_wege()
+    wege[DAY_FILTER_COLUMN] = ["n.a.", "n.a.", 4]
+    with pytest.raises(ValueError, match="non-numeric day values: 2"):
+        filter_reporting_day_legs(wege)
+
+
+def test_day_filter_raises_when_the_day_column_is_absent():
+    """No silent skip: a missing day column would produce an ALL-DAYS reference under a
+    weekday-universe header."""
+    from scripts.derive_escort_w_zweck_split import (
+        DAY_FILTER_COLUMN, filter_reporting_day_legs)
+    with pytest.raises(KeyError, match=DAY_FILTER_COLUMN):
+        filter_reporting_day_legs(_day_filter_wege().drop(columns=[DAY_FILTER_COLUMN]))

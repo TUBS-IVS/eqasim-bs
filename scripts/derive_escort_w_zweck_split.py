@@ -22,8 +22,14 @@ code_13_to_education_share_under_pairing, and the reference becomes
   education_adjusted_ref = W1_ausbildung
       + W1_begleitung * share_weighted[code_13] * code_13_to_education_share_under_pairing
 
+Every row is measured on the WEEKDAY reporting days the PopulationSim seed keeps
+(``kernwo in MID_SEED_COLUMNS.day_filter_values``, see DAY_FILTER_VALUES below):
+a production run can only ever realise a weekday donor diary, so a reference
+derived on all reporting days would describe a universe no run has (ruling
+C-R18, regenerated 2026-09-10).
+
 Input:  eqasim-data/data/braunschweig/popsim/mid2023_raw/MiD2023_Wege.csv
-        (LOCAL-only raw; comma-separated; W_ZWECK, W_GEW, wegkm_imp plus
+        (LOCAL-only raw; comma-separated; W_ZWECK, W_GEW, wegkm_imp, kernwo plus
         PAIRING_COLUMNS_NEEDED for the pairing-derived column)
 Output: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
         (committed pinned reference; regenerate here, never edit)
@@ -36,6 +42,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.seed import MID_SEED_COLUMNS
 from scripts.derive_escort_location_weights import _sniff_separator, weighted_median
 
 REPO = Path(__file__).resolve().parents[1]
@@ -45,6 +52,16 @@ DEFAULT_OUTPUT_PATH = (REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
                        / "mid2023_escort_w_zweck_split.csv")
 
 ESCORT_CODES = (6, 13)
+#: Reporting-day universe of every number in this table, taken from the PopulationSim seed's OWN
+#: day filter rather than re-typed: ``MID_SEED_COLUMNS.day_filter_col`` / ``.day_filter_values``
+#: (``braunschweig/popsim/seed.py``, which also declares ``WEEKDAY_KERNWO`` as the single source of
+#: truth for the MiD core-week codes). The seed keeps exactly these reporting days unless
+#: ``config_keys.KEY_SEED_DAY_FILTER`` is switched to "off"/"all" -- it is not, in any committed
+#: config -- so only a weekday MiD diary can ever become a synthetic person's plan source. A
+#: reference derived on ALL reporting days would therefore describe a universe no production run
+#: has (ruling C-R18).
+DAY_FILTER_COLUMN = MID_SEED_COLUMNS.day_filter_col
+DAY_FILTER_VALUES = MID_SEED_COLUMNS.day_filter_values
 #: Extra raw MiD Wege columns the passive-escort pairing needs on top of the three the
 #: active/passive split itself reads (issue #372): the household/person/leg keys, the departure
 #: time and the member's age (``escort_pairing.REQUIRED_COLUMNS``).
@@ -107,6 +124,49 @@ def _band_shares_pct(length_km: pd.Series, weights: pd.Series) -> pd.Series:
              .groupby("b", observed=False)["w"].sum())
     share = (share / share.sum()).reindex(BAND_COLUMNS)
     return 100.0 * share.astype(float)
+
+
+def filter_reporting_day_legs(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Keep only the legs of the reporting days the PopulationSim seed keeps (ruling C-R18).
+
+    The day filter is the SEED's own (``DAY_FILTER_COLUMN`` / ``DAY_FILTER_VALUES``, read from
+    ``MID_SEED_COLUMNS``), never re-typed here, so this table's universe cannot drift away from the
+    universe a production run can realise.
+
+    Args:
+        df: raw MiD Wege frame carrying ``DAY_FILTER_COLUMN``.
+
+    Returns:
+        ``(filtered, diagnostics)`` with ``n_legs_raw``, ``n_legs_kept``, ``share_kept`` and
+        ``n_day_not_numeric`` (values the numeric coercion could not read; they are DROPPED, and
+        counted so a delivery whose day column is text cannot silently empty the table).
+
+    Raises:
+        KeyError: if the day column is absent -- a silently skipped day filter would produce an
+            all-days reference under a weekday-universe header.
+        ValueError: if no leg survives the filter.
+    """
+    if DAY_FILTER_COLUMN not in df.columns:
+        raise KeyError(
+            f"[derive_escort_w_zweck_split] the reporting-day filter needs column "
+            f"{DAY_FILTER_COLUMN!r}, absent from the Wege frame (has {list(df.columns)}). Every "
+            "number in this table is defined on the seed's weekday universe, so the column cannot "
+            "be optional.")
+    day = pd.to_numeric(df[DAY_FILTER_COLUMN], errors="coerce")
+    n_day_not_numeric = int((df[DAY_FILTER_COLUMN].notna() & day.isna()).sum())
+    kept = df[day.isin(DAY_FILTER_VALUES)].copy()
+    if len(kept) == 0:
+        raise ValueError(
+            f"[derive_escort_w_zweck_split] no leg has {DAY_FILTER_COLUMN} in "
+            f"{list(DAY_FILTER_VALUES)}; check the column contents (raw legs: {len(df)}, "
+            f"non-numeric day values: {n_day_not_numeric}).")
+    diagnostics = {
+        "n_legs_raw": int(len(df)),
+        "n_legs_kept": int(len(kept)),
+        "share_kept": float(len(kept) / len(df)) if len(df) else 0.0,
+        "n_day_not_numeric": n_day_not_numeric,
+    }
+    return kept, diagnostics
 
 
 def derive_split(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -310,10 +370,21 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     df = pd.read_csv(args.wege, sep=_sniff_separator(args.wege),
-                     usecols=["W_ZWECK", "W_GEW", "wegkm_imp", *PAIRING_COLUMNS_NEEDED,
-                              *LEG_FILTER_COLUMNS_NEEDED],
+                     usecols=["W_ZWECK", "W_GEW", "wegkm_imp", DAY_FILTER_COLUMN,
+                              *PAIRING_COLUMNS_NEEDED, *LEG_FILTER_COLUMNS_NEEDED],
                      low_memory=False)
     df["W_ZWECK"] = pd.to_numeric(df["W_ZWECK"], errors="coerce")
+    # The seed's reporting-day filter FIRST, so every row of the table -- the active/passive split
+    # and the length profile as much as the pairing-derived fold -- describes the same weekday
+    # universe a production run can realise (ruling C-R18).
+    df, day_stats = filter_reporting_day_legs(df)
+    if day_stats["n_day_not_numeric"] > 0:
+        print(f"WARNING [derive_escort_w_zweck_split] {DAY_FILTER_COLUMN} coercion failures: "
+              f"{day_stats['n_day_not_numeric']} leg(s) with a non-numeric reporting day "
+              f"-> dropped by the day filter", flush=True)
+    print(f"[derive_escort_w_zweck_split] reporting-day filter {DAY_FILTER_COLUMN} in "
+          f"{list(DAY_FILTER_VALUES)}: kept {day_stats['n_legs_kept']}/{day_stats['n_legs_raw']} "
+          f"legs ({100.0 * day_stats['share_kept']:.2f}%)")
     table, stats = derive_split(df)
     # The pairing runs on the WHOLE Wege frame (it needs every household member's legs, not only
     # the escort ones), so it is derived from df rather than from derive_split's escort subset.
@@ -338,7 +409,23 @@ def main(argv=None) -> int:
         "# Source: MiD 2023 Wege (local raw MiD2023_Wege.csv), W_ZWECK in {6, 13},\n"
         "# W_GEW-weighted. Code 6 = active Bringen/Holen; code 13 = the escorted\n"
         "# person's own (passive) leg (issue #256; 100% minors, verified 2026-08-11).\n"
-        f"# share_weighted over ALL escort legs (n={stats['n_escort_legs']}); length stats\n"
+        f"# Day universe: weekday reporting days {DAY_FILTER_COLUMN} in "
+        f"{list(DAY_FILTER_VALUES)}, as the PopulationSim seed\n"
+        "#   (braunschweig.popsim.seed.MID_SEED_COLUMNS.day_filter_values; config key\n"
+        "#   braunschweig.population.popsim.seed_day_filter, default \"default\"). EVERY row --\n"
+        "#   code_6 and 'both' included -- is measured on that universe, because only a weekday\n"
+        "#   MiD diary can become a synthetic person's plan source (ruling C-R18).\n"
+        "# Leg universe (pairing and fold only): on top of the day filter, the TRIP BUILD's own\n"
+        "#   filters -- rbW summary legs excluded, leading arrive-home leg dropped.\n"
+        f"# Exclusions: n_legs_raw={day_stats['n_legs_raw']} -> weekday "
+        f"{day_stats['n_legs_kept']}/{day_stats['n_legs_raw']} "
+        f"({100.0 * day_stats['share_kept']:.2f}%);\n"
+        f"#   passive legs kept by the trip build {pairing_stats['n_passive']}/"
+        f"{pairing_stats['n_passive_raw']} "
+        f"({100.0 * pairing_stats['n_passive'] / pairing_stats['n_passive_raw']:.2f}% of the\n"
+        f"#   weekday passive legs); {DAY_FILTER_COLUMN} values that failed the numeric coercion "
+        f"and were dropped: {day_stats['n_day_not_numeric']}.\n"
+        f"# share_weighted over ALL weekday escort legs (n={stats['n_escort_legs']}); length stats\n"
         f"# (wegkm_imp >= 0, < 1000 km) cover {stats['length_coverage_weighted']:.4f} of the escort weight.\n"
         f"# weight_coercion_failures={stats['weight_coercion_failures']}.\n"
         "# Band columns follow mid2023_W12_triplength_by_purpose.csv (row-%).\n"
@@ -353,16 +440,14 @@ def main(argv=None) -> int:
         f"# Pairing rate: {pairing_stats['n_paired']}/{pairing_stats['n_passive']} legs "
         f"({pairing_stats['share_paired']:.4f}) within "
         f"{pairing_stats['max_gap_minutes']:.0f} min.\n"
-        f"# Universe: the {pairing_stats['n_passive']} passive legs the TRIP BUILD keeps, out of "
-        f"{pairing_stats['n_passive_raw']} in the\n"
-        "# raw table; the adult candidate pool is filtered the same way, so this describes the\n"
+        f"# Universe: the {pairing_stats['n_passive']} passive legs the TRIP BUILD keeps out of the "
+        f"{pairing_stats['n_passive_raw']} weekday\n"
+        "# passive legs; the adult candidate pool is filtered the same way, so this describes the\n"
         "# production leg universe, not the raw one.\n"
         "# The two decomposition figures above are rounded independently of the row value, so\n"
         "# their sum can differ from it by one unit in the last place.\n"
-        "# ASSUMED flag values (the INTENDED production state; escort_passive_from_adult: true is\n"
-        "# added to configs/base_bs.yml by Task 7 of issue #372 and is not there yet, so a run\n"
-        "# made before that task does NOT match these numbers -- nor does any run configured\n"
-        "# differently):\n"
+        "# ASSUMED flag values (the production state, set in configs/base_bs.yml; a run configured\n"
+        "# differently does NOT match these numbers):\n"
         + "".join(f"#   {key} = {value}\n" for key, value in DERIVATION_FLAGS.items())
         + f"#   escort_passive_pair_max_gap_minutes = {pairing_stats['max_gap_minutes']:.0f}\n"
         "# Generated by scripts/derive_escort_w_zweck_split.py; regenerate there, never edit.\n"

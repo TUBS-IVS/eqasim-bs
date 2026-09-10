@@ -30,8 +30,8 @@ verification:
     Ships committed with every clone (git add -f, per the .gitignore allowlist convention for
     eqasim-data/data/braunschweig/mid/mid2023_*.csv), so it is not listed in
     scripts/verify_braunschweig_inputs.py. The extraction's own invariants and the identity of the
-    imported specs are covered by tests/test_extract_mid_w_zwd_groups.py (19 tests on synthetic
-    frames that use the REAL W_ZWD codes).
+    imported specs are covered by tests/test_extract_mid_w_zwd_groups.py (14 tests on synthetic
+    frames that use the REAL W_ZWD codes; count from pytest --collect-only, 2026-09-10).
 requirements:
   synthesis: not_needed
   matsim: not_needed

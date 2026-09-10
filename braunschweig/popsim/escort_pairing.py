@@ -11,6 +11,13 @@ LAZILY there to avoid a cycle with this module's ``trips.mid_time_seconds`` impo
 pairing into the child's actual purpose (the adult's destination purpose). Pure pandas; no file
 I/O, no MATSim dependency.
 
+Those three figures are the ALL-DAYS raw measurement. On the universe a production run actually
+has -- the weekday reporting days the PopulationSim seed keeps, after the trip build's leg
+filters -- the committed reference
+``eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv`` measures 6,384/6,781 =
+94.15 % paired within 15 minutes (regenerated 2026-09-10, ruling C-R18); that is the rate the
+low-pairing WARNING below cites.
+
 The adult candidate pool excludes legs whose own W_ZWECK is itself PASSIVE_W_ZWECK (Ruling
 C-R8): a person who is being passively escorted on a leg cannot simultaneously be the escorting
 adult for that leg (they need an escort themselves), and PASSIVE_W_ZWECK is not a real
@@ -242,8 +249,9 @@ def pair_passive_legs(
     )
     if share_paired < WARN_PAIRED_SHARE:
         logger.warning(
-            "%s only %d/%d (%.1f%%) passive legs could be paired with an adult leg (raw MiD B1 "
-            "reference: 94.8%% within 15 min, see the module docstring); check HP_ALTER, the "
+            "%s only %d/%d (%.1f%%) passive legs could be paired with an adult leg (committed "
+            "reference: 94.2%% within 15 min on the production universe, "
+            "mid2023_escort_w_zweck_split.csv; see the module docstring); check HP_ALTER, the "
             "W_SZS/W_SZM time columns and the H_ID household join before trusting the "
             "passive-leg purposes downstream",
             _LOG_TAG, n_paired, n_passive, 100.0 * share_paired,

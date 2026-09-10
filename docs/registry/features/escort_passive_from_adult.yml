@@ -19,13 +19,14 @@ description: 'Gives a PAIRED MiD passive escort leg (W_ZWECK 13, the escorted ch
   other, 99 -> other, a missing or unknown adult code -> DEFAULT_PURPOSE, WARNed and counted. Five
   passive_pair_* traceability columns travel with the trip table.
 
-  Measured on the production leg universe (rbW legs excluded, leading arrive-home leg dropped --
-  the same universe the trip build keeps, controller ruling C-R12; committed
-  eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv): 10,339/10,905 = 94.81 % of
+  Measured on the production universe (the WEEKDAY reporting days the PopulationSim seed keeps,
+  then rbW legs excluded and the leading arrive-home leg dropped -- the same universe the trip
+  build keeps, controller rulings C-R12 and C-R18; committed
+  eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv): 6,384/6,781 = 94.15 % of
   the passive legs pair within 15 minutes, and the resulting W_GEW purpose fold is education
-  0.2065 (of which 0.1432 pairs with an active escort leg and 0.0632 stays unpaired), leisure
-  0.3494, other 0.1625, shop 0.1589, home 0.1228, escort 0.0000 -- i.e. 79.4 % of the passive mass
-  leaves education, and 12.3 % of it is a trip HOME that used to be modelled as a school trip.
+  0.2684 (of which 0.1947 pairs with an active escort leg and 0.0738 stays unpaired), leisure
+  0.2451, other 0.1804, shop 0.1778, home 0.1283, escort 0.0000 -- i.e. 73.2 % of the passive mass
+  leaves education, and 12.8 % of it is a trip HOME that used to be modelled as a school trip.
 
   Requires escort_purpose: map_purpose raises ValueError naming BOTH keys when this flag is on and
   escort_purpose is off. Because of that dependency the CODE and DECLARED default is False
@@ -113,7 +114,7 @@ evidence:
     log_marker: '[escort pairing]'
     note: 'Two instruments, both explicit rates. (1) pair_passive_legs logs n_paired/n_passive with
       the share, the three unpaired reasons (no_time / no_adult / gap) and the adult-W_ZWECK
-      distribution of the pairs, and WARNs below 80 % paired, naming the 94.8 % raw-MiD reference --
+      distribution of the pairs, and WARNs below 80 % paired, naming the committed 94.2 % reference --
       a collapsed or empty pairing is the signature of a broken household/time join. (2) map_purpose
       logs the paired share with its weighting basis, the resulting PURPOSE DISTRIBUTION of the
       relabelled legs (a distribution collapsed onto one purpose is what a broken pairing looks
@@ -137,8 +138,9 @@ evidence:
       member. A VALIDATION reference, not a control target: no synthesis stage reads it; its
       consumer is braunschweig.analysis.population_validation.trip_coherence
       (load_passive_purpose_fold -> apply_escort_active_adjustment). The header discloses the flag
-      values the derivation assumed and the exact universe (10,905 passive legs the trip build
-      keeps), so a run configured differently cannot be scored against it unknowingly. The fold is
+      values the derivation assumed and the exact universe (the weekday reporting days the seed keeps,
+      then the 6,781 passive legs the trip build keeps), so a run configured differently cannot be
+      scored against it unknowingly. The fold is
       measured on MiD DONOR legs, not on the synthetic population -- see the assumption in
       ADR-0112.'
 validation:
@@ -147,12 +149,12 @@ validation:
   metric: 'Not yet measured on a population. ADR-0112''s pre-registered A/B (Consequences section)
     specifies arm A (this flag plus w_zweck_10_as_leisure, one PopulationSim run) against
     sub-project B''s arm 1, with six rows: paired share of code-13 legs from the run log (reference
-    0.9481 committed, expected >= 0.90), the realised purpose fold of the relabelled legs against
+    0.9415 committed, expected >= 0.90), the realised purpose fold of the relabelled legs against
     the committed fold, education participation of children 0-5 (arm-4 baseline: model 0.6862 vs
     SrV 0.6558 = +3.04 pp, expected to move DOWN toward the reference), the education->education
     same-purpose repeats (10,253 reported in issue #329), the W1 begleitung escort share (expected
     unchanged -- the active side is untouched) and the share of former passive legs that become
-    trips HOME (committed fold 0.1228). To be run as Task 9 of the #373/#372/#242 SDD plan.'
+    trips HOME (committed fold 0.1283). To be run as Task 9 of the #373/#372/#242 SDD plan.'
   note: 'No run has executed this code as of this record (the documentation task is written before
     the A/B). validation.state is unvalidated, not measured_vs_reference: the committed split table
     is a DONOR-side measurement of what MiD says the escorted children did, not a measurement of
