@@ -18,7 +18,7 @@ is a taxonomy artefact rather than a regional one (which is exactly what the
 | --- | --- |
 | SrV reference | `eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv` |
 | MiD reference | `eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` |
-| code state (--source-commit) | `7d7640a5` |
+| code state (--source-commit) | `f120d93d` |
 | crosswalk | `braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE` |
 | SrV weights | `GEWICHT_W_ZENSUS` (Zensus 2022 expansion, ADR-0055) |
 | MiD weights | `W_GEW` (trip expansion weight) |

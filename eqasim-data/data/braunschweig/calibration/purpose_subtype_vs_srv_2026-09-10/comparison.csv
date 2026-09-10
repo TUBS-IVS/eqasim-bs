@@ -1,6 +1,6 @@
 # Comparison of the MiD W_ZWD subtype mix with the SrV 2023 fine-purpose mix (issue #242 Task 6).
 # Sources: eqasim-data/data/braunschweig/srv/srv2023_fine_purpose_reference.csv ; eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
-# Code state at generation: eqasim-bs 7d7640a5 (--source-commit, 8-character hash of the
+# Code state at generation: eqasim-bs f120d93d (--source-commit, 8-character hash of the
 #   eqasim-bs commit whose code produced this file), crosswalk
 #   braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE.
 # Rule: candidate_for_reestimation = (exactness == "exact") and any over spec variants of (abs(delta_pp_comparable) > 10); delta_pp_comparable = delta_pp_renormalised where the purpose is asymmetric, else delta_pp, and EMPTY for a row outside the comparable universe (grade not in exact + approximate)
