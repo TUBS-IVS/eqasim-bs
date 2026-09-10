@@ -550,19 +550,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.popsim.mid",
         "braunschweig.popsim.stage",
     ),
-    "braunschweig.popsim.distance_distributions": (
-        "braunschweig.popsim.mid",
-        "braunschweig.popsim.purpose_subtype",
-        "braunschweig.popsim.shop_subtype",
-        # config_keys joined 2026-09-09 (purpose correctness, issue #373 task 2):
-        # configure()/execute() now import KEY_W_ZWECK_10_AS_LEISURE /
-        # DEFAULT_W_ZWECK_10_AS_LEISURE from braunschweig.popsim.stage.config_keys (the
-        # SHARED constants every stage reading this key declares with) instead of a raw
-        # string literal; same no-token debt as the other four siblings in this entry.
-        "braunschweig.popsim.stage.config_keys",
-        "braunschweig.popsim.time_imputation",
-        "braunschweig.popsim.trips",
-    ),
     "braunschweig.synthesis.incommuters": (
         "braunschweig.synthesis.vehicles.fleet_sampling_de",
     ),
@@ -789,4 +776,24 @@ def test_trips_stage_declares_a_validate_token_over_its_helpers():
                      "braunschweig.popsim.sources.mid"):
         assert required in names, required
     token = trips_stage.validate(None)
+    assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+
+
+def test_distance_distributions_declares_a_validate_token_over_its_helpers():
+    """braunschweig.popsim.distance_distributions had NO validate() at all: editing
+    trips.py / purpose_subtype.py / shop_subtype.py / escort_pairing.py served a STALE
+    cached distance distribution on a partial rerun -- the config VALUE is hashed via the
+    stage's declared keys, but the RULE CODE inside those helper modules was not (issue
+    #373 task 1, the same class of gap trips_stage.py closed for the trip build itself)."""
+    import braunschweig.popsim.distance_distributions as distance_distributions
+
+    assert hasattr(distance_distributions, "validate")
+    names = ({m.__name__ for m in distance_distributions._HELPER_MODULES}
+             | set(distance_distributions._DEFERRED_HELPER_MODULE_NAMES))
+    for required in ("braunschweig.popsim.trips", "braunschweig.popsim.time_imputation",
+                     "braunschweig.popsim.escort_pairing", "braunschweig.popsim.mid",
+                     "braunschweig.popsim.purpose_subtype", "braunschweig.popsim.shop_subtype",
+                     "braunschweig.popsim.stage.config_keys"):
+        assert required in names, required
+    token = distance_distributions.validate(None)
     assert isinstance(token, str) and len(token) == 32  # md5 hexdigest

@@ -75,6 +75,9 @@ Activity purposes:
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 
 import numpy as np
@@ -87,6 +90,14 @@ from synthesis.population.spatial.secondary.distance_distributions import (
     calculate_bounds,
 )
 
+# Module OBJECTS (in addition to the named imports below): needed so validate()'s
+# _HELPER_MODULES tuple can hash their source via inspect.getsource. escort_pairing is
+# imported here even though this file never calls it directly -- trips.map_purpose does,
+# under escort_passive_from_adult -- for exactly the reason trips_stage.py hashes it (see
+# the _HELPER_MODULES comment below).
+from braunschweig.popsim import escort_pairing as _escort_pairing
+from braunschweig.popsim import time_imputation as _time_imputation
+from braunschweig.popsim import trips as _trips
 from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
 from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, map_mode, map_purpose, mid_time_seconds)
@@ -97,6 +108,70 @@ logger = logging.getLogger(__name__)
 # Canonical project-wide constant (braunschweig.constants); local alias kept
 # for the existing references.
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
+
+# synpp's get_stage_hash hashes only THIS file's own source (inspect.getsource of this
+# module); every helper whose code shapes this stage's OUTPUT must therefore be folded
+# into validate()'s token below, or an edit to it silently reuses the stale cached
+# distance distributions on a partial rerun -- the config VALUE the stage declares is
+# hashed, but the RULE CODE inside a helper module is not. This stage had NO token at all
+# until issue #373 task 1 (see tests/test_synpp_helper_hash_invariant.py, which carried an
+# ALLOWED_VIOLATIONS debt entry for it), the same class of gap
+# braunschweig.popsim.trips_stage.py closed for the trip build itself after the
+# 2026-08-19 cache-invalidation hazard (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml).
+#
+# trips carries map_mode/map_purpose, which this stage's ENTIRE output (mode + purpose
+# vocabulary, for both the legacy and the by_purpose layer) is built from. time_imputation
+# defines WEGMIN_CODE_THRESHOLD, the validity bound the coded-clock-time rescue (Step 3b
+# above) uses to decide whether wegmin_imp1 can rescue a trip's travel_time. escort_pairing
+# decides WHICH adult leg a passive escort leg (W_ZWECK 13) is paired with under
+# escort_passive_from_adult, and therefore which purpose -- and so which distance layer --
+# that leg's distance value lands in; this module never calls it directly, trips.map_purpose
+# does, exactly as for trips_stage.py.
+_HELPER_MODULES = (
+    _trips,
+    _time_imputation,
+    _escort_pairing,
+)
+# Imported LAZILY inside run()/configure()/execute() (to avoid an unconditional import cost
+# when the shop/leisure/other subtype splits are off, and -- for config_keys -- a heavy
+# top-level import of the popsim stage package), so they are hashed by dotted module name via
+# importlib rather than as a bound module object, mirroring trips_stage.py's own deferred
+# tuple. mid.load_mid_wege is this stage's only data source; purpose_subtype/shop_subtype
+# define the W_ZWD subtype groupings the leisure/shop/other subtype splits are built from;
+# config_keys is the shared home of the four purpose-package config keys this stage declares.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.mid",
+    "braunschweig.popsim.purpose_subtype",
+    "braunschweig.popsim.shop_subtype",
+    "braunschweig.popsim.stage.config_keys",
+)
+
+
+def validate(context):
+    """synpp validation token: md5 over the helper modules above.
+
+    Same mechanism and boundary semantics as ``braunschweig.popsim.stage.validate()``
+    (the single canonical statement) and ``braunschweig.popsim.trips_stage.validate()``
+    (which closes the identical own-package-sibling gap for the trip build); kept minimal
+    here because this stage's helper surface is small. A deferred module that fails to
+    import raises rather than being skipped -- dropping it would keep the stale cache
+    alive exactly when the code is broken.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"distance_distributions validate(): cannot hash the deferred helper "
+                f"module {module_name!r} ({type(error).__name__}: {error}); it must not "
+                "be skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 # Primary activity types — trips where BOTH ends are primary are excluded.
 # Matches the default stage exactly (synthesis/population/spatial/secondary/
