@@ -888,6 +888,11 @@ def _capture_education_flag_seed(monkeypatch):
     def capturing(persons, wege, **kwargs):
         captured["drop_leading_arrive_home_leg"] = kwargs.get("drop_leading_arrive_home_leg")
         captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        # Issue #373 cleanup wave, item 3: the two remaining purpose-package flags reached
+        # this call site without a test asserting the VALUE arrives (only presence/absence
+        # of escort_passive_from_adult was pinned above).
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
         return real(persons, wege, **kwargs)
 
     monkeypatch.setattr(seed_loading, "derive_education_flag_seed", capturing)
@@ -903,9 +908,15 @@ def test_load_mid_seed_forwards_the_education_flag_leading_drop(tmp_path, monkey
         kreis_seed_rng=np.random.RandomState(0),
         escort_passive_education=True, exclude_rbw_legs=True,
         escort_passive_from_adult=True,
+        w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
         education_flag_drop_leading_arrive_home_leg=True)
     assert captured["escort_passive_from_adult"] is True
     assert captured["drop_leading_arrive_home_leg"] is True
+    # Non-default values (module code default is False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    # so a forwarding regression that silently falls back to the callee's own default would
+    # be caught here, not just a KeyError on a missing kwarg.
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
 
 
 def test_project_completed_seed_forwards_the_education_flag_leading_drop(tmp_path, monkeypatch):
@@ -918,9 +929,12 @@ def test_project_completed_seed_forwards_the_education_flag_leading_drop(tmp_pat
         kreis_seed_rng=np.random.RandomState(0), mid_dir=donor_dir,
         escort_passive_education=True, exclude_rbw_legs=True,
         escort_passive_from_adult=True,
+        w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
         education_flag_drop_leading_arrive_home_leg=True)
     assert captured["escort_passive_from_adult"] is True
     assert captured["drop_leading_arrive_home_leg"] is True
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
 
 
 class _SeedInfoContext:
@@ -987,3 +1001,73 @@ def test_build_populationsim_seed_forwards_the_leading_drop_to_both_mid_branches
 
     assert captured["load_mid_seed"] is True
     assert captured["project_completed_seed"] is True
+
+
+def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both_mid_branches(
+        monkeypatch):
+    """Issue #373 cleanup wave, item 3: escort_passive_from_adult, w_zweck_10_as_leisure and
+    passive_pair_max_gap_minutes reach BOTH mid.load_mid_seed and mid.project_completed_seed
+    from _build_populationsim_seed, but no test asserted the VALUE arrives -- the sibling test
+    above only pins education_flag_drop_leading_arrive_home_leg. Non-default values are used
+    (module code defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a
+    forwarding regression that silently falls back to the callee's own default is caught, not
+    just a missing kwarg."""
+    from braunschweig.popsim import stage as popsim_stage
+
+    captured = {}
+
+    class _Report:
+        completeness_rate = 1.0
+
+    def capture_load_mid_seed(mid_dir, **kwargs):
+        captured["load_mid_seed"] = {
+            "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
+            "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
+            "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+        }
+        return pd.DataFrame(), pd.DataFrame(), _Report()
+
+    def capture_project_completed_seed(households, persons, columns, **kwargs):
+        captured["project_completed_seed"] = {
+            "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
+            "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
+            "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+        }
+        return pd.DataFrame(), pd.DataFrame()
+
+    monkeypatch.setattr(popsim_stage.mid, "load_mid_seed", capture_load_mid_seed)
+    monkeypatch.setattr(popsim_stage.mid, "project_completed_seed",
+                        capture_project_completed_seed)
+
+    class _Source:
+        def seed_columns(self):
+            from braunschweig.popsim import sources
+            return sources.get_source("mid").seed_columns()
+
+    class _Donor:
+        households = pd.DataFrame()
+        persons = pd.DataFrame()
+        completeness_report = _Report()
+
+        class completion_report:
+            n_households_filled = 0
+            n_persons_added = 0
+
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext(), _Source(), "mid", "unused", False, (),
+        set(), np.random.RandomState(0), None,
+        escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
+        passive_pair_max_gap_minutes=22.0)
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext({"completed_donor": _Donor()}), _Source(), "mid", "unused", True, (),
+        set(), np.random.RandomState(0), None,
+        escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
+        passive_pair_max_gap_minutes=22.0)
+
+    expected = {
+        "escort_passive_from_adult": True,
+        "w_zweck_10_as_leisure": True,
+        "passive_pair_max_gap_minutes": 22.0,
+    }
+    assert captured["load_mid_seed"] == expected
+    assert captured["project_completed_seed"] == expected
