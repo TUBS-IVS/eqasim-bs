@@ -1,0 +1,11 @@
+metric,value
+n_trips,3455184.0
+n_trips_synthetic_closure,214385.0
+share_trips_synthetic_closure,0.06204734682726014
+n_persons,945826.0
+n_persons_closed,214385.0
+share_persons_closed,0.22666431246339178
+n_home_trips,1438858.0
+n_home_trips_synthetic,214385.0
+share_home_trips_synthetic,0.1489966348312342
+closure_column_present,1.0
