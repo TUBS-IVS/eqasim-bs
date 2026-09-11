@@ -123,14 +123,27 @@ def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
     return pd.cut(ages, bins=list(edges), labels=False).to_numpy()
 
 
-def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
+def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
+                  age_band_edges=AGE_BAND_EDGES):
     """Greedily pair each target member to a distinct donor member by
-    (coarse age band, sex), falling back to age band only, then any free donor.
+    (age band, sex), falling back to age band only, then any free donor.
+
+    Each paired target member inherits its donor's plan source, so the bands decide
+    whose recorded day a child receives: under the coarse :data:`AGE_BAND_EDGES` a
+    first-grader and a 13-year-old are interchangeable here exactly as they were in the
+    diary match (issue #386). Pass :data:`FINE_CHILD_AGE_BAND_EDGES` to separate them.
+
+    The number of pairs returned is ``min(len(target_members), len(donor_members))``
+    under ANY edge set -- every target member takes some free donor through the
+    ``any_free`` fallback -- and this function consumes no rng. Changing the bands
+    therefore changes WHICH donor a member is paired with without changing how many
+    person-level fallback draws the caller makes afterwards, i.e. without moving the
+    shared completion rng stream.
     """
-    d_band = age_band_index(donor_members["HP_ALTER"])
+    d_band = age_band_index(donor_members["HP_ALTER"], edges=age_band_edges)
     d_sex = donor_members["HP_SEX"].to_numpy()
     used = np.zeros(len(donor_members), dtype=bool)
-    t_band = age_band_index(target_members["HP_ALTER"])
+    t_band = age_band_index(target_members["HP_ALTER"], edges=age_band_edges)
     t_sex = target_members["HP_SEX"].to_numpy()
     pairs = []
     for tpos in range(len(target_members)):
@@ -254,12 +267,25 @@ class WeekendMatchReport:
     n_swept: int = 0
 
 
-def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID"):
+def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
+                                  fine_child_age_bands=True):
+    """Give every weekend-reporting donor a matched WEEKDAY plan source.
+
+    ``fine_child_age_bands`` (default True, issue #386): band 6-13-year-olds finely
+    (6-9 / 10-13) wherever this pass matches on age -- the household-level member
+    alignment (:func:`align_members`), the person-level fallback and the mixed-household
+    sweep -- so a primary-school child cannot inherit a 13-year-old's school day. All
+    three consume the same number of rng values under either edge set (``align_members``
+    draws none and returns the same number of pairs; ``match_person`` draws exactly one
+    per call), so the flag changes the ASSIGNMENT, never the draw sequence of the
+    completion stream this pass shares with member completion and the diary match.
+    """
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
     from braunschweig.popsim.day_type import WEEKEND_KERNWO
     from braunschweig.popsim.seed import WEEKDAY_KERNWO
 
+    age_band_edges = FINE_CHILD_AGE_BAND_EDGES if fine_child_age_bands else AGE_BAND_EDGES
     persons = persons.copy()
     hh_dt = _dt.household_day_type(persons, household_id=household_id)
     # completed_donor_households (load_completed_donor) do NOT carry hh_type5 --
@@ -320,7 +346,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key)
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
-            paired = align_members(target_members, donor_members)
+            paired = align_members(target_members, donor_members,
+                                   age_band_edges=age_band_edges)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
@@ -341,7 +368,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                     continue
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
+                                              age_band_edges=age_band_edges)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -382,7 +410,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_swept = 0
     for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
         trow = persons.loc[ridx]
-        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
+                                      age_band_edges=age_band_edges)
         persons.loc[ridx, "source_H_ID"] = sh
         persons.loc[ridx, "source_P_ID"] = sp
         resolution[ridx] = "mixed_person_sweep"

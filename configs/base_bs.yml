@@ -288,15 +288,20 @@ config:
   # far (docs/runs/plan-structure-fix-arm3-100pct-2026-09-07.yml), so the expected
   # effect on the population is nil.
   braunschweig.population.popsim.diary_match_hard_employment: true
-  # Band 6-13 children finely (6-9 / 10-13) for the `age_band` key of that SAME re-draw
-  # (#386): under the coarse band a first-grader can inherit a 13-year-old's school day,
-  # and the two differ systematically -- a first education leg before 07:00 occurs for
-  # 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds (raw MiD 2023 B1, 2026-09-09),
-  # and secondary-school ways are longer. The WEEKEND plan match keeps the coarse bands
-  # (its draw sequence is a pinned byte-identity contract). Unlike the employment key
-  # above, `age_band` stays relaxable, so crossings remain possible and are reported as a
-  # rate in BOTH arms (DiaryMatchReport.n_crossed_fine_child_age_band).
-  braunschweig.population.popsim.diary_match_fine_child_age_bands: true
+  # Band 6-13 children finely (6-9 / 10-13) wherever the donor build matches a person to
+  # a MiD donor by age (#386, ADR-0118): member completion's mirror role matching, the
+  # weekend match's member alignment + person fallback + sweep, AND the diary re-draw.
+  # Under the coarse band a first-grader can inherit a 13-year-old's school day, and the
+  # two differ systematically -- a first education leg before 07:00 occurs for 5.4 % of
+  # 6-9-year-olds but 18.2 % of 10-13-year-olds (raw MiD 2023 B1, 2026-09-09), and
+  # secondary-school ways are longer. None of the three matchers consumes a different
+  # NUMBER of rng values under the fine bands, so the shared completion stream (and with
+  # it the byte-identity contract) is unmoved: only WHICH donor is assigned changes.
+  # Read regardless of diary_plan_match, since the first two matchers run either way.
+  # Unlike the employment key above, `age_band` stays relaxable, so crossings remain
+  # possible and are reported as a rate in BOTH arms
+  # (DiaryMatchReport.n_crossed_fine_child_age_band).
+  braunschweig.population.popsim.donor_match_fine_child_age_bands: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).

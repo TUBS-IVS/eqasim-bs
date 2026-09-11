@@ -31,7 +31,7 @@ production:
   - braunschweig.population.popsim.diary_plan_match
   - braunschweig.population.popsim.exclude_holiday_plan_sources
   - braunschweig.population.popsim.diary_match_hard_employment
-  - braunschweig.population.popsim.diary_match_fine_child_age_bands
+  - braunschweig.population.popsim.donor_match_fine_child_age_bands
 introduced:
   issue: '#365'
   pr: null
@@ -62,6 +62,10 @@ evidence:
   - tests/test_diary_plan_match.py::test_reassign_with_fine_child_bands_prefers_a_primary_school_donor
   - tests/test_diary_plan_match.py::test_reassign_counts_and_logs_the_fine_child_band_crossing_rate
   - tests/test_completed_donor_diary_match.py::test_diary_match_uses_the_fine_child_bands_by_default_and_reports_the_crossing_rate
+  - tests/test_weekend_plan_match.py::test_align_members_fine_child_bands_pair_a_first_grader_with_a_first_grader
+  - tests/test_weekend_plan_match.py::test_fine_child_bands_leave_the_rng_stream_untouched_on_a_randomised_population
+  - tests/test_popsim_member_completion.py::test_fine_child_bands_keep_the_mirror_sibling_age_structure
+  - tests/test_popsim_member_completion.py::test_fine_child_bands_do_not_move_the_member_completion_rng_stream
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_completed_donor_stage.py::test_build_completed_donor_off_matches_pre_task_inline_pipeline
@@ -108,7 +112,13 @@ evidence:
       histogram is not directly comparable to arm 3's. On the arm-3 100 % run only 2 of the 74,898
       remaps relaxed past employed (match_level_counts={0: 74896, 3: 2}), so the flag is a GUARD
       against a future pool composition rather than a correction of a measured defect.
-      SINCE #386 (ADR-0118) the pass also counts DiaryMatchReport.n_crossed_fine_child_age_band
+      SINCE #386 (ADR-0118) the shared key donor_match_fine_child_age_bands additionally bands
+      6-13-year-olds finely (6-9 / 10-13) in ALL THREE age-matching passes of the donor build --
+      member completion's mirror role matching and the weekend match's member alignment as well
+      as this re-draw -- so an A/B on it is NOT an isolation of this feature; the upstream passes
+      also move, and this pass's remap COUNT therefore differs between the arms (compare rates).
+      The stage record braunschweig.popsim.completed_donor.yml owns the full description. Here the
+      pass counts DiaryMatchReport.n_crossed_fine_child_age_band
       over n_remapped_in_split_child_band -- remaps of persons aged 6-13 (the one coarse band
       weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES splits) whose donor lands in a different FINE
       band -- and logs it as n/total with a percentage. Unlike the employment counter this one is

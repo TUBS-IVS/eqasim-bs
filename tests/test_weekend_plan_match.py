@@ -789,3 +789,143 @@ def test_fine_child_bands_and_hard_keys_compose():
         target, weekday, rng=np.random.RandomState(0), hard_keys=frozenset({"employed"}),
         age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
     assert (household_id, person_id) == (71, 1)
+
+
+# --- issue #386 follow-up: the same fine bands inside align_members ------------
+
+def _school_child_households():
+    """Two structurally identical couple+2-children households, HH 2 reporting on a
+    weekend, whose children sit at the two ends of the coarse 6-13 band.
+
+    The weekday donor HH 1 lists its children 13 BEFORE 7, the weekend target HH 2
+    lists 7 before 13. align_members pairs positionally in target order and takes the
+    FIRST free donor of the matching band, so under the coarse 6-13 band the target's
+    7-year-old is paired with the donor's 13-year-old.
+    """
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [4, 4], "hh_type5": ["family", "family"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+        "H_GEW": [1.0, 1.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 1, 1, 2, 2, 2, 2], "P_ID": [1, 2, 3, 4, 1, 2, 3, 4],
+        "HP_ALTER": [40, 38, 13, 7, 41, 39, 7, 13],
+        "HP_SEX": [1, 2, 1, 1, 1, 2, 1, 1],
+        "P_FSCHEIN": [1, 1, 2, 2, 1, 1, 2, 2],
+        "P_TAET": [1, 1, 9, 9, 1, 1, 9, 9],
+        "P_FKARTE": [1, 1, 3, 3, 1, 1, 3, 3],
+        "kernwo": [2, 2, 2, 2, 6, 6, 6, 6],       # HH 1 weekday, HH 2 weekend
+        "source_H_ID": [1, 1, 1, 1, 2, 2, 2, 2], "source_P_ID": [1, 2, 3, 4, 1, 2, 3, 4],
+        "member_imputed": [False] * 8,
+        "P_GEW": [1.0] * 8,
+    })
+    return households, persons
+
+
+def test_align_members_fine_child_bands_pair_a_first_grader_with_a_first_grader():
+    _hh, persons = _school_child_households()
+    target = persons[persons["H_ID"] == 2].reset_index(drop=True)
+    donor = persons[persons["H_ID"] == 1].reset_index(drop=True)
+
+    coarse = dict(wpm.align_members(target, donor))
+    fine = dict(wpm.align_members(target, donor,
+                                  age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES))
+    # Target position 2 is the 7-year-old, donor position 2 the 13-year-old and
+    # position 3 the 7-year-old.
+    assert coarse[2] == 2 and coarse[3] == 3      # 7 -> 13 and 13 -> 7 (both wrong)
+    assert fine[2] == 3 and fine[3] == 2          # 7 -> 7 and 13 -> 13
+    # The refinement must not change HOW MANY members are paired -- that count is what
+    # decides how many person-fallback match_person calls (and therefore rng draws)
+    # the caller makes.
+    assert len(coarse) == len(fine) == len(target)
+
+
+def test_weekend_match_fine_child_bands_change_sources_without_moving_the_rng_stream():
+    """The load-bearing claim of this change: align_members consumes NO rng, and the
+    number of pairs it returns is min(len(target), len(donor)) whatever the bands, so
+    the person-fallback loop makes the same number of match_person calls. Refining the
+    bands therefore changes WHICH donor a child inherits without shifting the shared
+    completion stream that member completion and the diary match draw from.
+    """
+    households, persons = _school_child_households()
+    coarse_rng = np.random.RandomState(7)
+    fine_rng = np.random.RandomState(7)
+    coarse_out, _t, _r = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=coarse_rng, fine_child_age_bands=False)
+    fine_out, _t2, _r2 = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=fine_rng, fine_child_age_bands=True)
+
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]
+    # ...and the refinement is not a no-op: the weekend 7-year-old (H_ID 2, P_ID 3)
+    # inherits the donor's 13-year-old today and the donor's 7-year-old with fine bands.
+    coarse_child = coarse_out[(coarse_out["H_ID"] == 2) & (coarse_out["P_ID"] == 3)].iloc[0]
+    fine_child = fine_out[(fine_out["H_ID"] == 2) & (fine_out["P_ID"] == 3)].iloc[0]
+    assert (coarse_child["source_H_ID"], coarse_child["source_P_ID"]) == (1, 3)
+    assert (fine_child["source_H_ID"], fine_child["source_P_ID"]) == (1, 4)
+
+
+def _random_weekend_population(n_households=60, seed=11):
+    """A randomised donor population: mixed sizes, both day types, many school children.
+
+    Deliberately NOT hand-tuned, so the rng-invariance claim below is checked against
+    households that hit every branch of the pass (hh match, person fallback when no
+    equal-size weekday household exists, and the mixed-household sweep).
+    """
+    rng = np.random.RandomState(seed)
+    sizes = rng.choice([1, 2, 3, 4, 5], size=n_households)
+    hh_rows, person_rows = [], []
+    for offset, size in enumerate(sizes):
+        household_id = 1000 + offset
+        hh_rows.append({
+            "H_ID": household_id, "H_GR": int(size),
+            "hh_type5": rng.choice(["single", "couple", "family"]),
+            "oek_status": int(rng.choice([1, 2, 3, 4])),
+            "RegioStaR7": int(rng.choice([71, 73, 77])),
+            "H_ANZAUTO": int(rng.choice([0, 1, 2])), "H_GEW": float(rng.uniform(0.5, 3.0)),
+        })
+        weekend = bool(rng.rand() < 0.4)
+        for person_index in range(int(size)):
+            kernwo = int(rng.choice([6, 7])) if weekend else int(rng.choice([1, 2, 3]))
+            person_rows.append({
+                "H_ID": household_id, "P_ID": person_index + 1,
+                # Children dominate the 6-13 range on purpose: that is the band the
+                # refinement splits, so this is where a draw-count change would show.
+                "HP_ALTER": int(rng.choice([4, 6, 7, 8, 9, 10, 11, 12, 13, 16, 35, 45, 68])),
+                "HP_SEX": int(rng.choice([1, 2])),
+                "P_FSCHEIN": int(rng.choice([1, 2])),
+                "P_TAET": int(rng.choice([1, 5, 9, 11])),
+                "P_FKARTE": int(rng.choice([1, 3, 4, 8])),
+                "kernwo": kernwo,
+                "source_H_ID": household_id, "source_P_ID": person_index + 1,
+                "member_imputed": False, "P_GEW": float(rng.uniform(0.5, 4.0)),
+            })
+    return pd.DataFrame(hh_rows), pd.DataFrame(person_rows)
+
+
+def test_fine_child_bands_leave_the_rng_stream_untouched_on_a_randomised_population():
+    """The structural invariant, checked on 60 randomised households rather than on one
+    hand-built pair: align_members draws nothing and returns a band-independent number
+    of pairs, and match_person draws exactly one value per call, so BOTH arms end on the
+    same rng stream position however the pass branches."""
+    households, persons = _random_weekend_population()
+    coarse_rng = np.random.RandomState(23)
+    fine_rng = np.random.RandomState(23)
+    coarse_out, _t, coarse_report = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=coarse_rng, fine_child_age_bands=False)
+    fine_out, _t2, fine_report = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=fine_rng, fine_child_age_bands=True)
+
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]
+    # The pass must have done real work in both arms, and the same amount of it.
+    assert coarse_report.n_persons_remapped == fine_report.n_persons_remapped > 0
+    assert coarse_report.n_hh_matched == fine_report.n_hh_matched
+    # ...and the refinement is not a no-op on this population.
+    differing = (coarse_out["source_P_ID"].to_numpy() != fine_out["source_P_ID"].to_numpy()) | (
+        coarse_out["source_H_ID"].to_numpy() != fine_out["source_H_ID"].to_numpy())
+    assert differing.any()

@@ -251,8 +251,8 @@ DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
 # ONLY by braunschweig.popsim.completed_donor, which is where the diary match runs,
 # so it is declared there (like diary_match_hard_employment) and reaches the popsim
 # stage through that stage dependency.
-KEY_DIARY_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.diary_match_fine_child_age_bands"
-DEFAULT_DIARY_MATCH_FINE_CHILD_AGE_BANDS = True
+KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.donor_match_fine_child_age_bands"
+DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

@@ -51,7 +51,7 @@ and shared across runs (Tier B2).
    byte-identical.
    Since #386 (ADR-0118) the diary caller additionally passes
    `age_band_edges=weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES` while
-   `diary_match_fine_child_age_bands` is on, which splits the coarse 6-13 child band into
+   `donor_match_fine_child_age_bands` is on, which splits the coarse 6-13 child band into
    6-9 and 10-13 so a primary-school child cannot inherit a 13-year-old's school day. The
    same two reading rules apply, with one important difference from the employment key:
    `age_band` stays a SOFT key, so the ladder may still relax it, and a crossing is
@@ -59,7 +59,24 @@ and shared across runs (Tier B2).
    `DiaryMatchReport.n_crossed_fine_child_age_band` (over `.n_remapped_in_split_child_band`,
    the remapped 6-13-year-olds) is measured against the FINE edges in BOTH arms, so the
    flag-OFF arm reports today's rate and an A/B compares like with like; no threshold is
-   asserted and the line is always INFO. The weekend caller keeps the coarse edges.
+   asserted and the line is always INFO.
+
+   **The same key covers steps 1 and 2 as well** -- it is one decision about who is an
+   interchangeable donor, not a diary-match option. `member_completion.
+   _match_present_members` (step 1) and `weekend_plan_match.align_members` plus that pass's
+   person fallback and mixed sweep (step 2) take the same fine edges from it. Two
+   consequences to know before reading a trace or an A/B:
+   - NONE of the three passes consumes a different NUMBER of rng values under the fine
+     bands. `align_members` and `_match_present_members` draw nothing and return a
+     band-independent number of pairs (every leftover falls through to an "any free"
+     branch); `match_person` draws exactly one value per call. So the shared completion
+     stream stays at the same position in both arms -- the flag changes the ASSIGNMENT,
+     never the draw sequence. Pinned by the rng-state assertions in
+     `tests/test_weekend_plan_match.py` (including one over 60 randomised households) and
+     `tests/test_popsim_member_completion.py`.
+   - The diary match's own remap COUNT differs between the arms, because step 2 now pairs
+     household members differently and a different set of persons ends up sourced from a
+     diary-less donor. Compare rates between arms, not raw counts.
 5. **Fact attachment** — `diary_facts.attach_plan_source_facts`. Joins the facts of
    the FINAL plan source onto every person as `src_<fact>` columns. Also
    unconditional (see the propagation contract below).

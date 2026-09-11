@@ -246,7 +246,7 @@ def test_diary_match_uses_the_fine_child_bands_by_default_and_reports_the_crossi
                                         weekend_plan_match_on=True)
     coarse = cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None,
                                       weekend_plan_match_on=True,
-                                      diary_match_fine_child_age_bands=False)
+                                      donor_match_fine_child_age_bands=False)
 
     # ON (the production default): the 8-year-old inherits the 7-year-old's diary.
     fine_row = fine.persons[(fine.persons["H_ID"] == hid) & (fine.persons["P_ID"] == pid)].iloc[0]
@@ -261,8 +261,14 @@ def test_diary_match_uses_the_fine_child_bands_by_default_and_reports_the_crossi
     coarse_row = coarse.persons[(coarse.persons["H_ID"] == hid) & (coarse.persons["P_ID"] == pid)].iloc[0]
     assert (coarse_row["source_H_ID"], coarse_row["source_P_ID"]) == (2, 3)
     assert coarse.diary_report.n_crossed_fine_child_age_band >= 1
+    # The two arms do NOT have the same number of remaps: the flag also refines the
+    # WEEKEND match that runs before this one, so household 3's members are paired with
+    # different weekday donors and a different number of them end up sourced from the
+    # diary-less 8-year-old. Every remapped person in either arm is a 6-13-year-old here.
     assert (coarse.diary_report.n_remapped_in_split_child_band
-            == fine.diary_report.n_remapped_in_split_child_band)
+            == coarse.diary_report.n_remapped)
+    assert (fine.diary_report.n_remapped_in_split_child_band
+            == fine.diary_report.n_remapped)
     # The rate is logged, not silently carried in the report only.
     assert any("fine child age band crossed by 0/" in record.getMessage()
                and "remapped 6-13-year-olds" in record.getMessage()
