@@ -145,13 +145,36 @@
     therefore NOT required to be 0 with the flag on, and **no threshold is asserted** -- asserting
     one would require a reference for how often the ladder should relax, which does not exist. The
     comparison is the A/B, not a bound.
-  - NOT MEASURED YET at production scale: the realised effect on school-trip length by age band.
-    The A/B the issue asks for has not been run, so this record documents a mechanism and a
-    measured motivation, not a validated improvement. Flipping the single key in
+  - NOT MEASURED: the realised effect on school-trip LENGTH by age band. The crossing rate below
+    is measured, the downstream consequence is not, so this record documents a corrected
+    mechanism, not a validated improvement of the population. Flipping the single key in
     `configs/base_bs.yml` reverts it.
 
+- **Measured on the raw MiD 2023 B1 delivery** (2026-09-11, `random_seed` 1234, 485,709 donor
+  persons, 74,898 remaps of which 4,673 are 6-13-year-olds; reproducible with
+  `scripts/measure_donor_match_fine_child_bands.py`, which carries the same figures in its
+  docstring):
+
+  | `donor_match_fine_child_age_bands` | fine-band crossings among remapped 6-13-year-olds | `match_level` histogram |
+  |---|---|---|
+  | `false` (today) | **2,371 / 4,673 = 50.74 %** | `{0: 74896, 2: 2}` |
+  | `true` (this change) | **0 / 4,673 = 0.00 %** | `{0: 74896, 2: 2}` |
+
+  Two readings, both load-bearing for this decision. **(1)** 50.74 % is what blind drawing from
+  two roughly equally sized halves produces, so the coarse band carried essentially NO information
+  inside 6-13 -- the key was a coin flip there, which is a stronger justification than "it
+  sometimes mismatches". **(2)** The two match-level histograms are IDENTICAL, so the refinement
+  costs **no additional ladder relaxation**: the donor pool holds a same-fine-band donor for
+  practically every child, and the change does not trade one defect for a thinner pool. That was
+  the main risk of rejected alternative 5 and it is now measured, not assumed.
+
+  SCOPE of this measurement: the DIARY match only (it was run against the diary-only revision).
+  The identical refinement in member completion and the weekend match is NOT in these numbers, and
+  the weekend match is the larger pass -- so 0.00 % is evidence for matcher 3, not for all three.
+
 - **Evidence:** issue **#386** and its raw-MiD Finding (2026-09-09); the 100 % donor-build log of
-  2026-09-11 for the pass sizes quoted above; the implementation in
+  2026-09-11 for the pass sizes quoted above; `scripts/measure_donor_match_fine_child_bands.py`
+  and the A/B table above; the implementation in
   `braunschweig/popsim/weekend_plan_match.py` (`FINE_CHILD_AGE_BAND_EDGES`, `age_band_index`,
   `align_members(age_band_edges=...)`, `match_person(age_band_edges=...)`,
   `reassign_weekend_plan_sources(fine_child_age_bands=...)`),

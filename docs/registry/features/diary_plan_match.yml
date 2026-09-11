@@ -117,7 +117,13 @@ evidence:
       member completion's mirror role matching and the weekend match's member alignment as well
       as this re-draw -- so an A/B on it is NOT an isolation of this feature; the upstream passes
       also move, and this pass's remap COUNT therefore differs between the arms (compare rates).
-      The stage record braunschweig.popsim.completed_donor.yml owns the full description. Here the
+      The stage record braunschweig.popsim.completed_donor.yml owns the full description, and
+      ADR-0118 the measured A/B: on the raw MiD 2023 B1 delivery (2026-09-11, seed 1234,
+      scripts/measure_donor_match_fine_child_bands.py) the crossing rate among the 4,673 remapped
+      6-13-year-olds falls from 2,371 (50.74 %) with the flag off to 0 (0.00 %) with it on, at an
+      IDENTICAL match-level histogram ({0: 74896, 2: 2}) in both arms -- the refinement costs no
+      additional ladder relaxation. That measurement covers this pass only, not the two upstream
+      matchers the same key also refines. Here the
       pass counts DiaryMatchReport.n_crossed_fine_child_age_band
       over n_remapped_in_split_child_band -- remaps of persons aged 6-13 (the one coarse band
       weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES splits) whose donor lands in a different FINE
