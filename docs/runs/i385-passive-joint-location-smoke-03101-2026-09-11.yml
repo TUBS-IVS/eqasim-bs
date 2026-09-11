@@ -1,0 +1,56 @@
+id: i385-passive-joint-location-smoke-03101-2026-09-11
+date: '2026-09-11'
+repository:
+  commit: 4d22aeefe40c83cfa32da2b304f4a64709051a1c
+  branch: feature/i385-passive-joint-location
+configuration:
+  base: 'configs/config_local_i385_mini.yml (gitignored local test bed =
+    configs/fixtures/config_smoke_popsim_mid_mini.yml + the base_bs.yml escort/purpose block,
+    secondary_building_potentials false, commute-day model off,
+    braunschweig.population.popsim.max_cells 1000, braunschweig.population.popsim.num_workers 1)'
+  overlays: []
+  notes: 'Local smoke, not a production or overlay-based configuration. Run target restricted
+    to braunschweig.synthesis.locations.secondary_chainsolvers (the config''s own run list),
+    so only the stages the chainsolver depends on execute.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: Kreis 03101 only
+pipeline:
+  targets:
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+classification:
+- smoke
+status:
+  execution: running
+environment: local (Windows, eqasim env)
+validation:
+- metric: passive joint link rate (measure-first, build_passive_joint_links on the fresh trips/persons
+    frames before the two-pass wiring)
+  reference: none -- a descriptive rate, not a target
+  result: PENDING_MEASUREMENT
+- metric: OFF-path frame equality after the _solve_problem_set extraction (pd.testing.assert_frame_equal
+    on df_locations sorted by person_id/activity_index, and on df_convergence, pre- vs post-refactor
+    stage output)
+  reference: the pre-refactor stage output on the same test bed
+  result: PENDING_MEASUREMENT
+- metric: 'ON run: children placed at the adult''s location (link rate, anchor-resolution rate,
+    share of anchored child activities whose geometry equals the adult''s -- expected 100% of
+    resolved links by construction --, fallback accounting vs OFF, pass sizes, wall time of both
+    passes)'
+  reference: none -- a descriptive/mechanism check, not a behavioural target
+  result: PENDING_MEASUREMENT
+features:
+  note: 'First test-bed exercise of escort_passive_joint_location (issue #385, ADR-0119). The
+    run is not yet complete at the time this manifest was written (documentation Task 7 of the
+    SDD plan was dispatched while the test-bed run was still executing); every result field
+    above is a placeholder for the controller to fill from the completed measurement/OFF/ON
+    steps.'
+artifacts:
+- 'local cache (gitignored, not committed): eqasim-data/cache_mini_popsim_mid'
+issues:
+- '#385'
+decisions:
+- ADR-0119
+source: '.superpowers/sdd/2026-09-11-passive-escort-joint-location/ (design spec
+  docs/superpowers/specs/2026-09-11-passive-escort-joint-location-design.md; task briefs/reports
+  task-1 through task-7)'

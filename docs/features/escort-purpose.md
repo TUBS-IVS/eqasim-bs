@@ -138,6 +138,38 @@ Phase 2 -- anchoring the child's joint activity at the ADULT's chosen secondary
 location (the inverse of the #201 household link) -- is deliberately NOT part of
 this rule and is tracked as issue #385.
 
+## Joint location (ADR-0119)
+`escort_passive_joint_location` (issue #385; code default OFF, `true` in
+configs/base_bs.yml; requires `escort_passive_from_adult`) anchors a PAIRED
+passive escort child's joint activity (shop/leisure/other) at the accompanying
+adult's PLACED secondary location instead of drawing the child's location
+independently -- the inverse of the #201 household link, which anchors the
+ADULT at the CHILD's education location.
+
+`braunschweig/synthesis/locations/passive_joint_links.py` links each paired
+code-13 leg to the adult's activity by PLAN-SOURCE identity inside the
+synthetic household, then by the adult's leg `W_ID`; a link is kept only when
+BOTH activities are secondary. The chainsolver stage then solves in TWO passes
+(`secondary_chainsolvers._compose_two_pass`): pass 1 places everyone who is not
+a linked child, pass 2 places the linked children with a fixed boundary purpose
+`passive_linked` anchored at the adult's pass-1 location
+(`ANCHORED_PURPOSES` in `synthesis/population/spatial/secondary/problems.py`).
+Both passes share ONE `RandomState`, so an ON/OFF comparison is a different
+Monte-Carlo realisation, not a pure anchoring effect.
+
+Excluded and counted, never silently dropped: the adult's trip home and own
+Bringen/Holen leg (handled by the #201 link), the adult's work/education leg
+(needs primary facility ids, deferred -- ~4.2 % of raw pairs, ADR-0112), an
+adult absent from the synthetic household, and a missing adult leg. The link
+rate (with its exclusion split) and the anchor-resolution rate are logged
+every run under the `[passive_joint_links]` marker, escalating to WARNING at
+pathological values.
+
+This is a SMOKE, not a validation: no observed reference exists for "child
+and adult end up at the same place" -- only the mechanism's own rates are
+checked. See `docs/registry/features/escort_passive_joint_location.yml` for
+the current production state and measured rates.
+
 ## Validation
 With `escort_passive_education` ON the model's `escort` purpose is active-only,
 so the W1 scoring uses the active-adjusted target (begleitung x active_share;
@@ -174,4 +206,6 @@ active/passive split.
 #241 (MiD W_ZWECK 14-16/99 mapping gap, ADR-0091) and #242 (SrV subtype
 re-validation, measured and committed under ADR-0113) are done; #372 is the
 passive-leg rule documented above (ADR-0112). #243 was folded into this feature
-(education-type split). Still open: #385 (Phase 2 joint location).
+(education-type split). #385 (Phase 2 joint location) is documented above
+("Joint location (ADR-0119)"); see the feature record for its live
+(production/measurement) state.

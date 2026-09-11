@@ -33,6 +33,7 @@ resolves_to:
 features:
 - building_potentials_secondary
 - detour_circuity_curve
+- escort_passive_joint_location
 - escort_purpose
 - leisure_unspecified_subtype
 - no_answer_codes_excluded
@@ -52,6 +53,7 @@ decisions:
 - ADR-0115
 - ADR-0116
 - ADR-0117
+- ADR-0119
 notes: >-
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
@@ -137,3 +139,40 @@ notes: >-
   known. Measured on the 2026-09 delivery (ad hoc): errand 0.5304 -> 0.5540, rest 0.4696 ->
   0.4460. The two sibling builders are unaffected -- they already reuse the sentinel-carrying
   specs of purpose_subtype, which is exactly the pattern this closes for the coarse split.
+
+
+  PASSIVE JOINT LOCATION (issue #385, ADR-0119; designed and implemented as ADR-0118, renumbered
+  on discovering that id was already taken by another merged branch -- see ADR-0119's Numbering
+  paragraph): with escort_passive_joint_location on (code default false; requires
+  escort_passive_from_adult, itself requiring escort_purpose; production true in
+  configs/base_bs.yml), execute() solves the population in TWO passes instead of one
+  (_compose_two_pass, built on _solve_problem_set -- the solve body extracted verbatim from the
+  pre-refactor stage so the RNG call order and the len(plans_df) == 0 early return are unchanged).
+  Pass 1 solves everybody who is not a linked child, carrying their own #201 escort anchors; pass 2
+  solves the linked children -- identified by braunschweig.synthesis.locations.passive_joint_links.
+  build_passive_joint_links on the phase-1 (#372, ADR-0112) passive-pairing columns -- with a fixed
+  boundary purpose passive_linked on both sides of the anchored activity
+  (secondary_chainsolvers.escort.rewrite_anchored_activities) plus the adult's placed location
+  resolved by resolve_joint_anchors. The passive_linked boundary is resolved through the SAME
+  activity_anchors mapping as the #201 escort_linked boundary, via
+  ANCHORED_PURPOSES = ("escort_linked", "passive_linked") in
+  synthesis/population/spatial/secondary/problems.py (_anchor_coordinates, unchanged fail-fast
+  contract). Both solver passes share ONE RandomState built once in _build_shared_solve_state
+  before either pass runs, so an ON/OFF comparison is a different Monte-Carlo realisation, not
+  attributable to the anchoring mechanism alone (ADR-0119 Consequences). The link rate (with its
+  three-way exclusion split: adult not in the synthetic household, adult leg missing, purpose not
+  secondary) and the anchor-resolution rate are logged every run ([passive_joint_links] marker),
+  escalating to WARNING at pathological values. _log_subtype_draw_rates and the SrV
+  draw-rate/summary-CSV writer now run ONCE, AFTER both passes complete, over the summed subtype
+  statistics of all passes (_sum_subtype_stats, _concat_desired_by_category) -- reporting only, but
+  a crashed solve now loses these log lines and the SrV summary write, where the pre-refactor
+  single-pass code would already have written them. The _solve_problem_set extraction also
+  surfaced an unrelated, intended behaviour change on the zero-bounded-legs early-return path:
+  execute() now continues after that return and still appends the #201 linked_location_rows and
+  prints the success rate, which the pre-refactor inline code skipped (silently dropping any
+  escort-linked rows on that path); unreachable on a real run. OFF is one pass over the whole
+  population, INTENDED to be frame-equal to the pre-refactor stage output by construction of the
+  verbatim extraction; the empirical result on the Kreis-03101 smoke is recorded in
+  docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml (PENDING at the time of this
+  note). No new stage, DAG unchanged: the stage already reads synthesis.population.sampled and
+  synthesis.population.trips.final.
