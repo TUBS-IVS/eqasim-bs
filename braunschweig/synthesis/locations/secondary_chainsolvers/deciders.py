@@ -400,10 +400,14 @@ def _build_other_subtype_decider(context, random_seed: int):
         tt_band,
     )
     from braunschweig.popsim.stage.config_keys import (
-        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
-        PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
+        PURPOSE_BY_W_ZWECK, W_ZWECK_NO_ANSWER_CODE, map_mode, mid_time_seconds,
+        restrict_to_weekday_diary_legs)
+
+    exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
 
     # Same flag/default as _build_leisure_subtype_decider and
     # distance_distributions -- the key name is IMPORTED, not retyped (see the
@@ -443,11 +447,23 @@ def _build_other_subtype_decider(context, random_seed: int):
         coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
                          "escort": OTHER_ESCORT_ZWECK,
                          "rest": other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK}
+    # exclude_no_answer_purpose_legs (ADR-0117): W_ZWECK 99 "keine Angabe" maps to the eqasim
+    # purpose "other", so without this it sits inside the "rest" GROUP and is estimated as if the
+    # respondent had answered "some other purpose" -- 2.80 % of everything the model calls "other"
+    # (2026-09 delivery, ad hoc). Moving it into the spec's SENTINELS takes it out of numerator
+    # AND denominator, exactly as the W_ZWD no-detail codes are handled one level down, so
+    # errand/escort/rest renormalise over the legs whose purpose is known. It must leave the
+    # "rest" group in the same breath: SubtypeSpec refuses a code that is both grouped and a
+    # sentinel.
+    coarse_sentinels = frozenset()
+    if exclude_no_answer_purpose and W_ZWECK_NO_ANSWER_CODE in other_zweck:
+        coarse_sentinels = frozenset({W_ZWECK_NO_ANSWER_CODE})
+        coarse_groups = {name: codes - coarse_sentinels for name, codes in coarse_groups.items()}
     coarse_spec = SubtypeSpec(
         purpose_label="other_coarse",
         zweck_values=other_zweck,
         groups=coarse_groups,
-        sentinels=frozenset(),
+        sentinels=coarse_sentinels,
         group_col="W_ZWECK",
     )
     coarse_cell_probs, coarse_marginal = estimate_group_probabilities(

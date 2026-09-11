@@ -26,7 +26,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.popsim.distance_distributions import (
-    _build_leisure_unspecified_layer, run)
+    DETOUR_FACTOR, _build_leisure_unspecified_layer, run)
 from braunschweig.popsim.purpose_subtype import OTHER_ERRAND_GROUPS, LEISURE_GROUPS
 
 DETOUR_FACTOR = 1.3
@@ -534,3 +534,53 @@ def test_weekday_legs_only_off_needs_no_universe_column():
     wege = _make_subtype_wege().drop(columns=["kernwo", "W_RBW"])
     out = run(wege, by_purpose=True, leisure_subtype_split=True)
     assert "leisure" in out
+
+
+# ---------------------------------------------------------------------------
+# exclude_no_answer_purpose: MiD W_ZWECK 99 "keine Angabe" legs are a NON-ANSWER,
+# not a purpose, so they must not feed any donor pool (issue #373 follow-up, ADR-0117).
+# ---------------------------------------------------------------------------
+
+_NO_ANSWER_KM = 44.0   # distinct from every other fixture distance
+
+
+def _wege_with_a_no_answer_purpose_leg():
+    """The subtype fixture plus two W_ZWECK 99 legs carrying a unique distance."""
+    rows: list = []
+    row_id = _add_rows(rows, 0, w_zweck=7, w_zwd=706, wegkm=_LEISURE_LOCAL_KM)
+    row_id = _add_rows(rows, row_id, w_zweck=5, w_zwd=601, wegkm=_OTHER_ERRAND_SHORT_KM)
+    _add_rows(rows, row_id, w_zweck=99, w_zwd=7704, wegkm=_NO_ANSWER_KM)
+    return pd.DataFrame(rows)
+
+
+def test_no_answer_purpose_legs_are_excluded_from_every_donor_pool():
+    out = run(_wege_with_a_no_answer_purpose_leg(), by_purpose=True,
+              exclude_no_answer_purpose=True)
+    for key, layer in out.items():
+        values = {v for mode in layer.values() for d in mode["distributions"] for v in d["values"]}
+        assert not any(abs(v * DETOUR_FACTOR / 1000.0 - _NO_ANSWER_KM) < 1e-9 for v in values), key
+
+
+def test_no_answer_purpose_legs_are_kept_when_the_flag_is_off():
+    """The OFF path is the pre-feature behaviour: the legs stay in the 'other' pool."""
+    out = run(_wege_with_a_no_answer_purpose_leg(), by_purpose=True,
+              exclude_no_answer_purpose=False)
+    values = {v for mode in out["other"].values()
+              for d in mode["distributions"] for v in d["values"]}
+    assert any(abs(v * DETOUR_FACTOR / 1000.0 - _NO_ANSWER_KM) < 1e-9 for v in values)
+
+
+def test_no_answer_purpose_exclusion_leaves_the_other_pools_untouched():
+    on = run(_wege_with_a_no_answer_purpose_leg(), by_purpose=True, exclude_no_answer_purpose=True)
+    without = run(_wege_with_a_no_answer_purpose_leg().query("W_ZWECK != 99"), by_purpose=True,
+                  exclude_no_answer_purpose=False)
+    assert set(on) == set(without)
+    for key in without:
+        assert _serialise(on[key]) == _serialise(without[key]), key
+
+
+def test_no_answer_purpose_exclusion_logs_the_rate(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        run(_wege_with_a_no_answer_purpose_leg(), by_purpose=True, exclude_no_answer_purpose=True)
+    assert "no-answer purpose" in caplog.text and "15/45" in caplog.text

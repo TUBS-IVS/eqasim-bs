@@ -47,7 +47,7 @@ FEATURE_FLAGS_ON = [
     # estimation universe while every test stayed green.
     "w_zweck_10_as_leisure", "escort_passive_from_adult",
     "purpose_subtype_codeplan_sentinels", "leisure_unspecified_subtype",
-    "secondary_mid_weekday_legs_only",
+    "secondary_mid_weekday_legs_only", "exclude_no_answer_purpose_legs",
     # Run resource recorder (issue #350). Guarded here because a run without its
     # resource series cannot answer afterwards what it peaked at -- the datum the
     # 2026-08-24 run lost with its processes.

@@ -625,8 +625,14 @@ def run(
     # the ENTD detour factor gives the straight-line distance in km; * 1000 -> m.
     # --------------------------------------------------------------------------
     if "wegkm_imp" in table.columns:
+        # Guarded: a MiD design code (>= 9994 "unplausibel" / "keine Angabe") or a missing
+        # length would become a 7,688 km euclidean_distance on the trips CONTRACT, from
+        # where it reaches every downstream consumer (ADR-0117). The 2026-09 delivery
+        # carries none, so this is byte-identical on it.
         table["euclidean_distance"] = (
-            table["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+            _diary_facts.validate_trip_length_km(
+                table["wegkm_imp"], log_tag="[popsim.trips_stage]")
+            * 1000.0 / DETOUR_FACTOR
         )
 
     # Build final column order: CONTRACT first, then extras (euclidean_distance,

@@ -1607,3 +1607,58 @@ def test_secondary_mid_weekday_legs_only_default_agrees_across_its_two_homes():
         DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY
     assert distance_ctx.registered[KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY] == \
         DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY
+
+
+# ---------------------------------------------------------------------------
+# exclude_no_answer_purpose_legs: MiD W_ZWECK 99 "keine Angabe" is not a purpose,
+# so the coarse other-split must not estimate a "rest" share on it (ADR-0117).
+# ---------------------------------------------------------------------------
+
+def _other_wege_with_no_answer_legs():
+    """Errand legs (W_ZWECK 5) plus the same number of no-answer legs (W_ZWECK 99).
+
+    With the no-answer legs counted as "rest" the coarse marginal is 50/50; with them
+    excluded, "errand" is the only answered outcome and takes the whole mass.
+    """
+    rows: list = []
+    row_id = _add_rows(rows, 0, w_zweck=5, w_zwd=601, wegkm=6.0, n=40)
+    _add_rows(rows, row_id, w_zweck=99, w_zwd=7704, wegkm=44.0, n=40)
+    return pd.DataFrame(rows)
+
+
+def test_other_coarse_split_excludes_the_no_answer_purpose_legs(monkeypatch):
+    ctx = _decider_context({"secondary_other_subtype_split": True, "escort_purpose": True,
+                            "exclude_no_answer_purpose_legs": True},
+                           monkeypatch, _other_wege_with_no_answer_legs())
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    assert decide is not None
+    # Every "other" leg resolves to an errand subtype: "rest" was pure no-answer mass.
+    for tt in (100.0, 500.0, 900.0, 2000.0):
+        assert decide("car", tt).startswith("other_errand")
+
+
+def test_other_coarse_split_keeps_the_no_answer_legs_when_the_flag_is_off(monkeypatch):
+    ctx = _decider_context({"secondary_other_subtype_split": True, "escort_purpose": True,
+                            "exclude_no_answer_purpose_legs": False},
+                           monkeypatch, _other_wege_with_no_answer_legs())
+    decide = sc._build_other_subtype_decider(ctx, random_seed=1)
+    outcomes = {decide("car", tt) for tt in (100.0, 300.0, 500.0, 700.0, 900.0, 1500.0, 2000.0)}
+    # The pre-feature behaviour: half the coarse mass is "rest", so it is reachable.
+    assert "other_rest" in outcomes
+
+
+def test_exclude_no_answer_purpose_default_agrees_across_its_two_homes():
+    """Both consumer stages declare the key from the ONE constant pair in config_keys, so the
+    coarse split estimated here and the donor pool built there can never disagree about which
+    legs answered the purpose question (ADR-0117)."""
+    import braunschweig.popsim.distance_distributions as dd
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS, KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
+
+    assert DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS is True
+    ctx = _FakeContext()
+    sc.configure(ctx)
+    assert ctx.registered[KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS] is DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS
+    ctx_dd = _FakeContext()
+    dd.configure(ctx_dd)
+    assert ctx_dd.registered[KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS] is DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS

@@ -103,6 +103,7 @@ from synthesis.population.spatial.secondary import (
 # under escort_passive_from_adult -- for exactly the reason trips_stage.py hashes it (see
 # the _HELPER_MODULES comment below).
 from braunschweig import constants as _constants
+from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import time_imputation as _time_imputation
 from braunschweig.popsim import trips as _trips
@@ -143,6 +144,7 @@ from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 # helpers above and are checked for import cycles (neither has any first-party import).
 _HELPER_MODULES = (
     _trips,
+    _diary_facts,
     _time_imputation,
     _escort_pairing,
     _constants,
@@ -406,7 +408,8 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         drop_leading_arrive_home_leg: bool = False,
         codeplan_sentinels: bool = False,
         leisure_unspecified_subtype: bool = False,
-        weekday_legs_only: bool = False) -> dict:
+        weekday_legs_only: bool = False,
+        exclude_no_answer_purpose: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -751,7 +754,12 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     # --- Step 4: compute euclidean_distance in metres from wegkm_imp. ------
     # wegkm_imp is the MiD imputed routed trip length in kilometres.
     # Dividing by DETOUR_FACTOR gives the straight-line distance in km; x1000 -> m.
-    df["distance"] = df["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+    # The guard rejects MiD design codes (>= 9994) and missing/non-positive lengths BEFORE the
+    # conversion: unguarded, a refused answer would enter every layer below as a 7,688 km
+    # straight-line leg, and a NaN would sit inside the cumulative distribution with its weight
+    # attached (ADR-0117). It cannot fire on the 2026-09 delivery, which carries none.
+    df["distance"] = _diary_facts.validate_trip_length_km(
+        df["wegkm_imp"], log_tag="[popsim.distance_distributions]") * 1000.0 / DETOUR_FACTOR
 
     # --- Step 5: select columns needed and filter primary-only trips. ------
     # Keep W_ZWD when present: needed by Task 5 (shop daily split) and
@@ -781,6 +789,46 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         100.0 * n_excluded / n_before if n_before > 0 else 0.0,
         n_after,
     )
+
+    # --- Step 5b: drop legs that cannot inform a distance pool (ADR-0117). ---
+    # Two separate reasons, counted separately because they mean different things:
+    #   * NO-ANSWER PURPOSE (flag-gated): the respondent did not say why they travelled
+    #     (W_ZWECK 99). The leg is a real trip and the trip build still gives it the "other"
+    #     purpose, but it must not shape what "other" trips LOOK like -- otherwise 2.8 % of the
+    #     "other" pool is legs whose purpose is unknown, and every share estimated on it is
+    #     diluted by a non-answer. Excluding them here renormalises the pools over legs whose
+    #     purpose is actually known.
+    #   * MISSING DISTANCE (always): a leg without a usable length cannot contribute a length.
+    #     validate_trip_length_km already RAISED on the impossible values (design codes,
+    #     non-positive); what can still be NaN here is a structurally unsurveyed leg, and such a
+    #     leg must not sit inside a cumulative distribution with its weight attached.
+    # Both run AFTER the chain has been derived (Step 2) and after the primary-both filter
+    # (Step 5), so neither changes any other leg's preceding_purpose.
+    n_before_pool = len(df)
+    if exclude_no_answer_purpose:
+        if "W_ZWECK" not in df.columns:
+            raise ValueError(
+                "[popsim.distance_distributions] exclude_no_answer_purpose=True needs the raw "
+                "W_ZWECK column (it names the no-answer legs), but it is absent from the frame; "
+                "the exclusion cannot be applied and must not be skipped silently.")
+        is_no_answer = pd.to_numeric(df["W_ZWECK"], errors="coerce") == _trips.W_ZWECK_NO_ANSWER_CODE
+        n_no_answer = int(is_no_answer.sum())
+        logger.info(
+            "[popsim.distance_distributions] no-answer purpose (W_ZWECK %d) legs excluded from "
+            "every donor pool: %d/%d legs (%.2f%%)", _trips.W_ZWECK_NO_ANSWER_CODE, n_no_answer,
+            n_before_pool, 100.0 * n_no_answer / n_before_pool if n_before_pool else float("nan"))
+        df = df[~is_no_answer]
+    n_missing_distance = int(df["distance"].isna().sum())
+    if n_missing_distance:
+        logger.info(
+            "[popsim.distance_distributions] legs without a usable length excluded from every "
+            "donor pool: %d/%d (%.2f%%)", n_missing_distance, len(df),
+            100.0 * n_missing_distance / len(df) if len(df) else float("nan"))
+        df = df[df["distance"].notna()]
+    if len(df) == 0:
+        raise ValueError(
+            "[popsim.distance_distributions] no leg survives the donor-pool filters "
+            f"({n_before_pool} before); the distance distributions would be empty.")
 
     # --- Step 6: build per-mode (or per-purpose × mode) distributions. ------
     if not by_purpose:
@@ -950,11 +998,13 @@ def configure(context):
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config("braunschweig.population.popsim.mid_dir")
@@ -1051,6 +1101,12 @@ def configure(context):
     # needs it; it applies to every layer this stage builds, including the aggregate one.
     context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
                    DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
+    # exclude_no_answer_purpose_legs (ADR-0117), shared with the same stage for the same
+    # reason: a leg whose MAIN purpose is the MiD no-answer code must not shape what the
+    # purposes it is NOT an answer about look like. Declared unconditionally, since it
+    # applies to every layer this stage builds, the aggregate one included.
+    context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+                   DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
 
 
 def execute(context):
@@ -1067,6 +1123,7 @@ def execute(context):
         KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
 
@@ -1086,6 +1143,7 @@ def execute(context):
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     # One-argument execute-context read (the key and its default are declared in configure()).
     weekday_legs_only = bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY))
+    exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -1110,4 +1168,5 @@ def execute(context):
         codeplan_sentinels=codeplan_sentinels,
         leisure_unspecified_subtype=leisure_unspecified_subtype,
         weekday_legs_only=weekday_legs_only,
+        exclude_no_answer_purpose=exclude_no_answer_purpose,
     )

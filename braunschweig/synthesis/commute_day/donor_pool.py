@@ -62,7 +62,7 @@ from braunschweig.calibration.commute_day_state_reference import (
 )
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 from braunschweig.popsim.chain_matching import derive_age_class
-from braunschweig.popsim.diary_facts import compute_diary_facts
+from braunschweig.popsim.diary_facts import compute_diary_facts, validate_trip_length_km
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
 from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, build_validated_trip_table)
@@ -729,7 +729,11 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
             "must replace every coded-time donor before the donor pool is built.")
 
     if "wegkm_imp" in table.columns:
-        table["euclidean_distance"] = table["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+        # Guarded like the trip build itself: the donor pool's distances are copied
+        # verbatim onto the replaced rows, so a MiD design code would travel into the
+        # spliced home-office chains unchanged (ADR-0117).
+        table["euclidean_distance"] = validate_trip_length_km(
+            table["wegkm_imp"], log_tag="[commute_day.donor_pool]") * 1000.0 / DETOUR_FACTOR
 
     table = table.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
     table = table.rename(columns={"person_id": "donor_id"})

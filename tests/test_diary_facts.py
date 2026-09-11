@@ -121,3 +121,66 @@ def test_compute_diary_facts_ignores_nan_codes_on_rbw_legs():
     wege.loc[2, "W_SO1"] = np.nan    # an rbW leg of person (1, 1)
     facts = df_mod.compute_diary_facts(wege)
     assert facts.loc[(1, 1), "n_rbw_legs"] == 2
+
+
+# ---------------------------------------------------------------------------
+# validate_trip_length_km: the shared guard against MiD design codes in a
+# distance column (issue #373 follow-up, ADR-0117).
+# ---------------------------------------------------------------------------
+
+def test_validate_trip_length_km_accepts_a_clean_column():
+    import pandas as pd
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    # Returns the coerced numeric series unchanged; the 2026-09 MiD delivery's own
+    # maximum is 950 km, so a realistic long leg must pass.
+    out = validate_trip_length_km(pd.Series(["1.5", "950.0", "0.1"]), log_tag="[t]")
+    assert list(out) == [1.5, 950.0, 0.1]
+
+
+def test_validate_trip_length_km_raises_on_a_design_code():
+    import pandas as pd
+    import pytest
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    with pytest.raises(ValueError, match="9994"):
+        validate_trip_length_km(pd.Series([1.0, 9994.0, 2.0]), log_tag="[t]")
+
+
+def test_validate_trip_length_km_passes_missing_through_and_logs_the_rate(caplog):
+    import logging
+
+    import pandas as pd
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    # A NaN is STRUCTURAL: the closure/dwell synthesis adds legs that were never surveyed.
+    # It is counted and logged, never raised on and never silently dropped.
+    with caplog.at_level(logging.INFO):
+        out = validate_trip_length_km(pd.Series([1.0, float("nan")]), log_tag="[t]")
+    assert out.isna().sum() == 1
+    assert "1/2" in caplog.text and "missing" in caplog.text
+
+
+def test_validate_trip_length_km_raises_on_a_non_positive_length():
+    import pandas as pd
+    import pytest
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    with pytest.raises(ValueError, match="non-positive"):
+        validate_trip_length_km(pd.Series([1.0, 0.0]), log_tag="[t]")
+
+
+def test_validate_trip_length_km_names_the_caller_and_the_count():
+    import pandas as pd
+    import pytest
+
+    from braunschweig.popsim.diary_facts import validate_trip_length_km
+
+    with pytest.raises(ValueError) as excinfo:
+        validate_trip_length_km(pd.Series([1.0, 9994.0, 9999.0]), log_tag="[mystage]")
+    message = str(excinfo.value)
+    assert "[mystage]" in message and "2/3" in message

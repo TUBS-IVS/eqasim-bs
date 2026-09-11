@@ -25,6 +25,63 @@ REQUIRED_WEGE_COLUMNS = ("W_ZWECK", "W_RBW", "W_SO1", "wegkm_imp")
 #: MiD wegkm_imp codes >= this value are missing-value codes (9994 "unplausibel", 9999 ...); they
 #: are counted as 0 km and reported.
 WEGKM_CODE_MIN = 9994.0
+
+
+def validate_trip_length_km(values, *, log_tag: str):
+    """Return ``values`` coerced to float, RAISING if any entry is an IMPOSSIBLE trip length.
+
+    The shared guard for every consumer that turns a MiD trip-length column into a DISTANCE --
+    a distribution, a donor pool, a mean, or a contract column (issue #373 follow-up, ADR-0117).
+    It separates two classes that must not be treated alike:
+
+    * **Impossible (RAISES).** A MiD design code (``>= WEGKM_CODE_MIN``: 9994 "unplausibel", 9999
+      "keine Angabe") or a non-positive length. MiD codes item non-response NUMERICALLY, so an
+      unguarded consumer turns a refused answer into a 9,994 km trip, which ``* 1000 /
+      DETOUR_FACTOR`` stores as a 7,688 km straight-line leg inside a cumulative distribution --
+      where it is drawable. No delivery can legitimately contain these in a distance column, so
+      the run stops instead of poisoning every layer downstream.
+    * **Missing (COUNTED and logged, never silently dropped).** A NaN is STRUCTURAL here: the
+      closure/dwell synthesis adds legs that were never surveyed and therefore carry no
+      ``wegkm_imp``. Raising on those would reject a legitimate trip table, so the rate is logged
+      and the NaN is passed through; it is each caller's own decision what to do with it (the
+      distance-distribution stage drops such legs from its pools with its own logged rate; the
+      trip build keeps the column NaN, which is what a leg without a surveyed length means).
+
+    The 2026-09 MiD 2023 B1 delivery carries ZERO impossible values in ``wegkm_imp`` (measured
+    2026-09-11 over all 1,087,393 rows: no NaN, no value <= 0, maximum 950 km), so this guard
+    cannot fire on it and every consumer is byte-identical on it.
+
+    Parameters
+    ----------
+    values : Series
+        The raw trip-length column (km), possibly still text.
+    log_tag : str
+        The caller's log tag, so the message names which consumer read the column.
+    """
+    km = pd.to_numeric(values, errors="coerce")
+    n_total = int(len(km))
+    is_missing = km.isna()
+    is_code = km >= WEGKM_CODE_MIN
+    is_non_positive = (km <= 0) & ~is_missing
+    n_impossible = int((is_code | is_non_positive).sum())
+    if n_impossible:
+        raise ValueError(
+            f"{log_tag} trip length column: {n_impossible}/{n_total} values are impossible "
+            f"distances ({int(is_code.sum())} MiD design codes >= {WEGKM_CODE_MIN:.0f}, i.e. "
+            f"9994 'unplausibel' / 9999 'keine Angabe', {int(is_non_positive.sum())} "
+            "non-positive). A design code must never enter a distance distribution, a donor pool "
+            "or a contract column -- it would become a 7,688 km leg; see ADR-0117."
+        )
+    n_missing = int(is_missing.sum())
+    if n_missing:
+        logger.info(
+            "%s trip length column: %d/%d values (%.2f%%) are missing (structural -- a leg the "
+            "closure/dwell synthesis added was never surveyed); passed through as NaN for the "
+            "caller to handle", log_tag, n_missing, n_total,
+            100.0 * n_missing / n_total if n_total else float("nan"))
+    return km.astype(float)
+
+
 FACT_COLUMNS = ("n_direct_legs", "n_rbw_legs", "rbw_distance_km", "first_so1",
                 "first_direct_zweck", "last_direct_zweck", "ends_at_home", "starts_arriving_home")
 _FILL = {"n_direct_legs": 0, "n_rbw_legs": 0, "rbw_distance_km": 0.0, "first_so1": -1,

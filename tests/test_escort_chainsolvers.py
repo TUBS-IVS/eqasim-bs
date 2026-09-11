@@ -328,6 +328,10 @@ def test_other_subtype_decider_drops_escort_group_when_escort_purpose_on(monkeyp
         # the weekday diary universe cannot be expressed on it (and would raise, by design),
         # and this test is about the escort_purpose group drop, not about the leg universe.
         "secondary_mid_weekday_legs_only": False,
+        # issue #373 / ADR-0117: also read unconditionally by this builder. OFF here so the
+        # coarse split keeps its pre-feature group membership -- this mini fixture carries
+        # no W_ZWECK 99 legs anyway, and the test is about the escort group drop.
+        "exclude_no_answer_purpose_legs": False,
     })
     decide = sc._build_other_subtype_decider(ctx, random_seed=3)
     outcomes = {decide("car", 600.0) for _ in range(200)}

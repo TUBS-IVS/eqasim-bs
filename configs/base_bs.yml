@@ -106,6 +106,12 @@ config:
   # synthetic day IS a weekday, and the committed MiD reference tables measure the same
   # universe. false = the pre-ADR-0116 all-day estimation.
   secondary_mid_weekday_legs_only: true
+  # MiD legs whose MAIN purpose is the no-answer code W_ZWECK 99 ('keine Angabe', 0.58 % of the
+  # weekday legs but 2.80 % of everything the model calls 'other') are excluded from every
+  # secondary ESTIMATION -- the purpose and subtype distance pools and the coarse other-split
+  # probabilities -- so the remaining purposes renormalise over legs whose purpose is known
+  # (ADR-0117). The trip build is unchanged: the leg is a real trip and keeps 'other'.
+  exclude_no_answer_purpose_legs: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
   # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs

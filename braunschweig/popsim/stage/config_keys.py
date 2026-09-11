@@ -404,6 +404,20 @@ DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
 DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
 
+# exclude_no_answer_purpose_legs (issue #373 follow-up, ADR-0117): MiD legs whose MAIN purpose is
+# the no-answer code W_ZWECK 99 ("keine Angabe", trips.W_ZWECK_NO_ANSWER_CODE) are excluded from
+# every secondary ESTIMATION -- the per-purpose and per-subtype distance pools
+# (braunschweig.popsim.distance_distributions) and the coarse other-split probabilities
+# (braunschweig.synthesis.locations.secondary_chainsolvers.deciders) -- so the remaining purposes'
+# shares and pools renormalise over legs whose purpose is actually known. The trip build is
+# deliberately NOT changed: the leg is a real trip and keeps the "other" purpose the map assigns,
+# because deleting it would remove a trip the person made and inventing a purpose would fabricate
+# behaviour. Both stages must resolve the SAME value (one labels, the other supplies that label's
+# pool). Not a trip-build key -> not in ENTD_REJECTED_KEYS (popsim_open keeps the ENTD CDFs and
+# never estimates on MiD, so the key is inert there).
+KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = "exclude_no_answer_purpose_legs"
+DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = True
+
 # MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
 # build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
 # each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the

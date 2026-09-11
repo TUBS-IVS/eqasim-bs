@@ -54,6 +54,15 @@ logger = logging.getLogger(__name__)
 # MEANS in eqasim: the person's ASSIGNED educational facility, which the primary-location
 # machinery anchors (school / Kita). An evening class is not that facility, so anchoring it
 # there would place the activity wrongly. See the ADR for the full argument.
+#: MiD ``W_ZWECK`` 99 "keine Angabe": the respondent did not say why they travelled. The LEG is
+#: real (a trip happened), so the trip build still gives it a purpose -- DEFAULT_PURPOSE "other",
+#: the same bucket the map below assigns -- but it is a NON-ANSWER, not a behaviour, so it must
+#: not feed any ESTIMATION: neither a purpose distance pool nor a subtype probability
+#: (exclude_no_answer_purpose_legs, ADR-0117). 6,029 legs of the 2026-09 delivery carry it,
+#: 4,271 of them in the weekday diary universe (0.58 % of its legs, 2.80 % of everything the
+#: model calls "other"; measured 2026-09-11, ad hoc).
+W_ZWECK_NO_ANSWER_CODE = 99
+
 PURPOSE_BY_W_ZWECK = {
     1: "work",
     2: "work",

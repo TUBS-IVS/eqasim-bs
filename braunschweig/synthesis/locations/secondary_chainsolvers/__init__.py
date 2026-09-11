@@ -460,8 +460,10 @@ def configure(context):
     # set in configs/base_bs.yml (issue #242 Task 7).
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
     )
     context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
@@ -477,6 +479,12 @@ def configure(context):
     # Declared UNCONDITIONALLY (like the two split flags above) so an all-flags-off config
     # never needs it; inert while all three subtype splits are OFF (no decider is built).
     context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
+    # exclude_no_answer_purpose_legs (ADR-0117): shared with
+    # braunschweig.popsim.distance_distributions, which must resolve the SAME value --
+    # the coarse other-split estimated here labels a leg and that stage supplies the
+    # label's donor pool, so the two have to agree on which legs answered the question.
+    context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+                   DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
     # The fifth leisure subtype (issue #373, ADR-0115): W_ZWECK-10 legs
     # ("anderer Zweck") are leisure under w_zweck_10_as_leisure but carry no
     # leisure W_ZWD detail code, so ON gives them their own estimated group
