@@ -396,3 +396,69 @@ def test_write_popsim_folder_requires_all_control_geographies(tmp_path):
             seed_households=pd.DataFrame(),
             seed_persons=pd.DataFrame(),
         )
+
+
+# --- PopulationSim settings vs. control geographies ---------------------------
+# Regression guard: the run folder's settings.yaml was copied in as raw text and never
+# checked against the control set, so a control at a geography the settings do not
+# declare was only discovered inside the PopulationSim subprocess -- or not at all.
+# With the per-Kreis attribute controls defaulting ON, the 4-level settings file
+# (WELT > STAAT > ZENSUS1km > ZENSUS100m) silently under-constrains every KREIS control.
+
+_FOUR_LEVEL_SETTINGS = """
+geographies:
+- WELT
+- STAAT
+- ZENSUS1km
+- ZENSUS100m
+seed_geography: STAAT
+"""
+
+_FIVE_LEVEL_SETTINGS = """
+geographies:
+- WELT
+- STAAT
+- KREIS
+- ZENSUS1km
+- ZENSUS100m
+seed_geography: STAAT
+"""
+
+
+def _controls(*geographies):
+    return pd.DataFrame({
+        "target": [f"control_{i}" for i in range(len(geographies))],
+        "geography": list(geographies),
+    })
+
+
+def test_validate_settings_geographies_accepts_a_declared_set():
+    folders.validate_settings_geographies(
+        _FOUR_LEVEL_SETTINGS, _controls("ZENSUS100m", "ZENSUS1km", "STAAT"))
+    folders.validate_settings_geographies(
+        _FIVE_LEVEL_SETTINGS, _controls("ZENSUS100m", "KREIS"))
+
+
+def test_validate_settings_geographies_rejects_an_undeclared_geography():
+    """The real failure: KREIS controls against the 4-level settings file."""
+    with pytest.raises(ValueError) as excinfo:
+        folders.validate_settings_geographies(
+            _FOUR_LEVEL_SETTINGS, _controls("ZENSUS100m", "KREIS", "KREIS"))
+    message = str(excinfo.value)
+    assert "KREIS" in message
+    # The message must name the count and the declared set, so the reader can see WHAT
+    # is unconstrained and WHICH file to swap -- not just that something is wrong.
+    assert "2" in message
+    assert "ZENSUS100m" in message and "WELT" in message
+
+
+def test_validate_settings_geographies_rejects_settings_without_a_geographies_key():
+    with pytest.raises(ValueError, match="geographies"):
+        folders.validate_settings_geographies(
+            "seed_geography: STAAT\n", _controls("ZENSUS100m"))
+
+
+def test_validate_settings_geographies_requires_the_geography_column():
+    with pytest.raises(KeyError, match="geography"):
+        folders.validate_settings_geographies(
+            _FOUR_LEVEL_SETTINGS, pd.DataFrame({"target": ["a"]}))

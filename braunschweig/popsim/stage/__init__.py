@@ -149,6 +149,7 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
+from braunschweig.popsim import folders
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
@@ -2440,6 +2441,13 @@ def execute(context) -> pd.DataFrame:
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
     )
+    # Fail fast BEFORE any batch folder is written or any PopulationSim subprocess starts:
+    # the settings file is a local-only path outside this repo and is copied in as raw
+    # text, so a control at a geography it does not declare would otherwise be discovered
+    # only inside a subprocess -- or silently never balanced. The per-Kreis attribute
+    # controls default ON and render at KREIS, which the 4-level settings file lacks.
+    folders.validate_settings_geographies(
+        Path(settings_path).read_text(encoding="utf-8"), controls_df)
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,

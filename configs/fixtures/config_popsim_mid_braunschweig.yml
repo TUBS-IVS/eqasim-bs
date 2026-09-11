@@ -102,7 +102,16 @@ config:
   # Canonical: popsimprep/popsim/configs/ (controls_path is UNUSED under controls_source:
   # catalog above -- kept for the csv opt-out / reference).
   braunschweig.population.popsim.controls_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/_prep3_controls.csv  # local-only, set to your path
-  braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings.yaml  # local-only, set to your path
+  # settings_tier3.yaml, NOT settings.yaml: the 4-level file (WELT > STAAT > ZENSUS1km >
+  # ZENSUS100m) has no KREIS level, and the per-Kreis attribute controls
+  # (economic_status / number_of_cars / number_of_bicycles / has_ebike / trip_class /
+  # employment_status / pt_ticket_group / work_by_employment / education_by_age / ...)
+  # all default ON and render at KREIS. With the 4-level file those controls are simply
+  # not balanced. The file name says "tier3" for historical reasons -- the KREIS level is
+  # required by ANY active per-Kreis control, not only by control_tiers=tier3.
+  # braunschweig.popsim.folders.validate_settings_geographies fails the run fast if this
+  # path points at a settings file that does not declare every control geography.
+  braunschweig.population.popsim.settings_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/settings_tier3.yaml  # local-only, set to your path
   braunschweig.population.popsim.logging_path: C:/Users/bienzeisler/Documents/GitHub/popsimprep/popsim/configs/logging.yaml  # local-only, set to your path
 
   # popsimprep repo root (cwd for `uv run populationsim`).
