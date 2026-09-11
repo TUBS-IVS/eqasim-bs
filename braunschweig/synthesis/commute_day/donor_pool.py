@@ -62,9 +62,10 @@ from braunschweig.calibration.commute_day_state_reference import (
 )
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
 from braunschweig.popsim.chain_matching import derive_age_class
-from braunschweig.popsim.diary_facts import compute_diary_facts
+from braunschweig.popsim.diary_facts import compute_diary_facts, validate_trip_length_km
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
-from braunschweig.popsim.trips import build_validated_trip_table
+from braunschweig.popsim.trips import (
+    DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, build_validated_trip_table)
 from braunschweig.popsim.trips_stage import (
     CONTRACT,
     DEFAULT_CLOSURE_DWELL_MIN_OBS,
@@ -612,13 +613,19 @@ def donor_attributes(donors: pd.DataFrame, persons_all: pd.DataFrame, households
 def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFrame, *,
                 random_seed: int, escort_purpose: bool, escort_passive_education: bool,
                 explicit_round_trip_purposes: bool, exclude_rbw_legs: bool = False,
-                drop_leading_arrive_home_leg: bool = False, dwell_model=None) -> pd.DataFrame:
+                drop_leading_arrive_home_leg: bool = False,
+                w_zweck_10_as_leisure: bool = False,
+                escort_passive_from_adult: bool = False,
+                passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                dwell_model=None) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
     Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
     arguments :func:`braunschweig.popsim.trips_stage.run` passes -- ``resample=True``, the
-    escort/round-trip flags, ``random_seed``, and the three plan-structure arguments
-    ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` / ``dwell_model`` -- ruling R2, but
+    escort/round-trip/``w_zweck_10_as_leisure``/``escort_passive_from_adult`` flags (the last
+    with its ``passive_pair_max_gap_minutes`` window), ``random_seed``, and the three
+    plan-structure arguments ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` /
+    ``dwell_model`` -- ruling R2, but
     WITHOUT ``trips_stage.run``'s per-person departure-time jitter step
     (:func:`braunschweig.popsim.trips_stage.apply_per_person_jitter`): that jitter is applied
     ONCE later, in the plan-replacement step, keyed by the RECEIVING synthetic person -- applying
@@ -706,6 +713,9 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
     )
     n_donors_with_trips = table["person_id"].nunique() if len(table) else 0
@@ -719,7 +729,11 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
             "must replace every coded-time donor before the donor pool is built.")
 
     if "wegkm_imp" in table.columns:
-        table["euclidean_distance"] = table["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+        # Guarded like the trip build itself: the donor pool's distances are copied
+        # verbatim onto the replaced rows, so a MiD design code would travel into the
+        # spliced home-office chains unchanged (ADR-0117).
+        table["euclidean_distance"] = validate_trip_length_km(
+            table["wegkm_imp"], log_tag="[commute_day.donor_pool]") * 1000.0 / DETOUR_FACTOR
 
     table = table.sort_values(["person_id", "trip_index"]).reset_index(drop=True)
     table = table.rename(columns={"person_id": "donor_id"})
@@ -801,6 +815,10 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
                                  drop_leading_arrive_home_leg: bool = False,
                                  closure_dwell_model: str | None = None,
                                  closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+                                 w_zweck_10_as_leisure: bool = False,
+                                 escort_passive_from_adult: bool = False,
+                                 passive_pair_max_gap_minutes: float =
+                                 DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
                                  exclude_no_diary: bool = False,
                                  exclude_holidays: bool = False,
                                  exclude_only_rbw: bool = False
@@ -826,6 +844,17 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       and the filters, and the two copies could then drift apart.
     * ``closure_dwell_min_obs`` -- minimum observations per (purpose x arrival band) cell of the
       empirical model; inert while ``closure_dwell_model`` is ``None`` or ``"fixed_1h"``.
+    * ``w_zweck_10_as_leisure`` -- maps MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"``
+      purpose instead of ``"other"`` (issue #373, ADR-0111), forwarded to
+      :func:`build_closure_dwell_model` (when a dwell model is built) and :func:`donor_trips`,
+      following MiD's own hwzweck1 fold. Default False keeps the pre-#373 output byte-identical.
+    * ``escort_passive_from_adult`` / ``passive_pair_max_gap_minutes`` -- give a PAIRED passive
+      escort leg (MiD W_ZWECK 13) the accompanying adult's purpose (issue #372, ADR-0112),
+      forwarded to :func:`build_closure_dwell_model` (when a dwell model is built) and
+      :func:`donor_trips`. The donor's day must follow the same purpose vocabulary as the day it
+      replaces (ruling R2), so the stage passes the values of the same config keys
+      ``trips_stage`` reads. Requires the ``HP_ALTER`` Wege column the pairing needs. Default
+      False keeps the pre-#372 output byte-identical.
     * ``exclude_no_diary`` / ``exclude_holidays`` / ``exclude_only_rbw`` -- forwarded to
       :func:`filter_donor_diaries`.
 
@@ -886,6 +915,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
             explicit_round_trip_purposes=explicit_round_trip_purposes,
             exclude_rbw_legs=exclude_rbw_legs,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+            escort_passive_from_adult=escort_passive_from_adult,
+            passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         )
     trips = donor_trips(
         donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
@@ -893,6 +925,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
     )
     if dwell_model is not None:

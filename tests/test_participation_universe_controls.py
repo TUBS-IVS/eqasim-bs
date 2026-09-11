@@ -342,10 +342,10 @@ _MINI_PERSONS = (
     "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1;P_BKAT\n"
     "11;1;1.0;40;1;1;1;5;1\n12;2;1.0;12;2;1;1;1;7\n13;3;1.0;50;1;1;1;5;7\n")
 _MINI_WEGE = (
-    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
-    "1;11;101;1;4;8;0;8;30;5.0;30;0;1\n"
-    "2;12;102;13;1;9;0;9;20;2.0;20;0;1\n"
-    "3;13;103;1;4;8;0;8;30;5.0;30;1;1\n")
+    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+    "1;11;101;1;4;8;0;8;30;5.0;30;0;1;40\n"
+    "2;12;102;13;1;9;0;9;20;2.0;20;0;1;40\n"
+    "3;13;103;1;4;8;0;8;30;5.0;30;1;1;40\n")
 
 
 def _write_mini_mid(tmp: Path, *, with_wege: bool = True):
@@ -362,10 +362,10 @@ def _write_mini_mid(tmp: Path, *, with_wege: bool = True):
 # string-keyed for the same reason). The raw-MiD path above keeps numeric ids because
 # load_mid_seed reads BOTH sides from the CSVs.
 _DONOR_WEGE = (
-    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1\n"
-    "h1;p11;101;1;4;8;0;8;30;5.0;30;0;1\n"
-    "h2;p12;102;13;1;9;0;9;20;2.0;20;0;1\n"
-    "h3;p13;103;1;4;8;0;8;30;5.0;30;1;1\n")
+    "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+    "h1;p11;101;1;4;8;0;8;30;5.0;30;0;1;40\n"
+    "h2;p12;102;13;1;9;0;9;20;2.0;20;0;1;40\n"
+    "h3;p13;103;1;4;8;0;8;30;5.0;30;1;1;40\n")
 
 
 def _completed_donor_frames():
@@ -763,3 +763,420 @@ def test_age_range_denominator_raises_on_a_partially_covered_band():
     message = str(excinfo.value)
     assert "6, 7, 8, 9" in message
     assert "8 of the 24" in message
+
+
+# ---------------------------------------------------------------------------
+# Issue #372 task 4: the education_flag seed must count exactly the code-13 legs the
+# trip build realises as education under escort_passive_from_adult -- a child paired
+# with a SHOPPING adult goes shopping, not to their own Kita.
+# ---------------------------------------------------------------------------
+
+def _passive_escort_persons_wege():
+    """One household: a shopping adult and a 5-year-old whose ONLY leg is passive escort
+    (W_ZWECK 13) departing in the same minute as the adult's shopping leg."""
+    persons = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "HP_ALTER": [35, 5], "anzwege1": [1, 1],
+        "member_imputed": [False, False],
+        "source_H_ID": [1, 1], "source_P_ID": [1, 2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 1],
+        "W_ZWECK": [4, 13], "W_RBW": [0, 0],
+        "W_SZS": [8, 8], "W_SZM": [0, 0], "HP_ALTER": [35, 5]})
+    return persons, wege
+
+
+def test_education_flag_follows_the_paired_adults_purpose_under_escort_passive_from_adult():
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _passive_escort_persons_wege()
+    without_pairing = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True)
+    with_pairing = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert without_pairing["education_flag"].tolist() == ["noedu", "edu"]
+    assert with_pairing["education_flag"].tolist() == ["noedu", "noedu"]
+
+
+def test_education_flag_keeps_an_unpaired_passive_leg_as_education():
+    """An UNPAIRED code-13 leg keeps the escort_passive_education relabel, exactly as
+    map_purpose does -- the seed must not silently drop it."""
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _passive_escort_persons_wege()
+    # Move the adult's leg five hours away: no candidate within the pairing window.
+    wege.loc[wege["P_ID"] == 1, "W_SZS"] = 13
+    out = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert out["education_flag"].tolist() == ["noedu", "edu"]
+
+
+def test_education_flag_pairing_uses_the_trip_builds_leg_universe():
+    """Fix round 1, IMPORTANT 2 (controller ruling C-R12): the nearest adult leg in the raw
+    table is an rbW summary leg the trip build DROPS, so the seed must pair with the runner-up
+    (the adult's Kita drop-off) exactly as the plan does -- and read the child as 'edu'.
+
+    With the raw (unfiltered) universe the rbW work leg would win on time and the child would be
+    seeded 'noedu', i.e. the seed and the plan would describe different days."""
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "HP_ALTER": [35, 5], "anzwege1": [2, 1],
+        "member_imputed": [False, False],
+        "source_H_ID": [1, 1], "source_P_ID": [1, 2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 2], "W_ID": [1, 2, 1],
+        # The adult's rbW leg departs in the same minute as the child's passive leg; the real
+        # Bringen/Holen leg (W_ZWECK 6) is five minutes later.
+        "W_ZWECK": [1, 6, 13], "W_RBW": [1, 0, 0],
+        "W_SZS": [8, 8, 8], "W_SZM": [0, 5, 0], "HP_ALTER": [35, 35, 5],
+        "W_SO1": [1, 809, 1]})
+    kept = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True)
+    assert kept["education_flag"].tolist() == ["noedu", "edu"]
+    # Control: on the RAW universe the rbW leg wins the pairing and the child loses education.
+    raw = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=False,
+        escort_passive_from_adult=True)
+    assert raw["education_flag"].tolist() == ["noedu", "noedu"]
+
+
+def _leading_arrive_home_persons_wege():
+    """One household: the adult's FIRST leg is a leading arrive-home leg (W_ZWECK 8 with
+    W_SO1 == 2, i.e. from before the observed diary window) departing in the same minute as
+    the 5-year-old's passive escort leg; the adult's real Bringen/Holen leg is 5 minutes
+    later. The trip build DROPS that leading leg, so the pairing must reach the second one."""
+    persons = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "HP_ALTER": [35, 5], "anzwege1": [2, 1],
+        "member_imputed": [False, False],
+        "source_H_ID": [1, 1], "source_P_ID": [1, 2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 1], "P_ID": [1, 1, 2], "W_ID": [1, 2, 1],
+        "W_ZWECK": [8, 6, 13], "W_RBW": [0, 0, 0],
+        "W_SZS": [8, 8, 8], "W_SZM": [0, 5, 0], "HP_ALTER": [35, 35, 5],
+        "W_SO1": [2, 809, 1]})
+    return persons, wege
+
+
+@pytest.mark.parametrize("drop_leading_arrive_home_leg,expected", [
+    (True, ["noedu", "edu"]), (False, ["noedu", "noedu"])])
+def test_education_flag_pairing_follows_the_leading_arrive_home_drop(
+        drop_leading_arrive_home_leg, expected):
+    """Fix round 2 (ruling C-R12, second half): with the drop ON the leading arrive-home leg
+    is gone and the child pairs with the adult's Bringen/Holen leg (-> edu); with it OFF that
+    leg wins on time and gives the child 'home' (-> noedu). Either way the seed must agree
+    with what the trip build realises."""
+    from braunschweig.popsim.mid.participation import derive_education_flag_seed
+    persons, wege = _leading_arrive_home_persons_wege()
+    out = derive_education_flag_seed(
+        persons, wege, escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
+    assert out["education_flag"].tolist() == expected
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 2 item 1(b): education_flag_drop_leading_arrive_home_leg must REACH
+# derive_education_flag_seed from every layer that carries it.
+# --------------------------------------------------------------------------- #
+
+def _capture_education_flag_seed(monkeypatch):
+    """Replace derive_education_flag_seed in seed_loading with a capturing pass-through."""
+    from braunschweig.popsim.mid import seed_loading
+    captured = {}
+    real = seed_loading.derive_education_flag_seed
+
+    def capturing(persons, wege, **kwargs):
+        captured["drop_leading_arrive_home_leg"] = kwargs.get("drop_leading_arrive_home_leg")
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        # Issue #373 cleanup wave, item 3: the two remaining purpose-package flags reached
+        # this call site without a test asserting the VALUE arrives (only presence/absence
+        # of escort_passive_from_adult was pinned above).
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        return real(persons, wege, **kwargs)
+
+    monkeypatch.setattr(seed_loading, "derive_education_flag_seed", capturing)
+    return captured
+
+
+def test_load_mid_seed_forwards_the_education_flag_leading_drop(tmp_path, monkeypatch):
+    from braunschweig.popsim.mid import load_mid_seed
+    captured = _capture_education_flag_seed(monkeypatch)
+    _write_mini_mid(tmp_path)
+    load_mid_seed(
+        tmp_path, day_filter_values=(), kreis_control_entries=_universe_entries(),
+        kreis_seed_rng=np.random.RandomState(0),
+        escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True,
+        w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
+        education_flag_drop_leading_arrive_home_leg=True)
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["drop_leading_arrive_home_leg"] is True
+    # Non-default values (module code default is False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    # so a forwarding regression that silently falls back to the callee's own default would
+    # be caught here, not just a KeyError on a missing kwarg.
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
+
+
+def test_project_completed_seed_forwards_the_education_flag_leading_drop(tmp_path, monkeypatch):
+    """The TWIN of the test above: the two seed paths must not diverge on this either."""
+    captured = _capture_education_flag_seed(monkeypatch)
+    donor_dir = _write_wege_only(tmp_path)
+    cols, households, persons = _completed_donor_frames()
+    mid.project_completed_seed(
+        households, persons, cols, kreis_control_entries=_universe_entries(),
+        kreis_seed_rng=np.random.RandomState(0), mid_dir=donor_dir,
+        escort_passive_education=True, exclude_rbw_legs=True,
+        escort_passive_from_adult=True,
+        w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
+        education_flag_drop_leading_arrive_home_leg=True)
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["drop_leading_arrive_home_leg"] is True
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
+
+
+class _SeedInfoContext:
+    """The minimal ExecuteContext surface _build_populationsim_seed touches."""
+
+    def __init__(self, staged=None):
+        self._staged = staged or {}
+        self.info = {}
+
+    def stage(self, name):
+        return self._staged[name]
+
+    def set_info(self, key, value):
+        self.info[key] = value
+
+
+def test_build_populationsim_seed_forwards_the_leading_drop_to_both_mid_branches(monkeypatch):
+    """The popsim stage reads ONE config key and must hand it to whichever seed loader runs:
+    the education_flag pairing universe has to be the trip build's on both paths (ruling
+    C-R12). Both loaders are replaced by capturing stubs, so this pins the CALL, not the
+    seed."""
+    from braunschweig.popsim import stage as popsim_stage
+
+    captured = {}
+
+    class _Report:
+        completeness_rate = 1.0
+
+    def capture_load_mid_seed(mid_dir, **kwargs):
+        captured["load_mid_seed"] = kwargs.get("education_flag_drop_leading_arrive_home_leg")
+        return pd.DataFrame(), pd.DataFrame(), _Report()
+
+    def capture_project_completed_seed(households, persons, columns, **kwargs):
+        captured["project_completed_seed"] = kwargs.get(
+            "education_flag_drop_leading_arrive_home_leg")
+        return pd.DataFrame(), pd.DataFrame()
+
+    monkeypatch.setattr(popsim_stage.mid, "load_mid_seed", capture_load_mid_seed)
+    monkeypatch.setattr(popsim_stage.mid, "project_completed_seed",
+                        capture_project_completed_seed)
+
+    class _Source:
+        def seed_columns(self):
+            from braunschweig.popsim import sources
+            return sources.get_source("mid").seed_columns()
+
+    class _Donor:
+        households = pd.DataFrame()
+        persons = pd.DataFrame()
+        completeness_report = _Report()
+
+        class completion_report:
+            n_households_filled = 0
+            n_persons_added = 0
+
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext(), _Source(), "mid", "unused", False, (),
+        set(), np.random.RandomState(0), None,
+        drop_leading_arrive_home_leg=True, escort_passive_from_adult=True)
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext({"completed_donor": _Donor()}), _Source(), "mid", "unused", True, (),
+        set(), np.random.RandomState(0), None,
+        drop_leading_arrive_home_leg=True, escort_passive_from_adult=True)
+
+    assert captured["load_mid_seed"] is True
+    assert captured["project_completed_seed"] is True
+
+
+def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both_mid_branches(
+        monkeypatch):
+    """Issue #373 cleanup wave, item 3: escort_passive_from_adult, w_zweck_10_as_leisure and
+    passive_pair_max_gap_minutes reach BOTH mid.load_mid_seed and mid.project_completed_seed
+    from _build_populationsim_seed, but no test asserted the VALUE arrives -- the sibling test
+    above only pins education_flag_drop_leading_arrive_home_leg. Non-default values are used
+    (module code defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a
+    forwarding regression that silently falls back to the callee's own default is caught, not
+    just a missing kwarg."""
+    from braunschweig.popsim import stage as popsim_stage
+
+    captured = {}
+
+    class _Report:
+        completeness_rate = 1.0
+
+    def capture_load_mid_seed(mid_dir, **kwargs):
+        captured["load_mid_seed"] = {
+            "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
+            "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
+            "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+        }
+        return pd.DataFrame(), pd.DataFrame(), _Report()
+
+    def capture_project_completed_seed(households, persons, columns, **kwargs):
+        captured["project_completed_seed"] = {
+            "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
+            "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
+            "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+        }
+        return pd.DataFrame(), pd.DataFrame()
+
+    monkeypatch.setattr(popsim_stage.mid, "load_mid_seed", capture_load_mid_seed)
+    monkeypatch.setattr(popsim_stage.mid, "project_completed_seed",
+                        capture_project_completed_seed)
+
+    class _Source:
+        def seed_columns(self):
+            from braunschweig.popsim import sources
+            return sources.get_source("mid").seed_columns()
+
+    class _Donor:
+        households = pd.DataFrame()
+        persons = pd.DataFrame()
+        completeness_report = _Report()
+
+        class completion_report:
+            n_households_filled = 0
+            n_persons_added = 0
+
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext(), _Source(), "mid", "unused", False, (),
+        set(), np.random.RandomState(0), None,
+        escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
+        passive_pair_max_gap_minutes=22.0)
+    popsim_stage._build_populationsim_seed(
+        _SeedInfoContext({"completed_donor": _Donor()}), _Source(), "mid", "unused", True, (),
+        set(), np.random.RandomState(0), None,
+        escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
+        passive_pair_max_gap_minutes=22.0)
+
+    expected = {
+        "escort_passive_from_adult": True,
+        "w_zweck_10_as_leisure": True,
+        "passive_pair_max_gap_minutes": 22.0,
+    }
+    assert captured["load_mid_seed"] == expected
+    assert captured["project_completed_seed"] == expected
+
+
+class _StopAtSeedBuild(Exception):
+    """Sentinel raised by the capturing _build_populationsim_seed stub below, so
+    execute() never reaches the (real, expensive, unmocked) PopulationSim batching
+    that follows the seed build."""
+
+
+def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_seed(monkeypatch):
+    """Issue #373 cleanup wave fix round, IMPORTANT 3: the two tests above pin the PRIVATE
+    _build_populationsim_seed function directly, which proves nothing about whether
+    braunschweig.popsim.stage.execute() itself actually resolves the three config keys and
+    forwards their VALUES into that call. This test drives the PUBLIC execute() entry point
+    with a config stub carrying non-default values for the three flags.
+
+    Every OTHER step execute() performs before the seed build (path/scope/RNG resolution,
+    donor-source resolution, control-set/KREIS-control assembly, 100 m cell loading and
+    grid-column injection) is monkeypatched to a trivial stand-in: none of those steps reads
+    or forwards the flags under test, and reproducing their own real behaviour here would only
+    duplicate tests/test_popsim_stage_*.py and tests/test_execute_context_config_contract.py
+    without adding coverage of the forwarding path this test targets. The stub context is
+    STRICT (raises on any key not explicitly stubbed), so an accidentally-unmocked step that
+    tries to read a real config key fails loudly here rather than silently reading a wrong
+    default. _build_populationsim_seed itself is replaced by a capturing stub that raises a
+    private sentinel exception immediately after recording its kwargs, so execute() never
+    reaches the real (and here entirely unmocked) PopulationSim batching that follows.
+    """
+    from braunschweig.popsim import stage as popsim_stage
+
+    class _StrictExecuteContext:
+        """synpp's real ExecuteContext.config() contract: single-arg, no default; an
+        undeclared/unstubbed key must fail loudly, not silently return a placeholder."""
+
+        def __init__(self, values):
+            self._values = values
+
+        def config(self, key):
+            if key not in self._values:
+                raise AssertionError(
+                    f"unexpected context.config({key!r}) call -- either a step this test "
+                    "meant to mock away was not mocked, or the stub is missing a key")
+            return self._values[key]
+
+    values = {
+        popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
+        popsim_stage.KEY_DIARY_PLAN_MATCH: False,
+        popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
+        popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
+        popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
+        # The three flags under test -- all NON-DEFAULT (the pure function's own keyword
+        # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0), so a
+        # forwarding regression that silently falls back to the callee's default is caught
+        # by a value mismatch below, not just a missing-kwarg KeyError.
+        popsim_stage.KEY_W_ZWECK_10_AS_LEISURE: True,
+        popsim_stage.KEY_ESCORT_PASSIVE_FROM_ADULT: True,
+        popsim_stage.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+    }
+    context = _StrictExecuteContext(values)
+
+    class _Source:
+        name = "mid"
+
+    monkeypatch.setattr(
+        popsim_stage, "_read_stage_paths",
+        lambda ctx: ("cells.csv", "mid_dir", "controls.csv", "settings.yaml",
+                    "logging.yaml", "popsimprep", "uv"))
+    monkeypatch.setattr(
+        popsim_stage, "_read_batching_and_scope_config",
+        lambda ctx: (10, 1, "work_dir", [], "mid", False, False))
+    monkeypatch.setattr(
+        popsim_stage, "_create_seeded_rngs",
+        lambda ctx: (1, np.random.RandomState(1), np.random.RandomState(2)))
+    monkeypatch.setattr(popsim_stage, "_resolve_source", lambda source_name: _Source())
+    monkeypatch.setattr(
+        popsim_stage, "_read_control_config",
+        lambda ctx, source_name: ((), (), "csv", False, False, (), set(), 30, None, "default", False))
+    monkeypatch.setattr(
+        popsim_stage, "_build_control_frame",
+        lambda *args, **kwargs: (pd.DataFrame(), []))
+    monkeypatch.setattr(
+        popsim_stage, "_load_tier3_kreis_controls",
+        lambda ctx, control_tiers, controls_source, source_name, kreise: (None, None, set()))
+    monkeypatch.setattr(
+        popsim_stage, "_resolve_cell_load_columns", lambda *args, **kwargs: [])
+    monkeypatch.setattr(popsim_stage.mid, "load_control_cells", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(popsim_stage.mid, "filter_zgb_cells", lambda cells, kreise: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_add_aggregated_control_columns", lambda cells, *args, **kwargs: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_inject_employment_grid_columns", lambda ctx, cells, *args, **kwargs: cells)
+    monkeypatch.setattr(
+        popsim_stage, "_inject_ownership_grid_columns", lambda ctx, cells, *args, **kwargs: cells)
+
+    captured = {}
+
+    def capturing_build_populationsim_seed(*args, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        raise _StopAtSeedBuild()
+
+    monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
+
+    with pytest.raises(_StopAtSeedBuild):
+        popsim_stage.execute(context)
+
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
+from braunschweig.popsim.seed import MID_SEED_COLUMNS
 from data.hts import hts
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,15 @@ logger = logging.getLogger(__name__)
 # MEANS in eqasim: the person's ASSIGNED educational facility, which the primary-location
 # machinery anchors (school / Kita). An evening class is not that facility, so anchoring it
 # there would place the activity wrongly. See the ADR for the full argument.
+#: MiD ``W_ZWECK`` 99 "keine Angabe": the respondent did not say why they travelled. The LEG is
+#: real (a trip happened), so the trip build still gives it a purpose -- DEFAULT_PURPOSE "other",
+#: the same bucket the map below assigns -- but it is a NON-ANSWER, not a behaviour, so it must
+#: not feed any ESTIMATION: neither a purpose distance pool nor a subtype probability
+#: (exclude_no_answer_purpose_legs, ADR-0117). 6,029 legs of the 2026-09 delivery carry it,
+#: 4,271 of them in the weekday diary universe (0.58 % of its legs, 2.80 % of everything the
+#: model calls "other"; measured 2026-09-11, ad hoc).
+W_ZWECK_NO_ANSWER_CODE = 99
+
 PURPOSE_BY_W_ZWECK = {
     1: "work",
     2: "work",
@@ -98,6 +109,286 @@ ROUND_TRIP_LEISURE_W_ZWECK = frozenset({14, 15, 16})
 # an escort trip in its own right; code 6 keeps mapping to "escort".
 ESCORT_W_ZWECK = frozenset({6, 13})
 
+#: MiD W_ZWECK 10 "anderer Zweck". MiD's own main-purpose derivation hwzweck1 folds it to 6 Freizeit for
+#: 100 % of the legs (committed mid2023_w_zweck_by_hwzweck1.csv, ADR-0111); its W_ZWD is always a sentinel.
+W_ZWECK_OTHER_CODE = 10
+LEISURE_PURPOSE = "leisure"
+
+#: The child's (passive escort leg's) purpose derived from the W_ZWECK of the ACCOMPANYING adult
+#: leg the pairing found (issue #372, ADR-0112). Read as "the adult travelled for X, so the child
+#: taken along arrived at X too".
+#:
+#: Two codes are deliberately ABSENT and resolved elsewhere in
+#: :func:`passive_purpose_for_pairs`, because their child-side purpose depends on an active flag
+#: rather than on the adult code alone: 6 (:data:`ADULT_ESCORT_W_ZWECK`, the adult's own
+#: Bringen/Holen leg -- the child is then genuinely being brought somewhere of their own, so the
+#: existing passive rule decides between "education" and "escort") and
+#: :data:`W_ZWECK_OTHER_CODE` (10, which follows ``w_zweck_10_as_leisure`` exactly as the adult's
+#: own leg does). Every OTHER documented W_ZWECK code is listed here explicitly, so a code the
+#: MiD codeplan documents can never reach the fallback silently (the same coverage rule
+#: ``PURPOSE_BY_W_ZWECK`` follows since issue #241).
+#:
+#: The three EDUCATION codes (3 Ausbildungsstaette, 11 Schule, 12 Kita) map the child to "other",
+#: NOT to "education": eqasim's ``education`` purpose means the person's OWN assigned educational
+#: facility, which the primary-location machinery anchors. A toddler taken along to an older
+#: sibling's school is not at their own Kita, so anchoring them there would place the activity
+#: wrongly -- the same argument PURPOSE_BY_W_ZWECK states for code 16.
+PASSIVE_PURPOSE_BY_ADULT_W_ZWECK = {
+    1: "other", 2: "other", 3: "other", 4: "shop", 5: "other", 7: "leisure",
+    8: "home", 9: "home", 11: "other", 12: "other", 14: "leisure", 15: "leisure",
+    16: "leisure", 99: "other",
+}
+#: MiD W_ZWECK 6 "Bringen oder Holen von Personen" -- the ACTIVE escort leg. A passive leg paired
+#: with one keeps the ``escort_passive_education`` rule (see PASSIVE_PURPOSE_BY_ADULT_W_ZWECK).
+ADULT_ESCORT_W_ZWECK = 6
+
+#: Default maximum departure-time gap (MINUTES) between a passive escort leg and the candidate
+#: adult leg it is paired with. MUST equal ``escort_pairing.DEFAULT_MAX_GAP_MINUTES``, which is
+#: the OWNER of the value: that module cannot be imported here at module level (it imports
+#: :func:`mid_time_seconds` from THIS module), and ``stage.config_keys`` -- which needs a literal
+#: synpp default -- must stay a leaf. The three homes are pinned equal by
+#: ``tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes``.
+DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
+
+
+#: MiD W_ZWECK codes that mean "arrived at home" -- the destination a LEADING arrive-home leg
+#: has (see :func:`leading_arrive_home_leg_index`). Same two codes ``PURPOSE_BY_W_ZWECK`` maps to
+#: ``"home"``, derived from it so the two can never disagree.
+HOME_W_ZWECK = frozenset(code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == "home")
+#: MiD ``W_SO1`` (start situation of the reporting day's first recorded leg) = 2: the day begins
+#: mid-trip and the first RECORDED leg only ARRIVES home, i.e. it precedes the observed window.
+LEADING_ARRIVE_HOME_W_SO1 = 2
+#: MiD ``W_RBW`` = 1: a "regelmaessiger beruflicher Weg" SUMMARY record, not an individually
+#: reported diary leg (see ``time_imputation``'s module docstring for the audited background).
+RBW_LEG_FLAG = 1
+
+
+def rbw_leg_mask(wege: pd.DataFrame, *, rbw_col: str = "W_RBW") -> pd.Series:
+    """Boolean mask of the rbW summary legs the trip build drops under ``exclude_rbw_legs``.
+
+    The ONE definition of "this leg is an rbW summary record", used both by
+    :func:`expand_persons_to_trips` (which drops them and counts the donors it empties) and by
+    :func:`legs_kept_by_the_trip_build` (which the SEED derivations and the reference-derivation
+    scripts use to reproduce the plan's leg universe). Raises ``KeyError`` naming the column when
+    it is absent, rather than reading a missing flag as "not rbW".
+    """
+    if rbw_col not in wege.columns:
+        raise KeyError(f"[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column '{rbw_col}'")
+    return wege[rbw_col] == RBW_LEG_FLAG
+
+
+def leading_arrive_home_leg_index(
+    wege: pd.DataFrame, *, household_col: str = "H_ID", person_col: str = "P_ID",
+    trip_col: str = "W_ID", so1_col: str = "W_SO1", zweck_col: str = "W_ZWECK",
+) -> pd.Index:
+    """Index labels of the leading "arrive home from elsewhere" legs the trip build drops.
+
+    A person's FIRST leg (by ``trip_col``) qualifies when it both arrives home
+    (``zweck_col`` in :data:`HOME_W_ZWECK`) and started elsewhere
+    (``so1_col`` == :data:`LEADING_ARRIVE_HOME_W_SO1`): such a leg is not the diary's actual
+    first trip but a leftover record from before the observed window. The ONE definition, shared
+    exactly like :func:`rbw_leg_mask`. Raises ``KeyError`` when ``so1_col`` is absent.
+    """
+    if so1_col not in wege.columns:
+        raise KeyError(
+            f"[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column '{so1_col}'")
+    ordered = wege.sort_values([household_col, person_col, trip_col])
+    first = ordered.groupby([household_col, person_col], sort=False).head(1)
+    return first.index[(first[so1_col] == LEADING_ARRIVE_HOME_W_SO1)
+                       & first[zweck_col].isin(HOME_W_ZWECK)]
+
+
+def legs_kept_by_the_trip_build(
+    wege: pd.DataFrame, *, exclude_rbw_legs: bool, drop_leading_arrive_home_leg: bool,
+    household_col: str = "H_ID", person_col: str = "P_ID", trip_col: str = "W_ID",
+) -> pd.DataFrame:
+    """``wege`` reduced to the legs the trip build actually turns into plan legs.
+
+    Applies :func:`rbw_leg_mask` and then :func:`leading_arrive_home_leg_index`, in the SAME
+    order :func:`expand_persons_to_trips` applies them (the second rule reads "the person's first
+    remaining leg", so the order is load-bearing). Every consumer that must reason about the
+    realised plan on the RAW Wege table -- the ``education_flag`` seed's passive-escort pairing
+    (``mid.participation``) and the committed-reference derivation
+    (``scripts/derive_escort_w_zweck_split.py``) -- goes through this function instead of
+    re-implementing the two rules, so a seed or a pinned reference cannot describe a different
+    day than the plan (issue #372 fix round 1, controller rulings C-R12 / IMPORTANT 3).
+
+    Does NOT log the emptied-donor counters :func:`expand_persons_to_trips` reports: those are
+    about the SYNTHETIC persons' plans and need a persons frame, which the seed/reference callers
+    do not have here. Returns a filtered view/copy; ``wege`` is not mutated.
+    """
+    out = wege
+    if exclude_rbw_legs:
+        out = out[~rbw_leg_mask(out)]
+    if drop_leading_arrive_home_leg:
+        out = out.drop(index=leading_arrive_home_leg_index(
+            out, household_col=household_col, person_col=person_col, trip_col=trip_col))
+    return out
+
+
+#: The model's ONE weekday definition: the SAME day filter the PopulationSim seed applies
+#: (``seed.MID_SEED_COLUMNS.day_filter_values``, the MiD ``kernwo`` core-week codes; the seed
+#: module's own alias for the value set is ``seed.WEEKDAY_KERNWO``). Read from the seed rather
+#: than re-typed, so a change to the model's weekday universe cannot leave a second, silently
+#: stale copy behind. Every MiD-based estimation of a WEEKDAY quantity uses this universe
+#: (issue #373, ADR-0116).
+WEEKDAY_DIARY_KERNWO = tuple(MID_SEED_COLUMNS.day_filter_values)
+
+#: The two MiD Wege columns the weekday diary universe is defined on: the reporting-day code and
+#: the rbW summary flag. Single source for both names -- the universe helpers check exactly these
+#: (the first one overridable per call) and RAISE naming the missing one, so a delivery that
+#: cannot express the universe fails instead of silently widening it.
+WEEKDAY_DIARY_COLUMNS = ("kernwo", "W_RBW")
+
+
+def weekday_diary_leg_mask(wege: pd.DataFrame, *, kernwo_col: str = "kernwo") -> pd.Series:
+    """Boolean mask of the legs that form the WEEKDAY DIARY universe.
+
+    True where the reporting day is in :data:`WEEKDAY_DIARY_KERNWO` AND the leg is not an rbW
+    summary record (:func:`rbw_leg_mask`). This is the ONE definition of "the leg universe of
+    one synthetic weekday" (issue #373, ADR-0116), shared by the secondary distance layers
+    (``braunschweig.popsim.distance_distributions``), the three MiD-based subtype deciders
+    (``braunschweig.synthesis.locations.secondary_chainsolvers.deciders``) and the two committed
+    MiD reference extractions (``scripts/extract_mid_w_zwd_groups.py``,
+    ``scripts/extract_mid_w_zweck_hwzweck1.py``), so a reference and the estimation it is
+    compared against can never describe different days.
+
+    ``kernwo_col`` values are coerced to numeric (a CSV delivery may hand the codes over as
+    text); an uncoercible value counts as NOT weekday rather than raising, because a leg whose
+    reporting day cannot be read must not be admitted to a weekday universe.
+
+    Raises ``ValueError`` naming the column when ``kernwo_col`` or ``W_RBW`` is absent: the
+    universe must never be applied silently to a frame that cannot express it (a missing
+    ``kernwo`` would otherwise read as "every leg is a weekday leg").
+    """
+    is_weekday, is_rbw = _weekday_and_rbw_masks(wege, kernwo_col=kernwo_col)
+    return is_weekday & ~is_rbw
+
+
+def _weekday_and_rbw_masks(wege: pd.DataFrame, *, kernwo_col: str) -> tuple:
+    """``(is_weekday, is_rbw)`` for the weekday diary universe -- the ONE place both are built.
+
+    Kept private and shared by :func:`weekday_diary_leg_mask` and
+    :func:`restrict_to_weekday_diary_legs` so the universe rule is expressed once and each
+    caller walks the frame once: the public mask needs the conjunction, the logging wrapper
+    needs the two drop reasons separately.
+    """
+    rbw_col = WEEKDAY_DIARY_COLUMNS[1]          # the rbW summary flag of the universe
+    universe_columns = (kernwo_col, rbw_col)
+    for column in universe_columns:
+        if column not in wege.columns:
+            raise ValueError(
+                f"[popsim.trips] the weekday diary universe needs the MiD Wege column "
+                f"{column!r} (universe columns: {universe_columns}); it is absent from "
+                f"the frame (present: {list(wege.columns[:20])} ...)."
+            )
+    is_weekday = pd.to_numeric(wege[kernwo_col], errors="coerce").isin(WEEKDAY_DIARY_KERNWO)
+    return is_weekday, rbw_leg_mask(wege, rbw_col=rbw_col)
+
+
+def restrict_to_weekday_diary_legs(wege: pd.DataFrame, *, log_tag: str) -> pd.DataFrame:
+    """``wege`` reduced to the weekday diary universe, with the kept rate logged.
+
+    Applies :func:`weekday_diary_leg_mask` and logs ``kept n/total (rate)`` together with the
+    two drop reasons at INFO -- a filter that shrinks an estimation universe must never be
+    silent (CLAUDE.md "Fallback transparency"). The two reasons PARTITION the dropped legs:
+    ``non-weekday`` counts every leg outside the day filter (rbW or not) and ``rbW`` counts the
+    weekday legs dropped for being summary records, so kept + non-weekday + rbW == total.
+
+    Raises ``ValueError`` when nothing is kept: a stage that would estimate on an empty frame
+    must stop rather than fall back to something else (an empty result here means the delivery's
+    ``kernwo`` / ``W_RBW`` contents are not what the universe assumes).
+
+    Returns a filtered view/copy; ``wege`` is not mutated.
+    """
+    # One pass: the shared helper builds both masks (and raises when a universe column is
+    # absent), the conjunction is the universe and the two complements are the drop reasons.
+    is_weekday, is_rbw = _weekday_and_rbw_masks(wege, kernwo_col="kernwo")
+    mask = is_weekday & ~is_rbw
+    n_total = len(wege)
+    n_kept = int(mask.sum())
+    n_non_weekday = int((~is_weekday).sum())
+    n_rbw = int((is_weekday & is_rbw).sum())
+    logger.info(
+        "%s weekday diary universe: kept %d/%d legs (%.1f%%); dropped %d non-weekday "
+        "(kernwo outside %s), %d rbW summary records",
+        log_tag, n_kept, n_total, 100.0 * n_kept / n_total if n_total else float("nan"),
+        n_non_weekday, list(WEEKDAY_DIARY_KERNWO), n_rbw,
+    )
+    if n_kept == 0:
+        raise ValueError(
+            f"{log_tag} the weekday diary universe is EMPTY: none of {n_total} legs is a "
+            f"weekday (kernwo in {list(WEEKDAY_DIARY_KERNWO)}) non-rbW leg; check the kernwo "
+            "and W_RBW contents of the MiD delivery."
+        )
+    return wege[mask]
+
+
+def passive_purpose_for_pairs(adult_codes, *, escort_passive_education: bool,
+                              w_zweck_10_as_leisure: bool) -> np.ndarray:
+    """The passive escort legs' purposes, derived from their paired adults' ``W_ZWECK`` codes.
+
+    Pure vectorised lookup over :data:`PASSIVE_PURPOSE_BY_ADULT_W_ZWECK` with the two
+    flag-dependent codes resolved on top (see that mapping's own documentation):
+    :data:`ADULT_ESCORT_W_ZWECK` keeps the existing passive rule and
+    :data:`W_ZWECK_OTHER_CODE` follows ``w_zweck_10_as_leisure``.
+
+    Args:
+        adult_codes: the paired adult legs' ``W_ZWECK`` codes, one per passive leg. Any
+            array-like of integer-coercible codes.
+        escort_passive_education: the value of the ``escort_passive_education`` trip-build flag
+            for THIS run; decides what a child paired with an ACTIVE escort leg becomes
+            (``"education"`` when on, ``"escort"`` otherwise).
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag for
+            THIS run (issue #373, ADR-0111); decides what a child paired with an adult code-10
+            leg becomes.
+
+    Returns:
+        ``np.ndarray`` of purpose strings, one per input code, in input order.
+
+    A code outside the table -- including a MISSING one -- falls back to :data:`DEFAULT_PURPOSE`,
+    COUNTED and NAMED in a warning (CLAUDE.md fallback transparency): every code the codeplan
+    documents is mapped, so an unknown code means a NEW MiD code that must be added explicitly.
+
+    ``explicit_round_trip_purposes`` is deliberately NOT threaded in: it is True in production
+    and inert there, and its pre-#241 arm would send the ADULT's own leg for W_ZWECK 14/15/16
+    back to ``"other"`` while this table still gives the child ``"leisure"`` -- an asymmetry that
+    only matters on that A/B arm, where ``escort_passive_from_adult`` is not used. Thread it if
+    the two flags are ever combined.
+    """
+    # to_numeric(errors="coerce"), NOT astype(int): a NaN adult code (an unpaired row slipping
+    # in, or a delivery with a blank W_ZWECK) would otherwise raise IntCastingNaNError instead of
+    # reaching the counted, named fallback this function's contract promises.
+    codes = pd.to_numeric(pd.Series(np.asarray(adult_codes)), errors="coerce")
+    passive_rule = "education" if escort_passive_education else "escort"
+    purpose = codes.map(PASSIVE_PURPOSE_BY_ADULT_W_ZWECK)
+    purpose = purpose.where(codes != ADULT_ESCORT_W_ZWECK, passive_rule)
+    purpose = purpose.where(codes != W_ZWECK_OTHER_CODE,
+                            LEISURE_PURPOSE if w_zweck_10_as_leisure else DEFAULT_PURPOSE)
+    unknown = purpose.isna()
+    if bool(unknown.any()):
+        # dropna() before sorting: a NaN code cannot be compared with an int, and it is reported
+        # by its own count rather than as a sortable "code".
+        # int(): to_numeric yields float64 as soon as one code is missing, and a codeplan code
+        # reported as "77.0" reads like a different value than the "77" the codeplan documents.
+        unknown_codes = sorted(int(code) for code in codes[unknown].dropna().unique())
+        n_missing = int(codes[unknown].isna().sum())
+        logger.warning(
+            "[popsim.trips] passive pairing: adult W_ZWECK code(s) %s are not in "
+            "PASSIVE_PURPOSE_BY_ADULT_W_ZWECK (plus %d leg(s) with no adult code at all); "
+            "%d legs fall back to %r",
+            unknown_codes, n_missing, int(unknown.sum()), DEFAULT_PURPOSE)
+    return purpose.fillna(DEFAULT_PURPOSE).to_numpy()
+
+
+def leisure_w_zweck_codes(*, w_zweck_10_as_leisure: bool) -> frozenset:
+    """The W_ZWECK codes that mean 'leisure' under the active flags (single source for seeds and plans)."""
+    codes = {code for code, purpose in PURPOSE_BY_W_ZWECK.items() if purpose == LEISURE_PURPOSE}
+    if w_zweck_10_as_leisure:
+        codes.add(W_ZWECK_OTHER_CODE)
+    return frozenset(codes)
+
+
 # MiD hvm_imp (imputed Hauptverkehrsmittel; handbook Kap. 4.2 mandates the
 # imputed variant) -> eqasim canonical mode. hvm_imp is fully imputed (codes
 # 1..5 only); any other code is a data/contract error and raises.
@@ -115,7 +406,12 @@ MODE_BY_HVM = {
 def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 escort_purpose: bool = False,
                 escort_passive_education: bool = False,
-                explicit_round_trip_purposes: bool = True) -> pd.DataFrame:
+                explicit_round_trip_purposes: bool = True,
+                w_zweck_10_as_leisure: bool = False,
+                escort_passive_from_adult: bool = False,
+                passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                pairing_candidate_mask: pd.Series | None = None,
+                ) -> pd.DataFrame:
     """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
 
     When ``escort_purpose`` is True (issue #201), W_ZWECK codes in
@@ -147,18 +443,79 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
     escort_passive_education:
         If True (issue #256), further relabel the passive leg (W_ZWECK 13) to
         ``"education"``. Requires ``escort_purpose=True``.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"``, following MiD's own hwzweck1
+        fold (100 % of code-10 legs fold to 6 Freizeit; see the committed
+        evidence table ``mid2023_w_zweck_by_hwzweck1.csv``). Default False
+        keeps every existing caller byte-identical; the production default is
+        wired in a later task (issue #373 task 2).
+    escort_passive_from_adult:
+        If True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        (``passive_purpose_for_pairs`` over the pairing
+        ``braunschweig.popsim.escort_pairing.pair_passive_legs`` finds)
+        instead of the flat ``escort_passive_education`` relabel: the child is
+        wherever the adult went, which is their own Kita/school for only ~21 %
+        of the legs. An UNPAIRED passive leg keeps the existing mapping (the
+        ``escort_passive_education`` rule), and the paired/unpaired split is
+        logged. Requires ``escort_purpose=True`` (and, for the "education"
+        reading of the adult's own escort leg, ``escort_passive_education``).
+        Default False keeps every existing caller byte-identical, INCLUDING
+        the output columns (the pairing columns are added only when the flag
+        is on).
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for a passive leg to count as
+        paired with an adult leg; forwarded verbatim to ``pair_passive_legs``.
+        Inert unless ``escort_passive_from_adult`` is True. Default
+        :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
+    pairing_candidate_mask:
+        Issue #373 task 2 (ruling C-R20/C-R21). Optional boolean ``pd.Series``,
+        indexed IDENTICALLY to ``wege`` (raises ``ValueError`` otherwise),
+        restricting which legs the passive-escort PAIRING may consider -- as
+        both a possible passive leg AND a possible candidate adult leg -- to
+        ``wege[pairing_candidate_mask]``. Inert unless
+        ``escort_passive_from_adult`` is True.
+
+        This caller (``braunschweig.popsim.trips_stage`` via
+        ``expand_persons_to_trips``) already restricts ``wege`` to
+        :func:`legs_kept_by_the_trip_build` BEFORE calling this function, so
+        its own pairing naturally sees only the legs the plan will realise.
+        A caller that must keep every leg in its OWN output -- for example
+        ``braunschweig.popsim.distance_distributions``, whose distance pool
+        must include every leg regardless of the trip build's leg-drop flags
+        -- has no such pre-filter to rely on, so without this mask its pairing
+        could pick a leg the plan never realises (an excluded rbW summary leg
+        or a dropped leading arrive-home leg) as the nearest-in-time adult
+        candidate, resolving a purpose the plan does not.
+
+        A passive leg OUTSIDE the mask is not considered for pairing at all
+        and keeps the existing passive rule (the ``escort_passive_education``
+        relabel applied above), exactly like an UNPAIRED leg -- the mask
+        narrows the universe the pairing runs on, it does not change what an
+        excluded leg's purpose falls back to. The DISTANCE POOL (or whatever
+        else the caller does with ``wege``) is entirely unaffected by this
+        mask: only the pairing's candidate universe is restricted, every row
+        of ``wege`` is still returned. Default ``None`` reproduces today's
+        behaviour byte-identically (the pairing considers every row of
+        ``wege``).
 
     Returns
     -------
     pd.DataFrame
-        ``wege`` with an added ``purpose`` column.
+        ``wege`` with an added ``purpose`` column, plus -- only when
+        ``escort_passive_from_adult`` is True -- the
+        ``escort_pairing.PAIRING_COLUMNS`` traceability columns (which adult
+        leg each passive leg was paired with, and why an unpaired one was not).
 
     Raises
     ------
     ValueError
-        If ``escort_passive_education`` is True while ``escort_purpose`` is
-        False (there is no passive side to split off without the dedicated
-        escort purpose being active).
+        If ``escort_passive_education`` or ``escort_passive_from_adult`` is
+        True while ``escort_purpose`` is False (there is no passive side to
+        split off without the dedicated escort purpose being active), or if
+        ``escort_passive_from_adult`` is True and ``wege`` lacks a column the
+        pairing needs.
     """
     out = wege.copy()
     codes = out[zweck_col]
@@ -195,10 +552,29 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
             "[popsim.trips] explicit_round_trip_purposes OFF: W_ZWECK %s reverted to %r "
             "(%d legs) -- pre-#241 assignment for the A/B",
             sorted(ROUND_TRIP_LEISURE_W_ZWECK), DEFAULT_PURPOSE, int(reverted.sum()))
+    if w_zweck_10_as_leisure:
+        is_code_10 = codes == W_ZWECK_OTHER_CODE
+        out.loc[is_code_10, "purpose"] = LEISURE_PURPOSE
+        if "W_GEW" in out.columns:
+            total_weight = float(out["W_GEW"].astype(float).sum())
+            share = float(out.loc[is_code_10, "W_GEW"].astype(float).sum() / total_weight) if total_weight else 0.0
+            basis = "W_GEW-weighted"
+        else:
+            share = float(is_code_10.mean()) if len(out) else 0.0
+            basis = "unweighted"
+        logger.info("[popsim.trips] w_zweck_10_as_leisure ON: W_ZWECK 10 'anderer Zweck' -> 'leisure' for %d/%d legs "
+                    "(%.2f%% %s), following MiD's hwzweck1 fold (ADR-0111)",
+                    int(is_code_10.sum()), len(out), 100.0 * share, basis)
     if escort_passive_education and not escort_purpose:
         raise ValueError(
             "[popsim.trips] escort_passive_education requires escort_purpose to be ON "
             "(without a dedicated escort purpose there is no passive side to split off)."
+        )
+    if escort_passive_from_adult and not escort_purpose:
+        raise ValueError(
+            "[popsim.trips] escort_passive_from_adult requires escort_purpose to be ON "
+            "(without a dedicated escort purpose there is no passive side to re-derive "
+            "from the accompanying adult's leg)."
         )
     if escort_purpose:
         escort_mask = out[zweck_col].isin(ESCORT_W_ZWECK)
@@ -238,6 +614,157 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 int(escort_mask.sum()), len(out), 100.0 * (share_active + share_passive),
                 basis, sorted(ESCORT_W_ZWECK),
             )
+    if escort_passive_from_adult:
+        # Runs AFTER the escort block on purpose: every code-13 leg has already received the
+        # passive rule, so the block below only has to OVERWRITE the legs it could pair, and an
+        # unpaired leg keeps that rule without any second code path deciding it.
+        #
+        # Imported HERE rather than at module level: escort_pairing imports mid_time_seconds
+        # from THIS module, so a module-level import would be a cycle.
+        from braunschweig.popsim.escort_pairing import (
+            PAIRING_COLUMNS, PASSIVE_W_ZWECK, REQUIRED_COLUMNS, STATUS_PAIRED,
+            pair_passive_legs,
+        )
+        if zweck_col != "W_ZWECK":
+            raise ValueError(
+                f"[popsim.trips] escort_passive_from_adult=True is only defined for the MiD "
+                f"purpose column 'W_ZWECK' (got zweck_col={zweck_col!r}); the pairing reads "
+                "W_ZWECK directly to find the accompanying adult's leg.")
+        missing = [column for column in REQUIRED_COLUMNS if column not in out.columns]
+        if missing:
+            raise ValueError(
+                f"[popsim.trips] escort_passive_from_adult=True requires the MiD Wege column(s) "
+                f"{missing}, which this frame does not carry (has {sorted(out.columns)[:20]} ...). "
+                "map_purpose is called on the RAW Wege frame (before the synthetic-person join), "
+                "so the household id, the member's age and the departure time needed to find the "
+                "accompanying adult's leg must all still be present; load them or set "
+                "escort_passive_from_adult to False.")
+
+        if pairing_candidate_mask is None:
+            # Today's behaviour, kept BYTE-IDENTICAL: the pairing considers every leg in
+            # `out` as both a possible passive leg and a possible candidate adult leg.
+            paired_frame, pairing = pair_passive_legs(
+                out, max_gap_minutes=passive_pair_max_gap_minutes)
+            is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
+            out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
+                paired_frame.loc[is_paired, "passive_pair_adult_w_zweck"],
+                escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+            # Carried as extras so a downstream analysis can see WHICH adult leg a child's
+            # purpose came from, and why an unpaired leg kept the passive rule.
+            for column in PAIRING_COLUMNS:
+                out[column] = paired_frame[column].values
+            n_paired = int(is_paired.sum())
+            n_passive = int(pairing["n_passive"])
+        else:
+            # Issue #373 task 2 (ruling C-R20/C-R21): restrict the pairing's CANDIDATE
+            # UNIVERSE -- both the passive legs it tries to pair and the adult legs it may
+            # pair them with -- to pairing_candidate_mask, without dropping any row from
+            # `out` itself (see the parameter's docstring above for why a caller like
+            # distance_distributions.run needs this: it must keep every leg for its own
+            # distance pool, but its pairing should agree with the trip build's about which
+            # legs even exist to be paired).
+            if not pairing_candidate_mask.index.equals(out.index):
+                raise ValueError(
+                    "[popsim.trips] escort_passive_from_adult: pairing_candidate_mask must "
+                    "be indexed identically to the Wege frame passed to map_purpose (got a "
+                    "mismatched index); the mask restricts which passive AND candidate-adult "
+                    "legs the pairing considers, so a misaligned index would silently pair "
+                    "the wrong rows.")
+            # MINOR 7 fix (cleanup wave fix round): a duplicate-labelled index makes the
+            # `.loc[paired_frame.index, column] = ...` assignment below raise an opaque pandas
+            # error ("Must have equal len keys and value when setting with an iterable") --
+            # fail loudly and name the count up front instead, since `.loc` by label requires
+            # a unique index to mean what this function assumes it means.
+            if out.index.has_duplicates:
+                duplicate_labels = out.index[out.index.duplicated(keep=False)].unique()
+                raise ValueError(
+                    f"[popsim.trips] escort_passive_from_adult: the Wege frame's index has "
+                    f"{len(duplicate_labels)} duplicate label(s) (e.g. "
+                    f"{sorted(duplicate_labels.tolist())[:10]}); pairing_candidate_mask "
+                    "restricts rows by index label via .loc, which requires a unique index. "
+                    "Call reset_index(drop=True) on the Wege frame before map_purpose.")
+            # MINOR 6 fix (cleanup wave fix round): pd.Series.astype(bool) casts NaN to True
+            # (NaN is a nonzero float), which would silently ADD a leg to the pairing's
+            # candidate universe instead of failing loudly -- fail before that cast can happen.
+            if pairing_candidate_mask.isna().any():
+                n_nan = int(pairing_candidate_mask.isna().sum())
+                raise ValueError(
+                    f"[popsim.trips] escort_passive_from_adult: pairing_candidate_mask has "
+                    f"{n_nan} NaN value(s); astype(bool) would silently cast a NaN to True, "
+                    "including that leg in the pairing's candidate universe by accident. "
+                    "Every entry must be an actual True/False.")
+            mask = pairing_candidate_mask.astype(bool)
+            candidates = out.loc[mask]
+            paired_frame, pairing = pair_passive_legs(
+                candidates, max_gap_minutes=passive_pair_max_gap_minutes)
+            paired_status = paired_frame["passive_pair_status"] == STATUS_PAIRED
+            is_paired_series = pd.Series(False, index=out.index)
+            is_paired_series.loc[paired_status.index[paired_status]] = True
+            is_paired = is_paired_series.to_numpy()
+            out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
+                paired_frame.loc[paired_status, "passive_pair_adult_w_zweck"],
+                escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+            # Every leg OUTSIDE the mask was never considered for pairing at all -- its
+            # PAIRING_COLUMNS stay NaN (like a leg the None-mask path never sees any
+            # differently than an unpaired one), distinguishing "not considered" from
+            # "considered but unpaired" only via the (still available) mask itself.
+            for column in PAIRING_COLUMNS:
+                out[column] = np.nan
+            out["passive_pair_status"] = out["passive_pair_status"].astype(object)
+            for column in PAIRING_COLUMNS:
+                out.loc[paired_frame.index, column] = paired_frame[column].values
+            n_paired = int(is_paired.sum())
+            n_passive = int(pairing["n_passive"])
+            n_passive_total = int((out[zweck_col] == PASSIVE_W_ZWECK).sum())
+            n_outside_mask = n_passive_total - n_passive
+            if n_outside_mask:
+                logger.info(
+                    "[popsim.trips] escort_passive_from_adult pairing_candidate_mask ON: %d/%d "
+                    "passive legs (%.1f%%) sit OUTSIDE the pairing's candidate universe and are "
+                    "not considered for pairing at all -- they keep the existing passive rule "
+                    "(%r).",
+                    n_outside_mask, n_passive_total,
+                    100.0 * n_outside_mask / n_passive_total if n_passive_total else 0.0,
+                    "education" if escort_passive_education else "escort",
+                )
+        # MINOR 5 fix (cleanup wave fix round): restrict the RATE denominator to the exact
+        # same set n_paired/n_passive already count over -- the whole frame when
+        # pairing_candidate_mask is None (today's behaviour, byte-identical: pairing_universe
+        # is then all-True, so this is a no-op), or the mask itself otherwise. Computing
+        # is_passive_leg over the WHOLE frame while n_passive came from pair_passive_legs'
+        # OWN mask-internal count (the masked branch above) silently understated share_paired
+        # whenever a passive leg outside the mask carried weight: that leg was never even a
+        # pairing candidate, so it must not inflate the denominator of "share of the legs the
+        # pairing actually considered that got paired".
+        if pairing_candidate_mask is None:
+            pairing_universe = np.ones(len(out), dtype=bool)
+            universe_description = "in the Wege frame"
+        else:
+            pairing_universe = mask.to_numpy()
+            universe_description = "inside the pairing's candidate universe"
+        is_passive_leg = (out[zweck_col] == PASSIVE_W_ZWECK).to_numpy() & pairing_universe
+        if "W_GEW" in out.columns:
+            weights = out["W_GEW"].astype(float).to_numpy()
+            passive_weight = float(weights[is_passive_leg].sum())
+            share_paired = float(weights[is_paired].sum() / passive_weight) if passive_weight else 0.0
+            basis = "W_GEW-weighted"
+        else:
+            share_paired = (n_paired / n_passive) if n_passive else 0.0
+            basis = "unweighted"
+        # The resulting purposes of the RELABELLED legs: a distribution collapsed onto a single
+        # purpose is the signature of a broken pairing (e.g. every adult leg resolving to the
+        # same code), which the count alone would not show.
+        distribution = out.loc[is_paired, "purpose"].value_counts().to_dict()
+        logger.info(
+            "[popsim.trips] escort_passive_from_adult ON: %d/%d passive legs %s (%.2f%% %s) take "
+            "the paired adult's purpose %s; %d unpaired legs keep the passive rule (%r). "
+            "Pairing outcome: %s",
+            n_paired, n_passive, universe_description, 100.0 * share_paired, basis, distribution,
+            n_passive - n_paired, "education" if escort_passive_education else "escort",
+            {key: value for key, value in pairing.items() if key != "share_paired"},
+        )
     return out
 
 
@@ -308,6 +835,9 @@ def build_trip_table(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -389,6 +919,22 @@ def build_trip_table(
         leg (forwarded to ``expand_persons_to_trips``); see that function's
         docstring for the rationale. Default False keeps the OFF path
         byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``map_purpose`` via
+        ``expand_persons_to_trips``). Default False keeps the OFF path
+        byte-identical.
+    escort_passive_from_adult:
+        If True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        instead of the flat ``escort_passive_education`` relabel; an UNPAIRED
+        one keeps that relabel (forwarded to ``map_purpose`` via ``expand_persons_to_trips``). Requires
+        ``escort_purpose=True``. Default False keeps the OFF path
+        byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for a passive leg to count as
+        paired (forwarded to ``map_purpose`` via ``expand_persons_to_trips``). Inert unless
+        ``escort_passive_from_adult`` is True.
 
     Returns
     -------
@@ -428,6 +974,9 @@ def build_trip_table(
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -503,6 +1052,9 @@ def expand_persons_to_trips(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -543,6 +1095,21 @@ def expand_persons_to_trips(
         as ``exclude_rbw_legs`` (over the REFERENCED donors only, ruling R21);
         if that count is > 0 a warning is logged with the same diary-plan-match
         hint. Default False keeps every existing caller byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``map_purpose``).
+        Default False keeps every existing caller byte-identical.
+    escort_passive_from_adult:
+        If True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        instead of the flat ``escort_passive_education`` relabel; an UNPAIRED
+        one keeps that relabel (forwarded to ``map_purpose``). Requires
+        ``escort_purpose=True``. Default False keeps the OFF path
+        byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for a passive leg to count as
+        paired (forwarded to ``map_purpose``). Inert unless
+        ``escort_passive_from_adult`` is True.
 
     Raises
     ------
@@ -569,9 +1136,10 @@ def expand_persons_to_trips(
 
     n_referenced = len(referenced_donors)
     if exclude_rbw_legs:
-        if "W_RBW" not in wege_in.columns:
-            raise KeyError("[popsim.trips] exclude_rbw_legs=True requires the MiD Wege column 'W_RBW'")
-        is_rbw = wege_in["W_RBW"] == 1
+        # The rule itself lives in rbw_leg_mask (the ONE definition the seed derivations and the
+        # reference-derivation scripts also use); only the emptied-donor counters below are
+        # specific to this call site.
+        is_rbw = rbw_leg_mask(wege_in)
         n_referenced_before = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in[~is_rbw]
         n_emptied = n_referenced_before - _n_referenced_donors_with_legs(wege_in)
@@ -585,11 +1153,11 @@ def expand_persons_to_trips(
                            "should have been remapped upstream (completed_donor) -- check the flags are "
                            "consistent", n_emptied)
     if drop_leading_arrive_home_leg:
-        if "W_SO1" not in wege_in.columns:
-            raise KeyError("[popsim.trips] drop_leading_arrive_home_leg=True requires the MiD Wege column 'W_SO1'")
-        ordered = wege_in.sort_values([household_col, person_col, trip_col])
-        first = ordered.groupby([household_col, person_col], sort=False).head(1)
-        drop_idx = first.index[(first["W_SO1"] == 2) & first["W_ZWECK"].isin([8, 9])]
+        # Same split as above: leading_arrive_home_leg_index owns the rule, this call site owns
+        # the counters. n_first is the population the drop RATE below is reported over.
+        drop_idx = leading_arrive_home_leg_index(
+            wege_in, household_col=household_col, person_col=person_col, trip_col=trip_col)
+        n_first = wege_in[[household_col, person_col]].drop_duplicates().shape[0]
         n_referenced_before_arrive_home = _n_referenced_donors_with_legs(wege_in)
         wege_in = wege_in.drop(index=drop_idx)
         n_emptied_arrive_home = (
@@ -597,7 +1165,7 @@ def expand_persons_to_trips(
         )
         logger.info("[popsim.trips] leading arrive-home legs dropped: %d donor persons (%.2f%% of persons with Wege); "
                     "referenced donor persons emptied by the drop: %d/%d (%.2f%%)",
-                    len(drop_idx), 100.0 * len(drop_idx) / max(len(first), 1),
+                    len(drop_idx), 100.0 * len(drop_idx) / max(n_first, 1),
                     n_emptied_arrive_home, n_referenced,
                     100.0 * n_emptied_arrive_home / max(n_referenced, 1))
         if n_emptied_arrive_home:
@@ -610,6 +1178,9 @@ def expand_persons_to_trips(
         wege_in, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     ))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")
@@ -657,6 +1228,9 @@ def build_validated_trip_table(
     escort_passive_education: bool = False,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     dwell_model=None,
     **kwargs,
 ):
@@ -735,6 +1309,21 @@ def build_validated_trip_table(
         If True, drop a donor person's leading "arrive home from elsewhere"
         leg (forwarded to ``build_trip_table`` / ``expand_persons_to_trips``).
         Default False keeps the OFF path byte-identical.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` instead of ``"other"`` (forwarded to ``build_trip_table``
+        / ``map_purpose``). Default False keeps the OFF path byte-identical.
+    escort_passive_from_adult:
+        If True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        instead of the flat ``escort_passive_education`` relabel; an UNPAIRED
+        one keeps that relabel (forwarded to ``build_trip_table`` / ``map_purpose``). Requires
+        ``escort_purpose=True``. Default False keeps the OFF path
+        byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for a passive leg to count as
+        paired (forwarded to ``build_trip_table`` / ``map_purpose``). Inert unless
+        ``escort_passive_from_adult`` is True.
     dwell_model:
         Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
         to every ``PlanValidator.repair_trips`` call this function makes
@@ -776,7 +1365,10 @@ def build_validated_trip_table(
         persons, mid_wege, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
-        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg, **kwargs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes, **kwargs,
     )
     validator = PlanValidator(require_home_closure=require_home_closure)
     repair_report = None

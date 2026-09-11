@@ -66,11 +66,14 @@ def _write_mid_attribute_fixture(tmp_path):
         (3, 1), (3, 2), (3, 3), (3, 4),
     ]
     _wege_rows = [
-        "H_ID,P_ID,W_ID,W_ZWECK,hvm_imp,W_SZS,W_SZM,W_AZS,W_AZM,wegkm_imp,wegmin_imp1,W_RBW,W_SO1"
+        "H_ID,P_ID,W_ID,W_ZWECK,hvm_imp,W_SZS,W_SZM,W_AZS,W_AZM,wegkm_imp,wegmin_imp1,W_RBW,W_SO1,HP_ALTER"
     ]
     for h_id, p_id in _wege_persons:
-        _wege_rows.append(f"{h_id},{p_id},1,1,4,7,0,7,30,10.0,30,0,1")
-        _wege_rows.append(f"{h_id},{p_id},2,8,4,17,0,17,30,10.0,30,0,809")
+        # The trailing 40 is HP_ALTER, required by MID_WEGE_REQUIRED_COLS since issue #372
+        # (the passive-escort pairing reads it to identify the accompanying adult); this
+        # fixture does not exercise the pairing, so one adult age is used on every leg.
+        _wege_rows.append(f"{h_id},{p_id},1,1,4,7,0,7,30,10.0,30,0,1,40")
+        _wege_rows.append(f"{h_id},{p_id},2,8,4,17,0,17,30,10.0,30,0,809,40")
     (tmp_path / "MiD2023_Wege.csv").write_text("\n".join(_wege_rows) + "\n", encoding="utf-8")
 
 

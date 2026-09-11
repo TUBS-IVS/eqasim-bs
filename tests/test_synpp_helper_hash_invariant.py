@@ -550,13 +550,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.popsim.mid",
         "braunschweig.popsim.stage",
     ),
-    "braunschweig.popsim.distance_distributions": (
-        "braunschweig.popsim.mid",
-        "braunschweig.popsim.purpose_subtype",
-        "braunschweig.popsim.shop_subtype",
-        "braunschweig.popsim.time_imputation",
-        "braunschweig.popsim.trips",
-    ),
     "braunschweig.synthesis.incommuters": (
         "braunschweig.synthesis.vehicles.fleet_sampling_de",
     ),
@@ -784,3 +777,112 @@ def test_trips_stage_declares_a_validate_token_over_its_helpers():
         assert required in names, required
     token = trips_stage.validate(None)
     assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+
+
+def test_distance_distributions_declares_a_validate_token_over_its_helpers():
+    """braunschweig.popsim.distance_distributions had NO validate() at all: editing
+    trips.py / purpose_subtype.py / shop_subtype.py / escort_pairing.py served a STALE
+    cached distance distribution on a partial rerun -- the config VALUE is hashed via the
+    stage's declared keys, but the RULE CODE inside those helper modules was not (issue
+    #373 task 1, the same class of gap trips_stage.py closed for the trip build itself).
+
+    ``braunschweig.popsim.mid.donor`` is required in ADDITION to
+    ``braunschweig.popsim.mid`` (cleanup wave fix round, IMPORTANT 1): the package
+    __init__ only RE-EXPORTS ``load_mid_wege`` (``from .donor import load_mid_wege``),
+    so ``inspect.getsource`` of the package object hashes __init__.py's own text --
+    the import statement -- never donor.py's function body where load_mid_wege is
+    actually defined (the same own-package-transitive gap
+    braunschweig.popsim.completed_donor.py already closes for the same module, via
+    the identical mid.load_completed_donor / mid.load_mid_wege transitive path).
+    braunschweig.constants (ROUTED_DETOUR_FACTOR scales EVERY distance value this
+    stage produces) and synthesis.population.spatial.secondary.distance_distributions
+    (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE
+    inputs that shape the output and must be hashed for the same reason."""
+    import braunschweig.popsim.distance_distributions as distance_distributions
+
+    assert hasattr(distance_distributions, "validate")
+    names = ({m.__name__ for m in distance_distributions._HELPER_MODULES}
+             | set(distance_distributions._DEFERRED_HELPER_MODULE_NAMES))
+    for required in ("braunschweig.popsim.trips", "braunschweig.popsim.time_imputation",
+                     "braunschweig.popsim.escort_pairing", "braunschweig.popsim.mid",
+                     "braunschweig.popsim.mid.donor",
+                     "braunschweig.popsim.purpose_subtype", "braunschweig.popsim.shop_subtype",
+                     "braunschweig.popsim.seed",
+                     "braunschweig.popsim.stage.config_keys", "braunschweig.constants",
+                     "synthesis.population.spatial.secondary.distance_distributions"):
+        assert required in names, required
+    token = distance_distributions.validate(None)
+    assert isinstance(token, str) and len(token) == 32  # md5 hexdigest
+
+
+def test_distance_distributions_validate_token_changes_when_mid_donor_source_changes(monkeypatch):
+    """Demonstrates the IMPORTANT-1 gap directly: hashing the mid PACKAGE object is not
+    enough to detect a change to mid/donor.py (where load_mid_wege actually lives) --
+    the digest must change when donor.py's source changes. Patches inspect.getsource so
+    it returns perturbed text ONLY for the braunschweig.popsim.mid.donor module object,
+    leaving every other module's hashed source untouched."""
+    import inspect
+
+    import braunschweig.popsim.distance_distributions as distance_distributions
+    from braunschweig.popsim.mid import donor as mid_donor
+
+    token_before = distance_distributions.validate(None)
+
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is mid_donor:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    token_after = distance_distributions.validate(None)
+    assert token_before != token_after
+
+
+def test_distance_distributions_token_changes_when_the_seed_day_filter_source_changes(monkeypatch):
+    """The model's WEEKDAY DEFINITION lives in braunschweig.popsim.seed (ADR-0116).
+
+    Under ``secondary_mid_weekday_legs_only`` every layer this stage builds is estimated on
+    ``trips.weekday_diary_leg_mask``, whose ``WEEKDAY_DIARY_KERNWO`` READS
+    ``seed.MID_SEED_COLUMNS.day_filter_values``. Hashing trips' own source cannot see a change
+    on the other side of that import, so an edit to the seed's day filter would otherwise serve
+    stale cached distance layers -- the same one-edge-further-out gap the mid.donor test below
+    demonstrates for the loader.
+    """
+    import inspect
+
+    import braunschweig.popsim.distance_distributions as distance_distributions
+    from braunschweig.popsim import seed as popsim_seed
+
+    token_before = distance_distributions.validate(None)
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is popsim_seed:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(distance_distributions.inspect, "getsource", patched_getsource)
+    assert distance_distributions.validate(None) != token_before
+
+
+def test_secondary_chainsolvers_token_changes_when_the_seed_day_filter_source_changes(monkeypatch):
+    """Same weekday-definition edge for the stage that ESTIMATES the three MiD subtype deciders
+    on that universe (ADR-0116): braunschweig.popsim.seed must be inside this stage's token."""
+    import inspect
+
+    import braunschweig.synthesis.locations.secondary_chainsolvers as chainsolvers
+    from braunschweig.popsim import seed as popsim_seed
+
+    assert popsim_seed in chainsolvers._HELPER_MODULES
+    token_before = chainsolvers.validate(None)
+    real_getsource = inspect.getsource
+
+    def patched_getsource(obj):
+        if obj is popsim_seed:
+            return real_getsource(obj) + "\n# perturbed by the test\n"
+        return real_getsource(obj)
+
+    monkeypatch.setattr(chainsolvers.inspect, "getsource", patched_getsource)
+    assert chainsolvers.validate(None) != token_before

@@ -80,6 +80,45 @@ def test_by_household_size_all_absent_share():
     assert list(table.index) == [1, 2, 3, 4, 5]
 
 
+# ---------------------------------------------------------------------------
+# Person-level absence rate by size class (issue #388): the PERSON-weighted share of absent
+# persons among ALL persons living in a household of that size class -- distinct from
+# ``p_all_absent``, which is the HOUSEHOLD-weighted share of households where EVERY member is
+# absent. A reporting reference for #388's residual-only-on-households->=2 design.
+# ---------------------------------------------------------------------------
+
+def test_by_household_size_person_level_absence_rate():
+    prepared, _ = A.prepare_absence_persons(_persons())
+    table = A.build_absence_household_by_size(prepared, _households()).set_index("size_class")
+    # Household 1 (size 1): its single member is absent -> 1/1 persons absent.
+    assert table.loc[1, "n_persons_unweighted"] == 1
+    assert table.loc[1, "n_absent_persons_unweighted"] == 1
+    assert table.loc[1, "p_absent_person"] == pytest.approx(1.0)
+    # Household 2 (size 2): both members absent -> 2/2 persons absent.
+    assert table.loc[2, "n_persons_unweighted"] == 2
+    assert table.loc[2, "n_absent_persons_unweighted"] == 2
+    assert table.loc[2, "p_absent_person"] == pytest.approx(1.0)
+    # Household 3 (size 3): nobody absent -> 0/3 persons absent.
+    assert table.loc[3, "n_persons_unweighted"] == 3
+    assert table.loc[3, "n_absent_persons_unweighted"] == 0
+    assert table.loc[3, "p_absent_person"] == pytest.approx(0.0)
+    # No household of size 4 in the fixture -> empty class, NaN rate, never a substituted zero.
+    assert table.loc[4, "n_persons_unweighted"] == 0
+    assert table.loc[4, "n_absent_persons_unweighted"] == 0
+    assert np.isnan(table.loc[4, "p_absent_person"])
+
+
+def test_by_household_size_person_counts_sum_to_the_by_age_all_row():
+    """Every delivered person belongs to exactly one size class, so the by-size table's person
+    counts must reconcile with the by-age table's 'all' row (same universe, both built from the
+    same ``prepared`` frame)."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    by_age = A.build_absence_by_age_band(prepared)
+    by_size = A.build_absence_household_by_size(prepared, _households())
+    all_row_n_unweighted = int(by_age.loc[by_age["band"] == A.ALL_BAND, "n_unweighted"].iloc[0])
+    assert int(by_size["n_persons_unweighted"].sum()) == all_row_n_unweighted == len(prepared)
+
+
 def test_invariants_accept_the_builder_output_and_reject_a_share_above_one():
     prepared, _ = A.prepare_absence_persons(_persons())
     by_age = A.build_absence_by_age_band(prepared)
@@ -88,6 +127,19 @@ def test_invariants_accept_the_builder_output_and_reject_a_share_above_one():
     broken = by_age.copy(); broken.loc[0, "p_absent"] = 1.2
     with pytest.raises(ValueError, match="p_absent"):
         A.check_invariants(broken, by_size)
+
+
+def test_invariants_reject_more_absent_persons_than_persons_in_a_size_class():
+    """No-silent-fallback / no-invented-data guard (issue #388): a size class can never report
+    more absent persons than persons, so a violation must raise rather than silently pass through
+    into the committed CSV."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    by_age = A.build_absence_by_age_band(prepared)
+    by_size = A.build_absence_household_by_size(prepared, _households())
+    broken = by_size.copy()
+    broken.loc[0, "n_absent_persons_unweighted"] = broken.loc[0, "n_persons_unweighted"] + 1
+    with pytest.raises(ValueError, match="n_absent_persons_unweighted"):
+        A.check_invariants(by_age, broken)
 
 
 def test_build_absence_household_by_size_raises_on_a_non_positive_household_weight():

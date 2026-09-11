@@ -35,7 +35,8 @@ margin's universe is persons 14+ with a valid V_ERW; the SrV conditional rates' 
 persons 14+ INCLUDING the persons with a missing/implausible V_ERW code (classed non-employed
 there). The two universes differ by AT MOST 11 persons of the 14,845-person 14+ universe (0.07pp
 on the employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header
-line measures n_missing_employment_code=11 on the 17,269-person at-home-or-mobile universe, not
+line measures n_unreadable_employment_code (ADR-0117: those persons now LEAVE the universe
+instead of being classed not employed) on the at-home-or-mobile universe, not
 on the 14,845-person 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round
 1, item 7). This gap is combined as-is and documented in the written target's header, never
 silently absorbed.
@@ -401,7 +402,7 @@ HEADER_WORK = """\
 # employment_status margin's universe is persons 14+ with a valid V_ERW; the SrV conditional
 # rates' universe is persons 14+ INCLUDING the persons with a missing/implausible V_ERW code
 # (classed non-employed on the SrV side). The two universes differ by AT MOST
-# n_missing_employment_code=11 persons of the 14,845-person 14+ universe (0.07 pp on the
+# the persons whose V_ERW could not be read, who since ADR-0117 leave the universe (0.07 pp on the
 # employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header line
 # measures that count on the 17,269-person at-home-or-mobile universe, not on the 14,845-person
 # 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round 1, item 7). The two

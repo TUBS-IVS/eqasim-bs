@@ -75,6 +75,28 @@ limitations: |
   individual-only draw at the corresponding per-band person rates could not reproduce this size
   gradient (ADR-0110, rejected alternatives).
 
+  Additional PERSON-level columns (issue #388, ADR-0110 Amendment 1, added on top of the four
+  HOUSEHOLD-level columns above, which are UNCHANGED by this addition): n_persons_unweighted,
+  n_absent_persons_unweighted, p_absent_person -- the GEWICHT_P_ZENSUS person-weighted share of
+  absent persons among ALL persons living in a household of that size class (every delivered
+  person counted once, whether or not their own household is fully absent). This differs from
+  p_all_absent, which is the household-weighted share of households where EVERY member is
+  absent -- the two columns answer different questions and are not expected to be numerically
+  close. p_absent_person is a REPORTING reference only: braunschweig.synthesis.day_absence
+  .absence.AbsenceReference.p_absent_person_by_size feeds draw_absence's by_size_class
+  diagnostic (reference_rate/delta_pp), never the draw itself (unlike p_all_absent, which the
+  household stage consumes directly), and it is what the individual-stage eligibility gate
+  (day_absence_individual_stage_min_household_size) is designed to bring the model closer to for
+  eligible households, per ADR-0110 Amendment 1.
+
+  Measured 2026-09-09 (n persons: 1,969 / 7,500 / 3,498 / 3,736 / 1,520 for size classes 1-5):
+  p_absent_person = 0.0514 (size 1), 0.0587 (size 2), 0.0543 (size 3), 0.0416 (size 4), 0.0175
+  (size 5+). Size 1's person-level rate (5.14 %) is, by construction, close to but not identical
+  to the household-level p_all_absent for size 1 (5.29 %) -- for a single-person household the
+  two events (the household is fully absent; this person is absent) coincide, and the small
+  difference between the two committed shares comes from the different weight (GEWICHT_HH_ZENSUS
+  vs GEWICHT_P_ZENSUS) rather than from a different underlying event.
+
   Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
   all, the region rate implicitly excludes Wolfsburg residents, the same caveat every SrV-derived
   table in this codebase carries.
@@ -95,3 +117,10 @@ notes: |
   age-band reference for the INDIVIDUAL stage of the same draw. Both tables share one provenance
   header format, written together by scripts/extract_srv_absence.py in a single run. Decision
   record: ADR-0110.
+
+  p_absent_person (issue #388) is read the same way, into
+  AbsenceReference.p_absent_person_by_size (NaN accepted for an empty size class, since this is a
+  REPORTING reference, unlike p_all_absent_by_size, which the household draw consumes and which
+  must never be NaN) -- it feeds only draw_absence's by_size_class diagnostic, never the draw
+  itself. Decision record for the eligibility gate this reference now also supports: ADR-0110
+  "Amendment 1 (2026-09-09, issue #388)".

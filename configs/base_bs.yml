@@ -79,6 +79,39 @@ config:
   # own leg; 100% minors) become the child's own education trip at their own
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
+  # MiD W_ZWECK 10 'anderer Zweck' follows MiD's own main-purpose fold (hwzweck1 = 6
+  # Freizeit for 100 % of the legs, committed mid2023_w_zweck_by_hwzweck1.csv, ADR-0111):
+  # -> 'leisure' in the plan AND in the leisure participation seed. false = 'other'.
+  w_zweck_10_as_leisure: true
+  # Passive escort legs (W_ZWECK 13, the escorted child's own leg) take the purpose of
+  # the same-household adult leg departing within escort_passive_pair_max_gap_minutes
+  # (94.2 % of the legs pair within 15 min; 12.8 % of the passive mass ends as a trip
+  # HOME with the adult -- committed fold in mid2023_escort_w_zweck_split.csv). Adult
+  # Bringen/Holen (6) and unpaired legs keep the escort_passive_education rule.
+  # Requires escort_purpose. ADR-0112. false = every code-13 leg -> education.
+  escort_passive_from_adult: true
+  # Unit: minutes; valid range > 0. Inert while escort_passive_from_adult is false.
+  escort_passive_pair_max_gap_minutes: 15
+  # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
+  # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
+  purpose_subtype_codeplan_sentinels: true
+  # MiD W_ZWECK 10 leisure legs (no W_ZWD detail, 43.2 % of the labelled leisure mass on the
+  # committed weekday reference universe) form the fifth leisure subtype 'leisure_unspecified'
+  # with their own distance layer instead of being imputed one of the four W_ZWD groups
+  # (ADR-0115). Requires w_zweck_10_as_leisure. false = four groups.
+  leisure_unspecified_subtype: true
+  # The secondary distance layers and the three MiD subtype deciders estimate on the WEEKDAY
+  # DIARY universe -- the seed's own day filter and no rbW summary records, 67.9 % of the
+  # delivered MiD Wege rows -- instead of every delivered row incl. weekends (ADR-0116). The
+  # synthetic day IS a weekday, and the committed MiD reference tables measure the same
+  # universe. false = the pre-ADR-0116 all-day estimation.
+  secondary_mid_weekday_legs_only: true
+  # MiD legs whose MAIN purpose is the no-answer code W_ZWECK 99 ('keine Angabe', 0.58 % of the
+  # weekday legs but 2.80 % of everything the model calls 'other') are excluded from every
+  # secondary ESTIMATION -- the purpose and subtype distance pools and the coarse other-split
+  # probabilities -- so the remaining purposes renormalise over legs whose purpose is known
+  # (ADR-0117). The trip build is unchanged: the leg is a real trip and keeps 'other'.
+  exclude_no_answer_purpose_legs: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
   # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs
@@ -124,6 +157,12 @@ config:
   # Guard (percentage points): a band with >= 1,000 persons whose realised absence
   # deviates from the reference by more than this WARNS (a broken join, not a target).
   day_absence_max_band_deviation_pp: 1.0
+  # Households below this size skip the INDIVIDUAL residual stage (issue #388, ADR-0110
+  # amendment 1): for a single-person household "whole household absent" IS "person
+  # absent", so the household stage already realises the SrV single-person rate (5.1 %)
+  # and any residual on top over-absents singles. 2 (default) = residual only on
+  # multi-person households; 1 = the PR #387 behaviour (byte-identical).
+  day_absence_individual_stage_min_household_size: 2
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location

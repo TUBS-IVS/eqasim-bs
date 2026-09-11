@@ -179,6 +179,21 @@ def persons_with_purpose(legs: pd.DataFrame, purpose_codes) -> tuple[set, dict]:
 
 
 # --------------------------------------------------------------------------- universe
+def _employment_flag(employment_code: pd.Series, is_unreadable) -> pd.array:
+    """``employed`` as a NULLABLE boolean: ``pd.NA`` where ``V_ERW`` could not be read.
+
+    A plain ``bool`` column cannot express "this person did not answer": ``isin`` returns False
+    for a missing or negative code, which reads as "not employed" and puts a non-answer into the
+    denominator of every employed share computed from it (ADR-0117). The nullable dtype makes the
+    non-answer visible to every consumer instead, and
+    :func:`build_work_by_employment_aggregate` -- the only place the flag is USED -- drops those
+    rows from its own universe with a logged count.
+    """
+    flag = pd.array(employment_code.isin(EMPLOYED_V_ERW).values, dtype="boolean")
+    flag[is_unreadable] = pd.NA
+    return flag
+
+
 def prepare_universe_persons(persons: pd.DataFrame,
                              households: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """The at-home-or-mobile person universe with its Kreis, weight, age and employed flag.
@@ -204,16 +219,21 @@ def prepare_universe_persons(persons: pd.DataFrame,
     * ``missing_kreis`` -- the person's ``HHNR`` has no household row, or the household ``AGS``
       is missing/sentinel so :func:`srv_distance_targets.kreis_from_ags` returns ``NaN``
       (measured over the persons surviving the away-from-home filter; the two sub-reasons are
-      logged separately).
+      logged separately);
+    * ``n_unreadable_employment_code`` -- ``V_ERW`` missing or negative (``-8`` "nicht erhoben",
+      ``-10`` "unplausibel"), measured over the persons surviving the Kreis filter. Such a person
+      answered NOTHING about their employment; before ADR-0117 they were silently classed NOT
+      employed, which put a non-answer into the denominator of the employed share this universe's
+      control target is built from.
 
     Returns ``(universe, diagnostics)``. ``universe`` has exactly :data:`UNIVERSE_COLUMNS`:
     ``pid`` (``<HHNR>_<PNR>``), ``kreis`` (5-digit key), ``weight`` (``GEWICHT_P_ZENSUS``),
     ``age`` (``V_ALTER``, ``NaN`` for a negative/missing sentinel) and ``employed``
-    (``V_ERW in EMPLOYED_V_ERW``). ``diagnostics`` carries the three exclusion counts above plus
-    ``n_persons_total`` (input rows), ``n_universe`` (surviving rows), ``n_missing_age`` and
-    ``n_missing_employment_code`` (persons classed NOT employed because ``V_ERW`` is a missing
-    code, measured on the universe) -- meant to be written verbatim into the committed CSV's
-    provenance header, so the exclusion counts live IN the committed file.
+    (``V_ERW in EMPLOYED_V_ERW``, over the persons whose code could be read). ``diagnostics``
+    carries the four exclusion counts above plus ``n_persons_total`` (input rows), ``n_universe``
+    (surviving rows) and ``n_missing_age`` (persons whose ``V_ALTER`` is a sentinel, measured on
+    the universe) -- meant to be written verbatim into the committed CSV's provenance header, so
+    the exclusion counts live IN the committed file.
     """
     _require_columns(persons, PERSON_COLUMNS, "persons")
     _require_columns(households, HOUSEHOLD_COLUMNS, "households")
@@ -288,22 +308,34 @@ def prepare_universe_persons(persons: pd.DataFrame,
             % (int((~working["kreis"].isin(ZGB_KREISE)).sum()), outside_zgb, list(ZGB_KREISE)))
 
     age = pd.to_numeric(working["V_ALTER"], errors="coerce")
+
+    # A person whose V_ERW cannot be read (missing, or a negative SrV code such as -8 "nicht
+    # erhoben" / -10 "unplausibel") answered NOTHING about their employment, so `employed` is
+    # UNKNOWN for them rather than False. Before ADR-0117 `isin(EMPLOYED_V_ERW)` silently made it
+    # False, which put a non-answer into the DENOMINATOR of the employed share the work control is
+    # built from. They stay in the UNIVERSE -- their education participation is perfectly readable
+    # and the education control has nothing to do with employment -- and are dropped only where
+    # the employed flag is actually used (build_work_by_employment_aggregate), which is the
+    # narrowest place that fixes the defect.
     employment_code = pd.to_numeric(working["V_ERW"], errors="coerce")
+    is_unreadable_employment = (employment_code.isna() | (employment_code < 0)).values
+    n_unreadable_employment_code = int(is_unreadable_employment.sum())
+
     universe = pd.DataFrame({
         "pid": _person_ids(working).values,
         "kreis": working["kreis"].values,
         "weight": pd.to_numeric(working["GEWICHT_P_ZENSUS"], errors="coerce").astype(float).values,
         "age": age.where(age >= 0).values,
-        "employed": employment_code.isin(EMPLOYED_V_ERW).values,
+        "employed": _employment_flag(employment_code, is_unreadable_employment),
     })[UNIVERSE_COLUMNS].reset_index(drop=True)
 
     n_missing_age = int(universe["age"].isna().sum())
-    n_missing_employment_code = int((employment_code.isna() | (employment_code < 0)).sum())
-    logger.info("%s universe: %d/%d persons (%.2f%%); %d have no valid age (V_ALTER sentinel) "
-                "and %d have a missing V_ERW code and are therefore classed NOT employed",
+    logger.info("%s universe: %d/%d persons (%.2f%%); %d have no valid age (V_ALTER sentinel); "
+                "%d carry employed=<NA> because their V_ERW could not be read and are dropped by "
+                "the WORK control only (ADR-0117: a non-answer is not an employment status)",
                 _LOG_TAG, len(universe), n_persons_total,
                 100.0 * len(universe) / n_persons_total if n_persons_total else float("nan"),
-                n_missing_age, n_missing_employment_code)
+                n_missing_age, n_unreadable_employment_code)
     missing_kreise = [code for code in ZGB_KREISE if code not in set(universe["kreis"])]
     if missing_kreise:
         logger.info("%s ZGB Kreise with no person in this universe: %s (%s is Wolfsburg, which "
@@ -318,7 +350,7 @@ def prepare_universe_persons(persons: pd.DataFrame,
         "missing_kreis": n_missing_kreis,
         "n_universe": int(len(universe)),
         "n_missing_age": n_missing_age,
-        "n_missing_employment_code": n_missing_employment_code,
+        "n_unreadable_employment_code": n_unreadable_employment_code,
     }
     return universe, diagnostics
 
@@ -355,6 +387,19 @@ def build_work_by_employment_aggregate(persons: pd.DataFrame, legs: pd.DataFrame
               "work-control universe (age >= %d; persons without a valid age are dropped here "
               "too)" % MIN_AGE_WORK)
 
+    # ADR-0117: a person whose V_ERW could not be read carries employed = pd.NA. They answered
+    # nothing about their employment, so they belong in NEITHER the employed nor the not-employed
+    # group; leaving them in would deflate employed_share by the non-response rate and would put
+    # non-answers into p_work_nonemployed. They stay in the universe for the education control,
+    # which does not read this flag.
+    n_before_readable = len(adults)
+    unknown_employment = adults["employed"].isna()
+    n_unknown_employment = int(unknown_employment.sum())
+    _log_drop(n_unknown_employment, n_before_readable,
+              "readable employment status (V_ERW present and non-negative; a missing or negative "
+              "code is a non-answer, not 'not employed')")
+    adults = adults[~unknown_employment].copy()
+
     work_pids, leg_diagnostics = persons_with_purpose(legs, WORK_E_ZWECK_9)
     adults["has_work"] = adults["pid"].isin(work_pids)
 
@@ -363,8 +408,9 @@ def build_work_by_employment_aggregate(persons: pd.DataFrame, legs: pd.DataFrame
     rows.append(_work_row(LEVEL_TOTAL, REGION_CODE, adults))
     table = pd.DataFrame(rows, columns=WORK_COLUMNS)
 
-    diagnostics.update(n_below_min_age=n_below_min_age, n_age_14plus=int(len(adults)),
-                       **leg_diagnostics)
+    diagnostics.update(n_below_min_age=n_below_min_age,
+                       n_unknown_employment_status=n_unknown_employment,
+                       n_age_14plus=int(len(adults)), **leg_diagnostics)
     total = table[table["level"] == LEVEL_TOTAL].iloc[0]
     logger.info("%s work-by-employment table: %d rows (%d Kreis + 1 %s); %s row "
                 "(n=%d): employed_share=%.4f, p_work_employed=%.4f, p_work_nonemployed=%.4f",

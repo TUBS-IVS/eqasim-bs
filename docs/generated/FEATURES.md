@@ -32,6 +32,7 @@ may only name run manifests (no run, no claim).
 | [einpendler_injection](../registry/features/einpendler_injection.yml) | cordon | active | ON | A/A/- | 5 | -- | none | none | unvalidated | pending |
 | [employment_margin](../registry/features/employment_margin.yml) | attributes | parked | off | -/-/i | 1 | -- | marker | none | unvalidated | pending |
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
+| [escort_passive_from_adult](../registry/features/escort_passive_from_adult.yml) | behavior | active | ON | A/i/- | 10 | proven | marker | committed | unvalidated | pending |
 | [escort_purpose](../registry/features/escort_purpose.yml) | behavior | active | ON | A/-/- | 5 | proven | none | committed | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | pending |
 | [explicit_w_zweck_purposes](../registry/features/explicit_w_zweck_purposes.yml) | behavior | active | ON | A/-/- | 2 | proven | marker | none | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | pending |
 | [fine_teen_age_bands](../registry/features/fine_teen_age_bands.yml) | population | active | ON | A/A/- | 5 | proven | marker | none | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | pending |
@@ -60,10 +61,12 @@ may only name run manifests (no run, no claim).
 | [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |
 | [joint_age_size_margin](../registry/features/joint_age_size_margin.yml) | population | supported | off | -/-/A | 1 | -- | none | none | unvalidated | pending |
 | [kreis_income_control](../registry/features/kreis_income_control.yml) | attributes | active | off | i/i/- | 2 | proven | marker | committed | unvalidated | pending |
+| [leisure_unspecified_subtype](../registry/features/leisure_unspecified_subtype.yml) | secondary | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
+| [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 4 | -- | marker | none | unvalidated | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
@@ -73,11 +76,13 @@ may only name run manifests (no run, no claim).
 | [population_validation](../registry/features/population_validation.yml) | validation | active | ON | A/s/s | 1 | -- | marker | none | unvalidated | pending |
 | [pt_subscription_conditioned](../registry/features/pt_subscription_conditioned.yml) | attributes | active | off | -/-/A | 1 | -- | marker | committed | unvalidated | pending |
 | [pt_ticket_group_kreis_control](../registry/features/pt_ticket_group_kreis_control.yml) | attributes | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`, `smoke-pt-never-group-03101-off-2026-08-21`, `smoke-pt-never-group-03101-on-2026-08-21`) | pending |
+| [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
+| [secondary_mid_weekday_universe](../registry/features/secondary_mid_weekday_universe.yml) | secondary | active | ON | A/-/- | 7 | proven | marker | committed | unvalidated | pending |
 | [secondary_srv_location_types](../registry/features/secondary_srv_location_types.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | pending |
 | [sector_aware_attraction_tilt](../registry/features/sector_aware_attraction_tilt.yml) | work | parked | off | i/i/i | 1 | -- | none | none | measured_vs_reference (`sector-aware-ab-2026-07-15`) | pending |
 | [sex_aware_couples](../registry/features/sex_aware_couples.yml) | population | supported | off | -/-/A | 1 | proven | none | assumption | unvalidated | pending |
@@ -94,3 +99,4 @@ may only name run manifests (no run, no claim).
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | active | ON | A/A/i | 4 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
+| [w_zwd_codeplan_sentinels](../registry/features/w_zwd_codeplan_sentinels.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |

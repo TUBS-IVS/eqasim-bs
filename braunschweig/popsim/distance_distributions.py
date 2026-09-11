@@ -75,6 +75,9 @@ Activity purposes:
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
 import logging
 
 import numpy as np
@@ -86,9 +89,27 @@ import pandas as pd
 from synthesis.population.spatial.secondary.distance_distributions import (
     calculate_bounds,
 )
+# Module OBJECT of the same default-stage import above (in addition to the named
+# `calculate_bounds` import): needed so validate()'s _HELPER_MODULES tuple can hash its
+# source. Checked for an import cycle: this module has no first-party imports at all
+# (only numpy/pandas), so binding it here is safe.
+from synthesis.population.spatial.secondary import (
+    distance_distributions as _default_distance_distributions,
+)
 
+# Module OBJECTS (in addition to the named imports below): needed so validate()'s
+# _HELPER_MODULES tuple can hash their source via inspect.getsource. escort_pairing is
+# imported here even though this file never calls it directly -- trips.map_purpose does,
+# under escort_passive_from_adult -- for exactly the reason trips_stage.py hashes it (see
+# the _HELPER_MODULES comment below).
+from braunschweig import constants as _constants
+from braunschweig.popsim import diary_facts as _diary_facts
+from braunschweig.popsim import escort_pairing as _escort_pairing
+from braunschweig.popsim import time_imputation as _time_imputation
+from braunschweig.popsim import trips as _trips
 from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
-from braunschweig.popsim.trips import map_mode, map_purpose, mid_time_seconds
+from braunschweig.popsim.trips import (
+    DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, map_mode, map_purpose, mid_time_seconds)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +117,91 @@ logger = logging.getLogger(__name__)
 # Canonical project-wide constant (braunschweig.constants); local alias kept
 # for the existing references.
 from braunschweig.constants import ROUTED_DETOUR_FACTOR as DETOUR_FACTOR
+
+# synpp's get_stage_hash hashes only THIS file's own source (inspect.getsource of this
+# module); every helper whose code shapes this stage's OUTPUT must therefore be folded
+# into validate()'s token below, or an edit to it silently reuses the stale cached
+# distance distributions on a partial rerun -- the config VALUE the stage declares is
+# hashed, but the RULE CODE inside a helper module is not. This stage had NO token at all
+# until issue #373 task 1 (see tests/test_synpp_helper_hash_invariant.py, which carried an
+# ALLOWED_VIOLATIONS debt entry for it), the same class of gap
+# braunschweig.popsim.trips_stage.py closed for the trip build itself after the
+# 2026-08-19 cache-invalidation hazard (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml).
+#
+# trips carries map_mode/map_purpose, which this stage's ENTIRE output (mode + purpose
+# vocabulary, for both the legacy and the by_purpose layer) is built from. time_imputation
+# defines WEGMIN_CODE_THRESHOLD, the validity bound the coded-clock-time rescue (Step 3b
+# above) uses to decide whether wegmin_imp1 can rescue a trip's travel_time. escort_pairing
+# decides WHICH adult leg a passive escort leg (W_ZWECK 13) is paired with under
+# escort_passive_from_adult, and therefore which purpose -- and so which distance layer --
+# that leg's distance value lands in; this module never calls it directly, trips.map_purpose
+# does, exactly as for trips_stage.py. constants owns ROUTED_DETOUR_FACTOR, which scales
+# EVERY distance value this stage produces (Step 4 below); the default-stage
+# distance_distributions module owns calculate_bounds, the quantile-binning logic this
+# stage reuses verbatim (Step 6). Both are OUT-OF-PACKAGE (not under braunschweig.popsim),
+# so the own-package-sibling coverage gate (tests/test_synpp_helper_hash_invariant.py)
+# does not require them, but they shape the output just as directly as the own-package
+# helpers above and are checked for import cycles (neither has any first-party import).
+_HELPER_MODULES = (
+    _trips,
+    _diary_facts,
+    _time_imputation,
+    _escort_pairing,
+    _constants,
+    _default_distance_distributions,
+)
+# Imported LAZILY inside run()/configure()/execute() (to avoid an unconditional import cost
+# when the shop/leisure/other subtype splits are off, and -- for config_keys -- a heavy
+# top-level import of the popsim stage package), so they are hashed by dotted module name via
+# importlib rather than as a bound module object, mirroring trips_stage.py's own deferred
+# tuple. mid.load_mid_wege is this stage's only data source; mid.donor is named SEPARATELY
+# from the mid package because mid/__init__.py only RE-EXPORTS load_mid_wege
+# (`from .donor import load_mid_wege`) -- inspect.getsource of the package object hashes
+# only __init__.py's own text (the import statement), never donor.py's function body where
+# load_mid_wege is actually defined, mirroring the identical mid.donor entry
+# braunschweig.popsim.completed_donor.py already carries for the same transitive reason.
+# purpose_subtype/shop_subtype define the W_ZWD subtype groupings the leisure/shop/other
+# subtype splits are built from; config_keys is the shared home of the four purpose-package
+# config keys this stage declares. seed owns the model's WEEKDAY DEFINITION (ADR-0116):
+# trips.WEEKDAY_DIARY_KERNWO READS seed.MID_SEED_COLUMNS.day_filter_values, so under
+# secondary_mid_weekday_legs_only every layer this stage builds depends on that constant --
+# and hashing trips' own source cannot see a change on the other side of that import, the
+# same one-edge-further-out reason the chainsolver stage hashes trips itself.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.mid",
+    "braunschweig.popsim.mid.donor",
+    "braunschweig.popsim.purpose_subtype",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.shop_subtype",
+    "braunschweig.popsim.stage.config_keys",
+)
+
+
+def validate(context):
+    """synpp validation token: md5 over the helper modules above.
+
+    Same mechanism and boundary semantics as ``braunschweig.popsim.stage.validate()``
+    (the single canonical statement) and ``braunschweig.popsim.trips_stage.validate()``
+    (which closes the identical own-package-sibling gap for the trip build); kept minimal
+    here because this stage's helper surface is small. A deferred module that fails to
+    import raises rather than being skipped -- dropping it would keep the stale cache
+    alive exactly when the code is broken.
+    """
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"distance_distributions validate(): cannot hash the deferred helper "
+                f"module {module_name!r} ({type(error).__name__}: {error}); it must not "
+                "be skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
+    return digest.hexdigest()
 
 # Primary activity types — trips where BOTH ends are primary are excluded.
 # Matches the default stage exactly (synthesis/population/spatial/secondary/
@@ -221,13 +327,89 @@ def _build_mode_distributions(df: pd.DataFrame) -> dict:
     return distributions
 
 
+def _build_leisure_unspecified_layer(df: pd.DataFrame) -> dict | None:
+    """Per-mode distributions of the W_ZWECK-10 leisure legs, or None when empty.
+
+    The fifth leisure subtype (issue #373, ADR-0115). Unlike the four W_ZWD
+    groups this one is defined by the RAW MiD purpose code -- W_ZWECK 10
+    ("anderer Zweck", ``purpose_subtype.LEISURE_UNSPECIFIED_ZWECK``) legs become
+    leisure through ``w_zweck_10_as_leisure`` but never carry a leisure W_ZWD
+    detail code, so no W_ZWD grouping can reach them.
+
+    Parameters
+    ----------
+    df:
+        The already-prepared, primary-only-filtered frame of Step 5 (columns
+        ``mode``, ``travel_time``, ``distance``, ``weight``,
+        ``following_purpose``, plus the raw ``W_ZWECK``).
+
+    Returns
+    -------
+    dict or None
+        ``{mode: {"bounds", "distributions"}}`` for the W_ZWECK-10 leisure
+        legs, or None when there are none (the caller then adds no layer).
+
+    Raises
+    ------
+    ValueError
+        When ``W_ZWECK`` is absent: the column DEFINES the group, so the layer
+        cannot be built and must not be skipped silently. Defensive -- W_ZWECK
+        is in REQUIRED_COLUMNS and is kept through Step 5 via _OPTIONAL_COLUMNS.
+
+    Side effects
+    ------------
+    Logs the share of the leisure universe this group takes (INFO), and warns
+    when the group is empty -- the fold being off is the expected cause, and a
+    silently missing layer would send every code-10 leg to the aggregate
+    fallback without any trace (CLAUDE.md "Fallback transparency").
+    """
+    if "W_ZWECK" not in df.columns:
+        raise ValueError(
+            "[popsim.distance_distributions] leisure_unspecified_subtype=True needs the "
+            "raw W_ZWECK column on the Wege frame (it defines the group), but it is absent; "
+            "the layer cannot be built and must not be skipped silently."
+        )
+
+    from braunschweig.popsim.purpose_subtype import (LEISURE_UNSPECIFIED_GROUP,
+                                                     LEISURE_UNSPECIFIED_ZWECK)
+
+    leisure_df = df[df["following_purpose"] == "leisure"]
+    unspecified_df = leisure_df[leisure_df["W_ZWECK"].isin(LEISURE_UNSPECIFIED_ZWECK)]
+    # An empty leisure universe has no rate, so say that instead of printing
+    # "nan%" -- a NaN in a rate line reads as a broken computation and hides the
+    # real finding (there were no leisure legs to split at all).
+    rate_text = (
+        f"({100.0 * len(unspecified_df) / len(leisure_df):.1f}%)" if len(leisure_df)
+        else "(no leisure legs)"
+    )
+    logger.info(
+        "[popsim.distance_distributions] leisure subtype %s: %d/%d leisure legs %s",
+        LEISURE_UNSPECIFIED_GROUP, len(unspecified_df), len(leisure_df), rate_text,
+    )
+    if not len(unspecified_df):
+        logger.warning(
+            "[popsim.distance_distributions] leisure subtype %s: 0 legs -- is "
+            "w_zweck_10_as_leisure on? The layer is not built.", LEISURE_UNSPECIFIED_GROUP)
+        return None
+    return _build_mode_distributions(unspecified_df)
+
+
 def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         shop_daily_split: bool = False,
         leisure_subtype_split: bool = False,
         other_subtype_split: bool = False,
         escort_purpose: bool = False,
         explicit_round_trip_purposes: bool = True,
-        escort_passive_education: bool = False) -> dict:
+        escort_passive_education: bool = False,
+        w_zweck_10_as_leisure: bool = False,
+        escort_passive_from_adult: bool = False,
+        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        exclude_rbw_legs: bool = False,
+        drop_leading_arrive_home_leg: bool = False,
+        codeplan_sentinels: bool = False,
+        leisure_unspecified_subtype: bool = False,
+        weekday_legs_only: bool = False,
+        exclude_no_answer_purpose: bool = False) -> dict:
     """Build secondary distance distributions from the MiD 2023 Wege survey.
 
     This is the pure computational core, factored out of execute() so that
@@ -282,6 +464,102 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         ``escort_purpose=True`` (enforced by ``map_purpose``); requires
         by_purpose for a dedicated layer, harmless otherwise. Default False
         keeps the OFF path byte-identical.
+    w_zweck_10_as_leisure:
+        When True (issue #373, ADR-0111), maps W_ZWECK 10 ("anderer Zweck") to
+        the ``"leisure"`` purpose instead of ``"other"`` (forwarded to
+        ``map_purpose``), following MiD's own hwzweck1 fold. Default False
+        keeps the OFF path byte-identical.
+    escort_passive_from_adult:
+        When True (issue #372, ADR-0112), a PAIRED passive escort leg (W_ZWECK
+        13) takes the purpose derived from the accompanying adult's W_ZWECK
+        (forwarded to ``map_purpose``), so those legs land in the distance
+        layer of the purpose the plan actually gives them instead of all in
+        ``education``. Requires ``escort_purpose=True`` and the MiD Wege
+        columns the pairing needs (``H_ID``/``P_ID``/``W_ID``/``W_SZS``/
+        ``W_SZM``/``HP_ALTER``; ``load_mid_wege`` loads all of them). Default
+        False keeps the OFF path byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for that pairing; inert unless
+        ``escort_passive_from_adult`` is True.
+    exclude_rbw_legs:
+    drop_leading_arrive_home_leg:
+        Issue #373 task 2 (ruling C-R20/C-R21). Restrict the passive-escort
+        pairing's CANDIDATE UNIVERSE (both the passive legs it may pair and
+        the adult legs it may pair them with) to
+        ``trips.legs_kept_by_the_trip_build(mid_wege, exclude_rbw_legs=...,
+        drop_leading_arrive_home_leg=...)``, forwarded to ``map_purpose`` as
+        ``pairing_candidate_mask``. The trip build itself already drops these
+        legs BEFORE it pairs (they never reach ``map_purpose`` there), so its
+        pairing naturally agrees with these flags; this stage keeps every leg
+        for its OWN distance pool (which is UNAFFECTED by these two flags --
+        they only narrow which legs the PAIRING considers; ``weekday_legs_only``
+        is the one keyword that DOES narrow the pool, in Step 0a, and because it
+        runs first it also removes those legs from the pairing universe below
+        regardless of these two flags), so without this
+        it could pair a passive leg to a leg the plan never realises (an
+        excluded rbW summary leg or a dropped leading arrive-home leg),
+        landing the leg's distance under a purpose the plan does not give it.
+        Both default False (matching every other flag's code default in this
+        function; the byte-identical direct-call behaviour, with the pairing
+        considering every leg); ``configure()``/``execute()`` read the SAME
+        shared ``KEY_EXCLUDE_RBW_LEGS`` / ``KEY_DROP_LEADING_ARRIVE_HOME_LEG``
+        constants ``braunschweig.popsim.trips_stage`` declares, whose
+        production default (``configs/base_bs.yml``) is True for both, so a
+        full pipeline run resolves the SAME value the trip build uses. Inert
+        unless ``escort_passive_from_adult`` is also True.
+    codeplan_sentinels:
+        When True (issue #242 Task 5, ADR-0113), the leisure_subtype_split /
+        other_subtype_split donor pools above are built from
+        ``purpose_subtype.leisure_spec(True)`` / ``other_errand_spec(True))``
+        instead of the raw ``LEISURE_GROUPS`` / ``OTHER_ERRAND_GROUPS``
+        constants, so W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung k.A.")
+        -- NO-DETAIL codeplan codes -- are excluded from the
+        "leisure_activity" / "other_errand_long" donor pool the SAME way
+        ``braunschweig.synthesis.locations.secondary_chainsolvers``'s
+        deciders exclude them from ESTIMATION. Both consumers read the SAME
+        ``purpose_subtype_codeplan_sentinels`` config key and must resolve the
+        same value, or a leg the decider labels "leisure_activity" /
+        "other_errand_long" would draw its distance from a donor pool that
+        still includes the excluded legs. Default False keeps this function's
+        OFF path byte-identical to before issue #242 Task 5; inert unless
+        ``leisure_subtype_split`` or ``other_subtype_split`` is also True.
+    leisure_unspecified_subtype:
+        When True (issue #373, ADR-0115), adds the FIFTH leisure subtype layer
+        ``leisure_unspecified``: the legs whose RAW MiD purpose code is in
+        ``purpose_subtype.LEISURE_UNSPECIFIED_ZWECK`` (W_ZWECK 10, "anderer
+        Zweck"). Those legs are leisure only under ``w_zweck_10_as_leisure``
+        and never carry a leisure W_ZWD detail code, so the four W_ZWD group
+        layers above cannot reach them and they would otherwise land in the
+        aggregate "leisure" fallback layer alone. The group is therefore
+        defined by W_ZWECK, not by W_ZWD -- it is built whether or not the
+        W_ZWD column is present (mirroring ``other_escort``). Requires
+        ``leisure_subtype_split`` (the subtype layers only exist there) and,
+        to be non-empty, ``w_zweck_10_as_leisure``; ``configure()`` refuses
+        that latter contradiction before any stage runs, but only while
+        ``secondary_leisure_subtype_split`` is on -- with the split off this
+        flag is inert and its value cannot contradict anything. An empty group
+        is logged as a WARNING rather than skipped silently. Default False
+        keeps this function's OFF path byte-identical.
+    weekday_legs_only:
+        When True (issue #373, ADR-0116), EVERY layer this function builds is
+        estimated on the WEEKDAY DIARY universe -- the legs of
+        ``trips.weekday_diary_leg_mask``: the reporting day is in the
+        PopulationSim seed's own day filter (``trips.WEEKDAY_DIARY_KERNWO``) and
+        the leg is not an rbW summary record. The synthetic population IS a
+        weekday and the committed MiD reference tables measure that same
+        universe, so without this the layers describe a mixture of weekdays and
+        weekends (ADR-0115 "Two universes"). Applied in Step 0a, BEFORE the
+        pairing mask of Step 0b and before the purpose mapping, so the aggregate,
+        the per-purpose and every subtype layer share ONE universe. Requires the
+        MiD Wege columns ``kernwo`` and ``W_RBW``; they are deliberately NOT in
+        ``REQUIRED_COLUMNS`` (they are needed only under this flag), and the
+        helper raises naming the missing column. Default False keeps this
+        function's OFF path byte-identical; ``configure()`` / ``execute()`` read
+        the shared ``KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY`` constant (production
+        default True), which
+        ``braunschweig.synthesis.locations.secondary_chainsolvers`` declares too
+        so the deciders' ESTIMATION universe and these layers' donor universe
+        cannot diverge.
 
     Returns
     -------
@@ -322,11 +600,68 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
     df = mid_wege.copy()
 
+    # --- Step 0a: the weekday diary universe (issue #373, ADR-0116). ----------
+    # Every layer this stage builds describes ONE synthetic weekday, so the donor legs are
+    # the seed's weekday diaries without rbW summary records -- the SAME universe the
+    # committed MiD reference tables measure (scripts/extract_mid_w_zwd_groups.py, whose
+    # filter calls the very same helper). Applied BEFORE the pairing mask of Step 0b and
+    # before the purpose mapping of Step 1, so the aggregate, the per-purpose and every
+    # subtype layer are built from one universe rather than a half-filtered mixture. The
+    # helper logs the kept rate with both drop reasons and raises on an empty result or a
+    # missing kernwo/W_RBW column (those two are required ONLY on this path, which is why
+    # they are not in REQUIRED_COLUMNS).
+    #
+    # Filtering HERE, before the chain is re-derived, has a second effect that is intended
+    # rather than tolerated (ADR-0116 Consequences, controller ruling W5): Step 2 derives
+    # preceding_purpose per (H_ID, P_ID) chain from the legs still in the frame, and Step 5
+    # then excludes the trips whose BOTH ends are primary activities -- so a chain that
+    # contained a dropped leg (a weekend leg, or an rbW summary record sitting inside an
+    # otherwise kept diary) has its preceding purposes re-derived without it, and the set of
+    # primary-both trips excluded can change with it. Under exclude_rbw_legs=true
+    # (production) the trip build drops those very rbW records from the plans, so
+    # re-deriving the chain without them moves this donor pool CLOSER to the plan's own leg
+    # universe. Do not move this block after Step 2 without meeting that reasoning.
+    if weekday_legs_only:
+        df = _trips.restrict_to_weekday_diary_legs(
+            df, log_tag="[popsim.distance_distributions]")
+
+    # --- Step 0b: restrict the passive-escort pairing's candidate universe -----
+    # (issue #373 task 2, ruling C-R20/C-R21). Built BEFORE map_purpose (which does
+    # the actual pairing) and BEFORE the primary/secondary filter below, from the
+    # SAME helper the trip build's own leg-drop step uses -- see the run() docstring's
+    # exclude_rbw_legs/drop_leading_arrive_home_leg entry for the full rationale. A
+    # mask is only constructed when at least one flag is True, so the default
+    # (both False) leaves pairing_candidate_mask at None and map_purpose takes its
+    # byte-identical OFF path (no mask ever built or passed).
+    pairing_candidate_mask = None
+    if exclude_rbw_legs or drop_leading_arrive_home_leg:
+        kept = _trips.legs_kept_by_the_trip_build(
+            df, exclude_rbw_legs=exclude_rbw_legs,
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        )
+        pairing_candidate_mask = pd.Series(df.index.isin(kept.index), index=df.index)
+        n_total_legs = len(df)
+        n_candidate_legs = int(pairing_candidate_mask.sum())
+        logger.info(
+            "[popsim.distance_distributions] pairing_candidate_mask "
+            "(exclude_rbw_legs=%s, drop_leading_arrive_home_leg=%s): %d/%d legs "
+            "(%.1f%%) form the passive-escort pairing's candidate universe; the "
+            "DISTANCE POOL itself is unaffected by this mask -- every leg still "
+            "contributes its distance under whichever purpose it resolves to.",
+            exclude_rbw_legs, drop_leading_arrive_home_leg,
+            n_candidate_legs, n_total_legs,
+            100.0 * n_candidate_legs / n_total_legs if n_total_legs else 0.0,
+        )
+
     # --- Step 1: map mode and purpose from MiD codes. ----------------------
     df = map_mode(map_purpose(
         df, escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
         explicit_round_trip_purposes=explicit_round_trip_purposes,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        pairing_candidate_mask=pairing_candidate_mask,
     ))
     # following_purpose = destination activity.
     df["following_purpose"] = df["purpose"]
@@ -419,7 +754,12 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
     # --- Step 4: compute euclidean_distance in metres from wegkm_imp. ------
     # wegkm_imp is the MiD imputed routed trip length in kilometres.
     # Dividing by DETOUR_FACTOR gives the straight-line distance in km; x1000 -> m.
-    df["distance"] = df["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+    # The guard rejects MiD design codes (>= 9994) and missing/non-positive lengths BEFORE the
+    # conversion: unguarded, a refused answer would enter every layer below as a 7,688 km
+    # straight-line leg, and a NaN would sit inside the cumulative distribution with its weight
+    # attached (ADR-0117). It cannot fire on the 2026-09 delivery, which carries none.
+    df["distance"] = _diary_facts.validate_trip_length_km(
+        df["wegkm_imp"], log_tag="[popsim.distance_distributions]") * 1000.0 / DETOUR_FACTOR
 
     # --- Step 5: select columns needed and filter primary-only trips. ------
     # Keep W_ZWD when present: needed by Task 5 (shop daily split) and
@@ -449,6 +789,46 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
         100.0 * n_excluded / n_before if n_before > 0 else 0.0,
         n_after,
     )
+
+    # --- Step 5b: drop legs that cannot inform a distance pool (ADR-0117). ---
+    # Two separate reasons, counted separately because they mean different things:
+    #   * NO-ANSWER PURPOSE (flag-gated): the respondent did not say why they travelled
+    #     (W_ZWECK 99). The leg is a real trip and the trip build still gives it the "other"
+    #     purpose, but it must not shape what "other" trips LOOK like -- otherwise 2.8 % of the
+    #     "other" pool is legs whose purpose is unknown, and every share estimated on it is
+    #     diluted by a non-answer. Excluding them here renormalises the pools over legs whose
+    #     purpose is actually known.
+    #   * MISSING DISTANCE (always): a leg without a usable length cannot contribute a length.
+    #     validate_trip_length_km already RAISED on the impossible values (design codes,
+    #     non-positive); what can still be NaN here is a structurally unsurveyed leg, and such a
+    #     leg must not sit inside a cumulative distribution with its weight attached.
+    # Both run AFTER the chain has been derived (Step 2) and after the primary-both filter
+    # (Step 5), so neither changes any other leg's preceding_purpose.
+    n_before_pool = len(df)
+    if exclude_no_answer_purpose:
+        if "W_ZWECK" not in df.columns:
+            raise ValueError(
+                "[popsim.distance_distributions] exclude_no_answer_purpose=True needs the raw "
+                "W_ZWECK column (it names the no-answer legs), but it is absent from the frame; "
+                "the exclusion cannot be applied and must not be skipped silently.")
+        is_no_answer = pd.to_numeric(df["W_ZWECK"], errors="coerce") == _trips.W_ZWECK_NO_ANSWER_CODE
+        n_no_answer = int(is_no_answer.sum())
+        logger.info(
+            "[popsim.distance_distributions] no-answer purpose (W_ZWECK %d) legs excluded from "
+            "every donor pool: %d/%d legs (%.2f%%)", _trips.W_ZWECK_NO_ANSWER_CODE, n_no_answer,
+            n_before_pool, 100.0 * n_no_answer / n_before_pool if n_before_pool else float("nan"))
+        df = df[~is_no_answer]
+    n_missing_distance = int(df["distance"].isna().sum())
+    if n_missing_distance:
+        logger.info(
+            "[popsim.distance_distributions] legs without a usable length excluded from every "
+            "donor pool: %d/%d (%.2f%%)", n_missing_distance, len(df),
+            100.0 * n_missing_distance / len(df) if len(df) else float("nan"))
+        df = df[df["distance"].notna()]
+    if len(df) == 0:
+        raise ValueError(
+            "[popsim.distance_distributions] no leg survives the donor-pool filters "
+            f"({n_before_pool} before); the distance distributions would be empty.")
 
     # --- Step 6: build per-mode (or per-purpose × mode) distributions. ------
     if not by_purpose:
@@ -503,9 +883,11 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
     # --- Step 8: leisure subtype sub-distributions (Task 3, issue #127). -----
     # Splits following_purpose == "leisure" legs by their W_ZWD detail code into
-    # the groups defined in purpose_subtype.LEISURE_GROUPS (local/visit/activity/
-    # excursion). The aggregate "leisure" key is KEPT so downstream callers without
-    # the split can still use it as a fallback (mirrors the shop split above).
+    # the groups defined in purpose_subtype.leisure_spec(codeplan_sentinels)
+    # (local/visit/activity/excursion; see codeplan_sentinels above for the
+    # 799 "Freizeit k.A." sentinel treatment). The aggregate "leisure" key is
+    # KEPT so downstream callers without the split can still use it as a
+    # fallback (mirrors the shop split above).
     if leisure_subtype_split:
         if "W_ZWD" not in df.columns:
             logger.warning(
@@ -514,10 +896,15 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                 "leisure subtype split."
             )
         else:
-            from braunschweig.popsim.purpose_subtype import LEISURE_GROUPS
+            from braunschweig.popsim.purpose_subtype import leisure_spec
 
+            # leisure_spec(codeplan_sentinels) selects LEISURE_SPEC_CODEPLAN
+            # (799 "Freizeit k.A." excluded as a NO-DETAIL sentinel) or the
+            # unchanged LEISURE_SPEC by identity -- see the codeplan_sentinels
+            # docstring parameter above.
+            leisure_groups = leisure_spec(codeplan_sentinels).groups
             leisure_df = df[df["following_purpose"] == "leisure"]
-            for group_name, codes in LEISURE_GROUPS.items():
+            for group_name, codes in leisure_groups.items():
                 group_df = leisure_df[leisure_df["W_ZWD"].isin(codes)]
                 logger.info(
                     "[popsim.distance_distributions] leisure subtype %s: %d legs",
@@ -525,6 +912,23 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                 )
                 if len(group_df):
                     out[group_name] = _build_mode_distributions(group_df)
+
+        # --- Step 8b: the fifth leisure subtype (issue #373, ADR-0115). ------
+        # Deliberately OUTSIDE the W_ZWD branch above: this group is defined by
+        # the RAW W_ZWECK code, not by a detail code, so -- exactly like
+        # "other_escort" in Step 9 -- it is still built when W_ZWD is absent.
+        # It differs from Step 9 in the other direction: Step 9 warns and SKIPS
+        # when W_ZWECK is absent, because its split is one optional refinement of
+        # a layer ("other") that exists either way, whereas here the flag being
+        # on IS the request for this layer and there is no W_ZWD path that could
+        # still produce it -- so a missing W_ZWECK RAISES rather than silently
+        # leaving every code-10 leg on the aggregate fallback.
+        if leisure_unspecified_subtype:
+            from braunschweig.popsim.purpose_subtype import LEISURE_UNSPECIFIED_GROUP
+
+            unspecified_distributions = _build_leisure_unspecified_layer(df)
+            if unspecified_distributions is not None:
+                out[LEISURE_UNSPECIFIED_GROUP] = unspecified_distributions
 
     # --- Step 9: other subtype sub-distributions (Task 3, issue #127). -------
     # other_escort only needs the raw W_ZWECK code (Bringen/Holen has no W_ZWD
@@ -539,9 +943,9 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
             )
         else:
             from braunschweig.popsim.purpose_subtype import (
-                OTHER_ERRAND_GROUPS,
                 OTHER_ERRAND_ZWECK,
                 OTHER_ESCORT_ZWECK,
+                other_errand_spec,
             )
 
             other_df = df[df["following_purpose"] == "other"]
@@ -569,8 +973,13 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
                     "since it does not depend on W_ZWD)."
                 )
             else:
+                # other_errand_spec(codeplan_sentinels) selects
+                # OTHER_ERRAND_SPEC_CODEPLAN (699 "Erledigung k.A." excluded as
+                # a NO-DETAIL sentinel) or the unchanged OTHER_ERRAND_SPEC by
+                # identity -- see the codeplan_sentinels docstring parameter.
+                other_errand_groups = other_errand_spec(codeplan_sentinels).groups
                 errand_df = other_df[other_df["W_ZWECK"].isin(OTHER_ERRAND_ZWECK)]
-                for group_name, codes in OTHER_ERRAND_GROUPS.items():
+                for group_name, codes in other_errand_groups.items():
                     group_df = errand_df[errand_df["W_ZWD"].isin(codes)]
                     logger.info(
                         "[popsim.distance_distributions] other subtype %s: %d legs",
@@ -584,16 +993,120 @@ def run(mid_wege: pd.DataFrame, *, by_purpose: bool = False,
 
 def configure(context):
     """Declare stage dependencies: MiD Wege path + random_seed + purpose/shop flags."""
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE,
+        DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
+    )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
     # but we declare it for consistent config validation across popsim stages.
     context.config("random_seed")
     context.config("secondary_distance_by_purpose", False)
     context.config("secondary_shop_daily_split", False)
-    context.config("secondary_leisure_subtype_split", False)
+    # Captured because the leisure_unspecified_subtype guard below is scoped to it
+    # (the fifth subtype only exists inside the leisure subtype layers).
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
+    # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
+    # Task 5, ADR-0113). Key/default declared ONCE in config_keys (see that
+    # module's comment on KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS) and imported
+    # here rather than retyped, because
+    # braunschweig.synthesis.locations.secondary_chainsolvers ALSO declares
+    # this exact key -- both stages must resolve the SAME value (the
+    # leisure_activity / other_errand_long donor pool built here must exclude
+    # exactly the legs the chainsolver deciders' estimation excludes, or a leg
+    # placed under one label draws its distance from a donor pool built for a
+    # different label). Declared UNCONDITIONALLY (like the two split flags
+    # above) so an all-flags-off config never needs it; inert unless
+    # leisure_subtype_split or other_subtype_split is also True. The
+    # production value is also set in configs/base_bs.yml (issue #242 Task 7).
+    context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
+    # The fifth leisure subtype (issue #373, ADR-0115). Same shared-key reasoning
+    # as the codeplan sentinels above: this stage builds the leisure_unspecified
+    # DISTANCE layer while
+    # braunschweig.synthesis.locations.secondary_chainsolvers estimates the
+    # decider that labels legs with it, so both must resolve the SAME value or a
+    # leg labelled leisure_unspecified would find no layer built for it (and fall
+    # back to the aggregate "leisure" pool), or a layer would be built that no leg
+    # ever draws from. Declared UNCONDITIONALLY (like the split flags above);
+    # inert unless leisure_subtype_split is also True.
+    leisure_unspecified_subtype = context.config(
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
     context.config("escort_purpose", False)
     context.config("escort_passive_education", False)
+    # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
+    # key/default constant, like the plan-structure flags elsewhere -- the
+    # distance layers must count the same W_ZWECK codes as leisure that the
+    # trip build does, or a "leisure" distance distribution is built from a
+    # different set of legs than the plan actually realises.
+    w_zweck_10_as_leisure = context.config(
+        KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Configure-time contradiction guard (issue #373, ADR-0115), same shape as the
+    # C-R22 guard in braunschweig.popsim.trips_stage.configure: fail the whole DAG
+    # before any stage executes rather than after hours of upstream compute. With
+    # the fold off, no W_ZWECK-10 leg reaches following_purpose "leisure", so the
+    # leisure_unspecified class would be estimated by the chainsolver decider but
+    # never have a donor pool here -- a silently empty layer, exactly what the
+    # fallback-transparency rule forbids.
+    #
+    # SCOPED to secondary_leisure_subtype_split (ruling R8): without the split
+    # there are no leisure subtype layers at all, so leisure_unspecified_subtype
+    # is inert and its value cannot contradict anything -- config_keys states the
+    # same ("effective only with secondary_leisure_subtype_split on"). Raising
+    # unscoped would abort every split-off configuration that legitimately sets
+    # w_zweck_10_as_leisure false (the popsim_open fixtures do), for a flag that
+    # does nothing there.
+    if (bool(leisure_subtype_split) and bool(leisure_unspecified_subtype)
+            and not bool(w_zweck_10_as_leisure)):
+        raise ValueError(
+            f"[popsim.distance_distributions] {KEY_LEISURE_UNSPECIFIED_SUBTYPE}: true requires "
+            f"{KEY_W_ZWECK_10_AS_LEISURE}: true when secondary_leisure_subtype_split is on -- "
+            "with the fold off no W_ZWECK-10 leg is leisure, so the leisure_unspecified class "
+            f"would be estimated but never realised. Set both or disable "
+            f"{KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
+        )
+    # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112),
+    # declared with the SHARED key/default constants for the same reason: a passive leg
+    # the trip build sends to "shop" must contribute to the SHOP distance distribution,
+    # not to the education one, or the sampler draws its distance from the wrong layer.
+    # Declared default False; the production true is added to configs/base_bs.yml by task 7
+    # (see config_keys for the one statement of both defaults).
+    context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # Passive-escort pairing candidate universe (issue #373 task 2, ruling C-R20/C-R21):
+    # the SAME shared key/default constants braunschweig.popsim.trips_stage declares, so
+    # this stage's pairing agrees with the trip build's about which legs even exist to be
+    # paired (see run()'s exclude_rbw_legs/drop_leading_arrive_home_leg docstring entry).
+    # Declaring them here does NOT change this stage's own leg-drop behaviour -- the
+    # distance pool still includes every leg regardless of these two flags' value.
+    context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
+    context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116). Same shared-key reasoning
+    # as the codeplan sentinels and the fifth leisure subtype above:
+    # braunschweig.synthesis.locations.secondary_chainsolvers declares this identical key for
+    # its three MiD-based subtype deciders, and the two must resolve the SAME value -- the
+    # decider labels a leg and this stage builds that label's donor pool, so a disagreement
+    # would pair a label estimated on one leg universe with distances drawn from another.
+    # Declared UNCONDITIONALLY (like the split flags above) so an all-flags-off config never
+    # needs it; it applies to every layer this stage builds, including the aggregate one.
+    context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+                   DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
+    # exclude_no_answer_purpose_legs (ADR-0117), shared with the same stage for the same
+    # reason: a leg whose MAIN purpose is the MiD no-answer code must not shape what the
+    # purposes it is NOT an answer about look like. Declared unconditionally, since it
+    # applies to every layer this stage builds, the aggregate one included.
+    context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+                   DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
 
 
 def execute(context):
@@ -605,14 +1118,32 @@ def execute(context):
     can consume it without modification.
     """
     from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_RBW_LEGS, KEY_LEISURE_UNSPECIFIED_SUBTYPE,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
+    )
 
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     by_purpose = context.config("secondary_distance_by_purpose")
     shop_daily_split = context.config("secondary_shop_daily_split")
     leisure_subtype_split = context.config("secondary_leisure_subtype_split")
     other_subtype_split = context.config("secondary_other_subtype_split")
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
+    leisure_unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     escort_purpose = context.config("escort_purpose")
     escort_passive_education = context.config("escort_passive_education")
+    w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
+    escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
+    passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
+    exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
+    # One-argument execute-context read (the key and its default are declared in configure()).
+    weekday_legs_only = bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY))
+    exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
 
     logger.info(
         "[popsim.distance_distributions] loading MiD Wege from %s", mid_dir
@@ -629,4 +1160,13 @@ def execute(context):
         other_subtype_split=other_subtype_split,
         escort_purpose=escort_purpose,
         escort_passive_education=escort_passive_education,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        codeplan_sentinels=codeplan_sentinels,
+        leisure_unspecified_subtype=leisure_unspecified_subtype,
+        weekday_legs_only=weekday_legs_only,
+        exclude_no_answer_purpose=exclude_no_answer_purpose,
     )

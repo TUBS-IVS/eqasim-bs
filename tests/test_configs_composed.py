@@ -39,6 +39,15 @@ FEATURE_FLAGS_ON = [
     "escort_purpose", "escort_household_link", "escort_distance_by_type",
     "escort_passive_education",
     "secondary_srv_location_types",
+    # MiD purpose correctness and the secondary leg universe (issues #373/#372/#242,
+    # ADR-0111..ADR-0113, ADR-0115, ADR-0116). Guarded here for the same reason as the
+    # fleet block above: each is production-enabled ONLY through its base_bs.yml line
+    # (three of them have a code default of False or depend on a sibling flag), so a
+    # dropped line would silently ship a different purpose taxonomy or a different
+    # estimation universe while every test stayed green.
+    "w_zweck_10_as_leisure", "escort_passive_from_adult",
+    "purpose_subtype_codeplan_sentinels", "leisure_unspecified_subtype",
+    "secondary_mid_weekday_legs_only", "exclude_no_answer_purpose_legs",
     # Run resource recorder (issue #350). Guarded here because a run without its
     # resource series cannot answer afterwards what it peaked at -- the datum the
     # 2026-08-24 run lost with its processes.

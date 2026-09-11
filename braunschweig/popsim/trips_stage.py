@@ -26,9 +26,14 @@ import pandas as pd
 
 from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import diary_facts as _diary_facts
+from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
+# The passive-escort pairing gap default lives with the trip build (braunschweig.popsim.trips)
+# and is re-exported through it here rather than re-typed, so this stage and map_purpose can
+# never disagree on the threshold a run uses when the config leaves it unset.
+from braunschweig.popsim.trips import DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
 from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
 # Authoritative plan-time bound lives in plan_validation (where bound-exceeding
 # persons are classified unfixable + resampled); re-exported here for the final
@@ -57,6 +62,12 @@ _HELPER_MODULES = (
     _plan_validation,
     _closure_dwell,
     _diary_facts,
+    # escort_pairing decides WHICH adult leg each passive escort leg (W_ZWECK 13) is paired
+    # with, and therefore the purpose the child's leg receives under escort_passive_from_adult
+    # (issue #372); trips.py only applies the mapping. A change to the pairing rule changes this
+    # stage's trip purposes without changing trips.py, so it is hashed for exactly the reason
+    # trips.py itself is.
+    _escort_pairing,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.sources",
@@ -236,6 +247,9 @@ def build_closure_dwell_model(
     explicit_round_trip_purposes: bool = True,
     exclude_rbw_legs: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
 ):
     """Build the :class:`ClosureDwellModel` selected by ``closure_dwell_model``.
 
@@ -267,6 +281,26 @@ def build_closure_dwell_model(
         drawn from directly; a thinner cell falls back to the purpose marginal
         (config key ``braunschweig.population.popsim.closure_dwell_min_obs``).
         Must be a positive integer. Inert for ``"fixed_1h"``.
+    w_zweck_10_as_leisure:
+        If True (issue #373, ADR-0111), remap W_ZWECK 10 ("anderer Zweck") to
+        ``"leisure"`` (forwarded to the donor trip table build). Must match the
+        value the main trip table is built with -- otherwise the empirical
+        dwell pools are stratified by a DIFFERENT purpose vocabulary than the
+        table they are drawn into, sending every W_ZWECK-10-following draw into
+        the wrong purpose's pool. Default False keeps the OFF path
+        byte-identical.
+    escort_passive_from_adult:
+        If True (issue #372, ADR-0112), a paired passive escort leg takes the
+        accompanying adult's purpose (forwarded to the donor trip table build).
+        Must match the value the main trip table is built with, for exactly the
+        reason ``w_zweck_10_as_leisure`` must: the empirical pools are
+        stratified by ``following_purpose``, so a donor table built with a
+        different passive-escort vocabulary would send those draws into the
+        wrong purpose's pool. Default False keeps the OFF path byte-identical.
+    passive_pair_max_gap_minutes:
+        Maximum |departure-time gap| in MINUTES for the pairing (forwarded to
+        the donor trip table build). Inert unless
+        ``escort_passive_from_adult`` is True.
 
     Returns
     -------
@@ -300,6 +334,9 @@ def build_closure_dwell_model(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     )
     return ClosureDwellModel.from_trips(
         donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET),
@@ -414,6 +451,9 @@ def run(
     drop_leading_arrive_home_leg: bool = False,
     closure_dwell_model: str = "fixed_1h",
     closure_dwell_min_obs: int = DEFAULT_CLOSURE_DWELL_MIN_OBS,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -452,6 +492,32 @@ def run(
         dwell model must hold to be drawn from directly; thinner cells fall back
         to the purpose marginal (rate logged). Positive integer, default
         :data:`DEFAULT_CLOSURE_DWELL_MIN_OBS`; inert for ``"fixed_1h"``.
+    w_zweck_10_as_leisure:
+        remap MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"`` purpose
+        instead of ``"other"`` (issue #373, ADR-0111), following MiD's own
+        hwzweck1 fold (100% of code-10 legs fold to 6 Freizeit; see the
+        committed evidence table ``mid2023_w_zweck_by_hwzweck1.csv``). Forwarded
+        to ``build_closure_dwell_model`` and ``build_validated_trip_table`` /
+        ``map_purpose``. Default False keeps the OFF path byte-identical; the
+        production default is configured by ``braunschweig.popsim.stage.
+        config_keys.DEFAULT_W_ZWECK_10_AS_LEISURE``.
+    escort_passive_from_adult:
+        give a PAIRED passive escort leg (MiD W_ZWECK 13) the purpose derived
+        from the accompanying adult's W_ZWECK instead of the flat
+        ``escort_passive_education`` relabel (issue #372, ADR-0112); an
+        UNPAIRED one keeps that relabel. Requires ``escort_purpose=True`` and
+        the MiD Wege columns ``H_ID``/``P_ID``/``W_ID``/``W_SZS``/``W_SZM``/
+        ``HP_ALTER``. Forwarded to ``build_closure_dwell_model`` and
+        ``build_validated_trip_table`` / ``map_purpose``. Default False keeps
+        the OFF path byte-identical; the production default is configured by
+        ``braunschweig.popsim.stage.config_keys.
+        DEFAULT_ESCORT_PASSIVE_FROM_ADULT``.
+    passive_pair_max_gap_minutes:
+        maximum |departure-time gap| in MINUTES for a passive leg to count as
+        paired (config key
+        ``escort_passive_pair_max_gap_minutes``); inert while
+        ``escort_passive_from_adult`` is False. Default
+        :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
 
     Returns
     -------
@@ -476,6 +542,9 @@ def run(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     )
     table, report = popsim_trips.build_validated_trip_table(
         persons, mid_wege,
@@ -487,6 +556,9 @@ def run(
         explicit_round_trip_purposes=explicit_round_trip_purposes,
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
     )
 
@@ -553,8 +625,14 @@ def run(
     # the ENTD detour factor gives the straight-line distance in km; * 1000 -> m.
     # --------------------------------------------------------------------------
     if "wegkm_imp" in table.columns:
+        # Guarded: a MiD design code (>= 9994 "unplausibel" / "keine Angabe") or a missing
+        # length would become a 7,688 km euclidean_distance on the trips CONTRACT, from
+        # where it reaches every downstream consumer (ADR-0117). The 2026-09 delivery
+        # carries none, so this is byte-identical on it.
         table["euclidean_distance"] = (
-            table["wegkm_imp"].astype(float) * 1000.0 / DETOUR_FACTOR
+            _diary_facts.validate_trip_length_km(
+                table["wegkm_imp"], log_tag="[popsim.trips_stage]")
+            * 1000.0 / DETOUR_FACTOR
         )
 
     # Build final column order: CONTRACT first, then extras (euclidean_distance,
@@ -576,17 +654,20 @@ def configure(context):
     # with (braunschweig.popsim.stage.config_keys is the single home for both halves).
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
-        DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_EXCLUDE_RBW_LEGS,
-        KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
-        KEY_EXCLUDE_RBW_LEGS,
+        DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
+        KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
+        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE,
     )
     # Read from synthesis.population.sampled (not the raw producer): sampled carries the
     # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
     # table is built against the already-sampled and id-remapped synthetic population.
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
-    context.config("escort_purpose", False)
+    escort_purpose = context.config("escort_purpose", False)
     # escort_passive_education is declared with the SHARED key/default constants (final fix
     # wave, item 3), like the plan-structure flags below: the popsim stage reads the same
     # key so its education_flag control seed counts the same W_ZWECK codes as education
@@ -610,6 +691,38 @@ def configure(context):
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG)
     context.config(KEY_CLOSURE_DWELL_MODEL, DEFAULT_CLOSURE_DWELL_MODEL)
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, DEFAULT_CLOSURE_DWELL_MIN_OBS)
+    # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a TRIP-BUILD flag
+    # declared with the SHARED key/default constants, like escort_passive_education
+    # above -- the popsim stage's leisure_participation KREIS-control seed and the
+    # distance-distribution layers must see the SAME value this trip build uses, or
+    # they disagree on which W_ZWECK codes mean leisure (the seed-vs-plan mismatch
+    # class this package exists to remove).
+    context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112): declared
+    # with the SHARED key/default constants for the same reason escort_passive_education is --
+    # the popsim stage's education_flag KREIS-control seed, the distance layers and the
+    # commute-day donor pool must all see the SAME value this trip build uses, or they disagree
+    # on which code-13 legs are education and the seed describes a different day than the plan.
+    # Declared default False; the production true is added to configs/base_bs.yml by task 7
+    # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
+    escort_passive_from_adult = context.config(
+        KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # Ruling C-R22 (issue #373 cleanup wave, item 6): trips.map_purpose already raises this
+    # exact contradiction ("escort_passive_from_adult requires escort_purpose"), but only at
+    # TRIP-BUILD time -- i.e. after synpp has already resolved and run every UPSTREAM stage,
+    # including the full PopulationSim balancing (potentially hours of compute). Repeating the
+    # check here, at CONFIGURE time, lets synpp fail the whole DAG before any stage executes,
+    # mirroring the config-time contradiction guard braunschweig.analysis.synthesis.
+    # plan_structure_vs_srv.configure() already uses for its own trips_view key. The
+    # map_purpose check is KEPT (not removed): it is the last line of defense for any caller
+    # that builds a trip table directly, outside this stage's configure()/execute() contract.
+    if escort_passive_from_adult and not escort_purpose:
+        raise ValueError(
+            f"[trips_stage] {KEY_ESCORT_PASSIVE_FROM_ADULT}=True requires escort_purpose=True "
+            "(without a dedicated escort purpose there is no passive side to re-derive from "
+            "the accompanying adult's leg); set both keys consistently."
+        )
     context.config("braunschweig.population.popsim.mid_dir")
     # Donor source identifier: must match the value configured in popsim.stage
     # (default "mid" -> MidSource -> mid.load_mid_wege + trips_stage.run, byte-identical).
@@ -654,7 +767,8 @@ def execute(context):
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
-        KEY_EXCLUDE_RBW_LEGS,
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
@@ -663,6 +777,9 @@ def execute(context):
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     closure_dwell_model = str(context.config(KEY_CLOSURE_DWELL_MODEL))
     closure_dwell_min_obs = int(context.config(KEY_CLOSURE_DWELL_MIN_OBS))
+    w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
+    escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
+    passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
@@ -673,4 +790,7 @@ def execute(context):
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         closure_dwell_model=closure_dwell_model,
         closure_dwell_min_obs=closure_dwell_min_obs,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
     )

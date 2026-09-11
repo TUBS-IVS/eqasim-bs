@@ -10,9 +10,17 @@ description: 'Gives EVERY synthetic person a reporting-day absence state,
   (braunschweig.synthesis.day_absence.absence_stage): a HOUSEHOLD draw marks a whole
   household absent_household with probability p_household(size_class) (committed
   srv2023_absence_household_by_size.csv, by household size 1..5+); an INDIVIDUAL residual
-  draw then marks every still-present person absent_individual per age band, at the
-  probability needed so the committed per-band rate (srv2023_absence_by_age_band.csv) is
-  met IN EXPECTATION net of what the household stage already realised in that band. This
+  draw then marks every still-present ELIGIBLE person absent_individual per age band, at
+  the probability needed so the committed per-band rate (srv2023_absence_by_age_band.csv)
+  is met IN EXPECTATION net of what the household stage already realised in that band.
+  Eligibility (issue #388, ADR-0110 Amendment 1) is household_size (unclipped member
+  count) >= day_absence_individual_stage_min_household_size, CONFIGURED default 2:
+  households of size 1 skip the individual stage entirely, because for a single-person
+  household "whole household absent" IS "person absent", so the household stage alone
+  already realises the SrV single-person person-level absence rate
+  (srv2023_absence_household_by_size.csv''s p_absent_person, size 1: 5.14 %) and any
+  residual drawn on top would over-absent singles; setting the key to 1 restores the
+  pre-#388 behaviour byte-identically. This
   reproduces both the SrV per-band absence rates and the SrV household clustering (55.8 %
   of absent persons live in a fully absent household), which an individual-only draw at the
   same rates could not (an independent draw absorbing a 2-person household is ~0.25 % vs. the
@@ -210,4 +218,18 @@ notes: 'Composes with the commute_day_state feature (docs/registry/features/comm
   Decision record: ADR-0110 (general day absence as a two-stage state draw) -- it carries the SrV
   evidence tables, the rejected alternatives (MiD P_STREISE as a donor, an individual-only default,
   raising the trip_class immobility target, per-Kreis rates) and the named assumptions this record
-  does not repeat.'
+  does not repeat.
+
+  Amendment 1 (issue #388, ADR-0110 "Amendment 1" section): the household-size limitation
+  originally recorded in ADR-0110''s Consequences/Assumptions (singles over-absent, multi-person
+  households under-absent within an age band) is FIXED for households below
+  day_absence_individual_stage_min_household_size (CONFIGURED default 2) by excluding them from
+  the individual residual stage''s eligible pool. The limitation is RETAINED, narrowed to
+  households at or above the threshold: the residual is still computed once per age band over the
+  whole eligible pool, not separately per household-size class within it, so draw_absence''s
+  by_size_class diagnostic (reference_rate/delta_pp against the newly committed
+  p_absent_person_by_size, srv2023_absence_household_by_size.csv) stays REPORTED, never a target,
+  for those sizes. Pre-registered arm 3 (not yet run) compares singles'' realised absence against
+  the SrV person-level rate (5.14 %, +/- 0.6 pp), the household-clustering share against 55.8 %,
+  and the per-band rates (unchanged within 1 pp); sizes 2-5 are reported as a hold-out with no
+  tolerance, per the retained limitation.'

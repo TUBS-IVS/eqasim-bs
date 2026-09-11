@@ -113,9 +113,11 @@ def _extract_locations(result_df: pd.DataFrame,
     known_prob = np.array(
         [valid_split[i] and (prob_idx_int[i] in meta_by_idx) for i in range(n_rows)]
     )
-    # Tier 2 / Task 4: the internal subtype activities (shop_daily/non_daily;
-    # leisure_local/visit/activity/excursion; other_errand_short/long,
-    # other_escort) are secondary too -- they map back to the eqasim "shop" /
+    # Tier 2 / Task 4: the internal subtype activities (SHOP_SUBTYPE_ACTIVITIES,
+    # LEISURE_SUBTYPE_ACTIVITIES, OTHER_SUBTYPE_ACTIVITIES -- the tuples are the
+    # single statement of each vocabulary, so a name added to one, such as the
+    # fifth leisure subtype of issue #373, is covered here without editing this
+    # comment) are secondary too -- they map back to the eqasim "shop" /
     # "leisure" / "other" purpose respectively. Include them here so a
     # subtype-tagged leg is not silently dropped at extraction. The subtype
     # label never reaches the output schema (which carries no purpose:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import logging
+import numbers
 import os
 
 import numpy as np
@@ -41,6 +42,13 @@ KEY_HOUSEHOLD_STAGE = "day_absence_household_stage_enabled"
 DEFAULT_HOUSEHOLD_STAGE = True
 KEY_MAX_BAND_DEVIATION_PP = "day_absence_max_band_deviation_pp"
 DEFAULT_MAX_BAND_DEVIATION_PP = 1.0
+#: Issue #388: minimum UNCLIPPED household size eligible for the individual residual stage. The
+#: CONFIGURED default is 2 (households of size 1 carry the household-stage rate only, since the
+#: SrV household-level clustering effect the individual residual corrects for is not well
+#: identified for singles); the CODE default in draw_absence() stays 1 for byte-identical legacy
+#: behaviour when this stage is bypassed (e.g. a direct absence.draw_absence() call in a test).
+KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = "day_absence_individual_stage_min_household_size"
+DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = 2
 #: Bands with fewer persons than this are not judged against the deviation guard (sampling noise).
 MIN_PERSONS_FOR_BAND_GUARD = 1000
 #: Subdirectory of ``data_path`` holding the committed SrV reference tables.
@@ -68,6 +76,7 @@ def configure(context):
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
     context.config(KEY_HOUSEHOLD_STAGE, DEFAULT_HOUSEHOLD_STAGE)
     context.config(KEY_MAX_BAND_DEVIATION_PP, DEFAULT_MAX_BAND_DEVIATION_PP)
+    context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE, DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE)
 
 
 def _disabled_frame(persons):
@@ -99,6 +108,28 @@ def _disabled_frame(persons):
         "p_household": 0.0, "p_individual": 0.0, "reason": REASON_DISABLED})[list(ABSENCE_COLUMNS)]
 
 
+def _validate_individual_stage_min_household_size(raw_value):
+    """Validate ``day_absence_individual_stage_min_household_size``: a genuine integer >= 1.
+
+    ``int(raw_value)`` alone would silently TRUNCATE a non-integral float (e.g. ``2.7`` -> ``2``),
+    hiding a likely configuration typo (CLAUDE.md "fail early", "no silent fallbacks") -- only a
+    ``numbers.Integral`` (covers plain ``int`` AND numpy integer types such as ``numpy.int64``, e.g.
+    when a config value has round-tripped through a numpy/pandas-backed loader; never ``bool``,
+    which is technically an ``int`` subtype but not a meaningful household-size count) or a
+    ``float``/``numpy.floating`` with no fractional part (e.g. ``2.0``) is accepted.
+    """
+    error = ValueError(f"{_LOG_TAG} {KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE} must be an integer >= 1, "
+                       f"got {raw_value!r}")
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (numbers.Integral, numbers.Real)):
+        raise error
+    if not isinstance(raw_value, numbers.Integral) and not float(raw_value).is_integer():
+        raise error
+    value = int(raw_value)
+    if value < 1:
+        raise error
+    return value
+
+
 def execute(context):
     """Draw the general day-absence state of every enriched person.
 
@@ -106,8 +137,10 @@ def execute(context):
     :func:`braunschweig.synthesis.day_absence.absence.draw_absence` (``n_persons``,
     ``n_households``, ``n_absent_household``, ``n_absent_individual``, ``n_absent_total``,
     ``share_absent_total``, ``share_absent_in_fully_absent_households``, ``n_bands_overshoot``,
-    ``household_stage``, ``by_band``) plus ``n_band_guard_hits`` (see the deviation guard below).
-    On the OFF path: ``{"enabled": False}`` only.
+    ``n_bands_unreachable``, ``household_stage``, ``individual_stage_min_household_size``,
+    ``n_persons_ineligible_individual_stage``, ``by_band``, ``by_size_class``) plus
+    ``n_band_guard_hits`` (see the deviation guard below). On the OFF path: ``{"enabled": False}``
+    only.
     """
     persons = context.stage("synthesis.population.enriched")
     for column in ("person_id", "household_id", "age"):
@@ -119,17 +152,27 @@ def execute(context):
     random_seed = int(context.config("random_seed"))
     household_stage = bool(context.config(KEY_HOUSEHOLD_STAGE))
     max_dev_pp = float(context.config(KEY_MAX_BAND_DEVIATION_PP))
+    individual_stage_min_household_size = _validate_individual_stage_min_household_size(
+        context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE))
     reference = load_absence_reference(os.path.join(str(context.config("data_path")), *SRV_SUBDIR))
-    logger.info("%s parameters: household_stage=%s, random_seed=%d (+%d offset), reference bands %s, sizes %s",
-                _LOG_TAG, household_stage, random_seed, DAY_ABSENCE_SEED_OFFSET,
+    logger.info("%s parameters: household_stage=%s, %s=%d, random_seed=%d (+%d offset), reference bands %s, "
+                "sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+                individual_stage_min_household_size, random_seed, DAY_ABSENCE_SEED_OFFSET,
                 {b: round(v, 4) for b, v in reference.p_absent_by_band.items()},
                 {k: round(v, 4) for k, v in reference.p_all_absent_by_size.items()})
     rng = np.random.RandomState(random_seed + DAY_ABSENCE_SEED_OFFSET)
-    absence, diagnostics = draw_absence(persons, reference, rng, household_stage=household_stage)
+    absence, diagnostics = draw_absence(persons, reference, rng, household_stage=household_stage,
+                                        individual_stage_min_household_size=individual_stage_min_household_size)
     assert len(absence) == len(persons) and not absence["person_id"].duplicated().any(), (
         f"{_LOG_TAG} the absence frame must carry exactly one row per person")
     n_guard_hits = 0
     for band, cell in diagnostics["by_band"].items():
+        # Compact per-band line (final-review fix wave, MINOR finding 5): includes
+        # n_eligible_present so the individual-stage eligibility gate's effect on each band is
+        # visible even when the deviation guard below does not fire.
+        logger.info("%s band %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d)", _LOG_TAG,
+                   band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
+                   cell["n_eligible_present"])
         if cell["n"] >= MIN_PERSONS_FOR_BAND_GUARD:
             deviation_pp = 100.0 * (cell["realised_rate"] - cell["reference_rate"])
             if abs(deviation_pp) > max_dev_pp:
@@ -137,6 +180,19 @@ def execute(context):
                 logger.warning("%s band %s realised %.2f%% vs reference %.2f%% (%.2f pp, n=%d) exceeds %s=%.2f pp",
                                _LOG_TAG, band, 100 * cell["realised_rate"], 100 * cell["reference_rate"],
                                deviation_pp, cell["n"], KEY_MAX_BAND_DEVIATION_PP, max_dev_pp)
+    # Fallback-transparency logging for the individual-stage eligibility gate (issue #388, CLAUDE.md
+    # "no silent fallbacks"): a per-size-class realised-vs-SrV comparison and the ineligible share.
+    for size_class, cell in diagnostics["by_size_class"].items():
+        logger.info("%s size %d: realised %.2f%% vs SrV %.2f%% (delta %.2f pp, n=%d)", _LOG_TAG,
+                   size_class, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"],
+                   cell["delta_pp"], cell["n"])
+    n_total = diagnostics["n_persons"]
+    n_ineligible = diagnostics["n_persons_ineligible_individual_stage"]
+    ineligible_rate = n_ineligible / n_total if n_total else float("nan")
+    logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
+               "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
+               100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+               individual_stage_min_household_size)
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
     diagnostics["n_band_guard_hits"] = n_guard_hits

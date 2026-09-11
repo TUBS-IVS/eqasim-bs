@@ -306,10 +306,43 @@ PARTICIPATION_W_ZWECK: dict[str, set[int]] = {
 PARTICIPATION_W_ZWECK["escort"] = {6}
 
 
+def participation_w_zweck(purpose: str, *, w_zweck_10_as_leisure: bool = False) -> set:
+    """The ``<purpose>`` participation W_ZWECK code set, flag-aware for leisure (issue
+    #373, ADR-0111).
+
+    Mirrors ``PARTICIPATION_W_ZWECK[purpose]`` for every purpose (``PARTICIPATION_W_ZWECK``
+    stays the flag-OFF vocabulary), except ``"leisure"``: when ``w_zweck_10_as_leisure`` is
+    True, the leisure code set additionally includes W_ZWECK 10 ("anderer Zweck") --
+    delegated to :func:`braunschweig.popsim.trips.leisure_w_zweck_codes`, the single source
+    of truth also used by ``trips.map_purpose``, so a participation seed built through this
+    function always agrees with the realised plan on which W_ZWECK codes mean leisure.
+
+    Args:
+        purpose: one of ``PARTICIPATION_W_ZWECK`` (``"work"``, ``"leisure"``,
+            ``"education"``, ``"escort"``).
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run. Inert for every purpose except ``"leisure"``.
+
+    Returns:
+        A plain ``set`` of MiD ``W_ZWECK`` codes.
+
+    Raises:
+        ValueError: if ``purpose`` is not one of ``PARTICIPATION_W_ZWECK``.
+    """
+    if purpose not in PARTICIPATION_W_ZWECK:
+        raise ValueError(
+            f"participation_w_zweck: purpose must be one of {sorted(PARTICIPATION_W_ZWECK)}, "
+            f"got {purpose!r}.")
+    if purpose == "leisure":
+        return set(trips.leisure_w_zweck_codes(w_zweck_10_as_leisure=w_zweck_10_as_leisure))
+    return set(PARTICIPATION_W_ZWECK[purpose])
+
+
 def compute_has_purpose_trip(
     persons: pd.DataFrame, wege: pd.DataFrame, purpose: str, *,
     household_id: str = "H_ID", person_id: str = "P_ID",
     trips_col: str = "anzwege1", zweck_col: str = "W_ZWECK",
+    w_zweck_10_as_leisure: bool = False,
 ) -> pd.Series:
     """Derive the per-person ``has_<purpose>_trip`` flag (0/1, or a carried 803/804 diary
     non-response code) from each person's MiD Wege, for a ``<purpose>_participation`` seed
@@ -328,6 +361,12 @@ def compute_has_purpose_trip(
     ``missing.AttributeSpec(impute_codes=(803, 804))`` imputes it from the valid {0, 1}
     pool within the person's age band, exactly as ``trip_class`` handles the same codes.
     A diary non-response person must never be forced to 0.
+
+    Args:
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run (issue #373, ADR-0111), forwarded to
+            :func:`participation_w_zweck`. Inert unless ``purpose == "leisure"``. Default
+            False keeps every existing caller byte-identical.
 
     Returns a ``pd.Series`` indexed like ``persons`` (index preserved, not reset).
 
@@ -350,7 +389,7 @@ def compute_has_purpose_trip(
             f"compute_has_purpose_trip: column(s) {missing_wege_cols} absent from the Wege "
             f"frame (has {list(wege.columns)}); cannot derive has_{purpose}_trip.")
 
-    purpose_codes = PARTICIPATION_W_ZWECK[purpose]
+    purpose_codes = participation_w_zweck(purpose, w_zweck_10_as_leisure=w_zweck_10_as_leisure)
     purpose_wege = wege[wege[zweck_col].isin(purpose_codes)]
     purpose_person_keys = pd.MultiIndex.from_arrays(
         [purpose_wege[household_id], purpose_wege[person_id]]).unique()
@@ -387,7 +426,8 @@ def compute_has_work_trip(
         trips_col=trips_col, zweck_col=zweck_col)
 
 
-def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID", person_id="P_ID"):
+def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID", person_id="P_ID",
+                              w_zweck_10_as_leisure: bool = False):
     """Derive the ``<purpose>_participation`` control seed from each person's REALISED
     weekday plan (generic core behind ``derive_work_participation_seed`` / the leisure /
     education controls, feature #224 task 5; mirrors ``derive_trip_class_seed`` -- see
@@ -407,6 +447,12 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
     person's own Wege directly; the path taken is logged (no silent fallback). The
     803/804 diary non-response codes are imputed within the PERSON's own ``alter_gr1``
     age band, exactly as ``derive_trip_class_seed`` does.
+
+    Args:
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run (issue #373, ADR-0111), forwarded to
+            :func:`compute_has_purpose_trip`. Inert unless ``purpose == "leisure"``.
+            Default False keeps every existing caller byte-identical.
     """
     name = f"{purpose}_participation"
     has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
@@ -416,7 +462,8 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
             "(no plan-source columns present -> seed is weekday-filtered).", name)
         persons = persons.copy()
         persons[f"has_{purpose}_trip"] = compute_has_purpose_trip(
-            persons, wege, purpose, household_id=household_id, person_id=person_id)
+            persons, wege, purpose, household_id=household_id, person_id=person_id,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure)
         out = attributes.map_participation(persons, name, source_col=f"has_{purpose}_trip", rng=rng)
         return out.drop(columns=[f"has_{purpose}_trip"])
 
@@ -424,7 +471,8 @@ def derive_participation_seed(persons, wege, purpose, *, rng, household_id="H_ID
     # points at its mirror donor, which is one of these real persons.
     real = persons[~persons["member_imputed"].astype(bool)] if "member_imputed" in persons.columns else persons
     real_has_purpose_trip = compute_has_purpose_trip(
-        real, wege, purpose, household_id=household_id, person_id=person_id)
+        real, wege, purpose, household_id=household_id, person_id=person_id,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure)
     source_has_purpose_trip = pd.Series(
         real_has_purpose_trip.to_numpy(),
         index=pd.MultiIndex.from_arrays([real[household_id], real[person_id]]))
@@ -675,8 +723,94 @@ def derive_work_by_employment_seed(persons, wege, *, exclude_rbw_legs,
     return out
 
 
+def _wege_without_non_education_passive_legs(
+    wege, *, escort_passive_education: bool, w_zweck_10_as_leisure: bool,
+    passive_pair_max_gap_minutes: float, exclude_rbw_legs: bool,
+    drop_leading_arrive_home_leg: bool, household_id: str = "H_ID", person_id: str = "P_ID",
+    trip_id: str = "W_ID",
+):
+    """``wege`` minus the passive escort legs the TRIP BUILD will not realise as education.
+
+    Under ``escort_passive_from_adult`` (issue #372, ADR-0112) a PAIRED W_ZWECK-13 leg takes the
+    accompanying adult's purpose, which is ``"education"`` only when that adult leg is itself an
+    ACTIVE escort leg (``trips.ADULT_ESCORT_W_ZWECK``); an UNPAIRED one keeps the
+    ``escort_passive_education`` relabel. Removing exactly the legs that resolve to something
+    else -- rather than re-deciding which codes count -- keeps this seed and
+    ``trips.map_purpose`` on ONE derivation (:func:`trips.passive_purpose_for_pairs`), so they
+    cannot drift into describing different days (the mismatch class this package exists to
+    remove; see the section header above).
+
+    The pairing runs on the legs the trip build KEEPS, not on the raw table
+    (:func:`trips.legs_kept_by_the_trip_build`, controller ruling C-R12): production drops the
+    rbW summary legs and the leading arrive-home leg BEFORE ``map_purpose`` pairs, so pairing
+    here on the unfiltered frame could pick a dropped leg as the nearest adult candidate and
+    seed a purpose the plan never realises. The filters are applied to the WHOLE frame (not only
+    to the escort legs), because a dropped leg must disappear from the ADULT candidate pool too.
+    The filtered frame is used only to decide WHICH passive legs stay in the education code set;
+    the returned frame keeps every other leg, so the caller's own ``exclude_rbw_legs`` handling
+    downstream is unchanged.
+
+    Args:
+        wege: the donor MiD Wege table; must carry ``escort_pairing.REQUIRED_COLUMNS``, plus
+            ``W_RBW`` / ``W_SO1`` when the corresponding filter flag is on.
+        escort_passive_education / w_zweck_10_as_leisure: the trip-build flags for THIS run,
+            forwarded verbatim to :func:`trips.passive_purpose_for_pairs`.
+            ``w_zweck_10_as_leisure`` cannot change the education answer (adult code 10 resolves
+            to leisure or other, never education) but is threaded rather than assumed, so the
+            seed's derivation stays literally the trip build's.
+        passive_pair_max_gap_minutes: the pairing window in MINUTES.
+        exclude_rbw_legs / drop_leading_arrive_home_leg: the trip build's two leg-drop flags,
+            applied through the SAME helpers ``trips.expand_persons_to_trips`` uses.
+        household_id / person_id / trip_id: the MiD key columns those helpers order by.
+
+    Returns:
+        A filtered COPY of ``wege`` (never mutated in place). Logs the kept/dropped split as an
+        explicit rate (CLAUDE.md fallback transparency): a run where every code-13 leg is dropped,
+        or none is, almost always means the pairing did not work rather than real behaviour.
+    """
+    from braunschweig.popsim.escort_pairing import (
+        PASSIVE_W_ZWECK, REQUIRED_COLUMNS, STATUS_PAIRED, pair_passive_legs,
+    )
+    missing = [column for column in REQUIRED_COLUMNS if column not in wege.columns]
+    if missing:
+        raise KeyError(
+            f"derive_education_flag_seed: escort_passive_from_adult is ON but the Wege frame "
+            f"lacks the column(s) {missing} the passive-escort pairing needs (has "
+            f"{list(wege.columns)}); the seed cannot be built from the same legs the trip build "
+            "realises.")
+    realised_legs = trips.legs_kept_by_the_trip_build(
+        wege, exclude_rbw_legs=exclude_rbw_legs,
+        drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        household_col=household_id, person_col=person_id, trip_col=trip_id)
+    paired, _diagnostics = pair_passive_legs(
+        realised_legs, max_gap_minutes=passive_pair_max_gap_minutes)
+    is_paired = (paired["passive_pair_status"] == STATUS_PAIRED).to_numpy()
+    realised_purpose = trips.passive_purpose_for_pairs(
+        paired.loc[is_paired, "passive_pair_adult_w_zweck"],
+        escort_passive_education=escort_passive_education,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure)
+    drop_index = paired.index[is_paired][realised_purpose != "education"]
+    n_passive = int((realised_legs["W_ZWECK"] == PASSIVE_W_ZWECK).sum())
+    n_passive_raw = int((wege["W_ZWECK"] == PASSIVE_W_ZWECK).sum())
+    logger.info(
+        "[popsim.mid] education_flag seed, escort_passive_from_adult ON: paired over the %d "
+        "passive escort legs (W_ZWECK %d) the trip build keeps out of %d in the raw table "
+        "(exclude_rbw_legs=%s, drop_leading_arrive_home_leg=%s); %d are realised as a "
+        "NON-education purpose by the paired adult and are dropped from the education code set, "
+        "%d stay education (paired with an active escort leg, or unpaired and kept on the "
+        "escort_passive_education rule).",
+        n_passive, PASSIVE_W_ZWECK, n_passive_raw, exclude_rbw_legs,
+        drop_leading_arrive_home_leg, len(drop_index), n_passive - len(drop_index))
+    return wege.drop(index=drop_index)
+
+
 def derive_education_flag_seed(persons, wege, *, escort_passive_education,
-                               exclude_rbw_legs, household_id="H_ID", person_id="P_ID"):
+                               exclude_rbw_legs, escort_passive_from_adult: bool = False,
+                               w_zweck_10_as_leisure: bool = False,
+                               passive_pair_max_gap_minutes: float =
+                               trips.DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                               drop_leading_arrive_home_leg: bool = False,
+                               household_id="H_ID", person_id="P_ID"):
     """Derive the ``education_flag`` seed column (``EDUCATION_FLAG_CATEGORIES``:
     ``edu`` / ``noedu``).
 
@@ -685,7 +819,10 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     (``{3, 11, 12}``), plus :data:`PASSIVE_ESCORT_W_ZWECK` iff
     ``escort_passive_education`` -- exactly the vocabulary ``trips.map_purpose`` gives the
     plan under the same flag. A static code set would seed an escorted child's Kita leg as
-    non-education while the plan realises it as education (issue #256).
+    non-education while the plan realises it as education (issue #256). Under
+    ``escort_passive_from_adult`` (issue #372) the code-13 legs are further narrowed to the
+    ones the pairing actually resolves to education, because the plan then sends the rest to
+    the accompanying adult's purpose instead (shop, home, leisure, ...).
 
     Args:
         escort_passive_education: the value of the ``escort_passive_education``
@@ -694,6 +831,23 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
         exclude_rbw_legs: forwarded verbatim to
             :func:`compute_has_direct_purpose_leg` (controller ruling R8); keyword-only
             with no default for the same reason.
+        escort_passive_from_adult: the value of the ``escort_passive_from_adult`` trip-build
+            flag for THIS run (issue #372, ADR-0112). When True, the code-13 legs the pairing
+            resolves to a NON-education purpose are removed from the counted legs first (see
+            :func:`_wege_without_non_education_passive_legs`), so the seed counts exactly the
+            legs the plan realises as education. Inert while ``escort_passive_education`` is
+            False (there is then no code-13 leg in the code set to begin with).
+        w_zweck_10_as_leisure: the value of the ``w_zweck_10_as_leisure`` trip-build flag for
+            THIS run (issue #373, ADR-0111), forwarded to the pairing's purpose derivation.
+            Inert for the education answer; threaded rather than assumed.
+        passive_pair_max_gap_minutes: the pairing window in MINUTES (config key
+            ``escort_passive_pair_max_gap_minutes``); inert while ``escort_passive_from_adult``
+            is False.
+        drop_leading_arrive_home_leg: the trip build's flag of the same name. Together with
+            ``exclude_rbw_legs`` it defines the leg universe the pairing runs on, which must be
+            the plan's (controller ruling C-R12); inert while ``escort_passive_from_adult`` is
+            False. These four have DEFAULTS, unlike the two flags above, because they were added
+            later: the default reproduces the pre-#372 seed byte-identically.
 
     Logs the ``edu`` share as a count AND a rate per education-by-age band
     (``EDUCATION_AGE_BOUNDS``), i.e. per control universe, so a band whose seed cannot
@@ -705,6 +859,14 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
     codes = set(PARTICIPATION_W_ZWECK["education"])
     if escort_passive_education:
         codes = codes | {PASSIVE_ESCORT_W_ZWECK}
+        if escort_passive_from_adult:
+            wege = _wege_without_non_education_passive_legs(
+                wege, escort_passive_education=escort_passive_education,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+                passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                exclude_rbw_legs=exclude_rbw_legs,
+                drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+                household_id=household_id, person_id=person_id)
     flag = _plan_source_flag(persons, wege, codes, exclude_rbw_legs=exclude_rbw_legs,
                              household_id=household_id, person_id=person_id,
                              name="education_flag")

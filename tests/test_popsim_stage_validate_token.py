@@ -154,14 +154,18 @@ EXPECTED_ENRICHED_MODULE_NAMES = (
 EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
-    # attributes / trips: the two deliberate SECOND-LEVEL exceptions to the one-level
-    # boundary (attributes via assembly / mid.seed_loading, trips via mid.participation).
-    # Added after the 2026-08-19 verification smoke showed both changing behaviour while
-    # the token stayed byte-identical, so a warm cache reused the pre-fix population
-    # (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml).
+    # attributes / trips / escort_pairing: the three deliberate SECOND-LEVEL exceptions to
+    # the one-level boundary (attributes via assembly / mid.seed_loading, trips and
+    # escort_pairing via mid.participation). The first two were added after the 2026-08-19
+    # verification smoke showed both changing behaviour while the token stayed
+    # byte-identical, so a warm cache reused the pre-fix population
+    # (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml); escort_pairing (issue #372,
+    # ADR-0112) decides which W_ZWECK-13 legs the education_flag seed counts, which is the
+    # same hazard.
     "braunschweig.popsim.attributes",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
+    "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.ownership_grid",

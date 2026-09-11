@@ -74,7 +74,10 @@ assessment:
     Bildungseinrichtung) rolls into SrV education -- 0.11% of legs. Mapping it to eqasim
     education would anchor an evening class at the person's assigned school.
   source: ADR-0091
-notes: 'Side effect that is a repair, not a regression: PARTICIPATION_W_ZWECK is derived from the
+notes: 'Extended by issue #373 / ADR-0111 (feature record purpose_main_fold_code_10), which adds
+  W_ZWECK 10 to the leisure code set behind its own flag and turns the leisure set into the derived
+  helper trips.leisure_w_zweck_codes -- the coverage guard and the 14/15/16 mapping recorded here are
+  unchanged by it. Side effect that is a repair, not a regression: PARTICIPATION_W_ZWECK is derived from the
   same table, so the leisure_participation control universe widens from {7} to {7,14,15,16}. Its
   SrV target uses E_ZWECK_9, whose leisure is one coarse bucket fed by the fine purposes 13-18
   (verified by cross-tabulating V_ZWECK against E_ZWECK_9 on the SrV microdata), so the previous

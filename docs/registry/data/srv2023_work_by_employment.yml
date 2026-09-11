@@ -73,9 +73,16 @@ limitations: |
   employment_status classes the control targets include in_ausbildung, and ADR-0060 treats MiD
   in_ausbildung (1.93%) and SrV V_ERW 8 (1.87%) as apples-to-apples; the same widening was
   applied to srv2023_plan_structure_reference in the same commit so that the control and the
-  validation reference measure the same "employed". A person whose V_ERW is a missing code (-8
-  not surveyed, -10 implausible) is classed NOT employed: 11 persons of the 17,269 universe,
-  counted as n_missing_employment_code in the header. work = at least one leg with E_ZWECK_9 in
+  validation reference measure the same "employed". A person whose V_ERW cannot be read (-8 not
+  surveyed, -10 implausible, or missing) has an UNKNOWN employment status since ADR-0117, not a
+  false "not employed": the flag is a nullable boolean carrying pd.NA, and those persons are
+  dropped by this table only (9 of the 11 are 14+; n_unreadable_employment_code = 11 and
+  n_unknown_employment_status = 9 in the header). They stay in the universe for the education
+  table, which does not read the flag. Before that correction the non-answer sat in the
+  DENOMINATOR of employed_share, deflating it: the region moved 0.538853 -> 0.539414 (+0.056 pp)
+  and Braunschweig city 0.556576 -> 0.557860 (+0.13 pp) when it was removed, and the derived
+  control's nonemployed_work fell by up to 0.23 pp because a person with an unknown status who
+  made a work trip had been counted as "not employed but working". work = at least one leg with E_ZWECK_9 in
   {1, 2} (Arbeit, dienstlich/geschaeftlich) on the reporting day, the same purpose set as
   srv2023_participation_by_kreis.csv. 27 of 58,148 legs carry a missing E_ZWECK_9 code and can
   match no purpose.

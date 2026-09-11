@@ -74,15 +74,23 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   clipped at 200 km) found a ~25x spread inside `leisure` (dog-walk-class legs ~4 km
   vs a 45-100 km excursion tail) and a ~3x spread inside the errand share of `other`
   (W_ZWECK=5, 5-9 km vs 11-16 km).
-- **Taxonomy (measured donor means; grouping criterion is the measured W_ZWD distance
-  clustering, NOT a codeplan-confirmed semantic label -- the MiD 2023 codeplan xlsx
-  was not available during implementation, so every per-code semantic label carries a
-  `label to verify (codeplan)` marker in `braunschweig/popsim/purpose_subtype.py`; do
-  not cite these as "visit friends" / "dog walk" etc. without resolving that marker
-  first).** Two boundary codes are explicitly provisional and documented in the module
-  docstring with their reassignment rule: W_ZWD 799 (`leisure_activity`; would move to
-  the sentinel set if the codeplan shows it is a no-assignment code) and W_ZWD 601
-  (`other_errand_short`; would move to `other_errand_long`).
+- **Taxonomy (grouping criterion was the measured W_ZWD distance clustering; the
+  semantic labels are now VERIFIED against the codeplan).** The MiD 2023 codeplan xlsx
+  was not available during implementation, so every per-code label originally carried a
+  `label to verify (codeplan)` marker. Issue #242 / ADR-0113 read the codeplan
+  (`MiD2023_Codeplaene_B1_Standard_v1.1.xlsx`, sheet Wege, `W_ZWD`): every group
+  member's label is now written into `braunschweig/popsim/purpose_subtype.py`, no
+  marker is left, and the grouping is confirmed plausible under those labels. The two
+  provisional boundary codes are resolved: **W_ZWD 799** ("Freizeit k.A.") is a
+  NO-DETAIL code and moves to the leisure sentinel set under
+  `purpose_subtype_codeplan_sentinels` (as does 699 "Erledigung k.A." in
+  `other_errand_long`), while **W_ZWD 601** ("Arztbesuch/medizinisch") STAYS in
+  `other_errand_short` with 602 -- which is also how the SrV crosswalk pairs it (SrV
+  `V_ZWECK` 10 "Behoerdengang, Arztbesuch"). Code 999 has no label in the verified
+  excerpt and remains a sentinel on that basis, stated as such in the module. The
+  group tables below show the DEFAULT (flag-off) membership; feature record
+  `w_zwd_codeplan_sentinels` carries the production state and ADR-0113 the reasoning
+  and the committed SrV comparison.
 
   | leisure group | W_ZWD codes | measured mean | placement |
   |---|---|---|---|
@@ -90,6 +98,29 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
   | `leisure_visit` | 701 | 19.1 km | `potential_visit` (residential, NEW) |
   | `leisure_activity` | 702, 703, 704, 707, 720, 721, 799 | ~10-18 km | `potential_leisure` |
   | `leisure_excursion` | 708, 709, 722 | 45-100 km | `potential_leisure` (boundary-clip share logged) |
+  | `leisure_unspecified` | none -- raw `W_ZWECK` 10 | 12.7 km (ad-hoc, in-sample, on the layer's own donor frame) | `potential_leisure` |
+
+  The FIFTH leisure group is not a `W_ZWD` grouping at all
+  ([ADR-0115](../decisions/ADR-0115-leisure-unspecified-subtype.md), flag
+  `leisure_unspecified_subtype`, feature record `leisure_unspecified_subtype`): MiD `W_ZWECK` 10
+  "anderer Zweck" legs are leisure only through `w_zweck_10_as_leisure` (ADR-0111) and never carry
+  a leisure `W_ZWD` detail code, so no `W_ZWD` clustering can reach them and the four groups above
+  would have to be IMPUTED onto them. They are instead labelled by the raw `W_ZWECK` code
+  (`purpose_subtype.SubtypeSpec.zweck_groups`, applied by the shared helper
+  `purpose_subtype.label_legs`, which lets a `W_ZWECK` group win over a detail code and counts how
+  often that happens), get their own distance layer (Step 8b, built outside the `W_ZWD` branch),
+  and are placed on the generic `pot_leisure` -- never on the residential `pot_visit` pool. They
+  are 43.24 % of the labelled leisure mass on the committed reference's WEEKDAY non-rbW universe,
+  with `wegkm_imp` p25/p50/p75 = 1.27 / 3.26 / 9.50 km (committed
+  `mid2023_w_zwd_group_reference.csv`, spec variant `codeplan_unspecified`). Note the two leg
+  universes that ADR-0116 closed: the decider and the layers USED to estimate on every delivered
+  MiD Wege row, where the same share is about 0.387 and the clipped donor mean about 12.7 km rather
+  than 12.0 km (pre-existing since #127; ADR-0115 Consequences "Two universes"). Since
+  `secondary_mid_weekday_legs_only` (production true, ADR-0116) both stages estimate on the SAME
+  weekday non-rbW universe this reference measures -- one shared function,
+  `braunschweig.popsim.trips.weekday_diary_leg_mask` -- so the only remaining differences are
+  `run()`'s own validity filters (a usable travel time, and the two leg ends not both primary
+  activities). With the flag off the old mismatch is back.
 
   | other group | definition | measured mean | placement |
   |---|---|---|---|
@@ -162,7 +193,7 @@ estimate-on-labelled / impute-onto-100% / log-the-rate pattern.
 | `secondary_distance_by_purpose` | `false` | Tier 1 purpose x mode distributions (popsim_mid) |
 | `secondary_shop_daily_split` | `false` | Tier 2 shop daily/non-daily split + placement |
 | `secondary_shop_daily_share` | `null` | Pin the daily share; `null` = derive from MiD W_GEW |
-| `secondary_leisure_subtype_split` | `false` | Tier 2 leisure 4-group split (distance only) |
+| `secondary_leisure_subtype_split` | `false` | Tier 2 leisure split (distance only): the four W_ZWD leisure groups (plus the W_ZWECK-defined fifth when `leisure_unspecified_subtype` is on) |
 | `secondary_other_subtype_split` | `false` | Tier 2 other/errand 4-group split (distance only) |
 | `leisure_visit_building_potential` | `false` | Places `leisure_visit` legs on residential `pot_visit`; requires `secondary_leisure_subtype_split` |
 | `secondary_distance_min_obs` | `30` | Sparse-cell fallback threshold (legs per cell) |
