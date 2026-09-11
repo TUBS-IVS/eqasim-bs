@@ -2441,11 +2441,13 @@ def execute(context) -> pd.DataFrame:
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
     )
-    # Fail fast BEFORE any batch folder is written or any PopulationSim subprocess starts:
-    # the settings file is a local-only path outside this repo and is copied in as raw
-    # text, so a control at a geography it does not declare would otherwise be discovered
-    # only inside a subprocess -- or silently never balanced. The per-Kreis attribute
-    # controls default ON and render at KREIS, which the 4-level settings file lacks.
+    # Fail fast BEFORE any batch folder is written or any PopulationSim subprocess starts.
+    # PopulationSim rejects an undeclared control geography itself (setup_data_structures
+    # raises "unknown geography column"), so this is not a correctness guard but a
+    # diagnostics one: without it the run dies late, in a worker, after all the batch
+    # folders were written, with a message naming neither the settings file nor the fix.
+    # The per-Kreis attribute controls default ON and render at KREIS, which the 4-level
+    # settings file lacks.
     folders.validate_settings_geographies(
         Path(settings_path).read_text(encoding="utf-8"), controls_df)
     _purge_stale_batches_for_changed_config(

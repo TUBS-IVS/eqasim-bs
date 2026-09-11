@@ -88,8 +88,9 @@ config:
   # ZENSUS100m) has no KREIS level, and the per-Kreis attribute controls
   # (economic_status / number_of_cars / number_of_bicycles / has_ebike / trip_class /
   # employment_status / pt_ticket_group / work_by_employment / education_by_age / ...)
-  # all default ON and render at KREIS. With the 4-level file those controls are simply
-  # not balanced. The file name says "tier3" for historical reasons -- the KREIS level is
+  # all default ON and render at KREIS. With the 4-level file PopulationSim aborts the batch
+  # ("unknown geography column 'KREIS' in control file"), so the run fails rather than
+  # silently under-constraining. The file name says "tier3" for historical reasons -- the KREIS level is
   # required by ANY active per-Kreis control, not only by control_tiers=tier3.
   # braunschweig.popsim.folders.validate_settings_geographies fails the run fast if this
   # path points at a settings file that does not declare every control geography.

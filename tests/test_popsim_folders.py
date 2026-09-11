@@ -399,11 +399,14 @@ def test_write_popsim_folder_requires_all_control_geographies(tmp_path):
 
 
 # --- PopulationSim settings vs. control geographies ---------------------------
-# Regression guard: the run folder's settings.yaml was copied in as raw text and never
-# checked against the control set, so a control at a geography the settings do not
-# declare was only discovered inside the PopulationSim subprocess -- or not at all.
-# With the per-Kreis attribute controls defaulting ON, the 4-level settings file
-# (WELT > STAAT > ZENSUS1km > ZENSUS100m) silently under-constrains every KREIS control.
+# Diagnostics guard: the run folder's settings.yaml was copied in as raw text and never
+# checked against the control set. PopulationSim DOES reject an undeclared control
+# geography itself, so the population was never silently wrong -- but the rejection came
+# late, inside a worker subprocess, after every batch folder had been written, and its
+# message ("unknown geography column 'KREIS' in control file") names neither the settings
+# file nor the fix. With the per-Kreis attribute controls defaulting ON, the 4-level
+# settings file (WELT > STAAT > ZENSUS1km > ZENSUS100m) made that the outcome of every
+# local popsim_mid run from the committed fixtures.
 
 _FOUR_LEVEL_SETTINGS = """
 geographies:
