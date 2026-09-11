@@ -71,12 +71,15 @@ def test_build_mid_workday_location_table_shares():
     far = t.loc["100_200"]
     assert far["share_at_home"] == pytest.approx(0.5) and far["share_other_place"] == pytest.approx(0.5)
     # Row 7 (P_STARB1 == 9, "no answer") is the only 50-100 km person; its state is undetermined,
-    # so share_missing on that row is 1.0 (Ruling R4: state-missing, non-zero).
+    # so that class reports a state_missing_rate of 1.0 (Ruling R4: state-missing, non-zero) and,
+    # since ADR-0117, NaN in the four determined shares rather than a 0.0 that would read as an
+    # observation.
     fifty_to_hundred = t.loc["50_100"]
     assert fifty_to_hundred["n_unweighted"] == 1
-    assert fifty_to_hundred["share_missing"] == pytest.approx(1.0)
+    assert fifty_to_hundred[R.STATE_MISSING_RATE_COLUMN] == pytest.approx(1.0)
     share_cols = list(R.SHARE_COLUMNS)
-    assert np.allclose(t[share_cols].sum(axis=1), 1.0)
+    determined_rows = t[share_cols].dropna()
+    assert np.allclose(determined_rows.sum(axis=1), 1.0)
     # Row 8 (P_STARB1 == 202, a "not employed/not asked" filter code) is outside the universe and
     # must not be counted anywhere: 7 = 9 input rows - 1 weekend (row 6) - 1 filter code (row 8).
     assert "all" in t.index and t.loc["all", "n_unweighted"] == 7
@@ -86,9 +89,10 @@ def test_build_mid_workday_location_table_missing_distance_row():
     p = _mid_persons(); p.loc[0, "P_ARB_ENTF"] = 996.0
     t = R.build_mid_workday_location_table(p).set_index("distance_class")
     assert t.loc["all", "n_missing_distance"] == 1
-    # Distance-missing (row 0) does not affect share_missing -- only row 7's state-missing
-    # (P_STARB1 == 9) does: weight 1 of the universe's total weight 8 (1+1+2+1+1+1+1).
-    assert t.loc["all", "share_missing"] == pytest.approx(1 / 8)
+    # Distance-missing (row 0) does not affect the state_missing_rate -- only row 7's
+    # state-missing (P_STARB1 == 9) does: weight 1 of the universe's total weight 8
+    # (1+1+2+1+1+1+1). The rate keeps the FULL universe as its denominator (ADR-0117).
+    assert t.loc["all", R.STATE_MISSING_RATE_COLUMN] == pytest.approx(1 / 8)
     assert "lt10" in t.index and t.loc["lt10", "n_unweighted"] == 3
 
 
@@ -386,3 +390,51 @@ def test_first_work_trip_length_km_keeps_the_first_valid_work_trip():
 def test_first_work_trip_length_km_requires_columns():
     with pytest.raises(ValueError, match="wegkm"):
         R.first_work_trip_length_km(_mid_trips_for_length().drop(columns=["wegkm"]))
+
+
+# ---------------------------------------------------------------------------
+# ADR-0117 follow-up: a person whose reporting-day STATE is undetermined is a
+# non-answer, not a fifth state. It must leave the shares' denominator so the
+# four determined states renormalise over the persons who answered, and the
+# rate at which the state is undetermined becomes its own diagnostic column.
+# ---------------------------------------------------------------------------
+
+def test_undetermined_state_leaves_the_share_denominator():
+    """The lt10 rows are 2 at_workplace + 2 at_home + 1 did_not_work by weight (total 5).
+
+    Adding one undetermined-state person (P_STARB1 == 9) with weight 5 to that class must NOT
+    halve the four shares: they are conditional on the state being known.
+    """
+    p = _mid_persons()
+    extra = p.iloc[[0]].copy()
+    extra["P_STARB1"] = 9
+    extra["P_GEW"] = 5.0
+    extra["P_ARB_ENTF"] = 5.0
+    t = R.build_mid_workday_location_table(
+        pd.concat([p, extra], ignore_index=True)).set_index("distance_class")
+    lt10 = t.loc["lt10"]
+    assert lt10["share_at_workplace"] == pytest.approx(2 / 5)
+    assert lt10["share_at_home"] == pytest.approx(2 / 5)
+    assert lt10["share_did_not_work"] == pytest.approx(1 / 5)
+    # ... and the undetermined weight is reported against the FULL universe of the class.
+    assert lt10["state_missing_rate"] == pytest.approx(5 / 10)
+
+
+def test_the_four_determined_shares_sum_to_one_on_every_row():
+    t = R.build_mid_workday_location_table(_mid_persons()).set_index("distance_class")
+    determined = t[list(R.SHARE_COLUMNS)].dropna()
+    assert len(determined) > 0
+    assert np.allclose(determined.sum(axis=1), 1.0)
+    assert "share_missing" not in t.columns          # renamed: a different denominator
+    assert "state_missing_rate" in t.columns
+
+
+def test_a_class_with_no_determined_state_yields_nan_shares_not_zero():
+    """Row 7 (P_STARB1 == 9) is the only 50-100 km person, so that class has no determined
+    state at all. A 0.0 share would read as "nobody works at their workplace there"; NaN is the
+    truth, and _build_share_at_workplace_lookup refuses to use it."""
+    t = R.build_mid_workday_location_table(_mid_persons()).set_index("distance_class")
+    fifty = t.loc["50_100"]
+    assert fifty["state_missing_rate"] == pytest.approx(1.0)
+    for column in R.SHARE_COLUMNS:
+        assert np.isnan(fifty[column]), column
