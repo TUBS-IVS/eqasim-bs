@@ -22,13 +22,19 @@ resolves_to:
   popsim_open: braunschweig.popsim.trips_stage
 features:
 - escort_purpose
+- escort_passive_from_adult
 - home_closure_model
+- no_answer_codes_excluded
+- purpose_main_fold_code_10
 - rbw_leg_convention
 decisions:
 - ADR-0072
 - ADR-0073
 - ADR-0107
 - ADR-0108
+- ADR-0111
+- ADR-0112
+- ADR-0117
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -42,3 +48,43 @@ notes: >-
   set them to their OFF values explicitly. The stage logs the dropped-leg rates, the closure
   shares and the dwell-fallback rates; is_synthetic_closure marks the synthesised rows on the
   cached frame and deliberately does NOT reach trips.csv (explicit column list there).
+
+
+  PURPOSE CORRECTNESS (issues #373 / #372, ADR-0111 / ADR-0112, feature records
+  purpose_main_fold_code_10 and escort_passive_from_adult): three further MiD-only keys are declared
+  and read here, all UNPREFIXED (like escort_purpose / escort_passive_education, unlike the
+  braunschweig.population.popsim.* plan-structure keys above), each from the shared constant pair in
+  braunschweig.popsim.stage.config_keys so the four stages that read them cannot disagree about a
+  key name or a default. w_zweck_10_as_leisure (declared default true) relabels W_ZWECK 10 "anderer
+  Zweck" to leisure, following MiD's own hwzweck1 fold; escort_passive_from_adult (declared default
+  FALSE, production true in configs/base_bs.yml -- it REQUIRES escort_purpose, whose declared
+  default is false, so a true declared default would make the declared default set internally
+  inconsistent) gives a PAIRED passive escort leg (W_ZWECK 13) the purpose of the accompanying
+  adult's leg, with escort_passive_pair_max_gap_minutes
+  (unit: minutes, default 15.0) the pairing window. Ruling C-R22 (issue #373 cleanup wave): this
+  stage's OWN configure() now ALSO raises ValueError naming BOTH keys when
+  escort_passive_from_adult is on and escort_purpose is off, so synpp fails the whole DAG before
+  any stage executes; map_purpose's own identical check is kept as the last line of defense for a
+  direct caller outside this stage's configure()/execute() contract (previously the ONLY check,
+  which meant a misconfigured run discovered the contradiction only at trip-build time, i.e. after
+  every upstream stage -- including the full PopulationSim balancing -- had already run).
+  EntdSource.build_trips REJECTS a
+  non-default value for all three (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
+  ENTD has neither a W_ZWECK vocabulary nor the household/time columns the pairing needs) and both
+  popsim_open fixtures set the OFF values explicitly. The pairing runs on the RAW Wege frame inside
+  map_purpose, so the stage needs HP_ALTER, H_ID, W_SZS and W_SZM present at that point; the code
+  relabel and the pairing both log explicit rates. braunschweig.popsim.escort_pairing is folded into
+  this stage's _HELPER_MODULES, so a change to the pairing rule invalidates the stage's cache.
+
+
+  TRIP-LENGTH GUARD (issue #373, ADR-0117, feature record no_answer_codes_excluded): the
+  euclidean_distance column this stage puts on the trips CONTRACT is now built through
+  braunschweig.popsim.diary_facts.validate_trip_length_km instead of a bare astype(float). A MiD
+  design code (>= 9994 "unplausibel" / "keine Angabe") or a non-positive length RAISES naming this
+  stage and the counts, because such a value would leave the contract as a 7,688 km straight-line
+  leg and reach every downstream consumer, including the commute-distance donor pool that imputes
+  OTHER persons' missing distances from it. A structurally missing length is counted and logged,
+  not raised on: the closure/dwell synthesis adds legs that were never surveyed and therefore
+  carry no wegkm_imp. Byte-identical on the 2026-09 delivery, which carries no impossible value
+  in 1,087,393 rows. This stage does NOT change how a W_ZWECK 99 leg is mapped -- it keeps the
+  purpose "other", because the trip is real; only the ESTIMATIONS exclude it (ADR-0117 Decision 2).

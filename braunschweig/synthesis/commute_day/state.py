@@ -242,7 +242,18 @@ def _build_share_at_workplace_lookup(table: pd.DataFrame, classes_needed) -> dic
             raise KeyError(
                 f"{_LOG_TAG} workday-location table has no row for distance_class={table_label!r} "
                 f"(needed to look up class {label!r}); present classes: {sorted(indexed.index)}")
-        lookup[label] = float(indexed.loc[table_label])
+        share = float(indexed.loc[table_label])
+        # Since ADR-0117 the four state shares are conditional on a DETERMINED state, so a class
+        # in which nobody reported one carries NaN rather than a 0.0 that would read as an
+        # observation. A NaN must not reach the keep-probability ratio, where it would silently
+        # turn every draw for that class into NaN -> False; stop and name the class instead.
+        if not np.isfinite(share):
+            raise ValueError(
+                f"{_LOG_TAG} workday-location table has no usable share_at_workplace for "
+                f"distance_class={table_label!r} (value {indexed.loc[table_label]!r}): no person "
+                "of that class reported a determined reporting-day state, so the share is "
+                "undefined. The keep probability cannot be formed from it (ADR-0117).")
+        lookup[label] = share
     return lookup
 
 

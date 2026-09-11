@@ -15,6 +15,8 @@ These tests pin the parity so the next parameter cannot stop one layer short.
 """
 import inspect
 
+import pytest
+
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.sources.base import PopsimSource
 from braunschweig.popsim.sources.entd import EntdSource
@@ -44,6 +46,14 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         # empirical model's cell threshold became a config key).
         "exclude_rbw_legs", "drop_leading_arrive_home_leg", "closure_dwell_model",
         "closure_dwell_min_obs",
+        # Added 2026-09-09 (purpose correctness, issue #373 task 2): W_ZWECK 10 ("anderer
+        # Zweck") -> leisure, following MiD's own hwzweck1 fold (ADR-0111).
+        "w_zweck_10_as_leisure",
+        # Added 2026-09-09 (purpose correctness, issue #372 task 4, controller ruling C-R3):
+        # a PAIRED passive escort leg (MiD W_ZWECK 13) takes the accompanying adult's purpose
+        # (ADR-0112), with the pairing's time window in minutes. trips_stage.execute reads and
+        # passes both, so all four layers must carry them.
+        "escort_passive_from_adult", "passive_pair_max_gap_minutes",
     }
 
 
@@ -85,3 +95,18 @@ def test_mid_adapter_forwards_the_round_trip_flag_to_the_implementation(monkeypa
     assert result == "sentinel"
     assert seen["explicit_round_trip_purposes"] is False
     assert seen["random_seed"] == 42
+
+
+@pytest.mark.parametrize("keyword,value,key_in_message", [
+    ("escort_passive_from_adult", True, "escort_passive_from_adult"),
+    ("passive_pair_max_gap_minutes", 20.0, "escort_passive_pair_max_gap_minutes"),
+])
+def test_entd_adapter_rejects_each_passive_escort_keyword_by_name(keyword, value, key_in_message):
+    """Fix round 1 (m9): accepting the keyword is not enough -- the ENTD donor has no MiD
+    W_ZWECK 13 and no household diary to pair against, so a non-default value must RAISE with
+    a message naming the CONFIG key to change (CLAUDE.md: no silent no-ops)."""
+    with pytest.raises(ValueError) as excinfo:
+        EntdSource().build_trips(persons=None, donor_trips=None, random_seed=1,
+                                 **{keyword: value})
+    assert key_in_message in str(excinfo.value)
+    assert "popsim_open" in str(excinfo.value)

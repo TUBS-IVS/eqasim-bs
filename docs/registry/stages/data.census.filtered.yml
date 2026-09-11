@@ -39,9 +39,11 @@ features:
 - ipf_synthesis_legacy
 - kreis_income_control
 - ownership_grid_1km
+- escort_passive_from_adult
 - participation_universe_controls
 - placement_income_l2
 - popsim_method
+- purpose_main_fold_code_10
 - sex_aware_couples
 - srv_participation_controls
 - tier3_kreis_controls
@@ -51,6 +53,8 @@ decisions:
 - ADR-0106
 - ADR-0108
 - ADR-0109
+- ADR-0111
+- ADR-0112
 notes: >-
   Two plan-structure flags are declared and read HERE as well as in the stages that own them
   (#365 / #367): braunschweig.population.popsim.diary_plan_match arms the guard that RAISES if a
@@ -77,3 +81,25 @@ notes: >-
   seed. The two seed columns (work_by_employment, education_flag) are derived on both MiD seed
   paths only when a universe entry is active; every Kreis attribute control is empty for a non-MiD
   source, so the ENTD path is untouched.
+
+
+  PURPOSE CORRECTNESS (issues #373 / #372, ADR-0111 / ADR-0112, feature records
+  purpose_main_fold_code_10 and escort_passive_from_adult): three more keys are declared and read
+  here for the SAME seed-vs-plan reason -- w_zweck_10_as_leisure, escort_passive_from_adult and
+  escort_passive_pair_max_gap_minutes, the same unprefixed keys and the same defaults
+  braunschweig.popsim.trips_stage declares, imported from braunschweig.popsim.stage.config_keys.
+  The leisure_participation control's seed must count W_ZWECK 10 as leisure exactly when the trip
+  build does, and the education_flag seed must count exactly the W_ZWECK-13 legs the trip build
+  realises as education: mid.participation.derive_education_flag_seed therefore runs the SAME
+  pairing and the SAME purpose rule, on the SAME leg universe --
+  _wege_without_non_education_passive_legs reduces the raw frame with
+  trips.legs_kept_by_the_trip_build (the one definition of the rbW and leading-arrive-home drops)
+  BEFORE pairing, so a leg the trip build drops also leaves the ADULT candidate pool, and
+  drop_leading_arrive_home_leg is threaded into that path as
+  education_flag_drop_leading_arrive_home_leg (spelled distinctly from the trip_class derivation's
+  parameter of the same config key, documented at both ends). Both seed columns therefore change
+  when either flag changes, which is why THIS stage's cache -- and with it the PopulationSim run --
+  is invalidated by them, intended. braunschweig.popsim.escort_pairing is listed in
+  _DEFERRED_HELPER_MODULE_NAMES (the third second-level exception validate() names, with the same
+  standard of evidence as the other two) so an edit to the pairing rule cannot be served from a
+  stale seed cache.

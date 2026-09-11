@@ -1,0 +1,217 @@
+feature: secondary_mid_weekday_universe
+title: 'secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders
+  estimate on the weekday diary universe'
+area: secondary
+description: |
+  The synthetic population is ONE WEEKDAY, and since this feature both MiD-estimating secondary
+  stages say so. braunschweig.popsim.distance_distributions.run (every layer it builds -- the
+  mode-only, the per-purpose and all subtype layers) and the three MiD-based subtype deciders in
+  braunschweig.synthesis.locations.secondary_chainsolvers.deciders
+  (_build_shop_subtype_decider, _build_leisure_subtype_decider, _build_other_subtype_decider)
+  are reduced to the WEEKDAY DIARY universe -- the seed's own day filter and no rbW summary
+  records -- instead of estimating on every delivered MiD Wege row. Issue #373, ADR-0116.
+
+  Universe size on the 2026-09-10 raw MiD 2023 B1 delivery, from the committed
+  mid2023_w_zwd_group_reference.csv header: n_legs_raw = 1087393 rows, of which
+  n_legs_after_weekday_rbw = 738546 (67.92 %) are weekday non-rbW legs. The two drop reasons are
+  251,215 non-weekday legs and 97,632 rbW summary records (the helper's own INFO line; AD-HOC
+  MEASUREMENT of 2026-09-10, Task 1 of the ADR-0116 plan, not reproduced by committed code).
+
+  Mechanism: ONE universe function, braunschweig.popsim.trips.weekday_diary_leg_mask, is
+  kernwo in WEEKDAY_DIARY_KERNWO AND NOT rbw_leg_mask, with
+  WEEKDAY_DIARY_KERNWO = tuple(seed.MID_SEED_COLUMNS.day_filter_values) READ from the seed rather
+  than re-typed (a test pins it equal to seed.WEEKDAY_KERNWO). It RAISES a ValueError naming the
+  column when kernwo or W_RBW is absent -- a universe must never be applied silently to a frame
+  that cannot express it -- and an uncoercible kernwo counts as NOT weekday. The companion
+  restrict_to_weekday_diary_legs applies the mask, logs the kept rate with both drop reasons at
+  INFO (they PARTITION the dropped legs, pinned by a test) and raises on an empty result. The
+  distance stage applies it in a new Step 0a, BEFORE the pairing mask of Step 0b and before the
+  purpose mapping of Step 1, so the aggregate, the per-purpose and every subtype layer share one
+  universe; kernwo / W_RBW are deliberately NOT in REQUIRED_COLUMNS because they are needed only
+  on this path. The three decider builders apply it right after load_mid_wege (shop: in its
+  ESTIMATION branch only, the pinned-share branch loads no MiD frame; leisure: before
+  code_coverage_guard; other: before map_mode, so both of its composed estimation stages read the
+  same frame). The SrV escort-location and SrV location-type deciders are not MiD estimations and
+  are untouched. The two committed reference extractions
+  (scripts/extract_mid_w_zwd_groups.py, scripts/extract_mid_w_zweck_hwzweck1.py) call the same
+  helper, so a reference table and the estimation it is compared against can no longer describe
+  different days. Both stages declare the key from the one constant pair in
+  braunschweig.popsim.stage.config_keys and must resolve the SAME value: the decider labels a leg
+  and the layer supplies that label's donor pool. Not a trip-build flag (trips_stage never reads
+  it), so it is deliberately absent from ENTD_REJECTED_KEYS -- popsim_open keeps the ENTD distance
+  CDFs and never estimates on MiD.
+
+  A/B arms: arms A, B and C of the #373/#372/#242 ladder must set
+  secondary_mid_weekday_legs_only false EXPLICITLY in their overlays, because this key's CODE
+  default is True and leaving it unset means ON; arm D = arm C + secondary_mid_weekday_legs_only
+  true (or unset). The CODE default of run()'s keyword stays False, so a direct caller or test
+  that omits it keeps the pre-feature behaviour.
+stages:
+- synthesis.population.spatial.secondary.distance_distributions
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - secondary_mid_weekday_legs_only
+introduced:
+  issue: '#373'
+  pr: null
+  adr: ADR-0116
+detail_doc: docs/features/secondary-distances.md
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/calibration/secondary_measurement.py
+- scripts/extract_mid_w_zwd_groups.py
+- scripts/extract_mid_w_zweck_hwzweck1.py
+evidence:
+  tests:
+  - tests/test_popsim_trips.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_distance_distributions_by_purpose.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  - tests/test_extract_mid_w_zwd_groups.py
+  - tests/test_escort_chainsolvers.py
+  - tests/test_synpp_helper_hash_invariant.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_distance_distributions_subtypes.py::test_weekday_legs_only_default_false_is_byte_identical_to_today
+    note: |
+      Two sides, both pinned. LAYERS: the named test serialises every layer of run()'s output with
+      weekday_legs_only=False and with the keyword OMITTED, on a fixture that DOES contain weekend
+      and rbW legs, and asserts the two are identical -- so the OFF path is byte-identical and the
+      fixture is one where the ON path really differs
+      (tests/test_distance_distributions_subtypes.py::test_weekday_legs_only_drops_weekend_and_rbw_legs_from_every_layer
+      and ::test_weekday_legs_only_off_keeps_the_weekend_and_rbw_legs are the two halves, and
+      tests/test_distance_distributions_by_purpose.py pins the aggregate and per-purpose layers
+      the same way with ::test_weekday_legs_only_drops_them_from_the_aggregate_and_purpose_layers,
+      ::test_weekday_legs_only_off_keeps_them_in_the_aggregate_layer and
+      ::test_weekday_legs_only_defaults_to_false).
+      ::test_weekday_legs_only_off_needs_no_universe_column pins that the OFF
+      path does not even require kernwo / W_RBW, and
+      ::test_weekday_legs_only_raises_when_the_universe_column_is_absent pins the raise on the ON
+      path. DECIDERS: the filter sits behind a single `if <key>:` gate right after load_mid_wege,
+      so the OFF path is the pre-feature code path by construction; it is pinned per builder by
+      tests/test_secondary_chainsolvers_subtypes.py::test_shop_decider_uses_the_weekend_legs_when_the_flag_is_off,
+      ::test_leisure_decider_uses_the_weekend_legs_when_the_flag_is_off and
+      ::test_other_decider_uses_the_rbw_legs_when_the_flag_is_off (the "other" fixture uses rbW
+      legs, so both halves of the universe are pinned), by the ON siblings
+      ::test_{shop,leisure,other}_decider_estimates_on_the_weekday_universe_when_the_flag_is_on,
+      and by ::test_shop_decider_pinned_share_needs_no_mid_frame (the pinned-share branch never
+      loads MiD at all). Every pre-existing decider test also exercises the OFF path unchanged --
+      _FakeContext's one-argument read returns None. NOT byte-identical, and recorded rather than
+      hidden: with the flag ON both stages emit one additional INFO line each (the universe log
+      markers below), and the re-measured sanity pins in
+      braunschweig.calibration.secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE describe the ON
+      frame, so the validation script's in-sample sanity line prints the weekday pins on an OFF
+      run too (a reporting band, never a gate; the all-day values are listed in ADR-0116
+      Consequences).
+  fallback_rate:
+    instrumented: true
+    log_marker: 'weekday diary universe: kept'
+    note: |
+      The declared marker is the literal, stage-independent middle of the ONE universe log line
+      that braunschweig.popsim.trips.restrict_to_weekday_diary_legs emits, prefixed by its
+      caller's log_tag: at run time it reads
+      "<tag> weekday diary universe: kept <n>/<total> legs (<rate>%); dropped <k> non-weekday
+      (kernwo outside [1, 2, 3]), <m> rbW summary records" -- the PRIMARY count against the
+      delivered frame, with the two drop reasons partitioning the remainder. Four tags exist, one
+      per consumer: "[popsim.distance_distributions]" (Step 0a of run) and
+      "[braunschweig.secondary_chainsolvers] shop subtype" / "... leisure subtype" /
+      "... other subtype" (the three decider builders). The helper RAISES rather than falling back
+      when nothing is kept, so a delivery whose kernwo / W_RBW contents do not match the universe
+      stops the stage instead of silently estimating on an empty or unfiltered frame; a missing
+      kernwo or W_RBW column raises a ValueError naming the column on the ON path. The knock-on
+      fallback this filter can cause is thin (mode, tt_band) cells, instrumented in the layer it
+      happens in, not here: purpose_subtype.estimate_group_probabilities logs
+      "[purpose_subtype:<purpose>] N/M (mode, tt_band) cells are below min_obs=30 and fall back to
+      the marginal" and WARNs when ALL cells are thin, and purpose_subtype.impute_groups logs
+      "[purpose_subtype] marginal fallback used for N/M legs (r%)". Those rates rise with the
+      smaller universe (ADR-0116 Consequences, "Thin cells") and arm D of the pre-registered A/B
+      must record them.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
+    note: |
+      This table IS the reference universe: since ADR-0116 it and the estimation apply the very
+      same braunschweig.popsim.trips.weekday_diary_leg_mask, and its header says so (regenerated
+      header-only for that sentence; the data rows are unchanged, md5
+      e3eee749df76d75a5784399db3b6a467 before and after). Its header also carries the universe
+      counts this record quotes (n_legs_raw = 1087393, n_legs_after_weekday_rbw = 738546, 67.92 %).
+      With the flag ON, the residual difference between the committed rows and the deciders'
+      printed marginals is run()'s own validity filters (a usable travel time; the two leg ends not
+      both primary activities), NOT the universe -- which is what closes the "Two universes"
+      finding of ADR-0113 Assumption 3 / ADR-0115 Consequences. The sibling committed aggregate
+      mid2023_w_zweck_by_hwzweck1.csv shares the same helper. Both remain MEASUREMENT references
+      that no synthesis, location or distribution stage reads, and neither is a target.
+validation:
+  state: unvalidated
+  runs: []
+  metric: |
+    Not yet measured on a population. What is measured today is donor-side and in-sample: the
+    universe itself (738,546 of 1,087,393 delivered Wege legs, 67.92 %, committed header; the
+    251,215 non-weekday / 97,632 rbW split is the helper's own log line, ad-hoc 2026-09-10), the
+    527,108 weekday against 749,634 all-day legs the layers are built from after run()'s
+    primary-both filter (AD-HOC, run()'s own Step-5 log), and the eight re-measured donor means
+    now pinned in secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE -- leisure_local 5.5,
+    leisure_visit 17.1, leisure_activity 9.9, leisure_excursion 68.0, leisure_unspecified 12.0,
+    other_errand_short 7.6, other_errand_long 10.1, other_escort 7.0 km (AD-HOC MEASUREMENTS of
+    2026-09-10 on the frame each layer is built from; all-day counterparts 6.2 / 19.1 / 12.1 /
+    65.9 / 12.7 / 7.5 / 11.5 / 8.0 km listed with their n in ADR-0116 Consequences). Those are
+    IN-SAMPLE donor means and sanity bands, never validation gates. Arm D of the pre-registered
+    A/B (ADR-0116 Consequences) is what would compare the model's REALISED subtype marginals and
+    distances -- and, for the first time on the SAME leg universe, against the committed
+    codeplan_unspecified reference rows.
+  note: |
+    No run has executed this code as of this record. Nothing here compares the model against
+    observed behaviour: the MiD reference is the donor survey the model estimates FROM, so even
+    arm D is an in-sample consistency measurement, and the change this feature makes is a
+    universe CORRECTION argued from the model's own definition (the population is a weekday), not
+    from a fitted improvement. validation.state stays unvalidated until an arm-D run manifest
+    records the realised marginals, the realised distance medians and the thin-cell fallback
+    rates.
+assessment:
+  status: pending
+  pending_reason: |
+    Arm D of the pre-registered A/B (ADR-0116 Consequences) has not run, so nothing is known about
+    the realised effect: the expected within-0.5-pp agreement of the deciders' printed marginals
+    with the committed weekday reference rows, the expected downward move of the realised leisure
+    distance median against arm C, and the expected RISE of the thin-cell fallback rates are all
+    ASSUMPTIONS. Note for whoever configures that A/B: this key's CODE default is True, so arms A,
+    B and C must set secondary_mid_weekday_legs_only: false EXPLICITLY in their overlays --
+    leaving it unset means ON -- while arm D = arm C + secondary_mid_weekday_legs_only: true (or
+    unset). A second item is parked on the same measurement rather than on an issue: the thin-cell
+    question (the universe is 67.9 % of the rows, so per-group donor n falls -- leisure_excursion
+    6,425 -> 3,591 and leisure_visit 15,205 -> 8,003 -- while secondary_distance_min_obs and the
+    deciders' per-cell min_obs keep their values), which arm D's logged fallback rates answer. A
+    third, deliberately out of scope here: scripts/derive_escort_w_zweck_split.py still measures
+    its committed share table on a day-filter-only universe (no rbW exclusion, stated in its own
+    header), so it is the last committed MiD Wege aggregate whose universe is not this helper's;
+    routing it through the helper would move a pinned reference table and is a separate,
+    artefact-changing task (ADR-0116 Rejected alternatives).
+notes: |
+  Sibling records of the same wave, both of whose "Two universes" statements this feature closes
+  by reference: w_zwd_codeplan_sentinels (#242, ADR-0113) owns the W_ZWD group boundaries and the
+  SrV measurement package, and leisure_unspecified_subtype (#373, ADR-0115) owns the fifth
+  leisure group. The subtype models themselves belong to secondary_distance_by_purpose (#127,
+  ADR-0026/ADR-0057) and their method is documented in docs/features/secondary-distances.md; this
+  record owns only the estimation UNIVERSE the three of them share. No separate GitHub issue was
+  opened: the owner decided on 2026-09-10 to implement this inside the #373 purpose-correctness
+  story ("implement immediately"), so #373 is the issue of record. Toggling this key recomputes
+  exactly the two declared stages -- each declares the key, both already hash
+  braunschweig.popsim.trips in their validate() helper-module tuple (so the new helper itself is
+  covered) and braunschweig.popsim.seed was ADDED to both tokens because the weekday definition
+  lives there and hashing trips cannot see across that import (ADR-0116, ruling W4; two tests in
+  tests/test_synpp_helper_hash_invariant.py perturb the seed source and assert both tokens move)
+  -- while PopulationSim and the trip build are untouched (no seed column
+  changes, no trip-build flag read differently), which is what makes arm D cheap. The trip build's
+  own exclude_rbw_legs / drop_leading_arrive_home_leg keys stay INDEPENDENT of this one on
+  purpose (ADR-0116 Rejected alternatives, controller ruling W1): one flag, one universe.

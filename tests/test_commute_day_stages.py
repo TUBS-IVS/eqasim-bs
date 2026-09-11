@@ -311,6 +311,10 @@ def _write_raw_mid(directory):
         # later ones, mirroring tests/test_completed_donor_stage.py).
         "W_RBW": [0, 0, 0, 0, 0, 0],
         "W_SO1": [1, 809, 1, 809, 1, 809],
+        # The MiD Wege file repeats the household member's age on every leg; the stage loads it
+        # (WEGE_COLUMNS) because the passive-escort pairing needs it to decide who counts as the
+        # accompanying ADULT (issue #372). Matches the persons frame above leg by leg.
+        "HP_ALTER": [40, 40, 35, 35, 50, 50],
     })
     households = pd.DataFrame({"H_ID": [1, 2], "H_GR": [2, 3], "H_ANZAUTO": [1, 0]})
     persons.to_csv(os.path.join(directory, DONORS.PERSONS_FILE), index=False)
@@ -507,6 +511,46 @@ def test_donor_stage_forwards_the_plan_structure_flags_and_the_donor_filters(tmp
     assert captured["exclude_no_diary"] is True
     assert captured["exclude_holidays"] is True
     assert captured["exclude_only_rbw"] is True
+
+
+def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_path, monkeypatch):
+    """Issue #373 cleanup wave, item 3: w_zweck_10_as_leisure, escort_passive_from_adult and
+    passive_pair_max_gap_minutes reach build_home_office_donor_pool, but no test asserted the
+    VALUE arrives (the sibling test above pins the plan-structure flags and donor filters, not
+    these three). Non-default values are used (the pure builder's own keyword defaults are
+    False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a forwarding regression that
+    silently falls back to the callee's own default would be caught here."""
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE,
+    )
+
+    _write_raw_mid(str(tmp_path))
+    captured = {}
+    real_builder = DONORS.build_home_office_donor_pool
+
+    def capturing_builder(persons, wege, households, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        return real_builder(persons, wege, households, **kwargs)
+
+    monkeypatch.setattr(DONORS, "build_home_office_donor_pool", capturing_builder)
+    # escort_passive_from_adult=True requires escort_purpose=True (map_purpose's own guard).
+    context = _context(DONORS, config=_donor_stage_config(
+        tmp_path,
+        **{
+            DONORS.KEY_ESCORT_PURPOSE: True,
+            KEY_W_ZWECK_10_AS_LEISURE: True,
+            KEY_ESCORT_PASSIVE_FROM_ADULT: True,
+            KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+        }))
+
+    DONORS.execute(context)
+
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
 
 
 def test_donor_stage_donor_filters_follow_the_plan_source_flags(tmp_path, monkeypatch):

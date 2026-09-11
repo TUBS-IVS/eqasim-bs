@@ -34,9 +34,13 @@ features:
 - building_potentials_secondary
 - detour_circuity_curve
 - escort_purpose
+- leisure_unspecified_subtype
+- no_answer_codes_excluded
 - parallel_chainsolvers
 - secondary_distance_by_purpose
+- secondary_mid_weekday_universe
 - secondary_srv_location_types
+- w_zwd_codeplan_sentinels
 decisions:
 - ADR-0026
 - ADR-0027
@@ -44,3 +48,92 @@ decisions:
 - ADR-0075
 - ADR-0076
 - ADR-0096
+- ADR-0113
+- ADR-0115
+- ADR-0116
+- ADR-0117
+notes: >-
+  W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
+  chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
+  imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.popsim.distance_distributions) and deciders.py's _build_leisure_subtype_decider /
+  _build_other_subtype_decider re-read it through the single-argument execute-context form to select
+  purpose_subtype.leisure_spec(...) / other_errand_spec(...). With the flag on, the two NO-DETAIL
+  W_ZWD codes 799 "Freizeit k.A." and 699 "Erledigung k.A." are sentinels instead of group members,
+  so they leave the ESTIMATION universe (numerator and denominator) and are imputed like every other
+  sentinel leg; with it off both selectors return the unflagged spec BY IDENTITY. Both build-time log
+  lines append "(codeplan no-detail sentinels: on/off)", so the active spec is readable in the run
+  log. braunschweig.popsim.purpose_subtype is imported at this package's module level solely so it
+  can be listed in _HELPER_MODULES and hashed by validate() (controller ruling C-R15): the deciders
+  reach it only through function-level imports, so a group-boundary edit with no textual change here
+  would otherwise have been served from a stale cache. This stage carries no seed, so toggling the
+  flag recomputes only the secondary location choice and the distance distributions -- which is why
+  it is the cheap arm B of the ADR-0113 A/B.
+
+
+  FIFTH LEISURE SUBTYPE (issue #373, ADR-0115, feature record leisure_unspecified_subtype): this
+  stage declares a second shared purpose-subtype key, leisure_unspecified_subtype (declared default
+  true, key and default imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.popsim.distance_distributions), which deciders._build_leisure_subtype_decider re-reads
+  through the single-argument execute-context form to select
+  purpose_subtype.leisure_spec(codeplan_sentinels, unspecified_subtype). With it on, the MiD
+  W_ZWECK-10 legs -- leisure through w_zweck_10_as_leisure but never carrying a W_ZWD detail code --
+  are estimated as their own group leisure_unspecified instead of being left outside the estimation
+  and imputed one of the four named groups. The build-time line
+  "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares ..." now ends with
+  "(codeplan no-detail sentinels: on|off, unspecified subtype: on|off)" and lists the fifth group's
+  marginal, so both spec flags and the resulting mix are readable in the run log. This stage ALSO
+  declares w_zweck_10_as_leisure (imported constant, same default) purely so the requirement is
+  checkable at configure time -- it never applies the fold itself -- and raises the same ValueError
+  naming both keys as the distance stage when leisure_unspecified_subtype is true, the fold is off
+  and secondary_leisure_subtype_split is on (ruling R8 scopes the guard to the split, so a config
+  without the split is not aborted by an inert key). activity_types.LEISURE_SUBTYPE_ACTIVITIES
+  carries the fifth name UNCONDITIONALLY (a vocabulary, not a flag): candidate_columns maps it to
+  pot_leisure, plans.py counts it in subtype_stats, results._extract_locations maps it back to the
+  eqasim purpose "leisure", and the excursion clip report ignores it; it never uses the residential
+  pot_visit pool. With the flag off the name exists, counts 0, and the extra (inert) offer emitted
+  on every leisure-offering building is pinned not to perturb placement by
+  tests/test_secondary_chainsolvers_subtypes.py::test_leisure_unspecified_offer_is_inert_when_the_flag_is_off.
+  braunschweig.popsim.trips joined _HELPER_MODULES in the same wave (ruling R7), because
+  purpose_subtype now builds LEISURE_UNSPECIFIED_ZWECK from trips.W_ZWECK_OTHER_CODE and
+  inspect.getsource hashes a module's OWN text only, so the new edge would otherwise have been
+  invisible to the cache token. Also from the same wave (final review M-4, ruling R14):
+  _build_leisure_subtype_decider calls purpose_subtype.code_coverage_guard on the prepared MiD
+  frame before estimating, so a W_ZWD code observed on a leg of the spec's W_ZWECK universe that
+  the spec maps to neither a group nor a sentinel makes THIS STAGE raise instead of the code being
+  dropped into the unlabelled share. Measured on the 2026-09-10 raw delivery, the guard passes for
+  all four leisure specs. The sibling _build_other_subtype_decider is deliberately unchanged (it
+  has never guarded its specs, pre-existing since issue #127), so the same class of defect in an
+  errand or coarse "other" spec is still only visible as a lower labelled share in the log.
+
+  WEEKDAY DIARY UNIVERSE (issue #373, ADR-0116, feature record secondary_mid_weekday_universe):
+  this stage declares secondary_mid_weekday_legs_only (declared default true, key and default
+  imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.popsim.distance_distributions -- the decider labels a leg and that stage supplies
+  the label's donor pool, so the two must resolve the SAME value; production true in
+  configs/base_bs.yml). With it on, all THREE MiD-based subtype decider builders in deciders.py
+  reduce their frame to trips.restrict_to_weekday_diary_legs right after mid.load_mid_wege and
+  before any derivation: _build_shop_subtype_decider in its ESTIMATION branch only (the
+  pinned-share branch loads no MiD frame), _build_leisure_subtype_decider before
+  code_coverage_guard, and _build_other_subtype_decider before map_mode so both of its composed
+  estimation stages read the same frame. Log line per builder: INFO
+  "[braunschweig.secondary_chainsolvers] <shop|leisure|other> subtype weekday diary universe: kept
+  %d/%d legs (%.1f%%); dropped %d non-weekday (kernwo outside [1, 2, 3]), %d rbW summary records";
+  the helper raises on an absent kernwo/W_RBW column and on an empty universe. The SrV
+  escort-location and SrV location-type deciders are not MiD estimations and are untouched. Cache:
+  braunschweig.popsim.seed was added to _HELPER_MODULES because the weekday definition lives there
+  (trips.WEEKDAY_DIARY_KERNWO reads seed.MID_SEED_COLUMNS.day_filter_values) and hashing trips
+  cannot see across that import (ruling W4).
+
+
+  NO-ANSWER PURPOSE (issue #373, ADR-0117, feature record no_answer_codes_excluded): this stage
+  declares exclude_no_answer_purpose_legs (declared default true, imported from
+  braunschweig.popsim.stage.config_keys, shared with braunschweig.popsim.distance_distributions,
+  which must resolve the SAME value -- the coarse split estimated here labels a leg and that stage
+  supplies the label's donor pool). With it on, deciders._build_other_subtype_decider puts
+  trips.W_ZWECK_NO_ANSWER_CODE (99 "keine Angabe") into the coarse spec's SENTINELS and removes it
+  from the "rest" group in the same breath, because SubtypeSpec refuses a code that is both
+  grouped and a sentinel; errand/escort/rest then renormalise over the legs whose purpose is
+  known. Measured on the 2026-09 delivery (ad hoc): errand 0.5304 -> 0.5540, rest 0.4696 ->
+  0.4460. The two sibling builders are unaffected -- they already reuse the sentinel-carrying
+  specs of purpose_subtype, which is exactly the pattern this closes for the coarse split.

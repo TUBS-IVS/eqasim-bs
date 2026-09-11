@@ -287,3 +287,48 @@ def test_kreis_coverage_rejects_a_kreis_row_outside_the_expected_set():
     work, education = _fixture_tables()
     with pytest.raises(ValueError, match="03102"):
         spu.check_kreis_coverage(work, education, expected_kreise=("03101",))
+
+
+# --------------------------------------------------------------------------- ADR-0117
+def test_an_unreadable_employment_code_becomes_unknown_not_not_employed():
+    """SrV codes a refusal / implausible answer as a NEGATIVE V_ERW.
+
+    Before ADR-0117 such a person silently became "not employed", which put a non-answer into the
+    DENOMINATOR of the employed share the work control is built from. The flag is now a nullable
+    boolean and carries pd.NA instead, so no consumer can mistake the non-answer for an answer.
+    The person STAYS in the universe: their education participation is perfectly readable, and
+    the education control does not look at employment at all.
+    """
+    persons, _wege, households = _raw()
+    persons.loc[0, "V_ERW"] = -10          # person 1_1: employed (V_ERW 9) -> unreadable
+    out, _excl = spu.prepare_universe_persons(persons, households)
+    assert "1_1" in set(out["pid"])                     # still in the universe
+    flag = out.set_index("pid")["employed"]
+    assert pd.isna(flag["1_1"])                         # ... but with no employment answer
+    assert bool(flag["2_2"]) and not bool(flag["2_1"])  # the others are untouched
+
+
+def test_the_work_control_drops_the_unknown_status_and_renormalises():
+    persons, wege, households = _raw()
+    base_table, _ = spu.build_work_by_employment_aggregate(persons, wege, households)
+    base_region = base_table[base_table["level"] == spu.LEVEL_TOTAL].iloc[0]["employed_share"]
+    # One extra 14+ person of the same Kreis whose employment code cannot be read, with a large
+    # weight: counted as "not employed" it would drag the regional share down by a third.
+    extra = persons.iloc[[0]].copy()
+    extra["PNR"] = 9
+    extra["V_ERW"] = -8
+    extra["GEWICHT_P_ZENSUS"] = 50.0
+    table, diagnostics = spu.build_work_by_employment_aggregate(
+        pd.concat([persons, extra], ignore_index=True), wege, households)
+    region = table[table["level"] == spu.LEVEL_TOTAL].iloc[0]["employed_share"]
+    assert diagnostics["n_unknown_employment_status"] == 1
+    assert region == pytest.approx(base_region)   # a non-answer moves the target by nothing
+
+
+def test_the_education_control_keeps_a_person_with_an_unreadable_employment_code():
+    """The narrow fix: the employment non-answer must not shrink the EDUCATION universe."""
+    persons, wege, households = _raw()
+    base, _ = spu.build_education_by_age_aggregate(persons, wege, households)
+    persons.loc[0, "V_ERW"] = -10
+    after, _ = spu.build_education_by_age_aggregate(persons, wege, households)
+    pd.testing.assert_frame_equal(base, after)

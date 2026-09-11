@@ -369,7 +369,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     distance_purpose = "shop"
                     subtype_stats["distance_layer_fallback"] += 1
 
-            # Task 4 (issue #127): resolve a leisure leg to one of the four
+            # Task 4 (issue #127): resolve a leisure leg to one of the
             # LEISURE_SUBTYPE_ACTIVITIES groups. Sibling to the shop block above:
             # the group is BOTH the chainsolver activity AND (with a logged
             # fallback to the aggregate "leisure" layer when the subtype

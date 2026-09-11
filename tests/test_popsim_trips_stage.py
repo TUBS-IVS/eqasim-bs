@@ -424,6 +424,45 @@ def test_trips_stage_configure_registers_the_plan_structure_keys():
     assert ctx.calls[KEY_CLOSURE_DWELL_MODEL] == "empirical"
 
 
+# ---------------------------------------------------------------------------
+# Ruling C-R22 (issue #373 cleanup wave, item 6): map_purpose already raises
+# "escort_passive_from_adult requires escort_purpose" -- but only at TRIP-BUILD
+# time, i.e. after synpp has already run every upstream stage including the full
+# PopulationSim balancing. configure() must raise the SAME contradiction before
+# any stage executes, so a misconfigured run fails the DAG immediately.
+# ---------------------------------------------------------------------------
+
+def test_trips_stage_configure_raises_when_escort_passive_from_adult_without_escort_purpose():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": False, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    with pytest.raises(ValueError, match="escort_purpose"):
+        trips_stage.configure(ctx)
+
+
+def test_trips_stage_configure_names_both_keys_in_the_error():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": False, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    with pytest.raises(ValueError) as error:
+        trips_stage.configure(ctx)
+    assert "escort_purpose" in str(error.value)
+    assert KEY_ESCORT_PASSIVE_FROM_ADULT in str(error.value)
+
+
+def test_trips_stage_configure_allows_escort_passive_from_adult_with_escort_purpose():
+    from braunschweig.popsim.stage import KEY_ESCORT_PASSIVE_FROM_ADULT
+    ctx = _RecordingConfigureContext(
+        values={"escort_purpose": True, KEY_ESCORT_PASSIVE_FROM_ADULT: True})
+    trips_stage.configure(ctx)  # must not raise
+
+
+def test_trips_stage_configure_default_flags_do_not_raise():
+    """Both flags default False, so a config that sets neither must configure cleanly."""
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)  # must not raise
+
+
 def test_entd_source_rejects_exclude_rbw_legs():
     from braunschweig.popsim.sources.entd import EntdSource
     with pytest.raises(NotImplementedError, match="exclude_rbw_legs"):
@@ -500,3 +539,66 @@ def test_run_threads_closure_dwell_min_obs(monkeypatch):
     trips_stage.run(persons, wege, random_seed=1, closure_dwell_model="empirical",
                     closure_dwell_min_obs=7, exclude_rbw_legs=True)
     assert seen["min_obs"] == 7
+
+
+def test_run_forwards_w_zweck_10_as_leisure_to_both_builders(monkeypatch):
+    """w_zweck_10_as_leisure must reach BOTH internal builders run() calls: the
+    empirical closure-dwell donor table (build_closure_dwell_model) and the main
+    validated trip table (popsim_trips.build_validated_trip_table) -- issue #373
+    fix round 1, Important finding 3b. Forwarding it to only one would let the
+    dwell pools disagree with the purpose vocabulary of the table they feed (see
+    build_closure_dwell_model's own docstring)."""
+    from braunschweig.popsim import trips as popsim_trips
+
+    seen = {}
+    original_dwell = trips_stage.build_closure_dwell_model
+
+    def dwell_spy(*args, **kwargs):
+        seen["dwell_model"] = kwargs.get("w_zweck_10_as_leisure")
+        return original_dwell(*args, **kwargs)
+
+    original_build = popsim_trips.build_validated_trip_table
+
+    def build_spy(*args, **kwargs):
+        seen["build_validated_trip_table"] = kwargs.get("w_zweck_10_as_leisure")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(trips_stage, "build_closure_dwell_model", dwell_spy)
+    monkeypatch.setattr(popsim_trips, "build_validated_trip_table", build_spy)
+    persons, wege = _persons_and_wege_with_rbw()
+    trips_stage.run(persons, wege, random_seed=1, w_zweck_10_as_leisure=True)
+    assert seen["dwell_model"] is True
+    assert seen["build_validated_trip_table"] is True
+
+
+def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monkeypatch):
+    """Same requirement as w_zweck_10_as_leisure above for the two passive-escort keywords
+    (issue #372 task 4): the empirical dwell pools are stratified by following_purpose, so a
+    donor table built WITHOUT the pairing would send every relabelled passive leg's draw into
+    the education pool while the main table puts it in shop/home/leisure."""
+    from braunschweig.popsim import trips as popsim_trips
+
+    seen = {}
+    original_dwell = trips_stage.build_closure_dwell_model
+
+    def dwell_spy(*args, **kwargs):
+        seen["dwell_flag"] = kwargs.get("escort_passive_from_adult")
+        seen["dwell_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        return original_dwell(*args, **kwargs)
+
+    original_build = popsim_trips.build_validated_trip_table
+
+    def build_spy(*args, **kwargs):
+        seen["build_flag"] = kwargs.get("escort_passive_from_adult")
+        seen["build_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(trips_stage, "build_closure_dwell_model", dwell_spy)
+    monkeypatch.setattr(popsim_trips, "build_validated_trip_table", build_spy)
+    persons, wege = _persons_and_wege_with_rbw()
+    wege = wege.assign(HP_ALTER=40)
+    trips_stage.run(persons, wege, random_seed=1, escort_purpose=True,
+                    escort_passive_education=True, escort_passive_from_adult=True,
+                    passive_pair_max_gap_minutes=20.0)
+    assert seen["dwell_flag"] is True and seen["build_flag"] is True
+    assert seen["dwell_gap"] == 20.0 and seen["build_gap"] == 20.0

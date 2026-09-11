@@ -64,6 +64,27 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
+# Imported at module level (not deferred, unlike deciders.py's own per-function
+# imports of this module) SOLELY so it is a module OBJECT this file can list in
+# _HELPER_MODULES below (controller ruling C-R15, issue #242): the stage
+# estimates its leisure/other subtype deciders from purpose_subtype's groups/
+# specs, so a change confined to that module (e.g. a future group boundary
+# edit) must devalidate this stage's synpp cache too, not just deciders.py's
+# own source.
+from braunschweig.popsim import purpose_subtype  # noqa: F401  (cache-hash only)
+# Same reason, one edge further out (issue #373, ADR-0115): purpose_subtype
+# derives LEISURE_UNSPECIFIED_ZWECK from trips.W_ZWECK_OTHER_CODE, so an edit
+# confined to trips changes which legs this stage's leisure_unspecified group
+# covers. inspect.getsource hashes only a module's OWN text, so that cross-package
+# edge is invisible to both the purpose_subtype entry above and the
+# own-package-sibling coverage gate (tests/test_synpp_helper_hash_invariant.py).
+from braunschweig.popsim import trips  # noqa: F401  (cache-hash only)
+# seed owns the model's WEEKDAY DEFINITION (ADR-0116): trips.WEEKDAY_DIARY_KERNWO READS
+# seed.MID_SEED_COLUMNS.day_filter_values, and under secondary_mid_weekday_legs_only the
+# three MiD subtype deciders of this stage are estimated on exactly that universe. Hashed
+# for the same one-edge-further-out reason as trips above -- hashing trips' own source
+# cannot see a change to the seed's day filter.
+from braunschweig.popsim import seed  # noqa: F401  (cache-hash only)
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -250,7 +271,18 @@ def __getattr__(name):
 # only hashes THIS file's source (inspect.getsource of the stage module), so
 # without the validate() hook below a change confined to a helper submodule
 # would silently reuse the stale cached stage output on a partial rerun.
-# Every submodule extracted from this package MUST be listed here.
+# Every submodule extracted from this package MUST be listed here, PLUS
+# purpose_subtype (controller ruling C-R15, issue #242): it is not one of
+# THIS package's own submodules -- it lives in braunschweig.popsim and is
+# imported only inside deciders.py's decider builders (deferred) -- but the
+# leisure/other subtype deciders are ESTIMATED from its LEISURE_SPEC /
+# OTHER_ERRAND_SPEC / leisure_spec() / other_errand_spec(), so a
+# purpose_subtype-only edit (e.g. a future group boundary change) must
+# devalidate this stage's cache too, exactly like a change confined to one of
+# the submodules below would. PLUS trips (issue #373, ADR-0115) for the same
+# reason one edge further out: purpose_subtype derives LEISURE_UNSPECIFIED_ZWECK
+# from trips.W_ZWECK_OTHER_CODE, and hashing purpose_subtype's own source cannot
+# see a change on the other side of that import.
 _HELPER_MODULES: Tuple[Any, ...] = (
     activity_types,
     candidate_columns,
@@ -261,11 +293,14 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     fallback,
     parallel_solving,
     plans,
+    purpose_subtype,
     reporting,
     results,
+    seed,
     solver_defaults,
     srv_candidates,
     srv_location_types,
+    trips,
 )
 
 
@@ -403,8 +438,88 @@ def configure(context):
     # all subtypes of the same purpose for now, see _ACTIVITY_POTENTIAL_COLUMN).
     # The eqasim output purpose stays "leisure" / "other"; the subtype is
     # internal to the chainsolver. OFF (default) is byte-identical.
-    context.config("secondary_leisure_subtype_split", False)
+    # Captured because the leisure_unspecified_subtype guard below is scoped to it
+    # (the fifth subtype only exists inside the leisure subtype split); re-used by
+    # the mid_dir block further down rather than read twice.
+    leisure_subtype_split = context.config("secondary_leisure_subtype_split", False)
     context.config("secondary_other_subtype_split", False)
+    # No-detail ("keine Angabe") W_ZWD codeplan sentinel treatment (issue #242
+    # Task 5, ADR-0113): W_ZWD 799 ("Freizeit k.A.") and 699 ("Erledigung
+    # k.A.") carry no usable subtype signal, so ON excludes them from
+    # ESTIMATION via purpose_subtype.leisure_spec / other_errand_spec (read by
+    # _build_leisure_subtype_decider / _build_other_subtype_decider below, via
+    # the SAME imported key). Key/default declared ONCE in config_keys (see
+    # that module's comment on KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS) and
+    # imported here rather than retyped, because
+    # braunschweig.popsim.distance_distributions ALSO declares this exact key
+    # -- both stages must resolve the SAME value (the leisure_activity /
+    # other_errand_long distance-layer donor pool must exclude exactly the
+    # legs the decider's estimation excludes). Declared UNCONDITIONALLY (like
+    # the two split flags above) so an all-flags-off config never needs it;
+    # inert while both subtype splits are OFF. The production value is also
+    # set in configs/base_bs.yml (issue #242 Task 7).
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_W_ZWECK_10_AS_LEISURE,
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
+    )
+    context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS, DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS)
+    # The WEEKDAY DIARY estimation universe of the three MiD-based subtype deciders (issue
+    # #373, ADR-0116): ON reduces the MiD Wege frame each of _build_shop_subtype_decider /
+    # _build_leisure_subtype_decider / _build_other_subtype_decider estimates on to the
+    # seed's own weekday diaries without rbW summary records
+    # (braunschweig.popsim.trips.weekday_diary_leg_mask), because the legs they label belong
+    # to a synthetic WEEKDAY. Declared with the SAME imported key/default constants
+    # braunschweig.popsim.distance_distributions declares (which applies the identical
+    # universe to the DISTANCE layers) -- both stages must resolve the same value, or a leg
+    # labelled from one universe would draw its distance from a pool built on another.
+    # Declared UNCONDITIONALLY (like the two split flags above) so an all-flags-off config
+    # never needs it; inert while all three subtype splits are OFF (no decider is built).
+    context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY)
+    # exclude_no_answer_purpose_legs (ADR-0117): shared with
+    # braunschweig.popsim.distance_distributions, which must resolve the SAME value --
+    # the coarse other-split estimated here labels a leg and that stage supplies the
+    # label's donor pool, so the two have to agree on which legs answered the question.
+    context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
+                   DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS)
+    # The fifth leisure subtype (issue #373, ADR-0115): W_ZWECK-10 legs
+    # ("anderer Zweck") are leisure under w_zweck_10_as_leisure but carry no
+    # leisure W_ZWD detail code, so ON gives them their own estimated group
+    # ("leisure_unspecified") in _build_leisure_subtype_decider instead of
+    # imputing one of the four W_ZWD groups onto them. Declared with the SAME
+    # imported key/default constants braunschweig.popsim.distance_distributions
+    # declares (which builds the matching DISTANCE layer) -- both stages must
+    # resolve the same value, or a leg labelled here finds no layer built for it.
+    # w_zweck_10_as_leisure is a TRIP-BUILD key (owned by
+    # braunschweig.popsim.trips_stage) and is declared here only to make the
+    # requirement checkable at configure time; this stage never applies it.
+    leisure_unspecified_subtype = context.config(
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
+    w_zweck_10_as_leisure = context.config(
+        KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Configure-time contradiction guard, same shape as the C-R22 guard in
+    # braunschweig.popsim.trips_stage.configure and the identical guard in
+    # braunschweig.popsim.distance_distributions.configure: synpp fails the whole
+    # DAG before any stage executes instead of after hours of upstream compute.
+    #
+    # SCOPED to secondary_leisure_subtype_split (ruling R8): with the split off no
+    # leisure subtype is ever estimated, so leisure_unspecified_subtype is inert
+    # and cannot contradict the fold -- config_keys says the same ("effective only
+    # with secondary_leisure_subtype_split on"). An unscoped raise would abort
+    # every split-off configuration that legitimately sets w_zweck_10_as_leisure
+    # false (the two popsim_open fixtures do) over a flag that does nothing there.
+    if (bool(leisure_subtype_split) and bool(leisure_unspecified_subtype)
+            and not bool(w_zweck_10_as_leisure)):
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_LEISURE_UNSPECIFIED_SUBTYPE}: true "
+            f"requires {KEY_W_ZWECK_10_AS_LEISURE}: true when "
+            "secondary_leisure_subtype_split is on -- with the fold off no W_ZWECK-10 leg "
+            "is leisure, so the leisure_unspecified class would be estimated but never realised. "
+            f"Set both or disable {KEY_LEISURE_UNSPECIFIED_SUBTYPE}."
+        )
 
     # Escort as dedicated activity purpose (issue #201). The decider draws one
     # location TYPE per escort leg from the SrV-derived weights; defaults are
@@ -428,7 +543,8 @@ def configure(context):
     # subtype split is ON, so non-real configs that leave all three flags off
     # never require the local-only MiD delivery.
     shop_daily_split = context.config("secondary_shop_daily_split")
-    leisure_subtype_split = context.config("secondary_leisure_subtype_split")
+    # leisure_subtype_split is already bound above (captured where it is declared,
+    # for the leisure_unspecified_subtype guard).
     other_subtype_split = context.config("secondary_other_subtype_split")
     if shop_daily_split or leisure_subtype_split or other_subtype_split:
         context.config("braunschweig.population.popsim.mid_dir")

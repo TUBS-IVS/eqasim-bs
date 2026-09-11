@@ -107,7 +107,12 @@ zensus_hh_inspect.txt
 # lsn/raw/, which stays local), the blended control-target tables
 # (eqasim-data/data/braunschweig/targets/target2026_*.csv, derived purely
 # from the committed aggregates above), the project's own
-# calibration-evaluation outputs (.../mid/education_calibration/*), and the
+# calibration-evaluation outputs (.../mid/education_calibration/*), the
+# per-run calibration evidence bundles under
+# eqasim-data/data/braunschweig/calibration/<name>_<date>/ (one directory per
+# calibration run, e.g. commute_day_state_phase_a_2026-09-05/ -- CSV/JSON/MD/TXT
+# outputs cited by an ADR or a run manifest, force-added the same way as the
+# aggregate tables above), and the
 # hand-transcribed KBA wohnmobile holder-age RAW table
 # (eqasim-data/data/braunschweig/kba/raw/kba_wohnmobile_holder_age_20250401.csv
 # -- force-added despite being a RAW file, unlike every other raw/ input

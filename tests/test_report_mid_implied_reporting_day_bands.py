@@ -153,10 +153,14 @@ def test_cli_raises_on_row_not_summing_to_one(tmp_path):
 def test_cli_against_the_real_committed_proof_artefact_matches_the_pinned_2026_09_06_decision():
     """End-to-end pin against the committed proof artefact used by the maintainer decision.
 
-    These four values (100_plus and 50_100, assigned/MiD-implied/model-ON) are exactly the ones
-    quoted in ADR-0104's "Decision 2026-09-06 on check 2 (maintainer)" subsection and in the
-    manifest note it points to; if this test ever fails, that subsection's numbers are stale and
-    must be regenerated from a fresh run of this script, not hand-edited.
+    The assigned (flag OFF) and model (flag ON) values come from the committed 2026-09-06 proof
+    artefact and can never move. The MiD-IMPLIED values are RECOMPUTED here from the current
+    committed MiD reference, so they move when that reference is corrected -- as it was by
+    ADR-0117, which took the undetermined reporting-day state out of the share denominator
+    (implied 100_plus 0.0602 -> 0.0606, 50_100 0.1185 -> 0.1183). The pins below are therefore the
+    RECOMPUTED values; ADR-0104 quotes both readings side by side. If this test fails again, that
+    subsection's numbers are stale and must be regenerated from a fresh run of this script, not
+    hand-edited.
     """
     artefact_dir = (REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "calibration" /
                     "commute_day_state_phase_b_proof_100pct_2026-09-06_rerun")
@@ -174,10 +178,10 @@ def test_cli_against_the_real_committed_proof_artefact_matches_the_pinned_2026_0
     implied = compute_mid_implied_shares(off_shares, mid_share_by_class)
 
     assert off_shares["100_plus"] == pytest.approx(0.1001, abs=5e-5)
-    assert implied["100_plus"] == pytest.approx(0.0602, abs=5e-5)
+    assert implied["100_plus"] == pytest.approx(0.0606, abs=5e-5)
     assert on_shares["100_plus"] == pytest.approx(0.0737, abs=5e-5)
     assert off_shares["50_100"] == pytest.approx(0.1330, abs=5e-5)
-    assert implied["50_100"] == pytest.approx(0.1185, abs=5e-5)
+    assert implied["50_100"] == pytest.approx(0.1183, abs=5e-5)
     assert on_shares["50_100"] == pytest.approx(0.1304, abs=5e-5)
 
 

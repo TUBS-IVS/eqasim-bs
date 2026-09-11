@@ -52,7 +52,7 @@ _EXCLUSIONS_UNITS_NOTE = (
     "(n_persons_total is the raw Personen-file row count; missing_weight is measured on it, "
     "away_from_home on the persons surviving the weight filter, and missing_kreis on the "
     "persons surviving the away-from-home filter; n_universe is the resulting "
-    "at-home-or-mobile person count; n_missing_age, n_missing_employment_code, n_below_min_age "
+    "at-home-or-mobile person count; n_missing_age, n_unreadable_employment_code, n_below_min_age "
     "(work table only) and n_band_* (education table only) are measured on n_universe; "
     "n_age_14plus (work table only) is n_universe minus n_below_min_age; n_legs_total and "
     "n_legs_missing_purpose are raw Wege-file row counts)"
@@ -130,9 +130,12 @@ def _work_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> 
         "#   marginally employed). Code 8 counts as employed by decision Q5 of issue #368: the",
         "#   MiD-side employment_status classes the control targets include in_ausbildung, and",
         "#   ADR-0060 treats MiD in_ausbildung (1.93 %) and SrV V_ERW 8 (1.87 %) as",
-        "#   apples-to-apples. A person whose V_ERW is a missing code (-8 not surveyed, -10",
-        "#   implausible) is classed NOT employed; the count is n_missing_employment_code in",
-        "#   the Exclusions line below.",
+        "#   apples-to-apples. A person whose V_ERW cannot be read (-8 not surveyed, -10",
+        "#   implausible, or missing) is EXCLUDED from the universe entirely (ADR-0117): they",
+        "#   answered nothing about their employment, and classing them NOT employed -- as this",
+        "#   table did before -- put a non-answer into the denominator of the employed share the",
+        "#   control target is built from. The count is n_unreadable_employment_code in the",
+        "#   Exclusions line below.",
         "#   work = at least one leg with E_ZWECK_9 in %s (Arbeit, dienstlich/geschaeftlich) on"
         % sorted(T.WORK_E_ZWECK_9),
         "#   the reporting day -- the same purpose set as the existing",

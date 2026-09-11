@@ -1,0 +1,120 @@
+dataset: mid2023_w_zwd_group_reference
+title: MiD 2023 W_ZWD subtype-group mix and leg lengths, under both sentinel settings
+provider: derived in-repo from the restricted MiD 2023 B1 scientific-use delivery
+vintage: 2023 survey year (MiD 2023 B1 Standard delivery)
+geography: national (Germany); the MiD B1 delivery carries no regional restriction. Its SrV
+  counterpart (srv2023_fine_purpose_reference) is Braunschweig + RGB, so every comparison of the
+  two mixes a regional with a survey-instrument effect -- stated as a caveat in the committed
+  comparison and in ADR-0113.
+crs: null
+roles:
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_w_zwd_groups.py --raw <MiD2023 B1 CSV dir>
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>. Reads MiD2023_Wege.csv
+    (W_ZWECK, W_ZWD, W_GEW, W_RBW, kernwo, wegkm_imp); the group definitions are IMPORTED from
+    braunschweig.popsim.purpose_subtype (leisure_spec / other_errand_spec) and
+    braunschweig.popsim.shop_subtype, never retyped, so the table cannot describe a grouping the
+    model does not use. The raw microdata is local-only, restricted, and never committed.
+  script: scripts/extract_mid_w_zwd_groups.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Ships committed with every clone (git add -f, per the .gitignore allowlist convention for
+    eqasim-data/data/braunschweig/mid/mid2023_*.csv), so it is not listed in
+    scripts/verify_braunschweig_inputs.py. The extraction's own invariants and the identity of the
+    imported specs are covered by tests/test_extract_mid_w_zwd_groups.py (24 tests on synthetic
+    frames that use the REAL W_ZWD codes; count from pytest --collect-only, 2026-09-10).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); the raw MiD B1 delivery is restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: weekday legs (kernwo in (1, 2, 3)), non-rbW (W_RBW != 1) -- 738,546 of 1,087,393 raw
+  Wege rows (67.92 %), the same filter as mid2023_w_zweck_by_hwzweck1, whose constants the script
+  imports. Weight: W_GEW. The extraction RAISES on a missing or non-positive weight (0 rows in the
+  2026-09-10 run) and reports per-column NaN coercion counts (all 0) in the header.
+
+  The share is CONDITIONAL ON A LEG BEING LABELLED: only legs the spec can label enter numerator
+  AND denominator, through the very same helper purpose_subtype.label_legs the model's estimation
+  uses. A leg is LABELLED either by a W_ZWD code that is a member of one of the spec's groups, or
+  by a W_ZWECK-defined group (spec.zweck_groups), which WINS over the detail code -- so a leg
+  labelled that way is not counted as a sentinel even though its W_ZWD is a design sentinel.
+  Labelled coverage is 59.90 % (shop), 33.74 % (other_errand, default variant) and 62.42 %
+  (leisure, default variant); the rest carry a design sentinel (2202 PAPI, 4402 child under 14,
+  7704/7705, 599/699/799/999).
+
+  ONE LEG UNIVERSE since ADR-0116, and this table measures it. The universe is applied through the
+  single helper braunschweig.popsim.trips.weekday_diary_leg_mask (kernwo in the seed's own day
+  filter AND W_RBW != 1), which the extraction and -- under the production flag
+  secondary_mid_weekday_legs_only (default and production true) -- the subtype deciders
+  (secondary_chainsolvers.deciders) and the distance layers
+  (braunschweig.popsim.distance_distributions) now share; the file header names the helper. The
+  residual difference between these rows and the deciders' printed marginals is the validity
+  filters of distance_distributions.run (a usable travel time; the two leg ends not both primary
+  activities), not the universe.
+
+  BEFORE ADR-0116 there were TWO universes: the labelled condition was the same one the model
+  applies but the weekday/non-rbW condition was not, because both stages estimated on every MiD
+  Wege row their stage loads (mid.load_mid_wege) -- pre-existing since issue #127 and unchanged by
+  issues #242/#373 until this decision. On that all-day universe the production
+  leisure_unspecified marginal is about 0.387 against 0.4324 here, and the clipped donor mean
+  about 12.7 km against 12.0 km (ad-hoc probe 2026-09-10; ADR-0115 Consequences "Two universes",
+  ADR-0113 Assumption 3, which also carry the per-group differences on the codeplan composition).
+  That is still the state on a run with secondary_mid_weekday_legs_only false -- arms A, B and C
+  of the pre-registered ladder -- where comparisons of realised model shares must read the
+  decider's own printed marginals and quote these rows as context only; arm D (ADR-0116) is the
+  arm on which the two sides describe the same day.
+
+  Provenance of the committed file: regenerated header-only on 2026-09-10 (--source-commit
+  f120d93d) so its Universe paragraph names the shared helper instead of the now-false sentence
+  "the labelling RULE is shared; the leg UNIVERSE is NOT". Its 25 data rows were proven
+  byte-identical across that regeneration (md5 e3eee749df76d75a5784399db3b6a467 on both sides
+  after stripping the header comments), so the change is provenance, not data.
+
+  spec_variant: three settings of the two subtype config keys -- 'default' (both off), 'codeplan'
+  (purpose_subtype_codeplan_sentinels on, so W_ZWD 799 and 699 are sentinels instead of group
+  members) and 'codeplan_unspecified' (additionally leisure_unspecified_subtype on, the PRODUCTION
+  composition; issue #373, ADR-0115). The shop split has no codeplan variant, so its blocks are
+  identical by construction. Labelled counts per variant: leisure 64,012 -> 58,782 -> 98,211 legs,
+  other_errand 22,524 -> 20,464 -> 20,464 (the 5,230 legs of code 799 and the 2,060 of code 699
+  leaving estimation), shop 46,096 unchanged.
+
+  The third variant is what adds the W_ZWECK-defined group 'leisure_unspecified': it WIDENS the
+  leisure universe from W_ZWECK {7} to {7, 10} (102,558 -> 141,987 legs) and labels the added
+  code-10 legs -- 39,429 of them, 0 of which also carried a valid W_ZWD group code on this
+  delivery, counted and WARNed about by label_legs -- so the file has 25 rows
+  (8 default + 8 codeplan + 9 codeplan_unspecified) and the four named leisure groups' raw shares
+  shrink against a larger denominator while their COMPARABLE-universe shares stay unchanged.
+
+  Distance percentiles are computed on wegkm_imp with the MiD missing-value codes (>= 9994,
+  braunschweig.popsim.diary_facts.WEGKM_CODE_MIN) EXCLUDED from the percentiles but kept in
+  n_unweighted; this delivery carries no such code at all (0 legs in every group), so the primary
+  path has 100 % coverage and the counter exists so a future delivery cannot pass silently.
+notes: |
+  MEASUREMENT REFERENCE, stated as such in its own header: not a control target and not a validated
+  calibration target -- no synthesis, location or distribution stage reads it and nothing is
+  re-estimated from it. Its only consumer is scripts/compare_purpose_subtypes_srv.py, which joins it
+  with the SrV counterpart srv2023_fine_purpose_reference through the crosswalk
+  braunschweig.calibration.srv_fine_purpose.SUBTYPE_TO_SRV_FINE and writes the committed comparison
+  eqasim-data/data/braunschweig/calibration/purpose_subtype_vs_srv_2026-09-10/{comparison.csv,summary.md}.
+
+  Evidence base of ADR-0113 and the feature record w_zwd_codeplan_sentinels (issue #242), and of
+  ADR-0115 and the feature record leisure_unspecified_subtype (issue #373, the third spec variant):
+  the labelled-count difference between the variants is what the no-detail sentinel move costs the
+  estimation universe and what the fifth leisure group adds to it. The codeplan /
+  codeplan_unspecified rows are CONTEXT for the arm-B / arm-C measurements of the realised subtype
+  shares, not their comparison base -- that is the decider's own printed marginal, because of the
+  two leg universes stated above. Sibling committed MiD aggregate of the same package:
+  mid2023_w_zweck_by_hwzweck1.
