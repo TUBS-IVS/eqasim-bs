@@ -545,7 +545,7 @@ def configure(context):
     context.config("escort_household_link", False)
     context.config("escort_household_link_max_child_age_years", 17)
 
-    # Passive escort joint location (issue #385, ADR-0118): solve the adults first and anchor
+    # Passive escort joint location (issue #385, ADR-0119): solve the adults first and anchor
     # a linked child's joint activity (shop / leisure / other taken along with the paired
     # adult, phase 1 of #372) at the adult's PLACED secondary location. Code default False
     # because it needs the phase-1 pairing columns (escort_passive_from_adult); the
@@ -1507,7 +1507,7 @@ def _concat_desired_by_category(reports):
 
 def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shared, *,
                       solve=None):
-    """Two solver passes (issue #385, ADR-0118): adults and unlinked persons first, then the
+    """Two solver passes (issue #385, ADR-0119): adults and unlinked persons first, then the
     linked children with their joint activities anchored at the adults' placed locations.
 
     ``links`` is the table from ``passive_joint_links.build_passive_joint_links``. Pass-1
@@ -1596,7 +1596,7 @@ def execute(context):
     shared = _build_shared_solve_state(context, df_primary, crs)
 
     # ON: the two-pass composition (adults first, then the children whose joint
-    # activities anchor at the adults' placed locations), issue #385 / ADR-0118.
+    # activities anchor at the adults' placed locations), issue #385 / ADR-0119.
     # OFF: ONE pass over the whole population, frame-equal to the pre-extraction
     # inline solve.
     if bool(context.config("escort_passive_joint_location")):

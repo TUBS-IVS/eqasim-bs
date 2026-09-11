@@ -92,7 +92,7 @@ config:
   escort_passive_from_adult: true
   # Unit: minutes; valid range > 0. Inert while escort_passive_from_adult is false.
   escort_passive_pair_max_gap_minutes: 15
-  # Phase 2 of #372 (issue #385, ADR-0118): a linked child's joint activity (shop / leisure /
+  # Phase 2 of #372 (issue #385, ADR-0119): a linked child's joint activity (shop / leisure /
   # other taken along with the paired adult) is anchored at the adult's PLACED secondary
   # location -- the chainsolver solves adults first, then the children. Requires
   # escort_passive_from_adult. false = the child's location is drawn independently (phase 1).

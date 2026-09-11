@@ -1,4 +1,4 @@
-"""Passive escort joint-location links (issue #385, ADR-0118): the escorted child's joint
+"""Passive escort joint-location links (issue #385, ADR-0119): the escorted child's joint
 activity is linked to the accompanying adult's activity inside the same synthetic household."""
 import numpy as np
 import pandas as pd

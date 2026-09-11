@@ -76,13 +76,17 @@
      `escort_passive_joint_location` is on and `escort_passive_from_adult` (or, transitively,
      `escort_purpose`) is off. The production ON state is realised ONLY by the `configs/base_bs.yml`
      line this record's package adds; no overlay change (flags live only in the base).
-  5. **OFF path is intended to be frame-equal (pending).** With the flag off, `execute()` runs
-     exactly one `_solve_problem_set` call over the whole population, the same solve body the
-     two-pass path calls twice; the extraction that made this possible preserves the pre-refactor
-     RNG call order and the early-return path verbatim, so the OFF path is INTENDED, by
-     construction, to be frame-equal to the pre-refactor stage output. The empirical
-     frame-equality result on the Kreis-03101 smoke (Task 5) is **PENDING** in the run manifest
-     below; this point is a design argument, not yet an observed result.
+  5. **OFF path is frame-equal (confirmed on the Kreis-03101 smoke).** With the flag off,
+     `execute()` runs exactly one `_solve_problem_set` call over the whole population, the same
+     solve body the two-pass path calls twice; the extraction that made this possible preserves
+     the pre-refactor RNG call order and the early-return path verbatim, so the OFF path is
+     INTENDED, by construction, to be frame-equal to the pre-refactor stage output. The empirical
+     frame-equality result on the Kreis-03101 smoke (Task 5) CONFIRMS this: FRAME-EQUAL between
+     the pre-refactor baseline (commit b5b94d6a) and the refactored stage with the flag OFF
+     (commit ef75223a) -- 3,415 location rows each, `assert_frame_equal` passing on the locations
+     frame (minus geometry), per-row geometry equality, and the convergence frame; both runs
+     2,237 problems, success rate 1.0000, carla placed 2,236/2,237, fallback 1 (the single
+     unbounded chain). Full detail in the run manifest below.
 - **Rejected alternatives:**
   - **Post-hoc overwrite of the child's location after a single pass (rejected).** Moving the child
     to the adult's location AFTER both were independently placed would leave the child's
@@ -112,8 +116,10 @@
   - **Runtime: two `cs.solve()` invocations per run** instead of one. The shared candidate set,
     distributions, deciders and the RDA fallback index are built exactly once
     (`_build_shared_solve_state`) and reused by both passes; pass 2 is expected to be small (only
-    linked children). Wall-clock impact is intended to be measured on the smoke rather than
-    assumed; the result is **PENDING** in the run manifest below.
+    linked children). Wall-clock impact was measured on the Kreis-03101 smoke rather than
+    assumed: pass 1 (2,208 problems, 2,207 persons, 5,408 plan rows) `cs.solve` 19.0 s; pass 2
+    (6 problems, 6 persons, 12 plan rows, 20 linked children) `cs.solve` 19.1 s -- see the run
+    manifest below.
   - **Both passes share ONE `RandomState`** (built once in `_build_shared_solve_state`, threaded
     through both `_solve_problem_set` calls). An ON/OFF comparison is therefore a DIFFERENT
     Monte-Carlo realisation, not attributable to the anchoring mechanism alone -- pass 1 draws from
@@ -185,8 +191,10 @@
   `escort_passive_joint_location` line). Tests: `tests/test_passive_joint_links.py`,
   the problem-splitter anchored-boundary tests, and the stage-level `_solve_problem_set` /
   two-pass-assembly tests named in the design spec section 3. Run manifest
-  `docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml` (smoke on Kreis 03101; the
-  measured link rate, anchor-resolution rate, OFF-path frame-equality result and ON-run numbers are
-  recorded there once the test-bed run completes -- **PENDING at the time this record is written**).
+  `docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml` (smoke on Kreis 03101,
+  completed 2026-09-11): measured link rate 36/74 paired passive legs linked (48.6 %),
+  anchor-resolution rate 36/36 (100.0 %), OFF-path frame-equality result FRAME-EQUAL against the
+  pre-refactor baseline, and the ON-run two-pass numbers (2,208 + 6 problems, `cs.solve` 19.0 s +
+  19.1 s) -- see the manifest for the full breakdown.
   Feature record `docs/registry/features/escort_passive_joint_location.yml`; feature doc section
   `docs/features/escort-purpose.md#joint-location-adr-0119`.

@@ -88,7 +88,7 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
 def rewrite_anchored_activities(df_trips: pd.DataFrame, df_anchors: pd.DataFrame,
                                 fixed_purpose: str) -> pd.DataFrame:
     """Return a COPY of the trips frame where BOTH sides of every anchored activity carry
-    ``fixed_purpose``, whatever the plan-level purpose was (issue #385, ADR-0118).
+    ``fixed_purpose``, whatever the plan-level purpose was (issue #385, ADR-0119).
 
     Unlike :func:`rewrite_linked_escort_trips`, which only touches activities whose purpose
     is already ``escort``, the passive joint anchor applies to ``shop`` / ``leisure`` /

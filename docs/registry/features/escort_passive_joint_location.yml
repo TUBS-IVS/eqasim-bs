@@ -38,8 +38,10 @@ description: 'Anchors a PAIRED passive escort child''s joint activity (shop / le
   line. With the flag off, execute() runs exactly ONE _solve_problem_set call over the whole
   population -- the OFF path is INTENDED, by construction, to be frame-equal to the pre-refactor
   stage output (the extraction preserves the RNG call order and the early-return path verbatim).
-  The empirical frame-equality result on the Kreis-03101 smoke is PENDING at the time of this
-  record; see the run manifest below.
+  The empirical frame-equality result on the Kreis-03101 smoke CONFIRMS this: FRAME-EQUAL between
+  the pre-refactor baseline (commit b5b94d6a) and the refactored stage with the flag OFF (commit
+  ef75223a) -- 3,415 location rows each, both runs 2,237 problems, success rate 1.0000, carla
+  placed 2,236/2,237, fallback 1; see the run manifest below.
 
   Both solver passes share ONE RandomState built once before either pass runs, so an ON/OFF
   comparison is a DIFFERENT Monte-Carlo realisation, not attributable to the anchoring mechanism
@@ -79,15 +81,21 @@ evidence:
   - tests/test_escort_links.py
   - tests/test_configs_composed.py
   off_path_byte_identical:
-    claimed: 'false'
-    note: 'Not yet claimed true: the _solve_problem_set extraction preserves the pre-refactor RNG
-      call order and the len(plans_df) == 0 early return verbatim (a design argument, not yet an
-      observed result), and the empirical frame-equality check (Task 5 of the #385 SDD plan:
-      pd.testing.assert_frame_equal on df_locations sorted by person_id/activity_index, and on
-      df_convergence, pre- vs post-refactor stage output on the Kreis-03101 test bed) has not
-      completed at the time this record was written -- result PENDING_MEASUREMENT in
-      docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml. Update to true only once
-      that manifest records a passing frame-equality result.'
+    claimed: 'true'
+    test: 'docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml -- stage pickle
+      ...__d0016af890806fcccb42a5f2f9cec8c9.p (pre-refactor baseline, commit b5b94d6a, detached
+      worktree) vs ...__65f86fb5db47c9d6a54f31989d9556aa.p (flag OFF, commit ef75223a)'
+    note: 'Claimed true on the Kreis-03101 smoke: pandas assert_frame_equal on the locations frame
+      minus geometry, per-row geometry equality, and assert_frame_equal on the convergence frame
+      all pass between the two pickles named in "test" above (3,415 location rows each; both runs
+      2,237 problems, success rate 1.0000, carla placed 2,236/2,237, fallback 1). This is a MANUAL
+      one-off comparison of two stage-cache pickles across commits/worktrees, not an automated
+      pytest node id: no dedicated byte-identity test exists in tests/test_passive_joint_two_pass.py
+      or elsewhere, unlike the pytest "test:" pointers named by sibling records (e.g.
+      escort_passive_from_adult.yml). The _solve_problem_set extraction preserves the pre-refactor
+      RNG call order and the len(plans_df) == 0 early return verbatim (the design argument
+      ADR-0119 makes); this measurement is the empirical confirmation of that argument on one test
+      bed, not a regression test that would catch a future break.'
   fallback_rate:
     instrumented: true
     log_marker: '[passive_joint_links]'
@@ -98,9 +106,13 @@ evidence:
       a broken plan-source join). (2) resolve_joint_anchors logs the anchor-resolution rate
       (n_resolved/n_links) and WARNs above DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5 unresolved
       (a signature of an incomplete pass-1 result). Unlinked/unresolved children keep the
-      independent draw -- the fallback here IS that draw, and it is counted, never silent. No rate
-      has been observed on a run yet; the measured link rate, exclusion split and anchor-resolution
-      rate are PENDING_MEASUREMENT in the run manifest.'
+      independent draw -- the fallback here IS that draw, and it is counted, never silent. Measured
+      on the Kreis-03101 smoke (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml):
+      link rate 36/74 paired passive legs linked (48.6 %), exclusion split adult_not_in_household
+      23 (31.1 %), purpose_not_secondary 15 (20.3 %), adult_leg_missing 0, adult_is_linked_child 0,
+      duplicate_child_activity 0; anchor-resolution rate 36/36 (100.0 %), 0 unresolved -- well
+      inside the WARNING thresholds (nothing linked; over 50 % unresolved). n = 74 paired legs on a
+      1 %-sampled single Kreis is a smoke-scale count, not a population rate.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
@@ -114,24 +126,36 @@ evidence:
       here reads this file directly; it grounds the ADR-0119 assumptions.'
 validation:
   state: unvalidated
-  runs: []
-  metric: 'Not yet measured on a population. Task 4 of the #385 SDD plan measures the link rate on
-    the Kreis-03101 test bed BEFORE the two-pass wiring; Task 6 measures the ON run (link rate,
-    anchor-resolution rate, share of anchored child activities whose geometry equals the adult''s
-    -- expected 100% of resolved links by construction -- fallback accounting vs OFF, wall time of
-    both passes). Recorded as a SMOKE in docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml,
-    not a validation: no observed reference exists for joint shopping/leisure locations.'
-  note: 'No run has executed this code as of this record (the documentation task is written while
-    the test-bed run is still executing). validation.state is unvalidated: convergence (a
-    fully-placed, stable solve) is not the same as validation (matching an observed reference),
-    and no such reference exists for this feature -- see ADR-0119''s Consequences and the run
-    manifest''s notes field.'
+  runs:
+  - i385-passive-joint-location-smoke-03101-2026-09-11
+  metric: 'Measured on the Kreis-03101 test bed (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml).
+    Task 4 measured the link rate BEFORE the two-pass wiring: 36/74 paired passive legs linked
+    (48.6 %). Task 6 measured the ON run: anchor-resolution rate 36/36 (100.0 %), 0 unresolved,
+    every resolved link places the child at the adult''s location (child_at_adult_location 36/36,
+    duplicate child rows 0) -- 100 % of resolved links by construction, as expected -- fallback
+    accounting vs OFF (3,415 location rows both runs; ON carla 2,213/2,214 with 1 fallback, OFF
+    carla 2,236/2,237 with 1 fallback), and wall time of both passes (pass 1 cs.solve 19.0 s, pass
+    2 cs.solve 19.1 s). Recorded as a SMOKE in
+    docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml, not a validation: no observed
+    reference exists for joint shopping/leisure locations.'
+  note: 'The Kreis-03101 smoke has completed (see metric above and the run manifest).
+    validation.state remains unvalidated, not measured_vs_reference: convergence (a fully-placed,
+    stable solve) is not the same as validation (matching an observed reference), and no such
+    reference exists for this feature -- see ADR-0119''s Consequences. Both solver passes also
+    share ONE RandomState, so the ON/OFF comparison is a DIFFERENT Monte-Carlo realisation, not
+    attributable to the anchoring mechanism alone; and n = 74 paired legs on a 1 %-sampled single
+    Kreis is a smoke-scale count, not a population rate.'
 assessment:
   status: pending
-  pending_reason: 'The Kreis-03101 smoke (Task 4 measurement, Task 5 OFF-path frame equality, Task
-    6 ON run) has not completed at the time this record is written. All three results are
-    PENDING_MEASUREMENT in the run manifest; this record and ADR-0119 must not be read as claiming
-    any rate, frame-equality result, or ON-run number until that manifest is updated.'
+  pending_reason: 'The Kreis-03101 smoke (Task 4 link-rate measurement, Task 5 OFF-path frame
+    equality, Task 6 ON run) has completed and is recorded in
+    docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml (see validation.note and
+    evidence.off_path_byte_identical / evidence.fallback_rate above). This record and ADR-0119 must
+    still not be read as claiming validation: no observed reference exists for joint
+    shopping/leisure locations, both solver passes share one RandomState (so the ON/OFF numbers are
+    a different Monte-Carlo realisation, not attributable to the anchoring mechanism alone), and
+    n = 74 paired legs on a 1 %-sampled single Kreis is a smoke-scale count, not a population rate.
+    Full-region evidence and any independent review remain outstanding.'
 notes: 'Phase 2 of the escort purpose family (feature record escort_passive_from_adult, ADR-0112,
   feature doc docs/features/escort-purpose.md section "Joint location (ADR-0119)"); this record
   owns the joint-location anchoring, escort_passive_from_adult owns the passive-leg purpose the

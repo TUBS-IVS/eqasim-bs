@@ -1,4 +1,4 @@
-"""Two-pass secondary chainsolver for passive escort joint locations (issue #385, ADR-0118):
+"""Two-pass secondary chainsolver for passive escort joint locations (issue #385, ADR-0119):
 flag declaration, prerequisites, and the pass composition."""
 import geopandas as gpd
 import numpy as np

@@ -1,5 +1,5 @@
 """Passive escort joint location: link the escorted child's joint activity to the
-accompanying adult's activity (issue #385, ADR-0118; phase 2 of #372 / ADR-0112).
+accompanying adult's activity (issue #385, ADR-0119; phase 2 of #372 / ADR-0112).
 
 Phase 1 gave a PAIRED passive escort leg (MiD ``W_ZWECK`` 13, the escorted child's own
 leg) the purpose of the same-household adult leg it travels with, and wrote the pairing
@@ -19,7 +19,7 @@ chainsolver needs to anchor the child's joint activity at the adult's PLACED loc
   The adult's trip home (child already at the household home), the adult's own
   Bringen/Holen leg (child at its own school, handled by the #201 household link) and
   the adult's work/education leg (would need primary facility ids in the facilities
-  coverage check; deferred, ADR-0118) are therefore excluded and counted
+  coverage check; deferred, ADR-0119) are therefore excluded and counted
   (``purpose_not_secondary``).
 
 This is the inverse of :mod:`braunschweig.synthesis.locations.escort_links` (#201),
