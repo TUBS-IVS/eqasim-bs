@@ -236,3 +236,26 @@ def test_rewrite_anchored_activities_returns_a_copy_and_handles_no_anchors():
     out = rewrite_anchored_activities(trips, pd.DataFrame(columns=ANCHOR_COLUMNS), PASSIVE_LINKED_PURPOSE)
     pd.testing.assert_frame_equal(out, trips)
     assert out is not trips
+
+
+def test_resolve_joint_anchors_logs_dropped_duplicate_placement_rows(caplog):
+    # Feed locations with a duplicate (person_id, activity_index) key:
+    # person 1 activity 1 appears twice with different locations
+    locations = pd.DataFrame({
+        "person_id":      [1,         1,         7],
+        "activity_index": [1,         1,         3],
+        "location_id":    ["shop_42", "shop_99", "sec_12345"],
+        "geometry":       [Point(10, 10), Point(15, 15), Point(20, 20)],
+    })
+    with caplog.at_level("WARNING"):
+        anchors, stats = resolve_joint_anchors(_links(), locations)
+    # First row (shop_42) wins; second (shop_99) dropped
+    assert anchors[["person_id", "activity_index", "location_id"]].values.tolist() == [
+        [2, 1, "shop_42"], [3, 1, "shop_42"], [6, 2, "sec_12345"],
+    ]
+    # Verify warning was logged
+    assert any("duplicate" in record.message.lower() for record in caplog.records
+               if record.levelname == "WARNING")
+    warning_msg = [r.message for r in caplog.records if "duplicate" in r.message.lower()]
+    assert len(warning_msg) > 0
+    assert "1 dropped" in warning_msg[0]  # Exactly 1 duplicate dropped

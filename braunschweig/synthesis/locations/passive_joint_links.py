@@ -235,8 +235,16 @@ def resolve_joint_anchors(links: pd.DataFrame, df_locations: pd.DataFrame
     stats = {"n_links": int(len(links)), "n_resolved": 0, "n_unresolved": 0}
     if len(links) == 0:
         return _empty_anchors(), stats
-    placed = df_locations[ANCHOR_COLUMNS].drop_duplicates(["person_id", "activity_index"],
-                                                          keep="first")
+    placed = df_locations[ANCHOR_COLUMNS].copy()
+    n_before = len(placed)
+    placed = placed.drop_duplicates(["person_id", "activity_index"], keep="first")
+    n_dropped = n_before - len(placed)
+    if n_dropped > 0:
+        logger.warning(
+            "%s chainsolver pass-1 placed %d duplicate (person_id, activity_index) rows; "
+            "the first occurrence is kept, %d dropped. This suggests the upstream solver "
+            "placed the same activity multiple times.", _LOG_TAG, n_before, n_dropped
+        )
     placed = placed.rename(columns={"person_id": "adult_person_id",
                                     "activity_index": "adult_activity_index"})
     merged = links.merge(placed, on=["adult_person_id", "adult_activity_index"], how="left")
