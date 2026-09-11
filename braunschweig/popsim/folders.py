@@ -53,9 +53,13 @@ def validate_settings_geographies(settings_yaml: str, controls_df) -> None:
 
     The settings file is a LOCAL-ONLY path (it lives in the popsimprep repo, not here) and
     is copied into every batch folder as raw text, so nothing used to relate it to the
-    control set this run actually renders. A control at a geography the settings do not
-    list is then either rejected deep inside a PopulationSim subprocess or, worse, simply
-    never balanced -- the classic silent under-constraint this project forbids.
+    control set this run actually renders. PopulationSim itself DOES catch the mismatch --
+    ``populationsim.steps.setup_data_structures`` raises ``RuntimeError("unknown geography
+    column '<geo>' in control file")`` -- so this check does not prevent a silently wrong
+    population; a mismatched pair always crashed. What it changes is WHEN and HOW: the
+    failure moves from late inside a worker subprocess, after every batch folder has been
+    written, with a message naming neither the settings file nor the fix, to here, before
+    any of that work happens, with a message that names both.
 
     The concrete case this guards: the per-Kreis attribute controls
     (``kreis_attribute_control.REGISTRY``) default ON and render at :data:`GEO_KREIS`, but

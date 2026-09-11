@@ -62,12 +62,21 @@ notes: >-
   (braunschweig.popsim.folders.validate_settings_geographies) and RAISES when the settings
   declare no "geographies" list or omit a geography the control set uses. The settings file is a
   LOCAL-ONLY path outside this repository and was previously copied into every batch folder as
-  raw text with nothing relating it to the control set, so a mismatch surfaced only inside a
-  subprocess -- or not at all, the controls simply never being balanced. The case that motivated
+  raw text with nothing relating it to the control set. PopulationSim itself DOES reject the
+  mismatch -- populationsim.steps.setup_data_structures raises
+  RuntimeError("unknown geography column '<geo>' in control file") -- so no run ever produced a
+  silently under-constrained population: a mismatched pair CRASHES. What the guard changes is
+  WHEN and HOW: the failure moved from late inside a worker subprocess, after the batch folders
+  were written, with a message naming neither the settings file nor the fix, to a fail-fast in
+  this stage naming the missing level, the number of controls at it, and what the settings do
+  declare. The case that motivated
   the guard: the per-Kreis attribute controls (kreis_attribute_control.REGISTRY) default ON and
   render at the KREIS geography, which the 4-level settings file (WELT > STAAT > ZENSUS1km >
-  ZENSUS100m) does not declare; the committed popsim_mid fixture configs therefore point at the
-  5-level file. KREIS controls are MiD-only, so popsim_open runs are unaffected.
+  ZENSUS100m) does not declare, so any local popsim_mid run from the committed fixture configs
+  aborted in a PopulationSim worker; those configs therefore now point at the 5-level file. The
+  production config (configs/base_bs.yml) was never affected -- its 100 % runs completed, which a
+  geography mismatch makes impossible. KREIS controls are MiD-only, so popsim_open runs are
+  unaffected either way.
   Two plan-structure flags are declared and read HERE as well as in the stages that own them
   (#365 / #367): braunschweig.population.popsim.diary_plan_match arms the guard that RAISES if a
   resolved plan source still carries MiD anzwege1 803/804 after the diary match (a silent
