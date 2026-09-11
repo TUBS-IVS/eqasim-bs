@@ -28,6 +28,8 @@ import logging
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, Union
 
+import yaml
+
 import numpy as np
 import pandas as pd
 
@@ -44,6 +46,64 @@ GEO_1KM = "ZENSUS1km"
 GEO_100M = "ZENSUS100m"
 
 CONTROL_GEOGRAPHIES: Sequence[str] = (GEO_100M, GEO_1KM, GEO_STAAT, GEO_WELT)
+
+
+def validate_settings_geographies(settings_yaml: str, controls_df) -> None:
+    """Fail fast when the PopulationSim settings do not declare every control geography.
+
+    The settings file is a LOCAL-ONLY path (it lives in the popsimprep repo, not here) and
+    is copied into every batch folder as raw text, so nothing used to relate it to the
+    control set this run actually renders. A control at a geography the settings do not
+    list is then either rejected deep inside a PopulationSim subprocess or, worse, simply
+    never balanced -- the classic silent under-constraint this project forbids.
+
+    The concrete case this guards: the per-Kreis attribute controls
+    (``kreis_attribute_control.REGISTRY``) default ON and render at :data:`GEO_KREIS`, but
+    the 4-level settings file (``WELT > STAAT > ZENSUS1km > ZENSUS100m``) has no KREIS
+    level, so every one of them would be unconstrained.
+
+    Parameters
+    ----------
+    settings_yaml:
+        Raw text of the PopulationSim ``settings.yaml`` that will be written into each
+        batch folder.
+    controls_df:
+        The rendered ``controls.csv`` frame; its ``geography`` column names the level each
+        control is balanced at.
+
+    Raises
+    ------
+    ValueError
+        If the settings declare no ``geographies`` list, or if any control geography is
+        missing from it. The message names the missing level(s), how many controls sit
+        there, and what the settings do declare, so the reader can pick the right file.
+    KeyError
+        If ``controls_df`` has no ``geography`` column (a caller passing the wrong frame
+        must not be read as "nothing to check").
+    """
+    if "geography" not in getattr(controls_df, "columns", ()):
+        raise KeyError(
+            "validate_settings_geographies: controls frame has no 'geography' column; "
+            "cannot check it against the PopulationSim settings.")
+    settings = yaml.safe_load(settings_yaml) or {}
+    declared = settings.get("geographies") if isinstance(settings, Mapping) else None
+    if not declared:
+        raise ValueError(
+            "PopulationSim settings declare no 'geographies' list; cannot verify that the "
+            "control set is balanced at levels the run knows about.")
+    declared_set = set(declared)
+    counts = controls_df["geography"].value_counts()
+    missing = {geography: int(n) for geography, n in counts.items()
+               if geography not in declared_set}
+    if missing:
+        detail = ", ".join(f"{geography} ({n} control(s))"
+                           for geography, n in sorted(missing.items()))
+        raise ValueError(
+            f"PopulationSim settings do not declare the control geography/-ies {detail}; "
+            f"they declare {list(declared)}. Those controls would not be balanced. Point "
+            "braunschweig.population.popsim.settings_path at a settings file whose "
+            "'geographies' list contains them (the KREIS level is required whenever any "
+            "per-Kreis attribute control or tier3 is active -- all of them default ON).")
 
 
 def _resolve_parent_kreis(

@@ -56,6 +56,18 @@ decisions:
 - ADR-0111
 - ADR-0112
 notes: >-
+  SETTINGS/GEOGRAPHY FAIL-FAST: before any batch folder is written or any PopulationSim
+  subprocess starts, this stage validates the file at
+  braunschweig.population.popsim.settings_path against the rendered controls frame
+  (braunschweig.popsim.folders.validate_settings_geographies) and RAISES when the settings
+  declare no "geographies" list or omit a geography the control set uses. The settings file is a
+  LOCAL-ONLY path outside this repository and was previously copied into every batch folder as
+  raw text with nothing relating it to the control set, so a mismatch surfaced only inside a
+  subprocess -- or not at all, the controls simply never being balanced. The case that motivated
+  the guard: the per-Kreis attribute controls (kreis_attribute_control.REGISTRY) default ON and
+  render at the KREIS geography, which the 4-level settings file (WELT > STAAT > ZENSUS1km >
+  ZENSUS100m) does not declare; the committed popsim_mid fixture configs therefore point at the
+  5-level file. KREIS controls are MiD-only, so popsim_open runs are unaffected.
   Two plan-structure flags are declared and read HERE as well as in the stages that own them
   (#365 / #367): braunschweig.population.popsim.diary_plan_match arms the guard that RAISES if a
   resolved plan source still carries MiD anzwege1 803/804 after the diary match (a silent
