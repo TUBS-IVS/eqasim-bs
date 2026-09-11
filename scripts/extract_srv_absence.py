@@ -151,16 +151,31 @@ def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, clu
         "#   elsewhere for the same universe; the values below are the ones this file commits.",
         "#   A size class with no household is still emitted, with n_households_unweighted=0 and",
         "#   a NaN share (never dropped).",
+        "# Additional columns (issue #388, PERSON-level reporting reference, added on top of the",
+        "#   four HOUSEHOLD-level columns above, which are UNCHANGED by this addition):",
+        "#   n_persons_unweighted, n_absent_persons_unweighted, p_absent_person -- the",
+        "#   GEWICHT_P_ZENSUS PERSON-weighted share of absent persons among ALL persons living in",
+        "#   a household of that size class (every delivered person counted once, whether or not",
+        "#   their own household is fully absent). This differs from p_all_absent, which is the",
+        "#   HOUSEHOLD-weighted share of households where EVERY member is absent -- the two",
+        "#   columns answer different questions and are not expected to be numerically close. A",
+        "#   size class with no persons is still emitted, with n_persons_unweighted=0 and a NaN",
+        "#   share (never dropped).",
     ]
-    lines += ["#   size %d: n_households_unweighted=%d, p_all_absent=%s"
+    lines += ["#   size %d: n_households_unweighted=%d, p_all_absent=%s, n_persons_unweighted=%d, "
+              "p_absent_person=%s"
               % (int(row["size_class"]), int(row["n_households_unweighted"]),
-                 "NaN" if pd.isna(row["p_all_absent"]) else "%.4f" % row["p_all_absent"])
+                 "NaN" if pd.isna(row["p_all_absent"]) else "%.4f" % row["p_all_absent"],
+                 int(row["n_persons_unweighted"]),
+                 "NaN" if pd.isna(row["p_absent_person"]) else "%.4f" % row["p_absent_person"])
               for _, row in table.iterrows()]
     lines += [
         "# Rows: %d size classes." % len(table),
         "# Invariants (checked before writing, the extraction raises on a violation): size",
-        "#   classes 1..%d are present, in that order; every share is NaN or inside [0, 1]."
+        "#   classes 1..%d are present, in that order; every share is NaN or inside [0, 1];"
         % A.HOUSEHOLD_SIZE_CLASS_TOP,
+        "#   n_absent_persons_unweighted <= n_persons_unweighted per row; sum(n_persons_unweighted)",
+        "#   equals the by-age table's 'all' row n_unweighted.",
     ]
     return lines
 

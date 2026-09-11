@@ -7,7 +7,11 @@ Two committed tables for the general-day-absence state draw
   day (``E_ANZ_WEGE == -7``, :data:`srv_plan_structure.AWAY_FROM_HOME_CODE`) per age band, plus an
   ``all`` row. Weight ``GEWICHT_P_ZENSUS`` (ADR-0055).
 * ``srv2023_absence_household_by_size.csv`` -- share of households in which EVERY member is away,
-  per household size class (1..5, 5 = five or more), weight ``GEWICHT_HH_ZENSUS``.
+  per household size class (1..5, 5 = five or more), weight ``GEWICHT_HH_ZENSUS``. Also carries a
+  PERSON-level reporting reference for issue #388 (``n_persons_unweighted``,
+  ``n_absent_persons_unweighted``, ``p_absent_person``): the ``GEWICHT_P_ZENSUS`` person-weighted
+  share of absent persons among ALL persons living in a household of that size class, distinct
+  from the household-level ``p_all_absent`` above.
 
 Universe: every delivered person with a valid positive person weight (the SrV ``at_home_zero``
 universe of :mod:`braunschweig.calibration.srv_plan_structure` -- absence IS the state being
@@ -43,7 +47,8 @@ AVERAGE_WEEKDAY = 1  # MITTL_WERKTAG
 PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS", "MITTL_WERKTAG"]
 HOUSEHOLD_COLUMNS = ["HHNR", "GEWICHT_HH_ZENSUS"]
 BY_AGE_COLUMNS = ["band", "age_min", "age_max", "n_unweighted", "n_absent_unweighted", "p_absent"]
-BY_SIZE_COLUMNS = ["size_class", "n_households_unweighted", "n_all_absent_unweighted", "p_all_absent"]
+BY_SIZE_COLUMNS = ["size_class", "n_households_unweighted", "n_all_absent_unweighted", "p_all_absent",
+                  "n_persons_unweighted", "n_absent_persons_unweighted", "p_absent_person"]
 
 
 def _require_columns(frame, required, name):
@@ -143,12 +148,20 @@ def build_absence_household_by_size(prepared: pd.DataFrame, households: pd.DataF
     if n_non_positive_weight_hh:
         raise ValueError(f"{_LOG_TAG} {n_non_positive_weight_hh} household(s) have a non-positive "
                          "GEWICHT_HH_ZENSUS; a household weight must be > 0")
+    # Person-level size class (issue #388): join each PERSON row -- not each household -- to its
+    # household's size class, so the PERSON-weighted absence rate can be aggregated per class as a
+    # reporting reference distinct from the household-level "every member absent" share above.
+    persons_sized = prepared.merge(per_hh[["hhnr", "size_class"]], on="hhnr", how="left")
     rows = []
     for size_class in range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1):
         g = per_hh[per_hh["size_class"] == size_class]
+        g_persons = persons_sized[persons_sized["size_class"] == size_class]
         rows.append({"size_class": size_class, "n_households_unweighted": int(len(g)),
                      "n_all_absent_unweighted": int(g["all_absent"].sum()),
-                     "p_all_absent": _weighted_share(g["GEWICHT_HH_ZENSUS"].astype(float), g["all_absent"])})
+                     "p_all_absent": _weighted_share(g["GEWICHT_HH_ZENSUS"].astype(float), g["all_absent"]),
+                     "n_persons_unweighted": int(len(g_persons)),
+                     "n_absent_persons_unweighted": int(g_persons["absent"].sum()),
+                     "p_absent_person": _weighted_share(g_persons["weight"].astype(float), g_persons["absent"])})
     return pd.DataFrame(rows, columns=BY_SIZE_COLUMNS)
 
 
@@ -198,11 +211,23 @@ def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame) -> None:
     if list(by_age["band"]) != list(AGE_BAND_LABELS) + [ALL_BAND]:
         raise ValueError(f"{_LOG_TAG} by-age table must carry exactly the bands {AGE_BAND_LABELS} + 'all'")
     bands = by_age[by_age["band"] != ALL_BAND]
-    if int(bands["n_unweighted"].sum()) > int(by_age.loc[by_age["band"] == ALL_BAND, "n_unweighted"].iloc[0]):
+    all_row_n_unweighted = int(by_age.loc[by_age["band"] == ALL_BAND, "n_unweighted"].iloc[0])
+    if int(bands["n_unweighted"].sum()) > all_row_n_unweighted:
         raise ValueError(f"{_LOG_TAG} band person counts exceed the 'all' row")
-    for name, table, col in (("by_age", by_age, "p_absent"), ("by_size", by_size, "p_all_absent")):
+    for name, table, col in (("by_age", by_age, "p_absent"), ("by_size", by_size, "p_all_absent"),
+                             ("by_size", by_size, "p_absent_person")):
         shares = table[col].dropna()
         if ((shares < 0) | (shares > 1)).any():
             raise ValueError(f"{_LOG_TAG} {name}: {col} outside [0, 1]")
     if list(by_size["size_class"]) != list(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1)):
         raise ValueError(f"{_LOG_TAG} by-size table must carry size classes 1..{HOUSEHOLD_SIZE_CLASS_TOP}")
+    # Person-level guards (issue #388): a size class can never report more absent persons than
+    # persons, and every delivered person belongs to exactly one size class, so the by-size
+    # person counts must reconcile with the by-age 'all' row (same universe, same prepared frame).
+    if (by_size["n_absent_persons_unweighted"] > by_size["n_persons_unweighted"]).any():
+        raise ValueError(f"{_LOG_TAG} by_size: n_absent_persons_unweighted exceeds n_persons_unweighted "
+                         "for at least one size class")
+    n_persons_total = int(by_size["n_persons_unweighted"].sum())
+    if n_persons_total != all_row_n_unweighted:
+        raise ValueError(f"{_LOG_TAG} by_size: sum(n_persons_unweighted)={n_persons_total} does not match "
+                         f"the by-age 'all' row n_unweighted={all_row_n_unweighted}")

@@ -358,6 +358,7 @@ trip that day:
 | `day_absence_enabled` | `true` | General day absence (issue #370, ADR-0110), independent of the commute-day-state model above: every person draws a reporting-day absence state from the committed SrV 2023 tables (household stage, then an individual residual per age band). `false` leaves every person `present` and every `.final` stage byte-identical to the pre-#370 reporting day. |
 | `day_absence_household_stage_enabled` | `true` | `false` runs an individual-only draw at the SrV band rates (the pre-registered sensitivity arm); the household stage is what reproduces the observed household clustering of absent persons. |
 | `day_absence_max_band_deviation_pp` | `1.0` (percentage points) | Guard: a band with `>= 1,000` persons whose realised absence share deviates from the SrV reference by more than this WARNS (a broken join or reference mismatch, not a target). |
+| `day_absence_individual_stage_min_household_size` | `2` (persons, unclipped household size) | Minimum household size eligible for the individual residual stage (issue #388, ADR-0110 Amendment 1). Below it, "whole household absent" already IS "person absent", so the household stage alone realises the SrV single-person rate and a residual on top would over-absent singles. `1` restores the PR #387 behaviour byte-identically (every present person eligible). |
 
 The drawn state is exported as the `commute_day_state` column of `persons.csv` (empty for a
 person without an assigned workplace), as `day_absence_state` (`present` / `absent_household` /
