@@ -1006,6 +1006,75 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
         _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
 
 
+def _resolve_shard_attempts(value):
+    """Validate the configured ``braunschweig.chainsolvers.shard_attempts``.
+
+    The shared solve state is built once per stage execution (issue #385), so this key is
+    read even by a run that never shards; a config setting it to ``null`` used to surface
+    as a bare ``TypeError`` from ``int(None)`` with no hint at the key. Fail fast and name
+    the key instead of falling back to the default silently (CLAUDE.md: explicit failure
+    over a silent default).
+    """
+    try:
+        attempts = int(value)
+    except (TypeError, ValueError):
+        attempts = None
+    if attempts is None or attempts < 1:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] braunschweig.chainsolvers."
+            f"shard_attempts must be a positive integer, got {value!r}; set a positive "
+            f"number of attempts (the stage default is {DEFAULT_SHARD_ATTEMPTS}) or "
+            "remove the key from the config to take that default."
+        )
+    return attempts
+
+
+def _passive_joint_link_summary(link_stats) -> str:
+    """The stage's one-line passive-joint LINK rate (issue #385), next to the #201 escort
+    link line.
+
+    Unlinked children keep the INDEPENDENT draw, so this is the primary-vs-fallback rate
+    of the feature and must stay observable per run. Paired legs present but nothing
+    linked means the pairing columns or the plan-source ids are broken, so that case is
+    flagged ``WARNING`` (CLAUDE.md fallback transparency rule 2). Pure: builds a string.
+    ``build_passive_joint_links`` logs the same rate and its per-exclusion breakdown at
+    INFO; this line carries it in the stage's print stream.
+    """
+    n_paired = link_stats["n_passive_paired"]
+    prefix = "WARNING: " if n_paired > 0 and link_stats["n_linked"] == 0 else ""
+    return (
+        f"[braunschweig.secondary_chainsolvers] {prefix}passive joint link: "
+        f"{link_stats['n_linked']:,}/{n_paired:,} paired passive "
+        f"legs linked to the adult's activity "
+        f"({100.0 * link_stats['link_rate'] if n_paired else 0.0:.1f}%); "
+        "unlinked children keep the independent draw."
+    )
+
+
+def _passive_joint_anchor_summary(n_linked_children, anchor_stats) -> str:
+    """The stage's one-line pass-2 ANCHOR summary (issue #385).
+
+    An unresolved link leaves the child on the independent draw, so an unresolved share
+    above ``passive_joint_links.DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE`` (the same
+    threshold ``resolve_joint_anchors`` escalates on -- imported, never copied) means the
+    pass-1 output is probably incomplete and is flagged ``WARNING``. Pure: builds a string.
+    """
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE,
+    )
+    n_links = anchor_stats["n_links"]
+    incomplete = n_links > 0 and (anchor_stats["n_unresolved"] / n_links
+                                  > DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
+    prefix = "WARNING: " if incomplete else ""
+    return (
+        f"[braunschweig.secondary_chainsolvers] {prefix}passive joint location: "
+        f"{n_linked_children:,} linked children solved in pass 2; "
+        f"{anchor_stats['n_resolved']:,}/{n_links:,} joint activities anchored at "
+        f"the adult's placed location, {anchor_stats['n_unresolved']:,} unresolved "
+        "-> independent draw."
+    )
+
+
 def _build_shared_solve_state(context, df_primary, crs):
     """Everything one solver pass needs that does not depend on WHICH persons it solves.
 
@@ -1151,7 +1220,8 @@ def _build_shared_solve_state(context, df_primary, crs):
     configured_procs = context.config("braunschweig.chainsolvers.processes")
     if configured_procs is None:
         configured_procs = context.config("processes")
-    shard_attempts = int(context.config("braunschweig.chainsolvers.shard_attempts"))
+    shard_attempts = _resolve_shard_attempts(
+        context.config("braunschweig.chainsolvers.shard_attempts"))
 
     # Only what a pass (or execute()'s consolidated reporting) actually reads. The seven
     # flag booleans used above -- shop_daily_split, leisure_subtype_split,
@@ -1236,9 +1306,11 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
             return _rda_fallback_place(
                 problems, problem_indices, rda_index_cache["index"],
                 distance_distributions, leisure_corr, random, crs,
+                pass_label=pass_label,
             )
         return _fallback_place(
             problems, problem_indices, df_secondary_legacy, random, crs,
+            pass_label=pass_label,
         )
 
     print(
@@ -1492,13 +1564,7 @@ def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shar
         frames.append(gpd.GeoDataFrame(anchor_rows, geometry="geometry", crs=crs))
     df_locations = gpd.GeoDataFrame(_concat(frames), geometry="geometry", crs=crs)
     df_convergence = _concat([df_conv_1, df_conv_2])
-    print(
-        "[braunschweig.secondary_chainsolvers] passive joint location: "
-        f"{len(pass2_persons):,} linked children solved in pass 2; "
-        f"{anchor_stats['n_resolved']:,}/{anchor_stats['n_links']:,} joint activities anchored at "
-        f"the adult's placed location, {anchor_stats['n_unresolved']:,} unresolved -> independent draw.",
-        flush=True,
-    )
+    print(_passive_joint_anchor_summary(len(pass2_persons), anchor_stats), flush=True)
     return df_locations, df_convergence, [report_1, report_2], anchor_stats
 
 
@@ -1550,15 +1616,7 @@ def execute(context):
             df_persons_link[persons_columns], df_trips_original)
         # The link rate in the stage's own print stream, next to the #201 escort-link line
         # (build_passive_joint_links also logs it, and its per-exclusion breakdown, at INFO).
-        # Unlinked children keep the INDEPENDENT draw, so this is the primary-vs-fallback
-        # rate of this feature and must stay observable per run (CLAUDE.md).
-        print(
-            "[braunschweig.secondary_chainsolvers] passive joint link: "
-            f"{link_stats['n_linked']:,}/{link_stats['n_passive_paired']:,} paired passive "
-            f"legs linked to the adult's activity "
-            f"({100.0 * link_stats['link_rate'] if link_stats['n_passive_paired'] else 0.0:.1f}%); "
-            "unlinked children keep the independent draw."
-        )
+        print(_passive_joint_link_summary(link_stats))
         df_locations, df_convergence, reports, _anchor_stats = _compose_two_pass(
             df_trips, df_primary, escort_activity_anchors, links, shared)
     else:

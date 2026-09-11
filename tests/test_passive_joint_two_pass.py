@@ -1,11 +1,15 @@
 """Two-pass secondary chainsolver for passive escort joint locations (issue #385, ADR-0118):
 flag declaration, prerequisites, and the pass composition."""
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Point
 
 from braunschweig.synthesis.locations import secondary_chainsolvers as sc
+from braunschweig.synthesis.locations.passive_joint_links import (
+    DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE,
+)
 # Reuse the sibling suite's configure() stub instead of duplicating one: it already
 # mirrors synpp's ConfigurationContext.config(name, default) semantics (a key's value
 # is resolved once and stays fixed for the re-reads configure() does).
@@ -180,3 +184,186 @@ def test_two_pass_with_no_links_runs_pass_1_only():
         solve=_fake_solve_factory(calls))
     assert len(calls) == 1 and calls[0]["persons"] == [1, 2, 3]
     assert anchor_stats == {"n_links": 0, "n_resolved": 0, "n_unresolved": 0}
+
+
+def _raw_anchor_solve_factory(calls):
+    """Like :func:`_fake_solve_factory` but records the RAW ``activity_anchors`` object.
+
+    The anchors contract is "None means no escort link at all, a dict means a link table
+    that may be empty"; a recorder normalising with ``dict(... or {})`` cannot tell the
+    two apart, which is exactly what this fake is for.
+    """
+    inner = _fake_solve_factory(calls)
+
+    def fake_solve(df_trips_pass, df_primary, activity_anchors, shared, *, pass_label=""):
+        result = inner(df_trips_pass, df_primary, activity_anchors, shared,
+                       pass_label=pass_label)
+        calls[-1]["raw_anchors"] = activity_anchors
+        return result
+    return fake_solve
+
+
+def test_pass_1_receives_none_when_there_are_no_escort_anchors():
+    calls = []
+    sc._compose_two_pass(_trips_two_households(), df_primary=None,
+                         escort_activity_anchors=None, links=_links_child_2(),
+                         shared={"crs": "EPSG:25832"},
+                         solve=_raw_anchor_solve_factory(calls))
+    # None (no escort household link at all), never an empty dict: the problem splitter
+    # distinguishes "no anchor table" from "an anchor table without an entry for me".
+    assert calls[0]["raw_anchors"] is None
+
+
+def test_pass_1_receives_a_dict_even_when_no_escort_anchor_belongs_to_it():
+    calls = []
+    sc._compose_two_pass(_trips_two_households(), df_primary=None,
+                         escort_activity_anchors={(2, 1): Point(8, 8)},
+                         links=_links_child_2(), shared={"crs": "EPSG:25832"},
+                         solve=_raw_anchor_solve_factory(calls))
+    # The only escort anchor belongs to the pass-2 child, so pass 1 gets an EMPTY dict.
+    assert calls[0]["raw_anchors"] == {}
+    assert isinstance(calls[0]["raw_anchors"], dict)
+
+
+def _unresolved_solve_factory(calls):
+    """A solve that places NOTHING, so every joint link stays unresolved."""
+    def fake_solve(df_trips_pass, df_primary, activity_anchors, shared, *, pass_label=""):
+        calls.append({"persons": sorted(df_trips_pass["person_id"].unique().tolist()),
+                      "purposes": df_trips_pass[["person_id", "following_purpose"]].values.tolist(),
+                      "label": pass_label})
+        df_loc = gpd.GeoDataFrame(pd.DataFrame(
+            {"person_id": pd.Series(dtype="int64"), "activity_index": pd.Series(dtype="int64"),
+             "location_id": pd.Series(dtype=object), "geometry": pd.Series(dtype=object)}),
+            geometry="geometry", crs="EPSG:25832")
+        df_conv = pd.DataFrame({"valid": pd.Series(dtype=bool), "size": pd.Series(dtype="int64")})
+        report = {"n_problems": 0, "n_unbounded": 0, "n_failed_bounded": 0,
+                  "subtype_stats": {}, "desired_by_category": {}, "n_plan_rows": 0}
+        return df_loc, df_conv, report
+    return fake_solve
+
+
+def test_an_unresolved_link_leaves_the_child_on_the_ordinary_pass_2_path():
+    """The adult's activity has no pass-1 row (it was never placed), so the child's joint
+    activity is NOT rewritten, no anchor row is appended, and the child is still solved in
+    pass 2 -- with its plan-level purpose, i.e. the independent draw."""
+    calls = []
+    df_locations, _conv, reports, anchor_stats = sc._compose_two_pass(
+        _trips_two_households(), df_primary=None, escort_activity_anchors=None,
+        links=_links_child_2(), shared={"crs": "EPSG:25832"},
+        solve=_unresolved_solve_factory(calls))
+    assert anchor_stats == {"n_links": 1, "n_resolved": 0, "n_unresolved": 1}
+    assert calls[1]["persons"] == [2]
+    assert [2, "passive_linked"] not in calls[1]["purposes"]
+    assert [2, "shop"] in calls[1]["purposes"]
+    assert len(df_locations) == 0  # nothing placed, and no anchor row appended
+    assert len(reports) == 2
+
+
+def test_the_anchor_summary_escalates_above_the_unresolved_share(capsys):
+    calls = []
+    sc._compose_two_pass(_trips_two_households(), df_primary=None,
+                         escort_activity_anchors=None, links=_links_child_2(),
+                         shared={"crs": "EPSG:25832"}, solve=_unresolved_solve_factory(calls))
+    line = capsys.readouterr().out
+    # The stage prefix stays first, as in every other escalated line of this stage.
+    assert "[braunschweig.secondary_chainsolvers] WARNING: passive joint location:" in line
+    assert "1 unresolved" in line
+
+
+def test_the_anchor_summary_does_not_escalate_when_the_anchors_resolve(capsys):
+    calls = []
+    sc._compose_two_pass(_trips_two_households(), df_primary=None,
+                         escort_activity_anchors=None, links=_links_child_2(),
+                         shared={"crs": "EPSG:25832"}, solve=_fake_solve_factory(calls))
+    assert "WARNING" not in capsys.readouterr().out
+
+
+def test_with_pass_label_returns_the_one_pass_line_by_identity():
+    """The one-pass path must stay byte-identical, so an empty label returns the very
+    same string object instead of a rebuilt equal one."""
+    line = "[braunschweig.secondary_chainsolvers] excursion boundary clip: 0/0"
+    assert sc._with_pass_label(line, "") is line
+    assert sc._with_pass_label("no stage prefix here", " [pass 2/2]") == "no stage prefix here"
+
+
+def test_with_pass_label_inserts_the_label_after_the_stage_prefix_once():
+    line = ("[braunschweig.secondary_chainsolvers] excursion boundary clip: "
+            "[braunschweig.secondary_chainsolvers] is quoted inside the line")
+    labelled = sc._with_pass_label(line, " [pass 2/2: linked children]")
+    assert labelled.startswith(
+        "[braunschweig.secondary_chainsolvers] [pass 2/2: linked children] excursion")
+    assert labelled.count(" [pass 2/2: linked children]") == 1
+
+
+# --- report lines and config fail-fasts -------------------------------------------
+
+def _link_stats(n_passive_paired, n_linked):
+    return {"n_passive_paired": n_passive_paired, "n_linked": n_linked,
+            "link_rate": (n_linked / n_passive_paired) if n_passive_paired else float("nan")}
+
+
+def test_the_link_rate_line_escalates_when_nothing_could_be_linked():
+    line = sc._passive_joint_link_summary(_link_stats(120, 0))
+    assert line.startswith(
+        "[braunschweig.secondary_chainsolvers] WARNING: passive joint link:")
+    assert "0/120 paired passive legs linked" in line
+
+
+def test_the_link_rate_line_stays_plain_when_links_were_built():
+    line = sc._passive_joint_link_summary(_link_stats(120, 90))
+    assert line.startswith("[braunschweig.secondary_chainsolvers] passive joint link:")
+    assert "90/120 paired passive legs linked to the adult's activity (75.0%)" in line
+
+
+def test_the_link_rate_line_survives_a_run_without_any_paired_leg():
+    # link_rate is NaN then; the line must not escalate and must not print "nan%".
+    line = sc._passive_joint_link_summary(_link_stats(0, 0))
+    assert "WARNING" not in line
+    assert "0/0 paired passive legs linked to the adult's activity (0.0%)" in line
+
+
+def test_the_anchor_summary_uses_the_shared_unresolved_share_constant():
+    n_links = 10
+    n_unresolved = int(DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE * n_links) + 1
+    stats = {"n_links": n_links, "n_resolved": n_links - n_unresolved,
+             "n_unresolved": n_unresolved}
+    assert "WARNING: " in sc._passive_joint_anchor_summary(3, stats)
+    at_threshold = {"n_links": n_links, "n_resolved": n_links - n_unresolved + 1,
+                    "n_unresolved": n_unresolved - 1}
+    assert "WARNING" not in sc._passive_joint_anchor_summary(3, at_threshold)
+
+
+def test_shard_attempts_must_be_a_positive_integer():
+    """The two-pass extraction reads the key unconditionally (it is part of the shared
+    solve state), so a config leaving it null must fail with a named error instead of a
+    bare TypeError from int(None)."""
+    with pytest.raises(ValueError, match="shard_attempts must be a positive integer"):
+        sc._resolve_shard_attempts(None)
+    with pytest.raises(ValueError, match="got 0"):
+        sc._resolve_shard_attempts(0)
+    assert sc._resolve_shard_attempts(3) == 3
+
+
+def _one_candidate_frame():
+    # No offers_* column at all -> every secondary purpose takes the any-type pool, which
+    # is the branch that prints the fallback catalog line.
+    return pd.DataFrame({"location_id": ["sec_1"], "geometry": [Point(0.0, 0.0)]})
+
+
+def _one_problem():
+    return [{"person_id": 1, "activity_index": 1, "purposes": ["shop"], "size": 1}]
+
+
+def test_the_fallback_catalog_line_carries_the_pass_label(capsys):
+    sc._fallback_place(_one_problem(), [0], _one_candidate_frame(),
+                       np.random.RandomState(0), "EPSG:25832",
+                       pass_label=" [pass 2/2: linked children]")
+    assert ("[braunschweig.secondary_chainsolvers] [pass 2/2: linked children] "
+            "fallback catalog:") in capsys.readouterr().out
+
+
+def test_the_fallback_catalog_line_is_unchanged_without_a_pass_label(capsys):
+    sc._fallback_place(_one_problem(), [0], _one_candidate_frame(),
+                       np.random.RandomState(0), "EPSG:25832")
+    assert capsys.readouterr().out.startswith(
+        "[braunschweig.secondary_chainsolvers] fallback catalog:")

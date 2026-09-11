@@ -3,9 +3,15 @@ activity is linked to the accompanying adult's activity inside the same syntheti
 import numpy as np
 import pandas as pd
 import pytest
+from shapely.geometry import Point
 
 from braunschweig.synthesis.locations.passive_joint_links import (
-    LINK_COLUMNS, SECONDARY_JOINT_PURPOSES, build_passive_joint_links,
+    ANCHOR_COLUMNS, DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE, LINK_COLUMNS,
+    PASSIVE_LINKED_PURPOSE, SECONDARY_JOINT_PURPOSES, build_passive_joint_links,
+    resolve_joint_anchors,
+)
+from braunschweig.synthesis.locations.secondary_chainsolvers.escort import (
+    rewrite_anchored_activities,
 )
 
 
@@ -148,14 +154,80 @@ def test_child_missing_from_persons_frame_raises():
         build_passive_joint_links(persons, _trips())
 
 
-from shapely.geometry import Point
+@pytest.mark.parametrize("column", ["passive_pair_adult_p_id", "passive_pair_adult_w_id"])
+def test_paired_leg_without_an_adult_id_raises_naming_the_column(column):
+    """A row marked "paired" but carrying NaN in a pairing id is a phase-1 wiring
+    defect, not a legitimate exclusion: it must raise a named error instead of the
+    generic pandas cast error."""
+    trips = _trips()
+    trips.loc[(trips["person_id"] == 3) & (trips["trip_index"] == 0), column] = np.nan
+    with pytest.raises(ValueError, match=column) as excinfo:
+        build_passive_joint_links(_persons(), trips)
+    message = str(excinfo.value)
+    assert "1 paired passive leg" in message
+    # The first offending row is named so the defect can be traced in the trips frame.
+    assert "person_id 3" in message and "trip_index 0" in message
 
-from braunschweig.synthesis.locations.passive_joint_links import (
-    ANCHOR_COLUMNS, PASSIVE_LINKED_PURPOSE, resolve_joint_anchors,
-)
-from braunschweig.synthesis.locations.secondary_chainsolvers.escort import (
-    rewrite_anchored_activities,
-)
+
+def _persons_sharing_one_plan_source():
+    # Defensive case: persons 1 and 6 of household 10 carry the SAME plan source
+    # (100, 1) -- e.g. a member-completion filler mirroring the donor adult -- so the
+    # child's paired leg matches TWO adults.
+    return pd.DataFrame({
+        "person_id":    [1,   6,   2],
+        "household_id": [10,  10,  10],
+        "source_H_ID":  [100, 100, 100],
+        "source_P_ID":  [1,   1,   2],
+    })
+
+
+def _trips_sharing_one_plan_source():
+    nan = np.nan
+    return pd.DataFrame({
+        "person_id":               [1,      6,      2],
+        "trip_index":              [0,      0,      0],
+        "following_purpose":       ["shop", "shop", "shop"],
+        "W_ID":                    [1,      1,      1],
+        "passive_pair_status":     [nan,    nan,    "paired"],
+        "passive_pair_adult_p_id": [nan,    nan,    1.0],
+        "passive_pair_adult_w_id": [nan,    nan,    1.0],
+    })
+
+
+def test_child_activity_matching_two_adults_keeps_the_lower_adult_person_id():
+    links, stats = build_passive_joint_links(_persons_sharing_one_plan_source(),
+                                             _trips_sharing_one_plan_source())
+    assert links[["child_person_id", "child_activity_index", "adult_person_id"]
+                 ].values.tolist() == [[2, 1, 1]]
+    assert stats["n_duplicate_dropped"] == 1
+    assert stats["n_linked"] == 1
+    # A duplicate plan source INFLATES the row count (one paired leg, two adult matches),
+    # so the reason counts sum to the paired total PLUS the inflation, which is exactly
+    # what n_duplicate_dropped counts here (see the Returns section of the docstring).
+    reasons = (stats["n_linked"] + stats["n_adult_not_in_household"] + stats["n_adult_leg_missing"]
+               + stats["n_purpose_not_secondary"] + stats["n_adult_is_linked_child"]
+               + stats["n_duplicate_dropped"])
+    assert reasons == stats["n_passive_paired"] + stats["n_duplicate_dropped"]
+
+
+def test_no_linkable_paired_leg_is_logged_as_a_warning(caplog):
+    """Fallback transparency: paired legs present but nothing linked means the pairing
+    columns or the plan-source ids are broken, not that the data happens to say so."""
+    persons = _persons()
+    persons.loc[persons["person_id"] == 1, "source_P_ID"] = 7
+    with caplog.at_level("INFO"):
+        links, stats = build_passive_joint_links(persons, _trips())
+    assert len(links) == 0 and stats["n_passive_paired"] > 0
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "no paired passive leg could be linked" in warnings[0].lower()
+
+
+def test_a_linked_run_logs_the_rate_at_info(caplog):
+    with caplog.at_level("INFO"):
+        build_passive_joint_links(_persons(), _trips())
+    assert [r.levelname for r in caplog.records] == ["INFO"]
+    assert "2/3 paired passive legs linked" in caplog.records[0].message
 
 
 def _links():
@@ -238,6 +310,17 @@ def test_rewrite_anchored_activities_returns_a_copy_and_handles_no_anchors():
     assert out is not trips
 
 
+def test_rewrite_anchored_activities_ignores_an_anchor_for_a_person_without_trips():
+    """An anchor whose person has no row in the pass frame (e.g. a child whose trips were
+    routed to the other pass) matches nothing and leaves the frame unchanged."""
+    trips = _child_trips()
+    anchors = pd.DataFrame({"person_id": [99], "activity_index": [1],
+                            "location_id": ["a"], "geometry": [Point(0, 0)]})
+    out = rewrite_anchored_activities(trips, anchors, PASSIVE_LINKED_PURPOSE)
+    pd.testing.assert_frame_equal(out, trips)
+    assert out is not trips
+
+
 def test_resolve_joint_anchors_logs_dropped_duplicate_placement_rows(caplog):
     # Feed locations with a duplicate (person_id, activity_index) key:
     # person 1 activity 1 appears twice with different locations
@@ -258,4 +341,34 @@ def test_resolve_joint_anchors_logs_dropped_duplicate_placement_rows(caplog):
                if record.levelname == "WARNING")
     warning_msg = [r.message for r in caplog.records if "duplicate" in r.message.lower()]
     assert len(warning_msg) > 0
-    assert "1 dropped" in warning_msg[0]  # Exactly 1 duplicate dropped
+    # The line names the dropped count and the total placed rows separately.
+    assert "1 of 3 placed pass-1 rows" in warning_msg[0]
+    assert stats["n_links"] == 3
+
+
+def test_resolve_joint_anchors_names_links_not_activities_in_the_unresolved_line(caplog):
+    locations = _pass1_locations()
+    locations = locations[locations["person_id"] != 7]
+    with caplog.at_level("INFO"):
+        resolve_joint_anchors(_links(), locations)
+    messages = [r.message for r in caplog.records]
+    assert len(messages) == 1
+    # One unresolved LINK, not one unresolved adult activity.
+    assert "1 links pointing at an adult activity without a placed location" in messages[0]
+    assert caplog.records[0].levelname == "INFO"  # 1/3 unresolved is below the threshold
+
+
+def test_resolve_joint_anchors_warns_above_the_unresolved_share_threshold(caplog):
+    """Fallback transparency: above the threshold share of unresolved links the pass-1
+    output is probably incomplete, so the line escalates to WARNING."""
+    assert DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE == 0.5
+    # Only adult 1 was placed -> link (6, 2) -> adult 7 stays unresolved: 1 of 3.
+    # Drop adults 1 AND 7 -> 3 of 3 unresolved, above the threshold.
+    locations = _pass1_locations()
+    locations = locations[~locations["person_id"].isin([1, 7])]
+    with caplog.at_level("INFO"):
+        _anchors, stats = resolve_joint_anchors(_links(), locations)
+    assert stats["n_unresolved"] == 3
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "pass-1 output is probably incomplete" in warnings[0]

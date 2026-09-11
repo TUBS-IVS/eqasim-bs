@@ -123,7 +123,31 @@ def test_passive_linked_is_an_anchored_fixed_purpose():
     assert problems_mod.ANCHORED_PURPOSES == ("escort_linked", "passive_linked")
 
 
-def test_passive_linked_destination_and_origin_resolve_through_the_anchor_dict():
+def test_passive_linked_destination_resolves_through_the_anchor_dict():
+    """home -> leisure -> [passive_linked shop with mum] -> home: the joint activity
+    (index 2) is a fixed boundary on the DESTINATION side of the chain, so the leisure
+    activity (index 1) is placed between home and the anchor."""
+    df = _trips_frame([
+        (5, 0, "home", "leisure", "walk", 300.0),
+        (5, 1, "leisure", "passive_linked", "car_passenger", 600.0),
+        (5, 2, "passive_linked", "home", "car_passenger", 600.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [5], "home": [_P(0, 0)], "work": [None], "education": [None],
+    })
+    anchors = {(5, 2): _P(7, 7)}
+    problems = list(problems_mod.find_assignment_problems(
+        df, df_locations, activity_anchors=anchors))
+    # One problem: the leisure activity between home and the anchored joint activity.
+    assert len(problems) == 1
+    p = problems[0]
+    assert p["purposes"] == ["leisure"]
+    assert p["origin"][0][0] == 0.0 and p["origin"][0][1] == 0.0
+    assert p["destination"][0][0] == 7.0 and p["destination"][0][1] == 7.0
+    assert p["activity_index"] == 1
+
+
+def test_passive_linked_origin_resolves_through_the_anchor_dict():
     """home -> [passive_linked shop with mum] -> leisure -> home: the joint
     activity (index 1) is a fixed boundary resolved via activity_anchors, so
     the leisure activity (index 2) is placed between the anchor and home."""
