@@ -57,7 +57,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -85,6 +85,13 @@ from braunschweig.popsim import trips  # noqa: F401  (cache-hash only)
 # for the same one-edge-further-out reason as trips above -- hashing trips' own source
 # cannot see a change to the seed's day filter.
 from braunschweig.popsim import seed  # noqa: F401  (cache-hash only)
+# The two sibling-package helpers execute() reaches through FUNCTION-LEVEL imports
+# (escort_links for the #201 household link, passive_joint_links for the #385 passive
+# joint anchors). Imported here as module OBJECTS for the same reason as the popsim
+# modules above: a deferred import is invisible to inspect.getsource of this file, so an
+# edit confined to one of them would otherwise reuse a stale cached stage output.
+from braunschweig.synthesis.locations import escort_links  # noqa: F401  (cache-hash only)
+from braunschweig.synthesis.locations import passive_joint_links  # noqa: F401  (cache-hash only)
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -283,7 +290,9 @@ def __getattr__(name):
 # the submodules below would. PLUS trips (issue #373, ADR-0115) for the same
 # reason one edge further out: purpose_subtype derives LEISURE_UNSPECIFIED_ZWECK
 # from trips.W_ZWECK_OTHER_CODE, and hashing purpose_subtype's own source cannot
-# see a change on the other side of that import.
+# see a change on the other side of that import. PLUS escort_links (#201) and
+# passive_joint_links (#385): both are reached only through function-level imports in
+# execute(), so an edit confined to them would otherwise reuse a stale cached stage output.
 _HELPER_MODULES: Tuple[Any, ...] = (
     activity_types,
     candidate_columns,
@@ -291,8 +300,10 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     deciders,
     distance_sampling,
     escort,
+    escort_links,
     fallback,
     parallel_solving,
+    passive_joint_links,
     plans,
     purpose_subtype,
     reporting,
@@ -533,6 +544,29 @@ def configure(context):
     # instead of drawing a location type. Requires escort_purpose ON.
     context.config("escort_household_link", False)
     context.config("escort_household_link_max_child_age_years", 17)
+
+    # Passive escort joint location (issue #385, ADR-0118): solve the adults first and anchor
+    # a linked child's joint activity (shop / leisure / other taken along with the paired
+    # adult, phase 1 of #372) at the adult's PLACED secondary location. Code default False
+    # because it needs the phase-1 pairing columns (escort_passive_from_adult); the
+    # production ON state is realised only by configs/base_bs.yml.
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_ESCORT_PASSIVE_FROM_ADULT, KEY_ESCORT_PASSIVE_FROM_ADULT,
+    )
+    joint_location = bool(context.config("escort_passive_joint_location", False))
+    passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT,
+                                             DEFAULT_ESCORT_PASSIVE_FROM_ADULT))
+    if joint_location and not passive_from_adult:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_passive_joint_location requires "
+            "escort_passive_from_adult (the pairing columns it links on are written by that "
+            "flag); set both or disable escort_passive_joint_location."
+        )
+    if joint_location and not bool(context.config("escort_purpose")):
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] escort_passive_joint_location requires "
+            "escort_purpose (escort_passive_from_adult itself requires it)."
+        )
 
     # Escort distance-by-type (A3): scale the MiD escort distance layer per
     # drawn destination type with SrV-derived structure factors.
@@ -955,25 +989,21 @@ def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
         _write_srv_location_draw_summary(context, subtype_stats, desired_by_category)
 
 
-def execute(context):
-    # Import eagerly (not used here directly) to fail fast with a clear error if
-    # the optional dependency is missing, rather than deep inside a worker; the
-    # actual solving imports it again in _solve_person_shard. Kept lazy at
-    # function scope so tests without the dependency can import this module.
-    import chainsolvers  # noqa: F401
+def _build_shared_solve_state(context, df_primary, crs):
+    """Everything one solver pass needs that does not depend on WHICH persons it solves.
 
-    df_trips = context.stage("synthesis.population.trips.final").sort_values(
-        by=["person_id", "trip_index"]
-    )
-    df_trips["travel_time"] = (
-        df_trips["arrival_time"] - df_trips["departure_time"]
-    )
+    Built exactly once per stage execution so that two passes (issue #385) share the same
+    candidate set, deciders, distributions, worker settings and RNG. Returns a dict; the
+    key names are the local variable names execute() used before the extraction.
 
-    df_trips, linked_location_rows, escort_activity_anchors = (
-        _apply_escort_household_link(context, df_trips)
-    )
-    df_primary, crs = _prepare_primary(context)
+    ``df_primary`` is part of the pinned call signature (the caller holds the primary
+    locations for ``_solve_problem_set`` anyway); no shared state derives from it today.
 
+    Nothing built here consumes the shared ``RandomState``, so building the candidate
+    frame / locations_df / scorer spec here -- ahead of the first pass instead of after
+    its plans, where execute() used to build them -- cannot change any drawn result. It
+    only moves the candidate-flag fail-fast checks earlier.
+    """
     distance_distributions = context.stage(
         "synthesis.population.spatial.secondary.distance_distributions"
     )
@@ -1051,115 +1081,12 @@ def execute(context):
     # The RDA candidate index (3 KDTrees over the full secondary candidate set)
     # is expensive to build and is independent of the problems being placed, so
     # it is constructed at most ONCE and reused across both fallback calls
-    # (unbounded chains and failed-bounded problems). It consumes no randomness,
-    # so building it once instead of twice cannot change any drawn result. Built
+    # (unbounded chains and failed-bounded problems) -- and, since it lives in
+    # the shared state, across both passes. It consumes no randomness, so
+    # building it once instead of twice cannot change any drawn result. Built
     # lazily so the "random" strategy and the no-fallback case never pay for it.
     rda_index_cache: Dict[str, Any] = {}
 
-    def _run_fallback(problem_indices):
-        if not problem_indices:
-            return [], []
-        if fallback_strategy == "rda":
-            if "index" not in rda_index_cache:
-                # Always the LEGACY frame: previously the closure late-bound
-                # df_secondary, so a run with zero unbounded chains but some
-                # carla-failed problems would have built the index on the
-                # REPLACE set instead -- pinning to legacy makes the fallback
-                # candidate set deterministic regardless of call order.
-                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary_legacy)
-            return _rda_fallback_place(
-                problems, problem_indices, rda_index_cache["index"],
-                distance_distributions, leisure_corr, random, crs,
-            )
-        return _fallback_place(
-            problems, problem_indices, df_secondary_legacy, random, crs,
-        )
-
-    print(
-        "[braunschweig.secondary_chainsolvers] enumerating "
-        "assignment problems..."
-    )
-    t0 = time.time()
-    problems = list(find_assignment_problems(
-        df_trips, df_primary, activity_anchors=escort_activity_anchors,
-    ))
-    print(
-        f"[braunschweig.secondary_chainsolvers] {len(problems):,} problems "
-        f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
-    )
-
-    plans_df, problem_meta, unbounded_idx, subtype_stats, desired_by_category = _build_plans_df(
-        problems, distance_distributions, leisure_corr, random,
-        shop_subtype_decider=shop_subtype_decider,
-        leisure_subtype_decider=leisure_subtype_decider,
-        other_subtype_decider=other_subtype_decider,
-        escort_location_decider=escort_location_decider,
-        escort_distance_by_type=escort_distance_factor_map is not None,
-        srv_location_decider=srv_location_decider,
-    )
-    if escort_location_decider is None and len(plans_df) and \
-            (plans_df["to_act_type"] == "escort").any():
-        raise RuntimeError(
-            "[braunschweig.secondary_chainsolvers] plans contain 'escort' legs but "
-            "escort_purpose is OFF in this stage -- the donor mapping and the "
-            "chainsolver must be driven by the SAME escort_purpose config key."
-        )
-    print(
-        f"[braunschweig.secondary_chainsolvers] bounded problems: "
-        f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
-    )
-    _log_subtype_draw_rates(
-        context, subtype_stats, desired_by_category,
-        shop_subtype_decider=shop_subtype_decider,
-        leisure_subtype_decider=leisure_subtype_decider,
-        other_subtype_decider=other_subtype_decider,
-        escort_location_decider=escort_location_decider,
-        srv_location_decider=srv_location_decider,
-    )
-    print(
-        f"[braunschweig.secondary_chainsolvers] fallback strategy: "
-        f"{fallback_strategy}"
-    )
-
-    fallback_rows, fallback_conv = _run_fallback(unbounded_idx)
-
-    if len(plans_df) == 0:
-        print(
-            "[braunschweig.secondary_chainsolvers] no bounded legs to place; "
-            "returning fallback-only result."
-        )
-        # No bounded problems -> carla placed nothing; every problem went to the
-        # fallback. Report the (100% fallback) split so the rate stays observable
-        # on this early-return path too. Counting only.
-        print(
-            _fallback_accounting_summary(
-                n_total_problems=len(problems),
-                n_unbounded=len(unbounded_idx),
-                n_failed_bounded=0,
-            ),
-            flush=True,
-        )
-        # Task 6, issue #127: no bounded legs at all -> no "leisure_excursion"
-        # legs either; still print the (0/0) line so the rate stays
-        # observable on this early-return path too (no silent gap).
-        if leisure_subtype_decider is not None:
-            print(_excursion_boundary_clip_summary(0, 0), flush=True)
-        df_loc = gpd.GeoDataFrame(
-            pd.DataFrame.from_records(
-                fallback_rows,
-                columns=["person_id", "activity_index", "location_id", "geometry"],
-            ),
-            geometry="geometry", crs=crs,
-        )
-        df_conv = pd.DataFrame.from_records(
-            fallback_conv, columns=["valid", "size"]
-        )
-        return df_loc, df_conv
-
-    print(
-        f"[braunschweig.secondary_chainsolvers] {len(plans_df):,} plan rows; "
-        f"building chainsolvers context..."
-    )
     sec_enabled = context.config("secondary_building_potentials")
     scorer_spec = _build_scorer_spec(context, sec_enabled)
     # NOTE: the RDA/unbounded fallback intentionally uses the LEGACY frame
@@ -1185,12 +1112,6 @@ def execute(context):
         escort_purpose_on=escort_purpose_on,
     )
 
-    _report_excursion_boundary_clip(
-        plans_df, problems, df_secondary,
-        leisure_subtype_decider=leisure_subtype_decider,
-        srv_location_decider=srv_location_decider,
-    )
-
     locations_df = _build_locations_df(
         df_secondary, with_potentials=sec_enabled,
         shop_daily_split=shop_daily_split,
@@ -1202,9 +1123,192 @@ def execute(context):
     )
 
     solver_name = context.config("braunschweig.chainsolvers.solver") or DEFAULT_CHAIN_SOLVER
+
+    parallel_enabled = bool(context.config("braunschweig.chainsolvers.parallel"))
+    # chainsolvers.processes (when set) overrides the synpp `processes` count; either
+    # honours the auto sentinel (0/null/"auto" -> cores - reserve) so the chain solver
+    # scales with the box. A key left unset (None) defers to `processes`. An explicit
+    # positive integer is used verbatim (resolve_workers is the identity there), so
+    # existing configs stay byte-identical. Resolved to ONE requested worker count here
+    # (the pass only caps it at the person count it actually solves).
+    configured_procs = context.config("braunschweig.chainsolvers.processes")
+    if configured_procs is None:
+        configured_procs = context.config("processes")
+    shard_attempts = int(context.config("braunschweig.chainsolvers.shard_attempts"))
+
+    return {
+        "distance_distributions": distance_distributions,
+        "leisure_corr": leisure_corr,
+        "random": random,
+        "shop_daily_split": shop_daily_split,
+        "shop_subtype_decider": shop_subtype_decider,
+        "leisure_subtype_split": leisure_subtype_split,
+        "leisure_subtype_decider": leisure_subtype_decider,
+        "other_subtype_split": other_subtype_split,
+        "other_subtype_decider": other_subtype_decider,
+        "escort_purpose_on": escort_purpose_on,
+        "escort_location_decider": escort_location_decider,
+        "escort_distance_factor_map": escort_distance_factor_map,
+        "leisure_visit_building_potential": leisure_visit_building_potential,
+        "srv_location_types_on": srv_location_types_on,
+        "srv_location_decider": srv_location_decider,
+        "fallback_strategy": fallback_strategy,
+        "rda_index_cache": rda_index_cache,
+        "df_secondary": df_secondary,
+        "df_secondary_legacy": df_secondary_legacy,
+        "sec_enabled": sec_enabled,
+        "scorer_spec": scorer_spec,
+        "locations_df": locations_df,
+        "solver_name": solver_name,
+        "parallel_enabled": parallel_enabled,
+        "configured_procs": configured_procs,
+        "shard_attempts": shard_attempts,
+        "crs": crs,
+    }
+
+
+def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, pass_label=""):
+    """Enumerate, plan, solve and place the assignment problems of ONE set of persons.
+
+    The body is execute()'s former solve section moved verbatim; the RNG call order is
+    unchanged (distance draws in _build_plans_df, then the unbounded fallback, then the
+    base_seed draw, then the failed-bounded fallback), so a single call over all persons
+    is byte-identical to the pre-extraction stage. ``pass_label`` prefixes the progress
+    prints when non-empty (two-pass mode, issue #385). Returns
+    ``(df_locations, df_convergence, report)`` with report keys ``n_problems``,
+    ``n_unbounded``, ``n_failed_bounded``, ``subtype_stats``, ``desired_by_category``,
+    ``n_plan_rows``.
+
+    The draw-rate log and the consolidated fallback accounting are deliberately NOT
+    printed here: they are reported ONCE by execute() over the summed reports of all
+    passes.
+    """
+    # Read once from the shared state so the moved solve section below stays verbatim.
+    distance_distributions = shared["distance_distributions"]
+    leisure_corr = shared["leisure_corr"]
+    random = shared["random"]
+    shop_subtype_decider = shared["shop_subtype_decider"]
+    leisure_subtype_decider = shared["leisure_subtype_decider"]
+    other_subtype_decider = shared["other_subtype_decider"]
+    escort_location_decider = shared["escort_location_decider"]
+    escort_distance_factor_map = shared["escort_distance_factor_map"]
+    srv_location_decider = shared["srv_location_decider"]
+    fallback_strategy = shared["fallback_strategy"]
+    rda_index_cache = shared["rda_index_cache"]
+    df_secondary = shared["df_secondary"]
+    df_secondary_legacy = shared["df_secondary_legacy"]
+    scorer_spec = shared["scorer_spec"]
+    locations_df = shared["locations_df"]
+    solver_name = shared["solver_name"]
+    parallel_enabled = shared["parallel_enabled"]
+    configured_procs = shared["configured_procs"]
+    shard_attempts = shared["shard_attempts"]
+    crs = shared["crs"]
+
+    def _run_fallback(problem_indices):
+        if not problem_indices:
+            return [], []
+        if fallback_strategy == "rda":
+            if "index" not in rda_index_cache:
+                # Always the LEGACY frame: previously the closure late-bound
+                # df_secondary, so a run with zero unbounded chains but some
+                # carla-failed problems would have built the index on the
+                # REPLACE set instead -- pinning to legacy makes the fallback
+                # candidate set deterministic regardless of call order.
+                rda_index_cache["index"] = _build_rda_candidate_index(df_secondary_legacy)
+            return _rda_fallback_place(
+                problems, problem_indices, rda_index_cache["index"],
+                distance_distributions, leisure_corr, random, crs,
+            )
+        return _fallback_place(
+            problems, problem_indices, df_secondary_legacy, random, crs,
+        )
+
+    print(
+        f"[braunschweig.secondary_chainsolvers]{pass_label} enumerating "
+        "assignment problems..."
+    )
+    t0 = time.time()
+    problems = list(find_assignment_problems(
+        df_trips_pass, df_primary, activity_anchors=activity_anchors,
+    ))
+    print(
+        f"[braunschweig.secondary_chainsolvers]{pass_label} {len(problems):,} problems "
+        f"in {time.time() - t0:.1f}s — building chainsolvers plans..."
+    )
+
+    plans_df, problem_meta, unbounded_idx, subtype_stats, desired_by_category = _build_plans_df(
+        problems, distance_distributions, leisure_corr, random,
+        shop_subtype_decider=shop_subtype_decider,
+        leisure_subtype_decider=leisure_subtype_decider,
+        other_subtype_decider=other_subtype_decider,
+        escort_location_decider=escort_location_decider,
+        escort_distance_by_type=escort_distance_factor_map is not None,
+        srv_location_decider=srv_location_decider,
+    )
+    if escort_location_decider is None and len(plans_df) and \
+            (plans_df["to_act_type"] == "escort").any():
+        raise RuntimeError(
+            "[braunschweig.secondary_chainsolvers] plans contain 'escort' legs but "
+            "escort_purpose is OFF in this stage -- the donor mapping and the "
+            "chainsolver must be driven by the SAME escort_purpose config key."
+        )
+    print(
+        f"[braunschweig.secondary_chainsolvers]{pass_label} bounded problems: "
+        f"{len(problem_meta):,}; unbounded (fallback): {len(unbounded_idx):,}"
+    )
+    print(
+        f"[braunschweig.secondary_chainsolvers]{pass_label} fallback strategy: "
+        f"{fallback_strategy}"
+    )
+
+    fallback_rows, fallback_conv = _run_fallback(unbounded_idx)
+
+    if len(plans_df) == 0:
+        print(
+            f"[braunschweig.secondary_chainsolvers]{pass_label} no bounded legs to place; "
+            "returning fallback-only result."
+        )
+        # Task 6, issue #127: no bounded legs at all -> no "leisure_excursion"
+        # legs either; still print the (0/0) line so the rate stays
+        # observable on this early-return path too (no silent gap).
+        if leisure_subtype_decider is not None:
+            print(_excursion_boundary_clip_summary(0, 0), flush=True)
+        df_loc = gpd.GeoDataFrame(
+            pd.DataFrame.from_records(
+                fallback_rows,
+                columns=["person_id", "activity_index", "location_id", "geometry"],
+            ),
+            geometry="geometry", crs=crs,
+        )
+        df_conv = pd.DataFrame.from_records(
+            fallback_conv, columns=["valid", "size"]
+        )
+        # No bounded problems -> carla placed nothing; every problem went to the
+        # fallback, which execute()'s consolidated accounting reports as such.
+        return df_loc, df_conv, {
+            "n_problems": len(problems),
+            "n_unbounded": len(unbounded_idx),
+            "n_failed_bounded": 0,
+            "subtype_stats": subtype_stats,
+            "desired_by_category": desired_by_category,
+            "n_plan_rows": 0,
+        }
+
+    print(
+        f"[braunschweig.secondary_chainsolvers]{pass_label} {len(plans_df):,} plan rows; "
+        f"building chainsolvers context..."
+    )
+
+    _report_excursion_boundary_clip(
+        plans_df, problems, df_secondary,
+        leisure_subtype_decider=leisure_subtype_decider,
+        srv_location_decider=srv_location_decider,
+    )
+
     # One base seed drawn from the deterministic RandomState. Drawing exactly
-    # once here (as the legacy single cs.setup did) preserves the RNG stream for
-    # the downstream fallback, so the serial path stays byte-identical.
+    # once per pass (as the legacy single cs.setup did) preserves the RNG stream
+    # for the downstream fallback, so the serial path stays byte-identical.
     base_seed = int(random.randint(0, 2**31 - 1))
 
     # Drop helper columns chainsolvers does not expect (issue #262 adds the
@@ -1213,21 +1317,15 @@ def execute(context):
     unique_persons = plans_for_cs["unique_person_id"].drop_duplicates().to_list()
     n_total = len(unique_persons)
 
-    parallel_enabled = bool(context.config("braunschweig.chainsolvers.parallel"))
-    configured_procs = context.config("braunschweig.chainsolvers.processes")
-    # chainsolvers.processes (when set) overrides the synpp `processes` count; either
-    # honours the auto sentinel (0/null/"auto" -> cores - reserve) so the chain solver
-    # scales with the box. A key left unset (None) defers to `processes`. An explicit
-    # positive integer is used verbatim (resolve_workers is the identity there), so
-    # existing configs stay byte-identical.
+    # The requested worker count is resolved once in the shared state; only the cap at
+    # the number of persons this pass actually solves is per pass.
     from braunschweig.parallelism import resolve_workers
-    _requested_procs = configured_procs if configured_procs is not None else context.config("processes")
-    n_workers = resolve_workers(_requested_procs)
+    n_workers = resolve_workers(configured_procs)
     n_workers = max(1, min(n_workers, n_total)) if n_total else 1
     run_parallel = parallel_enabled and n_workers > 1 and n_total > 0
 
     print(
-        f"[braunschweig.secondary_chainsolvers] running cs.solve() "
+        f"[braunschweig.secondary_chainsolvers]{pass_label} running cs.solve() "
         f"({'parallel, %d workers' % n_workers if run_parallel else 'serial'}; "
         f"{n_total:,} persons)...",
         flush=True,
@@ -1238,7 +1336,7 @@ def execute(context):
         result_df, failed_problem_idx = _solve_chains_parallel(
             plans_for_cs, unique_persons, locations_df, solver_name,
             base_seed, n_workers, t0, scorer_spec,
-            shard_attempts=int(context.config("braunschweig.chainsolvers.shard_attempts")),
+            shard_attempts=shard_attempts,
         )
     else:
         # Serial path: a single shard over all persons seeded with base_seed, so
@@ -1257,25 +1355,9 @@ def execute(context):
     fallback_rows = list(fallback_rows) + extra_rows
     fallback_conv = list(fallback_conv) + extra_conv
     print(
-        f"[braunschweig.secondary_chainsolvers] cs.solve() finished in "
+        f"[braunschweig.secondary_chainsolvers]{pass_label} cs.solve() finished in "
         f"{time.time() - t0:.1f}s; "
         f"persons solved={n_total - n_failed:,}, failed={n_failed:,}",
-        flush=True,
-    )
-
-    # Consolidated PRIMARY (carla) vs FALLBACK accounting over ALL problems
-    # (bounded + unbounded), so the carla-vs-fallback usage is observable as an
-    # explicit rate. n_failed counts the bounded problems carla raised on;
-    # len(unbounded_idx) the chains carla could never accept -- both go to the
-    # fallback. A high fallback share is flagged with a WARNING prefix because it
-    # means carla is effectively not working. Counting only; no placed result,
-    # selection, or RNG draw is affected.
-    print(
-        _fallback_accounting_summary(
-            n_total_problems=len(problems),
-            n_unbounded=len(unbounded_idx),
-            n_failed_bounded=n_failed,
-        ),
         flush=True,
     )
 
@@ -1298,6 +1380,89 @@ def execute(context):
             [df_convergence, pd.DataFrame.from_records(fallback_conv, columns=["valid", "size"])],
             ignore_index=True,
         )
+
+    return df_locations, df_convergence, {
+        "n_problems": len(problems),
+        "n_unbounded": len(unbounded_idx),
+        "n_failed_bounded": n_failed,
+        "subtype_stats": subtype_stats,
+        "desired_by_category": desired_by_category,
+        "n_plan_rows": len(plans_df),
+    }
+
+
+def _sum_subtype_stats(reports):
+    """Per-key sum of the passes' subtype counters (one pass -> the same counts)."""
+    total: Dict[str, int] = {}
+    for report in reports:
+        for key, value in report["subtype_stats"].items():
+            total[key] = total.get(key, 0) + int(value)
+    return total
+
+
+def _concat_desired_by_category(reports):
+    """Per-category concatenation of the passes' desired distances (km)."""
+    merged: Dict[str, List[float]] = {}
+    for report in reports:
+        for key, values in report["desired_by_category"].items():
+            merged.setdefault(key, []).extend(values)
+    return merged
+
+
+def execute(context):
+    # Import eagerly (not used here directly) to fail fast with a clear error if
+    # the optional dependency is missing, rather than deep inside a worker; the
+    # actual solving imports it again in _solve_person_shard. Kept lazy at
+    # function scope so tests without the dependency can import this module.
+    import chainsolvers  # noqa: F401
+
+    df_trips = context.stage("synthesis.population.trips.final").sort_values(
+        by=["person_id", "trip_index"]
+    )
+    df_trips["travel_time"] = (
+        df_trips["arrival_time"] - df_trips["departure_time"]
+    )
+
+    df_trips, linked_location_rows, escort_activity_anchors = (
+        _apply_escort_household_link(context, df_trips)
+    )
+    df_primary, crs = _prepare_primary(context)
+    shared = _build_shared_solve_state(context, df_primary, crs)
+
+    # ONE pass over the whole population: frame-equal to the pre-extraction inline
+    # solve. The two-pass composition (adults first, then the children whose joint
+    # activities anchor at the adults' placed locations) is the ON branch of
+    # escort_passive_joint_location, issue #385.
+    df_locations, df_convergence, report = _solve_problem_set(
+        df_trips, df_primary, escort_activity_anchors, shared)
+    reports = [report]
+
+    # Draw-rate logging and the consolidated PRIMARY (carla) vs FALLBACK accounting
+    # run ONCE, over ALL passes, so the rates stay observable as ONE explicit split
+    # over the whole population (CLAUDE.md fallback transparency) instead of a
+    # per-pass fragment. Both are reporting only -- no placed result, selection or
+    # RNG draw is affected -- so the only difference to the pre-extraction stage is
+    # that these lines now print AFTER the solve instead of before it.
+    _log_subtype_draw_rates(
+        context, _sum_subtype_stats(reports), _concat_desired_by_category(reports),
+        shop_subtype_decider=shared["shop_subtype_decider"],
+        leisure_subtype_decider=shared["leisure_subtype_decider"],
+        other_subtype_decider=shared["other_subtype_decider"],
+        escort_location_decider=shared["escort_location_decider"],
+        srv_location_decider=shared["srv_location_decider"],
+    )
+    # n_failed_bounded counts the bounded problems carla raised on; n_unbounded the
+    # chains carla could never accept -- both go to the fallback. A high fallback
+    # share is flagged with a WARNING prefix because it means carla is effectively
+    # not working.
+    print(
+        _fallback_accounting_summary(
+            n_total_problems=sum(r["n_problems"] for r in reports),
+            n_unbounded=sum(r["n_unbounded"] for r in reports),
+            n_failed_bounded=sum(r["n_failed_bounded"] for r in reports),
+        ),
+        flush=True,
+    )
 
     # Anchored escort activities are fixed boundaries (escort_linked), so the
     # problem splitter never places them; append their pre-anchored rows
