@@ -146,3 +146,93 @@ def test_child_missing_from_persons_frame_raises():
     persons = persons[persons["person_id"] != 2]
     with pytest.raises(ValueError, match="person_id"):
         build_passive_joint_links(persons, _trips())
+
+
+from shapely.geometry import Point
+
+from braunschweig.synthesis.locations.passive_joint_links import (
+    ANCHOR_COLUMNS, PASSIVE_LINKED_PURPOSE, resolve_joint_anchors,
+)
+from braunschweig.synthesis.locations.secondary_chainsolvers.escort import (
+    rewrite_anchored_activities,
+)
+
+
+def _links():
+    return pd.DataFrame({
+        "child_person_id":      [2, 3, 6],
+        "child_activity_index": [1, 1, 2],
+        "adult_person_id":      [1, 1, 7],
+        "adult_activity_index": [1, 1, 3],
+        "adult_purpose":        ["shop", "shop", "leisure"],
+    })
+
+
+def _pass1_locations():
+    # Adult 1's shop was placed by the solver; adult 7 activity 3 was placed by the RDA
+    # fallback (a synthesised sec_ id) -- both count as placed. Activity 5 of person 9 is
+    # unrelated noise.
+    return pd.DataFrame({
+        "person_id":      [1,         7,           9],
+        "activity_index": [1,         3,           5],
+        "location_id":    ["shop_42", "sec_12345", "leis_1"],
+        "geometry":       [Point(10, 10), Point(20, 20), Point(0, 0)],
+    })
+
+
+def test_resolve_joint_anchors_copies_the_adults_location_to_each_child():
+    anchors, stats = resolve_joint_anchors(_links(), _pass1_locations())
+    assert list(anchors.columns) == ANCHOR_COLUMNS
+    assert anchors[["person_id", "activity_index", "location_id"]].values.tolist() == [
+        [2, 1, "shop_42"], [3, 1, "shop_42"], [6, 2, "sec_12345"],
+    ]
+    assert anchors["geometry"].iloc[0] == Point(10, 10)
+    assert anchors["geometry"].iloc[2] == Point(20, 20)
+    assert stats == {"n_links": 3, "n_resolved": 3, "n_unresolved": 0}
+
+
+def test_resolve_joint_anchors_counts_an_adult_activity_without_a_location():
+    locations = _pass1_locations()
+    locations = locations[locations["person_id"] != 7]
+    anchors, stats = resolve_joint_anchors(_links(), locations)
+    assert anchors["person_id"].tolist() == [2, 3]
+    assert stats == {"n_links": 3, "n_resolved": 2, "n_unresolved": 1}
+
+
+def test_resolve_joint_anchors_with_no_links_is_empty():
+    anchors, stats = resolve_joint_anchors(_links().iloc[0:0], _pass1_locations())
+    assert list(anchors.columns) == ANCHOR_COLUMNS and len(anchors) == 0
+    assert stats == {"n_links": 0, "n_resolved": 0, "n_unresolved": 0}
+
+
+def _child_trips():
+    # child 2: home -> shop (activity 1) -> home; child 3: home -> shop -> leisure -> home
+    return pd.DataFrame({
+        "person_id":         [2,      2,      3,      3,         3],
+        "trip_index":        [0,      1,      0,      1,         2],
+        "preceding_purpose": ["home", "shop", "home", "shop",    "leisure"],
+        "following_purpose": ["shop", "home", "shop", "leisure", "home"],
+    }, index=[10, 11, 12, 13, 14])  # non-monotonic index on purpose
+
+
+def test_rewrite_anchored_activities_marks_both_sides_regardless_of_purpose():
+    anchors = pd.DataFrame({"person_id": [2, 3], "activity_index": [1, 2],
+                            "location_id": ["a", "b"], "geometry": [Point(0, 0), Point(1, 1)]})
+    out = rewrite_anchored_activities(_child_trips(), anchors, PASSIVE_LINKED_PURPOSE)
+    # child 2 activity 1 = destination of trip 0, origin of trip 1
+    assert out.loc[10, "following_purpose"] == PASSIVE_LINKED_PURPOSE
+    assert out.loc[11, "preceding_purpose"] == PASSIVE_LINKED_PURPOSE
+    # child 3 activity 2 (leisure) = destination of trip 1, origin of trip 2
+    assert out.loc[13, "following_purpose"] == PASSIVE_LINKED_PURPOSE
+    assert out.loc[14, "preceding_purpose"] == PASSIVE_LINKED_PURPOSE
+    # untouched: child 3's shop activity (index 1) and every home
+    assert out.loc[12, "following_purpose"] == "shop" and out.loc[13, "preceding_purpose"] == "shop"
+    assert (out["preceding_purpose"] == "home").sum() == 2
+    assert (out["following_purpose"] == "home").sum() == 2
+
+
+def test_rewrite_anchored_activities_returns_a_copy_and_handles_no_anchors():
+    trips = _child_trips()
+    out = rewrite_anchored_activities(trips, pd.DataFrame(columns=ANCHOR_COLUMNS), PASSIVE_LINKED_PURPOSE)
+    pd.testing.assert_frame_equal(out, trips)
+    assert out is not trips

@@ -67,6 +67,32 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
     return out
 
 
+def rewrite_anchored_activities(df_trips: pd.DataFrame, df_anchors: pd.DataFrame,
+                                fixed_purpose: str) -> pd.DataFrame:
+    """Return a COPY of the trips frame where BOTH sides of every anchored activity carry
+    ``fixed_purpose``, whatever the plan-level purpose was (issue #385, ADR-0118).
+
+    Unlike :func:`rewrite_linked_escort_trips`, which only touches activities whose purpose
+    is already ``escort``, the passive joint anchor applies to ``shop`` / ``leisure`` /
+    ``other`` activities, so the rewrite is keyed on ``(person_id, activity_index)`` alone.
+    A trip's ``preceding_purpose`` is activity ``trip_index``, its ``following_purpose``
+    activity ``trip_index + 1``. Only the chainsolver-local problem construction sees this
+    frame; the persisted plans keep the real purpose. Positional boolean masks, so a
+    non-monotonic row index is handled.
+    """
+    out = df_trips.copy()
+    if len(df_anchors) == 0:
+        return out
+    anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
+    preceding_activity = pd.MultiIndex.from_arrays([out["person_id"], out["trip_index"]])
+    following_activity = pd.MultiIndex.from_arrays([out["person_id"], out["trip_index"] + 1])
+    mask_preceding = preceding_activity.isin(anchored)
+    mask_following = following_activity.isin(anchored)
+    out.loc[out.index[mask_preceding], "preceding_purpose"] = fixed_purpose
+    out.loc[out.index[mask_following], "following_purpose"] = fixed_purpose
+    return out
+
+
 def _build_escort_distance_factor_map(context):
     """{activity_name: factor} for escort distance-by-type (A3), or None when OFF.
 

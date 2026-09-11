@@ -182,6 +182,7 @@ from .srv_candidates import (  # noqa: F401  (re-exports)
 )
 from .escort import (  # noqa: F401  (re-exports)
     _build_escort_distance_factor_map,
+    rewrite_anchored_activities,
     rewrite_linked_escort_trips,
 )
 from .srv_location_types import (  # noqa: F401  (re-exports)

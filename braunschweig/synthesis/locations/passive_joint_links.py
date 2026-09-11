@@ -211,3 +211,49 @@ def build_passive_joint_links(df_persons: pd.DataFrame, df_trips: pd.DataFrame, 
         stats["n_adult_is_linked_child"], stats["n_duplicate_dropped"],
     )
     return links, stats
+
+
+def _empty_anchors() -> pd.DataFrame:
+    return pd.DataFrame({"person_id": pd.Series(dtype="int64"),
+                         "activity_index": pd.Series(dtype="int64"),
+                         "location_id": pd.Series(dtype=object),
+                         "geometry": pd.Series(dtype=object)})
+
+
+def resolve_joint_anchors(links: pd.DataFrame, df_locations: pd.DataFrame
+                          ) -> tuple[pd.DataFrame, dict]:
+    """Anchor rows for the linked CHILD activities, taken from the adults' PLACED locations.
+
+    ``df_locations`` is the pass-1 chainsolver output (``person_id, activity_index,
+    location_id, geometry``; solver rows AND fallback rows -- both are placements). A link
+    whose adult activity has no location row stays unresolved: the child then keeps the
+    independent draw in pass 2 (counted, logged). Returns ``(anchor_rows, stats)`` with
+    :data:`ANCHOR_COLUMNS` sorted by ``(person_id, activity_index)`` -- the same shape as
+    the #201 ``linked_location_rows``, so the stage appends and dict-ifies both alike --
+    and ``stats = {n_links, n_resolved, n_unresolved}``. Pure; no randomness.
+    """
+    stats = {"n_links": int(len(links)), "n_resolved": 0, "n_unresolved": 0}
+    if len(links) == 0:
+        return _empty_anchors(), stats
+    placed = df_locations[ANCHOR_COLUMNS].drop_duplicates(["person_id", "activity_index"],
+                                                          keep="first")
+    placed = placed.rename(columns={"person_id": "adult_person_id",
+                                    "activity_index": "adult_activity_index"})
+    merged = links.merge(placed, on=["adult_person_id", "adult_activity_index"], how="left")
+    resolved = merged["geometry"].notna()
+    stats["n_resolved"] = int(resolved.sum())
+    stats["n_unresolved"] = int((~resolved).sum())
+    anchors = merged.loc[resolved, ["child_person_id", "child_activity_index",
+                                    "location_id", "geometry"]]
+    anchors = anchors.rename(columns={"child_person_id": "person_id",
+                                      "child_activity_index": "activity_index"})
+    anchors = anchors.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
+    anchors["person_id"] = anchors["person_id"].astype("int64")
+    anchors["activity_index"] = anchors["activity_index"].astype("int64")
+    logger.info(
+        "%s anchors resolved for %d/%d links (%.1f%%); %d adult activities without a "
+        "placed location -> the child keeps the independent draw.",
+        _LOG_TAG, stats["n_resolved"], stats["n_links"],
+        100.0 * stats["n_resolved"] / stats["n_links"], stats["n_unresolved"],
+    )
+    return anchors, stats
