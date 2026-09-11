@@ -7,10 +7,15 @@ byte-identical to the input (ruling R2).
 """
 from __future__ import annotations
 
+import dataclasses
+import logging
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
 
+from braunschweig.popsim.departure_time_model import OFFSET_COLUMN
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement
 
@@ -118,6 +123,42 @@ def test_home_person_with_match_gets_donor_chain_renumbered():
     assert diagnostics["n_trips_removed"] == 2 + 2  # p2's original 2 rows + p3's (absent) 2 rows
     assert diagnostics["n_trips_added"] == 3
     assert diagnostics["n_extra_columns_nulled"] == 1
+
+
+def test_recomputed_offset_column_is_not_nulled_or_counted_as_an_extra():
+    """Ruling A-R8 (issue #123 review fix round 1).
+
+    Once the trips frame carries OFFSET_COLUMN (issue #123, Phase 0 Task 1), it must be treated
+    as a RECOMPUTED column, not as a genuine "no donor-side value" extra: apply_per_person_jitter
+    overwrites it for every replaced row a few lines after ``_replaced_rows`` would otherwise have
+    nulled it, so nulling it first only inflated ``n_extra_columns_nulled`` by one for a null
+    nobody ever observes in the output. This fixture adds ``OFFSET_COLUMN`` on top of the
+    pre-existing trips fixture (which already has ONE genuine extra column, ``raw_mid_extra``) and
+    checks: ``n_extra_columns_nulled`` stays at the pre-existing count (still 1, not 2); the
+    replaced person's recorded offset is non-null and IDENTICAL for every trip in the chain (one
+    draw per person, per the jitter formula); and ``departure_time - OFFSET_COLUMN`` reproduces
+    the rounded DONOR departure -- i.e. Task 1's raw-plus-offset decomposition contract still
+    holds across a donor splice, not only inside ``apply_per_person_jitter`` itself.
+    """
+    trips = _trips_fixture()
+    # Arbitrary pre-existing values for the untouched/kept rows -- irrelevant to this test, which
+    # only checks what happens to the REPLACED person p2's offset.
+    trips[OFFSET_COLUMN] = 0.0
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED)
+
+    # Unchanged from test_home_person_with_match_gets_donor_chain_renumbered above: OFFSET_COLUMN
+    # must NOT add a second nulled extra column on top of raw_mid_extra.
+    assert diagnostics["n_extra_columns_nulled"] == 1
+
+    p2_rows = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert p2_rows[OFFSET_COLUMN].notna().all()
+    assert p2_rows[OFFSET_COLUMN].nunique() == 1   # one draw, shared by every trip in the chain
+
+    donor_departure = _donor_trips_fixture().sort_values("trip_index")["departure_time"].to_numpy()
+    recovered_departure = (p2_rows["departure_time"] - p2_rows[OFFSET_COLUMN]).to_numpy()
+    assert np.allclose(recovered_departure, np.round(donor_departure))
 
 
 def test_home_person_without_match_is_unchanged_and_counted():
@@ -573,3 +614,222 @@ def test_build_day_trips_emits_no_pandas_performance_warning():
     assert list(first_person["is_last_trip"]) == [False, False, True]
     assert first_person["raw_mid_extra_0"].isna().all()
     assert list(first_person["mode"]) == ["bike", "bike", "bike"]
+
+
+# ---------------------------------------------------------------------------
+# Departure-time model on the spliced home-office chains (issue #123 Task 4, ADR-0114).
+# The replaced rows carry a DONOR's day placed on a RECEIVING person, so the start-time model
+# must be applied with the RECEIVING person's own attributes (ruling A-R7); ``departure_time=None``
+# keeps today's eqasim jitter byte-identically.
+# ---------------------------------------------------------------------------
+
+SRV_REFERENCE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "eqasim-data", "data", "braunschweig", "srv")
+
+
+def _receiving_persons():
+    """Synthetic-schema attributes for the fixture's persons: p2 (the replaced one) is an
+    employed adult, so its mapping cell is ``(employed, <first purpose of the donor chain>)``."""
+    return pd.DataFrame({
+        "person_id": ["p1", "p2", "p3", "p4", "p5"],
+        "household_id": [1, 2, 3, 4, 5],
+        "age": [40, 41, 42, 43, 44],
+        "employed": [True, True, True, True, False],
+    })
+
+
+def _departure_time_settings(model="srv_mapped", **overrides):
+    from braunschweig.popsim.departure_time_model import load_departure_time_reference
+
+    settings = dict(
+        model=model,
+        reference=load_departure_time_reference(SRV_REFERENCE_DIR) if model == "srv_mapped" else None,
+        min_reference_n=200, min_model_n=1, max_median_shift_hours=2.0,
+        persons=_receiving_persons())
+    settings.update(overrides)
+    return plan_replacement.DepartureTimeSettings(**settings)
+
+
+def test_replaced_rows_use_the_departure_time_model_when_settings_are_given():
+    """With settings the replaced rows go through ``apply_departure_time_model`` instead of the
+    eqasim jitter: the offset is recorded once per person, the whole donor chain moves rigidly,
+    the first departure lands inside the SrV support of the receiving person's cell, and no
+    untouched row is affected."""
+    from braunschweig.popsim.departure_time_model import BIN_MINUTES
+
+    trips = _trips_fixture()
+    # The real pre-assignment table always carries the recorded offset (trips_stage.run writes
+    # it); build_day_trips only keeps output columns the INPUT frame has, so a fixture without
+    # it would silently drop the very column this test reads.
+    trips[OFFSET_COLUMN] = 0.0
+    settings = _departure_time_settings()
+    day_trips, diagnostics = plan_replacement.build_day_trips(
+        trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture(),
+        random_seed=RANDOM_SEED, departure_time=settings)
+
+    p2_rows = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert len(p2_rows) == 3
+    assert p2_rows[OFFSET_COLUMN].nunique() == 1          # one offset for the whole chain
+    donor = _donor_trips_fixture().sort_values("trip_index").reset_index(drop=True)
+    offset = float(p2_rows[OFFSET_COLUMN].iloc[0])
+    assert np.allclose(p2_rows["departure_time"], np.round(donor["departure_time"] + offset))
+    assert np.allclose(p2_rows["arrival_time"], np.round(donor["arrival_time"] + offset))
+
+    # The donor's first leg goes to "work" and p2 is employed, so the mapping cell is
+    # (employed, work); the mapped first departure must sit in a bin that cell has mass in.
+    cell = settings.reference[(settings.reference["segment"] == "employed")
+                              & (settings.reference["purpose"] == "work")]
+    support = set(cell.loc[cell["share_derounded"] > 0.0, "bin_15min"].astype(int))
+    assert int(p2_rows["departure_time"].iloc[0] // (BIN_MINUTES * 60)) in support
+    # The model ran and reported itself, so a run log can state which model produced the day.
+    assert diagnostics["departure_time"]["model"] == "srv_mapped"
+    assert diagnostics["departure_time"]["n_persons"] == 1
+
+    # Untouched persons keep their original rows exactly.
+    untouched = ["p1", "p4", "p5"]
+    pd.testing.assert_frame_equal(
+        day_trips[day_trips["person_id"].isin(untouched)][list(trips.columns)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True),
+        trips[trips["person_id"].isin(untouched)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True))
+
+
+def test_departure_time_none_keeps_the_eqasim_jitter_byte_identically():
+    """The default (``departure_time=None``) must reproduce the pre-Task-4 output exactly, so
+    turning the model off is a genuine no-op rather than "close enough"."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED)
+    b, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=None)
+    pd.testing.assert_frame_equal(a, b)
+
+    # ... and it IS the eqasim jitter, not a model that happens to agree: the same donor rows
+    # jittered directly with the same seed give the same times.
+    expected = plan_replacement.apply_per_person_jitter(
+        _donor_trips_fixture().sort_values("trip_index").reset_index(drop=True)
+        .assign(person_id="p2"), RANDOM_SEED)
+    p2_rows = a[a["person_id"] == "p2"].sort_values("trip_index").reset_index(drop=True)
+    assert p2_rows["departure_time"].tolist() == expected["departure_time"].tolist()
+
+
+def test_eqasim_uniform_settings_are_byte_identical_to_no_settings_at_all():
+    """The reporting-day stage ALWAYS passes settings, so its OFF path is
+    ``DepartureTimeSettings(model="eqasim_uniform")`` -- which must produce exactly the frame the
+    pre-Task-4 ``departure_time=None`` call produced, or turning the feature off would still move
+    every spliced home-office day."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED)
+    b, diagnostics = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(model="eqasim_uniform"))
+    pd.testing.assert_frame_equal(a, b)
+    assert diagnostics["departure_time"]["model"] == "eqasim_uniform"
+
+
+def test_the_settings_use_the_receiving_persons_attributes_not_the_donors():
+    """Ruling A-R7: the mapping cell comes from the RECEIVING person. Two runs that differ ONLY
+    in the receiving person's age (school-age vs employed adult) must map the same donor chain
+    into different reference cells, i.e. produce different times."""
+    trips = _trips_fixture()
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    adult = _departure_time_settings()
+    child_persons = _receiving_persons()
+    child_persons.loc[child_persons["person_id"] == "p2", ["age", "employed"]] = [10, False]
+    child = _departure_time_settings(persons=child_persons)
+
+    a, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=adult)
+    b, _ = plan_replacement.build_day_trips(*args, random_seed=RANDOM_SEED, departure_time=child)
+    p2_a = a[a["person_id"] == "p2"]["departure_time"].tolist()
+    p2_b = b[b["person_id"] == "p2"]["departure_time"].tolist()
+    assert p2_a != p2_b
+
+
+def test_the_departure_time_settings_are_frozen():
+    """A frozen dataclass: the settings are read by the replacement and reported in the run log,
+    so they must not be mutated between the two.
+
+    The expected exception is ``dataclasses.FrozenInstanceError`` specifically (fix round 1): a
+    bare ``Exception`` would also pass if the assignment failed for an unrelated reason -- e.g.
+    the attribute having been renamed -- and would then no longer prove the class is frozen.
+    """
+    settings = _departure_time_settings(model="eqasim_uniform")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        settings.model = "srv_mapped"
+
+
+def _population_ranking_context(n=500, purpose="work", group="employed"):
+    """A POPULATION ranking base (ruling A-R18) for the replaced persons' cell: ``n`` population
+    persons with a raw first departure on the quarter-hour clock grid, in the cell the fixture's
+    donor chain and receiving person p2 resolve to ((work, employed))."""
+    return pd.DataFrame({
+        "person_id": ["pop%04d" % index for index in range(n)],
+        "raw_first_departure_seconds": [7 * 3600.0 + (index % 8) * 900.0 for index in range(n)],
+        "purpose": purpose, "group": group})
+
+
+def test_the_ranking_context_maps_a_spliced_set_too_thin_to_rank_itself(caplog):
+    """Ruling A-R18 (issue #123 cleanup item 7). At the PRODUCTION ``min_model_n`` of 50 a single
+    replaced person cannot be mapped at all when the replaced set is its own ranking base: the
+    cell fails every rung and the spliced day keeps the donor's own start time although the
+    population has hundreds of persons in that same (work, employed) cell.
+
+    With the population as the ranking base the same person maps at ``purpose_group``, and the
+    log line names the base -- a mapped quantile means nothing without knowing what it was
+    computed in.
+    """
+    trips = _trips_fixture()
+    trips[OFFSET_COLUMN] = 0.0
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+
+    alone, diagnostics_alone = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50))
+    alone_cell = diagnostics_alone["departure_time"]["cells"][("work", "employed")]
+    assert alone_cell["level"] == "unmapped"
+    # Without a context the replaced person IS the whole base -- one person, so no rung is usable.
+    assert alone_cell["n_context"] == 1
+    assert diagnostics_alone["departure_time"]["n_ranking_context"] is None
+
+    context = _population_ranking_context()
+    with caplog.at_level(logging.INFO, logger="braunschweig.synthesis.commute_day.plan_replacement"):
+        ranked, diagnostics = plan_replacement.build_day_trips(
+            *args, random_seed=RANDOM_SEED,
+            departure_time=_departure_time_settings(min_model_n=50, ranking_context=context))
+
+    cell = diagnostics["departure_time"]["cells"][("work", "employed")]
+    assert cell["level"] == "purpose_group"
+    assert cell["n_model"] == 1 and cell["n_context"] == 500
+    assert cell["n_context_pooled"] == 500          # the base actually ranked in at that rung
+    assert diagnostics["departure_time"]["n_ranking_context"] == 500
+    assert "ranking base from a ranking context of 500 population person(s)" in caplog.text
+    # The mapping actually moved the day: the same spliced chain now starts somewhere the
+    # unmapped (de-rounding-only) run cannot reach.
+    assert (ranked[ranked["person_id"] == "p2"]["departure_time"].tolist()
+            != alone[alone["person_id"] == "p2"]["departure_time"].tolist())
+
+
+def test_the_ranking_context_never_changes_the_persons_whose_day_is_replaced():
+    """The context is a ranking BASE, never a work list: adding 500 population persons must not
+    give any of them a spliced day, nor touch a row of the persons this call does not replace."""
+    trips = _trips_fixture()
+    trips[OFFSET_COLUMN] = 0.0
+    args = (trips, _states_fixture(), _matches_fixture(), _donor_trips_fixture())
+    alone, _ = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50))
+    ranked, diagnostics = plan_replacement.build_day_trips(
+        *args, random_seed=RANDOM_SEED,
+        departure_time=_departure_time_settings(min_model_n=50,
+                                                ranking_context=_population_ranking_context()))
+
+    # The same persons appear either way (p3 is absent under both, and no pop* person appears).
+    assert set(ranked["person_id"]) == set(alone["person_id"])
+    assert diagnostics["departure_time"]["n_persons"] == 1        # only p2 was shifted
+    untouched = ["p1", "p4", "p5"]
+    pd.testing.assert_frame_equal(
+        ranked[ranked["person_id"].isin(untouched)][list(trips.columns)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True),
+        trips[trips["person_id"].isin(untouched)]
+        .sort_values(["person_id", "trip_index"]).reset_index(drop=True))

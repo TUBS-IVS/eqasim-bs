@@ -370,6 +370,10 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
         "sizes, not a gap: SrV is an expanded survey of 18,223 respondents, the model side a "
         "(possibly sampled) synthetic population.",
         "",
+        "The dep_hour_share_* rows compare de-rounded model times with as-reported SrV times "
+        "at hour level and are biased at the hour boundary; the unbiased 15-minute comparison "
+        "lives in analysis/departure_time_vs_srv/.",
+        "",
         "## Headline (segment 'all')",
         "",
     ]

@@ -417,6 +417,11 @@ class EntdSource:
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        departure_time_model: str = "eqasim_uniform",
+        departure_time_reference: pd.DataFrame = None,
+        departure_time_min_reference_n: int = 200,
+        departure_time_min_model_n: int = 50,
+        departure_time_max_median_shift_hours: float = 2.0,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -454,7 +459,20 @@ class EntdSource:
         gap, so a deliberately tuned value would otherwise sit silently inert in a
         popsim_open config.
 
-        The six checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
+        ``departure_time_model`` (issue #123, ADR-0114) is rejected on a
+        non-default value because the ENTD trip build
+        (:func:`braunschweig.popsim.sources.entd_trips.build_trips`) applies the
+        eqasim per-person jitter itself and never reaches
+        ``braunschweig.popsim.trips_stage.run``, where the departure-time model is
+        applied -- a configured ``srv_mapped`` popsim_open run would otherwise
+        produce un-calibrated departure times while the config claimed the
+        opposite. Its three NUMERIC parameters and the loaded
+        ``departure_time_reference`` are accepted and ignored WITHOUT a rejection,
+        the ``closure_dwell_min_obs`` treatment: they only size a mapping the
+        model rejection already guarantees never runs, and the model key's own
+        message names the feature, so nothing tuned can pass unnoticed.
+
+        The seven checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
         deferred import, like every other ``config_keys`` reference from this
         package -- see that module's own docstring for why it cannot be imported at
         THIS module's level) rather than a second hand-typed literal, so this
@@ -463,11 +481,20 @@ class EntdSource:
         (issue #373 fix round 1).
         """
         from braunschweig.popsim.stage.config_keys import (
-            ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL,
+            ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MODEL,
             KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
             KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
             KEY_W_ZWECK_10_AS_LEISURE,
         )
+        if departure_time_model != ENTD_REJECTED_KEYS[KEY_DEPARTURE_TIME_MODEL]:
+            raise ValueError(
+                f"[popsim.sources.entd] departure_time_model={departure_time_model!r} is not "
+                "supported for the ENTD donor (this adapter builds its trips through "
+                "braunschweig.popsim.sources.entd_trips.build_trips, which applies the eqasim "
+                "per-person jitter itself and never reaches the departure-time model in "
+                "braunschweig.popsim.trips_stage.run); set departure_time_model to "
+                f"{ENTD_REJECTED_KEYS[KEY_DEPARTURE_TIME_MODEL]!r} for popsim_open runs."
+            )
         if escort_passive_from_adult != ENTD_REJECTED_KEYS[KEY_ESCORT_PASSIVE_FROM_ADULT]:
             raise ValueError(
                 "[popsim.sources.entd] escort_passive_from_adult=True is not supported for "

@@ -1,0 +1,86 @@
+dataset: srv2023_activity_duration_reference
+title: SrV 2023 activity-duration bands by segment and purpose (committed aggregate, HOLD-OUT
+  reference of the departure-time model)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown.
+crs: null
+roles:
+- validation_reference
+- reference_table
+used_by:
+- braunschweig.analysis.synthesis.departure_time_vs_srv
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_departure_times.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_departure_time_reference.csv in one run from the same harmonised
+    frames (braunschweig.calibration.srv_plan_structure.harmonise_srv). The raw microdata is
+    local-only and never committed.
+  script: scripts/extract_srv_departure_times.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_activity_duration_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed with every
+    clone, like every other committed SrV aggregate here. Definitions live in
+    braunschweig/calibration/srv_departure_times.py (activity_duration_table); the shape is
+    validated AT LOAD by srv_departure_times.validate_activity_duration_table (exactly the six
+    DURATION_BAND_LABELS per (segment, purpose) cell, one n_unweighted per cell, shares summing
+    to 1 within REFERENCE_SUM_TOLERANCE for a non-empty cell), so a silently short cell cannot
+    reach a comparison. Tests: tests/test_srv_departure_times.py (synthetic frames plus a pin
+    test against this committed file), tests/test_departure_time_vs_srv.py (loader validation and
+    the comparison against the real file).
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe and weight as for srv2023_departure_time_reference (at_home_zero only,
+  GEWICHT_W_ZENSUS, the same harmonise_srv guards that RAISE rather than adapt).
+
+  Definition: an activity's duration is the NEXT trip's dep_min minus the CURRENT trip's arr_min
+  within the same person, in hours; the activity is attributed to the CURRENT trip's DESTINATION
+  purpose, i.e. the activity that trip leads into. Bands (srv_departure_times.DURATION_BAND_EDGES_H
+  / _LABELS): 0-0.5, 0.5-1, 1-2, 2-4, 4-8, 8+ h. A trip with no following trip (every person's
+  last trip of the day) or a missing arrival / next departure has no measurable duration; a
+  measured duration outside [0, WORK_ACTIVITY_MAX_H = 20 h] is EXCLUDED and counted, never
+  clipped. ASSUMPTION: WORK_ACTIVITY_MAX_H is inherited from srv_plan_structure, where it bounds
+  WORK activities, and is generalised here to every purpose -- no purpose-specific plausibility
+  ceiling is available.
+
+  Shape and exclusions (measured 2026-09-10, committed in the file's header): 282 rows; DENSE
+  over the six bands for every (segment, purpose) with at least one included leg, while a cell
+  with ZERO contributing legs is OMITTED entirely -- the opposite convention to the
+  departure-time reference, and deliberate: this table is read by humans and by the analysis
+  stage, never coarsened programmatically by a model. n_legs_total 58,148;
+  n_legs_excluded_no_next_or_missing_time 15,610 (expected: every person's last trip);
+  n_legs_excluded_out_of_range 0 (no 20 h+ gap occurred in the real data -- the exclusion PATH is
+  exercised by a synthetic 25 h gap in the unit tests, not by the delivery);
+  n_legs_included 42,538, of which 19 carry a destination purpose harmonise_srv could not map and
+  are therefore counted ONLY in the pooled purpose 'all'.
+
+  Wolfsburg (03103) is not surveyed by SrV, the standard caveat of every SrV table here.
+notes: |
+  This table is HOLD-OUT in its ENTIRETY (ADR-0114): the departure-time model shifts a person's
+  whole chain by one whole-second offset and therefore leaves every activity duration bitwise
+  unchanged, so nothing here is ever fitted. Its purpose is to make that claim FALSIFIABLE -- if
+  a run's realised duration bands move against this reference, the chain shift did not stay
+  rigid, or something upstream of it changed. Read only by
+  braunschweig.analysis.synthesis.departure_time_vs_srv (activity_duration.csv); the model itself
+  never opens it.
+
+  Companion table: srv2023_departure_time_reference.csv (data record
+  srv2023_departure_time_reference), whose position 'first' rows ARE the model's calibration
+  target. Both come out of ONE run of scripts/extract_srv_departure_times.py and share one
+  provenance header format, so they are always regenerated together from the same source commit
+  and the same raw delivery. Feature record: departure_time_model. Contributor note:
+  docs/codebase/notes/departure-time-model.md.

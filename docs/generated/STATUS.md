@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 90 | stages: 124 | datasets: 73 | ADRs: 116 | run manifests: 39
+- Features: 91 | stages: 125 | datasets: 75 | ADRs: 117 | run manifests: 39
 
 ## Population synthesis
 
@@ -54,11 +54,12 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-16 stage(s), 9 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`
+16 stage(s), 9 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Commute-day-state model (far/weekly out-commuters)](../registry/features/commute_day_state.yml) | active | ON | A/-/- | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
+| [Departure-time model (precision-aware de-rounding and SrV first-departure mapping)](../registry/features/departure_time_model.yml) | active | ON | A/i/- | unvalidated | [#123](https://github.com/TUBS-IVS/eqasim-bs/issues/123) |
 | [Passive escort legs take the purpose of the paired same-household adult leg](../registry/features/escort_passive_from_adult.yml) | active | ON | A/i/- | unvalidated | [#372](https://github.com/TUBS-IVS/eqasim-bs/issues/372) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
@@ -164,7 +165,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-3 stage(s), 3 in the production DAG. Datasets: `srv2023_plan_structure_reference`
+4 stage(s), 4 in the production DAG. Datasets: `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|

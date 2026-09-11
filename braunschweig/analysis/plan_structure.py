@@ -249,8 +249,8 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
         "pid": trips["person_id"].values,
         "seq": pd.to_numeric(trips["trip_index"], errors="coerce").astype(int).values,
         "weight": 1.0,
-        "purpose": _harmonise_purpose(trips["following_purpose"], "following_purpose"),
-        "prev_purpose": _harmonise_purpose(trips["preceding_purpose"], "preceding_purpose"),
+        "purpose": harmonise_purpose(trips["following_purpose"], "following_purpose"),
+        "prev_purpose": harmonise_purpose(trips["preceding_purpose"], "preceding_purpose"),
         "dep_min": pd.to_numeric(trips["departure_time"], errors="coerce").values
         / SECONDS_PER_MINUTE,
         "arr_min": pd.to_numeric(trips["arrival_time"], errors="coerce").values
@@ -269,7 +269,7 @@ def harmonise_model(persons: pd.DataFrame, trips: pd.DataFrame,
     return out, harmonised_trips
 
 
-def _harmonise_purpose(values: pd.Series, column: str) -> np.ndarray:
+def harmonise_purpose(values: pd.Series, column: str) -> np.ndarray:
     """Map an eqasim purpose column onto the seven harmonised purposes.
 
     The popsim_mid trip builder emits exactly
@@ -289,6 +289,13 @@ def _harmonise_purpose(values: pd.Series, column: str) -> np.ndarray:
                        list(SRV.PURPOSES), sorted(text[~known].unique().tolist())[:10],
                        SRV.UNKNOWN_PURPOSE, 100.0 * n_unknown / len(text) if len(text) else 0.0)
     return text.where(known, SRV.UNKNOWN_PURPOSE).values
+
+
+#: Historical private name, kept as an alias so existing call sites keep working. The function is
+#: public because the departure-time comparison (:mod:`braunschweig.analysis.departure_time`)
+#: must harmonise a leg's destination purpose by exactly this rule -- two model-side comparisons
+#: mapping purposes by two implementations could silently disagree.
+_harmonise_purpose = harmonise_purpose
 
 
 # --------------------------------------------------------------------------- model table

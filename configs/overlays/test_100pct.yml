@@ -10,6 +10,7 @@ run:
   - braunschweig.analysis.simwrapper_export
   - braunschweig.analysis.analysis_suite
   - braunschweig.analysis.synthesis.plan_structure_vs_srv
+  - braunschweig.analysis.synthesis.departure_time_vs_srv
   - braunschweig.analysis.verbindungen_validation
   - braunschweig.analysis.synthesis.commute_distance_by_kreis
   - braunschweig.analysis.synthesis.work_participation_by_kreis

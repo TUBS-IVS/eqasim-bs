@@ -23,6 +23,7 @@ may only name run manifests (no run, no claim).
 | [cordon_gates](../registry/features/cordon_gates.yml) | cordon | active | ON | A/A/- | 5 | -- | marker | none | unvalidated | pending |
 | [cordon_mode_balancer](../registry/features/cordon_mode_balancer.yml) | cordon | active | ON | A/A/- | 2 | -- | marker | committed | unvalidated | pending |
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
+| [departure_time_model](../registry/features/departure_time_model.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 13 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [driving_licence_enrichment](../registry/features/driving_licence_enrichment.yml) | attributes | active | off | -/-/A | 1 | -- | none | committed | unvalidated | pending |

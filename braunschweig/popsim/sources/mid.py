@@ -177,6 +177,11 @@ class MidSource:
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        departure_time_model: str = "eqasim_uniform",
+        departure_time_reference: pd.DataFrame = None,
+        departure_time_min_reference_n: int = 200,
+        departure_time_min_model_n: int = 50,
+        departure_time_max_median_shift_hours: float = 2.0,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -221,6 +226,18 @@ class MidSource:
         passive_pair_max_gap_minutes:
             maximum |departure-time gap| in MINUTES for that pairing; inert
             while ``escort_passive_from_adult`` is False.
+        departure_time_model:
+            which START-TIME model shapes the first departure (issue #123,
+            ADR-0114): ``"eqasim_uniform"`` (default, unchanged jitter),
+            ``"derounded"`` or ``"srv_mapped"``. Any other value raises
+            ``ValueError`` inside the implementation.
+        departure_time_reference:
+            the loaded SrV first-departure reference, required for
+            ``"srv_mapped"``.
+        departure_time_min_reference_n / departure_time_min_model_n:
+            thresholds of the ``"srv_mapped"`` coarsening ladder.
+        departure_time_max_median_shift_hours:
+            median-|shift| warning threshold per mapping cell, in HOURS.
 
         Returns
         -------
@@ -240,4 +257,9 @@ class MidSource:
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            departure_time_model=departure_time_model,
+            departure_time_reference=departure_time_reference,
+            departure_time_min_reference_n=departure_time_min_reference_n,
+            departure_time_min_model_n=departure_time_min_model_n,
+            departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
         )

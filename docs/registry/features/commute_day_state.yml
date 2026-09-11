@@ -351,4 +351,10 @@ notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restric
   general_day_absence draw (a person is trip-less when commute_day_state == "absent" OR the
   general draw''s day_absence_state != "present"); the composition rule lives ONCE, in
   braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s general_absence keyword
-  -- see the feature record general_day_absence, never copied here.'
+  -- see the feature record general_day_absence, never copied here.
+
+  Since issues #123 / #384 (ADR-0114) the spliced home-office chains also go through the
+  configurable departure-time model instead of the plain eqasim jitter: plan_replacement applies
+  it exactly once per replaced person, keyed by the RECEIVING person group and the donor chain
+  first purpose -- see the feature record departure_time_model and the contributor note
+  docs/codebase/notes/departure-time-model.md, never copied here.'
