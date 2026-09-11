@@ -49,6 +49,17 @@ and shared across runs (Tier B2).
    `DiaryMatchReport.n_crossed_employment_boundary` and logged as a rate (WARNING when the
    guard is on). The weekend caller passes no hard keys, so its draw sequence is
    byte-identical.
+   Since #386 (ADR-0118) the diary caller additionally passes
+   `age_band_edges=weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES` while
+   `diary_match_fine_child_age_bands` is on, which splits the coarse 6-13 child band into
+   6-9 and 10-13 so a primary-school child cannot inherit a 13-year-old's school day. The
+   same two reading rules apply, with one important difference from the employment key:
+   `age_band` stays a SOFT key, so the ladder may still relax it, and a crossing is
+   therefore legitimate rather than a defect. The counter
+   `DiaryMatchReport.n_crossed_fine_child_age_band` (over `.n_remapped_in_split_child_band`,
+   the remapped 6-13-year-olds) is measured against the FINE edges in BOTH arms, so the
+   flag-OFF arm reports today's rate and an A/B compares like with like; no threshold is
+   asserted and the line is always INFO. The weekend caller keeps the coarse edges.
 5. **Fact attachment** — `diary_facts.attach_plan_source_facts`. Joins the facts of
    the FINAL plan source onto every person as `src_<fact>` columns. Also
    unconditional (see the propagation contract below).

@@ -31,6 +31,7 @@ production:
   - braunschweig.population.popsim.diary_plan_match
   - braunschweig.population.popsim.exclude_holiday_plan_sources
   - braunschweig.population.popsim.diary_match_hard_employment
+  - braunschweig.population.popsim.diary_match_fine_child_age_bands
 introduced:
   issue: '#365'
   pr: null
@@ -56,6 +57,11 @@ evidence:
   - tests/test_diary_plan_match.py::test_reassign_reports_zero_crossings_with_hard_employment_and_counts_them_without
   - tests/test_diary_plan_match.py::test_reassign_warns_when_a_crossing_survives_hard_employment
   - tests/test_completed_donor_diary_match.py::test_diary_match_keeps_the_employment_boundary_and_reports_the_crossing_rate
+  - tests/test_weekend_plan_match.py::test_match_person_with_default_age_band_edges_reproduces_todays_draw_sequence
+  - tests/test_weekend_plan_match.py::test_fine_child_bands_prefer_a_primary_school_donor_over_a_13_year_old
+  - tests/test_diary_plan_match.py::test_reassign_with_fine_child_bands_prefers_a_primary_school_donor
+  - tests/test_diary_plan_match.py::test_reassign_counts_and_logs_the_fine_child_band_crossing_rate
+  - tests/test_completed_donor_diary_match.py::test_diary_match_uses_the_fine_child_bands_by_default_and_reports_the_crossing_rate
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_completed_donor_stage.py::test_build_completed_donor_off_matches_pre_task_inline_pipeline
@@ -102,6 +108,14 @@ evidence:
       histogram is not directly comparable to arm 3's. On the arm-3 100 % run only 2 of the 74,898
       remaps relaxed past employed (match_level_counts={0: 74896, 3: 2}), so the flag is a GUARD
       against a future pool composition rather than a correction of a measured defect.
+      SINCE #386 (ADR-0118) the pass also counts DiaryMatchReport.n_crossed_fine_child_age_band
+      over n_remapped_in_split_child_band -- remaps of persons aged 6-13 (the one coarse band
+      weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES splits) whose donor lands in a different FINE
+      band -- and logs it as n/total with a percentage. Unlike the employment counter this one is
+      measured against the FINE edges in BOTH arms, so the flag-OFF arm reports today's rate and
+      the two arms of an A/B are directly comparable, and it is NOT required to be 0 with the flag
+      on: age_band stays a SOFT key the relaxation ladder may drop, so a residual is a legitimate
+      relaxation rather than a defect. No threshold is asserted for that reason.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv

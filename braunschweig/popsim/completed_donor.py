@@ -18,9 +18,9 @@ The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issu
 match, in that order, CONTINUING the same seeded RNG instance -- they are new
 steps appended to the byte-identity contract above, never inserted before or
 between the existing two. The stage now also depends on the MiD Wege (trip)
-table (``mid.load_mid_wege``) and five additional flags (diary_plan_match,
+table (``mid.load_mid_wege``) and six additional flags (diary_plan_match,
 exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg,
-diary_match_hard_employment);
+diary_match_hard_employment, diary_match_fine_child_age_bands);
 it remains sampling- and controls-independent, so it is still shareable across
 runs via the cache_share store. The eight ``src_*`` plan-source fact columns are
 attached to ``persons`` ALWAYS (even with diary_plan_match OFF) -- they are
@@ -119,6 +119,7 @@ def build_completed_donor(
     exclude_rbw_legs: bool = True,
     drop_leading_arrive_home_leg: bool = True,
     diary_match_hard_employment: bool = True,
+    diary_match_fine_child_age_bands: bool = True,
     diary_trace_path: Optional[Union[str, Path]] = None,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
@@ -173,6 +174,14 @@ def build_completed_donor(
         inherit the diary of a donor of their own employment class (issue #368).
         Ignored when ``diary_plan_match_on`` is False. Only the diary match is
         affected: the weekend-plan match above keeps the unconstrained ladder, and
+        ``match_person`` draws exactly ONE weighted value per call either way, so the
+        shared completion RNG stream is unchanged (byte-identity contract above).
+    diary_match_fine_child_age_bands:
+        When True (default) and ``diary_plan_match_on``, the ``age_band`` match key uses
+        the fine child bands (6-9 / 10-13 instead of one 6-13 band) while re-drawing a
+        plan source, so a primary-school child can no longer inherit a 13-year-old's
+        school day (issue #386). Ignored when ``diary_plan_match_on`` is False. Only the
+        diary match is affected: the weekend-plan match above keeps the coarse bands, and
         ``match_person`` draws exactly ONE weighted value per call either way, so the
         shared completion RNG stream is unchanged (byte-identity contract above).
     diary_trace_path:
@@ -258,6 +267,7 @@ def build_completed_donor(
             exclude_holidays=exclude_holiday_plan_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             hard_employment=diary_match_hard_employment,
+            fine_child_age_bands=diary_match_fine_child_age_bands,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
@@ -318,14 +328,15 @@ def configure(context):
     cache_share store.
     """
     from braunschweig.popsim.stage import (
-        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DIARY_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
+        KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_PLAN_MATCH,
-        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_DIARY_MATCH_FINE_CHILD_AGE_BANDS, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT,
+        DEFAULT_DIARY_PLAN_MATCH, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
+        DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
     )
     context.config(KEY_MID)
     context.config("random_seed")
@@ -341,6 +352,10 @@ def configure(context):
     # only (like KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES): the popsim stage never reads it
     # and inherits the invalidation through its completed_donor stage dependency.
     context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT)
+    # Issue #386: same argument for the fine child age bands -- they change which donor a
+    # diary-less child draws, so flipping them must rebuild the donor, not reuse the cache.
+    context.config(KEY_DIARY_MATCH_FINE_CHILD_AGE_BANDS,
+                   DEFAULT_DIARY_MATCH_FINE_CHILD_AGE_BANDS)
 
 
 def execute(context) -> CompletedDonor:
@@ -351,9 +366,10 @@ def execute(context) -> CompletedDonor:
     PopulationSim seed and the expansion donor tables.
     """
     from braunschweig.popsim.stage import (
-        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DIARY_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
+        KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     mid_dir = context.config(KEY_MID)
     random_seed = int(context.config("random_seed"))
@@ -367,6 +383,7 @@ def execute(context) -> CompletedDonor:
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     diary_match_hard_employment = bool(context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT))
+    diary_match_fine_child_age_bands = bool(context.config(KEY_DIARY_MATCH_FINE_CHILD_AGE_BANDS))
 
     result = build_completed_donor(
         mid_dir,
@@ -379,6 +396,7 @@ def execute(context) -> CompletedDonor:
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         diary_match_hard_employment=diary_match_hard_employment,
+        diary_match_fine_child_age_bands=diary_match_fine_child_age_bands,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
     )
 
@@ -392,4 +410,8 @@ def execute(context) -> CompletedDonor:
         context.set_info("diary_plan_match_share", result.diary_report.share_remapped)
         context.set_info("diary_plan_match_crossed_employment_boundary",
                          result.diary_report.n_crossed_employment_boundary)
+        context.set_info("diary_plan_match_remapped_in_split_child_band",
+                         result.diary_report.n_remapped_in_split_child_band)
+        context.set_info("diary_plan_match_crossed_fine_child_age_band",
+                         result.diary_report.n_crossed_fine_child_age_band)
     return result

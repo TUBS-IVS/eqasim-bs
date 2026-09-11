@@ -39,6 +39,7 @@ decisions:
 - ADR-0059
 - ADR-0106
 - ADR-0109
+- ADR-0118
 notes: >-
   INPUT: reads the MiD Haushalte and Personen tables as before, and since #365 the MiD WEGE table
   as well (the diary facts and the realisable-source classification are derived from it), plus the
@@ -53,7 +54,16 @@ notes: >-
   to weekend_plan_match.match_person so the key ladder never relaxes past employment; surviving
   crossings (only reachable through the whole-pool fallback) are counted in
   DiaryMatchReport.n_crossed_employment_boundary, logged as a rate and published via
-  set_info("diary_plan_match_crossed_employment_boundary"). Like its sibling
+  set_info("diary_plan_match_crossed_employment_boundary"), and since #386 (ADR-0118)
+  .diary_match_fine_child_age_bands, which makes the SAME call pass
+  age_band_edges=weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES so 6-9 and 10-13-year-olds stop
+  being interchangeable donors; crossings of that fine band are counted in
+  DiaryMatchReport.n_crossed_fine_child_age_band over .n_remapped_in_split_child_band, logged as
+  a rate and published via set_info("diary_plan_match_crossed_fine_child_age_band") /
+  ("diary_plan_match_remapped_in_split_child_band"). The WEEKEND plan match in the same stage
+  keeps the coarse bands -- its draw sequence is a pinned byte-identity contract -- and
+  match_person consumes exactly one rng value per call under either edge set, so the shared
+  completion stream is unchanged. Like its sibling
   .exclude_holiday_plan_sources the key is declared HERE only (no other stage reads it), which is
   what puts it into this stage's config hash: flipping it rebuilds the donor AND, as a descendant,
   re-runs popsim. The stage

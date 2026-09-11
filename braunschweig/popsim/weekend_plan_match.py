@@ -92,20 +92,45 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
 
 
 AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
+#: Refinement of :data:`AGE_BAND_EDGES` that splits the 6-13 child band into 6-9
+#: (primary school, Grundschule) and 10-13 (lower secondary), for the DIARY plan
+#: match only (issue #386). Under the coarse band a first-grader and a 13-year-old
+#: are interchangeable donors although their school days differ systematically:
+#: on the raw MiD 2023 B1 (measured 2026-09-09) a first education leg before 07:00
+#: occurs for 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds, and
+#: secondary-school ways are longer than primary-school ways. Every coarse edge is
+#: KEPT and only the value 9 is added, so the 0-5, 14-17 and 18+ bands -- and
+#: therefore which adult donors are interchangeable -- are unchanged.
+FINE_CHILD_AGE_BAND_EDGES = (-1, 5, 9, 13, 17, 200)
 
 
-def _age_band(ages: pd.Series) -> np.ndarray:
-    return pd.cut(ages, bins=list(AGE_BAND_EDGES), labels=False).to_numpy()
+def _validate_age_band_edges(edges, *, what: str) -> list:
+    """Return ``edges`` as a list after checking it is a usable ``pd.cut`` bin spec.
+
+    Raises here, naming the parameter and the caller, rather than letting ``pd.cut``
+    fail deep inside :func:`_person_keys` with a message that names neither.
+    """
+    values = list(edges)
+    if len(values) < 2:
+        raise ValueError(f"{what}: age_band_edges needs at least 2 edges, got {values}")
+    if any(b <= a for a, b in zip(values, values[1:])):
+        raise ValueError(f"{what}: age_band_edges must be strictly increasing, got {values}")
+    return values
+
+
+def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
+    """Band index of each age under ``edges`` (default: the coarse production bands)."""
+    return pd.cut(ages, bins=list(edges), labels=False).to_numpy()
 
 
 def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
     """Greedily pair each target member to a distinct donor member by
     (coarse age band, sex), falling back to age band only, then any free donor.
     """
-    d_band = _age_band(donor_members["HP_ALTER"])
+    d_band = age_band_index(donor_members["HP_ALTER"])
     d_sex = donor_members["HP_SEX"].to_numpy()
     used = np.zeros(len(donor_members), dtype=bool)
-    t_band = _age_band(target_members["HP_ALTER"])
+    t_band = age_band_index(target_members["HP_ALTER"])
     t_sex = target_members["HP_SEX"].to_numpy()
     pairs = []
     for tpos in range(len(target_members)):
@@ -123,9 +148,9 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
 PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
 
 
-def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
+def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES) -> pd.DataFrame:
     return pd.DataFrame({
-        "age_band": _age_band(persons["HP_ALTER"]),
+        "age_band": age_band_index(persons["HP_ALTER"], edges=age_band_edges),
         "sex": persons["HP_SEX"].to_numpy(),
         "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
         # Canonical MiD employment (ILO-style `erwerb`), same single source of truth
@@ -137,7 +162,8 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
     }, index=persons.index)
 
 
-def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
+def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
+                 age_band_edges=AGE_BAND_EDGES):
     """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
 
     Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
@@ -153,13 +179,21 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
     the boundary was crossed (see ``diary_plan_match.reassign_diaryless_plan_sources``,
     ``DiaryMatchReport.n_crossed_employment_boundary``).
 
+    ``age_band_edges`` are the ``pd.cut`` bin edges behind the ``age_band`` key
+    (default :data:`AGE_BAND_EDGES`, today's coarse 0-5 / 6-13 / 14-17 / 18+ bands).
+    :data:`FINE_CHILD_AGE_BAND_EDGES` additionally separates 6-9 from 10-13 and is
+    used by the DIARY match only (issue #386); the weekend match keeps the default,
+    whose draw sequence is a byte-identity contract. Like ``hard_keys``, the parameter
+    changes WHICH donor is drawn, never HOW MANY rng values are consumed.
+
     ``level`` counts SOFT-key relaxations, so its maximum is ``len(soft keys)``:
     with ``hard_keys`` empty that is ``len(PERSON_KEYS_BY_PRIORITY)`` (unchanged),
     with one hard key it is one less. Callers that log level histograms must
     therefore read them against the hard-key setting of the run.
 
-    BYTE-IDENTITY (mandatory): with the default ``hard_keys=frozenset()`` this
-    function takes the same branches, builds the same pools in the same order and
+    BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()`` and
+    ``age_band_edges=AGE_BAND_EDGES`` this function takes the same branches, builds
+    the same pools in the same order and
     makes the same number of ``weighted_choice`` calls (exactly one, whichever
     branch returns) as the pre-``hard_keys`` implementation. Both callers --
     ``reassign_weekend_plan_sources`` and ``diary_plan_match.
@@ -179,8 +213,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
             raise ValueError(
                 f"match_person: unknown hard match key(s) {unknown_keys}; valid keys are "
                 f"{list(PERSON_KEYS_BY_PRIORITY)}")
-    keys = _person_keys(weekday_persons)
-    tkeys = _person_keys(pd.DataFrame([target_row])).iloc[0]
+    edges = _validate_age_band_edges(age_band_edges, what="match_person")
+    keys = _person_keys(weekday_persons, age_band_edges=edges)
+    tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges).iloc[0]
     hard = [key for key in PERSON_KEYS_BY_PRIORITY if key in hard_keys]
     soft = [key for key in PERSON_KEYS_BY_PRIORITY if key not in hard_keys]
     hard_mask = pd.Series(True, index=weekday_persons.index)
