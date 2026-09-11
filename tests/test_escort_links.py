@@ -115,6 +115,57 @@ def test_escort_linked_is_a_fixed_purpose_boundary():
     assert p["origin"][0][0] == 5.0 and p["origin"][0][1] == 5.0
 
 
+# --- Task 3: passive_linked as a second anchored fixed purpose (issue #385) ---
+
+
+def test_passive_linked_is_an_anchored_fixed_purpose():
+    assert "passive_linked" in problems_mod.FIXED_PURPOSES
+    assert problems_mod.ANCHORED_PURPOSES == ("escort_linked", "passive_linked")
+
+
+def test_passive_linked_destination_and_origin_resolve_through_the_anchor_dict():
+    """home -> [passive_linked shop with mum] -> leisure -> home: the joint
+    activity (index 1) is a fixed boundary resolved via activity_anchors, so
+    the leisure activity (index 2) is placed between the anchor and home."""
+    df = _trips_frame([
+        (5, 0, "home", "passive_linked", "car_passenger", 600.0),
+        (5, 1, "passive_linked", "leisure", "walk", 300.0),
+        (5, 2, "leisure", "home", "walk", 300.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [5], "home": [_P(0, 0)], "work": [None], "education": [None],
+    })
+    anchors = {(5, 1): _P(7, 7)}
+    problems = list(problems_mod.find_assignment_problems(
+        df, df_locations, activity_anchors=anchors))
+    # One problem: the leisure activity between the anchored joint activity and home.
+    assert len(problems) == 1
+    p = problems[0]
+    assert p["purposes"] == ["leisure"]
+    assert p["origin"][0][0] == 7.0 and p["origin"][0][1] == 7.0
+    assert p["destination"][0][0] == 0.0 and p["destination"][0][1] == 0.0
+    assert p["activity_index"] == 2
+
+
+def test_passive_linked_without_an_anchor_entry_fails_fast():
+    """A passive_linked boundary WITHOUT an anchor entry is a bug in the
+    caller's assignment (the joint-activity rewrite and the anchor table must
+    be built from the same assignment); it must raise, not fall back."""
+    df = _trips_frame([
+        (5, 0, "home", "passive_linked", "car_passenger", 600.0),
+        (5, 1, "passive_linked", "leisure", "walk", 300.0),
+        (5, 2, "leisure", "home", "walk", 300.0),
+    ])
+    df_locations = pd.DataFrame({
+        "person_id": [5], "home": [_P(0, 0)], "work": [None], "education": [None],
+    })
+    # _anchor_coordinates raises KeyError (not RuntimeError) for a missing entry;
+    # this mirrors test_missing_anchor_entry_fails_fast for escort_linked.
+    with pytest.raises(KeyError, match="passive_linked"):
+        list(problems_mod.find_assignment_problems(
+            df, df_locations, activity_anchors={}))
+
+
 def test_problems_without_escort_linked_column_unchanged():
     df = _trips_frame([
         (1, 0, "home", "shop", "car", 600.0),
