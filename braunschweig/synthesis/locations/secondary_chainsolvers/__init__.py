@@ -838,15 +838,32 @@ def _validate_candidate_flag_prerequisites(*, sec_enabled, shop_daily_split,
         )
 
 
+def _with_pass_label(line, pass_label):
+    """Insert ``pass_label`` right after the stage prefix of an already-built report line.
+
+    The reporting helpers build their lines with the plain stage prefix, so under the
+    two-pass composition (issue #385) the two passes' boundary-clip blocks would be
+    indistinguishable in the log. Inserting the label here gives them the same prefix as
+    the progress prints of the same pass; with ``pass_label == ""`` (the one-pass path)
+    the line is returned byte-identical.
+    """
+    prefix = "[braunschweig.secondary_chainsolvers]"
+    if not pass_label or not line.startswith(prefix):
+        return line
+    return prefix + pass_label + line[len(prefix):]
+
+
 def _report_excursion_boundary_clip(plans_df, problems, df_secondary, *,
-                                    leisure_subtype_decider, srv_location_decider):
+                                    leisure_subtype_decider, srv_location_decider,
+                                    pass_label=""):
     """Excursion boundary-clip transparency (Task 6, issue #127).
 
     Reads the already-sampled desired distances (plans_df["distance_meters"])
     and the already-finalised candidate set (df_secondary) -- this reporting
     places nothing and draws no random number; see the module-level comment
     above _excursion_boundary_clip_summary. A no-op when the leisure subtype
-    split is OFF (no "leisure_excursion" legs exist then).
+    split is OFF (no "leisure_excursion" legs exist then). ``pass_label``
+    prefixes the printed lines exactly like the solve progress prints.
     """
     if leisure_subtype_decider is not None and srv_location_decider is not None:
         # Issue #262: with SrV placement ON, "leisure_excursion" is a DISTANCE
@@ -855,7 +872,7 @@ def _report_excursion_boundary_clip(plans_df, problems, df_secondary, *,
         # per DRAWN placement category, each against its own candidate pool (and
         # hence its own reach ceiling).
         for line in _srv_excursion_boundary_clip_lines(plans_df, problems, df_secondary):
-            print(line)
+            print(_with_pass_label(line, pass_label))
     elif leisure_subtype_decider is not None:
         desired_m, anchors_xy = _excursion_desired_distances_and_anchors_m(plans_df, problems)
         if desired_m.size > 0:
@@ -877,7 +894,7 @@ def _report_excursion_boundary_clip(plans_df, problems, df_secondary, *,
             _, n_clipped, n_total = boundary_clip_share(desired_m, ceiling_m)
         else:
             n_clipped, n_total = 0, 0
-        print(_excursion_boundary_clip_summary(n_clipped, n_total))
+        print(_with_pass_label(_excursion_boundary_clip_summary(n_clipped, n_total), pass_label))
 
 
 def _log_subtype_draw_rates(context, subtype_stats, desired_by_category, *,
@@ -1136,27 +1153,27 @@ def _build_shared_solve_state(context, df_primary, crs):
         configured_procs = context.config("processes")
     shard_attempts = int(context.config("braunschweig.chainsolvers.shard_attempts"))
 
+    # Only what a pass (or execute()'s consolidated reporting) actually reads. The seven
+    # flag booleans used above -- shop_daily_split, leisure_subtype_split,
+    # other_subtype_split, escort_purpose_on, leisure_visit_building_potential,
+    # srv_location_types_on, sec_enabled -- are deliberately NOT exported: they steer the
+    # decider/candidate construction that happens HERE, and every consumer downstream
+    # branches on the built object (a decider is None exactly when its flag is OFF), so
+    # exporting them would create a second, drift-prone copy of the same fact.
     return {
         "distance_distributions": distance_distributions,
         "leisure_corr": leisure_corr,
         "random": random,
-        "shop_daily_split": shop_daily_split,
         "shop_subtype_decider": shop_subtype_decider,
-        "leisure_subtype_split": leisure_subtype_split,
         "leisure_subtype_decider": leisure_subtype_decider,
-        "other_subtype_split": other_subtype_split,
         "other_subtype_decider": other_subtype_decider,
-        "escort_purpose_on": escort_purpose_on,
         "escort_location_decider": escort_location_decider,
         "escort_distance_factor_map": escort_distance_factor_map,
-        "leisure_visit_building_potential": leisure_visit_building_potential,
-        "srv_location_types_on": srv_location_types_on,
         "srv_location_decider": srv_location_decider,
         "fallback_strategy": fallback_strategy,
         "rda_index_cache": rda_index_cache,
         "df_secondary": df_secondary,
         "df_secondary_legacy": df_secondary_legacy,
-        "sec_enabled": sec_enabled,
         "scorer_spec": scorer_spec,
         "locations_df": locations_df,
         "solver_name": solver_name,
@@ -1273,7 +1290,8 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
         # legs either; still print the (0/0) line so the rate stays
         # observable on this early-return path too (no silent gap).
         if leisure_subtype_decider is not None:
-            print(_excursion_boundary_clip_summary(0, 0), flush=True)
+            print(_with_pass_label(_excursion_boundary_clip_summary(0, 0), pass_label),
+                  flush=True)
         df_loc = gpd.GeoDataFrame(
             pd.DataFrame.from_records(
                 fallback_rows,
@@ -1286,6 +1304,11 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
         )
         # No bounded problems -> carla placed nothing; every problem went to the
         # fallback, which execute()'s consolidated accounting reports as such.
+        # Unlike the pre-extraction inline code, which RETURNED the stage output here,
+        # execute() continues after this return: the #201 linked_location_rows are still
+        # appended and the success rate is still printed even on this path. That is
+        # intended -- the escort-linked rows used to be dropped silently -- and is
+        # unreachable on a real run, where bounded legs always exist.
         return df_loc, df_conv, {
             "n_problems": len(problems),
             "n_unbounded": len(unbounded_idx),
@@ -1304,6 +1327,7 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
         plans_df, problems, df_secondary,
         leisure_subtype_decider=leisure_subtype_decider,
         srv_location_decider=srv_location_decider,
+        pass_label=pass_label,
     )
 
     # One base seed drawn from the deterministic RandomState. Drawing exactly
@@ -1409,6 +1433,75 @@ def _concat_desired_by_category(reports):
     return merged
 
 
+def _compose_two_pass(df_trips, df_primary, escort_activity_anchors, links, shared, *,
+                      solve=None):
+    """Two solver passes (issue #385, ADR-0118): adults and unlinked persons first, then the
+    linked children with their joint activities anchored at the adults' placed locations.
+
+    ``links`` is the table from ``passive_joint_links.build_passive_joint_links``. Pass-1
+    persons are everybody NOT appearing as a linked child; their #201 escort anchors travel
+    with them. After pass 1 the adults' placed rows resolve the children's anchors
+    (``resolve_joint_anchors``); the children's trips get the fixed purpose
+    ``passive_linked`` on both sides of each anchored activity and are solved in pass 2
+    with the escort anchors of pass-2 persons plus the joint anchors. The anchored child
+    rows (adult location_id + geometry) are appended; unresolved links leave the child on
+    the ordinary draw path (counted). With no links, pass 1 covers everybody and pass 2 is
+    skipped. ``solve`` defaults to :func:`_solve_problem_set` (injectable for tests).
+    Returns ``(df_locations, df_convergence, reports, anchor_stats)``.
+    """
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        PASSIVE_LINKED_PURPOSE, resolve_joint_anchors,
+    )
+    if solve is None:
+        solve = _solve_problem_set
+    crs = shared["crs"]
+    pass2_persons = set(links["child_person_id"].tolist())
+    in_pass2 = df_trips["person_id"].isin(pass2_persons).to_numpy()
+
+    def _anchors_for(person_filter):
+        if escort_activity_anchors is None:
+            return None
+        return {key: point for key, point in escort_activity_anchors.items()
+                if person_filter(key[0])}
+
+    df_loc_1, df_conv_1, report_1 = solve(
+        df_trips[~in_pass2], df_primary, _anchors_for(lambda p: p not in pass2_persons),
+        shared, pass_label=" [pass 1/2: adults + unlinked]" if pass2_persons else "")
+    if not pass2_persons:
+        return df_loc_1, df_conv_1, [report_1], {"n_links": 0, "n_resolved": 0, "n_unresolved": 0}
+
+    anchor_rows, anchor_stats = resolve_joint_anchors(links, df_loc_1)
+    anchors_2 = _anchors_for(lambda p: p in pass2_persons) or {}
+    anchors_2.update({(row.person_id, row.activity_index): row.geometry
+                      for row in anchor_rows.itertuples(index=False)})
+    trips_2 = rewrite_anchored_activities(df_trips[in_pass2], anchor_rows, PASSIVE_LINKED_PURPOSE)
+    df_loc_2, df_conv_2, report_2 = solve(
+        trips_2, df_primary, anchors_2, shared, pass_label=" [pass 2/2: linked children]")
+
+    def _concat(frames):
+        # Empty frames are dropped first: pandas derives the result dtype from ALL entries,
+        # so an empty pass-2 result (whose columns carry no dtype information) would coerce
+        # the bool "valid" column of the stage output to object/float -- pandas deprecates
+        # exactly that coercion. Every frame empty -> concat them anyway, which yields the
+        # empty result frame with its columns.
+        non_empty = [frame for frame in frames if len(frame)]
+        return pd.concat(non_empty or frames, ignore_index=True)
+
+    frames = [df_loc_1, df_loc_2]
+    if len(anchor_rows):
+        frames.append(gpd.GeoDataFrame(anchor_rows, geometry="geometry", crs=crs))
+    df_locations = gpd.GeoDataFrame(_concat(frames), geometry="geometry", crs=crs)
+    df_convergence = _concat([df_conv_1, df_conv_2])
+    print(
+        "[braunschweig.secondary_chainsolvers] passive joint location: "
+        f"{len(pass2_persons):,} linked children solved in pass 2; "
+        f"{anchor_stats['n_resolved']:,}/{anchor_stats['n_links']:,} joint activities anchored at "
+        f"the adult's placed location, {anchor_stats['n_unresolved']:,} unresolved -> independent draw.",
+        flush=True,
+    )
+    return df_locations, df_convergence, [report_1, report_2], anchor_stats
+
+
 def execute(context):
     # Import eagerly (not used here directly) to fail fast with a clear error if
     # the optional dependency is missing, rather than deep inside a worker; the
@@ -1423,19 +1516,55 @@ def execute(context):
         df_trips["arrival_time"] - df_trips["departure_time"]
     )
 
+    # The trips frame with the PLAN-LEVEL purposes, before the #201 escort rewrite below
+    # (which returns a rewritten COPY when the link is on, leaving this binding intact).
+    # The passive joint links are built on it: the adult's escort activities are excluded
+    # by the link rule either way (an escort purpose is not secondary), reading the
+    # original frame just keeps that rule readable.
+    df_trips_original = df_trips
+
     df_trips, linked_location_rows, escort_activity_anchors = (
         _apply_escort_household_link(context, df_trips)
     )
     df_primary, crs = _prepare_primary(context)
     shared = _build_shared_solve_state(context, df_primary, crs)
 
-    # ONE pass over the whole population: frame-equal to the pre-extraction inline
-    # solve. The two-pass composition (adults first, then the children whose joint
-    # activities anchor at the adults' placed locations) is the ON branch of
-    # escort_passive_joint_location, issue #385.
-    df_locations, df_convergence, report = _solve_problem_set(
-        df_trips, df_primary, escort_activity_anchors, shared)
-    reports = [report]
+    # ON: the two-pass composition (adults first, then the children whose joint
+    # activities anchor at the adults' placed locations), issue #385 / ADR-0118.
+    # OFF: ONE pass over the whole population, frame-equal to the pre-extraction
+    # inline solve.
+    if bool(context.config("escort_passive_joint_location")):
+        from braunschweig.synthesis.locations.passive_joint_links import build_passive_joint_links
+        # synthesis.population.sampled is already a declared dependency of this stage
+        # (configure), so reading it here adds no edge to the DAG.
+        df_persons_link = context.stage("synthesis.population.sampled")
+        persons_columns = ["person_id", "household_id", "source_H_ID", "source_P_ID"]
+        missing = [c for c in persons_columns if c not in df_persons_link.columns]
+        if missing:
+            raise RuntimeError(
+                "[braunschweig.secondary_chainsolvers] escort_passive_joint_location needs "
+                f"{missing} on synthesis.population.sampled (popsim_mid persons carry them); "
+                "disable the flag for producers without plan-source ids."
+            )
+        links, link_stats = build_passive_joint_links(
+            df_persons_link[persons_columns], df_trips_original)
+        # The link rate in the stage's own print stream, next to the #201 escort-link line
+        # (build_passive_joint_links also logs it, and its per-exclusion breakdown, at INFO).
+        # Unlinked children keep the INDEPENDENT draw, so this is the primary-vs-fallback
+        # rate of this feature and must stay observable per run (CLAUDE.md).
+        print(
+            "[braunschweig.secondary_chainsolvers] passive joint link: "
+            f"{link_stats['n_linked']:,}/{link_stats['n_passive_paired']:,} paired passive "
+            f"legs linked to the adult's activity "
+            f"({100.0 * link_stats['link_rate'] if link_stats['n_passive_paired'] else 0.0:.1f}%); "
+            "unlinked children keep the independent draw."
+        )
+        df_locations, df_convergence, reports, _anchor_stats = _compose_two_pass(
+            df_trips, df_primary, escort_activity_anchors, links, shared)
+    else:
+        df_locations, df_convergence, report = _solve_problem_set(
+            df_trips, df_primary, escort_activity_anchors, shared)
+        reports = [report]
 
     # Draw-rate logging and the consolidated PRIMARY (carla) vs FALLBACK accounting
     # run ONCE, over ALL passes, so the rates stay observable as ONE explicit split

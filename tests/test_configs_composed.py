@@ -46,6 +46,7 @@ FEATURE_FLAGS_ON = [
     # dropped line would silently ship a different purpose taxonomy or a different
     # estimation universe while every test stayed green.
     "w_zweck_10_as_leisure", "escort_passive_from_adult",
+    "escort_passive_joint_location",
     "purpose_subtype_codeplan_sentinels", "leisure_unspecified_subtype",
     "secondary_mid_weekday_legs_only", "exclude_no_answer_purpose_legs",
     # Run resource recorder (issue #350). Guarded here because a run without its
