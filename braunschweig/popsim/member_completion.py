@@ -61,16 +61,20 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim.sampling import weighted_choice
+# ONE owner for the donor-matching age bands: weekend_plan_match defines both edge
+# sets and the banding helper, and this module's mirror role matching bands ages for
+# exactly the same purpose (issue #386). A second copy here is what let the two drift
+# apart in the first place. No import cycle: weekend_plan_match does not import this
+# module (completed_donor imports both).
+from braunschweig.popsim.weekend_plan_match import (
+    AGE_BAND_EDGES, FINE_CHILD_AGE_BAND_EDGES, age_band_index,
+)
 
 logger = logging.getLogger(__name__)
 
 # Relaxation hierarchy AFTER the hard equal-size (H_GR) condition: each key
 # narrows the mirror candidate pool only while candidates remain.
 MIRROR_MATCH_KEYS = ("hhgr_gr", "oek_status", "RegioStaR7")
-
-# Coarse age-band edges for the role matching of present members against the
-# mirror household's members (pd.cut bins; ages in completed years).
-AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
 
 
 @dataclass(frozen=True)
@@ -89,11 +93,6 @@ class MemberCompletionReport:
     n_households_incomplete: int
     n_households_filled: int
     n_persons_added: int
-
-
-def _age_band(ages: pd.Series) -> pd.Series:
-    """Map ages (completed years) to coarse band labels for role matching."""
-    return pd.cut(ages, bins=list(AGE_BAND_EDGES), labels=False)
 
 
 def _select_mirror(
@@ -124,20 +123,33 @@ def _select_mirror(
 
 
 def _match_present_members(
-    present: pd.DataFrame, mirror_members: pd.DataFrame
+    present: pd.DataFrame, mirror_members: pd.DataFrame, *,
+    age_band_edges=AGE_BAND_EDGES,
 ) -> list:
     """Greedily match present host members to mirror members by (age band, sex).
 
     Returns the positional indices (into ``mirror_members``) of the mirror
     members that were matched (i.e. that correspond to an already-present host
-    member). Matching prefers an exact (coarse age band, sex) match, falls back
+    member). Matching prefers an exact (age band, sex) match, falls back
     to the age band only, then to any unused mirror member.
+
+    The mirror members this does NOT mark are the ones copied in as fillers, so the
+    bands decide which surplus member the host receives. Under the coarse
+    :data:`AGE_BAND_EDGES` a present 7-year-old can consume the mirror's 13-year-old
+    slot, and the host then receives a SECOND 7-year-old instead of the 13-year-old
+    sibling the mirror household actually has -- the assumption stated in the module
+    docstring says the latter (issue #386). Pass
+    :data:`FINE_CHILD_AGE_BAND_EDGES` to separate 6-9 from 10-13.
+
+    Consumes no rng, and marks ``min(len(present), len(mirror_members))`` members under
+    ANY edge set, so the filler COUNT is unchanged and the caller's seeded mirror draw
+    stays in lockstep.
     """
-    mirror_bands = _age_band(mirror_members["HP_ALTER"]).to_numpy()
+    mirror_bands = age_band_index(mirror_members["HP_ALTER"], edges=age_band_edges)
     mirror_sex = mirror_members["HP_SEX"].to_numpy()
     used = np.zeros(len(mirror_members), dtype=bool)
 
-    present_bands = _age_band(present["HP_ALTER"]).to_numpy()
+    present_bands = age_band_index(present["HP_ALTER"], edges=age_band_edges)
     present_sex = present["HP_SEX"].to_numpy()
 
     for band, sex in zip(present_bands, present_sex):
@@ -159,6 +171,7 @@ def complete_members(
     household_id: str = "H_ID",
     size_col: str = "H_GR",
     kernwo_col: str = "kernwo",
+    fine_child_age_bands: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, MemberCompletionReport]:
     """Fill member-incomplete households by mirror-household sampling.
 
@@ -181,6 +194,11 @@ def complete_members(
             constrained to the same day type (weekday/weekend) as the
             incomplete host. If absent or if the data contains only one
             day type, the behaviour is identical to the legacy path.
+        fine_child_age_bands: When True (default, issue #386), band 6-13-year-olds
+            finely (6-9 / 10-13) in the mirror role matching, so a present
+            primary-school child does not consume the mirror's secondary-school slot
+            and leave the host with a duplicate of itself. Changes WHICH mirror member
+            is copied, never how many -- the seeded mirror draw is unaffected.
 
     Returns:
         ``(households, persons_filled, MemberCompletionReport)``. The household
@@ -190,6 +208,7 @@ def complete_members(
     """
     from braunschweig.popsim import day_type as _dt
 
+    age_band_edges = FINE_CHILD_AGE_BAND_EDGES if fine_child_age_bands else AGE_BAND_EDGES
     persons = persons.copy()
     persons["member_imputed"] = False
     persons["source_H_ID"] = persons[household_id]
@@ -290,7 +309,8 @@ def complete_members(
         ).reset_index(drop=True)
 
         n_missing = int(row[size_col]) - len(present)
-        matched_positions = _match_present_members(present, mirror_members)
+        matched_positions = _match_present_members(
+            present, mirror_members, age_band_edges=age_band_edges)
         unmatched = mirror_members.drop(index=matched_positions)
         fillers = unmatched.head(n_missing).copy()
 

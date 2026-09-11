@@ -39,6 +39,7 @@ decisions:
 - ADR-0059
 - ADR-0106
 - ADR-0109
+- ADR-0118
 notes: >-
   INPUT: reads the MiD Haushalte and Personen tables as before, and since #365 the MiD WEGE table
   as well (the diary facts and the realisable-source classification are derived from it), plus the
@@ -53,7 +54,24 @@ notes: >-
   to weekend_plan_match.match_person so the key ladder never relaxes past employment; surviving
   crossings (only reachable through the whole-pool fallback) are counted in
   DiaryMatchReport.n_crossed_employment_boundary, logged as a rate and published via
-  set_info("diary_plan_match_crossed_employment_boundary"). Like its sibling
+  set_info("diary_plan_match_crossed_employment_boundary"), and since #386 (ADR-0118)
+  .donor_match_fine_child_age_bands, which makes ALL THREE of this stage's age-matching passes
+  use weekend_plan_match.FINE_CHILD_AGE_BAND_EDGES so 6-9 and 10-13-year-olds stop being
+  interchangeable donors: member completion's mirror role matching
+  (member_completion._match_present_members, reached via mid.load_completed_donor), the weekend
+  match's household member alignment (weekend_plan_match.align_members) together with its
+  person-level fallback and mixed-household sweep, and the diary match's re-draw. It is therefore
+  the one diary-adjacent key that is read REGARDLESS of .diary_plan_match, because the first two
+  passes run either way. Crossings of the fine band are counted in
+  DiaryMatchReport.n_crossed_fine_child_age_band over .n_remapped_in_split_child_band, logged as
+  a rate and published via set_info("diary_plan_match_crossed_fine_child_age_band") /
+  ("diary_plan_match_remapped_in_split_child_band"). The byte-identity contract SURVIVES: none of
+  the three passes consumes a different number of rng values under the fine bands (align_members
+  and _match_present_members draw none and return a band-independent number of pairs;
+  match_person draws exactly one per call), so the shared completion stream stays at the same
+  position and only the ASSIGNMENT changes. One reading consequence: the diary match's remap
+  COUNT differs between the arms, because the weekend match upstream pairs members differently --
+  an A/B compares rates, not raw counts. Like its sibling
   .exclude_holiday_plan_sources the key is declared HERE only (no other stage reads it), which is
   what puts it into this stage's config hash: flipping it rebuilds the donor AND, as a descendant,
   re-runs popsim. The stage

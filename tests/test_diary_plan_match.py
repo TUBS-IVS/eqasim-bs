@@ -66,9 +66,9 @@ def test_realisable_pool_excludes_bad_sources_and_holidays():
 def test_reassign_remaps_only_flagged_sources_and_is_deterministic():
     donors = _donors(); facts = dfm.compute_diary_facts(_wege())
     out1, trace1, rep1 = dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(3),
-                                                             hard_employment=True, **FLAGS)
+                                                             hard_employment=True, fine_child_age_bands=False, **FLAGS)
     out2, trace2, rep2 = dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(3),
-                                                             hard_employment=True, **FLAGS)
+                                                             hard_employment=True, fine_child_age_bands=False, **FLAGS)
     pd.testing.assert_frame_equal(out1, out2)
     remapped = out1[trace1["reason"].isin(dpm.REASONS_REMAP).to_numpy()]
     assert set(zip(remapped["source_H_ID"], remapped["source_P_ID"])) == {(5, 1)}
@@ -82,18 +82,18 @@ def test_reassign_raises_on_empty_pool():
     donors = _donors().iloc[:4]; facts = dfm.compute_diary_facts(_wege())
     with pytest.raises(ValueError, match="realisable"):
         dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(0),
-                                            hard_employment=True, **FLAGS)
+                                            hard_employment=True, fine_child_age_bands=False, **FLAGS)
 
 
 def test_reassign_requires_mobility_columns():
     donors = _donors().drop(columns=["mobil"]); facts = dfm.compute_diary_facts(_wege())
     with pytest.raises(KeyError, match="mobil"):
         dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=np.random.RandomState(0),
-                                            hard_employment=True, **FLAGS)
+                                            hard_employment=True, fine_child_age_bands=False, **FLAGS)
     donors_no_holiday_flag = _donors().drop(columns=["feiertag"])
     with pytest.raises(KeyError, match="feiertag"):
         dpm.reassign_diaryless_plan_sources(donors_no_holiday_flag, donors_no_holiday_flag, facts,
-                                            rng=np.random.RandomState(0), hard_employment=True,
+                                            rng=np.random.RandomState(0), hard_employment=True, fine_child_age_bands=False,
                                             **FLAGS)  # exclude_holidays=True
 
 
@@ -104,7 +104,7 @@ def test_reassign_requires_person_match_columns():
     persons = donors.drop(columns=["HP_ALTER"])
     with pytest.raises(KeyError, match="HP_ALTER"):
         dpm.reassign_diaryless_plan_sources(persons, donors, facts, rng=np.random.RandomState(0),
-                                            hard_employment=True, **FLAGS)
+                                            hard_employment=True, fine_child_age_bands=False, **FLAGS)
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +153,9 @@ def test_reassign_reports_zero_crossings_with_hard_employment_and_counts_them_wi
     donors = _crossing_donors(); facts = dfm.compute_diary_facts(_crossing_wege())
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
         hard_out, _hard_trace, hard_report = dpm.reassign_diaryless_plan_sources(
-            donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True, **FLAGS)
+            donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True, fine_child_age_bands=False, **FLAGS)
     soft_out, _soft_trace, soft_report = dpm.reassign_diaryless_plan_sources(
-        donors, donors, facts, rng=np.random.RandomState(3), hard_employment=False, **FLAGS)
+        donors, donors, facts, rng=np.random.RandomState(3), hard_employment=False, fine_child_age_bands=False, **FLAGS)
 
     assert hard_report.n_remapped == soft_report.n_remapped == 1
     # Hard: the employed donor wins although it shares no soft key.
@@ -177,10 +177,111 @@ def test_reassign_warns_when_a_crossing_survives_hard_employment(caplog):
     facts = dfm.compute_diary_facts(_crossing_wege())
     with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
         out, _trace, report = dpm.reassign_diaryless_plan_sources(
-            donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True, **FLAGS)
+            donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True, fine_child_age_bands=False, **FLAGS)
     assert tuple(out.loc[0, ["source_H_ID", "source_P_ID"]]) == (5, 1)  # fallback, not an exception
     assert report.n_crossed_employment_boundary == 1
     warnings = [r for r in caplog.records
                 if r.levelno == logging.WARNING and "employment boundary crossed" in r.getMessage()]
     assert len(warnings) == 1
     assert "1/1 remaps (100.00%)" in warnings[0].getMessage()
+
+
+# ---------------------------------------------------------------------------
+# Fine child age bands for the diary match -- issue #386
+# ---------------------------------------------------------------------------
+def _child_donors():
+    """One diary-less 7-year-old to remap plus two realisable school-child donors.
+
+    Donor 8 is a 7-year-old (primary school), donor 9 a 13-year-old (lower secondary).
+    Both share every other match key with the target, so under the coarse 6-13 band
+    they are interchangeable and the P_GEW-weighted draw prefers the heavier
+    13-year-old -- the defect of issue #386. Donor 5 is an adult, so the fine band
+    still has a genuine choice to make rather than a single surviving candidate.
+    """
+    return pd.DataFrame({
+        "H_ID": [1, 5, 8, 9], "P_ID": [1, 1, 1, 1],
+        "anzwege1": [803, 2, 2, 2],
+        "mobil": [1, 1, 1, 1],
+        "feiertag": [0, 0, 0, 0],
+        "kernwo": [2, 2, 2, 2],
+        "member_imputed": [False] * 4,
+        "source_H_ID": [1, 5, 8, 9], "source_P_ID": [1, 1, 1, 1],
+        "P_GEW": [1.0, 1.0, 1.0, 1000.0],
+        "HP_ALTER": [7, 40, 7, 13],
+        "HP_SEX": [1, 1, 1, 1],
+        "P_FSCHEIN": [2, 1, 2, 2],
+        "P_TAET": [9, 1, 9, 9],
+        "P_FKARTE": [3, 1, 3, 3],
+    })
+
+
+def _child_wege():
+    """Two direct legs (home -> education -> home) for the three realisable donors."""
+    return pd.DataFrame({
+        "H_ID":      [5, 5, 8, 8, 9, 9],
+        "P_ID":      [1, 1, 1, 1, 1, 1],
+        "W_ID":      [1, 2, 1, 2, 1, 2],
+        "W_ZWECK":   [3, 8, 3, 8, 3, 8],
+        "W_RBW":     [0, 0, 0, 0, 0, 0],
+        "W_SO1":     [1, 809, 1, 809, 1, 809],
+        "wegkm_imp": [3.0, 3.0, 1.5, 1.5, 4.0, 4.0],
+    })
+
+
+def test_reassign_with_fine_child_bands_prefers_a_primary_school_donor():
+    donors = _child_donors(); facts = dfm.compute_diary_facts(_child_wege())
+    coarse_out, _t, coarse_report = dpm.reassign_diaryless_plan_sources(
+        donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True,
+        fine_child_age_bands=False, **FLAGS)
+    fine_out, _t2, fine_report = dpm.reassign_diaryless_plan_sources(
+        donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True,
+        fine_child_age_bands=True, **FLAGS)
+
+    assert coarse_report.n_remapped == fine_report.n_remapped == 1
+    # Today: the 13-year-old's diary wins the weighted draw inside the 6-13 band.
+    assert tuple(coarse_out.loc[0, ["source_H_ID", "source_P_ID"]]) == (9, 1)
+    # With the fine bands the 7-year-old can only inherit a 6-9-year-old's diary.
+    assert tuple(fine_out.loc[0, ["source_H_ID", "source_P_ID"]]) == (8, 1)
+
+
+def test_reassign_counts_and_logs_the_fine_child_band_crossing_rate(caplog):
+    """The crossing count is measured against the FINE bands in BOTH arms, so the
+    OFF arm reports today's rate and the two arms are directly comparable."""
+    donors = _child_donors(); facts = dfm.compute_diary_facts(_child_wege())
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        coarse_report = dpm.reassign_diaryless_plan_sources(
+            donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True,
+            fine_child_age_bands=False, **FLAGS)[2]
+    fine_report = dpm.reassign_diaryless_plan_sources(
+        donors, donors, facts, rng=np.random.RandomState(3), hard_employment=True,
+        fine_child_age_bands=True, **FLAGS)[2]
+
+    # The one remapped person is a 7-year-old, i.e. inside the band the fine edges split.
+    assert coarse_report.n_remapped_in_split_child_band == 1
+    assert fine_report.n_remapped_in_split_child_band == 1
+    assert coarse_report.n_crossed_fine_child_age_band == 1   # got the 13-year-old
+    assert fine_report.n_crossed_fine_child_age_band == 0     # got the 7-year-old
+    assert any("fine child age band crossed by 1/1" in record.getMessage()
+               for record in caplog.records)
+
+
+def test_reassign_fine_child_bands_off_is_byte_identical_to_today():
+    """The OFF path must reproduce the pre-#386 sources AND leave the rng where it was,
+    so enabling the flag never shifts the draws of any later consumer of the shared
+    completion stream."""
+    donors = _donors(); facts = dfm.compute_diary_facts(_wege())
+    off_rng = np.random.RandomState(3)
+    on_rng = np.random.RandomState(3)
+    off_out = dpm.reassign_diaryless_plan_sources(
+        donors, donors, facts, rng=off_rng, hard_employment=True,
+        fine_child_age_bands=False, **FLAGS)[0]
+    # Pre-#386 donor set, pinned by test_reassign_remaps_only_flagged_sources_and_is_deterministic.
+    remapped = off_out[off_out["H_ID"].isin([1, 3, 4, 6, 7])]
+    assert set(zip(remapped["source_H_ID"], remapped["source_P_ID"])) == {(5, 1)}
+
+    dpm.reassign_diaryless_plan_sources(donors, donors, facts, rng=on_rng, hard_employment=True,
+                                        fine_child_age_bands=True, **FLAGS)
+    off_state, on_state = off_rng.get_state(), on_rng.get_state()
+    assert off_state[0] == on_state[0]
+    assert (off_state[1] == on_state[1]).all()
+    assert off_state[2:] == on_state[2:]

@@ -240,6 +240,19 @@ KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_ha
 # stage that declares it used to spell the default as a literal `True`, so the default and
 # the key had two independent homes and could drift apart silently.
 DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
+# Use the fine child age bands (6-9 / 10-13 instead of one 6-13 band) for the
+# `age_band` match key when the diary plan match re-draws a plan source
+# (issue #386). Under the coarse band a first-grader and a 13-year-old are
+# interchangeable donors although their school days differ systematically: on the
+# raw MiD 2023 B1 (measured 2026-09-09) a first education leg before 07:00 occurs
+# for 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds, and secondary-school
+# ways are longer than primary-school ways. The WEEKEND plan match keeps the coarse
+# edges (its draw sequence is a pinned byte-identity contract). Default ON; read
+# ONLY by braunschweig.popsim.completed_donor, which is where the diary match runs,
+# so it is declared there (like diary_match_hard_employment) and reaches the popsim
+# stage through that stage dependency.
+KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.donor_match_fine_child_age_bands"
+DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

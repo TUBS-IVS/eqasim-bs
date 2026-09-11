@@ -315,6 +315,7 @@ rejection is needed here.
 | `education_by_age_kreis_control` | One toggle for three 2-cell (`edu`/`noedu`) controls on the age ranges 0–5, 6–17 and 18+, each with a census-exact band total. **Replaces** `education_participation_kreis_control` |
 | `education_participation_kreis_control` | The replaced all-persons education-participation control; likewise kept for ablation configs |
 | `diary_match_hard_employment` | Forbids the diary plan match from relaxing the `employed` match key, so a person's employment attribute and their work diary cannot come from two different MiD respondents; surviving crossings are counted and logged |
+| `donor_match_fine_child_age_bands` | Bands 6-13-year-olds finely (6-9 / 10-13) wherever the MiD donor build matches a person to a donor by age — member completion's mirror role matching, the weekend plan match's member alignment, and the diary plan match's re-draw — so a primary-school child cannot inherit a 13-year-old's school day; none of the three consumes a different number of random draws, and crossings are counted and logged in both arms |
 
 Enabling a replacement together with the control it replaces — or a replacement
 while `employment_status_kreis_control` is off — fails at **config time** with a
