@@ -133,18 +133,20 @@ assessment:
     imputed purpose from comparable legs -- the policy braunschweig.popsim.missing.resolve applies
     to person attributes -- is a separate owner decision with its own flag and arm, because it
     would change the plan for 0.58 % of legs rather than only the estimations.'
-notes: 'Two smaller instances of the same pattern were MEASURED during the 2026-09-11 sweep and
-  deliberately NOT changed here, because each would move a committed reference or control target
-  rather than an estimation, and each is an order of magnitude smaller: calibration
-  commute_day_state_reference keeps a "missing" state in the denominator of the workday-location
-  shares (0.15 % of the mass, at most 0.82 % in one distance class; share_at_workplace would move
-  0.5209 -> about 0.5217, feeding the state draw''s keep_probability), and
-  srv_participation_universe classes a person with a missing V_ERW as NOT employed (9 persons,
-  0.098 % weighted; the employed control target would move 53.566 % -> 53.619 %). Both are already
-  disclosed in their own committed headers. They are listed in ADR-0117 Consequences so the sweep''s
-  result is complete and neither is re-discovered as new. The sweep also confirmed the parts that
-  are already correct and must not be re-opened: popsim.missing.resolve for all 13 person
-  attributes, the complete W_ZWD no-answer family (599 shop, 699 errand, 799 leisure), the SrV
-  escort destination weights (invalid BHOL excluded, 98.79 % coverage disclosed), the SrV
-  location-type draw (invalid mode and length excluded with rates) and every committed control
-  target (none carries an unknown category).'
+notes: |
+  The 2026-09-11 sweep found four instances in total; all four are fixed. Two are behind this
+  record's own flag (the W_ZWECK-99 purpose and the unguarded trip-length columns). The other two
+  were fixed in the same wave WITHOUT a flag, because each corrects the DENOMINATOR of a committed
+  reference or control target and a corrected denominator has no OFF path: the undetermined
+  reporting-day state left the workday-location share denominator (share_at_workplace 0.5209 ->
+  0.5216 on the all row, up to +0.26 pp on one distance class; the fifth column is renamed
+  state_missing_rate because its denominator differs), and an unreadable SrV employment code
+  became pd.NA instead of "not employed" (employed_share 0.5389 -> 0.5394 for the region; the
+  derived control's nonemployed_work falls by up to 0.23 pp). Both are detailed with their
+  per-class numbers in ADR-0117 Consequences, and neither is part of this feature's flag or arm.
+
+  The sweep also confirmed the parts that are already correct and must not be re-opened:
+  popsim.missing.resolve for all 13 person attributes, the complete W_ZWD no-answer family (599
+  shop, 699 errand, 799 leisure), the SrV escort destination weights (invalid BHOL excluded,
+  98.79 % coverage disclosed), the SrV location-type draw (invalid mode and length excluded with
+  rates) and every committed control target (none carries an unknown category).
