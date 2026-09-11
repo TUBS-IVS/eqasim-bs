@@ -108,6 +108,9 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on, diary_plan
         # key is never relaxed. match_person draws exactly ONE rng value per call
         # regardless of the flag, so the shared completion stream stays in lockstep.
         hard_employment=True,
+        # Same for the fine child age bands (issue #386): build_completed_donor defaults
+        # them ON, and they likewise cost exactly one rng value per call.
+        fine_child_age_bands=True,
     )
     persons = diary_facts.attach_plan_source_facts(persons, facts)
     return households, persons
@@ -241,9 +244,9 @@ class _RecordingConfigureContext:
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():
     from braunschweig.popsim.stage import (
-        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
     )
     ctx = _RecordingConfigureContext()
     cd.configure(ctx)
@@ -254,6 +257,9 @@ def test_completed_donor_configure_registers_diary_plan_match_keys():
     # Task 6 (issue #368): the un-relaxable employment boundary must be part of THIS
     # stage's config hash, or flipping it would silently reuse the cached donor build.
     assert ctx.calls[KEY_DIARY_MATCH_HARD_EMPLOYMENT] is True
+    # Issue #386: the fine child age bands change which donor a diary-less child draws,
+    # so they belong in THIS stage's config hash for the same reason.
+    assert ctx.calls[KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS] is True
 
 
 import inspect

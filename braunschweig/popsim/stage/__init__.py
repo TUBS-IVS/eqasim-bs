@@ -149,6 +149,7 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
+from braunschweig.popsim import folders
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
@@ -257,6 +258,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_DEPARTURE_TIME_MIN_MODEL_N,
     KEY_DEPARTURE_TIME_MIN_REFERENCE_N,
     KEY_DEPARTURE_TIME_MODEL,
+    KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
     KEY_DIARY_MATCH_HARD_EMPLOYMENT,
     KEY_DIARY_PLAN_MATCH,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG,
@@ -2439,6 +2441,15 @@ def execute(context) -> pd.DataFrame:
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
     )
+    # Fail fast BEFORE any batch folder is written or any PopulationSim subprocess starts.
+    # PopulationSim rejects an undeclared control geography itself (setup_data_structures
+    # raises "unknown geography column"), so this is not a correctness guard but a
+    # diagnostics one: without it the run dies late, in a worker, after all the batch
+    # folders were written, with a message naming neither the settings file nor the fix.
+    # The per-Kreis attribute controls default ON and render at KREIS, which the 4-level
+    # settings file lacks.
+    folders.validate_settings_geographies(
+        Path(settings_path).read_text(encoding="utf-8"), controls_df)
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,

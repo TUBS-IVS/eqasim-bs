@@ -25,7 +25,7 @@ may only name run manifests (no run, no claim).
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
 | [departure_time_model](../registry/features/departure_time_model.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
-| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 13 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
+| [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 22 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [driving_licence_enrichment](../registry/features/driving_licence_enrichment.yml) | attributes | active | off | -/-/A | 1 | -- | none | committed | unvalidated | pending |
 | [economic_status_bayes](../registry/features/economic_status_bayes.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [education_enrollment_validation](../registry/features/education_enrollment_validation.yml) | validation | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |

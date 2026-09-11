@@ -186,6 +186,7 @@ def load_completed_donor(
     *,
     completion_rng,
     day_filter_values: Optional[Sequence[int]] = None,
+    fine_child_age_bands: bool = True,
 ) -> tuple[
     pd.DataFrame, pd.DataFrame,
     seedmod.CompletenessReport, completion.MemberCompletionReport,
@@ -209,6 +210,13 @@ def load_completed_donor(
             the standard weekday default on ``MID_SEED_COLUMNS``; an empty
             iterable DISABLES the day filter; any non-empty iterable is used
             verbatim (same tri-state contract as :func:`load_mid_seed`).
+        fine_child_age_bands: Forwarded to
+            :func:`braunschweig.popsim.member_completion.complete_members`. When True
+            (default, issue #386) the mirror role matching bands 6-13-year-olds finely
+            (6-9 / 10-13), so a present primary-school child does not consume the
+            mirror's secondary-school slot. It changes WHICH mirror member is copied,
+            never how many, so ``completion_rng`` is left at the same stream position
+            either way.
 
     Returns:
         ``(households, persons, completeness_report, completion_report)``.
@@ -251,6 +259,7 @@ def load_completed_donor(
     households, persons, completion_report = completion.complete_members(
         households, persons, rng=completion_rng,
         household_id=MID_SEED_COLUMNS.household_id,
+        fine_child_age_bands=fine_child_age_bands,
     )
     return households, persons, completeness_report, completion_report
 

@@ -546,22 +546,23 @@ def _hard_key_targets(n_targets=50, seed=23):
     return [frame.loc[i] for i in frame.index]
 
 
-def _draw_sequence(*, hard_keys=None, seed=7):
+def _draw_sequence(*, hard_keys=None, age_band_edges=None, seed=7):
     """Run the 50 baseline targets through match_person on ONE seeded rng.
 
-    ``hard_keys=None`` uses the OLD call shape (no hard_keys argument at all), so the
-    two call shapes can be compared against each other AND against the frozen
-    baseline.
+    ``hard_keys=None`` / ``age_band_edges=None`` use the OLD call shape (the argument
+    is not passed at all), so every call shape can be compared against the others AND
+    against the frozen baseline.
     """
     pool = _hard_key_pool()
     rng = np.random.RandomState(seed)
+    optional = {}
+    if hard_keys is not None:
+        optional["hard_keys"] = hard_keys
+    if age_band_edges is not None:
+        optional["age_band_edges"] = age_band_edges
     sequence = []
     for target in _hard_key_targets():
-        if hard_keys is None:
-            household_id, person_id, level = wpm.match_person(target, pool, rng=rng)
-        else:
-            household_id, person_id, level = wpm.match_person(
-                target, pool, rng=rng, hard_keys=hard_keys)
+        household_id, person_id, level = wpm.match_person(target, pool, rng=rng, **optional)
         sequence.append((int(household_id), int(person_id), int(level)))
     return sequence
 
@@ -675,3 +676,256 @@ def test_hard_keys_do_not_change_the_number_of_rng_draws():
     assert soft_state[2:] == hard_state[2:]
     # ...and the guard is not a no-op on this fixture: it moves most of the donors.
     assert sum(1 for s, h in zip(soft, hard) if s[:2] != h[:2]) > 0
+
+
+# --- issue #386: fine child age bands for the DIARY match only -----------------
+
+def test_fine_child_age_band_edges_split_only_the_6_13_band():
+    """The fine edges must refine the coarse ones, never re-cut the other bands.
+
+    Every coarse edge is kept and exactly one value (9) is added, so 0-5, 14-17 and
+    18+ are UNCHANGED and only 6-13 splits into 6-9 (primary school) and 10-13
+    (lower secondary). A fine band that moved an adult edge would silently change
+    which adult donors are interchangeable, which this feature never intends.
+    """
+    assert set(wpm.AGE_BAND_EDGES).issubset(set(wpm.FINE_CHILD_AGE_BAND_EDGES))
+    assert set(wpm.FINE_CHILD_AGE_BAND_EDGES) - set(wpm.AGE_BAND_EDGES) == {9}
+    ages = pd.Series([0, 5, 6, 9, 10, 13, 14, 17, 18, 99])
+    coarse = wpm.age_band_index(ages)
+    fine = wpm.age_band_index(ages, edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
+    assert list(coarse) == [0, 0, 1, 1, 1, 1, 2, 2, 3, 3]
+    assert list(fine) == [0, 0, 1, 1, 2, 2, 3, 3, 4, 4]
+
+
+def test_match_person_rejects_non_increasing_age_band_edges():
+    """Non-monotonic edges would make pd.cut raise deep inside _person_keys with a
+    message that names neither the caller nor the parameter."""
+    pool = _hard_key_pool()
+    with pytest.raises(ValueError, match="age_band_edges"):
+        wpm.match_person(_hard_key_targets()[0], pool, rng=np.random.RandomState(0),
+                         age_band_edges=(-1, 13, 5, 200))
+    with pytest.raises(ValueError, match="age_band_edges"):
+        wpm.match_person(_hard_key_targets()[0], pool, rng=np.random.RandomState(0),
+                         age_band_edges=(5,))
+
+
+def test_match_person_with_default_age_band_edges_reproduces_todays_draw_sequence():
+    """Passing the default edges EXPLICITLY must be byte-identical to omitting them.
+
+    Same guard as the ``hard_keys`` one above: the weekend caller keeps the default
+    and its draws are entangled with member completion and the diary match in ONE
+    seeded stream, so the new parameter must not move a single draw on the default.
+    """
+    assert _draw_sequence(age_band_edges=wpm.AGE_BAND_EDGES) == BASELINE_PERSON_DRAWS
+
+
+def test_fine_child_age_band_edges_change_the_draw_sequence():
+    """The parameter must actually bite: the fine edges move at least one donor.
+
+    Without this the byte-identity test above would also pass for an argument that
+    is silently ignored. The baseline fixture holds 9-year-old targets and 10-year-old
+    donors -- interchangeable under the coarse 6-13 band, separated by the fine one.
+    """
+    fine = _draw_sequence(age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
+    assert fine != BASELINE_PERSON_DRAWS
+    assert len(fine) == len(BASELINE_PERSON_DRAWS)
+
+
+def test_fine_child_age_band_edges_do_not_change_the_number_of_rng_draws():
+    """Refining the bands changes WHICH donor is drawn, never HOW MANY draws are
+    consumed -- the property that lets the diary caller enable it without shifting
+    the shared completion stream for every later consumer."""
+    pool = _hard_key_pool()
+    targets = _hard_key_targets()
+    coarse_rng = np.random.RandomState(7)
+    fine_rng = np.random.RandomState(7)
+    for target in targets:
+        wpm.match_person(target, pool, rng=coarse_rng)
+        wpm.match_person(target, pool, rng=fine_rng,
+                         age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]
+
+
+def test_fine_child_bands_prefer_a_primary_school_donor_over_a_13_year_old():
+    """A 7-year-old must get the 7-year-old's diary, not the 13-year-old's.
+
+    Both donors are identical in every other match key, so under the coarse 6-13
+    band they are interchangeable and the P_GEW-weighted draw can return either; the
+    13-year-old carries the heavier weight here, so the coarse match picks it. This
+    is the defect of issue #386 (first education legs before 07:00: 5.4 % among
+    6-9-year-olds vs 18.2 % among 10-13-year-olds; secondary-school ways are longer).
+    """
+    weekday = pd.DataFrame({
+        "H_ID": [60, 61], "P_ID": [1, 1],
+        "HP_ALTER": [7, 13], "HP_SEX": [1, 1],
+        "P_FSCHEIN": [2, 2], "P_TAET": [9, 9], "P_FKARTE": [3, 3],
+        "P_GEW": [1.0, 1000.0],
+    })
+    target = pd.Series({"HP_ALTER": 7, "HP_SEX": 1, "P_FSCHEIN": 2, "P_TAET": 9, "P_FKARTE": 3})
+
+    coarse = wpm.match_person(target, weekday, rng=np.random.RandomState(0))
+    fine = wpm.match_person(target, weekday, rng=np.random.RandomState(0),
+                            age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
+    assert coarse[:2] == (61, 1)   # the 13-year-old wins the weighted draw today
+    assert fine[:2] == (60, 1)     # the fine band makes it the only candidate
+    assert fine[2] == coarse[2]    # same relaxation level: no soft key had to be dropped
+
+
+def test_fine_child_bands_and_hard_keys_compose():
+    """The two diary-match guards are independent: ``employed`` stays un-relaxable
+    while the age band is the fine one."""
+    weekday = pd.DataFrame({
+        "H_ID": [70, 71], "P_ID": [1, 1],
+        "HP_ALTER": [13, 7], "HP_SEX": [2, 1],
+        "P_FSCHEIN": [1, 2], "P_TAET": [11, 1], "P_FKARTE": [1, 3],
+        "P_GEW": [1.0, 1.0],
+    })
+    target = pd.Series({"HP_ALTER": 7, "HP_SEX": 1, "P_FSCHEIN": 2, "P_TAET": 1, "P_FKARTE": 3})
+
+    household_id, person_id, _level = wpm.match_person(
+        target, weekday, rng=np.random.RandomState(0), hard_keys=frozenset({"employed"}),
+        age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES)
+    assert (household_id, person_id) == (71, 1)
+
+
+# --- issue #386 follow-up: the same fine bands inside align_members ------------
+
+def _school_child_households():
+    """Two structurally identical couple+2-children households, HH 2 reporting on a
+    weekend, whose children sit at the two ends of the coarse 6-13 band.
+
+    The weekday donor HH 1 lists its children 13 BEFORE 7, the weekend target HH 2
+    lists 7 before 13. align_members pairs positionally in target order and takes the
+    FIRST free donor of the matching band, so under the coarse 6-13 band the target's
+    7-year-old is paired with the donor's 13-year-old.
+    """
+    households = pd.DataFrame({
+        "H_ID": [1, 2], "H_GR": [4, 4], "hh_type5": ["family", "family"],
+        "oek_status": [3, 3], "RegioStaR7": [71, 71], "H_ANZAUTO": [2, 2],
+        "H_GEW": [1.0, 1.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID": [1, 1, 1, 1, 2, 2, 2, 2], "P_ID": [1, 2, 3, 4, 1, 2, 3, 4],
+        "HP_ALTER": [40, 38, 13, 7, 41, 39, 7, 13],
+        "HP_SEX": [1, 2, 1, 1, 1, 2, 1, 1],
+        "P_FSCHEIN": [1, 1, 2, 2, 1, 1, 2, 2],
+        "P_TAET": [1, 1, 9, 9, 1, 1, 9, 9],
+        "P_FKARTE": [1, 1, 3, 3, 1, 1, 3, 3],
+        "kernwo": [2, 2, 2, 2, 6, 6, 6, 6],       # HH 1 weekday, HH 2 weekend
+        "source_H_ID": [1, 1, 1, 1, 2, 2, 2, 2], "source_P_ID": [1, 2, 3, 4, 1, 2, 3, 4],
+        "member_imputed": [False] * 8,
+        "P_GEW": [1.0] * 8,
+    })
+    return households, persons
+
+
+def test_align_members_fine_child_bands_pair_a_first_grader_with_a_first_grader():
+    _hh, persons = _school_child_households()
+    target = persons[persons["H_ID"] == 2].reset_index(drop=True)
+    donor = persons[persons["H_ID"] == 1].reset_index(drop=True)
+
+    coarse = dict(wpm.align_members(target, donor))
+    fine = dict(wpm.align_members(target, donor,
+                                  age_band_edges=wpm.FINE_CHILD_AGE_BAND_EDGES))
+    # Target position 2 is the 7-year-old, donor position 2 the 13-year-old and
+    # position 3 the 7-year-old.
+    assert coarse[2] == 2 and coarse[3] == 3      # 7 -> 13 and 13 -> 7 (both wrong)
+    assert fine[2] == 3 and fine[3] == 2          # 7 -> 7 and 13 -> 13
+    # The refinement must not change HOW MANY members are paired -- that count is what
+    # decides how many person-fallback match_person calls (and therefore rng draws)
+    # the caller makes.
+    assert len(coarse) == len(fine) == len(target)
+
+
+def test_weekend_match_fine_child_bands_change_sources_without_moving_the_rng_stream():
+    """The load-bearing claim of this change: align_members consumes NO rng, and the
+    number of pairs it returns is min(len(target), len(donor)) whatever the bands, so
+    the person-fallback loop makes the same number of match_person calls. Refining the
+    bands therefore changes WHICH donor a child inherits without shifting the shared
+    completion stream that member completion and the diary match draw from.
+    """
+    households, persons = _school_child_households()
+    coarse_rng = np.random.RandomState(7)
+    fine_rng = np.random.RandomState(7)
+    coarse_out, _t, _r = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=coarse_rng, fine_child_age_bands=False)
+    fine_out, _t2, _r2 = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=fine_rng, fine_child_age_bands=True)
+
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]
+    # ...and the refinement is not a no-op: the weekend 7-year-old (H_ID 2, P_ID 3)
+    # inherits the donor's 13-year-old today and the donor's 7-year-old with fine bands.
+    coarse_child = coarse_out[(coarse_out["H_ID"] == 2) & (coarse_out["P_ID"] == 3)].iloc[0]
+    fine_child = fine_out[(fine_out["H_ID"] == 2) & (fine_out["P_ID"] == 3)].iloc[0]
+    assert (coarse_child["source_H_ID"], coarse_child["source_P_ID"]) == (1, 3)
+    assert (fine_child["source_H_ID"], fine_child["source_P_ID"]) == (1, 4)
+
+
+def _random_weekend_population(n_households=60, seed=11):
+    """A randomised donor population: mixed sizes, both day types, many school children.
+
+    Deliberately NOT hand-tuned, so the rng-invariance claim below is checked against
+    households that hit every branch of the pass (hh match, person fallback when no
+    equal-size weekday household exists, and the mixed-household sweep).
+    """
+    rng = np.random.RandomState(seed)
+    sizes = rng.choice([1, 2, 3, 4, 5], size=n_households)
+    hh_rows, person_rows = [], []
+    for offset, size in enumerate(sizes):
+        household_id = 1000 + offset
+        hh_rows.append({
+            "H_ID": household_id, "H_GR": int(size),
+            "hh_type5": rng.choice(["single", "couple", "family"]),
+            "oek_status": int(rng.choice([1, 2, 3, 4])),
+            "RegioStaR7": int(rng.choice([71, 73, 77])),
+            "H_ANZAUTO": int(rng.choice([0, 1, 2])), "H_GEW": float(rng.uniform(0.5, 3.0)),
+        })
+        weekend = bool(rng.rand() < 0.4)
+        for person_index in range(int(size)):
+            kernwo = int(rng.choice([6, 7])) if weekend else int(rng.choice([1, 2, 3]))
+            person_rows.append({
+                "H_ID": household_id, "P_ID": person_index + 1,
+                # Children dominate the 6-13 range on purpose: that is the band the
+                # refinement splits, so this is where a draw-count change would show.
+                "HP_ALTER": int(rng.choice([4, 6, 7, 8, 9, 10, 11, 12, 13, 16, 35, 45, 68])),
+                "HP_SEX": int(rng.choice([1, 2])),
+                "P_FSCHEIN": int(rng.choice([1, 2])),
+                "P_TAET": int(rng.choice([1, 5, 9, 11])),
+                "P_FKARTE": int(rng.choice([1, 3, 4, 8])),
+                "kernwo": kernwo,
+                "source_H_ID": household_id, "source_P_ID": person_index + 1,
+                "member_imputed": False, "P_GEW": float(rng.uniform(0.5, 4.0)),
+            })
+    return pd.DataFrame(hh_rows), pd.DataFrame(person_rows)
+
+
+def test_fine_child_bands_leave_the_rng_stream_untouched_on_a_randomised_population():
+    """The structural invariant, checked on 60 randomised households rather than on one
+    hand-built pair: align_members draws nothing and returns a band-independent number
+    of pairs, and match_person draws exactly one value per call, so BOTH arms end on the
+    same rng stream position however the pass branches."""
+    households, persons = _random_weekend_population()
+    coarse_rng = np.random.RandomState(23)
+    fine_rng = np.random.RandomState(23)
+    coarse_out, _t, coarse_report = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=coarse_rng, fine_child_age_bands=False)
+    fine_out, _t2, fine_report = wpm.reassign_weekend_plan_sources(
+        households.copy(), persons.copy(), rng=fine_rng, fine_child_age_bands=True)
+
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]
+    # The pass must have done real work in both arms, and the same amount of it.
+    assert coarse_report.n_persons_remapped == fine_report.n_persons_remapped > 0
+    assert coarse_report.n_hh_matched == fine_report.n_hh_matched
+    # ...and the refinement is not a no-op on this population.
+    differing = (coarse_out["source_P_ID"].to_numpy() != fine_out["source_P_ID"].to_numpy()) | (
+        coarse_out["source_H_ID"].to_numpy() != fine_out["source_H_ID"].to_numpy())
+    assert differing.any()
