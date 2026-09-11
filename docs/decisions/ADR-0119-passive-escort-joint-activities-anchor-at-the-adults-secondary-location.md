@@ -76,10 +76,13 @@
      `escort_passive_joint_location` is on and `escort_passive_from_adult` (or, transitively,
      `escort_purpose`) is off. The production ON state is realised ONLY by the `configs/base_bs.yml`
      line this record's package adds; no overlay change (flags live only in the base).
-  5. **OFF path is frame-equal.** With the flag off, `execute()` runs exactly one
-     `_solve_problem_set` call over the whole population, the same solve body the two-pass path
-     calls twice; the extraction that made this possible is verified frame-equal against the
-     pre-refactor stage output on the Kreis-03101 smoke (Task 5), recorded in the run manifest below.
+  5. **OFF path is intended to be frame-equal (pending).** With the flag off, `execute()` runs
+     exactly one `_solve_problem_set` call over the whole population, the same solve body the
+     two-pass path calls twice; the extraction that made this possible preserves the pre-refactor
+     RNG call order and the early-return path verbatim, so the OFF path is INTENDED, by
+     construction, to be frame-equal to the pre-refactor stage output. The empirical
+     frame-equality result on the Kreis-03101 smoke (Task 5) is **PENDING** in the run manifest
+     below; this point is a design argument, not yet an observed result.
 - **Rejected alternatives:**
   - **Post-hoc overwrite of the child's location after a single pass (rejected).** Moving the child
     to the adult's location AFTER both were independently placed would leave the child's
@@ -90,12 +93,15 @@
   - **A dedicated `escorted` activity type (rejected).** Renaming the child's activity would only
     relabel the question; it would not answer WHERE the escorted child's shop/leisure/other activity
     happens, which is the actual defect being fixed.
-  - **Anchoring at the adult's PRIMARY location for adult `W_ZWECK` 1-3 (work/education pairs,
-    deferred, not rejected outright).** This would need primary facility ids to be accepted by the
-    facilities coverage check the way the #201 `escort_linked` anchors already are, and is 4.2-4.7 %
-    of raw pairs (ADR-0112's adult-`W_ZWECK` distribution; the ASSUMPTION carried forward here).
-    Deferred; these legs are excluded and counted under `purpose_not_secondary` (they map to
-    `other` in phase 1's purpose rule regardless).
+  - **Anchoring at the adult's PRIMARY location for adult `W_ZWECK` 1-3 (work, business or
+    education pairs, deferred, not rejected outright).** This would need primary facility ids to
+    be accepted by the facilities coverage check the way the #201 `escort_linked` anchors already
+    are. ADR-0112's committed table measures only the `W_ZWECK` 1/2 (work/business) share of this
+    group, at **4.2 %** of raw pairs; code 3 (education) sits inside a separate, not-broken-out
+    `3, 9, 99 = 2.0 %` row, so a combined work-and-education share is NOT measurable from that
+    table. The figure carried forward here is therefore the 4.2 % work/business share only (see
+    this record's own Assumptions section 3). Deferred; these legs are excluded and counted under
+    `purpose_not_secondary` (they map to `other` in phase 1's purpose rule regardless).
   - **Joint household solving inside chainsolvers (rejected).** Chainsolvers exposes no API to
     solve two related persons' chains as one coupled problem; the two-pass composition with a
     resolved anchor is the mechanism the existing `activity_anchors` machinery already supports.
@@ -106,7 +112,8 @@
   - **Runtime: two `cs.solve()` invocations per run** instead of one. The shared candidate set,
     distributions, deciders and the RDA fallback index are built exactly once
     (`_build_shared_solve_state`) and reused by both passes; pass 2 is expected to be small (only
-    linked children). Wall-clock impact is measured on the smoke, not assumed (run manifest below).
+    linked children). Wall-clock impact is intended to be measured on the smoke rather than
+    assumed; the result is **PENDING** in the run manifest below.
   - **Both passes share ONE `RandomState`** (built once in `_build_shared_solve_state`, threaded
     through both `_solve_problem_set` calls). An ON/OFF comparison is therefore a DIFFERENT
     Monte-Carlo realisation, not attributable to the anchoring mechanism alone -- pass 1 draws from
@@ -150,7 +157,7 @@
      `source_H_ID` are copies of one MiD donor household (`expand.expand_to_persons` +
      member-completion semantics). The link rate this run measures is exactly the rate at which
      that identity survives synthesis (member completion, the diary-plan match, and the day-absence
-     model can all break it).
+     model can all break it). No run has measured this rate yet (see Evidence).
   3. **The excluded primary-target share.** Children paired with an adult travelling for work,
      business or education (adult `W_ZWECK` 1-3) are excluded from anchoring here
      (`purpose_not_secondary`) and keep phase 1's `other` purpose assignment. ADR-0112 measured this
@@ -161,8 +168,9 @@
 - **Evidence:** issue **#385** (phase 2 of #372 / ADR-0112); design spec
   `docs/superpowers/specs/2026-09-11-passive-escort-joint-location-design.md`; related **ADR-0072 /
   ADR-0073** (#201, the inverse active-side household link), **ADR-0104** (the chainsolver reads the
-  reporting-day trips), **ADR-0112** (phase 1, passive escort purpose, the 4.2-4.7 % primary-target
-  share and the 94.15 % pairing rate this record's link rate is measured against). Committed
+  reporting-day trips), **ADR-0112** (phase 1, passive escort purpose, the 4.2 % work/business
+  primary-target share -- adult `W_ZWECK` 1/2 -- and the 94.15 % pairing rate this record's link
+  rate is measured against). Committed
   reference table `eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv` (script
   `scripts/derive_escort_w_zweck_split.py`, data record `mid2023_reference_tables`): **6,384/6,781 =
   94.15 %** of raw passive legs pair with a same-household adult leg within 15 minutes -- a RAW-MiD

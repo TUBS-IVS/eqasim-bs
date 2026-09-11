@@ -158,8 +158,10 @@ Both passes share ONE `RandomState`, so an ON/OFF comparison is a different
 Monte-Carlo realisation, not a pure anchoring effect.
 
 Excluded and counted, never silently dropped: the adult's trip home and own
-Bringen/Holen leg (handled by the #201 link), the adult's work/education leg
-(needs primary facility ids, deferred -- ~4.2 % of raw pairs, ADR-0112), an
+Bringen/Holen leg (handled by the #201 link), the adult's work, business or
+education leg (needs primary facility ids, deferred -- the committed table
+measures only the work/business share, adult W_ZWECK 1/2, at ~4.2 % of raw
+pairs, ADR-0112; education (W_ZWECK 3) is not broken out separately), an
 adult absent from the synthetic household, and a missing adult leg. The link
 rate (with its exclusion split) and the anchor-resolution rate are logged
 every run under the `[passive_joint_links]` marker, escalating to WARNING at

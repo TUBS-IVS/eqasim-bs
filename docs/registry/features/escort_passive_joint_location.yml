@@ -36,9 +36,10 @@ description: 'Anchors a PAIRED passive escort child''s joint activity (shop / le
   both keys when this flag is on and escort_passive_from_adult (or, transitively,
   escort_purpose) is off. The production ON state is realised ONLY by the configs/base_bs.yml
   line. With the flag off, execute() runs exactly ONE _solve_problem_set call over the whole
-  population -- the OFF path is INTENDED to be frame-equal to the pre-refactor stage output
-  (the extraction preserves the RNG call order and the early-return path verbatim); this is
-  confirmed empirically on the Kreis-03101 smoke, recorded in the run manifest below.
+  population -- the OFF path is INTENDED, by construction, to be frame-equal to the pre-refactor
+  stage output (the extraction preserves the RNG call order and the early-return path verbatim).
+  The empirical frame-equality result on the Kreis-03101 smoke is PENDING at the time of this
+  record; see the run manifest below.
 
   Both solver passes share ONE RandomState built once before either pass runs, so an ON/OFF
   comparison is a DIFFERENT Monte-Carlo realisation, not attributable to the anchoring mechanism
@@ -105,10 +106,12 @@ evidence:
     path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
     note: 'The SAME committed table ADR-0112 cites: 6,384/6,781 = 94.15% of raw passive legs pair
       with a same-household adult leg within 15 minutes (RAW-MiD donor-side fact, upper bound for
-      this feature''s link rate) and the 4.2% adult-work/education share of pairs (ADR-0112''s
-      adult-W_ZWECK distribution) that this feature excludes as purpose_not_secondary -- both
-      quoted as donor-side facts, never as a synthetic-population rate. No consumer here reads
-      this file directly; it grounds the ADR-0119 assumptions.'
+      this feature''s link rate) and the 4.2% adult W_ZWECK 1/2 (work/business, not education)
+      share of pairs (ADR-0112''s adult-W_ZWECK distribution) that this feature excludes as
+      purpose_not_secondary -- both quoted as donor-side facts, never as a synthetic-population
+      rate. Code 3 (education) sits inside a separate, not-broken-out 3, 9, 99 = 2.0% row in the
+      same table, so a combined work-and-education share is not measurable from it. No consumer
+      here reads this file directly; it grounds the ADR-0119 assumptions.'
 validation:
   state: unvalidated
   runs: []
