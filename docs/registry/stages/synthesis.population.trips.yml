@@ -37,8 +37,8 @@ decisions:
 - ADR-0108
 - ADR-0111
 - ADR-0112
-- ADR-0117
 - ADR-0114
+- ADR-0117
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
