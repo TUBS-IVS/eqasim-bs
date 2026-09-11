@@ -35,6 +35,7 @@ features:
 - detour_circuity_curve
 - escort_purpose
 - leisure_unspecified_subtype
+- no_answer_codes_excluded
 - parallel_chainsolvers
 - secondary_distance_by_purpose
 - secondary_mid_weekday_universe
@@ -50,6 +51,7 @@ decisions:
 - ADR-0113
 - ADR-0115
 - ADR-0116
+- ADR-0117
 notes: >-
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
@@ -122,3 +124,16 @@ notes: >-
   braunschweig.popsim.seed was added to _HELPER_MODULES because the weekday definition lives there
   (trips.WEEKDAY_DIARY_KERNWO reads seed.MID_SEED_COLUMNS.day_filter_values) and hashing trips
   cannot see across that import (ruling W4).
+
+
+  NO-ANSWER PURPOSE (issue #373, ADR-0117, feature record no_answer_codes_excluded): this stage
+  declares exclude_no_answer_purpose_legs (declared default true, imported from
+  braunschweig.popsim.stage.config_keys, shared with braunschweig.popsim.distance_distributions,
+  which must resolve the SAME value -- the coarse split estimated here labels a leg and that stage
+  supplies the label's donor pool). With it on, deciders._build_other_subtype_decider puts
+  trips.W_ZWECK_NO_ANSWER_CODE (99 "keine Angabe") into the coarse spec's SENTINELS and removes it
+  from the "rest" group in the same breath, because SubtypeSpec refuses a code that is both
+  grouped and a sentinel; errand/escort/rest then renormalise over the legs whose purpose is
+  known. Measured on the 2026-09 delivery (ad hoc): errand 0.5304 -> 0.5540, rest 0.4696 ->
+  0.4460. The two sibling builders are unaffected -- they already reuse the sentinel-carrying
+  specs of purpose_subtype, which is exactly the pattern this closes for the coarse split.

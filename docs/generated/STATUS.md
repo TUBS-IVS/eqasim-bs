@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 89 | stages: 124 | datasets: 73 | ADRs: 115 | run manifests: 37
+- Features: 90 | stages: 124 | datasets: 73 | ADRs: 116 | run manifests: 37
 
 ## Population synthesis
 
@@ -124,6 +124,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Building potentials — secondary](../registry/features/building_potentials_secondary.yml) | active | ON | A/i/i | unvalidated |  |
 | [Calibration: Tier-3 detour/circuity curve](../registry/features/detour_circuity_curve.yml) | supported | off | i/i/i | unvalidated |  |
 | [leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype](../registry/features/leisure_unspecified_subtype.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
+| [exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose, and a design code can never become a distance](../registry/features/no_answer_codes_excluded.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [Calibration: purpose-resolved secondary](../registry/features/secondary_distance_by_purpose.yml) | active | ON | A/i/i | unvalidated |  |
 | [secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders estimate on the weekday diary universe](../registry/features/secondary_mid_weekday_universe.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [SrV-grounded secondary location types for leisure/other (#262)](../registry/features/secondary_srv_location_types.yml) | active | ON | A/-/- | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | [#262](https://github.com/TUBS-IVS/eqasim-bs/issues/262) |

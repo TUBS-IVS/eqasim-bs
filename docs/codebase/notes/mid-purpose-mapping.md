@@ -93,6 +93,19 @@ every consumer of the purpose vocabulary at once, or it is not added.
    flag off the old mismatch returns, which is why every record that quotes a share says which
    universe it belongs to.
 
+   **Corollary: a non-answer is not a purpose (ADR-0117).** `W_ZWECK` 99 is "keine Angabe".
+   `PURPOSE_BY_W_ZWECK` maps it to `other` so the PLAN has a purpose for a trip that really
+   happened, but under `exclude_no_answer_purpose_legs` (production true) it is excluded from
+   every ESTIMATION built on that purpose -- the distance pools of
+   `braunschweig.popsim.distance_distributions` and the coarse errand/rest split of
+   `secondary_chainsolvers.deciders`, whose local `SubtypeSpec` now carries it in `sentinels`
+   instead of in the `rest` group. The rule for any new MiD aggregate or draw is therefore:
+   `trips.W_ZWECK_NO_ANSWER_CODE` never belongs in a group, only in a sentinel set. The same
+   applies one level down for the detail codes -- 599 (shop), 699 (errand), 799 (leisure) -- and
+   any distance built from a trip-length column goes through
+   `diary_facts.validate_trip_length_km`, which raises on a MiD design code rather than turning
+   a refusal into a 7,688 km leg.
+
 ## Threading list (as of ADR-0111 / ADR-0112 / ADR-0113)
 
 Trip-build flags -- `escort_purpose`, `escort_passive_education`,

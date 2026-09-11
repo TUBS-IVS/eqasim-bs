@@ -24,6 +24,7 @@ features:
 - escort_purpose
 - escort_passive_from_adult
 - home_closure_model
+- no_answer_codes_excluded
 - purpose_main_fold_code_10
 - rbw_leg_convention
 decisions:
@@ -33,6 +34,7 @@ decisions:
 - ADR-0108
 - ADR-0111
 - ADR-0112
+- ADR-0117
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -73,3 +75,16 @@ notes: >-
   map_purpose, so the stage needs HP_ALTER, H_ID, W_SZS and W_SZM present at that point; the code
   relabel and the pairing both log explicit rates. braunschweig.popsim.escort_pairing is folded into
   this stage's _HELPER_MODULES, so a change to the pairing rule invalidates the stage's cache.
+
+
+  TRIP-LENGTH GUARD (issue #373, ADR-0117, feature record no_answer_codes_excluded): the
+  euclidean_distance column this stage puts on the trips CONTRACT is now built through
+  braunschweig.popsim.diary_facts.validate_trip_length_km instead of a bare astype(float). A MiD
+  design code (>= 9994 "unplausibel" / "keine Angabe") or a non-positive length RAISES naming this
+  stage and the counts, because such a value would leave the contract as a 7,688 km straight-line
+  leg and reach every downstream consumer, including the commute-distance donor pool that imputes
+  OTHER persons' missing distances from it. A structurally missing length is counted and logged,
+  not raised on: the closure/dwell synthesis adds legs that were never surveyed and therefore
+  carry no wegkm_imp. Byte-identical on the 2026-09 delivery, which carries no impossible value
+  in 1,087,393 rows. This stage does NOT change how a W_ZWECK 99 leg is mapped -- it keeps the
+  purpose "other", because the trip is real; only the ESTIMATIONS exclude it (ADR-0117 Decision 2).
