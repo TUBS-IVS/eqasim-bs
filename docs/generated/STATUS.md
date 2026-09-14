@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 91 | stages: 125 | datasets: 75 | ADRs: 118 | run manifests: 39
+- Features: 93 | stages: 125 | datasets: 75 | ADRs: 119 | run manifests: 40
 
 ## Population synthesis
 
@@ -141,6 +141,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Mode balancer](../registry/features/cordon_mode_balancer.yml) | active | ON | A/A/- | unvalidated |  |
 | [Cordon network ring + cut](../registry/features/cordon_network_ring.yml) | active | ON | A/A/- | unvalidated |  |
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
+| [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
+| [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Freight

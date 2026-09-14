@@ -19,3 +19,7 @@ inputs:
 - destatis_population_kreis
 features:
 - student_incommuters
+- incommuter_donor_demographics
+- incommuter_time_chronology
+decisions:
+- ADR-0120

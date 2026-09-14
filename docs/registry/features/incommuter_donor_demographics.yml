@@ -1,0 +1,54 @@
+feature: incommuter_donor_demographics
+title: Preserve MiD in-commuter donor demographics
+area: cordon
+description: Maps raw HP_ALTER and HP_SEX to the age and sex consumed by worker and
+  student injection, replacing the accidental all-scalar demographic fallback (#397).
+stages:
+- braunschweig.data.hts.mid_donor
+- braunschweig.synthesis.incommuters
+- braunschweig.synthesis.student_incommuters
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_incommuter_donor_demographics
+introduced:
+  issue: '#397'
+  pr: null
+  adr: ADR-0120
+detail_doc: docs/decisions/ADR-0120-incommuter-donor-demographics-and-time-chronology.md
+code_paths:
+- braunschweig/data/hts/mid_donor.py
+- braunschweig/popsim/expand.py
+evidence:
+  tests:
+  - tests/test_incommuter_donor_consistency.py
+  - tests/test_mid_donor.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_incommuter_donor_consistency.py::test_legacy_off_outputs_match_frozen_pre_fix_baseline
+    note: Raw MiD donor tables and subsequent RNG bytes match the frozen 1502e88e baseline.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[mid_donor] sex: primary'
+    note: Observed/imputed sex rates and direct age coverage are logged; no observed
+      binary-sex pool raises instead of producing all-male donors.
+  reference:
+    kind: none
+    note: This restores source attributes; it is not a demographic calibration.
+validation:
+  state: unvalidated
+  runs:
+  - incommuter-donor-smoke-2026-09-14
+  metric: null
+  note: Raw-data adapter smoke and regression tests establish correctness, not empirical validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Maintainer review and full scenario assessment remain outstanding.
+  source: ADR-0120

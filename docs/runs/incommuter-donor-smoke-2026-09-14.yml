@@ -1,0 +1,55 @@
+id: incommuter-donor-smoke-2026-09-14
+date: '2026-09-14'
+repository:
+  commit: c42f63953ae9cbb26f85df85237897ab3d73e04b
+  branch: fix/i397-incommuter-donor-consistency
+  notes: Implementation commit, based on 1502e88e. Tests ran before the local commit;
+    a donor-function docstring was clarified between the raw smoke and full suite.
+configuration:
+  notes: Both corrections ON; random_seed 1234. The committed pytest smoke loads
+    the raw MiD tables using MidSource, then samples 1000 households with pandas
+    random_state=1234 and retains their persons and complete recorded diaries.
+sampling:
+  rate: 1000 raw MiD households (not a population sampling rate)
+  scope: 1972 persons and 5224 transformed trips
+pipeline:
+  targets:
+  - braunschweig.data.hts.mid_donor
+  notes: Direct adapter and donor-time helper invocation, not a synpp or MATSim scenario run.
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+environment: Windows; Python 3.10.10, numpy 1.23.5, pandas 1.5.3; conda eqasim
+validation:
+- metric: Raw donor age and observed binary sex preserved
+  reference: The sampled MiD HP_ALTER and HP_SEX source columns
+  result: All 1972 ages preserved; 1969 observed binary-sex values preserved.
+  notes: Three non-binary/missing values use the existing seeded demographic mapper.
+- metric: Chronological donor time sequences after repair
+  reference: Finite timestamps and depart_home <= arrive_middle < depart_middle <= arrive_home
+  result: 381 worker donors and 95 education donors; zero violations in either group.
+  notes: This checks structural correctness, not empirical duration fit or demographic representativeness.
+- metric: Regression suite including optional actual-data smoke
+  reference: tests/test_incommuter_donor_consistency.py
+  result: 35 passed, 2 dependency deprecation warnings, 30.74 seconds.
+- metric: Full repository pytest suite
+  reference: python -m pytest tests/ -q
+  result: 5659 passed, 92 skipped, 29 warnings, 487.77 seconds.
+  notes: The optional real-MiD smoke is skipped without EQASIM_MID_SMOKE_DIR;
+    it was executed separately above. Skips and warnings are not counted as passes.
+features:
+  note: Verification for incommuter_donor_demographics and incommuter_time_chronology only.
+artifacts:
+- tests/test_incommuter_donor_consistency.py
+- tests/fixtures/incommuter_legacy_397.json
+issues:
+- '#397'
+decisions:
+- ADR-0120
+source: tests/test_incommuter_donor_consistency.py::test_real_mid_sample_preserves_demographics_and_has_ordered_plans
+notes: Reproduce by setting EQASIM_MID_SMOKE_DIR to the restricted MiD2023 raw directory
+  and running python -m pytest tests/test_incommuter_donor_consistency.py -q -s in
+  the eqasim environment. Raw survey rows and local paths are not committed. No
+  behavioural validation or full scenario execution is claimed.

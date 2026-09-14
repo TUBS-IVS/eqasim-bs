@@ -20,7 +20,10 @@ inputs:
 features:
 - cordon_mode_balancer
 - einpendler_injection
+- incommuter_donor_demographics
+- incommuter_time_chronology
 decisions:
 - ADR-0028
 - ADR-0029
 - ADR-0063
+- ADR-0120
