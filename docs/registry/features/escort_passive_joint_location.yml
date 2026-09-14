@@ -104,14 +104,15 @@ evidence:
       exclusion reasons (adult_not_in_household, adult_leg_missing, purpose_not_secondary) plus
       the acyclic-guard and duplicate-drop counts; WARNs when nothing links at all (a signature of
       a broken plan-source join). (2) resolve_joint_anchors logs the anchor-resolution rate
-      (n_resolved/n_links) and WARNs above DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5 unresolved
-      (a signature of an incomplete pass-1 result). Unlinked/unresolved children keep the
+      (n_resolved/n_links) and WARNs at or above DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5
+      unresolved (a >= comparison, the convention of every sibling rate instrument of this stage;
+      a signature of an incomplete pass-1 result). Unlinked/unresolved children keep the
       independent draw -- the fallback here IS that draw, and it is counted, never silent. Measured
       on the Kreis-03101 smoke (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml):
       link rate 36/74 paired passive legs linked (48.6 %), exclusion split adult_not_in_household
       23 (31.1 %), purpose_not_secondary 15 (20.3 %), adult_leg_missing 0, adult_is_linked_child 0,
       duplicate_child_activity 0; anchor-resolution rate 36/36 (100.0 %), 0 unresolved -- well
-      inside the WARNING thresholds (nothing linked; over 50 % unresolved). n = 74 paired legs on a
+      inside the WARNING thresholds (nothing linked; 50 % or more of the links unresolved). n = 74 paired legs on a
       1 %-sampled single Kreis is a smoke-scale count, not a population rate.'
   reference:
     kind: committed

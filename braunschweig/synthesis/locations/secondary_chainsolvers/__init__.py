@@ -1054,17 +1054,18 @@ def _passive_joint_link_summary(link_stats) -> str:
 def _passive_joint_anchor_summary(n_linked_children, anchor_stats) -> str:
     """The stage's one-line pass-2 ANCHOR summary (issue #385).
 
-    An unresolved link leaves the child on the independent draw, so an unresolved share
-    above ``passive_joint_links.DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE`` (the same
-    threshold ``resolve_joint_anchors`` escalates on -- imported, never copied) means the
-    pass-1 output is probably incomplete and is flagged ``WARNING``. Pure: builds a string.
+    An unresolved link leaves the child on the independent draw, so an unresolved share at
+    or above ``passive_joint_links.DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE`` (the same
+    threshold, and the same ``>=`` comparison, ``resolve_joint_anchors`` escalates on --
+    imported, never copied) means the pass-1 output is probably incomplete and is flagged
+    ``WARNING``. Pure: builds a string.
     """
     from braunschweig.synthesis.locations.passive_joint_links import (
         DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE,
     )
     n_links = anchor_stats["n_links"]
     incomplete = n_links > 0 and (anchor_stats["n_unresolved"] / n_links
-                                  > DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
+                                  >= DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
     prefix = "WARNING: " if incomplete else ""
     return (
         f"[braunschweig.secondary_chainsolvers] {prefix}passive joint location: "
@@ -1075,15 +1076,12 @@ def _passive_joint_anchor_summary(n_linked_children, anchor_stats) -> str:
     )
 
 
-def _build_shared_solve_state(context, df_primary, crs):
+def _build_shared_solve_state(context, crs):
     """Everything one solver pass needs that does not depend on WHICH persons it solves.
 
     Built exactly once per stage execution so that two passes (issue #385) share the same
     candidate set, deciders, distributions, worker settings and RNG. Returns a dict; the
     key names are the local variable names execute() used before the extraction.
-
-    ``df_primary`` is part of the pinned call signature (the caller holds the primary
-    locations for ``_solve_problem_set`` anyway); no shared state derives from it today.
 
     Nothing built here consumes the shared ``RandomState``, so building the candidate
     frame / locations_df / scorer spec here -- ahead of the first pass instead of after
@@ -1593,7 +1591,7 @@ def execute(context):
         _apply_escort_household_link(context, df_trips)
     )
     df_primary, crs = _prepare_primary(context)
-    shared = _build_shared_solve_state(context, df_primary, crs)
+    shared = _build_shared_solve_state(context, crs)
 
     # ON: the two-pass composition (adults first, then the children whose joint
     # activities anchor at the adults' placed locations), issue #385 / ADR-0119.

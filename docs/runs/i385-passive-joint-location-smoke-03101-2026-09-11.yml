@@ -1,7 +1,7 @@
 id: i385-passive-joint-location-smoke-03101-2026-09-11
 date: '2026-09-11'
 repository:
-  commit: 4d22aeefe40c83cfa32da2b304f4a64709051a1c
+  commit: ef75223a4091f94e06e5d0d4ba831c2297fc1483
   branch: feature/i385-passive-joint-location
 configuration:
   base: 'configs/config_local_i385_mini.yml (gitignored local test bed =
@@ -18,7 +18,15 @@ configuration:
     secondary_external_candidates is ON (warned by the stage), the commute-day model OFF, one
     Kreis (03101), sampling_rate: 0.01, and the local PopulationSim settings mirror
     settings_tier3_mef100_intseed_numba_local.yaml (the fixture''s 4-level settings.yaml lacks
-    the KREIS geography the default-ON Kreis controls render).'
+    the KREIS geography the default-ON Kreis controls render). Code state: all three runs below
+    executed at commit ef75223a (repository.commit above). The branch ADVANCED after the
+    measurements -- the origin/main merge 818d1e3a and the final review''s fix wave -- and a
+    re-measurement at the final HEAD was NOT performed. The measured results are carried forward
+    because none of those later commits touches the measured paths: rewrite_anchored_activities
+    (whose positional-mask fix is unreachable on a unique-index trips frame) is called only on
+    the ON path, _build_shared_solve_state''s dropped parameter was unused, and the unresolved-
+    anchor threshold change (> to >=) affects a log line only. The OFF path is unchanged in
+    effect by all of them.'
 sampling:
   rate: 1% (sampling_rate 0.01)
   scope: Kreis 03101 only
@@ -61,7 +69,12 @@ validation:
     rows, cs.solve 19.1 s; 20 linked children entered pass 2. Anchors resolved 36/36 (100.0
     %), 0 unresolved. Every resolved link places the child at the adult''s location:
     child_at_adult_location 36/36, duplicate child rows 0, 3,415 location rows, success
-    rate 1.0000, carla 2,213/2,214 with 1 fallback.'
+    rate 1.0000, carla 2,213/2,214 with 1 fallback. Runtime reading: pass 2 solved 6 problems
+    in the same wall time as pass 1''s 2,208 (19.1 s vs 19.0 s), so the second pass cost a full
+    pass''s FIXED overhead (worker-pool spin-up plus the fallback pool rebuild) rather than a
+    cost proportional to its problem count -- it doubled the measured cs.solve time for 6
+    problems. That fixed per-pass cost, not the number of linked children, is what to watch at
+    100 % scale, where it has not been measured.'
 features:
   note: 'First test-bed exercise of escort_passive_joint_location (issue #385, ADR-0119). The
     measurement, OFF-path, and ON-run steps have all completed; the three validation entries

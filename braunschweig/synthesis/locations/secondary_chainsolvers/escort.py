@@ -96,7 +96,7 @@ def rewrite_anchored_activities(df_trips: pd.DataFrame, df_anchors: pd.DataFrame
     A trip's ``preceding_purpose`` is activity ``trip_index``, its ``following_purpose``
     activity ``trip_index + 1``. Only the chainsolver-local problem construction sees this
     frame; the persisted plans keep the real purpose. Positional boolean masks, so a
-    non-monotonic row index is handled.
+    non-monotonic AND a duplicate row index are both handled.
     """
     out = df_trips.copy()
     if len(df_anchors) == 0:
@@ -104,8 +104,12 @@ def rewrite_anchored_activities(df_trips: pd.DataFrame, df_anchors: pd.DataFrame
     anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
     # No candidate pre-filter: every activity of the pass frame may be anchored.
     mask_preceding, mask_following = _anchored_side_masks(out, anchored)
-    out.loc[out.index[mask_preceding], "preceding_purpose"] = fixed_purpose
-    out.loc[out.index[mask_following], "following_purpose"] = fixed_purpose
+    # Boolean (positional) .loc assignment, exactly as in rewrite_linked_escort_trips.
+    # Passing the mask itself keeps the selection POSITIONAL; resolving it to labels first
+    # (out.index[mask]) would rewrite every row sharing a selected label, which silently
+    # corrupts an unrelated person's purposes on a frame with a duplicate index.
+    out.loc[mask_preceding, "preceding_purpose"] = fixed_purpose
+    out.loc[mask_following, "following_purpose"] = fixed_purpose
     return out
 
 

@@ -321,6 +321,34 @@ def test_rewrite_anchored_activities_ignores_an_anchor_for_a_person_without_trip
     assert out is not trips
 
 
+def test_rewrite_anchored_activities_on_a_duplicate_index_touches_only_the_anchored_person():
+    """A DUPLICATE row index must not leak the rewrite to an unrelated person.
+
+    ``_anchored_side_masks`` returns POSITIONAL boolean masks. Indexing the frame's index
+    with such a mask (``out.index[mask]``) turns the selected POSITIONS into LABELS, and
+    ``.loc[labels]`` then hits EVERY row carrying those labels -- on a frame whose index
+    repeats (two persons sharing the labels 0 and 1) that rewrites the other person's
+    purposes as well. The sibling ``rewrite_linked_escort_trips`` passes the boolean mask
+    to ``.loc`` directly, which stays positional. Not reachable in the pipeline today (the
+    chainsolver's trips frame arrives with a unique index), so this guards robustness, not
+    a live behaviour.
+    """
+    trips = pd.DataFrame({
+        "person_id":         [2,      2,      3,         3],
+        "trip_index":        [0,      1,      0,         1],
+        "preceding_purpose": ["home", "shop", "home",    "leisure"],
+        "following_purpose": ["shop", "home", "leisure", "home"],
+    }, index=[0, 1, 0, 1])  # duplicate labels: person 2 and person 3 share 0 and 1
+    anchors = pd.DataFrame({"person_id": [2], "activity_index": [1],
+                            "location_id": ["a"], "geometry": [Point(0, 0)]})
+    out = rewrite_anchored_activities(trips, anchors, PASSIVE_LINKED_PURPOSE)
+    # Positional assertions: the labels are ambiguous, the positions are not.
+    assert out["following_purpose"].tolist() == [
+        PASSIVE_LINKED_PURPOSE, "home", "leisure", "home"]
+    assert out["preceding_purpose"].tolist() == [
+        "home", PASSIVE_LINKED_PURPOSE, "home", "leisure"]
+
+
 def test_resolve_joint_anchors_logs_dropped_duplicate_placement_rows(caplog):
     # Feed locations with a duplicate (person_id, activity_index) key:
     # person 1 activity 1 appears twice with different locations
@@ -358,9 +386,24 @@ def test_resolve_joint_anchors_names_links_not_activities_in_the_unresolved_line
     assert caplog.records[0].levelname == "INFO"  # 1/3 unresolved is below the threshold
 
 
+def test_resolve_joint_anchors_warns_exactly_at_the_unresolved_share_threshold(caplog):
+    """Threshold convention: the escalation is ``>=``, like every sibling rate instrument
+    of this stage (reporting._fallback_accounting_summary,
+    reporting._excursion_boundary_clip_summary, the SrV marginal-fallback line), so a rate
+    landing EXACTLY on the threshold warns instead of staying silent."""
+    # Two links (adult 1 and adult 7); adult 7 unplaced -> 1 of 2 unresolved = exactly 0.5.
+    links = _links().iloc[[0, 2]]
+    locations = _pass1_locations()
+    locations = locations[locations["person_id"] != 7]
+    with caplog.at_level("INFO"):
+        _anchors, stats = resolve_joint_anchors(links, locations)
+    assert stats["n_unresolved"] / stats["n_links"] == DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
+
+
 def test_resolve_joint_anchors_warns_above_the_unresolved_share_threshold(caplog):
-    """Fallback transparency: above the threshold share of unresolved links the pass-1
-    output is probably incomplete, so the line escalates to WARNING."""
+    """Fallback transparency: at or above the threshold share of unresolved links the
+    pass-1 output is probably incomplete, so the line escalates to WARNING."""
     assert DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE == 0.5
     # Only adult 1 was placed -> link (6, 2) -> adult 7 stays unresolved: 1 of 3.
     # Drop adults 1 AND 7 -> 3 of 3 unresolved, above the threshold.

@@ -323,6 +323,9 @@ def test_the_link_rate_line_survives_a_run_without_any_paired_leg():
 
 
 def test_the_anchor_summary_uses_the_shared_unresolved_share_constant():
+    """The escalation is ``>=``, the convention every sibling rate instrument of this stage
+    uses (reporting._fallback_accounting_summary, reporting._excursion_boundary_clip_summary,
+    the SrV marginal-fallback line), so a share landing EXACTLY on the threshold warns."""
     n_links = 10
     n_unresolved = int(DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE * n_links) + 1
     stats = {"n_links": n_links, "n_resolved": n_links - n_unresolved,
@@ -330,7 +333,12 @@ def test_the_anchor_summary_uses_the_shared_unresolved_share_constant():
     assert "WARNING: " in sc._passive_joint_anchor_summary(3, stats)
     at_threshold = {"n_links": n_links, "n_resolved": n_links - n_unresolved + 1,
                     "n_unresolved": n_unresolved - 1}
-    assert "WARNING" not in sc._passive_joint_anchor_summary(3, at_threshold)
+    assert (at_threshold["n_unresolved"] / n_links
+            == DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
+    assert "WARNING: " in sc._passive_joint_anchor_summary(3, at_threshold)
+    below_threshold = {"n_links": n_links, "n_resolved": n_links - n_unresolved + 2,
+                       "n_unresolved": n_unresolved - 2}
+    assert "WARNING" not in sc._passive_joint_anchor_summary(3, below_threshold)
 
 
 def test_shard_attempts_must_be_a_positive_integer():

@@ -51,10 +51,14 @@ LINK_COLUMNS = ["child_person_id", "child_activity_index",
 #: ``linked_location_rows`` (same columns, so the caller treats both alike).
 ANCHOR_COLUMNS = ["person_id", "activity_index", "location_id", "geometry"]
 
-#: Above this share of links whose adult activity has no placed pass-1 location the pass-1
-#: output is probably incomplete (a truncated or mis-keyed pass-1 result), so
+#: At or above this share of links whose adult activity has no placed pass-1 location the
+#: pass-1 output is probably incomplete (a truncated or mis-keyed pass-1 result), so
 #: :func:`resolve_joint_anchors` escalates its rate line from INFO to WARNING
 #: (CLAUDE.md fallback transparency: a pathological fallback rate is a failure signal).
+#: The comparison is ``>=``, the convention of every sibling rate instrument of this stage
+#: (``reporting._fallback_accounting_summary``,
+#: ``reporting._excursion_boundary_clip_summary``, the SrV marginal-fallback line), so a
+#: rate landing exactly on the threshold warns instead of staying silent.
 DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5
 
 _REQUIRED_PERSON_COLUMNS = ("person_id", "household_id", "source_H_ID", "source_P_ID")
@@ -343,14 +347,14 @@ def resolve_joint_anchors(links: pd.DataFrame, df_locations: pd.DataFrame
     # the pass-1 placements the anchors are read from are incomplete (CLAUDE.md fallback
     # transparency rule 2).
     incomplete = (stats["n_unresolved"] / stats["n_links"]
-                  > DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
+                  >= DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE)
     logger.log(
         logging.WARNING if incomplete else logging.INFO,
         "%s anchors resolved for %d/%d links (%.1f%%); %d links pointing at an adult "
         "activity without a placed location -> the child keeps the independent draw.%s",
         _LOG_TAG, stats["n_resolved"], stats["n_links"],
         100.0 * stats["n_resolved"] / stats["n_links"], stats["n_unresolved"],
-        (f" More than {100.0 * DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE:.0f}% of the links "
+        (f" At or above {100.0 * DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE:.0f}% of the links "
          "are unresolved -- the pass-1 output is probably incomplete.") if incomplete else "",
     )
     return anchors, stats

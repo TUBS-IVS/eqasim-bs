@@ -116,11 +116,24 @@ def test_escort_linked_is_a_fixed_purpose_boundary():
 
 
 # --- Task 3: passive_linked as a second anchored fixed purpose (issue #385) ---
+from braunschweig.synthesis.locations.passive_joint_links import PASSIVE_LINKED_PURPOSE
 
 
 def test_passive_linked_is_an_anchored_fixed_purpose():
     assert "passive_linked" in problems_mod.FIXED_PURPOSES
     assert problems_mod.ANCHORED_PURPOSES == ("escort_linked", "passive_linked")
+
+
+def test_the_passive_linked_constant_is_pinned_to_the_splitters_tuple():
+    """The boundary purpose has two homes by necessity: the rewriter's constant
+    (braunschweig) and the fork-local splitter's taxonomy (synthesis). Drift between them
+    fails SILENTLY and reintroduces exactly the duplicate child location row issue #385
+    exists to prevent -- the rewritten purpose would stop being a fixed boundary, so the
+    solver would place the child's activity AND the anchor row would still be appended.
+    Assert the CONSTANT, not a second copy of the literal.
+    """
+    assert PASSIVE_LINKED_PURPOSE in problems_mod.ANCHORED_PURPOSES
+    assert PASSIVE_LINKED_PURPOSE in problems_mod.FIXED_PURPOSES
 
 
 def test_passive_linked_destination_resolves_through_the_anchor_dict():

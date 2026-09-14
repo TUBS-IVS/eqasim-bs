@@ -5,18 +5,17 @@
   references in `braunschweig/synthesis/locations/passive_joint_links.py`,
   `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`,
   `braunschweig/synthesis/locations/secondary_chainsolvers/escort.py`,
-  `synthesis/population/spatial/secondary/problems.py` and `configs/base_bs.yml` all say
+  `synthesis/population/spatial/secondary/problems.py` and `configs/base_bs.yml` all said
   `ADR-0118`, mirroring the same pattern ADR-0112's own Numbering paragraph records). RE-VERIFIED
   across ALL branches on 2026-09-11 (`git fetch origin`, then `git ls-tree -r --name-only <ref> --
   docs/decisions` grepped for `ADR-[0-9]{4}` on every `refs/remotes/origin` and `refs/heads` ref):
   **`ADR-0118` is ALREADY TAKEN** by `docs/decisions/ADR-0118-donor-match-fine-child-age-bands.md`
   (issue #386, `feature/i386-donor-match-fine-child-age-bands`), already merged to `origin/main`.
   The highest id otherwise found is ADR-0117. This record therefore uses **ADR-0119**, the next
-  free id. The `ADR-0118` strings already in the working tree are stale forward references written
-  before this renumbering was discovered; they are OUT OF SCOPE for this documentation-only task
-  (the worktree scope for this task forbids editing `braunschweig/`, `synthesis/` or `configs/`) and
-  should be corrected to `ADR-0119` in a follow-up commit that touches those files. Ids are
-  append-only.
+  free id. Those stale forward references were corrected to `ADR-0119` across `braunschweig/`,
+  `synthesis/` and `configs/` by commit `fb59fd12` on this branch, so no code file points at
+  `ADR-0118` for this record any more; the single `ADR-0118` string left in the code tree is
+  `configs/base_bs.yml`'s own, legitimate reference to #386's record. Ids are append-only.
 - **Context:** Phase 1 (#372 / ADR-0112) gives a PAIRED passive escort leg (MiD `W_ZWECK` 13, the
   escorted child's own leg, 100 % minors) the PURPOSE of the same-household adult leg it travels
   with -- the adult shops, so the child taken along gets `shop` too. The child's LOCATION was still
@@ -53,8 +52,9 @@
      adult activity is looked up in the pass-1 output (chainsolver rows AND fallback rows are both
      placements) to yield the child's anchor `(location_id, geometry)`. A link whose adult activity
      has no pass-1 row stays unresolved and the child keeps the independent draw in pass 2 (counted,
-     logged; the resolution rate escalates to WARNING above
-     `DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE` = 50 % unresolved).
+     logged; the resolution rate escalates to WARNING at or above
+     `DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE` = 50 % unresolved -- a `>=` comparison, the
+     convention every sibling rate instrument of this stage uses).
   3. **Two-pass composition** (`secondary_chainsolvers._compose_two_pass`, built on
      `_solve_problem_set`, the solve body extracted verbatim from the pre-refactor `execute()` so
      the RNG call order and the early-return path are unchanged): pass 1 solves everybody who is not
@@ -119,7 +119,12 @@
     linked children). Wall-clock impact was measured on the Kreis-03101 smoke rather than
     assumed: pass 1 (2,208 problems, 2,207 persons, 5,408 plan rows) `cs.solve` 19.0 s; pass 2
     (6 problems, 6 persons, 12 plan rows, 20 linked children) `cs.solve` 19.1 s -- see the run
-    manifest below.
+    manifest below. Pass 2 solved 6 problems in the same wall time as pass 1's 2,208, so on this
+    smoke the second pass cost a full pass's FIXED overhead (worker-pool spin-up plus the fallback
+    pool rebuild) rather than a cost proportional to its problem count -- it doubled the measured
+    `cs.solve` time for 6 problems. That fixed per-pass cost, not the number of linked children, is
+    what to watch at 100 % scale, where it has not been measured (its SHARE of a much longer pass 1
+    is the open question).
   - **Both passes share ONE `RandomState`** (built once in `_build_shared_solve_state`, threaded
     through both `_solve_problem_set` calls). An ON/OFF comparison is therefore a DIFFERENT
     Monte-Carlo realisation, not attributable to the anchoring mechanism alone -- pass 1 draws from
@@ -131,8 +136,8 @@
   - **The link and anchor-resolution rates are logged every run** (`[passive_joint_links]` marker):
     the link rate with its three-way exclusion split (adult not in the synthetic household / adult
     leg missing / purpose not secondary) and the anchor-resolution rate, both escalating to WARNING
-    at pathological values (nothing linked; over 50 % of links unresolved) per CLAUDE.md fallback
-    transparency.
+    at pathological values (nothing linked; 50 % or more of the links unresolved) per CLAUDE.md
+    fallback transparency.
   - **An unrelated, intended behaviour change surfaced during the `_solve_problem_set` extraction**:
     on the zero-bounded-legs early-return path, `execute()` now continues after the solve returns
     and still appends the #201 `linked_location_rows` and prints the success-rate line, which the
@@ -163,7 +168,9 @@
      `source_H_ID` are copies of one MiD donor household (`expand.expand_to_persons` +
      member-completion semantics). The link rate this run measures is exactly the rate at which
      that identity survives synthesis (member completion, the diary-plan match, and the day-absence
-     model can all break it). No run has measured this rate yet (see Evidence).
+     model can all break it). The Kreis-03101 smoke measured it: **36/74 paired passive legs
+     linked (48.6 %)** -- n = 74 paired legs on a 1 %-sampled single Kreis, a smoke-scale count,
+     not a population rate (see Evidence and the run manifest).
   3. **The excluded primary-target share.** Children paired with an adult travelling for work,
      business or education (adult `W_ZWECK` 1-3) are excluded from anchoring here
      (`purpose_not_secondary`) and keep phase 1's `other` purpose assignment. ADR-0112 measured this
@@ -188,9 +195,12 @@
   `braunschweig/synthesis/locations/secondary_chainsolvers/escort.py`
   (`rewrite_anchored_activities`), `synthesis/population/spatial/secondary/problems.py`
   (`ANCHORED_PURPOSES`, `_anchor_coordinates`), `configs/base_bs.yml` (the escort block's
-  `escort_passive_joint_location` line). Tests: `tests/test_passive_joint_links.py`,
-  the problem-splitter anchored-boundary tests, and the stage-level `_solve_problem_set` /
-  two-pass-assembly tests named in the design spec section 3. Run manifest
+  `escort_passive_joint_location` line). Tests: `tests/test_passive_joint_links.py`, the
+  problem-splitter anchored-boundary tests (`tests/test_escort_links.py`) and the stage-level
+  two-pass-assembly tests (`tests/test_passive_joint_two_pass.py`). No automated test covers the
+  `_solve_problem_set` extraction itself: the OFF-path frame equality below is a one-off manual
+  comparison of the two stage pickles, as the feature record states
+  (`evidence.off_path_byte_identical.note`). Run manifest
   `docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml` (smoke on Kreis 03101,
   completed 2026-09-11): measured link rate 36/74 paired passive legs linked (48.6 %),
   anchor-resolution rate 36/36 (100.0 %), OFF-path frame-equality result FRAME-EQUAL against the

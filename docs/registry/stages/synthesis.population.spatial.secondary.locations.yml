@@ -172,7 +172,11 @@ notes: >-
   prints the success rate, which the pre-refactor inline code skipped (silently dropping any
   escort-linked rows on that path); unreachable on a real run. OFF is one pass over the whole
   population, INTENDED to be frame-equal to the pre-refactor stage output by construction of the
-  verbatim extraction; the empirical result on the Kreis-03101 smoke is recorded in
-  docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml (PENDING at the time of this
-  note). No new stage, DAG unchanged: the stage already reads synthesis.population.sampled and
+  verbatim extraction; the empirical result on the Kreis-03101 smoke CONFIRMS it -- FRAME-EQUAL
+  between the pre-refactor baseline and the refactored stage with the flag OFF (3,415 location
+  rows each), recorded with the full breakdown in
+  docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml. That smoke also measured the
+  link rate at 36/74 paired passive legs (48.6 %) and the anchor-resolution rate at 36/36, on a
+  1 %-sampled single Kreis -- a smoke-scale count, not a population rate, and not a validation.
+  No new stage, DAG unchanged: the stage already reads synthesis.population.sampled and
   synthesis.population.trips.final.
