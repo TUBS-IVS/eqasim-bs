@@ -170,7 +170,11 @@
      that identity survives synthesis (member completion, the diary-plan match, and the day-absence
      model can all break it). The Kreis-03101 smoke measured it: **36/74 paired passive legs
      linked (48.6 %)** -- n = 74 paired legs on a 1 %-sampled single Kreis, a smoke-scale count,
-     not a population rate (see Evidence and the run manifest).
+     not a population rate (see Evidence and the run manifest). That measurement predates the
+     `origin/main` merge that brought issue #386 (fine child age bands applied to all three donor
+     matchers, ADR-0118), which changes the diary-plan match named above as one of the breaks on
+     this identity; the 48.6 % figure was not re-measured after that merge and should not be read
+     as the rate the branch's current HEAD produces.
   3. **The excluded primary-target share.** Children paired with an adult travelling for work,
      business or education (adult `W_ZWECK` 1-3) are excluded from anchoring here
      (`purpose_not_secondary`) and keep phase 1's `other` purpose assignment. ADR-0112 measured this

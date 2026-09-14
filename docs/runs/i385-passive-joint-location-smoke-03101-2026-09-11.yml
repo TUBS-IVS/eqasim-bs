@@ -21,12 +21,22 @@ configuration:
     the KREIS geography the default-ON Kreis controls render). Code state: all three runs below
     executed at commit ef75223a (repository.commit above). The branch ADVANCED after the
     measurements -- the origin/main merge 818d1e3a and the final review''s fix wave -- and a
-    re-measurement at the final HEAD was NOT performed. The measured results are carried forward
-    because none of those later commits touches the measured paths: rewrite_anchored_activities
-    (whose positional-mask fix is unreachable on a unique-index trips frame) is called only on
-    the ON path, _build_shared_solve_state''s dropped parameter was unused, and the unresolved-
-    anchor threshold change (> to >=) affects a log line only. The OFF path is unchanged in
-    effect by all of them.'
+    re-measurement at the final HEAD was NOT performed. The OFF-path frame-equality result
+    (validation metric 2 below) carries forward: it is a property of the stage''s code given
+    identical cached inputs, and none of the later commits touches the OFF path --
+    rewrite_anchored_activities (whose positional-mask fix is unreachable on a unique-index trips
+    frame) is called only on the ON path, _build_shared_solve_state''s dropped parameter was
+    unused, and the unresolved-anchor threshold change (> to >=) affects a log line only. The
+    LINK RATE (validation metric 1) and the ON-run counts (validation metric 3) do NOT carry
+    forward with the same confidence: the origin/main merge 818d1e3a brought issue #386 (''Apply
+    the fine child age bands to all three donor matchers'', commits 251f3bb9, 61f8921a,
+    c3552e83), which changes the diary plan match (feature record diary_plan_match, ADR-0118) --
+    exactly the mechanism that bounds this feature''s link rate, since a child fails to link when
+    its own plan source has been remapped away from the paired adult''s synthetic household. The
+    population underlying the link-rate and ON-run measurements above was built with the
+    PRE-#386 donor matchers; #386 therefore plausibly shifts the measured 48.6 % link rate and the
+    downstream ON-run anchor-resolution counts, in a direction and magnitude that were NOT
+    re-measured at the branch''s current HEAD.'
 sampling:
   rate: 1% (sampling_rate 0.01)
   scope: Kreis 03101 only
