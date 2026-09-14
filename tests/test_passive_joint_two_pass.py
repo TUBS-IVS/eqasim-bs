@@ -1,5 +1,9 @@
 """Two-pass secondary chainsolver for passive escort joint locations (issue #385, ADR-0119):
-flag declaration, prerequisites, and the pass composition."""
+flag declaration, prerequisites, the pass composition, execute()'s flag dispatch, and the
+RNG call-order guard for the ``_solve_problem_set`` extraction."""
+import sys
+import types
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -297,8 +301,12 @@ def test_with_pass_label_inserts_the_label_after_the_stage_prefix_once():
 
 # --- report lines and config fail-fasts -------------------------------------------
 
-def _link_stats(n_passive_paired, n_linked):
+def _link_stats(n_passive_paired, n_linked, n_adult_not_in_household=0,
+                n_adult_leg_missing=0, n_purpose_not_secondary=0):
     return {"n_passive_paired": n_passive_paired, "n_linked": n_linked,
+            "n_adult_not_in_household": n_adult_not_in_household,
+            "n_adult_leg_missing": n_adult_leg_missing,
+            "n_purpose_not_secondary": n_purpose_not_secondary,
             "link_rate": (n_linked / n_passive_paired) if n_passive_paired else float("nan")}
 
 
@@ -320,6 +328,24 @@ def test_the_link_rate_line_survives_a_run_without_any_paired_leg():
     line = sc._passive_joint_link_summary(_link_stats(0, 0))
     assert "WARNING" not in line
     assert "0/0 paired passive legs linked to the adult's activity (0.0%)" in line
+    # The exclusion split divides by the paired count, so the zero-paired run must not
+    # print "nan%" for it either.
+    assert "nan" not in line
+
+
+def test_the_link_rate_line_carries_the_per_exclusion_split():
+    """CLAUDE.md fallback-transparency rule 1 wants the split observable PER RUN, and the
+    stage's print stream is the only channel the operator's run log carries -- the same
+    breakdown ``passive_joint_links._log_link_rates`` emits reaches ``logging`` only, for
+    which ``scripts/run_synpp.py`` configures no handler."""
+    line = sc._passive_joint_link_summary(
+        _link_stats(200, 140, n_adult_not_in_household=20, n_adult_leg_missing=30,
+                    n_purpose_not_secondary=10))
+    assert "140/200 paired passive legs linked to the adult's activity (70.0%)" in line
+    # Same wording as the log line, so the two channels are recognisably one statement.
+    assert ("excluded: adult not in the synthetic household (plan source) 20 (10.0%), "
+            "adult leg missing 30 (15.0%), purpose not secondary 10 (5.0%)") in line
+    assert line.endswith("unlinked children keep the independent draw.")
 
 
 def test_the_anchor_summary_uses_the_shared_unresolved_share_constant():
@@ -352,6 +378,18 @@ def test_shard_attempts_must_be_a_positive_integer():
     assert sc._resolve_shard_attempts(3) == 3
 
 
+def test_shard_attempts_rejects_a_non_integral_value():
+    """A fractional value must be NAMED, not silently truncated: ``int(3.7)`` is 3, so a
+    config asking for 3.7 attempts would have run with a different number than it states
+    -- an untraceable divergence between the config and the executed run."""
+    with pytest.raises(ValueError, match="shard_attempts must be a positive integer"):
+        sc._resolve_shard_attempts(3.7)
+    with pytest.raises(ValueError, match="got 0.5"):
+        sc._resolve_shard_attempts(0.5)
+    # An integral float (a YAML ``3.0``) is a legitimate way to write 3 and stays accepted.
+    assert sc._resolve_shard_attempts(3.0) == 3
+
+
 def _one_candidate_frame():
     # No offers_* column at all -> every secondary purpose takes the any-type pool, which
     # is the branch that prints the fallback catalog line.
@@ -375,3 +413,313 @@ def test_the_fallback_catalog_line_is_unchanged_without_a_pass_label(capsys):
                        np.random.RandomState(0), "EPSG:25832")
     assert capsys.readouterr().out.startswith(
         "[braunschweig.secondary_chainsolvers] fallback catalog:")
+
+
+# --- execute()'s flag dispatch ----------------------------------------------------
+# The two branches of execute() itself: the ON branch's plan-source guard and the OFF
+# branch's single-solve contract. The stub context below is an ALL-FLAGS-OFF minimum, so
+# the stage's own setup (the #201 escort link, the primary locations, the distributions,
+# every decider, the candidate frame and the worker settings) runs FOR REAL up to the
+# dispatch -- only the solve itself, which needs the chainsolvers solver and a real
+# candidate set, is substituted.
+
+def _execute_stage_values(df_persons):
+    """The six stage outputs execute() reads, at the smallest shape that carries the
+    contract: two persons of one household, each with a home -> shop -> home chain."""
+    crs = "EPSG:25832"
+    df_home = gpd.GeoDataFrame({"household_id": [10], "geometry": [Point(0.0, 0.0)]},
+                               geometry="geometry", crs=crs)
+    df_work = gpd.GeoDataFrame({"person_id": [1, 2],
+                                "geometry": [Point(1000.0, 0.0), Point(1000.0, 0.0)]},
+                               geometry="geometry", crs=crs)
+    df_education = gpd.GeoDataFrame({"person_id": [1, 2],
+                                     "geometry": [Point(0.0, 1000.0), Point(0.0, 1000.0)]},
+                                    geometry="geometry", crs=crs)
+    df_trips = pd.DataFrame({
+        "person_id": [1, 1, 2, 2], "trip_index": [0, 1, 0, 1],
+        "preceding_purpose": ["home", "shop", "home", "shop"],
+        "following_purpose": ["shop", "home", "shop", "home"],
+        "mode": ["car"] * 4,
+        "departure_time": [0.0, 3600.0, 0.0, 3600.0],
+        "arrival_time": [600.0, 4200.0, 600.0, 4200.0],
+    })
+    df_candidates = gpd.GeoDataFrame({
+        "location_id": ["sec_1"], "offers_shop": [True], "offers_leisure": [True],
+        "offers_other": [True], "geometry": [Point(500.0, 500.0)],
+    }, geometry="geometry", crs=crs)
+    return {
+        "synthesis.population.trips.final": df_trips,
+        "synthesis.population.sampled": df_persons,
+        "synthesis.population.spatial.home.locations": df_home,
+        "synthesis.population.spatial.primary.locations": (df_work, df_education),
+        # An empty distributions dict is the documented empty-input contract of
+        # _resample_distributions; nothing in these tests samples a distance.
+        "synthesis.population.spatial.secondary.distance_distributions": {},
+        "synthesis.locations.secondary": df_candidates,
+    }
+
+
+#: Every flag OFF -- the cheapest configuration that still reaches the dispatch, and the
+#: one whose printed output the OFF path must keep byte-identical.
+_EXECUTE_CONFIG = {
+    "escort_household_link": False,
+    "escort_distance_by_type": False,
+    "escort_purpose": False,
+    "random_seed": 1234,
+    "leisure_correction_factor": 2.0,
+    "secondary_shop_daily_split": False,
+    "secondary_leisure_subtype_split": False,
+    "secondary_other_subtype_split": False,
+    "leisure_visit_building_potential": False,
+    "secondary_srv_location_types": False,
+    "secondary_building_potentials": False,
+    "braunschweig.chainsolvers.fallback": "rda",
+    "braunschweig.chainsolvers.solver": sc.DEFAULT_CHAIN_SOLVER,
+    "braunschweig.chainsolvers.parallel": False,
+    "braunschweig.chainsolvers.processes": 1,
+    "braunschweig.chainsolvers.shard_attempts": sc.DEFAULT_SHARD_ATTEMPTS,
+}
+
+
+class _ExecuteCtx:
+    """Minimal synpp ExecuteContext stand-in for ``execute``.
+
+    ``config(key)`` takes the key ALONE, mirroring synpp's
+    ``ExecuteContext.config`` (declared options only, no default parameter) exactly like
+    ``tests.test_escort_chainsolvers._Ctx``: a two-argument read from the stage would fail
+    here just as it would crash in production. Every config and stage read is recorded, so
+    a test can assert HOW OFTEN a stage was read.
+    """
+
+    def __init__(self, *, df_persons, **config_overrides):
+        self._config = dict(_EXECUTE_CONFIG)
+        self._config.update(config_overrides)
+        self._stages = _execute_stage_values(df_persons)
+        self.config_reads = []
+        self.stage_reads = []
+
+    def config(self, key):
+        self.config_reads.append(key)
+        if key not in self._config:
+            raise KeyError(
+                f"_ExecuteCtx: no value for config key {key!r} -- declared-config "
+                "semantics require the test to supply it explicitly.")
+        return self._config[key]
+
+    def stage(self, name):
+        self.stage_reads.append(name)
+        if name not in self._stages:
+            raise KeyError(f"_ExecuteCtx: no value for stage {name!r}.")
+        return self._stages[name]
+
+
+def _persons_without_plan_source():
+    """A persons frame from a producer that carries no plan-source ids (the case the ON
+    branch's guard names)."""
+    return pd.DataFrame({"person_id": [1, 2], "household_id": [10, 10]})
+
+
+@pytest.fixture
+def fake_chainsolvers_module(monkeypatch):
+    """Stub out the optional ``chainsolvers`` package for the duration of one test.
+
+    ``execute`` imports it eagerly purely as a fail-fast dependency check, and the tests
+    using this fixture never solve. chainsolvers is an optional dependency that is not
+    installed everywhere (see tests/test_chainsolvers_parallel.py), so injecting the stub
+    unconditionally keeps these tests deterministic with AND without the real package.
+    """
+    monkeypatch.setitem(sys.modules, "chainsolvers", types.ModuleType("chainsolvers"))
+
+
+def _recording_execute_solve(calls):
+    """Stands in for ``_solve_problem_set``: records the call and returns an empty result
+    in the shape execute()'s consolidated reporting consumes."""
+    def solve(df_trips_pass, df_primary, activity_anchors, shared, **kwargs):
+        calls.append({"persons": sorted(df_trips_pass["person_id"].unique().tolist()),
+                      "anchors": activity_anchors, "kwargs": dict(kwargs)})
+        df_loc = gpd.GeoDataFrame(pd.DataFrame(
+            {"person_id": pd.Series(dtype="int64"), "activity_index": pd.Series(dtype="int64"),
+             "location_id": pd.Series(dtype=object), "geometry": pd.Series(dtype=object)}),
+            geometry="geometry", crs=shared["crs"])
+        df_conv = pd.DataFrame({"valid": pd.Series(dtype=bool), "size": pd.Series(dtype="int64")})
+        report = {"n_problems": 0, "n_unbounded": 0, "n_failed_bounded": 0,
+                  "subtype_stats": {}, "desired_by_category": {}, "n_plan_rows": 0}
+        return df_loc, df_conv, report
+    return solve
+
+
+def test_execute_with_the_flag_on_requires_the_plan_source_columns(fake_chainsolvers_module):
+    """The ON branch links on ``(source_H_ID, source_P_ID)``; a producer without them must
+    fail with a named error rather than a bare pandas KeyError deep inside the link build."""
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(),
+                      escort_passive_joint_location=True)
+    with pytest.raises(RuntimeError) as excinfo:
+        sc.execute(ctx)
+    message = str(excinfo.value)
+    assert message.startswith("[braunschweig.secondary_chainsolvers]")
+    assert "escort_passive_joint_location" in message
+    assert "source_H_ID" in message and "source_P_ID" in message
+    # The stage whose frame is missing them, so the operator knows WHERE to look.
+    assert "synthesis.population.sampled" in message
+    # The ON branch is the one that reads the persons frame a second time (the first read
+    # is _prepare_primary's); the guard fires on that second read, before any link build.
+    assert ctx.stage_reads.count("synthesis.population.sampled") == 2
+
+
+def test_execute_with_the_flag_off_solves_once_and_reads_the_persons_frame_once(
+        monkeypatch, fake_chainsolvers_module):
+    """The OFF path's contract: ONE pass over the whole population, the two-pass
+    composition never entered, and no second read of ``synthesis.population.sampled``."""
+    solve_calls, compose_calls = [], []
+    monkeypatch.setattr(sc, "_solve_problem_set", _recording_execute_solve(solve_calls))
+
+    def _must_not_compose(*args, **kwargs):
+        compose_calls.append((args, kwargs))
+        raise AssertionError("_compose_two_pass ran on the OFF path")
+
+    monkeypatch.setattr(sc, "_compose_two_pass", _must_not_compose)
+    ctx = _ExecuteCtx(df_persons=_persons_without_plan_source(),
+                      escort_passive_joint_location=False)
+
+    df_locations, df_convergence = sc.execute(ctx)
+
+    assert compose_calls == []
+    assert len(solve_calls) == 1
+    assert solve_calls[0]["persons"] == [1, 2]  # one pass over everybody
+    # None, not an empty dict: the #201 escort link is OFF, so there is no anchor table.
+    assert solve_calls[0]["anchors"] is None
+    # No pass_label keyword at all -- NOT passing it is what keeps the one-pass printed
+    # lines byte-identical and keeps the default stated in exactly one place.
+    assert solve_calls[0]["kwargs"] == {}
+    assert ctx.stage_reads.count("synthesis.population.sampled") == 1
+    assert len(df_locations) == 0 and len(df_convergence) == 0
+
+
+# --- RNG call-order guard for the _solve_problem_set extraction --------------------
+# _solve_problem_set is execute()'s former solve section moved verbatim, and the evidence
+# that the move preserved the RNG stream is a ONE-OFF manual comparison of two cache
+# pickles -- a check nothing in tests/ repeats. test_the_rng_consuming_calls_of_one_pass_
+# keep_their_order below is the standing guard that manual A/B cannot be: it pins the
+# ORDER of the RNG-consuming calls within one pass, and that all of them draw from the ONE
+# shared RandomState. A golden output frame would need the real chainsolvers solver and a
+# real candidate set, so it does not belong in a unit test; the call order is the part an
+# edit can break silently.
+
+class _RecordingRandom:
+    """Records every method ``_solve_problem_set`` calls on the shared RNG.
+
+    Deliberately NOT a ``numpy.random.RandomState`` subclass: an unrecorded draw method
+    would then pass through silently, and an unrecorded draw is exactly what this guard
+    exists to catch. Draws are delegated to a real seeded ``RandomState`` so the values
+    are the ones the production stream would yield.
+    """
+
+    def __init__(self, calls, seed=0):
+        self._calls = calls
+        self._random = np.random.RandomState(seed)
+
+    def randint(self, *args, **kwargs):
+        self._calls.append("random.randint")
+        return self._random.randint(*args, **kwargs)
+
+    def __getattr__(self, name):
+        raise AssertionError(
+            f"_solve_problem_set used the shared RNG via {name!r}, which this order guard "
+            "does not record. Add it to _RecordingRandom AND to the expected sequence, "
+            "after confirming the new draw is intended -- an added, removed or reordered "
+            "draw changes every placed location downstream of it.")
+
+
+def _order_guard_trips():
+    """Two persons, each home -> shop -> home: the smallest frame yielding TWO assignment
+    problems, so the two fallback calls can be told apart by their problem indices."""
+    return pd.DataFrame({
+        "person_id": [1, 1, 2, 2], "trip_index": [0, 1, 0, 1],
+        "preceding_purpose": ["home", "shop", "home", "shop"],
+        "following_purpose": ["shop", "home", "shop", "home"],
+        "mode": ["car"] * 4, "travel_time": [600.0, 600.0, 600.0, 600.0],
+    })
+
+
+def _order_guard_primary():
+    return pd.DataFrame({
+        "person_id": [1, 2],
+        "home": [Point(0.0, 0.0), Point(0.0, 0.0)],
+        "work": [Point(1000.0, 0.0), Point(1000.0, 0.0)],
+        "education": [Point(0.0, 1000.0), Point(0.0, 1000.0)],
+    })
+
+
+def _order_guard_shared(random_wrapper, df_secondary):
+    """The shared solve state ``_solve_problem_set`` reads, with every decider OFF."""
+    return {
+        "distance_distributions": {}, "leisure_corr": 2.0, "random": random_wrapper,
+        "shop_subtype_decider": None, "leisure_subtype_decider": None,
+        "other_subtype_decider": None, "escort_location_decider": None,
+        "escort_distance_factor_map": None, "srv_location_decider": None,
+        "fallback_strategy": "rda", "rda_index_cache": {},
+        "df_secondary": df_secondary, "df_secondary_legacy": df_secondary,
+        "scorer_spec": None, "locations_df": pd.DataFrame(),
+        "solver_name": sc.DEFAULT_CHAIN_SOLVER, "parallel_enabled": False,
+        "configured_procs": 1, "shard_attempts": 1, "crs": "EPSG:25832",
+    }
+
+
+def test_the_rng_consuming_calls_of_one_pass_keep_their_order(monkeypatch):
+    calls, received_random, solve_args, index_builds = [], [], [], []
+    shared_random = _RecordingRandom(calls)
+    df_secondary = _one_candidate_frame()
+
+    def fake_build_plans_df(problems, distance_distributions, leisure_corr, random, **kwargs):
+        calls.append("_build_plans_df")
+        received_random.append(random)
+        plans_df = pd.DataFrame({"unique_person_id": ["1", "2"], "to_act_type": ["shop", "shop"]})
+        # Problem 0 is bounded and will fail in the solve; problem 1 is unbounded.
+        problem_meta = [{"problem_idx": 0, "person_id": 1, "activity_index": 1,
+                         "n_secondary": 1}]
+        return plans_df, problem_meta, [1], {}, {}
+
+    def fake_rda_fallback_place(problems, problem_indices, rda_index, distance_distributions,
+                                leisure_correction_factor, random, crs, *, pass_label=""):
+        calls.append("_rda_fallback_place%s" % (tuple(problem_indices),))
+        received_random.append(random)
+        return [], []
+
+    def fake_solve_person_shard(args):
+        calls.append("solve")
+        solve_args.append(args)
+        return 0, sc._empty_chain_result_df(), [0]
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError(
+            "the 'random' fallback strategy ran while 'rda' was configured")
+
+    monkeypatch.setattr(sc, "_build_plans_df", fake_build_plans_df)
+    monkeypatch.setattr(sc, "_rda_fallback_place", fake_rda_fallback_place)
+    monkeypatch.setattr(sc, "_fallback_place", _must_not_be_called)
+    monkeypatch.setattr(sc, "_build_rda_candidate_index",
+                        lambda frame: index_builds.append(frame) or "rda-index")
+    monkeypatch.setattr(sc, "_init_chain_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sc, "_solve_person_shard", fake_solve_person_shard)
+
+    df_locations, df_convergence, report = sc._solve_problem_set(
+        _order_guard_trips(), _order_guard_primary(), None,
+        _order_guard_shared(shared_random, df_secondary))
+
+    # The verbatim order of the pass: distance draws, the unbounded fallback, the base-seed
+    # draw, the solve, then the failed-bounded fallback. The problem indices in the two
+    # fallback entries also pin WHICH set each call received.
+    assert calls == ["_build_plans_df", "_rda_fallback_place(1,)", "random.randint",
+                     "solve", "_rda_fallback_place(0,)"]
+    # ONE stream: the plans build, the base seed and both fallbacks share the same object,
+    # so a future edit handing any of them a fresh RandomState fails here.
+    assert received_random and all(r is shared_random for r in received_random)
+    # base_seed is the FIRST draw of that stream (nothing above it consumes one), which a
+    # freshly seeded RandomState could not reproduce by construction.
+    assert solve_args[0][3] == np.random.RandomState(0).randint(0, 2**31 - 1)
+    assert isinstance(solve_args[0][3], int)
+    # The RDA candidate index is built at most once per pass, and on the LEGACY frame.
+    assert len(index_builds) == 1 and index_builds[0] is df_secondary
+    assert report["n_unbounded"] == 1 and report["n_failed_bounded"] == 1
+    assert report["n_problems"] == 2
+    assert len(df_locations) == 0 and len(df_convergence) == 1

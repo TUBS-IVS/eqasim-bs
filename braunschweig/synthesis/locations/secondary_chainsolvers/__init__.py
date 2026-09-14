@@ -163,7 +163,6 @@ from .fallback import (  # noqa: F401  (re-exports)
 )
 from .plans import (  # noqa: F401  (re-exports)
     DISTANCE_LABEL_COLUMN,
-    FIXED_PURPOSES,
     PLANS_HELPER_COLUMNS,
     SECONDARY_PURPOSES,
     _build_plans_df,
@@ -1014,12 +1013,19 @@ def _resolve_shard_attempts(value):
     as a bare ``TypeError`` from ``int(None)`` with no hint at the key. Fail fast and name
     the key instead of falling back to the default silently (CLAUDE.md: explicit failure
     over a silent default).
+
+    A NON-INTEGRAL value is rejected too: ``int(3.7)`` truncates to 3, so the run would
+    have used a different number of attempts than the config states -- a divergence
+    between the recorded configuration and the executed run, which is not traceable.
+    An integral float (a YAML ``3.0``) is a legitimate spelling of 3 and is accepted.
     """
     try:
         attempts = int(value)
+        is_integral = float(value).is_integer()
     except (TypeError, ValueError):
         attempts = None
-    if attempts is None or attempts < 1:
+        is_integral = False
+    if attempts is None or not is_integral or attempts < 1:
         raise ValueError(
             "[braunschweig.secondary_chainsolvers] braunschweig.chainsolvers."
             f"shard_attempts must be a positive integer, got {value!r}; set a positive "
@@ -1037,8 +1043,16 @@ def _passive_joint_link_summary(link_stats) -> str:
     of the feature and must stay observable per run. Paired legs present but nothing
     linked means the pairing columns or the plan-source ids are broken, so that case is
     flagged ``WARNING`` (CLAUDE.md fallback transparency rule 2). Pure: builds a string.
-    ``build_passive_joint_links`` logs the same rate and its per-exclusion breakdown at
-    INFO; this line carries it in the stage's print stream.
+
+    The line carries the THREE-WAY exclusion split (adult not in the synthetic household /
+    adult leg missing / purpose not secondary) in the same wording
+    ``build_passive_joint_links`` uses, because that function reports it through ``logging``
+    only and ``scripts/run_synpp.py`` configures no handler that carries a library logger
+    into the run log the operator reads -- the stage's print stream is the only channel the
+    split actually reaches (CLAUDE.md fallback transparency rule 1: the split must be
+    observable per run). The two remaining counters (``n_adult_is_linked_child``,
+    ``n_duplicate_dropped``) stay log-only: both are expected to be 0 by construction, so
+    they are diagnostics of a defensive case rather than the feature's rate.
     """
     n_paired = link_stats["n_passive_paired"]
     prefix = "WARNING: " if n_paired > 0 and link_stats["n_linked"] == 0 else ""
@@ -1047,6 +1061,13 @@ def _passive_joint_link_summary(link_stats) -> str:
         f"{link_stats['n_linked']:,}/{n_paired:,} paired passive "
         f"legs linked to the adult's activity "
         f"({100.0 * link_stats['link_rate'] if n_paired else 0.0:.1f}%); "
+        "excluded: adult not in the synthetic household (plan source) "
+        f"{link_stats['n_adult_not_in_household']:,} "
+        f"({_rate_pct(link_stats['n_adult_not_in_household'], n_paired):.1f}%), "
+        f"adult leg missing {link_stats['n_adult_leg_missing']:,} "
+        f"({_rate_pct(link_stats['n_adult_leg_missing'], n_paired):.1f}%), "
+        f"purpose not secondary {link_stats['n_purpose_not_secondary']:,} "
+        f"({_rate_pct(link_stats['n_purpose_not_secondary'], n_paired):.1f}%); "
         "unlinked children keep the independent draw."
     )
 
