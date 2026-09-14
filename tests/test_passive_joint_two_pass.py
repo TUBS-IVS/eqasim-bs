@@ -334,16 +334,21 @@ def test_the_link_rate_line_survives_a_run_without_any_paired_leg():
 
 
 def test_the_link_rate_line_carries_the_per_exclusion_split():
-    """CLAUDE.md fallback-transparency rule 1 wants the split observable PER RUN, and the
-    stage's print stream is the only channel the operator's run log carries -- the same
-    breakdown ``passive_joint_links._log_link_rates`` emits reaches ``logging`` only, for
-    which ``scripts/run_synpp.py`` configures no handler."""
+    """The split already reaches the run log through ``logging`` --
+    ``passive_joint_links._log_link_rates`` logs it, and ``scripts/run_synpp.py::main``'s
+    ``braunschweig.logging_setup.setup_logging`` root-logger setup carries every
+    ``braunschweig.*`` logger into it. The stage prints the same split ADDITIONALLY so it
+    sits with the stage's other per-run rate lines (the fallback accounting summary and the
+    success rate) in the operator's stdout block, where the rates are read together
+    (CLAUDE.md fallback transparency rule 1). The printed line carries only the three main
+    reasons, so it must say so and point to the log line for the full five-way split."""
     line = sc._passive_joint_link_summary(
         _link_stats(200, 140, n_adult_not_in_household=20, n_adult_leg_missing=30,
                     n_purpose_not_secondary=10))
     assert "140/200 paired passive legs linked to the adult's activity (70.0%)" in line
     # Same wording as the log line, so the two channels are recognisably one statement.
-    assert ("excluded: adult not in the synthetic household (plan source) 20 (10.0%), "
+    assert ("excluded (three main reasons; the run log's [passive_joint_links] line carries "
+            "all five): adult not in the synthetic household (plan source) 20 (10.0%), "
             "adult leg missing 30 (15.0%), purpose not secondary 10 (5.0%)") in line
     assert line.endswith("unlinked children keep the independent draw.")
 
@@ -604,6 +609,9 @@ def test_execute_with_the_flag_off_solves_once_and_reads_the_persons_frame_once(
 # shared RandomState. A golden output frame would need the real chainsolvers solver and a
 # real candidate set, so it does not belong in a unit test; the call order is the part an
 # edit can break silently.
+#
+# This guard drives the SERIAL path only (the stub context below sets "parallel_enabled":
+# False), so it does not cover _solve_chains_parallel, where per-shard seeding happens.
 
 class _RecordingRandom:
     """Records every method ``_solve_problem_set`` calls on the shared RNG.

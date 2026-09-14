@@ -1044,15 +1044,22 @@ def _passive_joint_link_summary(link_stats) -> str:
     linked means the pairing columns or the plan-source ids are broken, so that case is
     flagged ``WARNING`` (CLAUDE.md fallback transparency rule 2). Pure: builds a string.
 
-    The line carries the THREE-WAY exclusion split (adult not in the synthetic household /
-    adult leg missing / purpose not secondary) in the same wording
-    ``build_passive_joint_links`` uses, because that function reports it through ``logging``
-    only and ``scripts/run_synpp.py`` configures no handler that carries a library logger
-    into the run log the operator reads -- the stage's print stream is the only channel the
-    split actually reaches (CLAUDE.md fallback transparency rule 1: the split must be
-    observable per run). The two remaining counters (``n_adult_is_linked_child``,
-    ``n_duplicate_dropped``) stay log-only: both are expected to be 0 by construction, so
-    they are diagnostics of a defensive case rather than the feature's rate.
+    ``build_passive_joint_links`` already logs the full five-way exclusion split through
+    ``logging``, and that reaches the run log on its own: ``scripts/run_synpp.py::main``
+    calls ``braunschweig.logging_setup.setup_logging``, which configures the ROOT logger
+    (console handler plus the ``logs/run_<timestamp>.log`` file handler), and this module's
+    ``__name__`` logger sits under ``braunschweig.`` and propagates into it. The line here
+    carries the THREE main exclusion reasons (adult not in the synthetic household / adult
+    leg missing / purpose not secondary) in the same wording ADDITIONALLY, so the split sits
+    with the stage's other per-run rate lines (``_fallback_accounting_summary`` and the
+    success rate) in the operator's stdout block, where the rates are read together
+    (CLAUDE.md fallback transparency rule 1: the split must be observable per run). The
+    printed line names only the three main reasons and says so, pointing to the log line for
+    the full split -- without that, a defensive case would leave the printed counts silently
+    failing to reconcile with ``n_passive_paired - n_linked``. The two remaining counters
+    (``n_adult_is_linked_child``, ``n_duplicate_dropped``) stay log-only: both are expected
+    to be 0 by construction, so they are diagnostics of a defensive case rather than the
+    feature's rate.
     """
     n_paired = link_stats["n_passive_paired"]
     prefix = "WARNING: " if n_paired > 0 and link_stats["n_linked"] == 0 else ""
@@ -1061,7 +1068,8 @@ def _passive_joint_link_summary(link_stats) -> str:
         f"{link_stats['n_linked']:,}/{n_paired:,} paired passive "
         f"legs linked to the adult's activity "
         f"({100.0 * link_stats['link_rate'] if n_paired else 0.0:.1f}%); "
-        "excluded: adult not in the synthetic household (plan source) "
+        "excluded (three main reasons; the run log's [passive_joint_links] line carries "
+        "all five): adult not in the synthetic household (plan source) "
         f"{link_stats['n_adult_not_in_household']:,} "
         f"({_rate_pct(link_stats['n_adult_not_in_household'], n_paired):.1f}%), "
         f"adult leg missing {link_stats['n_adult_leg_missing']:,} "

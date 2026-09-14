@@ -48,12 +48,15 @@ description: 'Anchors a PAIRED passive escort child''s joint activity (shop / le
   alone -- stated as a limitation in ADR-0119''s Consequences.
 
   Link rate and anchor-resolution rate are logged every run ([passive_joint_links] marker), with
-  the three-way exclusion split and escalation to WARNING at pathological values (nothing
-  linked; 50 % or more of the links unresolved), per CLAUDE.md fallback transparency. The link
-  rate AND its three-way exclusion split are additionally carried by the stage print stream
-  (secondary_chainsolvers._passive_joint_link_summary), because scripts/run_synpp.py configures
-  no handler that carries a library logger into the run log the operator reads -- the logging
-  channel alone would leave the split unobservable per run. Convergence
+  the full five-way exclusion split and escalation to WARNING at pathological values (nothing
+  linked; 50 % or more of the links unresolved), per CLAUDE.md fallback transparency; this
+  logging channel already reaches the run log via braunschweig.logging_setup.setup_logging''s
+  root-logger setup, which scripts/run_synpp.py::main calls. The link rate AND its three main
+  exclusion reasons are additionally carried by the stage print stream
+  (secondary_chainsolvers._passive_joint_link_summary), so the split sits with the stage''s
+  other per-run rate lines (the fallback accounting summary and the success rate) in the
+  operator''s stdout block, where the rates are read together; the printed line names itself as
+  the three-reason subset and points to the log line for the full five-way split. Convergence
   (a stable, fully-placed solve) is NOT validation: no observed reference exists for "child and
   adult end up at the same shop", so this feature has no behavioural target to compare against --
   only the mechanism''s own rates.'
