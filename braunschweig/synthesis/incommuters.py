@@ -280,7 +280,7 @@ def build_pt_entry_stops(stops, routes, kreise, zgb_kreise):
 def assemble_incommuter_core_frames(person_ids, home_x, home_y, mid_x, mid_y,
                                     mid_location_ids, depart_home_s, arrive_mid_s,
                                     depart_mid_s, arrive_home_s, modes,
-                                    crs, middle_purpose="work"):
+                                    crs, middle_purpose="work", *, repair_chronology=True):
     """Build the shared Home->MIDDLE->Home core frames (trips, activities,
     locations) for an in-commuter subpopulation. ``middle_purpose`` is "work" for
     SvB commuters and "education" for students. ``mid_location_ids`` are the unique
@@ -290,7 +290,8 @@ def assemble_incommuter_core_frames(person_ids, home_x, home_y, mid_x, mid_y,
     # so both frames share the same finite times -- a non-final activity without an end time
     # makes MATSim's PlanRouter abort ("undefined activity end time"). See impute_incommuter_times.
     depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s = impute_incommuter_times(
-        depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s, middle_purpose=middle_purpose)
+        depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
+        middle_purpose=middle_purpose, repair_chronology=repair_chronology)
     trips = build_incommuter_trips(person_ids, depart_home_s, arrive_mid_s,
                                    depart_mid_s, arrive_home_s,
                                    middle_purpose=middle_purpose)
@@ -315,7 +316,8 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
                             real_origin=False, gemeinden=None,
                             zgb_polygon=None, source_buffer_m=45000.0,
                             mode_balance=False,
-                            mode_reference_by_bundesland=None):
+                            mode_reference_by_bundesland=None,
+                            repair_chronology=True):
     """Assemble every in-commuter frame.
 
     Returns a dict with keys persons, trips, activities, locations, vehicles,
@@ -668,7 +670,7 @@ def build_incommuter_frames(flows, zgb_kreise, sampling_rate, gates, assignment,
         person_ids, home_x, home_y, work_x, work_y,
         [f"ic_work_{int(pid)}" for pid in person_ids],
         depart_home, arrive_work, depart_work, arrive_home, modes,
-        zgb_work.crs, middle_purpose="work")
+        zgb_work.crs, middle_purpose="work", repair_chronology=repair_chronology)
     trips, activities, locations = core["trips"], core["activities"], core["locations"]
 
     # Per-agent monthly household income (EUR) from the origin-Kreis INKAR level,
@@ -1124,11 +1126,27 @@ def _empty_frames(crs):
         od_target=pd.DataFrame(columns=["ars5", "direction", "n_target"]))
 
 
+_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.cordon.plans",)
+
+
+def validate(context):
+    """Include shared plan repairs in synpp's stage cache identity."""
+    import hashlib
+    import importlib
+    import inspect
+
+    digest = hashlib.md5()
+    for name in _DEFERRED_HELPER_MODULE_NAMES:
+        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def configure(context):
     context.config("cordon_enabled", False)
     context.config("random_seed")
     if not context.config("cordon_enabled"):
         return
+    context.config("cordon_incommuter_time_chronology", True)
     context.config("data_path")
     context.config("sampling_rate")
     context.config("braunschweig.political_prefix")
@@ -1308,6 +1326,7 @@ def execute(context):
         source_buffer_m=source_buffer_m,
         mode_balance=mode_balance,
         mode_reference_by_bundesland=mode_reference_by_bundesland,
+        repair_chronology=context.config("cordon_incommuter_time_chronology"),
     )
     print(f"[braunschweig.synthesis.incommuters] {len(frames['persons'])} in-commuters "
           f"injected ({(frames['trips']['mode'] == 'pt').sum() // 2} PT, rest car)")

@@ -43,7 +43,7 @@ def _synthetic_mid():
         "H_ID": [1, 2], "P_ID": [1, 1],
         "P_TAET": [1, 10],          # 1 -> employed, 10 -> Student -> studies
         "alter_gr1": [5, 3], "RegioStaR7": [71, 71],
-        "age": [45, 22], "sex": ["male", "female"],
+        "HP_ALTER": [45, 22], "HP_SEX": [1, 2],
     })
     # Person 1: home(0)->work(1)->home; Person 2: home->education->home.
     wege = pd.DataFrame({
@@ -135,6 +135,7 @@ def test_execute_on_real_mid_yields_commute_donors():
     class Ctx:
         def config(self, k, d=None):
             return {"braunschweig.population.popsim.mid_raw_path": _MID_DIR,
+                    mid_donor.KEY_DEMOGRAPHICS: True,
                     "random_seed": 1234}.get(k, d)
     hh, persons, trips = mid_donor.execute(Ctx())
     assert persons["person_id"].is_unique

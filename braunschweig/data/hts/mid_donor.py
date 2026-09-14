@@ -27,14 +27,76 @@ _log = logging.getLogger(__name__)
 # ENTD-resident config) must still resolve to a usable path instead of
 # hard-failing at synpp graph-build.
 DEFAULT_MID_RAW_PATH = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
+KEY_DEMOGRAPHICS = "cordon_incommuter_donor_demographics"
+
+# These transformations live outside the stage file synpp hashes itself.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.expand",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.trips",
+    "braunschweig.popsim.sources.mid",
+    "braunschweig.popsim.mid.donor",
+)
 
 
-def build_mid_donor_frames(households, persons, wege, rng):
+def validate(context):
+    """Invalidate cached donors when a directly used MiD helper changes."""
+    import hashlib
+    import importlib
+    import inspect
+
+    digest = hashlib.md5()
+    for name in _DEFERRED_HELPER_MODULE_NAMES:
+        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _map_donor_demographics(persons, rng):
+    """Use the resident MiD coding, without accepting an all-default donor pool."""
+    from braunschweig.popsim.expand import map_demographics
+
+    required = {"HP_ALTER", "HP_SEX"}
+    missing = required - set(persons.columns)
+    if missing:
+        raise ValueError(f"[mid_donor] missing raw MiD demographics: {sorted(missing)}")
+    age = persons["HP_ALTER"].to_numpy(dtype=float)
+    if not (np.isfinite(age) & (age >= 0) & (age == np.floor(age))).all():
+        raise ValueError("[mid_donor] HP_ALTER must contain finite non-negative integer ages")
+    observed = persons["HP_SEX"].isin([1, 2])
+    n, n_primary = len(persons), int(observed.sum())
+    n_fallback = n - n_primary
+    log = _log.warning if n_fallback else _log.info
+    log("[mid_donor] sex: primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%); "
+        "non-binary/missing codes use the observed MiD pool, seeded by random_seed",
+        n_primary, n, 100.0 * n_primary / max(n, 1),
+        n_fallback, n, 100.0 * n_fallback / max(n, 1))
+    if n and not n_primary:
+        raise ValueError("[mid_donor] HP_SEX has no observed binary-sex pool for imputation")
+    # A missing age-band key must use the global observed pool, not be skipped by
+    # pandas groupby in the shared mapper. Give just those rows an empty band.
+    mapping_input = persons.copy()
+    if "alter_gr1" in mapping_input:
+        mapping_input["alter_gr1"] = mapping_input["alter_gr1"].astype(object)
+        mapping_input.loc[~observed & mapping_input["alter_gr1"].isna(), "alter_gr1"] = "missing"
+    mapped = map_demographics(mapping_input, rng=rng)
+    if not mapped["sex"].isin(["male", "female"]).all():
+        raise ValueError("[mid_donor] HP_SEX mapping left unresolved donor demographics")
+    _log.info("[mid_donor] age: primary %d/%d (%.1f%%), fallback 0/%d (0.0%%)",
+              n, n, 100.0 if n else 0.0, n)
+    # Preserve the raw donor attributes, including the original age-band keys.
+    out = persons.copy()
+    out[["age", "sex"]] = mapped[["age", "sex"]]
+    return out
+
+
+def build_mid_donor_frames(households, persons, wege, rng, *, preserve_demographics=True):
     """Pure transform: raw MiD (households, persons, wege) -> in-commuter donor
     (households, persons, trips).
 
     ``persons`` gets a stable per-(H_ID, P_ID) ``person_id`` plus boolean
-    ``employed``/``studies`` (via the shared MiD attribute mappers); ``trips``
+    ``employed``/``studies`` and MiD ``age``/``sex`` via the shared mappers.
+    ``preserve_demographics=False`` retains the legacy optional-column adapter,
+    including its downstream scalar defaults on raw input (#397). ``trips``
     is the eqasim trip table (home-first, purposes + float departure/arrival
     seconds) built by the shared MiD trip-table builder. ``households`` is
     passed through unchanged (only used here for the donor-pool size log).
@@ -53,6 +115,17 @@ def build_mid_donor_frames(households, persons, wege, rng):
         raise ValueError("[mid_donor] non-unique (H_ID, P_ID) -> person_id collision")
     p = attributes.map_employed(p, rng=rng)
     p = attributes.map_studies(p)
+    if preserve_demographics:
+        # Map after employment so its imputation retains the previous RNG stream.
+        p = _map_donor_demographics(p, rng)
+    else:
+        for column in ("age", "sex"):
+            n_primary = len(p) if column in p else 0
+            _log.warning(
+                "[mid_donor] legacy %s: primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%); "
+                "missing columns trigger worker/student scalar defaults",
+                column, n_primary, len(p), 100.0 * n_primary / max(len(p), 1),
+                len(p) - n_primary, len(p), 100.0 * (len(p) - n_primary) / max(len(p), 1))
 
     trips = trips_mod.build_trip_table(
         p[["person_id", "H_ID", "P_ID"]], wege,
@@ -84,6 +157,7 @@ def configure(context):
     # explicitly (as the popsim configs do).
     context.config(KEY_MID, DEFAULT_MID_RAW_PATH)
     context.config("random_seed")
+    context.config(KEY_DEMOGRAPHICS, True)
 
 
 def execute(context):
@@ -106,4 +180,6 @@ def execute(context):
     mid_dir = context.config(KEY_MID)
     households, persons, wege = MidSource().load_donor(mid_dir)
     rng = np.random.RandomState(int(context.config("random_seed")))
-    return build_mid_donor_frames(households, persons, wege, rng)
+    return build_mid_donor_frames(
+        households, persons, wege, rng,
+        preserve_demographics=context.config(KEY_DEMOGRAPHICS))

@@ -86,7 +86,7 @@ def sample_donors(donors, n, rng):
 
 
 def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_home_s,
-                            middle_purpose="work"):
+                            middle_purpose="work", *, repair_chronology=True):
     """Complete item-nonresponse in donor Home->MIDDLE->Home timings.
 
     An HTS donor whose return trip is untimed (or whose first/last-trip fallback in
@@ -101,38 +101,72 @@ def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_ho
     (runs with no missing times stay byte-identical, and downstream income/fleet draws are
     unaffected). Called once in :func:`assemble_incommuter_core_frames` so the trips and
     activities frames share the same completed times. Returns the four completed float
-    arrays (seconds since midnight); the middle-end fill rate is logged.
+    arrays (seconds since midnight). With ``repair_chronology=True`` (default),
+    a home arrival before the REPAIRED middle departure is imputed too; negative
+    first departure/middle arrival times are repaired. OFF reproduces the legacy
+    arrays and RNG draws. Fully valid inputs are unchanged, including next-day
+    arrivals. Repair and observed-pool/assumption rates are logged.
     """
     dh = np.asarray(depart_home_s, dtype=float).copy()
     am = np.asarray(arrive_mid_s, dtype=float).copy()
     dm = np.asarray(depart_mid_s, dtype=float).copy()
     ah = np.asarray(arrive_home_s, dtype=float).copy()
+    if repair_chronology and (any(a.ndim != 1 for a in (dh, am, dm, ah)) or
+                              not dh.shape == am.shape == dm.shape == ah.shape):
+        raise ValueError("[incommuters] time arrays must be one-dimensional and equally sized")
     n = len(am)
     rng = np.random.RandomState(20260723)  # local + deterministic; does NOT touch caller RNG
 
-    def _sample(pool, k, default):
+    def _sample(pool, k, default, label):
         pool = pool[np.isfinite(pool) & (pool > 0)]
+        log = LOGGER.info if pool.size else LOGGER.warning
+        log("[incommuters] %s duration imputation: observed pool %d/%d (%.1f%%), "
+            "assumption %d/%d (%.1f%%); empty-pool assumption %.0f seconds",
+            label, int(k) if pool.size else 0, k, 100.0 if pool.size else 0.0,
+            0 if pool.size else int(k), k, 0.0 if pool.size else 100.0, default)
         return rng.choice(pool, int(k)) if pool.size else np.full(int(k), float(default))
+
+    def _log_repair(label, mask):
+        k = int(mask.sum())
+        log = LOGGER.warning if k else LOGGER.info
+        log("[incommuters] %s (%s): primary %d/%d (%.1f%%), fallback %d/%d (%.1f%%)",
+            label, middle_purpose, n - k, n, 100.0 * (n - k) / max(n, 1),
+            k, n, 100.0 * k / max(n, 1))
 
     default_dur = (8.0 if middle_purpose == "work" else 6.0) * 3600.0
     m = ~np.isfinite(am)                                    # middle start (rare)
+    if repair_chronology:
+        m |= am < 0
+    _log_repair("middle arrival", m)
     if m.any():
         finite_am = am[np.isfinite(am)]
+        if repair_chronology:
+            finite_am = finite_am[finite_am >= 0]
+        if not finite_am.size:
+            LOGGER.warning("[incommuters] middle arrival: observed pool 0/%d (0.0%%), "
+                           "assumption %d/%d (100.0%%); ASSUMPTION: 08:00",
+                           int(m.sum()), int(m.sum()), int(m.sum()))
         am[m] = rng.choice(finite_am, int(m.sum())) if finite_am.size else 8.0 * 3600.0
     m_end = ~(np.isfinite(dm - am) & ((dm - am) > 0))       # middle end (common, router-critical)
+    _log_repair("middle departure", m_end)
     if m_end.any():
-        dm[m_end] = am[m_end] + _sample(dm - am, m_end.sum(), default_dur)
+        dm[m_end] = am[m_end] + _sample(dm - am, m_end.sum(), default_dur, "middle activity")
     m = ~(np.isfinite(dh) & (dh <= am))                    # first-activity (home) end
+    if repair_chronology:
+        m |= dh < 0
+    _log_repair("home departure", m)
     if m.any():
-        dh[m] = np.maximum(0.0, am[m] - _sample(am - dh, m.sum(), 3600.0))
+        dh[m] = np.maximum(0.0, am[m] - _sample(am - dh, m.sum(), 3600.0, "outbound"))
     m = ~np.isfinite(ah)                                   # last-activity (home) start
+    if repair_chronology:
+        m |= ah < dm
+    _log_repair("home arrival", m)
     if m.any():
-        ah[m] = dm[m] + _sample(ah - dm, m.sum(), 3600.0)
-    if m_end.any():
-        LOGGER.warning("[incommuters] imputed missing %s-activity end time for %d/%d agents "
-                       "(%.1f%%): HTS donor had an untimed return trip; sampled the activity-"
-                       "duration distribution of fully-timed same-subpopulation donors.",
-                       middle_purpose, int(m_end.sum()), n, int(m_end.sum()) / max(n, 1) * 100.0)
+        ah[m] = dm[m] + _sample(ah - dm, m.sum(), 3600.0, "return")
+    if repair_chronology and not (
+            np.isfinite(np.stack((dh, am, dm, ah))).all() and
+            ((0 <= dh) & (dh <= am) & (am < dm) & (dm <= ah)).all()):
+        raise ValueError("[incommuters] time repair failed to produce finite chronological plans")
     return dh, am, dm, ah
 
 
@@ -233,7 +267,8 @@ def extract_activity_times(trips, purpose="work"):
     """Donor Home->PURPOSE->Home timings (seconds since midnight) from HTS ``trips``:
     (depart_home, arrive_mid, depart_mid, arrive_home). Generalises
     ``extract_commute_times`` (purpose='work'); same first/last-trip fallback so
-    four ordered times are always returned."""
+    four anchors are returned. They can be incomplete or unordered and must pass
+    through :func:`impute_incommuter_times` before plan-frame construction."""
     t = trips.sort_values("departure_time").reset_index(drop=True)
     outbound = t[(t["preceding_purpose"] == "home") & (t["following_purpose"] == purpose)]
     inbound = t[(t["preceding_purpose"] == purpose) & (t["following_purpose"] == "home")]
