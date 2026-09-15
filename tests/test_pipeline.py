@@ -23,6 +23,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.pipeline_runtime import configure_pipeline_runtime
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DRYRUN_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_dryrun_braunschweig.yml"
 DATA_PATH = REPO_ROOT / "eqasim-data" / "data"
@@ -53,6 +55,7 @@ def test_dryrun_pipeline_runs(tmp_path):
     raw = _load_dryrun_config()
     config = dict(raw.get("config", {}))
     aliases = raw.get("aliases", {})
+    configure_pipeline_runtime(config)
 
     # Redirect outputs into the pytest tmp_path so we don't pollute the
     # repository's working directories.
