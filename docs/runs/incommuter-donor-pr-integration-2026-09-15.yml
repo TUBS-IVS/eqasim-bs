@@ -1,12 +1,12 @@
 id: incommuter-donor-pr-integration-2026-09-15
 date: '2026-09-15'
 repository:
-  commit: baa16b0151d5ebc7c69951f69c8b51084c9d1bdc
+  commit: 33db2419da825244b1a388a90c1738037d7eac8b
   branch: fix/i397-incommuter-donor-consistency
-  notes: Clean final executable code after merging origin/main d84ee661c9ae12c5c3765175d70a4566433d10c3
-    and clarifying duration-pool provenance in the review follow-up. Later changes
-    only record documentation and evidence. Earlier full-suite attempts on dbd3f912
-    were interrupted before completion and are not used as passing evidence.
+  notes: Clean final executable code after merging origin/main d84ee661c9ae12c5c3765175d70a4566433d10c3,
+    clarifying duration-pool provenance and closing the review's cache-invalidation
+    gaps. Later changes only record documentation and evidence. Earlier full-suite
+    attempts on dbd3f912 were interrupted and are not used as passing evidence.
 configuration:
   config: pytest.ini
   notes: Both in-commuter corrections ON for the raw-data smoke; random_seed 1234.
@@ -36,26 +36,27 @@ environment:
 validation:
 - metric: Final-code Linux/WSL regression gate
   reference: Existing assertions on the integrated code state named above
-  result: 5822 passed, 85 skipped, 4 deselected, 27 warnings in 336.66 s; exit 0
-  artifact: 'Local WSL: /home/felix/projects/eqasim-bs-i397-pr/test-results.xml'
-  notes: Log and preflight are /home/felix/projects/eqasim-bs-i397-pr-tests.log and
-    /home/felix/projects/eqasim-bs-i397-pr-environment.json. Skips cover absent local-only
+  result: 5825 passed, 85 skipped, 4 deselected, 27 warnings in 344.85 s; exit 0
+  artifact: 'Local WSL: /home/felix/projects/eqasim-bs-i397-review-tests.xml'
+  notes: Log and preflight are /home/felix/projects/eqasim-bs-i397-review-tests.log and
+    /home/felix/projects/eqasim-bs-i397-review-environment.json. Skips cover absent local-only
     inputs/caches, the adjacent Java checkout and conditional fixture/data branches.
     The optional MiD smoke is skipped here and executed separately below.
 - metric: Final-code Windows regression gate
   reference: Identical shared-runner command and executable commit as Linux
-  result: 5807 passed, 100 skipped, 4 deselected, 29 warnings in 480.20 s; exit 0
-  artifact: 'Local task worktree: test-results.xml'
-  notes: Logs and preflight are scratch/pre-pr-windows-tests.log and
-    scratch/pre-pr-windows-environment.json. The 15 additional skips versus Linux
+  result: 5810 passed, 100 skipped, 4 deselected, 29 warnings in 477.70 s; exit 0
+  artifact: 'Local task worktree: scratch/review-followup-windows-tests.xml'
+  notes: Logs and preflight are scratch/review-followup-windows-tests.log and
+    scratch/review-followup-windows-environment.json. The 15 additional skips versus Linux
     are 12 POSIX-shell cases and 3 fork-dependent multiprocessing cases, all passing
     on Linux. Both JUnit reports contain zero failures and zero errors.
 - metric: Focused adapter, stage wiring and helper-cache regressions
   reference: python scripts/run_tests.py tests/test_incommuter_donor_consistency.py
     tests/test_mid_donor.py tests/test_student_incommuters_stage.py
     tests/test_synpp_helper_hash_invariant.py -q
-  result: 100 passed, 3 skipped, 2 warnings in 7.05 s; exit 0
-  notes: Executed on the final executable files just before committing baa16b01.
+  result: 103 passed, 3 skipped, 2 warnings in 11.44 s; exit 0
+  notes: Executed before committing 33db2419, including mutations of the MiD facade,
+    stage facade and defining config-key module; all seven cache-token cases passed.
 - metric: Real MiD smoke on final code
   reference: EQASIM_MID_SMOKE_DIR points to the restricted CSV directory; python
     scripts/run_tests.py tests/test_incommuter_donor_consistency.py -q -s
@@ -66,11 +67,12 @@ validation:
     All 1972 sampled ages and 1969 observed binary-sex values are preserved.
     Three non-binary/missing sex values use the existing seeded mapper.
     All 381 worker and 95 education donors have finite chronological times after repair.
-- metric: Independent integration review
-  reference: Diff from d84ee661 to dbd3f912 and follow-up baa16b01 in a separate worktree
-  result: No critical or important findings. Minor duration-pool provenance wording resolved.
-  notes: Final registry wording also clarifies that duration pools may include repaired
-    anchors. Sampling calculations are unchanged by the review follow-up.
+- metric: Independent and PR integration review
+  reference: Independent review through baa16b01 and Copilot review of PR head 4af8f880
+  result: No critical findings. Duration-pool provenance, cache invalidation and three nits resolved.
+  notes: The cache token now covers the MiD facade and stage/config-key export contract.
+    Module-level plans is classified consistently, and the manifest uses English dataset
+    descriptions. These follow-ups do not change sampling calculations or model outputs.
 features:
   note: Correctness evidence for incommuter_donor_demographics and incommuter_time_chronology.
 artifacts:
