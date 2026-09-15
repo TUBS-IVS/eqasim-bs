@@ -1,61 +1,66 @@
-# Reproducible Linux environment
+# Reproducible runtime environments
 
-`environment.yml` is the editable dependency specification for the `eqasim`
-conda environment. `environments/conda-lock.yml` is its committed, unified
-`linux-64` and `win-64` lock: every conda artifact has a checksum and every pip
-artifact has an exact URL and hash where the upstream format provides one. Its
-Linux resolution is the canonical runtime definition for WSL2 and the Linux
-production server; the Windows resolution keeps CI and local development on an
-equally exact dependency set.
+The Linux runtime is a captured, audited production-server snapshot, not a new
+solver result. `environments/server-linux-64.lock` lists the 312 installed
+conda artifacts as exact URLs, MD5 checksums, SHA-256 checksums, versions, and
+builds. `environments/requirements-server-linux-64.txt` records the 11
+effective pip installations and their exact PyPI artifact URLs and SHA-256
+hashes. It is the canonical environment for WSL2 and the Linux production
+server.
 
-`environments/conda-linux-64.lock` and `environments/conda-win-64.lock` are
-rendered explicit views of the same lock. They are useful for auditing or
-seeding a package cache. Install through `conda-lock install`, rather than
-`conda create --file`, because the unified installer also applies the pip
-section.
+The captured server ran Python 3.10.10 on `linux-64`. The committed export
+deliberately omits its machine paths, package file lists, and other local
+metadata. Its source was a read-only production environment snapshot collected
+on 2026-09-15.
 
-The pip layer must not replace a direct scientific conda package. When updating
-the lock, inspect the `manager: pip` records in `conda-lock.yml`: direct pins
-such as `numpy`, `pandas`, `scipy`, `geopandas`, `scikit-learn`, and `pyarrow`
-must remain conda-managed. If a VCS or PyPI dependency makes that impossible,
-make the conflict explicit in `environment.yml` and resolve it before accepting
-the new lock.
+## Install the Linux server snapshot
 
-## Install
-
-Install the unified lock with a Linux conda-compatible executable (for example
-micromamba):
+Install conda artifacts first, then reproduce the server's effective pip layer:
 
 ```bash
-conda-lock install --conda "$(command -v micromamba)" --name eqasim environments/conda-lock.yml
+micromamba create --prefix /path/to/eqasim-server --file environments/server-linux-64.lock
+/path/to/eqasim-server/bin/python -m pip install --no-deps -r environments/requirements-server-linux-64.txt
 ```
 
-This install includes `synpp`, `bhepop2`, and the pinned `chainsolvers` VCS
-source. The lock records the latter as
-`git+https://github.com/TUBS-IVS/chainsolvers.git@d8d8ae7de5bf2504d44b8422abcfe827ed7d054b`.
-On an offline WSL host, prefetch or mirror the URLs recorded in the unified lock
-(including that VCS commit) before running the install command.
+The `--no-deps` flag is required: the conda lock already provides the complete
+base graph and the requirements file captures only packages that the production
+server installed through pip. For an offline WSL host, prefetch or mirror the
+artifact URLs in the two files. The `chainsolvers` entry is the exact VCS commit
+`d8d8ae7de5bf2504d44b8422abcfe827ed7d054b`; stage that checkout or an equivalent
+archive before the pip step.
 
-## Update and verify
+The pip layer intentionally overrides some conda-installed packages. In
+particular, the server has conda `pytest=7.2.2` but its effective runtime is pip
+`pytest=9.1.1`, pulled in with the pinned `chainsolvers` installation. This is
+documented and replayed rather than hidden. The other captured pip packages are
+`py-spy=0.4.2`, `plotly=6.8.0`, `PyYAML=6.0.3`, `narwhals=2.22.0`,
+`frozendict=2.4.7`, `pyzmq=27.1.0`, `bhepop2=2.0.0`, `synpp=1.6.2`, and
+`Pygments=2.20.0`.
 
-Regenerate both platform lock views only after changing `environment.yml`,
-using the recorded lock tool version:
+## Windows development and CI
+
+`environment.yml` remains the editable portable source for Windows. Its
+`pytest=9.1.1` pin matches the production server's effective version.
+`environments/conda-lock.yml` and `environments/conda-win-64.lock` are the
+Windows-only conda-lock 4.0.2 resolution; install the unified lock with:
+
+```powershell
+conda-lock install --conda (Get-Command micromamba).Source --name eqasim environments/conda-lock.yml
+```
+
+The explicit Windows file is for auditing and cache seeding. Use the unified
+lock for installation so its pip section is also applied.
+
+## Refresh policy
+
+Do not regenerate the Linux snapshot from `environment.yml`: it represents a
+known production runtime. Refresh it only from a new read-only server snapshot,
+then record both the conda artifacts and the effective pip metadata again.
+
+Regenerate the Windows lock after changing `environment.yml` with the recorded
+tool version:
 
 ```bash
-uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --file environment.yml --platform linux-64 --platform win-64 --kind lock --lockfile environments/conda-lock.yml
-uvx --from conda-lock==4.0.2 conda-lock render --platform linux-64 --platform win-64 --kind explicit --filename-template 'environments/conda-{platform}.lock' environments/conda-lock.yml
-uvx --from conda-lock==4.0.2 conda-lock lock --file environment.yml --platform linux-64 --platform win-64 --lockfile environments/conda-lock.yml --check-input-hash
+uvx --from conda-lock==4.0.2 conda-lock lock --micromamba --file environment.yml --platform win-64 --kind lock --lockfile environments/conda-lock.yml
+uvx --from conda-lock==4.0.2 conda-lock render --platform win-64 --kind explicit --filename-template 'environments/conda-{platform}.lock' environments/conda-lock.yml
 ```
-
-With conda-lock 4.0.2, the final command reports that the spec hash is already
-locked and exits successfully when the lock still matches the source
-specification.
-
-## Pytest compatibility pin
-
-The pinned `chainsolvers` commit declares `pytest>=8.4.2`. Its previous
-`pytest=7.2.2` source constraint was therefore incompatible with a complete
-pip installation. `environment.yml` pins the lowest compatible version,
-`pytest=8.4.2`, and repeats it in the pip section: conda-lock resolves conda
-and pip requirement graphs independently, so the repeated pip constraint
-prevents the VCS dependency from silently selecting a newer pytest release.
