@@ -30,10 +30,18 @@ jobs:
           miniforge-version: latest
           activate-environment: lock-tools
           python-version: "3.11"
-      - name: Install locked project environment
+      - name: Install production Linux snapshot
+        if: runner.os == 'Linux'
+        run: |
+          conda create --yes --name eqasim --file environments/server-linux-64.lock
+          conda run --no-capture-output -n eqasim python -m pip install --no-deps -r environments/requirements-server-linux-64.txt
+      - name: Install locked Windows environment
+        if: runner.os == 'Windows'
         run: |
           python -m pip install conda-lock==4.0.2
           conda-lock install --name eqasim environments/conda-lock.yml
+      - name: Verify dependency consistency
+        run: conda run --no-capture-output -n eqasim python -m pip check
       - name: Report actual environment
         run: conda run --no-capture-output -n eqasim python scripts/run_tests.py --check
       - name: Regression tests with duration report

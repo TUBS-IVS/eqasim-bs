@@ -21,20 +21,29 @@ field assertions. Neither repetition adds an independent input or scenario.
 
 1. Use Linux as the canonical scientific execution platform, with WSL2 locally.
    Keep a Windows lock and CI regression leg to exercise native portability.
-2. Commit one generated conda-lock environment covering linux-64 and win-64.
-   Keep existing direct scientific versions and the chainsolvers commit. Resolve
-   the actual pytest conflict with 8.4.2, the minimum required by that commit.
-   Install through conda-lock so pip and VCS dependencies are included.
+2. Capture the known production Linux environment as an explicit conda artifact
+   snapshot plus the effective pip layer. Reproduce both layers in WSL2 and Linux
+   CI. A newly solved Linux environment was rejected because it selected newer
+   transitive packages (including Plotly 7 instead of the server's 6.8). Keep a
+   separate Windows conda-lock resolution from environment.yml. Its pytest 9.1.1
+   matches the effective server runtime; the Linux snapshot deliberately retains
+   the server's conda-then-pip installation history. Keep scientific versions and
+   the chainsolvers commit. Verify the effective installation with `pip check`.
 3. Provide `scripts/run_tests.py` as a shared test entry point. It reports the
    actual interpreter/import origins, uses repository-root discovery, enables
    UTF-8 and preserves pytest exit status. Its default selection excludes real
-   pipeline runs; `--pipeline` selects those runs through the existing opt-in.
+   pipeline runs and clears inherited opt-in flags; `--pipeline` selects those
+   runs through the existing opt-in, after data/JDK/Maven preflight.
 4. Run the regression workflow against main with locked dependencies and retain
    JUnit/duration evidence. Real MATSim runs still need JDK 25 and data/toolchain
    preflight; the regression gate does not install unused extraction tools.
 5. Consolidate tests with identical inputs into coherent output-contract checks,
    retaining every assertion and independent edge/override case. Reuse the fleet
-   sample once; retain its default-ON, explicit-OFF and determinism coverage.
+   sample and its validation summary once; retain default-ON, explicit-OFF,
+   determinism and the raw-KBA-target negative regression coverage.
+6. Make historical test fixtures portable: retain native-integer dtype checks
+   and fix the historical Windows CSV line ending for its existing golden hash.
+   Do not accept additional hashes or disable dtype assertions.
 
 ## Alternatives and consequences
 

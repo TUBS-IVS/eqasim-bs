@@ -46,9 +46,13 @@ python scripts/run_tests.py --pipeline -v
 ```
 
 This selects only those tests and sets their existing `EQASIM_BS_RUN_PIPELINE=1`
-opt-in. Their data/toolchain requirements still apply. MATSim requires JDK 25,
-Maven and the configured network tools. Inspect skipped-test reasons with `-rs`.
-The runner does not download data or configure Java. A small-data regression pass
+opt-in. Before execution it runs the existing input preflight with `--matsim`
+and requires JDK 25 and Maven on PATH. Missing prerequisites fail the command.
+`--pipeline --collect-only` can list the selected tests without these inputs.
+Network extraction tools must also be installed for an actual MATSim run.
+The default runner clears inherited pipeline opt-in flags; direct pytest retains
+its original opt-in/skip semantics. The runner does not download data or configure
+Java. A small-data regression pass
 is not a real pipeline smoke or scientific validation.
 
 Direct `python -m pytest tests/ -q` remains supported with the previous opt-in

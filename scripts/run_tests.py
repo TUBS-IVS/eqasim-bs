@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import shutil
 import subprocess
 import sys
 
@@ -73,6 +75,22 @@ def main(argv=None):
     env = dict(os.environ, PYTHONUTF8="1")
     if args.pipeline:
         env["EQASIM_BS_RUN_PIPELINE"] = "1"
+        if not any(flag in pytest_args for flag in ("--collect-only", "--co")):
+            result = subprocess.call(
+                [sys.executable, str(REPO_ROOT / "scripts" / "verify_braunschweig_inputs.py"),
+                 "--matsim"], cwd=REPO_ROOT, env=env,
+            )
+            if result:
+                return result
+            if shutil.which("java") is None or shutil.which("mvn") is None:
+                print("Pipeline tests require JDK 25 and Maven on PATH.", file=sys.stderr)
+                return 2
+            java = subprocess.run(["java", "-version"], capture_output=True, text=True)
+            if java.returncode or not re.search(r'version "25(?:[.\"]|$)', java.stdout + java.stderr):
+                print("Pipeline tests require JDK 25 on PATH.", file=sys.stderr)
+                return 2
+    else:
+        env.pop("EQASIM_BS_RUN_PIPELINE", None)
     # Keep the real-data boundary explicit even when the caller's shell has an
     # old opt-in variable set. Preserve other pytest arguments, including -k.
     marker = "pipeline" if args.pipeline else "not pipeline"
