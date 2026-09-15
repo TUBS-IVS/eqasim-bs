@@ -365,15 +365,6 @@ def test_gemeinde_tilt_bridges_umlaut_and_suffix_mismatch(sampler):
 # Task 5 — sonstige redistribution (consistency_v2).
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
-def sampled_v2(sampler):
-    """sample_fleet with consistency_v2=True (default)."""
-    df_cars = _make_cars()
-    df_spec, df_types, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
-    return df_spec, df_types
-
-
-@pytest.fixture(scope="module")
 def sampled_v2_off(sampler):
     """sample_fleet with consistency_v2=False (legacy path)."""
     df_cars = _make_cars()
@@ -382,9 +373,9 @@ def sampled_v2_off(sampler):
     return df_spec, df_types
 
 
-def test_no_sonstige_segment_in_output(sampled_v2):
-    """After redistribution, no vehicle carries segment=='sonstige'."""
-    df_spec, _ = sampled_v2
+def test_default_consistency_v2_redistributes_sonstige(sampled):
+    """The default v2 path redistributes every ``sonstige`` vehicle."""
+    df_spec, _ = sampled
     assert (df_spec["segment"] == "sonstige").sum() == 0
     assert (df_spec["brand"].astype(str).str.strip() == "").mean() < 0.001
 
