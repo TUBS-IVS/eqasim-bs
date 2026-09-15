@@ -3,7 +3,7 @@ date: '2026-09-15'
 repository:
   commit: 8a91cc53
   branch: codex/test-environment
-  notes: Full regression runs after consolidation and portability fixes; later shell-wrapper and documentation changes are checked separately.
+  notes: Original full regression runs after consolidation and portability fixes; subsequent tested code states are identified in the validation entries.
 configuration:
   config: pytest.ini
   notes: python scripts/run_tests.py -q --durations=30 --junitxml=RESULT.xml; baseline used python -m pytest tests/ -q on 31fc30fd.
@@ -20,10 +20,15 @@ status:
   notes: 'Windows baseline: 5689 passed, 91 skipped, 616.10 s. Final Windows: 5656 passed, 87 skipped, 4 deselected, 460.29 s. Server-mirrored WSL: 5659 passed, 84 skipped, 4 deselected, 321.29 s. Zero failures in all three runs. Timings are single observations with concurrent activity, not a controlled speed benchmark.'
 environment: Windows and Ubuntu 24.04 WSL2; Python 3.10.10
 validation:
+  - metric: Copilot review follow-up regression gate
+    reference: Executable code at ef69c516 after integrating origin/main 31fc30fd
+    result: 'Linux/WSL: 5675 passed, 84 skipped, 4 deselected; exit 0.'
+    artifact: 'Local WSL: /home/felix/eqasim-tools/copilot-review-final-tests.xml'
+    notes: 'Full shared runner with --durations=30 and --junitxml=test-results.xml: 27 warnings, 262.73 s. Log: /home/felix/eqasim-tools/copilot-review-final-tests.log. Focused Linux runner/runtime/bootstrap checks: 11 passed in 1.43 s. Windows runner/runtime checks: 8 passed in 9.98 s (Windows TEMP eqasim-copilot-focused-windows-final.log). Probes now bound both rootdir and confcutdir after earlier Windows checks exposed discovery of unrelated changing Temp files. Pipeline tooling was verified using isolated fake executables; no real-data pipeline run was launched. All four Copilot findings are fixed locally; publishing and new CI are still pending.'
   - metric: Final agent-process regression gate
     reference: Executable code at ac8fe0e2 after integrating origin/main 31fc30fd
     result: 'Linux/WSL: 5668 passed, 84 skipped, 4 deselected, 27 warnings in 244.98 s; exit 0.'
-    artifact: 'Local WSL: /home/felix/projects/eqasim-bs-test-environment/test-results.xml'
+    artifact: 'Local WSL: /home/felix/eqasim-tools/process-gate-tests.log'
     notes: 'Command: python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml. Environment preflight passed in the server-mirrored Python 3.10.10 runtime. Includes all nine JDK/config wrapper cases. Subsequent changes only clarify process documentation and record this evidence. Log: /home/felix/eqasim-tools/process-gate-tests.log. PR CI remains required before merge.'
   - metric: Regression results
     reference: Existing test assertions on main 31fc30fd
@@ -40,4 +45,4 @@ artifacts:
 decisions:
   - ADR-0122
 source: Local executed regression suites and read-only server package/configuration capture
-notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. CI workflow is configured but has not run remotely; native Windows used its existing environment, not a fresh Windows lock installation. Subsequent shell changes passed 9 isolated JDK/config preflight cases on Linux (correctly skipped on Windows), fake git/conda bootstrap and snapshot-update checks, and launch-gate checks showing a failed update never starts tmux. These checks execute stubs, not the production pipeline.
+notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. Original native Windows runs used the existing environment; subsequent PR CI on 86fff969 installed the committed Linux and Windows environments and passed both regressions and the documentation check. Review follow-up commits require new CI after publication. Subsequent shell changes passed 9 isolated JDK/config preflight cases on Linux (correctly skipped on Windows), fake git/conda bootstrap and snapshot-update checks, and launch-gate checks showing a failed update never starts tmux. These checks execute stubs, not the production pipeline.
