@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
 # update_server.sh - pull the latest eqasim-bs code on the Linux run server and
-# keep the conda environment in sync.
+# preserve the captured production conda environment.
 #
 # Code is distributed via git (GitHub is the single source of truth), so this
 # script never copies files by hand: it fast-forwards the local checkout and,
-# only if environment.yml actually changed, updates the conda environment.
+# never rebuilds an existing production environment from environment.yml. That
+# file is the Windows source lock; Linux uses the captured server snapshot.
 #
 # The large raw input tree (eqasim-data/, gitignored) is NOT touched here - it
 # is synced separately and rarely (see sync_data_to_server.ps1 on the Windows
@@ -17,13 +18,11 @@
 # Assumptions:
 #   - the repository lives at $REPO_DIR (default ~/eqasim-bs)
 #   - the conda environment is named "eqasim"
-#   - conda is initialised for the current shell
+#   - the environment was installed from environments/server-linux-64.lock
 
 set -euo pipefail
 
 REPO_DIR="${EQASIM_REPO_DIR:-$HOME/eqasim-bs}"
-CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
-
 if [[ ! -d "$REPO_DIR/.git" ]]; then
     echo "ERROR: '$REPO_DIR' is not a git repository." >&2
     echo "Clone it first:  git clone <repo-url> '$REPO_DIR'" >&2
@@ -32,39 +31,34 @@ fi
 
 cd "$REPO_DIR"
 
-# Record the environment.yml hash before pulling so we can detect dependency
-# changes that require a conda env update (recreating the env on every pull
-# would be slow and unnecessary).
-ENV_FILE="environment.yml"
-hash_before=""
-if [[ -f "$ENV_FILE" ]]; then
-    hash_before="$(sha1sum "$ENV_FILE" | awk '{print $1}')"
-fi
+# Record the two canonical Linux snapshot artifacts before pulling. A changed
+# snapshot requires an explicit fresh-environment installation; do not mutate a
+# trusted production environment in place.
+SERVER_CONDA_LOCK="environments/server-linux-64.lock"
+SERVER_PIP_REQUIREMENTS="environments/requirements-server-linux-64.txt"
+snapshot_hash() {
+    if [[ -f "$1" ]]; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        printf 'missing\n'
+    fi
+}
+conda_lock_before="$(snapshot_hash "$SERVER_CONDA_LOCK")"
+pip_requirements_before="$(snapshot_hash "$SERVER_PIP_REQUIREMENTS")"
 
 echo "==> Fetching latest code on branch $(git rev-parse --abbrev-ref HEAD) ..."
 git pull --ff-only
 
-hash_after=""
-if [[ -f "$ENV_FILE" ]]; then
-    hash_after="$(sha1sum "$ENV_FILE" | awk '{print $1}')"
-fi
-
-if [[ "$hash_before" != "$hash_after" ]]; then
-    echo "==> $ENV_FILE changed - updating conda environment '$CONDA_ENV' ..."
-    # conda is a shell function that only exists after sourcing conda.sh; this
-    # script runs in a non-interactive SSH shell where conda is not initialised,
-    # so 'conda env update' would fail with 'conda: command not found'.
-    CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
-    if [[ ! -f "$CONDA_ROOT/etc/profile.d/conda.sh" ]]; then
-        echo "ERROR: conda not found at $CONDA_ROOT. Set CONDA_ROOT to your install." >&2
-        exit 1
-    fi
-    # shellcheck disable=SC1091
-    source "$CONDA_ROOT/etc/profile.d/conda.sh"
-    # 'conda env update --prune' adds new and removes dropped dependencies.
-    conda env update -n "$CONDA_ENV" -f "$ENV_FILE" --prune
+conda_lock_after="$(snapshot_hash "$SERVER_CONDA_LOCK")"
+pip_requirements_after="$(snapshot_hash "$SERVER_PIP_REQUIREMENTS")"
+snapshot_changed=0
+if [[ "$conda_lock_before" != "$conda_lock_after" || "$pip_requirements_before" != "$pip_requirements_after" ]]; then
+    echo "ERROR: the production Linux environment snapshot changed." >&2
+    echo "       Existing environments are preserved; install a fresh environment" >&2
+    echo "       from $SERVER_CONDA_LOCK and $SERVER_PIP_REQUIREMENTS." >&2
+    snapshot_changed=1
 else
-    echo "==> $ENV_FILE unchanged - conda environment '$CONDA_ENV' left as is."
+    echo "==> Production Linux environment snapshot unchanged - existing environment left as is."
 fi
 
 # Keep the sibling eqasim-java-bs (our own editable Java project, built via
@@ -79,3 +73,7 @@ fi
 
 echo "==> Done. Now at commit:"
 git --no-pager log -1 --oneline
+
+if [[ "$snapshot_changed" -ne 0 ]]; then
+    exit 1
+fi
