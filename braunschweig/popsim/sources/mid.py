@@ -199,6 +199,7 @@ class MidSource:
         departure_time_min_reference_n: int = 200,
         departure_time_min_model_n: int = 50,
         departure_time_max_median_shift_hours: float = 2.0,
+        vectorized_validation: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -279,4 +280,5 @@ class MidSource:
             departure_time_min_reference_n=departure_time_min_reference_n,
             departure_time_min_model_n=departure_time_min_model_n,
             departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
+            vectorized_validation=vectorized_validation,
         )

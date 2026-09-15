@@ -43,6 +43,6 @@ artifacts:
   - 'Local Windows TEMP: eqasim-tests-final-reviewed-windows.log and .xml'
   - 'Local WSL: /home/felix/eqasim-tools/server-mirror-tests.log and .xml'
 decisions:
-  - ADR-0122
+  - ADR-0123
 source: Local executed regression suites and read-only server package/configuration capture
 notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. Original native Windows runs used the existing environment; subsequent PR CI on 86fff969 installed the committed Linux and Windows environments and passed both regressions and the documentation check. Review follow-up commits require new CI after publication. Subsequent shell changes passed 9 isolated JDK/config preflight cases on Linux (correctly skipped on Windows), fake git/conda bootstrap and snapshot-update checks, and launch-gate checks showing a failed update never starts tmux. These checks execute stubs, not the production pipeline.

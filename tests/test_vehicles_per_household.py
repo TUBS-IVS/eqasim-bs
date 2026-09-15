@@ -349,6 +349,7 @@ def test_sample_fleet_receives_age_income_coupling_kwarg(monkeypatch):
                 "data_path": DATA_PATH,
                 "random_seed": 42,
                 "hbefa_segment_size_map": None,
+                "braunschweig.performance.fleet_home_lookup": True,
                 "fleet_model_enabled": True,
                 "fleet_model_brands": False,
                 "fleet_hsn_tsn_attributes": False,

@@ -1,0 +1,35 @@
+{
+  "scope": "synthetic completed-donor build with passenger fields, member completion, weekend and diary rematching",
+  "reference": {
+    "commit": "31fc30fd4710efe32867d764f037b335afca5cb1",
+    "dirty": false
+  },
+  "candidate": {
+    "commit": "23fc1b7eeee3e45d6ddc7c89eb777eb1ef3e6e02",
+    "dirty": false
+  },
+  "original_off_on_exact": true,
+  "households": 3,
+  "persons": 12,
+  "diary_report": {
+    "n_persons": 12,
+    "n_remapped": 2,
+    "counts_by_reason": {
+      "realisable": 10,
+      "nodiary_mobile": 2
+    },
+    "match_level_counts": {
+      "0": 2
+    },
+    "share_remapped": 0.16666666666666666,
+    "n_crossed_employment_boundary": 0,
+    "n_remapped_in_split_child_band": 0,
+    "n_crossed_fine_child_age_band": 0
+  },
+  "completion_report": {
+    "n_households_total": 3,
+    "n_households_incomplete": 1,
+    "n_households_filled": 1,
+    "n_persons_added": 2
+  }
+}

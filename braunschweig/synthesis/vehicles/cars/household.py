@@ -114,7 +114,8 @@ def _kreis_ags5_from_ars(commune_id: str) -> str:
 
 
 def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
-                              df_regiostar: pd.DataFrame) -> pd.DataFrame:
+                              df_regiostar: pd.DataFrame, *,
+                              indexed_home_lookup: bool = True) -> pd.DataFrame:
     """Build the one-row-per-household-car frame F4 consumes.
 
     Parameters
@@ -125,6 +126,10 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
     df_homes : home zones with ``household_id`` and ``commune_id`` (12-digit ARS).
     df_regiostar : RegioStaR reference with ``commune_id`` (8-digit AGS),
         ``name`` (Gemeinde name) and ``regiostar7`` (RS7 code).
+    indexed_home_lookup : whether to build a first-occurrence home-row index.
+        True avoids filtering the complete home frame once for each car-owning
+        household. False retains the original filtered-frame lookup for
+        equivalence checks.
 
     Returns
     -------
@@ -154,6 +159,15 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
                             "regiostar7": "raumtyp"})
     rs["gemeinde"] = rs["gemeinde"].astype(str).str.strip().str.upper()
     homes = homes.merge(rs[["ags8", "gemeinde", "raumtyp"]], on="ags8", how="left")
+    home_rows_by_household = None
+    if indexed_home_lookup:
+        # ``merge`` may duplicate a home when RegioStaR has duplicate AGS rows.
+        # Keep the first row so the indexed path exactly matches the historical
+        # ``homes[homes["household_id"] == household_id].iloc[0]`` behaviour.
+        home_rows_by_household = (
+            homes.drop_duplicates("household_id", keep="first")
+            .set_index("household_id", drop=False)
+        )
 
     # One car-need-ordered record list per household.
     rows: list[dict] = []
@@ -166,13 +180,22 @@ def build_household_car_frame(df_persons: pd.DataFrame, df_homes: pd.DataFrame,
         if number_of_cars <= 0:
             continue
 
-        home = homes[homes["household_id"] == household_id]
-        if home.empty:
-            raise ValueError(
-                f"build_household_car_frame: no home commune for household "
-                f"{household_id}"
-            )
-        home_row = home.iloc[0]
+        if indexed_home_lookup:
+            try:
+                home_row = home_rows_by_household.loc[household_id]
+            except KeyError:
+                raise ValueError(
+                    f"build_household_car_frame: no home commune for household "
+                    f"{household_id}"
+                ) from None
+        else:
+            home = homes[homes["household_id"] == household_id]
+            if home.empty:
+                raise ValueError(
+                    f"build_household_car_frame: no home commune for household "
+                    f"{household_id}"
+                )
+            home_row = home.iloc[0]
         economic_status = str(group["economic_status"].iloc[0])
 
         owners = _assign_owners(group, number_of_cars)
@@ -435,6 +458,10 @@ def configure(context):
     context.config("data_path")
     context.config("random_seed")
     context.config("hbefa_segment_size_map", None)
+    # Default-ON indexed home lookup removes the repeated household-frame
+    # filtering in build_household_car_frame. False is an executable baseline
+    # path for output-equivalence checks.
+    context.config("braunschweig.performance.fleet_home_lookup", True)
     # Fleet model switches (Task F7). All flag-gated with the spec defaults; with
     # the German fleet disabled the stage reproduces the legacy one-car-per-person
     # default_car fleet byte-identically (OFF-equivalence).
@@ -506,6 +533,8 @@ def execute(context):
     data_path = context.config("data_path")
     random_seed = context.config("random_seed")
     size_map = context.config("hbefa_segment_size_map")
+    indexed_home_lookup = bool(
+        context.config("braunschweig.performance.fleet_home_lookup"))
     fleet_model_enabled = bool(context.config("fleet_model_enabled"))
     model_brands = bool(context.config("fleet_model_brands"))
     hsn_tsn_attributes = bool(context.config("fleet_hsn_tsn_attributes"))
@@ -535,7 +564,9 @@ def execute(context):
             f"(supported: {FLEET_ELECTRIC_CALIBRATIONS})"
         )
 
-    df_cars = build_household_car_frame(df_persons, df_homes, df_regiostar)
+    df_cars = build_household_car_frame(
+        df_persons, df_homes, df_regiostar,
+        indexed_home_lookup=indexed_home_lookup)
     df_cars = assign_vehicle_ids(df_cars)
 
     # T9b: grid EV tilt -- attach per-household grid_ev_share + gemeinde_grid_mean

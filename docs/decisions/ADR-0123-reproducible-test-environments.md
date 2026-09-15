@@ -1,4 +1,4 @@
-# ADR-0122 · 2026-09-15 · Reproducible test environments and measured consolidation
+# ADR-0123 · 2026-09-15 · Reproducible test environments and measured consolidation
 
 - **Status:** accepted for implementation
 

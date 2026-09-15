@@ -21,8 +21,10 @@ resolves_to:
   popsim_mid: braunschweig.synthesis.locations.home_cell
   popsim_open: braunschweig.synthesis.locations.home_cell
 features:
+- performance_equivalence
 - alkis_home_matching
 - cell_accurate_homes
 decisions:
+- ADR-0122
 - ADR-0007
 - ADR-0008
