@@ -18,11 +18,13 @@ The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issu
 match, in that order, CONTINUING the same seeded RNG instance -- they are new
 steps appended to the byte-identity contract above, never inserted before or
 between the existing two. The stage now also depends on the MiD Wege (trip)
-table (``mid.load_mid_wege``) and six additional flags (diary_plan_match,
+  table (``mid.load_mid_wege``) and six scientific flags (diary_plan_match,
 exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg,
 diary_match_hard_employment) plus donor_match_fine_child_age_bands, which
-applies to member completion and the weekend match as well and is therefore read
-regardless of diary_plan_match;
+  applies to member completion and the weekend match as well and is therefore read
+  regardless of diary_plan_match;
+  ``braunschweig.performance.donor_matching`` additionally selects the default-ON
+  prepared matching kernel without changing model behavior;
 it remains sampling- and controls-independent, so it is still shareable across
 runs via the cache_share store. The eight ``src_*`` plan-source fact columns are
 attached to ``persons`` ALWAYS (even with diary_plan_match OFF) -- they are
@@ -54,6 +56,7 @@ logger = logging.getLogger(__name__)
 # popsim.stage.build_persons. Must NOT change: it defines the donor draw
 # (byte-identity contract).
 COMPLETION_RNG_OFFSET = 74513
+KEY_PERFORMANCE_DONOR_MATCHING = "braunschweig.performance.donor_matching"
 
 # Filename of the weekend-plan-match trace persisted into this stage's cache dir.
 WEEKEND_TRACE_FILE = "weekend_plan_match_trace.parquet"
@@ -123,6 +126,7 @@ def build_completed_donor(
     diary_match_hard_employment: bool = True,
     donor_match_fine_child_age_bands: bool = True,
     diary_trace_path: Optional[Union[str, Path]] = None,
+    precompute_matching: bool = True,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
     diary plan match), and attach the plan-source diary facts.
@@ -198,6 +202,9 @@ def build_completed_donor(
     diary_trace_path:
         Where to write the diary-plan-match trace parquet (only when matching is
         on and a path is given). ``None`` -> trace not persisted (e.g. unit tests).
+    precompute_matching:
+        Prepare invariant person donor features and candidate indexes once per
+        matching pool. ``False`` retains the executable repeated-filter baseline.
 
     Notes
     -----
@@ -234,6 +241,7 @@ def build_completed_donor(
         persons, weekend_trace, weekend_report = weekend_plan_match.reassign_weekend_plan_sources(
             households, persons, rng=completion_rng,
             fine_child_age_bands=donor_match_fine_child_age_bands,
+            precompute_matching=precompute_matching,
         )
         if trace_path is not None:
             weekend_trace.to_parquet(trace_path)
@@ -281,6 +289,7 @@ def build_completed_donor(
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             hard_employment=diary_match_hard_employment,
             fine_child_age_bands=donor_match_fine_child_age_bands,
+            precompute_matching=precompute_matching,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
@@ -335,7 +344,8 @@ def configure(context):
     """Declare the completed-donor config dependencies.
 
     This stage depends ONLY on the MiD donor data, the random seed, the seed
-    day-filter, the weekend-plan-match flag, and the diary-plan-match flags --
+    day-filter, the weekend-plan-match flag, the diary-plan-match flags, and the
+    donor-matching performance flag --
     NOT on controls, sampling, or work_dir. That narrow dependency set is what
     makes it shareable across ALL runs (incl. control-tier changes) via the
     cache_share store.
@@ -369,6 +379,7 @@ def configure(context):
     # diary-less child draws, so flipping them must rebuild the donor, not reuse the cache.
     context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
                    DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS)
+    context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)
 
 
 def execute(context) -> CompletedDonor:
@@ -397,6 +408,7 @@ def execute(context) -> CompletedDonor:
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     diary_match_hard_employment = bool(context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT))
     donor_match_fine_child_age_bands = bool(context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS))
+    precompute_matching = bool(context.config(KEY_PERFORMANCE_DONOR_MATCHING))
 
     result = build_completed_donor(
         mid_dir,
@@ -411,6 +423,7 @@ def execute(context) -> CompletedDonor:
         diary_match_hard_employment=diary_match_hard_employment,
         donor_match_fine_child_age_bands=donor_match_fine_child_age_bands,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
+        precompute_matching=precompute_matching,
     )
 
     # Surface the build reports as run info (also set on the consumer in popsim.stage
