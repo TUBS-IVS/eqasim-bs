@@ -39,7 +39,7 @@ evidence:
     note: |
       Logs primed/already-present/forced/missing-in-store counts, transported metadata,
       missing provenance and incoherent dependency snapshots. Actual hits remain subject
-      to native synpp module/config/token validation (ADR-0121).
+      to native synpp module/config/token validation (ADR-0122).
   reference:
     kind: none
     note: Infrastructure feature (stage caching); no external reference applies.

@@ -113,5 +113,5 @@ artifacts:
 - docs/runs/artifacts/performance-equivalence-2026-09-15/inputs-dense-home-provenance.json
 issues: []
 decisions:
-- ADR-0121
+- ADR-0122
 source: Direct execution and exact comparisons in isolated worktrees on 2026-09-15.

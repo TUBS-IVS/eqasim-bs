@@ -1,0 +1,81 @@
+feature: mid_passenger_availability
+title: MiD passenger access independent of driver access
+area: attributes
+description: >-
+  Derives a separate passenger-availability attribute from MiD P_VAUTO for persons
+  aged 14+ and explicit household/diary assumptions for younger children. The Java
+  consumer uses it for car_passenger while retaining Bavaria's endogenous mode
+  choice and the existing driver licence/car-access rules. Technical vehicles
+  and utility coefficients are unchanged. See ADR-0121 for semantics and limits.
+stages:
+- braunschweig.popsim.completed_donor
+- data.census.filtered
+- synthesis.population.enriched
+- synthesis.output
+- matsim.scenario.population
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - mid_passenger_availability
+introduced:
+  issue: '#398'
+  pr: null
+  adr: ADR-0121
+detail_doc: docs/decisions/ADR-0121-mid-passenger-availability.md
+code_paths:
+- braunschweig/popsim/passenger_availability.py
+- matsim/scenario/population.py
+- matsim/simulation/prepare.py
+evidence:
+  tests:
+  - tests/test_mid_passenger_availability.py
+  - tests/test_population_passenger_availability.py
+  - tests/test_popsim_assembly.py
+  - tests/test_popsim_member_completion_integration.py
+  - tests/test_output_columns.py
+  - tests/test_mid_passenger_prepare.py
+  - tests/test_measure_mid_passenger_availability.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_population_passenger_availability.py
+    note: >-
+      Exact legacy CSV literal and base-1502e88e XML fixture tests; enabled/OFF
+      assembly shared-column equality preserves driver and stochastic fields.
+      The run manifest also records the actual Python-to-Java 24-case comparison.
+  fallback_rate:
+    instrumented: true
+    log_marker: passenger_availability
+    note: >-
+      Own responses, missing-response estimates, borrowed member-completion
+      responses/estimates and child derivations are counted separately.
+  reference:
+    kind: assumption
+    path: docs/decisions/ADR-0121-mid-passenger-availability.md
+    note: >-
+      P_VAUTO categories are observed survey responses from restricted MiD B1.
+      Their use as a passenger gate and the child/unknown-response derivation
+      are model assumptions, not independently validated availability measures.
+validation:
+  state: unvalidated
+  runs:
+  - smoke-mid-passenger-availability-2026-09-15
+  metric: null
+  note: >-
+    No behavioral validation is claimed. Survey-answer preservation, source
+    coverage and mode-set tests establish wiring and implementation properties.
+assessment:
+  status: reviewed
+  by: Independent Sol implementation and integration reviews
+  date: '2026-09-15'
+  pending_reason: null
+  source: ADR-0121
+notes: >-
+  Requires the coordinated eqasim-java-bs consumer and capability entrypoint
+  RunAdaptPassengerAvailabilityConfig. An older JAR must fail on the enabled
+  path rather than silently retaining the household-ownership gate.

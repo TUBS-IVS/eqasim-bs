@@ -32,7 +32,7 @@ features:
 - rbw_leg_convention
 - departure_time_model
 decisions:
-- ADR-0121
+- ADR-0122
 - ADR-0072
 - ADR-0073
 - ADR-0107

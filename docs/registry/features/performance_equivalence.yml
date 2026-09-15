@@ -27,7 +27,7 @@ production:
 introduced:
   issue: null
   pr: null
-  adr: ADR-0121
+  adr: ADR-0122
 detail_doc: docs/codebase/notes/performance-equivalence.md
 code_paths:
 - braunschweig/synthesis/vehicles/cars/household.py
@@ -78,7 +78,7 @@ assessment:
   by: null
   date: null
   pending_reason: Maintainer acceptance of the integrated performance change remains pending.
-  source: ADR-0121
+  source: ADR-0122
 notes: >
   Fleet applies to every workflow; typed home applies to PopulationSim.
   Array plan validation, completed-donor matching and the home-office donor caller

@@ -18,11 +18,23 @@ namespace; the class itself is region-neutral (point-in-polygon zone
 attribution against the supplied shapefile).
 """
 
+import hashlib
+import inspect
 import shutil
 import os.path
 
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
+
+_HELPER_MODULES = (delegate,)
+
+
+def validate(context):
+    """Invalidate this wrapper when its delegated preparation helper changes."""
+    digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
+    return digest.hexdigest()
 
 def configure(context):
     delegate.configure(context)

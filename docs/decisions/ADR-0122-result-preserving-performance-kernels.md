@@ -1,10 +1,11 @@
-# ADR-0121 · 2026-09-15 · Optimize repeated work while preserving simulation inputs
+# ADR-0122 · 2026-09-15 · Optimize repeated work while preserving simulation inputs
 
 ## Status
 
 Implemented on the performance worktree; maintainer acceptance pending.
-ADR-0119 and ADR-0120 already exist on sibling branches; 0121 was the next
-unused number in the local and fetched reference history when reserved.
+Originally drafted as ADR-0121 after reserving 0119/0120 for sibling branches.
+Renumbered to ADR-0122 when integrating main at 31fc30fd: PR #399 had landed
+the passenger-availability decision as ADR-0121 before this branch was pushed.
 
 ## Context
 

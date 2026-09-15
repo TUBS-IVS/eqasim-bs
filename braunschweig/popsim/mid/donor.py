@@ -52,6 +52,10 @@ from typing import Optional, Sequence, Union
 import pandas as pd
 
 from braunschweig.popsim import member_completion as completion
+from braunschweig.popsim.passenger_availability import (
+    ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN,
+    ATTRIBUTE_SOURCE_PERSON_COLUMN,
+)
 from braunschweig.popsim import seed as seedmod
 
 from .csv_format import detect_csv_separator
@@ -137,6 +141,8 @@ MID_WEGE_REQUIRED_COLS = (
 
 def load_mid_attributes(
     mid_dir: Union[str, Path],
+    *,
+    include_passenger_availability: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the MiD donor attribute columns (households + persons) for enrichment.
 
@@ -153,12 +159,28 @@ def load_mid_attributes(
     )
     _persons_sep = detect_csv_separator(persons_path)
     _persons_header = pd.read_csv(persons_path, sep=_persons_sep, nrows=0).columns
+    passenger_columns = []
+    if include_passenger_availability:
+        if "P_VAUTO" not in _persons_header:
+            raise KeyError(
+                "[popsim.mid] passenger availability is enabled, but MiD2023_Personen.csv "
+                "lacks required column 'P_VAUTO'"
+            )
+        passenger_columns.append("P_VAUTO")
     persons = pd.read_csv(
         persons_path,
         usecols=list(MID_PERSON_ATTR_COLS)
-        + [c for c in MID_PERSON_OPTIONAL_COLS if c in _persons_header],
+        + [c for c in MID_PERSON_OPTIONAL_COLS if c in _persons_header]
+        + passenger_columns,
         sep=_persons_sep,
     )
+    if include_passenger_availability:
+        # These immutable raw respondent keys are distinct from source_H_ID /
+        # source_P_ID, which member/weekend/diary matching may rewrite as the
+        # selected plan source. Member completion copies the protected keys
+        # verbatim so every filler remains tied to its original real respondent.
+        persons[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN] = persons["H_ID"]
+        persons[ATTRIBUTE_SOURCE_PERSON_COLUMN] = persons["P_ID"]
     return households, persons
 
 
@@ -187,6 +209,7 @@ def load_completed_donor(
     completion_rng,
     day_filter_values: Optional[Sequence[int]] = None,
     fine_child_age_bands: bool = True,
+    include_passenger_availability: bool = False,
 ) -> tuple[
     pd.DataFrame, pd.DataFrame,
     seedmod.CompletenessReport, completion.MemberCompletionReport,
@@ -230,7 +253,10 @@ def load_completed_donor(
             "load_completed_donor requires completion_rng (a seeded "
             "numpy.random.RandomState); random processes must use an explicit seed."
         )
-    households, persons = load_mid_attributes(mid_dir)
+    households, persons = load_mid_attributes(
+        mid_dir,
+        include_passenger_availability=include_passenger_availability,
+    )
 
     # Drop H_ID=0 / null sentinel before any downstream logic (donor validity).
     households, persons, _n_hh_bad, _n_p_bad = drop_invalid_households(

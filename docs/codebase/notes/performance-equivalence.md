@@ -2,7 +2,7 @@
 
 This change removes repeated work in four Python kernels. The scientific
 configuration and random draw order remain unchanged. Decision:
-[ADR-0121](../../decisions/ADR-0121-result-preserving-performance-kernels.md).
+[ADR-0122](../../decisions/ADR-0122-result-preserving-performance-kernels.md).
 Executed measurements and their limitations:
 [run manifest](../../runs/performance-equivalence-2026-09-15.yml).
 

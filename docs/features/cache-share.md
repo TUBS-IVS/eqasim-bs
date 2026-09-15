@@ -17,7 +17,7 @@ so we never recompute synpp's hash -- we copy the artifacts and let synpp decide
   `cache_share_enabled` (default **true**), `cache_share_store`
   (default `eqasim-data/cache_shared`), `cache_share_stages` (default = the freight
   chain), `cache_share_recompute` (default `[]`; `["*"]` = recompute all).
-- `cache_share_metadata` (default **true**, ADR-0121) transports each copied entry's
+- `cache_share_metadata` (default **true**, ADR-0122) transports each copied entry's
   native metadata and merges only coherent dependency snapshots with exactly matching
   tracked creation runtimes (OS, architecture, Python and package versions). False retains
   artifact-only copying; fresh targets then recompute because synpp requires

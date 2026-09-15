@@ -117,6 +117,15 @@ and Bavaria lineage live in the Stage Registry
   64-core / 128 GB machine.
 - Disk: ~13 GB input data + caches (tens of GB at scale).
 
+With `mid_passenger_availability: true` (the `popsim_mid` default), the MiD
+person file must contain `P_VAUTO`, and the sibling Java checkout or supplied
+JAR must include `RunAdaptPassengerAvailabilityConfig` (issue #398). Update both
+forks together: an older JAR fails the capability check instead of silently
+ignoring the new passenger attribute. Setting the flag to `false` restores
+the previous passenger rule. Driver access remains separate. See
+[ADR-0121](docs/decisions/ADR-0121-mid-passenger-availability.md) for the survey
+definition and child-access assumptions.
+
 ## Installation
 
 ```powershell

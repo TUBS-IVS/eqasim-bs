@@ -35,14 +35,22 @@ features:
 - popsim_method
 - diary_plan_match
 - participation_universe_controls
+- mid_passenger_availability
 decisions:
-- ADR-0121
+- ADR-0122
 - ADR-0002
 - ADR-0059
 - ADR-0106
 - ADR-0109
 - ADR-0118
+- ADR-0121
 notes: >-
+  With mid_passenger_availability enabled, the stage additionally retains each
+  person's P_VAUTO response and its protected attribute_source_H_ID/attribute_source_P_ID
+  before member completion. Fillers inherit this original respondent identity;
+  subsequent diary matching only changes source_H_ID/source_P_ID, which determine
+  the attached passenger diary evidence. These additions are absent when the
+  feature is disabled. Attribute-source identities stay internal.
   INPUT: reads the MiD Haushalte and Personen tables as before, and since #365 the MiD WEGE table
   as well (the diary facts and the realisable-source classification are derived from it), plus the
   person columns mobil (always) and feiertag (only when exclude_holiday_plan_sources is ON);

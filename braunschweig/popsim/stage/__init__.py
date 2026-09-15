@@ -155,6 +155,7 @@ from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import plausibility as _plausibility
+from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
@@ -249,6 +250,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CELLS,
     KEY_CLEANUP_H5,
     KEY_COMPLETE_MEMBERS,
+    KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
     KEY_CONTROLS_SOURCE,
@@ -409,6 +411,7 @@ _HELPER_MODULES = (
     _kic,
     _ist,
     _plausibility,
+    _passenger_availability,
     prepared_cells,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
@@ -709,6 +712,7 @@ def configure(context):
     context.config(KEY_STRATIFY, False)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
     # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
@@ -1895,7 +1899,8 @@ def _join_cell_attributes_onto_merged_output(merge_report, cells: pd.DataFrame) 
 
 
 def _load_donor_tables(context, source, source_name: str, mid_dir, complete_members: bool,
-        completed_donor_households, completed_donor_persons):
+        completed_donor_households, completed_donor_persons,
+        passenger_availability_enabled: bool = False):
     """Load the donor attribute tables through the active source adapter.
 
     For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
@@ -1929,7 +1934,12 @@ def _load_donor_tables(context, source, source_name: str, mid_dir, complete_memb
     else:
         # popsim_mid, complete_members=False (legacy): reads MiD CSV files
         # directly from mid_dir.
-        donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+        if passenger_availability_enabled:
+            donor_households, donor_persons, _donor_trips = source.load_donor(
+                mid_dir, include_passenger_availability=True
+            )
+        else:
+            donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
     return donor_households, donor_persons
 
 
@@ -1956,7 +1966,8 @@ def _resolve_placement_income_flag(context, source_name: str) -> bool:
 
 def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_households: pd.DataFrame,
         donor_persons: pd.DataFrame, rng, source, source_name: str, inkar_income,
-        placement_income_on: bool):
+        placement_income_on: bool, *, passenger_availability_enabled: bool = False,
+        random_seed: int | None = None):
     """Expand the merged donor households into the full eqasim persons frame.
 
     pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
@@ -1989,6 +2000,18 @@ def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_h
     from braunschweig.popsim import placement_income as _pi_path
     income_path = _pi_path.resolve_income_path(
         placement_income_on, income_kreis_control_on, _income_tilt_flag)
+    passenger_kwargs = {}
+    if passenger_availability_enabled:
+        if random_seed is None:
+            raise ValueError(
+                "[popsim.stage] passenger availability requires random_seed"
+            )
+        passenger_kwargs = {
+            "passenger_availability_enabled": True,
+            "passenger_rng": np.random.RandomState(
+                int(random_seed) + _passenger_availability.PASSENGER_AVAILABILITY_RNG_OFFSET
+            ),
+        }
     persons, pseudonym_map = assembly.build_persons(
         combined, donor_households, donor_persons,
         rng=rng,
@@ -1996,6 +2019,7 @@ def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_h
         pseudonymise=pseudonymise,
         inkar_scale=inkar_income,
         skip_inkar_income_scale=income_path["skip_inkar_scale"],
+        **passenger_kwargs,
     )
     context.set_info("popsim_n_persons", len(persons))
     return persons, pseudonym_map, pseudonymise, income_path, _pi_path
@@ -2351,6 +2375,17 @@ def execute(context) -> pd.DataFrame:
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
+    passenger_availability_requested = bool(
+        context.config(KEY_MID_PASSENGER_AVAILABILITY)
+    )
+    passenger_availability_enabled = (
+        passenger_availability_requested and source_name == "mid"
+    )
+    if passenger_availability_requested and source_name != "mid":
+        logger.info(
+            "[popsim.stage] mid_passenger_availability requested but source=%s; "
+            "feature inactive for this source.", source_name,
+        )
 
     (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
@@ -2467,6 +2502,7 @@ def execute(context) -> pd.DataFrame:
     donor_households, donor_persons = _load_donor_tables(
         context, source, source_name, mid_dir, complete_members,
         completed_donor_households, completed_donor_persons,
+        passenger_availability_enabled=passenger_availability_enabled,
     )
     placement_income_on = _resolve_placement_income_flag(context, source_name)
 
@@ -2527,6 +2563,8 @@ def execute(context) -> pd.DataFrame:
     ) = _expand_donor_households_to_persons(
         context, combined, donor_households, donor_persons, rng, source,
         source_name, inkar_income, placement_income_on,
+        passenger_availability_enabled=passenger_availability_enabled,
+        random_seed=random_seed,
     )
     persons = _apply_housing_tenure_parity(context, persons, random_seed)
 
