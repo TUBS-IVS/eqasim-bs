@@ -105,6 +105,9 @@ def test_indexed_home_lookup_eliminates_per_household_home_filters(monkeypatch):
         persons, homes, regiostar, indexed_home_lookup=True)
 
     assert calls == 0
+    household_module.build_household_car_frame(
+        persons, homes, regiostar, indexed_home_lookup=False)
+    assert calls == 4  # one filter for each car-owning household in this fixture
 
 
 def test_configure_registers_default_on_fleet_home_lookup():
