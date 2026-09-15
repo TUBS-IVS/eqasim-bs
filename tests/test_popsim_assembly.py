@@ -94,13 +94,17 @@ def test_build_persons_derives_passenger_availability_only_when_enabled():
         alter_gr1=[5, 2, 7],
         src_has_car_passenger_trip=[False, False, False],
     )
+    enabled_donor_persons = donor_persons.assign(
+        attribute_source_H_ID=donor_persons["H_ID"],
+        attribute_source_P_ID=donor_persons["P_ID"],
+    )
     households = _mid_households().assign(RegioStaR7=[72, 73])
 
     legacy, _ = assembly.build_persons(
         _merged(), households, donor_persons, rng=np.random.RandomState(5)
     )
     enabled, _ = assembly.build_persons(
-        _merged(), households, donor_persons,
+        _merged(), households, enabled_donor_persons,
         rng=np.random.RandomState(5),
         passenger_availability_enabled=True,
         passenger_rng=np.random.RandomState(99),

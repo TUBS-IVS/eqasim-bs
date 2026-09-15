@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -10,6 +12,9 @@ from braunschweig.popsim.passenger_availability import (
     attach_car_passenger_diary_evidence,
     derive_car_passenger_availability,
 )
+
+ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN = "attribute_source_H_ID"
+ATTRIBUTE_SOURCE_PERSON_COLUMN = "attribute_source_P_ID"
 
 
 def _write_mid_attribute_files(directory, *, include_p_vauto):
@@ -41,7 +46,11 @@ def test_loader_reads_p_vauto_only_when_feature_is_enabled(tmp_path):
     )
 
     assert "P_VAUTO" not in legacy.columns
+    assert ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN not in legacy.columns
+    assert ATTRIBUTE_SOURCE_PERSON_COLUMN not in legacy.columns
     assert enabled["P_VAUTO"].tolist() == [2]
+    assert enabled[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN].tolist() == [1]
+    assert enabled[ATTRIBUTE_SOURCE_PERSON_COLUMN].tolist() == [1]
 
 
 def test_enabled_loader_fails_when_p_vauto_is_absent(tmp_path):
@@ -171,6 +180,8 @@ def test_carless_adult_keeps_own_occasional_passenger_access():
             "household_id": ["household_1"],
             "H_ID": [10],
             "P_ID": [1],
+            ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN: [10],
+            ATTRIBUTE_SOURCE_PERSON_COLUMN: [1],
             "age": [35],
             "alter_gr1": [4],
             "P_VAUTO": [2],
@@ -179,7 +190,9 @@ def test_carless_adult_keeps_own_occasional_passenger_access():
             "car_availability": ["none"],
         }
     ).set_index("person_id", drop=False)
-    households = pd.DataFrame({"H_ID": [10], "RegioStaR7": [72]})
+    households = pd.DataFrame(
+        {"H_ID": [10], "RegioStaR7": [72], "number_of_cars": [0]}
+    )
 
     result = derive_car_passenger_availability(
         persons,
@@ -199,6 +212,11 @@ def _derive(rows, *, seed=1234):
             "RegioStaR7": [72] * persons["H_ID"].nunique(),
         }
     )
+    cars_by_origin = (
+        persons.drop_duplicates(ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN)
+        .set_index(ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN)["number_of_cars"]
+    )
+    households["number_of_cars"] = households["H_ID"].map(cars_by_origin)
     return derive_car_passenger_availability(
         persons,
         households,
@@ -212,6 +230,8 @@ def _person(person_id, household_id, donor_household_id, donor_person_id, age, r
         "household_id": household_id,
         "H_ID": donor_household_id,
         "P_ID": donor_person_id,
+        ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN: donor_household_id,
+        ATTRIBUTE_SOURCE_PERSON_COLUMN: donor_person_id,
         "age": age,
         "alter_gr1": age // 10,
         "P_VAUTO": response,
@@ -341,6 +361,19 @@ def test_child_without_usable_household_evidence_uses_empirical_fallback():
     assert result.loc["child", "passenger_availability_source"] == "child_empirical_fallback"
 
 
+def test_child_household_mapping_emits_no_future_warning():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _derive(
+            [
+                _person("pool_adult", "adult_h", 1, 1, 40, 1),
+                _person("child", "child_only_h", 2, 1, 8, 402),
+            ]
+        )
+
+    assert not [warning for warning in caught if issubclass(warning.category, FutureWarning)]
+
+
 def test_child_fallback_excludes_imputed_adult_responses_from_empirical_pool():
     result = _derive(
         [
@@ -373,6 +406,53 @@ def test_malformed_or_age_incompatible_codes_fail(age, response):
                 _person("valid_pool", "pool", 9, 1, 40, 1),
                 _person("bad", "bad", 1, 1, age, response),
             ]
+        )
+
+
+def test_enabled_derivation_rejects_incomplete_attribute_source_identity():
+    persons = pd.DataFrame(
+        [_person("adult", "h1", 1, 1, 35, 1)]
+    ).drop(columns=[ATTRIBUTE_SOURCE_PERSON_COLUMN])
+
+    with pytest.raises(KeyError, match=ATTRIBUTE_SOURCE_PERSON_COLUMN):
+        derive_car_passenger_availability(
+            persons,
+            pd.DataFrame({"H_ID": [1], "RegioStaR7": [72], "number_of_cars": [0]}),
+            rng=np.random.RandomState(1234),
+        )
+
+
+@pytest.mark.parametrize(
+    "column",
+    [ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN, ATTRIBUTE_SOURCE_PERSON_COLUMN],
+)
+def test_enabled_derivation_rejects_missing_attribute_source_identity(column):
+    rows = [
+        _person("pool", "adult_h", 1, 1, 40, 1),
+        _person("child", "child_h", 2, 1, 8, 402),
+    ]
+    rows[1][column] = np.nan
+
+    with pytest.raises(ValueError, match="attribute-source identity contains missing"):
+        _derive(rows)
+
+
+def test_enabled_derivation_rejects_changed_origin_for_real_member():
+    persons = pd.DataFrame([_person("adult", "h1", 1, 1, 35, 1)])
+    persons.loc[0, ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN] = 2
+    households = pd.DataFrame(
+        {
+            "H_ID": [1, 2],
+            "RegioStaR7": [72, 73],
+            "number_of_cars": [0, 1],
+        }
+    )
+
+    with pytest.raises(ValueError, match="non-filler persons must keep their own"):
+        derive_car_passenger_availability(
+            persons,
+            households,
+            rng=np.random.RandomState(1234),
         )
 
 

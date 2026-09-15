@@ -32,11 +32,15 @@ _MISSING_RESPONSE_SENTINEL = -1
 
 SOURCE_OWN_RESPONSE = "own_response"
 SOURCE_ADULT_IMPUTATION = "adult_empirical_imputation"
+SOURCE_MEMBER_BORROWED_RESPONSE = "member_completion_borrowed_response"
+SOURCE_MEMBER_BORROWED_IMPUTATION = "member_completion_borrowed_imputation"
 SOURCE_CHILD_HOUSEHOLD = "child_household_evidence"
 SOURCE_CHILD_DIARY = "child_diary_evidence"
 SOURCE_CHILD_FALLBACK = "child_empirical_fallback"
 
 DIARY_EVIDENCE_COLUMN = "src_has_car_passenger_trip"
+ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN = "attribute_source_H_ID"
+ATTRIBUTE_SOURCE_PERSON_COLUMN = "attribute_source_P_ID"
 
 
 def _require_columns(frame: pd.DataFrame, columns, *, frame_name: str) -> None:
@@ -137,31 +141,96 @@ def _validate_response_codes(responses: pd.Series, ages: pd.Series) -> None:
         )
 
 
+def _member_imputed_mask(persons: pd.DataFrame) -> pd.Series:
+    if "member_imputed" not in persons.columns:
+        return pd.Series(False, index=persons.index)
+    try:
+        member_imputed = persons["member_imputed"].astype("boolean")
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "[passenger_availability] member_imputed must contain booleans"
+        ) from error
+    if member_imputed.isna().any():
+        raise ValueError(
+            "[passenger_availability] member_imputed contains missing values"
+        )
+    return member_imputed.astype(bool)
+
+
+def _validate_attribute_source_identity(
+    persons: pd.DataFrame, member_imputed: pd.Series
+) -> None:
+    origin_keys = [ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN, ATTRIBUTE_SOURCE_PERSON_COLUMN]
+    if persons[origin_keys].isna().any().any():
+        raise ValueError(
+            "[passenger_availability] protected attribute-source identity contains "
+            "missing values"
+        )
+    real = ~member_imputed
+    changed_real_origin = real & (
+        ~persons[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN].eq(persons["H_ID"])
+        | ~persons[ATTRIBUTE_SOURCE_PERSON_COLUMN].eq(persons["P_ID"])
+    )
+    if changed_real_origin.any():
+        examples = persons.loc[
+            changed_real_origin,
+            ["H_ID", "P_ID", *origin_keys],
+        ].head(5)
+        raise ValueError(
+            "[passenger_availability] non-filler persons must keep their own "
+            "(H_ID, P_ID) as the protected attribute-source identity; examples: "
+            f"{examples.to_dict(orient='records')}"
+        )
+
+
 def _adult_donor_rows(
     persons: pd.DataFrame,
     donor_households: pd.DataFrame,
     responses: pd.Series,
     ages: pd.Series,
+    member_imputed: pd.Series,
 ) -> pd.DataFrame:
     adult = ages >= PASSENGER_MIN_OWN_RESPONSE_AGE_YEARS
     work = persons.loc[adult].copy()
     work["_passenger_response"] = responses.loc[adult]
-    work["_passenger_has_household_car"] = (
-        pd.to_numeric(work["number_of_cars"], errors="coerce") > 0
-    ).astype(int)
+    origin_keys = [ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN, ATTRIBUTE_SOURCE_PERSON_COLUMN]
+
+    household_columns = ["H_ID", "number_of_cars"]
     if "RegioStaR7" in donor_households.columns:
-        regions = donor_households[["H_ID", "RegioStaR7"]].drop_duplicates()
-        duplicate_households = regions["H_ID"].duplicated(keep=False)
-        if duplicate_households.any():
+        household_columns.append("RegioStaR7")
+    household_facts = donor_households[household_columns].copy()
+    for column in household_columns[1:]:
+        inconsistent = (
+            household_facts.groupby("H_ID", dropna=False)[column]
+            .nunique(dropna=False)
+            .gt(1)
+        )
+        if inconsistent.any():
             raise ValueError(
                 "[passenger_availability] donor household frame carries conflicting "
-                "RegioStaR7 rows for the same H_ID"
+                f"{column} rows for the same H_ID"
             )
-        work["_passenger_donor_region"] = work["H_ID"].map(
-            regions.set_index("H_ID")["RegioStaR7"]
+    household_facts = household_facts.drop_duplicates("H_ID").set_index("H_ID")
+    original_household_ids = work[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN]
+    original_cars = original_household_ids.map(household_facts["number_of_cars"])
+    if original_cars.isna().any():
+        missing_households = original_household_ids.loc[original_cars.isna()].unique()[:5]
+        raise ValueError(
+            "[passenger_availability] protected attribute-source households are absent "
+            f"from the donor household frame; examples: {list(missing_households)}"
+        )
+    numeric_cars = pd.to_numeric(original_cars, errors="coerce")
+    if numeric_cars.isna().any():
+        raise ValueError(
+            "[passenger_availability] original donor household number_of_cars "
+            "contains missing or non-numeric values"
+        )
+    work["_passenger_has_household_car"] = numeric_cars.gt(0).astype(int)
+    if "RegioStaR7" in household_facts.columns:
+        work["_passenger_donor_region"] = original_household_ids.map(
+            household_facts["RegioStaR7"]
         )
 
-    donor_keys = ["H_ID", "P_ID"]
     consistency_columns = [
         "_passenger_response",
         "age",
@@ -171,14 +240,25 @@ def _adult_donor_rows(
     ]
     consistency_columns = [c for c in consistency_columns if c in work.columns]
     for column in consistency_columns:
-        inconsistent = work.groupby(donor_keys, dropna=False)[column].nunique(dropna=False) > 1
+        inconsistent = work.groupby(origin_keys, dropna=False)[column].nunique(dropna=False) > 1
         if inconsistent.any():
             sample = list(inconsistent[inconsistent].index[:5])
             raise ValueError(
                 f"[passenger_availability] repeated donor persons disagree in {column!r}; "
-                f"example (H_ID, P_ID) keys: {sample}"
+                f"example protected attribute-source keys: {sample}"
             )
-    return work.drop_duplicates(donor_keys, keep="first")
+
+    work["_passenger_member_imputed"] = member_imputed.loc[adult]
+
+    origin_index = pd.MultiIndex.from_frame(work[origin_keys])
+    work["_passenger_origin_order"] = pd.factorize(origin_index, sort=False)[0]
+    return (
+        work.sort_values(
+            ["_passenger_origin_order", "_passenger_member_imputed"], kind="stable"
+        )
+        .drop_duplicates(origin_keys, keep="first")
+        .sort_values("_passenger_origin_order", kind="stable")
+    )
 
 
 def derive_car_passenger_availability(
@@ -190,12 +270,14 @@ def derive_car_passenger_availability(
     """Resolve ``car_passenger_availability`` and its public derivation source.
 
     Valid answers are never changed. Adult missing responses are drawn once per
-    own MiD person key from comparable valid respondents using age group,
-    household car access and donor RegioStaR7 when available. Children receive
-    ``some`` for positive household or selected-diary evidence; resolved negative
-    adult household evidence yields ``none``. Unknown households use a logged
-    adult empirical fallback. An empty valid adult pool fails rather than inventing
-    a default.
+    protected original MiD respondent identity from distinct comparable real
+    respondents using age group, original household car access and donor
+    RegioStaR7 when available. Member-completion fillers share that resolution
+    and carry an explicit borrowed-response or borrowed-imputation source.
+    Children receive ``some`` for positive household or selected-diary evidence;
+    resolved negative adult household evidence yields ``none``. Unknown
+    households use a logged observed-adult empirical fallback. An empty valid
+    adult pool fails rather than inventing a default.
     """
     _require_columns(
         persons,
@@ -207,11 +289,19 @@ def derive_car_passenger_availability(
             "P_VAUTO",
             "number_of_cars",
             "has_license",
+            ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN,
+            ATTRIBUTE_SOURCE_PERSON_COLUMN,
         ),
         frame_name="persons frame",
     )
-    _require_columns(donor_households, ("H_ID",), frame_name="donor household frame")
+    _require_columns(
+        donor_households,
+        ("H_ID", "number_of_cars"),
+        frame_name="donor household frame",
+    )
     out = persons.copy()
+    member_imputed = _member_imputed_mask(out)
+    _validate_attribute_source_identity(out, member_imputed)
     ages = pd.to_numeric(out["age"], errors="coerce")
     if ages.isna().any():
         raise ValueError(
@@ -221,7 +311,9 @@ def derive_car_passenger_availability(
     _validate_response_codes(responses, ages)
 
     adult_mask = ages >= PASSENGER_MIN_OWN_RESPONSE_AGE_YEARS
-    unique_adults = _adult_donor_rows(out, donor_households, responses, ages)
+    unique_adults = _adult_donor_rows(
+        out, donor_households, responses, ages, member_imputed
+    )
     unique_adults["_passenger_response"] = unique_adults["_passenger_response"].fillna(
         _MISSING_RESPONSE_SENTINEL
     )
@@ -262,15 +354,32 @@ def derive_car_passenger_availability(
             "[passenger_availability] adult P_VAUTO imputation produced missing values; "
             "the valid empirical pool is unusable"
         )
-    donor_keys = pd.MultiIndex.from_frame(unique_adults[["H_ID", "P_ID"]])
+    donor_keys = pd.MultiIndex.from_frame(
+        unique_adults[[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN, ATTRIBUTE_SOURCE_PERSON_COLUMN]]
+    )
     resolved_by_key = pd.Series(resolved_adults.to_numpy(), index=donor_keys)
-    person_adult_keys = pd.MultiIndex.from_frame(out.loc[adult_mask, ["H_ID", "P_ID"]])
+    person_adult_keys = pd.MultiIndex.from_frame(
+        out.loc[
+            adult_mask,
+            [ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN, ATTRIBUTE_SOURCE_PERSON_COLUMN],
+        ]
+    )
     out.loc[adult_mask, "car_passenger_availability"] = resolved_by_key.reindex(
         person_adult_keys
     ).to_numpy()
-    own_valid = adult_mask & responses.isin(PASSENGER_AVAILABILITY_BY_P_VAUTO)
+    valid_response = responses.isin(PASSENGER_AVAILABILITY_BY_P_VAUTO)
+    own_valid = adult_mask & valid_response & ~member_imputed
+    borrowed_valid = adult_mask & valid_response & member_imputed
+    adult_imputed = adult_mask & ~valid_response & ~member_imputed
+    borrowed_imputed = adult_mask & ~valid_response & member_imputed
     out.loc[own_valid, "passenger_availability_source"] = SOURCE_OWN_RESPONSE
-    out.loc[adult_mask & ~own_valid, "passenger_availability_source"] = SOURCE_ADULT_IMPUTATION
+    out.loc[adult_imputed, "passenger_availability_source"] = SOURCE_ADULT_IMPUTATION
+    out.loc[
+        borrowed_valid, "passenger_availability_source"
+    ] = SOURCE_MEMBER_BORROWED_RESPONSE
+    out.loc[
+        borrowed_imputed, "passenger_availability_source"
+    ] = SOURCE_MEMBER_BORROWED_IMPUTATION
 
     diary = (
         out[DIARY_EVIDENCE_COLUMN].fillna(False).astype(bool)
@@ -301,9 +410,15 @@ def derive_car_passenger_availability(
         .any()
     )
     child_households = out.loc[child_mask, "household_id"]
-    has_adult = child_households.map(adult_exists).fillna(False).astype(bool)
-    has_positive_adult = child_households.map(adult_positive).fillna(False).astype(bool)
-    has_licensed_adult = child_households.map(licensed_adult).fillna(False).astype(bool)
+    has_adult = (
+        child_households.map(adult_exists).astype("boolean").fillna(False).astype(bool)
+    )
+    has_positive_adult = (
+        child_households.map(adult_positive).astype("boolean").fillna(False).astype(bool)
+    )
+    has_licensed_adult = (
+        child_households.map(licensed_adult).astype("boolean").fillna(False).astype(bool)
+    )
     child_cars = pd.to_numeric(out.loc[child_mask, "number_of_cars"], errors="coerce")
     positive_household = has_positive_adult | (child_cars.gt(0) & has_licensed_adult)
     child_diary = diary.loc[child_mask]
@@ -349,10 +464,17 @@ def derive_car_passenger_availability(
         )
     logger.info(
         "[passenger_availability] sources: own=%d, adult_imputed=%d, "
+        "member_borrowed_response=%d, member_borrowed_imputation=%d, "
         "child_household=%d, child_diary=%d, child_fallback=%d; adult group "
         "fallback=%d/%d",
         int((out["passenger_availability_source"] == SOURCE_OWN_RESPONSE).sum()),
         int((out["passenger_availability_source"] == SOURCE_ADULT_IMPUTATION).sum()),
+        int(
+            (out["passenger_availability_source"] == SOURCE_MEMBER_BORROWED_RESPONSE).sum()
+        ),
+        int(
+            (out["passenger_availability_source"] == SOURCE_MEMBER_BORROWED_IMPUTATION).sum()
+        ),
         int((out["passenger_availability_source"] == SOURCE_CHILD_HOUSEHOLD).sum()),
         int((out["passenger_availability_source"] == SOURCE_CHILD_DIARY).sum()),
         int((out["passenger_availability_source"] == SOURCE_CHILD_FALLBACK).sum()),

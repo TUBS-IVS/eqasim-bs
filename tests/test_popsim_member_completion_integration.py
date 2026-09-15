@@ -20,8 +20,11 @@ load_donor behaviour byte-identically.
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim import assembly, mid, trips
+from braunschweig.popsim import assembly, mid, passenger_availability, trips
 from tests.conftest import popsim_stage_package_source_text
+
+ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN = "attribute_source_H_ID"
+ATTRIBUTE_SOURCE_PERSON_COLUMN = "attribute_source_P_ID"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +107,156 @@ def test_load_completed_donor_preserves_p_vauto_on_filled_members(tmp_path):
 
     assert "P_VAUTO" in persons.columns
     assert set(persons.loc[persons["member_imputed"], "P_VAUTO"]) == {402}
+
+
+def _write_passenger_provenance_fixture(tmp_path):
+    """One incomplete host gets adult fillers from one complete MiD household."""
+    (tmp_path / "MiD2023_Haushalte.csv").write_text(
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        "1,3,4,0,2,2,0,71,4,4,1.0,1,1\n"
+        "2,3,4,2,2,2,0,73,4,4,1.0,1,1\n"
+        "3,3,4,0,1,1,0,75,1,1,1.0,1,1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "MiD2023_Personen.csv").write_text(
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo,P_VAUTO\n"
+        "1,1,50,1,1,1,3,1,5,2,1.0,1,1\n"
+        "2,1,50,1,1,1,3,1,5,2,1.0,1,1\n"
+        "2,2,30,2,1,1,3,1,5,2,1.0,1,2\n"
+        "2,3,35,1,1,1,3,1,5,2,1.0,1,9\n"
+        "2,4,45,2,1,1,3,1,5,2,1.0,1,3\n"
+        "3,1,8,2,5,2,3,4,1,0,1.0,1,402\n",
+        encoding="utf-8",
+    )
+
+
+class _RecordingPassengerRng:
+    def __init__(self):
+        self.calls = []
+
+    def randint(self, high, size=None):
+        self.calls.append((high, size))
+        if size is None:
+            return 0
+        return np.zeros(size, dtype=int)
+
+
+def test_member_completion_origin_controls_passenger_resolution_after_plan_remap(tmp_path):
+    _write_passenger_provenance_fixture(tmp_path)
+    households, completed_persons, _, completion_report = mid.load_completed_donor(
+        tmp_path,
+        completion_rng=np.random.RandomState(0),
+        include_passenger_availability=True,
+    )
+    assert completion_report.n_persons_added == 3
+
+    attribute_hh = ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN
+    attribute_person = ATTRIBUTE_SOURCE_PERSON_COLUMN
+    duplicated_sources = completed_persons.groupby([attribute_hh, attribute_person]).size()
+    assert duplicated_sources.loc[(2, 2)] == 2
+    assert duplicated_sources.loc[(2, 3)] == 2
+
+    # The diary match is allowed to replace the mutable plan source. Passenger
+    # attributes must still follow the protected original respondent identity.
+    remapped = completed_persons.copy()
+    from_household_two = remapped[attribute_hh].eq(2)
+    remapped.loc[from_household_two, "source_H_ID"] = 1
+    remapped.loc[from_household_two, "source_P_ID"] = 1
+    remapped[passenger_availability.DIARY_EVIDENCE_COLUMN] = False
+
+    merged = pd.DataFrame(
+        {
+            "ZENSUS100m": ["C1", "C2", "C3"],
+            "ZENSUS1km": ["K1", "K2", "K3"],
+            "H_ID": [1, 2, 3],
+            "RegionalSchlussel_ARS": ["031010000000"] * 3,
+        }
+    )
+    passenger_rng = _RecordingPassengerRng()
+    enabled, _ = assembly.build_persons(
+        merged,
+        households,
+        remapped,
+        rng=np.random.RandomState(11),
+        passenger_availability_enabled=True,
+        passenger_rng=passenger_rng,
+    )
+    disabled, _ = assembly.build_persons(
+        merged,
+        households,
+        remapped,
+        rng=np.random.RandomState(11),
+    )
+
+    source_valid = enabled[
+        enabled[attribute_hh].eq(2) & enabled[attribute_person].eq(2)
+    ].sort_values("member_imputed")
+    source_missing = enabled[
+        enabled[attribute_hh].eq(2) & enabled[attribute_person].eq(3)
+    ].sort_values("member_imputed")
+
+    assert source_valid["car_passenger_availability"].tolist() == ["some", "some"]
+    assert source_valid["passenger_availability_source"].tolist() == [
+        "own_response",
+        "member_completion_borrowed_response",
+    ]
+    assert source_missing["car_passenger_availability"].nunique() == 1
+    assert source_missing["passenger_availability_source"].tolist() == [
+        "adult_empirical_imputation",
+        "member_completion_borrowed_imputation",
+    ]
+    # One missing original respondent is resolved once from its three-person
+    # matching group. The child fallback then sees four distinct valid original
+    # respondents, rather than the two valid filler copies as extra observations.
+    assert passenger_rng.calls == [(3, None), (4, 1)]
+    pd.testing.assert_series_equal(
+        enabled["car_availability"], disabled["car_availability"]
+    )
+    pd.testing.assert_series_equal(enabled["has_license"], disabled["has_license"])
+
+
+def test_filler_only_expansion_uses_protected_original_attributes(tmp_path):
+    _write_passenger_provenance_fixture(tmp_path)
+    households, completed_persons, _, _ = mid.load_completed_donor(
+        tmp_path,
+        completion_rng=np.random.RandomState(0),
+        include_passenger_availability=True,
+    )
+    attribute_hh = ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN
+    attribute_person = ATTRIBUTE_SOURCE_PERSON_COLUMN
+    completed_persons[passenger_availability.DIARY_EVIDENCE_COLUMN] = False
+
+    # Expand the incomplete host and child-only household, but not mirror
+    # household 2. Its copied real respondents must remain usable through the
+    # protected source identity and original household covariates.
+    merged = pd.DataFrame(
+        {
+            "ZENSUS100m": ["C1", "C3"],
+            "ZENSUS1km": ["K1", "K3"],
+            "H_ID": [1, 3],
+            "RegionalSchlussel_ARS": ["031010000000"] * 2,
+        }
+    )
+    passenger_rng = _RecordingPassengerRng()
+    result, _ = assembly.build_persons(
+        merged,
+        households,
+        completed_persons,
+        rng=np.random.RandomState(11),
+        passenger_availability_enabled=True,
+        passenger_rng=passenger_rng,
+    )
+
+    borrowed_valid = result[
+        result[attribute_hh].eq(2) & result[attribute_person].eq(2)
+    ].iloc[0]
+    borrowed_missing = result[
+        result[attribute_hh].eq(2) & result[attribute_person].eq(3)
+    ].iloc[0]
+    assert borrowed_valid["car_passenger_availability"] == "some"
+    assert borrowed_valid["passenger_availability_source"] == "member_completion_borrowed_response"
+    assert borrowed_missing["passenger_availability_source"] == "member_completion_borrowed_imputation"
+    assert passenger_rng.calls == [(2, None), (3, 1)]
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,10 @@ from typing import Optional, Sequence, Union
 import pandas as pd
 
 from braunschweig.popsim import member_completion as completion
+from braunschweig.popsim.passenger_availability import (
+    ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN,
+    ATTRIBUTE_SOURCE_PERSON_COLUMN,
+)
 from braunschweig.popsim import seed as seedmod
 
 from .csv_format import detect_csv_separator
@@ -170,6 +174,13 @@ def load_mid_attributes(
         + passenger_columns,
         sep=_persons_sep,
     )
+    if include_passenger_availability:
+        # These immutable raw respondent keys are distinct from source_H_ID /
+        # source_P_ID, which member/weekend/diary matching may rewrite as the
+        # selected plan source. Member completion copies the protected keys
+        # verbatim so every filler remains tied to its original real respondent.
+        persons[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN] = persons["H_ID"]
+        persons[ATTRIBUTE_SOURCE_PERSON_COLUMN] = persons["P_ID"]
     return households, persons
 
 
