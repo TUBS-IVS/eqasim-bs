@@ -559,9 +559,11 @@ def assign_homes_typed(
     random_seed:
         Base seed; the effective seed is ``random_seed + RANDOM_SEED_OFFSET``.
     batch_coordinates:
-        When true, batch deterministic centroid clamp/reprojection operations for
-        repeated selected ``(building_id, cell_id)`` pairs. False preserves the
-        scalar transformation path for equivalence checks and rollback.
+        When true, use the typed-home performance path: project relevant cell
+        signals, match slots through indexed arrays, and batch deterministic
+        centroid clamp/reprojection operations for repeated selected
+        ``(building_id, cell_id)`` pairs. False preserves the legacy scalar
+        path for equivalence checks and rollback.
 
     Returns
     -------
@@ -725,6 +727,8 @@ def assign_homes_typed(
         if batch_coordinates else cells
     )
     sig = cbs.cell_signals(signal_cells).set_index("ZENSUS100m")
+    slots_builder = bt.build_slots_arrays if batch_coordinates else bt.build_slots
+    matcher = hm.match_cell_arrays if batch_coordinates else hm.match_cell
 
     hh = households.copy()
     _btype_mapped = hh["building_type_3class"].map(_BTYPE_MAP)
@@ -808,10 +812,10 @@ def assign_homes_typed(
         occ = float(s["occupied"]) if s is not None else float(len(grp))
         size_hist = s["size_hist"] if s is not None else []
         typed = bt.assign_building_types(fps[["building_id", "area_m2", "height_m"]], geb, rng)
-        slots = bt.build_slots(typed, whg, max(occ, len(grp)), size_hist, rng)
+        slots = slots_builder(typed, whg, max(occ, len(grp)), size_hist, rng)
         cell_hh = grp[[household_id_col, "btype", "household_size"]].rename(
             columns={household_id_col: "household_id"})
-        amap, rep = hm.match_cell(cell_hh, slots, rng)
+        amap, rep = matcher(cell_hh, slots, rng)
         n_match += rep.n_type_match
         n_over += rep.n_overcapacity
         bid_by_hh = dict(zip(amap["household_id"], amap["building_id"]))
