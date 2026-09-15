@@ -39,7 +39,7 @@ Run it from the repository root **in a tree without the local-only data** (a git
 worktree is exactly that):
 
 ```
-python -m pytest tests/ -p scripts.audit_test_data_dependencies -q
+python scripts/run_tests.py tests/ -p scripts.audit_test_data_dependencies -q
 python scripts/audit_test_data_dependencies.py test_data_probe_audit.txt
 ```
 

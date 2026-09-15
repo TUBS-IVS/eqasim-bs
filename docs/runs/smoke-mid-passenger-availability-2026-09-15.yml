@@ -1,0 +1,143 @@
+id: smoke-mid-passenger-availability-2026-09-15
+date: '2026-09-15'
+repository:
+  commit: f9e19ce7fee4065f940ec790a09ca985c0458758
+  branch: codex/mid-passenger-availability
+  notes: >-
+    Python base 1502e88ef529001167f4a8848892862c39bda9cb; coordinated Java base
+    83751682c214cbf3cfc448c3e4d82b8e3f8e25d6. Java implementation 82b61729d;
+    its standalone braunschweig-2.3.1.jar SHA256 is
+    7c0d43ce9eb843e1c8874032a2bdaee69fee854ef984b8d115728cf70efd8fbe.
+configuration:
+  base: configs/base_bs.yml
+  overlays: []
+  notes: >-
+    Focused production-helper measurement with seed 1234 and an explicit local
+    --mid-dir; no synpp population expansion or MATSim simulation is included.
+    A separate bounded raw-data check runs the real household-member completion.
+sampling:
+  rate: full available raw donor sample after production H_ID filtering
+  scope: National MiD 2023 B1 sample, not the synthetic ZGB population
+pipeline:
+  targets: []
+  notes: >-
+    Runs the real passenger-availability helper on raw donors, compares driver
+    and passenger attributes, and separately exercises Python XML output through
+    the actual Java MATSim reader and Braunschweig mode-availability provider.
+classification:
+- smoke
+- wiring_proof
+- ab_test
+status:
+  execution: completed
+environment: Windows, conda eqasim (Python 3.10), JDK 25
+validation:
+- metric: Full Python regression suite
+  reference: Existing repository tests and new feature invariants
+  result: >-
+    5689 tests passed, 91 skipped, 0 failed, with 29 existing warnings in
+    374.25 seconds on c6d9dd32c7a457442bb052a28e4c30236124188e. The new
+    passenger derivation adds no FutureWarnings; focused tests also passed
+    with FutureWarnings treated as errors. Independent Sol reviews closed
+    all implementation and integration findings.
+  notes: >-
+    Command: python -u -m pytest tests/ -q --durations=10. The preceding full
+    run found one existing strict test context lacking the new configuration
+    key; the test-only c6d9dd32 correction retains the unknown-key assertion,
+    and the full suite was rerun successfully. Production code remains f9e19ce7.
+- metric: Raw MiD answer preservation and passenger eligibility
+  reference: >-
+    Restricted MiD 2023 B1 source answers; input hashes and exact unweighted
+    sample counts are in the committed aggregate report. This is no observed
+    modal-share reference or population estimate.
+  result: >-
+    All 354674 valid own responses at age 14+ were retained exactly. Passenger
+    eligibility changed from 380681 to 391243 among 420667 evaluated persons:
+    24313 newly eligible and 13751 newly excluded. Driver availability and
+    licence fields were unchanged. Missing/proxy responses were estimated for
+    25783 age-14+ respondents. Of 40210 younger children, 214 required the
+    explicit empirical fallback (0.53%).
+  artifact: docs/runs/artifacts/smoke-mid-passenger-availability-2026-09-15/report.json
+  notes: >-
+    P_VAUTO=3 coexists with a reported passenger trip for 1974 respondents.
+    Their valid general-access answers remain unchanged; see ADR-0121 for
+    the resulting eligibility limitation. RNG seed 1234; separate production
+    passenger offset 74517 gives effective seed 75751.
+    The final run excludes imputed adult answers from the empirical child pool,
+    protects original respondent identities across household completion and
+    orders the distinct original respondent pool canonically before drawing.
+- metric: Real MiD member-completion provenance and copy invariance
+  reference: >-
+    Deterministic bounded raw MiD subset: up to 100 complete and 100 incomplete
+    households per declared H_GR, ordered by H_ID, with all reporting days.
+    The same restricted input delivery and hashes as the raw national measurement.
+    This is an implementation invariant, not a representative population reference.
+  result: >-
+    The production loader completed all 500 incomplete households among 1100
+    selected households, adding 1292 members to 2808 original persons. All 635
+    valid-answer and 70 missing-answer copies at age 14+ were labelled borrowed.
+    Each original respondent had one resolved value across copies. Removing every
+    filler and repeating with the same passenger RNG left all 2211 original age-14+
+    values exactly unchanged. Driver availability and licence fields were unchanged.
+  artifact: docs/runs/artifacts/smoke-mid-passenger-availability-2026-09-15/completion-provenance.json
+  notes: >-
+    Uses mid.load_completed_donor, demographic/licence/car-count mapping,
+    attach_car_passenger_diary_evidence and derive_car_passenger_availability.
+    Completion offset 74513; passenger offset 74517; seed 1234. This check does not
+    run weekend/diary source rematching or PopulationSim expansion. Committed
+    test_popsim_member_completion_integration regressions cover later plan-source
+    remapping, filler-only expansion, distinct empirical pools and copy invariance.
+    The first check exposed an order-dependent difference in 62 original estimates;
+    canonical protected-identity ordering fixed it before the successful rerun.
+- metric: Python XML to MATSim reader to Braunschweig mode availability
+  reference: >-
+    24 literal combinations of three driver-access values, two licence values
+    and four passenger-attribute states (absent/none/some/all); pre-change writer
+    at Python base 1502e88e.
+  result: >-
+    All 24 cases passed with the actual shaded Java JAR. Driver mode remained
+    unchanged; six absent-attribute cases retained legacy behavior. Removing
+    precisely the 18 added passenger attribute lines from the enabled XML
+    reproduced the original XML bytes exactly.
+  notes: >-
+    Baseline XML SHA256 0b063d1f7e4ed0524d166b89ab62ac400e7383a87031a059e6818726f8f9d2de;
+    enabled XML SHA256 4f13aad6b09b2b86624066d72908dad91b760c46cc238cb6652749ae84679549.
+    Local reproduction uses scratch/write_passenger_cross_repo_fixture.py and
+    scratch/PassengerCrossRepoSmoke.java. Durable CSV/XML OFF-byte tests and
+    MATSim reader/config equivalence tests are also committed in the two forks.
+- metric: Java focused tests and standalone build
+  reference: Implementation invariants; no behavioral calibration reference
+  result: >-
+    15 tests passed, with no failures or errors: 10 availability tests,
+    one entrypoint/config-equivalence test and four existing income tests.
+    The standalone reactor build succeeded. A repeated-logging defect found
+    by the cross-repository smoke was reproduced and fixed before this build.
+  notes: >-
+    Maven command: -Pstandalone -pl braunschweig -am
+    -Dtest=BraunschweigModeAvailabilityTest,RunAdaptPassengerAvailabilityConfigTest,BraunschweigIncomeUtilityTest
+    -Dsurefire.failIfNoSpecifiedTests=false package. Existing upstream Maven,
+    deprecated-API, native-access and shade-overlap warnings remain.
+features:
+  note: >-
+    Coverage, preservation of observed answers, explicit imputation sources and
+    unchanged driver rules are implementation properties. This run cannot
+    establish passenger modal shares, chauffeuring feasibility or calibration.
+artifacts:
+- docs/runs/artifacts/smoke-mid-passenger-availability-2026-09-15/report.json
+- docs/runs/artifacts/smoke-mid-passenger-availability-2026-09-15/eligibility_by_age_and_cars.csv
+- docs/runs/artifacts/smoke-mid-passenger-availability-2026-09-15/completion-provenance.json
+issues:
+- '#398'
+decisions:
+- ADR-0121
+notes: >-
+  Restricted person and household records remain local. Only aggregate
+  measurements and input hashes may be recorded. General P_VAUTO=3 can coexist
+  with a reported passenger trip; those cases remain explicit diagnostics and
+  valid own answers are preserved.
+source: >-
+  scripts/measure_mid_passenger_availability.py --mid-dir <local MiD2023 delivery>
+  --out-dir <new aggregate-output directory> --seed 1234; production writer/reader
+  cross-repository smoke and the focused Maven test/package command recorded above.
+  Bounded completion check: scratch/check_completed_passenger_provenance.py
+  --mid-dir <local MiD2023 delivery> --output <new local aggregate report>.

@@ -128,3 +128,6 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0117](../decisions/ADR-0117-no-answer-codes-out-of-every-estimation.md) | 2026-09-11 | active | A survey non-answer never becomes a modelled category or a distance |
 | [ADR-0118](../decisions/ADR-0118-donor-match-fine-child-age-bands.md) | 2026-09-11 | active | The MiD donor match bands 6-13-year-olds finely (6-9 / 10-13) wherever it matches on age |
 | [ADR-0120](../decisions/ADR-0120-incommuter-donor-demographics-and-time-chronology.md) | 2026-09-14 | active | Preserve donor demographics and chronological in-commuter plans |
+| [ADR-0121](../decisions/ADR-0121-mid-passenger-availability.md) | 2026-09-15 | active | Separate MiD passenger access from driver access |
+| [ADR-0122](../decisions/ADR-0122-result-preserving-performance-kernels.md) | 2026-09-15 | -- | Optimize repeated work while preserving simulation inputs |
+| [ADR-0123](../decisions/ADR-0123-reproducible-test-environments.md) | 2026-09-15 | accepted for implementation | Reproducible test environments and measured consolidation |

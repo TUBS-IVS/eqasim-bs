@@ -29,7 +29,9 @@ import numpy as np
 # braunschweig.synthesis.day_absence.absence_stage. Independent of commute_day_state.
 PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status", "employment_status",
                                   "rbw_legs_count", "rbw_distance_km",
-                                  "commute_day_state", "day_absence_state")
+                                  "commute_day_state", "day_absence_state",
+                                  "car_passenger_availability",
+                                  "passenger_availability_source")
 
 
 def select_person_output_columns(available_columns, residency_col):

@@ -1,0 +1,53 @@
+id: test-environment-2026-09-15
+date: '2026-09-15'
+repository:
+  commit: 8a91cc53
+  branch: codex/test-environment
+  notes: Original full regression runs after consolidation and portability fixes; subsequent tested code states are identified in the validation entries.
+configuration:
+  config: pytest.ini
+  notes: python scripts/run_tests.py -q --durations=30 --junitxml=RESULT.xml; baseline used python -m pytest tests/ -q on 31fc30fd.
+sampling:
+  rate: unknown
+  scope: Regression suite; no population run
+pipeline:
+  targets: []
+  notes: Four real-data pipeline tests explicitly deselected; no MATSim simulation executed.
+classification:
+  - wiring_proof
+status:
+  execution: completed
+  notes: 'Windows baseline: 5689 passed, 91 skipped, 616.10 s. Final Windows: 5656 passed, 87 skipped, 4 deselected, 460.29 s. Server-mirrored WSL: 5659 passed, 84 skipped, 4 deselected, 321.29 s. Zero failures in all three runs. Timings are single observations with concurrent activity, not a controlled speed benchmark.'
+environment: Windows and Ubuntu 24.04 WSL2; Python 3.10.10
+validation:
+  - metric: Post-main-merge regression gate
+    reference: Merge commit 9ea98b48 combining PR #401 with main d01f7abb
+    result: 'Linux/WSL: 5788 passed, 84 skipped, 4 deselected; exit 0.'
+    artifact: 'Local WSL: /home/felix/projects/eqasim-bs-test-environment/test-results.xml'
+    notes: 'Full shared runner after resolving the documentation conflicts: 27 warnings, 266.35 s. Log: /home/felix/eqasim-tools/post-main-merge-tests.log. Performance ADR retained ADR-0122; this test-environment ADR was renumbered to ADR-0123. Subsequent changes only record this test evidence and regenerate documentation.'
+  - metric: Copilot review follow-up regression gate
+    reference: Executable code at ef69c516 after integrating origin/main 31fc30fd
+    result: 'Linux/WSL: 5675 passed, 84 skipped, 4 deselected; exit 0.'
+    artifact: 'Local WSL: /home/felix/eqasim-tools/copilot-review-final-tests.xml'
+    notes: 'Full shared runner with --durations=30 and --junitxml=test-results.xml: 27 warnings, 262.73 s. Log: /home/felix/eqasim-tools/copilot-review-final-tests.log. Focused Linux runner/runtime/bootstrap checks: 11 passed in 1.43 s. Windows runner/runtime checks: 8 passed in 9.98 s (Windows TEMP eqasim-copilot-focused-windows-final.log). Probes now bound both rootdir and confcutdir after earlier Windows checks exposed discovery of unrelated changing Temp files. Pipeline tooling was verified using isolated fake executables; no real-data pipeline run was launched. All four Copilot findings are fixed locally; publishing and new CI are still pending.'
+  - metric: Final agent-process regression gate
+    reference: Executable code at ac8fe0e2 after integrating origin/main 31fc30fd
+    result: 'Linux/WSL: 5668 passed, 84 skipped, 4 deselected, 27 warnings in 244.98 s; exit 0.'
+    artifact: 'Local WSL: /home/felix/eqasim-tools/process-gate-tests.log'
+    notes: 'Command: python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml. Environment preflight passed in the server-mirrored Python 3.10.10 runtime. Includes all nine JDK/config wrapper cases. Subsequent changes only clarify process documentation and record this evidence. Log: /home/felix/eqasim-tools/process-gate-tests.log. PR CI remains required before merge.'
+  - metric: Regression results
+    reference: Existing test assertions on main 31fc30fd
+    result: All selected tests pass on Windows and server-mirrored Linux.
+    notes: NOT behavioural validation. SimWrapper retains all 132 assertion expressions while combining 100 cases into 63; two redundant 32000-vehicle draws were eliminated by sharing one sample. Four runner tests were added. Native dtype expectations and explicit historical CRLF serialization remove three platform-dependent failures without relaxing assertions.
+  - metric: Linux environment parity
+    reference: Read-only production-server snapshot captured 2026-09-15
+    result: All 312 conda version/build/MD5 records and 11 effective pip versions match; pip check passes.
+    notes: JDK 25.0.3+9 copied from server; java binary SHA256 ac3505f0c58282f00a6585591324a86b038c89cd171105fe42a1a0cf2f13b517. Server base config copy SHA256 b505473910095d397f6993863eb646c6cd544e442b6d4134690c7d1a7c69420c. Server checkout was 1502e88ef529001167f4a8848892862c39bda9cb; tests used the newer reviewed code above.
+artifacts:
+  - 'Local Windows TEMP: eqasim-tests-baseline.log and .xml'
+  - 'Local Windows TEMP: eqasim-tests-final-reviewed-windows.log and .xml'
+  - 'Local WSL: /home/felix/eqasim-tools/server-mirror-tests.log and .xml'
+decisions:
+  - ADR-0123
+source: Local executed regression suites and read-only server package/configuration capture
+notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. Original native Windows runs used the existing environment; subsequent PR CI on 86fff969 installed the committed Linux and Windows environments and passed both regressions and the documentation check. Review follow-up commits require new CI after publication. Subsequent shell changes passed 9 isolated JDK/config preflight cases on Linux (correctly skipped on Windows), fake git/conda bootstrap and snapshot-update checks, and launch-gate checks showing a failed update never starts tmux. These checks execute stubs, not the production pipeline.

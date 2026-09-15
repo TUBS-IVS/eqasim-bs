@@ -154,6 +154,7 @@ def _stub(config_overrides=None, path=None):
         "data_path": DATA_PATH,
         "random_seed": 42,
         "hbefa_segment_size_map": None,
+        "braunschweig.performance.fleet_home_lookup": True,
         "fleet_model_enabled": True,
         "fleet_model_brands": True,
         "fleet_hsn_tsn_attributes": True,

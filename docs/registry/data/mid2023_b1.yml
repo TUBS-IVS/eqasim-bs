@@ -60,6 +60,11 @@ notes: |
   THE popsim_mid donor: every synthetic person carries a real MiD donor's attributes and travel-day
   chain. Raw ids are pseudonymised before any output; the surrogate map stays in the local work dir.
 
+  Personen P_VAUTO is additionally required when mid_passenger_availability is enabled
+  (issue #398). Its definition, missing-code policy and separation from household
+  H_ANZAUTO and driver access are recorded in ADR-0121. The same existing files
+  supply household membership and diary evidence; no new delivery is required.
+
   The package has SEVEN sub-datasets, not three. The Autos file (one row per household car, 290930
   records, vehicle weight A_GEW) is the source of two committed fleet tables:
   mid2023_age_by_segment_status.csv and mid2023_antrieb_by_status.csv -- the latter built 2026-08-17

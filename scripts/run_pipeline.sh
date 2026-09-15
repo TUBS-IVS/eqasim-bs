@@ -27,6 +27,7 @@ set -euo pipefail
 REPO_DIR="${EQASIM_REPO_DIR:-$HOME/eqasim-bs}"
 CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
 CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
+REQUESTED_JAVA_HOME="${JAVA_HOME:-}"
 
 # Default is a syntax placeholder only (its former Linux server counterpart,
 # config_server_braunschweig_25pct.yml, was removed as superseded ballast, #230);
@@ -50,27 +51,97 @@ fi
 source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 
-# Preflight: the MATSim part of the pipeline builds the eqasim jar with Maven and
-# a JDK 21. Verify the toolchain up front and fail fast with actionable guidance,
-# instead of crashing hours into the run (which is what happened before this
-# check existed: missing Maven, then a JDK 17 that cannot target release 21).
-#
-# The eqasim-java sources are compiled for Java 21 (maven-compiler release 21),
-# so an older JDK fails the build with "invalid target release: 21". Pin
-# JAVA_HOME to a JDK 21 explicitly (first on PATH, after conda activation) so
-# both the Maven build and the MATSim run use Java 21 regardless of the system
-# default 'java'.
-java21_home=$(ls -d /usr/lib/jvm/java-21-openjdk-* 2>/dev/null | head -1)
-if [[ -z "$java21_home" ]]; then
-    echo "ERROR: no JDK 21 found under /usr/lib/jvm. The eqasim-java sources target" >&2
-    echo "       Java 21; an older JDK fails the Maven build with 'invalid target" >&2
-    echo "       release: 21'. Install it with:" >&2
-    echo "         sudo apt-get install -y openjdk-21-jdk" >&2
+# Preflight: the MATSim build uses the trusted server JDK 25. An explicitly
+# configured JAVA_HOME takes precedence; otherwise use the server installation.
+JAVA_HOME="${REQUESTED_JAVA_HOME:-$HOME/tools/jdk-25.0.3+9}"
+java_binary="$JAVA_HOME/bin/java"
+if [[ ! -x "$java_binary" ]]; then
+    echo "ERROR: JDK 25 executable not found at '$java_binary'." >&2
+    echo "       Set JAVA_HOME to an installed JDK 25, or install the trusted" >&2
+    echo "       server JDK at '$HOME/tools/jdk-25.0.3+9'." >&2
     exit 1
 fi
-export JAVA_HOME="$java21_home"
+
+if ! java_version_output="$("$java_binary" -version 2>&1)"; then
+    echo "ERROR: could not execute Java at '$java_binary'." >&2
+    echo "       Set JAVA_HOME to a working JDK 25 installation." >&2
+    exit 1
+fi
+java_version="${java_version_output%%$'\n'*}"
+if [[ "$java_version" =~ \"([0-9]+)([.\"]|$) ]]; then
+    java_major="${BASH_REMATCH[1]}"
+else
+    echo "ERROR: could not determine the Java version from: $java_version" >&2
+    exit 1
+fi
+if [[ "$java_major" != "25" ]]; then
+    echo "ERROR: run_pipeline.sh requires JDK 25; found major version $java_major" >&2
+    echo "       at '$JAVA_HOME' ($java_version). Set JAVA_HOME to a JDK 25." >&2
+    exit 1
+fi
+
+export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
-echo "==> Using JDK 21 at $JAVA_HOME"
+echo "==> Using JDK 25 at $JAVA_HOME"
+
+# The Python runtime stages may override the shell selection through their
+# config. Reject a conflicting override here, before Maven or MATSim starts.
+if ! python - "$CONFIG" "$JAVA_HOME" "$java_binary" <<'PY'
+import os
+import shutil
+import sys
+
+import yaml
+
+
+config_path, selected_home, selected_binary = sys.argv[1:]
+with open(config_path, encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file) or {}
+
+if not isinstance(config, dict):
+    print(f"ERROR: config '{config_path}' must contain a mapping.", file=sys.stderr)
+    raise SystemExit(1)
+
+runtime_config = config.get("config", {})
+if not isinstance(runtime_config, dict):
+    print(f"ERROR: config '{config_path}' field 'config' must contain a mapping.", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def real_path(path: str) -> str:
+    return os.path.realpath(os.path.expanduser(path))
+
+
+configured_home = runtime_config.get("java_home")
+if configured_home and real_path(str(configured_home)) != real_path(selected_home):
+    print(
+        "ERROR: config java_home does not match the selected JDK 25: "
+        f"{configured_home!r} != {selected_home!r}.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+configured_binary = runtime_config.get("java_binary")
+if configured_binary:
+    resolved_binary = shutil.which(str(configured_binary))
+    if resolved_binary is None:
+        print(
+            f"ERROR: config java_binary cannot be resolved: {configured_binary!r}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if real_path(resolved_binary) != real_path(selected_binary):
+        print(
+            "ERROR: config java_binary does not match the selected JDK 25: "
+            f"{configured_binary!r} resolves to {resolved_binary!r}, "
+            f"not {selected_binary!r}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+PY
+then
+    exit 1
+fi
 
 if ! command -v mvn >/dev/null 2>&1; then
     echo "ERROR: Maven (mvn) not found on PATH. The eqasim MATSim jar is built with" >&2

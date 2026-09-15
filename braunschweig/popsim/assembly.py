@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import attributes
+from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import expand
 from braunschweig.popsim import income as _income_module
 from braunschweig.population import schema
@@ -249,6 +250,8 @@ def map_mid_person_attributes(
     donor_col: str = "H_ID",
     rng=None,
     rs7_conditioning: bool = True,
+    passenger_availability_enabled: bool = False,
+    passenger_rng=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply the MiD attribute-mapping sequence to a pre-expanded, pre-zoned persons frame.
 
@@ -365,6 +368,19 @@ def map_mid_person_attributes(
         persons, count_col="number_of_bicycles", adults_only=False,
         derive=attributes.derive_bicycle_availability,
     )
+
+    # This additive derivation is deliberately appended after every established
+    # stochastic attribute mapper. It uses a separate seeded stream so enabling
+    # passenger availability cannot move the legacy employment/licence/PT draws.
+    if passenger_availability_enabled:
+        if passenger_rng is None:
+            raise ValueError(
+                "[popsim.assembly] passenger availability requires an independent "
+                "seeded passenger_rng"
+            )
+        persons = passenger_availability.derive_car_passenger_availability(
+            persons, donor_hh, rng=passenger_rng
+        )
 
     # --- Popsim control-fit attributes ----------------------------------------
     # hh_type5: 5-class Zensus Familientyp per synthetic household, derived from
@@ -491,6 +507,8 @@ def build_persons(
     pseudonymise: bool = True,
     inkar_scale=None,
     skip_inkar_income_scale: bool = False,
+    passenger_availability_enabled: bool = False,
+    passenger_rng=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the synthetic persons frame with demographics + attributes.
 
@@ -600,7 +618,18 @@ def build_persons(
         if attribute_mapper is not None
         else functools.partial(map_mid_person_attributes, donor_col=donor_col)
     )
-    result = effective_mapper(persons, mid_households, rng=rng)
+    mapper_kwargs = {"rng": rng}
+    if passenger_availability_enabled:
+        if passenger_rng is None:
+            raise ValueError(
+                "[popsim.assembly] passenger availability requires an independent "
+                "seeded passenger_rng"
+            )
+        mapper_kwargs.update(
+            passenger_availability_enabled=True,
+            passenger_rng=passenger_rng,
+        )
+    result = effective_mapper(persons, mid_households, **mapper_kwargs)
 
     # Contract: every mapper returns (persons, pseudonym_map); the map may be
     # empty (open-data sources) but must be explicit. Silently substituting an

@@ -106,6 +106,7 @@ EXPECTED_OTHER_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.income_kreis_control",
     "braunschweig.popsim.income_spatial_tilt",
     "braunschweig.popsim.plausibility",
+    "braunschweig.popsim.passenger_availability",
     "braunschweig.popsim.prepared_cells",
 )
 

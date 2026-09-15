@@ -1,0 +1,14 @@
+# Effective pip layer captured from the production server; install with --no-deps after server-linux-64.lock.
+# PyPI URLs and hashes are verified against the project JSON for the recorded version.
+# chainsolvers is pinned to the server-recorded VCS commit; pip cannot attach a wheel hash to a VCS source.
+py-spy @ https://files.pythonhosted.org/packages/f9/34/dd7d3c763a00b7b965e25a5eab0acd1a345dbaf0f45fffe595278873a1c0/py_spy-0.4.2-py2.py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.whl#sha256=aeb0323409199c785f730645e9f4bb7a7b9ca2c481f2c331a55642b5d13fa52f
+plotly @ https://files.pythonhosted.org/packages/f9/14/abe5ce876ab5b66ee3c691bf537fcd43d037aea55d447aacf74630a8f31e/plotly-6.8.0-py3-none-any.whl#sha256=13c5c4a0f70b74cab1913eda0de49b826df5931708eb6f9c3010040614700ec8
+PyYAML @ https://files.pythonhosted.org/packages/7a/1e/7acc4f0e74c4b3d9531e24739e0ab832a5edf40e64fbae1a9c01941cabd7/pyyaml-6.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl#sha256=9c7708761fccb9397fe64bbc0395abcae8c4bf7b0eac081e12b809bf47700d0b
+narwhals @ https://files.pythonhosted.org/packages/1f/b6/e7cdde7b8e90d5dff25b622f95833ef26567ad184c977278b93a1cbd5717/narwhals-2.22.0-py3-none-any.whl#sha256=1421797ede01789cc1537619dbc3f36f840737240f748fdb24a60a0225fc80be
+frozendict @ https://files.pythonhosted.org/packages/71/be/b179b5f200cb0f52debeccc63b786cabcc408c4542f47c4245f978ad36e3/frozendict-2.4.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl#sha256=4c64d34b802912ee6d107936e970b90750385a1fdfd38d310098b2918ba4cbf2
+pyzmq @ https://files.pythonhosted.org/packages/30/76/8f099f9d6482450428b17c4d6b241281af7ce6a9de8149ca8c1c649f6792/pyzmq-27.1.0-cp310-cp310-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl#sha256=03ff0b279b40d687691a6217c12242ee71f0fba28bf8626ff50e3ef0f4410e1e
+bhepop2 @ https://files.pythonhosted.org/packages/39/3a/7e2df61668f5c5d18b37ad7dd0d0b6864edc5c78f6586dab4ba09cf33428/bhepop2-2.0.0-py3-none-any.whl#sha256=195c60df2776da47ff81a342ada9a19ee43c97a87ffc90a54b32666bc41e013a
+pytest @ https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl#sha256=37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
+synpp @ https://files.pythonhosted.org/packages/f4/b0/644e6517bd6adf61b65a7aecf472e7953bd2d1cbc149b1b4a027acf519bd/synpp-1.6.2-py3-none-any.whl#sha256=c6ad8408d9c3757e11f8a5b45d79e47d5d9d53029f915a32f2cee108361165f7
+chainsolvers @ git+https://github.com/TUBS-IVS/chainsolvers.git@d8d8ae7de5bf2504d44b8422abcfe827ed7d054b
+Pygments @ https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl#sha256=81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176

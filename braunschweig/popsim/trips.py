@@ -1232,6 +1232,7 @@ def build_validated_trip_table(
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     dwell_model=None,
+    vectorized_validation: bool = True,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -1333,6 +1334,9 @@ def build_validated_trip_table(
         observed donor activity durations instead of the constant
         ``HOME_CLOSURE_DWELL_S``. Default ``None`` keeps the constant-dwell
         behaviour.
+    vectorized_validation:
+        Use array-based per-person validation. ``False`` keeps the reference
+        group-by implementation executable for exact output comparisons.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -1370,7 +1374,10 @@ def build_validated_trip_table(
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes, **kwargs,
     )
-    validator = PlanValidator(require_home_closure=require_home_closure)
+    validator = PlanValidator(
+        require_home_closure=require_home_closure,
+        vectorized=vectorized_validation,
+    )
     repair_report = None
     if repair:
         table, repair_report = validator.repair_trips(table, dwell_model=dwell_model)

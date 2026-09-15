@@ -175,3 +175,5 @@ test_data_probe_audit.txt
 /launch_*.sh
 /launch_*.py
 /mkcfg_*.py
+# Local regression evidence (uploaded separately by CI).
+/test-results.xml

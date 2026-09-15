@@ -206,6 +206,10 @@ def configure(context):
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
     context.config("random_seed")
+    context.config(
+        _plan_validation.KEY_VECTORIZED_PLAN_VALIDATION,
+        _plan_validation.DEFAULT_VECTORIZED_PLAN_VALIDATION,
+    )
 
 
 def validate(context):
@@ -386,6 +390,8 @@ def execute(context):
         w_zweck_10_as_leisure=bool(context.config(KEY_W_ZWECK_10_AS_LEISURE)),
         escort_passive_from_adult=bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT)),
         passive_pair_max_gap_minutes=float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES)),
+        vectorized_validation=bool(
+            context.config(_plan_validation.KEY_VECTORIZED_PLAN_VALIDATION)),
         **filter_flags,
     )
 

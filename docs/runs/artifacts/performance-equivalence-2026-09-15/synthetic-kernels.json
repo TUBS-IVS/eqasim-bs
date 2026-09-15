@@ -1,0 +1,147 @@
+{
+  "scope": "bounded function benchmarks; no full-pipeline speedup claim",
+  "reference": {
+    "commit": "1502e88ef529001167f4a8848892862c39bda9cb",
+    "dirty": false
+  },
+  "candidate": {
+    "commit": "8a1a8ea7d2016a125c5fd3616e69105647544a64",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.10.10 | packaged by conda-forge | (main, Mar 24 2023, 20:00:38) [MSC v.1934 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "numpy": "1.23.5",
+    "pandas": "1.5.3",
+    "geopandas": "1.0.1",
+    "synpp": "1.6.2"
+  },
+  "size": 1000,
+  "repeat": 3,
+  "random_seed": 1234,
+  "input_kind": "synthetic",
+  "cases": {
+    "fleet": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 1.8177379999997356,
+        "off": 1.4139398000006622,
+        "on": 1.595967400000518
+      },
+      "input_rows": {
+        "persons": 1000,
+        "homes": 1000,
+        "regiostar": 1
+      },
+      "seconds": {
+        "original": [
+          1.8617996000011772,
+          1.8177379999997356,
+          1.5209570000006352
+        ],
+        "off": [
+          1.4845681000006152,
+          1.4139398000006622,
+          1.411107300000367
+        ],
+        "on": [
+          1.6499493999999686,
+          1.5411830000011832,
+          1.595967400000518
+        ]
+      },
+      "speedup_original_over_on": 1.138956848366167
+    },
+    "home": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.2921707999994396,
+        "off": 0.27233979999982694,
+        "on": 0.021686899999622256
+      },
+      "input_rows": {
+        "households": 300,
+        "buildings": 1,
+        "cells": 1
+      },
+      "seconds": {
+        "original": [
+          0.2921707999994396,
+          0.28292700000019977,
+          0.3018658000000869
+        ],
+        "off": [
+          0.27819170000111626,
+          0.27233979999982694,
+          0.2545649000003323
+        ],
+        "on": [
+          0.021677099999578786,
+          0.021686899999622256,
+          0.023381400000289432
+        ]
+      },
+      "speedup_original_over_on": 13.472225168397912
+    },
+    "validation": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.15552799999932176,
+        "off": 0.1582366999991791,
+        "on": 0.003732799999852432
+      },
+      "input_rows": {
+        "trips": 2000
+      },
+      "seconds": {
+        "original": [
+          0.1558800999991945,
+          0.15451969999958237,
+          0.15552799999932176
+        ],
+        "off": [
+          0.15509889999884763,
+          0.1582366999991791,
+          0.16588830000000598
+        ],
+        "on": [
+          0.003857199999401928,
+          0.003732799999852432,
+          0.0035082000013062498
+        ]
+      },
+      "speedup_original_over_on": 41.66523789259275
+    },
+    "donor": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.5000543000005564,
+        "off": 0.5129586999992171,
+        "on": 0.25356579999970563
+      },
+      "input_rows": {
+        "pool": 1000,
+        "targets": 200
+      },
+      "seconds": {
+        "original": [
+          0.5000543000005564,
+          0.48892759999944246,
+          0.7655843000011373
+        ],
+        "off": [
+          0.5027991000006296,
+          0.5129586999992171,
+          0.81193759999951
+        ],
+        "on": [
+          0.25356579999970563,
+          0.26151630000094883,
+          0.2533186000000569
+        ]
+      },
+      "speedup_original_over_on": 1.9720889015834822
+    }
+  },
+  "donor_age_bands": "fine"
+}

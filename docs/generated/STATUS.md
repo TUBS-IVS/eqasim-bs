@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 93 | stages: 125 | datasets: 75 | ADRs: 119 | run manifests: 40
+- Features: 95 | stages: 125 | datasets: 75 | ADRs: 122 | run manifests: 43
 
 ## Population synthesis
 
@@ -44,6 +44,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
 | [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
+| [MiD passenger access independent of driver access](../registry/features/mid_passenger_availability.yml) | active | ON | A/-/- | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | [#398](https://github.com/TUBS-IVS/eqasim-bs/issues/398) |
 | [Participation controls conditional on their universe (#368)](../registry/features/participation_universe_controls.yml) | active | ON | A/i/- | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | [#368](https://github.com/TUBS-IVS/eqasim-bs/issues/368) |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
 | [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
@@ -199,6 +200,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [CPU-accumulation hang watchdog for the pipeline's Java subprocesses](../registry/features/java_hang_watchdog.yml) | active | ON | A/A/A | unvalidated | [#330](https://github.com/TUBS-IVS/eqasim-bs/issues/330) |
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
+| [Result-preserving fleet, home, validation and donor kernels](../registry/features/performance_equivalence.yml) | active | ON | A/s/s | not_applicable (`performance-equivalence-2026-09-15`) |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
 | [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
 | [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated |  |

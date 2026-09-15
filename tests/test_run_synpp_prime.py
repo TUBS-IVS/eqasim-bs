@@ -2,6 +2,10 @@
 import importlib.util
 import os
 import textwrap
+import sys
+
+import pytest
+import synpp
 
 _PATH = os.path.join(os.path.dirname(__file__), "..", "scripts", "run_synpp.py")
 
@@ -56,6 +60,42 @@ def test_prime_from_config_absent_store_is_safe(tmp_path):
     rep = mod.prime_from_config(str(cfg))
     assert rep["primed"] == []
     assert "braunschweig.freight.extraction" in rep["missing_in_store"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_creation_provenance_tracking_obeys_resolved_switch(tmp_path, monkeypatch, enabled):
+    mod = _load()
+    module_name = "launcher_provenance_probe"
+    (tmp_path / (module_name + ".py")).write_text(
+        "def execute(context):\n    return 17\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(
+        f"working_directory: {wd.as_posix()}\nconfig:\n  cache_share_metadata: {str(enabled).lower()}\n",
+        encoding="utf-8")
+    with mod.track_cache_provenance_from_config(str(cfg)):
+        synpp.run([{"descriptor": module_name}], working_directory=str(wd), rerun_required=False)
+    assert bool(list(wd.glob("*.metadata.json"))) is enabled
+
+
+def test_failed_pipeline_does_not_label_partially_completed_entries(tmp_path, monkeypatch):
+    mod = _load()
+    module_name = "failed_provenance_probe"
+    (tmp_path / (module_name + ".py")).write_text(
+        "def execute(context):\n    return 17\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(f"working_directory: {wd.as_posix()}\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="later stage failed"):
+        with mod.track_cache_provenance_from_config(str(cfg)):
+            synpp.run([{"descriptor": module_name}], working_directory=str(wd), rerun_required=False)
+            raise RuntimeError("later stage failed")
+    assert not list(wd.glob("*.metadata.json"))
 
 
 # --- automatic post-run export (export_to_store_from_config) -----------------

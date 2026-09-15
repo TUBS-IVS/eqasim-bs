@@ -42,6 +42,9 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Default ON (project rule: new features default on); False reproduces the
 # legacy load_mid_seed + load_donor path byte-identically.
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# MiD P_VAUTO-based passenger availability. The intentionally short public key
+# is shared with the MATSim preparation gate; it is effective only for popsim_mid.
+KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"
 # Controls source: "csv" (default, byte-identical, reads the external hand-edited
 # file at KEY_CONTROLS) or "catalog" (renders from the typed control catalog via
 # control_spec; Task 5 of the control-catalog plan).

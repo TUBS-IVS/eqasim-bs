@@ -617,7 +617,7 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
                 w_zweck_10_as_leisure: bool = False,
                 escort_passive_from_adult: bool = False,
                 passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
-                dwell_model=None) -> pd.DataFrame:
+                dwell_model=None, vectorized_validation: bool = True) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
     Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
@@ -717,6 +717,7 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
+        vectorized_validation=vectorized_validation,
     )
     n_donors_with_trips = table["person_id"].nunique() if len(table) else 0
     logger.info("%s donor trip table built: %d trips for %d/%d donors (valid=%s)",
@@ -821,7 +822,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
                                  DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
                                  exclude_no_diary: bool = False,
                                  exclude_holidays: bool = False,
-                                 exclude_only_rbw: bool = False
+                                 exclude_only_rbw: bool = False,
+                                 vectorized_validation: bool = True,
                                  ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Build the MiD home-office-day donor pool: attributes + trip chains + diagnostics.
 
@@ -929,6 +931,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
+        vectorized_validation=vectorized_validation,
     )
     if dwell_model is not None:
         # AFTER the trip build, exactly where trips_stage.run logs the identical report: the

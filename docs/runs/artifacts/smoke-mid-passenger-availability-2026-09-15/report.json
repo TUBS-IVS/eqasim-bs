@@ -1,0 +1,46 @@
+{
+  "counts": {
+    "children_under14": 40210,
+    "evaluated_persons": 420667,
+    "input_households": 218101,
+    "input_persons": 420979,
+    "missing_or_proxy_rows": 25783,
+    "new_eligible": 391243,
+    "newly_eligible": 24313,
+    "newly_excluded": 13751,
+    "observed_14plus_answers": 354674,
+    "old_eligible": 380681,
+    "p_vauto_none_with_passenger_diary_evidence": 1974
+  },
+  "input_filtering": {
+    "invalid_households_dropped": 0,
+    "invalid_persons_dropped": 312
+  },
+  "measurement": "raw_mid_passenger_availability_attribute_wiring_ab",
+  "provenance": {
+    "calibration_run": false,
+    "git_commit": "f9e19ce7fee4065f940ec790a09ca985c0458758",
+    "matsim_simulation_run": false,
+    "passenger_rng": {
+      "effective_seed": 75751,
+      "offset": 74517,
+      "protocol": "independent_production_passenger_availability_rng"
+    },
+    "seed": 1234,
+    "source_file_sha256": {
+      "MiD2023_Haushalte.csv": "a40b41b26654831b4296d8f34c709bda40f8a7d323fcf4e25106be6acde0f3c3",
+      "MiD2023_Personen.csv": "fcb458bf720a0686aa63a5a00e36f489e23b42b6c4b02a7210636da58dc4a0cb",
+      "MiD2023_Wege.csv": "78be5d58354cb88b04906a03856a7c1df9745fd67036abb3c4f5e83e4e5fa0b6"
+    }
+  },
+  "scope_note": "Counts are unweighted raw MiD sample counts, not population estimates. The full raw national data are not the synthetic ZGB population.",
+  "source_category_counts": {
+    "adult_empirical_imputation": 25783,
+    "child_diary_evidence": 67,
+    "child_empirical_fallback": 214,
+    "child_household_evidence": 39929,
+    "member_completion_borrowed_imputation": 0,
+    "member_completion_borrowed_response": 0,
+    "own_response": 354674
+  }
+}

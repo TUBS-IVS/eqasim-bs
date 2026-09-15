@@ -768,7 +768,8 @@ def _golden_off_path_attributes() -> pd.DataFrame:
         "distance_km": np.array([15.0, 200.0, 200.0, np.nan], dtype="float64"),
         "distance_class": ["10_25", "100_200", "gt200", "unknown"],
         "distance_source": ["P_ARB_ENTF", "P_ARB_ENTF", "trip_length", "unknown"],
-        "n_trips": np.array([2, 2, 2, 0], dtype="int32"),
+        # The source uses astype(int): native integer width, not fixed int32.
+        "n_trips": np.array([2, 2, 2, 0], dtype=int),
         "is_immobile": [False, False, False, True],
         "has_education_leg": [False, False, False, False],
         "has_work_leg": [False, True, True, False],

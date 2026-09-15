@@ -20,6 +20,7 @@ import pandas as pd
 from braunschweig.popsim import mid as mid_mod
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.assembly import map_mid_person_attributes
+from braunschweig.popsim.passenger_availability import attach_car_passenger_diary_evidence
 from braunschweig.popsim.seed import MID_SEED_COLUMNS, SeedColumns
 from braunschweig.popsim.stratum import cell_urban_class_from_rs7
 
@@ -45,7 +46,10 @@ class MidSource:
         return MID_SEED_COLUMNS
 
     def load_donor(
-        self, data_dir: Union[str, Path]
+        self,
+        data_dir: Union[str, Path],
+        *,
+        include_passenger_availability: bool = False,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Load the MiD 2023 donor tables from data_dir.
 
@@ -63,8 +67,13 @@ class MidSource:
             and ``trips`` comes from :func:`braunschweig.popsim.mid.load_mid_wege`.
         """
         data_dir = Path(data_dir)
-        households, persons = mid_mod.load_mid_attributes(data_dir)
+        households, persons = mid_mod.load_mid_attributes(
+            data_dir,
+            include_passenger_availability=include_passenger_availability,
+        )
         trips = mid_mod.load_mid_wege(data_dir)
+        if include_passenger_availability:
+            persons = attach_car_passenger_diary_evidence(persons, trips)
         logger.info(
             "[MidSource] loaded donor: %d households, %d persons, %d trips from %s",
             len(households), len(persons), len(trips), data_dir,
@@ -77,6 +86,8 @@ class MidSource:
         households: pd.DataFrame,
         *,
         rng=None,
+        passenger_availability_enabled: bool = False,
+        passenger_rng=None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Map MiD donor attributes to the eqasim synthesis schema.
 
@@ -107,7 +118,13 @@ class MidSource:
             Discarding the map here would silently break the re-linking file
             written by the stage (data-protection requirement).
         """
-        return map_mid_person_attributes(persons, households, rng=rng)
+        return map_mid_person_attributes(
+            persons,
+            households,
+            rng=rng,
+            passenger_availability_enabled=passenger_availability_enabled,
+            passenger_rng=passenger_rng,
+        )
 
     def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
         """Return the per-household stratum label for donor stratification.
@@ -182,6 +199,7 @@ class MidSource:
         departure_time_min_reference_n: int = 200,
         departure_time_min_model_n: int = 50,
         departure_time_max_median_shift_hours: float = 2.0,
+        vectorized_validation: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -262,4 +280,5 @@ class MidSource:
             departure_time_min_reference_n=departure_time_min_reference_n,
             departure_time_min_model_n=departure_time_min_model_n,
             departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
+            vectorized_validation=vectorized_validation,
         )

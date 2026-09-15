@@ -7,6 +7,8 @@ the target config is simply ignored (recomputed) -- never corruption.
 """
 import os
 
+import pytest
+
 from braunschweig import cache_share
 
 
@@ -103,6 +105,69 @@ def test_export_default_overwrites_existing(tmp_path):
     rep = cache_share.export(str(wd), ["m"], str(store))
     assert (store / "m__h1.p").read_bytes() == b"x"  # overwritten
     assert "m__h1" in rep["exported"]
+
+
+def test_interrupted_export_does_not_publish_or_permanently_skip_partial_entry(
+    tmp_path, monkeypatch,
+):
+    """A partial staged cache must stay invisible and remain repairable."""
+    entry = "braunschweig.freight.extraction__abc123"
+    wd = tmp_path / "wd"
+    store = tmp_path / "store"
+    _make_entry(str(wd), entry)
+    real_copytree = cache_share.shutil.copytree
+
+    def fail_after_partial_copy(source, destination, *args, **kwargs):
+        os.makedirs(destination)
+        with open(os.path.join(destination, "partial.txt"), "w", encoding="utf-8") as stream:
+            stream.write("incomplete")
+        raise OSError("simulated interrupted directory copy")
+
+    monkeypatch.setattr(cache_share.shutil, "copytree", fail_after_partial_copy)
+    with pytest.raises(OSError, match="simulated interrupted"):
+        cache_share.export(str(wd), ["braunschweig.freight.extraction"], str(store))
+
+    assert not (store / (entry + ".p")).exists()
+    assert not (store / (entry + ".cache")).exists()
+    assert not (store / (entry + ".metadata.json")).exists()
+
+    monkeypatch.setattr(cache_share.shutil, "copytree", real_copytree)
+    report = cache_share.export(
+        str(wd), ["braunschweig.freight.extraction"], str(store), skip_existing=True,
+    )
+    assert report["exported"] == [entry]
+    assert report["skipped_present"] == []
+    assert (store / (entry + ".p")).read_bytes() == b"x"
+    assert (store / (entry + ".cache") / "f.txt").read_text(encoding="utf-8") == "c"
+
+
+def test_interrupted_reexport_preserves_existing_complete_entry(tmp_path, monkeypatch):
+    """A failed staged overwrite must leave all previously published artifacts intact."""
+    entry = "m__h1"
+    wd = tmp_path / "wd"
+    store = tmp_path / "store"
+    _make_entry(str(wd), entry)
+    _make_entry(str(store), entry)
+    (wd / (entry + ".p")).write_bytes(b"NEW")
+    (wd / (entry + ".cache") / "f.txt").write_text("new", encoding="utf-8")
+    (store / (entry + ".p")).write_bytes(b"OLD")
+    (store / (entry + ".cache") / "f.txt").write_text("old", encoding="utf-8")
+    sidecar = store / (entry + ".metadata.json")
+    sidecar.write_text('{"sentinel": "old"}', encoding="utf-8")
+
+    def fail_after_partial_copy(source, destination, *args, **kwargs):
+        os.makedirs(destination)
+        with open(os.path.join(destination, "partial.txt"), "w", encoding="utf-8") as stream:
+            stream.write("incomplete")
+        raise OSError("simulated interrupted directory copy")
+
+    monkeypatch.setattr(cache_share.shutil, "copytree", fail_after_partial_copy)
+    with pytest.raises(OSError, match="simulated interrupted"):
+        cache_share.export(str(wd), ["m"], str(store))
+
+    assert (store / (entry + ".p")).read_bytes() == b"OLD"
+    assert (store / (entry + ".cache") / "f.txt").read_text(encoding="utf-8") == "old"
+    assert sidecar.read_text(encoding="utf-8") == '{"sentinel": "old"}'
 
 
 def test_prime_skips_recompute_and_star(tmp_path):

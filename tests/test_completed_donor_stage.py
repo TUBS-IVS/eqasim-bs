@@ -247,6 +247,7 @@ def test_completed_donor_configure_registers_diary_plan_match_keys():
         KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
         KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_MID_PASSENGER_AVAILABILITY,
     )
     ctx = _RecordingConfigureContext()
     cd.configure(ctx)
@@ -260,6 +261,7 @@ def test_completed_donor_configure_registers_diary_plan_match_keys():
     # Issue #386: the fine child age bands change which donor a diary-less child draws,
     # so they belong in THIS stage's config hash for the same reason.
     assert ctx.calls[KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS] is True
+    assert ctx.calls[KEY_MID_PASSENGER_AVAILABILITY] is True
 
 
 import inspect

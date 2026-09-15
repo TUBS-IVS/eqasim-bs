@@ -4,6 +4,10 @@ import os.path
 import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
 
+_PASSENGER_AVAILABILITY_ADAPTER = (
+    "org.eqasim.braunschweig.scenario.RunAdaptPassengerAvailabilityConfig")
+_LEGACY_ADAPTER = "org.eqasim.braunschweig.scenario.RunAdaptConfig"
+
 def configure(context):
     # synpp scopes config per stage (issue #229): execute() calls eqasim.run() ->
     # java.run(), which reads the java binary/memory options AND the hang-watchdog
@@ -14,6 +18,11 @@ def configure(context):
     java.configure(context)
 
     context.config("mode_choice", False)
+    # The passenger-specific Java entrypoint is a capability negotiation: a MiD
+    # population carrying carPassengerAvailability needs a JAR that understands
+    # it.  Old/open configurations deliberately retain the legacy entrypoint.
+    context.config("mid_passenger_availability", True)
+    context.config("braunschweig.population.method", None)
     
     context.stage("matsim.scenario.population")
     context.stage("matsim.scenario.households")
@@ -112,8 +121,14 @@ def execute(context):
     ])
     assert os.path.exists("%s/generic_config.xml" % context.path())
 
-    # Adapt config for Île-de-France
-    eqasim.run(context, "org.eqasim.braunschweig.scenario.RunAdaptConfig", [
+    # Adapt the config through the capability-specific entrypoint only for an
+    # enabled MiD population.  Do not fall back if the requested class is absent:
+    # that failure means the configured JAR lacks the required capability.
+    adapter = _PASSENGER_AVAILABILITY_ADAPTER if (
+        context.config("mid_passenger_availability")
+        and context.config("braunschweig.population.method") == "popsim_mid"
+    ) else _LEGACY_ADAPTER
+    eqasim.run(context, adapter, [
         "--input-path", "generic_config.xml",
         "--output-path", "%sconfig.xml" % context.config("output_prefix"),
         "--prefix", context.config("output_prefix")
