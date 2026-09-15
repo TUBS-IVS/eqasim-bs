@@ -690,11 +690,34 @@ def assign_homes_typed(
     n_btype_defaulted = int(_btype_mapped.isna().sum())
     hh["btype"] = _btype_mapped.fillna("efh_zfh")
     rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
-    coordinate_positions: list[tuple[int, tuple[object, str]]] = []
+    coordinate_positions_by_pair: dict[tuple[object, str], list[int]] = {}
+
+    def _flush_batched_home_points() -> None:
+        """Resolve the current deterministic coordinate batch in scalar order on error."""
+        if not coordinate_positions_by_pair:
+            return
+        pairs = list(coordinate_positions_by_pair)
+        try:
+            points_by_pair = _batch_home_points_for_cells(
+                pairs, geom_by_bid, buildings.crs,
+            )
+        except Exception:
+            # A vectorized CRS operation can fail after considering more than one
+            # pair. Replay scalar transformations in first-occurrence order so the
+            # observable exception remains the one raised by the original path.
+            points_by_pair = {
+                pair: _home_point_for_cell(pair[0], pair[1]) for pair in pairs
+            }
+        for pair, positions in coordinate_positions_by_pair.items():
+            for position in positions:
+                rec_geom[position] = points_by_pair[pair]
+        coordinate_positions_by_pair.clear()
+
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
         if fps is None or len(fps) == 0:
+            _flush_batched_home_points()
             # The household's own 100 m cell has no building. Prefer the spatially
             # nearest real building in a NEIGHBOURING cell (ring search, ENH) -- this
             # captures the dominant empty-cell cause (a boundary building whose
@@ -745,19 +768,16 @@ def assign_homes_typed(
             rec_comm.append(getattr(r, commune_col))
             rec_bid.append(bid)
             if pd.isna(bid):
+                _flush_batched_home_points()
                 rec_geom.append(hm.random_point_in_cell(str(cell_id), rng))
             elif batch_coordinates and _has_footprint and geom_by_bid.get(bid) is not None:
-                coordinate_positions.append((len(rec_geom), (bid, str(cell_id))))
+                pair = (bid, str(cell_id))
+                coordinate_positions_by_pair.setdefault(pair, []).append(len(rec_geom))
                 rec_geom.append(None)
             else:
+                _flush_batched_home_points()
                 rec_geom.append(_home_point_for_cell(bid, str(cell_id)))
-
-    if coordinate_positions:
-        batched_points = _batch_home_points_for_cells(
-            [pair for _, pair in coordinate_positions], geom_by_bid, buildings.crs,
-        )
-        for position, pair in coordinate_positions:
-            rec_geom[position] = batched_points[pair]
+        _flush_batched_home_points()
 
     n = len(hh)
     btype_default_rate = n_btype_defaulted / n if n else 0.0
