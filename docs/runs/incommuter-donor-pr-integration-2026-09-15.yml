@@ -62,7 +62,7 @@ validation:
     --junitxml=scratch/pre-pr-real-mid-smoke.xml
   result: 35 passed, 2 dependency warnings in 33.97 s; exit 0
   artifact: 'Local task worktree: scratch/pre-pr-real-mid-smoke.xml and .log'
-  notes: Haushalte, Personen and Wege CSVs passed existence/nonempty preflight.
+  notes: Household, person and trip CSVs passed existence/nonempty preflight.
     All 1972 sampled ages and 1969 observed binary-sex values are preserved.
     Three non-binary/missing sex values use the existing seeded mapper.
     All 381 worker and 95 education donors have finite chronological times after repair.

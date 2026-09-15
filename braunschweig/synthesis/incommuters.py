@@ -33,6 +33,7 @@ from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
 from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
+from braunschweig.data.cordon import plans as _plans
 from braunschweig.data.cordon.plans import (
     assign_fixed_mode, assign_fixed_mode_per_agent, build_incommuter_activities,
     build_incommuter_locations, build_incommuter_trips, extract_commute_times,
@@ -1126,18 +1127,17 @@ def _empty_frames(crs):
         od_target=pd.DataFrame(columns=["ars5", "direction", "n_target"]))
 
 
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.cordon.plans",)
+_HELPER_MODULES = (_plans,)
 
 
 def validate(context):
     """Include shared plan repairs in synpp's stage cache identity."""
     import hashlib
-    import importlib
     import inspect
 
     digest = hashlib.md5()
-    for name in _DEFERRED_HELPER_MODULE_NAMES:
-        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
     return digest.hexdigest()
 
 

@@ -43,8 +43,9 @@ Two independent flags are default-ON in the canonical base config:
 Each OFF path keeps the old transformations and RNG consumption. The time helper
 retains its fixed local seed, independent of the stage RNG. Donor demographic
 mapping occurs after the existing employment draws and does not change those
-draws. Cache validation tokens include the relevant shared mappers, plan helper
-and student assembly dependency so a helper edit invalidates cached stage output.
+draws. Cache validation tokens include the relevant shared mappers, the MiD
+facade, the stage/config-key export contract, the plan helper and the student
+assembly dependency so a helper or config-key edit invalidates cached stage output.
 This is scoped cache coverage, not a repository-wide helper audit.
 
 ## Assumptions and alternatives

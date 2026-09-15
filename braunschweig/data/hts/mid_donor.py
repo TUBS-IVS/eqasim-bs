@@ -15,7 +15,10 @@ import logging
 
 import numpy as np
 
+from braunschweig.popsim import mid as _popsim_mid
+from braunschweig.popsim import stage as _popsim_stage
 from braunschweig.popsim.stage import KEY_MID
+from braunschweig.popsim.stage import config_keys as _popsim_config_keys
 
 _log = logging.getLogger(__name__)
 
@@ -29,7 +32,17 @@ _log = logging.getLogger(__name__)
 DEFAULT_MID_RAW_PATH = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
 KEY_DEMOGRAPHICS = "cordon_incommuter_donor_demographics"
 
-# These transformations live outside the stage file synpp hashes itself.
+# Module-level dependencies whose source can change this stage's result without
+# changing this file. Keep these as module objects to match their import site.
+_HELPER_MODULES = (
+    _popsim_mid,
+    _popsim_stage,
+    _popsim_config_keys,
+)
+
+# Function-level dependencies whose transformations live outside the stage file
+# synpp hashes itself. The MiD facade is covered above as the adapter's direct
+# call surface; donor remains explicit because it implements those re-exports.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.expand",
     "braunschweig.popsim.attributes",
@@ -46,6 +59,8 @@ def validate(context):
     import inspect
 
     digest = hashlib.md5()
+    for module in _HELPER_MODULES:
+        digest.update(inspect.getsource(module).encode("utf-8"))
     for name in _DEFERRED_HELPER_MODULE_NAMES:
         digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
     return digest.hexdigest()

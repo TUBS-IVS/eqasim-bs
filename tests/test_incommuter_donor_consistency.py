@@ -220,6 +220,9 @@ def test_student_execute_forwards_time_flag(monkeypatch, enabled):
 
 @pytest.mark.parametrize("stage,helper", [
     (mid_donor, "braunschweig.popsim.expand"),
+    (mid_donor, "braunschweig.popsim.mid"),
+    (mid_donor, "braunschweig.popsim.stage"),
+    (mid_donor, "braunschweig.popsim.stage.config_keys"),
     (incommuters, "braunschweig.data.cordon.plans"),
     (student_incommuters, "braunschweig.data.cordon.plans"),
     (student_incommuters, "braunschweig.synthesis.incommuters"),
