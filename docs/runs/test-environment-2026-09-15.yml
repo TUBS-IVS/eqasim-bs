@@ -20,6 +20,11 @@ status:
   notes: 'Windows baseline: 5689 passed, 91 skipped, 616.10 s. Final Windows: 5656 passed, 87 skipped, 4 deselected, 460.29 s. Server-mirrored WSL: 5659 passed, 84 skipped, 4 deselected, 321.29 s. Zero failures in all three runs. Timings are single observations with concurrent activity, not a controlled speed benchmark.'
 environment: Windows and Ubuntu 24.04 WSL2; Python 3.10.10
 validation:
+  - metric: Post-main-merge regression gate
+    reference: Merge commit 9ea98b48 combining PR #401 with main d01f7abb
+    result: 'Linux/WSL: 5788 passed, 84 skipped, 4 deselected; exit 0.'
+    artifact: 'Local WSL: /home/felix/projects/eqasim-bs-test-environment/test-results.xml'
+    notes: 'Full shared runner after resolving the documentation conflicts: 27 warnings, 266.35 s. Log: /home/felix/eqasim-tools/post-main-merge-tests.log. Performance ADR retained ADR-0122; this test-environment ADR was renumbered to ADR-0123. Subsequent changes only record this test evidence and regenerate documentation.'
   - metric: Copilot review follow-up regression gate
     reference: Executable code at ef69c516 after integrating origin/main 31fc30fd
     result: 'Linux/WSL: 5675 passed, 84 skipped, 4 deselected; exit 0.'
