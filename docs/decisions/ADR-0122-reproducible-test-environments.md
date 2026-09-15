@@ -56,6 +56,15 @@ field assertions. Neither repetition adds an independent input or scenario.
 
 ## Alternatives and consequences
 
+Review follow-up: pipeline test configs resolve their external tools from the
+active PATH instead of retaining machine-specific fixture paths. Caller `-m`
+filters intersect the runner's pipeline boundary. Bootstrap offers explicit
+`--repair-pip` recovery after an interrupted first installation while normal
+reruns preserve existing environments. Runner subprocess probes bound pytest's
+root and conftest ancestry to their own temporary directory to avoid unrelated
+Windows Temp entries. None of these changes modifies scientific settings or
+weakens existing assertions.
+
 - Arbitrary deletion quotas were rejected: model correctness and scientific
   invariants determine which checks are needed.
 - Parameterization alone would shorten code without reducing repeated execution.

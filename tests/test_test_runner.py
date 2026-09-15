@@ -15,8 +15,11 @@ def _run(tmp_path, source, *options):
     test_file.write_text(source, encoding="utf-8")
     env = dict(os.environ, PYTHONUTF8="1", EQASIM_BS_RUN_PIPELINE="1")
     env.pop("PYTHONPATH", None)
+    # The repository ini also sets pytest's default conftest boundary. Override
+    # both boundaries so external probes never scan unrelated shared Temp paths.
     return subprocess.run(
-        [sys.executable, str(RUNNER), *options, str(test_file), "-q"],
+        [sys.executable, str(RUNNER), *options, str(test_file), "-q",
+         f"--rootdir={tmp_path}", f"--confcutdir={tmp_path}"],
         cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8",
         timeout=60,
     )
