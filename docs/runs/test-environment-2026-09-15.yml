@@ -20,6 +20,11 @@ status:
   notes: 'Windows baseline: 5689 passed, 91 skipped, 616.10 s. Final Windows: 5656 passed, 87 skipped, 4 deselected, 460.29 s. Server-mirrored WSL: 5659 passed, 84 skipped, 4 deselected, 321.29 s. Zero failures in all three runs. Timings are single observations with concurrent activity, not a controlled speed benchmark.'
 environment: Windows and Ubuntu 24.04 WSL2; Python 3.10.10
 validation:
+  - metric: Final agent-process regression gate
+    reference: Executable code at ac8fe0e2 after integrating origin/main 31fc30fd
+    result: 'Linux/WSL: 5668 passed, 84 skipped, 4 deselected, 27 warnings in 244.98 s; exit 0.'
+    artifact: 'Local WSL: /home/felix/projects/eqasim-bs-test-environment/test-results.xml'
+    notes: 'Command: python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml. Environment preflight passed in the server-mirrored Python 3.10.10 runtime. Includes all nine JDK/config wrapper cases. Subsequent changes only clarify process documentation and record this evidence. Log: /home/felix/eqasim-tools/process-gate-tests.log. PR CI remains required before merge.'
   - metric: Regression results
     reference: Existing test assertions on main 31fc30fd
     result: All selected tests pass on Windows and server-mirrored Linux.
