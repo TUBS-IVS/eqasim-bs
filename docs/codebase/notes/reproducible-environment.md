@@ -37,6 +37,24 @@ documented and replayed rather than hidden. The other captured pip packages are
 `frozendict=2.4.7`, `pyzmq=27.1.0`, `bhepop2=2.0.0`, `synpp=1.6.2`, and
 `Pygments=2.20.0`.
 
+## Match configuration as well as packages
+
+Keep a dated, byte-checked copy of the server's `configs/base_bs.yml` for local
+reproduction. Record its server commit and SHA-256; the current repository base
+can evolve independently. Apply a committed scope overlay with
+`braunschweig.config_compose.compose`, then a local resource override with
+`deep_merge`. Persist that resolved YAML and pass the single file to
+`scripts/run_synpp.py`; its CLI accepts one config or base plus one overlay,
+not three config arguments. Only reduce worker counts and Java memory for local
+capacity; preserve model flags, calibration values, seeds and input definitions.
+An environment mirror alone does not provision input data, popsimprep or Java
+build tools.
+
+The Linux shell wrappers require JDK 25. Bootstrap installs the captured Linux
+snapshot for a new environment and preserves an existing one. The update script
+stops if the Linux snapshot changes, requiring an explicit environment refresh;
+it never re-solves the server from the Windows source file.
+
 ## Windows development and CI
 
 `environment.yml` remains the editable portable source for Windows. Its
