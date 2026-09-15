@@ -701,13 +701,20 @@ def assign_homes_typed(
             points_by_pair = _batch_home_points_for_cells(
                 pairs, geom_by_bid, buildings.crs,
             )
-        except Exception:
+        except Exception as batch_error:
             # A vectorized CRS operation can fail after considering more than one
             # pair. Replay scalar transformations in first-occurrence order so the
             # observable exception remains the one raised by the original path.
-            points_by_pair = {
-                pair: _home_point_for_cell(pair[0], pair[1]) for pair in pairs
-            }
+            try:
+                points_by_pair = {
+                    pair: _home_point_for_cell(pair[0], pair[1]) for pair in pairs
+                }
+            except Exception:
+                raise
+            # A successful replay means the failure is specific to the optimized
+            # path. Surface it rather than silently treating the scalar replay as
+            # a normal fallback.
+            raise batch_error
         for pair, positions in coordinate_positions_by_pair.items():
             for position in positions:
                 rec_geom[position] = points_by_pair[pair]

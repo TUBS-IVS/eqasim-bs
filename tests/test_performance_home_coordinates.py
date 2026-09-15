@@ -257,6 +257,20 @@ def test_typed_batch_coordinates_fails_before_later_random_fallback(monkeypatch)
     assert scalar_states == random_states == []
 
 
+def test_typed_batch_coordinates_surfaces_vector_only_failure(monkeypatch):
+    """A batch-only failure must not silently degrade to successful scalar output."""
+    households, buildings, cells = _one_building_per_cell_fixture([CELL_A])
+
+    def fail_batch_only(*_args, **_kwargs):
+        raise RuntimeError("injected vector-only failure")
+
+    monkeypatch.setattr(home_cell, "_batch_home_points_for_cells", fail_batch_only)
+    with pytest.raises(RuntimeError, match="injected vector-only failure"):
+        home_cell.assign_homes_typed(
+            households, buildings, cells, random_seed=1234, batch_coordinates=True,
+        )
+
+
 def test_typed_batch_coordinates_preserves_missing_building_geometry_error():
     """A missing active geometry must fail with the same public API error in both modes."""
     households, _buildings, cells = _footprint_fixture()
