@@ -1,3 +1,6 @@
 # Server-side shell scripts must keep LF line endings so bash on the Linux run
 # server can execute them -- a CRLF shebang line breaks with "bad interpreter".
 *.sh text eol=lf
+
+# The legacy writer byte fixture must retain the exact LF bytes on Windows too.
+tests/fixtures/population_passenger_availability_legacy.xml text eol=lf

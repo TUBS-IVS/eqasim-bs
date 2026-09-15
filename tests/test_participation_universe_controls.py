@@ -1115,6 +1115,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
             return self._values[key]
 
     values = {
+        popsim_stage.KEY_MID_PASSENGER_AVAILABILITY: False,
         popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
         popsim_stage.KEY_DIARY_PLAN_MATCH: False,
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
