@@ -33,6 +33,7 @@ pytestmark = pytest.mark.skipif(
         "(see eqasim-data/DOWNLOAD_CHECKLIST_BS.md)."
     ),
 )
+pytestmark = [pytest.mark.pipeline, pytestmark]
 
 
 def _hash_file(path: Path) -> str:

@@ -42,6 +42,7 @@ pytestmark = pytest.mark.skipif(
         "(see eqasim-data/DOWNLOAD_CHECKLIST_BS.md)."
     ),
 )
+pytestmark = [pytest.mark.pipeline, pytestmark]
 
 
 def test_matsim_build(tmp_path):

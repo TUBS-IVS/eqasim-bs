@@ -58,6 +58,7 @@ pytestmark = pytest.mark.skipif(
         f"Set {STRICT_VAR}=1 for byte-for-byte hash validation."
     ),
 )
+pytestmark = [pytest.mark.pipeline, pytestmark]
 
 
 # ---------------------------------------------------------------------------

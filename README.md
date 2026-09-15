@@ -105,9 +105,11 @@ and Bavaria lineage live in the Stage Registry
 
 ## Requirements
 
-- **Python 3.10** via miniforge/conda; the pinned environment is
-  [`environment.yml`](environment.yml) (env name `eqasim`). The pipeline AND
-  the test suite run in this env.
+- **Python 3.10** via miniforge/conda; install the `eqasim` environment from
+  [`environments/conda-lock.yml`](environments/conda-lock.yml). Its Linux and
+  Windows resolutions pin transitive dependencies as well as direct packages.
+  [`environment.yml`](environment.yml) is the editable source specification.
+  The pipeline AND the test suite run in this env.
 - **Java**: eqasim-java 2.2.0 targets **JDK 25**; point `java_home` /
   `java_binary` at it (see `configs/base_bs.yml`). Maven is resolved by the
   pipeline.
@@ -128,14 +130,34 @@ definition and child-access assumptions.
 
 ## Installation
 
-```powershell
+Linux is the canonical execution environment; on Windows, use WSL2 with the
+checkout and caches inside the Linux filesystem (for example `~/projects/`),
+as recommended in [Microsoft's filesystem guide](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
+Native Windows regression tests remain supported by the Windows lock.
+
+After installing Miniforge and `uv`, use the same commands on Linux/WSL2 and
+Windows (initialise the Miniforge shell first):
+
+```bash
 git clone https://github.com/TUBS-IVS/eqasim-bs.git
 git clone https://github.com/TUBS-IVS/eqasim-java-bs.git   # sibling directory
 cd eqasim-bs
-& "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
-conda env create -f environment.yml
+uvx --from conda-lock==4.0.2 conda-lock install --name eqasim environments/conda-lock.yml
 conda activate eqasim
+python scripts/run_tests.py --check
 ```
+
+For an existing Windows Miniforge installation, initialise PowerShell with
+`& "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"` before these commands.
+Install a fresh environment when comparing runtimes; an existing environment
+can contain extra packages even after applying a lock. See
+[environment maintenance](docs/codebase/notes/reproducible-environment.md) for
+lock regeneration and the pip/VCS installation contract.
+
+Run small-data regression tests with `python scripts/run_tests.py`; use
+`python scripts/run_tests.py --pipeline` only for an explicitly requested
+real-data synthesis/MATSim smoke with its data and JDK 25 toolchain available.
+See [testing](docs/codebase/TESTING.md) for focused selection and duration reports.
 
 ## Data setup
 
