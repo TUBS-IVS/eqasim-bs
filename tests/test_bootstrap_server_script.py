@@ -33,18 +33,24 @@ def bootstrap_harness(tmp_path: Path) -> dict[str, str]:
         "git": "echo git:$* >> \"$FAKE_LOG\"\nexit 0\n",
         "conda": """echo conda:$* >> \"$FAKE_LOG\"
 if [ \"$1\" = env ] && [ \"$2\" = list ]; then echo \"$FAKE_ENV\"; fi
-if [ \"$1\" = run ] && [ \"$*\" = *\"pip install\"* ] && [ \"${FAIL_PIP:-0}\" = 1 ]; then exit 42; fi
+if [[ \"$1\" = run && \"$*\" == *\"pip install\"* && \"${FAIL_PIP:-0}\" = 1 ]]; then exit 42; fi
 exit 0
 """,
     }.items():
         command = bin_dir / name
         command.write_text("#!/usr/bin/env bash\n" + body)
         command.chmod(0o755)
+    (bin_dir / "mamba").write_text((bin_dir / "conda").read_text())
+    (bin_dir / "mamba").chmod(0o755)
+    script = tmp_path / "bootstrap_server.sh"
+    script.write_bytes(SCRIPT.read_bytes().replace(b"\r\n", b"\n"))
+    script.chmod(0o755)
     return {
         "repo": str(repo),
         "conda_root": str(conda_root),
         "bin": str(bin_dir),
         "log": str(log),
+        "script": str(script),
     }
 
 
@@ -53,9 +59,9 @@ def run_bootstrap(harness: dict[str, str], *args: str, **extra: str) -> subproce
         "EQASIM_REPO_DIR": harness["repo"],
         "CONDA_ROOT": harness["conda_root"],
         "FAKE_LOG": harness["log"],
-        "PATH": harness["bin"] + os.pathsep + os.environ["PATH"],
+        "PATH": harness["bin"] + os.pathsep + "/usr/bin" + os.pathsep + "/bin",
     } | extra
-    return subprocess.run([BASH, str(SCRIPT), *args], text=True, capture_output=True, env=environment, check=False)
+    return subprocess.run([BASH, harness["script"], *args], text=True, capture_output=True, env=environment, check=False)
 
 
 @pytest.mark.skipif(BASH is None, reason="requires a POSIX bash runner")
