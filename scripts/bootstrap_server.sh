@@ -27,6 +27,24 @@ REPO_URL="${EQASIM_REPO_URL:-https://github.com/TUBS-IVS/eqasim-bs.git}"
 REPO_DIR="${EQASIM_REPO_DIR:-$HOME/eqasim-bs}"
 CONDA_ROOT="${CONDA_ROOT:-$HOME/miniforge3}"
 CONDA_ENV="${EQASIM_CONDA_ENV:-eqasim}"
+REPAIR_PIP=0
+
+case "$#" in
+    0)
+        ;;
+    1)
+        if [[ "$1" == "--repair-pip" ]]; then
+            REPAIR_PIP=1
+        else
+            echo "ERROR: unknown option '$1'. Use --repair-pip or no option." >&2
+            exit 2
+        fi
+        ;;
+    *)
+        echo "ERROR: expected no option or --repair-pip." >&2
+        exit 2
+        ;;
+esac
 
 if ! command -v git >/dev/null 2>&1; then
     echo "ERROR: git is not installed. Run this first (needs sudo):" >&2
@@ -75,11 +93,23 @@ fi
 if conda env list | awk '{print $1}' | grep -qx "$CONDA_ENV"; then
     echo "==> conda env '$CONDA_ENV' already exists - preserving it."
     echo "    It is not updated from environment.yml; that file is the Windows source lock."
+    if [[ "$REPAIR_PIP" -eq 1 ]]; then
+        echo "==> Replaying the captured pip layer by explicit request ..."
+        if ! conda run -n "$CONDA_ENV" python -m pip install --no-deps -r "$SERVER_PIP_REQUIREMENTS"; then
+            echo "ERROR: pip repair failed; the existing environment was not deleted." >&2
+            exit 1
+        fi
+    fi
 else
     echo "==> Creating conda env '$CONDA_ENV' from the production Linux snapshot ..."
     "$CREATE" create -y -n "$CONDA_ENV" --file "$SERVER_CONDA_LOCK"
     echo "==> Installing the captured pip layer without dependency resolution ..."
-    conda run -n "$CONDA_ENV" python -m pip install --no-deps -r "$SERVER_PIP_REQUIREMENTS"
+    if ! conda run -n "$CONDA_ENV" python -m pip install --no-deps -r "$SERVER_PIP_REQUIREMENTS"; then
+        echo "ERROR: initial pip installation failed; the newly created environment was preserved." >&2
+        echo "       After fixing access to the staged artifacts, run:" >&2
+        echo "       bash $0 --repair-pip" >&2
+        exit 1
+    fi
 fi
 
 echo "==> Verifying effective dependency consistency ..."
