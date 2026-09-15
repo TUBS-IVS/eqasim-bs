@@ -62,7 +62,12 @@ if [[ ! -x "$java_binary" ]]; then
     exit 1
 fi
 
-java_version="$($java_binary -version 2>&1 | head -1)"
+if ! java_version_output="$("$java_binary" -version 2>&1)"; then
+    echo "ERROR: could not execute Java at '$java_binary'." >&2
+    echo "       Set JAVA_HOME to a working JDK 25 installation." >&2
+    exit 1
+fi
+java_version="${java_version_output%%$'\n'*}"
 if [[ "$java_version" =~ \"([0-9]+)([.\"]|$) ]]; then
     java_major="${BASH_REMATCH[1]}"
 else
