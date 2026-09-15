@@ -63,6 +63,10 @@ KEY_HOME_MATCHING = "braunschweig.home_matching"
 # Default value for the home-matching mode config key.
 _DEFAULT_HOME_MATCHING = "typed"
 
+# Config key for batching deterministic typed-home coordinate transforms.
+KEY_HOME_BATCH_COORDINATES = "braunschweig.performance.home_coordinates"
+_DEFAULT_HOME_BATCH_COORDINATES = True
+
 # Config key for the prepared 100 m cell parquet (shared with the popsim stage).
 KEY_CELLS_100M = "braunschweig.population.popsim.cells_100m_path"
 
@@ -447,6 +451,34 @@ class TypedHomeReport:
     btype_default_rate: float
 
 
+def _batch_home_points_for_cells(
+    pairs: list[tuple[object, str]],
+    geom_by_bid: dict[object, object],
+    buildings_crs: object,
+) -> dict[tuple[object, str], object]:
+    """Transform each selected ``(building_id, cell_id)`` pair once.
+
+    This is the deterministic counterpart to ``_home_point_for_cell`` in
+    :func:`assign_homes_typed`: the source centroid is transformed to EPSG:3035,
+    clamped to its selected cell, then transformed back in the same CRS sequence.
+    Random fallbacks remain in the original household loop because their draw order
+    is part of the seeded model contract.
+    """
+    unique_pairs = list(dict.fromkeys(pairs))
+    source_points = [geom_by_bid[bid] for bid, _ in unique_pairs]
+    points_3035 = gpd.GeoSeries(source_points, crs=buildings_crs).to_crs(ZENSUS_CRS)
+    clamped_points = []
+    for point_3035, (_, cell_id) in zip(points_3035, unique_pairs):
+        _, n_sw, e_sw = _parse_inspire_id(cell_id)
+        east_m = max(float(e_sw), min(float(e_sw + CELL_SIZE_M), point_3035.x))
+        north_m = max(float(n_sw), min(float(n_sw + CELL_SIZE_M), point_3035.y))
+        clamped_points.append(Point(east_m, north_m))
+    points_in_buildings_crs = gpd.GeoSeries(
+        clamped_points, crs=ZENSUS_CRS
+    ).to_crs(buildings_crs)
+    return dict(zip(unique_pairs, points_in_buildings_crs))
+
+
 def assign_homes_typed(
     households: pd.DataFrame,
     buildings: gpd.GeoDataFrame,
@@ -456,6 +488,7 @@ def assign_homes_typed(
     cell_col: str = "ZENSUS100m",
     commune_col: str = "commune_id",
     household_id_col: str = "household_id",
+    batch_coordinates: bool = True,
 ) -> tuple[gpd.GeoDataFrame, TypedHomeReport]:
     """Place each household in a type- and size-matched building of its 100 m cell.
 
@@ -485,6 +518,10 @@ def assign_homes_typed(
         extractor reads.
     random_seed:
         Base seed; the effective seed is ``random_seed + RANDOM_SEED_OFFSET``.
+    batch_coordinates:
+        When true, batch deterministic centroid clamp/reprojection operations for
+        repeated selected ``(building_id, cell_id)`` pairs. False preserves the
+        scalar transformation path for equivalence checks and rollback.
 
     Returns
     -------
@@ -653,6 +690,7 @@ def assign_homes_typed(
     n_btype_defaulted = int(_btype_mapped.isna().sum())
     hh["btype"] = _btype_mapped.fillna("efh_zfh")
     rec_id, rec_comm, rec_bid, rec_geom = [], [], [], []
+    coordinate_positions: list[tuple[int, tuple[object, str]]] = []
     n_match = n_zero = n_over = n_in_cell = n_neighbour = 0
     for cell_id, grp in hh.groupby(cell_col, sort=False):
         fps = fps_by_cell_df.get(str(cell_id))
@@ -706,10 +744,20 @@ def assign_homes_typed(
             rec_id.append(hid)
             rec_comm.append(getattr(r, commune_col))
             rec_bid.append(bid)
-            rec_geom.append(
-                _home_point_for_cell(bid, str(cell_id)) if pd.notna(bid)
-                else hm.random_point_in_cell(str(cell_id), rng)
-            )
+            if pd.isna(bid):
+                rec_geom.append(hm.random_point_in_cell(str(cell_id), rng))
+            elif batch_coordinates and _has_footprint and geom_by_bid.get(bid) is not None:
+                coordinate_positions.append((len(rec_geom), (bid, str(cell_id))))
+                rec_geom.append(None)
+            else:
+                rec_geom.append(_home_point_for_cell(bid, str(cell_id)))
+
+    if coordinate_positions:
+        batched_points = _batch_home_points_for_cells(
+            [pair for _, pair in coordinate_positions], geom_by_bid, buildings.crs,
+        )
+        for position, pair in coordinate_positions:
+            rec_geom[position] = batched_points[pair]
 
     n = len(hh)
     btype_default_rate = n_btype_defaulted / n if n else 0.0
@@ -748,6 +796,9 @@ def configure(context):
     context.config("random_seed")
     # Home-matching mode: "typed" (default, ALKIS type-aware) or "legacy".
     context.config(KEY_HOME_MATCHING, _DEFAULT_HOME_MATCHING)
+    # Batch deterministic typed-home coordinate transforms; OFF retains the scalar
+    # transformation path for rollback and equivalence checks.
+    context.config(KEY_HOME_BATCH_COORDINATES, _DEFAULT_HOME_BATCH_COORDINATES)
     # Prepared 100 m cell parquet path (only read on the typed path, but declared
     # here so the stage's config dependency is explicit).
     context.config(KEY_CELLS_100M)
@@ -768,6 +819,7 @@ def execute(context):
     # The default is registered in configure() (synpp's ExecuteContext.config() does
     # NOT accept a default argument -- only the PrepareContext does), so read by key only.
     mode = context.config(KEY_HOME_MATCHING)
+    batch_coordinates = bool(context.config(KEY_HOME_BATCH_COORDINATES))
     if mode == "legacy":
         households = (
             df_sampled[["household_id", "ZENSUS100m", "commune_id"]]
@@ -796,5 +848,6 @@ def execute(context):
     households = df_sampled[typed_cols].drop_duplicates("household_id").reset_index(drop=True)
     result, _ = assign_homes_typed(
         households, buildings, cells, random_seed=context.config("random_seed"),
+        batch_coordinates=batch_coordinates,
     )
     return result[["household_id", "commune_id", "home_location_id", "geometry"]]
