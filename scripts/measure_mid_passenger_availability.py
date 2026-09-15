@@ -88,8 +88,7 @@ def _assert_invariants(persons: pd.DataFrame) -> None:
     valid_answers = persons["age"].ge(14) & persons["P_VAUTO"].isin(VALID_P_VAUTO)
     expected = persons.loc[valid_answers, "P_VAUTO"].map(VALID_P_VAUTO)
     actual = persons.loc[valid_answers, "car_passenger_availability"]
-    changed_answers = persons.loc[valid_answers].loc[actual.ne(expected)]
-    if not changed_answers.empty:
+    if (~actual.eq(expected).fillna(False)).any():
         raise ValueError(
             "P_VAUTO responses for valid 14+ respondents did not survive exactly "
             "as car_passenger_availability."
@@ -99,8 +98,8 @@ def _assert_invariants(persons: pd.DataFrame) -> None:
         ("car_availability", "_driver_car_availability_before"),
         ("has_license", "_has_license_before"),
     ):
-        changed = persons[column].ne(persons[before_column])
-        if changed.any():
+        unchanged = persons[column].eq(persons[before_column]).fillna(False)
+        if (~unchanged).any():
             raise ValueError(
                 f"Passenger-availability measurement changed protected driver attribute {column!r}."
             )
@@ -208,6 +207,18 @@ def _git_commit() -> str:
     ).strip()
 
 
+def passenger_rng_with_provenance(
+    seed: int, passenger_availability_rng_offset: int
+) -> tuple[np.random.RandomState, dict]:
+    """Create the production-equivalent independent passenger RNG stream."""
+    effective_seed = int(seed) + int(passenger_availability_rng_offset)
+    return np.random.RandomState(effective_seed), {
+        "protocol": "independent_production_passenger_availability_rng",
+        "offset": int(passenger_availability_rng_offset),
+        "effective_seed": effective_seed,
+    }
+
+
 def _read_required_wege(mid_dir: Path) -> pd.DataFrame:
     from braunschweig.popsim.mid import detect_csv_separator
 
@@ -231,10 +242,11 @@ def _assert_unique_person_keys(persons: pd.DataFrame) -> None:
         )
 
 
-def _run_raw_measurement(mid_dir: Path, seed: int) -> tuple[dict, pd.DataFrame]:
+def _run_raw_measurement(mid_dir: Path, seed: int) -> tuple[dict, pd.DataFrame, dict]:
     """Run the production helpers, keeping the raw data local to this process."""
     from braunschweig.popsim import attributes, expand, mid
     from braunschweig.popsim.passenger_availability import (
+        PASSENGER_AVAILABILITY_RNG_OFFSET,
         attach_car_passenger_diary_evidence,
         derive_car_passenger_availability,
     )
@@ -270,7 +282,10 @@ def _run_raw_measurement(mid_dir: Path, seed: int) -> tuple[dict, pd.DataFrame]:
 
     wege = _read_required_wege(mid_dir)
     persons = attach_car_passenger_diary_evidence(persons, wege)
-    persons = derive_car_passenger_availability(persons, households, rng=rng)
+    passenger_rng, passenger_rng_provenance = passenger_rng_with_provenance(
+        seed, PASSENGER_AVAILABILITY_RNG_OFFSET
+    )
+    persons = derive_car_passenger_availability(persons, households, rng=passenger_rng)
     report, table = evaluate_passenger_availability(
         persons, input_households=raw_households, input_persons=raw_persons
     )
@@ -278,7 +293,7 @@ def _run_raw_measurement(mid_dir: Path, seed: int) -> tuple[dict, pd.DataFrame]:
         "invalid_households_dropped": int(dropped_households),
         "invalid_persons_dropped": int(dropped_persons),
     }
-    return report, table
+    return report, table, passenger_rng_provenance
 
 
 def _prepare_output_dir(out_dir: Path) -> None:
@@ -298,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     mid_dir = Path(args.mid_dir)
     out_dir = Path(args.out_dir)
     _prepare_output_dir(out_dir)
-    report, table = _run_raw_measurement(mid_dir, args.seed)
+    report, table, passenger_rng_provenance = _run_raw_measurement(mid_dir, args.seed)
     source_files = [
         mid_dir / "MiD2023_Haushalte.csv",
         mid_dir / "MiD2023_Personen.csv",
@@ -306,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     report["provenance"] = {
         "seed": args.seed,
+        "passenger_rng": passenger_rng_provenance,
         "git_commit": _git_commit(),
         "source_file_sha256": {path.name: _sha256(path) for path in source_files},
         "matsim_simulation_run": False,

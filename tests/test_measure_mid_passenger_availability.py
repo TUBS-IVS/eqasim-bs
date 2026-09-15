@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -61,12 +62,41 @@ def test_evaluate_rejects_a_changed_valid_own_response():
         measurement.evaluate_passenger_availability(persons, input_households=2)
 
 
+def test_evaluate_rejects_nullable_derived_valid_own_response():
+    """A missing nullable passenger value cannot pass the exact P_VAUTO guard."""
+    persons = _persons()
+    persons["car_passenger_availability"] = persons[
+        "car_passenger_availability"
+    ].astype("string")
+    persons.loc[1, "car_passenger_availability"] = pd.NA
+
+    with pytest.raises(ValueError, match="P_VAUTO"):
+        measurement.evaluate_passenger_availability(persons, input_households=2)
+
+
 def test_evaluate_rejects_driver_attribute_changes():
     """A passenger measurement may not mutate the already-derived driver attributes."""
     persons = _persons()
     persons.loc[2, "has_license"] = False
 
     with pytest.raises(ValueError, match="has_license"):
+        measurement.evaluate_passenger_availability(persons, input_households=2)
+
+
+@pytest.mark.parametrize(
+    ("column", "dtype"),
+    [
+        ("car_availability", "string"),
+        ("has_license", "boolean"),
+    ],
+)
+def test_evaluate_rejects_nullable_protected_driver_attribute(column, dtype):
+    """A nullable protected-driver mismatch must fail closed instead of being skipped."""
+    persons = _persons()
+    persons[column] = persons[column].astype(dtype)
+    persons.loc[2, column] = pd.NA
+
+    with pytest.raises(ValueError, match=column):
         measurement.evaluate_passenger_availability(persons, input_households=2)
 
 
@@ -91,6 +121,18 @@ def test_evaluate_reports_age_car_rates_and_conflicting_diary_measure():
     assert rows.loc[("14to17", "positive"), "old_eligible_rate"] == 0.0
     assert rows.loc[("18plus", "0"), "n_persons"] == 2
     assert rows.loc[("18plus", "0"), "newly_excluded"] == 1
+
+
+def test_passenger_rng_uses_production_offset_and_reports_effective_seed():
+    """Changing the passenger stream to the shared attribute RNG must fail this protocol check."""
+    rng, provenance = measurement.passenger_rng_with_provenance(1234, 74517)
+
+    assert rng.randint(0, 1_000_000) == np.random.RandomState(75751).randint(0, 1_000_000)
+    assert provenance == {
+        "protocol": "independent_production_passenger_availability_rng",
+        "offset": 74517,
+        "effective_seed": 75751,
+    }
 
 
 def test_cli_refuses_to_overwrite_an_existing_aggregate_report(tmp_path):
