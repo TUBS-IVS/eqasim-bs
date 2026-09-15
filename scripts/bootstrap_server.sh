@@ -82,6 +82,9 @@ else
     conda run -n "$CONDA_ENV" python -m pip install --no-deps -r "$SERVER_PIP_REQUIREMENTS"
 fi
 
+echo "==> Verifying effective dependency consistency ..."
+conda run -n "$CONDA_ENV" python -m pip check
+
 echo ""
 echo "==> Bootstrap complete."
 echo "    Repo : $REPO_DIR ($(git -C "$REPO_DIR" rev-parse --short HEAD))"

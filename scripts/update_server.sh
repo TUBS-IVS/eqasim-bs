@@ -52,7 +52,11 @@ git pull --ff-only
 conda_lock_after="$(snapshot_hash "$SERVER_CONDA_LOCK")"
 pip_requirements_after="$(snapshot_hash "$SERVER_PIP_REQUIREMENTS")"
 snapshot_changed=0
-if [[ "$conda_lock_before" != "$conda_lock_after" || "$pip_requirements_before" != "$pip_requirements_after" ]]; then
+if [[ ! -f "$SERVER_CONDA_LOCK" || ! -f "$SERVER_PIP_REQUIREMENTS" ]]; then
+    echo "ERROR: the production Linux environment snapshot is incomplete." >&2
+    echo "       Expected $SERVER_CONDA_LOCK and $SERVER_PIP_REQUIREMENTS." >&2
+    snapshot_changed=1
+elif [[ "$conda_lock_before" != "$conda_lock_after" || "$pip_requirements_before" != "$pip_requirements_after" ]]; then
     echo "ERROR: the production Linux environment snapshot changed." >&2
     echo "       Existing environments are preserved; install a fresh environment" >&2
     echo "       from $SERVER_CONDA_LOCK and $SERVER_PIP_REQUIREMENTS." >&2
