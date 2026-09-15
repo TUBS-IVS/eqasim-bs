@@ -341,6 +341,22 @@ def test_child_without_usable_household_evidence_uses_empirical_fallback():
     assert result.loc["child", "passenger_availability_source"] == "child_empirical_fallback"
 
 
+def test_child_fallback_excludes_imputed_adult_responses_from_empirical_pool():
+    result = _derive(
+        [
+            _person("observed_some", "h1", 1, 1, 40, 2),
+            _person("observed_none", "h2", 2, 1, 40, 3),
+            _person("missing_adult", "h3", 3, 1, 40, 9),
+            _person("child", "child_only_h", 4, 1, 8, 402),
+        ],
+        seed=1,
+    )
+
+    assert result.loc["missing_adult", "passenger_availability_source"] == "adult_empirical_imputation"
+    assert result.loc["child", "car_passenger_availability"] == "none"
+    assert result.loc["child", "passenger_availability_source"] == "child_empirical_fallback"
+
+
 def test_no_empirical_adult_pool_fails_clearly():
     with pytest.raises(ValueError, match="valid adult P_VAUTO pool is empty"):
         _derive([_person("unknown", "h1", 1, 1, 35, 9)])

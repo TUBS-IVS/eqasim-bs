@@ -326,9 +326,10 @@ def derive_car_passenger_availability(
     fallback = ~positive_household & ~child_diary & ~has_adult
     fallback_indices = child_indices[fallback.to_numpy()]
     if len(fallback_indices):
-        empirical_pool = resolved_adults.map(
-            {"all": "some", "some": "some", "none": "none"}
-        ).to_numpy()
+        empirical_pool = unique_adults.loc[
+            unique_adults["_passenger_response"].isin(PASSENGER_AVAILABILITY_BY_P_VAUTO),
+            "_passenger_response",
+        ].map({1: "some", 2: "some", 3: "none"}).to_numpy()
         draws = rng.randint(len(empirical_pool), size=len(fallback_indices))
         out.loc[fallback_indices, "car_passenger_availability"] = empirical_pool[draws]
         out.loc[fallback_indices, "passenger_availability_source"] = SOURCE_CHILD_FALLBACK
