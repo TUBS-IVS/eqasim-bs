@@ -552,6 +552,10 @@ config:
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
   cordon_enabled: true
+  # Preserve raw MiD age/sex and repair chronologically inconsistent return legs (#397).
+  # Set either flag to false to reproduce its legacy output; see ADR-0120.
+  cordon_incommuter_donor_demographics: true
+  cordon_incommuter_time_chronology: true
   # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.
