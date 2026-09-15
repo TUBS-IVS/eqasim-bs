@@ -250,14 +250,11 @@ def _adult_donor_rows(
 
     work["_passenger_member_imputed"] = member_imputed.loc[adult]
 
-    origin_index = pd.MultiIndex.from_frame(work[origin_keys])
-    work["_passenger_origin_order"] = pd.factorize(origin_index, sort=False)[0]
     return (
         work.sort_values(
-            ["_passenger_origin_order", "_passenger_member_imputed"], kind="stable"
+            [*origin_keys, "_passenger_member_imputed"], kind="stable"
         )
         .drop_duplicates(origin_keys, keep="first")
-        .sort_values("_passenger_origin_order", kind="stable")
     )
 
 

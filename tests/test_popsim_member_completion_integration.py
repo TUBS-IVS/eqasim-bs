@@ -187,6 +187,15 @@ def test_member_completion_origin_controls_passenger_resolution_after_plan_remap
         remapped,
         rng=np.random.RandomState(11),
     )
+    without_fillers_rng = _RecordingPassengerRng()
+    without_fillers, _ = assembly.build_persons(
+        merged,
+        households,
+        remapped.loc[~remapped["member_imputed"]],
+        rng=np.random.RandomState(11),
+        passenger_availability_enabled=True,
+        passenger_rng=without_fillers_rng,
+    )
 
     source_valid = enabled[
         enabled[attribute_hh].eq(2) & enabled[attribute_person].eq(2)
@@ -209,6 +218,18 @@ def test_member_completion_origin_controls_passenger_resolution_after_plan_remap
     # matching group. The child fallback then sees four distinct valid original
     # respondents, rather than the two valid filler copies as extra observations.
     assert passenger_rng.calls == [(3, None), (4, 1)]
+    identity_columns = [attribute_hh, attribute_person]
+    full_originals = enabled.loc[
+        ~enabled["member_imputed"],
+        [*identity_columns, "car_passenger_availability", "passenger_availability_source"],
+    ].sort_values(identity_columns).reset_index(drop=True)
+    pd.testing.assert_frame_equal(
+        full_originals,
+        without_fillers[
+            [*identity_columns, "car_passenger_availability", "passenger_availability_source"]
+        ].sort_values(identity_columns).reset_index(drop=True),
+    )
+    assert passenger_rng.calls == without_fillers_rng.calls
     pd.testing.assert_series_equal(
         enabled["car_availability"], disabled["car_availability"]
     )
