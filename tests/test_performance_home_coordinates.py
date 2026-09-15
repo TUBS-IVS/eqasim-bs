@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -93,6 +95,162 @@ def _rng_state(rng) -> tuple[object, bytes, int, int, float]:
     """Return every RandomState component that changes with draws."""
     algorithm, state, position, has_gauss, cached_gaussian = rng.get_state()
     return algorithm, state.tobytes(), position, has_gauss, cached_gaussian
+
+
+def test_home_signal_loader_projects_raw_parquet_and_keeps_source_row_order(tmp_path):
+    """The optimized stage must not load unused national-cell columns or rows."""
+    raw = pd.DataFrame(
+        {
+            "GITTER_ID_100m": [CELL_C, CELL_A, CELL_B],
+            "FreiEFH-Geb-Gebaeudetyp-Groesse_100m-Gitter": pd.Series(
+                [7.0, 1.0, 2.0], dtype="float32"
+            ),
+            "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter": [7.0, 1.0, 2.0],
+            "unused national control": [70, 10, 20],
+        }
+    )
+    path = tmp_path / "prepared-cells.parquet"
+    raw.to_parquet(path)
+
+    projected = home_cell.load_home_signal_cells(path, [CELL_B, CELL_A])
+
+    assert list(projected.columns) == [
+        "ZENSUS100m",
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter",
+        "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter",
+    ]
+    assert projected["ZENSUS100m"].tolist() == [CELL_A, CELL_B]
+    assert str(projected["FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter"].dtype) == "float32"
+
+
+def test_typed_home_signal_projection_preserves_off_results_rng_and_report(monkeypatch):
+    """Removing unused cell signals must leave typed-home outcomes byte-identical."""
+    households, buildings, used_cells = _footprint_fixture()
+    cells = pd.concat([_signals([CELL_C]), used_cells], ignore_index=True)
+    real_cell_signals = home_cell.cbs.cell_signals
+    observed_signal_inputs = []
+    original_random_point = home_cell.hm.random_point_in_cell
+    random_states = []
+
+    def capture_signal_input(frame):
+        observed_signal_inputs.append(frame.copy())
+        return real_cell_signals(frame)
+
+    def record_random_state(cell_id, rng):
+        point = original_random_point(cell_id, rng)
+        random_states.append(_rng_state(rng))
+        return point
+
+    monkeypatch.setattr(home_cell.cbs, "cell_signals", capture_signal_input)
+    monkeypatch.setattr(home_cell.hm, "random_point_in_cell", record_random_state)
+    original, original_report = home_cell.assign_homes_typed(
+        households, buildings, cells, random_seed=1234, batch_coordinates=False,
+    )
+    original_random_states = list(random_states)
+    random_states.clear()
+    projected, projected_report = home_cell.assign_homes_typed(
+        households, buildings, cells, random_seed=1234, batch_coordinates=True,
+    )
+
+    assert list(projected.columns) == list(original.columns)
+    assert projected.dtypes.equals(original.dtypes)
+    pd.testing.assert_frame_equal(
+        projected.drop(columns="geometry"), original.drop(columns="geometry"),
+    )
+    assert _wkb(projected) == _wkb(original)
+    assert projected_report == original_report
+    assert random_states == original_random_states
+    assert random_states[-1] == original_random_states[-1]
+
+    assert len(observed_signal_inputs) == 2
+    on_signal_input = observed_signal_inputs[1]
+    assert on_signal_input["ZENSUS100m"].tolist() == [CELL_A, CELL_B, CELL_EMPTY]
+    assert len(on_signal_input) <= households["ZENSUS100m"].nunique()
+    assert list(on_signal_input.columns) == [
+        "ZENSUS100m",
+        "FreiEFH_Geb_Gebaeudetyp_Groesse_100m_Gitter",
+        "MFH_3bis6Wohnungen_Geb_Gebaeudetyp_Groesse_100m_Gitter",
+        "FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        "MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter",
+        "BewohntWhg_Leerstand_100m_Gitter",
+        "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter",
+    ]
+
+
+def test_typed_home_signal_projection_keeps_unused_malformed_signal_fail_fast():
+    """ON must not hide a malformed signal row that the full path rejects."""
+    households, buildings, cells = _footprint_fixture()
+    wide_cells = pd.concat([_signals([CELL_C]), cells], ignore_index=True)
+    wide_cells.loc[0, "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter"] = "malformed"
+
+    with pytest.raises(ValueError):
+        home_cell.assign_homes_typed(
+            households, buildings, wide_cells, random_seed=1234, batch_coordinates=False,
+        )
+    with pytest.raises(ValueError, match="could not convert string to float: 'malformed'"):
+        home_cell.assign_homes_typed(
+            households, buildings, wide_cells, random_seed=1234, batch_coordinates=True,
+        )
+
+
+def test_typed_home_signal_projection_keeps_unused_nullable_size_bin_error():
+    """ON must retain the full size-bin parser's nullable-value TypeError."""
+    households, buildings, cells = _footprint_fixture()
+    wide_cells = pd.concat([_signals([CELL_C]), cells], ignore_index=True)
+    size_column = "90bis99_Flaeche_der_Wohnung_10m2_Intervalle_100m_Gitter"
+    wide_cells[size_column] = wide_cells[size_column].astype(object)
+    wide_cells.loc[0, size_column] = pd.NA
+
+    with pytest.raises(TypeError, match="boolean value of NA is ambiguous"):
+        home_cell.assign_homes_typed(
+            households, buildings, wide_cells, random_seed=1234, batch_coordinates=False,
+        )
+    with pytest.raises(TypeError, match="boolean value of NA is ambiguous"):
+        home_cell.assign_homes_typed(
+            households, buildings, wide_cells, random_seed=1234, batch_coordinates=True,
+        )
+
+
+def test_typed_home_log_separates_empty_slots_random_fallback(caplog):
+    """A nonempty cell with no supported slots must be visible in the run log."""
+    households, buildings, cells = _one_building_per_cell_fixture([CELL_A])
+    households["building_type_3class"] = "mehrfamilienhaus"
+    cells["FreiEFH_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 0.0
+    cells["MFH_3bis6Wohnungen_Wohnung_Gebaeudetyp_Groesse_100m_Gitter"] = 1.0
+
+    with caplog.at_level(logging.WARNING, logger=home_cell.__name__):
+        result, report = home_cell.assign_homes_typed(
+            households, buildings, cells, random_seed=1234, batch_coordinates=True,
+        )
+
+    assert pd.isna(result.loc[0, "home_location_id"])
+    assert report.n_zero_building_cells == 0
+    message = caplog.records[-1].getMessage()
+    assert "1 random-point calls" in message
+    assert "0 zero-building emitted" in message
+    assert "1 empty-slots emitted" in message
+    assert "0 neighbour RNG-preservation draws discarded" in message
+
+
+def test_typed_home_log_separates_neighbour_rng_preservation_draw(caplog):
+    """A neighbour placement must report its discarded in-cell random draw."""
+    households, buildings, _cells = _one_building_per_cell_fixture([CELL_A])
+    households["ZENSUS100m"] = CELL_B
+
+    with caplog.at_level(logging.WARNING, logger=home_cell.__name__):
+        result, report = home_cell.assign_homes_typed(
+            households, buildings, _signals([CELL_B]), random_seed=1234,
+            batch_coordinates=True,
+        )
+
+    assert result.loc[0, "home_location_id"] == 0
+    assert report.n_zero_building_cells == 1
+    assert report.n_neighbour_cell_placed == 1
+    message = caplog.records[-1].getMessage()
+    assert "1 random-point calls" in message
+    assert "0 zero-building emitted" in message
+    assert "0 empty-slots emitted" in message
+    assert "1 neighbour RNG-preservation draws discarded" in message
 
 
 def test_home_coordinate_batching_is_registered_default_on():
@@ -370,3 +528,47 @@ def test_execute_forwards_home_coordinate_batching_switch(monkeypatch):
     monkeypatch.setattr(home_cell, "assign_homes_typed", capture_assignment)
     home_cell.execute(Context())
     assert observed["batch_coordinates"] is False
+
+
+def test_execute_uses_projected_home_signals_when_coordinate_optimization_is_on(monkeypatch):
+    """The default-ON stage path must avoid loading unrelated prepared-cell controls."""
+    households, buildings, cells = _footprint_fixture()
+    sampled = households.copy()
+    observed = {}
+
+    class Context:
+        def stage(self, name):
+            return {
+                "braunschweig.data.buildings": buildings,
+                "synthesis.population.sampled": sampled,
+            }[name]
+
+        def config(self, key):
+            return {
+                "random_seed": 1234,
+                "braunschweig.home_matching": "typed",
+                "braunschweig.performance.home_coordinates": True,
+                home_cell.KEY_CELLS_100M: "prepared-cells.parquet",
+            }[key]
+
+    def capture_assignment(*args, **kwargs):
+        observed["cells"] = args[2]
+        observed["batch_coordinates"] = kwargs["batch_coordinates"]
+        return gpd.GeoDataFrame(
+            {
+                "household_id": sampled["household_id"],
+                "commune_id": sampled["commune_id"],
+                "home_location_id": pd.NA,
+            },
+            geometry=[Point(0, 0)] * len(sampled), crs="EPSG:25832",
+        ), None
+
+    def unexpected_full_load(_path):
+        raise AssertionError("default-ON typed-home execution used the full cell loader")
+
+    monkeypatch.setattr(home_cell, "load_prepared_cells", unexpected_full_load)
+    monkeypatch.setattr(home_cell, "load_home_signal_cells", lambda _path, ids: cells)
+    monkeypatch.setattr(home_cell, "assign_homes_typed", capture_assignment)
+    home_cell.execute(Context())
+    assert observed["batch_coordinates"] is True
+    assert observed["cells"] is cells

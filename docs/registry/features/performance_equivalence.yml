@@ -2,8 +2,8 @@ feature: performance_equivalence
 title: Result-preserving fleet, home, validation and donor kernels
 area: infrastructure
 description: >
-  Remove repeated DataFrame filtering, scalar CRS transformations and invariant donor
-  feature extraction, and validate ordered trip arrays without constructing one
+  Remove repeated DataFrame filtering, unused prepared-cell signal loading, scalar
+  CRS transformations and invariant donor feature extraction, and validate ordered trip arrays without constructing one
   mixed-type row frame per person. Preserve model choices, row order, geometry,
   diagnostics and random streams; each kernel retains its original OFF path.
 stages:
@@ -32,6 +32,7 @@ detail_doc: docs/codebase/notes/performance-equivalence.md
 code_paths:
 - braunschweig/synthesis/vehicles/cars/household.py
 - braunschweig/synthesis/locations/home_cell.py
+- braunschweig/synthesis/locations/cell_building_signals.py
 - braunschweig/popsim/plan_validation.py
 - braunschweig/popsim/trips.py
 - braunschweig/popsim/trips_stage.py
@@ -62,8 +63,12 @@ evidence:
       processes on identical fixtures. This is bounded execution-equivalence evidence,
       not a claim that every full-production output file has been replayed.
   fallback_rate:
-    instrumented: false
-    note: No new scientific fallback; original fallback paths and reporting remain in place.
+    instrumented: true
+    log_marker: '[home_typed] %d HH: in-cell'
+    test: tests/test_performance_home_coordinates.py::test_typed_home_log_separates_empty_slots_random_fallback
+    note: >
+      Typed-home logging distinguishes emitted zero-building and empty-slot random
+      points from neighbour RNG-preservation draws. Allocation remains unchanged.
   reference:
     kind: none
     note: Implementation-equivalence comparison against commit 1502e88e; no behavioural reference applies.
