@@ -102,12 +102,17 @@ if not isinstance(config, dict):
     print(f"ERROR: config '{config_path}' must contain a mapping.", file=sys.stderr)
     raise SystemExit(1)
 
+runtime_config = config.get("config", {})
+if not isinstance(runtime_config, dict):
+    print(f"ERROR: config '{config_path}' field 'config' must contain a mapping.", file=sys.stderr)
+    raise SystemExit(1)
+
 
 def real_path(path: str) -> str:
     return os.path.realpath(os.path.expanduser(path))
 
 
-configured_home = config.get("java_home")
+configured_home = runtime_config.get("java_home")
 if configured_home and real_path(str(configured_home)) != real_path(selected_home):
     print(
         "ERROR: config java_home does not match the selected JDK 25: "
@@ -116,7 +121,7 @@ if configured_home and real_path(str(configured_home)) != real_path(selected_hom
     )
     raise SystemExit(1)
 
-configured_binary = config.get("java_binary")
+configured_binary = runtime_config.get("java_binary")
 if configured_binary:
     resolved_binary = shutil.which(str(configured_binary))
     if resolved_binary is None:

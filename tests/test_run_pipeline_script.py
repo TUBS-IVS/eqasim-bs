@@ -13,13 +13,12 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "run_pipeline.sh"
 BASH = shutil.which("bash")
-HEAD = shutil.which("head")
 
 
 def _prepare_harness(tmp_path: Path, *, java_version: str | None,
                      explicit_java_home: bool, java_runs: bool,
                      java_home_has_spaces: bool,
-                     config_contents: str = "{}\n") -> tuple[dict[str, str], Path]:
+                     config_contents: str = "config: {}\n") -> tuple[dict[str, str], Path]:
     """Create only the wrapper's config, conda and optional JDK preconditions."""
     conda_root = tmp_path / "conda"
     conda_script = conda_root / "etc" / "profile.d" / "conda.sh"
@@ -45,7 +44,6 @@ def _prepare_harness(tmp_path: Path, *, java_version: str | None,
 
     harness_bin = tmp_path / "harness-bin"
     harness_bin.mkdir()
-    (harness_bin / "head").symlink_to(HEAD)
     (harness_bin / "python").symlink_to(sys.executable)
 
     environment = os.environ | {
@@ -61,22 +59,24 @@ def _prepare_harness(tmp_path: Path, *, java_version: str | None,
     return environment, java_home
 
 
-@pytest.mark.skipif(os.name != "posix" or BASH is None or HEAD is None,
-                    reason="run_pipeline.sh harness requires POSIX bash and head")
+@pytest.mark.skipif(os.name != "posix" or BASH is None,
+                    reason="run_pipeline.sh harness requires POSIX bash")
 @pytest.mark.parametrize(
     ("java_version", "explicit_java_home", "java_runs", "java_home_has_spaces",
      "config_contents", "expected"),
     [
-        ("25.0.3", True, True, True, "{}\n", "Using JDK 25"),
-        ("25.0.3", False, True, False, "{}\n", "Using JDK 25"),
-        ("25.0.3", True, True, False, "java_binary: java\n", "Using JDK 25"),
-        ("21.0.7", True, True, False, "{}\n", "requires JDK 25; found major version 21"),
-        (None, False, True, False, "{}\n", "JDK 25 executable not found"),
-        ("25.0.3", True, False, False, "{}\n", "could not execute Java"),
+        ("25.0.3", True, True, True, "config: {}\n", "Using JDK 25"),
+        ("25.0.3", False, True, False, "config: {}\n", "Using JDK 25"),
+        ("25.0.3", True, True, False, "config:\n  java_binary: java\n", "Using JDK 25"),
+        ("21.0.7", True, True, False, "config: {}\n", "requires JDK 25; found major version 21"),
+        (None, False, True, False, "config: {}\n", "JDK 25 executable not found"),
+        ("25.0.3", True, False, False, "config: {}\n", "could not execute Java"),
         ("25.0.3", True, True, False,
-         "java_home: /different/jdk-25\n", "config java_home does not match"),
+         "config:\n  java_home: /different/jdk-25\n", "config java_home does not match"),
         ("25.0.3", True, True, False,
-         "java_binary: /bin/sh\n", "config java_binary does not match"),
+         "config:\n  java_binary: /bin/sh\n", "config java_binary does not match"),
+        ("25.0.3", True, True, False,
+         "config: []\n", "field 'config' must contain a mapping"),
     ],
 )
 def test_jdk_preflight_selects_or_rejects_the_configured_jdk(
