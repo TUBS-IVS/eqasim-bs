@@ -84,6 +84,60 @@ export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
 echo "==> Using JDK 25 at $JAVA_HOME"
 
+# The Python runtime stages may override the shell selection through their
+# config. Reject a conflicting override here, before Maven or MATSim starts.
+if ! python - "$CONFIG" "$JAVA_HOME" "$java_binary" <<'PY'
+import os
+import shutil
+import sys
+
+import yaml
+
+
+config_path, selected_home, selected_binary = sys.argv[1:]
+with open(config_path, encoding="utf-8") as config_file:
+    config = yaml.safe_load(config_file) or {}
+
+if not isinstance(config, dict):
+    print(f"ERROR: config '{config_path}' must contain a mapping.", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def real_path(path: str) -> str:
+    return os.path.realpath(os.path.expanduser(path))
+
+
+configured_home = config.get("java_home")
+if configured_home and real_path(str(configured_home)) != real_path(selected_home):
+    print(
+        "ERROR: config java_home does not match the selected JDK 25: "
+        f"{configured_home!r} != {selected_home!r}.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+configured_binary = config.get("java_binary")
+if configured_binary:
+    resolved_binary = shutil.which(str(configured_binary))
+    if resolved_binary is None:
+        print(
+            f"ERROR: config java_binary cannot be resolved: {configured_binary!r}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if real_path(resolved_binary) != real_path(selected_binary):
+        print(
+            "ERROR: config java_binary does not match the selected JDK 25: "
+            f"{configured_binary!r} resolves to {resolved_binary!r}, "
+            f"not {selected_binary!r}.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+PY
+then
+    exit 1
+fi
+
 if ! command -v mvn >/dev/null 2>&1; then
     echo "ERROR: Maven (mvn) not found on PATH. The eqasim MATSim jar is built with" >&2
     echo "       Maven. Install it with:" >&2
