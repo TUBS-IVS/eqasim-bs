@@ -25,8 +25,8 @@ AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
    diagnostics, command, exit status, pass/skip/deselected counts and JUnit path.
    Explain unexpected skips. A skip is not a pass; direct pytest and results from
    another checkout or pre-merge code state cannot substitute for this gate.
-   Later executable changes require affected checks again; broaden to the suite
-   when their impact is not isolated. Documentation-only recording of results
+   Later executable changes require the final regression gate again.
+   Documentation-only recording or clarification of the process and results
    does not invalidate the executable-code evidence.
 5. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
    documentation check must pass on the PR's latest commit. Inspect failures
@@ -97,8 +97,9 @@ its original opt-in/skip semantics. The runner does not download data or configu
 Java. A small-data regression pass
 is not a real pipeline smoke or scientific validation.
 
-Direct `python -m pytest tests/ -q` remains available for low-level diagnostics
-with the previous opt-in semantics; it does not satisfy the required agent gate.
+Direct pytest is reserved for debugging the shared runner itself and the named
+metadata-only documentation workflow. Normal focused diagnostics must use the
+runner; direct pytest does not satisfy the required agent gate.
 `pytest.ini` registers the marker and limits default discovery to
 `tests/`; `tests/conftest.py` owns shared fixtures and logger cleanup.
 

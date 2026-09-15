@@ -130,20 +130,16 @@ re-derived here; this file records what the current branch actually shows.
    bugs in CONCERNS.md") as if populated. Before this task only
    `docs/codebase/.codebase-scan.txt` existed; these seven docs are newly created.
 
-4. **Conda env name mismatch.** `environment.yml` declares `name: ile-de-france`
-   and CI activates `ile-de-france`, but README/AGENTS.md/CLAUDE.md tell
-   contributors to use env `eqasim`. `[ASK USER]` which name is canonical.
+4. **Conda env name mismatch — RESOLVED (ADR-0122).** The project environment
+   is `eqasim`; Linux uses the captured server snapshot and Windows its lock.
 
-5. **Java version.** CI installs Java **17** (Corretto), and the task brief /
-   common assumption mentions Java 21. `[ASK USER]` if a Java 21 upgrade is
-   intended.
+5. **Java version — RESOLVED (ADR-0122).** Pipeline checks require JDK 25 and
+   validate configured Java paths. Python regression CI does not install an
+   unused Java toolchain.
 
-6. **CI trigger branches.** `.github/workflows/tests.yml` triggers only on
-   `push`/`pull_request` to `develop`. The active work is on
-   `feature/education-gravity-bs` and `main`, so the GitHub Actions test job does
-   **not run** on the branches actually in use. `.travis.yml` is also still present
-   (legacy, likely dead). `[ASK USER]` whether the CI trigger should include the
-   working branches.
+6. **CI trigger branches — RESOLVED (ADR-0122).** Regression CI targets `main`
+   pushes and PRs with Linux/Windows jobs using the shared runner. The inherited
+   Travis configuration is retired. See [the verification process](TESTING.md#required-agent-verification-gate).
 
 ## Data / provenance risks
 
@@ -221,7 +217,7 @@ long wall times (README: 25 % run ~10 h).
 
 - `git rev-parse --abbrev-ref HEAD` -> `feature/education-gravity-bs`; `ls bavaria` absent
 - `.gitignore` (`eqasim-data/*` + force-added exceptions); `git ls-files eqasim-data` (38 files)
-- `environment.yml` (`name: ile-de-france`); `.github/workflows/tests.yml` (Java 17, branch `develop`)
+- `environment.yml` (`name: eqasim`); `.github/workflows/tests.yml` (locked Linux/Windows regression on `main`; ADR-0122)
 - `configs/fixtures/config_local_braunschweig.yml` (legacy keys, binary paths)
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` ("Legacy dead-config keys", MiD non-commercial)
 - `docs/codebase/.codebase-scan.txt` (CODE METRICS, production TODOs, high-churn files)
