@@ -185,7 +185,15 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
 
     if "car_passenger_availability" in person_fields:
         passenger_availability = person[person_fields.index("car_passenger_availability")]
-        missing = passenger_availability is None or pd.isna(passenger_availability)
+        missing = passenger_availability is None
+        if not missing and not isinstance(passenger_availability, str):
+            missing_value = pd.isna(passenger_availability)
+            if isinstance(missing_value, (bool, np.bool_)):
+                missing = bool(missing_value)
+            else:
+                raise ValueError(
+                    "Invalid car_passenger_availability %r; expected one of %s."
+                    % (passenger_availability, sorted(PASSENGER_AVAILABILITY_VALUES)))
         if missing:
             if passenger_availability_omission_counter is not None:
                 passenger_availability_omission_counter["persons_without_passenger_availability"] += 1

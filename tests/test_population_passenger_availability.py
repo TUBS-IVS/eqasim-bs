@@ -71,7 +71,7 @@ def test_writer_emits_valid_passenger_availability_as_java_string():
     assert writer.types["carPassengerAvailability"] == "java.lang.String"
 
 
-@pytest.mark.parametrize("value", ["unknown", "ALL", 1, ["some"]])
+@pytest.mark.parametrize("value", ["unknown", "ALL", 1, ["some"], ["some", "all"]])
 def test_writer_rejects_malformed_present_passenger_availability(value):
     fields = pop.PERSON_FIELDS + ["car_passenger_availability"]
     with pytest.raises(ValueError, match="car_passenger_availability"):
