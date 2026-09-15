@@ -29,6 +29,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,38 @@ def _write_metadata(path: str, metadata: dict) -> None:
     finally:
         if os.path.exists(temporary):
             os.remove(temporary)
+
+
+def _drop_incoherent_metadata(metadata: dict, copied: list) -> int:
+    """Retain only exact dependency snapshots for copied entries and descendants.
+
+    synpp checks whether a parent is NEWER than the child's recorded parent. A
+    parent imported from another run can be OLDER and still contain different
+    results. Cross-run merging therefore needs exact timestamp equality. Unrelated
+    target entries are outside this check and remain untouched.
+    """
+    downstream = defaultdict(list)
+    for entry, record in metadata.items():
+        for dependency in record.get("dependencies", {}):
+            downstream[dependency].append(entry)
+    affected = set(copied)
+    pending = list(copied)
+    for entry in pending:
+        for child in downstream[entry]:
+            if child not in affected:
+                affected.add(child)
+                pending.append(child)
+    removed = 0
+    while True:
+        stale = [entry for entry in affected if entry in metadata and any(
+            dependency not in metadata or metadata[dependency].get("updated") != timestamp
+            for dependency, timestamp in metadata[entry].get("dependencies", {}).items()
+        )]
+        if not stale:
+            return removed
+        for entry in stale:
+            del metadata[entry]
+            removed += 1
 
 
 def find_stage_entries(directory: str, module: str) -> list:
@@ -184,6 +217,7 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
             # an I/O failure. Existing payloads above remain entirely untouched.
             if share_metadata and entry in metadata:
                 metadata.pop(entry)
+                _drop_incoherent_metadata(metadata, [entry])
                 _write_metadata(metadata_path, metadata)
             _copy_entry(store, working_directory, entry)
             if share_metadata:
@@ -194,6 +228,10 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
                     with_metadata += 1
             primed.append(entry)
     if share_metadata and primed:
+        removed = _drop_incoherent_metadata(metadata, primed)
+        if removed:
+            logger.info("[cache_share] prime: invalidated %d incoherent dependency records", removed)
+        with_metadata = sum(entry in metadata for entry in primed)
         _write_metadata(metadata_path, metadata)
     logger.info("[cache_share] prime: metadata for %d/%d copied entries (enabled=%s); "
                 "entries without metadata require recomputation",

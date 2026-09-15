@@ -133,7 +133,8 @@ def test_merge_retains_existing_unrelated_metadata(tmp_path, pipeline):
     assert trace.read_text().splitlines() == ["executed"]
 
 
-@pytest.mark.parametrize("scenario", ["complete", "missing_parent", "changed_parent", "forced_parent"])
+@pytest.mark.parametrize("scenario", ["complete", "missing_parent", "changed_parent", "forced_parent",
+                                    "older_target_parent", "newer_target_child"])
 def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
     module, _, trace, token = pipeline
     child = "shared_cache_probe_child"
@@ -156,7 +157,15 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
                          rerun_required=False)
 
     source, store, target = (tmp_path / name for name in ("source", "store", "target"))
+    if scenario == "older_target_parent":
+        target.mkdir()
+        synpp.run([{"descriptor": module}], config, working_directory=str(target),
+                  rerun_required=False)
     expected = run(source)
+    if scenario == "newer_target_child":
+        assert run(target) == expected
+        for entry in cache_share.find_stage_entries(str(target), module):
+            (target / (entry + ".p")).unlink()
     modules = [child] if scenario == "missing_parent" else [module, child]
     cache_share.export(str(source), modules, str(store))
     forced = [module] if scenario == "forced_parent" else []
@@ -165,4 +174,8 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         token.write_text("changed", encoding="utf-8")
     assert run(target) == expected
     executions = ["executed", "child"] * (1 if scenario == "complete" else 2)
+    if scenario == "older_target_parent":
+        executions = ["executed", "executed", "child", "child"]
+    if scenario == "newer_target_child":
+        executions = ["executed", "child", "executed", "child", "child"]
     assert trace.read_text().splitlines() == executions
