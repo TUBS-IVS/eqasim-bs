@@ -12,13 +12,22 @@ from braunschweig.popsim import diary_facts
 from braunschweig.popsim import diary_plan_match as dpm
 from braunschweig.popsim import weekend_plan_match as wpm
 from tests.test_diary_plan_match import FLAGS, _child_donors, _child_wege, _donors, _wege
-from tests.test_weekend_plan_match import _hard_key_pool, _hard_key_targets, _random_weekend_population
+from tests.test_weekend_plan_match import (
+    BASELINE_PERSON_DRAWS, _hard_key_pool, _hard_key_targets, _random_weekend_population,
+)
 
 
 def _assert_random_state_equal(left, right):
     assert left[0] == right[0]
     np.testing.assert_array_equal(left[1], right[1])
     assert left[2:] == right[2:]
+
+
+def _captured_records(caplog, logger_name):
+    return [
+        (record.name, record.levelno, record.getMessage())
+        for record in caplog.records if record.name == logger_name
+    ]
 
 
 def _matching_row(**changes):
@@ -43,6 +52,29 @@ def _target(**changes):
     row.pop("P_GEW")
     row.update(changes)
     return pd.Series(row)
+
+
+def test_prepared_shared_seed_matches_off_and_frozen_baseline_with_exact_types():
+    pool = _hard_key_pool()
+    targets = _hard_key_targets()
+    off_rng = np.random.RandomState(7)
+    on_rng = np.random.RandomState(7)
+
+    off = [wpm.match_person(target, pool, rng=off_rng) for target in targets]
+    prepared = wpm.prepare_person_pool(pool)
+    on = [
+        wpm.match_person(target, pool, rng=on_rng, prepared_pool=prepared)
+        for target in targets
+    ]
+
+    assert off == on == BASELINE_PERSON_DRAWS
+    assert [[type(value) for value in draw] for draw in off] == [
+        [type(value) for value in draw] for draw in BASELINE_PERSON_DRAWS
+    ]
+    assert [[type(value) for value in draw] for draw in on] == [
+        [type(value) for value in draw] for draw in BASELINE_PERSON_DRAWS
+    ]
+    _assert_random_state_equal(off_rng.get_state(), on_rng.get_state())
 
 
 @pytest.mark.parametrize(
@@ -72,25 +104,38 @@ def test_prepared_pool_matches_every_soft_relaxation_level(changes, expected_lev
 
 
 def test_prepared_pool_preserves_hard_only_and_whole_pool_fallbacks(caplog):
-    caplog.set_level(logging.DEBUG, logger="braunschweig.popsim.weekend_plan_match")
+    logger_name = "braunschweig.popsim.weekend_plan_match"
+    caplog.set_level(logging.DEBUG, logger=logger_name)
     hard_only = pd.DataFrame([
         _matching_row(H_ID=20, HP_ALTER=8, HP_SEX=2, P_FSCHEIN=2, P_FKARTE=1),
     ], index=[91])
     whole_pool = hard_only.assign(P_TAET=11)
 
     for pool in (hard_only, whole_pool):
+        caplog.clear()
         old_rng = np.random.RandomState(11)
-        new_rng = np.random.RandomState(11)
         hard_keys = frozenset({"employed"})
         old = wpm.match_person(_target(), pool, rng=old_rng, hard_keys=hard_keys)
+        old_records = _captured_records(caplog, logger_name)
+
+        caplog.clear()
+        new_rng = np.random.RandomState(11)
         new = wpm.match_person(
             _target(), pool, rng=new_rng, hard_keys=hard_keys,
             prepared_pool=wpm.prepare_person_pool(pool),
         )
+        new_records = _captured_records(caplog, logger_name)
         assert old == new == (20, 1, 4)
         _assert_random_state_equal(old_rng.get_state(), new_rng.get_state())
+        assert new_records == old_records
 
-    assert any("whole-pool" in record.getMessage() for record in caplog.records)
+    assert new_records == [(
+        logger_name,
+        logging.DEBUG,
+        "[weekend_plan_match] match_person hit the whole-pool size-only fallback "
+        "(all soft person keys dropped and no donor shares the hard key(s) "
+        "['employed']); drew weekday (20, 1).",
+    )]
 
 
 @pytest.mark.parametrize("edges", [wpm.AGE_BAND_EDGES, wpm.FINE_CHILD_AGE_BAND_EDGES])
@@ -121,6 +166,8 @@ def test_prepared_pool_preserves_weighted_draws_order_and_full_rng_state(edges):
 
 
 def test_prepared_pool_preserves_missing_key_relaxation_and_uniform_weight_warning(caplog):
+    logger_name = "braunschweig.popsim.sampling"
+    caplog.set_level(logging.WARNING, logger=logger_name)
     pool = pd.DataFrame([
         _matching_row(H_ID=30, HP_ALTER=np.nan, P_GEW=np.nan),
         _matching_row(H_ID=20, HP_ALTER=np.nan, P_GEW=0.0),
@@ -130,17 +177,24 @@ def test_prepared_pool_preserves_missing_key_relaxation_and_uniform_weight_warni
     new_rng = np.random.RandomState(5)
 
     old = wpm.match_person(target, pool, rng=old_rng)
+    old_records = _captured_records(caplog, logger_name)
+    caplog.clear()
     new = wpm.match_person(
         target, pool, rng=new_rng, prepared_pool=wpm.prepare_person_pool(pool))
+    new_records = _captured_records(caplog, logger_name)
 
     assert old == new
     assert old[2] == 3  # age_band is relaxed before either missing age can match
     _assert_random_state_equal(old_rng.get_state(), new_rng.get_state())
-    warnings = [r for r in caplog.records if "uniform draw" in r.getMessage()]
-    assert len(warnings) == 2
+    assert new_records == old_records == [(
+        logger_name,
+        logging.WARNING,
+        "[sampling.weighted_choice] all 2 candidate weights are NaN/<=0; "
+        "falling back to a uniform draw.",
+    )]
 
 
-def test_prepare_person_pool_does_not_mutate_input_and_rejects_stale_or_unrelated_pool():
+def test_prepare_person_pool_does_not_mutate_input_and_rejects_unrelated_pool():
     pool = _hard_key_pool().set_axis(np.arange(12) * 5 + 2)
     before = pool.copy(deep=True)
     prepared = wpm.prepare_person_pool(pool)
@@ -152,7 +206,19 @@ def test_prepare_person_pool_does_not_mutate_input_and_rejects_stale_or_unrelate
             prepared_pool=prepared,
         )
 
-    pool.loc[pool.index[0], "P_GEW"] += 1.0
+
+@pytest.mark.parametrize("mutation", ["HP_ALTER", "H_ID", "P_ID", "P_GEW", "index"])
+def test_prepared_pool_rejects_each_relevant_same_object_mutation(mutation):
+    pool = _hard_key_pool().set_axis(np.arange(12) * 5 + 2)
+    prepared = wpm.prepare_person_pool(pool)
+    if mutation == "index":
+        pool.index = pool.index + 100
+    elif mutation == "HP_ALTER":
+        pool.iat[0, pool.columns.get_loc(mutation)] = 8
+    else:
+        column = pool.columns.get_loc(mutation)
+        pool.iat[0, column] = pool.iat[0, column] + 1
+
     with pytest.raises(ValueError, match="changed since preparation"):
         wpm.match_person(
             _hard_key_targets(1)[0], pool, rng=np.random.RandomState(0),
