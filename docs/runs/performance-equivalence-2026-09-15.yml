@@ -153,8 +153,9 @@ validation:
   reference: native synpp 1.6.2 behavior
   result: 42 local cache/launcher tests passed; independent Sol runtime-provenance review approved 119b0159.
   notes: Covers source/config/token checks, exact dependency snapshots, skipped payloads, runtime mismatch,
-    untracked stores, re-export origin, failed runs and artifact-only OFF. No speedup factor is assigned
-    to this infrastructure gate.
+    untracked stores, re-export origin, interrupted partial directory copies, failed runs and artifact-only
+    OFF. Staged export failures leave no discoverable partial entry and preserve complete prior entries.
+    No speedup factor is assigned to this infrastructure gate.
 features:
   note: Result-preserving execution optimization; no behavioural validation claim.
 artifacts:

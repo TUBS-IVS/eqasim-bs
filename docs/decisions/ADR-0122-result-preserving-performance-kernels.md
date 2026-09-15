@@ -37,7 +37,9 @@ unrelated run snapshots therefore requires an additional exact-coherence check.
    each shared artifact. Prime only matching runtime environments and coherent
    dependency snapshots; absent or mismatched provenance forces recomputation.
    Preserve existing target payloads and unrelated records. Never infer metadata
-   for an old store or attach another run's metadata to a skipped payload.
+   for an old store or attach another run's metadata to a skipped payload. Stage
+   result and cache artifacts together, publishing the result file only after the
+   cache directory is complete; preserve an existing entry on copy failure.
 
 Each kernel has an independent default-ON switch and executable OFF path.
 `cache_share_metadata: false` retains artifact-only transfer.

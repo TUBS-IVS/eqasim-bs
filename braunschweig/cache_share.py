@@ -156,20 +156,54 @@ def find_stage_entries(directory: str, module: str) -> list:
 def _copy_entry(src_dir: str, dst_dir: str, entry: str) -> None:
     """Copy ``<entry>.p`` and, when present, ``<entry>.cache/`` from src to dst.
 
-    An existing ``.cache`` dir at the destination is replaced so a re-export/re-prime
-    cannot leave a half-stale directory.
+    Both artifacts are copied into a temporary entry before either final path is
+    published. The cache directory is published first and the result file last;
+    therefore the ``.p`` file used for discovery/``skip_existing`` only appears
+    after a complete cache copy. Existing artifacts are restored if publication
+    raises, so re-export/re-prime cannot leave a half-stale entry.
     """
     os.makedirs(dst_dir, exist_ok=True)
-    shutil.copy2(
-        os.path.join(src_dir, entry + _RESULT_SUFFIX),
-        os.path.join(dst_dir, entry + _RESULT_SUFFIX),
-    )
+    result_src = os.path.join(src_dir, entry + _RESULT_SUFFIX)
     cache_src = os.path.join(src_dir, entry + _CACHE_SUFFIX)
-    if os.path.isdir(cache_src):
-        cache_dst = os.path.join(dst_dir, entry + _CACHE_SUFFIX)
-        if os.path.exists(cache_dst):
-            shutil.rmtree(cache_dst)
-        shutil.copytree(cache_src, cache_dst)
+    result_dst = os.path.join(dst_dir, entry + _RESULT_SUFFIX)
+    cache_dst = os.path.join(dst_dir, entry + _CACHE_SUFFIX)
+
+    with tempfile.TemporaryDirectory(
+        dir=dst_dir, prefix=".cache-share-", suffix=".tmp",
+    ) as staging_dir:
+        staged_result = os.path.join(staging_dir, "result" + _RESULT_SUFFIX)
+        staged_cache = os.path.join(staging_dir, "result" + _CACHE_SUFFIX)
+        shutil.copy2(result_src, staged_result)
+        has_cache = os.path.isdir(cache_src)
+        if has_cache:
+            shutil.copytree(cache_src, staged_cache)
+
+        backup_dir = os.path.join(staging_dir, "previous")
+        os.makedirs(backup_dir)
+        backup_result = os.path.join(backup_dir, "result" + _RESULT_SUFFIX)
+        backup_cache = os.path.join(backup_dir, "result" + _CACHE_SUFFIX)
+        published_result = False
+        published_cache = False
+        try:
+            if os.path.exists(result_dst):
+                os.replace(result_dst, backup_result)
+            if has_cache and os.path.exists(cache_dst):
+                os.replace(cache_dst, backup_cache)
+            if has_cache:
+                os.replace(staged_cache, cache_dst)
+                published_cache = True
+            os.replace(staged_result, result_dst)
+            published_result = True
+        except Exception:
+            if published_result and os.path.exists(result_dst):
+                os.remove(result_dst)
+            if published_cache and os.path.exists(cache_dst):
+                shutil.rmtree(cache_dst)
+            if os.path.exists(backup_result):
+                os.replace(backup_result, result_dst)
+            if os.path.exists(backup_cache):
+                os.replace(backup_cache, cache_dst)
+            raise
 
 
 def export(working_directory: str, modules: list, store: str, skip_existing: bool = False,
@@ -211,10 +245,12 @@ def export(working_directory: str, modules: list, store: str, skip_existing: boo
                 continue
             sidecar = os.path.join(store, entry + _METADATA_SUFFIX)
             # Never associate an older record with newly copied artifacts, including
-            # legacy/OFF exports into a store that already has metadata.
+            # legacy/OFF exports into a store that already has metadata. Keep the
+            # old sidecar until staging succeeds so an interrupted copy leaves the
+            # complete previously published entry intact.
+            _copy_entry(working_directory, store, entry)
             if os.path.exists(sidecar):
                 os.remove(sidecar)
-            _copy_entry(working_directory, store, entry)
             envelope = _read_metadata(os.path.join(working_directory, entry + _METADATA_SUFFIX)) if share_metadata else {}
             if (entry in metadata and envelope.get("version") == _METADATA_VERSION
                     and envelope.get("metadata") == metadata[entry] and envelope.get("environment")

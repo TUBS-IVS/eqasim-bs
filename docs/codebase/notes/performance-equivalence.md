@@ -95,6 +95,13 @@ recomputed. Existing payloads are never overwritten during prime; existing
 metadata may be invalidated if a newly imported parent makes it incoherent.
 Unrelated target metadata is retained.
 
+Each result file and cache directory is copied into a temporary entry first.
+The complete cache directory is published before the result file used for entry
+discovery. A failed copy removes only temporary artifacts; a failed re-export
+keeps the previously published result, cache directory and metadata intact. This
+prevents automatic `skip_existing` exports from permanently accepting a result
+file paired with a partial cache directory.
+
 Legacy cache creation environments cannot be reconstructed. To seed a usable
 store, execute the desired stages through the updated launcher in a fresh working
 directory, then export that tracked, completed cache using
