@@ -2,10 +2,11 @@ feature: performance_equivalence
 title: Result-preserving fleet, home, validation and donor kernels
 area: infrastructure
 description: >
-  Remove repeated DataFrame filtering, unused prepared-cell signal loading, scalar
-  CRS transformations and invariant donor feature extraction, and validate ordered trip arrays without constructing one
-  mixed-type row frame per person. Preserve model choices, row order, geometry,
-  diagnostics and random streams; each kernel retains its original OFF path.
+  Remove repeated DataFrame filtering, unused prepared-cell signal loading, typed-home
+  slot/matcher frame churn, scalar CRS transformations and invariant donor feature
+  extraction, and validate ordered trip arrays without constructing one mixed-type
+  row frame per person. Preserve model choices, row order, geometry, diagnostics and
+  random streams; each kernel retains its original OFF path.
 stages:
 - braunschweig.synthesis.vehicles.cars.household
 - synthesis.population.spatial.home.locations
@@ -33,6 +34,8 @@ code_paths:
 - braunschweig/synthesis/vehicles/cars/household.py
 - braunschweig/synthesis/locations/home_cell.py
 - braunschweig/synthesis/locations/cell_building_signals.py
+- braunschweig/synthesis/locations/building_typing.py
+- braunschweig/synthesis/locations/home_matcher.py
 - braunschweig/popsim/plan_validation.py
 - braunschweig/popsim/trips.py
 - braunschweig/popsim/trips_stage.py
@@ -49,6 +52,7 @@ evidence:
   tests:
   - tests/test_performance_fleet_lookup.py
   - tests/test_performance_home_coordinates.py
+  - tests/test_home_matching_arrays.py
   - tests/test_performance_plan_validation.py
   - tests/test_performance_donor_matching.py
   - tests/test_performance_config.py
@@ -60,8 +64,9 @@ evidence:
       The named test pins the fleet frame; the companion kernel test modules pin
       exact values/dtypes/order, geometry WKB, validation reports and donor draws/RNG.
       The benchmark CLI additionally compares original commit, OFF and ON in separate
-      processes on identical fixtures. This is bounded execution-equivalence evidence,
-      not a claim that every full-production output file has been replayed.
+      processes on identical fixtures. The production-size typed-home comparison also
+      pins 558,279 output rows, geometry WKB, report and RNG state. This does not claim
+      that a complete synpp or MATSim run was replayed.
   fallback_rate:
     instrumented: true
     log_marker: '[home_typed] %d HH: in-cell'

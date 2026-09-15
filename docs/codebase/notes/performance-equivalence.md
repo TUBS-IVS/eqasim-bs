@@ -13,7 +13,7 @@ All switches live in `configs/base_bs.yml` and default to true.
 | Switch | Optimized operation | OFF behavior |
 |---|---|---|
 | `braunschweig.performance.fleet_home_lookup` | Index the first joined home row per household | Original household-by-household frame filter |
-| `braunschweig.performance.home_coordinates` | Transform selected footprint/cell pairs in batches | Original scalar CRS round trip |
+| `braunschweig.performance.home_coordinates` | Project signals to household cells, build/match slots with arrays, and batch coordinate transforms | Original full cell loader, scalar slot/matcher kernels and scalar CRS round trip |
 | `braunschweig.performance.plan_validation` | Check trip arrays grouped at person boundaries | Original per-person validator |
 | `braunschweig.performance.donor_matching` | Prepare invariant donor features and candidates | Original feature extraction per match |
 | `cache_share_metadata` | Transfer coherent native synpp metadata | Original artifact-only cache copy |
@@ -22,10 +22,15 @@ To disable a switch, copy the desired scale overlay outside tracked configuratio
 and add that key with `false` to its `config` mapping. Run the unchanged base
 with this temporary overlay. Each switch can be disabled independently.
 
-Home batching applies to the typed footprint path; centroid-only and legacy
-placement retain their existing behavior. The preparation cost belongs to the
-optimized invocation and must be included in a benchmark. No global mutable
-donor cache is introduced.
+The typed-home optimization reads the grid id plus the 38 signal columns used by
+home matching, retains only source-ordered household cells, and builds per-cell
+histograms for those rows. Native numeric signal columns take a dtype-only
+validation fast path; unusual object or nullable size-bin columns replay the old
+value conversion before filtering so malformed unused rows still fail. Indexed
+slot construction and matching preserve the existing pandas sort order, Hamilton
+rounding and over-capacity choice. Centroid-only and legacy placement retain their
+existing behavior. Preparation belongs to the optimized invocation and is included
+in measurements. No global mutable donor cache is introduced.
 
 The plan-validation switch reaches both the main MiD trip stage and the home-office
 donor trip builder. The common source interface accepts it for ENTD, whose separate
@@ -61,8 +66,13 @@ Donor comparisons default to the production fine child age bands;
 `--donor-age-bands coarse` checks the older band definition explicitly. The same
 edges are passed to the original matcher, OFF matcher and prepared ON matcher.
 
-This is execution-equivalence evidence for the tested inputs. It does not
-constitute a 100% synthesis/MATSim replay or behavioural validation.
+The bounded CLI evidence is complemented by a production-size typed-home replay:
+558,279 households, 310,512 buildings and 38,483 used cells. The projected path
+completed in 547.419 s; adding array slot construction and matching reduced that
+to 410.853 s (24.95%, 1.332x). Values, dtypes, row/column order, geometry WKB,
+CRS, `TypedHomeReport`, random-call counts and final RNG state were exact. This
+is full-input evidence for the typed-home public function, not a full synpp or
+MATSim replay and not behavioural validation.
 
 ## Shared cache correctness
 

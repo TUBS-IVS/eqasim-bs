@@ -23,8 +23,12 @@ unrelated run snapshots therefore requires an additional exact-coherence check.
 ## Decision
 
 1. Build a stable first-home-row index after the original fleet joins.
-2. Batch only selected deterministic footprint/cell coordinate pairs, retaining
-   the exact CRS round trip and the original positions of random fallback draws.
+2. For typed homes, load only the prepared-cell signal columns and source-ordered
+   household cells consumed by matching. Build slots and match households through
+   indexed arrays while replaying the legacy pandas sort order, Hamilton rounding
+   and over-capacity selection. Batch only selected deterministic footprint/cell
+   coordinate pairs, retaining the exact CRS round trip and the original positions
+   of random fallback draws.
 3. Validate sorted trip arrays at person boundaries while retaining issue ordering,
    all validation/repair passes and the scalar reference path.
 4. Prepare invariant donor features and candidate data within an explicit pool
@@ -61,6 +65,13 @@ Worker counts, shard sizes, seeds, weights and model defaults remain unchanged.
 The 1%/25% shared uniform profile and the distinct optimized 100% profile remain
 separate. A measured kernel speedup is not a full-run speedup.
 
+The production-size typed-home public-function replay used 558,279 households,
+310,512 buildings and 38,483 cells. Signal projection plus coordinate batching
+completed in 547.419 s; array slot construction and matching reduced this to
+410.853 s (24.95%, 1.332x). Exact scalar values, dtypes, ordering, geometry WKB,
+report and random state matched. The result does not claim a full synpp or MATSim
+runtime improvement.
+
 README impact: existing installation, data acquisition and run commands remain
 applicable. Benchmark usage and cache migration are documented in the linked note.
 
@@ -70,5 +81,6 @@ applicable. Benchmark usage and cache migration are documented in the linked not
 - [Feature registry](../registry/features/performance_equivalence.yml)
 - [Run manifest](../runs/performance-equivalence-2026-09-15.yml)
 - Real synpp cache tests: `tests/test_cache_share_synpp.py`.
-- The four `tests/test_performance_*.py` kernel modules pin OFF/ON equivalence;
+- The four `tests/test_performance_*.py` kernel modules and
+  `tests/test_home_matching_arrays.py` pin OFF/ON equivalence;
   `scripts/benchmark_performance_equivalence.py` compares against original code.

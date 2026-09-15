@@ -1,0 +1,26 @@
+{
+  "buildings": {
+    "path": "eqasim-data/cache_bs_100pct_allfeat_popsim/braunschweig.data.buildings__c1c30a53e689a90b57dda63ffd235ec3.p",
+    "rows": 310512,
+    "sha256": "52df0e782b6b785c784a491e1bb16ee571943ca30c668ac2a011ca1b325bd37f"
+  },
+  "cached_home_reference": {
+    "path": "eqasim-data/cache_bs_100pct_allfeat_popsim/braunschweig.synthesis.locations.home_cell__b8b86e52aadb3e1343918e52c872d683.p",
+    "rows": 558279,
+    "sha256": "38e3bb6b5fa92ddf39c4bf7e83069881b2afc8c255ac284a2faa343c2a9ad71d"
+  },
+  "prepared_cells": {
+    "columns": 576,
+    "path": "eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+    "rows": 3148482,
+    "sha256": "31857326c85d11288a9143caa8c7cfbe36e3582e64bffb9ec18f232865643177"
+  },
+  "sampled_population": {
+    "households": 558279,
+    "path": "eqasim-data/cache_bs_100pct_allfeat_popsim/synthesis.population.sampled__db63f20b7fd3f2dfeb9ab104833cdd71.p",
+    "persons": 1130617,
+    "sha256": "6bb05d9241679036c9270e7f19556ce9adf8a2220718129085fa0ba755532328"
+  },
+  "seed": 1234,
+  "unique_household_cells": 38483
+}

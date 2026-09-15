@@ -1,21 +1,21 @@
 id: performance-equivalence-2026-09-15
 date: '2026-09-15'
 repository:
-  commit: 8a1a8ea7d2016a125c5fd3616e69105647544a64
+  commit: 39b6b9472f4f304881c9820f35a19ed99dd20283
   branch: codex/performance-equivalence
-  notes: Source revision for the historical kernel timings against immutable reference
-    1502e88ef529001167f4a8848892862c39bda9cb. Later integration of main 31fc30fd adds
-    its independently developed passenger feature while retaining the performance kernels.
-    Separate post-merge exactness probes and full-suite gate revisions are recorded below.
+  notes: Source revision for the production-size typed-home measurement and integrated
+    kernels. Historical timings used revision 8a1a8ea7 against immutable reference
+    1502e88e. Main 31fc30fd added its independently developed passenger feature.
 configuration:
   base: configs/base_bs.yml
   overlays: []
   notes: 'Offline public-function comparisons with original/OFF/ON in separate processes; same Python
-    environment and seed 1234. No full synpp or MATSim run was launched.
+    environment and seed 1234. Typed homes were replayed at full production input size.
+    No full synpp or MATSim run was launched.
 
     '
 sampling:
-  rate: bounded cached-input samples and synthetic fixtures
+  rate: bounded fixtures plus full production-size typed-home inputs
   scope: fleet, typed home placement, trip validation, donor matching and cache reuse
   notes: 'Historical small-cache inputs: 2543 fleet persons/1397 homes, 100 home households in 91 cells,
     8391 trips, 10000 donor candidates/100 targets. Additional home probe: first 500 households in 03101
@@ -30,14 +30,36 @@ classification:
 - wiring_proof
 status:
   execution: completed
-  notes: All strict integrated kernel comparisons and both full test suites passed. This record covers
-    the bounded probes and tests listed here; no full pipeline or MATSim replay was performed.
+  notes: All strict integrated kernel comparisons and full test suites passed. Typed homes were
+    replayed for all production households; no full pipeline or MATSim replay was performed.
 environment: 'Windows eqasim and Linux felix eqasim; Python 3.10, NumPy 1.23.5, pandas 1.5.3, GeoPandas
-  1.0.1 and synpp 1.6.2. Timings below are Linux medians of 3 measured calls after one untimed warmup;
-  preparation is inside the timed call.
+  1.0.1 and synpp 1.6.2. Historical bounded timings are Linux medians of 3 measured calls after
+  one untimed warmup. Production-size typed-home entries are single isolated process measurements;
+  preparation is inside the timed section.
 
   '
 validation:
+- metric: production-size typed-home array runtime and exactness
+  reference: projected/scalar-kernel eb3f0736 versus projected/array-kernel 39b6b9472
+  result: 547.419 s versus 410.853 s; 136.565 s (24.95%) reduction, 1.332x speedup;
+    558279 rows exact
+  artifact: docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-arrays-compare.json
+  notes: 558279 households, 310512 buildings and 38483 used cells. Exact scalar values,
+    dtypes, row/column order, CRS, geometry WKB, TypedHomeReport, random-call counts and final
+    RNG state and the existing production synpp cached stage output. Peak RSS was 3819484 KiB
+    for eb3f0736 and 3874776 KiB for 39b6b9472.
+- metric: production-size typed-home signal projection
+  reference: full prepared Germany grid versus household-cell projection at eb3f0736
+  result: 3148482 rows x 576 source columns projected to 38483 rows x 39 columns in 2.863 s;
+    final frame 15200785 bytes deep
+  artifact: docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-projected.json
+  notes: The previous full-width load used 16.54 GB pandas deep memory and 29.44 GiB peak RSS.
+    Its full cell_signals profile was stopped after exceeding 85.42 GiB and had not completed,
+    so no unsupported end-to-end speedup is calculated from that aborted reference.
+- metric: post-issue-351 Windows full test suite
+  reference: 39b6b9472f4f304881c9820f35a19ed99dd20283
+  result: 5800 passed, 91 skipped, 29 warnings in 797.79 s; exit 0
+  notes: Complete tests/ suite after signal projection and reviewed array-kernel fixes.
 - metric: post-merge Windows full test suite
   reference: 23fc1b7eeee3e45d6ddc7c89eb777eb1ef3e6e02
   result: 5785 passed, 91 skipped, 29 warnings in 571.90 s; exit 0
@@ -139,7 +161,13 @@ artifacts:
 - scripts/benchmark_performance_equivalence.py
 - docs/runs/artifacts/performance-equivalence-2026-09-15/inputs-small-provenance.json
 - docs/runs/artifacts/performance-equivalence-2026-09-15/inputs-dense-home-provenance.json
-issues: []
+- docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-inputs.json
+- docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-reference.json
+- docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-projected.json
+- docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-arrays.json
+- docs/runs/artifacts/performance-equivalence-2026-09-15/home-100pct-arrays-compare.json
+issues:
+- '351'
 decisions:
 - ADR-0122
 source: Direct execution and exact comparisons in isolated worktrees on 2026-09-15.
