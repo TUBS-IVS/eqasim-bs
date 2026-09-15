@@ -4,7 +4,8 @@ repository:
   commit: 8a1a8ea7d2016a125c5fd3616e69105647544a64
   branch: codex/performance-equivalence
   notes: Final kernel/config/harness source revision. Original reference is immutable 1502e88ef529001167f4a8848892862c39bda9cb.
-    Documentation-only commits follow; full-suite gate revision is recorded with its result.
+    Documentation and test-expectation commits follow; production code is unchanged. The full-suite
+    gate revision is recorded with its result.
 configuration:
   base: configs/base_bs.yml
   overlays: []
@@ -27,14 +28,27 @@ classification:
 - ab_test
 - wiring_proof
 status:
-  execution: partial
-  notes: All strict integrated kernel comparisons passed. Final full-suite and whole-branch gates pending.
+  execution: completed
+  notes: All strict integrated kernel comparisons and both full test suites passed. This record covers
+    the bounded probes and tests listed here; no full pipeline or MATSim replay was performed.
 environment: 'Windows eqasim and Linux felix eqasim; Python 3.10, NumPy 1.23.5, pandas 1.5.3, GeoPandas
   1.0.1 and synpp 1.6.2. Timings below are Linux medians of 3 measured calls after one untimed warmup;
   preparation is inside the timed call.
 
   '
 validation:
+- metric: final Windows full test suite
+  reference: 3b67756fac26862f81eb5632830a696dbdce831b
+  result: 5718 passed, 91 skipped, 29 warnings in 460.66 s; exit 0
+  artifact: .superpowers/sdd/2026-09-15-performance-equivalence/full-windows-3b67756f.log
+  notes: Complete tests/ suite in the eqasim environment. Warning count unchanged from the Windows
+    baseline. Two pinned API-signature expectations include the tested default-ON validation keyword.
+- metric: final Linux full test suite
+  reference: 3b67756fac26862f81eb5632830a696dbdce831b
+  result: 5722 passed, 87 skipped, 35 warnings in 402.24 s; exit 0
+  artifact: /home/felix/eqasim-perf-full-linux-3b67756f.log
+  notes: Complete tests/ suite in the eqasim environment on felix. Warning count unchanged from the
+    immutable Linux baseline. The three baseline portability failures are corrected in tests only.
 - metric: immutable Linux baseline suite
   reference: 1502e88ef529001167f4a8848892862c39bda9cb
   result: 5626 passed, 87 skipped, 3 pre-existing failures, 35 warnings in 436 s
