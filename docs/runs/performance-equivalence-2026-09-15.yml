@@ -3,9 +3,10 @@ date: '2026-09-15'
 repository:
   commit: 8a1a8ea7d2016a125c5fd3616e69105647544a64
   branch: codex/performance-equivalence
-  notes: Final kernel/config/harness source revision. Original reference is immutable 1502e88ef529001167f4a8848892862c39bda9cb.
-    Documentation and test-expectation commits follow; production code is unchanged. The full-suite
-    gate revision is recorded with its result.
+  notes: Source revision for the historical kernel timings against immutable reference
+    1502e88ef529001167f4a8848892862c39bda9cb. Later integration of main 31fc30fd adds
+    its independently developed passenger feature while retaining the performance kernels.
+    Separate post-merge exactness probes and full-suite gate revisions are recorded below.
 configuration:
   base: configs/base_bs.yml
   overlays: []
@@ -37,13 +38,40 @@ environment: 'Windows eqasim and Linux felix eqasim; Python 3.10, NumPy 1.23.5, 
 
   '
 validation:
-- metric: final Windows full test suite
+- metric: post-merge Windows full test suite
+  reference: 23fc1b7eeee3e45d6ddc7c89eb777eb1ef3e6e02
+  result: 5785 passed, 91 skipped, 29 warnings in 571.90 s; exit 0
+  artifact: .superpowers/sdd/2026-09-15-performance-equivalence/full-windows-23fc1b7e.log
+  notes: Complete tests/ suite after merging main 31fc30fd. Both donor switches are exercised
+    independently in all four combinations. Warning count unchanged from the Windows baseline.
+- metric: post-merge Linux full test suite
+  reference: 23fc1b7eeee3e45d6ddc7c89eb777eb1ef3e6e02
+  result: 5789 passed, 87 skipped, 35 warnings in 409.40 s; exit 0
+  artifact: /home/felix/eqasim-perf-full-linux-23fc1b7e.log
+  notes: Complete tests/ suite after merging main 31fc30fd. Warning count unchanged from the
+    immutable Linux baseline. Subsequent commits only record evidence and regenerate documentation.
+- metric: current-main original/OFF/ON checks across all four kernels
+  reference: main 31fc30fd4710efe32867d764f037b335afca5cb1 versus merge 46c7a14c7c6959901e36a38f501a8c6b963f0289
+  result: All strict comparisons passed in separate processes on clean source revisions.
+  artifact: docs/runs/artifacts/performance-equivalence-2026-09-15/current-main-kernels.json
+  notes: Synthetic size 1000, bounded home/donor fixtures, seed 1234, one measured call;
+    an integration exactness check, not a new performance estimate.
+- metric: completed-donor passenger-feature integration exactness
+  reference: main 31fc30fd4710efe32867d764f037b335afca5cb1 versus candidate 23fc1b7eeee3e45d6ddc7c89eb777eb1ef3e6e02 OFF/ON
+  result: Exact full frames, dtypes, order and reports; 3 households, 12 persons, 2 completion additions,
+    2 diary remaps, with passenger attributes and positive passenger-trip evidence present.
+  artifact: docs/runs/artifacts/performance-equivalence-2026-09-15/passenger-donor-equivalence.json
+  notes: Separate-process build_completed_donor calls with passenger availability enabled and seed 1.
+    Uses test_completed_donor_stage._write_mid_attribute_fixture plus the first-person diaryless
+    mutation from test_completed_donor_diary_match; P_VAUTO cycles 1/2/3 and P_ID 2 trips use
+    hvm_imp 3. The original receives no performance keyword. Existing assert_exact compares all outputs.
+- metric: pre-merge Windows full test suite
   reference: 3b67756fac26862f81eb5632830a696dbdce831b
   result: 5718 passed, 91 skipped, 29 warnings in 460.66 s; exit 0
   artifact: .superpowers/sdd/2026-09-15-performance-equivalence/full-windows-3b67756f.log
   notes: Complete tests/ suite in the eqasim environment. Warning count unchanged from the Windows
     baseline. Two pinned API-signature expectations include the tested default-ON validation keyword.
-- metric: final Linux full test suite
+- metric: pre-merge Linux full test suite
   reference: 3b67756fac26862f81eb5632830a696dbdce831b
   result: 5722 passed, 87 skipped, 35 warnings in 402.24 s; exit 0
   artifact: /home/felix/eqasim-perf-full-linux-3b67756f.log

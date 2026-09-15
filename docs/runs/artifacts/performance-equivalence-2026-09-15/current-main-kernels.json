@@ -1,0 +1,123 @@
+{
+  "scope": "bounded function benchmarks; no full-pipeline speedup claim",
+  "reference": {
+    "commit": "31fc30fd4710efe32867d764f037b335afca5cb1",
+    "dirty": false
+  },
+  "candidate": {
+    "commit": "46c7a14c7c6959901e36a38f501a8c6b963f0289",
+    "dirty": false
+  },
+  "environment": {
+    "python": "3.10.10 | packaged by conda-forge | (main, Mar 24 2023, 20:00:38) [MSC v.1934 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "numpy": "1.23.5",
+    "pandas": "1.5.3",
+    "geopandas": "1.0.1",
+    "synpp": "1.6.2"
+  },
+  "size": 1000,
+  "repeat": 1,
+  "random_seed": 1234,
+  "input_kind": "synthetic",
+  "cases": {
+    "fleet": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 1.7323541000005207,
+        "off": 1.708262800000739,
+        "on": 1.4372094000009383
+      },
+      "input_rows": {
+        "persons": 1000,
+        "homes": 1000,
+        "regiostar": 1
+      },
+      "seconds": {
+        "original": [
+          1.7323541000005207
+        ],
+        "off": [
+          1.708262800000739
+        ],
+        "on": [
+          1.4372094000009383
+        ]
+      },
+      "speedup_original_over_on": 1.2053595669492487
+    },
+    "home": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.33723100000133854,
+        "off": 0.32146239999929094,
+        "on": 0.027229499999521067
+      },
+      "input_rows": {
+        "households": 300,
+        "buildings": 1,
+        "cells": 1
+      },
+      "seconds": {
+        "original": [
+          0.33723100000133854
+        ],
+        "off": [
+          0.32146239999929094
+        ],
+        "on": [
+          0.027229499999521067
+        ]
+      },
+      "speedup_original_over_on": 12.384766521870398
+    },
+    "validation": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.20035869999992428,
+        "off": 0.20177530000000843,
+        "on": 0.004331099999035359
+      },
+      "input_rows": {
+        "trips": 2000
+      },
+      "seconds": {
+        "original": [
+          0.20035869999992428
+        ],
+        "off": [
+          0.20177530000000843
+        ],
+        "on": [
+          0.004331099999035359
+        ]
+      },
+      "speedup_original_over_on": 46.26046501917504
+    },
+    "donor": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.6539343999993434,
+        "off": 0.6486703999999008,
+        "on": 0.3212337999993906
+      },
+      "input_rows": {
+        "pool": 1000,
+        "targets": 200
+      },
+      "seconds": {
+        "original": [
+          0.6539343999993434
+        ],
+        "off": [
+          0.6486703999999008
+        ],
+        "on": [
+          0.3212337999993906
+        ]
+      },
+      "speedup_original_over_on": 2.035696119152418
+    }
+  },
+  "donor_age_bands": "fine"
+}
