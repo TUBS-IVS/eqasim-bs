@@ -30,6 +30,8 @@ VALID_P_VAUTO = {1: "all", 2: "some", 3: "none"}
 PASSENGER_AVAILABILITY_SOURCES = (
     "own_response",
     "adult_empirical_imputation",
+    "member_completion_borrowed_response",
+    "member_completion_borrowed_imputation",
     "child_household_evidence",
     "child_diary_evidence",
     "child_empirical_fallback",
@@ -157,8 +159,16 @@ def evaluate_passenger_availability(
 
     old_eligible = persons["car_availability"].ne("none")
     new_eligible = persons["car_passenger_availability"].ne("none")
-    valid_answers = persons["age"].ge(14) & persons["P_VAUTO"].isin(VALID_P_VAUTO)
-    missing_or_proxy = persons["age"].ge(14) & ~persons["P_VAUTO"].isin(VALID_P_VAUTO)
+    valid_answers = (
+        persons["age"].ge(14)
+        & persons["P_VAUTO"].isin(VALID_P_VAUTO)
+        & persons["passenger_availability_source"].eq("own_response")
+    )
+    missing_or_proxy = (
+        persons["age"].ge(14)
+        & ~persons["P_VAUTO"].isin(VALID_P_VAUTO)
+        & persons["passenger_availability_source"].eq("adult_empirical_imputation")
+    )
     conflict = (
         persons["age"].ge(14)
         & persons["P_VAUTO"].eq(3)

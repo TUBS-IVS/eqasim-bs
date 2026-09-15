@@ -49,6 +49,8 @@ def test_evaluate_preserves_each_valid_14plus_own_response_mapping():
         "child_diary_evidence": 1,
         "child_household_evidence": 0,
         "own_response": 3,
+        "member_completion_borrowed_response": 0,
+        "member_completion_borrowed_imputation": 0,
     }
     assert set(table["age_group"]) == {"under14", "14to17", "18plus"}
 
@@ -107,6 +109,21 @@ def test_evaluate_rejects_an_unrecognised_derivation_source():
 
     with pytest.raises(ValueError, match="passenger_availability_source"):
         measurement.evaluate_passenger_availability(persons, input_households=2)
+
+
+def test_evaluate_counts_borrowed_member_values_separately_from_own_answers():
+    """Borrowed values remain visible and cannot inflate original-answer counts."""
+    persons = _persons()
+    persons.loc[2, "passenger_availability_source"] = "member_completion_borrowed_response"
+    persons.loc[3, "passenger_availability_source"] = "member_completion_borrowed_imputation"
+    persons.loc[3, "P_VAUTO"] = 9
+
+    report, _ = measurement.evaluate_passenger_availability(persons, input_households=2)
+
+    assert report["counts"]["observed_14plus_answers"] == 1
+    assert report["counts"]["missing_or_proxy_rows"] == 0
+    assert report["source_category_counts"]["member_completion_borrowed_response"] == 1
+    assert report["source_category_counts"]["member_completion_borrowed_imputation"] == 1
 
 
 def test_evaluate_reports_age_car_rates_and_conflicting_diary_measure():

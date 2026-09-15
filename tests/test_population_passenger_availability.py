@@ -71,6 +71,19 @@ def test_writer_emits_valid_passenger_availability_as_java_string():
     assert writer.types["carPassengerAvailability"] == "java.lang.String"
 
 
+def test_passenger_attribute_origin_ids_stay_out_of_matsim_person_fields():
+    """Only the derived availability crosses the public XML boundary."""
+    private = {"attribute_source_H_ID", "attribute_source_P_ID"}
+    persons = pd.DataFrame(columns=[
+        *pop.PERSON_FIELDS, *private, "car_passenger_availability",
+    ])
+
+    fields = pop.effective_person_fields(persons)
+
+    assert private.isdisjoint(fields)
+    assert "car_passenger_availability" in fields
+
+
 @pytest.mark.parametrize("value", ["unknown", "ALL", 1, ["some"], ["some", "all"]])
 def test_writer_rejects_malformed_present_passenger_availability(value):
     fields = pop.PERSON_FIELDS + ["car_passenger_availability"]

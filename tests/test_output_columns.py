@@ -81,6 +81,20 @@ def test_person_columns_legacy_byte_identical_when_passenger_facts_absent():
     assert cols == BASE_PERSON
 
 
+def test_passenger_attribute_origin_ids_stay_out_of_public_person_csv():
+    """Protected raw MiD identities are internal even when passenger facts are public."""
+    private = {"attribute_source_H_ID", "attribute_source_P_ID"}
+    available = set(BASE_PERSON) | private | {
+        "car_passenger_availability", "passenger_availability_source",
+    }
+
+    columns = select_person_output_columns(available, "is_urban_resident")
+
+    assert private.isdisjoint(columns)
+    assert "car_passenger_availability" in columns
+    assert "passenger_availability_source" in columns
+
+
 def test_person_csv_bytes_legacy_when_passenger_facts_absent():
     frame = pd.DataFrame([{
         "person_id": 1, "household_id": 10, "age": 35, "employed": "yes",
