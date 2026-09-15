@@ -69,7 +69,8 @@ def prime_from_config(config_path):
             store)
         return {"primed": [], "skipped_present": [], "forced": [], "missing_in_store": list(stages)}
     os.makedirs(working_directory, exist_ok=True)
-    return cache_share.prime(working_directory, stages, store, recompute)
+    return cache_share.prime(working_directory, stages, store, recompute,
+                             share_metadata=cfg.get("cache_share_metadata", True))
 
 
 def export_to_store_from_config(config_path):
@@ -104,7 +105,8 @@ def export_to_store_from_config(config_path):
         log.info("[cache_share] auto-export: no working_directory -> nothing to export.")
         return None
     os.makedirs(store, exist_ok=True)
-    report = cache_share.export(working_directory, stages, store, skip_existing=True)
+    report = cache_share.export(working_directory, stages, store, skip_existing=True,
+                                share_metadata=cfg.get("cache_share_metadata", True))
     log.info(
         "[cache_share] auto-export: exported %d, already-in-store %d, not-in-cache %s",
         len(report["exported"]), len(report["skipped_present"]), report["skipped"] or "[]",
