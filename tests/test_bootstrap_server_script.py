@@ -69,12 +69,14 @@ def test_failed_first_pip_install_is_repaired_only_on_request(bootstrap_harness:
     failed = run_bootstrap(bootstrap_harness, FAKE_ENV="", FAIL_PIP="1")
     assert failed.returncode == 1
     assert "--repair-pip" in failed.stderr
+    assert "pip check" not in Path(bootstrap_harness["log"]).read_text()
 
     repaired = run_bootstrap(bootstrap_harness, "--repair-pip", FAKE_ENV="eqasim")
     assert repaired.returncode == 0
     log = Path(bootstrap_harness["log"]).read_text()
     assert log.count("pip install") == 2
     assert "conda:create" in log
+    assert "pip check" in log
 
 
 @pytest.mark.skipif(BASH is None, reason="requires a POSIX bash runner")
@@ -84,6 +86,7 @@ def test_existing_environment_is_preserved_without_repair_option(bootstrap_harne
     log = Path(bootstrap_harness["log"]).read_text()
     assert "pip install" not in log
     assert "conda:create" not in log
+    assert "pip check" in log
 
 
 @pytest.mark.skipif(BASH is None, reason="requires a POSIX bash runner")

@@ -107,7 +107,7 @@ else
     if ! conda run -n "$CONDA_ENV" python -m pip install --no-deps -r "$SERVER_PIP_REQUIREMENTS"; then
         echo "ERROR: initial pip installation failed; the newly created environment was preserved." >&2
         echo "       After fixing access to the staged artifacts, run:" >&2
-        echo "       bash $0 --repair-pip" >&2
+        echo "       bash \"$REPO_DIR/scripts/bootstrap_server.sh\" --repair-pip" >&2
         exit 1
     fi
 fi
