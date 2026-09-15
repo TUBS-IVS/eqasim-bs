@@ -117,6 +117,43 @@ def test_vectorized_validation_preserves_supported_identifier_dtypes(identifier_
     assert [issue.person_id for issue in new.issues] == expected_person_order
 
 
+@pytest.mark.parametrize(
+    "person_ids",
+    [
+        pd.Series([2, 1], dtype="int64"),
+        pd.Series([2, 1], dtype="Int64"),
+        pd.Series(pd.Categorical([2, 1], categories=[2, 1])),
+        pd.Series(["beta", "alpha"], dtype="string"),
+    ],
+    ids=["ordinary_int", "nullable_int", "categorical_int", "nullable_string"],
+)
+def test_vectorized_issue_ids_preserve_group_iterator_scalar_types(person_ids):
+    """Issue identifiers must use pandas GroupBy's scalar types, not NumPy coercion."""
+    trips = pd.DataFrame({
+        "person_id": person_ids,
+        "departure_time": [1.0, 1.0],
+        "arrival_time": [2.0, 2.0],
+        "preceding_purpose": ["home", "home"],
+        "following_purpose": ["work", "work"],
+    })
+    sorted_trips = trips.sort_values(["person_id", "departure_time"])
+    reference_ids = [
+        person_id for person_id, _group
+        in sorted_trips.groupby("person_id", sort=False)
+    ]
+
+    old = plan_validation.PlanValidator(vectorized=False).validate_trips(trips)
+    new = plan_validation.PlanValidator(vectorized=True).validate_trips(trips)
+    old_ids = [issue.person_id for issue in old.issues]
+    new_ids = [issue.person_id for issue in new.issues]
+
+    assert old_ids == reference_ids
+    assert new_ids == reference_ids
+    assert [type(person_id) for person_id in new_ids] == [
+        type(person_id) for person_id in reference_ids
+    ]
+
+
 def test_vectorized_validation_without_home_closure_does_not_require_purpose_columns():
     """The reference time-only contract remains valid when closure checks are disabled."""
     trips = pd.DataFrame({

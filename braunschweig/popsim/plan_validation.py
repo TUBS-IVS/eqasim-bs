@@ -415,7 +415,10 @@ class PlanValidator:
     def _check_person_arrays(self, sorted_trips: pd.DataFrame) -> list:
         """Calculate per-person diagnostics without constructing group DataFrames."""
         group_sizes_series = sorted_trips.groupby("person_id", sort=False).size()
-        person_ids = group_sizes_series.index.to_numpy()
+        # Index iteration preserves the scalar types yielded by pandas GroupBy
+        # (e.g. built-in int for an int64 index, np.int64 for nullable Int64).
+        # ``to_numpy`` coerces those cases in opposite directions.
+        person_ids = list(group_sizes_series.index)
         group_sizes = group_sizes_series.to_numpy(dtype=np.intp)
         if len(group_sizes) == 0:
             return []
