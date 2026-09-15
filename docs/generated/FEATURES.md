@@ -65,6 +65,7 @@ may only name run manifests (no run, no claim).
 | [leisure_unspecified_subtype](../registry/features/leisure_unspecified_subtype.yml) | secondary | active | ON | A/-/- | 6 | not claimed | marker | committed | unvalidated | pending |
 | [lod2_height_volume_typing](../registry/features/lod2_height_volume_typing.yml) | home | active | ON | A/A/A | 3 | -- | marker | none | unvalidated | pending |
 | [matsim_output_archive](../registry/features/matsim_output_archive.yml) | infrastructure | active | ON | A/A/A | 1 | -- | marker | none | unvalidated | pending |
+| [mid_passenger_availability](../registry/features/mid_passenger_availability.yml) | attributes | active | ON | A/-/- | 7 | proven | marker | assumption | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | Independent Sol implementation and integration reviews, 2026-09-15 |
 | [mid_validation_report](../registry/features/mid_validation_report.yml) | validation | active | ON | A/s/s | 1 | -- | none | committed | unvalidated | pending |
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |

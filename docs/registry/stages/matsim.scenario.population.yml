@@ -37,11 +37,13 @@ resolves_to:
   popsim_mid: braunschweig.matsim.scenario.population
   popsim_open: braunschweig.matsim.scenario.population
 features:
+- mid_passenger_availability
 - carless_routing_remode
 - rbw_leg_convention
 - urban_parking
 - general_day_absence
 decisions:
+- ADR-0121
 - ADR-0104
 - ADR-0022
 - ADR-0029

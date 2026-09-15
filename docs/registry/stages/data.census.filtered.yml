@@ -31,6 +31,7 @@ inputs:
 - mid2023_cars_by_rs7_haustyp
 - mid2023_bikes_by_rs7_haustyp
 features:
+- mid_passenger_availability
 - age_aware_composition
 - diary_plan_match
 - home_closure_model
@@ -48,6 +49,7 @@ features:
 - srv_participation_controls
 - tier3_kreis_controls
 decisions:
+- ADR-0121
 - ADR-0002
 - ADR-0092
 - ADR-0106
