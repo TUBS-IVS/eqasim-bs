@@ -17,7 +17,7 @@ dependencies:
   - pytables=3.9.2
   - xlrd=2.0.1
   - openpyxl=3.1.0
-  - pip=23.0.1
+  - pip=26.2.1
   - python=3.10.10
   - py7zr=0.20.8
   # The production server's pip layer resolves the chainsolvers requirement
