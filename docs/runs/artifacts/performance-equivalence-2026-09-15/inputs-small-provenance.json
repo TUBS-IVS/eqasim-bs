@@ -1,0 +1,45 @@
+{
+  "cache": "/home/felix/eqasim-bs/eqasim-data/cache_bs_test_matsim",
+  "sources": [
+    {
+      "entry": "braunschweig.popsim.enriched_adapter__683580b7e0d05fa116abee3ef1bf2325",
+      "bytes": 1075701
+    },
+    {
+      "entry": "braunschweig.synthesis.spatial.home_zones",
+      "bytes": 44317
+    },
+    {
+      "entry": "braunschweig.data.bbsr.regiostar__6488c569a2937786e92690c9b4b4ad97",
+      "bytes": 1257
+    },
+    {
+      "entry": "braunschweig.data.buildings__dbe8ad3b1a93732a85d97be8a80264f7",
+      "bytes": 11067137
+    },
+    {
+      "entry": "braunschweig.popsim.trips_stage__17a53e7426f300023f9ad2473006279c",
+      "bytes": 18065728
+    },
+    {
+      "entry": "braunschweig.popsim.completed_donor__94e091f958d89db27c09db6f8e3d99a6",
+      "bytes": 87085851
+    },
+    {
+      "entry": "synthesis.population.sampled__683580b7e0d05fa116abee3ef1bf2325",
+      "bytes": 1182233
+    }
+  ],
+  "cells_path": "eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_100m_de_prepared.parquet",
+  "counts": {
+    "fleet_persons": 2543,
+    "fleet_homes": 1397,
+    "home_households": 100,
+    "buildings": 45687,
+    "cells": 91,
+    "validation_trips": 8391,
+    "donor_pool": 10000,
+    "targets": 100
+  },
+  "scope": "Bounded function input bundle; historical cached inputs, not an end-to-end replay."
+}

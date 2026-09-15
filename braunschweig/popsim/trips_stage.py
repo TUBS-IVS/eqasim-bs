@@ -548,6 +548,7 @@ def run(
     departure_time_min_reference_n: int = DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
     departure_time_min_model_n: int = DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
     departure_time_max_median_shift_hours: float = DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+    vectorized_validation: bool = True,
 ) -> pd.DataFrame:
     """Build popsim_mid trips in the synthesis.population.trips 11-column contract.
 
@@ -709,6 +710,7 @@ def run(
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         dwell_model=dwell_model,
+        vectorized_validation=vectorized_validation,
     )
 
     if "is_synthetic_closure" in table.columns:
@@ -832,6 +834,10 @@ def configure(context):
     # table is built against the already-sampled and id-remapped synthetic population.
     context.stage("synthesis.population.sampled", alias="persons")
     context.config("random_seed")
+    context.config(
+        _plan_validation.KEY_VECTORIZED_PLAN_VALIDATION,
+        _plan_validation.DEFAULT_VECTORIZED_PLAN_VALIDATION,
+    )
     escort_purpose = context.config("escort_purpose", False)
     # escort_passive_education is declared with the SHARED key/default constants (final fix
     # wave, item 3), like the plan-structure flags below: the popsim stage reads the same
@@ -981,6 +987,8 @@ def execute(context):
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
     passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
+    vectorized_validation = bool(
+        context.config(_plan_validation.KEY_VECTORIZED_PLAN_VALIDATION))
     return source.build_trips(
         persons, donor_trips,
         random_seed=int(context.config("random_seed")),
@@ -999,4 +1007,5 @@ def execute(context):
         departure_time_min_reference_n=departure_time_min_reference_n,
         departure_time_min_model_n=departure_time_min_model_n,
         departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
+        vectorized_validation=vectorized_validation,
     )

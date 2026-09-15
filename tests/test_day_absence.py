@@ -224,7 +224,9 @@ def test_individual_stage_min_household_size_1_matches_the_ada06b61_golden_hash(
     out, _diag = D.draw_absence(persons, ref, np.random.RandomState(13),
                                 individual_stage_min_household_size=1)
     serialised = out.sort_values("person_id").reset_index(drop=True)[list(D.ABSENCE_COLUMNS)] \
-        .to_csv(index=False).encode()
+        .to_csv(index=False, lineterminator="\r\n").encode()
+    # The historical golden was captured on Windows. Pin that byte format on
+    # every platform rather than accepting a second, platform-dependent hash.
     assert hashlib.sha256(serialised).hexdigest() == GOLDEN_HASH_ADA06B61
 
 

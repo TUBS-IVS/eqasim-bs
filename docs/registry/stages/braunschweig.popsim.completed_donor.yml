@@ -31,11 +31,13 @@ production: true
 inputs:
 - mid2023_b1
 features:
+- performance_equivalence
 - popsim_method
 - diary_plan_match
 - participation_universe_controls
 - mid_passenger_availability
 decisions:
+- ADR-0122
 - ADR-0002
 - ADR-0059
 - ADR-0106
