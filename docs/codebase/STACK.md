@@ -67,13 +67,15 @@ unpinned import in a `scripts/` geocoder).
 
 ## Dev tooling
 
-- **pytest 7.2.2** (`environment.yml`). Tests live in `tests/` (see TESTING.md).
-- **No linter/formatter config** found in the repo root (scan: "No linting or
-  formatting config files found"). No `pyproject.toml`, `setup.cfg`, `setup.py`,
-  `pytest.ini`, or `conftest.py` present (verified by directory listing).
-- CI: GitHub Actions (`.github/workflows/tests.yml`, `data.yml`) and a legacy
-  `.travis.yml`. The tests workflow runs `pytest tests/` on ubuntu + windows and
-  sets up Java (Corretto 17) + Maven + osmosis.
+- **pytest 9.1.1** effective runtime. Linux uses the captured server conda/pip
+  snapshot; Windows uses its generated lock. See
+  [environment ownership](notes/reproducible-environment.md).
+- `scripts/run_tests.py` is the shared entry point; `pytest.ini` owns discovery
+  and pipeline markers, and `tests/conftest.py` owns shared fixtures.
+- GitHub Actions runs the regression suite on Linux and Windows using the
+  committed environments. The metadata-only documentation workflow is a separate
+  gate. The obsolete inherited Travis configuration has been retired.
+- Agents follow [the required verification gate](TESTING.md#required-agent-verification-gate).
 
 ## Java / MATSim side
 
@@ -88,10 +90,9 @@ unpinned import in a `scripts/` geocoder).
   locally; the felix + local run configs point `java_home` / `java_binary` at it).
   The Maven runtime honours a new `java_home` config key
   (`matsim/runtime/maven.py`) that exports JAVA_HOME for the build subprocess.
-- CI (`.github/workflows/tests.yml`) still installs **Java 17 (Corretto)** for the
-  Python test suite — that is unchanged and sufficient for pytest, but NOT for
-  building eqasim-java 2.2.0 (which needs JDK 25); the Java jar build is exercised
-  on felix / locally, not in the Python CI.
+- The Python regression CI does not install Java/Maven or run real-data pipeline
+  tests. Explicit pipeline checks require JDK 25, Maven and the input preflight;
+  they are separate from the regression gate.
 - The Java MATSim package is `org.eqasim.braunschweig.*` in the fork (renamed from
   `bavaria`), though several config files and `matsim/simulation/prepare.py` still
   reference `org.eqasim.bavaria.*` entry-point class paths (see CONCERNS.md).
@@ -104,7 +105,7 @@ unpinned import in a `scripts/` geocoder).
 
 - `environment.yml`
 - `configs/fixtures/config_local_braunschweig.yml` (entry `run:`, `processes`, binaries)
-- `.github/workflows/tests.yml` (Java 17, conda env `ile-de-france`, `pytest tests/`)
+- `.github/workflows/tests.yml` (locked Linux/Windows environments, shared runner)
 - `README.md` §2 (env), §4 (run command)
 - `AGENTS.md` "Environment", "Day-to-day commands"
 - `braunschweig/synthesis/locations/education_gravity.py` (synpp `configure`/`execute`)

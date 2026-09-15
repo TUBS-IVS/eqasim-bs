@@ -179,6 +179,17 @@ overstate results").
 
 ## Tests
 
+**Mandatory for every coding agent:** follow the
+[required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate).
+Use `python scripts/run_tests.py` for focused checks and the final regression
+suite, with `--check` at session start. Use the committed platform locks and the
+server-mirrored Linux/WSL environment for canonical evidence. Do not replace a
+failed gate with direct pytest, import monkey-patches, silently skipped tests,
+an unpinned environment, or results from another code state. Record the tested
+commit, environment, command, exit status and pass/skip counts in the handoff/PR.
+Both regression CI platforms must pass before merge; a small-data pass does not
+replace a required real-data smoke.
+
 Add tests for non trivial logic. Prefer small unit tests for data transformations, filtering rules, assignment logic, cost calculations, aggregation logic, routing helper logic, and validation checks. Use integration tests for MATSim scenario setup or full pipeline behavior. Tests must be deterministic. Use small synthetic test data where possible; do not rely on large external datasets in unit tests.
 
 ## Performance

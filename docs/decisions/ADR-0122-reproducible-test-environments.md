@@ -48,6 +48,11 @@ field assertions. Neither repetition adds an independent input or scenario.
    effective dependencies. Preserve existing environments; fail an update if
    either snapshot artifact is missing or changes. Use the trusted JDK 25 in
    the Linux pipeline wrapper and reject conflicting configured Java paths.
+8. Make the shared runner mandatory in the agent bootstrap, binding rules,
+   contributor workflow and PR checklist. Keep the verification process in
+   TESTING.md, including final-code evidence and both CI platforms before merge.
+   Retire the inherited Travis entry point; retain the explicitly separate
+   metadata-only documentation gate.
 
 ## Alternatives and consequences
 

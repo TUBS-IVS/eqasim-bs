@@ -1,5 +1,47 @@
 # Testing
 
+## Required agent verification gate
+
+This is the canonical verification process for humans and coding agents;
+AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
+
+1. **At session start:** activate the locked project environment and run
+   `python scripts/run_tests.py --check`. Linux/WSL2 uses the captured server
+   snapshot; native Windows uses the Windows lock. Follow the
+   [environment installation and refresh policy](notes/reproducible-environment.md).
+   Diagnose a failed preflight before proceeding; do not work around it with
+   import patches or a fresh unconstrained dependency solve.
+2. **During implementation:** run affected tests through the same runner, using
+   paths or `-k`. Preserve scientific invariants and measure repeated work before
+   consolidating tests. A focused pass is development feedback, not the final gate.
+3. **Before final handoff, push or PR:** integrate the current `origin/main` and run
+   `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml`
+   on the final code state in server-mirrored Linux/WSL2. Use an isolated checkout
+   on the server only when local Linux is unavailable; do not mutate its trusted
+   environment or start a production simulation for this regression gate.
+   Native Windows checks use the identical command. If a required platform is
+   unavailable, report it explicitly; do not label that gate passed.
+4. **Record evidence:** tested commit (and any uncommitted changes), OS, environment
+   diagnostics, command, exit status, pass/skip/deselected counts and JUnit path.
+   Explain unexpected skips. A skip is not a pass; direct pytest and results from
+   another checkout or pre-merge code state cannot substitute for this gate.
+   Later executable changes require affected checks again; broaden to the suite
+   when their impact is not isolated. Documentation-only recording of results
+   does not invalidate the executable-code evidence.
+5. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
+   documentation check must pass on the PR's latest commit. Inspect failures
+   rather than disabling a platform or weakening assertions. CI provides the
+   second platform when it cannot be run locally; pending CI is pending evidence.
+6. **When scientific behavior or pipeline wiring changes:** additionally run the
+   relevant real-data smoke with its preflight and record a run manifest. The
+   regression suite does not replace that evidence. Never launch a production
+   run merely to satisfy a regression check.
+
+Keep the JUnit file as local/CI evidence (`test-results.xml` is gitignored).
+The metadata-only documentation workflow intentionally uses direct pytest in
+its minimal environment; it is a separate gate and never substitutes for the
+scientific-stack regression workflow.
+
 ## One command on Linux, WSL2 and Windows
 
 Activate the project environment described in [README](../../README.md#installation),
@@ -55,8 +97,9 @@ its original opt-in/skip semantics. The runner does not download data or configu
 Java. A small-data regression pass
 is not a real pipeline smoke or scientific validation.
 
-Direct `python -m pytest tests/ -q` remains supported with the previous opt-in
-semantics. `pytest.ini` registers the marker and limits default discovery to
+Direct `python -m pytest tests/ -q` remains available for low-level diagnostics
+with the previous opt-in semantics; it does not satisfy the required agent gate.
+`pytest.ini` registers the marker and limits default discovery to
 `tests/`; `tests/conftest.py` owns shared fixtures and logger cleanup.
 
 ## Test design
