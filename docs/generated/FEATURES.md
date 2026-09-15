@@ -57,8 +57,8 @@ may only name run manifests (no run, no claim).
 | [housing_tenure](../registry/features/housing_tenure.yml) | attributes | active | ON | A/A/A | 1 | -- | marker | committed | unvalidated | pending |
 | [income_aware_cars](../registry/features/income_aware_cars.yml) | attributes | active | off | -/-/A | 1 | proven | marker | committed | unvalidated | pending |
 | [income_spatial_tilt](../registry/features/income_spatial_tilt.yml) | population | active | off | i/i/- | 3 | proven | marker | none | unvalidated | pending |
-| [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`) | pending |
-| [incommuter_time_chronology](../registry/features/incommuter_time_chronology.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`) | pending |
+| [incommuter_donor_demographics](../registry/features/incommuter_donor_demographics.yml) | cordon | active | ON | A/A/- | 2 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
+| [incommuter_time_chronology](../registry/features/incommuter_time_chronology.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | pending |
 | [integerizer_quality](../registry/features/integerizer_quality.yml) | analysis | active | ON | A/s/- | 1 | -- | marker | none | unvalidated | pending |
 | [ipf_synthesis_legacy](../registry/features/ipf_synthesis_legacy.yml) | population | supported | off | -/-/A | 3 | -- | marker | none | unvalidated | pending |
 | [java_hang_watchdog](../registry/features/java_hang_watchdog.yml) | infrastructure | active | ON | A/A/A | 2 | proven | marker | none | unvalidated | pending |

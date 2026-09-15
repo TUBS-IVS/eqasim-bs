@@ -38,7 +38,7 @@ evidence:
     instrumented: true
     log_marker: '[incommuters] %s (%s): primary'
     note: Each anchor logs unchanged/repaired coverage. Duration imputation distinguishes
-      an observed pool from the retained empty-pool assumptions.
+      a duration pool that may include repaired anchors from direct fixed empty-pool assumptions.
   reference:
     kind: none
     note: Chronology is a correctness invariant; fallback durations are assumptions, not targets.
@@ -46,6 +46,7 @@ validation:
   state: unvalidated
   runs:
   - incommuter-donor-smoke-2026-09-14
+  - incommuter-donor-pr-integration-2026-09-15
   metric: null
   note: Raw donor smoke and synthetic regressions do not establish behavioural realism.
 assessment:
