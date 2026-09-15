@@ -86,8 +86,9 @@ and licences is `eqasim-data/DOWNLOAD_CHECKLIST_BS.md`; this file summarises it.
 The `matsim.output` stage builds a MATSim scenario using the **eqasim Java**
 project and **pt2matsim** (HAFAS/GTFS converter). synpp downloads and caches both
 as nested git checkouts under `eqasim-data/cache_*/matsim.runtime.*` (gitignored;
-AGENTS.md). CI provisions Java 17 (Corretto) + Maven + osmosis
-(`.github/workflows/tests.yml`). Local runs require `osmosis_binary` and
+AGENTS.md). Regression CI uses locked Python environments and does not provision
+the Java pipeline toolchain. Real pipeline runs require JDK 25, Maven,
+`osmosis_binary` and
 `osmconvert_binary` (configured per-machine in the run config). The Java package
 namespace stays `org.eqasim.bavaria.*` and is read-only from this repo (AGENTS.md
 D-1c).
@@ -104,7 +105,7 @@ restrictive: any output depending on MiD 2023 inherits non-commercial use
 - `eqasim-data/DOWNLOAD_CHECKLIST_BS.md` (sections A–E, bounding box, licence notes)
 - `configs/fixtures/config_local_braunschweig.yml` (input paths, `vrb_stations_path`, `osmosis_binary`)
 - `environment.yml` (no DB/HTTP-service client libs)
-- `.github/workflows/tests.yml` (Java 17 + Maven + osmosis)
+- `.github/workflows/tests.yml` (locked Linux/Windows Python regression gate)
 - `eqasim-data/data/braunschweig/schools/README.md` (Nominatim geocoding)
 - `README.md` ("Input data", "License")
 

@@ -1,150 +1,139 @@
-# TESTING
+# Testing
 
-> **Refreshed 2026-07-18.** ~344 `test_*.py` files on the current tree (count is
-> branch-dependent). Local caveat: the canonical pytest run is on the **server / `eqasim` conda
-> env** — system Python 3.13 shadows the repo-local `matsim` namespace package, so
-> synpp-layer tests fail locally but pass on the server (memory
-> `reference-local-test-env-matsim-shadowing.md`). New test suites cover calibration
-> (`test_calibration_*`, `test_circuity`, `test_detour_fit`,
-> `test_distance_distributions_by_purpose`) and building potentials.
+## Required agent verification gate
 
-Test setup for `eqasim-bs`. Verified from the `tests/` listing, `environment.yml`,
-`.github/workflows/tests.yml`, `CLAUDE.md`, and `AGENTS.md`.
+This is the canonical verification process for humans and coding agents;
+AGENTS.md, CLAUDE.md, CONTRIBUTING.md and the PR checklist require it.
 
-## Framework and command
+1. **At session start:** activate the locked project environment and run
+   `python scripts/run_tests.py --check`. Linux/WSL2 uses the captured server
+   snapshot; native Windows uses the Windows lock. Follow the
+   [environment installation and refresh policy](notes/reproducible-environment.md).
+   Diagnose a failed preflight before proceeding; do not work around it with
+   import patches or a fresh unconstrained dependency solve.
+2. **During implementation:** run affected tests through the same runner, using
+   paths or `-k`. Preserve scientific invariants and measure repeated work before
+   consolidating tests. A focused pass is development feedback, not the final gate.
+3. **Before final handoff, push or PR:** integrate the current `origin/main` and run
+   `python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml`
+   on the final code state in server-mirrored Linux/WSL2. Use an isolated checkout
+   on the server only when local Linux is unavailable; do not mutate its trusted
+   environment or start a production simulation for this regression gate.
+   Native Windows checks use the identical command. If a required platform is
+   unavailable, report it explicitly; do not label that gate passed.
+4. **Record evidence:** tested commit (and any uncommitted changes), OS, environment
+   diagnostics, command, exit status, pass/skip/deselected counts and JUnit path.
+   Explain unexpected skips. A skip is not a pass; direct pytest and results from
+   another checkout or pre-merge code state cannot substitute for this gate.
+   Later executable changes require the final regression gate again.
+   Documentation-only recording or clarification of the process and results
+   does not invalidate the executable-code evidence.
+5. **Before merge:** both `regression` matrix jobs (Linux and Windows) and the
+   documentation check must pass on the PR's latest commit. Inspect failures
+   rather than disabling a platform or weakening assertions. CI provides the
+   second platform when it cannot be run locally; pending CI is pending evidence.
+6. **When scientific behavior or pipeline wiring changes:** additionally run the
+   relevant real-data smoke with its preflight and record a run manifest. The
+   regression suite does not replace that evidence. Never launch a production
+   run merely to satisfy a regression check.
 
-- **pytest 7.2.2** (`environment.yml`).
-- No `pytest.ini` / `setup.cfg` / `pyproject.toml` / `conftest.py` present in the
-  repo (verified) — pytest runs with defaults from the repo root.
-- Run the full suite:
-  ```powershell
-  $env:PYTHONUTF8 = "1"; python -m pytest tests/ -v
-  ```
-  `PYTHONUTF8=1` matters because some reference data and German field names are
-  non-ASCII (see the user-memory note "Pipeline conda env … needs PYTHONUTF8").
-- CI runs `MKL_CBWR=AUTO pytest tests/` on ubuntu-latest and windows-latest
-  (`.github/workflows/tests.yml`).
-- AGENTS.md documents a fast-subset command that skips the slow pipeline tests:
-  ```powershell
-  pytest tests/ -v -k "not test_pipeline and not test_simulation and not test_determinism"
-  ```
+Keep the JUnit file as local/CI evidence (`test-results.xml` is gitignored).
+The metadata-only documentation workflow intentionally uses direct pytest in
+its minimal environment; it is a separate gate and never substitutes for the
+scientific-stack regression workflow.
 
-## Layout
+## One command on Linux, WSL2 and Windows
 
-`tests/` holds ~344 top-level `test_*.py` modules plus `tests/braunschweig/` (`test_stages.py`),
-`tests/baselines/`, `tests/testdata.py`, and `tests/__init__.py`. Tests group by
-feature/subsystem:
+Activate the project environment described in [README](../../README.md#installation),
+then run:
 
-- **MiD reference data:** `test_mid_reference_tables.py`, `test_mid_school_distance.py`,
-  `test_mikrozensus_school_distance.py`
-- **Gravity (work):** `test_gravity_ring_calibration.py`, `test_gravity_slope_config.py`,
-  `test_regiostar_fill.py`
-- **Education gravity:** `test_education_gravity_model.py`, `test_education_gravity_stage.py`,
-  `test_education_validation.py`, `test_calibrate_education_slopes.py`,
-  `test_school_typing.py`, `test_school_readers.py`, `test_school_facilities.py`,
-  `test_university_facilities.py`, `test_kita_facilities.py`,
-  `test_extract_nds_kitas.py`
-- **Population / IPF:** `test_braunschweig_data.py`, `test_hh_size_margin.py`,
-  `test_run_mid_validation.py`
-- **Pipeline / determinism (opt-in, slow):** `test_pipeline.py`, `test_simulation.py`,
-  `test_determinism.py`, `test_smoke_1pct.py`
+```bash
+python scripts/run_tests.py --check
+python scripts/run_tests.py
+```
 
-## Strategy
+The runner uses the active Python executable, runs from the repository root and
+sets UTF-8 for the test process. `--check` reports interpreter, platform, installed
+package versions and the actual `matsim` import location. A wrong Python version,
+missing required package or shadowed repository import fails with a diagnostic.
+This is a preflight, not a proof of numerical-library correctness.
 
-- **Deterministic, small synthetic data.** Unit tests build tiny in-memory
-  pandas/GeoPandas frames with fixed coordinates and a fixed seed rather than
-  loading large external datasets (CLAUDE.md "Tests"; example
-  `tests/test_education_gravity_stage.py` constructs a 5-person, 4-school GeoDataFrame).
-- **Mocking:** `mock=5.1.0` is available in the env; no heavyweight HTTP/DB mocking
-  layer is needed because the pipeline is file-based.
-- **Opt-in heavy tests.** The full pipeline / simulation / determinism tests are
-  gated behind an environment flag (`EQASIM_BS_RUN_PIPELINE=1` per README; the
-  default `pytest tests/ -q` run reports "65 passed, 4 skipped"). AGENTS.md records
-  a frozen baseline of 53 pass / 11 fail for the pre-refactor IDF-inherited suite —
-  the two figures reflect different points in the project history; `[ASK USER]`
-  which is the current expected gate.
+Pass normal pytest paths and filters to run focused checks:
 
-## Environment caveat (calibration scripts)
+A caller's `-m` expression is combined with the selected pipeline boundary
+using `and`; it narrows that selection and cannot enable a real pipeline in
+the default regression mode.
 
-Some calibration scripts that use NumPy linear algebra / GLM fitting
-(`scripts/calibrate_gravity_per_rs7.py` Poisson GLM, SVD-based code) are reported
-to crash in the local `eqasim` conda env due to a broken BLAS/LAPACK (reference
-BLAS) build — the synpp **pipeline** itself runs fine, but GLM-based calibration
-scripts do not (user-memory "eqasim env LAPACK broken"). The corresponding tests
-(`test_gravity_ring_calibration.py`, `test_calibrate_education_slopes.py`) may be
-affected on that env. This is an environment limitation, not a test-code defect.
+```bash
+python scripts/run_tests.py tests/test_population_passenger_availability.py -q
+python scripts/run_tests.py -k passenger --durations=20
+python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml
+```
 
-## Evidence
+Test counts depend on the commit, parametrization and selection; collect them
+instead of maintaining a number in this overview:
 
-- `tests/` directory listing (25 modules + `tests/braunschweig/`)
-- `environment.yml` (`pytest=7.2.2`, `mock=5.1.0`)
-- `.github/workflows/tests.yml` (`MKL_CBWR=AUTO pytest tests/`)
-- `AGENTS.md` ("Day-to-day commands", "Current state": 53/11 baseline)
-- `README.md` ("Test gate": 65 passed / 4 skipped, `EQASIM_BS_RUN_PIPELINE=1`)
-- `CLAUDE.md` ("Tests" — deterministic synthetic data; per-feature test lists)
-- user-memory `eqasim-env-lapack-broken.md`, `pipeline-conda-env.md`
+```bash
+python scripts/run_tests.py --collect-only -q
+```
 
----
+## Regression and real-data boundaries
 
-## Cross-repo addendum: test strategy for the population-synthesis refactor
+The default runner selects `not pipeline`: unit tests, small synthetic integration
+checks and available committed reference-table checks. It does not promise that
+every selected test is a pure unit test or has identical runtime. Tests needing
+unavailable local inputs must explain their skip; a skip is not a pass.
 
-Added 2026-06-08. popsimprep currently has **no tests** (`pyproject.toml` declares
-pytest + a `[tool.pytest.ini_options]` block but no `tests/` directory exists). The
-refactor must add a test suite in the eqasim-bs deterministic-synthetic-data style.
-Required coverage (from brief §10), grouped:
+The `pipeline` marker identifies real synthesis/MATSim runs in `test_pipeline`,
+`test_determinism`, `test_simulation` and `test_smoke_1pct`. Run these explicitly:
 
-- **Config / workflow selection:** valid/invalid `population.method`; missing MiD
-  path errors only when `popsim_mid` selected; MiD not required for
-  `simple_ipf_open` / `popsim_open`; no silent fallback between workflows.
-- **Data safety:** MiD folders + parquet ignored by Git; restricted paths absent
-  from default configs; no restricted data written into a tracked output dir.
-- **Spatial consistency (use tiny synthetic grids):** 100 m aggregates to 1 km;
-  every 100 m cell has exactly one 1 km parent; `is_orphan` handled explicitly;
-  totals consistent after aggregate/disaggregate.
-- **Batching:** batches hold complete 1 km parents (1 km atomic); each 100 m cell
-  in exactly one batch; deterministic batch input generation (split manifest sha1);
-  merge does not duplicate households/persons; `(ZENSUS100m, H_ID)` global
-  uniqueness; failed/missing batches detected.
-- **PopulationSim integration:** expected input files generated per folder;
-  expected output detected; batch logs preserved; a **minimal fixture that runs
-  PopulationSim on a 2-3 cell toy problem** without large real data (gated/opt-in
-  like the existing heavy pipeline tests, given the BLAS/LAPACK + subprocess needs).
-- **Workflow behaviour:** `simple_ipf_open` preserves current IPF output (lock with
-  a baseline / byte-identical test, mirroring eqasim-bs's existing
-  `test_determinism.py` discipline); `popsim_open` runs without MiD; `popsim_mid`
-  requires MiD only when selected; all three produce the harmonised output schema.
-- **Output handoff & plausibility:** final files in the right quaSIM dir with
-  consistent names; intermediate vs final separated; household/person counts,
-  age/sex/income distributions, vehicle-ownership plausible; fixed seed reproducible.
+```bash
+python scripts/run_tests.py --pipeline -v
+```
 
-Reuse eqasim-bs's existing `braunschweig/analysis/population_validation/` package
-(PopulationSim-style control validation, already on main) as the plausibility/QC
-layer rather than building a parallel validator.
+This selects only those tests and sets their existing `EQASIM_BS_RUN_PIPELINE=1`
+opt-in. Before execution it runs the existing input preflight with `--matsim`
+and requires JDK 25 and Maven on PATH. Missing prerequisites fail the command.
+`--pipeline --collect-only` can list the selected tests without these inputs.
+Network extraction tools must also be installed for an actual MATSim run.
+All four pipeline tests resolve `java`, `mvn`, `osmosis` and `osmconvert` from
+the active PATH and derive `java_home` from that Java executable. Their local
+fixture-specific binary paths are replaced in memory; scientific settings and
+baselines are unchanged. Put the actual JDK 25 and extraction tools on PATH on
+either platform; missing tools fail explicitly.
+The default runner clears inherited pipeline opt-in flags; direct pytest retains
+its original opt-in/skip semantics. The runner does not download data or configure
+Java. A small-data regression pass
+is not a real pipeline smoke or scientific validation.
 
-Evidence: `popsimprep/pyproject.toml` (pytest declared, no tests dir),
-brief §10, `tests/test_determinism.py`,
-`braunschweig/analysis/population_validation/`.
+Direct pytest is reserved for debugging the shared runner itself and the named
+metadata-only documentation workflow. Normal focused diagnostics must use the
+runner; direct pytest does not satisfy the required agent gate.
+`pytest.ini` registers the marker and limits default discovery to
+`tests/`; `tests/conftest.py` owns shared fixtures and logger cleanup.
 
----
+## Test design
 
-## Update 2026-06-10: implemented popsim + cordon test coverage
+- Prefer small deterministic synthetic fixtures and real production helpers.
+- Preserve conservation, assignment, error handling, primary/fallback-path,
+  reproducibility and promised OFF-path checks.
+- For identical inputs, check a coherent output contract in one test rather than
+  rerunning the same export for each field. Keep distinct inputs and edge cases
+  separately identifiable. Parametrization reduces repeated code, not test cases.
+- Static source inspection is appropriate only for a specifically
+  justified structural constraint; prefer observable behavior for logic.
+- Never remove tests solely to meet a numeric budget. Measure durations first.
+- PopulationSim control changes additionally require the specification checks and
+  numerical smoke described in [CONTRIBUTING](../../CONTRIBUTING.md#after-touching-a-populationsim-control).
 
-### Popsim branch (worktree popsim-g5)
+## Continuous integration
 
-- **Selector/config:** `test_population_selector.py`, `test_population_config.py`,
-  `test_popsim_open_config.py` (incl. the deliberate NON-alias of ENTD
-  distance_distributions), `test_simple_ipf_open_baseline.py` (regression freeze).
-- **Income unification:** `test_popsim_income_unified.py` (16 tests, INKAR scaling,
-  high_income >= 5000 EUR, fallback rates), `test_population_income_attribute.py`.
-- **Comparability:** `test_three_case_comparability.py` — schema/MATSim
-  compatibility across all three methods.
-- **Smoke harness:** `scripts/popsim_mid_smoke.py` (2 1-km parents through real
-  PopulationSim), `config_smoke_{simple_ipf,popsim_mid,popsim_open}[_mini].yml`,
-  `validate_three_cases.py`. Last result: popsim_open mini e2e EXITCODE 0
-  (`smoke_popsim_open_mini_final.log`, 12/12 stages, secondary success 97.16 %).
+[The regression workflow](../../.github/workflows/tests.yml) targets `main` and
+runs the shared command, recording the actual environment, slow-test durations
+and a JUnit report. The separate [documentation workflow](../../.github/workflows/docs.yml)
+runs the metadata gate without the scientific stack.
 
-### Cordon (merged to main)
-
-18 `tests/test_cordon_*.py` modules + `tests/test_incommuters.py` (integration);
-key regression guard `test_cordon_commuter_conservation.py`
-(in-commuter count scales linearly with `sampling_rate`; in/out conservation).
+Use Linux/WSL2 as the canonical scientific runtime. Native Windows regression
+checks remain useful for import, encoding, path and process portability. Environment
+installation and locking are documented in
+[reproducible-environment](notes/reproducible-environment.md).

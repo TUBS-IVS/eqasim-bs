@@ -54,9 +54,11 @@ config_*.yml → scripts/run_synpp.py → synthesis.output → matsim.output →
 - **Java**: the pipeline builds our own `braunschweig` module in `../eqasim-java-bs` via
   `eqasim_source_path` (not the upstream bavaria clone). MATSim version `2025.0-PR3568`.
 - **CRS**: project-wide metric CRS is **EPSG:25832**. Never compute metric distances in WGS84.
-- Local pytest can fail on `matsim` namespace shadowing (system Python has PyPI
-  `matsim-tools` which shadows the repo-local `matsim/`); the canonical suite runs on the
-  server.
+- Use the captured server environment on Linux/WSL2 and the committed Windows
+  lock for native portability checks. Start with `python scripts/run_tests.py --check`
+  to catch interpreter, dependency and `matsim` import problems. Follow the
+  [required verification gate](codebase/TESTING.md#required-agent-verification-gate)
+  before handing off work or opening a PR; use the shared runner on both platforms.
 
 ## 4. How to run
 

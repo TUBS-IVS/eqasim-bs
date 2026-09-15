@@ -52,29 +52,15 @@ def _make_fleet_gdf() -> gpd.GeoDataFrame:
 # ---------------------------------------------------------------------------
 
 class TestWriteXytCsv:
-    def test_header_lines(self, tmp_path: Path):
+    def test_writes_complete_default_contract(self, tmp_path: Path):
         gdf = _make_fleet_gdf()
         write_xyt_csv(gdf, tmp_path, "test.xyt.csv", "engine_power_kw")
         lines = (tmp_path / "test.xyt.csv").read_text(encoding="utf-8").splitlines()
         assert lines[0] == "# EPSG:25832", f"First line must be '# EPSG:25832', got {lines[0]!r}"
-
-    def test_header_row(self, tmp_path: Path):
-        gdf = _make_fleet_gdf()
-        write_xyt_csv(gdf, tmp_path, "test.xyt.csv", "engine_power_kw")
-        lines = (tmp_path / "test.xyt.csv").read_text(encoding="utf-8").splitlines()
         assert lines[1] == "time,x,y,value", f"Second line must be CSV header, got {lines[1]!r}"
-
-    def test_data_row_count(self, tmp_path: Path):
-        gdf = _make_fleet_gdf()
-        write_xyt_csv(gdf, tmp_path, "test.xyt.csv", "engine_power_kw")
         df = pd.read_csv(tmp_path / "test.xyt.csv", comment="#")
         # All 4 rows have non-null geometry and non-null engine_power_kw.
         assert len(df) == 4, f"Expected 4 data rows, got {len(df)}"
-
-    def test_time_column_is_zero(self, tmp_path: Path):
-        gdf = _make_fleet_gdf()
-        write_xyt_csv(gdf, tmp_path, "test.xyt.csv", "engine_power_kw")
-        df = pd.read_csv(tmp_path / "test.xyt.csv", comment="#")
         assert (df["time"] == 0).all(), "time column must be all zeros"
 
     def test_null_rows_excluded(self, tmp_path: Path):
@@ -98,7 +84,7 @@ class TestWriteXytCsv:
 # ---------------------------------------------------------------------------
 
 class TestFleetByKreis:
-    def test_columns(self):
+    def test_aggregates_complete_fleet_contract(self):
         gdf = _make_fleet_gdf()
         result = fleet_by_kreis(gdf)
         expected_cols = {"kreis_ags5", "n_vehicles", "bev_share_pct",
@@ -107,16 +93,9 @@ class TestFleetByKreis:
             f"Missing columns: {expected_cols - set(result.columns)}"
         )
 
-    def test_kreis_counts(self):
-        gdf = _make_fleet_gdf()
-        result = fleet_by_kreis(gdf)
         counts = result.set_index("kreis_ags5")["n_vehicles"]
         assert counts["03101"] == 2
         assert counts["03102"] == 2
-
-    def test_bev_share(self):
-        gdf = _make_fleet_gdf()
-        result = fleet_by_kreis(gdf)
         shares = result.set_index("kreis_ags5")["bev_share_pct"]
         # 03101: 1 BEV / 2 total = 50%
         assert abs(shares["03101"] - 50.0) < 0.01, (
@@ -127,9 +106,6 @@ class TestFleetByKreis:
             f"03102 BEV share should be 50%, got {shares['03102']}"
         )
 
-    def test_mean_power_kw(self):
-        gdf = _make_fleet_gdf()
-        result = fleet_by_kreis(gdf)
         means = result.set_index("kreis_ags5")["mean_power_kw"]
         # 03101: (150 + 90) / 2 = 120
         assert abs(means["03101"] - 120.0) < 0.01, (
@@ -146,30 +122,18 @@ class TestFleetByKreis:
 # ---------------------------------------------------------------------------
 
 class TestCardXytime:
-    def test_type_is_xytime(self):
+    def test_default_contract(self):
         card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv")
         assert card["type"] == "xytime"
-
-    def test_file_key_not_dataset(self):
-        card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv")
         assert "file" in card, "card_xytime must use 'file' key"
         assert "dataset" not in card, "card_xytime must NOT use 'dataset' key"
-
-    def test_file_value(self):
-        card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv")
         assert card["file"] == "fleet_power_kw.xyt.csv"
-
-    def test_radius_default(self):
-        card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv")
         assert card["radius"] == 6
+        assert card["width"] == 2
 
     def test_radius_override(self):
         card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv", radius=4)
         assert card["radius"] == 4
-
-    def test_width_default(self):
-        card = w.card_xytime("Power map", "fleet_power_kw.xyt.csv")
-        assert card["width"] == 2
 
     def test_value_label(self):
         card = w.card_xytime("Power map", "f.xyt.csv", value_label="kW")
@@ -198,65 +162,33 @@ class TestCardChoropleth:
     ``fill.dataset``/``fill.join``).
     """
 
-    def test_type_is_map(self):
+    def test_default_contract_uses_embedded_geojson_values(self):
         card = w.card_choropleth("BEV share", "kreise.geojson",
                                  value_col="bev_share_pct")
         assert card["type"] == "map"
-
-    def test_shapes_file(self):
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
         assert card["shapes"]["file"] == "kreise.geojson"
+        assert "datasets" not in card, (
+            "datasets key must be absent to avoid the CSV string/int join mismatch"
+        )
+        assert "dataset" not in card["display"]["fill"], (
+            "fill.dataset must be absent"
+        )
+        assert "join" not in card["display"]["fill"], (
+            "fill.join must be absent when colouring from GeoJSON properties"
+        )
+        assert card["display"]["fill"]["columnName"] == "bev_share_pct"
+        assert card["display"]["fill"]["colorRamp"]["steps"] == 7
+        assert card["height"] == 13
 
     def test_shapes_join(self):
         card = w.card_choropleth("BEV share", "kreise.geojson",
                                  value_col="bev_share_pct", join="ars5")
         assert card["shapes"]["join"] == "ars5"
 
-    def test_no_datasets_key(self):
-        """No ``datasets`` key: colour is sourced from GeoJSON properties only."""
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert "datasets" not in card, (
-            "datasets key must be absent to avoid the CSV string/int join mismatch"
-        )
-
-    def test_no_fill_dataset_key(self):
-        """``fill.dataset`` must be absent (colour from GeoJSON, not CSV)."""
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert "dataset" not in card["display"]["fill"], (
-            "fill.dataset must be absent"
-        )
-
-    def test_no_fill_join_key(self):
-        """``fill.join`` must be absent (no CSV join step)."""
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert "join" not in card["display"]["fill"], (
-            "fill.join must be absent when colouring from GeoJSON properties"
-        )
-
-    def test_display_fill_column_name(self):
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert card["display"]["fill"]["columnName"] == "bev_share_pct"
-
-    def test_display_fill_color_ramp(self):
+    def test_color_ramp_override(self):
         card = w.card_choropleth("BEV share", "kreise.geojson",
                                  value_col="bev_share_pct", color_ramp="Plasma")
         assert card["display"]["fill"]["colorRamp"]["ramp"] == "Plasma"
-
-    def test_display_fill_steps(self):
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert card["display"]["fill"]["colorRamp"]["steps"] == 7
-
-    def test_height_default(self):
-        """Default height for big map cards is 13."""
-        card = w.card_choropleth("BEV share", "kreise.geojson",
-                                 value_col="bev_share_pct")
-        assert card["height"] == 13
 
     def test_height_override(self):
         card = w.card_choropleth("BEV share", "kreise.geojson",
@@ -290,95 +222,52 @@ class TestCardHexagons:
         defaults.update(kwargs)
         return w.card_hexagons("Demand", "trips_xy.csv", **defaults)
 
-    def test_type_is_hexagons(self):
+    def test_default_contract_uses_from_to_aggregation(self):
+        """Aggregations are FROM-TO dictionaries, never lists."""
         card = self._make_card()
         assert card["type"] == "hexagons"
-
-    def test_file_key(self):
-        card = self._make_card()
         assert card["file"] == "trips_xy.csv"
-
-    def test_aggregations_is_dict_not_list(self):
-        """aggregations must be a dict of FROM-TO objects, not a list."""
-        card = self._make_card()
         assert isinstance(card["aggregations"], dict)
         agg_name = next(iter(card["aggregations"]))
         assert isinstance(card["aggregations"][agg_name], dict), (
             "Each aggregation entry must be a FROM-TO dict, not a list"
         )
-
-    def test_aggregation_has_from_to_keys(self):
-        card = self._make_card()
         agg = next(iter(card["aggregations"].values()))
         for key in ("title", "fromTitle", "fromX", "fromY", "toTitle", "toX", "toY"):
             assert key in agg, f"FROM-TO aggregation must contain key '{key}'"
-
-    def test_from_xy_values(self):
-        card = self._make_card()
-        agg = next(iter(card["aggregations"].values()))
         assert agg["fromX"] == "origin_x"
         assert agg["fromY"] == "origin_y"
-
-    def test_to_xy_values(self):
-        card = self._make_card()
-        agg = next(iter(card["aggregations"].values()))
         assert agg["toX"] == "destination_x"
         assert agg["toY"] == "destination_y"
-
-    def test_aggregation_name_default(self):
-        card = self._make_card()
         assert "Trips" in card["aggregations"]
+        agg = card["aggregations"]["Trips"]
+        assert agg["fromTitle"] == "Origins"
+        assert agg["toTitle"] == "Destinations"
+        assert card["radius"] == 150
+        assert card["projection"] == "EPSG:25832"
+        assert card["height"] == 13
+        assert card["width"] == 2
+        assert "description" not in card
 
     def test_aggregation_name_override(self):
         card = self._make_card(aggregation_name="Flows")
         assert "Flows" in card["aggregations"]
 
-    def test_from_title_default(self):
-        card = self._make_card()
-        agg = card["aggregations"]["Trips"]
-        assert agg["fromTitle"] == "Origins"
-
-    def test_to_title_default(self):
-        card = self._make_card()
-        agg = card["aggregations"]["Trips"]
-        assert agg["toTitle"] == "Destinations"
-
-    def test_radius_default(self):
-        card = self._make_card()
-        assert card["radius"] == 150
-
     def test_radius_override(self):
         card = self._make_card(radius=300)
         assert card["radius"] == 300
-
-    def test_projection_default(self):
-        card = self._make_card()
-        assert card["projection"] == "EPSG:25832"
 
     def test_projection_override(self):
         card = self._make_card(projection="EPSG:4326")
         assert card["projection"] == "EPSG:4326"
 
-    def test_height_default(self):
-        """Default height for big map cards is 13."""
-        card = self._make_card()
-        assert card["height"] == 13
-
     def test_height_override(self):
         card = self._make_card(height=8)
         assert card["height"] == 8
 
-    def test_width_default(self):
-        card = self._make_card()
-        assert card["width"] == 2
-
     def test_description_present(self):
         card = self._make_card(description="desc")
         assert card["description"] == "desc"
-
-    def test_no_description_absent(self):
-        card = self._make_card()
-        assert "description" not in card
 
 
 # ---------------------------------------------------------------------------
@@ -386,25 +275,16 @@ class TestCardHexagons:
 # ---------------------------------------------------------------------------
 
 class TestCardSankey:
-    def test_type_is_sankey(self):
+    def test_default_contract(self):
         card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
         assert card["type"] == "sankey"
-
-    def test_csv_key(self):
-        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
         assert card["csv"] == "purpose_to_mode.csv"
-
-    def test_sort_default_true(self):
-        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
         assert card["sort"] is True
+        assert card["width"] == 2
 
     def test_sort_override(self):
         card = w.card_sankey("Mode flow", "purpose_to_mode.csv", sort=False)
         assert card["sort"] is False
-
-    def test_width_default(self):
-        card = w.card_sankey("Mode flow", "purpose_to_mode.csv")
-        assert card["width"] == 2
 
     def test_title_present(self):
         card = w.card_sankey("My title", "x.csv")
@@ -424,16 +304,10 @@ class TestCardSankey:
 # ---------------------------------------------------------------------------
 
 class TestCardScatter:
-    def test_type_is_scatter(self):
+    def test_default_contract(self):
         card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
         assert card["type"] == "scatter"
-
-    def test_dataset_key(self):
-        card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
         assert card["dataset"] == "data.csv"
-
-    def test_x_y_keys(self):
-        card = w.card_scatter("Car share", "data.csv", x="mid_car_pct", y="sim_car_pct")
         assert card["x"] == "mid_car_pct"
         assert card["y"] == "sim_car_pct"
 
@@ -443,22 +317,16 @@ class TestCardScatter:
         assert card["xAxisName"] == "MiD %"
         assert card["yAxisName"] == "Sim %"
 
-    def test_empty_axis_names_absent(self):
+    def test_default_optional_fields_are_absent(self):
         card = w.card_scatter("T", "d.csv", x="a", y="b")
         assert "xAxisName" not in card
         assert "yAxisName" not in card
-
-    def test_width_default(self):
-        card = w.card_scatter("T", "d.csv", x="a", y="b")
         assert card["width"] == 1
+        assert "description" not in card
 
     def test_description_present(self):
         card = w.card_scatter("T", "d.csv", x="a", y="b", description="desc")
         assert card["description"] == "desc"
-
-    def test_no_description_absent(self):
-        card = w.card_scatter("T", "d.csv", x="a", y="b")
-        assert "description" not in card
 
 
 # ---------------------------------------------------------------------------

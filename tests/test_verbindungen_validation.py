@@ -2,7 +2,7 @@
 
 Run with::
 
-    python -m pytest tests/test_verbindungen_validation.py -v
+    python scripts/run_tests.py tests/test_verbindungen_validation.py -v
 """
 from __future__ import annotations
 
