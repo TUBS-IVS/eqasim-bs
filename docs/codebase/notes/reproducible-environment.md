@@ -55,6 +55,12 @@ snapshot for a new environment and preserves an existing one. The update script
 stops if the Linux snapshot changes, requiring an explicit environment refresh;
 it never re-solves the server from the Windows source file.
 
+If initial pip installation is interrupted after conda creation, fix the artifact
+access problem and explicitly run `bash scripts/bootstrap_server.sh --repair-pip`.
+This replays the captured pip layer with `--no-deps` and then runs `pip check`;
+it never deletes the environment. A normal rerun still preserves an existing
+environment without reinstalling its packages.
+
 ## Windows development and CI
 
 `environment.yml` remains the editable portable source for Windows. Its

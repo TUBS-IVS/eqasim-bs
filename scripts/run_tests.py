@@ -72,6 +72,11 @@ def main(argv=None):
         return 0
     if pytest_args[:1] == ["--"]:
         pytest_args = pytest_args[1:]
+    # Pytest keeps only the last -m. Extract the caller's expression (including
+    # passthrough arguments after --) and intersect it with our run boundary.
+    marker_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    marker_parser.add_argument("-m", dest="expression")
+    marker_args, pytest_args = marker_parser.parse_known_args(pytest_args)
     env = dict(os.environ, PYTHONUTF8="1")
     if args.pipeline:
         env["EQASIM_BS_RUN_PIPELINE"] = "1"
@@ -94,6 +99,8 @@ def main(argv=None):
     # Keep the real-data boundary explicit even when the caller's shell has an
     # old opt-in variable set. Preserve other pytest arguments, including -k.
     marker = "pipeline" if args.pipeline else "not pipeline"
+    if marker_args.expression:
+        marker = f"({marker}) and ({marker_args.expression})"
     command = [sys.executable, "-u", "-m", "pytest", "-c", str(REPO_ROOT / "pytest.ini")]
     command.extend(pytest_args or ["-q"])
     command.extend(["-m", marker])

@@ -18,11 +18,10 @@ external, cached toolchain (see "Java / MATSim side" below).
 
 - **Python 3.10** (`environment.yml` pins `python=3.10.10`). README and AGENTS.md
   both state Python 3.10 via miniforge.
-- **Conda environment.** Created from `environment.yml`. Note a naming divergence:
-  the env file declares `name: ile-de-france` (inherited from upstream) and the
-  CI workflow activates `ile-de-france`, but README/AGENTS.md/CLAUDE.md instruct
-  contributors to use the env named `eqasim`. See CONCERNS.md. `[ASK USER]`
-  whether the canonical local env name is `eqasim` or `ile-de-france`.
+- **Conda environment `eqasim`.** Linux/WSL reproduces the captured server
+  conda/pip snapshot; Windows installs its generated lock. `environment.yml`
+  is the Windows source specification, not a command to re-solve production.
+  See [environment installation and ownership](notes/reproducible-environment.md).
 - Pipeline entry point: `python scripts/run_synpp.py <config>.yml [<overlay>.yml]`, which installs
   the deterministic stage-hash patch (ADR-0105) before synpp builds the stage graph; a plain
   `python -m synpp` run is unsupported (README §4; AGENTS.md "Day-to-day commands").

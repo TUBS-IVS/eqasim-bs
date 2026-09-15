@@ -60,6 +60,10 @@ This is a preflight, not a proof of numerical-library correctness.
 
 Pass normal pytest paths and filters to run focused checks:
 
+A caller's `-m` expression is combined with the selected pipeline boundary
+using `and`; it narrows that selection and cannot enable a real pipeline in
+the default regression mode.
+
 ```bash
 python scripts/run_tests.py tests/test_population_passenger_availability.py -q
 python scripts/run_tests.py -k passenger --durations=20
@@ -92,6 +96,11 @@ opt-in. Before execution it runs the existing input preflight with `--matsim`
 and requires JDK 25 and Maven on PATH. Missing prerequisites fail the command.
 `--pipeline --collect-only` can list the selected tests without these inputs.
 Network extraction tools must also be installed for an actual MATSim run.
+All four pipeline tests resolve `java`, `mvn`, `osmosis` and `osmconvert` from
+the active PATH and derive `java_home` from that Java executable. Their local
+fixture-specific binary paths are replaced in memory; scientific settings and
+baselines are unchanged. Put the actual JDK 25 and extraction tools on PATH on
+either platform; missing tools fail explicitly.
 The default runner clears inherited pipeline opt-in flags; direct pytest retains
 its original opt-in/skip semantics. The runner does not download data or configure
 Java. A small-data regression pass

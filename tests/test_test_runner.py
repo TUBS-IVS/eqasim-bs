@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 RUNNER = Path(__file__).resolve().parents[1] / "scripts" / "run_tests.py"
 
@@ -76,3 +78,24 @@ def test_pipeline_input_preflight_failure_stops_before_pytest(tmp_path, monkeypa
     )
     assert run_tests.main(["--pipeline"]) == 1
     assert "Missing required inputs" in capfd.readouterr().out
+
+
+@pytest.mark.parametrize("pipeline", [False, True])
+def test_caller_marker_filters_within_enforced_boundary(tmp_path, pipeline):
+    options = (["--pipeline", "-mnot slow"] if pipeline
+               else ["--", "-m", "not slow"])
+    options.extend(["--collect-only", "-o", "markers=pipeline: real data\nslow: slow test"])
+    result = _run(tmp_path, '''
+import pytest
+def test_fast_unit(): pass
+@pytest.mark.slow
+def test_slow_unit(): pass
+@pytest.mark.pipeline
+def test_fast_pipeline(): pass
+@pytest.mark.pipeline
+@pytest.mark.slow
+def test_slow_pipeline(): pass
+''', *options)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1/4 tests collected (3 deselected)" in result.stdout
+    assert ("test_fast_pipeline" if pipeline else "test_fast_unit") in result.stdout
