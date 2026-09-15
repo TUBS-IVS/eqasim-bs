@@ -9,8 +9,11 @@ output. Tested via two pure helpers so no synpp context / full pipeline is neede
 """
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
+
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -76,6 +79,25 @@ def test_person_columns_append_passenger_availability_facts_when_present():
 def test_person_columns_legacy_byte_identical_when_passenger_facts_absent():
     cols = select_person_output_columns(set(BASE_PERSON), "is_urban_resident")
     assert cols == BASE_PERSON
+
+
+def test_person_csv_bytes_legacy_when_passenger_facts_absent():
+    frame = pd.DataFrame([{
+        "person_id": 1, "household_id": 10, "age": 35, "employed": "yes",
+        "sex": "female", "socioprofessional_class": "employed",
+        "has_driving_license": True, "has_pt_subscription": False,
+        "pt_subscription_type": "never_pt", "census_person_id": 44,
+        "hts_id": 55, "is_urban_resident": True,
+    }])
+    output = io.BytesIO()
+    frame[select_person_output_columns(frame.columns, "is_urban_resident")].to_csv(
+        output, sep=";", index=False, lineterminator="\n")
+    assert output.getvalue() == (
+        b"person_id;household_id;age;employed;sex;socioprofessional_class;"
+        b"has_driving_license;has_pt_subscription;pt_subscription_type;"
+        b"census_person_id;hts_id;is_urban_resident\n"
+        b"1;10;35;yes;female;employed;True;False;never_pt;44;55;True\n"
+    )
 
 
 def test_household_columns_legacy_byte_identical_when_optionals_absent():

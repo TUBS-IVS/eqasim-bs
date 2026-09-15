@@ -19,6 +19,10 @@ from matsim.scenario import population as pop  # noqa: E402
 import matsim.writers as writers  # noqa: E402
 
 
+LEGACY_XML_FIXTURE = Path(__file__).with_name("fixtures") / (
+    "population_passenger_availability_legacy.xml")
+
+
 class _StubWriter:
     def __init__(self):
         self.attributes = {}
@@ -142,3 +146,17 @@ def test_population_writer_logs_aggregate_passenger_omission_rate(tmp_path, capl
 
 def test_absent_passenger_column_keeps_legacy_writer_field_order():
     assert pop.effective_person_fields(pd.DataFrame({field: [0] for field in pop.PERSON_FIELDS})) == pop.PERSON_FIELDS
+
+
+def test_population_writer_without_passenger_column_matches_prechange_xml_bytes(tmp_path):
+    """The committed literal was generated from base 1502e88e, not this writer."""
+    persons, activities, trips, vehicles = _frames(["some"])
+    persons = persons.drop(columns=["car_passenger_availability"])
+    output = tmp_path / "population.xml.gz"
+
+    pop.write_population(str(output), persons, activities, trips, vehicles,
+                         enable_urban_parking=False, context=_Context())
+
+    with gzip.open(output, "rb") as handle:
+        actual = handle.read()
+    assert actual == LEGACY_XML_FIXTURE.read_bytes()
