@@ -19,6 +19,8 @@ RBW_PERSON_ATTRIBUTES = (
     ("rbw_distance_km", "rbwDistanceKm", "java.lang.Double", float),
 )
 
+PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
+
 def configure(context):
     context.stage("synthesis.population.enriched")
 
@@ -107,6 +109,10 @@ OPTIONAL_PERSON_FIELDS = [
     "rbw_distance_km",
     "commute_day_state",  # Braunschweig reporting-day state (ADR-0104; written as commuteDayState)
     "day_absence_state",  # Braunschweig general day absence (ADR-0110; written as dayAbsenceState)
+    # MiD passenger availability.  This is intentionally separate from the
+    # driver-car attribute above: the Java capability entrypoint consumes it
+    # only when the MiD feature produced the column.
+    "car_passenger_availability",
 ]
 
 
@@ -131,7 +137,8 @@ VEHICLE_FIELDS = [
 def add_person(writer, person, activities, trips, vehicles, enable_urban_parking = False,
                write_income_eur = False, person_fields = None,
                remode_carless_car_legs = False, id_attribute_types = None,
-               rbw_omission_counter = None):
+               rbw_omission_counter = None,
+               passenger_availability_omission_counter = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
@@ -175,6 +182,20 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
 
     writer.add_attribute("carAvailability", "java.lang.String", person[PERSON_FIELDS.index("car_availability")])
     writer.add_attribute("bicycleAvailability", "java.lang.String", person[PERSON_FIELDS.index("bicycle_availability")])
+
+    if "car_passenger_availability" in person_fields:
+        passenger_availability = person[person_fields.index("car_passenger_availability")]
+        missing = passenger_availability is None or pd.isna(passenger_availability)
+        if missing:
+            if passenger_availability_omission_counter is not None:
+                passenger_availability_omission_counter["persons_without_passenger_availability"] += 1
+        elif (not isinstance(passenger_availability, str)
+              or passenger_availability not in PASSENGER_AVAILABILITY_VALUES):
+            raise ValueError(
+                "Invalid car_passenger_availability %r; expected one of %s."
+                % (passenger_availability, sorted(PASSENGER_AVAILABILITY_VALUES)))
+        else:
+            writer.add_attribute("carPassengerAvailability", "java.lang.String", passenger_availability)
 
     _census_hh_id = person[PERSON_FIELDS.index("census_household_id")]
     writer.add_attribute("censusHouseholdId",
@@ -373,8 +394,10 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
     # their rbW attributes and counts them here, so the gap is reported once for the
     # whole population instead of disappearing silently (CLAUDE.md: no silent fallbacks).
     rbw_omission_counter = collections.Counter()
+    passenger_availability_omission_counter = collections.Counter()
     writes_rbw_attributes = any(
         column in df_persons.columns for column, _, _, _ in RBW_PERSON_ATTRIBUTES)
+    writes_passenger_availability = "car_passenger_availability" in df_persons.columns
 
     with gzip.open(output_path, 'wb+') as writer:
         with io.BufferedWriter(writer, buffer_size = 2 * 1024**3) as writer:
@@ -449,7 +472,9 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                person_fields=person_fields,
                                remode_carless_car_legs=remode_carless_car_legs,
                                id_attribute_types=id_attribute_types,
-                               rbw_omission_counter=rbw_omission_counter)
+                               rbw_omission_counter=rbw_omission_counter,
+                               passenger_availability_omission_counter=
+                               passenger_availability_omission_counter)
                     progress.update()
 
             writer.end_population()
@@ -459,6 +484,14 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
         n_persons = len(df_persons)
         logger.info("[population] rbw attributes omitted for %d/%d persons (%.2f%%) -- "
                     "persons without a MiD plan source",
+                    n_omitted, n_persons, 100.0 * n_omitted / max(n_persons, 1))
+
+    if writes_passenger_availability:
+        n_omitted = passenger_availability_omission_counter[
+            "persons_without_passenger_availability"]
+        n_persons = len(df_persons)
+        logger.info("[population] passenger availability omitted for %d/%d persons (%.2f%%) -- "
+                    "persons without MiD passenger availability",
                     n_omitted, n_persons, 100.0 * n_omitted / max(n_persons, 1))
 
     return "population.xml.gz"

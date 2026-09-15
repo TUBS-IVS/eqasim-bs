@@ -62,6 +62,22 @@ def test_person_columns_legacy_byte_identical_when_employment_status_absent():
     assert cols == BASE_PERSON
 
 
+def test_person_columns_append_passenger_availability_facts_when_present():
+    available = set(BASE_PERSON) | {
+        "car_passenger_availability", "passenger_availability_source",
+    }
+    cols = select_person_output_columns(available, "is_urban_resident")
+    assert cols[:len(BASE_PERSON)] == BASE_PERSON
+    assert cols[-2:] == [
+        "car_passenger_availability", "passenger_availability_source",
+    ]
+
+
+def test_person_columns_legacy_byte_identical_when_passenger_facts_absent():
+    cols = select_person_output_columns(set(BASE_PERSON), "is_urban_resident")
+    assert cols == BASE_PERSON
+
+
 def test_household_columns_legacy_byte_identical_when_optionals_absent():
     cols = select_household_output_columns(set(BASE_HOUSEHOLD))
     assert cols == BASE_HOUSEHOLD
