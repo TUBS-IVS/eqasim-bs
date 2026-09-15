@@ -23,7 +23,7 @@ validation:
   - metric: Regression results
     reference: Existing test assertions on main 31fc30fd
     result: All selected tests pass on Windows and server-mirrored Linux.
-    notes: NOT behavioural validation. SimWrapper retains all 132 assertion expressions while combining 100 cases into 63; two duplicate 32000-vehicle draws are shared. Four runner tests were added. Native dtype expectations and explicit historical CRLF serialization remove three platform-dependent failures without relaxing assertions.
+    notes: NOT behavioural validation. SimWrapper retains all 132 assertion expressions while combining 100 cases into 63; two redundant 32000-vehicle draws were eliminated by sharing one sample. Four runner tests were added. Native dtype expectations and explicit historical CRLF serialization remove three platform-dependent failures without relaxing assertions.
   - metric: Linux environment parity
     reference: Read-only production-server snapshot captured 2026-09-15
     result: All 312 conda version/build/MD5 records and 11 effective pip versions match; pip check passes.
@@ -35,4 +35,4 @@ artifacts:
 decisions:
   - ADR-0122
 source: Local executed regression suites and read-only server package/configuration capture
-notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. CI workflow is configured but has not run remotely; native Windows used its existing environment, not a fresh Windows lock installation.
+notes: WSL dependencies were staged through Windows with artifact hashes verified because direct WSL HTTPS timed out. Pipeline data, Maven, osmosis and popsimprep have not been provisioned locally. CI workflow is configured but has not run remotely; native Windows used its existing environment, not a fresh Windows lock installation. Subsequent shell changes passed 9 isolated JDK/config preflight cases on Linux (correctly skipped on Windows), fake git/conda bootstrap and snapshot-update checks, and launch-gate checks showing a failed update never starts tmux. These checks execute stubs, not the production pipeline.

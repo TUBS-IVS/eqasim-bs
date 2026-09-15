@@ -44,6 +44,10 @@ field assertions. Neither repetition adds an independent input or scenario.
 6. Make historical test fixtures portable: retain native-integer dtype checks
    and fix the historical Windows CSV line ending for its existing golden hash.
    Do not accept additional hashes or disable dtype assertions.
+7. Bootstrap new Linux environments from the server snapshot and check the
+   effective dependencies. Preserve existing environments; fail an update if
+   either snapshot artifact is missing or changes. Use the trusted JDK 25 in
+   the Linux pipeline wrapper and reject conflicting configured Java paths.
 
 ## Alternatives and consequences
 
