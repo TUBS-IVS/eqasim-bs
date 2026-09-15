@@ -96,7 +96,7 @@ def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_ho
     activity end time" (a non-final activity MUST carry an end time).
 
     Following :mod:`braunschweig.popsim.missing`, the missing values are imputed from
-    comparable respondents -- the fully-timed donors of the SAME subpopulation -- using a
+    positive-duration pools within the SAME subpopulation using a
     FIXED-seed RNG so the fill is deterministic and never consumes from the caller's RNG
     (runs with no missing times stay byte-identical, and downstream income/fleet draws are
     unaffected). Called once in :func:`assemble_incommuter_core_frames` so the trips and
@@ -105,7 +105,8 @@ def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_ho
     a home arrival before the REPAIRED middle departure is imputed too; negative
     first departure/middle arrival times are repaired. OFF reproduces the legacy
     arrays and RNG draws. Fully valid inputs are unchanged, including next-day
-    arrivals. Repair and observed-pool/assumption rates are logged.
+    arrivals. Pools are computed sequentially and may include previously repaired
+    anchors. Repair and duration-pool/fixed-assumption rates are logged.
     """
     dh = np.asarray(depart_home_s, dtype=float).copy()
     am = np.asarray(arrive_mid_s, dtype=float).copy()
@@ -120,8 +121,9 @@ def impute_incommuter_times(depart_home_s, arrive_mid_s, depart_mid_s, arrive_ho
     def _sample(pool, k, default, label):
         pool = pool[np.isfinite(pool) & (pool > 0)]
         log = LOGGER.info if pool.size else LOGGER.warning
-        log("[incommuters] %s duration imputation: observed pool %d/%d (%.1f%%), "
-            "assumption %d/%d (%.1f%%); empty-pool assumption %.0f seconds",
+        log("[incommuters] %s duration imputation: duration pool %d/%d (%.1f%%), "
+            "direct fixed assumption %d/%d (%.1f%%); pool may include repaired anchors; "
+            "empty-pool assumption %.0f seconds",
             label, int(k) if pool.size else 0, k, 100.0 if pool.size else 0.0,
             0 if pool.size else int(k), k, 0.0 if pool.size else 100.0, default)
         return rng.choice(pool, int(k)) if pool.size else np.full(int(k), float(default))

@@ -49,12 +49,15 @@ This is scoped cache coverage, not a repository-wide helper audit.
 
 ## Assumptions and alternatives
 
-The time repair retains the old positive-duration sampling from other agents of
-the same subpopulation. **ASSUMPTIONS retained from the previous implementation:**
-when an observed pool is empty, middle arrival is 08:00, middle duration is eight
+The time repair retains the old positive-duration sampling within the same
+subpopulation. Duration pools are computed sequentially and can include anchors
+repaired earlier in the same call; pool draws are therefore not necessarily
+fully observed durations. **ASSUMPTIONS retained from the previous implementation:**
+when the relevant pool is empty, middle arrival is 08:00, middle duration is eight
 hours for work or six for education, and each travel duration is one hour. These
-are not empirical reference values. The logs now distinguish observed-pool draws
-from these assumptions and warn on every repair/assumption use.
+are not empirical reference values. The logs distinguish duration-pool draws
+(potentially based on repaired anchors) from direct fixed assumptions and warn
+on every repair or direct fixed-assumption use.
 
 Clamping home arrival to departure would create zero-duration return trips for
 the broken diaries. Drawing a positive duration uses the established imputation
