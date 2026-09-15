@@ -106,7 +106,7 @@ _EXPECTED_SIGNATURES = {
     # entd_trips.build_trips, which applies the eqasim jitter itself and never reaches the model
     # -- while the loaded reference and the three thresholds are accepted and ignored, the
     # closure_dwell_min_obs treatment (they only size a mapping the model rejection forbids).
-    # vectorized_validation was added in ADR-0121 as the default-on performance path; every
+    # vectorized_validation was added in ADR-0122 as the default-on performance path; every
     # source adapter accepts it so trips_stage.execute can retain the tested rollback switch.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "

@@ -350,7 +350,11 @@ def test_completed_donor_declares_default_on_matching_performance_flag():
     assert context.calls["braunschweig.performance.donor_matching"] is True
 
 
-def test_completed_donor_execute_forwards_matching_performance_flag(monkeypatch, tmp_path):
+@pytest.mark.parametrize("precompute_matching", [False, True])
+@pytest.mark.parametrize("passenger_availability_enabled", [False, True])
+def test_completed_donor_execute_forwards_matching_performance_flag(
+    monkeypatch, tmp_path, precompute_matching, passenger_availability_enabled,
+):
     captured = {}
 
     def fake_build(*args, **kwargs):
@@ -375,7 +379,8 @@ def test_completed_donor_execute_forwards_matching_performance_flag(monkeypatch,
             "braunschweig.population.popsim.drop_leading_arrive_home_leg": True,
             "braunschweig.population.popsim.diary_match_hard_employment": True,
             "braunschweig.population.popsim.donor_match_fine_child_age_bands": True,
-            "braunschweig.performance.donor_matching": False,
+            "braunschweig.performance.donor_matching": precompute_matching,
+            "mid_passenger_availability": passenger_availability_enabled,
         }
 
         def config(self, key):
@@ -389,4 +394,5 @@ def test_completed_donor_execute_forwards_matching_performance_flag(monkeypatch,
 
     monkeypatch.setattr(cd, "build_completed_donor", fake_build)
     cd.execute(Context())
-    assert captured["precompute_matching"] is False
+    assert captured["precompute_matching"] is precompute_matching
+    assert captured["passenger_availability_enabled"] is passenger_availability_enabled

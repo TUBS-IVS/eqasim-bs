@@ -335,7 +335,7 @@ config:
   braunschweig.population.popsim.trip_class_seed_counts_closure: true
 
   # Result-preserving kernels; each false value selects its original scalar path.
-  # See docs/codebase/notes/performance-equivalence.md (ADR-0121).
+  # See docs/codebase/notes/performance-equivalence.md (ADR-0122).
   braunschweig.performance.fleet_home_lookup: true
   braunschweig.performance.home_coordinates: true
   braunschweig.performance.plan_validation: true
