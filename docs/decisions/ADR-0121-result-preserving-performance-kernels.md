@@ -1,0 +1,73 @@
+# ADR-0121 · 2026-09-15 · Optimize repeated work while preserving simulation inputs
+
+## Status
+
+Implemented on the performance worktree; maintainer acceptance pending.
+ADR-0119 and ADR-0120 already exist on sibling branches; 0121 was the next
+unused number in the local and fetched reference history when reserved.
+
+## Context
+
+The workflow repeats household home-frame filtering, single-point coordinate
+transformations, per-person validation frame construction and donor feature
+extraction. The requested optimization must preserve the previous results,
+including seeded choices and diagnostic reports. The reference implementation
+is commit `1502e88ef529001167f4a8848892862c39bda9cb`.
+
+Shared cache priming also copied native artifacts without their `pipeline.json`
+records. Real synpp tests showed that a fresh target executed the stage again.
+Native synpp compares dependency timestamps using a greater-than check; merging
+unrelated run snapshots therefore requires an additional exact-coherence check.
+
+## Decision
+
+1. Build a stable first-home-row index after the original fleet joins.
+2. Batch only selected deterministic footprint/cell coordinate pairs, retaining
+   the exact CRS round trip and the original positions of random fallback draws.
+3. Validate sorted trip arrays at person boundaries while retaining issue ordering,
+   all validation/repair passes and the scalar reference path.
+4. Prepare invariant donor features and candidate data within an explicit pool
+   lifetime; keep candidate order, weighting and seeded choice calls unchanged.
+5. Export native synpp metadata and tracked creation-environment provenance beside
+   each shared artifact. Prime only matching runtime environments and coherent
+   dependency snapshots; absent or mismatched provenance forces recomputation.
+   Preserve existing target payloads and unrelated records. Never infer metadata
+   for an old store or attach another run's metadata to a skipped payload.
+
+Each kernel has an independent default-ON switch and executable OFF path.
+`cache_share_metadata: false` retains artifact-only transfer.
+
+## Rationale
+
+Removing repeated deterministic work can accelerate execution without changing
+the scientific problem or partitioning random streams. Increasing worker counts,
+changing shards, adopting a different floating-point solver or harmonizing the
+100% importance profile would require separate reproducibility evidence.
+
+## Consequences
+
+Index and prepared-pool memory must remain bounded by actual inputs/requests.
+New switches and source hashes cause an expected one-time cache invalidation.
+Metadata-free stores need a new tracked execution before their provenance is known;
+automatic export deliberately leaves existing store entries untouched.
+OS, Python and installed-package version mismatches safely miss. Native entries
+receive creation provenance only when their update timestamp changes during a
+successful launcher invocation; old cache hits are never relabelled at export.
+Cross-run metadata mismatches safely miss even when the payloads might happen
+to be equal. Concurrent writes to the same cache destination remain unsupported.
+
+Worker counts, shard sizes, seeds, weights and model defaults remain unchanged.
+The 1%/25% shared uniform profile and the distinct optimized 100% profile remain
+separate. A measured kernel speedup is not a full-run speedup.
+
+README impact: existing installation, data acquisition and run commands remain
+applicable. Benchmark usage and cache migration are documented in the linked note.
+
+## Evidence
+
+- [Implementation and reproduction](../codebase/notes/performance-equivalence.md)
+- [Feature registry](../registry/features/performance_equivalence.yml)
+- [Run manifest](../runs/performance-equivalence-2026-09-15.yml)
+- Real synpp cache tests: `tests/test_cache_share_synpp.py`.
+- The four `tests/test_performance_*.py` kernel modules pin OFF/ON equivalence;
+  `scripts/benchmark_performance_equivalence.py` compares against original code.

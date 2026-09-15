@@ -1,0 +1,57 @@
+{
+  "scope": "bounded function benchmarks; no full-pipeline speedup claim",
+  "reference": {
+    "commit": "1502e88ef529001167f4a8848892862c39bda9cb",
+    "dirty": false
+  },
+  "candidate": {
+    "commit": "8a1a8ea7d2016a125c5fd3616e69105647544a64",
+    "dirty": false
+  },
+  "environment": {
+    "python": "3.10.10 | packaged by conda-forge | (main, Mar 24 2023, 20:08:06) [GCC 11.3.0]",
+    "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31",
+    "numpy": "1.23.5",
+    "pandas": "1.5.3",
+    "geopandas": "1.0.1",
+    "synpp": "1.6.2"
+  },
+  "size": 1000,
+  "repeat": 3,
+  "random_seed": 1234,
+  "input_kind": "explicit bundle",
+  "cases": {
+    "home": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 5.406313603001763,
+        "off": 5.441208303993335,
+        "on": 4.9385074869933305
+      },
+      "input_rows": {
+        "households": 500,
+        "buildings": 45681,
+        "cells": 39
+      },
+      "seconds": {
+        "original": [
+          5.439624454986188,
+          5.406313603001763,
+          5.386776291008573
+        ],
+        "off": [
+          5.417311094002798,
+          5.4467319440009305,
+          5.441208303993335
+        ],
+        "on": [
+          4.9385074869933305,
+          4.874223756007268,
+          5.025779370000237
+        ]
+      },
+      "speedup_original_over_on": 1.0947262137883773
+    }
+  },
+  "input_bundle_sha256": "176bab0596421e67f5ac194ed1335b6e905a4651147c1dcc484605d14bc73920"
+}

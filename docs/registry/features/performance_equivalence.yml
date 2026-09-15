@@ -1,0 +1,86 @@
+feature: performance_equivalence
+title: Result-preserving fleet, home, validation and donor kernels
+area: infrastructure
+description: >
+  Remove repeated DataFrame filtering, scalar CRS transformations and invariant donor
+  feature extraction, and validate ordered trip arrays without constructing one
+  mixed-type row frame per person. Preserve model choices, row order, geometry,
+  diagnostics and random streams; each kernel retains its original OFF path.
+stages:
+- braunschweig.synthesis.vehicles.cars.household
+- synthesis.population.spatial.home.locations
+- synthesis.population.trips
+- braunschweig.popsim.completed_donor
+- braunschweig.synthesis.commute_day.home_office_donors_stage
+pipelines:
+  popsim_mid: active
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.performance.fleet_home_lookup
+  - braunschweig.performance.home_coordinates
+  - braunschweig.performance.plan_validation
+  - braunschweig.performance.donor_matching
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0121
+detail_doc: docs/codebase/notes/performance-equivalence.md
+code_paths:
+- braunschweig/synthesis/vehicles/cars/household.py
+- braunschweig/synthesis/locations/home_cell.py
+- braunschweig/popsim/plan_validation.py
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/sources/base.py
+- braunschweig/popsim/sources/mid.py
+- braunschweig/popsim/sources/entd.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/popsim/weekend_plan_match.py
+- braunschweig/popsim/diary_plan_match.py
+- braunschweig/popsim/completed_donor.py
+- scripts/benchmark_performance_equivalence.py
+evidence:
+  tests:
+  - tests/test_performance_fleet_lookup.py
+  - tests/test_performance_home_coordinates.py
+  - tests/test_performance_plan_validation.py
+  - tests/test_performance_donor_matching.py
+  - tests/test_performance_config.py
+  - tests/test_performance_benchmark.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_performance_fleet_lookup.py::test_indexed_home_lookup_is_exactly_equivalent_for_lookup_edge_cases
+    note: >
+      The named test pins the fleet frame; the companion kernel test modules pin
+      exact values/dtypes/order, geometry WKB, validation reports and donor draws/RNG.
+      The benchmark CLI additionally compares original commit, OFF and ON in separate
+      processes on identical fixtures. This is bounded execution-equivalence evidence,
+      not a claim that every full-production output file has been replayed.
+  fallback_rate:
+    instrumented: false
+    note: No new scientific fallback; original fallback paths and reporting remain in place.
+  reference:
+    kind: none
+    note: Implementation-equivalence comparison against commit 1502e88e; no behavioural reference applies.
+validation:
+  state: not_applicable
+  runs:
+  - performance-equivalence-2026-09-15
+  metric: null
+  note: Runtime and exact-output evidence are recorded separately from behavioural validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Maintainer acceptance of the integrated performance change remains pending.
+  source: ADR-0121
+notes: >
+  Fleet applies to every workflow; typed home applies to PopulationSim.
+  Array plan validation, completed-donor matching and the home-office donor caller
+  apply to MiD; the ENTD source accepts the common flag but has its own trip builder.
+  No worker-count, shard, seed, numerical-solver or importance-profile change.

@@ -31,10 +31,12 @@ production: true
 inputs:
 - mid2023_b1
 features:
+- performance_equivalence
 - popsim_method
 - diary_plan_match
 - participation_universe_controls
 decisions:
+- ADR-0121
 - ADR-0002
 - ADR-0059
 - ADR-0106

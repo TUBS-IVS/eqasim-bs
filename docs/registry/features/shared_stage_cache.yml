@@ -14,6 +14,7 @@ production:
   enabled: true
   flags:
   - cache_share_enabled
+  - cache_share_metadata
 introduced:
   issue: null
   pr: null
@@ -27,6 +28,7 @@ evidence:
   - tests/test_cache_share.py
   - tests/test_cache_share_cli.py
   - tests/test_run_synpp_prime.py
+  - tests/test_cache_share_synpp.py
   off_path_byte_identical:
     claimed: not_applicable
     note: |
@@ -35,7 +37,9 @@ evidence:
     instrumented: true
     log_marker: '[cache_share] prime: primed'
     note: |
-      Logs primed/already-present/forced/missing-in-store counts on prime, and already-in-store/skipped counts on export.
+      Logs primed/already-present/forced/missing-in-store counts, transported metadata,
+      missing provenance and incoherent dependency snapshots. Actual hits remain subject
+      to native synpp module/config/token validation (ADR-0121).
   reference:
     kind: none
     note: Infrastructure feature (stage caching); no external reference applies.
@@ -43,7 +47,9 @@ validation:
   state: unvalidated
   runs: []
   metric: null
-  note: No KPI applies to a caching mechanism.
+  note: >
+    No behavioural KPI applies. Real-synpp tests prove coherent reuse and safe misses
+    across configuration, module, token, missing-dependency and mixed-run changes.
 assessment:
   status: pending
   by: null
