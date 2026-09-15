@@ -10,8 +10,8 @@ synpp recomputes ``<hash>`` from the stage's config dependencies and re-validate
 it when loading, so we never recompute the hash ourselves:
 
 - ``export`` copies a stage's ``<module>__<hash>.{p,cache}`` from a working_directory
-  into a shared, syncable store, with a ``.metadata.json`` sidecar containing its
-  native ``pipeline.json`` record.
+  into a shared, syncable store, with a ``.metadata.json`` envelope containing its
+  native ``pipeline.json`` record and tracked creation runtime.
 - ``prime`` copies the store's entries for the requested modules into a target
   working_directory BEFORE synpp runs and merges metadata for newly copied entries.
   synpp checks configuration, implementation, dependency timestamps and validation
@@ -30,12 +30,57 @@ import os
 import shutil
 import tempfile
 from collections import defaultdict
+from contextlib import contextmanager
+import importlib.metadata
+import platform
+import struct
+import sys
 
 logger = logging.getLogger(__name__)
 
 _RESULT_SUFFIX = ".p"
 _CACHE_SUFFIX = ".cache"
 _METADATA_SUFFIX = ".metadata.json"
+_METADATA_VERSION = 1
+
+
+def _runtime_fingerprint() -> dict:
+    """Conservatively identify the runtime that actually created an entry."""
+    packages = {}
+    for dist in importlib.metadata.distributions():
+        distribution_metadata = dist.metadata
+        name = distribution_metadata.get("Name")
+        if name:
+            packages[name.lower().replace("_", "-")] = distribution_metadata["Version"]
+    return {
+        "system": platform.system(), "machine": platform.machine(),
+        "bits": struct.calcsize("P") * 8, "byteorder": sys.byteorder,
+        "python": platform.python_version(), "implementation": platform.python_implementation(),
+        "packages": packages,
+    }
+
+
+@contextmanager
+def track_run(working_directory: str):
+    """Record provenance only for native entries produced during a successful run.
+
+    Unchanged cache hits without a prior envelope stay unknown. In particular an
+    explicit export cannot retrospectively label old artifacts with today's runtime.
+    """
+    before = _read_metadata(os.path.join(working_directory, "pipeline.json"))
+    yield
+    after = _read_metadata(os.path.join(working_directory, "pipeline.json"))
+    environment = None
+    for entry, record in after.items():
+        if entry in before and before[entry].get("updated") == record.get("updated"):
+            continue
+        if (os.path.isfile(os.path.join(working_directory, entry + _RESULT_SUFFIX))
+                and os.path.isdir(os.path.join(working_directory, entry + _CACHE_SUFFIX))):
+            if environment is None:
+                environment = _runtime_fingerprint()
+            _write_metadata(os.path.join(working_directory, entry + _METADATA_SUFFIX), {
+                "version": _METADATA_VERSION, "environment": environment, "metadata": record,
+            })
 
 
 def _read_metadata(path: str) -> dict:
@@ -170,8 +215,11 @@ def export(working_directory: str, modules: list, store: str, skip_existing: boo
             if os.path.exists(sidecar):
                 os.remove(sidecar)
             _copy_entry(working_directory, store, entry)
-            if entry in metadata and os.path.isdir(os.path.join(working_directory, entry + _CACHE_SUFFIX)):
-                _write_metadata(sidecar, metadata[entry])
+            envelope = _read_metadata(os.path.join(working_directory, entry + _METADATA_SUFFIX)) if share_metadata else {}
+            if (entry in metadata and envelope.get("version") == _METADATA_VERSION
+                    and envelope.get("metadata") == metadata[entry] and envelope.get("environment")
+                    and os.path.isdir(os.path.join(working_directory, entry + _CACHE_SUFFIX))):
+                _write_metadata(sidecar, envelope)
                 with_metadata += 1
             exported.append(entry)
     logger.info(
@@ -197,6 +245,8 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
     """
     metadata_path = os.path.join(working_directory, "pipeline.json")
     metadata = _read_metadata(metadata_path) if share_metadata else {}
+    environment = _runtime_fingerprint() if share_metadata else None
+    envelopes = {}
     with_metadata = 0
     recompute = recompute or []
     force_all = "*" in recompute
@@ -221,17 +271,29 @@ def prime(working_directory: str, modules: list, store: str, recompute: list,
                 _write_metadata(metadata_path, metadata)
             _copy_entry(store, working_directory, entry)
             if share_metadata:
-                record = _read_metadata(os.path.join(store, entry + _METADATA_SUFFIX))
+                envelope = _read_metadata(os.path.join(store, entry + _METADATA_SUFFIX))
+                compatible = (envelope.get("version") == _METADATA_VERSION
+                              and envelope.get("environment") == environment)
+                record = envelope.get("metadata", {}) if compatible else {}
                 metadata.pop(entry, None)
                 if record and os.path.isdir(os.path.join(store, entry + _CACHE_SUFFIX)):
                     metadata[entry] = record
+                    envelopes[entry] = envelope
                     with_metadata += 1
+                elif envelope:
+                    logger.info("[cache_share] prime: unknown or incompatible runtime provenance: %s", entry)
             primed.append(entry)
     if share_metadata and primed:
         removed = _drop_incoherent_metadata(metadata, primed)
         if removed:
             logger.info("[cache_share] prime: invalidated %d incoherent dependency records", removed)
         with_metadata = sum(entry in metadata for entry in primed)
+        for entry in primed:
+            sidecar = os.path.join(working_directory, entry + _METADATA_SUFFIX)
+            if entry in metadata:
+                _write_metadata(sidecar, envelopes[entry])
+            elif os.path.exists(sidecar):
+                os.remove(sidecar)
         _write_metadata(metadata_path, metadata)
     logger.info("[cache_share] prime: metadata for %d/%d copied entries (enabled=%s); "
                 "entries without metadata require recomputation",

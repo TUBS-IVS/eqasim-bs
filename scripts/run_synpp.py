@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from contextlib import nullcontext
 
 # Running this file as a script puts scripts/ on sys.path[0] (NOT the repo root),
 # so synpp could not import the stage packages (synthesis, matsim, braunschweig)
@@ -114,6 +115,18 @@ def export_to_store_from_config(config_path):
     return report
 
 
+def track_cache_provenance_from_config(config_path):
+    """Keep creation-runtime evidence for entries actually executed by this run."""
+    with open(config_path, encoding="utf-8") as stream:
+        doc = yaml.safe_load(stream) or {}
+    cfg = doc.get("config", {}) or {}
+    working_directory = doc.get("working_directory")
+    if (not working_directory or not cfg.get("cache_share_enabled", True)
+            or not cfg.get("cache_share_metadata", True)):
+        return nullcontext()
+    return cache_share.track_run(working_directory)
+
+
 def ensure_run_directories(config_path):
     """Create the run's ``working_directory`` and ``output_path`` before synpp starts.
 
@@ -204,7 +217,8 @@ def main(argv=None) -> int:
         # synpp starts building the stage graph; see braunschweig/synpp_deterministic.py.
         from braunschweig import synpp_deterministic
         synpp_deterministic.install()
-        synpp.run_from_yaml(config_path, None, [], {})
+        with track_cache_provenance_from_config(config_path):
+            synpp.run_from_yaml(config_path, None, [], {})
         # Export the shareable stage caches into the shared store ONLY after a
         # successful run (run_from_yaml raises on failure, so a failed/partial run
         # never seeds the store). Gated by cache_share_enabled + cache_share_export

@@ -2,6 +2,7 @@
 import importlib
 import json
 import sys
+from copy import deepcopy
 
 import pytest
 import synpp
@@ -35,8 +36,9 @@ def pipeline(tmp_path, monkeypatch):
 
     def run(directory, value=17):
         directory.mkdir(exist_ok=True)
-        return synpp.run([{"descriptor": module_name}], {**config, "value": value},
-                         working_directory=str(directory), rerun_required=False)
+        with cache_share.track_run(str(directory)):
+            return synpp.run([{"descriptor": module_name}], {**config, "value": value},
+                             working_directory=str(directory), rerun_required=False)
 
     return module_name, run, trace, token
 
@@ -51,6 +53,58 @@ def test_export_prime_reuses_real_synpp_result(tmp_path, pipeline):
     assert trace.read_text().splitlines() == ["executed"]
 
 
+def test_untracked_native_entries_cannot_gain_invented_creation_provenance(tmp_path, pipeline):
+    module, _, trace, token = pipeline
+    source, store, target = (tmp_path / name for name in ("source", "store", "target"))
+    config = {"trace": str(trace), "token_file": str(token), "value": 17}
+    source.mkdir()
+    synpp.run([{"descriptor": module}], config, working_directory=str(source), rerun_required=False)
+    cache_share.export(str(source), [module], str(store))
+    cache_share.prime(str(target), [module], str(store), [])
+    synpp.run([{"descriptor": module}], config, working_directory=str(target), rerun_required=False)
+    assert trace.read_text().splitlines() == ["executed", "executed"]
+
+
+@pytest.mark.parametrize("difference", ["system", "packages"])
+def test_runtime_mismatch_is_a_real_synpp_miss(tmp_path, pipeline, monkeypatch, difference):
+    module, run, trace, _ = pipeline
+    source, store, target = (tmp_path / name for name in ("source", "store", "target"))
+    expected = run(source)
+    cache_share.export(str(source), [module], str(store))
+    environment = deepcopy(cache_share._runtime_fingerprint())
+    if difference == "packages":
+        environment["packages"]["numpy"] = "different-version"
+    else:
+        environment["system"] = "different-operating-system"
+    monkeypatch.setattr(cache_share, "_runtime_fingerprint", lambda: environment)
+    cache_share.prime(str(target), [module], str(store), [])
+    assert run(target) == expected
+    assert trace.read_text().splitlines() == ["executed", "executed"]
+
+
+def test_reexport_preserves_known_creation_environment(tmp_path, pipeline, monkeypatch):
+    module, run, _, _ = pipeline
+    source, store = tmp_path / "source", tmp_path / "store"
+    run(source)
+    entry = cache_share.find_stage_entries(str(source), module)[0]
+    original = json.loads((source / (entry + ".metadata.json")).read_text())
+    monkeypatch.setattr(cache_share, "_runtime_fingerprint", lambda: {"system": "different"})
+    cache_share.export(str(source), [module], str(store))
+    assert json.loads((store / (entry + ".metadata.json")).read_text()) == original
+
+
+def test_tracking_unchanged_unknown_hits_does_not_relabel_them(tmp_path, pipeline):
+    module, run, trace, _ = pipeline
+    source = tmp_path / "source"
+    run(source)
+    entry = cache_share.find_stage_entries(str(source), module)[0]
+    sidecar = source / (entry + ".metadata.json")
+    sidecar.unlink()
+    run(source)
+    assert trace.read_text().splitlines() == ["executed"]
+    assert not sidecar.exists()
+
+
 @pytest.mark.parametrize("change", ["config", "validation_token", "module_hash"])
 def test_shared_cache_keeps_synpp_invalidation(tmp_path, pipeline, change):
     module, run, trace, token = pipeline
@@ -62,6 +116,12 @@ def test_shared_cache_keeps_synpp_invalidation(tmp_path, pipeline, change):
         for record in metadata.values():
             record["module_hash"] = "previous-implementation"
         path.write_text(json.dumps(metadata), encoding="utf-8")
+        # Model a tracked result produced by that previous implementation.
+        for entry, record in metadata.items():
+            sidecar = source / (entry + ".metadata.json")
+            envelope = json.loads(sidecar.read_text())
+            envelope["metadata"] = record
+            sidecar.write_text(json.dumps(envelope), encoding="utf-8")
     cache_share.export(str(source), [module], str(store))
     cache_share.prime(str(target), [module], str(store), [])
     if change == "validation_token":
@@ -153,8 +213,9 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
 
     def run(directory):
         directory.mkdir(exist_ok=True)
-        return synpp.run([{"descriptor": child}], config, working_directory=str(directory),
-                         rerun_required=False)
+        with cache_share.track_run(str(directory)):
+            return synpp.run([{"descriptor": child}], config, working_directory=str(directory),
+                             rerun_required=False)
 
     source, store, target = (tmp_path / name for name in ("source", "store", "target"))
     if scenario == "older_target_parent":
