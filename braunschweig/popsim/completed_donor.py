@@ -44,6 +44,7 @@ import pandas as pd
 
 from braunschweig.popsim import diary_facts, diary_plan_match
 from braunschweig.popsim import mid
+from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import weekend_plan_match
 
@@ -76,6 +77,7 @@ DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 _HELPER_MODULES = (
     diary_facts,
     diary_plan_match,
+    passenger_availability,
     seedmod,
     weekend_plan_match,
 )
@@ -122,6 +124,7 @@ def build_completed_donor(
     drop_leading_arrive_home_leg: bool = True,
     diary_match_hard_employment: bool = True,
     donor_match_fine_child_age_bands: bool = True,
+    passenger_availability_enabled: bool = False,
     diary_trace_path: Optional[Union[str, Path]] = None,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
@@ -225,6 +228,7 @@ def build_completed_donor(
     households, persons, completeness_report, completion_report = mid.load_completed_donor(
         mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
         fine_child_age_bands=donor_match_fine_child_age_bands,
+        include_passenger_availability=passenger_availability_enabled,
     )
 
     weekend_report = None
@@ -288,6 +292,10 @@ def build_completed_donor(
 
     # src_* plan-source fact columns are attached ALWAYS (facts, not behaviour).
     persons = diary_facts.attach_plan_source_facts(persons, facts)
+    if passenger_availability_enabled:
+        persons = passenger_availability.attach_car_passenger_diary_evidence(
+            persons, wege
+        )
 
     return CompletedDonor(
         households=households,
@@ -344,7 +352,7 @@ def configure(context):
         KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
         KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
-        KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT,
@@ -355,6 +363,7 @@ def configure(context):
     context.config("random_seed")
     context.config(KEY_SEED_DAY_FILTER, "default")
     context.config(KEY_WEEKEND_PLAN_MATCH, True)
+    context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
@@ -382,7 +391,7 @@ def execute(context) -> CompletedDonor:
         KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
         KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
-        KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     mid_dir = context.config(KEY_MID)
     random_seed = int(context.config("random_seed"))
@@ -397,6 +406,7 @@ def execute(context) -> CompletedDonor:
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     diary_match_hard_employment = bool(context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT))
     donor_match_fine_child_age_bands = bool(context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS))
+    passenger_availability_enabled = bool(context.config(KEY_MID_PASSENGER_AVAILABILITY))
 
     result = build_completed_donor(
         mid_dir,
@@ -410,6 +420,7 @@ def execute(context) -> CompletedDonor:
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         diary_match_hard_employment=diary_match_hard_employment,
         donor_match_fine_child_age_bands=donor_match_fine_child_age_bands,
+        passenger_availability_enabled=passenger_availability_enabled,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
     )
 

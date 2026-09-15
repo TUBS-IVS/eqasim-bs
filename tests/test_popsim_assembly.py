@@ -6,6 +6,7 @@ Composes the expansion + demographic + attribute mappings into one persons frame
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import assembly
@@ -85,6 +86,33 @@ def test_build_persons_car_availability_uses_adult_count():
 def test_build_persons_carries_home_cell():
     persons, _map = assembly.build_persons(_merged(), _mid_households(), _mid_persons())
     assert set(persons.loc[persons["household_id"] == "A_1_0", "ZENSUS100m"]) == {"A"}
+
+
+def test_build_persons_derives_passenger_availability_only_when_enabled():
+    donor_persons = _mid_persons().assign(
+        P_VAUTO=[2, 402, 3],
+        alter_gr1=[5, 2, 7],
+        src_has_car_passenger_trip=[False, False, False],
+    )
+    households = _mid_households().assign(RegioStaR7=[72, 73])
+
+    legacy, _ = assembly.build_persons(
+        _merged(), households, donor_persons, rng=np.random.RandomState(5)
+    )
+    enabled, _ = assembly.build_persons(
+        _merged(), households, donor_persons,
+        rng=np.random.RandomState(5),
+        passenger_availability_enabled=True,
+        passenger_rng=np.random.RandomState(99),
+    )
+
+    assert "car_passenger_availability" not in legacy.columns
+    assert enabled.set_index("P_ID").loc[
+        1, "car_passenger_availability"
+    ].tolist() == ["some", "none"]
+    child = enabled[(enabled["H_ID"] == 1) & (enabled["P_ID"] == 2)].iloc[0]
+    assert child["car_passenger_availability"] == "some"
+    pd.testing.assert_frame_equal(legacy, enabled[legacy.columns])
 
 
 # ---------------------------------------------------------------------------
