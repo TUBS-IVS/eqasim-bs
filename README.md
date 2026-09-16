@@ -270,12 +270,13 @@ tables keep all reference comparisons working.
 | SrV general day-absence aggregates (committed) | `python scripts/extract_srv_absence.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run and are read at run time by the general day-absence model (ADR-0110, below) | `braunschweig/srv/srv2023_absence_by_age_band.csv`, `braunschweig/srv/srv2023_absence_household_by_size.csv` |
 | SrV departure-time + activity-duration references (committed) | `python scripts/extract_srv_departure_times.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run. The departure-time table is read at run time by the departure-time model (ADR-0114, `departure_time_model: srv_mapped`), which aborts naming the path and the config key if it is missing; both are read by the `departure_time_vs_srv` analysis stage | `braunschweig/srv/srv2023_departure_time_reference.csv`, `braunschweig/srv/srv2023_activity_duration_reference.csv` |
 
-Two diagnostics check the synthesised fleet against those committed references
+Three diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):
 
 ```bash
-python scripts/measure_combustion_split.py        # realised petrol/diesel vs 46251-02 (ZGB)
-python scripts/measure_gemeinde_join_coverage.py  # Gemeinde-name join coverage of the EV tilt
+python scripts/measure_combustion_split.py          # realised petrol/diesel vs 46251-02 (ZGB)
+python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverage of the EV tilt
+python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
 
 The exhaustive acquisition companion (with every note and edge case) is
