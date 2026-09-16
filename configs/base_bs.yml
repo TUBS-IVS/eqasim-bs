@@ -529,7 +529,7 @@ config:
   fleet_ev_income_tilt: true
   fleet_euro6_substage: true
   fleet_wohnmobile_age_tilt: true
-  # Per-Gemeinde BEV-vs-PHEV composition (issue #317, ADR-0124). The 2026
+  # Per-Gemeinde BEV-vs-PHEV composition (issue #317, ADR-0125). The 2026
   # per-Gemeinde EV source publishes only the COMBINED electric share, so
   # ADR-0086 had to tilt both electric powertrains by one factor; this restores
   # the spatial BEV-vs-PHEV structure from the FZ 27.17 composition while the

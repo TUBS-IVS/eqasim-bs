@@ -1,6 +1,6 @@
 """Measure the per-Gemeinde BEV:PHEV composition tilt against its reference.
 
-Diagnostic for issue #317 / ADR-0124. The 2026 per-Gemeinde EV export publishes
+Diagnostic for issue #317 / ADR-0125. The 2026 per-Gemeinde EV export publishes
 only the COMBINED electric share, so ADR-0086 tilts both electric powertrains by
 one factor; the composition tilt restores the BEV-vs-PHEV structure from the FZ
 27.17 private-car table. This script reports, per ZGB Kreis:
@@ -30,7 +30,7 @@ baseline: the aggregate movement the composition factors alone would cause. It i
 NOT what a production run realises. ``sample_fleet`` additionally neutralises the
 aggregate on the drawn population
 (:func:`~braunschweig.synthesis.vehicles.fleet_sampling_de._neutralise_composition_aggregate`,
-ADR-0124 decision 8), because these factors are centred on FZ 27.17 electric-stock
+ADR-0125 decision 8), because these factors are centred on FZ 27.17 electric-stock
 weights while the ADR-0085 rake targets the unweighted mean of the cars that
 actually exist. This script deliberately reports the pre-correction number, so the
 size of what the correction removes stays visible instead of being hidden by it.
@@ -166,7 +166,7 @@ def report(data_path: Path) -> None:
     model_off.gemeinde_bev_composition_tilt = False
 
     print("")
-    print("Per-Gemeinde BEV:PHEV composition tilt (issue #317 / ADR-0124)")
+    print("Per-Gemeinde BEV:PHEV composition tilt (issue #317 / ADR-0125)")
     print("  reference : FZ 27.17 kba_gemeinde_private_bev.csv (private cars, 2025-01-01)")
     print("  applied to: 46251-02 kba_kreis_fuel.csv (all ownership, 2025-01-01)")
     print("  clip band : %s, renormalised per Kreis after clipping" % (GEMEINDE_TILT_CLIP,))
@@ -235,7 +235,7 @@ def report(data_path: Path) -> None:
           "composition may not change the electric LEVEL)." % worst_electric_drift)
     print("")
     print("This is the UNCORRECTED baseline: production additionally neutralises the")
-    print("aggregate on the drawn population (ADR-0124 decision 8), so a real run does")
+    print("aggregate on the drawn population (ADR-0125 decision 8), so a real run does")
     print("NOT carry this shift. It is reported to keep the size of what the correction")
     print("removes visible. It is NOT a calibration target.")
 

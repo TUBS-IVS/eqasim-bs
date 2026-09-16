@@ -467,7 +467,7 @@ class PowertrainModel:
             # Issue #317: the 2026 source publishes no BEV/PHEV split, so the tilt
             # runs on the combined share (ADR-0086). FZ 27.17 still carries the
             # split, and supplies the STRUCTURE the combined share cannot
-            # (ADR-0124). Only built on this branch: on the FZ 27.17 fallback
+            # (ADR-0125). Only built on this branch: on the FZ 27.17 fallback
             # branch below the per-powertrain path fires, which already carries
             # the structure, so a composition map would never be applied.
             if df_gem_fz27_weights is not None:
@@ -1175,7 +1175,7 @@ class PowertrainModel:
                 "%s powertrain Gemeinde BEV/PHEV composition tilt: primary "
                 "%d/%d (%.1f%%), fallback %d (%.1f%%) tilted both electric "
                 "powertrains by the combined factor alone (no FZ 27.17 "
-                "BEV:PHEV ratio for that Gemeinde, ADR-0124)",
+                "BEV:PHEV ratio for that Gemeinde, ADR-0125)",
                 tag, self._gemeinde_composition_primary, ctot,
                 100.0 * self._gemeinde_composition_primary / ctot,
                 self._gemeinde_composition_fallback, 100.0 * crate,
@@ -1300,7 +1300,7 @@ def _gemeinde_electric_composition(
     keeps coming from the newer source.
 
     Both parts enter as RELATIVE factors, so the vintage gap between the two
-    sources only ever affects a ratio of ratios (ADR-0124)::
+    sources only ever affects a ratio of ratios (ADR-0125)::
 
         bev_frac(g)      = private_bev(g) / (private_bev(g) + private_phev(g))
         bev_frac(kreis)  = SUM private_bev / SUM (private_bev + private_phev)
@@ -1320,7 +1320,7 @@ def _gemeinde_electric_composition(
     The centring keeps the factors near 1.0 so the clip band stays meaningful;
     the aggregate itself is made exact on the realised rows by
     :func:`_neutralise_composition_aggregate`, which ``sample_fleet`` runs before
-    the rake target is taken (ADR-0124 decision 8, added after PR review).
+    the rake target is taken (ADR-0125 decision 8, added after PR review).
 
     The counts are used directly rather than reconstructed from
     ``private_bev_share * private_total``; the committed table agrees with itself
@@ -2853,7 +2853,7 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
     gemeinde_bev_composition_tilt : when ``True`` (default), the per-Gemeinde
         electric tilt additionally splits its effect between ``bev`` and
         ``phev`` using the FZ 27.17 per-Gemeinde BEV:PHEV composition
-        (:func:`_gemeinde_electric_composition`, issue #317 / ADR-0124). The
+        (:func:`_gemeinde_electric_composition`, issue #317 / ADR-0125). The
         2026 per-Gemeinde source publishes only the COMBINED electric share
         (ADR-0086), so without this the two electric powertrains are tilted by
         one and the same factor and the spatial BEV-vs-PHEV signal is lost. The

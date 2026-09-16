@@ -84,10 +84,20 @@ log = logging.getLogger("build_participation_universe_targets")
 WOLFSBURG_ARS5 = "03103"
 GESAMT_ARS5 = "Gesamt"
 
-# The 5-digit ARS codes of the 7 Kreise SrV actually surveys, derived from
-# spatial.ZGB8 (never re-listed literally) so a change to the canonical ZGB-8 set cannot
-# silently drift out of sync with the coverage check below (fix round 1, item 3).
-_EXPECTED_SRV_KREIS_CODES = frozenset(code for code in spatial.ZGB8 if code != WOLFSBURG_ARS5)
+# The 5-digit ARS codes of the 8 Kreis rows the SrV sources carry, derived from spatial.ZGB8
+# (never re-listed literally) so a change to the canonical ZGB-8 set cannot silently drift out
+# of sync with the coverage check below (fix round 1, item 3). All EIGHT since issue #405: the
+# SrV aggregates emit one row per expected Kreis, an unsurveyed one as a ZERO row. Which Kreise
+# carry measurable rates is therefore read from the data (n_unweighted > 0) instead of being
+# hardcoded here as "ZGB8 minus Wolfsburg" -- a reader must not have to know the answer that its
+# input already states.
+_EXPECTED_SRV_KREIS_CODES = frozenset(spatial.ZGB8)
+
+# Above this share of Kreise falling back to the region-total rates, the substitution stops being
+# a documented exception for one unsurveyed Kreis and starts being a broken input (an empty join,
+# a stale file): CLAUDE.md's fallback-transparency rule requires the rate to be logged every run
+# and a high rate to be surfaced loudly rather than absorbed.
+_REGION_TOTAL_FALLBACK_WARN_SHARE = 0.5
 
 _EMPLOYMENT_STATUS_TARGET_RELPATH = "targets/target2026_employment_status_by_kreis.csv"
 _SRV_WORK_BY_EMPLOYMENT_RELPATH = "srv/srv2023_work_by_employment_by_kreis.csv"
@@ -132,6 +142,37 @@ def read_srv_education_by_age(data: Path) -> pd.DataFrame:
         raise FileNotFoundError(
             f"build_participation_universe_targets: required committed input missing: {path}")
     return pd.read_csv(path, comment="#", dtype={"code": str})
+
+
+def split_measured_and_empty_kreise(kreis_rows: pd.DataFrame, context: str) -> tuple:
+    """Split the SrV Kreis rows into those with a measurable rate and those without.
+
+    A Kreis the survey does not cover is a ZERO row with NaN shares (issue #405), so "does this
+    Kreis have its own rates?" is a question about the data, not a fact the reader must carry.
+    Returns ``(measured, empty_codes)``.
+
+    Logs the primary-vs-fallback rate on every run and warns above
+    :data:`_REGION_TOTAL_FALLBACK_WARN_SHARE`, per CLAUDE.md's fallback-transparency rule: the
+    region-total substitution used to be invisible outside the written header, so an input that
+    lost several Kreise would have produced a target built almost entirely from one pooled rate
+    without saying so anywhere.
+    """
+    measurable = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce").fillna(0) > 0
+    measured = kreis_rows[measurable]
+    empty_codes = sorted(kreis_rows.loc[~measurable, "code"])
+    n_total = len(kreis_rows)
+    fallback_share = len(empty_codes) / n_total if n_total else 0.0
+    message = ("%s: per-Kreis rates from SrV for %d/%d Kreise (%.1f%%), region-total (%s) "
+               "fallback for %d (%.1f%%): %s")
+    arguments = (context, len(measured), n_total, 100.0 * (1.0 - fallback_share),
+                 _REGION_TOTAL_CODE, len(empty_codes), 100.0 * fallback_share,
+                 empty_codes or "none")
+    if fallback_share > _REGION_TOTAL_FALLBACK_WARN_SHARE:
+        log.warning(message + " -- most Kreise carry no own rate; check the SrV source before "
+                    "trusting this target", *arguments)
+    else:
+        log.info(message, *arguments)
+    return measured, empty_codes
 
 
 # --------------------------------------------------------------------------- validation
@@ -236,8 +277,8 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
     if missing_codes:
         raise ValueError(
             f"build_work_by_employment_target: SrV work-by-employment source is missing kreis "
-            f"row(s) for {missing_codes} (expected the 7 SrV-surveyed Kreise, "
-            f"spatial.ZGB8 minus Wolfsburg {WOLFSBURG_ARS5!r}); present: {sorted(present_codes)}.")
+            f"row(s) for {missing_codes} (expected all 8 ZGB Kreise, spatial.ZGB8 -- a Kreis SrV "
+            f"does not survey is a zero row, not an absent one); present: {sorted(present_codes)}.")
     unexpected_codes = sorted(present_codes - _EXPECTED_SRV_KREIS_CODES)
     if unexpected_codes:
         raise ValueError(
@@ -276,8 +317,10 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
                 "employed margin cannot be computed without silently shrinking it.")
         return float(row.sum())
 
+    measured, empty_codes = split_measured_and_empty_kreise(
+        kreis_rows, "build_work_by_employment_target")
     rows = []
-    for _, r in kreis_rows.iterrows():
+    for _, r in measured.iterrows():
         code = r["code"]
         rows.append(_work_by_employment_row(
             code, "employment_status_target x srv", int(r["n_unweighted"]), margin_for(code),
@@ -286,7 +329,11 @@ def build_work_by_employment_target(data: Path) -> pd.DataFrame:
     total_n = int(total_row["n_unweighted"])
     total_p_we = float(total_row["p_work_employed"])
     total_p_wn = float(total_row["p_work_nonemployed"])
-    for ars5 in (WOLFSBURG_ARS5, GESAMT_ARS5):
+    # A Kreis without own rates keeps ITS OWN employed margin and borrows only the region-total
+    # conditional rates; Gesamt does the same with the Gesamt margin. Unchanged behaviour -- the
+    # only difference is that the set of such Kreise now comes from the source's zero rows
+    # instead of from the literal WOLFSBURG_ARS5.
+    for ars5 in list(empty_codes) + [GESAMT_ARS5]:
         rows.append(_work_by_employment_row(
             ars5, "employment_status_target x srv_region_total", total_n, margin_for(ars5),
             total_p_we, total_p_wn))
@@ -341,9 +388,9 @@ def build_education_by_age_target(data: Path, entry_name: str) -> pd.DataFrame:
     if missing_codes:
         raise ValueError(
             f"build_education_by_age_target: SrV education-by-age source is missing kreis "
-            f"row(s) for band {entry_name!r}: {missing_codes} (expected the 7 SrV-surveyed "
-            f"Kreise, spatial.ZGB8 minus Wolfsburg {WOLFSBURG_ARS5!r}); present: "
-            f"{sorted(present_codes)}.")
+            f"row(s) for band {entry_name!r}: {missing_codes} (expected all 8 ZGB Kreise, "
+            f"spatial.ZGB8 -- a Kreis SrV does not survey is a zero row, not an absent one); "
+            f"present: {sorted(present_codes)}.")
     unexpected_codes = sorted(present_codes - _EXPECTED_SRV_KREIS_CODES)
     if unexpected_codes:
         raise ValueError(
@@ -362,13 +409,18 @@ def build_education_by_age_target(data: Path, entry_name: str) -> pd.DataFrame:
             f"build_education_by_age_target: expected the region-total row's code to be "
             f"{_REGION_TOTAL_CODE!r} for band {entry_name!r}, got {total_row['code']!r}.")
 
+    measured, empty_codes = split_measured_and_empty_kreise(
+        kreis_rows, f"build_education_by_age_target[{entry_name}]")
     rows = [
         _education_row(r["code"], "srv", int(r["n_unweighted"]), float(r["p_education"]))
-        for _, r in kreis_rows.iterrows()
+        for _, r in measured.iterrows()
     ]
     total_share = float(total_row["p_education"])
     total_n = int(total_row["n_unweighted"])
-    rows.append(_education_row(WOLFSBURG_ARS5, "srv_region_total", total_n, total_share))
+    # A Kreis without own rates takes the region-total p_education directly (unchanged
+    # behaviour; the set is now read from the source's zero rows, not hardcoded as Wolfsburg).
+    for ars5 in empty_codes:
+        rows.append(_education_row(ars5, "srv_region_total", total_n, total_share))
     rows.append(_education_row(GESAMT_ARS5, "srv", total_n, total_share))
 
     df = pd.DataFrame(rows, columns=["ars5", "source", "n_effective", *EDUCATION_FLAG_CATEGORIES])

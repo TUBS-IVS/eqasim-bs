@@ -56,5 +56,5 @@ When adding or reviewing a flag-gated feature that has a fallback:
    assert that no warning is emitted.
 
 Related: CLAUDE.md "Fallback transparency"; ADR-0086 (a fallback counter that treated
-"matched but did nothing" as a primary hit); ADR-0124 decision 8 and its OFF-path
+"matched but did nothing" as a primary hit); ADR-0125 decision 8 and its OFF-path
 tests in `tests/test_fleet_gemeinde_bev_composition.py`.

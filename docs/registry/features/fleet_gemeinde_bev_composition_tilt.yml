@@ -7,7 +7,7 @@ description: Restores the spatial BEV-vs-PHEV differential the ADR-0086 combined
   both counts per Gemeinde and supplies the STRUCTURE. Both enter as relative factors,
   the Kreis reference is weighted by each Gemeinde's electric stock so the factors average
   to exactly 1.0, and the pair is rescaled per Gemeinde so the electric TOTAL is untouched
-  (issue #317, ADR-0124).
+  (issue #317, ADR-0125).
 stages:
 - braunschweig.synthesis.vehicles.cars.household
 pipelines:
@@ -22,7 +22,7 @@ production:
 introduced:
   issue: 317
   pr: null
-  adr: ADR-0124
+  adr: ADR-0125
 detail_doc: null
 code_paths:
 - braunschweig/synthesis/vehicles/fleet_sampling_de.py
@@ -52,11 +52,11 @@ validation:
   runs: []
   metric: null
   note: |
-    No production run recorded yet. Two properties are exact by construction and asserted by tests: each car's electric TOTAL is untouched (measured drift 4.9e-17, machine zero) and the per-Kreis BEV:PHEV aggregate is neutralised on the REALISED draw population (ADR-0124 decision 8, added after the PR review found that normalising on FZ 27.17 electric-stock weights does not bind the rake, which targets the unweighted mean of the actual cars). scripts/measure_gemeinde_bev_composition.py reports the UNCORRECTED baseline that decision 8 removes: at most 0.0224 pp of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3-4%. What remains approximate is the per-Gemeinde magnitude of the structure signal, because the FZ 27.17 factors are a PRIVATE-scope measurement applied to an ALL-OWNERSHIP pmf (scope gap 0.88..5.04 pp). No observed per-Gemeinde BEV:PHEV reference exists to validate the realised split against.
+    No production run recorded yet. Two properties are exact by construction and asserted by tests: each car's electric TOTAL is untouched (measured drift 4.9e-17, machine zero) and the per-Kreis BEV:PHEV aggregate is neutralised on the REALISED draw population (ADR-0125 decision 8, added after the PR review found that normalising on FZ 27.17 electric-stock weights does not bind the rake, which targets the unweighted mean of the actual cars). scripts/measure_gemeinde_bev_composition.py reports the UNCORRECTED baseline that decision 8 removes: at most 0.0224 pp of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3-4%. What remains approximate is the per-Gemeinde magnitude of the structure signal, because the FZ 27.17 factors are a PRIVATE-scope measurement applied to an ALL-OWNERSHIP pmf (scope gap 0.88..5.04 pp). No observed per-Gemeinde BEV:PHEV reference exists to validate the realised split against.
 assessment:
   status: pending
   by: null
   date: null
   pending_reason: |
     Awaiting the first production run with the tilt active; the realised per-Gemeinde BEV:PHEV split and the per-Kreis aggregates are to be recorded in a run manifest and compared against kba_gemeinde_private_bev.csv.
-  source: ADR-0124
+  source: ADR-0125

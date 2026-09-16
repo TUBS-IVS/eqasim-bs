@@ -516,7 +516,7 @@ def configure(context):
     # ONE combined factor (the only option while the 2026 per-Gemeinde source
     # publishes no split, ADR-0086): the FZ 27.17 per-Gemeinde BEV:PHEV ratio
     # supplies the STRUCTURE while the combined share keeps supplying the LEVEL
-    # (ADR-0124). The composition is rescaled so a Gemeinde's electric TOTAL is
+    # (ADR-0125). The composition is rescaled so a Gemeinde's electric TOTAL is
     # untouched, and Gemeinden without a usable ratio keep factor 1.0 (counted
     # and logged). False restores the pre-#317 behaviour byte-identically.
     context.config("fleet_gemeinde_bev_composition_tilt", True)

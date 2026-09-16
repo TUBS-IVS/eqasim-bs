@@ -64,7 +64,7 @@ notes: |
   segment -> model series and per-model fuel weights (kba_segment_model.csv / kba_model_fuel.csv,
   658 series), per-Gemeinde EV 2026 and the 5 km EV grid (kba_gemeinde_ev.csv, kba_ev_grid.csv),
   the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, the Kreis-mean denominator
-  weight source AND, since issue #317 / ADR-0124, the per-Gemeinde BEV:PHEV composition source --
+  weight source AND, since issue #317 / ADR-0125, the per-Gemeinde BEV:PHEV composition source --
   the 2026 per-Gemeinde EV export publishes only the combined electric share, so FZ 27.17 supplies
   the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio),
   the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check

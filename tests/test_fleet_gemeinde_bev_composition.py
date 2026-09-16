@@ -405,7 +405,7 @@ class TestCompositionTiltApplication:
         BEV:PHEV ratio moves slightly. This pins that the effect is second-order
         even under a 15 pp source gap far larger than any measured on the
         committed tables (<= 5.04 pp; measured worst-case residual 0.0224 pp of
-        the all-car fleet in Kreis 03154, ADR-0124).
+        the all-car fleet in Kreis 03154, ADR-0125).
         """
         model = self._model(base_bev=0.06, base_phev=0.04)
         off = self._model(composition_on=False, base_bev=0.06, base_phev=0.04)
@@ -553,7 +553,7 @@ class TestCompositionTiltApplication:
 @pytest.mark.skipif(not FZ2717_CSV.exists(),
                     reason="kba_gemeinde_private_bev.csv absent (local-only data)")
 def test_committed_fz2717_coverage_is_105_of_113():
-    """Pins the measured data situation recorded in ADR-0124 / issue #317.
+    """Pins the measured data situation recorded in ADR-0125 / issue #317.
 
     Not a target to hit but a fact to notice: if a KBA refresh changes these
     counts, the ADR's named fallback list is stale and must be revisited.

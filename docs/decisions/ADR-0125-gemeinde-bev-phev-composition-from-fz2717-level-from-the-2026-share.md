@@ -1,4 +1,4 @@
-# ADR-0124 · 2026-09-16 · The per-Gemeinde BEV:PHEV composition comes from FZ 27.17 while the level stays with the 2026 combined share (issue #317)
+# ADR-0125 · 2026-09-16 · The per-Gemeinde BEV:PHEV composition comes from FZ 27.17 while the level stays with the 2026 combined share (issue #317)
 
 - **Status:** active
 - **Context:** ADR-0086 had to tilt BOTH electric powertrains by ONE factor,
