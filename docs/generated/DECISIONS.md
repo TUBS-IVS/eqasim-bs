@@ -127,6 +127,7 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0116](../decisions/ADR-0116-secondary-weekday-universe.md) | 2026-09-10 | active | The secondary distance layers and the MiD subtype deciders estimate on the weekday diary universe |
 | [ADR-0117](../decisions/ADR-0117-no-answer-codes-out-of-every-estimation.md) | 2026-09-11 | active | A survey non-answer never becomes a modelled category or a distance |
 | [ADR-0118](../decisions/ADR-0118-donor-match-fine-child-age-bands.md) | 2026-09-11 | active | The MiD donor match bands 6-13-year-olds finely (6-9 / 10-13) wherever it matches on age |
+| [ADR-0119](../decisions/ADR-0119-passive-escort-joint-activities-anchor-at-the-adults-secondary-location.md) | 2026-09-11 | active | Passive escort joint activities anchor at the accompanying adult's secondary location |
 | [ADR-0120](../decisions/ADR-0120-incommuter-donor-demographics-and-time-chronology.md) | 2026-09-14 | active | Preserve donor demographics and chronological in-commuter plans |
 | [ADR-0121](../decisions/ADR-0121-mid-passenger-availability.md) | 2026-09-15 | active | Separate MiD passenger access from driver access |
 | [ADR-0122](../decisions/ADR-0122-result-preserving-performance-kernels.md) | 2026-09-15 | -- | Optimize repeated work while preserving simulation inputs |

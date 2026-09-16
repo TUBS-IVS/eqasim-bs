@@ -1,0 +1,202 @@
+feature: escort_passive_joint_location
+title: Passive escort joint activities anchor at the accompanying adult's placed secondary location
+area: behavior
+description: 'Anchors a PAIRED passive escort child''s joint activity (shop / leisure / other,
+  phase 1 of #372 / ADR-0112) at the accompanying adult''s PLACED secondary location, instead of
+  drawing the child''s location independently. Issue #385, ADR-0119 (designed and implemented as
+  ADR-0118, renumbered on discovering that id was already taken -- see the record''s Numbering
+  paragraph). Inverse of the #201/ADR-0072/ADR-0073 household link, which anchors the escorting
+  ADULT at the linked CHILD''s education location.
+
+  Link table (pure module braunschweig/synthesis/locations/passive_joint_links.py,
+  build_passive_joint_links): for each paired code-13 leg, the paired adult is matched by
+  PLAN-SOURCE identity (source_H_ID + the paired adult''s P_ID) inside the same synthetic
+  household, then by the adult''s W_ID leg. A link is kept only when BOTH the child''s and the
+  adult''s activity purpose are secondary (shop/leisure/other); the adult''s trip home, the
+  adult''s own Bringen/Holen leg (handled by the #201 link) and the adult''s work/education leg
+  are excluded and counted as purpose_not_secondary. A child whose adult is absent from the
+  synthetic household (member completion, a diary-plan remap, the day-absence model) is counted
+  as adult_not_in_household; a missing adult leg (a spliced commute day) as adult_leg_missing.
+
+  Two-pass solve (secondary_chainsolvers._compose_two_pass, built on _solve_problem_set, the
+  solve body extracted verbatim from the pre-refactor stage so the RNG call order and the
+  early-return path are unchanged): pass 1 solves everybody who is not a linked child (with
+  their own #201 escort anchors); pass 2 solves the linked children with the fixed boundary
+  purpose passive_linked on both sides of the anchored activity
+  (escort.rewrite_anchored_activities, purpose-agnostic unlike the #201 rewrite) plus the
+  adult''s placed location resolved by resolve_joint_anchors. Both purposes remain secondary on
+  the persisted plan (passive_linked never persists, like escort_linked). The anchored child rows
+  carry the adult''s location_id and geometry verbatim.
+  synthesis/population/spatial/secondary/problems.py resolves the boundary via
+  ANCHORED_PURPOSES = ("escort_linked", "passive_linked") through the existing activity_anchors
+  mapping (unchanged fail-fast contract: a boundary purpose without an anchor entry raises).
+
+  Requires escort_passive_from_adult (code default False, mirroring the phase-1 convention
+  ruling C-R9); braunschweig.synthesis.locations.secondary_chainsolvers.configure raises naming
+  both keys when this flag is on and escort_passive_from_adult (or, transitively,
+  escort_purpose) is off. The production ON state is realised ONLY by the configs/base_bs.yml
+  line. With the flag off, execute() runs exactly ONE _solve_problem_set call over the whole
+  population -- the OFF path is INTENDED, by construction, to be frame-equal to the pre-refactor
+  stage output (the extraction preserves the RNG call order and the early-return path verbatim).
+  The empirical frame-equality result on the Kreis-03101 smoke CONFIRMS this: FRAME-EQUAL between
+  the pre-refactor baseline (commit b5b94d6a) and the refactored stage with the flag OFF (commit
+  ef75223a) -- 3,415 location rows each, both runs 2,237 problems, success rate 1.0000, carla
+  placed 2,236/2,237, fallback 1; see the run manifest below.
+
+  Both solver passes share ONE RandomState built once before either pass runs, so an ON/OFF
+  comparison is a DIFFERENT Monte-Carlo realisation, not attributable to the anchoring mechanism
+  alone -- stated as a limitation in ADR-0119''s Consequences.
+
+  Link rate and anchor-resolution rate are logged every run ([passive_joint_links] marker), with
+  the full five-way exclusion split and escalation to WARNING at pathological values (nothing
+  linked; 50 % or more of the links unresolved), per CLAUDE.md fallback transparency; this
+  logging channel already reaches the run log via braunschweig.logging_setup.setup_logging''s
+  root-logger setup, which scripts/run_synpp.py::main calls. The link rate AND its three main
+  exclusion reasons are additionally carried by the stage print stream
+  (secondary_chainsolvers._passive_joint_link_summary), so the split sits with the stage''s
+  other per-run rate lines (the fallback accounting summary and the success rate) in the
+  operator''s stdout block, where the rates are read together; the printed line names itself as
+  the three-reason subset and points to the log line for the full five-way split. Convergence
+  (a stable, fully-placed solve) is NOT validation: no observed reference exists for "child and
+  adult end up at the same shop", so this feature has no behavioural target to compare against --
+  only the mechanism''s own rates.'
+stages:
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - escort_passive_joint_location
+introduced:
+  issue: '#385'
+  pr: null
+  adr: ADR-0119
+detail_doc: docs/features/escort-purpose.md
+code_paths:
+- braunschweig/synthesis/locations/passive_joint_links.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/escort.py
+- synthesis/population/spatial/secondary/problems.py
+evidence:
+  tests:
+  - tests/test_passive_joint_links.py
+  - tests/test_passive_joint_two_pass.py
+  - tests/test_escort_links.py
+  - tests/test_configs_composed.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: 'docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml -- stage pickle
+      ...__d0016af890806fcccb42a5f2f9cec8c9.p (pre-refactor baseline, commit b5b94d6a, detached
+      worktree) vs ...__65f86fb5db47c9d6a54f31989d9556aa.p (flag OFF, commit ef75223a)'
+    note: 'Claimed true on the Kreis-03101 smoke: pandas assert_frame_equal on the locations frame
+      minus geometry, per-row geometry equality, and assert_frame_equal on the convergence frame
+      all pass between the two pickles named in "test" above (3,415 location rows each; both runs
+      2,237 problems, success rate 1.0000, carla placed 2,236/2,237, fallback 1). This is a MANUAL
+      one-off comparison of two stage-cache pickles across commits/worktrees, not an automated
+      pytest node id: no dedicated byte-identity test exists in tests/test_passive_joint_two_pass.py
+      or elsewhere, unlike the pytest "test:" pointers named by sibling records (e.g.
+      escort_passive_from_adult.yml). The _solve_problem_set extraction preserves the pre-refactor
+      RNG call order and the len(plans_df) == 0 early return verbatim (the design argument
+      ADR-0119 makes); this measurement is the empirical confirmation of that argument on one test
+      bed, not a regression test that would catch a future break.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[passive_joint_links]'
+    note: 'Two instruments, both explicit rates (CLAUDE.md fallback transparency). (1)
+      build_passive_joint_links logs n_linked/n_passive_paired with the share and the three
+      exclusion reasons (adult_not_in_household, adult_leg_missing, purpose_not_secondary) plus
+      the acyclic-guard and duplicate-drop counts; WARNs when nothing links at all (a signature of
+      a broken plan-source join). (2) resolve_joint_anchors logs the anchor-resolution rate
+      (n_resolved/n_links) and WARNs at or above DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5
+      unresolved (a >= comparison, the convention of every sibling rate instrument of this stage;
+      a signature of an incomplete pass-1 result). Unlinked/unresolved children keep the
+      independent draw -- the fallback here IS that draw, and it is counted, never silent. Measured
+      in the PRODUCTION configuration on the felix server smoke
+      (docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml): link rate
+      12/58 paired passive legs linked (20.7 %), exclusion split adult_not_in_household 27
+      (46.6 %), adult_leg_missing 3 (5.2 %), purpose_not_secondary 16 (27.6 %),
+      adult_is_linked_child 0, duplicate_child_activity 0; anchor-resolution rate 12/12 (100.0 %),
+      0 unresolved -- well inside the WARNING thresholds (nothing linked; 50 % or more of the
+      links unresolved). n = 58 paired legs on a 1 %-sampled single Kreis is a smoke-scale count,
+      not a population rate. The earlier REDUCED-FIXTURE local smoke
+      (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml) measured 36/74 (48.6 %)
+      under a DIFFERENT, non-production configuration (PopulationSim control tiers 0-2 only, no
+      per-Kreis controls, the commute-day model off, pre-#386 donor matchers); a same-server
+      decomposition on the production population attributes only 2.6 of the points between its own
+      two frames to the commute-day splice, and the remainder of the gap between the
+      reduced-fixture and production measurements is NOT separable into its causes with the runs
+      performed.'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
+    note: 'The SAME committed table ADR-0112 cites: 6,384/6,781 = 94.15% of raw passive legs pair
+      with a same-household adult leg within 15 minutes (RAW-MiD donor-side fact, upper bound for
+      this feature''s link rate) and the 4.2% adult W_ZWECK 1/2 (work/business, not education)
+      share of pairs (ADR-0112''s adult-W_ZWECK distribution) that this feature excludes as
+      purpose_not_secondary -- both quoted as donor-side facts, never as a synthetic-population
+      rate. Code 3 (education) sits inside a separate, not-broken-out 3, 9, 99 = 2.0% row in the
+      same table, so a combined work-and-education share is not measurable from it. No consumer
+      here reads this file directly; it grounds the ADR-0119 assumptions.'
+validation:
+  state: unvalidated
+  runs:
+  - i385-passive-joint-location-smoke-03101-2026-09-11
+  - i385-passive-joint-location-production-smoke-03101-2026-09-15
+  metric: 'PRODUCTION configuration (configs/base_bs.yml), measured on the felix server smoke
+    (docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml): link rate
+    12/58 paired passive legs linked (20.7 %), anchor-resolution rate 12/12 (100.0 %), 0
+    unresolved. Pass 1 (adults + unlinked) 2,093 problems, cs.solve 28.5 s with 62 workers
+    (production braunschweig.chainsolvers.processes: 0 sentinel on 64 cores); pass 2 (linked
+    children) 11 linked children entered, 0 problems -- every linked child''s joint activity is a
+    fixed boundary and nothing variable remained to place, so the pass placed nothing and returned
+    the fallback-only result. Primary/fallback: carla placed 2,093/2,093 (100.0 %), fallback 0.
+
+    REDUCED-FIXTURE test bed (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml, a
+    DIFFERENT, non-production configuration -- see that manifest''s configuration.notes). Task 4
+    measured the link rate BEFORE the two-pass wiring: 36/74 paired passive legs linked (48.6 %).
+    Task 6 measured the ON run: anchor-resolution rate 36/36 (100.0 %), 0 unresolved, every
+    resolved link places the child at the adult''s location (child_at_adult_location 36/36,
+    duplicate child rows 0) -- 100 % of resolved links by construction, as expected -- fallback
+    accounting vs OFF (3,415 location rows both runs; ON carla 2,213/2,214 with 1 fallback, OFF
+    carla 2,236/2,237 with 1 fallback), and wall time of both passes (pass 1 cs.solve 19.0 s, pass
+    2 cs.solve 19.1 s).
+
+    DECOMPOSITION (production manifest, measured on the SAME server population): the commute-day /
+    day-absence splice costs 2.6 percentage points between synthesis.population.trips (14/60 =
+    23.3 %, before the splice) and synthesis.population.trips.final (12/58 = 20.7 %, after the
+    splice); it does NOT explain the gap to the reduced-fixture 48.6 % -- the two configurations
+    build the population differently in more ways than the splice or issue #386, and that
+    remaining gap is NOT separable into its causes with the runs performed. Both runs recorded as
+    SMOKEs, not a validation: no observed reference exists for joint shopping/leisure locations.'
+  note: 'Two smokes have completed on Kreis 03101 (see metric above and both run manifests): the
+    reduced-fixture local smoke and the production-configuration felix server smoke.
+    validation.state remains unvalidated, not measured_vs_reference: convergence (a fully-placed,
+    stable solve) is not the same as validation (matching an observed reference), and no such
+    reference exists for this feature -- see ADR-0119''s Consequences. Both solver passes also
+    share ONE RandomState, so an ON/OFF or configuration comparison is a DIFFERENT Monte-Carlo
+    realisation, not attributable to the anchoring mechanism alone; n = 74 (reduced-fixture local
+    smoke) and n = 58 (production smoke) paired legs on a 1 %-sampled single Kreis are both
+    smoke-scale counts, not a population rate.'
+assessment:
+  status: pending
+  pending_reason: 'The Kreis-03101 smoke (Task 4 link-rate measurement, Task 5 OFF-path frame
+    equality, Task 6 ON run) has completed and is recorded in
+    docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml (see validation.note and
+    evidence.off_path_byte_identical / evidence.fallback_rate above). This record and ADR-0119 must
+    still not be read as claiming validation: no observed reference exists for joint
+    shopping/leisure locations, both solver passes share one RandomState (so the ON/OFF numbers are
+    a different Monte-Carlo realisation, not attributable to the anchoring mechanism alone), and
+    n = 74 paired legs on a 1 %-sampled single Kreis is a smoke-scale count, not a population rate.
+    Full-region evidence and any independent review remain outstanding.'
+notes: 'Phase 2 of the escort purpose family (feature record escort_passive_from_adult, ADR-0112,
+  feature doc docs/features/escort-purpose.md section "Joint location (ADR-0119)"); this record
+  owns the joint-location anchoring, escort_passive_from_adult owns the passive-leg purpose the
+  link table reads. Inverse mechanism: escort_purpose / escort_household_link (#201,
+  ADR-0072/ADR-0073) anchor the ADULT at the CHILD''s education location; this feature anchors the
+  CHILD at the ADULT''s secondary location. No new stage and no new DAG dependency: the chainsolver
+  stage already reads synthesis.population.sampled and synthesis.population.trips.final. The
+  design spec is docs/superpowers/specs/2026-09-11-passive-escort-joint-location-design.md.'

@@ -2,10 +2,15 @@ import numpy as np
 import pandas as pd
 
 FIELDS = ["person_id", "trip_index", "preceding_purpose", "following_purpose", "mode", "travel_time"]
-# "escort_linked" (eqasim-bs #201 Phase 2): household-linked escort activities are
-# pre-anchored at the linked child's education location; the purpose only ever occurs when the
-# Braunschweig chainsolver stage injects it, so upstream-path behaviour is unchanged.
-FIXED_PURPOSES = ["home", "work", "education", "escort_linked"]
+# "escort_linked" (eqasim-bs #201 Phase 2) and "passive_linked" (eqasim-bs #385): activities
+# pre-anchored by the Braunschweig chainsolver stage -- the adult's escort activity at the
+# linked child's school, the escorted child's joint activity at the adult's placed secondary
+# location. Both purposes only ever occur when the caller injected them, which implies it
+# passed activity_anchors.
+FIXED_PURPOSES = ["home", "work", "education", "escort_linked", "passive_linked"]
+#: Fixed purposes resolved through the activity_anchors mapping instead of a per-person
+#: location column.
+ANCHORED_PURPOSES = ("escort_linked", "passive_linked")
 
 def find_bare_assignment_problems(df):
     problem = None
@@ -39,19 +44,19 @@ def find_bare_assignment_problems(df):
 
 LOCATION_FIELDS = ["person_id", "home", "work", "education", "escort_linked"]
 
-def _anchor_coordinates(activity_anchors, person_id, activity_index):
-    """Coordinates of a pre-anchored escort_linked activity. The caller that
-    injects escort_linked trips must derive the trip rewrite and the anchor
-    table from the SAME assignment, so a miss is a bug -- fail fast."""
+def _anchor_coordinates(activity_anchors, person_id, activity_index, purpose):
+    """Coordinates of a pre-anchored anchored-purpose activity (see
+    ANCHORED_PURPOSES). The caller that injects such trips must derive the
+    trip rewrite and the anchor table from the SAME assignment, so a miss is
+    a bug -- fail fast."""
     try:
         point = activity_anchors[(person_id, activity_index)]
     except KeyError:
         raise KeyError(
-            f"escort_linked activity (person_id={person_id}, "
+            f"{purpose} activity (person_id={person_id}, "
             f"activity_index={activity_index}) has no entry in activity_anchors; "
-            "the escort_linked trip rewrite and the anchor table must be built "
-            "from the same assignment (see "
-            "braunschweig/synthesis/locations/escort_links.py)."
+            "the trip rewrite and the anchor table must be built from the same "
+            "assignment (see braunschweig/synthesis/locations/escort_links.py)."
         ) from None
     return np.array([[point.x, point.y]])
 
@@ -62,22 +67,24 @@ def find_assignment_problems(df, df_locations, activity_anchors = None):
           - Size of the problem
           - Reduces purposes to the variable ones
 
-        activity_anchors (eqasim-bs #201 multi-child fix): optional mapping
-        {(person_id, activity_index): shapely Point} consulted for the
-        "escort_linked" boundary purpose INSTEAD of a per-person location
-        column, so consecutive escort activities can anchor at different
-        children's schools. Origin activity index = trip_index of the
+        activity_anchors (eqasim-bs #201 multi-child fix, extended by eqasim-bs
+        #385): optional mapping {(person_id, activity_index): shapely Point}
+        consulted for the ANCHORED_PURPOSES boundary purposes ("escort_linked",
+        "passive_linked") INSTEAD of a per-person location column, so
+        consecutive escort or passive-escort activities can anchor at
+        different locations. Origin activity index = trip_index of the
         problem's first trip; destination = trip_index + number of trips.
         The legacy path (None, all upstream callers) is unchanged.
     """
     # Presence-based field list: the legacy/French path passes a location frame
     # without the "escort_linked" column (eqasim-bs #201 Phase 2) and must keep
     # today's behaviour exactly. Since the multi-child fix, the Braunschweig
-    # chainsolver resolves "escort_linked" boundaries via the activity_anchors
-    # table instead of a per-person column; the column path below remains for
-    # callers that attach one. A boundary purpose can only be "escort_linked"
-    # when the caller injected that trip, which implies it passed anchors (or
-    # the column), so the lookups below are safe by construction.
+    # chainsolver resolves ANCHORED_PURPOSES boundaries ("escort_linked",
+    # "passive_linked") via the activity_anchors table instead of a per-person
+    # column; the column path below remains for callers that attach one. A
+    # boundary purpose can only be an anchored purpose when the caller injected
+    # that trip, which implies it passed anchors (or the column), so the
+    # lookups below are safe by construction.
     location_fields = [
         field for field in LOCATION_FIELDS
         if field == "person_id" or field in df_locations.columns
@@ -117,18 +124,19 @@ def find_assignment_problems(df, df_locations, activity_anchors = None):
         problem["destination"] = None
 
         if origin_purpose in FIXED_PURPOSES:
-            if activity_anchors is not None and origin_purpose == "escort_linked":
+            if activity_anchors is not None and origin_purpose in ANCHORED_PURPOSES:
                 problem["origin"] = _anchor_coordinates(
-                    activity_anchors, problem["person_id"], problem["trip_index"])
+                    activity_anchors, problem["person_id"], problem["trip_index"],
+                    origin_purpose)
             else:
                 problem["origin"] = current_location[location_fields.index(origin_purpose)] # Shapely POINT
                 problem["origin"] = np.array([[problem["origin"].x, problem["origin"].y]])
 
         if destination_purpose in FIXED_PURPOSES:
-            if activity_anchors is not None and destination_purpose == "escort_linked":
+            if activity_anchors is not None and destination_purpose in ANCHORED_PURPOSES:
                 problem["destination"] = _anchor_coordinates(
                     activity_anchors, problem["person_id"],
-                    problem["trip_index"] + len(problem["modes"]))
+                    problem["trip_index"] + len(problem["modes"]), destination_purpose)
             else:
                 problem["destination"] = current_location[location_fields.index(destination_purpose)] # Shapely POINT
                 problem["destination"] = np.array([[problem["destination"].x, problem["destination"].y]])

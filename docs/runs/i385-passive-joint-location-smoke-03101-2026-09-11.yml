@@ -1,0 +1,110 @@
+id: i385-passive-joint-location-smoke-03101-2026-09-11
+date: '2026-09-11'
+repository:
+  commit: ef75223a4091f94e06e5d0d4ba831c2297fc1483
+  branch: feature/i385-passive-joint-location
+configuration:
+  base: 'configs/config_local_i385_mini.yml (gitignored local test bed =
+    configs/fixtures/config_smoke_popsim_mid_mini.yml + the base_bs.yml escort/purpose block,
+    secondary_building_potentials false, commute-day model off,
+    braunschweig.population.popsim.max_cells 1000, braunschweig.population.popsim.num_workers 1)'
+  overlays: []
+  notes: 'Local smoke, not a production or overlay-based configuration. Run target restricted
+    to braunschweig.synthesis.locations.secondary_chainsolvers (the config''s own run list),
+    so only the stages the chainsolver depends on execute. Test-bed deviations from production:
+    braunschweig.chainsolvers.processes: 4 instead of the production sentinel 0 (20 spawn-mode
+    workers exceeded the Windows commit limit: "ImportError: DLL load failed while importing
+    np_datetime: Die Auslagerungsdatei ist zu klein"), cordon_enabled OFF while
+    secondary_external_candidates is ON (warned by the stage), the commute-day model OFF, one
+    Kreis (03101), sampling_rate: 0.01, and the local PopulationSim settings mirror
+    settings_tier3_mef100_intseed_numba_local.yaml (the fixture''s 4-level settings.yaml lacks
+    the KREIS geography the default-ON Kreis controls render). Code state: all three runs below
+    executed at commit ef75223a (repository.commit above). The branch ADVANCED after the
+    measurements -- the origin/main merge 818d1e3a and the final review''s fix wave -- and a
+    re-measurement at the final HEAD was NOT performed. The OFF-path frame-equality result
+    (validation metric 2 below) carries forward: it is a property of the stage''s code given
+    identical cached inputs, and none of the later commits touches the OFF path --
+    rewrite_anchored_activities (whose positional-mask fix is unreachable on a unique-index trips
+    frame) is called only on the ON path, _build_shared_solve_state''s dropped parameter was
+    unused, and the unresolved-anchor threshold change (> to >=) affects a log line only. The
+    LINK RATE (validation metric 1) and the ON-run counts (validation metric 3): this run''s
+    configuration (configuration.base above) is the REDUCED mini fixture -- PopulationSim control
+    tiers 0-2 only, no per-Kreis controls, a different settings file, the commute-day model OFF,
+    and the pre-#386 donor matchers (issue #386, ''Apply the fine child age bands to all three
+    donor matchers'', origin/main merge 818d1e3a, commits 251f3bb9, 61f8921a, c3552e83, feature
+    record diary_plan_match, ADR-0118, which changes the diary plan match this feature''s link rate
+    depends on). A PRODUCTION-configuration smoke was measured separately and is recorded in
+    docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml: link rate
+    12/58 = 20.7 %, well below this run''s 48.6 %. That gap is NOT attributable to #386 alone --
+    the production smoke used the full production configuration (configs/base_bs.yml), while this
+    run used the reduced fixture named above, so the two populations are built differently in more
+    ways than the donor-matcher change. This run''s 48.6 % link rate is therefore a
+    REDUCED-FIXTURE measurement, not the production rate, and was never an apples-to-apples
+    predecessor of the 20.7 % figure. The production manifest''s own same-server decomposition
+    shows the commute-day splice explains only 2.6 of the points between its two frames; the
+    remainder of the gap to this run''s 48.6 % is NOT separable into its causes with the runs
+    performed.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: Kreis 03101 only
+pipeline:
+  targets:
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+classification:
+- smoke
+status:
+  execution: completed
+environment: local (Windows, eqasim env)
+validation:
+- metric: passive joint link rate (measure-first, build_passive_joint_links on the fresh trips/persons
+    frames before the two-pass wiring)
+  reference: none -- a descriptive rate, not a target
+  result: '36/74 paired passive legs linked (48.6 %). Exclusions: adult not in the synthetic
+    household (plan source) 23 (31.1 %), purpose not secondary 15 (20.3 %), adult leg missing
+    0, adult is a linked child 0, duplicate child activity 0. Adult purposes of the links:
+    other 14, leisure 11, shop 11; 20 distinct linked children, 22 distinct adults, 10 children
+    with more than one linked activity. n = 74 paired legs on a 1 %-sampled single Kreis --
+    a smoke-scale count, not a population rate.'
+- metric: OFF-path frame equality after the _solve_problem_set extraction (pd.testing.assert_frame_equal
+    on df_locations sorted by person_id/activity_index, and on df_convergence, pre- vs post-refactor
+    stage output)
+  reference: the pre-refactor stage output on the same test bed
+  result: 'FRAME-EQUAL. Pre-refactor baseline (commit b5b94d6a, detached worktree, stage
+    pickle ...__d0016af890806fcccb42a5f2f9cec8c9.p) vs the refactored stage with the flag
+    OFF (commit ef75223a, pickle ...__65f86fb5db47c9d6a54f31989d9556aa.p): 3,415 location
+    rows each; pandas assert_frame_equal on the locations frame minus geometry, per-row
+    geometry equality, and assert_frame_equal on the convergence frame all pass. Both runs:
+    2,237 problems, success rate 1.0000, carla placed 2,236/2,237, fallback 1 (the single
+    unbounded chain).'
+- metric: 'ON run: children placed at the adult''s location (link rate, anchor-resolution rate,
+    share of anchored child activities whose geometry equals the adult''s -- expected 100% of
+    resolved links by construction --, fallback accounting vs OFF, pass sizes, wall time of both
+    passes)'
+  reference: none -- a descriptive/mechanism check, not a behavioural target
+  result: 'Two passes ran. Pass 1 (adults + unlinked): 2,208 problems, 2,207 persons, 5,408
+    plan rows, cs.solve 19.0 s. Pass 2 (linked children): 6 problems, 6 persons, 12 plan
+    rows, cs.solve 19.1 s; 20 linked children entered pass 2. Anchors resolved 36/36 (100.0
+    %), 0 unresolved. Every resolved link places the child at the adult''s location:
+    child_at_adult_location 36/36, duplicate child rows 0, 3,415 location rows, success
+    rate 1.0000, carla 2,213/2,214 with 1 fallback. Runtime reading: pass 2 solved 6 problems
+    in the same wall time as pass 1''s 2,208 (19.1 s vs 19.0 s), so the second pass cost a full
+    pass''s FIXED overhead (worker-pool spin-up plus the fallback pool rebuild) rather than a
+    cost proportional to its problem count -- it doubled the measured cs.solve time for 6
+    problems. That fixed per-pass cost, not the number of linked children, is what to watch at
+    100 % scale, where it has not been measured.'
+features:
+  note: 'First test-bed exercise of escort_passive_joint_location (issue #385, ADR-0119). The
+    measurement, OFF-path, and ON-run steps have all completed; the three validation entries
+    above record the measured results. This remains a SMOKE on a 1 %-sampled single Kreis, not
+    a validation: no observed reference exists for joint locations, and both solver passes
+    share one RandomState, so an ON/OFF difference reflects a different Monte-Carlo realisation,
+    not the anchoring mechanism alone.'
+artifacts:
+- 'local cache (gitignored, not committed): eqasim-data/cache_mini_popsim_mid'
+issues:
+- '#385'
+decisions:
+- ADR-0119
+source: '.superpowers/sdd/2026-09-11-passive-escort-joint-location/ (design spec
+  docs/superpowers/specs/2026-09-11-passive-escort-joint-location-design.md; task briefs/reports
+  task-1 through task-7)'

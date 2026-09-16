@@ -99,7 +99,8 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
                         distributions: Dict[str, Any],
                         leisure_correction_factor: float,
                         random: np.random.RandomState,
-                        crs) -> Tuple[List[tuple], List[tuple]]:
+                        crs,
+                        *, pass_label: str = "") -> Tuple[List[tuple], List[tuple]]:
     """Eqasim RDA-style fallback (GravityChainSolver + Angular tail + free chain).
 
     Drives the legacy ``AssignmentSolver`` pipeline (relaxation
@@ -115,6 +116,10 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
     and the failed-bounded calls is byte-identical to constructing a fresh one
     each time: the index is queried/sampled but never modified, and all
     randomness flows through ``random`` inside ``assignment_solver.solve``.
+
+    ``pass_label`` prefixes the printed line exactly like the solve progress prints of
+    the same pass (issue #385, two-pass composition); empty for the one-pass path, where
+    the line stays byte-identical.
     """
     if not problem_indices:
         return [], []
@@ -193,7 +198,7 @@ def _rda_fallback_place(problems: List[Dict[str, Any]],
         convergence_rows.append((bool(result["valid"]), problem["size"]))
 
     print(
-        f"[braunschweig.secondary_chainsolvers] RDA fallback placed "
+        f"[braunschweig.secondary_chainsolvers]{pass_label} RDA fallback placed "
         f"{len(problem_indices) - n_failed:,}/{len(problem_indices):,} "
         f"problems (raised={n_failed:,})"
     )
@@ -204,7 +209,8 @@ def _fallback_place(problems: List[Dict[str, Any]],
                     unbounded_idx: List[int],
                     df_secondary: pd.DataFrame,
                     random: np.random.RandomState,
-                    crs) -> Tuple[List[tuple], List[tuple]]:
+                    crs,
+                    *, pass_label: str = "") -> Tuple[List[tuple], List[tuple]]:
     """Random distance-aware placement for tail / head / floating chains.
 
     Picks any candidate of the right purpose; ignores distance optimisation.
@@ -218,7 +224,9 @@ def _fallback_place(problems: List[Dict[str, Any]],
     ``offers_<purpose>`` column gets an ANY-TYPE pool -- the full candidate
     set -- rather than an empty one, per the #201 design spec scope amendment
     (fallback-placed escort legs must match any candidate type instead of
-    going unplaced); logged, not silent.
+    going unplaced); logged, not silent. That line fires on every call, so it carries
+    ``pass_label`` like the solve progress prints of the same pass (issue #385); empty
+    for the one-pass path, where the line stays byte-identical.
     """
     if not unbounded_idx:
         return [], []
@@ -237,7 +245,7 @@ def _fallback_place(problems: List[Dict[str, Any]],
             pool[purpose] = df_secondary.reset_index(drop=True)
     if any_type_purposes:
         print(
-            "[braunschweig.secondary_chainsolvers] fallback catalog: "
+            f"[braunschweig.secondary_chainsolvers]{pass_label} fallback catalog: "
             f"purpose(s) {sorted(any_type_purposes)} have no offers_* column "
             f"on the fallback candidate frame -> any-type pool (all "
             f"{len(df_secondary):,} candidates; #201 spec amendment)."
