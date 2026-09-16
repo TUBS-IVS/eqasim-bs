@@ -105,9 +105,13 @@ def _common_header(table_name: str, source_commit: str) -> list:
         "#   Canonical code-to-name mapping: braunschweig.analysis.spatial.ZGB8 (03101",
         "#   Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar,",
         "#   03154 Helmstedt, 03157 Peine, 03158 Wolfenbuettel).",
-        "# Wolfsburg (03103) is NOT surveyed by SrV and therefore has NO row here (the",
-        "#   convention of srv2023_participation_by_kreis.csv); a target builder must fill it",
-        "#   from the %s row as a documented assumption." % T.REGION_CODE,
+        "# Wolfsburg (03103) is NOT surveyed by SrV: its row IS emitted, with n_unweighted=0 and",
+        "#   NaN shares (never dropped, never backfilled) -- the row set is the 8 expected ZGB",
+        "#   Kreise, not the Kreise the delivery happens to cover (issue #405). A target builder",
+        "#   still has to fill its RATES from the %s row as a documented assumption, because a"
+        % T.REGION_CODE,
+        "#   zero row carries no measurable rate; what it no longer has to do is know that one",
+        "#   Kreis is missing.",
         "# %s row scope: EXACTLY the union of the kreis rows above, so"
         % T.REGION_CODE,
         "#   sum(kreis n_unweighted) == %s n_unweighted holds by construction." % T.REGION_CODE,
@@ -255,12 +259,13 @@ def main(argv=None) -> int:
     education_table, education_diagnostics = T.build_education_by_age_aggregate(
         persons, legs, households)
     T.check_invariants(work_table, education_table)
-    # Coverage is checked separately from the table invariants: both builders emit one row per
-    # Kreis PRESENT in the universe, so a delivery that lost a whole Kreis would satisfy every
-    # invariant with a shorter table. Wolfsburg is the one code allowed to be absent.
+    # Coverage is checked separately from the table invariants: the builders emit the full row
+    # set, so a delivery that lost a Kreis produces a ZERO row that satisfies every invariant.
+    # check_kreis_coverage is what rejects a surveyed Kreis at zero (and an unsurveyed one that
+    # suddenly carries persons).
     T.check_kreis_coverage(work_table, education_table, expected_kreise=ZGB_KREISE)
-    logger.info("invariants and Kreis coverage passed for both tables (expected Kreise %s, "
-                "%s legitimately absent because SrV does not survey it)", list(ZGB_KREISE),
+    logger.info("invariants and Kreis coverage passed for both tables (expected Kreise %s; %s "
+                "is a zero row because SrV does not survey it)", list(ZGB_KREISE),
                 T.WOLFSBURG_KREIS)
     logger.info("work diagnostics: %s", work_diagnostics)
     logger.info("education diagnostics: %s", education_diagnostics)

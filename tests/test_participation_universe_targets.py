@@ -53,12 +53,19 @@ def _full_emp_status(overrides: dict) -> dict:
 
 
 _DEFAULT_WORK_AGG_TAIL = (100, 50, 50, 0.5, 0.68, 0.03)  # n_unweighted..p_work_nonemployed filler
+# Wolfsburg's row as the SrV aggregate now emits it (issue #405): present, n_unweighted == 0,
+# every share NaN. The builder must recognise it as "no own rate" from the DATA and fall back to
+# the region total -- a fixture that left the row out would no longer test the shipped shape.
+_UNSURVEYED_WORK_AGG_TAIL = (0, 0, 0, float("nan"), float("nan"), float("nan"))
+_UNSURVEYED_EDU_ROW = (0, float("nan"))
 
 
 def _full_work_agg(overrides: dict) -> list:
-    """An 8-row srv2023_work_by_employment_by_kreis.csv fixture (7 SrV Kreise + 03ZGB total),
-    the default tail for every code not named in `overrides` (mapping code -> tail tuple)."""
+    """A 9-row srv2023_work_by_employment_by_kreis.csv fixture (7 surveyed Kreise + the 03103
+    zero row + 03ZGB total), the default tail for every code not named in `overrides` (mapping
+    code -> tail tuple)."""
     rows = [(code, "kreis", *overrides.get(code, _DEFAULT_WORK_AGG_TAIL)) for code in _ZGB_KREIS_CODES]
+    rows.append(("03103", "kreis", *overrides.get("03103", _UNSURVEYED_WORK_AGG_TAIL)))
     rows.append(("03ZGB", "total", *overrides.get("03ZGB", _DEFAULT_WORK_AGG_TAIL)))
     return rows
 
@@ -67,9 +74,11 @@ _DEFAULT_EDU_ROW = (200, 0.5)  # (n_unweighted, p_education) filler
 
 
 def _full_edu_agg(band: str, overrides: dict) -> list:
-    """An 8-row srv2023_education_by_age_by_kreis.csv fixture for one band (7 SrV Kreise +
-    03ZGB total), the default row for every code not named in `overrides`."""
+    """A 9-row srv2023_education_by_age_by_kreis.csv fixture for one band (7 surveyed Kreise +
+    the 03103 zero row + 03ZGB total), the default row for every code not named in
+    `overrides`."""
     rows = [(code, "kreis", band, *overrides.get(code, _DEFAULT_EDU_ROW)) for code in _ZGB_KREIS_CODES]
+    rows.append(("03103", "kreis", band, *overrides.get("03103", _UNSURVEYED_EDU_ROW)))
     rows.append(("03ZGB", "total", band, *overrides.get("03ZGB", _DEFAULT_EDU_ROW)))
     return rows
 
@@ -220,6 +229,27 @@ def test_education_target_is_the_conditional_share_with_wolfsburg_and_gesamt_fro
     assert df.loc["03103", "edu"] == 0.90 and df.loc["Gesamt", "n_effective"] == 2000
 
 
+def test_region_total_fallback_follows_the_zero_rows_not_a_hardcoded_kreis(tmp_path):
+    """Which Kreise borrow the region-total rate is read from the source, not hardcoded.
+
+    Wolfsburg alone passing proves nothing about that: a builder that still substituted the
+    literal 03103 would pass it too. Here a SURVEYED Kreis (03153) carries the zero row and
+    Wolfsburg carries real rates -- so the fallback must follow 03153 and leave 03103 on its own
+    measured value. Guards the reader against silently re-acquiring the knowledge the row
+    convention exists to remove (issue #405).
+    """
+    from scripts.build_participation_universe_targets import build_education_by_age_target
+    data = _write_inputs(tmp_path, edu_agg=_full_edu_agg("education_6_17", {
+        "03153": _UNSURVEYED_EDU_ROW,     # surveyed Kreis, but empty in this delivery
+        "03103": (150, 0.77),             # unsurveyed Kreis, but measured in this delivery
+        "03ZGB": (2000, 0.90)}))
+    df = build_education_by_age_target(data, "education_6_17").set_index("ars5")
+    assert df.loc["03153", "edu"] == 0.90        # borrowed from the 03ZGB total
+    assert df.loc["03153", "n_effective"] == 2000
+    assert df.loc["03103", "edu"] == 0.77        # kept its own measured rate
+    assert df.loc["03103", "n_effective"] == 150
+
+
 def test_unknown_education_entry_name_raises(tmp_path):
     data = _write_inputs(
         tmp_path,
@@ -230,9 +260,10 @@ def test_unknown_education_entry_name_raises(tmp_path):
 
 
 def test_education_missing_region_total_raises(tmp_path):
-    # Full 7-Kreis coverage (so the item-3 completeness guard does not fire first) but no
-    # 03ZGB total row at all.
+    # Full 8-Kreis coverage including the 03103 zero row (so the item-3 completeness guard does
+    # not fire first) but no 03ZGB total row at all.
     rows = [(code, "kreis", "education_6_17", 200, 0.5) for code in _ZGB_KREIS_CODES]
+    rows.append(("03103", "kreis", "education_6_17", *_UNSURVEYED_EDU_ROW))
     data = _write_inputs(tmp_path, edu_agg=rows)
     from scripts.build_participation_universe_targets import build_education_by_age_target
     with pytest.raises(ValueError, match="region-total"):
