@@ -48,6 +48,10 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from braunschweig.analysis import spatial  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_participation_target")
@@ -58,7 +62,18 @@ PURPOSES = ("work", "leisure", "education", "escort")
 # survey; per the documented ASSUMPTION above, its row uses the SrV region total
 # directly (identical convention to target2026_has_ebike_by_kreis.csv; unlike
 # the trip_class target, no MiD pattern transfer is applied for participation).
+# The code is still named because the header text and the Gesamt row refer to it, but the
+# builder no longer USES it to decide which Kreis needs the substitution -- that is read from
+# the source's zero rows (issue #405).
 WOLFSBURG_ARS5 = "03103"
+
+# All EIGHT Kreis rows are expected in the SrV source since issue #405; derived from
+# spatial.ZGB8 rather than re-listed, so the canonical set cannot drift out of sync.
+_EXPECTED_SRV_KREIS_CODES = frozenset(spatial.ZGB8)
+
+# Above this share of Kreise on the region-total fallback the substitution stops being a
+# documented exception for one unsurveyed Kreis and starts being a broken input.
+_REGION_TOTAL_FALLBACK_WARN_SHARE = 0.5
 
 HEADER_TEMPLATE = """\
 # SrV 2023 {purpose}-participation per-Kreis control target, built by
@@ -121,22 +136,56 @@ def build_participation_target(data: Path, purpose: str) -> pd.DataFrame:
 
     yes_col, no_col = f"{purpose}_yes", f"{purpose}_no"
 
+    missing_codes = sorted(_EXPECTED_SRV_KREIS_CODES - set(kreis_rows["code"]))
+    if missing_codes:
+        raise ValueError(
+            f"build_participation_target: SrV source is missing kreis row(s) for {missing_codes} "
+            f"(expected all 8 ZGB Kreise, spatial.ZGB8 -- a Kreis SrV does not survey is a zero "
+            f"row, not an absent one); present: {sorted(set(kreis_rows['code']))}.")
+    unexpected_codes = sorted(set(kreis_rows["code"]) - _EXPECTED_SRV_KREIS_CODES)
+    if unexpected_codes:
+        raise ValueError(
+            f"build_participation_target: SrV source has unexpected kreis row code(s) "
+            f"{unexpected_codes}, not in the expected set {sorted(_EXPECTED_SRV_KREIS_CODES)}.")
+
+    # Which Kreise have their own measurable share is a question about the DATA: a Kreis the
+    # survey does not cover is a zero row with a NaN share (issue #405). Reading it here removes
+    # the hardcoded "Wolfsburg is the exception" that the row convention exists to make
+    # unnecessary; the substitution itself is unchanged.
+    measurable = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce").fillna(0) > 0
+    measured, empty_codes = kreis_rows[measurable], sorted(kreis_rows.loc[~measurable, "code"])
+    n_kreis = len(kreis_rows)
+    fallback_share = len(empty_codes) / n_kreis if n_kreis else 0.0
+    message = ("build_participation_target[%s]: own SrV share for %d/%d Kreise (%.1f%%), "
+               "region-total (03ZGB) fallback for %d (%.1f%%): %s")
+    arguments = (purpose, len(measured), n_kreis, 100.0 * (1.0 - fallback_share),
+                 len(empty_codes), 100.0 * fallback_share, empty_codes or "none")
+    # CLAUDE.md fallback transparency: the substitution used to be invisible outside the written
+    # header, so a source that lost several Kreise would have produced a target built mostly from
+    # one pooled rate without saying so anywhere.
+    if fallback_share > _REGION_TOTAL_FALLBACK_WARN_SHARE:
+        log.warning(message + " -- most Kreise carry no own share; check the SrV source before "
+                    "trusting this target", *arguments)
+    else:
+        log.info(message, *arguments)
+
     rows = []
-    for _, r in kreis_rows.iterrows():
+    for _, r in measured.iterrows():
         yes = float(r[purpose])
         rows.append({
             "ars5": r["code"], "source": "srv", "n_effective": int(r["n_unweighted"]),
             yes_col: yes, no_col: 1.0 - yes,
         })
 
-    # Wolfsburg: SrV region-total share used directly (no MiD pattern transfer;
-    # that transfer is specific to trip_class immobility, not participation).
+    # A Kreis without an own share (today: Wolfsburg) takes the SrV region total directly -- no
+    # MiD pattern transfer; that transfer is specific to trip_class immobility, not participation.
     total_yes = float(total_row[purpose])
     total_n = int(total_row["n_unweighted"])
-    rows.append({
-        "ars5": WOLFSBURG_ARS5, "source": "srv_region_total", "n_effective": total_n,
-        yes_col: total_yes, no_col: 1.0 - total_yes,
-    })
+    for ars5 in empty_codes:
+        rows.append({
+            "ars5": ars5, "source": "srv_region_total", "n_effective": total_n,
+            yes_col: total_yes, no_col: 1.0 - total_yes,
+        })
     rows.append({
         "ars5": "Gesamt", "source": "srv", "n_effective": total_n,
         yes_col: total_yes, no_col: 1.0 - total_yes,

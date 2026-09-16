@@ -150,7 +150,14 @@ def test_committed_srv_aggregate_carries_escort_column():
         DATA / "srv" / "srv2023_participation_by_kreis.csv", comment="#", dtype={"code": str})
     assert "escort" in src.columns
     kreis = src[src["level"] == "kreis"]
-    assert ((kreis["escort"] > 0.0) & (kreis["escort"] < 1.0)).all()
+    # A Kreis the survey does not cover is a zero row whose shares are NaN, not 0.0 (issue
+    # #405), so the plausibility bound applies to the SURVEYED rows. Both halves are asserted:
+    # every measured share strictly inside (0, 1), and every unmeasured one NaN rather than a
+    # fabricated 0.0 that would read as "nobody here escorts anyone".
+    surveyed = kreis[kreis["n_unweighted"] > 0]
+    assert len(surveyed) == 7, f"expected 7 surveyed Kreis rows, found {len(surveyed)}"
+    assert ((surveyed["escort"] > 0.0) & (surveyed["escort"] < 1.0)).all()
+    assert kreis[kreis["n_unweighted"] == 0]["escort"].isna().all()
 
 
 # --- Stage flag wiring ---------------------------------------------------------------

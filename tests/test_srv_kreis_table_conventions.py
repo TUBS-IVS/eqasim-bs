@@ -5,23 +5,18 @@ that each generator emits the right shape, but nothing proved that what is actua
 still has it. That is the gap this file closes -- the committed table is what every consumer
 reads, and it is what a regeneration on a future delivery can silently change.
 
-Scope: the tables of the ``code,level`` contract family that issue #405 brings onto one
-convention. Three other families exist in the same directory and are deliberately NOT asserted
-here, because bringing them onto this contract is a separate change with its own consumers, not
-a test fix:
+Scope: every committed table of the ``code,level`` contract family. Two other families exist in
+the same directory and are deliberately NOT asserted here, because they are different contracts
+rather than the same contract applied inconsistently:
 
-* ``srv2023_participation_by_kreis.csv`` -- same ``code,level`` / ``03ZGB`` family and the same
-  data-driven row set (``persons.groupby("ars5")`` in
-  ``scripts/build_srv_participation_aggregate.py``), so it is the next table that belongs here.
-  It is out of scope only because its consumer surface is much wider (popsim Kreis controls and
-  the participation-fit validation stage, not one target builder). Named explicitly rather than
-  quietly skipped: an unexplained carve-out is exactly the silent convention drift these tests
-  exist to stop.
 * the ``level,code,name`` family (``cars``, ``bikes``, ``dticket``, ``income5``, ...) writes a
   ``total,total,Gesamt`` region row plus ``stratum`` rows and covers a different geography set.
 * the ``level_geo,code,source`` family (``commute_distance*``, ``education_distance*``) fills
   the unsurveyed Kreis from a documented RS7 proxy (``proxy_rs7_72``) rather than with a zero
   row, which is a modelling decision, not a shape inconsistency.
+
+Both are named rather than quietly skipped: an unexplained carve-out is exactly the silent
+convention drift these tests exist to stop.
 """
 from pathlib import Path
 
@@ -36,11 +31,17 @@ REGION_CODE = "03ZGB"
 LEVEL_KREIS = "kreis"
 LEVEL_TOTAL = "total"
 
-# Committed tables that share the code,level contract, with the name of the generator that has
-# to keep them on it.
+# Committed tables that share the code,level contract: the generator that has to keep them on
+# it, and the share columns that must be NaN on an unsurveyed Kreis. The share columns are named
+# per table rather than guessed from a prefix: a heuristic that silently matches nothing would
+# turn the strongest assertion below into a no-op.
 CODE_LEVEL_TABLES = (
-    ("srv2023_work_by_employment_by_kreis.csv", "scripts/extract_srv_participation_universe.py"),
-    ("srv2023_education_by_age_by_kreis.csv", "scripts/extract_srv_participation_universe.py"),
+    ("srv2023_work_by_employment_by_kreis.csv", "scripts/extract_srv_participation_universe.py",
+     ("employed_share", "p_work_employed", "p_work_nonemployed")),
+    ("srv2023_education_by_age_by_kreis.csv", "scripts/extract_srv_participation_universe.py",
+     ("p_education",)),
+    ("srv2023_participation_by_kreis.csv", "scripts/build_srv_participation_aggregate.py",
+     ("work", "education", "leisure", "escort")),
 )
 
 
@@ -56,8 +57,8 @@ def _read(name: str) -> pd.DataFrame:
     return pd.read_csv(path, comment="#", dtype={"code": str})
 
 
-@pytest.mark.parametrize("name,generator", CODE_LEVEL_TABLES)
-def test_every_zgb_kreis_has_a_row_and_the_region_row_is_present(name, generator):
+@pytest.mark.parametrize("name,generator,share_columns", CODE_LEVEL_TABLES)
+def test_every_zgb_kreis_has_a_row_and_the_region_row_is_present(name, generator, share_columns):
     """All eight ZGB Kreise plus the region row -- an unsurveyed Kreis is a ZERO row.
 
     This is the property that stops a reader from having to know how many Kreise to expect. It
@@ -82,8 +83,8 @@ def test_every_zgb_kreis_has_a_row_and_the_region_row_is_present(name, generator
         f"{name} ({generator}) has unexpected level value(s) {sorted(unexpected_levels)}.")
 
 
-@pytest.mark.parametrize("name,generator", CODE_LEVEL_TABLES)
-def test_the_first_two_columns_are_code_then_level(name, generator):
+@pytest.mark.parametrize("name,generator,share_columns", CODE_LEVEL_TABLES)
+def test_the_first_two_columns_are_code_then_level(name, generator, share_columns):
     """One column order across the family. Every reader goes through pandas by NAME, so this
     buys no correctness -- it buys a maintainer being able to diff two of these tables against
     each other, which is how the divergence of issue #405 stayed invisible."""
@@ -93,8 +94,8 @@ def test_the_first_two_columns_are_code_then_level(name, generator):
         f"{list(table.columns)[:2]}.")
 
 
-@pytest.mark.parametrize("name,generator", CODE_LEVEL_TABLES)
-def test_an_unsurveyed_kreis_row_is_zero_with_no_fabricated_share(name, generator):
+@pytest.mark.parametrize("name,generator,share_columns", CODE_LEVEL_TABLES)
+def test_an_unsurveyed_kreis_row_is_zero_with_no_fabricated_share(name, generator, share_columns):
     """Wolfsburg's zero row must carry NaN shares, never 0.0.
 
     A 0.0 share reads as a measured rate of zero and would flow into a control target as one; a
@@ -107,9 +108,8 @@ def test_an_unsurveyed_kreis_row_is_zero_with_no_fabricated_share(name, generato
     assert (wolfsburg["n_unweighted"] == 0).all(), (
         f"{name} ({generator}): 03103 is recorded as not surveyed by SrV but carries persons. "
         "If a delivery now covers it, the region-total assumption in every consumer is stale.")
-    share_columns = [c for c in table.columns
-                     if c.startswith(("p_", "share_", "employed_share"))]
-    assert share_columns, f"{name} ({generator}): no share column found to check."
-    assert wolfsburg[share_columns].isna().all().all(), (
+    missing = [c for c in share_columns if c not in table.columns]
+    assert not missing, f"{name} ({generator}): declared share column(s) {missing} not in the table."
+    assert wolfsburg[list(share_columns)].isna().all().all(), (
         f"{name} ({generator}): 03103 has a non-NaN share in {share_columns} despite "
         "n_unweighted == 0; an empty class must never be reported as a measured 0.0.")

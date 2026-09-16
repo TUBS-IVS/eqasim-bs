@@ -18,11 +18,23 @@
 #   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/education/leisure/escort (float shares, 0.0..1.0, in PURPOSE dict order).
+# work/education/leisure/escort (float shares in 0.0..1.0, or empty/NaN, in
+# PURPOSE dict order).
 # Region-total row coded "03ZGB" with level="total".
+#
+# Rows: one per EXPECTED ZGB Kreis (all 8) plus the region total -- the row set
+# is the expected geography, never the Kreise the delivery happens to cover
+# (issue #405), so a reader never has to know that eight are expected but seven
+# arrive. Wolfsburg (03103) is NOT surveyed by SrV and is therefore emitted with
+# n_unweighted=0 and NaN shares; a consumer must substitute (today: the 03ZGB
+# region total, recorded as source "srv_region_total") and say so. The shares of
+# such a row are NaN and never 0.0: a 0.0 would read as a MEASURED participation
+# rate of zero. A Kreis that has persons but none of a given purpose keeps a
+# genuine 0.0.
 code,level,n_unweighted,work,education,leisure,escort
 03101,kreis,4519,0.34443,0.17582,0.41776,0.075053
 03102,kreis,1794,0.330209,0.193044,0.342177,0.100453
+03103,kreis,0,,,,
 03151,kreis,3574,0.323938,0.182649,0.382145,0.11508
 03153,kreis,2258,0.328466,0.145629,0.347937,0.120013
 03154,kreis,1761,0.321426,0.156608,0.383272,0.106603

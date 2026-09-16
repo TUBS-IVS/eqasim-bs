@@ -27,9 +27,12 @@ data-driven.
 ## Decision
 
 **The row set of a per-Kreis SrV aggregate is a property of the expected geography, never of the
-delivery.** Both builders in `braunschweig/calibration/srv_participation_universe.py` take
-`expected_kreise` (default `ZGB_KREISE`) and emit one row per expected code; a Kreis with no
-person becomes a zero row with NaN shares. Consequences:
+delivery.** All three builders of the `code,level` family — the two in
+`braunschweig/calibration/srv_participation_universe.py` and `compute_participation` in
+`scripts/build_srv_participation_aggregate.py` — take `expected_kreise` (default `ZGB_KREISE`)
+and emit one row per expected code; a Kreis with no person becomes a zero row with NaN shares.
+Each also raises if the universe carries a code outside the expected set, which under a
+contract-driven row set would otherwise reach the region row but no Kreis row. Consequences:
 
 1. **NaN, never 0.0, on an empty row.** A 0.0 share reads as a measured rate of zero and would
    flow into a control target as one. NaN forces the consumer to decide explicitly.
@@ -40,9 +43,10 @@ person becomes a zero row with NaN shares. Consequences:
    It also rejects an **unsurveyed Kreis that carries persons**: every consumer applies the
    documented assumption that Wolfsburg's rates come from the region total, and real data makes
    that assumption stale while it keeps being applied.
-3. **The reader stops knowing the answer its input states.** `build_participation_universe_targets.py`
-   expects all eight rows and reads *which* Kreise lack a measurable rate from `n_unweighted == 0`.
-   The region-total substitution itself is unchanged — a zero row carries no rate, so Wolfsburg's
+3. **The reader stops knowing the answer its input states.** Both target builders
+   (`build_participation_universe_targets.py`, `build_participation_target.py`) expect all eight
+   rows and read *which* Kreise lack a measurable rate from `n_unweighted == 0`. The
+   region-total substitution itself is unchanged — a zero row carries no rate, so Wolfsburg's
    rates still come from `03ZGB` — but the substitution is now logged as an explicit
    primary-vs-fallback rate every run (CLAUDE.md fallback transparency), which it never was.
 4. **A test asserts the convention on the committed tables**
@@ -53,12 +57,14 @@ person becomes a zero row with NaN shares. Consequences:
 
 Measured 2026-09-16 against the local raw delivery (`b1dfb244`):
 
-- Before the change, all three participation tables regenerate **row-identical** to the committed
-  ones — so the A/B has a trustworthy baseline.
-- After the change, the data-row diff is **exactly** the added zero rows (1 in the work table, 3
-  band rows in the education table); every pre-existing data row is unchanged.
-- All four derived `target2026_*` control tables regenerate **byte-identical**. The change does
-  not move any scientific result.
+- Before the change, every affected table regenerates **row-identical** to the committed one —
+  so the A/B has a trustworthy baseline.
+- After the change, the data-row diff is **exactly** the added zero rows: 1 in the work table, 3
+  band rows in the education table, 1 in the participation table. Every pre-existing data row is
+  unchanged.
+- All eight derived `target2026_*` control tables regenerate **byte-identical** (four
+  work/education universe targets, four purpose-participation targets). The change does not move
+  any scientific result.
 
 ## Rejected alternatives
 
@@ -77,14 +83,29 @@ grounds that `03ZGB` matches the `03xxx` Kreis codes). Rejected on two measureme
   manifests — far outside the issue's "five touch points per table".
 
 **Applying the convention to every committed per-Kreis SrV table in this change.** The issue's
-acceptance criterion asks for a test over *every* such table; four different families exist and
-three are out of scope here (see the docstring of `tests/test_srv_kreis_table_conventions.py`).
-`srv2023_participation_by_kreis.csv` shares this family and this exact defect
-(`persons.groupby("ars5")` in `scripts/build_srv_participation_aggregate.py`) and is the next
-table that belongs on the convention; it is deferred only because its consumer surface is much
-wider (popsim Kreis controls and the participation-fit validation stage rather than one target
-builder). The carve-out is named in the test rather than left silent — an unexplained exception
-is the same failure mode this ADR removes.
+acceptance criterion asks for a test over *every* such table; three different families exist.
+All three tables of the `code,level` family are now on the convention, including
+`srv2023_participation_by_kreis.csv`, which carried the same defect
+(`persons.groupby("ars5")` in `scripts/build_srv_participation_aggregate.py`). The other two
+families are out of scope and named in the docstring of
+`tests/test_srv_kreis_table_conventions.py`: they are different contracts (a
+`total,total,Gesamt` region row plus `stratum` rows; a documented RS7 proxy instead of a zero
+row), not the same contract applied inconsistently.
+
+The participation table was initially deferred on an over-broad estimate of its consumer
+surface: grepping `participation_by_kreis.csv` matches the four DERIVED
+`target2026_<purpose>_participation_by_kreis.csv` files too, which made 16 files look like
+readers of the SrV aggregate. Exactly one module reads it
+(`scripts/build_participation_target.py`), plus two tests — the same shape as the other two
+tables. Recorded because the measurement, not the estimate, is what decided the scope.
+
+That table carried a second defect the row change would otherwise have amplified: its share
+formula was `... if tot > 0 else 0.0`, so an empty Kreis would have been emitted with a
+participation rate of **0.0** — a fabricated measured zero flowing straight into a control
+target. Empty rows are NaN; a Kreis that has persons but none of a given purpose keeps its
+genuine 0.0. `scripts/build_participation_target.py` also had no completeness guard at all
+(only `kreis_rows.empty`), so a source that lost a Kreis would have shipped a short target
+silently; it now expects all eight rows and logs the primary-vs-fallback rate like its sibling.
 
 **Changing column order in `work_participation` (`level,code` → `code,level`).** Every reader
 goes through pandas by column name (verified: no positional or `header=None` read of these
