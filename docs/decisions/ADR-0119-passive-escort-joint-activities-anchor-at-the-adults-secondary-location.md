@@ -156,6 +156,13 @@
   - **A smoke, not a validation.** No observed reference exists for "child and adult end up at the
     same shop" -- this is a mechanism check (does the anchoring work, at what rate, at what cost),
     not a behavioural validation against real-world joint-activity data.
+  - **At production settings the realised effect is small.** The production-configuration smoke
+    (`docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml`) anchored 12
+    joint activities in this smoke (12/58 links, 20.7 %); the binding constraint on how many
+    children this feature can anchor is the per-person diary-plan match that must preserve the
+    paired adult inside the same synthetic household (Assumption 2 below), not the anchoring
+    mechanism itself, which resolves 100 % of the links it is given. Widening that reach is future
+    work, tracked in a follow-up issue.
 - **Assumptions (explicit):**
   1. **Same-destination reading of the pair.** A code-13 leg paired with a same-household adult leg
      within `escort_passive_pair_max_gap_minutes` is read as the SAME trip, ending at the SAME
@@ -166,15 +173,22 @@
   2. **Plan-source identity of the pair.** `(source_H_ID, source_P_ID)` uniquely identifies the
      paired adult within one synthetic household, i.e. a synthetic household's members that share
      `source_H_ID` are copies of one MiD donor household (`expand.expand_to_persons` +
-     member-completion semantics). The link rate this run measures is exactly the rate at which
+     member-completion semantics). The link rate this record measures is exactly the rate at which
      that identity survives synthesis (member completion, the diary-plan match, and the day-absence
-     model can all break it). The Kreis-03101 smoke measured it: **36/74 paired passive legs
-     linked (48.6 %)** -- n = 74 paired legs on a 1 %-sampled single Kreis, a smoke-scale count,
-     not a population rate (see Evidence and the run manifest). That measurement predates the
-     `origin/main` merge that brought issue #386 (fine child age bands applied to all three donor
-     matchers, ADR-0118), which changes the diary-plan match named above as one of the breaks on
-     this identity; the 48.6 % figure was not re-measured after that merge and should not be read
-     as the rate the branch's current HEAD produces.
+     model can all break it). The PRODUCTION-configuration smoke on the felix server
+     (`configs/base_bs.yml`, every behaviour flag resolved from the base) measured it: **12/58
+     paired passive legs linked (20.7 %)** -- n = 58 paired legs on a 1 %-sampled single Kreis, a
+     smoke-scale count, not a population rate (see Evidence and the production run manifest). An
+     earlier, REDUCED-FIXTURE local smoke had measured **36/74 (48.6 %)** under a different,
+     non-production configuration: PopulationSim control tiers 0-2 only, no per-Kreis controls, a
+     different settings file, the commute-day model off, and the pre-`origin/main`-merge donor
+     matchers (issue #386, fine child age bands applied to all three donor matchers, ADR-0118). A
+     same-server decomposition (production manifest) attributes only 2.6 of the points between
+     `synthesis.population.trips` (14/60 = 23.3 %) and `synthesis.population.trips.final` (12/58 =
+     20.7 %) to the commute-day / day-absence splice: issue #386 is therefore ONE of several
+     configuration differences between the two smokes, not the sole cause of the gap to 48.6 % --
+     the remainder is NOT separable into its causes with the runs performed, and the 48.6 % figure
+     is a reduced-fixture measurement that must not be read as the production rate.
   3. **The excluded primary-target share.** Children paired with an adult travelling for work,
      business or education (adult `W_ZWECK` 1-3) are excluded from anchoring here
      (`purpose_not_secondary`) and keep phase 1's `other` purpose assignment. ADR-0112 measured this
@@ -205,10 +219,19 @@
   `_solve_problem_set` extraction itself: the OFF-path frame equality below is a one-off manual
   comparison of the two stage pickles, as the feature record states
   (`evidence.off_path_byte_identical.note`). Run manifest
-  `docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml` (smoke on Kreis 03101,
-  completed 2026-09-11): measured link rate 36/74 paired passive legs linked (48.6 %),
+  `docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml` (PRODUCTION
+  configuration `configs/base_bs.yml`, felix server, completed 2026-09-15; this is the HEADLINE
+  measurement): measured link rate 12/58 paired passive legs linked (20.7 %), anchor-resolution
+  rate 12/12 (100.0 %), the ON-run two-pass numbers (pass 1 2,093 problems `cs.solve` 28.5 s, pass
+  2 0 problems -- every linked child's joint activity was already a fixed boundary), and the
+  same-server decomposition of the gap to the reduced-fixture measurement below -- see the
+  manifest for the full breakdown. Run manifest
+  `docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml` (REDUCED-FIXTURE local smoke
+  on Kreis 03101, completed 2026-09-11, a different, non-production configuration -- see
+  Assumption 2 above): measured link rate 36/74 paired passive legs linked (48.6 %),
   anchor-resolution rate 36/36 (100.0 %), OFF-path frame-equality result FRAME-EQUAL against the
   pre-refactor baseline, and the ON-run two-pass numbers (2,208 + 6 problems, `cs.solve` 19.0 s +
-  19.1 s) -- see the manifest for the full breakdown.
+  19.1 s) -- see the manifest for the full breakdown; this reduced-fixture rate is NOT the
+  production rate.
   Feature record `docs/registry/features/escort_passive_joint_location.yml`; feature doc section
   `docs/features/escort-purpose.md#joint-location-adr-0119`.

@@ -1,0 +1,114 @@
+id: i385-passive-joint-location-production-smoke-03101-2026-09-15
+date: '2026-09-15'
+repository:
+  commit: 0700430a5a8469ed3c2d7b136cdf7db46858e6ac
+  branch: feature/i385-passive-joint-location
+configuration:
+  base: 'configs/base_bs.yml -- the canonical production config. Every behaviour flag,
+    escort_passive_joint_location included, came from configs/base_bs.yml, as the governance
+    rule requires (flags live only in the base); verified in the merged config.'
+  overlays:
+  - 'configs/config_local_i385_smoke_overlay.yml (gitignored, scale-only overlay):
+    working_directory eqasim-data/cache_i385_smoke, run target
+    braunschweig.synthesis.locations.secondary_chainsolvers, sampling_rate 0.01,
+    braunschweig.political_prefix [''03101''], popsim max_cells 750, num_workers 2.'
+  notes: 'Host felix, Linux, the eqasim conda env, 64 cores. Executed at commit
+    0700430a5a8469ed3c2d7b136cdf7db46858e6ac. Run 2026-09-14 19:50 to 2026-09-15 08:27
+    (interrupted once; see status.notes and the environment fact below).
+
+
+    Commit provenance (stated, not papered over): the branch has since gained 0ae8d728
+    (tests, the printed exclusion split, the dead plans.FIXED_PURPOSES removal, the
+    non-integral shard_attempts guard) and da4c52e1 (prose corrections). Neither commit
+    changes how a link is computed or an anchor resolved: build_passive_joint_links,
+    resolve_joint_anchors, rewrite_anchored_activities and _compose_two_pass are untouched
+    by both. The values measured below were NOT re-measured at the branch''s current HEAD
+    (da4c52e1).
+
+
+    Environment fact: felix was reduced from 128 GiB to 96 GiB of RAM between boots
+    (kernel-reported Memory: 134217184K on the 2026-08-10 boot vs 100662752K on the
+    2026-09-14 boot; 64 cores unchanged). The first attempt of this run was OOM-killed at
+    braunschweig.synthesis.locations.home_cell (Sep 14 22:30:23 matsim kernel: Out of
+    memory: Killed process 5139 (python) ... anon-rss:97342240kB); the relaunch survived
+    the same stage at a measured 96.8 GB peak RSS with 0 GB free. That is an environment
+    limit, not a property of this feature.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: Kreis 03101 only
+pipeline:
+  targets:
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+classification:
+- smoke
+status:
+  execution: completed
+  notes: 'The first attempt was OOM-killed at braunschweig.synthesis.locations.home_cell
+    (Sep 14 22:30:23 matsim kernel log, felix); the relaunch that produced the measurements
+    below completed at a measured 96.8 GB peak RSS with 0 GB free on the then-96 GiB host.
+    See configuration.notes for the environment fact (felix''s RAM reduction) this is
+    attributed to.'
+environment: 'server (felix, Linux, eqasim env)'
+validation:
+- metric: 'passive joint link rate, PRODUCTION configuration (configs/base_bs.yml + the
+    scale-only overlay above), measured on synthesis.population.trips.final (the reporting-day
+    frame the two-pass wiring actually consumes)'
+  reference: 'none -- a descriptive rate, not a target'
+  result: '12/58 paired passive legs linked (20.7 %). Exclusions: adult not in the synthetic
+    household (plan source) 27 (46.6 %), adult leg missing 3 (5.2 %), purpose not secondary
+    16 (27.6 %), adult is a linked child 0, duplicate child activity 0. Anchors resolved
+    12/12 (100.0 %), 0 unresolved. n = 58 paired legs on a 1 %-sampled single Kreis --
+    a smoke-scale count, not a population rate.'
+- metric: 'ON run: pass sizes, solver wall time, primary/fallback accounting (production
+    braunschweig.chainsolvers.processes: 0 sentinel resolves to 62 workers on this
+    64-core host)'
+  reference: 'none -- a descriptive/mechanism check, not a behavioural target'
+  result: 'Pass 1 (adults + unlinked): 2,093 problems, 2,093 persons, 5,059 plan rows,
+    cs.solve 28.5 s with 62 workers. Pass 2 (linked children): 11 linked children entered
+    pass 2; 0 problems -- every linked child''s joint activity is a fixed boundary and
+    nothing variable remained to place, so the pass placed nothing and returned the
+    fallback-only result. Primary/fallback: carla placed 2,093/2,093 (100.0 %), fallback
+    0; success rate 1.0000.'
+- metric: 'decomposition of the difference to the local reduced-fixture smoke, measured on
+    the SAME server population by running build_passive_joint_links on both cached trip
+    frames (before and after the commute-day / day-absence splice)'
+  reference: 'the local reduced-fixture smoke
+    (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml): 36/74 = 48.6 %.
+    Named here only to state precisely what is and is not explained by the splice -- it is
+    a DIFFERENT configuration''s measurement, never a comparable predecessor of the
+    production rate.'
+  result: |
+    | frame | link rate |
+    |---|---|
+    | synthesis.population.trips (before the commute-day splice) | 14/60 = 23.3 % |
+    | synthesis.population.trips.final (production, after the splice) | 12/58 = 20.7 % |
+
+    The commute-day / day-absence splice costs 2.6 percentage points and introduces all
+    three adult_leg_missing cases (0 before the splice). It does NOT explain the gap to the
+    local 48.6 %: the local smoke ran the mini fixture
+    (configs/fixtures/config_smoke_popsim_mid_mini.yml as a gitignored copy) --
+    PopulationSim control tiers 0-2 only, no per-Kreis controls, a different settings file,
+    the commute-day model OFF, and the pre-#386 donor matchers -- while this run used the
+    full production configuration. The two populations are built differently, so the
+    48.6 % was never an apples-to-apples predecessor of the 20.7 %; the earlier record's
+    caveat naming only #386 as the possible cause was too narrow. The remaining gap (local
+    48.6 % vs this run's pre-splice 23.3 %) is NOT separable into its causes with the runs
+    performed -- it is not apportioned to any single cause here.
+features:
+  note: 'Production-configuration exercise of escort_passive_joint_location (issue #385,
+    ADR-0119), recorded to correct which measurement is the headline. This remains a SMOKE
+    on a 1 %-sampled single Kreis, not a validation: no observed reference exists for joint
+    locations, both solver passes share ONE RandomState (an ON/OFF or configuration
+    comparison reflects a different Monte-Carlo realisation, not the anchoring mechanism
+    alone), and n = 58 paired legs is a smoke-scale count on a 1 %-sampled single Kreis, not
+    a population rate.'
+artifacts:
+- 'server cache (gitignored, not committed): eqasim-data/cache_i385_smoke (host felix)'
+issues:
+- '#385'
+decisions:
+- ADR-0119
+source: '.superpowers/sdd/2026-09-11-passive-escort-joint-location/ (design spec
+  docs/superpowers/specs/2026-09-11-passive-escort-joint-location-design.md; fix wave 7
+  brief/report record this production-configuration measurement and the corrections it
+  drove)'

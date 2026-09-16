@@ -27,16 +27,23 @@ configuration:
     rewrite_anchored_activities (whose positional-mask fix is unreachable on a unique-index trips
     frame) is called only on the ON path, _build_shared_solve_state''s dropped parameter was
     unused, and the unresolved-anchor threshold change (> to >=) affects a log line only. The
-    LINK RATE (validation metric 1) and the ON-run counts (validation metric 3) do NOT carry
-    forward with the same confidence: the origin/main merge 818d1e3a brought issue #386 (''Apply
-    the fine child age bands to all three donor matchers'', commits 251f3bb9, 61f8921a,
-    c3552e83), which changes the diary plan match (feature record diary_plan_match, ADR-0118) --
-    exactly the mechanism that bounds this feature''s link rate, since a child fails to link when
-    its own plan source has been remapped away from the paired adult''s synthetic household. The
-    population underlying the link-rate and ON-run measurements above was built with the
-    PRE-#386 donor matchers; #386 therefore plausibly shifts the measured 48.6 % link rate and the
-    downstream ON-run anchor-resolution counts, in a direction and magnitude that were NOT
-    re-measured at the branch''s current HEAD.'
+    LINK RATE (validation metric 1) and the ON-run counts (validation metric 3): this run''s
+    configuration (configuration.base above) is the REDUCED mini fixture -- PopulationSim control
+    tiers 0-2 only, no per-Kreis controls, a different settings file, the commute-day model OFF,
+    and the pre-#386 donor matchers (issue #386, ''Apply the fine child age bands to all three
+    donor matchers'', origin/main merge 818d1e3a, commits 251f3bb9, 61f8921a, c3552e83, feature
+    record diary_plan_match, ADR-0118, which changes the diary plan match this feature''s link rate
+    depends on). A PRODUCTION-configuration smoke was measured separately and is recorded in
+    docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml: link rate
+    12/58 = 20.7 %, well below this run''s 48.6 %. That gap is NOT attributable to #386 alone --
+    the production smoke used the full production configuration (configs/base_bs.yml), while this
+    run used the reduced fixture named above, so the two populations are built differently in more
+    ways than the donor-matcher change. This run''s 48.6 % link rate is therefore a
+    REDUCED-FIXTURE measurement, not the production rate, and was never an apples-to-apples
+    predecessor of the 20.7 % figure. The production manifest''s own same-server decomposition
+    shows the commute-day splice explains only 2.6 of the points between its two frames; the
+    remainder of the gap to this run''s 48.6 % is NOT separable into its causes with the runs
+    performed.'
 sampling:
   rate: 1% (sampling_rate 0.01)
   scope: Kreis 03101 only

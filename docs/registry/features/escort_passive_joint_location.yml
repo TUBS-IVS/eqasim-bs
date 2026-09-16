@@ -115,12 +115,21 @@ evidence:
       unresolved (a >= comparison, the convention of every sibling rate instrument of this stage;
       a signature of an incomplete pass-1 result). Unlinked/unresolved children keep the
       independent draw -- the fallback here IS that draw, and it is counted, never silent. Measured
-      on the Kreis-03101 smoke (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml):
-      link rate 36/74 paired passive legs linked (48.6 %), exclusion split adult_not_in_household
-      23 (31.1 %), purpose_not_secondary 15 (20.3 %), adult_leg_missing 0, adult_is_linked_child 0,
-      duplicate_child_activity 0; anchor-resolution rate 36/36 (100.0 %), 0 unresolved -- well
-      inside the WARNING thresholds (nothing linked; 50 % or more of the links unresolved). n = 74 paired legs on a
-      1 %-sampled single Kreis is a smoke-scale count, not a population rate.'
+      in the PRODUCTION configuration on the felix server smoke
+      (docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml): link rate
+      12/58 paired passive legs linked (20.7 %), exclusion split adult_not_in_household 27
+      (46.6 %), adult_leg_missing 3 (5.2 %), purpose_not_secondary 16 (27.6 %),
+      adult_is_linked_child 0, duplicate_child_activity 0; anchor-resolution rate 12/12 (100.0 %),
+      0 unresolved -- well inside the WARNING thresholds (nothing linked; 50 % or more of the
+      links unresolved). n = 58 paired legs on a 1 %-sampled single Kreis is a smoke-scale count,
+      not a population rate. The earlier REDUCED-FIXTURE local smoke
+      (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml) measured 36/74 (48.6 %)
+      under a DIFFERENT, non-production configuration (PopulationSim control tiers 0-2 only, no
+      per-Kreis controls, the commute-day model off, pre-#386 donor matchers); a same-server
+      decomposition on the production population attributes only 2.6 of the points between its own
+      two frames to the commute-day splice, and the remainder of the gap between the
+      reduced-fixture and production measurements is NOT separable into its causes with the runs
+      performed.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/mid/mid2023_escort_w_zweck_split.csv
@@ -136,23 +145,42 @@ validation:
   state: unvalidated
   runs:
   - i385-passive-joint-location-smoke-03101-2026-09-11
-  metric: 'Measured on the Kreis-03101 test bed (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml).
-    Task 4 measured the link rate BEFORE the two-pass wiring: 36/74 paired passive legs linked
-    (48.6 %). Task 6 measured the ON run: anchor-resolution rate 36/36 (100.0 %), 0 unresolved,
-    every resolved link places the child at the adult''s location (child_at_adult_location 36/36,
+  - i385-passive-joint-location-production-smoke-03101-2026-09-15
+  metric: 'PRODUCTION configuration (configs/base_bs.yml), measured on the felix server smoke
+    (docs/runs/i385-passive-joint-location-production-smoke-03101-2026-09-15.yml): link rate
+    12/58 paired passive legs linked (20.7 %), anchor-resolution rate 12/12 (100.0 %), 0
+    unresolved. Pass 1 (adults + unlinked) 2,093 problems, cs.solve 28.5 s with 62 workers
+    (production braunschweig.chainsolvers.processes: 0 sentinel on 64 cores); pass 2 (linked
+    children) 11 linked children entered, 0 problems -- every linked child''s joint activity is a
+    fixed boundary and nothing variable remained to place, so the pass placed nothing and returned
+    the fallback-only result. Primary/fallback: carla placed 2,093/2,093 (100.0 %), fallback 0.
+
+    REDUCED-FIXTURE test bed (docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml, a
+    DIFFERENT, non-production configuration -- see that manifest''s configuration.notes). Task 4
+    measured the link rate BEFORE the two-pass wiring: 36/74 paired passive legs linked (48.6 %).
+    Task 6 measured the ON run: anchor-resolution rate 36/36 (100.0 %), 0 unresolved, every
+    resolved link places the child at the adult''s location (child_at_adult_location 36/36,
     duplicate child rows 0) -- 100 % of resolved links by construction, as expected -- fallback
     accounting vs OFF (3,415 location rows both runs; ON carla 2,213/2,214 with 1 fallback, OFF
     carla 2,236/2,237 with 1 fallback), and wall time of both passes (pass 1 cs.solve 19.0 s, pass
-    2 cs.solve 19.1 s). Recorded as a SMOKE in
-    docs/runs/i385-passive-joint-location-smoke-03101-2026-09-11.yml, not a validation: no observed
-    reference exists for joint shopping/leisure locations.'
-  note: 'The Kreis-03101 smoke has completed (see metric above and the run manifest).
+    2 cs.solve 19.1 s).
+
+    DECOMPOSITION (production manifest, measured on the SAME server population): the commute-day /
+    day-absence splice costs 2.6 percentage points between synthesis.population.trips (14/60 =
+    23.3 %, before the splice) and synthesis.population.trips.final (12/58 = 20.7 %, after the
+    splice); it does NOT explain the gap to the reduced-fixture 48.6 % -- the two configurations
+    build the population differently in more ways than the splice or issue #386, and that
+    remaining gap is NOT separable into its causes with the runs performed. Both runs recorded as
+    SMOKEs, not a validation: no observed reference exists for joint shopping/leisure locations.'
+  note: 'Two smokes have completed on Kreis 03101 (see metric above and both run manifests): the
+    reduced-fixture local smoke and the production-configuration felix server smoke.
     validation.state remains unvalidated, not measured_vs_reference: convergence (a fully-placed,
     stable solve) is not the same as validation (matching an observed reference), and no such
     reference exists for this feature -- see ADR-0119''s Consequences. Both solver passes also
-    share ONE RandomState, so the ON/OFF comparison is a DIFFERENT Monte-Carlo realisation, not
-    attributable to the anchoring mechanism alone; and n = 74 paired legs on a 1 %-sampled single
-    Kreis is a smoke-scale count, not a population rate.'
+    share ONE RandomState, so an ON/OFF or configuration comparison is a DIFFERENT Monte-Carlo
+    realisation, not attributable to the anchoring mechanism alone; n = 74 (reduced-fixture local
+    smoke) and n = 58 (production smoke) paired legs on a 1 %-sampled single Kreis are both
+    smoke-scale counts, not a population rate.'
 assessment:
   status: pending
   pending_reason: 'The Kreis-03101 smoke (Task 4 link-rate measurement, Task 5 OFF-path frame
