@@ -358,6 +358,7 @@ def test_sample_fleet_receives_age_income_coupling_kwarg(monkeypatch):
                 "fleet_ev_income_tilt": True,
                 "fleet_euro6_substage": True,
                 "fleet_wohnmobile_age_tilt": True,
+                "fleet_gemeinde_bev_composition_tilt": True,
                 "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
                 "kba_fleet_paths": None,
             }

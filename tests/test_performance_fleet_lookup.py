@@ -172,6 +172,7 @@ def test_execute_forwards_fleet_home_lookup_to_car_frame(monkeypatch):
                 "fleet_ev_income_tilt": True,
                 "fleet_euro6_substage": True,
                 "fleet_wohnmobile_age_tilt": True,
+                "fleet_gemeinde_bev_composition_tilt": True,
                 "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
                 "kba_fleet_paths": None,
                 "braunschweig.performance.fleet_home_lookup": False,
