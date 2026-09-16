@@ -435,6 +435,37 @@ def _rescue_set(df_persons: pd.DataFrame, df_trips: pd.DataFrame) -> pd.DataFram
     return absent
 
 
+def _log_rescue_rates(stats: dict, max_gap_minutes: float, min_age_years: int,
+                      require_same_purpose: bool, *, material: bool) -> None:
+    """One rate line per run (CLAUDE.md fallback transparency).
+
+    ``material`` says whether at least one admissible candidate activity existed for some
+    eligible leg; a rescue that links NOTHING despite material is a failure signal (a broken
+    household join, a time-unit mismatch) and is logged at WARNING.
+    """
+    n = stats["n_rescue_candidates"]
+    if n == 0:
+        logger.info("%s surrogate rescue: no adult-not-in-household legs; nothing to rescue.",
+                    _LOG_TAG)
+        return
+    dead = material and stats["n_surrogate_linked"] == 0
+    logger.log(
+        logging.WARNING if dead else logging.INFO,
+        "%s surrogate rescue: %d/%d adult-not-in-household legs re-pointed to a household "
+        "surrogate (%.1f%%); child purpose not secondary %d, no admissible candidate activity "
+        "%d, nearest candidate beyond %.1f min %d; purpose-mismatch rows dropped %d, cyclic rows "
+        "dropped %d (require_same_purpose=%s, min_age_years=%d). Unrescued children keep the "
+        "independent draw.%s",
+        _LOG_TAG, stats["n_surrogate_linked"], n, 100.0 * stats["n_surrogate_linked"] / n,
+        stats["n_rescue_ineligible_child_purpose"], stats["n_rescue_no_candidate_activity"],
+        float(max_gap_minutes), stats["n_rescue_gap_exceeded"],
+        stats["n_rescue_purpose_mismatch_rows"], stats["n_rescue_cyclic_dropped_rows"],
+        bool(require_same_purpose), int(min_age_years),
+        " Candidate activities existed but none was linked -- check the household join and "
+        "the departure-time unit." if dead else "",
+    )
+
+
 def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
                            df_trips: pd.DataFrame, *, max_gap_minutes: float,
                            min_age_years: int, require_same_purpose: bool,
@@ -501,38 +532,67 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
         stats["rescue_rate"] = 0.0
     eligible = rescue[rescue["child_purpose"].isin(secondary)]
     stats["n_rescue_ineligible_child_purpose"] = int(len(rescue) - len(eligible))
-    # Task 2 continues here: candidate persons, candidate activities, gap, selection.
+    if len(eligible) == 0:
+        _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose,
+                          material=False)
+        return _empty_surrogate_links(), stats
+
+    # No person is both a linked child and a surrogate: a surrogate must be PLACED in pass 1,
+    # a linked child is placed in pass 2 (the ADR-0119 acyclic guard, generalised to the
+    # rescue set itself so a later-rescued sibling can never anchor an earlier one).
+    linked_children = (set(links["child_person_id"].tolist())
+                       | set(rescue["child_person_id"].tolist()))
+    persons = df_persons[["person_id", "household_id", "HP_ALTER"]].drop_duplicates("person_id")
+    old_enough = pd.to_numeric(persons["HP_ALTER"], errors="coerce") >= int(min_age_years)
+    candidates = persons.loc[old_enough, ["person_id", "household_id"]].rename(
+        columns={"person_id": "adult_person_id"})
+
+    # A leg on which the would-be surrogate is itself TAKEN ALONG (a paired passive leg)
+    # cannot carry an anchor: that person is not the one travelling to the place.
+    own_passive_leg = (df_trips["passive_pair_status"] == STATUS_PAIRED).to_numpy()
+    activities = df_trips.loc[df_trips["following_purpose"].isin(secondary).to_numpy()
+                              & ~own_passive_leg,
+                              ["person_id", "trip_index", "following_purpose", "departure_time"]]
+    activities = activities.rename(columns={
+        "person_id": "adult_person_id", "trip_index": "adult_trip_index",
+        "following_purpose": "adult_purpose", "departure_time": "adult_departure_time"})
+    activities = activities.merge(candidates, on="adult_person_id", how="inner")
+
+    pairs = eligible.merge(activities, on="household_id", how="inner")
+    pairs = pairs[pairs["adult_person_id"] != pairs["child_person_id"]]
+    cyclic = pairs["adult_person_id"].isin(linked_children)
+    stats["n_rescue_cyclic_dropped_rows"] = int(cyclic.sum())
+    pairs = pairs[~cyclic]
+    if require_same_purpose:
+        mismatch = pairs["adult_purpose"] != pairs["child_purpose"]
+        stats["n_rescue_purpose_mismatch_rows"] = int(mismatch.sum())
+        pairs = pairs[~mismatch]
+    pairs = pairs.copy()
+    pairs["gap_minutes"] = (pairs["adult_departure_time"]
+                            - pairs["child_departure_time"]).abs() / 60.0
+
+    key = ["child_person_id", "child_activity_index"]
+    eligible_keys = set(zip(eligible["child_person_id"].tolist(),
+                            eligible["child_activity_index"].tolist()))
+    with_activity = set(zip(pairs["child_person_id"].tolist(),
+                            pairs["child_activity_index"].tolist()))
+    stats["n_rescue_no_candidate_activity"] = len(eligible_keys - with_activity)
+    within = pairs[pairs["gap_minutes"] <= float(max_gap_minutes)]
+    within_keys = set(zip(within["child_person_id"].tolist(),
+                          within["child_activity_index"].tolist()))
+    stats["n_rescue_gap_exceeded"] = len(with_activity - within_keys)
+
+    # Nearest gap wins; ties break on the lowest adult person, then its earliest activity,
+    # so the result never depends on the frame order.
+    within = within.sort_values(key + ["gap_minutes", "adult_person_id", "adult_trip_index"])
+    chosen = within.drop_duplicates(key, keep="first").copy()
+    chosen["adult_activity_index"] = chosen["adult_trip_index"].astype("int64") + 1
+    chosen["link_source"] = LINK_SOURCE_SURROGATE
+    surrogate_links = chosen[SURROGATE_LINK_COLUMNS].reset_index(drop=True)
+    for column in LINK_COLUMNS[:-1]:
+        surrogate_links[column] = surrogate_links[column].astype("int64")
+    stats["n_surrogate_linked"] = int(len(surrogate_links))
+    stats["rescue_rate"] = stats["n_surrogate_linked"] / stats["n_rescue_candidates"]
     _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose,
-                      material=False)
-    return _empty_surrogate_links(), stats
-
-
-def _log_rescue_rates(stats: dict, max_gap_minutes: float, min_age_years: int,
-                      require_same_purpose: bool, *, material: bool) -> None:
-    """One rate line per run (CLAUDE.md fallback transparency).
-
-    ``material`` says whether at least one admissible candidate activity existed for some
-    eligible leg; a rescue that links NOTHING despite material is a failure signal (a broken
-    household join, a time-unit mismatch) and is logged at WARNING.
-    """
-    n = stats["n_rescue_candidates"]
-    if n == 0:
-        logger.info("%s surrogate rescue: no adult-not-in-household legs; nothing to rescue.",
-                    _LOG_TAG)
-        return
-    dead = material and stats["n_surrogate_linked"] == 0
-    logger.log(
-        logging.WARNING if dead else logging.INFO,
-        "%s surrogate rescue: %d/%d adult-not-in-household legs re-pointed to a household "
-        "surrogate (%.1f%%); child purpose not secondary %d, no admissible candidate activity "
-        "%d, nearest candidate beyond %.1f min %d; purpose-mismatch rows dropped %d, cyclic rows "
-        "dropped %d (require_same_purpose=%s, min_age_years=%d). Unrescued children keep the "
-        "independent draw.%s",
-        _LOG_TAG, stats["n_surrogate_linked"], n, 100.0 * stats["n_surrogate_linked"] / n,
-        stats["n_rescue_ineligible_child_purpose"], stats["n_rescue_no_candidate_activity"],
-        float(max_gap_minutes), stats["n_rescue_gap_exceeded"],
-        stats["n_rescue_purpose_mismatch_rows"], stats["n_rescue_cyclic_dropped_rows"],
-        bool(require_same_purpose), int(min_age_years),
-        " Candidate activities existed but none was linked -- check the household join and "
-        "the departure-time unit." if dead else "",
-    )
+                      material=len(pairs) > 0)
+    return surrogate_links, stats

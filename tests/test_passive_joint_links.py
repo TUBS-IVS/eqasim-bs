@@ -515,3 +515,157 @@ def test_rescue_requires_the_age_and_departure_columns():
     with pytest.raises(ValueError, match="departure_time"):
         rescue_with_surrogates(_identity_links(), _surrogate_persons(), trips,
                                max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+
+
+def _rescue(**overrides):
+    kwargs = dict(max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    kwargs.update(overrides)
+    return rescue_with_surrogates(_identity_links(), _surrogate_persons(), _surrogate_trips(),
+                                  **kwargs)
+
+
+def test_the_nearest_same_purpose_activity_of_a_household_member_is_chosen():
+    surrogate_links, stats = _rescue()
+    by_child = surrogate_links.set_index("child_person_id")
+    # Child 5: adult 4's shop trip, 5 minutes later (activity index = trip index + 1).
+    assert by_child.loc[5, "adult_person_id"] == 4
+    assert by_child.loc[5, "adult_activity_index"] == 1
+    assert by_child.loc[5, "adult_purpose"] == "shop"
+    assert by_child.loc[5, "gap_minutes"] == pytest.approx(5.0)
+    assert by_child.loc[5, "link_source"] == LINK_SOURCE_SURROGATE
+    # Child 12 ('other'): sibling 13 (15 years) does 'other' 10 min later; adult 14's 'other'
+    # is 30 min away and its leisure trip is the wrong purpose under the strict rule.
+    assert by_child.loc[12, "adult_person_id"] == 13
+    assert by_child.loc[12, "gap_minutes"] == pytest.approx(10.0)
+    assert stats["n_surrogate_linked"] == 2
+    # Two candidate ROWS fail the purpose rule: adult 4's leisure trip (household 20) and
+    # adult 14's leisure trip (household 60).
+    assert stats["n_rescue_purpose_mismatch_rows"] == 2
+
+
+def test_relaxing_the_purpose_rule_admits_the_nearest_secondary_activity_of_any_purpose():
+    surrogate_links, stats = _rescue(require_same_purpose=False)
+    by_child = surrogate_links.set_index("child_person_id")
+    assert by_child.loc[12, "adult_person_id"] == 14        # leisure, 1 minute away
+    assert by_child.loc[12, "adult_purpose"] == "leisure"
+    assert by_child.loc[12, "gap_minutes"] == pytest.approx(1.0)
+    assert stats["n_rescue_purpose_mismatch_rows"] == 0
+
+
+def test_the_age_floor_excludes_younger_household_members():
+    surrogate_links, stats = _rescue(min_age_years=18)
+    by_child = surrogate_links.set_index("child_person_id")
+    # Sibling 13 (15 years) is below the floor; adult 14's 'other' trip is 30 min away,
+    # beyond the 15-minute gap, so child 12 is counted as gap-exceeded, not rescued.
+    assert 12 not in by_child.index
+    assert stats["n_rescue_gap_exceeded"] == 1
+    assert stats["n_surrogate_linked"] == 1
+
+
+def test_widening_the_gap_rescues_the_leg_the_floor_left_over():
+    surrogate_links, _stats = _rescue(min_age_years=18, max_gap_minutes=30.0)
+    by_child = surrogate_links.set_index("child_person_id")
+    assert by_child.loc[12, "adult_person_id"] == 14
+    assert by_child.loc[12, "adult_activity_index"] == 2
+    assert by_child.loc[12, "gap_minutes"] == pytest.approx(30.0)
+
+
+def test_rescue_statistics_account_for_every_candidate_exactly_once():
+    for overrides in (dict(), dict(require_same_purpose=False), dict(min_age_years=18),
+                      dict(min_age_years=18, max_gap_minutes=30.0)):
+        _links, stats = _rescue(**overrides)
+        assert (stats["n_rescue_ineligible_child_purpose"] + stats["n_rescue_no_candidate_activity"]
+                + stats["n_rescue_gap_exceeded"] + stats["n_surrogate_linked"]
+                ) == stats["n_rescue_candidates"] == 3, overrides
+        assert stats["rescue_rate"] == pytest.approx(stats["n_surrogate_linked"] / 3)
+
+
+def test_rescued_link_rows_carry_int64_ids_and_the_documented_columns():
+    surrogate_links, _stats = _rescue()
+    assert list(surrogate_links.columns) == SURROGATE_LINK_COLUMNS
+    for column in ("child_person_id", "child_activity_index", "adult_person_id",
+                   "adult_activity_index"):
+        assert surrogate_links[column].dtype == "int64", column
+    assert surrogate_links["child_person_id"].is_monotonic_increasing
+
+
+def test_legs_excluded_for_other_reasons_are_never_rescued():
+    surrogate_links, _stats = _rescue(require_same_purpose=False, max_gap_minutes=600.0)
+    # Child 7 (adult leg missing) and child 9 (adult travels to work) keep their identity
+    # exclusion: a surrogate would override a KNOWN paired adult.
+    assert not surrogate_links["child_person_id"].isin([7, 9]).any()
+
+
+def test_a_linked_child_is_never_a_surrogate_and_the_dropped_rows_are_counted():
+    # Household 70: child 20 (6 y) and child 21 (15 y) BOTH lost their donor adult and both
+    # are taken along shopping at 08:00; child 21 additionally shops ON ITS OWN at 08:01
+    # (an ordinary, unpaired leg -- the only kind that could carry an anchor). Adult 22 shops
+    # 50 minutes later. Child 21 is rescue material itself, so its own shop trip must not
+    # anchor child 20 (21 would have to be solved in pass 1 AND pass 2).
+    persons = pd.DataFrame({"person_id": [20, 21, 22], "household_id": [70, 70, 70],
+                            "source_H_ID": [950, 950, 960], "source_P_ID": [2, 3, 1],
+                            "HP_ALTER": [6, 15, 40]})
+    trips = pd.DataFrame({
+        "person_id": [20, 21, 21, 22], "trip_index": [0, 0, 1, 0],
+        "following_purpose": ["shop", "shop", "shop", "shop"],
+        "departure_time": [28800.0, 28800.0, 28860.0, 31800.0], "W_ID": [1, 2, 4, 3],
+        "passive_pair_status": ["paired", "paired", np.nan, np.nan],
+        "passive_pair_adult_p_id": [1.0, 1.0, np.nan, np.nan],
+        "passive_pair_adult_w_id": [9.0, 9.0, np.nan, np.nan],
+    })
+    no_links = pd.DataFrame({c: pd.Series(dtype="int64") for c in ("child_person_id",
+                             "child_activity_index", "adult_person_id", "adult_activity_index")}
+                            | {"adult_purpose": pd.Series(dtype=object)})
+    surrogate_links, stats = rescue_with_surrogates(
+        no_links, persons, trips, max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    assert len(surrogate_links) == 0
+    assert stats["n_rescue_cyclic_dropped_rows"] == 1      # child 20 x person 21's OWN shop trip
+    assert stats["n_rescue_gap_exceeded"] == 2            # both children: adult 22 is 50 min away
+
+
+def test_an_activity_that_is_itself_a_paired_passive_leg_cannot_carry_an_anchor():
+    # Household 80: child 30 (5 y) lost its donor adult and shops at 08:00. Child 31 (16 y)
+    # ALSO shops at 08:00 -- but on a PAIRED passive leg whose adult leg (W_ID 99) is missing,
+    # so 31 is outside the rescue set. Being taken along, 31 is not a driver: its leg must not
+    # anchor 30. Adult 32's own shop trip is 30 min away, so 30 ends up gap-exceeded.
+    persons = pd.DataFrame({"person_id": [30, 31, 32], "household_id": [80, 80, 80],
+                            "source_H_ID": [970, 980, 980], "source_P_ID": [2, 2, 1],
+                            "HP_ALTER": [5, 16, 40]})
+    trips = pd.DataFrame({
+        "person_id": [30, 31, 32], "trip_index": [0, 0, 0],
+        "following_purpose": ["shop", "shop", "shop"],
+        "departure_time": [28800.0, 28800.0, 30600.0], "W_ID": [1, 40, 41],
+        "passive_pair_status": ["paired", "paired", np.nan],
+        "passive_pair_adult_p_id": [1.0, 1.0, np.nan], "passive_pair_adult_w_id": [9.0, 99.0, np.nan],
+    })
+    identity, identity_stats = build_passive_joint_links(persons, trips)
+    assert identity_stats["n_adult_leg_missing"] == 1 and len(identity) == 0
+    surrogate_links, stats = rescue_with_surrogates(
+        identity, persons, trips, max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    assert len(surrogate_links) == 0
+    assert stats["n_rescue_candidates"] == 1 and stats["n_rescue_gap_exceeded"] == 1
+
+
+def test_a_rescue_with_material_but_no_link_logs_a_warning(caplog):
+    persons = pd.DataFrame({"person_id": [20, 22], "household_id": [70, 70],
+                            "source_H_ID": [950, 960], "source_P_ID": [2, 1], "HP_ALTER": [6, 40]})
+    trips = pd.DataFrame({
+        "person_id": [20, 22], "trip_index": [0, 0], "following_purpose": ["shop", "shop"],
+        "departure_time": [28800.0, 31800.0], "W_ID": [1, 3],
+        "passive_pair_status": ["paired", np.nan],
+        "passive_pair_adult_p_id": [1.0, np.nan], "passive_pair_adult_w_id": [9.0, np.nan],
+    })
+    identity, _ = build_passive_joint_links(persons, trips)
+    with caplog.at_level("INFO", logger="braunschweig.synthesis.locations.passive_joint_links"):
+        rescue_with_surrogates(identity, persons, trips, max_gap_minutes=15.0,
+                               min_age_years=14, require_same_purpose=True)
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "surrogate rescue" in r.message]
+    assert len(warnings) == 1 and "0/1" in warnings[0].message
+
+
+def test_a_successful_rescue_logs_the_rate_at_info(caplog):
+    with caplog.at_level("INFO", logger="braunschweig.synthesis.locations.passive_joint_links"):
+        _rescue()
+    lines = [r for r in caplog.records if "surrogate rescue" in r.message]
+    assert len(lines) == 1 and lines[0].levelname == "INFO"
+    assert "2/3" in lines[0].message and "(66.7%)" in lines[0].message
