@@ -95,3 +95,9 @@ def test_detect_machine_records_both_sources():
     assert machine.memory_gb == pytest.approx(94.0)
     assert machine.cores_source == "sched_getaffinity"
     assert machine.memory_source == "psutil"
+
+
+def test_detect_machine_rejects_a_misspelled_reader_argument():
+    # A typo'd injection must not silently fall through to the real machine.
+    with pytest.raises(TypeError):
+        resources.detect_machine(afinity_reader=lambda: 999)

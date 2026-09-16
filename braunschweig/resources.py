@@ -169,13 +169,22 @@ def detect_memory_gb(psutil_reader: Optional[Callable[[], Optional[float]]] = _p
     )
 
 
-def detect_machine(**readers) -> MachineResources:
-    """Detect cores and memory together, recording which reader supplied each."""
+def detect_machine(affinity_reader: Optional[Callable[[], Optional[int]]] = _affinity_cores,
+                   cpu_count_reader: Callable[[], Optional[int]] = os.cpu_count,
+                   psutil_reader: Optional[Callable[[], Optional[float]]] = _psutil_total_gb,
+                   meminfo_reader: Optional[Callable[[], Optional[float]]] = _meminfo_total_gb,
+                   ) -> MachineResources:
+    """Detect cores and memory together, recording which reader supplied each.
+
+    All reader arguments are explicit; misspelled argument names raise TypeError
+    rather than silently falling through to real machine readers (CLAUDE.md:
+    no silent fallbacks).
+    """
     cores, cores_source = detect_cores(
-        **{k: v for k, v in readers.items() if k in ("affinity_reader", "cpu_count_reader")}
+        affinity_reader=affinity_reader, cpu_count_reader=cpu_count_reader
     )
     memory_gb, memory_source = detect_memory_gb(
-        **{k: v for k, v in readers.items() if k in ("psutil_reader", "meminfo_reader")}
+        psutil_reader=psutil_reader, meminfo_reader=meminfo_reader
     )
     return MachineResources(
         cores=cores, memory_gb=memory_gb,
