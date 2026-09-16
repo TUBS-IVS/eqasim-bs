@@ -169,7 +169,13 @@ WORK_BY_EMPLOYMENT_MIN_AGE_YEARS = 14
 # The two labels of the education_flag seed column: whether the realised plan contains a
 # direct education leg. Used by every education-by-age-range entry below (they differ only
 # in their age universe, not in their categories).
-EDUCATION_FLAG_CATEGORIES = ("edu", "noedu")
+#: The two ``education_flag`` seed values, named so a consumer never has to rely on the
+#: ORDER of :data:`EDUCATION_FLAG_CATEGORIES`. A display reorder of that tuple would
+#: otherwise invert the seed silently.
+EDUCATION_FLAG_EDU = "edu"
+EDUCATION_FLAG_NOEDU = "noedu"
+
+EDUCATION_FLAG_CATEGORIES = (EDUCATION_FLAG_EDU, EDUCATION_FLAG_NOEDU)
 
 # Inclusive age bounds (min_age, max_age) of the education-by-age-range control universes;
 # `None` as the upper bound means "no upper bound" (KreisAttributeControl.max_age = None).

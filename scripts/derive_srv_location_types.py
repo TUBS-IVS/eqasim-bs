@@ -14,7 +14,7 @@ Usage:
         [--out-probs <path>] [--out-shares <path>] [--min-obs 30]
 
 Input : eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
-        (latin-1 encoded, GEWICHT_W and GIS_LAENGE_GUELTIG use a decimal comma)
+        (cp1252 encoded, GEWICHT_W and GIS_LAENGE_GUELTIG use a decimal comma)
 Output: eqasim-data/data/braunschweig/srv/srv2023_location_type_by_distance.csv
         eqasim-data/data/braunschweig/srv/srv2023_secondary_type_shares.csv
 
@@ -339,7 +339,7 @@ def _load_wege(path: Path) -> pd.DataFrame:
             "(local-only SrV raw data; see eqasim-data README)."
         )
     df = pd.read_csv(
-        path, sep=None, engine="python", encoding="latin-1",
+        path, sep=None, engine="python", encoding="cp1252",
         usecols=["V_ZWECK", "E_HVM_5", "GEWICHT_W", "GIS_LAENGE_GUELTIG"],
     )
     df["GEWICHT_W"] = (df["GEWICHT_W"].astype(str)

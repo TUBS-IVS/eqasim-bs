@@ -111,6 +111,13 @@ from braunschweig.popsim.time_imputation import WEGMIN_CODE_THRESHOLD
 from braunschweig.popsim.trips import (
     DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, map_mode, map_purpose, mid_time_seconds)
 
+# The key and its default are owned by the popsim stage package; declaring them as bare
+# string literals here let the same fact live in two files (issue #368 review).
+from braunschweig.popsim.stage.config_keys import (
+    DEFAULT_ESCORT_PASSIVE_EDUCATION,
+    KEY_ESCORT_PASSIVE_EDUCATION,
+)
+
 logger = logging.getLogger(__name__)
 
 # Straight-line detour factor: routed_km / straight-line_km.
@@ -1043,7 +1050,7 @@ def configure(context):
     leisure_unspecified_subtype = context.config(
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE)
     context.config("escort_purpose", False)
-    context.config("escort_passive_education", False)
+    context.config(KEY_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_EDUCATION)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a SHARED
     # key/default constant, like the plan-structure flags elsewhere -- the
     # distance layers must count the same W_ZWECK codes as leisure that the
@@ -1135,7 +1142,7 @@ def execute(context):
     codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
     leisure_unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     escort_purpose = context.config("escort_purpose")
-    escort_passive_education = context.config("escort_passive_education")
+    escort_passive_education = context.config(KEY_ESCORT_PASSIVE_EDUCATION)
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
     passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))

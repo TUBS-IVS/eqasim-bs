@@ -106,6 +106,10 @@ def test_universe_raises_on_a_non_numeric_trip_count():
     """
     persons, wege, households = _raw()
     persons["E_ANZ_WEGE"] = persons["E_ANZ_WEGE"].astype(object)
+    # The German literal is DELIBERATE and stays: it is verbatim survey content, the exact
+    # string a mis-delivered SrV export would carry in this numeric column. The English-only
+    # rule governs identifiers, comments and messages, not the data a fixture imitates -- an
+    # invented English value would test a case the delivery cannot produce (#368 review).
     persons.loc[2, "E_ANZ_WEGE"] = "keine Angabe"
     with pytest.raises(ValueError, match="non-numeric E_ANZ_WEGE"):
         spu.prepare_universe_persons(persons, households)

@@ -1,4 +1,5 @@
 # tests/test_weekend_plan_match.py
+import logging
 import numpy as np
 import pandas as pd
 import pytest
@@ -647,6 +648,12 @@ def test_match_person_rejects_an_unknown_hard_key():
     target = pd.Series({
         "HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
     })
+    # Match the GUARD's own wording, not the echoed typo: a test that only asserts the
+    # input is quoted back would still pass if the guard were replaced by a bare raise.
+    with pytest.raises(ValueError, match="unknown hard match key"):
+        wpm.match_person(target, weekday, rng=np.random.RandomState(0),
+                         hard_keys=frozenset({"employment"}))
+    # The offending key is still echoed, so the message stays actionable.
     with pytest.raises(ValueError, match="employment"):
         wpm.match_person(target, weekday, rng=np.random.RandomState(0),
                          hard_keys=frozenset({"employment"}))
@@ -675,7 +682,44 @@ def test_hard_keys_do_not_change_the_number_of_rng_draws():
     assert (soft_state[1] == hard_state[1]).all()
     assert soft_state[2:] == hard_state[2:]
     # ...and the guard is not a no-op on this fixture: it moves most of the donors.
-    assert sum(1 for s, h in zip(soft, hard) if s[:2] != h[:2]) > 0
+    # Measured 28 of 50 (56 %); the floor is deliberately well below that so a fixture
+    # tweak does not turn the assertion red, but far enough above zero that a guard
+    # degenerating into a near-no-op is caught -- which "> 0" would not do.
+    n_moved = sum(1 for s, h in zip(soft, hard) if s[:2] != h[:2])
+    assert n_moved >= 10, f"the hard key moved only {n_moved} of {len(targets)} donors"
+
+
+def test_whole_pool_fallback_debug_message_names_the_hard_keys(caplog):
+    """The whole-pool fallback is the ONLY origin of a hard-key boundary crossing.
+
+    When every soft key has been dropped and no donor shares the hard key either,
+    match_person still returns a donor -- so the debug line naming the unsatisfied hard
+    keys is the single piece of evidence that a crossing happened. It was asserted by no
+    test, which is exactly the branch where silence is most expensive (issue #368 review).
+    """
+    # A pool whose only donor cannot satisfy the hard key, and a target that shares no
+    # soft key with it either, so the ladder walks all the way to the whole-pool branch.
+    weekday = pd.DataFrame({
+        "H_ID": [77], "P_ID": [1], "HP_ALTER": [70], "HP_SEX": [2],
+        "P_FSCHEIN": [2], "P_TAET": [7], "P_FKARTE": [2], "P_GEW": [1.0],
+        "employed": [0],
+    })
+    target = pd.Series({
+        "HP_ALTER": 30, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1,
+        "employed": 1,
+    })
+
+    with caplog.at_level(logging.DEBUG, logger="braunschweig.popsim.weekend_plan_match"):
+        h, p, _ = wpm.match_person(target, weekday, rng=np.random.RandomState(0),
+                                   hard_keys=frozenset({"employed"}))
+
+    assert (h, p) == (77, 1), "the fallback must still return the only available donor"
+    messages = [r.getMessage() for r in caplog.records]
+    fallback = [m for m in messages if "whole-pool size-only" in m]
+    assert fallback, f"expected a whole-pool fallback debug line, got {messages}"
+    assert "employed" in fallback[0], (
+        "the fallback line must name the unsatisfied hard key(s) -- it is the only "
+        f"record that a boundary was crossed; got {fallback[0]!r}")
 
 
 # --- issue #386: fine child age bands for the DIARY match only -----------------

@@ -10,7 +10,7 @@ Usage:
     python scripts/derive_escort_location_weights.py [--wege <path>] [--out <path>]
 
 Input : eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_Wege.csv
-        (latin-1 encoded, GEWICHT_W uses a decimal comma)
+        (cp1252 encoded, GEWICHT_W uses a decimal comma)
 Output: eqasim-data/data/braunschweig/srv/srv2023_escort_destination_types.csv
 
 Category mapping (SrV2023_Datenkodierung_SciUse.xlsx, variable V_ZWECK_BHOL):
@@ -213,7 +213,7 @@ def derive_distance_factors(df: pd.DataFrame,
 
 
 def _sniff_separator(path) -> str:
-    with open(path, "r", encoding="latin-1") as handle:
+    with open(path, "r", encoding="cp1252") as handle:
         first = handle.readline()
     return ";" if first.count(";") > first.count(",") else ","
 
@@ -374,7 +374,7 @@ def main(argv=None) -> int:
             "(local-only SrV raw data; see eqasim-data README)."
         )
     df = pd.read_csv(
-        args.wege, sep=None, engine="python", encoding="latin-1",
+        args.wege, sep=None, engine="python", encoding="cp1252",
         usecols=["V_ZWECK", "V_ZWECK_BHOL", "E_ZWECK_OBHOL", "GEWICHT_W",
                  "GIS_LAENGE_GUELTIG"],
     )

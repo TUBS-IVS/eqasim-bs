@@ -159,7 +159,7 @@ def load_kreis_by_hhnr(households_path: Path) -> pd.Series:
         Kreis (5-digit ARS str) indexed by HHNR.
     """
     households = pd.read_csv(
-        households_path, sep=";", decimal=",", encoding="latin-1", low_memory=False,
+        households_path, sep=";", decimal=",", encoding="cp1252", low_memory=False,
         usecols=["HHNR", "AGS"],
     )
     households["kreis"] = households["AGS"].astype(str).str.zfill(8).str[:5]
@@ -206,7 +206,7 @@ def main(argv=None) -> int:
 
     log.info("reading %s", personen_path)
     persons = pd.read_csv(
-        personen_path, sep=";", decimal=",", encoding="latin-1", low_memory=False
+        personen_path, sep=";", decimal=",", encoding="cp1252", low_memory=False
     )
     log.info("read %d persons", len(persons))
 
@@ -223,7 +223,7 @@ def main(argv=None) -> int:
         )
 
     log.info("reading %s", wege_path)
-    wege = pd.read_csv(wege_path, sep=";", decimal=",", encoding="latin-1", low_memory=False)
+    wege = pd.read_csv(wege_path, sep=";", decimal=",", encoding="cp1252", low_memory=False)
     log.info("read %d trips", len(wege))
 
     # Filter to average weekday
