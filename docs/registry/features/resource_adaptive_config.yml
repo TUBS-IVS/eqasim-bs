@@ -1,0 +1,156 @@
+feature: resource_adaptive_config
+title: Resource-adaptive configuration (machine-derived budget, ceiling clamps, chainsolver shard/worker split)
+area: infrastructure
+description: >
+  braunschweig/resources.py detects the machine a run actually lands on (cores via
+  os.sched_getaffinity with an os.cpu_count fallback, memory via psutil with a
+  /proc/meminfo fallback, raising ResourceDetectionError if neither source reports a
+  value) and derives one ResourceBudget per run (cores - 2, memory_gb - 8, overridable
+  by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). Three OPERATIONAL config keys are resolved
+  against that budget at their point of use -- java_memory (matsim/runtime/java.py,
+  data/osm/osmosis.py), braunschweig.population.popsim.num_workers
+  (braunschweig/popsim/stage/__init__.py, bounded by measured per-worker memory via
+  braunschweig.population.popsim.worker_memory_gb, default 30 GB) and processes
+  (synthesis/population/matched.py, synthesis/population/spatial/secondary/locations.py)
+  -- and a configured value is a CEILING: used verbatim when it fits, clamped down and
+  logged when it does not. The resolved value never enters the config, so no synpp stage
+  hash changes and no shared cache is invalidated by these three clamps.
+  matsim_threads / matsim_qsim_threads are deliberately excluded (unverified effect on
+  results, issue #410): the startup report only warns about them. A companion fix
+  separates the secondary-location chainsolver's person-shard count (new hashed key
+  braunschweig.chainsolvers.shards, default 62, SCIENTIFIC) from its worker-process
+  count (braunschweig.chainsolvers.processes, now volatile, OPERATIONAL), because
+  before this change the shard count WAS the worker count and every run's
+  secondary-location realisation silently depended on the machine's core count.
+  scripts/run_synpp.py builds the report from the resolved config at startup, logs it,
+  aborts on an error-severity violation, and records it in the run provenance under
+  "resources". See ADR-0126 for the full decision, including the rejected
+  free-resources alternative.
+stages:
+- matsim.runtime.java
+- data.osm.osmosis
+- data.census.filtered
+- synthesis.population.spatial.secondary.locations
+- synthesis.population.matched
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+introduced:
+  issue: null
+  pr: null
+  adr: ADR-0126
+detail_doc: docs/codebase/notes/resource-budget.md
+code_paths:
+- braunschweig/resources.py
+- braunschweig/provenance.py
+- scripts/run_synpp.py
+- matsim/runtime/java.py
+- data/osm/osmosis.py
+- synthesis/population/matched.py
+- synthesis/population/spatial/secondary/locations.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/parallel_solving.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/solver_defaults.py
+evidence:
+  tests:
+  - tests/test_resources_detection.py
+  - tests/test_resources_budget.py
+  - tests/test_resources_java_memory.py
+  - tests/test_resources_popsim_workers.py
+  - tests/test_resources_processes.py
+  - tests/test_resources_report.py
+  - tests/test_resources_run_start.py
+  - tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
+  - tests/test_chainsolvers_parallel.py::test_a_single_worker_still_produces_the_sharded_realisation
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
+    note: >
+      Two claims, verified separately. (1) The java_memory / num_workers / processes
+      clamps cannot change a result by construction (each key is classified
+      OPERATIONAL in the design spec by reading its consumers: java_memory only ever
+      becomes -Xmx; PopulationSim submits one independent subprocess per batch with no
+      worker-index-dependent seed; the two processes read sites split work across a
+      pool with no worker-index-dependent seed either) -- there is no ON/OFF switch to
+      pin a byte-identity test against, so this claim rests on the classification
+      itself, not on a dedicated test. (2) The chainsolver shard/worker split IS
+      pinned: test_solve_chains_parallel_is_invariant_to_the_worker_count and
+      test_a_single_worker_still_produces_the_sharded_realisation assert
+      byte-identical secondary-location output across different worker counts at a
+      fixed shard count, and the production default shards:62 reproduces every
+      production run on the 64-core server bit-for-bit. This is NOT verified
+      end-to-end against the real carla_sample solver: both tests inject a stateless
+      fake chainsolvers module (the optional package is not installed in the
+      environment these tests were written in) and only exercise the real process pool
+      where the 'fork' start method is available (Linux/CI; Windows has none). Off the
+      server several shards can run sequentially inside one worker process; if the
+      real solver holds any process-global RNG or cache state outside the context it
+      is explicitly passed, results could still depend on the worker count through
+      that back door. Outstanding discharge (not yet run): a server A/B at shards:62
+      comparing processes:8 against processes:62, asserting byte-identical
+      secondary-location output against the real solver. See ADR-0126, Consequences.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[resources] sched_getaffinity unavailable'
+    note: >
+      Machine detection has two independent primary/fallback pairs, each logged the
+      moment its fallback fires: cores (sched_getaffinity primary, os.cpu_count
+      fallback, "[resources] sched_getaffinity unavailable; using os.cpu_count().") and
+      memory (psutil primary, /proc/meminfo fallback, "[resources] psutil unavailable;
+      using /proc/meminfo."). Neither degrades silently: MachineResources carries
+      cores_source / memory_source into the run provenance on every run, and if NEITHER
+      reader of a pair reports a value, detect_cores / detect_memory_gb raise
+      ResourceDetectionError instead of guessing (tests/test_resources_detection.py).
+      This is a fallback between DETECTION METHODS on a single machine, not a
+      per-item rate over many records, so no percentage applies here; observability is
+      the logged source string (and the run-provenance field) on every single run
+      instead of an aggregate rate.
+  reference:
+    kind: none
+    note: >
+      Infrastructure / configuration-resolution feature; no external behavioural
+      reference applies to "does this run fit on this machine". The one
+      result-affecting exception -- the chainsolver shard default -- is justified by
+      the committed evidence in off_path_byte_identical and ADR-0126, not by comparison
+      to an external reference value.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: >
+    No real-machine smoke run has been recorded yet. The brief for this work names a
+    server smoke (python scripts/run_synpp.py configs/base_bs.yml
+    configs/overlays/test.yml) that must show a "[resources] machine: 64 cores" log
+    block, a "java_memory 100G -> 86G" clamp line, the run proceeding, and the
+    resources block landing in run_provenance_<stamp>.json, as the outstanding
+    evidence before this feature can be called production-proven; it has not been
+    executed as of this record. Unit-level coverage (detection fallbacks, budget
+    derivation, per-key resolution, the startup gate, the chainsolver shard/worker
+    invariance) is in place and green; see evidence.tests.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >
+    Awaiting the real-machine smoke run named in validation.note, and the server A/B
+    (shards:62, processes:8 vs processes:62) named in
+    evidence.off_path_byte_identical.note as the outstanding discharge for the
+    chainsolver worker-count invariance claim against the real carla_sample solver.
+  source: ADR-0126
+notes: >
+  The chainsolver shard/worker separation is also tracked in its own feature record,
+  docs/registry/features/parallel_chainsolvers.yml (the general parallel-execution
+  mechanism); this record covers the resource-budget/clamp mechanism as a whole and
+  the specific machine-independence property the shard/worker split establishes for
+  it. EQASIM_CPU_BUDGET and EQASIM_MEM_BUDGET are environment-variable overrides, not
+  config keys, and are therefore not listed under production.flags; there is no
+  boolean switch that turns this mechanism off -- every run resolves its resource keys
+  against the detected (or overridden) budget, so production.flags is intentionally
+  omitted (always-on infrastructure, matching the convention used by
+  docs/registry/features/run_resource_recorder.yml for monitoring_enabled -- except
+  here there is no equivalent single toggle to name).

@@ -85,6 +85,7 @@ may only name run manifests (no run, no claim).
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
+| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 9 | proven | marker | none | unvalidated | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |

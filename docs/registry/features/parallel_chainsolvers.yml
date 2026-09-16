@@ -1,9 +1,17 @@
 feature: parallel_chainsolvers
 title: Parallel chainsolvers
 area: infrastructure
-description: Runs the secondary-location chainsolvers (carla) across worker processes (auto-scaled
-  to cpu_count - 2) instead of single-threaded. A worker killed outright (OOM) reports a broken
-  executor instead of hanging the stage, and its shard alone is retried (ADR-0097).
+description: >
+  Runs the secondary-location chainsolvers (carla) across worker processes instead of
+  single-threaded. Since ADR-0126 the person-shard count (braunschweig.chainsolvers.shards,
+  SCIENTIFIC, default 62) is a separate, hashed config key from the worker-process count
+  (braunschweig.chainsolvers.processes, OPERATIONAL, volatile, auto-scaled to cpu_count - 2 under
+  the sentinel 0) -- the shard count fixes the person partition and every shard's derived rng seed,
+  so it, not the worker count, determines the secondary-location realisation, and the worker
+  count only decides how many processes chew through that fixed shard set. Before ADR-0126 the two
+  were the same number, so a run's result silently depended on the machine's core count. A worker
+  killed outright (OOM) reports a broken executor instead of hanging the stage, and its shard alone
+  is retried (ADR-0097).
 stages:
 - synthesis.population.spatial.secondary.locations
 pipelines:
@@ -15,6 +23,7 @@ production:
   enabled: true
   flags:
   - braunschweig.chainsolvers.parallel
+  - braunschweig.chainsolvers.shards
 introduced:
   issue: null
   pr: null

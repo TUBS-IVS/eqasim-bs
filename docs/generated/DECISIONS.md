@@ -132,3 +132,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0121](../decisions/ADR-0121-mid-passenger-availability.md) | 2026-09-15 | active | Separate MiD passenger access from driver access |
 | [ADR-0122](../decisions/ADR-0122-result-preserving-performance-kernels.md) | 2026-09-15 | -- | Optimize repeated work while preserving simulation inputs |
 | [ADR-0123](../decisions/ADR-0123-reproducible-test-environments.md) | 2026-09-15 | accepted for implementation | Reproducible test environments and measured consolidation |
+| [ADR-0126](../decisions/ADR-0126-resource-adaptive-configuration.md) | 2026-09-16 | -- | Scale resource-sensitive configuration off the machine's total allocation, never its free capacity |

@@ -19,6 +19,23 @@
 ##   5. sibling Java project at ~/eqasim-java-bs (eqasim_source_path)
 
 config:
+  # --- Resource-adaptive configuration (ADR-0126) -------------------------
+  # processes, java_memory (below) and braunschweig.population.popsim.num_workers
+  # (set per scale in configs/overlays/*.yml) are CEILINGS, not fixed sizes:
+  # braunschweig/resources.py detects this run's machine (cores, total memory) at
+  # startup and clamps each of the three down, logged, if the pinned value here
+  # does not fit -- the pinned VALUE in this file is never rewritten, so no synpp
+  # stage hash changes and no shared cache is invalidated by a clamp. Override the
+  # detected budget explicitly with the environment variables EQASIM_CPU_BUDGET /
+  # EQASIM_MEM_BUDGET (e.g. to deliberately share a box with another run) --
+  # scripts/run_synpp.py logs the resolved budget and every key's outcome before
+  # any stage executes, and aborts if a configuration cannot fit at all. See
+  # docs/codebase/notes/resource-budget.md for the mechanism and
+  # docs/registry/features/resource_adaptive_config.yml for its production state.
+  # matsim_threads / matsim_qsim_threads (below, "MATSim runtime") are
+  # DELIBERATELY EXCLUDED from this clamping: their effect on results is
+  # unverified (issue #410), so they keep their configured values unconditionally
+  # and are only WARNED about, never adjusted.
   processes: 32
   hts: entd
   random_seed: 1234
@@ -402,6 +419,11 @@ config:
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
 
+  # CEILING, not a fixed heap size (ADR-0126): clamped down to the detected memory
+  # budget at the point of use (matsim/runtime/java.py, data/osm/osmosis.py) when
+  # the machine is smaller than this; see the resource-adaptive configuration
+  # note at the top of this file. The config value itself is left untouched on
+  # purpose, so this line stays the pin every machine is measured against.
   java_memory: 100G
 
   mode_choice: false
@@ -427,6 +449,12 @@ config:
   # --- MATSim runtime (64-core box) ---
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5
+  # NOT clamped by braunschweig/resources.py, unlike processes / java_memory /
+  # popsim.num_workers above (ADR-0126): their effect on results is unverified and
+  # MATSim parallelisation is known to scale poorly on this server, so silently
+  # adjusting them could change science without anyone deciding to. They keep
+  # these pinned values unconditionally; the startup resource report only WARNS
+  # when they exceed the detected core budget. Revisit under issue #410.
   matsim_threads: 56
   matsim_qsim_threads: 16
 
