@@ -33,9 +33,11 @@ resolves_to:
   popsim_open: synthesis.output
   simple_ipf_open: synthesis.output
 features:
+- mid_passenger_availability
 - commute_day_state
 - rbw_leg_convention
 - general_day_absence
 decisions:
+- ADR-0121
 - ADR-0104
 - ADR-0110

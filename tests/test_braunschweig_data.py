@@ -16,11 +16,11 @@ the ``household_size`` "5"/"6+" mapping).
 
 Run with::
 
-    pytest tests/test_braunschweig_data.py -v
+    python scripts/run_tests.py tests/test_braunschweig_data.py -v
 
 Or with coverage::
 
-    pytest tests/test_braunschweig_data.py --cov=braunschweig --cov-report=term-missing
+    python scripts/run_tests.py tests/test_braunschweig_data.py --cov=braunschweig --cov-report=term-missing
 """
 
 from __future__ import annotations

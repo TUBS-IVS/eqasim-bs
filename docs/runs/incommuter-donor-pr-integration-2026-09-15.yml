@@ -1,0 +1,90 @@
+id: incommuter-donor-pr-integration-2026-09-15
+date: '2026-09-15'
+repository:
+  commit: 33db2419da825244b1a388a90c1738037d7eac8b
+  branch: fix/i397-incommuter-donor-consistency
+  notes: Clean final executable code after merging origin/main d84ee661c9ae12c5c3765175d70a4566433d10c3,
+    clarifying duration-pool provenance and closing the review's cache-invalidation
+    gaps. Later changes only record documentation and evidence. Earlier full-suite
+    attempts on dbd3f912 were interrupted and are not used as passing evidence.
+configuration:
+  config: pytest.ini
+  notes: Both in-commuter corrections ON for the raw-data smoke; random_seed 1234.
+    Regression tests exercise ON and frozen legacy OFF paths. Full command on both
+    platforms is python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml.
+sampling:
+  rate: 1000 raw MiD households for the smoke, not a population sampling rate
+  scope: Regression suite plus 1972 sampled persons and 5224 transformed trips
+pipeline:
+  targets:
+  - braunschweig.data.hts.mid_donor
+  notes: Direct adapter and donor-time helper smoke. Four real-data pipeline tests
+    deselected by the default regression runner; no full synpp or MATSim scenario.
+classification:
+- smoke
+- wiring_proof
+status:
+  execution: completed
+environment:
+  windows: Windows-10-10.0.26200-SP0; existing native conda eqasim environment
+  linux: Ubuntu WSL2, Linux-5.15.153.1-microsoft-standard-WSL2-x86_64-with-glibc2.39;
+    existing server-mirrored conda eqasim environment
+  versions: Python 3.10.10, pytest 9.1.1, numpy 1.23.5, scipy 1.10.1, pandas 1.5.3,
+    geopandas 1.0.1, synpp 1.6.2, chainsolvers 0.1.0
+  preflight: python scripts/run_tests.py --check passed on both platforms with no errors
+    and repository matsim namespace locations. Fresh lock installation is left to PR CI.
+validation:
+- metric: Final-code Linux/WSL regression gate
+  reference: Existing assertions on the integrated code state named above
+  result: 5825 passed, 85 skipped, 4 deselected, 27 warnings in 344.85 s; exit 0
+  artifact: 'Local WSL: /home/felix/projects/eqasim-bs-i397-review-tests.xml'
+  notes: Log and preflight are /home/felix/projects/eqasim-bs-i397-review-tests.log and
+    /home/felix/projects/eqasim-bs-i397-review-environment.json. Skips cover absent local-only
+    inputs/caches, the adjacent Java checkout and conditional fixture/data branches.
+    The optional MiD smoke is skipped here and executed separately below.
+- metric: Final-code Windows regression gate
+  reference: Identical shared-runner command and executable commit as Linux
+  result: 5810 passed, 100 skipped, 4 deselected, 29 warnings in 477.70 s; exit 0
+  artifact: 'Local task worktree: scratch/review-followup-windows-tests.xml'
+  notes: Logs and preflight are scratch/review-followup-windows-tests.log and
+    scratch/review-followup-windows-environment.json. The 15 additional skips versus Linux
+    are 12 POSIX-shell cases and 3 fork-dependent multiprocessing cases, all passing
+    on Linux. Both JUnit reports contain zero failures and zero errors.
+- metric: Focused adapter, stage wiring and helper-cache regressions
+  reference: python scripts/run_tests.py tests/test_incommuter_donor_consistency.py
+    tests/test_mid_donor.py tests/test_student_incommuters_stage.py
+    tests/test_synpp_helper_hash_invariant.py -q
+  result: 103 passed, 3 skipped, 2 warnings in 11.44 s; exit 0
+  notes: Executed before committing 33db2419, including mutations of the MiD facade,
+    stage facade and defining config-key module; all seven cache-token cases passed.
+- metric: Real MiD smoke on final code
+  reference: EQASIM_MID_SMOKE_DIR points to the restricted CSV directory; python
+    scripts/run_tests.py tests/test_incommuter_donor_consistency.py -q -s
+    --junitxml=scratch/pre-pr-real-mid-smoke.xml
+  result: 35 passed, 2 dependency warnings in 33.97 s; exit 0
+  artifact: 'Local task worktree: scratch/pre-pr-real-mid-smoke.xml and .log'
+  notes: Household, person and trip CSVs passed existence/nonempty preflight.
+    All 1972 sampled ages and 1969 observed binary-sex values are preserved.
+    Three non-binary/missing sex values use the existing seeded mapper.
+    All 381 worker and 95 education donors have finite chronological times after repair.
+- metric: Independent and PR integration review
+  reference: Independent review through baa16b01 and Copilot review of PR head 4af8f880
+  result: No critical findings. Duration-pool provenance, cache invalidation and three nits resolved.
+  notes: The cache token now covers the MiD facade and stage/config-key export contract.
+    Module-level plans is classified consistently, and the manifest uses English dataset
+    descriptions. These follow-ups do not change sampling calculations or model outputs.
+features:
+  note: Correctness evidence for incommuter_donor_demographics and incommuter_time_chronology.
+artifacts:
+- tests/test_incommuter_donor_consistency.py
+- tests/fixtures/incommuter_legacy_397.json
+- 'Local task worktree: scratch/pre-pr-linux-tests.xml (copy of WSL JUnit)'
+issues:
+- '#397'
+decisions:
+- ADR-0120
+source: Executed shared-runner regression suites, raw MiD smoke and independent code review
+notes: The original 2026-09-14 smoke remains a historical record. These new results
+  verify the integrated implementation, not empirical demographic representativeness
+  or behavioural realism. Skips are not passes. Latest PR CI on both platforms and
+  the documentation check remain required before merge.

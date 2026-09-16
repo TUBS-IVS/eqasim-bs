@@ -21,9 +21,11 @@ resolves_to:
   popsim_open: braunschweig.matsim.simulation.prepare
   simple_ipf_open: braunschweig.matsim.simulation.prepare
 features:
+- mid_passenger_availability
 - cordon_network_ring
 - freight_assumptions
 - mode_choice
 decisions:
+- ADR-0121
 - ADR-0030
 - ADR-0039

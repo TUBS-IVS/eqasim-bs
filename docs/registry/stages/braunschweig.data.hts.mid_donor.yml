@@ -1,8 +1,8 @@
 stage: braunschweig.data.hts.mid_donor
 title: MiD 2023 donor build
 layer: population
-description: Loads and repairs the restricted MiD 2023 B1 microdata into the popsim_mid donor
-  pool (household/person/Wege validation, missing-data policy, pseudonymisation).
+description: Adapts restricted MiD 2023 B1 microdata into worker and student in-commuter
+  donor tables, retaining age and sex alongside employment, study status and trip timing.
 lineage:
   type: braunschweig_new
   upstream: null
@@ -18,6 +18,8 @@ inputs:
 - mid2023_b1
 features:
 - popsim_method
+- incommuter_donor_demographics
 decisions:
 - ADR-0002
 - ADR-0057
+- ADR-0120

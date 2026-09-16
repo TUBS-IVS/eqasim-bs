@@ -1,6 +1,7 @@
 # braunschweig/synthesis/locations/home_matcher.py
 """Lexicographic per-cell home matcher: type (primary) then size (secondary)."""
 from __future__ import annotations
+from collections import deque
 from dataclasses import dataclass
 import numpy as np, pandas as pd
 import geopandas as gpd
@@ -85,6 +86,94 @@ def match_cell(households: pd.DataFrame, slots: pd.DataFrame, rng):
     out = pd.DataFrame({"household_id": hh["household_id"]})
     out["building_id"] = out["household_id"].map(assign)
     return out, MatchReport(n_households=n, n_type_match=n_type_match, n_overcapacity=n_over)
+
+
+def _descending_queue(values: np.ndarray, positions: np.ndarray) -> deque:
+    """Return source positions in pandas' descending ``sort_values`` order."""
+    series = pd.Series(values[positions], index=positions)
+    return deque(series.sort_values(ascending=False).index.tolist())
+
+
+def match_cell_arrays(households: pd.DataFrame, slots: pd.DataFrame, rng):
+    """Array-backed equivalent of :func:`match_cell` for the default-ON path.
+
+    The flow and ordering contracts deliberately remain in the legacy functions;
+    this implementation only replaces repeated per-type DataFrame construction
+    and ``pop(0)`` list shifting with indexed arrays and deques.
+    """
+    hh = households.reset_index(drop=True)
+    n = len(hh)
+    if slots is None or slots.empty:
+        return pd.DataFrame({"household_id": hh["household_id"], "building_id": pd.NA}), \
+            MatchReport(n_households=n, n_type_match=0, n_overcapacity=n)
+
+    slots = slots.reset_index(drop=True)
+    hh_types = hh["btype"].to_numpy()
+    hh_ids = hh["household_id"].to_numpy()
+    # ``to_dict('records')`` in the legacy code materializes Python scalars;
+    # retain that observable dtype behaviour for the ``map`` result below.
+    slot_buildings = slots["building_id"].tolist()
+    hh_sizes = hh["household_size"].to_numpy()
+    slot_sizes = slots["size"].to_numpy()
+
+    # Series.eq mirrors the legacy pandas filters for nullable/object labels;
+    # direct NumPy object comparison can collapse to a scalar in the presence
+    # of pd.NA and would silently exclude every known type.
+    hh_positions = {
+        kind: np.flatnonzero(
+            hh["btype"].eq(kind).fillna(False).to_numpy(dtype=bool)
+        )
+        for kind in TYPES
+    }
+    slot_positions = {
+        kind: np.flatnonzero(
+            slots["btype"].eq(kind).fillna(False).to_numpy(dtype=bool)
+        )
+        for kind in TYPES
+    }
+    flow = solve_type_flow(
+        {kind: len(hh_positions[kind]) for kind in TYPES},
+        {kind: len(slot_positions[kind]) for kind in TYPES},
+    )
+    hh_queues = {
+        kind: _descending_queue(hh_sizes, hh_positions[kind]) for kind in TYPES
+    }
+    slot_queues = {
+        kind: _descending_queue(slot_sizes, slot_positions[kind]) for kind in TYPES
+    }
+    assigned = {}
+    n_type_match = 0
+    for (source, destination), amount in flow.items():
+        for _ in range(amount):
+            household_position = hh_queues[source].popleft()
+            slot_position = slot_queues[destination].popleft()
+            assigned[hh_ids[household_position]] = slot_buildings[slot_position]
+            if source == destination:
+                n_type_match += 1
+
+    n_overcapacity = 0
+    leftover_positions = [
+        position for kind in TYPES for position in hh_queues[kind]
+    ]
+    if leftover_positions:
+        largest_slot_positions = {
+            kind: _descending_queue(slot_sizes, slot_positions[kind]) for kind in TYPES
+        }
+        any_largest_slot = _descending_queue(slot_sizes, np.arange(len(slots)))
+        for household_position in leftover_positions:
+            household_type = hh_types[household_position]
+            candidates = largest_slot_positions[household_type]
+            slot_position = candidates[0] if candidates else any_largest_slot[0]
+            assigned[hh_ids[household_position]] = slot_buildings[slot_position]
+            n_overcapacity += 1
+
+    out = pd.DataFrame({"household_id": hh["household_id"]})
+    out["building_id"] = out["household_id"].map(assigned)
+    return out, MatchReport(
+        n_households=n,
+        n_type_match=n_type_match,
+        n_overcapacity=n_overcapacity,
+    )
 
 
 

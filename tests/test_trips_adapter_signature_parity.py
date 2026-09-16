@@ -62,6 +62,10 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         "departure_time_model", "departure_time_reference",
         "departure_time_min_reference_n", "departure_time_min_model_n",
         "departure_time_max_median_shift_hours",
+        # ADR-0122 makes vectorized plan validation the default performance path while
+        # retaining an explicit OFF switch; the implementation and every adapter must
+        # carry the keyword so trips_stage.execute can forward that choice unchanged.
+        "vectorized_validation",
     }
 
 

@@ -339,6 +339,13 @@ config:
   # 50): seed and realised plan must count the same day. ADR-0108.
   braunschweig.population.popsim.trip_class_seed_counts_closure: true
 
+  # Result-preserving kernels; each false value selects its original scalar path.
+  # See docs/codebase/notes/performance-equivalence.md (ADR-0122).
+  braunschweig.performance.fleet_home_lookup: true
+  braunschweig.performance.home_coordinates: true
+  braunschweig.performance.plan_validation: true
+  braunschweig.performance.donor_matching: true
+
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so
   # they are not recomputed every run (primarily the ~3 h freight extraction). The
@@ -347,6 +354,7 @@ config:
   # (never corruption). Force a recompute by listing the module in cache_share_recompute
   # ("*" = all). See docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md.
   cache_share_enabled: true
+  cache_share_metadata: true  # false retains legacy artifact-only transfer
   cache_share_store: eqasim-data/cache_shared
   cache_share_stages:
     # Freight chain (input validation + the ~3 h Java routing).
@@ -424,6 +432,7 @@ config:
 
   # --- Population method: popsim_mid ---
   braunschweig.population.method: popsim_mid
+  mid_passenger_availability: true
 
   # popsim_mid inputs (relative to repo root; synced into eqasim-data/data).
   braunschweig.population.popsim.cells_1km_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet
@@ -548,6 +557,10 @@ config:
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
   cordon_enabled: true
+  # Preserve raw MiD age/sex and repair chronologically inconsistent return legs (#397).
+  # Set either flag to false to reproduce its legacy output; see ADR-0120.
+  cordon_incommuter_donor_demographics: true
+  cordon_incommuter_time_chronology: true
   # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.

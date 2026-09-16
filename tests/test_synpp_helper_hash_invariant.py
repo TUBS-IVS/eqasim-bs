@@ -565,9 +565,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "braunschweig.synthesis.locations.landuse_candidates",
         "braunschweig.synthesis.locations.secondary_chainsolvers",
     ),
-    "braunschweig.synthesis.student_incommuters": (
-        "braunschweig.synthesis.incommuters",
-    ),
     "data.gtfs.cleaned": (
         "data.gtfs.utils",
     ),

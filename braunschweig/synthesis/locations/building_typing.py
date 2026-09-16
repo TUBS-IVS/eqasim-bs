@@ -122,3 +122,82 @@ def build_slots(typed, whg_by_type, occupied, size_hist, rng):
         slots["size"] = (sizes + [sizes[-1]] * (len(slots) - len(sizes))) if sizes else 0.0
     slots["slot_id"] = np.arange(len(slots))
     return slots[["slot_id", "building_id", "btype", "size"]]
+
+
+def build_slots_arrays(typed, whg_by_type, occupied, size_hist, rng):
+    """Array-backed equivalent of :func:`build_slots` for the default-ON path.
+
+    It preserves the three-class Hamilton allocation and slot order exactly while
+    avoiding a DataFrame filter and sort for every building class.
+    """
+    classes = ("efh_zfh", "mfh", "sonst")
+    total_dwellings = sum(max(0.0, float(whg_by_type.get(kind, 0.0))) for kind in classes)
+    occupied_dwellings = float(occupied) if occupied and occupied > 0 else total_dwellings
+    total_slots = int(round(occupied_dwellings))
+    building_types = typed["btype"].to_numpy(dtype=object)
+    positions_by_type = {kind: np.flatnonzero(building_types == kind) for kind in classes}
+    if total_dwellings > 0:
+        shares = [max(0.0, float(whg_by_type.get(kind, 0.0))) / total_dwellings for kind in classes]
+    elif len(typed) > 0:
+        shares = [len(positions_by_type[kind]) / len(typed) for kind in classes]
+    else:
+        shares = [0.0] * len(classes)
+    exacts = [occupied_dwellings * share for share in shares]
+    floors = [int(exact) for exact in exacts]
+    remainders = [exact - floor for exact, floor in zip(exacts, floors)]
+    leftover = total_slots - sum(floors)
+    remainder_order = sorted(range(len(classes)), key=lambda index: remainders[index], reverse=True)
+    type_slots = list(floors)
+    for index in range(leftover):
+        type_slots[remainder_order[index % len(remainder_order)]] += 1
+
+    building_ids = typed["building_id"].to_numpy()
+    areas = typed["area_m2"].to_numpy()
+    heights = typed["height_m"].to_numpy() if "height_m" in typed.columns else None
+    rows = []
+    for class_index, kind in enumerate(classes):
+        n_slots = type_slots[class_index]
+        positions = positions_by_type[kind]
+        if n_slots <= 0 or len(positions) == 0:
+            continue
+        if heights is not None:
+            weights = np.array(
+                [building_volume(areas[position], heights[position]) for position in positions], float
+            )
+        else:
+            weights = pd.Series(areas[positions]).fillna(0).to_numpy().astype(float)
+        weight_sum = weights.sum()
+        weights = weights / weight_sum if weight_sum > 0 else np.ones(len(positions)) / len(positions)
+        capacities = np.maximum(1, np.round(weights * n_slots)).astype(int)
+        largest_first = weights.argsort()[::-1]
+        ordered_buildings = []
+        for relative_position in largest_first:
+            ordered_buildings.extend(
+                [building_ids[positions[relative_position]]] * capacities[relative_position]
+            )
+        if len(ordered_buildings) >= n_slots:
+            ordered_buildings = ordered_buildings[:n_slots]
+        else:
+            ordered_buildings.extend(
+                [building_ids[positions[largest_first[0]]]] * (n_slots - len(ordered_buildings))
+            )
+        rows.extend((building_id, kind) for building_id in ordered_buildings)
+
+    slots = pd.DataFrame(rows, columns=["building_id", "btype"])
+    if slots.empty:
+        return pd.DataFrame(columns=["slot_id", "building_id", "btype", "size"])
+    # Keep the legacy pandas quicksort permutation observable for equal mapped
+    # class keys. Although rows are already grouped by class, omitting this sort
+    # changes within-class slot order for larger frames and therefore assignments.
+    class_order = {"efh_zfh": 0, "mfh": 1, "sonst": 2}
+    slots = slots.sort_values(
+        "btype", key=lambda series: series.map(class_order)
+    ).reset_index(drop=True)
+    sizes = _expand_sizes(size_hist)
+    if len(sizes) >= len(slots):
+        slot_sizes = sizes[:len(slots)]
+    else:
+        slot_sizes = sizes + [sizes[-1]] * (len(slots) - len(sizes)) if sizes else 0.0
+    slots["size"] = slot_sizes
+    slots["slot_id"] = np.arange(len(slots))
+    return slots[["slot_id", "building_id", "btype", "size"]]

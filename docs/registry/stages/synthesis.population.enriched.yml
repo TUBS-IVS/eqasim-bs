@@ -24,6 +24,7 @@ resolves_to:
   popsim_open: braunschweig.popsim.enriched_adapter
   simple_ipf_open: braunschweig.synthesis.population.enriched
 features:
+- mid_passenger_availability
 - consistent_car_availability
 - driving_licence_enrichment
 - economic_status_bayes
@@ -34,6 +35,7 @@ features:
 - rbw_leg_convention
 - reactivated_person_attributes
 decisions:
+- ADR-0121
 - ADR-0011
 - ADR-0012
 - ADR-0013

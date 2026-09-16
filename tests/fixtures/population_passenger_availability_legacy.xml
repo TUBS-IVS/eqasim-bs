@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE population SYSTEM "http://www.matsim.org/files/dtd/population_v6.dtd">
+<population>
+  <person id="1">
+    <attributes>
+      <attribute name="householdId" class="java.lang.Integer">1</attribute>
+      <attribute name="householdIncome" class="java.lang.String">2600-3000</attribute>
+      <attribute name="highIncome" class="java.lang.Boolean">False</attribute>
+      <attribute name="carAvailability" class="java.lang.String">0</attribute>
+      <attribute name="bicycleAvailability" class="java.lang.String">0</attribute>
+      <attribute name="censusHouseholdId" class="java.lang.Long">0</attribute>
+      <attribute name="censusPersonId" class="java.lang.Long">0</attribute>
+      <attribute name="htsHouseholdId" class="java.lang.Long">0</attribute>
+      <attribute name="htsPersonId" class="java.lang.Long">0</attribute>
+      <attribute name="hasPtSubscription" class="java.lang.Boolean">False</attribute>
+      <attribute name="ptSubscriptionType" class="java.lang.String">never_pt</attribute>
+      <attribute name="hasLicense" class="java.lang.String">yes</attribute>
+      <attribute name="age" class="java.lang.Integer">0</attribute>
+      <attribute name="employed" class="java.lang.String">yes</attribute>
+      <attribute name="sex" class="java.lang.String">f</attribute>
+      <attribute name="vehicles" class="org.matsim.vehicles.PersonVehicles">{}</attribute>
+    </attributes>
+    <plan selected="yes">
+      <activity type="home" x="0.000000" y="0.000000" facility="home_1" />
+    </plan>
+  </person>
+</population>

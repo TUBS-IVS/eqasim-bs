@@ -1,0 +1,57 @@
+feature: incommuter_time_chronology
+title: Chronological in-commuter plan-time repair
+area: cordon
+description: Rechecks home arrival against the repaired middle-activity departure for
+  workers and students; repaired trip and activity tables share finite chronological times.
+stages:
+- braunschweig.synthesis.incommuters
+- braunschweig.synthesis.student_incommuters
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - cordon_incommuter_time_chronology
+introduced:
+  issue: '#397'
+  pr: null
+  adr: ADR-0120
+detail_doc: docs/decisions/ADR-0120-incommuter-donor-demographics-and-time-chronology.md
+code_paths:
+- braunschweig/data/cordon/plans.py
+- braunschweig/synthesis/incommuters.py
+- braunschweig/synthesis/student_incommuters.py
+evidence:
+  tests:
+  - tests/test_incommuter_donor_consistency.py
+  - tests/test_incommuter_core_frames.py
+  - tests/test_student_incommuters_stage.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_incommuter_donor_consistency.py::test_legacy_off_outputs_match_frozen_pre_fix_baseline
+    note: All four time arrays match frozen 1502e88e bytes for work and education,
+      including missing, inconsistent, complete and next-day cases.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[incommuters] %s (%s): primary'
+    note: Each anchor logs unchanged/repaired coverage. Duration imputation distinguishes
+      a duration pool that may include repaired anchors from direct fixed empty-pool assumptions.
+  reference:
+    kind: none
+    note: Chronology is a correctness invariant; fallback durations are assumptions, not targets.
+validation:
+  state: unvalidated
+  runs:
+  - incommuter-donor-smoke-2026-09-14
+  - incommuter-donor-pr-integration-2026-09-15
+  metric: null
+  note: Raw donor smoke and synthetic regressions do not establish behavioural realism.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Maintainer review and full scenario assessment remain outstanding.
+  source: ADR-0120

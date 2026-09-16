@@ -39,6 +39,8 @@ import pandas as pd
 import pytest
 import yaml
 
+from tests.pipeline_runtime import configure_pipeline_runtime
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_CONFIG = REPO_ROOT / "configs" / "fixtures" / "config_local_braunschweig.yml"
 BASELINE = REPO_ROOT / "tests" / "baselines" / "smoke_1pct_baseline.txt"
@@ -58,6 +60,7 @@ pytestmark = pytest.mark.skipif(
         f"Set {STRICT_VAR}=1 for byte-for-byte hash validation."
     ),
 )
+pytestmark = [pytest.mark.pipeline, pytestmark]
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +122,7 @@ def _run_smoke(tmp_path: Path) -> Path:
 
     config = dict(raw.get("config", {}))
     aliases = raw.get("aliases", {})
+    configure_pipeline_runtime(config)
 
     cache_path = tmp_path / "cache"
     output_path = tmp_path / "output"

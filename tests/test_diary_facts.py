@@ -68,17 +68,17 @@ def test_compute_diary_facts_output_unchanged_on_the_module_fixture():
     """Byte-identical output pin, INCLUDING dtype (CLAUDE.md 'preserve existing behaviour'):
     switching the internal rbW rule from the inline ``W_RBW == 1`` comparison to
     ``trips.rbw_leg_mask`` must not change compute_diary_facts' result on the module's own
-    fixture -- not even its column dtypes (the int columns are int32, per the astype(int)
+    fixture -- not even its column dtypes (the int columns use native int, per astype(int)
     casts in compute_diary_facts). Captured from the pre-fix implementation (2026-09-10)."""
     facts = df_mod.compute_diary_facts(_wege())
     expected = pd.DataFrame(
         {
-            "n_direct_legs": np.array([2, 2, 0], dtype=np.int32),
-            "n_rbw_legs": np.array([2, 0, 2], dtype=np.int32),
+            "n_direct_legs": np.array([2, 2, 0], dtype=int),
+            "n_rbw_legs": np.array([2, 0, 2], dtype=int),
             "rbw_distance_km": [25.0, 0.0, 7.0],
-            "first_so1": np.array([1, 2, -1], dtype=np.int32),
-            "first_direct_zweck": np.array([1, 8, -1], dtype=np.int32),
-            "last_direct_zweck": np.array([8, 4, -1], dtype=np.int32),
+            "first_so1": np.array([1, 2, -1], dtype=int),
+            "first_direct_zweck": np.array([1, 8, -1], dtype=int),
+            "last_direct_zweck": np.array([8, 4, -1], dtype=int),
             "ends_at_home": [True, False, False],
             "starts_arriving_home": [False, True, False],
         },

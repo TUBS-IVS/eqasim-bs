@@ -5,7 +5,7 @@ loader stage invariants on small synthetic fixtures. No network, no large data.
 
 Run with::
 
-    python -m pytest tests/test_verbindungen_data.py -v
+    python scripts/run_tests.py tests/test_verbindungen_data.py -v
 """
 from __future__ import annotations
 

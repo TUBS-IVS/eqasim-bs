@@ -59,9 +59,9 @@ _DELEGATE_BY_METHOD = {
     "build_trips": _build_trips,
 }
 
-# inspect.signature() strings pinned from the state of EntdSource on `main`
-# before #295 (PR #287's original guarantee); #295 must not change these,
-# since it touches documentation only.
+# inspect.signature() strings pin EntdSource's deliberate public protocol.
+# Documentation-only changes must not alter these; approved protocol changes
+# update this contract with their rationale.
 _EXPECTED_SIGNATURES = {
     "seed_columns": "(self) -> 'SeedColumns'",
     "built_seed_columns": "(self) -> 'SeedColumns'",
@@ -106,6 +106,8 @@ _EXPECTED_SIGNATURES = {
     # entd_trips.build_trips, which applies the eqasim jitter itself and never reaches the model
     # -- while the loaded reference and the three thresholds are accepted and ignored, the
     # closure_dwell_min_obs treatment (they only size a mapping the model rejection forbids).
+    # vectorized_validation was added in ADR-0122 as the default-on performance path; every
+    # source adapter accepts it so trips_stage.execute can retain the tested rollback switch.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
@@ -122,7 +124,8 @@ _EXPECTED_SIGNATURES = {
         "departure_time_reference: 'pd.DataFrame' = None, "
         "departure_time_min_reference_n: 'int' = 200, "
         "departure_time_min_model_n: 'int' = 50, "
-        "departure_time_max_median_shift_hours: 'float' = 2.0) -> 'pd.DataFrame'"
+        "departure_time_max_median_shift_hours: 'float' = 2.0, "
+        "vectorized_validation: 'bool' = True) -> 'pd.DataFrame'"
     ),
 }
 
@@ -138,7 +141,7 @@ def test_entd_source_public_method_names_unchanged():
 
 
 def test_entd_source_method_signatures_pinned():
-    """Every EntdSource method's inspect.signature stays exactly what #287 pinned."""
+    """Every EntdSource method keeps the approved public signature contract."""
     for method_name, expected_signature in _EXPECTED_SIGNATURES.items():
         method = getattr(EntdSource, method_name)
         actual_signature = str(inspect.signature(method))

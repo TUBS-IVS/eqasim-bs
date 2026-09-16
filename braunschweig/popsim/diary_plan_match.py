@@ -41,6 +41,7 @@ from braunschweig.popsim.attributes import EMPLOYED_TAET
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
     AGE_BAND_EDGES, FINE_CHILD_AGE_BAND_EDGES, age_band_index, match_person,
+    prepare_person_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -261,7 +262,8 @@ def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
 
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
                                     exclude_holidays, drop_leading_arrive_home_leg,
-                                    hard_employment, fine_child_age_bands):
+                                    hard_employment, fine_child_age_bands,
+                                    precompute_matching=True):
     """Remap every person whose plan source has no realisable weekday diary.
 
     ``hard_employment``: when True, ``employed`` is passed to ``match_person`` as an
@@ -280,6 +282,9 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     are counted in BOTH arms (see :func:`_count_fine_child_band_crossings`) and logged as a
     rate; they are NOT required to be 0 with the flag on, because ``age_band`` stays a soft
     key the ladder may relax.
+
+    ``precompute_matching`` prepares the invariant ``mobile`` and ``any`` donor
+    pools once when remaps exist. ``False`` retains the repeated-filter baseline.
     """
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
@@ -301,6 +306,12 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     donor_anzwege1 = donor_persons.set_index(["H_ID", "P_ID"])["anzwege1"]
     hard_keys = HARD_EMPLOYMENT_KEYS if hard_employment else frozenset()
     age_band_edges = FINE_CHILD_AGE_BAND_EDGES if fine_child_age_bands else AGE_BAND_EDGES
+    prepared_pools = {}
+    if precompute_matching and len(to_remap):
+        prepared_pools = {
+            name: prepare_person_pool(pool, age_band_edges=age_band_edges)
+            for name, pool in pools.items()
+        }
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
@@ -314,7 +325,9 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                 (persons.at[ridx, "source_H_ID"], persons.at[ridx, "source_P_ID"]), 0)
             pool = pools["mobile"] if (isinstance(src_anz, (int, np.integer)) and 0 < src_anz < 800) else pools["any"]
         sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
-                                     age_band_edges=age_band_edges)
+                                     age_band_edges=age_band_edges,
+                                     prepared_pool=prepared_pools.get(
+                                         "mobile" if pool is pools["mobile"] else "any"))
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level

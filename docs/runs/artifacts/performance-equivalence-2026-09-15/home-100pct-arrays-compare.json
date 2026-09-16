@@ -1,0 +1,29 @@
+{
+  "cached_stage_output_equal": true,
+  "candidate_digest": {
+    "geometry_wkb_hash": "aa3d4023dafa46ed7be71cc30466dcc72cdbaa63385f75ec8e031030c5ef56f3",
+    "scalar_hash": "eac6d34f460facf0becbf2833e33bc0c1291c3be16cfbc50f167f4cb2ba85e28"
+  },
+  "column_order_equal": true,
+  "columns": [
+    "household_id",
+    "commune_id",
+    "home_location_id",
+    "geometry"
+  ],
+  "crs_equal": true,
+  "dtypes_equal": true,
+  "exact_equal": true,
+  "geometry_wkb_equal": true,
+  "reference_digest": {
+    "geometry_wkb_hash": "aa3d4023dafa46ed7be71cc30466dcc72cdbaa63385f75ec8e031030c5ef56f3",
+    "scalar_hash": "eac6d34f460facf0becbf2833e33bc0c1291c3be16cfbc50f167f4cb2ba85e28"
+  },
+  "rng_choice_calls_equal": true,
+  "rng_final_state_equal": true,
+  "rng_uniform_calls_equal": true,
+  "row_order_equal": true,
+  "rows": 558279,
+  "scalar_values_equal": true,
+  "typed_home_report_equal": true
+}

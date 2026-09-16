@@ -18,8 +18,11 @@ onto the `superpowers` skill chain, named in brackets.)
    worktrees**, never one working dir `[using-git-worktrees]`.
 5. **Implement TDD** — red → green → refactor. New behaviour is **flag-gated, default-ON**
    with an explicit byte-identical **OFF-path test** `[test-driven-development]`.
-6. **Verify** — real evidence: run the suite on the **server** when matsim-shadowing breaks
-   local imports; a **1% real smoke** beats mocked tests `[verification-before-completion]`.
+6. **Verify** — follow the [required agent verification gate](docs/codebase/TESTING.md#required-agent-verification-gate):
+   use the shared runner in the locked environment, run the final regression suite
+   on Linux/WSL2, record evidence, and require both Linux/Windows CI checks before
+   merge. Add the relevant real-data smoke when model changes require it
+   `[verification-before-completion]`.
 7. **Review** — request a review before merging `[requesting-code-review]`.
 8. **Land** — open the PR **always via `git pr`** (base = the fork `TUBS-IVS/eqasim-bs`,
    never the `eqasim-org/eqasim-bavaria` upstream); after merge, delete the branch + prune
@@ -89,7 +92,7 @@ Two layers, cheapest first (issue #282). Both are required before claiming a con
 **1. Specification checks — seconds, no PopulationSim, no data:**
 
 ```powershell
-python -m pytest tests/test_control_fit_smoke.py -q
+python scripts/run_tests.py tests/test_control_fit_smoke.py -q
 ```
 
 These run against the ACTIVE catalog and registry and catch the defects a real run would only
