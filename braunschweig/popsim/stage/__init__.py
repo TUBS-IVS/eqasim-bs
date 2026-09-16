@@ -449,7 +449,10 @@ _HELPER_MODULES = (
 # was verified against an actual function-level import site in this package:
 #
 #   braunschweig.data.mid.tenure_by_income      _apply_housing_tenure_parity
-#   braunschweig.parallelism                    _read_batching_and_scope_config
+#   braunschweig.parallelism                    no longer imported directly; retained
+#                                               because braunschweig.popsim.batch relies
+#                                               on its SINGLE_THREAD_BLAS_ENV for the
+#                                               batch subprocesses.
 #   braunschweig.popsim.control_spec            _load_tier3_kreis_controls,
 #                                               _derive_kreis_attribute_control_targets,
 #                                               the placement_income block,
@@ -496,6 +499,10 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # Resolves this stage's worker count against the detected machine (memory-bound
+    # ceiling). Imported inside _read_batching_and_scope_config; listed here because the
+    # boundary is decided by import site, not by whether the module can change results.
+    "braunschweig.resources",
     # attributes / trips / escort_pairing: the second-level transitive entries -- see the
     # validate() docstring's boundary statement for why they are explicit exceptions to the
     # one-level rule (the first two were added after the 2026-08-19 hazard).
@@ -587,7 +594,8 @@ def validate(context):
     function body -- ``braunschweig.popsim.control_spec`` (the control catalog
     itself), ``kreis_attribute_control``, ``ownership_grid``, ``placement_income``,
     ``employment_grid``, ``zensus_employment_age``, ``folders``,
-    ``braunschweig.parallelism``, ``braunschweig.data.mid.tenure_by_income``, and
+    ``braunschweig.parallelism``, ``braunschweig.resources`` (the machine-derived
+    worker-count ceiling), ``braunschweig.data.mid.tenure_by_income``, and
     the ``braunschweig.synthesis.population.enriched`` package one level deep
     (``__init__`` plus ``availability`` / ``base`` / ``economic_status`` /
     ``housing_tenure`` / ``income_distribution`` / ``vehicle_ownership``), which is
