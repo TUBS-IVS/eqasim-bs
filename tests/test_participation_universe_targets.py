@@ -372,3 +372,55 @@ def test_duplicate_ars5_in_employment_status_raises(tmp_path):
     from scripts.build_participation_universe_targets import build_work_by_employment_target
     with pytest.raises(ValueError, match="duplicate"):
         build_work_by_employment_target(data)
+
+
+# ------------------------------------------------------- source-contract guards (issue #405)
+@pytest.mark.parametrize("bad_count", ["n/a", "", -5, 12.5])
+def test_an_unreadable_kreis_count_raises_instead_of_becoming_a_fallback_work(tmp_path, bad_count):
+    """A count that cannot be read is a BROKEN source, never an empty Kreis.
+
+    The region-total substitution is only valid for an EXPLICIT zero row: reading a missing,
+    non-numeric, negative or fractional n_unweighted as zero would route a corrupted Kreis onto
+    the documented fallback and ship a plausible target built from the pooled region rate, with
+    nothing in the output saying so (CLAUDE.md: no silent fallbacks).
+    """
+    data = _write_inputs(
+        tmp_path,
+        emp_status=_full_emp_status({}),
+        work_agg=_full_work_agg({"03102": (bad_count, 50, 50, 0.5, 0.68, 0.03)}))
+    from scripts.build_participation_universe_targets import build_work_by_employment_target
+    with pytest.raises(ValueError, match="n_unweighted"):
+        build_work_by_employment_target(data)
+
+
+@pytest.mark.parametrize("bad_count", ["n/a", "", -5, 12.5])
+def test_an_unreadable_kreis_count_raises_instead_of_becoming_a_fallback_education(tmp_path, bad_count):
+    """Education side of the same guard."""
+    data = _write_inputs(tmp_path, edu_agg=_full_edu_agg("education_6_17", {"03102": (bad_count, 0.5)}))
+    from scripts.build_participation_universe_targets import build_education_by_age_target
+    with pytest.raises(ValueError, match="n_unweighted"):
+        build_education_by_age_target(data, "education_6_17")
+
+
+def test_a_duplicated_kreis_row_raises_in_the_work_aggregate(tmp_path):
+    """The completeness check is set-based, so a duplicated Kreis row passes it and would be
+    iterated into the target twice, producing an ambiguous ars5 key instead of failing the
+    source contract."""
+    data = _write_inputs(
+        tmp_path,
+        emp_status=_full_emp_status({}),
+        work_agg=_full_work_agg({}) + [("03102", "kreis", *_DEFAULT_WORK_AGG_TAIL)])
+    from scripts.build_participation_universe_targets import build_work_by_employment_target
+    with pytest.raises(ValueError, match="03102"):
+        build_work_by_employment_target(data)
+
+
+def test_a_duplicated_kreis_row_raises_in_the_education_aggregate(tmp_path):
+    """Education side of the same guard."""
+    data = _write_inputs(
+        tmp_path,
+        edu_agg=_full_edu_agg("education_6_17", {})
+        + [("03102", "kreis", "education_6_17", *_DEFAULT_EDU_ROW)])
+    from scripts.build_participation_universe_targets import build_education_by_age_target
+    with pytest.raises(ValueError, match="03102"):
+        build_education_by_age_target(data, "education_6_17")

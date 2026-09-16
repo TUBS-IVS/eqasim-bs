@@ -84,3 +84,58 @@ def test_missing_or_duplicate_total_row_raises(tmp_path):
         encoding="utf-8")
     with pytest.raises(ValueError, match="region-total"):
         build_participation_target(tmp_path, "work")
+
+
+# --------------------------------------------------------- source-contract guards (issue #405)
+_SRV_KREIS_CODES = ("03101", "03102", "03151", "03153", "03154", "03157", "03158")
+
+
+def _write_source(tmp_path, kreis_rows) -> Path:
+    """Write a synthetic srv2023_participation_by_kreis.csv from `kreis_rows`
+    ((code, n_unweighted) pairs) plus the 03ZGB region-total row, and return the data root."""
+    (tmp_path / "srv").mkdir(parents=True, exist_ok=True)
+    lines = ["code,level,n_unweighted,work,education,leisure,escort\n"]
+    for code, n_unweighted in kreis_rows:
+        lines.append(f"{code},kreis,{n_unweighted},0.3,0.2,0.4,0.1\n")
+    lines.append("03ZGB,total,700,0.31,0.21,0.41,0.11\n")
+    (tmp_path / "srv" / "srv2023_participation_by_kreis.csv").write_text("".join(lines), encoding="utf-8")
+    return tmp_path
+
+
+def _full_source_rows(overrides: dict):
+    """All 8 expected Kreis rows: the 7 surveyed ones with 100 persons and Wolfsburg's zero
+    row, with `overrides` (code -> n_unweighted) applied."""
+    counts = {code: 100 for code in _SRV_KREIS_CODES}
+    counts["03103"] = 0
+    counts.update(overrides)
+    return list(counts.items())
+
+
+def test_the_committed_shape_builds(tmp_path):
+    """The guards below must reject only broken sources -- this pins that the shipped shape
+    (7 surveyed Kreise plus Wolfsburg's zero row) still passes all of them."""
+    df = build_participation_target(_write_source(tmp_path, _full_source_rows({})), "work")
+    assert set(df["ars5"]) == _EXPECTED_ARS5
+    assert df.set_index("ars5").loc["03103", "source"] == "srv_region_total"
+
+
+@pytest.mark.parametrize("bad_count", ["n/a", "", -5, 12.5])
+def test_an_unreadable_kreis_count_raises_instead_of_becoming_a_fallback(tmp_path, bad_count):
+    """A count that cannot be read is a BROKEN source, never an empty Kreis.
+
+    The fallback is only valid for an explicit zero: coercing a missing, non-numeric, negative
+    or fractional count to zero would route a corrupted Kreis onto the documented region-total
+    substitution and ship a plausible-looking target built from an unusable source, with nothing
+    in the output saying so (CLAUDE.md: no silent fallbacks).
+    """
+    data = _write_source(tmp_path, _full_source_rows({"03102": bad_count}))
+    with pytest.raises(ValueError, match="n_unweighted"):
+        build_participation_target(data, "work")
+
+
+def test_a_duplicated_kreis_row_raises_instead_of_being_emitted_twice(tmp_path):
+    """The completeness check is set-based, so a duplicate passes it; without an explicit
+    uniqueness guard the duplicated row reaches the written target as an ambiguous ars5 key."""
+    data = _write_source(tmp_path, _full_source_rows({}) + [("03102", 100)])
+    with pytest.raises(ValueError, match="03102"):
+        build_participation_target(data, "work")

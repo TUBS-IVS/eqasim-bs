@@ -612,12 +612,71 @@ def check_invariants(work_table: pd.DataFrame, education_table: pd.DataFrame) ->
                                     sorted(outside.unique().tolist())[:5]))
 
 
+def validated_kreis_counts(kreis_rows: pd.DataFrame, context: str) -> pd.Series:
+    """Return ``kreis_rows["n_unweighted"]`` as validated non-negative whole-number counts.
+
+    Raises ``ValueError`` naming the offending code(s) if any value is missing, non-numeric,
+    non-finite, negative or fractional.
+
+    Why a reader must never coerce a broken count to zero: every consumer of the issue #405 row
+    convention decides "does this Kreis have its own rate?" from ``n_unweighted > 0``, so a
+    ``to_numeric(errors="coerce").fillna(0)`` would route a CORRUPTED Kreis onto the documented
+    region-total fallback -- producing a plausible-looking target built from an unusable source,
+    with nothing in the output saying so. Only an explicit zero means "not surveyed"; anything
+    unreadable means the source is broken (CLAUDE.md: no silent fallbacks, fail early on invalid
+    input).
+    """
+    counts = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce")
+    invalid = ~np.isfinite(counts.to_numpy(dtype=float)) | (counts < 0) | (counts % 1 != 0)
+    if invalid.any():
+        offenders = {str(code): value for code, value
+                     in zip(kreis_rows.loc[invalid, "code"], kreis_rows.loc[invalid, "n_unweighted"])}
+        raise ValueError(
+            "%s: n_unweighted must be a finite, non-negative whole number on every Kreis row, "
+            "got %s. A count that cannot be read is NOT an empty Kreis: reading it as zero would "
+            "route a corrupted Kreis onto the documented region-total fallback and ship a "
+            "plausible target built from an unusable source." % (context, offenders))
+    return counts.astype(int)
+
+
+def require_unique_kreis_codes(kreis_rows: pd.DataFrame, context: str) -> None:
+    """Raise ``ValueError`` if a Kreis code appears on more than one row.
+
+    The row convention is one row per expected Kreis, so a set-based completeness check alone
+    would accept a duplicated row: the duplicate would be emitted twice and produce ambiguous
+    ``ars5`` keys in the written target rather than failing the source contract.
+    """
+    duplicates = sorted(set(kreis_rows.loc[kreis_rows["code"].duplicated(), "code"]))
+    if duplicates:
+        raise ValueError(
+            "%s: kreis code(s) %s appear on more than one row; the row convention is exactly one "
+            "row per expected Kreis, and a duplicate would reach the written target as an "
+            "ambiguous key." % (context, duplicates))
+
+
 def check_kreis_coverage(work_table: pd.DataFrame, education_table: pd.DataFrame,
                          expected_kreise=ZGB_KREISE,
                          unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
-    """Raise ``ValueError`` if the Kreis rows do not describe the expected geography.
+    """Raise ``ValueError`` if the Kreis rows of BOTH universe tables describe the expected
+    geography; see :func:`check_table_kreis_coverage` for the four checks applied per table.
 
-    Four ways a delivery can be wrong, each checked per table:
+    Separate from :func:`check_invariants` because coverage is a property of a FULL delivery,
+    not of the builders: a caller working on a subset of Kreise (a unit-test fixture, a
+    single-Kreis diagnostic) passes a narrower ``expected_kreise``/``unsurveyed_kreise`` or does
+    not call this at all, whereas ``scripts/extract_srv_participation_universe.py`` always calls
+    it with the full :data:`srv_distance_targets.ZGB_KREISE`.
+    """
+    for table, name in ((work_table, "work"), (education_table, "education")):
+        check_table_kreis_coverage(table, name, expected_kreise=expected_kreise,
+                                   unsurveyed_kreise=unsurveyed_kreise)
+
+
+def check_table_kreis_coverage(table: pd.DataFrame, name: str, expected_kreise=ZGB_KREISE,
+                               unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
+    """Raise ``ValueError`` if ONE ``code,level`` table's Kreis rows do not describe the
+    expected geography; ``name`` identifies the table in the error message.
+
+    Four ways a delivery can be wrong:
 
     1. an expected Kreis has NO row -- impossible from the builders, which always emit the full
        row set, but a hand-edited or externally produced table can still be short;
@@ -633,50 +692,48 @@ def check_kreis_coverage(work_table: pd.DataFrame, education_table: pd.DataFrame
        survey it -- real data makes that assumption stale while it keeps being applied, so the
        extraction stops rather than adapting silently.
 
-    Separate from :func:`check_invariants` because coverage is a property of a FULL delivery,
-    not of the builders: a caller working on a subset of Kreise (a unit-test fixture, a
-    single-Kreis diagnostic) passes a narrower ``expected_kreise``/``unsurveyed_kreise`` or does
-    not call this at all, whereas ``scripts/extract_srv_participation_universe.py`` always calls
-    it with the full :data:`srv_distance_targets.ZGB_KREISE`.
+    Shared by every builder of the ``code,level`` family -- the two universe aggregates through
+    :func:`check_kreis_coverage`, and ``scripts/build_srv_participation_aggregate.py`` for
+    ``srv2023_participation_by_kreis.csv`` -- so the same four broken deliveries are rejected
+    everywhere instead of only in whichever builder happened to grow the check (ADR-0124).
     """
     expected = list(expected_kreise)
     unsurveyed = {code for code in unsurveyed_kreise if code in set(expected)}
-    for table, name in ((work_table, "work"), (education_table, "education")):
-        kreis_rows = table[table["level"] == LEVEL_KREIS]
-        present = set(kreis_rows["code"])
-        absent = sorted(set(expected) - present)
-        if absent:
-            raise ValueError(
-                "%s table: expected a kreis row for every Kreis in %s but %s %s missing "
-                "(present: %s). A Kreis the delivery does not cover is a ZERO row, never an "
-                "absent one, so a shorter table means the table was not built by this module."
-                % (name, expected, absent, "is" if len(absent) == 1 else "are", sorted(present)))
-        unexpected = sorted(present - set(expected))
-        if unexpected:
-            raise ValueError(
-                "%s table: kreis row(s) %s are not in the expected Kreis set %s"
-                % (name, unexpected, expected))
+    kreis_rows = table[table["level"] == LEVEL_KREIS]
+    present = set(kreis_rows["code"])
+    absent = sorted(set(expected) - present)
+    if absent:
+        raise ValueError(
+            "%s table: expected a kreis row for every Kreis in %s but %s %s missing "
+            "(present: %s). A Kreis the delivery does not cover is a ZERO row, never an "
+            "absent one, so a shorter table means the table was not built by this module."
+            % (name, expected, absent, "is" if len(absent) == 1 else "are", sorted(present)))
+    unexpected = sorted(present - set(expected))
+    if unexpected:
+        raise ValueError(
+            "%s table: kreis row(s) %s are not in the expected Kreis set %s"
+            % (name, unexpected, expected))
 
-        # One code spans several rows in the education table (one per band), so a code is empty
-        # only when ALL of its rows are: sum over the code rather than checking one row.
-        counts = kreis_rows.groupby("code")["n_unweighted"].sum()
-        empty_surveyed = sorted(code for code in expected
-                                if code not in unsurveyed and int(counts.get(code, 0)) == 0)
-        if empty_surveyed:
-            raise ValueError(
-                "%s table: surveyed Kreis %s %s n_unweighted == 0. Only %s (not surveyed by "
-                "SrV) may be empty; a surveyed Kreis that collapses to zero is a broken "
-                "delivery, not a zero measurement."
-                % (name, empty_surveyed, "has" if len(empty_surveyed) == 1 else "have",
-                   sorted(unsurveyed) or "no code"))
-        populated_unsurveyed = sorted(code for code in unsurveyed if int(counts.get(code, 0)) > 0)
-        if populated_unsurveyed:
-            raise ValueError(
-                "%s table: Kreis %s carries persons but is recorded as NOT surveyed by SrV. "
-                "Every consumer fills it from the %s region total as a documented assumption; "
-                "that assumption is now stale. Revisit those consumers (and this module's "
-                "UNSURVEYED_KREISE) before regenerating."
-                % (name, populated_unsurveyed, REGION_CODE))
+    # One code spans several rows in the education table (one per band), so a code is empty
+    # only when ALL of its rows are: sum over the code rather than checking one row.
+    counts = validated_kreis_counts(kreis_rows, "%s table" % name).groupby(kreis_rows["code"]).sum()
+    empty_surveyed = sorted(code for code in expected
+                            if code not in unsurveyed and int(counts.get(code, 0)) == 0)
+    if empty_surveyed:
+        raise ValueError(
+            "%s table: surveyed Kreis %s %s n_unweighted == 0. Only %s (not surveyed by "
+            "SrV) may be empty; a surveyed Kreis that collapses to zero is a broken "
+            "delivery, not a zero measurement."
+            % (name, empty_surveyed, "has" if len(empty_surveyed) == 1 else "have",
+               sorted(unsurveyed) or "no code"))
+    populated_unsurveyed = sorted(code for code in unsurveyed if int(counts.get(code, 0)) > 0)
+    if populated_unsurveyed:
+        raise ValueError(
+            "%s table: Kreis %s carries persons but is recorded as NOT surveyed by SrV. "
+            "Every consumer fills it from the %s region total as a documented assumption; "
+            "that assumption is now stale. Revisit those consumers (and this module's "
+            "UNSURVEYED_KREISE) before regenerating."
+            % (name, populated_unsurveyed, REGION_CODE))
 
 
 def _check_levels(table: pd.DataFrame, name: str) -> None:
