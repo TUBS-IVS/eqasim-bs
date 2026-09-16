@@ -170,8 +170,8 @@ def test_solve_chains_parallel_is_reproducible_and_complete(fake_chainsolvers):
     persons = [f"p{i}#{i}" for i in range(50)]
     plans = _plans(persons)
 
-    df1, failed1 = scs._solve_chains_parallel(plans, persons, None, "carla", 99, 4, 0.0)
-    df2, failed2 = scs._solve_chains_parallel(plans, persons, None, "carla", 99, 4, 0.0)
+    df1, failed1 = scs._solve_chains_parallel(plans, persons, None, "carla", 99, 4, 0.0, n_shards=4)
+    df2, failed2 = scs._solve_chains_parallel(plans, persons, None, "carla", 99, 4, 0.0, n_shards=4)
 
     # all persons placed, no failures
     assert sorted(df1["unique_person_id"]) == sorted(persons)
@@ -185,7 +185,91 @@ def test_solve_chains_parallel_is_reproducible_and_complete(fake_chainsolvers):
 def test_solve_chains_parallel_collects_failures_sorted(fake_chainsolvers):
     persons = [f"p{i}#{i}" for i in range(20)] + ["pBAD#999"]
     plans = _plans(persons)
-    df, failed = scs._solve_chains_parallel(plans, persons, None, "carla", 7, 4, 0.0)
+    df, failed = scs._solve_chains_parallel(plans, persons, None, "carla", 7, 4, 0.0, n_shards=4)
     assert 999 in failed
     assert failed == sorted(failed)
     assert "pBAD#999" not in set(df["unique_person_id"])
+
+
+# ---------------------------------------------------------------------------
+# Shard count vs worker count decoupling (issue-6 of the resource-adaptive
+# config plan): the shard count is the SCIENTIFIC parameter (it fixes the
+# partition and every shard's rng seed) while the worker count is purely
+# OPERATIONAL (how many processes chew through that fixed shard set). Before
+# this split the shard count WAS the worker count, so the machine's core
+# count silently changed every person's random stream.
+# ---------------------------------------------------------------------------
+
+def test_shard_partition_depends_only_on_the_shard_count():
+    persons = [f"p{i}" for i in range(97)]
+    # Same shard count -> same partition, no matter how many processes will
+    # execute it. A different shard count is a different (equally valid)
+    # realisation, which is exactly why the shard count is hashed.
+    assert scs._make_person_shards(persons, 8) == scs._make_person_shards(persons, 8)
+    assert scs._make_person_shards(persons, 8) != scs._make_person_shards(persons, 62)
+
+
+def test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers(monkeypatch):
+    """Platform-independent counterpart to the end-to-end invariance test.
+
+    Captures what _solve_chains_parallel hands the executor instead of running a
+    process pool, so it also runs on Windows (no fork). Asserts both halves of the
+    split: the shard tasks depend only on n_shards, and the pool size depends only
+    on n_workers.
+    """
+    from braunschweig.synthesis.locations.secondary_chainsolvers import parallel_solving
+
+    captured = []
+
+    def fake_run_shards(tasks, executor_kwargs, progress, **kwargs):
+        captured.append((tasks, executor_kwargs))
+        return {index: None for index, *_ in tasks}, []
+
+    monkeypatch.setattr(parallel_solving, "_run_shards_with_recovery", fake_run_shards)
+
+    persons = [f"p{i}#{i}" for i in range(50)]
+    plans = _plans(persons)
+    for n_workers in (4, 8):
+        parallel_solving._solve_chains_parallel(
+            plans, persons, None, "carla", 99, n_workers, 0.0, n_shards=8)
+
+    (tasks_four, kwargs_four), (tasks_eight, kwargs_eight) = captured
+    # Identical partition and identical per-shard seeds despite different pools.
+    assert [(i, uids, seed) for i, uids, _frame, seed in tasks_four] \
+        == [(i, uids, seed) for i, uids, _frame, seed in tasks_eight]
+    assert len(tasks_four) == 8
+    # The pool size follows the WORKER count, never the shard count.
+    assert kwargs_four["max_workers"] == 4
+    assert kwargs_eight["max_workers"] == 8
+
+
+@pytest.mark.skipif(not FORK_AVAILABLE, reason="requires the 'fork' start method so workers inherit the injected fake module")
+def test_solve_chains_parallel_is_invariant_to_the_worker_count(fake_chainsolvers):
+    """The scientifically decisive test: the machine's core count must not change
+    secondary locations. Same input, same shard count, different worker counts ->
+    byte-identical result. This fails on the pre-split code, where the shard count
+    WAS the worker count."""
+    persons = [f"p{i}#{i}" for i in range(50)]
+    plans = _plans(persons)
+
+    with_four, failed_four = scs._solve_chains_parallel(
+        plans, persons, None, "carla", 99, 4, 0.0, n_shards=8)
+    with_eight, failed_eight = scs._solve_chains_parallel(
+        plans, persons, None, "carla", 99, 8, 0.0, n_shards=8)
+
+    pd.testing.assert_frame_equal(with_four, with_eight)
+    assert failed_four == failed_eight
+
+
+@pytest.mark.skipif(not FORK_AVAILABLE, reason="requires the 'fork' start method so workers inherit the injected fake module")
+def test_a_single_worker_still_produces_the_sharded_realisation(fake_chainsolvers):
+    """One worker must not silently fall back to the serial single-shard result."""
+    persons = [f"p{i}#{i}" for i in range(50)]
+    plans = _plans(persons)
+
+    with_one, _ = scs._solve_chains_parallel(
+        plans, persons, None, "carla", 99, 1, 0.0, n_shards=8)
+    with_eight, _ = scs._solve_chains_parallel(
+        plans, persons, None, "carla", 99, 8, 0.0, n_shards=8)
+
+    pd.testing.assert_frame_equal(with_one, with_eight)

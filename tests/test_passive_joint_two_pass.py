@@ -482,6 +482,7 @@ _EXECUTE_CONFIG = {
     "braunschweig.chainsolvers.solver": sc.DEFAULT_CHAIN_SOLVER,
     "braunschweig.chainsolvers.parallel": False,
     "braunschweig.chainsolvers.processes": 1,
+    "braunschweig.chainsolvers.shards": sc.DEFAULT_CHAIN_SHARDS,
     "braunschweig.chainsolvers.shard_attempts": sc.DEFAULT_SHARD_ATTEMPTS,
 }
 
@@ -669,7 +670,7 @@ def _order_guard_shared(random_wrapper, df_secondary):
         "df_secondary": df_secondary, "df_secondary_legacy": df_secondary,
         "scorer_spec": None, "locations_df": pd.DataFrame(),
         "solver_name": sc.DEFAULT_CHAIN_SOLVER, "parallel_enabled": False,
-        "configured_procs": 1, "shard_attempts": 1, "crs": "EPSG:25832",
+        "configured_procs": 1, "shard_attempts": 1, "n_shards": 1, "crs": "EPSG:25832",
     }
 
 

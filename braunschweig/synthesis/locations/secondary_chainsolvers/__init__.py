@@ -120,7 +120,9 @@ from . import (
     srv_candidates,
     srv_location_types,
 )
-from .solver_defaults import DEFAULT_CHAIN_SOLVER  # noqa: F401  (re-export)
+from .solver_defaults import (  # noqa: F401  (re-exports)
+    DEFAULT_CHAIN_SHARDS, DEFAULT_CHAIN_SOLVER,
+)
 from .reporting import (  # noqa: F401  (re-exports)
     DEFAULT_EXCURSION_CLIP_WARNING_SHARE,
     DEFAULT_FALLBACK_WARNING_SHARE,
@@ -366,14 +368,23 @@ def configure(context):
     # processes, each with its own chainsolvers context seeded deterministically
     # from random_seed and the shard index. The parallel result is fully
     # reproducible but is a DIFFERENT (equally valid) Monte-Carlo realisation
-    # than the single-RNG serial path, and depends on the worker count -- so
-    # reproducing a parallel run requires the same chainsolvers.processes.
+    # than the single-RNG serial path, and depends on the SHARD count -- so
+    # reproducing a parallel run requires the same chainsolvers.shards, not the
+    # worker count (issue #6 of the resource-adaptive config plan: the shard
+    # count and the worker count used to be the same number, which made every
+    # run's result depend on the machine's core count).
     context.config("braunschweig.chainsolvers.parallel", False)
-    # Worker count for parallel solving. None -> fall back to the global
-    # "processes" config. Decoupled from "processes" so the embarrassingly
-    # parallel chain solve can use more cores than the (memory-bound) MATSim
-    # mobsim without changing the MATSim thread count.
-    context.config("braunschweig.chainsolvers.processes", None)
+    # Person shards for parallel solving. SCIENTIFIC: the shard count defines the
+    # partition and each shard's rng seed, so it determines the secondary-location
+    # realisation. Hashed (not volatile) on purpose, so a changed partition
+    # invalidates the cache as it must. The default 62 reproduces the realisation
+    # of every production run on the 64-core server (available_cores(reserve=2)),
+    # which is what the pre-split code also used as BOTH shard and worker count.
+    context.config("braunschweig.chainsolvers.shards", DEFAULT_CHAIN_SHARDS)
+    # Worker processes for parallel solving. OPERATIONAL since the shard split:
+    # it no longer influences the result, so it is volatile and may scale with the
+    # machine. None -> fall back to the global "processes" config.
+    context.config("braunschweig.chainsolvers.processes", None, volatile = True)
     # How many executor generations the shard set may be run through before the
     # stage gives up (issue #344). A worker killed outright -- the 2026-08-20 night
     # run lost one of 62 to the kernel OOM killer while a second heavy run competed
@@ -1249,6 +1260,11 @@ def _build_shared_solve_state(context, crs):
         configured_procs = context.config("processes")
     shard_attempts = _resolve_shard_attempts(
         context.config("braunschweig.chainsolvers.shard_attempts"))
+    # SCIENTIFIC, unlike configured_procs above: the shard count fixes the
+    # partition and every shard's rng seed, so it -- not the worker count --
+    # determines the parallel result. Read once here (like shard_attempts) so
+    # both passes of the two-pass mode use the identical partition.
+    n_shards = int(context.config("braunschweig.chainsolvers.shards"))
 
     # Only what a pass (or execute()'s consolidated reporting) actually reads. The seven
     # flag booleans used above -- shop_daily_split, leisure_subtype_split,
@@ -1277,6 +1293,7 @@ def _build_shared_solve_state(context, crs):
         "parallel_enabled": parallel_enabled,
         "configured_procs": configured_procs,
         "shard_attempts": shard_attempts,
+        "n_shards": n_shards,
         "crs": crs,
     }
 
@@ -1317,6 +1334,7 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     parallel_enabled = shared["parallel_enabled"]
     configured_procs = shared["configured_procs"]
     shard_attempts = shared["shard_attempts"]
+    n_shards = shared["n_shards"]
     crs = shared["crs"]
 
     def _run_fallback(problem_indices):
@@ -1445,11 +1463,14 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     from braunschweig.parallelism import resolve_workers
     n_workers = resolve_workers(configured_procs)
     n_workers = max(1, min(n_workers, n_total)) if n_total else 1
-    run_parallel = parallel_enabled and n_workers > 1 and n_total > 0
+    # Gate on the SHARD count, not the worker count: a run with a single worker
+    # must still produce the sharded realisation, otherwise the result would
+    # depend on the machine again through the back door.
+    run_parallel = parallel_enabled and n_shards > 1 and n_total > 0
 
     print(
         f"[braunschweig.secondary_chainsolvers]{pass_label} running cs.solve() "
-        f"({'parallel, %d workers' % n_workers if run_parallel else 'serial'}; "
+        f"({'parallel, %d shards / %d workers' % (n_shards, n_workers) if run_parallel else 'serial'}; "
         f"{n_total:,} persons)...",
         flush=True,
     )
@@ -1460,6 +1481,7 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
             plans_for_cs, unique_persons, locations_df, solver_name,
             base_seed, n_workers, t0, scorer_spec,
             shard_attempts=shard_attempts,
+            n_shards=n_shards,
         )
     else:
         # Serial path: a single shard over all persons seeded with base_seed, so

@@ -51,7 +51,7 @@ class _ConfigureStub:
         self.requested_stages = []
         self.declared = {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
         self.declared[key] = default
         return self._overrides.get(key, default)
 
