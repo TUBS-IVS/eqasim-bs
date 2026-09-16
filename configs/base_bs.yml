@@ -97,6 +97,22 @@ config:
   # location -- the chainsolver solves adults first, then the children. Requires
   # escort_passive_from_adult. false = the child's location is drawn independently (phase 1).
   escort_passive_joint_location: true
+  # Surrogate anchor (issue #409 option 1, ADR-0124): a paired passive child whose donor adult
+  # was separated from its synthetic household by the diary plan match is re-pointed to a
+  # household member of at least the age floor whose secondary activity departs within the
+  # gap. Requires escort_passive_joint_location. false = ADR-0119 as is (the child keeps the
+  # independent draw). Measured on the Kreis-03101 1 % smoke (ADR-0124 / run manifest).
+  escort_passive_joint_surrogate: true
+  # Unit: minutes; valid range > 0. Same value as escort_passive_pair_max_gap_minutes by
+  # choice; a separate key because the semantics differ (synthetic-side surrogate).
+  escort_passive_joint_surrogate_max_gap_minutes: 15
+  # Unit: years; valid range > 0. ASSUMPTION bounded by the MiD sibling-age probe (ADR-0124):
+  # accompaniment by a household member under 18 is rare above 14 and below ~12 the nearest
+  # "partner" is a co-travelling small child.
+  escort_passive_joint_surrogate_min_age_years: 14
+  # true = the surrogate's activity purpose must equal the child's (ADR-0119 invariant kept);
+  # both settings were measured on the smoke, see ADR-0124 for the choice.
+  escort_passive_joint_surrogate_require_same_purpose: true
   # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
   # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
   purpose_subtype_codeplan_sentinels: true
