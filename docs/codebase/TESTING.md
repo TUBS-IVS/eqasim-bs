@@ -136,4 +136,7 @@ runs the metadata gate without the scientific stack.
 Use Linux/WSL2 as the canonical scientific runtime. Native Windows regression
 checks remain useful for import, encoding, path and process portability. Environment
 installation and locking are documented in
-[reproducible-environment](notes/reproducible-environment.md).
+[reproducible-environment](notes/reproducible-environment.md). Validate locally
+against the WSL mirror before calling a branch green, and read SKIP counts, not
+only failures, on data-gated tests — see
+[linux-parity-testing](notes/linux-parity-testing.md).
