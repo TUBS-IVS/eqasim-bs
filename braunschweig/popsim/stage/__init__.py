@@ -1670,7 +1670,9 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # PER (min_age, max_age) pair, so two entries sharing the same bounds reuse one
         # computation while different bounds recompute correctly (no cross-entry reuse
         # of the wrong universe -- the #97 universe trap this whole field exists to avoid).
-        _kac_persons_by_kreis_min_age: dict = {}
+        # Per-Kreis person totals of an age BAND, keyed by the normalised
+        # (low_age, max_age) pair; holds both min-age-only and full-range universes.
+        _kac_persons_by_kreis_age_band: dict = {}
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
         _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
@@ -1698,20 +1700,22 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
             if _ctl.level == "person":
                 _entry_min_age = getattr(_ctl, "min_age", None)
                 _entry_max_age = getattr(_ctl, "max_age", None)
-                _entry_age_key = (_entry_min_age, _entry_max_age)
+                # Normalise the lower bound ONCE: an entry with min_age unset and one with
+                # min_age=0 describe the same band, so they must share a cache entry
+                # instead of recomputing the identical per-Kreis total under two keys.
+                _entry_low_age = _entry_min_age if _entry_min_age is not None else 0
+                _entry_age_key = (_entry_low_age, _entry_max_age)
                 if _entry_max_age is not None:
-                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
-                        _lo = _entry_min_age if _entry_min_age is not None else 0
-                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_age_range(
-                            cells, _kac_kreis, _lo, _entry_max_age)
-                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
-                    _lo = _entry_min_age if _entry_min_age is not None else 0
-                    _total_label = f"persons (age {_lo}-{_entry_max_age})"
+                    if _entry_age_key not in _kac_persons_by_kreis_age_band:
+                        _kac_persons_by_kreis_age_band[_entry_age_key] = person_total_by_kreis_age_range(
+                            cells, _kac_kreis, _entry_low_age, _entry_max_age)
+                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_age_key]
+                    _total_label = f"persons (age {_entry_low_age}-{_entry_max_age})"
                 elif _entry_min_age is not None:
-                    if _entry_age_key not in _kac_persons_by_kreis_min_age:
-                        _kac_persons_by_kreis_min_age[_entry_age_key] = person_total_by_kreis_min_age(
+                    if _entry_age_key not in _kac_persons_by_kreis_age_band:
+                        _kac_persons_by_kreis_age_band[_entry_age_key] = person_total_by_kreis_min_age(
                             cells, _kac_kreis, _entry_min_age)
-                    _total_by_kreis = _kac_persons_by_kreis_min_age[_entry_age_key]
+                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_age_key]
                     _total_label = f"persons (age>={_entry_min_age})"
                 else:
                     if _kac_persons_by_kreis is None:
