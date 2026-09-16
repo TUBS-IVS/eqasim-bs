@@ -21,7 +21,11 @@ onto the `superpowers` skill chain, named in brackets.)
 6. **Verify** — follow the [required agent verification gate](docs/codebase/TESTING.md#required-agent-verification-gate):
    use the shared runner in the locked environment, run the final regression suite
    on Linux/WSL2, record evidence, and require both Linux/Windows CI checks before
-   merge. Add the relevant real-data smoke when model changes require it
+   merge. Linux validation is the norm, not a special case for import shadowing —
+   a Windows-only pass is not evidence for data-gated goldens; compare SKIP counts,
+   not only failures, per
+   [linux-parity-testing](docs/codebase/notes/linux-parity-testing.md). Add the
+   relevant real-data smoke when model changes require it
    `[verification-before-completion]`.
 7. **Review** — request a review before merging `[requesting-code-review]`.
 8. **Land** — open the PR **always via `git pr`** (base = the fork `TUBS-IVS/eqasim-bs`,
