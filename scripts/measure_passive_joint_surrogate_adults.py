@@ -32,6 +32,9 @@ Read-only against a COMPLETED working directory; never runs synpp. Run on the se
         --cache ~/eqasim-bs/eqasim-data/cache_i385_smoke \
         --out ~/i409_headroom
 
+    python scripts/measure_passive_joint_surrogate_adults.py \
+        --mid-dir ~/eqasim-bs/eqasim-data/data/braunschweig/popsim/mid2023_raw --out ~/i409_headroom
+
 Self-check. The script first rebuilds the production link table with the very function the
 pipeline uses and compares it against ``--expect-paired`` / ``--expect-linked`` (defaults:
 the production smoke's 58 / 12). A mismatch aborts, so no headroom number is ever reported
@@ -82,6 +85,12 @@ exactly, so the difference is attributable to the CUT and not to either measurem
 The issue's wider counts include children whose own activity is education or home (which
 cannot change location) and, in the second row, pair on an escort trip (which cannot carry
 an anchor, being pinned to a school by issue #201 / ADR-0072).
+
+SIBLING-AGE HISTOGRAM (2026-09-16, raw MiD 2023 B1, 10,905 passive legs of minors, gap 15
+min): floor 18 pairs 10,343 (94.8 %), 562 unpaired; newly paired at floor 16: 6 (16:3, 17:3)
+· 14: 15 (14:5, 15:4, 16:3, 17:3) · 12: 19 · 10: 27 · 6: 56 (dominated by 7- and 9-year-olds,
+i.e. co-travelling children). Re-measured by this mode in Task 8; replace these figures with
+that run's output if they differ.
 
 LIMITS. n = 46 unlinked legs in ONE Kreis at a 1 % sampling rate, and the 17 eligible legs
 sit in only 9 households. The error bars are wide and no reference value exists for any of
@@ -446,6 +455,56 @@ def purpose_breakdown(frame: pd.DataFrame, purpose_column: str) -> pd.DataFrame:
     return counts.sort_values(purpose_column).reset_index(drop=True)
 
 
+def sibling_age_histogram(wege: pd.DataFrame, *, floors=(16, 14, 12, 10, 6),
+                          max_gap_minutes: float = 15.0, reference_floor: int = 18
+                          ) -> pd.DataFrame:
+    """How old is the nearest-in-time household leg that a MINOR's passive leg could pair with?
+
+    Runs the phase-1 pairing (``escort_pairing.pair_passive_legs``) on RAW MiD Wege at the
+    reference floor (18, the production value) and at each lower floor, and reports, per
+    floor, how many of the legs UNPAIRED at the reference floor newly pair, with the age
+    histogram of their partners. This is the committed source of the
+    ``escort_passive_joint_surrogate_min_age_years`` default (ADR-0124): a marginal table,
+    because with a low floor a sibling can also WIN over an adult that is close in time, which
+    is not the question. Restricted to passive legs of minors (HP_ALTER <= 17).
+    """
+    from braunschweig.popsim.escort_pairing import (
+        PASSIVE_W_ZWECK, STATUS_PAIRED, pair_passive_legs,
+    )
+    age = wege.drop_duplicates(["H_ID", "P_ID"]).set_index(["H_ID", "P_ID"])["HP_ALTER"]
+    minors = ((wege["W_ZWECK"] == PASSIVE_W_ZWECK)
+              & (pd.to_numeric(wege["HP_ALTER"], errors="coerce") <= 17)).to_numpy()
+
+    def paired_with_partner_age(floor: int) -> pd.DataFrame:
+        out, _diagnostics = pair_passive_legs(wege, max_gap_minutes=max_gap_minutes,
+                                              adult_min_age=floor)
+        sub = out[minors].copy()
+        partner = pd.MultiIndex.from_arrays([sub["H_ID"], sub["passive_pair_adult_p_id"]])
+        sub["partner_age"] = pd.to_numeric(age.reindex(partner).to_numpy(), errors="coerce")
+        return sub
+
+    base = paired_with_partner_age(reference_floor)
+    paired_base = base["passive_pair_status"] == STATUS_PAIRED
+    unpaired_index = base.index[~paired_base]
+    rows = [{"floor_years": int(reference_floor), "n_passive_minor_legs": int(len(base)),
+             "n_paired_at_floor": int(paired_base.sum()), "n_newly_paired_vs_reference": 0,
+             "share_of_unpaired_at_reference": 0.0, "partner_age_histogram": ""}]
+    for floor in floors:
+        sub = paired_with_partner_age(int(floor))
+        newly = sub.loc[unpaired_index]
+        newly = newly[newly["passive_pair_status"] == STATUS_PAIRED]
+        histogram = newly["partner_age"].value_counts().sort_index()
+        rows.append({
+            "floor_years": int(floor), "n_passive_minor_legs": int(len(sub)),
+            "n_paired_at_floor": int((sub["passive_pair_status"] == STATUS_PAIRED).sum()),
+            "n_newly_paired_vs_reference": int(len(newly)),
+            "share_of_unpaired_at_reference": (len(newly) / len(unpaired_index)
+                                               if len(unpaired_index) else float("nan")),
+            "partner_age_histogram": ", ".join(f"{int(a)}:{int(n)}" for a, n in histogram.items()),
+        })
+    return pd.DataFrame(rows)
+
+
 def load_stage(working_directory: str, stage_name: str):
     """One cached synpp stage from a COMPLETED working directory.
 
@@ -480,10 +539,12 @@ def _print_frame(title: str, frame: pd.DataFrame) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cache", required=True,
-                        help="COMPLETED synpp working directory of the measured run")
-    parser.add_argument("--out", required=True,
-                        help="output directory for the per-leg and per-candidate CSVs")
+    parser.add_argument("--cache", help="COMPLETED synpp working directory of the measured run")
+    parser.add_argument("--out", help="output directory for the per-leg and per-candidate CSVs")
+    parser.add_argument("--mid-dir",
+                        help="RAW MiD 2023 Wege directory: run the sibling-age histogram "
+                             "(the committed source of the surrogate age-floor default) "
+                             "instead of the cache headroom measurement")
     parser.add_argument("--adult-min-age", type=int, default=DEFAULT_ADULT_MIN_AGE,
                         help="minimum HP_ALTER of a surrogate adult, in years "
                              f"(default {DEFAULT_ADULT_MIN_AGE}, the phase-1 threshold)")
@@ -498,6 +559,21 @@ def main() -> int:
                              f"(default {DEFAULT_EXPECT_LINKED}; -1 disables)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    if args.mid_dir:
+        from braunschweig.popsim.mid.donor import load_mid_wege
+        wege = load_mid_wege(args.mid_dir)
+        table = sibling_age_histogram(wege, max_gap_minutes=args.gap_minutes[0])
+        _print_frame("MiD sibling-age histogram: legs unpaired at floor 18 that pair at a lower floor",
+                     table)
+        if args.out:
+            os.makedirs(args.out, exist_ok=True)
+            path = os.path.join(args.out, "mid_sibling_age_histogram.csv")
+            table.to_csv(path, index=False)
+            print(f"wrote {path}")
+        return 0
+    if not (args.cache and args.out):
+        parser.error("--cache and --out are required unless --mid-dir is given")
 
     df_persons = load_stage(args.cache, PERSONS_STAGE)
     df_trips = load_stage(args.cache, TRIPS_STAGE)

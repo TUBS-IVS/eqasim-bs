@@ -239,3 +239,32 @@ def test_the_statistics_account_for_every_unlinked_leg_exactly_once():
     assert stats["n_eligible_child_purpose"] == 3
     assert stats["n_eligible_with_candidate"] == 2
     assert stats["n_candidate_rows"] == 3
+
+
+from scripts.measure_passive_joint_surrogate_adults import sibling_age_histogram  # noqa: E402
+
+
+def _wege_two_households():
+    """MiD-shaped legs. Household 1: child (7 y) taken along at 08:00, the only adult leaves
+    at 12:00 (240 min away), a 15-year-old sibling shops at 08:05. Household 2: child (6 y)
+    at 08:00 and an adult shopping at 08:02."""
+    return pd.DataFrame({
+        "H_ID":     [1,  1,  1,  2,  2],
+        "P_ID":     [1,  2,  3,  1,  2],
+        "W_ID":     [1,  2,  3,  4,  5],
+        "W_ZWECK":  [1,  13, 4,  4,  13],
+        "W_SZS":    [12, 8,  8,  8,  8],
+        "W_SZM":    [0,  0,  5,  2,  0],
+        "HP_ALTER": [40, 7,  15, 38, 6],
+    })
+
+
+def test_sibling_age_histogram_reports_the_marginal_gain_per_floor():
+    table = sibling_age_histogram(_wege_two_households(), floors=(16, 14), max_gap_minutes=15.0)
+    by_floor = table.set_index("floor_years")
+    assert by_floor.loc[18, "n_passive_minor_legs"] == 2
+    assert by_floor.loc[18, "n_paired_at_floor"] == 1                 # household 2 only
+    assert by_floor.loc[16, "n_newly_paired_vs_reference"] == 0
+    assert by_floor.loc[14, "n_newly_paired_vs_reference"] == 1       # the 15-year-old sibling
+    assert by_floor.loc[14, "share_of_unpaired_at_reference"] == pytest.approx(1.0)
+    assert by_floor.loc[14, "partner_age_histogram"] == "15:1"
