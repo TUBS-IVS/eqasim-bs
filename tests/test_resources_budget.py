@@ -126,3 +126,24 @@ def test_processes_pin_above_the_core_budget_is_clamped():
     result = resources.resolve_processes(32, budget)
     assert result.effective == 6      # 8 cores - reserve 2
     assert result.origin == "clamped"
+
+
+def test_a_negative_count_is_rejected_rather_than_treated_as_auto():
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_processes(-1, budget)
+
+
+def test_a_non_positive_java_memory_is_rejected():
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_java_memory("0G", budget)
+
+
+def test_a_fitting_java_memory_pin_is_echoed_verbatim_not_reformatted():
+    # Reformatting a pin that nothing clamped would silently shrink it:
+    # format_memory_gb("1500M") floors 1.46 GB to "1G".
+    budget = resources.resolve_budget(SERVER, env={})
+    result = resources.resolve_java_memory("1500M", budget)
+    assert result.effective == "1500M"
+    assert result.origin == "pinned"

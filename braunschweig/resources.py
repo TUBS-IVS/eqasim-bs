@@ -203,10 +203,6 @@ DEFAULT_MEMORY_RESERVE_GB = 8.0
 ENV_CPU_BUDGET = "EQASIM_CPU_BUDGET"
 ENV_MEM_BUDGET = "EQASIM_MEM_BUDGET"
 
-#: Configured values meaning "derive this from the budget". A key left at a
-#: sentinel scales with the machine; any real value is treated as a ceiling.
-_AUTO_SENTINELS = (None, "", "auto")
-
 
 @dataclass(frozen=True)
 class ResourceBudget:
@@ -250,7 +246,7 @@ def is_auto(value) -> bool:
     if isinstance(value, bool):
         return False
     if isinstance(value, (int, float)):
-        return value <= 0
+        return value == 0
     return value is None
 
 
@@ -282,25 +278,26 @@ def resolve_budget(machine: Optional[MachineResources] = None,
     return ResourceBudget(cores=cores, memory_gb=memory_gb, machine=machine)
 
 
-def _resolve_ceiling(key: str, configured, ceiling, *, unit: str,
-                     render=lambda value: value) -> Resolution:
-    """Shared pin/clamp/derive logic for one key against one ceiling."""
+def _resolve_ceiling(key: str, configured, ceiling: int, *, unit: str) -> Resolution:
+    """Shared pin/clamp/derive logic for one COUNT key against one ceiling."""
     if is_auto(configured):
         return Resolution(
-            key=key, configured=configured, effective=render(ceiling), origin="derived",
-            note=f"derived from the resource budget ({render(ceiling)} {unit})",
+            key=key, configured=configured, effective=ceiling, origin="derived",
+            note=f"derived from the resource budget ({ceiling} {unit})",
         )
-    requested = configured
+    requested = int(configured)
+    if requested < 0:
+        raise ValueError(
+            f"{key} must be 0 (auto) or a positive count, got {configured!r}.")
     if requested > ceiling:
         return Resolution(
-            key=key, configured=render(configured), effective=render(ceiling),
-            origin="clamped",
-            note=(f"configured {render(configured)} exceeds the resource budget; "
-                  f"clamped to {render(ceiling)} {unit}"),
+            key=key, configured=requested, effective=ceiling, origin="clamped",
+            note=(f"configured {requested} exceeds the resource budget; "
+                  f"clamped to {ceiling} {unit}"),
         )
     return Resolution(
-        key=key, configured=render(configured), effective=render(configured),
-        origin="pinned", note=f"configured value fits the resource budget ({unit})",
+        key=key, configured=requested, effective=requested, origin="pinned",
+        note=f"configured value fits the resource budget ({unit})",
     )
 
 
@@ -309,16 +306,30 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
 
     Operational only: the heap size becomes ``-Xmx`` and cannot change results,
     so clamping it down on a smaller machine is safe and needs no config change.
+    A pin that fits is echoed VERBATIM -- reformatting it would silently shrink
+    a sub-gigabyte-granular value such as "1500M".
     """
+    budget_text = format_memory_gb(budget.memory_gb)
     if is_auto(configured):
         return Resolution(
-            key="java_memory", configured=configured,
-            effective=format_memory_gb(budget.memory_gb), origin="derived",
-            note=f"derived from the memory budget ({format_memory_gb(budget.memory_gb)})",
+            key="java_memory", configured=configured, effective=budget_text,
+            origin="derived",
+            note=f"derived from the memory budget ({budget_text})",
         )
-    return _resolve_ceiling(
-        "java_memory", parse_memory_gb(configured), budget.memory_gb,
-        unit="memory", render=format_memory_gb,
+    requested_gb = parse_memory_gb(configured)
+    if requested_gb <= 0:
+        raise ValueError(
+            f"java_memory must be a positive size, got {configured!r}.")
+    if requested_gb > budget.memory_gb:
+        return Resolution(
+            key="java_memory", configured=configured, effective=budget_text,
+            origin="clamped",
+            note=(f"configured {configured} exceeds the memory budget; "
+                  f"clamped to {budget_text}"),
+        )
+    return Resolution(
+        key="java_memory", configured=configured, effective=str(configured),
+        origin="pinned", note="configured value fits the memory budget",
     )
 
 
