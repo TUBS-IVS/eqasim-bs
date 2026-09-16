@@ -311,6 +311,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_WORK_BY_EMPLOYMENT_CONTROL,
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
+    KEY_WORKER_MEMORY_GB,
     KEY_WORKERS,
     KEY_W_ZWECK_10_AS_LEISURE,
     _KREIS_CONTROL_DEFAULT,
@@ -694,6 +695,15 @@ def configure(context):
     context.config(KEY_UV)
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
+    # Measured peak memory of ONE PopulationSim batch worker (2026-07-10 OOM
+    # post-mortem: 25-30 GB per worker). Bounds num_workers against the machine's
+    # RAM at the point of use (_read_batching_and_scope_config), never against the
+    # core count. Declared volatile: an operational bound with no influence on
+    # any result, so changing it never invalidates the (expensive) popsim stage
+    # cache. KEY_WORKERS above keeps its own declaration and default unchanged.
+    from braunschweig import resources
+    context.config(KEY_WORKER_MEMORY_GB, resources.DEFAULT_POPSIM_WORKER_MEMORY_GB,
+                   volatile = True)
     context.config(KEY_WORK_DIR)
     context.config(KEY_BATCH_TIMEOUT, batch.DEFAULT_POPSIM_TIMEOUT_S)
     # Cleanup of the dead per-batch pipeline.h5 checkpoint store (issue #153).
@@ -990,12 +1000,15 @@ def _read_batching_and_scope_config(context):
     exist_ok=True)``) and logs the resolved worker count.
     """
     max_cells = int(context.config(KEY_MAX_CELLS))
-    # Worker count honours the auto sentinel (0/null/"auto" -> cores - reserve), so
-    # the batch runner scales with the box it lands on. An explicit positive integer
-    # is used verbatim (pin it when byte-reproducibility across machines matters).
-    from braunschweig.parallelism import resolve_workers
+    # The worker count is MEMORY-bound, not core-bound: each worker drives its own
+    # PopulationSim subprocess with a measured 25-30 GB peak, so a configured value
+    # is treated as a ceiling and clamped down when the machine cannot carry it.
+    # The configured value itself is never rewritten -- that would change this
+    # stage's hash and discard the shared popsim cache.
+    from braunschweig.resources import effective_popsim_workers
     _requested_workers = context.config(KEY_WORKERS)
-    num_workers = resolve_workers(_requested_workers)
+    num_workers = effective_popsim_workers(
+        _requested_workers, float(context.config(KEY_WORKER_MEMORY_GB)))
     logger.info(
         "[popsim.stage] PopulationSim batch workers: %d (requested=%r, cpu_count=%s)",
         num_workers, _requested_workers, os.cpu_count(),

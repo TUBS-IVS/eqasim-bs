@@ -505,3 +505,23 @@ def effective_java_memory(configured, machine: Optional[MachineResources] = None
         logger.warning("[resources] java_memory %s -> %s (%s)",
                        resolution.configured, resolution.effective, resolution.note)
     return resolution.effective
+
+
+def effective_popsim_workers(configured, worker_memory_gb: float,
+                             machine: Optional[MachineResources] = None,
+                             env: Optional[dict] = None) -> int:
+    """Effective PopulationSim batch worker count for this machine, logged.
+
+    Called at the point of use rather than resolved into the config, for the
+    same reason as ``effective_java_memory``: the configured value stays part
+    of the popsim stage's cache key, so writing a machine-dependent number
+    back into it would give every machine a different hash and destroy the
+    shared Tier-B PopulationSim cache. Clamping here changes nothing any stage
+    hashes.
+    """
+    resolution = resolve_popsim_workers(
+        configured, resolve_budget(machine=machine, env=env), worker_memory_gb)
+    if resolution.origin != "pinned":
+        logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
+                       resolution.configured, resolution.effective, resolution.note)
+    return int(resolution.effective)
