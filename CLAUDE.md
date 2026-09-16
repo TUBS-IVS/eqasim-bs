@@ -42,7 +42,7 @@ Maintenance duties: every new/changed stage → Stage Registry (+ `... dag` if t
 A PR mirrors its issue: branch `<fix|feature|analysis|docs|chore|test>/i<issue>-<slug>`, the issue's own `step:`/`area:` labels (never `prio:`), a title stating what the change does with `(closes #NN)`, and the same `**Stages:**` line in the body — `docs/codebase/notes/issue-and-pr-conventions.md`.
 Never push without explicit per-push confirmation (see the git policy below).
 
-Layer budgets (checked only at /close — exceeding one never blocks work): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · SESSION_LOG.md ≤ 10 entries. Registries have no budget (one fact per file scales).
+No size budgets. CLAUDE.md, MEMORY.md and SESSION_LOG.md have no KB or entry limit, and nothing is ever shortened, archived, or left unwritten just to hit a number. Keep them lean the only way that is safe: one fact in one place, dedupe before adding, and archive at /close what actually merged or was parked.
 
 ## Language policy
 
@@ -273,6 +273,8 @@ Before considering a task complete, check: code compiles; all names, comments, a
 
 When modifying code, first inspect the surrounding code and project structure. Do not guess APIs if the relevant code can be inspected. Do not invent missing classes, methods, or dependencies. If information is missing, state the uncertainty clearly. When suggesting changes, explain the reason briefly. Produce complete, consistent code, not isolated fragments, unless a fragment is explicitly requested. When a task affects scientific results, explicitly state whether the change may alter outputs. For performance improvements, explain the expected benefit and any trade off.
 
+**Answers in chat must be scientifically sound AND immediately understandable — both, never one at the cost of the other.** Simplify the packaging, not the content. Keep the substance every time: the actual numbers with their units, where each figure comes from, the distinction between observed data, model output and assumption, and any caveat that would change the user's decision (see "No invented reference values", "Research reporting"). Present it for a reader who has thirty seconds: the result first, then the short reason. Short sentences, plain words, no jargon where a normal word exists, and no narration of your own process (which tools ran, which files were opened, what was tried and dropped). Anything longer than a few lines becomes a handful of bullets or a small table, never a wall of prose, with the numbers, paths, and decisions easy to spot. Derivations, method details, and full evidence belong in the files the answer links to (registry record, ADR, run manifest), not in the chat. If a result cannot be said simply without becoming wrong, say it precisely and add one plain sentence that explains it. Chat language is German per the language policy above.
+
 ## Non negotiable rules
 
 - All code and comments must be in English.
@@ -284,3 +286,4 @@ When modifying code, first inspect the surrounding code and project structure. D
 - All input data must be validated.
 - All changes must preserve scientific credibility.
 - Completeness, consistency, reproducibility, and clarity are mandatory.
+- Every answer in chat must be scientifically sound and, at the same time, short and immediately understandable.
