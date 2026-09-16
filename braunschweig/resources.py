@@ -357,3 +357,134 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
 def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
     """Resolve the generic synpp worker count against the core budget."""
     return _resolve_ceiling("processes", configured, budget.cores, unit="cores")
+
+
+#: Default measured peak memory of one PopulationSim batch worker, in gigabytes.
+#: Traceable to the 2026-07-10 OOM post-mortem recorded in
+#: configs/overlays/test_100pct.yml ("the measured 25-30 GB per-worker peak");
+#: the upper bound is taken because under-estimating it is what OOMs the box.
+DEFAULT_POPSIM_WORKER_MEMORY_GB = 30.0
+
+KEY_WORKER_MEMORY_GB = "braunschweig.population.popsim.worker_memory_gb"
+
+
+class ResourceValidationError(RuntimeError):
+    """Raised at startup when the configuration cannot fit the detected machine."""
+
+
+@dataclass(frozen=True)
+class Violation:
+    """One configuration/machine mismatch found at startup.
+
+    ``"error"`` aborts the run; ``"warning"`` is logged and carried into the run
+    provenance but does not stop anything.
+    """
+
+    key: str
+    severity: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ResourceReport:
+    """Everything the run start needs to log, validate and record."""
+
+    machine: MachineResources
+    budget: ResourceBudget
+    resolutions: tuple
+    violations: tuple
+
+    def format_log(self) -> str:
+        lines = [
+            f"[resources] machine: {self.machine.cores} cores "
+            f"({self.machine.cores_source}), {self.machine.memory_gb:.1f} GB "
+            f"({self.machine.memory_source})",
+            f"[resources] budget for this run: {self.budget.cores} cores, "
+            f"{self.budget.memory_gb:.1f} GB",
+        ]
+        for resolution in self.resolutions:
+            lines.append(
+                f"[resources]   {resolution.key} = {resolution.effective} "
+                f"[{resolution.origin}] ({resolution.note})"
+            )
+        for violation in self.violations:
+            lines.append(f"[resources]   {violation.severity.upper()}: {violation.message}")
+        return "\n".join(lines)
+
+    def as_dict(self) -> dict:
+        return {
+            "machine": {
+                "cores": self.machine.cores,
+                "memory_gb": round(self.machine.memory_gb, 2),
+                "cores_source": self.machine.cores_source,
+                "memory_source": self.machine.memory_source,
+            },
+            "budget": {
+                "cores": self.budget.cores,
+                "memory_gb": round(self.budget.memory_gb, 2),
+            },
+            "resolutions": {
+                r.key: {"configured": r.configured, "effective": r.effective,
+                        "origin": r.origin, "note": r.note}
+                for r in self.resolutions
+            },
+            "violations": [
+                {"key": v.key, "severity": v.severity, "message": v.message}
+                for v in self.violations
+            ],
+        }
+
+
+def build_report(config: dict, machine: Optional[MachineResources] = None,
+                 env: Optional[dict] = None) -> ResourceReport:
+    """Resolve every resource key of a resolved synpp config against the machine.
+
+    Uses the same ``resolve_*`` functions the stages call at their point of use,
+    so the startup report cannot drift from what the run actually does.
+    """
+    budget = resolve_budget(machine=machine, env=env)
+    worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
+
+    resolutions = [
+        resolve_java_memory(config.get("java_memory", "auto"), budget),
+        resolve_processes(config.get("processes", "auto"), budget),
+        resolve_popsim_workers(
+            config.get("braunschweig.population.popsim.num_workers", "auto"),
+            budget, worker_memory_gb,
+        ),
+    ]
+
+    violations = []
+    workers = next(r for r in resolutions
+                   if r.key == "braunschweig.population.popsim.num_workers")
+    if workers.effective * worker_memory_gb > budget.memory_gb:
+        violations.append(Violation(
+            key="braunschweig.population.popsim.num_workers", severity="error",
+            message=(
+                f"Even a single PopulationSim worker needs {worker_memory_gb:g} GB but "
+                f"only {budget.memory_gb:.1f} GB is budgeted on a "
+                f"{budget.machine.memory_gb:.1f} GB machine. Reduce "
+                f"{KEY_WORKER_MEMORY_GB}, run on a larger machine, or raise "
+                f"{ENV_MEM_BUDGET}."
+            ),
+        ))
+
+    # matsim_threads / matsim_qsim_threads are NEVER clamped: their effect on
+    # results is unverified (issue #410) and silently changing them could change
+    # science. Oversubscription is slow, not wrong, so this only warns.
+    for key in ("matsim_threads", "matsim_qsim_threads"):
+        configured = config.get(key)
+        if configured and int(configured) > budget.cores:
+            violations.append(Violation(
+                key=key, severity="warning",
+                message=(
+                    f"{key} is {configured} but only {budget.cores} cores are "
+                    f"budgeted; the run will oversubscribe the machine. This value "
+                    f"is left untouched on purpose (issue #410)."
+                ),
+            ))
+
+    return ResourceReport(
+        machine=budget.machine, budget=budget,
+        resolutions=tuple(resolutions), violations=tuple(violations),
+    )
