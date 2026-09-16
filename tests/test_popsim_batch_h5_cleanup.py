@@ -53,7 +53,7 @@ def test_configure_registers_cleanup_default_on():
     seen = {}
 
     class FakeContext:
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             seen[key] = default
             return default
 

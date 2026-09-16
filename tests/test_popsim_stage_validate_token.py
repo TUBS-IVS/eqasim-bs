@@ -155,6 +155,10 @@ EXPECTED_ENRICHED_MODULE_NAMES = (
 EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # Resolves this stage's worker count against the detected machine (memory-bound
+    # ceiling). Imported inside _read_batching_and_scope_config, so it is a deferred
+    # dependency like every other entry here (ADR-0126).
+    "braunschweig.resources",
     # attributes / trips / escort_pairing: the three deliberate SECOND-LEVEL exceptions to
     # the one-level boundary (attributes via assembly / mid.seed_loading, trips and
     # escort_pairing via mid.participation). The first two were added after the 2026-08-19
