@@ -488,3 +488,20 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         machine=budget.machine, budget=budget,
         resolutions=tuple(resolutions), violations=tuple(violations),
     )
+
+
+def effective_java_memory(configured, machine: Optional[MachineResources] = None,
+                          env: Optional[dict] = None) -> str:
+    """Effective ``-Xmx`` value for a configured ``java_memory``, logged.
+
+    Called at the point of use rather than resolved into the config, because
+    ``java_memory`` is part of the ``matsim.runtime.java`` stage hash and is
+    inherited by every Java-dependent stage: changing the configured value would
+    invalidate the whole Java chain (network, routing, freight, MATSim), while
+    clamping here changes nothing any stage hashes.
+    """
+    resolution = resolve_java_memory(configured, resolve_budget(machine=machine, env=env))
+    if resolution.origin != "pinned":
+        logger.warning("[resources] java_memory %s -> %s (%s)",
+                       resolution.configured, resolution.effective, resolution.note)
+    return resolution.effective

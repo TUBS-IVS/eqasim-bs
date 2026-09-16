@@ -39,7 +39,12 @@ def run(context, entry_point, arguments = [], class_path = None, vm_arguments = 
         os.mkdir(temp_path)
 
     # Prepare arguments
+    # Clamp the configured heap to the machine this run actually landed on. The
+    # config value stays untouched on purpose: java_memory is part of this
+    # stage's hash, so rewriting it would invalidate every Java-dependent stage.
+    from braunschweig.resources import effective_java_memory
     memory = context.config("java_memory") if memory is None else memory
+    memory = effective_java_memory(memory)
     vm_arguments = [
         "-Xmx" + memory,
         "-Djava.io.tmpdir=%s" % temp_path,
