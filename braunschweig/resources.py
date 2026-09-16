@@ -190,3 +190,159 @@ def detect_machine(affinity_reader: Optional[Callable[[], Optional[int]]] = _aff
         cores=cores, memory_gb=memory_gb,
         cores_source=cores_source, memory_source=memory_source,
     )
+
+
+#: Cores left free for the OS and the orchestrating synpp driver when deriving a
+#: budget. Matches ``parallelism.DEFAULT_CORE_RESERVE`` so the two mechanisms
+#: cannot disagree about how much of the box a run may take.
+DEFAULT_CORE_RESERVE = 2
+
+#: Memory left free for the OS, the page cache and the synpp driver, in gigabytes.
+DEFAULT_MEMORY_RESERVE_GB = 8.0
+
+ENV_CPU_BUDGET = "EQASIM_CPU_BUDGET"
+ENV_MEM_BUDGET = "EQASIM_MEM_BUDGET"
+
+#: Configured values meaning "derive this from the budget". A key left at a
+#: sentinel scales with the machine; any real value is treated as a ceiling.
+_AUTO_SENTINELS = (None, "", "auto")
+
+
+@dataclass(frozen=True)
+class ResourceBudget:
+    """What a single run may use of the machine.
+
+    ``cores`` and ``memory_gb`` are the machine's resources minus the OS reserve,
+    or the operator's explicit ``EQASIM_CPU_BUDGET`` / ``EQASIM_MEM_BUDGET``.
+    """
+
+    cores: int
+    memory_gb: float
+    machine: MachineResources
+
+
+@dataclass(frozen=True)
+class Resolution:
+    """The effective value of one resource key and why it has that value.
+
+    ``origin`` is ``"pinned"`` (the configured value fitted and was used as-is),
+    ``"clamped"`` (it did not fit and was reduced) or ``"derived"`` (the key was
+    left at an auto sentinel). ``note`` is the human-readable explanation that
+    goes into the log and the run provenance.
+    """
+
+    key: str
+    configured: object
+    effective: object
+    origin: str
+    note: str
+
+
+def is_auto(value) -> bool:
+    """True when a configured value asks to be derived from the budget.
+
+    ``0`` counts as a sentinel for count-like keys (the spelling already used by
+    ``braunschweig.chainsolvers.processes``); a memory string like "100G" never
+    does.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("", "auto")
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value <= 0
+    return value is None
+
+
+def resolve_budget(machine: Optional[MachineResources] = None,
+                   core_reserve: int = DEFAULT_CORE_RESERVE,
+                   memory_reserve_gb: float = DEFAULT_MEMORY_RESERVE_GB,
+                   env: Optional[dict] = None) -> ResourceBudget:
+    """Derive what this run may use from the machine and the environment.
+
+    An explicit ``EQASIM_CPU_BUDGET`` / ``EQASIM_MEM_BUDGET`` is taken verbatim:
+    the operator has already decided how much of a shared box to claim, so no
+    further reserve is subtracted from it.
+    """
+    machine = detect_machine() if machine is None else machine
+    env = os.environ if env is None else env
+
+    cpu_override = env.get(ENV_CPU_BUDGET)
+    if cpu_override:
+        cores = max(1, int(cpu_override))
+    else:
+        cores = max(1, machine.cores - max(0, int(core_reserve)))
+
+    memory_override = env.get(ENV_MEM_BUDGET)
+    if memory_override:
+        memory_gb = max(1.0, parse_memory_gb(memory_override))
+    else:
+        memory_gb = max(1.0, machine.memory_gb - max(0.0, float(memory_reserve_gb)))
+
+    return ResourceBudget(cores=cores, memory_gb=memory_gb, machine=machine)
+
+
+def _resolve_ceiling(key: str, configured, ceiling, *, unit: str,
+                     render=lambda value: value) -> Resolution:
+    """Shared pin/clamp/derive logic for one key against one ceiling."""
+    if is_auto(configured):
+        return Resolution(
+            key=key, configured=configured, effective=render(ceiling), origin="derived",
+            note=f"derived from the resource budget ({render(ceiling)} {unit})",
+        )
+    requested = configured
+    if requested > ceiling:
+        return Resolution(
+            key=key, configured=render(configured), effective=render(ceiling),
+            origin="clamped",
+            note=(f"configured {render(configured)} exceeds the resource budget; "
+                  f"clamped to {render(ceiling)} {unit}"),
+        )
+    return Resolution(
+        key=key, configured=render(configured), effective=render(configured),
+        origin="pinned", note=f"configured value fits the resource budget ({unit})",
+    )
+
+
+def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
+    """Resolve the JVM heap size against the memory budget.
+
+    Operational only: the heap size becomes ``-Xmx`` and cannot change results,
+    so clamping it down on a smaller machine is safe and needs no config change.
+    """
+    if is_auto(configured):
+        return Resolution(
+            key="java_memory", configured=configured,
+            effective=format_memory_gb(budget.memory_gb), origin="derived",
+            note=f"derived from the memory budget ({format_memory_gb(budget.memory_gb)})",
+        )
+    return _resolve_ceiling(
+        "java_memory", parse_memory_gb(configured), budget.memory_gb,
+        unit="memory", render=format_memory_gb,
+    )
+
+
+def resolve_popsim_workers(configured, budget: ResourceBudget,
+                           worker_memory_gb: float) -> Resolution:
+    """Resolve the PopulationSim batch worker count against the MEMORY budget.
+
+    This key is memory-bound, not core-bound: each worker drives its own
+    PopulationSim subprocess whose measured peak is 25-30 GB (2026-07-10 OOM
+    post-mortem, recorded in ``configs/overlays/test_100pct.yml``). Deriving it
+    from the core count is what would OOM the box.
+
+    Worker count cannot change results: ``popsim.batch.run_batches`` submits one
+    independent subprocess per batch folder and no seed depends on the worker
+    index, so clamping is safe.
+    """
+    memory_bound = max(1, int(math.floor(budget.memory_gb / max(0.1, float(worker_memory_gb)))))
+    ceiling = max(1, min(memory_bound, budget.cores))
+    return _resolve_ceiling(
+        "braunschweig.population.popsim.num_workers", configured, ceiling,
+        unit=f"workers at {worker_memory_gb:g} GB each",
+    )
+
+
+def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
+    """Resolve the generic synpp worker count against the core budget."""
+    return _resolve_ceiling("processes", configured, budget.cores, unit="cores")
