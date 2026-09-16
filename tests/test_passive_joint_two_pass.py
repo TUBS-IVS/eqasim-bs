@@ -478,6 +478,13 @@ _EXECUTE_CONFIG = {
     "leisure_visit_building_potential": False,
     "secondary_srv_location_types": False,
     "secondary_building_potentials": False,
+    # The surrogate rescue keys (#409): read unconditionally once execute() enters the
+    # escort_passive_joint_location branch (_passive_joint_link_table's call reads all
+    # four regardless of surrogate_enabled), mirroring the defaults configure() declares.
+    "escort_passive_joint_surrogate": False,
+    "escort_passive_joint_surrogate_max_gap_minutes": 15.0,
+    "escort_passive_joint_surrogate_min_age_years": 14,
+    "escort_passive_joint_surrogate_require_same_purpose": True,
     "braunschweig.chainsolvers.fallback": "rda",
     "braunschweig.chainsolvers.solver": sc.DEFAULT_CHAIN_SOLVER,
     "braunschweig.chainsolvers.parallel": False,
@@ -766,3 +773,105 @@ def test_configure_rejects_non_positive_surrogate_parameters(key, value):
     ctx = _configure_context(**_base_overrides(**{key: value}))
     with pytest.raises(ValueError, match=f"{key} must be > 0"):
         sc.configure(ctx)
+
+
+# --- surrogate rescue wiring (#409) --------------------------------------------------
+from braunschweig.synthesis.locations.passive_joint_links import (  # noqa: E402
+    LINK_COLUMNS, LINK_SOURCE_PLAN_SOURCE, LINK_SOURCE_SURROGATE, build_passive_joint_links,
+)
+
+
+def _wiring_persons():
+    # hh 10: adult 1 + identity-linked child 2; hh 20: adult 4 + child 5 whose donor adult
+    # (source 300/1) is absent -> rescued onto adult 4's shop trip 5 minutes later.
+    return pd.DataFrame({
+        "person_id": [1, 2, 4, 5], "household_id": [10, 10, 20, 20],
+        "source_H_ID": [100, 100, 900, 300], "source_P_ID": [1, 2, 1, 2],
+        "HP_ALTER": [40, 8, 40, 8],
+    })
+
+
+def _wiring_trips():
+    nan = np.nan
+    return pd.DataFrame({
+        "person_id":               [1,      1,      2,        2,      4,      4,      5,        5],
+        "trip_index":              [0,      1,      0,        1,      0,      1,      0,        1],
+        "preceding_purpose":       ["home", "shop", "home",   "shop", "home", "shop", "home",   "shop"],
+        "following_purpose":       ["shop", "home", "shop",   "home", "shop", "home", "shop",   "home"],
+        "departure_time":          [28800., 36000., 28800.,   36000., 29100., 36000., 28800.,   36000.],
+        "W_ID":                    [1,      2,      3,        4,      5,      6,      7,        8],
+        "passive_pair_status":     [nan,    nan,    "paired", nan,    nan,    nan,    "paired", nan],
+        "passive_pair_adult_p_id": [nan,    nan,    1.0,      nan,    nan,    nan,    1.0,      nan],
+        "passive_pair_adult_w_id": [nan,    nan,    1.0,      nan,    nan,    nan,    50.0,     nan],
+    })
+
+
+def test_link_table_without_the_rescue_is_exactly_todays_identity_table():
+    links, link_stats, rescue_stats = sc._passive_joint_link_table(
+        _wiring_persons(), _wiring_trips(), surrogate_enabled=False,
+        max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    expected, expected_stats = build_passive_joint_links(_wiring_persons(), _wiring_trips())
+    pd.testing.assert_frame_equal(links, expected)
+    assert list(links.columns) == LINK_COLUMNS          # no link_source column on the OFF path
+    assert link_stats == expected_stats and rescue_stats is None
+
+
+def test_link_table_with_the_rescue_appends_provenance_tagged_surrogate_rows():
+    links, link_stats, rescue_stats = sc._passive_joint_link_table(
+        _wiring_persons(), _wiring_trips(), surrogate_enabled=True,
+        max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    assert list(links.columns) == LINK_COLUMNS + ["link_source"]
+    by_child = links.set_index("child_person_id")
+    assert by_child.loc[2, "link_source"] == LINK_SOURCE_PLAN_SOURCE
+    assert by_child.loc[5, "link_source"] == LINK_SOURCE_SURROGATE
+    assert by_child.loc[5, "adult_person_id"] == 4 and by_child.loc[5, "adult_activity_index"] == 1
+    assert link_stats["n_linked"] == 1 and rescue_stats["n_surrogate_linked"] == 1
+
+
+def test_two_pass_places_a_surrogate_linked_child_at_the_surrogates_location():
+    links, _link_stats, _rescue_stats = sc._passive_joint_link_table(
+        _wiring_persons(), _wiring_trips(), surrogate_enabled=True,
+        max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    calls = []
+    df_locations, _conv, reports, anchor_stats = sc._compose_two_pass(
+        _wiring_trips(), df_primary=None, escort_activity_anchors=None,
+        links=links, shared={"crs": "EPSG:25832"}, solve=_fake_solve_factory(calls))
+    # Both children are pass-2 persons; both adults were placed in pass 1.
+    assert calls[0]["persons"] == [1, 4] and calls[1]["persons"] == [2, 5]
+    child_5 = df_locations[(df_locations["person_id"] == 5) & (df_locations["activity_index"] == 1)]
+    assert len(child_5) == 1
+    assert child_5["location_id"].iloc[0] == "loc_4" and child_5["geometry"].iloc[0] == Point(4, 4)
+    assert anchor_stats == {"n_links": 2, "n_resolved": 2, "n_unresolved": 0}
+    assert len(reports) == 2
+
+
+def _rescue_stats(n_candidates, n_linked, ineligible=0, no_activity=0, gap_exceeded=0):
+    return {"n_rescue_candidates": n_candidates, "n_surrogate_linked": n_linked,
+            "n_rescue_ineligible_child_purpose": ineligible,
+            "n_rescue_no_candidate_activity": no_activity, "n_rescue_gap_exceeded": gap_exceeded,
+            "n_rescue_purpose_mismatch_rows": 0, "n_rescue_cyclic_dropped_rows": 0,
+            "rescue_rate": (n_linked / n_candidates) if n_candidates else float("nan")}
+
+
+def test_the_surrogate_summary_line_carries_the_rate_and_the_combined_total():
+    line = sc._passive_joint_surrogate_summary(
+        _link_stats(n_passive_paired=58, n_linked=12, n_adult_not_in_household=27),
+        _rescue_stats(27, 6, ineligible=10, no_activity=3, gap_exceeded=8))
+    assert line.startswith("[braunschweig.secondary_chainsolvers] passive joint surrogate: 6/27")
+    assert "(22.2%)" in line
+    assert "child purpose not secondary 10" in line and "gap exceeded 8" in line
+    assert "total linked 18/58 (plan-source 12 + surrogate 6)" in line
+
+
+def test_the_surrogate_summary_line_warns_when_material_exists_but_nothing_links():
+    line = sc._passive_joint_surrogate_summary(
+        _link_stats(n_passive_paired=58, n_linked=12, n_adult_not_in_household=27),
+        _rescue_stats(27, 0, ineligible=10, no_activity=3, gap_exceeded=14))
+    assert line.startswith("[braunschweig.secondary_chainsolvers] WARNING: passive joint surrogate: 0/27")
+
+
+def test_the_surrogate_summary_line_stays_plain_when_no_leg_had_any_material():
+    line = sc._passive_joint_surrogate_summary(
+        _link_stats(n_passive_paired=3, n_linked=1, n_adult_not_in_household=2),
+        _rescue_stats(2, 0, ineligible=2))
+    assert "WARNING" not in line and "0/2" in line
