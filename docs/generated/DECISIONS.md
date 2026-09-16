@@ -132,3 +132,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0121](../decisions/ADR-0121-mid-passenger-availability.md) | 2026-09-15 | active | Separate MiD passenger access from driver access |
 | [ADR-0122](../decisions/ADR-0122-result-preserving-performance-kernels.md) | 2026-09-15 | -- | Optimize repeated work while preserving simulation inputs |
 | [ADR-0123](../decisions/ADR-0123-reproducible-test-environments.md) | 2026-09-15 | accepted for implementation | Reproducible test environments and measured consolidation |
+| [ADR-0124](../decisions/ADR-0124-gemeinde-bev-phev-composition-from-fz2717-level-from-the-2026-share.md) | 2026-09-16 | active | The per-Gemeinde BEV:PHEV composition comes from FZ 27.17 while the level stays with the 2026 combined share (issue #317) |

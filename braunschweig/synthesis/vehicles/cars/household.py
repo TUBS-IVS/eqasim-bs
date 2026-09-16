@@ -511,6 +511,15 @@ def configure(context):
     # consumes no RNG). The reference CSV is COMMITTED, so with the flag ON its
     # absence raises instead of silently disabling the feature.
     context.config("fleet_wohnmobile_age_tilt", True)
+    # Issue #317: per-Gemeinde BEV-vs-PHEV composition tilt. When True (default)
+    # the Gemeinde electric tilt no longer scales both electric powertrains by
+    # ONE combined factor (the only option while the 2026 per-Gemeinde source
+    # publishes no split, ADR-0086): the FZ 27.17 per-Gemeinde BEV:PHEV ratio
+    # supplies the STRUCTURE while the combined share keeps supplying the LEVEL
+    # (ADR-0124). The composition is rescaled so a Gemeinde's electric TOTAL is
+    # untouched, and Gemeinden without a usable ratio keep factor 1.0 (counted
+    # and logged). False restores the pre-#317 behaviour byte-identically.
+    context.config("fleet_gemeinde_bev_composition_tilt", True)
     # T9b: default is the new grid-tilt mode; falls back gracefully to Gemeinde-
     # only when kba_ev_grid.csv is absent.  The legacy Gemeinde-only mode
     # ("kreis_mix_gemeinde_bev_tilt") remains supported for explicit rollback.
@@ -543,6 +552,8 @@ def execute(context):
     ev_income_tilt = bool(context.config("fleet_ev_income_tilt"))
     euro6_substage = bool(context.config("fleet_euro6_substage"))
     wohnmobile_age_tilt = bool(context.config("fleet_wohnmobile_age_tilt"))
+    gemeinde_bev_composition_tilt = bool(
+        context.config("fleet_gemeinde_bev_composition_tilt"))
     electric_calibration = context.config("fleet_electric_calibration")
     # Optional explicit KBA derived-CSV directory; default None -> use data_path.
     kba_fleet_paths = context.config("kba_fleet_paths")
@@ -657,6 +668,7 @@ def execute(context):
         age_income_coupling=age_income_coupling,
         ev_income_tilt=ev_income_tilt,
         wohnmobile_age_tilt=wohnmobile_age_tilt,
+        gemeinde_bev_composition_tilt=gemeinde_bev_composition_tilt,
         euro6_substage=euro6_substage,
         population_label="residents")
     if len(_fleet_result) == 3:
