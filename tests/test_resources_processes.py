@@ -1,6 +1,7 @@
 """The generic worker count is clamped down, and under-use is made visible."""
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -23,6 +24,21 @@ def test_processes_pin_is_clamped_on_a_smaller_machine():
 
 def test_processes_pin_that_fits_is_untouched():
     assert resources.effective_processes(32, machine=SERVER, env={}) == 32
+
+
+def test_clamping_is_logged_as_a_warning(caplog):
+    # CLAUDE.md: a clamp that fires silently is the failure mode this whole
+    # mechanism exists to prevent.
+    with caplog.at_level(logging.WARNING):
+        resources.effective_processes(32, machine=LAPTOP, env={})
+    assert any("processes" in record.getMessage() for record in caplog.records)
+
+
+def test_a_fitting_pin_is_neither_changed_nor_warned_about(caplog):
+    with caplog.at_level(logging.WARNING):
+        result = resources.effective_processes(32, machine=SERVER, env={})
+    assert result == 32
+    assert not [r for r in caplog.records if "processes" in r.getMessage()]
 
 
 def test_report_flags_a_processes_pin_that_wastes_the_machine():

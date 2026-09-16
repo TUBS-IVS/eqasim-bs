@@ -367,6 +367,12 @@ DEFAULT_POPSIM_WORKER_MEMORY_GB = 30.0
 
 KEY_WORKER_MEMORY_GB = "braunschweig.population.popsim.worker_memory_gb"
 
+#: Below this fraction of the core budget, a pinned ``processes`` value is
+#: reported as wasting the machine. Informational only -- the value is never
+#: raised automatically, because raising it needs the auto sentinel to be
+#: understood at every fallback read site.
+PROCESSES_UNDERUSE_FRACTION = 0.75
+
 
 class ResourceValidationError(RuntimeError):
     """Raised at startup when the configuration cannot fit the detected machine."""
@@ -537,13 +543,6 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
         logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
                        resolution.configured, resolution.effective, resolution.note)
     return int(resolution.effective)
-
-
-#: Below this fraction of the core budget, a pinned ``processes`` value is
-#: reported as wasting the machine. Informational only -- the value is never
-#: raised automatically, because raising it needs the auto sentinel to be
-#: understood at every fallback read site.
-PROCESSES_UNDERUSE_FRACTION = 0.75
 
 
 def effective_processes(configured, machine: Optional[MachineResources] = None,
