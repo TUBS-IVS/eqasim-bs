@@ -46,6 +46,14 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 DATA_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig"
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E402
+from braunschweig.calibration.srv_participation_universe import (  # noqa: E402
+    UNSURVEYED_KREISE, check_table_kreis_coverage)
+
+REGION_CODE = "03ZGB"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_srv_participation_aggregate")
@@ -81,12 +89,24 @@ HEADER = """\
 #   escort = {6} (Holen/Bringen)
 #
 # Columns: code (5-digit ARS), level ("kreis" or "total"), n_unweighted (int),
-# work/education/leisure/escort (float shares, 0.0..1.0, in PURPOSE dict order).
+# work/education/leisure/escort (float shares in 0.0..1.0, or empty/NaN, in
+# PURPOSE dict order).
 # Region-total row coded "03ZGB" with level="total".
+#
+# Rows: one per EXPECTED ZGB Kreis (all 8) plus the region total -- the row set
+# is the expected geography, never the Kreise the delivery happens to cover
+# (issue #405), so a reader never has to know that eight are expected but seven
+# arrive. Wolfsburg (03103) is NOT surveyed by SrV and is therefore emitted with
+# n_unweighted=0 and NaN shares; a consumer must substitute (today: the 03ZGB
+# region total, recorded as source "srv_region_total") and say so. The shares of
+# such a row are NaN and never 0.0: a 0.0 would read as a MEASURED participation
+# rate of zero. A Kreis that has persons but none of a given purpose keeps a
+# genuine 0.0.
 """
 
 
-def compute_participation(persons: pd.DataFrame, wege: pd.DataFrame) -> pd.DataFrame:
+def compute_participation(persons: pd.DataFrame, wege: pd.DataFrame,
+                          expected_kreise=ZGB_KREISE) -> pd.DataFrame:
     """
     Compute per-Kreis trip-participation shares from persons and trips.
 
@@ -97,13 +117,20 @@ def compute_participation(persons: pd.DataFrame, wege: pd.DataFrame) -> pd.DataF
         the household AGS -- see ``load_kreis_by_hhnr``), GEWICHT_P_ZENSUS.
     wege : pd.DataFrame
         Trips table with columns: HHNR, PNR, E_ZWECK_9.
+    expected_kreise : sequence of str, default ``ZGB_KREISE``
+        The geography the row set is taken from. One ``kreis`` row is emitted per code,
+        whether or not the delivery covers it (issue #405); raises if ``persons`` carries a
+        code outside this set, since such a person would reach the region row but no Kreis row.
 
     Returns
     -------
     pd.DataFrame
         Aggregated participation by Kreis and region total, with columns:
         code (5-digit ARS str), level ("kreis" or "total"), n_unweighted (int),
-        work (float), leisure (float), education (float).
+        work (float), leisure (float), education (float), escort (float).
+        A Kreis with no person is emitted with ``n_unweighted == 0`` and NaN shares -- never
+        dropped, and never a 0.0, which would read as a measured rate of zero. A Kreis that has
+        persons but none of a given purpose keeps a genuine 0.0.
     """
     persons = persons.copy()
     persons["pid"] = persons["HHNR"].astype(str) + "_" + persons["PNR"].astype(str)
@@ -119,23 +146,58 @@ def compute_participation(persons: pd.DataFrame, wege: pd.DataFrame) -> pd.DataF
         for p, codes in PURPOSE.items()
     }
 
-    # Aggregate by Kreis
+    # Aggregate by Kreis. The row set is the EXPECTED geography, never the Kreise the delivery
+    # happens to cover (issue #405): a Kreis SrV does not survey is a zero row with NaN shares,
+    # so a reader never has to know that eight Kreise are expected but seven arrive.
+    groups = {ars5: g for ars5, g in persons.groupby("ars5")}
+    unexpected = sorted(set(groups) - set(expected_kreise))
+    if unexpected:
+        raise ValueError(
+            "build_srv_participation_aggregate: persons carry Kreis code(s) %s that are not in "
+            "the expected set %s; they would be counted in the %s region row but in no Kreis "
+            "row." % (unexpected, list(expected_kreise), REGION_CODE))
+
+    empty = persons.iloc[0:0]
     rows = []
-    for ars5, g in persons.groupby("ars5"):
+    for ars5 in expected_kreise:
+        g = groups.get(ars5, empty)
         tot = g["w"].sum()
         row = {"code": ars5, "level": "kreis", "n_unweighted": int(len(g))}
         for p in PURPOSE:
-            row[p] = float(g.loc[g["pid"].isin(havers[p]), "w"].sum() / tot) if tot > 0 else 0.0
+            # NaN, never 0.0, when the weight base is empty: a 0.0 reads as a MEASURED
+            # participation rate of zero and would reach a control target as one. A Kreis that
+            # does have persons but none of this purpose is a genuine 0.0 and stays 0.0.
+            row[p] = (float(g.loc[g["pid"].isin(havers[p]), "w"].sum() / tot) if tot > 0
+                      else float("nan"))
         rows.append(row)
 
     out = pd.DataFrame(rows)
 
     # Compute region total
     tot = persons["w"].sum()
-    total = {"code": "03ZGB", "level": "total", "n_unweighted": int(len(persons))}
+    total = {"code": REGION_CODE, "level": "total", "n_unweighted": int(len(persons))}
     for p in PURPOSE:
         total[p] = float(persons.loc[persons["pid"].isin(havers[p]), "w"].sum() / tot)
     return pd.concat([out, pd.DataFrame([total])], ignore_index=True)
+
+
+def check_coverage(aggregate: pd.DataFrame, expected_kreise=ZGB_KREISE,
+                   unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
+    """Raise ``ValueError`` if the built aggregate does not describe the expected geography.
+
+    Needed because the row set is now the expected geography (issue #405): a delivery that LOST
+    a surveyed Kreis no longer shows up as a missing row -- it shows up as a zero row, which
+    every consumer of this table reads as "not surveyed, substitute the 03ZGB region total". A
+    hole would therefore be accepted here and silently turned into a fallback downstream, and a
+    delivery that suddenly covers Wolfsburg would make the consumers' documented substitution
+    assumption stale while they keep applying it.
+
+    Reuses :func:`srv_participation_universe.check_table_kreis_coverage` rather than
+    re-implementing the four checks, so this aggregate and the two sibling universe aggregates
+    reject exactly the same broken deliveries (ADR-0124).
+    """
+    check_table_kreis_coverage(aggregate, "participation", expected_kreise=expected_kreise,
+                               unsurveyed_kreise=unsurveyed_kreise)
 
 
 def load_kreis_by_hhnr(households_path: Path) -> pd.Series:
@@ -232,8 +294,11 @@ def main(argv=None) -> int:
     after = len(persons)
     log.info("filtered to MITTL_WERKTAG == 1: %d -> %d persons (%.1f%%)", before, after, 100.0 * after / before)
 
-    # Compute participation and write
+    # Compute participation, validate the delivery geography, and only then write: a table that
+    # ships a hole is worse than no table, because the zero row it leaves behind is
+    # indistinguishable from the documented unsurveyed-Kreis row every consumer already handles.
     agg = compute_participation(persons, wege)
+    check_coverage(agg)
     out_path = args.out_dir / "srv2023_participation_by_kreis.csv"
     write_aggregate(agg, out_path)
 

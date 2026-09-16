@@ -3,9 +3,9 @@ title: SrV 2023 employed share and conditional work-participation rates per Krei
   (committed aggregate, SrV conditional half of the work_by_employment control target)
 provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
 vintage: 2023 survey year
-geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per surveyed
-  home Kreis (7 of the 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and has NO row)
-  plus one 03ZGB region-total row.
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per EXPECTED
+  home Kreis (all 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and is emitted as a
+  ZERO row with NaN shares) plus one 03ZGB region-total row.
 crs: null
 roles:
 - calibration_target
@@ -28,7 +28,7 @@ storage:
 verification:
   verifier_entry: null
   notes: |
-    One committed file: srv2023_work_by_employment_by_kreis.csv (8 rows: 7 kreis + 1 03ZGB).
+    One committed file: srv2023_work_by_employment_by_kreis.csv (9 rows: 8 kreis + 1 03ZGB).
     Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup
     tables: the file ships committed with every clone, no SrV table is listed in the
     verifier at all, and no pipeline stage reads it - it is a BUILD-TIME input to the
@@ -99,21 +99,29 @@ limitations: |
   Braunschweig, 03102 Salzgitter, 03103 Wolfsburg, 03151 Gifhorn, 03153 Goslar, 03154
   Helmstedt, 03157 Peine, 03158 Wolfenbuettel.
 
-  Wolfsburg (03103) is NOT surveyed by SrV and has no row (the convention of
-  srv2023_participation_by_kreis.csv, whose consumer scripts/build_participation_target.py fills
-  Wolfsburg from the region total); a target builder must do the same and document it as an
-  assumption. The 03ZGB row is EXACTLY the union of the 7 kreis rows, so
+  Wolfsburg (03103) is NOT surveyed by SrV and is emitted as a ZERO row (n_unweighted = 0, NaN
+  shares) rather than being dropped (issue #405): the row set is the expected geography, not the
+  Kreise the delivery happens to cover, so a reader never has to know how many rows to expect. A
+  zero row carries no measurable rate, so a target builder still substitutes the 03ZGB
+  region-total rates and documents that as an assumption - what it no longer does is carry a
+  hardcoded "ZGB8 minus Wolfsburg" expectation (scripts/build_participation_universe_targets.py
+  now reads which Kreise lack a rate from n_unweighted == 0 and logs the primary-vs-fallback
+  rate every run). The 03ZGB row is EXACTLY the union of the 8 kreis rows, so
   sum(kreis n_unweighted) == 03ZGB n_unweighted holds by construction (enforced by
   srv_participation_universe.check_invariants, which also enforces that the employed and
   not-employed counts partition n_unweighted on every row and that every share is NaN or inside
   [0, 1]). A share is NaN, never 0.0, when its conditioning class is empty in a Kreis.
 
   Kreis COVERAGE has its own guard, srv_participation_universe.check_kreis_coverage, which the
-  extraction calls with the full ZGB_KREISE set and which raises if any surveyed Kreis has no
-  row (only WOLFSBURG_KREIS may be absent) or if a row carries a code outside the expected set.
-  It is separate from check_invariants because the builders emit one row per Kreis PRESENT in
-  the universe, so a delivery that lost a whole Kreis would satisfy every table invariant while
-  emitting one row fewer.
+  extraction calls with the full ZGB_KREISE set. It raises if an expected Kreis has no row at
+  all, if a row carries a code outside the expected set, if a SURVEYED Kreis has n_unweighted ==
+  0, or if an UNSURVEYED one (UNSURVEYED_KREISE, i.e. Wolfsburg) carries persons. The two count
+  checks carry the detection power the old data-driven row set provided for free: when a Kreis
+  without persons produced no row, a lost Kreis showed up as a missing row; now it shows up as a
+  zero row, so an unexpected zero has to be rejected explicitly or a delivery that lost a Kreis
+  would pass every table invariant while shipping a hole. The last check exists because every
+  consumer carries the documented assumption that Wolfsburg's rates come from the region total -
+  real data for it makes that assumption stale while it keeps being applied.
 
   Coverage caveat inherited from every SrV table: stratified PSU design over ~44 selected
   municipalities, so per-Kreis rows extrapolate from the sampled municipalities and are
