@@ -567,6 +567,37 @@ def configure(context):
             "escort_purpose (escort_passive_from_adult itself requires it)."
         )
 
+    # Surrogate anchor (issue #409 option 1, ADR-0124): re-point a paired passive child whose
+    # donor adult is absent from the synthetic household to a household member's nearest
+    # secondary activity. Extends the ADR-0119 link table, so it requires that flag. Keys and
+    # defaults are owned by passive_joint_links (imported, never retyped).
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        DEFAULT_SURROGATE_MAX_GAP_MINUTES, DEFAULT_SURROGATE_MIN_AGE_YEARS,
+        DEFAULT_SURROGATE_REQUIRE_SAME_PURPOSE, KEY_SURROGATE_ENABLED,
+        KEY_SURROGATE_MAX_GAP_MINUTES, KEY_SURROGATE_MIN_AGE_YEARS,
+        KEY_SURROGATE_REQUIRE_SAME_PURPOSE,
+    )
+    surrogate = bool(context.config(KEY_SURROGATE_ENABLED, False))
+    surrogate_gap = context.config(KEY_SURROGATE_MAX_GAP_MINUTES, DEFAULT_SURROGATE_MAX_GAP_MINUTES)
+    surrogate_age = context.config(KEY_SURROGATE_MIN_AGE_YEARS, DEFAULT_SURROGATE_MIN_AGE_YEARS)
+    context.config(KEY_SURROGATE_REQUIRE_SAME_PURPOSE, DEFAULT_SURROGATE_REQUIRE_SAME_PURPOSE)
+    if surrogate and not joint_location:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_ENABLED} requires "
+            "escort_passive_joint_location (the surrogate rescue extends that flag's link "
+            f"table); set both or disable {KEY_SURROGATE_ENABLED}."
+        )
+    if not float(surrogate_gap) > 0:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_MAX_GAP_MINUTES} must be > 0 "
+            f"(minutes), got {surrogate_gap!r}."
+        )
+    if not int(surrogate_age) > 0:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_MIN_AGE_YEARS} must be > 0 "
+            f"(years), got {surrogate_age!r}."
+        )
+
     # Escort distance-by-type (A3): scale the MiD escort distance layer per
     # drawn destination type with SrV-derived structure factors.
     context.config("escort_distance_by_type", False)

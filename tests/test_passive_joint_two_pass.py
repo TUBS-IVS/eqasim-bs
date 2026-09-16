@@ -731,3 +731,38 @@ def test_the_rng_consuming_calls_of_one_pass_keep_their_order(monkeypatch):
     assert report["n_unbounded"] == 1 and report["n_failed_bounded"] == 1
     assert report["n_problems"] == 2
     assert len(df_locations) == 0 and len(df_convergence) == 1
+
+
+def test_configure_declares_the_surrogate_keys_with_their_defaults():
+    ctx = _configure_context()
+    sc.configure(ctx)
+    assert ctx.registered["escort_passive_joint_surrogate"] is False
+    assert ctx.registered["escort_passive_joint_surrogate_max_gap_minutes"] == 15.0
+    assert ctx.registered["escort_passive_joint_surrogate_min_age_years"] == 14
+    assert ctx.registered["escort_passive_joint_surrogate_require_same_purpose"] is True
+
+
+def test_configure_rejects_the_surrogate_flag_without_joint_location():
+    ctx = _configure_context(**_base_overrides(escort_passive_joint_surrogate=True,
+                                               escort_passive_joint_location=False))
+    with pytest.raises(ValueError, match="requires escort_passive_joint_location"):
+        sc.configure(ctx)
+
+
+def test_configure_accepts_the_surrogate_flag_on_top_of_joint_location():
+    ctx = _configure_context(**_base_overrides(escort_passive_joint_surrogate=True,
+                                               escort_passive_joint_location=True))
+    sc.configure(ctx)
+    assert ctx.registered["escort_passive_joint_surrogate"] is True
+
+
+@pytest.mark.parametrize("key,value", [
+    ("escort_passive_joint_surrogate_max_gap_minutes", 0),
+    ("escort_passive_joint_surrogate_max_gap_minutes", -5.0),
+    ("escort_passive_joint_surrogate_min_age_years", 0),
+    ("escort_passive_joint_surrogate_min_age_years", -1),
+])
+def test_configure_rejects_non_positive_surrogate_parameters(key, value):
+    ctx = _configure_context(**_base_overrides(**{key: value}))
+    with pytest.raises(ValueError, match=f"{key} must be > 0"):
+        sc.configure(ctx)
