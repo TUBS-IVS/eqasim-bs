@@ -455,6 +455,43 @@ class TestCompositionTiltApplication:
         assert model._gemeinde_composition_primary == 2
         assert model._gemeinde_composition_fallback == 0
 
+    def test_flag_off_is_not_counted_as_a_missing_reference(self):
+        """An intentional rollback must not read as a 100 % broken reference.
+
+        The counters feed log_fallback_rate, which warns above 50 %. Counting a
+        deliberate OFF run as a fallback reports the rollback as a broken
+        reference -- the exact instrumentation defect ADR-0086 exists about.
+        """
+        off = self._model(composition_on=False)
+        off.powertrain_probabilities("klein", "03158", "BEVTOWN")
+        off.powertrain_probabilities("klein", "03158", "PHEVTOWN")
+
+        assert off._gemeinde_composition_fallback == 0
+        assert off._gemeinde_composition_primary == 0
+
+    def test_flag_off_logs_the_disabled_state(self, caplog):
+        """Disabled must be VISIBLE, not silent: silence reads as 'ran, did nothing'."""
+        off = self._model(composition_on=False)
+        off.powertrain_probabilities("klein", "03158", "BEVTOWN")
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            off.log_fallback_rate("residents")
+
+        assert "DISABLED" in caplog.text
+        assert "composition" in caplog.text.lower()
+
+    def test_flag_off_never_warns_about_the_composition(self, caplog):
+        off = self._model(composition_on=False)
+        for _ in range(10):
+            off.powertrain_probabilities("klein", "03158", "BEVTOWN")
+        with caplog.at_level(logging.INFO, logger=fs.logger.name):
+            off.log_fallback_rate("residents")
+
+        composition_warnings = [
+            r for r in caplog.records
+            if r.levelno >= logging.WARNING and "composition" in r.getMessage().lower()
+        ]
+        assert not composition_warnings, composition_warnings
+
     def test_composition_rate_is_logged(self, caplog):
         model = self._model()
         model.powertrain_probabilities("klein", "03158", "BEVTOWN")
@@ -502,7 +539,10 @@ class TestCompositionTiltApplication:
 
         assert tilted[idx["bev"]] == pytest.approx(0.075, rel=1e-9)
         assert tilted[idx["phev"]] == pytest.approx(0.025, rel=1e-9)
-        assert model._gemeinde_composition_fallback == 1
+        # NOT a missing-reference fallback: the source carries its own split here,
+        # so the composition is not applicable rather than unavailable. Counting it
+        # as a fallback would inflate the rate that log_fallback_rate warns on.
+        assert model._gemeinde_composition_fallback == 0
         assert model._gemeinde_composition_primary == 0
 
 

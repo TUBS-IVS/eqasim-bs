@@ -964,13 +964,19 @@ class PowertrainModel:
         # _gemeinde_electric_share_2026 drops both columns together), guarded
         # because the cost of being wrong here is a silent split defect.
         composition = None
-        if self.gemeinde_bev_composition_tilt:
-            uses_combined = all(
-                gem_shares.get(pt) is None or kreis_shares.get(pt, 0.0) <= 0.0
-                for pt in ELECTRIC_POWERTRAINS
-            )
-            if uses_combined:
-                composition = self.gemeinde_electric_composition.get(key)
+        # Whether the composition is APPLICABLE at all for this car, independent of
+        # whether one exists for its Gemeinde. Computed outside the flag test because
+        # the counters below must distinguish "no reference for this Gemeinde" (a
+        # real fallback) from "not applicable here" (the flag is off, or the source
+        # carries its own split) -- counting the latter as a fallback reports a
+        # deliberate OFF run as a 100 % missing-reference rate and warns about it,
+        # which is the exact instrumentation defect ADR-0086 was written about.
+        composition_applicable = self.gemeinde_bev_composition_tilt and all(
+            gem_shares.get(pt) is None or kreis_shares.get(pt, 0.0) <= 0.0
+            for pt in ELECTRIC_POWERTRAINS
+        )
+        if composition_applicable:
+            composition = self.gemeinde_electric_composition.get(key)
         if composition is not None and combined_factor is not None:
             # Rescale the pair so the Gemeinde's ELECTRIC TOTAL is preserved
             # exactly: the composition redistributes mass between bev and phev,
@@ -1007,7 +1013,9 @@ class PowertrainModel:
                         composition_counted = True
                         if composition is not None:
                             self._gemeinde_composition_primary += 1
-                        else:
+                        elif composition_applicable:
+                            # Applicable but no reference for this Gemeinde: a real
+                            # fallback (one of the documented eight).
                             self._gemeinde_composition_fallback += 1
                 continue
             # Clip the tilt to [0.2, 5] so a tiny denominator cannot explode a
@@ -1150,7 +1158,18 @@ class PowertrainModel:
         # so reporting it against that denominator is what makes "the structure
         # signal reached N% of the tilted cars" readable.
         ctot = self._gemeinde_composition_primary + self._gemeinde_composition_fallback
-        if ctot:
+        if not self.gemeinde_bev_composition_tilt:
+            # Report the DISABLED state explicitly. Silence would be
+            # indistinguishable from "the tilt ran and did nothing", and counting
+            # every car as a fallback (the pre-review behaviour) reported a
+            # deliberate rollback as a 100 % broken reference.
+            logger.info(
+                "%s powertrain Gemeinde BEV/PHEV composition tilt: DISABLED "
+                "(fleet_gemeinde_bev_composition_tilt=false); both electric "
+                "powertrains keep the single combined factor (ADR-0086 behaviour).",
+                tag,
+            )
+        elif ctot:
             crate = self._gemeinde_composition_fallback / ctot
             (logger.warning if crate > 0.50 else logger.info)(
                 "%s powertrain Gemeinde BEV/PHEV composition tilt: primary "

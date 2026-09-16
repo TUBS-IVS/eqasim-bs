@@ -124,7 +124,7 @@
   from PHEV is affected, per-Kreis electric levels are not. The feature is
   flag-gated (`fleet_gemeinde_bev_composition_tilt`, default true); the tilt
   consumes no RNG, so the OFF path is byte-identical to the pre-#317 draw.
-- **Evidence:** `tests/test_fleet_gemeinde_bev_composition.py` (32 tests, all
+- **Evidence:** `tests/test_fleet_gemeinde_bev_composition.py` (35 tests, all
   green), including a `TestCompositionAggregateNeutrality` group that builds a
   population deliberately skewed AGAINST the FZ weights (9 cars in the BEV-heavy
   Gemeinde, 1 in the PHEV-heavy one), asserts the uncorrected aggregate really
