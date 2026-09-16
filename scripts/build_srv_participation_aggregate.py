@@ -50,6 +50,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E402
+from braunschweig.calibration.srv_participation_universe import (  # noqa: E402
+    UNSURVEYED_KREISE, check_table_kreis_coverage)
 
 REGION_CODE = "03ZGB"
 
@@ -179,6 +181,25 @@ def compute_participation(persons: pd.DataFrame, wege: pd.DataFrame,
     return pd.concat([out, pd.DataFrame([total])], ignore_index=True)
 
 
+def check_coverage(aggregate: pd.DataFrame, expected_kreise=ZGB_KREISE,
+                   unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
+    """Raise ``ValueError`` if the built aggregate does not describe the expected geography.
+
+    Needed because the row set is now the expected geography (issue #405): a delivery that LOST
+    a surveyed Kreis no longer shows up as a missing row -- it shows up as a zero row, which
+    every consumer of this table reads as "not surveyed, substitute the 03ZGB region total". A
+    hole would therefore be accepted here and silently turned into a fallback downstream, and a
+    delivery that suddenly covers Wolfsburg would make the consumers' documented substitution
+    assumption stale while they keep applying it.
+
+    Reuses :func:`srv_participation_universe.check_table_kreis_coverage` rather than
+    re-implementing the four checks, so this aggregate and the two sibling universe aggregates
+    reject exactly the same broken deliveries (ADR-0124).
+    """
+    check_table_kreis_coverage(aggregate, "participation", expected_kreise=expected_kreise,
+                               unsurveyed_kreise=unsurveyed_kreise)
+
+
 def load_kreis_by_hhnr(households_path: Path) -> pd.Series:
     """
     Load the SrV household file and derive the Kreis lookup by HHNR.
@@ -273,8 +294,11 @@ def main(argv=None) -> int:
     after = len(persons)
     log.info("filtered to MITTL_WERKTAG == 1: %d -> %d persons (%.1f%%)", before, after, 100.0 * after / before)
 
-    # Compute participation and write
+    # Compute participation, validate the delivery geography, and only then write: a table that
+    # ships a hole is worse than no table, because the zero row it leaves behind is
+    # indistinguishable from the documented unsurveyed-Kreis row every consumer already handles.
     agg = compute_participation(persons, wege)
+    check_coverage(agg)
     out_path = args.out_dir / "srv2023_participation_by_kreis.csv"
     write_aggregate(agg, out_path)
 

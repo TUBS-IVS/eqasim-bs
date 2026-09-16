@@ -52,6 +52,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.analysis import spatial  # noqa: E402
+from braunschweig.calibration.srv_participation_universe import (  # noqa: E402
+    require_unique_kreis_codes, validated_kreis_counts)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("build_participation_target")
@@ -136,6 +138,10 @@ def build_participation_target(data: Path, purpose: str) -> pd.DataFrame:
 
     yes_col, no_col = f"{purpose}_yes", f"{purpose}_no"
 
+    # A set-based completeness check alone accepts a DUPLICATED Kreis row: it would be emitted
+    # twice and reach the written target as an ambiguous ars5 key instead of failing the source
+    # contract, so uniqueness is checked before the row set is split.
+    require_unique_kreis_codes(kreis_rows, "build_participation_target")
     missing_codes = sorted(_EXPECTED_SRV_KREIS_CODES - set(kreis_rows["code"]))
     if missing_codes:
         raise ValueError(
@@ -152,7 +158,11 @@ def build_participation_target(data: Path, purpose: str) -> pd.DataFrame:
     # survey does not cover is a zero row with a NaN share (issue #405). Reading it here removes
     # the hardcoded "Wolfsburg is the exception" that the row convention exists to make
     # unnecessary; the substitution itself is unchanged.
-    measurable = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce").fillna(0) > 0
+    # Only an explicit zero means "not surveyed": a count that cannot be read is a broken source,
+    # not an empty Kreis, and must never be coerced into one (it would silently route a corrupted
+    # Kreis onto the region-total fallback below).
+    kreis_rows["n_unweighted"] = validated_kreis_counts(kreis_rows, "build_participation_target")
+    measurable = kreis_rows["n_unweighted"] > 0
     measured, empty_codes = kreis_rows[measurable], sorted(kreis_rows.loc[~measurable, "code"])
     n_kreis = len(kreis_rows)
     fallback_share = len(empty_codes) / n_kreis if n_kreis else 0.0

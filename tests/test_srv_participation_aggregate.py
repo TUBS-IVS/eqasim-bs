@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS
-from scripts.build_srv_participation_aggregate import compute_participation
+from scripts.build_srv_participation_aggregate import check_coverage, compute_participation
 
 
 def test_participation_shares_weighted():
@@ -82,3 +82,43 @@ def test_a_kreis_outside_the_expected_set_raises_instead_of_vanishing():
     persons.loc[2, "kreis"] = "09999"
     with pytest.raises(ValueError, match="09999"):
         compute_participation(persons, wege, expected_kreise=("03101", WOLFSBURG_KREIS))
+
+
+def _shipped_shape(counts_by_code: dict) -> pd.DataFrame:
+    """A participation aggregate of the shipped shape: one kreis row per given code plus the
+    03ZGB region row. Only `code`, `level` and `n_unweighted` matter to the coverage check."""
+    rows = [{"code": code, "level": "kreis", "n_unweighted": n}
+            for code, n in counts_by_code.items()]
+    rows.append({"code": "03ZGB", "level": "total",
+                 "n_unweighted": sum(counts_by_code.values())})
+    return pd.DataFrame(rows)
+
+
+def test_coverage_accepts_the_shipped_shape():
+    """Seven surveyed Kreise with persons plus Wolfsburg's zero row is the delivery as it is."""
+    expected = ("03101", "03102", WOLFSBURG_KREIS)
+    check_coverage(_shipped_shape({"03101": 100, "03102": 80, WOLFSBURG_KREIS: 0}),
+                   expected_kreise=expected)
+
+
+def test_coverage_rejects_a_surveyed_kreis_that_collapsed_to_zero():
+    """The detection power the data-driven row set used to provide for free.
+
+    A lost Kreis used to be a MISSING row; with the row set taken from the expected geography it
+    is a ZERO row -- indistinguishable, to every consumer, from the documented unsurveyed-Kreis
+    row they fill from the 03ZGB region total. Without this guard the builder would write a
+    table whose hole is silently turned into a fallback three stages downstream.
+    """
+    expected = ("03101", "03102", WOLFSBURG_KREIS)
+    with pytest.raises(ValueError, match="03102"):
+        check_coverage(_shipped_shape({"03101": 100, "03102": 0, WOLFSBURG_KREIS: 0}),
+                       expected_kreise=expected)
+
+
+def test_coverage_rejects_persons_for_the_unsurveyed_kreis():
+    """A delivery that suddenly covers Wolfsburg makes every consumer's documented region-total
+    substitution stale while they keep applying it; the builder stops instead of adapting."""
+    expected = ("03101", "03102", WOLFSBURG_KREIS)
+    with pytest.raises(ValueError, match=WOLFSBURG_KREIS):
+        check_coverage(_shipped_shape({"03101": 100, "03102": 80, WOLFSBURG_KREIS: 5}),
+                       expected_kreise=expected)

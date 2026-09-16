@@ -69,6 +69,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.analysis import spatial  # noqa: E402
+from braunschweig.calibration.srv_participation_universe import (  # noqa: E402
+    require_unique_kreis_codes, validated_kreis_counts)
 from braunschweig.popsim.attributes import EMPLOYED_EMPLOYMENT_STATUS_CLASSES  # noqa: E402
 from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
     EDUCATION_AGE_BOUNDS, EDUCATION_BY_AGE_ENTRY_NAMES, EDUCATION_FLAG_CATEGORIES,
@@ -151,13 +153,22 @@ def split_measured_and_empty_kreise(kreis_rows: pd.DataFrame, context: str) -> t
     Kreis have its own rates?" is a question about the data, not a fact the reader must carry.
     Returns ``(measured, empty_codes)``.
 
+    Only an EXPLICIT zero routes a Kreis onto the fallback: the counts are validated first
+    (:func:`srv_participation_universe.validated_kreis_counts`), so a missing, non-numeric or
+    negative ``n_unweighted`` raises instead of being read as an empty Kreis -- otherwise a
+    corrupted source would produce a plausible target built from the pooled region rate, with
+    nothing in the output saying so. Duplicate Kreis codes are rejected for the same reason: the
+    row convention is one row per expected Kreis, and a duplicate would reach the written target
+    as an ambiguous ``ars5`` key.
+
     Logs the primary-vs-fallback rate on every run and warns above
     :data:`_REGION_TOTAL_FALLBACK_WARN_SHARE`, per CLAUDE.md's fallback-transparency rule: the
     region-total substitution used to be invisible outside the written header, so an input that
     lost several Kreise would have produced a target built almost entirely from one pooled rate
     without saying so anywhere.
     """
-    measurable = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce").fillna(0) > 0
+    require_unique_kreis_codes(kreis_rows, context)
+    measurable = validated_kreis_counts(kreis_rows, context) > 0
     measured = kreis_rows[measurable]
     empty_codes = sorted(kreis_rows.loc[~measurable, "code"])
     n_total = len(kreis_rows)

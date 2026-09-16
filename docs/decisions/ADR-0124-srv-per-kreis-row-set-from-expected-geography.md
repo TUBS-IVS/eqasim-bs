@@ -1,7 +1,8 @@
 # ADR-0124 · 2026-09-16 · SrV per-Kreis row set comes from the expected geography, not the delivery
 
 - **Status:** accepted for implementation
-- **Issue:** #405 (found by the #368 package review, deferred from PR #404)
+- **Issue:** #405 (found by the #368 package review, deferred from PR #404); #413 for the
+  review round below, raised after PR #412 had already been merged
 
 ## Context
 
@@ -52,6 +53,30 @@ contract-driven row set would otherwise reach the region row but no Kreis row. C
 4. **A test asserts the convention on the committed tables**
    (`tests/test_srv_kreis_table_conventions.py`), not only on builder fixtures. The committed
    table is what consumers read and what a future regeneration can silently change.
+
+### Review round: only an EXPLICIT zero is a fallback, and all three tables share one guard
+
+*(Issue #413 -- the Copilot review of PR #412 landed after that PR was merged.)*
+
+Consequence 3 makes `n_unweighted == 0` the switch that routes a Kreis onto the documented
+region-total substitution. A first implementation read that switch through
+`to_numeric(errors="coerce").fillna(0) > 0`, which silently classifies a **missing, non-numeric,
+negative or fractional** count as an empty Kreis: a corrupted delivery would then produce a
+plausible-looking target built from the pooled region rate, with nothing in the output saying so
+— exactly the silent fallback CLAUDE.md forbids, re-introduced by the switch that this decision
+created. Counts are therefore validated first
+(`srv_participation_universe.validated_kreis_counts`): only an explicit finite zero means "not
+surveyed", anything unreadable raises. For the same reason a duplicated Kreis row is rejected
+(`require_unique_kreis_codes`) — the set-based completeness check of consequence 2 accepts one,
+and it would reach the written target as an ambiguous `ars5` key.
+
+Consequence 2's coverage guard also applied to the two universe tables only, while
+`scripts/build_srv_participation_aggregate.py` wrote its result unchecked — so the third table of
+the family, the one this change newly put on the convention, was the one that could ship a hole.
+The per-table core of `check_kreis_coverage` is now the public
+`srv_participation_universe.check_table_kreis_coverage`, and all three builders call it, so the
+same four broken deliveries are rejected everywhere instead of in whichever builder happened to
+grow the check.
 
 ### Evidence that this is behaviour-preserving
 
