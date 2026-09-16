@@ -31,6 +31,7 @@ code_paths:
 evidence:
   tests:
   - tests/test_fleet_gemeinde_bev_composition.py
+  - tests/test_execute_context_config_contract.py
   off_path_byte_identical:
     claimed: true
     test: tests/test_fleet_gemeinde_bev_composition.py::TestCompositionTiltApplication::test_flag_off_reproduces_the_pre_317_tilt
@@ -51,7 +52,7 @@ validation:
   runs: []
   metric: null
   note: |
-    No production run recorded yet. Measured at reference level by scripts/measure_gemeinde_bev_composition.py: the electric TOTAL drift under the tilt is 4.9e-17 (machine zero, guaranteed by the per-Gemeinde rescale), and the residual per-Kreis BEV:PHEV shift is at most 0.0224 pp of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3-4%. That residual is the measured cost of taking structure and level from two different KBA vintages/scopes, not a calibration target. No observed per-Gemeinde BEV:PHEV reference exists to validate the realised split against.
+    No production run recorded yet. Two properties are exact by construction and asserted by tests: each car's electric TOTAL is untouched (measured drift 4.9e-17, machine zero) and the per-Kreis BEV:PHEV aggregate is neutralised on the REALISED draw population (ADR-0124 decision 8, added after the PR review found that normalising on FZ 27.17 electric-stock weights does not bind the rake, which targets the unweighted mean of the actual cars). scripts/measure_gemeinde_bev_composition.py reports the UNCORRECTED baseline that decision 8 removes: at most 0.0224 pp of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3-4%. What remains approximate is the per-Gemeinde magnitude of the structure signal, because the FZ 27.17 factors are a PRIVATE-scope measurement applied to an ALL-OWNERSHIP pmf (scope gap 0.88..5.04 pp). No observed per-Gemeinde BEV:PHEV reference exists to validate the realised split against.
 assessment:
   status: pending
   by: null

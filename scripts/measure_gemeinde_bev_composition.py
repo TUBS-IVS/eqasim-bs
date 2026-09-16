@@ -25,10 +25,15 @@ one factor; the composition tilt restores the BEV-vs-PHEV structure from the FZ
 * the per-Gemeinde factor extremes, so a new KBA vintage with a more extreme
   composition becomes visible rather than silently clipping.
 
-The realised shift is the acceptance criterion of issue #317 ("the Kreis BEV and
-PHEV aggregates are unchanged"): it is preserved by construction only where the
-FZ 27.17 private split and the 46251-02 all-ownership split agree, so the
-residual is MEASURED here rather than assumed.
+IMPORTANT -- what the reported shift is, and is not. It is the UNCORRECTED
+baseline: the aggregate movement the composition factors alone would cause. It is
+NOT what a production run realises. ``sample_fleet`` additionally neutralises the
+aggregate on the drawn population
+(:func:`~braunschweig.synthesis.vehicles.fleet_sampling_de._neutralise_composition_aggregate`,
+ADR-0124 decision 8), because these factors are centred on FZ 27.17 electric-stock
+weights while the ADR-0085 rake targets the unweighted mean of the cars that
+actually exist. This script deliberately reports the pre-correction number, so the
+size of what the correction removes stays visible instead of being hidden by it.
 
 Usage (from the repository root):
 
@@ -229,10 +234,10 @@ def report(data_path: Path) -> None:
     print("Largest electric-TOTAL drift             : %.3e (must be ~0: the "
           "composition may not change the electric LEVEL)." % worst_electric_drift)
     print("")
-    print("The BEV:PHEV shift is the residual left by the gap between the FZ 27.17")
-    print("private split (the composition reference) and the 46251-02 all-ownership")
-    print("split (what the tilt acts on). It is NOT a calibration target -- only the")
-    print("measured cost of taking structure and level from two different sources.")
+    print("This is the UNCORRECTED baseline: production additionally neutralises the")
+    print("aggregate on the drawn population (ADR-0124 decision 8), so a real run does")
+    print("NOT carry this shift. It is reported to keep the size of what the correction")
+    print("removes visible. It is NOT a calibration target.")
 
 
 def main(argv: list[str] | None = None) -> int:

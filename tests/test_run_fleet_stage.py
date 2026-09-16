@@ -174,6 +174,11 @@ def _stub(config_overrides=None, path=None):
         # execute() must be present here (see
         # tests/test_execute_context_config_contract.py).
         "fleet_wohnmobile_age_tilt": True,
+        # Issue #317 (per-Gemeinde BEV:PHEV composition tilt) is likewise read
+        # without a default in execute(). tests/test_execute_context_config_contract.py
+        # ::test_fleet_stage_stub_covers_every_execute_config_key now derives this
+        # requirement from the source, so a future key cannot be forgotten here again.
+        "fleet_gemeinde_bev_composition_tilt": True,
         "fleet_electric_calibration": "kreis_mix_gemeinde_bev_tilt",
         "kba_fleet_paths": None,
     }

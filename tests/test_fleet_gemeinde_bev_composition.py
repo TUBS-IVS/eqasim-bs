@@ -556,3 +556,151 @@ def test_committed_fz2717_factors_average_to_one_per_kreis():
             assert mean == pytest.approx(1.0, abs=1e-9), (
                 f"Kreis {kreis} {powertrain} factors average to {mean}, not 1.0"
             )
+
+
+# ---------------------------------------------------------------------------
+# Aggregate neutrality on the REALISED population (issue #317 review finding)
+# ---------------------------------------------------------------------------
+
+class TestCompositionAggregateNeutrality:
+    """``_neutralise_composition_aggregate`` on populations the FZ weights do not match.
+
+    The composition factors are normalised so their mean is 1.0 weighted by each
+    Gemeinde's FZ 27.17 ELECTRIC STOCK, but the per-Kreis rake targets the
+    unweighted mean of the ACTUAL cars' pmfs. Nothing makes a synthetic
+    population's cars-per-Gemeinde follow the FZ stock, and the rake preserves
+    whatever aggregate it is handed (ADR-0085) -- so the correction has to run on
+    the realised rows.
+    """
+
+    POWERTRAINS = ["petrol", "diesel", "bev", "phev", "hybrid", "gas", "other", "hydrogen"]
+    IDX = {p: i for i, p in enumerate(POWERTRAINS)}
+
+    def _pmf(self, bev: float, phev: float) -> np.ndarray:
+        vec = np.zeros(len(self.POWERTRAINS))
+        vec[self.IDX["petrol"]] = 1.0 - bev - phev
+        vec[self.IDX["bev"]] = bev
+        vec[self.IDX["phev"]] = phev
+        return vec
+
+    def _apply_composition(self, bev: float, phev: float,
+                           factors: dict) -> np.ndarray:
+        """Mirror what _apply_gemeinde_tilt does: factors + electric-total rescale."""
+        f_bev, f_phev = factors["bev"], factors["phev"]
+        denominator = bev * f_bev + phev * f_phev
+        scale = (bev + phev) / denominator
+        return self._pmf(bev * f_bev * scale, phev * f_phev * scale)
+
+    def _bev_share_of_electric(self, pmfs: list) -> float:
+        bev = sum(float(p[self.IDX["bev"]]) for p in pmfs)
+        phev = sum(float(p[self.IDX["phev"]]) for p in pmfs)
+        return bev / (bev + phev)
+
+    def test_skewed_population_aggregate_is_restored(self):
+        """The finding itself: cars concentrated where the factors are extreme.
+
+        Two Gemeinden whose factors average to 1.0 under EQUAL weights, but the
+        population puts 9 cars in the BEV-heavy one and 1 in the PHEV-heavy one.
+        Without the correction the Kreis BEV aggregate rises; with it, it is
+        exactly the untilted value.
+        """
+        base_bev, base_phev = 0.06, 0.04
+        bev_heavy = {"bev": 1.2, "phev": 0.7}
+        phev_heavy = {"bev": 0.8, "phev": 1.3}
+
+        pmfs, kreise, factors = [], [], []
+        for _ in range(9):
+            pmfs.append(self._apply_composition(base_bev, base_phev, bev_heavy))
+            kreise.append("03151")
+            factors.append(bev_heavy)
+        pmfs.append(self._apply_composition(base_bev, base_phev, phev_heavy))
+        kreise.append("03151")
+        factors.append(phev_heavy)
+
+        untilted = base_bev / (base_bev + base_phev)
+        assert self._bev_share_of_electric(pmfs) > untilted + 1e-6, (
+            "fixture must actually be skewed, otherwise it proves nothing"
+        )
+
+        deltas, clipped = fs._neutralise_composition_aggregate(
+            pmfs, kreise, factors, self.IDX)
+
+        assert clipped == 0
+        assert "03151" in deltas
+        assert self._bev_share_of_electric(pmfs) == pytest.approx(untilted, abs=1e-12)
+
+    def test_electric_total_per_car_is_untouched(self):
+        """The correction must not reintroduce the level coupling it sits next to."""
+        base_bev, base_phev = 0.06, 0.04
+        factors_a = {"bev": 1.25, "phev": 0.6}
+        pmfs = [self._apply_composition(base_bev, base_phev, factors_a) for _ in range(5)]
+        pmfs.append(self._pmf(base_bev, base_phev))
+        kreise = ["03151"] * 6
+        factors = [factors_a] * 5 + [None]
+        before = [float(p[self.IDX["bev"]] + p[self.IDX["phev"]]) for p in pmfs]
+
+        fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        after = [float(p[self.IDX["bev"]] + p[self.IDX["phev"]]) for p in pmfs]
+        for electric_before, electric_after in zip(before, after):
+            assert electric_after == pytest.approx(electric_before, abs=1e-15)
+
+    def test_within_kreis_ordering_is_preserved(self):
+        """A constant shift must not reorder Gemeinden: the structure is the point."""
+        base_bev, base_phev = 0.06, 0.04
+        bev_heavy = {"bev": 1.3, "phev": 0.5}
+        phev_heavy = {"bev": 0.7, "phev": 1.5}
+        pmfs = [self._apply_composition(base_bev, base_phev, bev_heavy)] * 3 + [
+            self._apply_composition(base_bev, base_phev, phev_heavy)]
+        pmfs = [p.copy() for p in pmfs]
+        kreise = ["03151"] * 4
+        factors = [bev_heavy] * 3 + [phev_heavy]
+
+        fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        bev_shares = [float(p[self.IDX["bev"]] / (p[self.IDX["bev"]] + p[self.IDX["phev"]]))
+                      for p in pmfs]
+        assert bev_shares[0] > bev_shares[3], "the BEV-heavy Gemeinde must stay BEV-heavier"
+
+    def test_kreise_are_corrected_independently(self):
+        """One Kreis's skew must never leak into another's aggregate."""
+        base_bev, base_phev = 0.06, 0.04
+        skew = {"bev": 1.4, "phev": 0.4}
+        pmfs = [self._apply_composition(base_bev, base_phev, skew) for _ in range(4)]
+        pmfs += [self._pmf(base_bev, base_phev) for _ in range(4)]
+        kreise = ["03151"] * 4 + ["03158"] * 4
+        factors = [skew] * 4 + [None] * 4
+
+        deltas, _ = fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        untilted = base_bev / (base_bev + base_phev)
+        assert self._bev_share_of_electric(pmfs[:4]) == pytest.approx(untilted, abs=1e-12)
+        assert self._bev_share_of_electric(pmfs[4:]) == pytest.approx(untilted, abs=1e-12)
+        assert "03158" not in deltas, "a Kreis with unit factors needs no shift"
+
+    def test_matched_population_needs_no_shift(self):
+        """When the population DOES match the factors' weighting, delta is zero."""
+        base_bev, base_phev = 0.075, 0.025
+        # Factors that average to 1.0 under equal weights, one car each.
+        a = {"bev": 1.2, "phev": 1.0 - (0.075 * 0.2) / 0.025}
+        b = {"bev": 0.8, "phev": 1.0 + (0.075 * 0.2) / 0.025}
+        pmfs = [self._apply_composition(base_bev, base_phev, a),
+                self._apply_composition(base_bev, base_phev, b)]
+        kreise = ["03151"] * 2
+        factors = [a, b]
+        untilted = base_bev / (base_bev + base_phev)
+
+        fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        assert self._bev_share_of_electric(pmfs) == pytest.approx(untilted, abs=1e-12)
+
+    def test_cars_without_electric_mass_are_skipped(self):
+        """A pmf with no electric mass must neither divide by zero nor be changed."""
+        pmfs = [self._pmf(0.0, 0.0), self._apply_composition(0.06, 0.04, {"bev": 1.3, "phev": 0.55})]
+        kreise = ["03151"] * 2
+        factors = [None, {"bev": 1.3, "phev": 0.55}]
+
+        fs._neutralise_composition_aggregate(pmfs, kreise, factors, self.IDX)
+
+        assert float(pmfs[0][self.IDX["bev"]]) == 0.0
+        assert float(pmfs[0][self.IDX["phev"]]) == 0.0

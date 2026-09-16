@@ -69,6 +69,24 @@
      Kreis reference (including them would skew the mean the others are
      normalised against), and are counted, rate-logged and named, per the
      no-silent-fallback rule.
+  8. **The aggregate is neutralised on the REALISED population, not on the FZ
+     reference stock** — added after the PR review caught this. Decision 2
+     normalises the factors against the FZ 27.17 electric stock, but the ADR-0085
+     rake targets the **unweighted mean of the actual cars'** unmasked pmfs, and
+     nothing constrains a synthetic population's cars-per-Gemeinde to follow the
+     FZ stock. Where the two distributions differ, the composition moves the
+     per-Kreis BEV:PHEV aggregate and the rake then PRESERVES that shift.
+     `sample_fleet` therefore inverts the composition back out of each car's
+     electric split (exact: the per-car rescale is common to both components and
+     cancels in the ratio), measures the Kreis BEV mass with and without it, and
+     shifts every car's BEV FRACTION by the single constant that closes the gap.
+     A constant additive shift in the fraction preserves each car's electric
+     TOTAL exactly and preserves the within-Kreis ordering, so the structure
+     survives while the aggregate becomes exact on the population that actually
+     exists. The shift is logged per Kreis; its `[0,1]` clip should never bind and
+     warns if it does. Decision 2's normalisation is retained — it keeps the
+     factors centred near 1.0 so the clip band stays meaningful — but it is no
+     longer what guarantees the aggregate.
 - **Rationale:** the alternative rejected up front in issue #317 — splitting the
   combined share with a national or per-Kreis BEV:PHEV ratio — is arithmetically
   trivial and scientifically indefensible, because it would present a modelled
@@ -77,16 +95,22 @@
   *measurement* of exactly the quantity in question, and entering as a relative
   factor on top of a relative level factor limits the vintage exposure to a
   ratio of ratios.
-- **What this deliberately does NOT preserve, measured:** the realised per-Kreis
-  BEV:PHEV aggregate is preserved exactly only where the FZ 27.17 private split
-  and the 46251-02 all-ownership split agree. Measured on the committed tables
-  the gap is **0.88 .. 5.04 pp** in the BEV fraction, and the residual it leaves
-  in the segment-weighted fleet is **at most 0.0224 pp** of the all-car fleet
-  (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3–4 %, i.e.
-  well under 1 % relative even in the worst Kreis. The electric TOTAL drift is
-  **4.9e-17**, i.e. machine zero, as decision 5 guarantees. The residual is
-  reported by the diagnostic, not assumed away; it is **not** a calibration
-  target. Note that the residual must be measured **segment-weighted**: the
+- **What is guaranteed, and what is not:** two things are exact by construction —
+  each car's electric TOTAL (decision 5) and, since decision 8, the per-Kreis
+  BEV:PHEV aggregate on the drawn population. What stays approximate is the
+  per-Gemeinde *magnitude* of the structure signal: the factors come from the FZ
+  27.17 PRIVATE split but act on a pmf whose split comes from 46251-02 (ALL
+  ownership). Measured on the committed tables that scope gap is **0.88 .. 5.04 pp**
+  in the BEV fraction, so a Gemeinde's realised deviation is damped or amplified
+  slightly against the reference; decision 8 removes the gap's effect on the Kreis
+  TOTAL but cannot make a private-scope measurement describe an all-ownership
+  fleet. Before decision 8 the uncorrected aggregate residual measured **at most
+  0.0224 pp** of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against
+  a BEV share of ~3–4 % — that is the magnitude decision 8 now removes, and it is
+  what `scripts/measure_gemeinde_bev_composition.py` reports as the UNCORRECTED
+  baseline. The electric TOTAL drift is **4.9e-17**, i.e. machine zero, as
+  decision 5 guarantees. None of these are calibration
+  targets. Note that the residual must be measured **segment-weighted**: the
   per-segment BEV:PHEV splits are far more dispersed than the Kreis aggregate
   (`minis` is ~100 % BEV, `gelaendewagen` ~33 %) and a Kreis-level approximation
   understates the worst case by about an order of magnitude (0.0026 vs 0.0224
@@ -100,8 +124,18 @@
   from PHEV is affected, per-Kreis electric levels are not. The feature is
   flag-gated (`fleet_gemeinde_bev_composition_tilt`, default true); the tilt
   consumes no RNG, so the OFF path is byte-identical to the pre-#317 draw.
-- **Evidence:** `tests/test_fleet_gemeinde_bev_composition.py` (25 tests, all
-  green), including the electric-stock-weighting invariance, an explicit test
+- **Evidence:** `tests/test_fleet_gemeinde_bev_composition.py` (32 tests, all
+  green), including a `TestCompositionAggregateNeutrality` group that builds a
+  population deliberately skewed AGAINST the FZ weights (9 cars in the BEV-heavy
+  Gemeinde, 1 in the PHEV-heavy one), asserts the uncorrected aggregate really
+  does move, and then asserts decision 8 restores it to the untilted value
+  exactly while leaving each car's electric total and the within-Kreis ordering
+  intact. Also `tests/test_execute_context_config_contract.py::
+  test_fleet_stage_stub_covers_every_execute_config_key`, a static (ast-only)
+  guard added because the stage test that would have caught the missing stub key
+  cannot even be COLLECTED where the local `matsim-tools` install shadows the
+  repository's `matsim` namespace package — six flags in a row had hit that gap.
+  Further: the electric-stock-weighting invariance, an explicit test
   that the total-car-stock weighting breaks it, the measured-zero flooring, the
   clip renormalisation, the level guarantee under a deliberately widened source
   gap, and the committed table's 105/113 coverage with the eight excluded
@@ -125,4 +159,14 @@
   decision 1 and unsupportable on a ~14-car electric stock. (e) Reverting the
   whole Gemeinde tilt to FZ 27.17 — already rejected in ADR-0086 alternative
   (a); the 2026 combined share remains the better level signal.
+  (f) Relying on the FZ-stock normalisation alone for aggregate neutrality (this
+  record's own first version) — it normalises against the wrong population, as
+  the PR review pointed out: the rake targets the unweighted mean of the ACTUAL
+  cars, so any mismatch between the synthetic cars-per-Gemeinde and the FZ
+  electric stock survived as a per-Kreis shift. Superseded by decision 8.
+  (g) Leaving that shift in place and merely DOCUMENTING it as a measured
+  limitation — rejected: it is an artefact of which reference table the factors
+  happened to be centred on, not a modelling position, and ADR-0085's rake turns
+  it into a standing bias rather than noise. A defect that is cheap to remove is
+  removed, not disclosed.
 - **Issue / PR:** #317

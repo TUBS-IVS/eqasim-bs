@@ -156,3 +156,84 @@ def test_checker_allows_two_argument_calls_inside_configure():
     checker = _ConfigCallChecker(REPO / "synthetic_configure_sample.py")
     checker.visit(tree)
     assert checker.violations == [], "two-arg context.config in configure() must be allowed"
+
+
+# --------------------------------------------------------------------------- #
+# The fleet stage's stub must declare every key execute() reads (issue #317)
+# --------------------------------------------------------------------------- #
+FLEET_STAGE = REPO / "braunschweig" / "synthesis" / "vehicles" / "cars" / "household.py"
+FLEET_STAGE_TEST = REPO / "tests" / "test_run_fleet_stage.py"
+
+
+def _single_argument_config_keys(module_path: Path) -> set[str]:
+    """Literal keys of every one-argument ``context.config("...")`` call in a module.
+
+    One argument means an execute-phase READ (see the contract above), which the
+    stub context must be able to resolve by key alone.
+    """
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "config"):
+            continue
+        if not (isinstance(func.value, ast.Name) and func.value.id == "context"):
+            continue
+        if len(node.args) != 1 or node.keywords:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+            keys.add(argument.value)
+    return keys
+
+
+def _stub_config_keys(test_path: Path) -> set[str]:
+    """Literal keys of the ``config = {...}`` dict inside ``_stub`` of the stage test."""
+    tree = ast.parse(test_path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef) and node.name == "_stub"):
+            continue
+        for statement in ast.walk(node):
+            if not isinstance(statement, ast.Assign):
+                continue
+            targets = [t.id for t in statement.targets if isinstance(t, ast.Name)]
+            if "config" not in targets:
+                continue
+            if not isinstance(statement.value, ast.Dict):
+                continue
+            return {
+                key.value for key in statement.value.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+    raise AssertionError(f"no `config = {{...}}` dict found in _stub of {test_path}")
+
+
+def test_fleet_stage_stub_covers_every_execute_config_key():
+    """Every key the fleet stage reads at execute time must exist in its test stub.
+
+    ``tests/test_run_fleet_stage.py::_stub`` mimics a synpp context AFTER
+    ``configure()``, but it hand-maintains the defaults rather than replaying
+    ``configure()``, so a newly added key raises ``KeyError`` there while the rest
+    of the suite stays green. That has now happened for six flags in a row
+    (``fleet_consistency_v2``, ``fleet_age_income_coupling``,
+    ``fleet_ev_income_tilt``, ``fleet_euro6_substage``,
+    ``fleet_wohnmobile_age_tilt`` and ``fleet_gemeinde_bev_composition_tilt``),
+    each time caught late because the stage test cannot even be COLLECTED where
+    the local ``matsim-tools`` install shadows the repository's namespace package.
+
+    This check is static (``ast`` only, no imports), so it runs in exactly the
+    environments where that stage test does not.
+    """
+    read_keys = _single_argument_config_keys(FLEET_STAGE)
+    stub_keys = _stub_config_keys(FLEET_STAGE_TEST)
+
+    assert read_keys, "no execute-time context.config() reads found -- parser broken?"
+    missing = sorted(read_keys - stub_keys)
+    assert not missing, (
+        "tests/test_run_fleet_stage.py::_stub does not declare "
+        f"{missing}, which {FLEET_STAGE.name}'s execute() reads without a default; "
+        "execute() would raise KeyError there. Add the key (with its configure() "
+        "default) to the stub's config dict."
+    )

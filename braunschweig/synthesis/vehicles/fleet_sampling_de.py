@@ -1027,6 +1027,28 @@ class PowertrainModel:
             self._gemeinde_fallback += 1
         return tilted
 
+    def composition_factors_for(self, kreis_ags5: str,
+                                gemeinde: Optional[str]) -> Optional[dict[str, float]]:
+        """The RAW (pre-per-car-rescale) BEV/PHEV composition factors for a home.
+
+        Resolves the home Gemeinde label exactly the way :meth:`_apply_gemeinde_tilt`
+        does -- :func:`normalize_gemeinde_name` then
+        :func:`apply_gebietsstand_crosswalk` -- so a caller cannot drift from the
+        lookup the draw actually used. Returns ``None`` when the composition tilt
+        is off, the Gemeinde is unknown, or that Gemeinde has no usable BEV:PHEV
+        ratio (the documented unit-factor fallback).
+
+        Exposed for :func:`sample_fleet`, which needs the factors to invert the
+        composition out of a car's electric split and measure what the per-Kreis
+        aggregate would have been WITHOUT it (issue #317 review; see the
+        aggregate-neutrality correction there).
+        """
+        if not self.gemeinde_bev_composition_tilt or gemeinde is None:
+            return None
+        gemeinde_norm = normalize_gemeinde_name(gemeinde)
+        crosswalked = apply_gebietsstand_crosswalk(kreis_ags5, gemeinde_norm)
+        return self.gemeinde_electric_composition.get((kreis_ags5, crosswalked))
+
     def _apply_grid_tilt(self, pmf: np.ndarray,
                          grid_ev_share: Optional[float],
                          gemeinde_grid_mean: Optional[float]) -> np.ndarray:
@@ -1269,12 +1291,17 @@ def _gemeinde_electric_composition(
     **The Kreis reference is the ELECTRIC-stock-weighted mean, not the total-car
     -stock-weighted one.** Summing the raw BEV and PHEV counts is exactly that
     weighting, and only under it do the factors average to 1.0 across the Kreis.
-    That invariance is load-bearing rather than cosmetic: the ADR-0085 post-mask
-    rake targets the **tilted** mean pmf, so a composition tilt whose Kreis mean
-    were, say, 1.02 would shift the per-Kreis BEV aggregate and the rake would
-    then PRESERVE the shift instead of correcting it. ``tests/
-    test_fleet_gemeinde_bev_composition.py`` pins both the invariance and the
-    fact that the total-car-stock weighting breaks it.
+    ``tests/test_fleet_gemeinde_bev_composition.py`` pins both that centring and
+    the fact that the total-car-stock weighting breaks it.
+
+    **This centring does NOT by itself guarantee the per-Kreis aggregate.** It is
+    normalised against the FZ 27.17 reference stock, whereas the ADR-0085 rake
+    targets the unweighted mean of the pmfs of the cars that actually exist, and
+    nothing makes a synthetic population's cars-per-Gemeinde follow the FZ stock.
+    The centring keeps the factors near 1.0 so the clip band stays meaningful;
+    the aggregate itself is made exact on the realised rows by
+    :func:`_neutralise_composition_aggregate`, which ``sample_fleet`` runs before
+    the rake target is taken (ADR-0124 decision 8, added after PR review).
 
     The counts are used directly rather than reconstructed from
     ``private_bev_share * private_total``; the committed table agrees with itself
@@ -1412,6 +1439,125 @@ def _gemeinde_electric_composition(
                 per_gemeinde[key][powertrain] /= mean
 
     return per_gemeinde, per_kreis
+
+
+def _neutralise_composition_aggregate(
+    unmasked_pmfs: list[np.ndarray],
+    car_kreis: Sequence[str],
+    car_composition_factors: Sequence[Optional[dict[str, float]]],
+    powertrain_idx: Mapping[str, int],
+) -> tuple[dict[str, float], int]:
+    """Remove the composition tilt's effect on the per-Kreis BEV:PHEV AGGREGATE.
+
+    :func:`_gemeinde_electric_composition` normalises its factors so their mean is
+    1.0 weighted by each Gemeinde's **FZ 27.17 electric stock**. The per-Kreis rake
+    that runs afterwards, however, targets the **unweighted mean of the actual
+    cars'** unmasked pmfs (``sample_fleet``, ADR-0085), and nothing constrains a
+    synthetic population's cars-per-Gemeinde to follow the FZ stock. Where the two
+    distributions differ, the composition moves the per-Kreis BEV:PHEV aggregate,
+    and the rake -- which targets the TILTED mean by design -- then PRESERVES that
+    shift instead of correcting it. Since the composition exists to redistribute
+    WITHIN a Kreis, that shift is a defect rather than a modelling choice; the
+    FZ-stock normalisation alone cannot prevent it, because it is normalised
+    against the wrong population.
+
+    The correction is exact and needs no reference data:
+
+    1. **Invert** the composition out of each car's electric split. The per-car
+       rescale that preserves the electric total is a factor common to both
+       components, so it cancels in the ratio: with raw factors ``f_bev``/``f_phev``
+       the pre-composition split of an electric mass ``E`` is
+       ``E * (bev/f_bev) / (bev/f_bev + phev/f_phev)``.
+    2. **Measure** per Kreis the electric-mass-weighted BEV total with and without
+       the composition.
+    3. **Shift** every car's BEV FRACTION by the single constant ``delta`` that
+       closes the gap. A constant additive shift in the fraction preserves each
+       car's electric TOTAL exactly (so the level guarantee the per-car rescale
+       provides is untouched) and preserves the within-Kreis ORDERING the
+       composition created, while making the Kreis aggregate exact on the
+       population that actually exists.
+
+    Operates on the UNMASKED pmfs only: those are the rake target, so the existing
+    rake propagates the corrected aggregate to the drawn fleet. ``delta`` is a
+    sub-percent quantity by construction, so the ``[0, 1]`` clip should never bind;
+    a non-zero clip count is reported so it cannot bind silently.
+
+    Args:
+        unmasked_pmfs: Per-car unmasked pmf vectors; corrected entries are replaced
+            in place (the arrays themselves are not mutated).
+        car_kreis: Per-car home Kreis AGS-5.
+        car_composition_factors: Per-car RAW composition factors (``None`` where the
+            Gemeinde had no usable BEV:PHEV ratio, i.e. unit factors).
+        powertrain_idx: Powertrain label -> index in the pmf vectors.
+
+    Returns:
+        ``(deltas_by_kreis, clipped_count)`` -- the applied BEV-fraction shift per
+        Kreis (Kreise needing no shift are absent) and the number of cars whose
+        corrected fraction had to be clipped into ``[0, 1]``.
+    """
+    bev_index = powertrain_idx["bev"]
+    phev_index = powertrain_idx["phev"]
+
+    electric_by_kreis: dict[str, float] = {}
+    bev_tilted_by_kreis: dict[str, float] = {}
+    bev_untilted_by_kreis: dict[str, float] = {}
+    for position, pmf in enumerate(unmasked_pmfs):
+        if pmf is None:
+            continue
+        bev_mass = float(pmf[bev_index])
+        phev_mass = float(pmf[phev_index])
+        electric = bev_mass + phev_mass
+        if electric <= 0.0:
+            continue
+        kreis = car_kreis[position]
+        factors = car_composition_factors[position]
+        if factors is None:
+            # Unit factors: this car is already composition-free, so it adds the
+            # same amount to both sums and cannot move delta.
+            bev_untilted = bev_mass
+        else:
+            f_bev = float(factors.get("bev", 1.0))
+            f_phev = float(factors.get("phev", 1.0))
+            bev_raw = (bev_mass / f_bev) if f_bev > 0.0 else 0.0
+            phev_raw = (phev_mass / f_phev) if f_phev > 0.0 else 0.0
+            raw_total = bev_raw + phev_raw
+            bev_untilted = (electric * bev_raw / raw_total) if raw_total > 0.0 else bev_mass
+        electric_by_kreis[kreis] = electric_by_kreis.get(kreis, 0.0) + electric
+        bev_tilted_by_kreis[kreis] = bev_tilted_by_kreis.get(kreis, 0.0) + bev_mass
+        bev_untilted_by_kreis[kreis] = bev_untilted_by_kreis.get(kreis, 0.0) + bev_untilted
+
+    deltas: dict[str, float] = {}
+    for kreis, electric_total in electric_by_kreis.items():
+        if electric_total <= 0.0:
+            continue
+        delta = ((bev_untilted_by_kreis[kreis] - bev_tilted_by_kreis[kreis])
+                 / electric_total)
+        if delta != 0.0:
+            deltas[kreis] = delta
+    if not deltas:
+        return {}, 0
+
+    clipped = 0
+    for position, pmf in enumerate(unmasked_pmfs):
+        if pmf is None:
+            continue
+        delta = deltas.get(car_kreis[position])
+        if not delta:
+            continue
+        bev_mass = float(pmf[bev_index])
+        phev_mass = float(pmf[phev_index])
+        electric = bev_mass + phev_mass
+        if electric <= 0.0:
+            continue
+        bev_fraction = bev_mass / electric + delta
+        if not 0.0 <= bev_fraction <= 1.0:
+            bev_fraction = min(1.0, max(0.0, bev_fraction))
+            clipped += 1
+        corrected = pmf.copy()
+        corrected[bev_index] = electric * bev_fraction
+        corrected[phev_index] = electric * (1.0 - bev_fraction)
+        unmasked_pmfs[position] = corrected
+    return deltas, clipped
 
 
 # --------------------------------------------------------------------------- #
@@ -2996,6 +3142,16 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
         car_brand: list[str] = [""] * n
         car_model: list[str] = [""] * n
         car_pmf: list[np.ndarray] = [None] * n  # type: ignore[list-item]
+        # Issue #317: raw BEV/PHEV composition factors per car, kept so the
+        # aggregate-neutrality correction below can invert the composition back out
+        # of each car's electric split. ``None`` where the Gemeinde has no usable
+        # ratio (unit factors) or the tilt is off.
+        car_composition_factors: list[Optional[dict[str, float]]] = [None] * n
+        composition_active = bool(
+            sampler.powertrain_model.gemeinde_bev_composition_tilt
+            and sampler.powertrain_model.gemeinde_electric_composition)
+        _log_tag = ("[fleet_de][%s]" % population_label
+                    if population_label else "[fleet_de]")
         # Unmasked (but Gemeinde-tilted) pmf -- the rake target so the rake undoes
         # ONLY the feasibility-masking electric deficit and PRESERVES the FZ 27.17
         # Gemeinde tilt (the tilt is already in this pmf). Its per-Kreis mean
@@ -3065,6 +3221,13 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
                 grid_ev_share=_grid_ev,
                 gemeinde_grid_mean=_gem_mean)
             unmasked_pmf = pt_pmf.copy()  # Task 7 rake target (tilt-preserving).
+            # Issue #317: capture the factors that shaped this car's electric split
+            # so the aggregate-neutrality correction can invert them exactly. Read
+            # through the model's own resolver so the Gemeinde-name normalisation
+            # and the Gebietsstand crosswalk cannot drift from the draw's lookup.
+            if composition_active:
+                car_composition_factors[i] = (
+                    sampler.powertrain_model.composition_factors_for(kreis, gemeinde))
             # Task B2: EV-income tilt -- applied to the WORKING pt_pmf only, NEVER
             # to unmasked_pmf captured just above. The Task 7 per-Kreis electric
             # rake (below) targets the mean of unmasked_pmf (spatial-only), so this
@@ -3137,6 +3300,37 @@ def sample_fleet(df_cars: pd.DataFrame, data_path: str, random_seed: int,
             car_model[i] = model
             car_pmf[i] = pt_pmf
             car_unmasked_pmf[i] = unmasked_pmf
+
+        # Issue #317 review finding: make the BEV:PHEV composition aggregate-neutral
+        # on the REALISED population rather than on the FZ 27.17 reference stock.
+        # See :func:`_neutralise_composition_aggregate` for why this is required.
+        if composition_active:
+            _composition_deltas, _composition_clipped = _neutralise_composition_aggregate(
+                car_unmasked_pmf, car_kreis, car_composition_factors, _powertrain_idx)
+            if _composition_deltas:
+                _worst = max(_composition_deltas.items(), key=lambda kv: abs(kv[1]))
+                logger.info(
+                    "%s BEV/PHEV composition aggregate correction: %d Kreis(e) "
+                    "shifted, largest %+.6f pp of the electric mass (Kreis %s). This "
+                    "removes the gap between the FZ 27.17 electric-stock weights the "
+                    "factors are normalised on and this population's cars-per-Gemeinde "
+                    "distribution, which the ADR-0085 rake would otherwise preserve.",
+                    _log_tag, len(_composition_deltas), 100.0 * _worst[1], _worst[0],
+                )
+            else:
+                logger.info(
+                    "%s BEV/PHEV composition aggregate correction: no Kreis needed a "
+                    "shift (this population's cars-per-Gemeinde distribution already "
+                    "matches the FZ 27.17 electric-stock weights).", _log_tag,
+                )
+            if _composition_clipped:
+                logger.warning(
+                    "%s BEV/PHEV composition aggregate correction: %d car(s) hit the "
+                    "[0,1] BEV-fraction clip, so their Kreis aggregate is preserved "
+                    "only approximately. The correction is a sub-percent shift by "
+                    "construction, so a non-zero count signals a broken input -- "
+                    "investigate rather than ignore.", _log_tag, _composition_clipped,
+                )
 
         # Task 7: per-Kreis electric-mass rake on the feasible support. For each
         # Kreis, scale every car's masked bev/phev mass so the EXPECTED per-Kreis
