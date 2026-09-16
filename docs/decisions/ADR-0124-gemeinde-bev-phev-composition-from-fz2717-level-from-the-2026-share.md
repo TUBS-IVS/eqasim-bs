@@ -169,4 +169,11 @@
   happened to be centred on, not a modelling position, and ADR-0085's rake turns
   it into a standing bias rather than noise. A defect that is cheap to remove is
   removed, not disclosed.
+- **Generalised rule:** the PR review also found the composition counters reporting a
+  deliberate OFF run as a 100 % missing-reference fallback (and warning about it).
+  That is not specific to this feature, so the rule it implies — a fallback counter
+  must separate DISABLED / NOT APPLICABLE from MISSING REFERENCE, and a disabled
+  feature must still be logged as disabled rather than silently — is written up once
+  in [`docs/codebase/notes/fallback-counter-states.md`](../codebase/notes/fallback-counter-states.md)
+  instead of being restated per feature.
 - **Issue / PR:** #317
