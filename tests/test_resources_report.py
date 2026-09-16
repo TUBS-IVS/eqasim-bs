@@ -66,7 +66,11 @@ def test_report_on_a_fitting_machine_has_no_violations():
     big = resources.MachineResources(
         cores=64, memory_gb=256.0, cores_source="sched_getaffinity", memory_source="psutil",
     )
-    report = resources.build_report(PRODUCTION_CONFIG, machine=big, env={})
+    # processes is raised from the real production pin (32) to 60 here only:
+    # 32 sits below PROCESSES_UNDERUSE_FRACTION * budget.cores (0.75 * 62 = 46.5)
+    # and would otherwise trip the new under-use warning this test must stay free of.
+    config = dict(PRODUCTION_CONFIG, processes=60)
+    report = resources.build_report(config, machine=big, env={})
     assert report.violations == ()
 
 

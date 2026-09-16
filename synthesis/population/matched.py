@@ -416,7 +416,10 @@ def _run_parallel_statistical_matching(context, args):
 def parallel_statistical_matching(context, df_source, source_identifier, weight, df_target, target_identifier, columns, minimum_observations = 0,
                                   similarity_column = None, similarity_bandwidth = 5.0, similarity_max_donors = 2000):
     random_seed = context.config("random_seed")
-    processes = context.config("processes")
+    # Clamp the configured pool size to the machine this run landed on. The config
+    # value is untouched, so this stage's hash is unchanged.
+    from braunschweig.resources import effective_processes
+    processes = effective_processes(context.config("processes"))
 
     random = np.random.RandomState(random_seed)
     chunks = np.array_split(df_target, processes)

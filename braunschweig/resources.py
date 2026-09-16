@@ -469,6 +469,18 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
             ),
         ))
 
+    processes = next(r for r in resolutions if r.key == "processes")
+    if (not is_auto(config.get("processes"))
+            and int(processes.effective) < PROCESSES_UNDERUSE_FRACTION * budget.cores):
+        violations.append(Violation(
+            key="processes", severity="warning",
+            message=(
+                f"processes is pinned to {processes.effective} but {budget.cores} "
+                f"cores are budgeted on this machine; the run will leave capacity "
+                f"unused. Raise the pin in the config if that is not intended."
+            ),
+        ))
+
     # matsim_threads / matsim_qsim_threads are NEVER clamped: their effect on
     # results is unverified (issue #410) and silently changing them could change
     # science. Oversubscription is slow, not wrong, so this only warns.
@@ -524,4 +536,21 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     if resolution.origin != "pinned":
         logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
                        resolution.configured, resolution.effective, resolution.note)
+    return int(resolution.effective)
+
+
+#: Below this fraction of the core budget, a pinned ``processes`` value is
+#: reported as wasting the machine. Informational only -- the value is never
+#: raised automatically, because raising it needs the auto sentinel to be
+#: understood at every fallback read site.
+PROCESSES_UNDERUSE_FRACTION = 0.75
+
+
+def effective_processes(configured, machine: Optional[MachineResources] = None,
+                        env: Optional[dict] = None) -> int:
+    """Effective generic worker count for this machine, logged when it changes."""
+    resolution = resolve_processes(configured, resolve_budget(machine=machine, env=env))
+    if resolution.origin != "pinned":
+        logger.warning("[resources] processes %s -> %s (%s)", resolution.configured,
+                       resolution.effective, resolution.note)
     return int(resolution.effective)
