@@ -28,6 +28,30 @@ Substitute the actual checkout or worktree path. Reproducing a three-test
 failure this way takes about 4 seconds -- there is no excuse to skip it before
 a claim of "tests pass".
 
+## A Windows-created worktree cannot resolve `.git` from WSL
+
+Running the suite from WSL against a git worktree that was created on Windows
+fails every git-dependent test for an environmental reason, not a code defect:
+the worktree's `.git` file holds a Windows absolute path that git inside WSL
+cannot follow. `git rev-parse --short HEAD` exits 128 there, and
+`braunschweig.provenance` logs "cannot determine git commit for
+'/mnt/c/.../<worktree>' ... recording 'unknown'" for every test that depends
+on it. The main checkout is unaffected -- its `.git` is a real directory, not a
+worktree pointer file -- so this is specific to Windows-created worktrees, not
+to WSL itself.
+
+Recognise it by where the failures land: they cluster in
+`tests/test_gitignore_root_scratch.py` and `tests/test_run_provenance.py`,
+alongside that `git rev-parse` exit-128 warning in the output. Measured on one
+branch: a full WSL run against a Windows-created worktree reported 25 failed,
+5919 passed, 35 skipped, and all 25 failures came from exactly those two files
+(isolating them gives 25 failed, 4 passed) -- no other test was affected. A WSL
+run reporting failures only in those two files is a clean run.
+
+So read such a run as covering everything except the git-dependent tests, and
+take those from the Windows run or the server, both of which have a `.git`
+that git can resolve.
+
 ## Division of labour
 
 - **WSL (`eqasim` env)** -- the fast, always-available Linux parity check for the
