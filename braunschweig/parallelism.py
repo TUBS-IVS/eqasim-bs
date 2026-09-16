@@ -9,10 +9,15 @@ box. Worker counts are therefore configured as a SENTINEL:
   - 0 / null / "auto"     -> auto-scale to the available cores (this module).
 
 Reproducibility note (CLAUDE.md): a parallel stage seeded per shard is only
-byte-reproducible for a FIXED worker count. "auto" makes the count depend on the
-machine, so a run that must be byte-identical across machines should pin an
-explicit integer; "auto" is for "use this box well". The resolved count is always
-logged by the caller so the effective parallelism is traceable.
+byte-reproducible for a FIXED worker count -- UNLESS it separates a SCIENTIFIC
+partition count from the OPERATIONAL worker count, as the secondary-location
+chain solvers now do: there, braunschweig.chainsolvers.shards (not the worker
+count) governs reproducibility, and braunschweig.chainsolvers.processes is
+volatile, so pinning it buys nothing. For a stage without that split, "auto"
+makes the count depend on the machine, so a run that must be byte-identical
+across machines should pin an explicit integer; "auto" is for "use this box
+well". The resolved count is always logged by the caller so the effective
+parallelism is traceable.
 """
 from __future__ import annotations
 

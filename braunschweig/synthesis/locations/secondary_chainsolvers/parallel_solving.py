@@ -368,7 +368,7 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
         executor_kwargs=dict(
             # Shards define the partition; workers only decide how many processes
             # chew through it. Sizing the pool from len(tasks) would ignore the
-            # configured (and machine-clamped) worker count entirely.
+            # configured (auto-scaled when the sentinel is used) worker count entirely.
             max_workers=max(1, min(n_workers, len(tasks))),
             # Platform default (fork on Linux), i.e. the same start method the
             # previous multiprocessing.Pool used -- workers inherit the parent's

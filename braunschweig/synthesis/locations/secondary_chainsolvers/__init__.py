@@ -1046,6 +1046,29 @@ def _resolve_shard_attempts(value):
     return attempts
 
 
+def _resolve_chain_shards(value):
+    """Validate the configured ``braunschweig.chainsolvers.shards``.
+
+    Unlike the adjacent ``braunschweig.chainsolvers.processes`` (where 0/null/"auto"
+    is a machine-derived auto-scale sentinel), 0 is NOT a sentinel here: the shard
+    count is the SCIENTIFIC partition, not an operational worker count, so there is
+    no machine-derived value to fall back to. The parallel/serial gate tests
+    ``n_shards > 1``, so silently accepting 0 (or a negative value) would route
+    every run to the serial single-shard realisation without saying so anywhere in
+    the log (CLAUDE.md: no silent fallbacks) -- fail fast and name the key instead.
+    """
+    n_shards = int(value)
+    if n_shards <= 0:
+        raise ValueError(
+            "[braunschweig.secondary_chainsolvers] braunschweig.chainsolvers.shards "
+            f"must be a positive integer, got {value!r}. Unlike "
+            "braunschweig.chainsolvers.processes, 0 is NOT an auto-scale sentinel for "
+            "this key -- set an explicit positive shard count (the stage default is "
+            f"{DEFAULT_CHAIN_SHARDS})."
+        )
+    return n_shards
+
+
 def _passive_joint_link_summary(link_stats) -> str:
     """The stage's one-line passive-joint LINK rate (issue #385), next to the #201 escort
     link line.
@@ -1264,7 +1287,20 @@ def _build_shared_solve_state(context, crs):
     # partition and every shard's rng seed, so it -- not the worker count --
     # determines the parallel result. Read once here (like shard_attempts) so
     # both passes of the two-pass mode use the identical partition.
-    n_shards = int(context.config("braunschweig.chainsolvers.shards"))
+    n_shards = _resolve_chain_shards(context.config("braunschweig.chainsolvers.shards"))
+    if parallel_enabled and n_shards == 1:
+        # The parallel/serial gate (_solve_problem_set) tests n_shards > 1, so this
+        # configuration takes the SERIAL path (a single shard seeded directly with
+        # base_seed) rather than a sharded parallel path (which would seed shard 0
+        # via _derive_shard_seed(base_seed, 0) -- a DIFFERENT value). Nothing else in
+        # the log names the shard count as the reason, so state it here explicitly
+        # (CLAUDE.md: no silent fallbacks).
+        print(
+            "[braunschweig.secondary_chainsolvers] WARNING: braunschweig.chainsolvers.shards "
+            "is 1 while braunschweig.chainsolvers.parallel is enabled -- this run takes the "
+            "SERIAL single-shard path, whose secondary-location realisation differs from any "
+            "run with braunschweig.chainsolvers.shards > 1."
+        )
 
     # Only what a pass (or execute()'s consolidated reporting) actually reads. The seven
     # flag booleans used above -- shop_daily_split, leisure_subtype_split,

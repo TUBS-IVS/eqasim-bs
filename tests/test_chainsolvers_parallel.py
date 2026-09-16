@@ -273,3 +273,64 @@ def test_a_single_worker_still_produces_the_sharded_realisation(fake_chainsolver
         plans, persons, None, "carla", 99, 8, 0.0, n_shards=8)
 
     pd.testing.assert_frame_equal(with_one, with_eight)
+
+
+# ---------------------------------------------------------------------------
+# configure() volatility contract: braunschweig.chainsolvers.shards must stay
+# HASHED (a changed partition invalidates the cache, as it must) while
+# braunschweig.chainsolvers.processes must be VOLATILE (an operational change
+# must never invalidate the cache). Nothing else in the suite asserts this --
+# a later edit that flips either flag would stay green everywhere else while
+# silently reusing a cached artifact under a partition that never produced it,
+# or forcing an unnecessary re-run on every worker-count tweak.
+# ---------------------------------------------------------------------------
+
+class _RecordingContext:
+    """configure()-time context: records declared options and volatile flags.
+
+    Same shape as tests/test_java_hang_watchdog.py::_RecordingContext, so a
+    stage's ``configure()`` can be run against it directly and the resulting
+    ``declared`` values / ``volatile`` set inspected.
+    """
+
+    def __init__(self):
+        self.declared = {}
+        self.volatile = set()
+
+    def stage(self, name, *args, **kwargs):
+        return None
+
+    def config(self, name, *args, **kwargs):
+        self.declared[name] = args[0] if args else None
+        if kwargs.get("volatile"):
+            self.volatile.add(name)
+        return self.declared[name]
+
+
+def test_shard_count_is_hashed_but_worker_count_is_volatile():
+    """The shard count is SCIENTIFIC (it fixes the partition and every shard's
+    rng seed), so it must stay OUT of the volatile set -- changing it has to
+    invalidate the stage cache. The worker count is purely OPERATIONAL since the
+    split, so it must be volatile -- changing it must never force a re-run."""
+    ctx = _RecordingContext()
+    scs.configure(ctx)
+    assert ctx.declared["braunschweig.chainsolvers.shards"] == scs.DEFAULT_CHAIN_SHARDS
+    assert "braunschweig.chainsolvers.shards" not in ctx.volatile
+    assert "braunschweig.chainsolvers.processes" in ctx.volatile
+
+
+# ---------------------------------------------------------------------------
+# braunschweig.chainsolvers.shards has no auto sentinel, unlike the adjacent
+# braunschweig.chainsolvers.processes: 0 would silently route every run to the
+# serial single-shard realisation (the n_shards > 1 gate) with nothing in the
+# log naming the cause.
+# ---------------------------------------------------------------------------
+
+def test_chain_shards_must_be_a_positive_integer():
+    with pytest.raises(ValueError, match="shards must be a positive integer"):
+        scs._resolve_chain_shards(0)
+    with pytest.raises(ValueError, match="got 0"):
+        scs._resolve_chain_shards(0)
+    with pytest.raises(ValueError, match="got -1"):
+        scs._resolve_chain_shards(-1)
+    assert scs._resolve_chain_shards(62) == 62
