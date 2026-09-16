@@ -553,3 +553,22 @@ def effective_processes(configured, machine: Optional[MachineResources] = None,
         logger.warning("[resources] processes %s -> %s (%s)", resolution.configured,
                        resolution.effective, resolution.note)
     return int(resolution.effective)
+
+
+def enforce_report(report: ResourceReport) -> None:
+    """Log the resource report and abort the run on any error-level violation.
+
+    Failing here costs seconds; the same mismatch discovered by the kernel OOM
+    killer costs hours of completed work (2026-08-20 incident, ADR-0097).
+    """
+    for line in report.format_log().splitlines():
+        logger.info(line)
+    for violation in report.violations:
+        if violation.severity == "warning":
+            logger.warning("[resources] %s", violation.message)
+    errors = [v for v in report.violations if v.severity == "error"]
+    if errors:
+        raise ResourceValidationError(
+            "The configuration does not fit this machine:\n"
+            + "\n".join(f"  - {v.key}: {v.message}" for v in errors)
+        )

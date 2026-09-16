@@ -187,11 +187,25 @@ def main(argv=None) -> int:
         merged = config_compose.compose(argv[0], argv[1])
         config_path = config_compose.write_merged(merged, merged["working_directory"])
 
+    # Resource gate: resolve every resource key against the machine this run
+    # landed on, log the outcome and refuse a configuration that cannot fit.
+    # Reads the RESOLVED config (after the composed-form reassignment above),
+    # never the unmerged base, and runs BEFORE any file is written (provenance,
+    # working_directory, output_path) so a mismatch costs seconds, not hours.
+    from braunschweig import resources
+    with open(config_path, encoding="utf-8") as handle:
+        _resolved_config = (yaml.safe_load(handle) or {}).get("config", {}) or {}
+    resource_report = resources.build_report(_resolved_config)
+    resources.enforce_report(resource_report)
+
     # Crash-proof provenance BEFORE synpp starts (issue #125): git commits of
     # this repo + eqasim_source_path, config path, sampling_rate / hts / seed /
     # population.method -- logged and persisted into the working_directory so
     # even a killed run is traceable (meta_output.py only writes on success).
-    log_and_write_run_provenance(config_path)
+    # The resource report built above is embedded under "resources" so the
+    # machine and effective resource values that produced this run are
+    # reconstructible afterwards.
+    log_and_write_run_provenance(config_path, resource_report=resource_report)
     # Create working_directory and output_path before any stage runs: upstream
     # meta_output.py writes into output_path without creating it, which aborted three
     # consecutive 100 % proof runs minutes after launch.
