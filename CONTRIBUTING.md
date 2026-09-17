@@ -65,7 +65,10 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
 When a new feature/gap/idea surfaces mid-work, **propose it first**, then open a GitHub
 issue **in `TUBS-IVS/eqasim-bs`** with its native type (Bug / Feature / Analysis / Decision /
 Task), one `step:*` and one or two `area:*` labels, and a `Stages:` line naming the registry
-stage ids; the title reads `<stage or attribute>: <finding>`. The full rule is
+stage ids; the title reads `<stage or attribute>: <finding>`. The body opens with the
+plain-language head — an `In short` line, `## Problem` as short bullets, `## Why it matters`,
+`## Done when` — written in everyday words so it is understood in thirty seconds without
+opening this repository; everything technical follows under `## Details`. The full rule is
 [docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 Nothing incidental gets forgotten. Decisions graduate into an ADR under `docs/decisions/`.
 
