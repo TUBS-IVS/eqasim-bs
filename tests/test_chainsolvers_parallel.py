@@ -311,12 +311,19 @@ def test_shard_count_is_hashed_but_worker_count_is_volatile():
     """The shard count is SCIENTIFIC (it fixes the partition and every shard's
     rng seed), so it must stay OUT of the volatile set -- changing it has to
     invalidate the stage cache. The worker count is purely OPERATIONAL since the
-    split, so it must be volatile -- changing it must never force a re-run."""
+    split, so it must be volatile -- changing it must never force a re-run. The
+    same holds for the worker pool's measured memory bound (ADR-0126 amendment,
+    braunschweig.chainsolvers.worker_memory_gb): it sizes the pool, never the
+    partition, so it must be volatile too."""
     ctx = _RecordingContext()
     scs.configure(ctx)
     assert ctx.declared["braunschweig.chainsolvers.shards"] == scs.DEFAULT_CHAIN_SHARDS
     assert "braunschweig.chainsolvers.shards" not in ctx.volatile
     assert "braunschweig.chainsolvers.processes" in ctx.volatile
+    from braunschweig import resources
+    assert (ctx.declared[resources.KEY_CHAINSOLVER_WORKER_MEMORY_GB]
+            == resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB)
+    assert resources.KEY_CHAINSOLVER_WORKER_MEMORY_GB in ctx.volatile
 
 
 # ---------------------------------------------------------------------------

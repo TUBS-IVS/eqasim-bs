@@ -34,6 +34,22 @@ def test_parse_memory_gb_rejects_nonsense():
         resources.parse_memory_gb("plenty")
 
 
+def test_parse_memory_gb_rejects_a_lone_b_suffix():
+    # "5B" has no size letter (K/M/G/T); bytes are not a supported unit, and the
+    # previous behaviour silently treated a lone "B" as gigabytes (the "no
+    # suffix" default), which is exactly the silent misinterpretation this
+    # rejection replaces.
+    with pytest.raises(ValueError, match="lone 'B'"):
+        resources.parse_memory_gb("5B")
+    with pytest.raises(ValueError, match="lone 'B'"):
+        resources.parse_memory_gb("5b")
+
+
+def test_parse_memory_gb_still_accepts_a_size_letter_plus_b():
+    assert resources.parse_memory_gb("100GB") == pytest.approx(100.0)
+    assert resources.parse_memory_gb("512MB") == pytest.approx(0.5)
+
+
 def test_format_memory_gb_rounds_down_to_whole_gigabytes():
     # Rounding UP could hand the JVM more heap than the machine has.
     assert resources.format_memory_gb(86.9) == "86G"
@@ -101,3 +117,27 @@ def test_detect_machine_rejects_a_misspelled_reader_argument():
     # A typo'd injection must not silently fall through to the real machine.
     with pytest.raises(TypeError):
         resources.detect_machine(afinity_reader=lambda: 999)
+
+
+# ---------------------------------------------------------------------------
+# current_process_rss_gb (ADR-0126 amendment): the chainsolver worker pool's
+# memory bound needs THIS process's own RSS, read with the same
+# primary/fallback discipline as detect_cores / detect_memory_gb above.
+# ---------------------------------------------------------------------------
+
+def test_current_process_rss_gb_prefers_psutil():
+    rss_gb = resources.current_process_rss_gb(
+        psutil_reader=lambda: 12.5, status_reader=lambda: 99.0,
+    )
+    assert rss_gb == pytest.approx(12.5)
+
+
+def test_current_process_rss_gb_falls_back_to_proc_self_status_and_says_so():
+    rss_gb = resources.current_process_rss_gb(
+        psutil_reader=None, status_reader=lambda: 8.0,
+    )
+    assert rss_gb == pytest.approx(8.0)
+
+
+def test_current_process_rss_gb_returns_none_when_neither_source_is_available():
+    assert resources.current_process_rss_gb(psutil_reader=None, status_reader=None) is None

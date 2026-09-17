@@ -5,6 +5,8 @@ import logging
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
@@ -36,3 +38,15 @@ def test_a_fitting_pin_is_neither_changed_nor_warned_about(caplog):
             2, worker_memory_gb=30.0, machine=SERVER, env={})
     assert result == 2
     assert not [r for r in caplog.records if "num_workers" in r.getMessage()]
+
+
+def test_non_positive_worker_memory_gb_raises():
+    # Validated ONCE in resolve_popsim_workers (build_report relies on this
+    # raising rather than re-checking); previously this function floored a
+    # non-positive value to 0.1 while build_report used it raw, so the two
+    # call sites could silently disagree about what "zero" means.
+    budget = resources.resolve_budget(machine=SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_popsim_workers(3, budget, worker_memory_gb=0.0)
+    with pytest.raises(ValueError):
+        resources.resolve_popsim_workers(3, budget, worker_memory_gb=-5.0)

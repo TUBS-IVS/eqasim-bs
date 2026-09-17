@@ -125,6 +125,19 @@ def test_format_log_names_machine_sources_and_every_origin():
     assert "clamped" in text
 
 
+def test_report_includes_a_reporting_only_chainsolver_processes_entry():
+    # ADR-0126 amendment: the chainsolver pool IS memory-bounded now, but the
+    # bound needs the live driver RSS, only known once the stage starts, so the
+    # startup report can only preview what the CORE budget alone allows --
+    # origin must be "reported", never "pinned"/"clamped"/"derived", so a reader
+    # never mistakes this preview for the value the stage actually used.
+    report = resources.build_report(PRODUCTION_CONFIG, machine=SERVER, env={})
+    chainsolver = next(
+        r for r in report.resolutions if r.key == "braunschweig.chainsolvers.processes")
+    assert chainsolver.origin == "reported"
+    assert chainsolver.effective == SERVER.cores - 2   # core budget alone
+
+
 def test_as_dict_is_json_serialisable_for_the_run_provenance():
     import json
     report = resources.build_report(PRODUCTION_CONFIG, machine=SERVER, env={})
