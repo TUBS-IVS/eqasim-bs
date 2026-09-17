@@ -1,6 +1,6 @@
 # ADR-0097 · 2026-08-21 · Chainsolver shards run through an executor that reports a killed worker, and lost shards are retried
 
-- **Status:** active
+- **Status:** active; the "rejected: a static memory cap on the pool" alternative is superseded by ADR-0126 once the shard/worker split removed its premise (shard count == worker count).
 - **Context:** The night run of 2026-08-20 stopped inside
   `braunschweig.synthesis.locations.secondary_chainsolvers` after 7.6 h of stage
   time, with `shard 61/62 done` as its last line, and then sat at load 0.02 with no

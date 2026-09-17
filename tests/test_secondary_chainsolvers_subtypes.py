@@ -524,7 +524,7 @@ class _FakeContext:
         self.registered = {}
         self.staged = []
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
         # Mirror real synpp semantics: a key's value is resolved ONCE (from an
         # override or the first-seen default) and stays fixed for subsequent
         # re-reads of the same key without a default -- exactly how

@@ -31,3 +31,9 @@ from __future__ import annotations
 #: measurement has not been repeated with it. Treat any downstream result as
 #: carrying that caveat until a run manifest records the comparison.
 DEFAULT_CHAIN_SOLVER = "carla_sample"
+
+#: Person shards for the parallel secondary-location solve. 62 = the worker count
+#: every production run on the 64-core server used (64 - 2 reserved cores), which
+#: the pre-split code also used as the shard count -- so this default reproduces
+#: the existing production realisation bit-for-bit on any machine.
+DEFAULT_CHAIN_SHARDS = 62

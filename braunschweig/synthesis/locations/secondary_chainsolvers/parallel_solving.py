@@ -1,10 +1,14 @@
 """Parallel chain solving: person shards across worker processes.
 
-Person chains are independent, so they are sharded across workers, each
-with its own chainsolvers context seeded deterministically from
-``random_seed`` and the shard index (``_derive_shard_seed``). The result is
-fully reproducible for a fixed worker count but is a DIFFERENT (equally
-valid) Monte-Carlo realisation than the single-RNG serial path. Worker
+Person chains are independent, so they are split into ``n_shards`` shards and
+executed by ``n_workers`` processes, each with its own chainsolvers context
+seeded deterministically from ``random_seed`` and the shard index
+(``_derive_shard_seed``). The shard count is a SCIENTIFIC parameter -- it
+fixes the partition and therefore every person's random stream, so the
+result is fully reproducible for a fixed shard count regardless of the
+worker count -- but it is a DIFFERENT (equally valid) Monte-Carlo realisation
+than the single-RNG serial path. The worker count is purely OPERATIONAL: it
+only decides how many processes chew through the fixed shard set. Worker
 state lives in the module-level ``_WORKER_*`` globals set by
 ``_init_chain_worker`` (per-process, set once by the pool initializer).
 
@@ -33,12 +37,13 @@ from .solver_defaults import DEFAULT_CHAIN_SOLVER
 # ---------------------------------------------------------------------------
 # Parallel chain solving
 #
-# Person chains are independent, so the population is sharded across worker
-# processes. Each worker builds its own chainsolvers context (one cs.setup per
-# shard) seeded deterministically from (base_seed, shard_index), so the result
-# is fully reproducible given the seed and the worker count. Shard results are
-# recombined in shard-index order regardless of completion order, so the output
-# does not depend on scheduling.
+# Person chains are independent, so the population is split into n_shards
+# shards, each solved in its own chainsolvers context (one cs.setup per shard)
+# seeded deterministically from (base_seed, shard_index). The result is fully
+# reproducible given the seed and the SHARD count, independent of how many
+# worker processes execute the shards. Shard results are recombined in
+# shard-index order regardless of completion order, so the output does not
+# depend on scheduling.
 # ---------------------------------------------------------------------------
 
 # Per-leg result columns chainsolvers' solve() returns (used for the empty
@@ -94,15 +99,18 @@ def _person_row_ranges(plans_df: pd.DataFrame, uid_col: str = "unique_person_id"
     return uid_order, starts, ends
 
 
-def _make_person_shards(unique_persons: List[Any], n_workers: int) -> List[Tuple[int, List[Any]]]:
-    """Split the person list into ``n_workers`` contiguous, balanced shards.
+def _make_person_shards(unique_persons: List[Any], n_shards: int) -> List[Tuple[int, List[Any]]]:
+    """Split the person list into ``n_shards`` contiguous, balanced shards.
 
-    Contiguous index-based slicing keeps the assignment deterministic and
-    independent of the worker count's scheduling, so a run is reproducible.
+    The shard count is a SCIENTIFIC parameter, not an operational one: each shard
+    seeds its own rng from (base_seed, shard_index), so changing the number of
+    shards changes every person's random stream and therefore the secondary
+    locations. It is deliberately independent of how many worker processes
+    execute those shards.
     """
-    n_workers = max(1, min(n_workers, len(unique_persons))) if unique_persons else 1
+    n_shards = max(1, min(n_shards, len(unique_persons))) if unique_persons else 1
     shards: List[Tuple[int, List[Any]]] = []
-    for shard_index, shard in enumerate(np.array_split(np.asarray(unique_persons, dtype=object), n_workers)):
+    for shard_index, shard in enumerate(np.array_split(np.asarray(unique_persons, dtype=object), n_shards)):
         shard_list = list(shard)
         if shard_list:
             shards.append((shard_index, shard_list))
@@ -306,10 +314,16 @@ def _run_shards_with_recovery(tasks, executor_kwargs, progress,
 
 def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
                            base_seed, n_workers, t0, scorer_spec=None,
-                           shard_attempts=DEFAULT_SHARD_ATTEMPTS):
+                           shard_attempts=DEFAULT_SHARD_ATTEMPTS, *, n_shards):
     """Solve all person chains across ``n_workers`` processes and recombine
-    deterministically (results concatenated in shard-index order)."""
-    shards = _make_person_shards(unique_persons, n_workers)
+    deterministically (results concatenated in shard-index order).
+
+    ``n_shards`` defines the partition and therefore the result; ``n_workers``
+    only decides how many processes chew through that fixed shard set. Keeping
+    them separate is what makes a run reproducible across machines of different
+    core counts.
+    """
+    shards = _make_person_shards(unique_persons, n_shards)
 
     # Shards are consecutive slices of unique_persons (appearance order), and
     # person rows are contiguous in plans_for_cs, so each shard frame is one
@@ -352,7 +366,10 @@ def _solve_chains_parallel(plans_for_cs, unique_persons, locations_df, solver,
     results_by_index, failed_problem_idx = _run_shards_with_recovery(
         tasks,
         executor_kwargs=dict(
-            max_workers=len(tasks),
+            # Shards define the partition; workers only decide how many processes
+            # chew through it. Sizing the pool from len(tasks) would ignore the
+            # configured (auto-scaled when the sentinel is used) worker count entirely.
+            max_workers=max(1, min(n_workers, len(tasks))),
             # Platform default (fork on Linux), i.e. the same start method the
             # previous multiprocessing.Pool used -- workers inherit the parent's
             # pages copy-on-write instead of re-importing the world.

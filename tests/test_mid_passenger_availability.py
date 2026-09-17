@@ -160,7 +160,7 @@ def test_stage_configures_passenger_availability_default_on():
         def __init__(self):
             self.configured = {}
 
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             self.configured[key] = default
             return default
 
