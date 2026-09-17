@@ -121,8 +121,14 @@ def surrogate_effect_rows(arm: str, surrogate_links: pd.DataFrame,
     ------
     ValueError
         When ``locations_arm``, ``locations_off`` and ``homes`` do not all share one CRS
-        (named) -- a mismatch would silently produce wrong metres in the distance columns,
-        which is exactly the table the run manifest quotes.
+        (named), when any of them carries no CRS at all, or when the shared CRS is
+        geographic -- each would silently produce wrong metres in the distance columns,
+        which is exactly the table the run manifest quotes. Agreement alone is not
+        enough: three frames agreeing on EPSG:4326 pass the equality check and then
+        have ``.distance()`` computed on them, writing DEGREES into columns named
+        ``*_m`` (CLAUDE.md "Geospatial processing"). Mirrors the three-part guard
+        ``braunschweig.synthesis.commute_day.state`` applies for the same reason
+        (missing CRS, then mismatch, then geographic).
     """
     if len(surrogate_links) == 0:
         return pd.DataFrame(columns=EFFECT_COLUMNS)
@@ -131,6 +137,19 @@ def surrogate_effect_rows(arm: str, surrogate_links: pd.DataFrame,
             f"{_LOG_TAG} inconsistent CRS across inputs: {arm} arm locations "
             f"{locations_arm.crs}, OFF arm locations {locations_off.crs}, homes "
             f"{homes.crs}; distances can only be computed with all three in the same CRS."
+        )
+    shared_crs = locations_arm.crs
+    if shared_crs is None:
+        raise ValueError(
+            f"{_LOG_TAG} the {arm} arm locations, OFF arm locations and homes carry no "
+            "CRS; every input geometry must carry an explicit CRS, otherwise the unit of "
+            "the dist_child_adult_m / dist_home_m columns is unknowable."
+        )
+    if not shared_crs.is_projected:
+        raise ValueError(
+            f"{_LOG_TAG} the {arm} arm inputs use the geographic CRS {shared_crs}; metric "
+            "distances require a projected CRS (the pipeline uses EPSG:25832) -- in degrees "
+            "the dist_child_adult_m / dist_home_m columns would carry no defensible unit."
         )
     links = surrogate_links.copy()
     links["arm"] = arm

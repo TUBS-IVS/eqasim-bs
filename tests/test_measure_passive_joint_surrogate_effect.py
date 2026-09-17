@@ -90,6 +90,42 @@ def test_effect_rows_raise_on_a_crs_mismatch_between_the_three_inputs():
         surrogate_effect_rows("strict", surrogate_links, on, off, homes, persons, child_purposes)
 
 
+def _agreeing_inputs(crs):
+    """The three geometry inputs, all carrying the SAME `crs` (which may be geographic
+    or absent) -- the case the equality check above cannot catch."""
+    records = [(4, 1, Point(1000, 0)), (5, 1, Point(1000, 0))]
+    locations = gpd.GeoDataFrame(
+        pd.DataFrame.from_records(records, columns=["person_id", "activity_index", "geometry"]),
+        geometry="geometry", crs=crs)
+    homes = gpd.GeoDataFrame({"household_id": [20], "geometry": [Point(0, 0)]},
+                             geometry="geometry", crs=crs)
+    return locations, homes
+
+
+@pytest.mark.parametrize("crs, expected", [
+    ("EPSG:4326", "projected"),   # degrees would be written into the *_m columns
+    (None, "explicit CRS"),       # no CRS at all: the unit is unknowable
+])
+def test_effect_rows_require_a_metric_crs_not_merely_an_agreeing_one(crs, expected):
+    """Three frames that AGREE on a geographic CRS (or carry none) pass the equality
+    check and then have `.distance()` computed on them, writing degrees into columns
+    named `_m` -- the columns the run manifest quotes as metres. CLAUDE.md
+    "Geospatial processing": never compute metric distances in geographic coordinates.
+    Mirrors the guard braunschweig.synthesis.commute_day.state uses for the same reason."""
+    surrogate_links = pd.DataFrame({
+        "child_person_id": [5], "child_activity_index": [1], "adult_person_id": [4],
+        "adult_activity_index": [1], "adult_purpose": ["shop"], "link_source": ["surrogate"],
+        "gap_minutes": [5.0],
+    })
+    locations, homes = _agreeing_inputs(crs)
+    persons = pd.DataFrame({"person_id": [4, 5], "household_id": [20, 20]})
+    child_purposes = pd.DataFrame({"person_id": [5], "trip_index": [0], "following_purpose": ["shop"]})
+
+    with pytest.raises(ValueError, match=expected):
+        surrogate_effect_rows("strict", surrogate_links, locations, locations, homes,
+                              persons, child_purposes)
+
+
 def test_summary_aggregates_per_arm_and_purpose():
     rows = pd.DataFrame({
         "arm": ["strict", "strict", "relaxed"], "child_person_id": [5, 6, 5],
