@@ -329,6 +329,31 @@ def is_auto(value) -> bool:
     return value is None
 
 
+def is_integral_count(value) -> bool:
+    """True when ``value`` spells a whole number a count-like key may use.
+
+    Booleans are excluded deliberately, the same way :func:`parse_memory_gb` and
+    :func:`is_auto` above exclude them: ``bool`` subclasses ``int``, so
+    ``int(True) == 1`` and ``float(True).is_integer()`` is true. Without this type
+    check a mistyped YAML ``true`` (or, under YAML 1.1, ``yes``) passes every
+    value-shaped guard as ONE, and a ``false`` as ZERO -- ``is_auto`` answers
+    ``False`` for a bool, so it never reaches the auto sentinel either. For an
+    OPERATIONAL count that silently sizes a worker pool wrongly; for the SCIENTIFIC
+    ``braunschweig.chainsolvers.shards`` it silently changes the partition, the
+    per-shard seeds and therefore the realisation, with nothing in the log naming
+    the cause (CLAUDE.md: no silent fallbacks).
+
+    A non-numeric value answers ``False`` rather than raising, so each caller keeps
+    reporting the defect in its own wording and naming its own key.
+    """
+    if isinstance(value, bool):
+        return False
+    try:
+        return float(value).is_integer()
+    except (TypeError, ValueError):
+        return False
+
+
 def _env_core_budget(raw) -> int:
     """Parse ``EQASIM_CPU_BUDGET``; raise an actionable ``ValueError`` if unusable.
 
@@ -446,7 +471,7 @@ def _resolve_ceiling(key: str, configured, ceiling: int, *, unit: str) -> Resolu
         )
     try:
         requested = int(configured)
-        is_integral = float(configured).is_integer()
+        is_integral = is_integral_count(configured)
     except (TypeError, ValueError):
         requested, is_integral = None, False
     if requested is None or not is_integral or requested < 0:
@@ -581,7 +606,7 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
         )
     try:
         requested = int(configured)
-        is_integral = float(configured).is_integer()
+        is_integral = is_integral_count(configured)
     except (TypeError, ValueError):
         requested, is_integral = None, False
     if requested is None or not is_integral or requested < 0:
@@ -763,7 +788,7 @@ def _chainsolver_core_preview(configured, budget: ResourceBudget,
         return budget.cores
     try:
         requested = int(configured)
-        is_integral = float(configured).is_integer()
+        is_integral = is_integral_count(configured)
     except (TypeError, ValueError):
         requested, is_integral = None, False
     if requested is None or not is_integral or requested < 0:

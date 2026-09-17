@@ -350,3 +350,17 @@ def test_chain_shards_rejects_a_non_integral_value():
     with pytest.raises(ValueError, match="must be a positive integer"):
         scs._resolve_chain_shards(3.7)
     assert scs._resolve_chain_shards(62.0) == 62
+
+
+def test_chain_shards_rejects_a_yaml_boolean():
+    # bool subclasses int, so int(True) == 1 and float(True).is_integer() is true:
+    # without an explicit type check a YAML "shards: true" (and, under YAML 1.1,
+    # "shards: yes") passes every value-shaped guard above and silently selects ONE
+    # shard -- which routes the run to the serial single-shard realisation through
+    # the n_shards > 1 gate. shards is the SCIENTIFIC partition key (ADR-0126), so a
+    # mistyped config would change the realisation with nothing in the log naming the
+    # cause. braunschweig.resources already excludes booleans in parse_memory_gb and
+    # is_auto; these count validators are the last places that did not.
+    for value in (True, False):
+        with pytest.raises(ValueError, match="must be a positive integer"):
+            scs._resolve_chain_shards(value)

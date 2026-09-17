@@ -1052,7 +1052,7 @@ def _resolve_shard_attempts(value):
     """
     try:
         attempts = int(value)
-        is_integral = float(value).is_integer()
+        is_integral = resources.is_integral_count(value)
     except (TypeError, ValueError):
         attempts = None
         is_integral = False
@@ -1083,10 +1083,16 @@ def _resolve_chain_shards(value):
     different partition and per-shard seed -- than the config states. An
     integral float (a YAML ``62.0``) is a legitimate spelling of 62 and is
     accepted.
+
+    A BOOLEAN is rejected as well, through ``resources.is_integral_count``: ``bool``
+    subclasses ``int``, so a YAML ``shards: true`` (or ``yes``) would otherwise read
+    as one shard and route the run to the serial single-shard realisation via the
+    ``n_shards > 1`` gate -- a silently different partition, which is exactly what
+    this key must never be.
     """
     try:
         n_shards = int(value)
-        is_integral = float(value).is_integer()
+        is_integral = resources.is_integral_count(value)
     except (TypeError, ValueError):
         n_shards, is_integral = None, False
     if n_shards is None or not is_integral or n_shards <= 0:

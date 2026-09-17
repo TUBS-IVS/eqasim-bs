@@ -216,3 +216,45 @@ def test_a_fitting_java_memory_pin_is_echoed_verbatim_not_reformatted():
     result = resources.resolve_java_memory("1500M", budget)
     assert result.effective == "1500M"
     assert result.origin == "pinned"
+
+
+# ---------------------------------------------------------------------------
+# Booleans are not counts. bool subclasses int, so int(True) == 1 and
+# float(True).is_integer() is true: every value-shaped guard in this module used
+# to pass a YAML "true"/"yes" through as ONE, and "false" through as ZERO (is_auto
+# deliberately answers False for a bool, so it never reached the auto sentinel).
+# parse_memory_gb and is_auto already excluded booleans explicitly; the count
+# resolvers below are brought in line with them.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value", [True, False])
+def test_resolve_processes_rejects_a_yaml_boolean(value):
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_processes(value, budget)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_resolve_popsim_workers_rejects_a_yaml_boolean(value):
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_popsim_workers(value, budget, worker_memory_gb=30.0)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_resolve_chainsolver_workers_rejects_a_yaml_boolean(value):
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_chainsolver_workers(value, budget, worker_memory_gb=0.86,
+                                              driver_rss_gb=0.0)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_the_startup_report_preview_rejects_a_yaml_boolean(value):
+    # build_report's chainsolver core preview validates the same key a second time
+    # (it runs before any RSS is measurable), so it needs the same guard: otherwise
+    # the startup report would print a plausible "1 worker" for a mistyped key while
+    # the point-of-use resolution rejected it hours later.
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources._chainsolver_core_preview(value, budget, key="probe.key")

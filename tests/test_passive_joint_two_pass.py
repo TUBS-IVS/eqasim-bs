@@ -395,6 +395,15 @@ def test_shard_attempts_rejects_a_non_integral_value():
     assert sc._resolve_shard_attempts(3.0) == 3
 
 
+def test_shard_attempts_rejects_a_yaml_boolean():
+    """``bool`` subclasses ``int``, so ``int(True) == 1`` and ``float(True).is_integer()``
+    is true: a YAML ``shard_attempts: true`` would otherwise pass as ONE attempt without
+    the log ever naming the mistyped key, defeating the retry this key exists for."""
+    for value in (True, False):
+        with pytest.raises(ValueError, match="shard_attempts must be a positive integer"):
+            sc._resolve_shard_attempts(value)
+
+
 def _one_candidate_frame():
     # No offers_* column at all -> every secondary purpose takes the any-type pool, which
     # is the branch that prints the fallback catalog line.

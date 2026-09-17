@@ -114,6 +114,8 @@ evidence:
   - tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
   - tests/test_chainsolvers_parallel.py::test_a_single_worker_still_produces_the_sharded_realisation
   - tests/test_chainsolvers_parallel.py::test_shard_count_is_hashed_but_worker_count_is_volatile
+  - tests/test_chainsolvers_parallel.py::test_chain_shards_rejects_a_yaml_boolean
+  - tests/test_passive_joint_two_pass.py::test_shard_attempts_rejects_a_yaml_boolean
   - tests/test_passive_joint_two_pass.py::test_solve_problem_set_obtains_its_worker_count_from_resources
   - tests/test_passive_joint_two_pass.py::test_a_pass_smaller_than_the_shard_count_prints_the_effective_shard_count
   off_path_byte_identical:
