@@ -156,3 +156,104 @@ def test_checker_allows_two_argument_calls_inside_configure():
     checker = _ConfigCallChecker(REPO / "synthetic_configure_sample.py")
     checker.visit(tree)
     assert checker.violations == [], "two-arg context.config in configure() must be allowed"
+
+
+# --------------------------------------------------------------------------- #
+# The fleet stage's stub must declare every key execute() reads (issue #317)
+# --------------------------------------------------------------------------- #
+FLEET_STAGE = REPO / "braunschweig" / "synthesis" / "vehicles" / "cars" / "household.py"
+FLEET_STAGE_TEST = REPO / "tests" / "test_run_fleet_stage.py"
+
+
+def _single_argument_config_keys(module_path: Path) -> set[str]:
+    """Literal keys of every one-argument ``context.config("...")`` call in a module.
+
+    One argument means an execute-phase READ (see the contract above), which the
+    stub context must be able to resolve by key alone.
+    """
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "config"):
+            continue
+        if not (isinstance(func.value, ast.Name) and func.value.id == "context"):
+            continue
+        if len(node.args) != 1 or node.keywords:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+            keys.add(argument.value)
+    return keys
+
+
+#: A dict literal in tests/ is treated as a stub for the fleet stage when it carries
+#: BOTH of these keys. Two markers rather than one: a single flag name also appears in
+#: assertion LISTS (tests/test_configs_composed.py), which are not stubs.
+_FLEET_STUB_MARKERS = ("fleet_model_enabled", "fleet_consistency_v2")
+
+
+def _fleet_stub_dicts(tests_dir: Path) -> list[tuple[Path, int, set[str]]]:
+    """Every dict literal under ``tests/`` that configures the fleet stage.
+
+    Deliberately NOT limited to one known file or one syntactic shape. The three
+    stubs that exist today are written three different ways -- a module-level
+    ``config = {...}``, a ``defaults = {...}`` inside a ``config()`` method, and a
+    dict returned inline from ``config()`` -- and scoping an earlier version of this
+    guard to the first of them let the other two ship a KeyError to CI. Matching on
+    CONTENT rather than on file name or assignment shape covers any new stub too.
+
+    Returns:
+        ``(path, lineno, keys)`` per matching dict literal.
+    """
+    found: list[tuple[Path, int, set[str]]] = []
+    for module_path in sorted(tests_dir.glob("test_*.py")):
+        try:
+            tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        except SyntaxError:  # pragma: no cover - a broken test file fails elsewhere
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = {
+                key.value for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if all(marker in keys for marker in _FLEET_STUB_MARKERS):
+                found.append((module_path, node.lineno, keys))
+    return found
+
+
+def test_every_fleet_stage_stub_covers_every_execute_config_key():
+    """Every fleet-stage stub in tests/ must declare every key execute() reads.
+
+    Those stubs mimic a synpp context AFTER ``configure()``, but they hand-maintain
+    the defaults instead of replaying ``configure()``, so a newly added key raises
+    ``KeyError`` in each of them while the rest of the suite stays green. That has
+    now happened for six flags in a row, and for the sixth
+    (``fleet_gemeinde_bev_composition_tilt``) it reached CI in two stubs a
+    single-file version of this guard did not look at.
+
+    The check is static (``ast`` only, no imports), so it runs in the environments
+    where the stage tests themselves cannot even be COLLECTED -- locally the
+    installed ``matsim-tools`` shadows the repository's ``matsim`` namespace package,
+    which is why this class of defect keeps reaching CI instead of the desk.
+    """
+    read_keys = _single_argument_config_keys(FLEET_STAGE)
+    assert read_keys, "no execute-time context.config() reads found -- parser broken?"
+
+    stubs = _fleet_stub_dicts(REPO / "tests")
+    assert stubs, "no fleet-stage stub found -- the markers or the scan are broken"
+
+    problems = []
+    for path, lineno, keys in stubs:
+        missing = sorted(read_keys - keys)
+        if missing:
+            problems.append(f"{path.name}:{lineno} is missing {missing}")
+    assert not problems, (
+        "fleet-stage stub(s) do not declare every key "
+        f"{FLEET_STAGE.name}'s execute() reads without a default, so execute() "
+        "would raise KeyError there:\n  " + "\n  ".join(problems)
+    )

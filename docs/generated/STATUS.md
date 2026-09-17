@@ -78,6 +78,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Fleet consistency v2 + income-age](../registry/features/fleet_consistency_v2.yml) | active | ON | A/A/- | unvalidated |  |
 | [BEV/electric calibration](../registry/features/fleet_electric_calibration.yml) | active | ON | A/A/- | unvalidated |  |
+| [Per-Gemeinde BEV:PHEV composition tilt (structure from FZ 27.17)](../registry/features/fleet_gemeinde_bev_composition_tilt.yml) | active | ON | A/A/- | unvalidated | [#317](https://github.com/TUBS-IVS/eqasim-bs/issues/317) |
 | [HSN/TSN engine attrs (kW/ccm/fuel)](../registry/features/fleet_hsn_tsn_attributes.yml) | active | ON | A/A/- | unvalidated |  |
 | [Fleet realism upgrade (all-Kreise fuel/euro, EV-income tilt, Euro-6 substage, RS7 cross-check)](../registry/features/fleet_realism_upgrade.yml) | active | ON | A/A/- | unvalidated | [#277](https://github.com/TUBS-IVS/eqasim-bs/issues/277) |
 | [German fleet segment+brand mix](../registry/features/fleet_segment_brand_mix.yml) | active | ON | A/A/- | unvalidated |  |

@@ -63,10 +63,13 @@ notes: |
   Euro-6 substage split (kba_fuel_euro6_substage_nds.csv), segment x powertrain, brand x powertrain,
   segment -> model series and per-model fuel weights (kba_segment_model.csv / kba_model_fuel.csv,
   658 series), per-Gemeinde EV 2026 and the 5 km EV grid (kba_gemeinde_ev.csv, kba_ev_grid.csv),
-  the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, still the Kreis-mean denominator
-  weight source), the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
+  the FZ 27.17 private BEV/PHEV sheet (kba_gemeinde_private_bev.csv, the Kreis-mean denominator
+  weight source AND, since issue #317 / ADR-0125, the per-Gemeinde BEV:PHEV composition source --
+  the 2026 per-Gemeinde EV export publishes only the combined electric share, so FZ 27.17 supplies
+  the structure the level signal cannot; 105/113 ZGB Gemeinden carry a usable ratio),
+  the national age anchor (kba_age_national.csv), the RegioStaR-7 EV cross-check
   (kba_ev_regiostar7.csv, logging only) and four MiD cross tables including
   mid2023_antrieb_by_status.csv (P(powertrain | economic status), the EV-income tilt input).
-  scripts/measure_combustion_split.py and scripts/measure_gemeinde_join_coverage.py check the
-  realised fleet against these tables. kba_wohnmobile_holder_age.csv (holder-age reference for the
+  scripts/measure_combustion_split.py, scripts/measure_gemeinde_join_coverage.py and
+  scripts/measure_gemeinde_bev_composition.py check the realised fleet against these tables. kba_wohnmobile_holder_age.csv (holder-age reference for the
   wohnmobile tilt, see the kba_wohnmobile_holder_age dataset entry; issue #315, ADR-0093).
