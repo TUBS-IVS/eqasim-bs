@@ -115,7 +115,7 @@ validation:
     diff applied as a clean patch, because at the merged HEAD 19 upstream stages devalidate (five
     config keys added to main after 0700430a) and a HEAD smoke would recompute the whole population;
     the merged HEAD is therefore NOT smoke-tested on the server, although its unit suite is green
-    (154 tests on the server at HEAD).'
+    (154 tests on the server at branch commit 3898fbd3).'
 assessment:
   status: pending
   pending_reason: 'Kreis-03101 smoke recorded; full-region evidence remains outstanding, as does a

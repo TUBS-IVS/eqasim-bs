@@ -89,7 +89,8 @@
   - **Re-pointing the ADULT's escort anchor to the child's location** (the inverse direction): a
     change to #201, out of scope; a separate issue if wanted.
   - **Lowering the donor-side pairing floor** (`escort_pairing.DEFAULT_ADULT_MIN_AGE = 18`): a change
-    to ADR-0112 worth 15 of 10,905 raw legs; separate follow-up.
+    to ADR-0112 worth 15 of 10,905 raw legs at a floor of 14 (the histogram's floor-14 row); separate
+    follow-up.
 - **Consequences:**
   - The locations of the rescued child activities change (and their chain-neighbouring leg distances
     with them, as under ADR-0119). In the Kreis-03101 smoke: 1 of 27 rescue candidates rescued in the
@@ -98,7 +99,12 @@
     (100 %, 0 unresolved, as in the OFF arm's 12/12). The realised distances per rescued activity are
     in the run manifest and are not restated here.
   - Runtime unchanged in kind (the same two passes; the rescue is a pandas join). RNG stream
-    unchanged: the rescue draws nothing.
+    unchanged: the rescue draws nothing. Enabling the flag does, however, move more children
+    into pass 2 and therefore re-partitions the two solver passes, so the unlinked persons'
+    Monte-Carlo realisation shifts (the smoke's per-arm problem counts differ: see the run
+    manifest) -- the ADR-0119 limitation applies here too (both passes share ONE
+    `RandomState`, so an ON/OFF or arm comparison is a different Monte-Carlo realisation, not
+    attributable to the anchoring mechanism alone; ADR-0119 Consequences).
   - Departure times and escort participation are untouched by construction (locations only).
   - **Smoke, not validation.** No observed reference exists for joint locations; the numbers are the
     mechanism's own rates on a 1 %-sampled single Kreis (27 rescue candidates; the 17 eligible legs

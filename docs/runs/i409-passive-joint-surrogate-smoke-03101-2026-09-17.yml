@@ -56,8 +56,8 @@ configuration:
     means recomputing the whole population (~2.5-3 h, on a host with an OOM history at
     locations.home_cell -- see the i385 manifest''s environment fact). CONSEQUENCE, STATED
     PLAINLY: the merged HEAD is NOT smoke-tested on the server. Its unit suite passes (154
-    tests green on the server at HEAD, incl. the five passive-joint/measurement files), and the
-    pipeline-behaviour evidence below is from the patched 0700430a tree.
+    tests green on the server at branch commit 3898fbd3, incl. the five passive-joint/measurement
+    files), and the pipeline-behaviour evidence below is from the patched 0700430a tree.
 
 
     (3) FIRST ATTEMPT, ABORTED -- AND A CACHE-COPY HAZARD IT EXPOSED. A first attempt ran the
