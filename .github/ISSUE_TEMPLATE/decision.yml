@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The record ends as `docs/decisions/ADR-NNNN-*.md` (check the number across ALL branches first).
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The first four fields are the plain-language head: someone who has never opened this repository must understand them. The record ends as `docs/decisions/ADR-NNNN-*.md` (check the number across ALL branches first).
   - type: input
     id: stages
     attributes:
@@ -14,13 +14,41 @@ body:
       description: Registry stage id(s) the decision governs (docs/registry/stages/). `unknown` is allowed.
     validations:
       required: true
-  - type: textarea
-    id: context
+  - type: input
+    id: short
     attributes:
-      label: Context / problem
-      description: What forces a decision now.
+      label: In short
+      description: One plain sentence, everyday words. What is wrong and what should happen. Someone who reads only this line knows what the issue is.
     validations:
       required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What forces a decision now, as two to four short bullets, everyday words. Then the alternatives, one line each, without arguing for one yet.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why it matters
+      description: What stays wrong or blocked while the question is open. One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state, one checkable outcome per line. A Decision ends in a committed ADR.
+      placeholder: |
+        - [ ] docs/decisions/ADR-NNNN-<slug>.md records the choice and the rejected options
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ### Details
+        Everything below is the technical record. Numbers, stage ids, code paths and prior work belong here, not in the head above.
   - type: textarea
     id: options
     attributes:
