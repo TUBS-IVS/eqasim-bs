@@ -6,26 +6,33 @@ description: >
   os.sched_getaffinity with an os.cpu_count fallback, memory via psutil with a
   /proc/meminfo fallback, raising ResourceDetectionError if neither source reports a
   value) and derives one ResourceBudget per run (cores - 2, memory_gb - 8, overridable
-  by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). Three OPERATIONAL config keys are resolved
+  by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). TWO OPERATIONAL config keys are resolved
   against that budget at their point of use -- java_memory (matsim/runtime/java.py,
-  data/osm/osmosis.py), braunschweig.population.popsim.num_workers
+  data/osm/osmosis.py) and braunschweig.population.popsim.num_workers
   (braunschweig/popsim/stage/__init__.py, bounded by measured per-worker memory via
-  braunschweig.population.popsim.worker_memory_gb, default 30 GB) and processes
-  (synthesis/population/matched.py, synthesis/population/spatial/secondary/locations.py)
-  -- and a configured value is a CEILING: used verbatim when it fits, clamped down and
-  logged when it does not. The resolved value never enters the config, so no synpp stage
-  hash changes and no shared cache is invalidated by these three clamps.
-  matsim_threads / matsim_qsim_threads are deliberately excluded (unverified effect on
-  results, issue #410): the startup report only warns about them. A companion fix
-  separates the secondary-location chainsolver's person-shard count (new hashed key
-  braunschweig.chainsolvers.shards, default 62, SCIENTIFIC) from its worker-process
-  count (braunschweig.chainsolvers.processes, now volatile, OPERATIONAL), because
-  before this change the shard count WAS the worker count and every run's
-  secondary-location realisation silently depended on the machine's core count.
-  scripts/run_synpp.py builds the report from the resolved config at startup, logs it,
-  aborts on an error-severity violation, and records it in the run provenance under
-  "resources". See ADR-0126 for the full decision, including the rejected
-  free-resources alternative.
+  braunschweig.population.popsim.worker_memory_gb, default 30 GB) -- and a configured
+  value is a CEILING: used verbatim when it fits, clamped down and logged when it does
+  not. The resolved value never enters the config, so no synpp stage hash changes and
+  no shared cache is invalidated by these two clamps. `processes` is DELIBERATELY NOT
+  in this list: at its two pure read sites (synthesis/population/matched.py,
+  synthesis/population/spatial/secondary/locations.py) it fixes both the person-chunk
+  partition (np.array_split) and the seed count (random.randint(..., size=processes)),
+  so it is result-affecting and is treated exactly like matsim_threads /
+  matsim_qsim_threads: reported and warned about (below 75% of the core budget), never
+  adjusted. matsim_threads / matsim_qsim_threads are excluded for the independent
+  reason that their effect on results is unverified (issue #410): the startup report
+  only warns about them. A companion fix separates the secondary-location chainsolver's
+  person-shard count (new hashed key braunschweig.chainsolvers.shards, default 62,
+  SCIENTIFIC) from its worker-process count (braunschweig.chainsolvers.processes, now
+  volatile, OPERATIONAL), because before this change the shard count WAS the worker
+  count and every run's secondary-location realisation silently depended on the
+  machine's core count. scripts/run_synpp.py builds the report from the resolved
+  config at startup, logs it, aborts on an error-severity violation ONLY when
+  braunschweig.population.method actually selects a PopulationSim workflow (so a
+  MATSim-only or simple_ipf_open run is never aborted by a popsim.num_workers mismatch
+  it will never hit), and records the report in the run provenance under "resources".
+  See ADR-0126 for the full decision, including the rejected free-resources
+  alternative.
 stages:
 - matsim.runtime.java
 - data.osm.osmosis
@@ -71,14 +78,20 @@ evidence:
     claimed: true
     test: tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
     note: >
-      Two claims, verified separately. (1) The java_memory / num_workers / processes
-      clamps cannot change a result by construction (each key is classified
-      OPERATIONAL in the design spec by reading its consumers: java_memory only ever
-      becomes -Xmx; PopulationSim submits one independent subprocess per batch with no
-      worker-index-dependent seed; the two processes read sites split work across a
-      pool with no worker-index-dependent seed either) -- there is no ON/OFF switch to
-      pin a byte-identity test against, so this claim rests on the classification
-      itself, not on a dedicated test. (2) The chainsolver shard/worker split IS
+      Two claims, verified separately. (1) The java_memory / num_workers clamps
+      cannot change a result by construction (each key is classified OPERATIONAL in
+      the design spec by reading its consumers: java_memory only ever becomes -Xmx;
+      PopulationSim submits one independent subprocess per batch with no
+      worker-index-dependent seed) -- there is no ON/OFF switch to pin a
+      byte-identity test against, so this claim rests on the classification itself,
+      not on a dedicated test. `processes` is NOT part of this claim: reading its two
+      pure consumers shows it fixes both the person-chunk partition
+      (np.array_split(..., processes)) and the seed count
+      (random.randint(10000, size=processes)), so it is result-affecting and is
+      neither clamped nor claimed byte-identical here -- it is reported and warned
+      about only, exactly like matsim_threads / matsim_qsim_threads (an earlier draft
+      of this record misclassified it as operational; ADR-0126, Decision 3, corrects
+      that). (2) The chainsolver shard/worker split IS
       pinned: test_solve_chains_parallel_is_invariant_to_the_worker_count and
       test_a_single_worker_still_produces_the_sharded_realisation assert
       byte-identical secondary-location output across different worker counts at a
@@ -126,12 +139,19 @@ validation:
     No real-machine smoke run has been recorded yet. The brief for this work names a
     server smoke (python scripts/run_synpp.py configs/base_bs.yml
     configs/overlays/test.yml) that must show a "[resources] machine: 64 cores" log
-    block, a "java_memory 100G -> 86G" clamp line, the run proceeding, and the
-    resources block landing in run_provenance_<stamp>.json, as the outstanding
-    evidence before this feature can be called production-proven; it has not been
-    executed as of this record. Unit-level coverage (detection fallbacks, budget
-    derivation, per-key resolution, the startup gate, the chainsolver shard/worker
-    invariance) is in place and green; see evidence.tests.
+    block, a "java_memory 100G -> 86G" clamp line, AND a
+    "braunschweig.population.popsim.num_workers 3 -> 2" clamp line (the pinned
+    num_workers: 3 in this overlay does not fit the measured 86 GB budget at 30
+    GB/worker; the same clamp applies to test_1pct.yml, test_25pct.yml,
+    test_100pct.yml, escort_reuse_5pct.yml and srv_location_reuse_5pct.yml, all
+    pinned at 3, and smoke_kreis_control_fit.yml, pinned at 4, clamps to 2 as well --
+    see ADR-0126 Consequences for the full list and the ~33-50% parallelism drop this
+    represents), the run proceeding, and the resources block landing in
+    run_provenance_<stamp>.json, as the outstanding evidence before this feature can
+    be called production-proven; it has not been executed as of this record.
+    Unit-level coverage (detection fallbacks, budget derivation, per-key resolution,
+    the startup gate, the chainsolver shard/worker invariance) is in place and green;
+    see evidence.tests.
 assessment:
   status: pending
   by: null

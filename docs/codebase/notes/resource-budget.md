@@ -26,10 +26,11 @@ same logical run, and the shared cache -- built once at real scale, reused by
 every subsequent run -- would silently stop being shared. This is why
 `resolve_*` functions return a `Resolution` (the effective value plus WHY) and
 the `effective_*` wrapper functions (`effective_java_memory`,
-`effective_popsim_workers`, `effective_processes`) are called at the point of
-use inside each consumer, never used to rewrite `context.config(...)`. If you
-are about to add a line that writes a detected or clamped value back into a
-config dict, stop -- that line is the bug this rule exists to prevent.
+`effective_popsim_workers` -- exactly the two OPERATIONAL keys; there is no
+`effective_processes`, see the worked example below) are called at the point
+of use inside each consumer, never used to rewrite `context.config(...)`. If
+you are about to add a line that writes a detected or clamped value back into
+a config dict, stop -- that line is the bug this rule exists to prevent.
 
 ## The operational-vs-result-affecting test, before you clamp anything
 
@@ -41,25 +42,46 @@ produces it?**
 - **Operational** (safe to clamp): the key sizes a mechanism whose outcome
   does not depend on the size chosen. `java_memory` only ever becomes an
   `-Xmx` argument. PopulationSim's `num_workers` submits one independent
-  subprocess per batch folder with no seed depending on the worker index. The
-  two pure `processes` read sites (`synthesis/population/matched.py`,
-  `synthesis/population/spatial/secondary/locations.py`) split a workload
-  across a pool with no worker-index-dependent seed either.
+  subprocess per batch folder with no seed depending on the worker index.
+  That is the WHOLE list today -- exactly two keys.
 - **Result-affecting** (must never be clamped silently): the key decides a
   partition, a seed, or anything else a result is derived from. This is not
-  hypothetical here -- it is exactly the defect ADR-0126 fixes. Before that
-  fix, `braunschweig.chainsolvers.processes` (then undifferentiated from the
+  hypothetical here -- it is exactly the defect ADR-0126 fixes, and the
+  worked example is not the chainsolver alone. Before the fix,
+  `braunschweig.chainsolvers.processes` (then undifferentiated from the
   shard count) fixed the person partition that
   `_derive_shard_seed(base_seed, shard_index)` seeds from, so the worker
   count silently decided the secondary-location realisation. The fix keeps
   the SHARD count (`braunschweig.chainsolvers.shards`) a separate, hashed,
   never-clamped config key, and only lets the WORKER count
   (`braunschweig.chainsolvers.processes`) be operational and volatile.
+  **The two pure `processes` read sites belong in THIS bucket, not the
+  operational one above.** `synthesis/population/matched.py`
+  (`parallel_statistical_matching`) and
+  `synthesis/population/spatial/secondary/locations.py` (`execute`) both do
+  `np.array_split(<ids or frame>, processes)` -- `processes` fixes the
+  person-chunk PARTITION -- immediately followed by
+  `random.randint(10000, size=processes)` -- `processes` also fixes how many
+  seeds are drawn, and which chunk gets which seed. Both are structurally
+  identical to the chainsolver defect one paragraph up: a `processes` pin of
+  4 on one machine and 8 on another produces a different partition and a
+  different seed draw for the SAME configured `random_seed`, on a stage
+  hash that never changes because `processes` is `volatile=True`. **An
+  earlier draft of this branch classified these two sites as operational and
+  clamped them; that was wrong, and the clamp was reverted (ADR-0126,
+  Decision 3) before merge.** If you are looking for the canonical example
+  of "read every consumer before you clamp", this is it -- the mistake was
+  made once, on this very key, and caught only by re-reading the consumers
+  the rule tells you to read.
 
 `matsim_threads` / `matsim_qsim_threads` sit in a third bucket: their effect
 on results is genuinely unverified (issue #410), so neither answer above is
 available yet. They are treated as result-affecting BY DEFAULT until proven
 otherwise -- never clamped, only warned about when they exceed the budget.
+`processes` is now handled the same way, for the reason stated above: it is
+NOT unverified (the two consumers are read and understood), it is
+POSITIVELY KNOWN to be result-affecting, and it is warned about (below 75%
+of the core budget) rather than clamped, using the same reporting mechanism.
 When in doubt about a new key, do the same: default to "do not touch it",
 not "it is probably fine".
 

@@ -50,6 +50,50 @@ def test_environment_overrides_win_over_detection():
     assert budget.memory_gb == pytest.approx(40.0)
 
 
+def test_overrides_are_reachable_even_when_detection_would_raise(monkeypatch):
+    # IMPORTANT 4 (final review): the error messages in detect_cores() /
+    # detect_memory_gb() advertise EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET as the
+    # remedy for a machine detection failure. That remedy must actually work:
+    # with both overrides set, resolve_budget must never call the (here,
+    # raising) real detectors at all.
+    def _raise_cores(*args, **kwargs):
+        raise resources.ResourceDetectionError("cores unavailable in this test")
+
+    def _raise_memory(*args, **kwargs):
+        raise resources.ResourceDetectionError("memory unavailable in this test")
+
+    monkeypatch.setattr(resources, "detect_cores", _raise_cores)
+    monkeypatch.setattr(resources, "detect_memory_gb", _raise_memory)
+
+    budget = resources.resolve_budget(
+        machine=None,
+        env={resources.ENV_CPU_BUDGET: "16", resources.ENV_MEM_BUDGET: "40G"},
+    )
+    assert budget.cores == 16
+    assert budget.memory_gb == pytest.approx(40.0)
+    # The source is recorded honestly: a detection that never ran must never be
+    # claimed in the log or the run provenance.
+    assert budget.machine.cores_source == "env_override"
+    assert budget.machine.memory_source == "env_override"
+
+
+def test_a_single_override_still_detects_the_other_quantity(monkeypatch):
+    # Only ONE quantity is overridden here, so the other quantity must still be
+    # detected normally (detection is skipped only for the overridden one).
+    monkeypatch.setattr(resources, "detect_cores", lambda: (8, "sched_getaffinity"))
+    monkeypatch.setattr(resources, "detect_memory_gb", lambda: (16.0, "psutil"))
+
+    budget = resources.resolve_budget(
+        machine=None, env={resources.ENV_CPU_BUDGET: "4"},
+    )
+    assert budget.cores == 4
+    assert budget.machine.cores_source == "env_override"
+    # Memory was not overridden, so it was really detected (via the stub) and
+    # the reserve is subtracted from it as usual.
+    assert budget.memory_gb == pytest.approx(16.0 - resources.DEFAULT_MEMORY_RESERVE_GB)
+    assert budget.machine.memory_source == "psutil"
+
+
 @pytest.mark.parametrize("value", [None, 0, "", "auto", "AUTO"])
 def test_is_auto_recognises_every_sentinel_spelling(value):
     assert resources.is_auto(value) is True
@@ -132,6 +176,24 @@ def test_a_negative_count_is_rejected_rather_than_treated_as_auto():
     budget = resources.resolve_budget(SERVER, env={})
     with pytest.raises(ValueError):
         resources.resolve_processes(-1, budget)
+
+
+@pytest.mark.parametrize("value", [-0.5, 0.4, 3.7])
+def test_a_non_integral_count_is_rejected_rather_than_silently_truncated(value):
+    # int(-0.5) == 0 and int(0.4) == 0: without this guard both would be
+    # silently accepted as "pinned, effective 0", and 0 reaches
+    # np.array_split(df, 0) as a bare ValueError deep inside a stage.
+    budget = resources.resolve_budget(SERVER, env={})
+    with pytest.raises(ValueError):
+        resources.resolve_processes(value, budget)
+
+
+def test_an_integral_float_count_is_accepted_like_its_int_spelling():
+    # A YAML "3.0" is a legitimate spelling of 3, unlike "3.7".
+    budget = resources.resolve_budget(SERVER, env={})
+    result = resources.resolve_processes(3.0, budget)
+    assert result.effective == 3
+    assert result.origin == "pinned"
 
 
 def test_a_non_positive_java_memory_is_rejected():

@@ -21,6 +21,11 @@ PRODUCTION_CONFIG = {
     "braunschweig.population.popsim.num_workers": 3,
     "matsim_threads": 56,
     "matsim_qsim_threads": 16,
+    # The canonical config's actual value (configs/base_bs.yml); this is what
+    # makes an impossible num_workers/memory combination an ERROR below -- see
+    # test_report_does_not_error_when_popsim_is_not_the_selected_method for the
+    # gate this exercises.
+    "braunschweig.population.method": "popsim_mid",
 }
 
 
@@ -52,14 +57,51 @@ def test_report_warns_but_never_clamps_matsim_threads():
     assert "56" in warning.message
 
 
+def test_report_does_not_crash_when_matsim_threads_is_the_auto_sentinel():
+    # This module's whole purpose w.r.t. matsim_threads/matsim_qsim_threads is
+    # to never touch them (issue #410); a non-numeric configured value (e.g.
+    # an overlay that reuses the "auto" spelling for these keys) must degrade
+    # to a warning, not crash int() and abort the resource gate over a key it
+    # deliberately never resolves.
+    config = dict(PRODUCTION_CONFIG, matsim_threads="auto")
+    report = resources.build_report(config, machine=SERVER, env={})
+    warning = next(v for v in report.violations if v.key == "matsim_threads")
+    assert warning.severity == "warning"
+    assert "auto" in warning.message
+
+
 def test_report_errors_when_a_pin_cannot_be_clamped_into_the_machine():
-    # A machine so small that even one popsim worker does not fit its memory.
+    # A machine so small that even one popsim worker does not fit its memory,
+    # and a config that actually selects a PopulationSim workflow.
     tiny = resources.MachineResources(
         cores=4, memory_gb=9.0, cores_source="cpu_count", memory_source="psutil",
     )
     report = resources.build_report(PRODUCTION_CONFIG, machine=tiny, env={})
     error = next(v for v in report.violations if v.severity == "error")
     assert "braunschweig.population.popsim.num_workers" in error.key
+
+
+def test_report_does_not_error_when_popsim_is_not_the_selected_method():
+    # IMPORTANT 2 (final review): a run that never selects a PopulationSim
+    # workflow (simple_ipf_open, or the key simply absent, as in a MATSim-only
+    # overlay) cannot start a PopulationSim worker, so the same impossible
+    # num_workers/memory combination must not abort it -- only warn.
+    tiny = resources.MachineResources(
+        cores=4, memory_gb=9.0, cores_source="cpu_count", memory_source="psutil",
+    )
+    config = dict(PRODUCTION_CONFIG, **{"braunschweig.population.method": "simple_ipf_open"})
+    report = resources.build_report(config, machine=tiny, env={})
+    assert not [v for v in report.violations if v.severity == "error"]
+    warning = next(v for v in report.violations
+                   if v.key == "braunschweig.population.popsim.num_workers")
+    assert warning.severity == "warning"
+
+    # The same holds when the key is entirely absent (a MATSim-only overlay
+    # such as configs/overlays/test_matsim.yml never sets population.method).
+    config_without_method = {k: v for k, v in PRODUCTION_CONFIG.items()
+                             if k != "braunschweig.population.method"}
+    report = resources.build_report(config_without_method, machine=tiny, env={})
+    assert not [v for v in report.violations if v.severity == "error"]
 
 
 def test_report_on_a_fitting_machine_has_no_violations():

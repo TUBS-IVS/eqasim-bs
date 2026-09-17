@@ -193,11 +193,33 @@ def detect_machine(affinity_reader: Optional[Callable[[], Optional[int]]] = _aff
 
 
 #: Cores left free for the OS and the orchestrating synpp driver when deriving a
-#: budget. Matches ``parallelism.DEFAULT_CORE_RESERVE`` so the two mechanisms
-#: cannot disagree about how much of the box a run may take.
+#: budget. Numerically matches ``parallelism.DEFAULT_CORE_RESERVE``, but the two
+#: mechanisms do NOT resolve the same way and CAN disagree in practice: the
+#: chainsolver pool resolves its worker count through
+#: ``parallelism.resolve_workers`` -> ``available_cores()`` -> ``os.cpu_count()``,
+#: which ignores CPU affinity (``taskset`` / a cpuset restriction) and ignores
+#: ``EQASIM_CPU_BUDGET`` entirely, while this module's ``detect_cores()``
+#: deliberately prefers ``sched_getaffinity`` and honours ``EQASIM_CPU_BUDGET``.
+#: On a machine where affinity differs from ``cpu_count()`` (a taskset'd
+#: container, a shared box under an operator override), the two mechanisms
+#: reserve the same NUMBER of cores off two DIFFERENT totals, and can therefore
+#: arrive at different core budgets for the same run. Keeping the constant equal
+#: is a deliberate convention (both reserves mean "leave the OS/driver two
+#: cores"), not a guarantee that the two mechanisms agree on how big the box is.
 DEFAULT_CORE_RESERVE = 2
 
 #: Memory left free for the OS, the page cache and the synpp driver, in gigabytes.
+#: ASSUMPTION: this figure has no measured source (unlike
+#: ``DEFAULT_POPSIM_WORKER_MEMORY_GB`` below, which is traceable to the
+#: 2026-07-10 OOM post-mortem). It is also the SENSITIVE parameter that decides
+#: whether a pinned ``num_workers: 3`` clamps to 2 on the measured 94 GB server:
+#: at this 8 GB reserve, 3 x 30 GB = 90 GB > 86 GB budget clamps; at roughly a
+#: 4 GB reserve -- what ``configs/overlays/test_100pct.yml``'s own "~90 GB on
+#: the 128 GB box" budget implies for 3 workers on this machine -- it would not.
+#: Not yet measured (see ADR-0126, Consequences); do not treat it as settled
+#: infrastructure. A server measurement of the actual OS/driver/page-cache
+#: footprint next to a real run is the missing evidence that would let this be
+#: tightened or confirmed.
 DEFAULT_MEMORY_RESERVE_GB = 8.0
 
 ENV_CPU_BUDGET = "EQASIM_CPU_BUDGET"
@@ -258,18 +280,42 @@ def resolve_budget(machine: Optional[MachineResources] = None,
 
     An explicit ``EQASIM_CPU_BUDGET`` / ``EQASIM_MEM_BUDGET`` is taken verbatim:
     the operator has already decided how much of a shared box to claim, so no
-    further reserve is subtracted from it.
+    further reserve is subtracted from it. The environment is read BEFORE any
+    detection runs, and detection is invoked only for the quantity an override
+    does not already fix: an operator who has pinned BOTH budgets explicitly
+    must be able to start a run even where ``sched_getaffinity`` /
+    ``psutil``/``/proc/meminfo`` would raise (the two error messages in
+    :func:`detect_cores` / :func:`detect_memory_gb` advertise exactly these
+    two overrides as the remedy, so that remedy must actually be reachable).
     """
-    machine = detect_machine() if machine is None else machine
     env = os.environ if env is None else env
-
     cpu_override = env.get(ENV_CPU_BUDGET)
+    memory_override = env.get(ENV_MEM_BUDGET)
+
+    if machine is None:
+        # Detect only the quantities not already fixed by an explicit override.
+        # cores_source / memory_source record "env_override" rather than
+        # claiming a detection that never ran, so the startup log and the run
+        # provenance stay honest about what actually happened (CLAUDE.md: no
+        # silent fallbacks).
+        if cpu_override:
+            machine_cores, machine_cores_source = int(cpu_override), "env_override"
+        else:
+            machine_cores, machine_cores_source = detect_cores()
+        if memory_override:
+            machine_memory_gb, machine_memory_source = parse_memory_gb(memory_override), "env_override"
+        else:
+            machine_memory_gb, machine_memory_source = detect_memory_gb()
+        machine = MachineResources(
+            cores=machine_cores, memory_gb=machine_memory_gb,
+            cores_source=machine_cores_source, memory_source=machine_memory_source,
+        )
+
     if cpu_override:
         cores = max(1, int(cpu_override))
     else:
         cores = max(1, machine.cores - max(0, int(core_reserve)))
 
-    memory_override = env.get(ENV_MEM_BUDGET)
     if memory_override:
         memory_gb = max(1.0, parse_memory_gb(memory_override))
     else:
@@ -452,12 +498,31 @@ class ResourceReport:
         }
 
 
+#: Config key selecting the population-generation workflow (see
+#: ``braunschweig.population.methods``). Only the two PopulationSim methods
+#: (``popsim_mid``, ``popsim_open``) ever start a PopulationSim worker; a run
+#: that does not select one of them (e.g. ``simple_ipf_open``, or a
+#: MATSim-only run that never declares this key) cannot hit a PopulationSim
+#: memory mismatch and must not be aborted by one.
+KEY_POPULATION_METHOD = "braunschweig.population.method"
+
+
 def build_report(config: dict, machine: Optional[MachineResources] = None,
                  env: Optional[dict] = None) -> ResourceReport:
-    """Resolve every resource key of a resolved synpp config against the machine.
+    """Resolve every resource key this module clamps or reports against the machine.
 
     Uses the same ``resolve_*`` functions the stages call at their point of use,
-    so the startup report cannot drift from what the run actually does.
+    so the startup report cannot drift from what the run actually does. Covers
+    the two OPERATIONAL clamped keys (``java_memory``,
+    ``braunschweig.population.popsim.num_workers``), the ``processes`` and
+    ``matsim_threads`` / ``matsim_qsim_threads`` warn-only keys. Deliberately
+    does NOT cover ``braunschweig.chainsolvers.processes``: the chainsolver
+    pool -- the largest process fan-out in the pipeline -- is resolved
+    entirely inside
+    ``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``
+    (`_resolve_shard_attempts` / the ``chainsolvers.processes`` config read),
+    is never routed through this module, and its per-worker memory footprint
+    has never been measured (see ADR-0126's Non-goals).
     """
     budget = resolve_budget(machine=machine, env=env)
     worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
@@ -475,14 +540,28 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     workers = next(r for r in resolutions
                    if r.key == "braunschweig.population.popsim.num_workers")
     if workers.effective * worker_memory_gb > budget.memory_gb:
+        # A PopulationSim memory mismatch can only ever fire on a run that actually
+        # selects a PopulationSim population method (popsim_mid / popsim_open) --
+        # see braunschweig.population.methods.requires_populationsim. A MATSim-only
+        # run or a simple_ipf_open run never starts a PopulationSim worker, so
+        # aborting it over this key would be a false-positive gate (issue found in
+        # final review: a MATSim-only overlay on a <~38 GB developer machine was
+        # aborted before any stage ran, even though it never touches PopulationSim).
+        from braunschweig.population.methods import requires_populationsim
+        population_method = config.get(KEY_POPULATION_METHOD)
+        severity = "error" if requires_populationsim(population_method) else "warning"
         violations.append(Violation(
-            key="braunschweig.population.popsim.num_workers", severity="error",
+            key="braunschweig.population.popsim.num_workers", severity=severity,
             message=(
                 f"Even a single PopulationSim worker needs {worker_memory_gb:g} GB but "
                 f"only {budget.memory_gb:.1f} GB is budgeted on a "
                 f"{budget.machine.memory_gb:.1f} GB machine. Reduce "
                 f"{KEY_WORKER_MEMORY_GB}, run on a larger machine, or raise "
                 f"{ENV_MEM_BUDGET}."
+                + ("" if severity == "error" else
+                   f" Not aborting: {KEY_POPULATION_METHOD} = {population_method!r} "
+                   "does not select a PopulationSim workflow, so this run never "
+                   "starts a PopulationSim worker.")
             ),
         ))
 

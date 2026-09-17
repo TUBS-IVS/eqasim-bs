@@ -60,34 +60,50 @@ hand), so it is fixed as part of this decision rather than left for later.
    `ResourceBudget` per run. `EQASIM_CPU_BUDGET` / `EQASIM_MEM_BUDGET` let an
    operator override the detected budget explicitly (e.g. to deliberately
    share a box), taken verbatim with no further reserve subtracted.
-2. **A configured value is a ceiling, not a target.** It is used verbatim
-   when it fits the budget, and clamped down -- logged as a deviation and
-   recorded in the run provenance -- when it does not. The RESOLVED value
-   never enters the config file or `.merged_config.yml`; resolution happens
-   in code at the point of use (`matsim/runtime/java.py` and
-   `data/osm/osmosis.py` for `java_memory`;
+2. **A configured value is a ceiling, not a target -- for OPERATIONAL keys
+   only.** An operational key is used verbatim when it fits the budget, and
+   clamped down -- logged as a deviation and recorded in the run provenance --
+   when it does not. The RESOLVED value never enters the config file or
+   `.merged_config.yml`; resolution happens in code at the point of use
+   (`matsim/runtime/java.py` and `data/osm/osmosis.py` for `java_memory`;
    `braunschweig/popsim/stage/__init__.py`
    (`_read_batching_and_scope_config`) for
-   `braunschweig.population.popsim.num_workers`; `synthesis/population/matched.py`
-   and `synthesis/population/spatial/secondary/locations.py` for the two pure
-   `processes` read sites). Because the config value is untouched, the synpp
+   `braunschweig.population.popsim.num_workers`). `processes` is deliberately
+   NOT in this list (see point 3): `synthesis/population/matched.py` and
+   `synthesis/population/spatial/secondary/locations.py` read
+   `context.config("processes")` unchanged, with no resolution step at all.
+   Because the config value is untouched, the synpp
    stage hash -- derived from each stage's declared config dependencies,
    `braunschweig/cache_share.py` -- does not change, and the shared cache
    survives a machine resize. This is why clamping is free: no cache is
    invalidated by it.
 3. **Only OPERATIONAL keys may be clamped.** `java_memory` only ever becomes
    `-Xmx`; PopulationSim's `num_workers` submits one independent subprocess
-   per batch folder with no seed depending on the worker index; the two
-   `processes` read sites split a matching/solve workload across a pool with
-   no worker-index-dependent seed either -- none of the three can change a
-   result by construction. `matsim_threads` and `matsim_qsim_threads` are
-   deliberately EXCLUDED from clamping: their effect on results is unverified
-   and MATSim parallelisation is known to scale poorly on this server
-   (issue #410). They keep their configured values (56 / 16) unconditionally;
-   the startup report only WARNS when they exceed the budget, because
-   oversubscription is slow, not wrong, and silently adjusting a key whose
-   effect on results is unverified would risk changing science without
-   anyone deciding to.
+   per batch folder with no seed depending on the worker index -- both are
+   operational and are clamped. **`processes` is NOT operational and is NOT
+   clamped.** An earlier draft of this decision classified the two pure
+   `processes` read sites (`synthesis/population/matched.py`,
+   `synthesis/population/spatial/secondary/locations.py`) as safe to clamp,
+   on the claim that they "split a matching/solve workload across a pool with
+   no worker-index-dependent seed". That claim does not survive reading the
+   consumers: both sites do `np.array_split(<ids or frame>, processes)` --
+   `processes` fixes the person-chunk PARTITION -- and then
+   `random.randint(10000, size=processes)` -- `processes` also fixes how many
+   seeds are drawn. Changing `processes` therefore changes which persons
+   share a chunk and which seed each chunk gets, exactly the chainsolver
+   defect this ADR otherwise fixes (point 4 below), just unfixed at these two
+   sites. `processes` is therefore treated exactly like `matsim_threads` /
+   `matsim_qsim_threads`: reported and warned about (the startup report warns
+   when a pin sits below 75% of the core budget, i.e. under-uses the
+   machine), never adjusted. The two consumers read
+   `context.config("processes")` verbatim, unchanged from before this ADR.
+   `matsim_threads` and `matsim_qsim_threads` are excluded from clamping for
+   an independent reason: their effect on results is unverified and MATSim
+   parallelisation is known to scale poorly on this server (issue #410). They
+   keep their configured values (56 / 16) unconditionally; the startup report
+   only WARNS when they exceed the budget, because oversubscription is slow,
+   not wrong, and silently adjusting a key whose effect on results is
+   unverified would risk changing science without anyone deciding to.
 4. **Separate the chainsolver SHARD count from its WORKER count.** A new
    config key `braunschweig.chainsolvers.shards` (default **62**, hashed,
    i.e. a change invalidates the stage cache as it must) fixes the person
@@ -102,7 +118,17 @@ hand), so it is fixed as part of this decision rather than left for later.
    recorded in two committed comments (`parallel_solving.py`'s "one of 62"
    and the stage's own `configure()`) before this change existed --
    pinning 62 therefore reproduces the existing production realisation
-   bit-for-bit on any machine. A run previously executed on a machine with a
+   bit-for-bit on any machine, FOR A REAL POPULATION (`n_total > 1`). At
+   exactly one unique person, `_make_person_shards` caps the shard count at
+   `len(unique_persons) = 1` regardless of the configured 62, so that single
+   shard is seeded via `_derive_shard_seed(base_seed, 0)` -- the same
+   SeedSequence-derived formula every sharded shard uses -- and NOT via the
+   plain `base_seed` the genuinely SERIAL path uses (taken only when
+   `braunschweig.chainsolvers.shards` is explicitly configured to `1`; see
+   the stage's own startup warning for that case). Production never runs at
+   `n_total = 1`, so this does not affect the reproduction claim above; it is
+   recorded so the claim is not overstated for a tiny fixture or smoke run.
+   A run previously executed on a machine with a
    different core count (e.g. a developer laptop) produces a different --
    equally valid -- realisation once under this default; that is the
    intended, one-time correction, stated here rather than absorbed silently.
@@ -131,10 +157,40 @@ this decision tries to prevent by watching load.
 
 ## Consequences
 
-- The `java_memory`, `popsim.num_workers` and `processes` clamps change no
-  config value and no stage hash: a run on a smaller machine reuses the
-  identical shared cache a run on the full-size server would produce. This
-  part of the change is free in cache terms.
+- The `java_memory` and `popsim.num_workers` clamps change no config value
+  and no stage hash: a run on a smaller machine reuses the identical shared
+  cache a run on the full-size server would produce. This part of the change
+  is free in cache terms. `processes` is NOT in this list (point 3 above):
+  it is not clamped at all, so it contributes nothing to discuss here in
+  cache terms either -- it was never resolved into a config-independent
+  value in the first place.
+- **The `popsim.num_workers` clamp is not free operationally: it is a real,
+  material drop in parallelism on the most expensive stage.** On the server
+  measured for this ADR (94 GB total -> 86 GB budget, 30 GB/worker ->
+  ceiling 2), every overlay that pins `num_workers: 3`
+  (`configs/overlays/test.yml`, `test_1pct.yml`, `test_25pct.yml`,
+  `test_100pct.yml`, `escort_reuse_5pct.yml`,
+  `srv_location_reuse_5pct.yml`) is clamped 3 -> 2 (a ~33% drop), and
+  `configs/overlays/smoke_kreis_control_fit.yml`, which pins `num_workers: 4`,
+  is clamped 4 -> 2 (a ~50% drop). This is exactly the deviation the startup
+  report and the run provenance are built to surface (never silently), but
+  it should be read as an operational regression against the pre-ADR
+  behaviour, not as a free correctness fix, and is expected in the
+  outstanding real-machine smoke evidence (see the Feature Registry's
+  `validation.note`).
+- **The 30 GB/worker figure is traceable evidence (the 2026-07-10 OOM
+  post-mortem); the 8 GB memory reserve subtracted before that bound is
+  applied is NOT.** `DEFAULT_MEMORY_RESERVE_GB = 8.0` has no committed
+  source and is the number that decides whether the clamp above fires at
+  all: at `reserve = 8`, `3 x 30 = 90 > 86` clamps to 2, but at
+  `reserve = 4` -- roughly what `configs/overlays/test_100pct.yml`'s own
+  "~90 GB on the 128 GB box" budget implies for 3 workers on the machine
+  this ADR measures -- `3 x 30 = 90 <= 90` would NOT have clamped. The value
+  is labelled an ASSUMPTION at its definition in `braunschweig/resources.py`
+  (CLAUDE.md "No invented reference values") and is not yet measured; a
+  server measurement of the OS/driver/page-cache footprint next to a real
+  run is the outstanding evidence that would let this reserve be tightened
+  or confirmed without guessing.
 - The chainsolver shard/worker split is NOT free: it adds one new hashed key
   to `braunschweig.synthesis.locations.secondary_chainsolvers`'s
   `configure()`, so that stage and everything downstream of it recompute
@@ -144,6 +200,25 @@ this decision tries to prevent by watching load.
   cross-machine reproducibility for a mechanism that previously had none,
   but it is a real cost and is recorded as such, not implied to be free
   alongside the operational clamps above.
+- **The PopulationSim stage's cache dependency on `braunschweig/resources.py`
+  is ALSO not free, and not only once.** `braunschweig/popsim/stage/__init__.py`
+  adds `"braunschweig.resources"` to `_DEFERRED_HELPER_MODULE_NAMES`, which
+  feeds that stage's `validate()` source-hash token (see that function's
+  docstring for the covered-boundary rule this follows). Landing this ADR
+  therefore invalidates the full-scale PopulationSim cache once, exactly
+  like the chainsolver shard key above -- but unlike that one-time cost,
+  this dependency is PERMANENT: any future edit to `resources.py`, including
+  a log-message wording change or a docstring-only edit with no behavioural
+  effect, changes that file's source text and therefore invalidates the
+  100% PopulationSim cache again, because `inspect.getsource` hashes the
+  whole file, not a semantic diff. This is a deliberate consequence of the
+  repository's documented import-site boundary rule (a direct dependency is
+  hashed by import site, not by whether it can change the stage's result;
+  see `validate()`'s docstring), not an oversight -- but it means
+  `braunschweig/resources.py` should be treated with the same "this file is
+  expensive to touch" discipline as any other module already in that stage's
+  covered set, and a future contributor changing it should expect the next
+  full popsim run to recompute.
 - `matsim_threads` / `matsim_qsim_threads` are untouched; an oversubscribed
   run on a shrunk machine is slower, not silently wrong, and the mismatch is
   now visible as a startup warning instead of invisible, pending the tuning

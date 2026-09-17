@@ -20,10 +20,42 @@ import pytest
 import yaml
 
 import matsim.runtime.process_watchdog as watchdog
+from braunschweig import resources
 from braunschweig.monitoring import process_tree
 from tests.fake_proc import write_process, write_system
 
 _RUN_SYNPP_PATH = os.path.join(os.path.dirname(__file__), "..", "scripts", "run_synpp.py")
+
+# A fixed machine for every test below that drives run_synpp.main end to end.
+# scripts/run_synpp.py resolves a real braunschweig.resources.build_report()
+# against the machine it is running on (issue found in final review: with only
+# prime_from_config/export_to_store_from_config patched, these tests exercised
+# the REAL detected machine, so the suite could pass or fail depending on the
+# RAM of the box running it -- exactly what the branch's own contributor note
+# (docs/codebase/notes/resource-budget.md) forbids). Pinning the machine and an
+# empty environment makes the gate deterministic regardless of the host: on a
+# 16 GB developer box this fixture makes these tests behave identically to a
+# 94 GB server, because build_report never sees the real machine either way.
+_FIXED_MACHINE = resources.MachineResources(
+    cores=64, memory_gb=94.0, cores_source="test_fixed", memory_source="test_fixed",
+)
+
+
+def _pin_resource_gate(monkeypatch):
+    """Pin the startup resource gate to a fixed machine for this test.
+
+    Patches ``resources.build_report`` (the same module object
+    ``scripts/run_synpp.py`` imported as ``from braunschweig import
+    resources``, so this reaches ``run_synpp.main`` too) to resolve against
+    ``_FIXED_MACHINE`` and an empty environment, using the REAL resolution
+    logic underneath -- only the machine detection is stubbed out.
+    """
+    real_build_report = resources.build_report
+    monkeypatch.setattr(
+        resources, "build_report",
+        lambda config, machine=None, env=None: real_build_report(
+            config, machine=_FIXED_MACHINE, env={}),
+    )
 
 
 class _Clock:
@@ -123,6 +155,7 @@ def test_a_pipeline_run_records_a_series_into_its_working_directory(tmp_path, mo
                         lambda *args, **kwargs: executed.append(args))
 
     run_synpp = _load_run_synpp()
+    _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
 
@@ -156,6 +189,7 @@ def test_the_recorded_series_watches_the_run_log_of_that_run(tmp_path, monkeypat
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()
+    _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
 
@@ -185,6 +219,7 @@ def test_the_summary_artifacts_are_written_when_the_run_ends(tmp_path, monkeypat
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()
+    _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
 
@@ -216,6 +251,7 @@ def test_a_failing_run_still_leaves_the_series_and_the_summary(tmp_path, monkeyp
     monkeypatch.setattr(synpp, "run_from_yaml", _fail)
 
     run_synpp = _load_run_synpp()
+    _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
 
@@ -244,6 +280,7 @@ def test_monitoring_switched_off_in_the_config_leaves_no_trace(tmp_path, monkeyp
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()
+    _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
 
