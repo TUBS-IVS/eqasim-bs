@@ -122,6 +122,84 @@ def _widened_distance_labels(assigned_class: str) -> set:
     return set(COMMUTE_CLASS_LABELS[lo:hi + 1])
 
 
+def donor_pool_size_by_hard_cell(eligible_donors: pd.DataFrame) -> list:
+    """Donor count per HARD matching cell -- the census half of ADR-0104 check 4 (issue #378).
+
+    One record per occupied cell of ``distance_class`` x :data:`HARD_CRITERIA`
+    (``has_active_escort`` x ``has_children_u14`` x ``has_car``), i.e. per cell the coarsening
+    cascade can never leave: every soft criterion is dropped as a person's cell proves too small,
+    but these four bound the candidate set at EVERY level (level 5 widens the distance class by
+    one rank and level 6 drops it, which is why the distance class is reported separately rather
+    than folded into one key). At most ``len(COMMUTE_CLASS_LABELS) + 1`` x 2 x 2 x 2 records, so
+    the census is small enough to serialise in full.
+
+    ``eligible_donors`` must already exclude the ``has_car``-unknown donors
+    (:func:`match_home_office_donors` removes them from the ENTIRE pass), because a donor that
+    can never satisfy a hard criterion is not available in any cell and counting it would report
+    a pool that is larger than the one the matching actually saw.
+
+    NOT a duplicate of ``donor_pool.build_home_office_donor_pool``'s own ``cells`` diagnostic,
+    which is deliberately a different quantity and cannot answer ADR-0104 check 4: that one is
+    keyed on THREE dimensions (``distance_class``, ``has_children_u14``, ``has_active_escort``)
+    and so silently merges cells that the ``has_car`` hard criterion splits, and it counts the
+    WHOLE pool, including the ``has_car``-unknown donors that can never be matched to anybody.
+    It describes the pool as BUILT; this describes the pool as MATCHED AGAINST.
+
+    Returns a list of plain-Python dicts -- never a frame or a tuple-keyed dict -- sorted by the
+    four cell columns, so the census round-trips through strict JSON unchanged and two runs of
+    the same pool produce byte-identical output. ``dropna=False``: a donor with an unresolved
+    cell column is reported under the ``str`` of that value rather than silently dropped, so the
+    record count always adds back up to ``len(eligible_donors)``.
+    """
+    columns = ["distance_class", *HARD_CRITERIA]
+    _require_columns(eligible_donors, columns, "eligible donors frame")
+    counts = eligible_donors.groupby(columns, dropna=False).size()
+    records = [{
+        "distance_class": str(distance_class),
+        "has_active_escort": bool(has_active_escort),
+        "has_children_u14": bool(has_children_u14),
+        "has_car": bool(has_car),
+        "n_donors": int(n_donors),
+    } for (distance_class, has_active_escort, has_children_u14, has_car), n_donors
+        in counts.items()]
+    records.sort(key=lambda record: (record["distance_class"], record["has_active_escort"],
+                                     record["has_children_u14"], record["has_car"]))
+    return records
+
+
+def _matched_cell_size_by_level(matched_cell_sizes: dict) -> dict:
+    """Distribution of the realised donor-cell size, per coarsening level (issue #378).
+
+    The realised half of ADR-0104 check 4: how many donors the person's day was actually drawn
+    from. It is NOT recoverable from :func:`donor_pool_size_by_hard_cell`, because the cell a
+    person is served from is narrowed further by the soft criteria still in force at their level
+    and by their own education-anchor exclusion (ruling R7).
+
+    Keys are the level as a STRING (JSON object keys are strings, so an int-keyed dict would not
+    survive the round trip into ``state_diagnostics.json`` unchanged), and a level nobody matched
+    at is OMITTED -- a dense zero row carries no distribution and would only dilute the summary.
+    The dense per-level count stays ``matched_by_level``.
+    """
+    summary = {}
+    for level in sorted(matched_cell_sizes):
+        sizes = matched_cell_sizes[level]
+        if not sizes:
+            continue
+        array = np.asarray(sizes, dtype=float)
+        summary[str(level)] = {
+            "n_persons": int(array.size),
+            "min": int(array.min()),
+            "p25": float(np.percentile(array, 25)),
+            "median": float(np.percentile(array, 50)),
+            "p75": float(np.percentile(array, 75)),
+            "max": int(array.max()),
+            # A cell of exactly one donor means that donor's day was the ONLY day on offer: the
+            # draw had no freedom at all, which is the sparsity signal check 4 is asking after.
+            "n_persons_single_donor_cell": int((array == 1).sum()),
+        }
+    return summary
+
+
 def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
                              rng: np.random.RandomState, *, minimum_cell: int = 1
                              ) -> tuple[pd.DataFrame, dict]:
@@ -157,6 +235,14 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
     exclusion actually removed at least one donor they would otherwise have been eligible for --
     NOT merely the persons the rule was evaluated for, a number that would grow with the cohort
     and say nothing about the rule's effect).
+
+    The fourth ADR-0104 check-4 diagnostic (issue #378) is the pair
+    ``donor_pool_size_by_hard_cell`` (see :func:`donor_pool_size_by_hard_cell` -- what the POOL
+    holds per cell, including cells nobody was drawn from) and ``matched_cell_size_by_level``
+    (see :func:`_matched_cell_size_by_level` -- how many donors each matched person's day was
+    actually drawn from), plus the headline ``n_persons_matched_from_single_donor_cell``. Neither
+    replaces the other: the census cannot see the soft criteria and the ruling-R7 exclusion that
+    narrow a person's cell further, and the realised sizes cannot see a cell no person reached.
     """
     _require_columns(persons_home, ("person_id", "assigned_distance_class", "sex", "age_class",
                                     "household_size", "has_active_escort", "has_children_u14",
@@ -248,6 +334,10 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
 
     matches = []
     matched_by_level = {level: 0 for level in range(MAX_COARSENING_LEVEL + 1)}
+    #: Realised cell sizes per level (issue #378), filled in the loop below; a level nobody
+    #: matched at stays empty and is omitted from the summary, so the distribution is never
+    #: diluted by zero rows. ``matched_by_level`` above remains the DENSE count.
+    matched_cell_sizes = {level: [] for level in range(MAX_COARSENING_LEVEL + 1)}
     n_not_replaceable = 0
 
     n_persons_education_restricted = 0
@@ -269,6 +359,7 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
 
         chosen_donor = None
         chosen_level = None
+        chosen_cell_size = None
         for level in range(MAX_COARSENING_LEVEL + 1):
             mask = hard_mask.copy()
             if level < 4:
@@ -293,6 +384,12 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
                 chosen_position = candidate_positions[rng.randint(0, count)]
                 chosen_donor = donor_id[chosen_position]
                 chosen_level = level
+                # The size of the cell the day was actually drawn from (issue #378): the number
+                # of donors that were eligible, NOT the one that happened to be drawn. It is
+                # recorded here rather than recomputed afterwards because the mask that produced
+                # it also carries this person's own education-anchor exclusion (ruling R7), which
+                # a later per-cell census could not reproduce.
+                chosen_cell_size = count
                 break
 
         if chosen_donor is None:
@@ -300,9 +397,12 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         else:
             matches.append((person.person_id, chosen_donor, chosen_level))
             matched_by_level[chosen_level] += 1
+            matched_cell_sizes[chosen_level].append(chosen_cell_size)
 
     n_persons = len(persons_home)
     share_not_replaceable = n_not_replaceable / max(n_persons, 1)
+    n_single_donor_cell = sum(1 for sizes in matched_cell_sizes.values()
+                              for size in sizes if size == 1)
 
     result = pd.DataFrame(matches, columns=["person_id", "donor_id", "coarsening_level"])
     if result.empty:
@@ -320,6 +420,9 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         "n_donors_with_education_leg": n_donors_with_education_leg,
         "n_persons_without_education_location": n_persons_without_education_location,
         "n_persons_education_restricted": n_persons_education_restricted,
+        "donor_pool_size_by_hard_cell": donor_pool_size_by_hard_cell(eligible_donors),
+        "matched_cell_size_by_level": _matched_cell_size_by_level(matched_cell_sizes),
+        "n_persons_matched_from_single_donor_cell": n_single_donor_cell,
     }
 
     logger.info(
@@ -328,6 +431,15 @@ def match_home_office_donors(persons_home: pd.DataFrame, donors: pd.DataFrame,
         100.0 * share_not_replaceable,
         {level: f"{count}/{n_persons} ({100.0 * count / max(n_persons, 1):.1f}%)"
          for level, count in matched_by_level.items() if count > 0})
+    n_matched = n_persons - n_not_replaceable
+    logger.info(
+        "%s donor-cell size (issue #378, ADR-0104 check 4): %d occupied hard cells over %d "
+        "eligible donors; realised cell size per level (median [min-max]): %s; %d/%d matched "
+        "persons (%.1f%%) were drawn from a cell of a SINGLE donor",
+        _LOG_TAG, len(diagnostics["donor_pool_size_by_hard_cell"]), len(eligible_donors),
+        {level: f"{cell['median']:.0f} [{cell['min']}-{cell['max']}]"
+         for level, cell in diagnostics["matched_cell_size_by_level"].items()},
+        n_single_donor_cell, n_matched, 100.0 * n_single_donor_cell / max(n_matched, 1))
     if share_not_replaceable > 0.5:
         logger.warning(
             "%s %d/%d persons (%.1f%%) are NOT replaceable by any donor at any coarsening level "

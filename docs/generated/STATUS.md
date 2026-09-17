@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 97 | stages: 125 | datasets: 75 | ADRs: 125 | run manifests: 46
+- Features: 97 | stages: 125 | datasets: 75 | ADRs: 126 | run manifests: 46
 
 ## Population synthesis
 

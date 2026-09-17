@@ -38,6 +38,7 @@ decisions:
 - ADR-0104
 - ADR-0110
 - ADR-0114
+- ADR-0128
 notes: 'The replacement logic itself lives entirely in plan_replacement.build_day_trips (a pure
   module, no synpp/no I/O): per person, by commute_day_state -- absent gets NO rows at all; home
   WITH a donor match gets every original row dropped and replaced by the donor''s own trip chain
@@ -63,7 +64,25 @@ notes: 'The replacement logic itself lives entirely in plan_replacement.build_da
   for EVERY replaced person; warned above 1% for that reason, CLAUDE.md fallback transparency).
   Diagnostics: n_persons_replaced, n_persons_absent, n_trips_removed, n_trips_added,
   n_home_unmatched, n_extra_columns_nulled, n_donors_without_trips -- logged by the stage on every
-  execute().
+  execute(). SINCE ISSUE #378 (ADR-0128) they are ALSO reported structurally, via
+  context.set_info under the single namespaced key trips_day_stage.INFO_KEY
+  ("commute_day_trips_diagnostics"), which synpp persists into the working directory''s
+  pipeline.json under this stage''s own hash and keeps across runs in which the stage is cached.
+  That is the side channel and not the return value because the return value IS the
+  reporting-day trips frame (this alias): returning a dict instead would either break every
+  consumer or force a pass-through stage caching a second copy of a 3.4 M-row frame. The payload
+  carries the two flags, the realised row/person counts and the diagnostics dict itself (None,
+  never a block of zeros, on the both-flags-off pass-through -- a reader must be able to tell
+  "nothing was replaced" from "this stage never ran"), all through
+  braunschweig.analysis.json_output.json_safe, because synpp serialises the whole meta with a
+  plain json.dump(meta, f) once the stage returns: a numpy scalar raises TypeError there and
+  aborts the run after all its work, while a NaN passes and writes a bare NaN literal that strict
+  JSON readers reject. json_output is deliberately NOT in _HELPER_MODULES: it
+  decides only how the diagnostics are rendered, never one value of the frame, so hashing it
+  would devalidate this stage and hours of everything downstream on a formatting change.
+  scripts/extract_commute_day_diagnostics.py reads the entry back into the committed
+  state_diagnostics.json, which is what ADR-0104 check 4 previously had to quote out of
+  run_log_excerpts.txt.
 
   The cache token (validate()) is an md5 of plan_replacement''s source alone (synpp hashes only
   trips_day_stage.py itself, so an edit to the pure replacement module would otherwise leave a
