@@ -193,6 +193,74 @@ def test_merge_retains_existing_unrelated_metadata(tmp_path, pipeline):
     assert trace.read_text().splitlines() == ["executed"]
 
 
+def _age_recorded_runs(directory, seconds=1.0):
+    """Move a working directory's recorded synpp timestamps strictly into the past.
+
+    The two cross-run scenarios below need the target's entries to come from a
+    DIFFERENT run than the store's, but they expressed that only through wall-clock
+    order: two sub-millisecond synpp runs a few statements apart. synpp stamps
+    ``updated`` with ``datetime.now(timezone.utc).timestamp()``, whose resolution on
+    Windows is the ~15.6 ms system tick, so both runs land on the IDENTICAL float
+    often enough to matter (measured: 2 failures in 120 runs of
+    ``older_target_parent``).
+
+    On such a collision the scenario silently loses its precondition:
+    ``cache_share._drop_incoherent_metadata`` requires EXACT timestamp equality to
+    judge a primed child coherent with the target's parent -- deliberately, see its
+    docstring -- so an equal pair keeps the primed record instead of dropping it,
+    and synpp's ``parent.updated > child.dependencies[parent]`` is False for equal
+    values. The child is then served from cache rather than re-executed, and the
+    test fails although nothing is wrong with the code under test.
+
+    Ageing the recorded timestamps states the precondition instead of hoping for it,
+    and removes the clock from the test. ``updated`` and the dependency snapshots
+    are shifted by the SAME amount so the directory's own entries stay internally
+    coherent; only recorded metadata is touched, never a cached payload, so what
+    synpp is asked to decide is unchanged.
+    """
+    path = directory / "pipeline.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    for record in metadata.values():
+        record["updated"] -= seconds
+        record["dependencies"] = {
+            dependency: timestamp - seconds
+            for dependency, timestamp in record.get("dependencies", {}).items()
+        }
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+
+
+def _recorded_timestamps(directory):
+    metadata = json.loads((directory / "pipeline.json").read_text(encoding="utf-8"))
+    stamps = set()
+    for record in metadata.values():
+        stamps.add(record["updated"])
+        stamps.update(record.get("dependencies", {}).values())
+    return stamps
+
+
+def _assert_runs_are_distinguishable(target, source):
+    """The precondition of the two cross-run scenarios, asserted instead of assumed.
+
+    Both need the target's entries to be recognisably from a different run than the
+    store's. Coherence is decided by EXACT timestamp equality, so a single shared
+    value silently turns the scenario into a different one -- which is how this test
+    used to fail about 2.5 % of the time on a coarse clock.
+
+    What this assertion does and does NOT do, precisely: ``_age_recorded_runs`` is
+    what makes the precondition hold, by shifting the target a whole second away so
+    equality is impossible. This check does not re-establish that; verified by
+    mutation, removing the ageing leaves this assertion passing on ~97.5 % of runs,
+    because the clock usually does tick between the two runs. Its value is that on
+    the remaining ~2.5 % the failure now names the cause -- shared timestamps, runs
+    indistinguishable -- instead of surfacing as a confusing trace mismatch several
+    statements later.
+    """
+    shared = _recorded_timestamps(target) & _recorded_timestamps(source)
+    assert not shared, (
+        f"target and source share recorded timestamps {sorted(shared)}; the scenario "
+        f"cannot distinguish the two runs (see _age_recorded_runs)")
+
+
 @pytest.mark.parametrize("scenario", ["complete", "missing_parent", "changed_parent", "forced_parent",
                                     "older_target_parent", "newer_target_child"])
 def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
@@ -222,11 +290,17 @@ def test_shared_dependency_chain(tmp_path, pipeline, monkeypatch, scenario):
         target.mkdir()
         synpp.run([{"descriptor": module}], config, working_directory=str(target),
                   rerun_required=False)
+        # Make "older" true by construction rather than by clock tick.
+        _age_recorded_runs(target)
     expected = run(source)
     if scenario == "newer_target_child":
         assert run(target) == expected
+        # Same reason: the target's run must be distinguishable from the store's.
+        _age_recorded_runs(target)
         for entry in cache_share.find_stage_entries(str(target), module):
             (target / (entry + ".p")).unlink()
+    if scenario in ("older_target_parent", "newer_target_child"):
+        _assert_runs_are_distinguishable(target, source)
     modules = [child] if scenario == "missing_parent" else [module, child]
     cache_share.export(str(source), modules, str(store))
     forced = [module] if scenario == "forced_parent" else []
