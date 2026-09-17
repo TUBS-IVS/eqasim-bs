@@ -152,9 +152,15 @@ evidence:
       artifact, and citing them as its verification (as an earlier draft of this
       record did) over-attributes the evidence. Off the server several shards can run
       sequentially inside one worker process; a code inspection of the installed
-      chainsolvers package (ADR-0126 Consequences) finds all randomness flowing
-      through a per-setup RunnerContext.rng with no module-level RNG, lru_cache or
-      global state, which narrows but does not close that back door. Outstanding
+      chainsolvers package (ADR-0126 Consequences) finds the run's randomness carried
+      by a per-setup RunnerContext.rng, with no module-level RNG, lru_cache or other
+      module-level mutable state anywhere in the package -- so worker REUSE is
+      state-free in the real package too. Two unseeded default_rng() fallbacks exist
+      (Selector.select per call, dp.py's constructor per instance); both are
+      per-call/per-instance, not global, so they can cost reproducibility but cannot
+      make a result depend on the worker count. That narrows, but does not close,
+      the back door: it is one pinned third-party version at one point in time.
+      Outstanding
       discharge (not yet run): a server A/B at shards:62 comparing processes:8 against
       processes:62, asserting byte-identical secondary-location output against the
       real solver. See ADR-0126, Consequences.

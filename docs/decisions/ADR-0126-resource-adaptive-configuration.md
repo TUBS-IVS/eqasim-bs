@@ -443,18 +443,27 @@ this decision tries to prevent by watching load.
   server A/B at `shards: 62` comparing `processes: 8` against `processes: 62`,
   asserting byte-identical secondary-location output against the real solver.
 - **Code inspection of the installed `chainsolvers` package (supporting, NOT a
-  substitute for the A/B above).** Reading the installed optional package:
-  all randomness flows through `RunnerContext.rng`, constructed fresh per
-  `cs.setup(rng_seed=...)` in its `run.py::_normalize_rng`; there is no
-  module-level RNG, no `lru_cache` and no other global state. Worker REUSE is
-  therefore state-free in the real package, not only in the test fake, which
-  materially strengthens the limitation above -- the "back door" it names has
-  no visible opening in the version currently installed. This is an inspection
-  of a pinned third-party version at one point in time, so it cannot discharge
-  the A/B: it does not cover a future version of the package, anything the
-  solver reaches through its own dependencies, or a difference the fake hides.
-  It is recorded so the residual risk is known to be small and WHY, not to
-  close the item.
+  substitute for the A/B above).** Reading the version installed in the project
+  environment: the run's randomness is carried by `RunnerContext.rng`, a
+  `numpy.random.Generator` built once per `cs.setup(rng_seed=...)` in
+  `run.py::_normalize_rng` and handed to each solver instance through
+  `_instantiate_solver`. There is **no module-level RNG, no `lru_cache` and no
+  other module-level mutable state anywhere in the package**. Worker REUSE is
+  therefore state-free in the real package, not only in the test fake -- the
+  "back door" the limitation above names has no visible opening in this version:
+  nothing survives from one `setup()` to the next inside a reused process.
+  Two unseeded `numpy.random.default_rng()` fallbacks do exist and are stated
+  rather than glossed over, because neither is module-level state:
+  `scoring_selection.Selector.select` falls back per CALL when it is passed no
+  rng (pre-existing, explicitly out of scope for this branch), and
+  `solvers/dp.py`'s constructor falls back per INSTANCE when constructed without
+  one (unreachable through `_instantiate_solver`, which always passes a
+  Generator). They can make a run non-reproducible; they cannot make it depend
+  on the worker count. This is an inspection of a pinned third-party version at
+  one point in time, so it cannot discharge the A/B: it does not cover a future
+  version of the package, anything the solver reaches through its own
+  dependencies, or a difference the fake hides. It is recorded so the residual
+  risk is known to be small and WHY, not to close the item.
 
 ## Evidence
 
