@@ -343,14 +343,24 @@ class _ConfigureRecorder:
     def __init__(self, config=None):
         self.stages = []
         self.config_keys = {}
+        self.volatile = set()
         self._config = dict(config) if config else {}
 
     def stage(self, name, alias=None, **kwargs):
         self.stages.append(name)
 
-    def config(self, key, default=None):
+    def config(self, key, *args, **kwargs):
+        # *args/**kwargs, not a fixed (key, default) pair: synpp also accepts
+        # volatile=True for an operational option that must stay out of a stage's hash
+        # (ADR-0126). A narrower signature raises TypeError from INSIDE the stage under
+        # test the moment any declaration here gains a keyword, and that failure reads as
+        # a stage defect rather than as a stale test double -- the shape
+        # tests/test_chainsolvers_parallel.py::_RecordingContext already uses.
+        default = args[0] if args else None
         value = self._config.get(key, default)
         self.config_keys[key] = value
+        if kwargs.get("volatile"):
+            self.volatile.add(key)
         return value
 
 
@@ -743,3 +753,25 @@ def test_the_activity_duration_loader_accepts_a_valid_table(tmp_path):
     _write_duration_csv(tmp_path, _valid_duration_table())
     table = S.load_activity_duration_reference(str(tmp_path))
     assert len(table) == len(SRVDT.DURATION_BAND_LABELS)
+
+
+def test_configure_recorder_accepts_synpps_volatile_keyword():
+    """The recorder must tolerate ``config(key, default, volatile=True)``.
+
+    synpp accepts ``volatile=True`` for an operational option that must stay OUT of a
+    stage's hash (ADR-0126). A recorder with a fixed ``(key, default)`` signature raises
+    ``TypeError`` from inside the stage's own ``configure()`` the moment any declaration
+    gains that keyword, and the failure then reads as a stage defect rather than as a
+    stale test double -- which is exactly how it presented when ADR-0126 landed
+    (PR #416) and again on the next merge (PR #422). This pins the recorder's contract
+    directly, so the drift cannot return silently even while THIS stage declares no
+    volatile option yet.
+    """
+    recorder = _ConfigureRecorder()
+
+    assert recorder.config("plain_key", "fallback") == "fallback"
+    assert recorder.config("operational_key", 4, volatile=True) == 4
+
+    assert recorder.config_keys["plain_key"] == "fallback"
+    assert recorder.config_keys["operational_key"] == 4
+    assert recorder.volatile == {"operational_key"}
