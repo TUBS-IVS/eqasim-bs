@@ -8,7 +8,11 @@ description: 'Extends escort_passive_joint_location (#385, ADR-0119). For a PAIR
   same synthetic household, HP_ALTER >= escort_passive_joint_surrogate_min_age_years (14), not a
   linked child (acyclic), an activity that is not itself a paired passive leg, departing within
   escort_passive_joint_surrogate_max_gap_minutes (15) of the child; with
-  escort_passive_joint_surrogate_require_same_purpose (true) the purposes must be equal. Nearest gap
+  escort_passive_joint_surrogate_require_same_purpose the purposes must be equal -- code default
+  true, PRODUCTION false (the relaxed rule, user decision 2026-09-17, ADR-0127 Consequences: an
+  escorted child does not choose its destination, so purpose equality is a constraint the mechanism
+  never asserts; the price is that such a child sits at a facility chosen for the surrogate''s
+  purpose). Nearest gap
   wins, deterministic tie-break (lowest adult person id, then that adult''s earliest activity), no
   random draw. Issue #409 option 1, ADR-0127 (drafted as ADR-0124 and renumbered -- see that
   record''s Numbering paragraph).
@@ -73,9 +77,10 @@ evidence:
       stage prints the same rate plus the COMBINED total plan-source + surrogate over all paired legs.
       Unrescued children keep the independent draw -- the fallback IS that draw, counted, never
       silent. Measured (docs/runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml): strict arm
-      (require_same_purpose true, the production setting) 1/27 = 3.7 %, split child purpose not
+      (require_same_purpose true) 1/27 = 3.7 %, split child purpose not
       secondary 12, no admissible candidate activity 10, gap exceeded 4, purpose-mismatch rows dropped
-      55, cyclic rows dropped 0, combined 13/58 = 22.4 %; relaxed arm (require_same_purpose false)
+      55, cyclic rows dropped 0, combined 13/58 = 22.4 %; relaxed arm (require_same_purpose false,
+      THE PRODUCTION SETTING since 2026-09-17)
       6/27 = 22.2 %, split 12 / 0 / 9, purpose-mismatch rows dropped 0, cyclic 0, combined 18/58 =
       31.0 %; OFF arm 12/58 = 20.7 % and no surrogate line printed at all. Anchor resolution was
       100 % in every arm (12/12, 13/13, 18/18, 0 unresolved). n = 27 candidates on a 1 %-sampled
@@ -120,9 +125,13 @@ assessment:
   status: pending
   pending_reason: 'Kreis-03101 smoke recorded; full-region evidence remains outstanding, as does a
     smoke at the merged HEAD (the arms ran a patched 0700430a tree -- see validation.note). The
-    production value of escort_passive_joint_surrogate_require_same_purpose stays the shipped strict
-    default (true); a decision for the relaxed rule after fuller evidence would change the base config
-    line and ADR-0127 together (ADR-0127 Consequences).'
+    production value of escort_passive_joint_surrogate_require_same_purpose is now the RELAXED rule
+    (false, user decision 2026-09-17; base config line and ADR-0127 Consequences changed together).
+    That decision rests on the mechanism''s semantics -- an escorted child does not choose its
+    destination -- and on the strict rule being near-inert in the smoke, NOT on the relaxed arm''s
+    realised distances, which are descriptive and have no observed reference. The realised rates of
+    the production setting are therefore still smoke-scale (6/27 rescued on a 1 %-sampled single
+    Kreis); full-region evidence remains outstanding.'
 notes: 'Phase 3 of the escort purpose family (escort_passive_from_adult -> escort_passive_joint_location
   -> this record). Separate follow-ups named in ADR-0127: lowering the DONOR-side pairing floor
   (ADR-0112), and re-pointing the ADULT''s escort anchor to the child''s location (#201).'
