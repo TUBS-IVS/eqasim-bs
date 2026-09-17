@@ -220,6 +220,21 @@ what the run actually does) collects every key's `Resolution` plus a list of
 `as_dict()` is what lands in `run_provenance_<stamp>.json` under
 `"resources"`.
 
+**There is exactly ONE failure channel.** A key whose configured value is
+unusable at all -- negative, non-integral, unparseable -- becomes an
+error-severity `Violation` too, not an exception: `build_report` catches the
+resolver's `ValueError` and records it against the key at fault. Before that,
+such a defect raised past `build_report` and past `enforce_report` and reached
+the operator as a bare traceback from `scripts/run_synpp.py`, while a
+machine-fit mismatch got a formatted message -- twelve distinct defects took
+that second channel and none reached the gate. Resolution continues past a bad
+key, so every unusable key is reported in one run rather than one per
+correction. The single exception is `ResourceDetectionError`: with no detected
+machine there is no budget and no report to build at all, so it still raises.
+`EQASIM_CPU_BUDGET` / `EQASIM_MEM_BUDGET` likewise raise, because they are read
+before any budget exists -- but with a message naming the variable, the value
+and the accepted spelling.
+
 ## Adding a new resource key
 
 1. Read every consumer of the key and classify it with the test above.
@@ -246,6 +261,10 @@ what the run actually does) collects every key's `Resolution` plus a list of
    `braunschweig.population.popsim.worker_memory_gb` by which the operator
    asserts it), warn otherwise, and say in the message WHY it is only a warning.
    Never bridge the gap with an invented scale-to-memory relationship.
+   Your resolver may raise `ValueError` for a value it cannot use at all;
+   `build_report` converts that into an error-severity `Violation` against your
+   key, so the message must name the key and the accepted spellings -- it is
+   what the operator sees in the gate.
 5. Add table-driven tests mirroring `tests/test_resources_budget.py`: a pin
    that fits is passed through verbatim, a pin that does not fit is clamped
    AND warns, and the auto sentinel is derived from the budget. Inject every

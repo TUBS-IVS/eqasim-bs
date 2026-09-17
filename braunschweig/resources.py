@@ -33,7 +33,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +329,45 @@ def is_auto(value) -> bool:
     return value is None
 
 
+def _env_core_budget(raw) -> int:
+    """Parse ``EQASIM_CPU_BUDGET``; raise an actionable ``ValueError`` if unusable.
+
+    A bare ``int()`` produced "invalid literal for int() with base 10: 'auto'",
+    naming neither the variable nor the remedy, and accepted ``0`` and negative
+    values silently: the budget then became 1 core while the startup log
+    reported "machine: 0 cores (env_override)". Both are rejected here instead.
+    This runs before any budget exists, so it cannot become a ``Violation``
+    (unlike a config-key defect, which :func:`build_report` routes into one).
+    """
+    try:
+        cores = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{ENV_CPU_BUDGET} must be a positive whole number of cores, "
+            f"got {raw!r}.") from None
+    if cores <= 0:
+        raise ValueError(
+            f"{ENV_CPU_BUDGET} must be a positive whole number of cores, got {raw!r}.")
+    return cores
+
+
+def _env_memory_budget(raw) -> float:
+    """Parse ``EQASIM_MEM_BUDGET``; raise an actionable ``ValueError`` if unusable.
+
+    Mirrors :func:`_env_core_budget`: ``parse_memory_gb``'s message already names
+    the accepted spellings, so it is quoted with the variable name prepended, and
+    a non-positive size is rejected rather than silently floored to 1 GB.
+    """
+    try:
+        memory_gb = parse_memory_gb(raw)
+    except ValueError as exc:
+        raise ValueError(f"{ENV_MEM_BUDGET}: {exc}") from None
+    if memory_gb <= 0:
+        raise ValueError(
+            f"{ENV_MEM_BUDGET} must be a positive size, got {raw!r}.")
+    return memory_gb
+
+
 def resolve_budget(machine: Optional[MachineResources] = None,
                    core_reserve: int = DEFAULT_CORE_RESERVE,
                    memory_reserve_gb: float = DEFAULT_MEMORY_RESERVE_GB,
@@ -346,8 +385,12 @@ def resolve_budget(machine: Optional[MachineResources] = None,
     two overrides as the remedy, so that remedy must actually be reachable).
     """
     env = os.environ if env is None else env
+    # Parsed ONCE here, so an unusable override fails before anything is derived
+    # from it and the two consumers below cannot drift apart.
     cpu_override = env.get(ENV_CPU_BUDGET)
     memory_override = env.get(ENV_MEM_BUDGET)
+    override_cores = _env_core_budget(cpu_override) if cpu_override else None
+    override_memory_gb = _env_memory_budget(memory_override) if memory_override else None
 
     if machine is None:
         # Detect only the quantities not already fixed by an explicit override.
@@ -355,12 +398,12 @@ def resolve_budget(machine: Optional[MachineResources] = None,
         # claiming a detection that never ran, so the startup log and the run
         # provenance stay honest about what actually happened (CLAUDE.md: no
         # silent fallbacks).
-        if cpu_override:
-            machine_cores, machine_cores_source = int(cpu_override), "env_override"
+        if override_cores is not None:
+            machine_cores, machine_cores_source = override_cores, "env_override"
         else:
             machine_cores, machine_cores_source = detect_cores()
-        if memory_override:
-            machine_memory_gb, machine_memory_source = parse_memory_gb(memory_override), "env_override"
+        if override_memory_gb is not None:
+            machine_memory_gb, machine_memory_source = override_memory_gb, "env_override"
         else:
             machine_memory_gb, machine_memory_source = detect_memory_gb()
         machine = MachineResources(
@@ -368,13 +411,13 @@ def resolve_budget(machine: Optional[MachineResources] = None,
             cores_source=machine_cores_source, memory_source=machine_memory_source,
         )
 
-    if cpu_override:
-        cores = max(1, int(cpu_override))
+    if override_cores is not None:
+        cores = override_cores
     else:
         cores = max(1, machine.cores - max(0, int(core_reserve)))
 
-    if memory_override:
-        memory_gb = max(1.0, parse_memory_gb(memory_override))
+    if override_memory_gb is not None:
+        memory_gb = override_memory_gb
     else:
         memory_gb = max(1.0, machine.memory_gb - max(0.0, float(memory_reserve_gb)))
 
@@ -693,7 +736,8 @@ class ResourceReport:
 KEY_POPULATION_METHOD = "braunschweig.population.method"
 
 
-def _chainsolver_core_preview(configured, budget: ResourceBudget) -> int:
+def _chainsolver_core_preview(configured, budget: ResourceBudget,
+                              key: str = "braunschweig.chainsolvers.processes") -> int:
     """Worker count ``braunschweig.chainsolvers.processes`` would take from CORES alone.
 
     The auto sentinel takes the whole core budget; a positive pin is a CEILING, so
@@ -709,6 +753,11 @@ def _chainsolver_core_preview(configured, budget: ResourceBudget) -> int:
     Rejects a non-integral or negative pin with the same message
     :func:`_resolve_ceiling` would raise at stage start, so an unusable value is
     reported at the run start (seconds) instead of hours into a run.
+
+    ``key`` names where the value actually came from. ``build_report`` falls back
+    to the global ``processes`` when ``braunschweig.chainsolvers.processes`` is
+    unset, and naming the chainsolver key there told the operator to fix a key
+    they never set.
     """
     if is_auto(configured):
         return budget.cores
@@ -719,8 +768,8 @@ def _chainsolver_core_preview(configured, budget: ResourceBudget) -> int:
         requested, is_integral = None, False
     if requested is None or not is_integral or requested < 0:
         raise ValueError(
-            "braunschweig.chainsolvers.processes must be 0 (auto) or a positive "
-            f"integer count, got {configured!r}.")
+            f"{key} must be 0 (auto) or a positive integer count, "
+            f"got {configured!r}.")
     return max(1, min(requested, budget.cores))
 
 
@@ -752,33 +801,101 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     ``braunschweig.population.popsim.worker_memory_gb`` explicitly. Otherwise it
     is a warning that names the unmeasured scale (see
     :data:`MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE`).
+
+    **One failure channel.** A key whose configured value is unusable (negative,
+    non-integral, unparseable) becomes an error-severity ``Violation`` here
+    rather than raising, so :func:`enforce_report` reports it with the key that
+    is at fault, exactly as it reports a machine-fit mismatch. Resolution
+    continues past a bad key, so every unusable key is reported in one run. The
+    sole exception is :class:`ResourceDetectionError`: without a detected machine
+    there is no budget and no report to build at all, so it still raises.
     """
     budget = resolve_budget(machine=machine, env=env)
-    worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
-    chainsolver_worker_memory_gb = float(
-        config.get(KEY_CHAINSOLVER_WORKER_MEMORY_GB, DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB))
 
-    chainsolver_configured = config.get("braunschweig.chainsolvers.processes")
+    resolutions: List[Resolution] = []
+    violations: List[Violation] = []
+
+    def _add_violation(violation: Violation) -> None:
+        # The same unusable `processes` value feeds BOTH resolve_processes and the
+        # chainsolver preview's fallback, which would otherwise report it twice.
+        if violation not in violations:
+            violations.append(violation)
+
+    def _record(key: str, resolve) -> None:
+        """Append one resolution, or an error-severity VIOLATION if it is unusable.
+
+        This is the single failure channel. A config-VALUE defect used to raise
+        out of the resolver, past this function, past :func:`enforce_report` and
+        out of ``scripts/run_synpp.py`` as a bare traceback -- so the gate that
+        exists to give an actionable startup message never saw it, while a
+        machine-FIT mismatch was formatted properly. Every remaining key is still
+        resolved afterwards, so an operator sees EVERY unusable key in one run
+        instead of rediscovering the next one after each correction.
+        """
+        try:
+            resolutions.append(resolve())
+        except ValueError as exc:
+            _add_violation(Violation(key=key, severity="error", message=str(exc)))
+
+    def _memory_setting(key: str, default: float) -> float:
+        """Read a per-worker memory setting; name the key when it is not a number.
+
+        A bare ``float()`` produced "could not convert string to float: 'x'",
+        which names neither the key nor what was expected.
+        """
+        raw = config.get(key, default)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"{key} must be a number of gigabytes per worker, got {raw!r}.") from None
+
+    worker_memory_gb = None
+    try:
+        worker_memory_gb = _memory_setting(KEY_WORKER_MEMORY_GB,
+                                           DEFAULT_POPSIM_WORKER_MEMORY_GB)
+    except ValueError as exc:
+        _add_violation(Violation(key=KEY_WORKER_MEMORY_GB, severity="error",
+                                 message=str(exc)))
+
+    chainsolver_worker_memory_gb = None
+    try:
+        chainsolver_worker_memory_gb = _memory_setting(
+            KEY_CHAINSOLVER_WORKER_MEMORY_GB, DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB)
+    except ValueError as exc:
+        _add_violation(Violation(key=KEY_CHAINSOLVER_WORKER_MEMORY_GB, severity="error",
+                                 message=str(exc)))
+
+    # The chainsolver pool falls back to the global `processes` when its own key is
+    # unset. `chainsolver_key` records where the value actually came from, so an
+    # unusable one names the key the operator set rather than one they never did.
+    chainsolver_key = "braunschweig.chainsolvers.processes"
+    chainsolver_configured = config.get(chainsolver_key)
     if chainsolver_configured is None:
+        chainsolver_key = "processes"
         chainsolver_configured = config.get("processes", "auto")
-    # The preview must report the count this run would actually start, not the
-    # core budget regardless of the pin: with `braunschweig.chainsolvers.processes: 8`
-    # the startup log and run_provenance_<stamp>.json used to both claim 62, which
-    # would have recorded the SAME effective value for both arms of the server A/B
-    # (shards: 62, processes: 8 vs 62) this mechanism owes as evidence.
-    chainsolver_preview = _chainsolver_core_preview(chainsolver_configured, budget)
 
-    resolutions = [
-        resolve_java_memory(config.get("java_memory", "auto"), budget),
-        resolve_processes(config.get("processes", "auto"), budget),
-        resolve_popsim_workers(
-            config.get("braunschweig.population.popsim.num_workers", "auto"),
-            budget, worker_memory_gb,
-        ),
-        Resolution(
+    _record("java_memory",
+            lambda: resolve_java_memory(config.get("java_memory", "auto"), budget))
+    _record("processes",
+            lambda: resolve_processes(config.get("processes", "auto"), budget))
+    if worker_memory_gb is not None:
+        _record("braunschweig.population.popsim.num_workers",
+                lambda: resolve_popsim_workers(
+                    config.get("braunschweig.population.popsim.num_workers", "auto"),
+                    budget, worker_memory_gb,
+                ))
+    if chainsolver_worker_memory_gb is not None:
+        _record(chainsolver_key, lambda: Resolution(
             key="braunschweig.chainsolvers.processes",
             configured=chainsolver_configured,
-            effective=chainsolver_preview,
+            # The preview must report the count this run would actually start, not the
+            # core budget regardless of the pin: with `braunschweig.chainsolvers.processes: 8`
+            # the startup log and run_provenance_<stamp>.json used to both claim 62, which
+            # would have recorded the SAME effective value for both arms of the server A/B
+            # (shards: 62, processes: 8 vs 62) this mechanism owes as evidence.
+            effective=_chainsolver_core_preview(chainsolver_configured, budget,
+                                                key=chainsolver_key),
             origin="reported",
             note=(
                 f"startup preview against the CORE budget only ({budget.cores} cores); "
@@ -792,13 +909,15 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 f"'[resources] braunschweig.chainsolvers.processes: ... -> ceiling N "
                 f"workers' log line is the source of truth for the value actually used."
             ),
-        ),
-    ]
+        ))
 
-    violations = []
-    workers = next(r for r in resolutions
-                   if r.key == "braunschweig.population.popsim.num_workers")
-    if workers.effective * worker_memory_gb > budget.memory_gb:
+    # A key whose value was unusable contributes no Resolution, so every lookup
+    # below tolerates its absence: the operator is told about the bad value, not
+    # about a StopIteration behind it.
+    workers = next((r for r in resolutions
+                    if r.key == "braunschweig.population.popsim.num_workers"), None)
+    if (workers is not None and worker_memory_gb is not None
+            and workers.effective * worker_memory_gb > budget.memory_gb):
         # Two independent conditions have to hold before this mismatch may ABORT a
         # run, because the 30 GB figure describes one specific kind of run:
         #
@@ -857,15 +976,16 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 f"explicitly to assert a per-worker figure for this run -- that makes "
                 f"this mismatch fatal again at any scale."
             )
-        violations.append(Violation(
+        _add_violation(Violation(
             key="braunschweig.population.popsim.num_workers", severity=severity,
             message=message,
         ))
 
-    processes = next(r for r in resolutions if r.key == "processes")
-    if (not is_auto(config.get("processes"))
+    processes = next((r for r in resolutions if r.key == "processes"), None)
+    if (processes is not None
+            and not is_auto(config.get("processes"))
             and int(processes.effective) < PROCESSES_UNDERUSE_FRACTION * budget.cores):
-        violations.append(Violation(
+        _add_violation(Violation(
             key="processes", severity="warning",
             message=(
                 f"processes is pinned to {processes.effective} but {budget.cores} "
@@ -1160,6 +1280,9 @@ def enforce_report(report: ResourceReport) -> None:
     errors = [v for v in report.violations if v.severity == "error"]
     if errors:
         raise ResourceValidationError(
-            "The configuration does not fit this machine:\n"
+            # Covers BOTH kinds of error-severity violation: a value this module
+            # cannot use at all, and a value that is usable but does not fit the
+            # machine. Each line below names which one it is.
+            "The run cannot start with the resolved configuration:\n"
             + "\n".join(f"  - {v.key}: {v.message}" for v in errors)
         )

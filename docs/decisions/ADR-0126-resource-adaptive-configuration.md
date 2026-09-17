@@ -415,6 +415,30 @@ this decision tries to prevent by watching load.
   run on a shrunk machine is slower, not silently wrong, and the mismatch is
   now visible as a startup warning instead of invisible, pending the tuning
   work tracked under issue #410.
+- **AMENDMENT (2026-09-17): the startup gate has exactly one failure channel.**
+  A machine-FIT mismatch became a `Violation` that `enforce_report` rendered
+  into an actionable message naming the key, but a config-VALUE defect
+  (negative, non-integral, unparseable) raised out of the resolver, past
+  `build_report`, past `enforce_report` and out of `scripts/run_synpp.py` as a
+  bare traceback. Reproduced on a 64-core / 94.28 GB machine: **twelve distinct
+  defects took the exception channel and none reached the gate**, across
+  `java_memory`, `processes`, `braunschweig.chainsolvers.processes`,
+  `braunschweig.population.popsim.num_workers` and both `*_worker_memory_gb`
+  keys. `build_report` now converts a resolver's `ValueError` into an
+  error-severity `Violation` against the key at fault and keeps resolving the
+  remaining keys, so an operator sees every unusable key in one run instead of
+  rediscovering the next after each correction; the gate's header is
+  correspondingly "The run cannot start with the resolved configuration",
+  which is true of both kinds. Two cases stay exceptions on purpose, because
+  they happen before a budget exists and so cannot become a `Violation`:
+  `ResourceDetectionError` (no machine, therefore no report at all) and an
+  unusable `EQASIM_CPU_BUDGET` / `EQASIM_MEM_BUDGET` -- the latter two now name
+  the variable, the value and the accepted spelling, and reject non-positive
+  values instead of silently becoming a 1-core budget while the log reported
+  "machine: 0 cores". The same investigation fixed a misattribution: with
+  `braunschweig.chainsolvers.processes` unset, `build_report` falls back to the
+  global `processes`, and the message named the chainsolver key the operator
+  had never set.
 - **Limitation, stated rather than buried.** The claim "secondary locations
   no longer depend on the machine" is verified for the shard partition, the
   per-shard seeds and the recombination order

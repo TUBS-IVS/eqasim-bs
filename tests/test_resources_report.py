@@ -259,9 +259,17 @@ def test_report_falls_back_to_the_synpp_processes_key_for_the_chainsolver_previe
 
 
 def test_report_rejects_an_unusable_chainsolver_pin_at_the_run_start():
+    # Rejected at the run start, but through the VIOLATION channel: build_report
+    # used to raise here, which escaped enforce_report and surfaced as a bare
+    # traceback from scripts/run_synpp.py instead of the gate's message naming
+    # the key. See tests/test_resources_error_channel.py for the full contract.
     config = dict(PRODUCTION_CONFIG, **{"braunschweig.chainsolvers.processes": -4})
-    with pytest.raises(ValueError, match="braunschweig.chainsolvers.processes"):
-        resources.build_report(config, machine=SERVER, env={})
+    report = resources.build_report(config, machine=SERVER, env={})
+    errors = [v for v in report.violations if v.severity == "error"]
+    assert [v.key for v in errors] == ["braunschweig.chainsolvers.processes"]
+    with pytest.raises(resources.ResourceValidationError,
+                       match="braunschweig.chainsolvers.processes"):
+        resources.enforce_report(report)
 
 
 def test_as_dict_is_json_serialisable_for_the_run_provenance():
