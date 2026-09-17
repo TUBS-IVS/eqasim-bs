@@ -32,8 +32,18 @@ NEW_SERVER = resources.MachineResources(
 
 # The seven deduplicated 100% ZGB-8 executions recorded in the run manifest:
 # (label, driver RSS GB at the stage's memory minimum, available-memory drop GB
-# summed over the 62 live workers). Driver growth during the stage was 0.0 GB
-# in every run, so "driver RSS at min" equals the run's baseline driver RSS.
+# summed over the 62 live workers).
+#
+# SAMPLING-POINT CAVEAT (recorded in the run manifest, and the reason none of
+# these rows verifies the bound against history): the code reads the driver's
+# RSS at the FORK POINT -- effective_chainsolver_workers is called inside
+# _solve_problem_set after plans_for_cs is built and before the pool is
+# created. The recorder never sampled that point. It captured a per-run
+# "driver RSS at the stage's memory minimum" (19.60-30.09 GB, the column
+# below) and a before-stage baseline that ranged 19-36 GB. Neither is the
+# fork-point quantity, so replaying these rows exercises the ARITHMETIC on
+# realistic magnitudes; it does not establish what the bound would have done
+# to the seven historical runs.
 MEASURED_SHAPES = [
     ("b370_arm0_20260905T193026", 19.60, 37.87),
     ("b370_arm0_20260905T224249", 19.62, 36.26),
@@ -45,21 +55,12 @@ MEASURED_SHAPES = [
 ]
 
 
-@pytest.mark.parametrize("label,driver_rss_gb,available_drop_gb", MEASURED_SHAPES)
-def test_measured_shapes_keep_the_pool_within_the_memory_budget(
-        label, driver_rss_gb, available_drop_gb):
-    # Safety invariant of the rule, true by construction of the floor: whatever
-    # the ceiling comes out to, driver + workers * worker_memory_gb must never
-    # exceed the machine's memory budget. Checked on BOTH machines so a future
-    # change to the arithmetic cannot silently break it on either.
-    for machine in (OLD_SERVER, NEW_SERVER):
-        budget = resources.resolve_budget(machine=machine, env={})
-        workers = resources.effective_chainsolver_workers(
-            0, worker_memory_gb=resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB,
-            machine=machine, env={}, driver_rss_gb=driver_rss_gb,
-        )
-        assert (driver_rss_gb + workers * resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB
-                <= budget.memory_gb + 1e-9)
+# NOTE: a former test here asserted only that
+# driver + workers * worker_memory_gb <= budget for each measured shape. That
+# holds by construction of the floor for every non-degenerate input, so it could
+# not fail; the two tests below assert the concrete expected worker counts on
+# both machines instead, and test_the_design_rules_own_worked_examples pins the
+# case where the memory bound actually binds.
 
 
 def test_measured_shapes_reproduce_62_workers_on_the_125_78gb_server_they_ran_on():
@@ -75,15 +76,20 @@ def test_measured_shapes_reproduce_62_workers_on_the_125_78gb_server_they_ran_on
 
 
 def test_measured_shapes_still_yield_62_on_the_new_94_28gb_server():
-    # None of the seven historically measured driver-RSS baselines (max 30.09 GB,
-    # the pb4_arm4 run) is by itself heavy enough to push the ceiling below the
-    # core budget on the smaller 94.28 GB / 86.28 GB-budget server: even the
-    # heaviest, (86.28 - 30.09) / 0.86 = 65, still leaves the pool capped at 62 by
-    # CORES, not by memory. This is a reassuring finding from the measured data,
-    # not a gap in the mechanism -- see test_the_design_rules_own_worked_examples
-    # below for a driver footprint large enough to actually bind (the design
-    # rule's own "pb4 shape" hypothetical, at the upper end of the quoted 19-36 GB
-    # baseline range, heavier than any of the seven rows actually measured here).
+    # Replayed at the DURING-STAGE driver RSS the recorder captured (max 30.09 GB,
+    # the pb4_arm4 run), none of the seven rows pushes the ceiling below the core
+    # budget on the smaller 94.28 GB / 86.28 GB-budget server: even the heaviest,
+    # (86.28 - 30.09) / 0.86 = 65, still leaves the pool capped at 62 by CORES.
+    #
+    # This does NOT establish that the bound would have left the seven historical
+    # runs alone: the quantity the code reads is the driver's RSS at the FORK
+    # POINT, which the recorder never sampled (see the caveat on MEASURED_SHAPES
+    # and the run manifest's sampling-point row). On this machine the bound drops
+    # below 62 from a driver RSS of about 32.96 GB upwards (86.28 - 62 * 0.86),
+    # which is INSIDE the 19-36 GB before-stage baseline range the recorder did
+    # capture. Whether any historical run would have been throttled is therefore
+    # UNVERIFIED; the outstanding evidence is the server smoke, which logs the
+    # fork-point value directly.
     for _label, driver_rss_gb, _drop in MEASURED_SHAPES:
         workers = resources.effective_chainsolver_workers(
             0, worker_memory_gb=resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB,
@@ -93,17 +99,22 @@ def test_measured_shapes_still_yield_62_on_the_new_94_28gb_server():
 
 
 @pytest.mark.parametrize("driver_rss_gb,expected_workers", [
-    # "Typical server runs" worked example: (86.28 - 25) / 0.86 = 71 -> capped at
-    # 62 by cores -> unchanged.
+    # "Typical server runs": (86.28 - 25) / 0.86 = 71 -> capped at 62 by cores.
     (25.0, 62),
-    # The "pb4 shape" worked example: (86.28 - 36) / 0.86 = 58 workers instead of
-    # an OOM. 36 GB is the upper end of the quoted 19-36 GB baseline driver-RSS
-    # range -- heavier than any of the seven MEASURED_SHAPES rows above (whose
-    # max is 30.09 GB), which is exactly why none of those rows alone bind on the
-    # new server while this hypothetical does.
+    # Just below where the memory bound starts to bind: 86.28 - 62 * 0.86 = 32.96
+    # GB, so a 32.9 GB driver still leaves room for the full core-bound pool.
+    (32.9, 62),
+    # Just above it: the bound now binds and the pool drops below the core budget.
+    (33.0, 61),
+    # At the TOP of the 19-36 GB before-stage baseline range the recorder
+    # captured: (86.28 - 36) / 0.86 = 58 workers. This is inside the measured
+    # baseline range, not beyond it -- so a run whose fork-point RSS sits here
+    # WOULD be throttled. Since the recorder never sampled the fork point, this
+    # is what the bound does at that footprint, not a claim about any of the
+    # seven recorded runs.
     (36.0, 58),
 ])
-def test_the_design_rules_own_worked_examples(driver_rss_gb, expected_workers):
+def test_the_bound_binds_from_about_33gb_of_driver_rss(driver_rss_gb, expected_workers):
     workers = resources.effective_chainsolver_workers(
         0, worker_memory_gb=resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB,
         machine=NEW_SERVER, env={}, driver_rss_gb=driver_rss_gb,

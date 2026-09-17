@@ -772,3 +772,61 @@ def test_solve_problem_set_obtains_its_worker_count_from_resources(monkeypatch):
     sc._solve_problem_set(_order_guard_trips(), _order_guard_primary(), None, shared)
 
     assert calls == [(7, 0.86)]
+
+
+def _two_person_plans(problems, distance_distributions, leisure_corr, random, **kwargs):
+    """Plans for exactly two persons -- fewer than any realistic shard count."""
+    plans_df = pd.DataFrame({"unique_person_id": ["1", "2"],
+                             "to_act_type": ["shop", "shop"]})
+    problem_meta = [{"problem_idx": 0, "person_id": 1, "activity_index": 1,
+                     "n_secondary": 1}]
+    return plans_df, problem_meta, [1], {}, {}
+
+
+def _pin_small_parallel_pass(monkeypatch, df_secondary, n_shards):
+    """Shared state + stubs for a PARALLEL pass over two persons."""
+    monkeypatch.setattr(sc, "_build_plans_df", _two_person_plans)
+    monkeypatch.setattr(sc, "_rda_fallback_place", lambda *args, **kwargs: ([], []))
+    monkeypatch.setattr(sc, "_build_rda_candidate_index", lambda frame: "rda-index")
+    monkeypatch.setattr(sc, "_init_chain_worker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sc, "_solve_chains_parallel",
+                        lambda *args, **kwargs: (sc._empty_chain_result_df(), [0]))
+    monkeypatch.setattr(sc.resources, "effective_chainsolver_workers",
+                        lambda configured, worker_memory_gb, **kwargs: 4)
+    shared = _order_guard_shared(np.random.RandomState(0), df_secondary)
+    shared["parallel_enabled"] = True
+    shared["n_shards"] = n_shards
+    shared["configured_procs"] = 4
+    return shared
+
+
+def test_a_pass_smaller_than_the_shard_count_prints_the_effective_shard_count(
+        monkeypatch, capsys):
+    """_make_person_shards caps the shard count at the person count, so a small
+    pass runs FEWER shards than configured. The headline print used to assert the
+    CONFIGURED value ("parallel, 62 shards / 4 workers" for a 2-person pass that
+    produced 2 shards) and nothing said the scientific key had been reduced."""
+    df_secondary = _one_candidate_frame()
+    shared = _pin_small_parallel_pass(monkeypatch, df_secondary, n_shards=62)
+
+    sc._solve_problem_set(_order_guard_trips(), _order_guard_primary(), None, shared)
+
+    out = capsys.readouterr().out
+    # The headline names the shard count that actually ran.
+    assert "parallel, 2 shards / 2 workers" in out
+    assert "parallel, 62 shards" not in out
+    # And the reduction is stated explicitly, naming the config key (CLAUDE.md:
+    # no silent adjustment of a result-determining value).
+    assert "WARNING: braunschweig.chainsolvers.shards is 62" in out
+    assert "2 shard(s)" in out
+
+
+def test_a_pass_at_or_above_the_shard_count_does_not_warn(monkeypatch, capsys):
+    df_secondary = _one_candidate_frame()
+    shared = _pin_small_parallel_pass(monkeypatch, df_secondary, n_shards=2)
+
+    sc._solve_problem_set(_order_guard_trips(), _order_guard_primary(), None, shared)
+
+    out = capsys.readouterr().out
+    assert "parallel, 2 shards / 2 workers" in out
+    assert "braunschweig.chainsolvers.shards is" not in out

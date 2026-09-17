@@ -68,3 +68,55 @@ def test_unreadable_config_never_raises(tmp_path) -> None:
     record = provenance.collect_run_provenance(str(tmp_path / "nope.yml"))
     assert "error" in record
     assert record["pipeline_commit"] != ""
+
+
+# ---------------------------------------------------------------------------
+# The resource report embedding (ADR-0126). Deleting the embedding, or the
+# ``resource_report=`` argument at the call site in scripts/run_synpp.py, used
+# to leave the whole suite green -- the machine and effective resource values
+# that produced a run would then silently stop being reconstructible.
+# ---------------------------------------------------------------------------
+
+def _server_report():
+    from braunschweig import resources
+    machine = resources.MachineResources(
+        cores=64, memory_gb=94.28,
+        cores_source="sched_getaffinity", memory_source="psutil",
+    )
+    return resources.build_report(
+        {"java_memory": "100G", "processes": 32,
+         "braunschweig.chainsolvers.processes": 0,
+         "braunschweig.population.popsim.num_workers": 3,
+         "braunschweig.population.method": "popsim_mid",
+         "sampling_rate": 1.0},
+        machine=machine, env={},
+    )
+
+
+def test_collect_embeds_the_resource_report_under_resources(tmp_path) -> None:
+    config = _write_config(tmp_path, str(tmp_path / "cache"))
+    report = _server_report()
+    record = provenance.collect_run_provenance(str(config), resource_report=report)
+    assert record["resources"] == report.as_dict()
+    # The parts a later reader actually needs: which machine, and what each key
+    # resolved to.
+    assert record["resources"]["machine"]["cores"] == 64
+    assert record["resources"]["machine"]["cores_source"] == "sched_getaffinity"
+    assert record["resources"]["resolutions"]["java_memory"]["effective"] == "86G"
+
+
+def test_collect_omits_resources_when_no_report_is_given(tmp_path) -> None:
+    config = _write_config(tmp_path, str(tmp_path / "cache"))
+    record = provenance.collect_run_provenance(str(config))
+    assert "resources" not in record
+
+
+def test_log_and_write_persists_the_resource_report_to_disk(tmp_path) -> None:
+    workdir = tmp_path / "cache"
+    config = _write_config(tmp_path, str(workdir))
+    report = _server_report()
+    provenance.log_and_write_run_provenance(str(config), resource_report=report)
+    files = list(workdir.glob("run_provenance_*.json"))
+    assert len(files) == 1
+    on_disk = json.loads(files[0].read_text(encoding="utf-8"))
+    assert on_disk["resources"] == report.as_dict()

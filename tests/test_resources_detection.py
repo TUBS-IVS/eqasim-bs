@@ -5,6 +5,7 @@ own reader callables, so the suite is deterministic on Linux, macOS and Windows.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -132,11 +133,17 @@ def test_current_process_rss_gb_prefers_psutil():
     assert rss_gb == pytest.approx(12.5)
 
 
-def test_current_process_rss_gb_falls_back_to_proc_self_status_and_says_so():
-    rss_gb = resources.current_process_rss_gb(
-        psutil_reader=None, status_reader=lambda: 8.0,
-    )
+def test_current_process_rss_gb_falls_back_to_proc_self_status_and_says_so(caplog):
+    # Unlike detect_cores / detect_memory_gb, this reader returns no source
+    # string, so the LOG line is the only place the fallback is observable
+    # (CLAUDE.md: no silent fallbacks). Assert it, or deleting the logger.info
+    # keeps this test green while the fallback goes silent.
+    with caplog.at_level(logging.INFO, logger=resources.logger.name):
+        rss_gb = resources.current_process_rss_gb(
+            psutil_reader=None, status_reader=lambda: 8.0,
+        )
     assert rss_gb == pytest.approx(8.0)
+    assert any("/proc/self/status" in record.getMessage() for record in caplog.records)
 
 
 def test_current_process_rss_gb_returns_none_when_neither_source_is_available():

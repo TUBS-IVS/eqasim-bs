@@ -1,4 +1,14 @@
-"""The run start must log the resource report and refuse an impossible machine."""
+"""``enforce_report`` logs a resource report and refuses an impossible machine.
+
+SCOPE, stated precisely: every test in this file calls
+``braunschweig.resources.enforce_report`` DIRECTLY. Nothing here imports or runs
+``scripts/run_synpp.py``, so this file does NOT cover the run start itself --
+that the launcher builds a report, enforces it and passes it into the run
+provenance is pinned by
+``tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record``
+and by ``tests/test_run_provenance.py``'s resource-report cases. The earlier
+docstring here ("the run start must ...") claimed coverage this file never had.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,8 +22,10 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig import resources  # noqa: E402
 
+# The run server as the run resource recorder measures it (94.28 GB total;
+# ``free -g`` truncates it to "94"), so the budget is 94.28 - 8 = 86.28 GB.
 SERVER = resources.MachineResources(
-    cores=64, memory_gb=94.0, cores_source="sched_getaffinity", memory_source="psutil",
+    cores=64, memory_gb=94.28, cores_source="sched_getaffinity", memory_source="psutil",
 )
 TINY = resources.MachineResources(
     cores=4, memory_gb=9.0, cores_source="cpu_count", memory_source="psutil",
@@ -22,6 +34,10 @@ CONFIG = {
     "java_memory": "100G", "processes": 32,
     "braunschweig.population.popsim.num_workers": 3,
     "braunschweig.population.method": "popsim_mid",
+    # The 100 % scale DEFAULT_POPSIM_WORKER_MEMORY_GB was measured at -- the only
+    # scale at which a mismatch against it is an ERROR (build_report, final review
+    # B2). Without it these cases would only warn.
+    "sampling_rate": 1.0,
 }
 
 
@@ -37,6 +53,15 @@ def test_enforce_raises_on_an_impossible_machine():
     with pytest.raises(resources.ResourceValidationError) as excinfo:
         resources.enforce_report(report)
     assert "num_workers" in str(excinfo.value)
+
+
+def test_enforce_does_not_raise_below_the_measured_sampling_rate():
+    # The scale gate (final review B2): the same impossible combination at 1 %
+    # must not abort, because the 30 GB/worker figure is a 100 %-scale
+    # measurement and nothing has measured the footprint at 1 %.
+    report = resources.build_report(dict(CONFIG, sampling_rate=0.01),
+                                    machine=TINY, env={})
+    resources.enforce_report(report)  # must NOT raise
 
 
 def test_enforce_does_not_raise_when_popsim_is_not_selected():

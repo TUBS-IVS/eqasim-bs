@@ -11,21 +11,31 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig import resources  # noqa: E402
 
+# The run server as the run resource recorder measures it: memory_total_kb reads
+# 94.28 GB (``free -g`` truncates the same machine to "94"), so the derived budget
+# is 94.28 - 8 = 86.28 GB. Recorded in
+# docs/runs/chainsolver-worker-private-memory-2026-09-17.yml.
 SERVER = resources.MachineResources(
-    cores=64, memory_gb=94.0, cores_source="sched_getaffinity", memory_source="psutil",
+    cores=64, memory_gb=94.28, cores_source="sched_getaffinity", memory_source="psutil",
 )
 
 PRODUCTION_CONFIG = {
     "java_memory": "100G",
     "processes": 32,
+    "braunschweig.chainsolvers.processes": 0,
     "braunschweig.population.popsim.num_workers": 3,
     "matsim_threads": 56,
     "matsim_qsim_threads": 16,
     # The canonical config's actual value (configs/base_bs.yml); this is what
     # makes an impossible num_workers/memory combination an ERROR below -- see
     # test_report_does_not_error_when_popsim_is_not_the_selected_method for the
-    # gate this exercises.
+    # method gate and test_report_only_warns_below_the_measured_sampling_rate for
+    # the scale gate this exercises.
     "braunschweig.population.method": "popsim_mid",
+    # The canonical 100 % production scale (configs/overlays/test_100pct.yml) --
+    # the scale DEFAULT_POPSIM_WORKER_MEMORY_GB was measured at, and therefore the
+    # only scale at which a mismatch against it may abort a run.
+    "sampling_rate": 1.0,
 }
 
 
@@ -104,6 +114,78 @@ def test_report_does_not_error_when_popsim_is_not_the_selected_method():
     assert not [v for v in report.violations if v.severity == "error"]
 
 
+# ---------------------------------------------------------------------------
+# The SCALE dimension of the PopulationSim memory gate (final review B2).
+# DEFAULT_POPSIM_WORKER_MEMORY_GB is a 100%-scale measurement, so it may only
+# ABORT a run at the scale it was measured at. Below that scale the same
+# mismatch is a warning that names the unmeasured scale.
+# ---------------------------------------------------------------------------
+
+DEVELOPER_MACHINE = resources.MachineResources(
+    cores=16, memory_gb=32.0, cores_source="cpu_count", memory_source="psutil",
+)
+
+
+def test_report_only_warns_below_the_measured_sampling_rate():
+    # A 1 % popsim fixture on a 32 GB machine: 32 - 8 = 24 GB budget < 30 GB, so
+    # the mismatch fires -- but the 30 GB figure has never been measured at 1 %,
+    # so it must not abort a run that worked before this gate existed.
+    config = dict(PRODUCTION_CONFIG, sampling_rate=0.01)
+    report = resources.build_report(config, machine=DEVELOPER_MACHINE, env={})
+    assert not [v for v in report.violations if v.severity == "error"]
+    warning = next(v for v in report.violations
+                   if v.key == "braunschweig.population.popsim.num_workers")
+    assert warning.severity == "warning"
+    # The caveat has to be stated plainly, not merely implied by the severity.
+    assert "100%-SCALE measurement" in warning.message
+    assert "has NOT been measured" in warning.message
+
+
+def test_report_errors_at_the_measured_sampling_rate():
+    # The same machine and the same mismatch at the scale the figure describes.
+    report = resources.build_report(PRODUCTION_CONFIG, machine=DEVELOPER_MACHINE, env={})
+    error = next(v for v in report.violations if v.severity == "error")
+    assert error.key == "braunschweig.population.popsim.num_workers"
+
+
+def test_report_treats_a_missing_sampling_rate_as_not_full_scale():
+    config = {k: v for k, v in PRODUCTION_CONFIG.items() if k != "sampling_rate"}
+    report = resources.build_report(config, machine=DEVELOPER_MACHINE, env={})
+    assert not [v for v in report.violations if v.severity == "error"]
+
+
+def test_report_errors_at_any_scale_once_the_operator_asserts_the_figure():
+    # Setting braunschweig.population.popsim.worker_memory_gb explicitly IS the
+    # operator asserting that the per-worker figure applies to this run, so the
+    # mismatch becomes fatal again regardless of sampling rate.
+    config = dict(PRODUCTION_CONFIG, sampling_rate=0.01)
+    config[resources.KEY_WORKER_MEMORY_GB] = 30.0
+    report = resources.build_report(config, machine=DEVELOPER_MACHINE, env={})
+    error = next(v for v in report.violations if v.severity == "error")
+    assert error.key == "braunschweig.population.popsim.num_workers"
+
+
+@pytest.mark.parametrize("fixture_name", [
+    "config_popsim_mid_braunschweig.yml",
+    "config_smoke_popsim_mid_mini.yml",
+])
+def test_committed_popsim_fixtures_still_start_on_a_32gb_machine(fixture_name):
+    # Regression for the concrete defect: both committed 1 % popsim fixtures
+    # (population.method popsim_mid, num_workers 3) aborted before any stage ran
+    # on a machine below ~38 GB. Reads the REAL fixture file, so a future edit to
+    # it is covered too.
+    import yaml
+    fixture_path = REPO / "configs" / "fixtures" / fixture_name
+    with open(fixture_path, encoding="utf-8") as handle:
+        config = (yaml.safe_load(handle) or {}).get("config", {}) or {}
+    assert config.get("braunschweig.population.method") == "popsim_mid", (
+        f"{fixture_name} no longer selects popsim_mid; this regression test is "
+        "pinned to the popsim path and must be updated deliberately")
+    report = resources.build_report(config, machine=DEVELOPER_MACHINE, env={})
+    resources.enforce_report(report)   # must NOT raise
+    assert not [v for v in report.violations if v.severity == "error"]
+
+
 def test_report_on_a_fitting_machine_has_no_violations():
     big = resources.MachineResources(
         cores=64, memory_gb=256.0, cores_source="sched_getaffinity", memory_source="psutil",
@@ -135,7 +217,51 @@ def test_report_includes_a_reporting_only_chainsolver_processes_entry():
     chainsolver = next(
         r for r in report.resolutions if r.key == "braunschweig.chainsolvers.processes")
     assert chainsolver.origin == "reported"
-    assert chainsolver.effective == SERVER.cores - 2   # core budget alone
+    # The canonical config leaves this key at the auto sentinel 0, so the preview
+    # is the whole core budget.
+    assert chainsolver.effective == SERVER.cores - 2
+
+
+def test_report_previews_a_positive_chainsolver_pin_and_not_the_core_budget():
+    # Final review B6: the preview hardcoded the core budget and ignored the pin,
+    # so `braunschweig.chainsolvers.processes: 8` was logged and written into
+    # run_provenance_<stamp>.json as 62. That destroys the evidence of the server
+    # A/B this mechanism owes (shards: 62, processes: 8 vs 62 -- both arms would
+    # have recorded effective 62).
+    config = dict(PRODUCTION_CONFIG, **{"braunschweig.chainsolvers.processes": 8})
+    report = resources.build_report(config, machine=SERVER, env={})
+    chainsolver = next(
+        r for r in report.resolutions if r.key == "braunschweig.chainsolvers.processes")
+    assert chainsolver.origin == "reported"
+    assert chainsolver.configured == 8
+    assert chainsolver.effective == 8
+    # The note must say the startup preview is a ceiling, not the final count.
+    assert "LIVE" in chainsolver.note and "stage start" in chainsolver.note
+
+
+def test_report_caps_a_chainsolver_pin_above_the_core_budget():
+    config = dict(PRODUCTION_CONFIG, **{"braunschweig.chainsolvers.processes": 999})
+    report = resources.build_report(config, machine=SERVER, env={})
+    chainsolver = next(
+        r for r in report.resolutions if r.key == "braunschweig.chainsolvers.processes")
+    assert chainsolver.effective == SERVER.cores - 2
+
+
+def test_report_falls_back_to_the_synpp_processes_key_for_the_chainsolver_preview():
+    # The stage does the same: braunschweig.chainsolvers.processes unset (or null)
+    # defers to the synpp-level `processes` key.
+    config = {k: v for k, v in PRODUCTION_CONFIG.items()
+              if k != "braunschweig.chainsolvers.processes"}
+    report = resources.build_report(config, machine=SERVER, env={})
+    chainsolver = next(
+        r for r in report.resolutions if r.key == "braunschweig.chainsolvers.processes")
+    assert chainsolver.effective == 32   # the config's `processes` pin, not 62
+
+
+def test_report_rejects_an_unusable_chainsolver_pin_at_the_run_start():
+    config = dict(PRODUCTION_CONFIG, **{"braunschweig.chainsolvers.processes": -4})
+    with pytest.raises(ValueError, match="braunschweig.chainsolvers.processes"):
+        resources.build_report(config, machine=SERVER, env={})
 
 
 def test_as_dict_is_json_serialisable_for_the_run_provenance():
