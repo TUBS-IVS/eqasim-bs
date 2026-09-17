@@ -79,7 +79,7 @@ def test_placement_income_key_registered_and_default_on():
         def __init__(self):
             self.defaults = {}
 
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             self.defaults[key] = default
             return default
 

@@ -355,11 +355,14 @@ class _ConfigureCtx:
     Mirrors synpp's ``ConfigurationContext.config(name, default)``: a key's
     value is resolved once (the first-seen default) and stays fixed for
     subsequent re-reads without a default -- configure() re-reads several
-    flags this way right after declaring them."""
+    flags this way right after declaring them. ``volatile`` is accepted (like
+    synpp 1.6.2's real signature, which uses it to exclude the key from the
+    stage-hash) but not recorded here -- this stub only tests declared VALUES,
+    never the cache hash itself."""
     def __init__(self):
         self.registered = {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
         if key not in self.registered:
             self.registered[key] = default
         return self.registered[key]

@@ -232,7 +232,8 @@ config:
   remode_carless_car_legs: true
 
   # Secondary-location chain solving: parallelised (seeded per shard ->
-  # reproducible for a fixed worker count).
+  # reproducible for a fixed shard count, independent of the worker count).
+  # braunschweig.chainsolvers.shards is left at its default (62) here.
   braunschweig.chainsolvers.parallel: true
   braunschweig.chainsolvers.processes: 8
 

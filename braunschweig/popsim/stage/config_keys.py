@@ -19,6 +19,15 @@ KEY_POPSIMPREP = "braunschweig.population.popsim.popsimprep_dir"
 KEY_UV = "braunschweig.population.popsim.uv_path"
 KEY_MAX_CELLS = "braunschweig.population.popsim.max_cells"
 KEY_WORKERS = "braunschweig.population.popsim.num_workers"
+# Measured peak memory of ONE PopulationSim batch worker, in gigabytes. Bounds
+# num_workers against the machine's RAM rather than its core count -- the worker
+# count is memory-bound (2026-07-10 OOM post-mortem: 25-30 GB per worker), so a
+# core-count-derived value would OOM the box. Owned by braunschweig.resources
+# (single definition); re-exported here so the popsim stage keeps its
+# established "all my config keys live in config_keys" import style. Declared
+# volatile in configure(): an operational bound with no influence on any result,
+# so changing it never invalidates the (expensive) popsim stage cache.
+from braunschweig.resources import KEY_WORKER_MEMORY_GB  # noqa: F401
 KEY_WORK_DIR = "braunschweig.population.popsim.work_dir"
 # Hard per-batch PopulationSim wall-clock limit (seconds). A batch exceeding this is
 # killed and flagged "failed (timeout)". Heavy control sets (tier1/2 + stratify) make

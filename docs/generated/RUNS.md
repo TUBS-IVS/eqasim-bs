@@ -10,6 +10,7 @@ WAS; a completed run is not validation and convergence is not validation.
 | Run | Date | Classification | Sampling | Execution | First validation entry |
 |---|---|---|---|---|---|
 | [25pct-parking](../runs/25pct-parking.yml) | unknown | ab_test | 25% | unknown | MiD validation report (parking vs no-parking): referenced in docs/features/run-analysis.md; date unknown |
+| [chainsolver-worker-private-memory-2026-09-17](../runs/chainsolver-worker-private-memory-2026-09-17.yml) | 2026-09-17 | validation | 100 % | completed | private per-worker memory (arm0, 2026-09-05 19:30:26): driver RSS 19.60 GB at the stage's memory minimum, available-memory drop 37.87 G |
 | [test-environment-2026-09-15](../runs/test-environment-2026-09-15.yml) | 2026-09-15 | wiring_proof | unknown | completed | Post-main-merge regression gate: Linux/WSL: 5788 passed, 84 skipped, 4 deselected; exit 0. |
 | [smoke-mid-passenger-availability-2026-09-15](../runs/smoke-mid-passenger-availability-2026-09-15.yml) | 2026-09-15 | smoke, wiring_proof, ab_test | full available raw donor sample afte | completed | Full Python regression suite: 5689 tests passed, 91 skipped, 0 failed, with 29 existing warnings in 374.25 sec |
 | [performance-equivalence-2026-09-15](../runs/performance-equivalence-2026-09-15.yml) | 2026-09-15 | ab_test, wiring_proof | bounded fixtures plus full productio | completed | production-size typed-home array runtime and exactness: 547.419 s versus 410.853 s; 136.565 s (24.95%) reduction, 1.332x speedup; 558279 |

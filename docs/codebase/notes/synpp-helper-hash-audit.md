@@ -26,8 +26,9 @@
 > modules that had joined `_DEFERRED_HELPER_MODULE_NAMES`
 > (`employment_grid`, `folders`, `kreis_attribute_control`, `placement_income`,
 > `zensus_employment_age`, `attributes`, `trips`) after the 44/46 figure was
-> written and after the 45/47 addendum. The re-run confirms it independently:
-> required is 45, exactly as that addendum predicted, and covered is 54 = 47 + 7.
+> written and after the 45/47 addendum. The 2026-09-09 re-run confirmed it independently:
+> required was 45 that day, exactly as that addendum predicted, and covered 54 = 47 + 7.
+> (The table below carries the CURRENT pair; do not read these historical figures as it.)
 > The codebase also grew from 564 to 620 scanned `.py` files and from 230 to 242
 > stages, and — the substantive change — the number of stages whose `validate()`
 > hashes Python source at all rose from **5 to 24** (16 at the #327 re-audit, 24 after
@@ -216,8 +217,8 @@ files were scanned in total across the five roots; 242 of them define both
 `braunschweig` 94. 2026-08-14: 564 files, 230 stages, `braunschweig` 84 — every
 stage added since is under `braunschweig`.)
 
-Category totals from this re-run: **(a) 144** stages with no first-party helper,
-**(b) 23** with helpers and complete coverage, **(c) 75** with helpers and no or
+Category totals from this re-run: **(a) 143** stages with no first-party helper,
+**(b) 23** with helpers and complete coverage, **(c) 76** with helpers and no or
 incomplete coverage. The 2026-09-09 figures were 144 / 16 / 80 and the
 2026-08-14 ones 143 / 2 / 86. Category (b) grew in two waves: on 2026-09-09
 because the `braunschweig.synthesis.commute_day` family and
@@ -330,11 +331,12 @@ otherwise qualify for both (b) and (d) is listed under (b) (coverage is what
 determines cache correctness) and flagged as also exhibiting the (d) pattern,
 rather than invented as a fifth category.
 
-## Category (c) — has helpers, no or incomplete coverage (75 stages, 2026-09-17)
+## Category (c) — has helpers, no or incomplete coverage (76 stages, 2026-09-17)
 
 > **The per-name lists in this section are the 2026-08-14 enumeration (86 stages)**
 > and were NOT re-typed by either re-audit; only the COUNT above comes from
-> the re-run. It fell 86 -> 80 -> 75 as stages gained complete tokens and left for (b). Regenerate the names with
+> the re-run. It moved 86 -> 80 -> 76 as stages gained complete tokens and left for (b),
+> against new stages arriving. Regenerate the names with
 > `python scripts/audit_synpp_helper_hash.py . --json <out.json>` and read the
 > `required_helpers` / `uncovered` fields, rather than trusting a name below to still
 > be in this category. One known movement since 2026-08-14:
