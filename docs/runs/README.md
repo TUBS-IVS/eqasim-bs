@@ -8,6 +8,12 @@ measured_vs_reference` / `behaviourally_validated` by pointing at manifests
 here. The browsable table is generated to
 [`docs/generated/RUNS.md`](../generated/RUNS.md); never edit that file.
 
+**Start from [`TEMPLATE.yml`](TEMPLATE.yml)** — a blank, commented manifest carrying every key
+the schema allows, the rules below, and the standard artifact set of a commute-day run. It is the
+one `*.yml` here that is *not* a run: `registries.load_manifests` skips it by name, so it never
+becomes a row of the generated table, and a test parses it against the manifest schema so it
+cannot silently rot (ADR-0128).
+
 Manifest rules (carried over from the retired `RUNS.md` ledger, archived at
 [`docs/archive/RUNS_ledger_2026-08-13.md`](../archive/RUNS_ledger_2026-08-13.md)):
 

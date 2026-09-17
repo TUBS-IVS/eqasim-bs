@@ -6,6 +6,8 @@ any distance), determinism under a seeded RNG, and the has_car-unknown hard-excl
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -423,3 +425,143 @@ def test_unresolved_education_flags_take_the_restrictive_reading():
     assert len(matches) == 0
     assert diagnostics["n_donors_with_education_leg"] == 1        # NaN donor read as "has one"
     assert diagnostics["n_persons_without_education_location"] == 1  # NaN person read as "none"
+
+
+# --------------------------------------------------------------- pool size per cell (issue #378)
+# ADR-0104 check 4's fourth diagnostic. Two complementary quantities, because neither alone
+# answers the check: the CENSUS is a property of the donor pool (how many donors exist per hard
+# cell, including cells nobody was drawn from), the REALISED size is a property of the draw (how
+# many donors the person's own day was actually drawn from).
+
+
+def _census_entry(diagnostics, distance_class, *, escort=False, children=False, car=True):
+    """The single census record for one hard cell, or ``None`` when the cell is not reported."""
+    for record in diagnostics["donor_pool_size_by_hard_cell"]:
+        if (record["distance_class"] == distance_class
+                and record["has_active_escort"] is escort
+                and record["has_children_u14"] is children
+                and record["has_car"] is car):
+            return record
+    return None
+
+
+def test_donor_pool_size_by_hard_cell_counts_donors_per_cell():
+    matches, diagnostics = _match(_persons_home_fixture(), _donors_fixture(),
+                                  np.random.RandomState(0))
+
+    # d1 is the only donor in (10_25, no escort, no children, car); d2 the only one in 25_50
+    # -- d3 shares 25_50 with d2 but is has_car-unknown and therefore in no cell at all.
+    assert _census_entry(diagnostics, "10_25")["n_donors"] == 1
+    assert _census_entry(diagnostics, "25_50")["n_donors"] == 1
+    assert sum(record["n_donors"] for record in diagnostics["donor_pool_size_by_hard_cell"]) == 2
+
+
+def test_donor_pool_size_by_hard_cell_omits_has_car_unknown_donors():
+    """A has_car-unknown donor is excluded from the whole pass, so it is in no cell either."""
+    _matches, diagnostics = _match(_persons_home_fixture(), _donors_fixture(),
+                                   np.random.RandomState(0))
+
+    assert diagnostics["n_donors_hard_excluded_has_car_unknown"] == 1
+    assert all(record["has_car"] is True
+               for record in diagnostics["donor_pool_size_by_hard_cell"])
+
+
+def test_donor_pool_size_by_hard_cell_is_json_safe_and_deterministically_ordered():
+    """The census is serialised into state_diagnostics.json, so it must be plain and stable."""
+    _matches, first = _match(_persons_home_fixture(), _donors_fixture(),
+                             np.random.RandomState(0))
+    _matches2, second = _match(_persons_home_fixture(), _donors_fixture(),
+                               np.random.RandomState(0))
+
+    census = first["donor_pool_size_by_hard_cell"]
+    assert census == second["donor_pool_size_by_hard_cell"]
+    assert json.loads(json.dumps(census, allow_nan=False)) == census
+    for record in census:
+        assert isinstance(record["n_donors"], int)
+        assert isinstance(record["distance_class"], str)
+
+
+def test_matched_cell_size_records_how_many_donors_the_day_was_drawn_from():
+    """p1 and p2 are each drawn from a cell of exactly one donor (d1 / d2)."""
+    _matches, diagnostics = _match(_persons_home_fixture(), _donors_fixture(),
+                                   np.random.RandomState(0))
+
+    by_level = diagnostics["matched_cell_size_by_level"]
+    assert by_level["0"]["n_persons"] == 1 and by_level["0"]["min"] == 1
+    assert by_level["4"]["n_persons"] == 1 and by_level["4"]["max"] == 1
+    # p3 is not replaceable and therefore contributes to no level.
+    assert sum(cell["n_persons"] for cell in by_level.values()) == 2
+    assert diagnostics["n_persons_matched_from_single_donor_cell"] == 2
+
+
+def test_matched_cell_size_reports_the_full_candidate_count_not_one():
+    """With several eligible donors the realised size is the size of the CELL, not the draw."""
+    persons = pd.DataFrame({
+        "person_id": ["p1"], "assigned_distance_class": ["10_25"], "sex": ["female"],
+        "age_class": [1], "household_size": [2], "has_license": [True],
+        "has_active_escort": [False], "has_children_u14": [False], "has_car": [True],
+    })
+    donors = pd.DataFrame({
+        "donor_id": ["d1", "d2", "d3"], "distance_class": ["10_25"] * 3,
+        "sex": ["female"] * 3, "age_class": [1] * 3, "household_size": [2] * 3,
+        "has_license": [True] * 3, "has_active_escort": [False] * 3,
+        "has_children_u14": [False] * 3, "has_car": [True] * 3,
+    })
+
+    _matches, diagnostics = _match(persons, donors, np.random.RandomState(0))
+
+    assert diagnostics["matched_cell_size_by_level"]["0"] == {
+        "n_persons": 1, "min": 3, "p25": 3.0, "median": 3.0, "p75": 3.0, "max": 3,
+        "n_persons_single_donor_cell": 0}
+    assert diagnostics["n_persons_matched_from_single_donor_cell"] == 0
+
+
+def test_matched_cell_size_by_level_omits_levels_nobody_matched_at():
+    """Dense zero rows would only dilute the distribution; matched_by_level stays the dense one."""
+    _matches, diagnostics = _match(_persons_home_fixture(), _donors_fixture(),
+                                   np.random.RandomState(0))
+
+    assert set(diagnostics["matched_cell_size_by_level"]) == {"0", "4"}
+    assert set(diagnostics["matched_by_level"]) == set(range(matching.MAX_COARSENING_LEVEL + 1))
+
+
+def test_donor_pool_size_by_hard_cell_never_reads_an_unresolved_flag_as_true():
+    """PR #417 review: ``bool(np.nan)`` is ``True`` and ``bool(pd.NA)`` RAISES, so converting a
+    grouped cell key straight to ``bool`` would silently file an unresolved donor under the
+    positive value (or abort). An unresolved flag is reported as the literal "unknown" -- the
+    same word ``donor_pool.DISTANCE_CLASS_UNKNOWN`` and ``state_stage`` already use."""
+    persons = _persons_home_fixture()
+    donors = _donors_fixture()
+    donors["has_children_u14"] = [False, np.nan, False]
+
+    _matches, diagnostics = _match(persons, donors, np.random.RandomState(0))
+
+    census = diagnostics["donor_pool_size_by_hard_cell"]
+    values = {record["has_children_u14"] for record in census}
+    assert "unknown" in values and True not in values
+    assert json.loads(json.dumps(census, allow_nan=False)) == census
+
+
+def test_donor_pool_size_by_hard_cell_survives_a_nullable_boolean_dtype():
+    """``pd.NA`` (nullable ``boolean`` dtype) must not abort the whole matching pass."""
+    persons = _persons_home_fixture()
+    donors = _donors_fixture()
+    donors["has_active_escort"] = pd.array([False, pd.NA, False], dtype="boolean")
+
+    _matches, diagnostics = _match(persons, donors, np.random.RandomState(0))
+
+    assert "unknown" in {record["has_active_escort"]
+                         for record in diagnostics["donor_pool_size_by_hard_cell"]}
+
+
+def test_donor_pool_size_by_hard_cell_accounts_for_every_eligible_donor():
+    """The census is a partition: its counts add back up to the donors the matching could use."""
+    donors = _donors_fixture()
+    donors["distance_class"] = ["10_25", np.nan, "25_50"]
+
+    _matches, diagnostics = _match(_persons_home_fixture(), donors, np.random.RandomState(0))
+
+    census = diagnostics["donor_pool_size_by_hard_cell"]
+    # d3 is has_car-unknown and excluded from the pass entirely, so 2 of the 3 remain.
+    assert sum(record["n_donors"] for record in census) == 2
+    assert "unknown" in {record["distance_class"] for record in census}
