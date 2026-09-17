@@ -469,10 +469,24 @@ def sibling_age_histogram(wege: pd.DataFrame, *, floors=(16, 14, 12, 10, 6),
     ``escort_passive_joint_surrogate_min_age_years`` default (ADR-0127): a marginal table,
     because with a low floor a sibling can also WIN over an adult that is close in time, which
     is not the question. Restricted to passive legs of minors (HP_ALTER <= 17).
+
+    Raises
+    ------
+    ValueError
+        When a floor in ``floors`` is at or above ``reference_floor`` (named): the histogram
+        reports floors BELOW the reference, so such a floor could never describe a leg newly
+        paired relative to it.
     """
-    from braunschweig.popsim.escort_pairing import (
-        PASSIVE_W_ZWECK, STATUS_PAIRED, pair_passive_legs,
-    )
+    bad_floors = [floor for floor in floors if floor >= reference_floor]
+    if bad_floors:
+        raise ValueError(
+            f"{_LOG_TAG} floor(s) {bad_floors} are at or above reference_floor "
+            f"{reference_floor}; every floor in `floors` must be strictly below the "
+            "reference floor it is measured against."
+        )
+    # STATUS_PAIRED is already imported at module level; only the two names not imported
+    # there are re-imported here.
+    from braunschweig.popsim.escort_pairing import PASSIVE_W_ZWECK, pair_passive_legs
     age = wege.drop_duplicates(["H_ID", "P_ID"]).set_index(["H_ID", "P_ID"])["HP_ALTER"]
     minors = ((wege["W_ZWECK"] == PASSIVE_W_ZWECK)
               & (pd.to_numeric(wege["HP_ALTER"], errors="coerce") <= 17)).to_numpy()

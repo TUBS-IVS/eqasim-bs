@@ -268,3 +268,12 @@ def test_sibling_age_histogram_reports_the_marginal_gain_per_floor():
     assert by_floor.loc[14, "n_newly_paired_vs_reference"] == 1       # the 15-year-old sibling
     assert by_floor.loc[14, "share_of_unpaired_at_reference"] == pytest.approx(1.0)
     assert by_floor.loc[14, "partner_age_histogram"] == "15:1"
+
+
+def test_sibling_age_histogram_rejects_a_floor_at_or_above_the_reference():
+    """M9: a floor could never describe a leg newly paired relative to the reference if it
+    sits at or above that reference floor -- named, not silently accepted."""
+    with pytest.raises(ValueError, match="reference_floor"):
+        sibling_age_histogram(_wege_two_households(), floors=(16, 18), reference_floor=18)
+    with pytest.raises(ValueError, match="20"):
+        sibling_age_histogram(_wege_two_households(), floors=(16, 20), reference_floor=18)

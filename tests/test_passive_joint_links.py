@@ -669,3 +669,126 @@ def test_a_successful_rescue_logs_the_rate_at_info(caplog):
     lines = [r for r in caplog.records if "surrogate rescue" in r.message]
     assert len(lines) == 1 and lines[0].levelname == "INFO"
     assert "2/3" in lines[0].message and "(66.7%)" in lines[0].message
+
+
+def _no_links():
+    return pd.DataFrame({c: pd.Series(dtype="int64") for c in ("child_person_id",
+                         "child_activity_index", "adult_person_id", "adult_activity_index")}
+                        | {"adult_purpose": pd.Series(dtype=object)})
+
+
+def test_tie_break_prefers_the_lower_adult_person_id_and_is_frame_order_independent():
+    """Spec section 6 / ADR-0127 decision 2 ("deterministic tie-break"): an EXACT tie on
+    gap breaks on the lowest adult_person_id. Household 90: child 50 (8 y) lost its donor
+    adult and shops at 08:00; adults 51 and 52 (unrelated ages, both admissible) BOTH shop
+    exactly 5 minutes later -- a tie the sort keys must resolve the same way regardless of
+    the trips frame's row order."""
+    persons = pd.DataFrame({
+        "person_id":    [50,  51,  52],
+        "household_id": [90,  90,  90],
+        "source_H_ID":  [990, 990, 990],
+        "source_P_ID":  [5,   6,   7],
+        "HP_ALTER":     [8,   30,  25],
+    })
+    trips = pd.DataFrame({
+        "person_id":               [50,      51,      52],
+        "trip_index":              [0,       0,       0],
+        "following_purpose":       ["shop",  "shop",  "shop"],
+        "departure_time":          [28800.0, 29100.0, 29100.0],
+        "W_ID":                    [1,       2,       3],
+        "passive_pair_status":     ["paired", np.nan,  np.nan],
+        "passive_pair_adult_p_id": [1.0,     np.nan,  np.nan],
+        "passive_pair_adult_w_id": [9.0,     np.nan,  np.nan],
+    })
+    surrogate_links, _stats = rescue_with_surrogates(
+        _no_links(), persons, trips, max_gap_minutes=15.0, min_age_years=14,
+        require_same_purpose=True)
+    assert len(surrogate_links) == 1
+    assert surrogate_links["adult_person_id"].iloc[0] == 51
+    assert surrogate_links["gap_minutes"].iloc[0] == pytest.approx(5.0)
+
+    # Reversing the trips frame's row order must not change which surrogate is chosen.
+    reversed_links, _stats = rescue_with_surrogates(
+        _no_links(), persons, trips.iloc[::-1].reset_index(drop=True),
+        max_gap_minutes=15.0, min_age_years=14, require_same_purpose=True)
+    assert reversed_links["adult_person_id"].iloc[0] == 51
+    assert reversed_links["gap_minutes"].iloc[0] == pytest.approx(5.0)
+
+
+def test_tie_break_within_one_adult_prefers_the_earlier_activity():
+    """Second tie-break key: two admissible activities of the SAME adult at an EXACT tie
+    on gap resolve on the lower adult_trip_index (adult_activity_index). Household 95:
+    child 60 lost its donor adult and shops at 08:00; adult 61 shops both 5 minutes BEFORE
+    (trip_index 0) and 5 minutes AFTER (trip_index 1) -- a tie within one person."""
+    persons = pd.DataFrame({
+        "person_id":    [60,  61],
+        "household_id": [95,  95],
+        "source_H_ID":  [995, 995],
+        "source_P_ID":  [8,   9],
+        "HP_ALTER":     [9,   35],
+    })
+    trips = pd.DataFrame({
+        "person_id":               [60,      61,      61],
+        "trip_index":              [0,       0,       1],
+        "following_purpose":       ["shop",  "shop",  "shop"],
+        "departure_time":          [28800.0, 28500.0, 29100.0],
+        "W_ID":                    [1,       2,       3],
+        "passive_pair_status":     ["paired", np.nan,  np.nan],
+        "passive_pair_adult_p_id": [1.0,     np.nan,  np.nan],
+        "passive_pair_adult_w_id": [9.0,     np.nan,  np.nan],
+    })
+    surrogate_links, _stats = rescue_with_surrogates(
+        _no_links(), persons, trips, max_gap_minutes=15.0, min_age_years=14,
+        require_same_purpose=True)
+    assert len(surrogate_links) == 1
+    assert surrogate_links["adult_person_id"].iloc[0] == 61
+    assert surrogate_links["adult_activity_index"].iloc[0] == 1
+    assert surrogate_links["gap_minutes"].iloc[0] == pytest.approx(5.0)
+
+
+def test_rescue_candidate_with_a_nan_departure_time_raises_naming_it():
+    """M3: a missing child departure time on an otherwise rescuable leg is a wiring defect
+    (check the trips frame's departure_time column), not a legitimate gap-exceeded
+    exclusion -- mirrors _paired_passive_legs's NaN-pairing-id raise."""
+    persons = pd.DataFrame({"person_id": [20, 22], "household_id": [70, 70],
+                            "source_H_ID": [950, 960], "source_P_ID": [2, 1], "HP_ALTER": [6, 40]})
+    trips = pd.DataFrame({
+        "person_id": [20, 22], "trip_index": [0, 0], "following_purpose": ["shop", "shop"],
+        "departure_time": [np.nan, 31800.0], "W_ID": [1, 3],
+        "passive_pair_status": ["paired", np.nan],
+        "passive_pair_adult_p_id": [1.0, np.nan], "passive_pair_adult_w_id": [9.0, np.nan],
+    })
+    identity, _ = build_passive_joint_links(persons, trips)
+    with pytest.raises(ValueError, match="child_departure_time") as excinfo:
+        rescue_with_surrogates(identity, persons, trips, max_gap_minutes=15.0,
+                               min_age_years=14, require_same_purpose=True)
+    message = str(excinfo.value)
+    assert "1 rescue-candidate paired passive leg" in message
+    assert "person_id 20" in message and "child_activity_index 1" in message
+
+
+def test_rescue_with_an_uncoercible_hp_alter_raises_naming_the_person():
+    """M4: the persons frame comes from one pipeline, so an HP_ALTER that cannot be
+    coerced to a number is a wiring defect, not a legitimate drop from the candidate pool
+    (today ``errors="coerce"`` silently excluded such a person)."""
+    persons = pd.DataFrame({
+        "person_id": [20, 21, 22], "household_id": [70, 70, 70],
+        "source_H_ID": [950, 950, 960], "source_P_ID": [2, 3, 1],
+        "HP_ALTER": [6, "not-a-number", 40],
+    })
+    trips = pd.DataFrame({
+        "person_id": [20, 21, 22], "trip_index": [0, 0, 0],
+        "following_purpose": ["shop", "shop", "shop"],
+        "departure_time": [28800.0, 28900.0, 31800.0], "W_ID": [1, 2, 3],
+        "passive_pair_status": ["paired", np.nan, np.nan],
+        "passive_pair_adult_p_id": [1.0, np.nan, np.nan],
+        "passive_pair_adult_w_id": [9.0, np.nan, np.nan],
+    })
+    identity, _ = build_passive_joint_links(persons, trips)
+    with pytest.raises(ValueError, match="HP_ALTER") as excinfo:
+        rescue_with_surrogates(identity, persons, trips, max_gap_minutes=15.0,
+                               min_age_years=14, require_same_purpose=True)
+    message = str(excinfo.value)
+    assert "1 person(s)" in message
+    # The offending person_id is named (repr'd, so plain "21" or "np.int64(21)" both match).
+    assert "21" in message

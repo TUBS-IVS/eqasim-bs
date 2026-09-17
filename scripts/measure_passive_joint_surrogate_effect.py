@@ -73,8 +73,6 @@ from scripts.measure_passive_joint_surrogate_adults import (         # noqa: E40
     PERSONS_STAGE, TRIPS_STAGE, load_stage,
 )
 
-logger = logging.getLogger(__name__)
-
 #: synpp stage aliased to ``synthesis.population.spatial.home.locations`` in this model; its
 #: output honours the upstream eqasim contract consumed by
 #: ``synthesis/population/spatial/locations.py``: one row per household with ``household_id``
@@ -117,9 +115,23 @@ def surrogate_effect_rows(arm: str, surrogate_links: pd.DataFrame,
                           locations_arm: gpd.GeoDataFrame, locations_off: gpd.GeoDataFrame,
                           homes: gpd.GeoDataFrame, persons: pd.DataFrame,
                           child_purposes: pd.DataFrame) -> pd.DataFrame:
-    """One row per surrogate link with the four realised distances (metres). Pure."""
+    """One row per surrogate link with the four realised distances (metres). Pure.
+
+    Raises
+    ------
+    ValueError
+        When ``locations_arm``, ``locations_off`` and ``homes`` do not all share one CRS
+        (named) -- a mismatch would silently produce wrong metres in the distance columns,
+        which is exactly the table the run manifest quotes.
+    """
     if len(surrogate_links) == 0:
         return pd.DataFrame(columns=EFFECT_COLUMNS)
+    if not (locations_arm.crs == locations_off.crs == homes.crs):
+        raise ValueError(
+            f"{_LOG_TAG} inconsistent CRS across inputs: {arm} arm locations "
+            f"{locations_arm.crs}, OFF arm locations {locations_off.crs}, homes "
+            f"{homes.crs}; distances can only be computed with all three in the same CRS."
+        )
     links = surrogate_links.copy()
     links["arm"] = arm
     purposes = child_purposes.assign(child_activity_index=child_purposes["trip_index"] + 1)[
@@ -148,8 +160,15 @@ def surrogate_effect_rows(arm: str, surrogate_links: pd.DataFrame,
     home_by_household = gpd.GeoSeries(homes["geometry"].to_numpy(),
                                       index=homes["household_id"].astype("int64"), crs=homes.crs)
     home = home_by_household.reindex(links["household_id"].astype("int64"))
-    if home.isna().any():
-        raise ValueError(f"{_LOG_TAG} a rescued child's household has no home location.")
+    missing_home = home.isna().to_numpy()
+    if missing_home.any():
+        first = links.loc[missing_home, ["child_person_id", "household_id"]].iloc[0]
+        raise ValueError(
+            f"{_LOG_TAG} {int(missing_home.sum())} rescued child activity row(s) reference a "
+            f"household with no home location (first: child_person_id "
+            f"{int(first['child_person_id'])}, household_id {int(first['household_id'])}); "
+            "the homes frame and the link table must come from the same run."
+        )
     home = gpd.GeoSeries(home.to_numpy(), crs=homes.crs)
 
     links["dist_child_adult_m_arm"] = child_arm.distance(adult_arm, align=False).to_numpy()

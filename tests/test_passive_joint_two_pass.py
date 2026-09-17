@@ -531,6 +531,13 @@ def _persons_without_plan_source():
     return pd.DataFrame({"person_id": [1, 2], "household_id": [10, 10]})
 
 
+def _persons_without_hp_alter():
+    """A persons frame that DOES carry the plan-source ids the identity link needs, but not
+    the age column the surrogate rescue additionally requires (M10)."""
+    return pd.DataFrame({"person_id": [1, 2], "household_id": [10, 10],
+                        "source_H_ID": [100, 100], "source_P_ID": [1, 2]})
+
+
 @pytest.fixture
 def fake_chainsolvers_module(monkeypatch):
     """Stub out the optional ``chainsolvers`` package for the duration of one test.
@@ -575,6 +582,27 @@ def test_execute_with_the_flag_on_requires_the_plan_source_columns(fake_chainsol
     assert "synthesis.population.sampled" in message
     # The ON branch is the one that reads the persons frame a second time (the first read
     # is _prepare_primary's); the guard fires on that second read, before any link build.
+    assert ctx.stage_reads.count("synthesis.population.sampled") == 2
+
+
+def test_execute_with_the_flag_on_and_the_surrogate_on_requires_hp_alter(fake_chainsolvers_module):
+    """Parametrised twin of the test above (M10): with escort_passive_joint_surrogate ALSO
+    on, the persons_columns guard additionally requires HP_ALTER (the surrogate age floor
+    reads it) and names both the missing column and the surrogate key in the error, not
+    just escort_passive_joint_location. Previously only the server smoke exercised this
+    branch of the guard; test_execute_with_the_flag_on_requires_the_plan_source_columns
+    above pins escort_passive_joint_surrogate=False (correctly) so HP_ALTER was never
+    required there."""
+    ctx = _ExecuteCtx(df_persons=_persons_without_hp_alter(),
+                      escort_passive_joint_location=True,
+                      escort_passive_joint_surrogate=True)
+    with pytest.raises(RuntimeError) as excinfo:
+        sc.execute(ctx)
+    message = str(excinfo.value)
+    assert message.startswith("[braunschweig.secondary_chainsolvers]")
+    assert "escort_passive_joint_location" in message
+    assert "escort_passive_joint_surrogate" in message
+    assert "HP_ALTER" in message
     assert ctx.stage_reads.count("synthesis.population.sampled") == 2
 
 

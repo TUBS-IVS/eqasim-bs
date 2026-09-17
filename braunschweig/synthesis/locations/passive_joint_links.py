@@ -436,18 +436,22 @@ def _rescue_set(df_persons: pd.DataFrame, df_trips: pd.DataFrame) -> pd.DataFram
 
 
 def _log_rescue_rates(stats: dict, max_gap_minutes: float, min_age_years: int,
-                      require_same_purpose: bool, *, material: bool) -> None:
+                      require_same_purpose: bool) -> None:
     """One rate line per run (CLAUDE.md fallback transparency).
 
-    ``material`` says whether at least one admissible candidate activity existed for some
-    eligible leg; a rescue that links NOTHING despite material is a failure signal (a broken
-    household join, a time-unit mismatch) and is logged at WARNING.
+    ``material`` (derived HERE from ``stats``, the same formula
+    ``secondary_chainsolvers._passive_joint_surrogate_summary`` uses so the two definitions
+    cannot drift apart) says whether at least one admissible candidate activity existed for
+    some eligible leg; a rescue that links NOTHING despite material is a failure signal (a
+    broken household join, a time-unit mismatch) and is logged at WARNING.
     """
     n = stats["n_rescue_candidates"]
     if n == 0:
         logger.info("%s surrogate rescue: no adult-not-in-household legs; nothing to rescue.",
                     _LOG_TAG)
         return
+    material = (n - stats["n_rescue_ineligible_child_purpose"]
+               - stats["n_rescue_no_candidate_activity"]) > 0
     dead = material and stats["n_surrogate_linked"] == 0
     logger.log(
         logging.WARNING if dead else logging.INFO,
@@ -512,7 +516,13 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
     Raises
     ------
     ValueError
-        On a missing required column (named) or a non-positive parameter (named).
+        On a missing required column (named), a non-positive parameter (named), a
+        rescue-candidate paired passive leg whose ``child_departure_time`` is NaN (named,
+        mirroring :func:`_paired_passive_legs`'s NaN-pairing-id raise -- a wiring defect, not
+        a legitimate ``gap_exceeded`` exclusion), or a person whose ``HP_ALTER`` cannot be
+        coerced to a number (named -- the persons frame comes from one pipeline, so an
+        unusable age is a wiring defect, not a legitimate exclusion from the surrogate
+        candidate pool).
     """
     _require_columns(df_persons, _REQUIRED_SURROGATE_PERSON_COLUMNS, "persons frame")
     _require_columns(df_trips, _REQUIRED_SURROGATE_TRIP_COLUMNS, "trips frame")
@@ -527,14 +537,25 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
     stats["rescue_rate"] = float("nan")
 
     rescue = _rescue_set(df_persons, df_trips)
+    if len(rescue) > 0:
+        missing_departure = rescue["child_departure_time"].isna()
+        if bool(missing_departure.any()):
+            first = rescue.loc[missing_departure].iloc[0]
+            raise ValueError(
+                f"{_LOG_TAG} {int(missing_departure.sum())} rescue-candidate paired passive "
+                "leg(s) carry no child_departure_time (first: person_id "
+                f"{first['child_person_id']}, child_activity_index "
+                f"{first['child_activity_index']}); a missing departure time on an otherwise "
+                "rescuable leg is a wiring defect in the trips frame's departure_time column, "
+                "not a legitimate gap-exceeded exclusion."
+            )
     stats["n_rescue_candidates"] = int(len(rescue))
     if stats["n_rescue_candidates"] > 0:
         stats["rescue_rate"] = 0.0
     eligible = rescue[rescue["child_purpose"].isin(secondary)]
     stats["n_rescue_ineligible_child_purpose"] = int(len(rescue) - len(eligible))
     if len(eligible) == 0:
-        _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose,
-                          material=False)
+        _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose)
         return _empty_surrogate_links(), stats
 
     # No person is both a linked child and a surrogate: a surrogate must be PLACED in pass 1,
@@ -543,7 +564,18 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
     linked_children = (set(links["child_person_id"].tolist())
                        | set(rescue["child_person_id"].tolist()))
     persons = df_persons[["person_id", "household_id", "HP_ALTER"]].drop_duplicates("person_id")
-    old_enough = pd.to_numeric(persons["HP_ALTER"], errors="coerce") >= int(min_age_years)
+    age_years = pd.to_numeric(persons["HP_ALTER"], errors="coerce")
+    unusable_age = age_years.isna()
+    if bool(unusable_age.any()):
+        first_person_id = persons.loc[unusable_age, "person_id"].iloc[0]
+        raise ValueError(
+            f"{_LOG_TAG} {int(unusable_age.sum())} person(s) on the persons frame carry an "
+            f"HP_ALTER that cannot be coerced to a number (first: person_id "
+            f"{first_person_id!r}); the persons frame comes from one pipeline, so an "
+            "unusable age is a wiring defect, not a legitimate exclusion from the surrogate "
+            "candidate pool."
+        )
+    old_enough = age_years >= int(min_age_years)
     candidates = persons.loc[old_enough, ["person_id", "household_id"]].rename(
         columns={"person_id": "adult_person_id"})
 
@@ -593,6 +625,5 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
         surrogate_links[column] = surrogate_links[column].astype("int64")
     stats["n_surrogate_linked"] = int(len(surrogate_links))
     stats["rescue_rate"] = stats["n_surrogate_linked"] / stats["n_rescue_candidates"]
-    _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose,
-                      material=len(pairs) > 0)
+    _log_rescue_rates(stats, max_gap_minutes, min_age_years, require_same_purpose)
     return surrogate_links, stats

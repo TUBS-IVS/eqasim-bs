@@ -69,6 +69,27 @@ def test_effect_rows_raise_when_a_placed_activity_key_is_duplicated():
         surrogate_effect_rows("strict", surrogate_links, on, on, homes, persons, child_purposes)
 
 
+def test_effect_rows_raise_on_a_crs_mismatch_between_the_three_inputs():
+    """M8: a mismatched CRS between the arm/OFF locations and the homes frame would
+    silently produce wrong metres in the very table the run manifest quotes."""
+    surrogate_links = pd.DataFrame({
+        "child_person_id": [5], "child_activity_index": [1], "adult_person_id": [4],
+        "adult_activity_index": [1], "adult_purpose": ["shop"], "link_source": ["surrogate"],
+        "gap_minutes": [5.0],
+    })
+    on = _locations([(4, 1, Point(1000, 0)), (5, 1, Point(1000, 0))])
+    off = gpd.GeoDataFrame(
+        pd.DataFrame.from_records([(4, 1, Point(1000, 0)), (5, 1, Point(700, 0))],
+                                  columns=["person_id", "activity_index", "geometry"]),
+        geometry="geometry", crs="EPSG:4326")  # deliberately a DIFFERENT CRS than `on`/`homes`
+    homes = gpd.GeoDataFrame({"household_id": [20], "geometry": [Point(0, 0)]}, geometry="geometry", crs=CRS)
+    persons = pd.DataFrame({"person_id": [4, 5], "household_id": [20, 20]})
+    child_purposes = pd.DataFrame({"person_id": [5], "trip_index": [0], "following_purpose": ["shop"]})
+
+    with pytest.raises(ValueError, match="inconsistent CRS"):
+        surrogate_effect_rows("strict", surrogate_links, on, off, homes, persons, child_purposes)
+
+
 def test_summary_aggregates_per_arm_and_purpose():
     rows = pd.DataFrame({
         "arm": ["strict", "strict", "relaxed"], "child_person_id": [5, 6, 5],
