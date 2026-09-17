@@ -33,17 +33,30 @@ import pytest
 
 
 class _ConfigureRecorder:
-    """Records what ``configure()`` declares, with synpp's two-argument ``config()``."""
+    """Records what ``configure()`` declares.
+
+    Same shape as ``tests/test_chainsolvers_parallel.py::_RecordingContext``: ``config()``
+    takes ``*args, **kwargs`` rather than a fixed ``(name, default)`` pair, because synpp
+    also accepts ``volatile=True`` for an operational option that must not enter a stage's
+    hash (ADR-0126). A stub with the narrower signature raises ``TypeError`` from INSIDE the
+    stage under test the moment any declaration gains a keyword -- the failure then looks
+    like a stage defect rather than a stale test double, which is exactly what it did when
+    PR #416 landed.
+    """
 
     def __init__(self):
         self.stages = []
         self.config_keys = {}
+        self.volatile = set()
 
-    def stage(self, name, **_kwargs):
+    def stage(self, name, *_args, **_kwargs):
         self.stages.append(name)
 
-    def config(self, name, default=None):
-        self.config_keys[name] = default
+    def config(self, name, *args, **kwargs):
+        self.config_keys[name] = args[0] if args else None
+        if kwargs.get("volatile"):
+            self.volatile.add(name)
+        return self.config_keys[name]
 
 
 def _declared(module):
