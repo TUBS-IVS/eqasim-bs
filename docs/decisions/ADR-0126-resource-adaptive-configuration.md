@@ -123,18 +123,37 @@ hand), so it is fixed as part of this decision rather than left for later.
    it. It is named as expected output here, in
    `docs/registry/features/resource_adaptive_config.yml`'s expected-smoke list,
    and in the `configs/base_bs.yml` comment itself.
-   **Known limitation of that warning, stated rather than fixed.** Both read
-   sites declare `processes` with `volatile = True` (pre-existing, from the
-   upstream eqasim-france #438 comment), so raising the pin the warning draws
-   attention to would change the statistical-matching and secondary-location
-   realisations WITHOUT invalidating those two stages' caches -- the change
-   would stay invisible until the caches are cleared by hand. Changing those
-   two declarations would itself invalidate two more full-scale caches and is
-   deliberately out of scope here. The warning text therefore carries the whole
-   caveat (`braunschweig/resources.py`, `build_report`): it states that the key
-   is result-affecting, what raising it changes, and that the caches will not
-   notice. The residual mismatch -- an advisory warning about a key whose cache
-   does not track it -- is accepted and recorded, not hidden.
+   **AMENDMENT (2026-09-17): the cache mismatch behind that warning is RESOLVED,
+   not merely stated.** Both read sites used to declare `processes` with
+   `volatile = True`, carried in from upstream eqasim-france #438 (ported in
+   `79f7f492`), whose comment calls the key an "execution detail, not scientific
+   config". A survey of all four declarations showed that premise holds at
+   exactly two of them and fails at exactly the other two -- and the split is
+   mechanical: **the only two files that declare `processes` volatile are the
+   only two that hand it to `np.array_split`.** Measured on the read sites' own
+   arithmetic: moving from `processes: 8` to `processes: 32` changes the drawn
+   seed of **19 of 20 persons**, because the partition decides which persons
+   share a chunk and each chunk is solved with its own seed. Since a volatile
+   key is excluded from the stage hash, raising the pin changed the
+   statistical-matching and secondary-location realisations while the cache
+   served the old ones.
+
+   `synthesis/population/matched.py` and
+   `synthesis/population/spatial/secondary/locations.py` therefore now declare
+   `processes` HASHED, deliberately diverging from upstream at these two sites
+   (each carries a comment saying so and why). The two MATSim stages that only
+   forward the value as a `--threads` / `numOfThreads` argument keep
+   `volatile=True`: there the upstream premise is correct, and hashing them
+   would cost recomputes for nothing. `braunschweig/resources.py`'s under-use
+   warning no longer carries the caveat, because it is no longer true.
+
+   **Cost, stated:** those two stages' hashes change once, and thereafter every
+   change to `processes` recomputes them. That recompute is the correct
+   behaviour -- it is the price of a changed scientific realisation, not a
+   regression. Results at a fixed `processes` are unchanged.
+   `tests/test_processes_hash_coverage.py` pins the classification and derives
+   it from the source, so a stage that starts partitioning in future cannot
+   quietly inherit the wrong flag.
    `matsim_threads` and `matsim_qsim_threads` are excluded from clamping for
    an independent reason: their effect on results is unverified and MATSim
    parallelisation is known to scale poorly on this server (issue #410). They

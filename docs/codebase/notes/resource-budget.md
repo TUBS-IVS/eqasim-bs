@@ -154,9 +154,16 @@ produces it?**
   how many seeds are drawn, and which chunk gets which seed. Both are structurally
   identical to the chainsolver defect one paragraph up: a `processes` pin of
   4 on one machine and 8 on another produces a different partition and a
-  different seed draw for the SAME configured `random_seed`, on a stage
-  hash that never changes because `processes` is `volatile=True`. **An
-  earlier draft of this branch classified these two sites as operational and
+  different seed draw for the SAME configured `random_seed`. Until 2026-09-17
+  that ran on a stage hash which never changed, because both sites declared
+  `processes` `volatile=True` -- carried in from upstream eqasim-france #438,
+  whose comment calls the key an "execution detail". **Both now declare it
+  HASHED**, diverging from upstream at exactly these two sites; the two MATSim
+  stages that only forward it as a thread count keep `volatile=True`, because
+  there the upstream premise holds. The tell is mechanical and worth
+  remembering: the only files that declared `processes` volatile were the only
+  files that call `np.array_split` with it.
+  **An earlier draft of this branch classified these two sites as operational and
   clamped them; that was wrong, and the clamp was reverted (ADR-0126,
   Decision 3) before merge.** If you are looking for the canonical example
   of "read every consumer before you clamp", this is it -- the mistake was

@@ -75,13 +75,21 @@ notes: >-
   `synthesis.population.spatial.secondary.locations`
   synpp-level `processes` config key (read by
   synthesis/population/spatial/secondary/locations.py, NOT by the chainsolver's own
-  braunschweig.chainsolvers.processes) is UNCHANGED by this ADR and remains read
-  verbatim (`context.config("processes")`, still declared `volatile=True` per the
-  upstream eqasim-france #438 comment) -- an earlier draft of ADR-0126 clamped it
-  against the machine's detected core budget, which was reverted before merge because
-  `processes` fixes both the person-chunk partition (`np.array_split`) and the drawn
-  seed count at this exact read site, making it result-affecting, not operational
-  (see the corrected worked example in docs/codebase/notes/resource-budget.md).
+  braunschweig.chainsolvers.processes) is still read verbatim
+  (`context.config("processes")`, never clamped) -- an earlier draft of ADR-0126
+  clamped it against the machine's detected core budget, which was reverted before
+  merge because `processes` fixes both the person-chunk partition (`np.array_split`)
+  and the drawn seed count at this exact read site, making it result-affecting, not
+  operational (see the corrected worked example in
+  docs/codebase/notes/resource-budget.md). Since the 2026-09-17 amendment it is also
+  declared HASHED: the `volatile=True` it carried from upstream eqasim-france #438
+  (ported in 79f7f492, "an execution detail, not scientific config") kept it out of
+  this stage's hash, so changing it served cached secondary locations built under a
+  different partition. Measured: 8 -> 32 changes the drawn seed of 19 of 20 persons.
+  The stage hash therefore changes once, and every later change to `processes`
+  recomputes this stage -- the correct cost of a changed realisation. This is a
+  deliberate divergence from upstream at this site, documented in the code comment
+  and pinned by tests/test_processes_hash_coverage.py.
 
   MEMORY-BOUNDED WORKER POOL (2026-09-17 amendment to ADR-0126): the stage now also
   declares `braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
