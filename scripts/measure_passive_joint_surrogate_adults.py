@@ -57,8 +57,16 @@ activities), but the time fit is poor::
 
     gap <= 15 min   any household adult with a secondary activity     6 of 46 legs
     gap <= 30 min   any household adult with a secondary activity     9 of 46 legs
+    gap <= 15 min   ... restricted to the SAME purpose as the child   1 of 46 legs
+    gap <= 30 min   ... restricted to the SAME purpose as the child   4 of 46 legs
     gap <= 15 min   ... restricted to an adult who ALSO escorts       0 of 46 legs
     gap <= 30 min   ... restricted to an adult who ALSO escorts       0 of 46 legs
+
+The SAME-purpose row is the strict D2 rule's own headroom
+(``escort_passive_joint_surrogate_require_same_purpose``, ADR-0127): most of the
+``any household adult`` reach does NOT survive requiring the surrogate's purpose to equal
+the child's own. (Added 2026-09-17, same working directory and self-check as the RESULT
+above -- 58 / 12, unchanged.)
 
 The reachable legs by the child's own purpose, which is what would actually move::
 
@@ -85,6 +93,18 @@ exactly, so the difference is attributable to the CUT and not to either measurem
 The issue's wider counts include children whose own activity is education or home (which
 cannot change location) and, in the second row, pair on an escort trip (which cannot carry
 an anchor, being pinned to a school by issue #201 / ADR-0072).
+
+INVERSE ANCHOR (2026-09-17, same working directory and self-check as the RESULT above --
+``summarise_inverse_anchor_headroom``, the #201 direction: re-pointing the ADULT's escort
+anchor at the child's own location instead, ADR-0127 Rejected alternatives -- MEASURED ONLY,
+not built, and changes no pipeline behaviour). Of the 17 eligible legs
+(the child's own activity secondary), NONE pairs in time with its household adult's
+``escort`` trip at either gap: 0 of 46 unlinked legs (0.0 %) and 0 of 17 eligible legs
+(0.0 %) at gap <= 15 min, and again 0 of 46 (0.0 %) / 0 of 17 (0.0 %) at gap <= 30 min. The
+"both diaries independently attest travel at the same minute" corroboration this idea would
+need is not available in this smoke either -- the same conclusion the ``adult_also_escorts``
+headroom row above already draws, now measured directly against the escort trip's own
+departure time rather than a secondary activity's.
 
 SIBLING-AGE HISTOGRAM (2026-09-16, raw MiD 2023 B1, 10,905 passive legs of minors, gap 15
 min): floor 18 pairs 10,343 (94.8 %), 562 unpaired; newly paired at floor 16: 6 (16:3, 17:3)
@@ -374,15 +394,20 @@ def summarise_headroom(candidates: pd.DataFrame, unlinked: pd.DataFrame,
                        gap_minutes=DEFAULT_GAP_MINUTES) -> pd.DataFrame:
     """Reachable legs per gap threshold and candidate restriction.
 
-    Three restrictions are reported, from the widest to the most conservative: ANY
-    household adult with a secondary activity; only an adult who ALSO escorts somebody
-    that day; and only an adult whose purpose additionally EQUALS the donor adult's. The
-    counts are legs, not candidate rows -- a leg counts once however many surrogates it
-    has. ``n_unlinked`` is carried so every share in the report has its denominator next
-    to it.
+    Four restrictions are reported, from the widest to the most conservative: ANY
+    household adult with a secondary activity; restricted to an adult whose activity
+    purpose EQUALS the child's OWN purpose (the strict D2 rule of ADR-0127,
+    ``escort_passive_joint_surrogate_require_same_purpose``); further restricted to an
+    adult who ALSO escorts somebody that day; and an adult whose purpose additionally
+    EQUALS the DONOR adult's (the original paired adult from the survey, not the child).
+    The counts are legs, not candidate rows -- a leg counts once however many surrogates
+    it has. ``n_unlinked`` is carried so every share in the report has its denominator
+    next to it.
     """
     restrictions = {
         "any_secondary_adult": pd.Series(True, index=candidates.index),
+        "same_purpose_as_child": (candidates["adult_purpose"] == candidates["child_purpose"])
+        if len(candidates) else pd.Series(dtype=bool),
         "adult_also_escorts": candidates["adult_escorts"].astype(bool)
         if len(candidates) else pd.Series(dtype=bool),
         "and_purpose_matches_donor": (candidates["adult_escorts"].astype(bool)
@@ -404,6 +429,62 @@ def summarise_headroom(candidates: pd.DataFrame, unlinked: pd.DataFrame,
                 "median_gap_minutes": float(subset["gap_minutes"].median())
                 if len(subset) else float("nan"),
             })
+    return pd.DataFrame(rows)
+
+
+def summarise_inverse_anchor_headroom(unlinked: pd.DataFrame, df_persons: pd.DataFrame,
+                                      df_trips: pd.DataFrame, *,
+                                      gap_minutes=DEFAULT_GAP_MINUTES,
+                                      adult_min_age: int = DEFAULT_ADULT_MIN_AGE,
+                                      secondary_purposes=SECONDARY_JOINT_PURPOSES
+                                      ) -> pd.DataFrame:
+    """Frequency of the INVERSE #201 anchor idea: does an ELIGIBLE child's own leg pair in
+    time with its household adult's ``escort`` trip?
+
+    ADR-0127's Rejected-alternatives records "re-pointing the ADULT's escort anchor to the
+    child's location" as a change to issue #201 / ADR-0072, out of scope there. This
+    measures only the FREQUENCY of the time-coincidence that idea would need -- restricted
+    to the same ELIGIBLE legs :func:`summarise_headroom` reports on (the child's own
+    activity is secondary: shop, leisure or other) -- so a later decision on the idea has a
+    committed number to start from. It does NOT implement the re-pointing and changes no
+    pipeline behaviour.
+
+    Parameters
+    ----------
+    unlinked:
+        :data:`UNLINKED_COLUMNS`, as returned by :func:`unlinked_paired_legs`.
+    df_persons, df_trips:
+        Passed through to :func:`_leg_activity_pairs`.
+    gap_minutes:
+        Reported ``|departure gap|`` thresholds in minutes.
+    adult_min_age:
+        Minimum ``HP_ALTER`` of a household adult, in years.
+    secondary_purposes:
+        The child-purpose eligibility filter, shared with :func:`build_surrogate_candidates`.
+
+    Returns
+    -------
+    A frame with ``gap_minutes_max, n_legs_reached, n_eligible, n_unlinked,
+    median_gap_minutes`` -- one row per threshold. Both ``n_eligible`` (the denominator
+    this idea actually applies to) and ``n_unlinked`` (all unlinked legs) are carried so
+    every share in the report has both denominators next to it.
+    """
+    eligible = unlinked[unlinked["child_purpose"].isin(frozenset(secondary_purposes))]
+    pairs = _leg_activity_pairs(eligible, df_persons, df_trips,
+                                activity_purposes=(ESCORT_PURPOSE,),
+                                adult_min_age=adult_min_age)
+    rows = []
+    for threshold in gap_minutes:
+        within = pairs[pairs["gap_minutes"] <= float(threshold)] if len(pairs) else pairs
+        legs = within.drop_duplicates(["child_person_id", "child_activity_index"])
+        rows.append({
+            "gap_minutes_max": float(threshold),
+            "n_legs_reached": int(len(legs)),
+            "n_eligible": int(len(eligible)),
+            "n_unlinked": int(len(unlinked)),
+            "median_gap_minutes": float(within["gap_minutes"].median())
+            if len(within) else float("nan"),
+        })
     return pd.DataFrame(rows)
 
 
@@ -637,6 +718,12 @@ def main() -> int:
     _print_frame("RECONCILIATION with issue #409's own table -- WIDER cuts, not the "
                  "decision-relevant headroom (see summarise_issue_409_cut)", reconciliation)
 
+    inverse_anchor = summarise_inverse_anchor_headroom(
+        unlinked, df_persons, df_trips, gap_minutes=args.gap_minutes,
+        adult_min_age=args.adult_min_age)
+    _print_frame("INVERSE ANCHOR (#201 direction) headroom: eligible legs whose household "
+                 "adult escorts within the gap", inverse_anchor)
+
     print("\n--- accounting ---")
     for key, value in stats.items():
         print(f"{key:32s} {value}")
@@ -647,6 +734,7 @@ def main() -> int:
         "surrogate_adult_candidates.csv": candidates,
         "surrogate_headroom_summary.csv": summary,
         "issue_409_reconciliation.csv": reconciliation,
+        "inverse_anchor_headroom.csv": inverse_anchor,
     }
     print()
     for name, frame in paths.items():

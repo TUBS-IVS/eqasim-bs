@@ -11,7 +11,8 @@ import pytest
 
 from scripts.measure_passive_joint_surrogate_adults import (
     CANDIDATE_COLUMNS, UNLINKED_COLUMNS, build_surrogate_candidates,
-    summarise_headroom, summarise_issue_409_cut, unlinked_paired_legs,
+    summarise_headroom, summarise_inverse_anchor_headroom, summarise_issue_409_cut,
+    unlinked_paired_legs,
 )
 
 NAN = np.nan
@@ -201,8 +202,25 @@ def test_headroom_restrictions_narrow_monotonically():
     summary = summarise_headroom(candidates, unlinked_paired_legs(
         _all_trips(), _persons(), _no_links()), gap_minutes=(30.0,))
     reached = summary.set_index("restriction")["n_legs_reached"]
-    assert reached["any_secondary_adult"] >= reached["adult_also_escorts"]
+    assert reached["any_secondary_adult"] >= reached["same_purpose_as_child"]
+    assert reached["same_purpose_as_child"] >= reached["adult_also_escorts"]
     assert reached["adult_also_escorts"] >= reached["and_purpose_matches_donor"]
+
+
+def test_headroom_same_purpose_as_child_restriction_reaches_both_legs_at_15_min():
+    candidates, _stats = _candidates()
+    summary = summarise_headroom(candidates, unlinked_paired_legs(
+        _all_trips(), _persons(), _no_links()), gap_minutes=(15.0,))
+    same_purpose = summary.set_index("restriction").loc["same_purpose_as_child"]
+    # Child 3's only candidate within 15 min is person 1's shop trip (5 min away, same
+    # "shop" purpose as the child); person 2's leisure candidate (60 min away, a different
+    # purpose) is already excluded by the gap at BOTH 15 and 30 min in this fixture, so it
+    # cannot distinguish the two restrictions here. Child 9's only candidate is person 8's
+    # shop trip (1 min away, also "shop"). Both legs survive the same-purpose restriction,
+    # so it reaches the same 2 legs as "any_secondary_adult" at this gap -- verified by
+    # running, not assumed.
+    assert same_purpose["n_legs_reached"] == 2
+    assert same_purpose["n_unlinked"] == 4
 
 
 def test_the_issue_cut_is_wider_because_it_ignores_the_childs_own_purpose():
@@ -227,6 +245,37 @@ def test_the_issue_cut_pairs_on_the_escort_trip_which_cannot_carry_an_anchor():
     # Person 1 escorts at 07:30, 30 minutes before child 3's own 08:00 departure.
     assert row["n_legs_reached"] == 1
     assert row["median_gap_minutes"] == pytest.approx(30.0)
+
+
+# ---------------------------------------------------------------- inverse anchor (#201)
+
+def test_inverse_anchor_headroom_measures_the_201_direction_frequency():
+    unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
+    summary = summarise_inverse_anchor_headroom(unlinked, _persons(), _all_trips(),
+                                                gap_minutes=(15.0, 30.0))
+    by_threshold = summary.set_index("gap_minutes_max")
+    # Child 3 is eligible (its own activity is "shop") and its household adult (person 1)
+    # escorts at 07:30, 30 minutes before the child's own 08:00 departure: 0 reached at 15
+    # min, 1 at 30 min, with a 30-minute median gap for the sole pair.
+    assert by_threshold.loc[15.0, "n_legs_reached"] == 0
+    assert by_threshold.loc[30.0, "n_legs_reached"] == 1
+    assert by_threshold.loc[30.0, "median_gap_minutes"] == pytest.approx(30.0)
+    # n_eligible (3: children 3, 6, 9 -- shop) and n_unlinked (4: also child 5, education)
+    # are carried on every row so both denominators sit next to the count.
+    assert (summary["n_eligible"] == 3).all()
+    assert (summary["n_unlinked"] == 4).all()
+
+
+def test_inverse_anchor_headroom_excludes_an_ineligible_childs_own_activity():
+    unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
+    summary = summarise_inverse_anchor_headroom(unlinked, _persons(), _all_trips(),
+                                                gap_minutes=(60.0,))
+    # Child 5's own activity is education, so it is excluded from the eligible set before
+    # the escort join ever runs -- household 20's only adult (person 4) does not escort
+    # anyway, so this also cannot inflate the count even if the exclusion were missing, but
+    # the eligibility filter is the thing under test here, not that incidental fact.
+    assert int(summary.loc[0, "n_legs_reached"]) == 1
+    assert int(summary.loc[0, "n_eligible"]) == 3
 
 
 def test_the_statistics_account_for_every_unlinked_leg_exactly_once():

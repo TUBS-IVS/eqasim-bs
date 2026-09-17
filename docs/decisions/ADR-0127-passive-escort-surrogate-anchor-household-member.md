@@ -34,7 +34,9 @@
   other 13 / shop 4, so 17 legs are eligible at all, and 16 of those 17 have a household surrogate
   adult somewhere in the day (65 candidate activities). The time fit is the binding constraint: a
   household adult (>= 18) with a secondary activity within 15 / 30 min reaches 6 / 9 of the 46 legs;
-  restricted to an adult who ALSO escorts somebody, 0 / 0. Those reachable legs by the child's own
+  restricted to the SAME purpose as the child (the strict D2 rule shipped as
+  `escort_passive_joint_surrogate_require_same_purpose`), 1 / 4; restricted to an adult who ALSO
+  escorts somebody, 0 / 0. Those reachable legs by the child's own
   purpose are other 5 / shop 1 at 15 min and other 5 / shop 4 at 30 min. The issue's own table
   (13 / 20 and 10 / 14, median gap 4.92 min) is reproduced exactly by the script's reconciliation
   mode: it counts children whose own activity is education or home (which cannot change location)
@@ -87,7 +89,11 @@
     EDUCATION location; a shopping child would be placed at a school. Measured: no surrogate carrying
     a usable secondary anchor also escorts within 30 min (0 / 0).
   - **Re-pointing the ADULT's escort anchor to the child's location** (the inverse direction): a
-    change to #201, out of scope; a separate issue if wanted.
+    change to #201, out of scope; a separate issue if wanted. Measured
+    (`summarise_inverse_anchor_headroom`, header of
+    `scripts/measure_passive_joint_surrogate_adults.py`): of the 17 eligible legs, none pairs in
+    time with its household adult's ESCORT trip, at either gap -- 0 / 46 unlinked legs (0.0 %) and
+    0 / 17 eligible legs (0.0 %) at 15 min, the same 0 / 46 (0.0 %) / 0 / 17 (0.0 %) at 30 min.
   - **Lowering the donor-side pairing floor** (`escort_pairing.DEFAULT_ADULT_MIN_AGE = 18`): a change
     to ADR-0112 worth 15 of 10,905 raw legs at a floor of 14 (the histogram's floor-14 row); separate
     follow-up.
