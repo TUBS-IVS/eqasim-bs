@@ -12,8 +12,8 @@
       2. DATA   - syncs eqasim-data/data to the server with rsync, which only
                   transfers what is out of sync (nothing happens if it already
                   matches). Delegates to sync_data_to_server.ps1.
-      3. UPDATE - over SSH: git pull on the server + conda env update if
-                  environment.yml changed (scripts/update_server.sh).
+      3. UPDATE - over SSH: git pull on the server; preserve its environment
+                  and stop on a changed Linux snapshot (scripts/update_server.sh).
       4. RUN    - launches the pipeline inside a detached tmux session so it
                   keeps running after you disconnect.
 
@@ -115,13 +115,13 @@ if ($CheckOnly) {
 # Step 3+4: UPDATE the server checkout and LAUNCH the pipeline in tmux.
 # ---------------------------------------------------------------------------
 # A detached tmux session keeps the multi-hour run alive after we disconnect.
-# update_server.sh does git pull + conda env update; run_pipeline.sh activates
+# update_server.sh pulls code and checks the Linux snapshot; run_pipeline.sh activates
 # conda and runs synpp. Single quotes inside keep the remote shell parsing sane.
 # Kill any lingering 'eqasim' tmux session (e.g. a previous crashed run still
 # finishing its cleanup) before starting, so the launch never fails with
 # "duplicate session". This starts a fresh run; do not use while a wanted run is live.
 $remoteCmd = "cd $RemoteRepo && bash scripts/update_server.sh && " +
-             "tmux kill-session -t eqasim 2>/dev/null; " +
+             "{ tmux kill-session -t eqasim 2>/dev/null || true; } && " +
              "tmux new-session -d -s eqasim " +
              "'bash scripts/run_pipeline.sh $Config'"
 

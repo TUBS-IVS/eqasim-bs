@@ -1,0 +1,33 @@
+{
+  "measurement": "raw_mid_member_completion_passenger_provenance",
+  "scope_note": "Deterministic bounded raw national MiD subset: up to 100 complete and 100 incomplete households per declared size, all reporting days; actual member completion and attribute helpers. No weekend/diary rematching, PopulationSim expansion or MATSim simulation. Counts are unweighted selected donor rows, not representative population estimates.",
+  "git_commit": "f9e19ce7fee4065f940ec790a09ca985c0458758",
+  "seed": 1234,
+  "completion_rng_offset": 74513,
+  "passenger_rng_offset": 74517,
+  "completed_households": 1100,
+  "completed_persons": 4100,
+  "original_persons": 2808,
+  "filler_persons": 1292,
+  "age14plus_valid_fillers": 635,
+  "age14plus_missing_fillers": 70,
+  "source_counts": {
+    "own_response": 2015,
+    "child_household_evidence": 1177,
+    "member_completion_borrowed_response": 635,
+    "adult_empirical_imputation": 196,
+    "member_completion_borrowed_imputation": 70,
+    "child_empirical_fallback": 5,
+    "child_diary_evidence": 2
+  },
+  "completion_report": {
+    "n_households_total": 1100,
+    "n_households_incomplete": 500,
+    "n_households_filled": 500,
+    "n_persons_added": 1292
+  },
+  "driver_fields_unchanged": true,
+  "one_adult_value_per_original_attribute_identity": true,
+  "original_adult_results_unchanged_when_fillers_removed": true,
+  "elapsed_seconds": 31.14
+}

@@ -1,0 +1,62 @@
+feature: fleet_gemeinde_bev_composition_tilt
+title: Per-Gemeinde BEV:PHEV composition tilt (structure from FZ 27.17)
+area: fleet
+description: Restores the spatial BEV-vs-PHEV differential the ADR-0086 combined-share
+  tilt had to discard. The 2026 per-Gemeinde EV source publishes only the combined
+  electric share, so it supplies the LEVEL; the FZ 27.17 private-car table still carries
+  both counts per Gemeinde and supplies the STRUCTURE. Both enter as relative factors,
+  the Kreis reference is weighted by each Gemeinde's electric stock so the factors average
+  to exactly 1.0, and the pair is rescaled per Gemeinde so the electric TOTAL is untouched
+  (issue #317, ADR-0125).
+stages:
+- braunschweig.synthesis.vehicles.cars.household
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - fleet_gemeinde_bev_composition_tilt
+introduced:
+  issue: 317
+  pr: null
+  adr: ADR-0125
+detail_doc: null
+code_paths:
+- braunschweig/synthesis/vehicles/fleet_sampling_de.py
+- braunschweig/synthesis/vehicles/cars/household.py
+- scripts/measure_gemeinde_bev_composition.py
+evidence:
+  tests:
+  - tests/test_fleet_gemeinde_bev_composition.py
+  - tests/test_execute_context_config_contract.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_fleet_gemeinde_bev_composition.py::TestCompositionTiltApplication::test_flag_off_reproduces_the_pre_317_tilt
+    note: |
+      fleet_gemeinde_bev_composition_tilt=False leaves the composition map unconsulted and the tilt consumes no RNG, so OFF is byte-identical to the pre-#317 combined-share-only draw by construction.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[fleet_de] gemeinde BEV/PHEV composition'
+    note: |
+      Two separate rates. At BUILD time the reference coverage is logged and the excluded Gemeinden are named (measured: primary 105/113 = 92.9%, fallback 8 = 7.1%). At DRAW time PowertrainModel.log_fallback_rate reports per-car composition primary vs fallback against the combined-share denominator, warning above 50%. The per-Kreis clip renormalisation ratio warns above 1%.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/kba/derived/kba_gemeinde_private_bev.csv
+    note: |
+      KBA FZ 27.17, Stichtag 2025-01-01, private cars. Measured: 105/113 ZGB Gemeinden carry a usable BEV:PHEV ratio; BEV fraction of the electric stock 0.598..1.000, IQR 0.722..0.804, median 0.748. The eight without one are Wolfsburg and Hedeper (suppressed BEV count) and Beierstedt, Jerxheim, Querenhorst, Dahlum, Uehrde, Winnigstedt (suppressed PHEV count); they keep composition factor 1.0.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: |
+    No production run recorded yet. Two properties are exact by construction and asserted by tests: each car's electric TOTAL is untouched (measured drift 4.9e-17, machine zero) and the per-Kreis BEV:PHEV aggregate is neutralised on the REALISED draw population (ADR-0125 decision 8, added after the PR review found that normalising on FZ 27.17 electric-stock weights does not bind the rake, which targets the unweighted mean of the actual cars). scripts/measure_gemeinde_bev_composition.py reports the UNCORRECTED baseline that decision 8 removes: at most 0.0224 pp of the all-car fleet (Kreis 03154; ZGB aggregate 0.0024 pp) against a BEV share of ~3-4%. What remains approximate is the per-Gemeinde magnitude of the structure signal, because the FZ 27.17 factors are a PRIVATE-scope measurement applied to an ALL-OWNERSHIP pmf (scope gap 0.88..5.04 pp). No observed per-Gemeinde BEV:PHEV reference exists to validate the realised split against.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Awaiting the first production run with the tilt active; the realised per-Gemeinde BEV:PHEV split and the per-Kreis aggregates are to be recorded in a run manifest and compared against kba_gemeinde_private_bev.csv.
+  source: ADR-0125

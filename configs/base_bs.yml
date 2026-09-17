@@ -79,6 +79,44 @@ config:
   # own leg; 100% minors) become the child's own education trip at their own
   # assigned Kita/school. Active Bringen/Holen (code 6) stays 'escort'.
   escort_passive_education: true
+  # MiD W_ZWECK 10 'anderer Zweck' follows MiD's own main-purpose fold (hwzweck1 = 6
+  # Freizeit for 100 % of the legs, committed mid2023_w_zweck_by_hwzweck1.csv, ADR-0111):
+  # -> 'leisure' in the plan AND in the leisure participation seed. false = 'other'.
+  w_zweck_10_as_leisure: true
+  # Passive escort legs (W_ZWECK 13, the escorted child's own leg) take the purpose of
+  # the same-household adult leg departing within escort_passive_pair_max_gap_minutes
+  # (94.2 % of the legs pair within 15 min; 12.8 % of the passive mass ends as a trip
+  # HOME with the adult -- committed fold in mid2023_escort_w_zweck_split.csv). Adult
+  # Bringen/Holen (6) and unpaired legs keep the escort_passive_education rule.
+  # Requires escort_purpose. ADR-0112. false = every code-13 leg -> education.
+  escort_passive_from_adult: true
+  # Unit: minutes; valid range > 0. Inert while escort_passive_from_adult is false.
+  escort_passive_pair_max_gap_minutes: 15
+  # Phase 2 of #372 (issue #385, ADR-0119): a linked child's joint activity (shop / leisure /
+  # other taken along with the paired adult) is anchored at the adult's PLACED secondary
+  # location -- the chainsolver solves adults first, then the children. Requires
+  # escort_passive_from_adult. false = the child's location is drawn independently (phase 1).
+  escort_passive_joint_location: true
+  # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
+  # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
+  purpose_subtype_codeplan_sentinels: true
+  # MiD W_ZWECK 10 leisure legs (no W_ZWD detail, 43.2 % of the labelled leisure mass on the
+  # committed weekday reference universe) form the fifth leisure subtype 'leisure_unspecified'
+  # with their own distance layer instead of being imputed one of the four W_ZWD groups
+  # (ADR-0115). Requires w_zweck_10_as_leisure. false = four groups.
+  leisure_unspecified_subtype: true
+  # The secondary distance layers and the three MiD subtype deciders estimate on the WEEKDAY
+  # DIARY universe -- the seed's own day filter and no rbW summary records, 67.9 % of the
+  # delivered MiD Wege rows -- instead of every delivered row incl. weekends (ADR-0116). The
+  # synthetic day IS a weekday, and the committed MiD reference tables measure the same
+  # universe. false = the pre-ADR-0116 all-day estimation.
+  secondary_mid_weekday_legs_only: true
+  # MiD legs whose MAIN purpose is the no-answer code W_ZWECK 99 ('keine Angabe', 0.58 % of the
+  # weekday legs but 2.80 % of everything the model calls 'other') are excluded from every
+  # secondary ESTIMATION -- the purpose and subtype distance pools and the coarse other-split
+  # probabilities -- so the remaining purposes renormalise over legs whose purpose is known
+  # (ADR-0117). The trip build is unchanged: the leg is a real trip and keeps 'other'.
+  exclude_no_answer_purpose_legs: true
   # Explicit W_ZWECK purposes (issue #241, ADR-0091): MiD codes 14 Sport/Sportverein,
   # 15 Freunde besuchen/treffen and 16 Unterricht (nicht Schule) map to 'leisure' instead of
   # reaching 'other' through a silent fillna. Verified on the raw Wege file: 3.03% of all legs
@@ -110,6 +148,47 @@ config:
   # counted; above this share the state stage RAISES, because the drawn home
   # share would then be governed by donor-pool gaps rather than by the model.
   commute_day_max_not_replaceable_share: 0.5
+  # General day absence (issue #370, ADR-0110): every person draws a reporting-day
+  # absence state from the committed SrV 2023 tables -- first the whole household
+  # (share of fully absent households by size class), then an individual residual
+  # per age band, so the SrV per-band absence rates (4.98 % overall) are met and the
+  # observed household clustering (56 % of absent persons in fully absent
+  # households) is reproduced. Absent persons make no trips in the reporting-day
+  # view (.final aliases). false -> everyone present (byte-identical A/B).
+  day_absence_enabled: true
+  # false = individual-only draw at the band rates (the pre-registered sensitivity
+  # arm); the household stage is what carries the clustering.
+  day_absence_household_stage_enabled: true
+  # Guard (percentage points): a band with >= 1,000 persons whose realised absence
+  # deviates from the reference by more than this WARNS (a broken join, not a target).
+  day_absence_max_band_deviation_pp: 1.0
+  # Households below this size skip the INDIVIDUAL residual stage (issue #388, ADR-0110
+  # amendment 1): for a single-person household "whole household absent" IS "person
+  # absent", so the household stage already realises the SrV single-person rate (5.1 %)
+  # and any residual on top over-absents singles. 2 (default) = residual only on
+  # multi-person households; 1 = the PR #387 behaviour (byte-identical).
+  day_absence_individual_stage_min_household_size: 2
+  # Departure-time model (ADR-0114). eqasim shifts every person's day by one uniform
+  # offset in +/-min(30 min, first departure) to break the survey's reporting grid; that
+  # is four times wider than the grid (quarter-hour / 5-minute reports) and flattened the
+  # school peak (+9 pp into hour 6 on the raw pool). 'derounded' draws the offset inside
+  # the reporting-precision cell of the first departure; 'srv_mapped' (default) then maps
+  # the first departure rank-preservingly onto the de-rounded SrV 2023 distribution of the
+  # person's (first purpose x group) cell and shifts the whole chain by the result -- the
+  # SrV start times are a CALIBRATION target, later trips and activity durations are the
+  # hold-out validation (analysis/departure_time_vs_srv). 'eqasim_uniform' = today.
+  departure_time_model: srv_mapped
+  # SrV legs (unweighted) a reference cell needs before the ladder maps onto it.
+  departure_time_mapping_min_reference_n: 200
+  # Persons a ladder rung's RANKING BASE needs before the rung is used (else the thin
+  # cell climbs to the next rung). One rule at both call sites: the base is the model
+  # population of that rung's own key -- the mapped set itself in the trip build, the
+  # population ranking context in the commute-day plan replacement, whose spliced set is
+  # far smaller (ADR-0114, rulings A-R18 / A-R20).
+  departure_time_mapping_min_model_n: 50
+  # WARN threshold on a mapping cell's median |shift|, in hours; offsets are never
+  # clipped to it.
+  departure_time_mapping_max_median_shift_hours: 2.0
   education_building_distribution: true
   # SrV-grounded location types for leisure/other secondary activities (issue
   # #262). Every leisure/other leg draws an OBSERVED SrV 2023 BS+RGB location
@@ -214,6 +293,20 @@ config:
   # far (docs/runs/plan-structure-fix-arm3-100pct-2026-09-07.yml), so the expected
   # effect on the population is nil.
   braunschweig.population.popsim.diary_match_hard_employment: true
+  # Band 6-13 children finely (6-9 / 10-13) wherever the donor build matches a person to
+  # a MiD donor by age (#386, ADR-0118): member completion's mirror role matching, the
+  # weekend match's member alignment + person fallback + sweep, AND the diary re-draw.
+  # Under the coarse band a first-grader can inherit a 13-year-old's school day, and the
+  # two differ systematically -- a first education leg before 07:00 occurs for 5.4 % of
+  # 6-9-year-olds but 18.2 % of 10-13-year-olds (raw MiD 2023 B1, 2026-09-09), and
+  # secondary-school ways are longer. None of the three matchers consumes a different
+  # NUMBER of rng values under the fine bands, so the shared completion stream (and with
+  # it the byte-identity contract) is unmoved: only WHICH donor is assigned changes.
+  # Read regardless of diary_plan_match, since the first two matchers run either way.
+  # Unlike the employment key above, `age_band` stays relaxable, so crossings remain
+  # possible and are reported as a rate in BOTH arms
+  # (DiaryMatchReport.n_crossed_fine_child_age_band).
+  braunschweig.population.popsim.donor_match_fine_child_age_bands: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
@@ -246,6 +339,13 @@ config:
   # 50): seed and realised plan must count the same day. ADR-0108.
   braunschweig.population.popsim.trip_class_seed_counts_closure: true
 
+  # Result-preserving kernels; each false value selects its original scalar path.
+  # See docs/codebase/notes/performance-equivalence.md (ADR-0122).
+  braunschweig.performance.fleet_home_lookup: true
+  braunschweig.performance.home_coordinates: true
+  braunschweig.performance.plan_validation: true
+  braunschweig.performance.donor_matching: true
+
   # --- Shared persistent stage-cache (prime-on-launch) ---------------------
   # Reuse expensive sampling-independent stage caches from a shared, synced store so
   # they are not recomputed every run (primarily the ~3 h freight extraction). The
@@ -254,6 +354,7 @@ config:
   # (never corruption). Force a recompute by listing the module in cache_share_recompute
   # ("*" = all). See docs/superpowers/specs/2026-06-22-shared-stage-cache-design.md.
   cache_share_enabled: true
+  cache_share_metadata: true  # false retains legacy artifact-only transfer
   cache_share_store: eqasim-data/cache_shared
   cache_share_stages:
     # Freight chain (input validation + the ~3 h Java routing).
@@ -331,6 +432,7 @@ config:
 
   # --- Population method: popsim_mid ---
   braunschweig.population.method: popsim_mid
+  mid_passenger_availability: true
 
   # popsim_mid inputs (relative to repo root; synced into eqasim-data/data).
   braunschweig.population.popsim.cells_1km_path: eqasim-data/data/braunschweig/popsim/cells/zensus2022_grid_1km_de_binned.parquet
@@ -427,6 +529,13 @@ config:
   fleet_ev_income_tilt: true
   fleet_euro6_substage: true
   fleet_wohnmobile_age_tilt: true
+  # Per-Gemeinde BEV-vs-PHEV composition (issue #317, ADR-0125). The 2026
+  # per-Gemeinde EV source publishes only the COMBINED electric share, so
+  # ADR-0086 had to tilt both electric powertrains by one factor; this restores
+  # the spatial BEV-vs-PHEV structure from the FZ 27.17 composition while the
+  # combined share keeps supplying the level. Rescaled per Gemeinde so the
+  # electric TOTAL is untouched.
+  fleet_gemeinde_bev_composition_tilt: true
   # Grid mode adds the sub-communal 5 km EV tilt on top of the Gemeinde tilt; its
   # input kba_ev_grid.csv (714 cells) is committed since #277. Falls back to
   # Gemeinde-only (logged) if the CSV or the home-location geometry is missing.
@@ -455,6 +564,10 @@ config:
 
   # --- Cross-cordon external demand (einpendler injection), whole-region gates ---
   cordon_enabled: true
+  # Preserve raw MiD age/sex and repair chronologically inconsistent return legs (#397).
+  # Set either flag to false to reproduce its legacy output; see ADR-0120.
+  cordon_incommuter_donor_demographics: true
+  cordon_incommuter_time_chronology: true
   # cordon_student_incommuters_enabled: default ON (unset) when education_gravity_enabled is on;
   # set to false to disable, do NOT set true unless education_gravity is on (else RuntimeError).
   # See docs/features/student-incommuters.md.

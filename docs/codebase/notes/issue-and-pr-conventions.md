@@ -78,6 +78,58 @@ every number goes in the body.
 - Analysis: `Validate … against <reference>` / `Measure …`.
 - Decision: the question or the alternatives. `Home->home round trips (2.6 %): virtual destination or zero-distance legs`
 
+## Issue body rule: the plain-language head
+
+Every issue opens with the same head, whatever its type. It is written for someone who
+has never opened this repository and has thirty seconds: one line says what the issue is,
+a few short bullets say what is wrong, one sentence says why anyone should care, and a
+short checklist says when it is done. Everything technical goes below `## Details`, where
+the per-type fields of the issue forms live (`.github/ISSUE_TEMPLATE/*.yml` ask for exactly
+these blocks and render the same sections with `###`).
+
+```markdown
+**Stages:** `synthesis.population.trips`
+
+> **In short:** One plain sentence: what is wrong and what should happen.
+
+## Problem
+- Two to four bullets. One fact each, about fifteen words, everyday words.
+- No solution yet, no numbers unless they change the decision.
+
+## Why it matters
+One sentence: what it costs the results or the work.
+
+## Done when
+- [ ] Two or three end states someone else can tick off.
+
+## Details
+Reproduction, reference tables, config flags, measured numbers, code paths, prior PRs.
+```
+
+Writing rules for the head, and only for the head:
+
+- **Everyday words.** Say "the national travel survey", not `MiD`; "district", not
+  `Kreis`; "a real survey household the synthetic one copies", not `donor`. If a term is
+  needed more than once, introduce it in brackets the first time and then reuse it. In
+  `## Details` the short forms are fine.
+- **Short.** The `In short` line is one sentence. A Problem bullet is one statement of
+  about fifteen words. `Why it matters` is one sentence. Nothing in the head is a paragraph.
+- **No bare cross-reference as a description.** `Follow-up to #77` or `see the backlog` does
+  not say what is wrong. Substance in the head, pointer under `## Details`.
+- **No code in the head.** Stage ids, file paths, config keys and symbols belong under
+  `## Details`.
+- **Numbers only when they change the decision**, rounded to what a reader needs ("about
+  1 in 40"), with the exact figure and its source under `## Details` (no invented reference
+  values — CLAUDE.md).
+- **`Done when` is checkable by someone else**: a committed table, a green test, a recorded
+  run manifest, an ADR file. Not "improve X".
+
+The head does not replace the per-type fields. A Bug still needs its reproduction and its
+expected-vs-actual, an Analysis its reference and pre-registered bound, a Decision its
+options — those live under `## Details`.
+
+Applied 2026-09-17 to all open issues; closed issues keep the body they were closed with.
+
 ## PRs: same axes, one kind prefix
 
 A PR is a *change*, so it needs no type field of its own — the branch prefix carries the
@@ -115,13 +167,16 @@ to `gh pr create`.) Merging is the user's action, never ours.
 ## Triage check (part of `/close`)
 
 Every open model issue has: a type, one `step:` label, at least one `area:` label, a
-`Stages:` line. `prio` may be absent (= not yet triaged) but the untriaged list is reviewed
-at every close. Closed issues keep their type and labels; their titles are not rewritten.
+`Stages:` line, and the plain-language head (`In short`, `## Problem`, `## Why it matters`,
+`## Done when`). `prio` may be absent (= not yet triaged) but the untriaged list is reviewed
+at every close. Closed issues keep their type, labels and body; their titles are not
+rewritten.
 
 ```
 gh issue list --repo TUBS-IVS/eqasim-bs --label prio:now
 gh issue list --repo TUBS-IVS/eqasim-bs --type Bug --label step:distribution
 gh issue list --repo TUBS-IVS/eqasim-bs --search "no:label -label:prio:now"   # untriaged
+gh issue list --repo TUBS-IVS/eqasim-bs --search '-"## Problem" in:body'      # no head
 ```
 
 ## Retired

@@ -82,10 +82,16 @@ def sampler():
 
 
 @pytest.fixture(scope="module")
-def sampled(sampler):
+def sampled_full(sampler):
+    """The default consistency-v2 sample and its validation summary."""
     df_cars = _make_cars()
-    df_spec, df_types, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler)
+    return fs.sample_fleet(df_cars, DATA_PATH, random_seed=42, sampler=sampler)
+
+
+@pytest.fixture(scope="module")
+def sampled(sampled_full):
+    """Backward-compatible two-frame view for existing fixture consumers."""
+    df_spec, df_types, _ = sampled_full
     return df_spec, df_types
 
 
@@ -365,15 +371,6 @@ def test_gemeinde_tilt_bridges_umlaut_and_suffix_mismatch(sampler):
 # Task 5 — sonstige redistribution (consistency_v2).
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
-def sampled_v2(sampler):
-    """sample_fleet with consistency_v2=True (default)."""
-    df_cars = _make_cars()
-    df_spec, df_types, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
-    return df_spec, df_types
-
-
-@pytest.fixture(scope="module")
 def sampled_v2_off(sampler):
     """sample_fleet with consistency_v2=False (legacy path)."""
     df_cars = _make_cars()
@@ -382,9 +379,9 @@ def sampled_v2_off(sampler):
     return df_spec, df_types
 
 
-def test_no_sonstige_segment_in_output(sampled_v2):
-    """After redistribution, no vehicle carries segment=='sonstige'."""
-    df_spec, _ = sampled_v2
+def test_default_consistency_v2_redistributes_sonstige(sampled):
+    """The default v2 path redistributes every ``sonstige`` vehicle."""
+    df_spec, _ = sampled
     assert (df_spec["segment"] == "sonstige").sum() == 0
     assert (df_spec["brand"].astype(str).str.strip() == "").mean() < 0.001
 
@@ -1163,16 +1160,14 @@ def test_expected_segment_is_effective_pmf_not_raw_kba(sampler):
     assert sum(expected_from_summary.values()) == pytest.approx(1.0, abs=1e-6)
 
 
-def test_sample_fleet_segment_not_flagged_at_scale(sampler):
+def test_sample_fleet_segment_not_flagged_at_scale(sampled_full, sampler):
     """At a car count large enough for the sonstige-redistribution gap
     (~2-3pp) to exceed the Monte-Carlo band, the validator must NOT flag
     'segment' DRIFT against the effective target -- and the raw KBA marginal
     (the pre-fix target) WOULD have flagged, demonstrating this is the fix
     for the cry-wolf bug (review Finding 2), not a widened tolerance.
     """
-    df_cars = _make_cars(n_per_kreis=4000)  # 32,000 cars across 8 ZGB Kreise.
-    df_spec, _, summary = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=True)
+    df_spec, _, summary = sampled_full
 
     seg_summary = summary["dimensions"]["segment"]
     assert seg_summary["flagged"] is False, (

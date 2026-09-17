@@ -182,6 +182,7 @@ from .participation import (  # noqa: F401  (re-exports)
     derive_work_by_employment_seed,
     derive_work_participation_seed,
     map_flag_from_plan_source,
+    participation_w_zweck,
     trips,
 )
 

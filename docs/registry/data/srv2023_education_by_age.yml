@@ -3,9 +3,10 @@ title: SrV 2023 education-participation rates per Kreis and age band 0-5 / 6-17 
   (committed aggregate, source of the three education_by_age control targets)
 provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
 vintage: 2023 survey year
-geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per surveyed
-  home Kreis x age band (7 of the 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and has
-  NO row) plus one 03ZGB region-total row per band; 7 x 3 + 3 = 24 rows.
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); one row per EXPECTED
+  home Kreis x age band (all 8 ZGB Kreise - Wolfsburg 03103 is not surveyed by SrV and is
+  emitted as ZERO rows with NaN shares) plus one 03ZGB region-total row per band;
+  8 x 3 + 3 = 27 rows.
 crs: null
 roles:
 - calibration_target
@@ -28,7 +29,7 @@ storage:
 verification:
   verifier_entry: null
   notes: |
-    One committed file: srv2023_education_by_age_by_kreis.csv (24 rows: 21 kreis + 3 03ZGB).
+    One committed file: srv2023_education_by_age_by_kreis.csv (27 rows: 24 kreis + 3 03ZGB).
     Not listed in scripts/verify_braunschweig_inputs.py and not in the README data-setup
     tables: the file ships committed with every clone, no SrV table is listed in the verifier
     at all, and no pipeline stage reads it - it is a BUILD-TIME input to the education_by_age
@@ -85,20 +86,26 @@ limitations: |
   pairs are deliberately not repeated here). Row/column convention:
   docs/codebase/notes/srv-kreis-table-conventions.md.
 
-  Wolfsburg (03103) is NOT surveyed by SrV and has no row (the convention of
-  srv2023_participation_by_kreis.csv, whose consumer scripts/build_participation_target.py fills
-  Wolfsburg from the region total); a target builder must do the same and document it as an
-  assumption. Per band the 03ZGB row is EXACTLY the union of the 7 kreis rows, so
+  Wolfsburg (03103) is NOT surveyed by SrV and is emitted as a ZERO row per band
+  (n_unweighted = 0, NaN share) rather than being dropped (issue #405): the row set is the
+  expected geography, not the Kreise the delivery happens to cover, and this table already
+  applied exactly that rule to empty age BANDS. A zero row carries no measurable rate, so a
+  target builder still substitutes the 03ZGB region-total share and documents that as an
+  assumption; what it no longer does is carry a hardcoded "ZGB8 minus Wolfsburg" expectation
+  (scripts/build_participation_universe_targets.py reads which Kreise lack a rate from
+  n_unweighted == 0 and logs the primary-vs-fallback rate every run). Per band the 03ZGB row is
+  EXACTLY the union of the 8 kreis rows, so
   sum(kreis n_unweighted) == 03ZGB n_unweighted holds by construction (enforced by
   srv_participation_universe.check_invariants, which also enforces that every band is present
   and that every share is NaN or inside [0, 1]).
 
   Kreis COVERAGE has its own guard, srv_participation_universe.check_kreis_coverage, which the
-  extraction calls with the full ZGB_KREISE set and which raises if any surveyed Kreis has no
-  row (only WOLFSBURG_KREIS may be absent) or if a row carries a code outside the expected set.
-  It is separate from check_invariants because the builders emit one row per Kreis PRESENT in
-  the universe, so a delivery that lost a whole Kreis would satisfy every table invariant while
-  emitting one row fewer.
+  extraction calls with the full ZGB_KREISE set. It raises if an expected Kreis has no row at
+  all, if a row carries a code outside the expected set, if a SURVEYED Kreis sums to
+  n_unweighted == 0 across its bands, or if an UNSURVEYED one (UNSURVEYED_KREISE, i.e.
+  Wolfsburg) carries persons. The two count checks carry the detection power the old data-driven
+  row set provided for free: a lost Kreis used to show up as a missing row and now shows up as a
+  zero row, so an unexpected zero has to be rejected explicitly.
 
   Thin-cell caveat: the per-Kreis 0-5 and 6-17 bands rest on 75-541 unweighted persons per cell
   (smallest: Helmstedt 03154 with 75 in education_0_5, Goslar 03153 with 95). Coverage caveat

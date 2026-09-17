@@ -56,5 +56,10 @@ assessment:
   pending_reason: |
     ADR-0026 documents the design (Tier 1 + Tier 2 daily/non-daily, both flags ON); no owner verdict on realised per-purpose fit has been recorded.
   source: ADR-0026
-notes: popsim_open deliberately keeps the eqasim ENTD distance CDFs -- ENTD is that workflow's
-  donor survey, so overriding with MiD CDFs would be wrong.
+notes: 'popsim_open deliberately keeps the eqasim ENTD distance CDFs -- ENTD is that workflow''s
+  donor survey, so overriding with MiD CDFs would be wrong. The leisure subtype taxonomy this record
+  owns has FIVE groups in production, not four: the fifth, leisure_unspecified, is defined by the
+  raw MiD W_ZWECK code rather than by W_ZWD and has its own record
+  leisure_unspecified_subtype (issue #373, ADR-0115), which owns its flag, its layer and its
+  evidence. The W_ZWD group boundaries themselves are owned by w_zwd_codeplan_sentinels (#242,
+  ADR-0113).'

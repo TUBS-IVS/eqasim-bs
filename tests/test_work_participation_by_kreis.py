@@ -654,6 +654,26 @@ def test_configure_declares_every_stage_and_config_key_execute_reads():
     assert "braunschweig.synthesis.commute_day.state_stage" in recorder.stages
     assert (recorder.config_keys[S.KEY_COMMUTE_DAY_STATE_ENABLED]
             == S.DEFAULT_COMMUTE_DAY_STATE_ENABLED)
+    # issue #370, Task 7: the general day-absence draw, declared (with both flags default True)
+    # alongside the state stage it overrides check 1's shares with.
+    assert S.ABSENCE_STAGE in recorder.stages
+    assert recorder.config_keys[S.KEY_DAY_ABSENCE_ENABLED] == S.DEFAULT_DAY_ABSENCE_ENABLED
+
+
+def test_configure_skips_the_absence_stage_when_day_absence_is_disabled():
+    recorder = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False})
+    S.configure(recorder)
+    assert S.ABSENCE_STAGE not in recorder.stages
+    # The state stage itself is unaffected -- only the absence override is gated on this flag.
+    assert "braunschweig.synthesis.commute_day.state_stage" in recorder.stages
+
+
+def test_configure_skips_the_absence_stage_when_the_commute_day_state_model_is_off():
+    """Check 1 needs the drawn states anyway, so the absence override is gated on it too."""
+    recorder = _ConfigureRecorder(config={S.KEY_COMMUTE_DAY_STATE_ENABLED: False})
+    S.configure(recorder)
+    assert "braunschweig.synthesis.commute_day.state_stage" not in recorder.stages
+    assert S.ABSENCE_STAGE not in recorder.stages
 
 
 def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path, monkeypatch):
@@ -694,6 +714,10 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             "braunschweig.locations.work": _work_locations(),
             "data.spatial.municipalities": pd.DataFrame({"commune_id": ["03101000"]}),
             "braunschweig.data.census.pendler": _ba_flows(),
+            # issue #370, Task 7: declared (both flags default True) -- nobody is generally
+            # absent here, so this test's numbers stay exactly what they were before Task 7.
+            S.ABSENCE_STAGE: {"absence": pd.DataFrame(
+                {"person_id": [1, 3], "day_absence_state": ["present", "present"]})},
         },
         config={
             "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
@@ -701,6 +725,7 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
             S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
             S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
             S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
+            S.KEY_DAY_ABSENCE_ENABLED: True,
         })
 
     result = S.execute(context)
@@ -725,8 +750,11 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     assert zgb_states["share_home"] == pytest.approx(0.5)
     assert zgb_states["share_absent"] == pytest.approx(0.0)
     assert zgb_states["share_no_workplace"] == pytest.approx(0.0)
+    # issue #370, Task 7: nobody is generally absent in this fixture, so the override is a no-op.
+    assert zgb_states["n_absent_general"] == 0
     summary = (out_dir / "summary.md").read_text(encoding="utf-8")
     assert "Check 1 (ADR-0104)" in summary and "never gated" in summary
+    assert "n_absent_general" in summary
 
     participation = pd.read_csv(out_dir / "work_participation_by_kreis.csv", dtype={"code": str})
     assert list(participation.columns) == list(S.PARTICIPATION_COLUMNS)
@@ -747,6 +775,73 @@ def test_execute_writes_the_report_against_the_committed_srv_reference(tmp_path,
     assert bool(row["destination_is_external"]) is True
     assert set(result) == {"participation", "distance_classes", "ext_destinations",
                            "near_class_edge_share", "commute_day_state_shares", "counts"}
+
+
+def test_execute_skips_the_absence_stage_and_matches_the_undisturbed_fixture_when_day_absence_is_disabled(
+        tmp_path, monkeypatch):
+    """issue #370, Task 7, OFF path: with day_absence_enabled False the general day-absence
+    draw must not change a single number of the report, and the absence stage must not even be
+    read -- proven here by NOT stubbing it: a read attempt would fail loudly on
+    _StubExecuteContext.stage() rather than silently returning something.
+
+    The pinned numbers are exactly those of
+    test_execute_writes_the_report_against_the_committed_srv_reference (same persons/trips/
+    states fixture), which additionally confirms that stubbing 'nobody absent' there is truly a
+    no-op rather than accidentally relying on the override.
+    """
+    from braunschweig.analysis import spatial
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = os.path.join(repo_root, "eqasim-data", "data")
+
+    monkeypatch.setattr(spatial, "load_vg250_layer",
+                        lambda layer, strict=True: _kreis_polygons())
+    monkeypatch.setattr(spatial, "assign_geographies",
+                        lambda homes, kreise=None: homes.assign(ars5=["03101", "03151"]))
+
+    home_locations = gpd.GeoDataFrame(
+        {"household_id": [1, 2]},
+        geometry=[Point(0.0, 0.0), Point(60_000.0, 0.0)], crs="EPSG:25832")
+    persons = pd.DataFrame({"person_id": [1, 3], "household_id": [1, 2],
+                            "employed": [True, True]})
+    recorder = _ConfigureRecorder(config={S.KEY_DAY_ABSENCE_ENABLED: False})
+    S.configure(recorder)
+    assert S.ABSENCE_STAGE not in recorder.stages
+
+    context = _StubExecuteContext(
+        recorder,
+        stages={
+            "synthesis.population.spatial.home.locations": home_locations,
+            "synthesis.population.spatial.primary.locations": (_work_points(), None),
+            "synthesis.population.enriched": persons,
+            "synthesis.population.trips.final": _trips(),
+            "braunschweig.synthesis.commute_day.state_stage": {"states": _states()},
+            "braunschweig.locations.work": _work_locations(),
+            "data.spatial.municipalities": pd.DataFrame({"commune_id": ["03101000"]}),
+            "braunschweig.data.census.pendler": _ba_flows(),
+            # Deliberately NOT stubbed: execute() must never attempt to read it with the flag off.
+        },
+        config={
+            "output_path": str(tmp_path), "data_path": data_path, "sampling_rate": 1.0,
+            S.KEY_DETOUR: 1.3, S.KEY_SUBDIR: "analysis/cds", S.KEY_MAX_UNMATCHED_HOME_SHARE: 0.05,
+            S.KEY_MAX_UNRESOLVED_DESTINATION_SHARE: 0.05, S.KEY_EDGE_TOLERANCE_KM: 5.0,
+            S.KEY_COMMUTE_DAY_STATE_ENABLED: True,
+            S.KEY_MAX_STATES_OUTSIDE_SHARE: S.DEFAULT_MAX_STATES_OUTSIDE_SHARE,
+            S.KEY_DAY_ABSENCE_ENABLED: False,
+        })
+
+    S.execute(context)
+
+    out_dir = tmp_path / "analysis" / "cds"
+    state_shares = pd.read_csv(out_dir / "commute_day_state_shares.csv", dtype={"code": str})
+    zgb_states = state_shares[state_shares["code"] == "zgb"].iloc[0]
+    assert zgb_states["n_employed"] == 2
+    assert zgb_states["n_workers"] == 2
+    assert zgb_states["share_at_workplace"] == pytest.approx(0.5)
+    assert zgb_states["share_home"] == pytest.approx(0.5)
+    assert zgb_states["share_absent"] == pytest.approx(0.0)
+    assert zgb_states["share_no_workplace"] == pytest.approx(0.0)
+    assert zgb_states["n_absent_general"] == 0
 
 
 # --------------------------------------------------------------------------- Kreis centroids

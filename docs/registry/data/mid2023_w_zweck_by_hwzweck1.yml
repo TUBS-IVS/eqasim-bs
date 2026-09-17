@@ -1,0 +1,70 @@
+dataset: mid2023_w_zweck_by_hwzweck1
+title: MiD 2023 W_ZWECK x hwzweck1 main-purpose fold (committed evidence table for ADR-0111)
+provider: derived in-repo from the restricted MiD 2023 B1 scientific-use delivery
+vintage: 2023 survey year (MiD 2023 B1 Standard delivery)
+geography: national (Germany); MiD B1 has no regional restriction, so this table is NOT
+  Braunschweig-specific -- it states what MiD's own main-purpose derivation does with each trip
+  purpose code, which is a property of the survey instrument, not of a region.
+crs: null
+roles:
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python -m scripts.extract_mid_w_zweck_hwzweck1 --raw <MiD2023 B1 CSV dir>
+    --source-commit <sha>. Reads MiD2023_Wege.csv (columns W_ZWECK, hwzweck1, W_GEW, W_RBW,
+    kernwo) with the delivery's own separator (braunschweig.popsim.mid.csv_format.detect_csv_separator)
+    and writes this table. The raw microdata is local-only, restricted, and never committed.
+  script: scripts/extract_mid_w_zweck_hwzweck1.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Ships committed with every clone (git add -f, per the .gitignore allowlist convention for
+    eqasim-data/data/braunschweig/mid/mid2023_*.csv), so it is deliberately NOT listed in
+    scripts/verify_braunschweig_inputs.py -- there is nothing for a user to acquire. Its content is
+    pinned by tests/test_w_zweck_hwzweck1_fold.py, which is also its only consumer.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); the raw MiD B1 delivery is restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: weekday legs (kernwo in (1, 2, 3)) that are not route-break summary legs (W_RBW != 1)
+  -- 738,546 of the delivery's 1,087,393 raw Wege rows. This is the same universe the trip build
+  keeps, which is why the table can be compared against PURPOSE_BY_W_ZWECK at all.
+  Columns: w_zweck, hwzweck1, n_unweighted (plain row count), share_weighted (W_GEW share within
+  each w_zweck, four decimals). The two count columns answer different questions and must not be
+  mixed; share_weighted can sum to 1.0001 per w_zweck because each row is rounded independently.
+
+  hwzweck1 is MiD's OWN derived main purpose ("Hauptzweck des Weges": 1 Arbeit, 2 dienstlich,
+  3 Ausbildung, 4 Einkauf, 5 Erledigung, 6 Freizeit, 7 Begleitung, 99 k.A.), i.e. a derivation by
+  the survey institute rather than an independent observation -- ADR-0111 rests on it and says so.
+  Every W_ZWECK code folds to exactly one hwzweck1 value (share_weighted 1.0000) EXCEPT the two
+  home codes 8 and 9, which spread over 1-7 plus a 99 sliver because MiD recodes a home leg to the
+  purpose of the previous leg; no dominant fold is expected or asserted for those.
+
+  National, not regional (see geography). The table states a coding rule of the survey, so the
+  national basis is the right one; it must NOT be read as a regional purpose mix.
+notes: |
+  EVIDENCE TABLE, stated as such in its own header: it is not a control target and no synthesis,
+  location or analysis STAGE reads it at run time. Its only consumer is the pin test
+  tests/test_w_zweck_hwzweck1_fold.py, which asserts that braunschweig.popsim.trips's
+  PURPOSE_BY_W_ZWECK (with w_zweck_10_as_leisure on) agrees with each code's dominant fold, except
+  the documented FOLD_EXCEPTIONS = {8, 9, 6, 13}, and that W_ZWECK 10 folds to hwzweck1 6
+  "Freizeit" with share_weighted >= 0.99 while the flag-off mapping still yields "other".
+
+  It is the sole measured basis of ADR-0111 (feature record purpose_main_fold_code_10): W_ZWECK 10
+  "anderer Zweck" is 39,429 legs (5.34 % of the universe) and folds to Freizeit for 100 % of them.
+  The same table supplies the leisure-universe counts ADR-0111 quotes ({7, 14, 15, 16} = 108,940
+  legs) and the code-13 count ADR-0112 quotes (6,781 legs).
+
+  Sibling committed MiD aggregates of the same package: mid2023_w_zwd_group_reference (the subtype
+  group mix) and the escort split inside the umbrella record mid2023_reference_tables.

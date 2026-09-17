@@ -2,6 +2,7 @@
 signals + dwelling-size histogram the home matcher needs (census-internal)."""
 from __future__ import annotations
 import pandas as pd
+from pandas.api.types import is_extension_array_dtype, is_numeric_dtype
 
 THREE_CLASSES = ("efh_zfh", "mfh", "sonst")
 _S = "_100m_Gitter"
@@ -29,6 +30,47 @@ _SIZE_DEF = [("unter30", 25.0), ("30bis39", 35.0), ("40bis49", 45.0), ("50bis59"
              ("180undmehr", 190.0)]
 SIZE_BIN_COLS = tuple(f"{p}_Flaeche_der_Wohnung_10m2_Intervalle{_S}" for p, _ in _SIZE_DEF)
 SIZE_BIN_MIDPOINTS = tuple(m for _, m in _SIZE_DEF)
+HOME_SIGNAL_COLUMNS = tuple(dict.fromkeys(
+    column
+    for columns in (*BUILDING_COUNT_COLS.values(), *DWELLING_COUNT_COLS.values())
+    for column in columns
+)) + (OCCUPIED_COL,) + SIZE_BIN_COLS
+
+
+def validate_home_signal_size_bins(cells: pd.DataFrame) -> None:
+    """Retain ``cell_signals`` errors before an optimized row projection.
+
+    Only ``cell_signals``' size-bin loop visits every row before household
+    matching. Native NumPy numeric columns cannot contain a malformed value and
+    therefore take an O(number-of-columns) dtype fast path. For object and
+    nullable extension columns, replay the original ``float(value or 0)`` in the
+    same row-major, size-bin order without wrapping its exception.
+    """
+    non_native_size_columns = [
+        column for column in SIZE_BIN_COLS
+        if column in cells.columns
+        and (not is_numeric_dtype(cells[column]) or is_extension_array_dtype(cells[column]))
+    ]
+    if not non_native_size_columns:
+        return
+    for _, row in cells[non_native_size_columns].iterrows():
+        for column in non_native_size_columns:
+            float(row.get(column, 0) or 0)
+
+
+def select_home_signal_cells(cells: pd.DataFrame, cell_ids) -> pd.DataFrame:
+    """Return source-ordered household cells with only home-matching signals.
+
+    ``cell_signals`` is row-local and typed home matching only looks up cells that
+    occur in the household frame. Keeping the source order preserves existing
+    duplicate prepared-cell behaviour while avoiding unused size histograms.
+    """
+    validate_home_signal_size_bins(cells)
+    selected_columns = ["ZENSUS100m"] + [
+        column for column in HOME_SIGNAL_COLUMNS if column in cells.columns
+    ]
+    requested_ids = pd.Index(pd.Series(cell_ids).dropna().drop_duplicates())
+    return cells.loc[cells["ZENSUS100m"].isin(requested_ids), selected_columns]
 
 
 def _sum(df, cols):

@@ -41,8 +41,12 @@ not validation.
   & "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
   conda activate eqasim
   ```
-- Local pytest can hit `matsim` namespace shadowing (PyPI `matsim-tools`
-  shadows the repo tree); the canonical full suite runs on the server.
+- Linux/WSL2 with the captured server environment is the canonical runtime;
+  native Windows is also checked for portability. Install from the platform's
+  committed lock files; see [environment setup](docs/codebase/notes/reproducible-environment.md).
+- Run `python scripts/run_tests.py --check` at session start. Fix interpreter,
+  dependency or `matsim` import errors before testing; never patch imports or
+  re-solve the trusted server environment to bypass a failed check.
 - Java: eqasim-java 2.2.0 needs JDK 25 (`java_home` / `java_binary` config).
 - `eqasim-data/` is gitignored/local-only (~13 GB) except small committed
   aggregate reference tables; preflight:
@@ -57,12 +61,16 @@ python scripts/run_synpp.py configs/base_bs.yml configs/overlays/test_25pct.yml 
 python scripts/verify_braunschweig_inputs.py --matsim                            # data preflight
 python -m braunschweig.documentation check                                       # registry/docs check (0 FAIL required)
 python -m braunschweig.documentation build                                       # regenerate docs/generated/*
-python -m pytest tests/ -q                                                       # test suite (eqasim env)
+python scripts/run_tests.py -q                                                  # regression suite (eqasim env)
 ```
 
 ## Non-negotiables for agents
 
 - English everywhere in the repo; chat with the maintainer in German.
+- Follow the [required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate)
+  before handing off, pushing or opening a PR: shared runner, final-tree Linux
+  regression evidence, documented skips, and Windows CI compatibility. Direct
+  pytest or an older checkout's results do not satisfy that gate.
 - Never `git push` without explicit per-push confirmation; PRs only via
   `git pr` (base = fork `TUBS-IVS/eqasim-bs`).
 - New behaviour flag-gated, default-ON with a byte-identical, tested OFF path.

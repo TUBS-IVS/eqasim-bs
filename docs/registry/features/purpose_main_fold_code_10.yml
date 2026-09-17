@@ -1,0 +1,149 @@
+feature: purpose_main_fold_code_10
+title: MiD W_ZWECK 10 "anderer Zweck" follows MiD's own main-purpose fold (leisure)
+area: behavior
+description: 'Maps MiD W_ZWECK 10 ("anderer Zweck") to the eqasim purpose leisure instead of
+  other, following MiD''s own main-purpose derivation hwzweck1, which folds code 10 to 6
+  "Freizeit" for 100 % of the legs (committed evidence table
+  eqasim-data/data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv, share_weighted 1.0000,
+  n 39,429 of 738,546 unweighted weekday non-rbW legs = 5.34 %). Issue #373, ADR-0111.
+
+  PURPOSE_BY_W_ZWECK[10] deliberately STAYS "other" (it records what the codebook literally
+  says); the relabel is a separate, logged step in braunschweig.popsim.trips.map_purpose, the
+  same pattern explicit_round_trip_purposes (ADR-0091) established.
+  trips.leisure_w_zweck_codes(*, w_zweck_10_as_leisure) is the ONE definition of "which W_ZWECK
+  codes are leisure"; braunschweig.popsim.mid.participation.participation_w_zweck delegates the
+  leisure entry of PARTICIPATION_W_ZWECK to it, so the leisure_participation Kreis control counts
+  the same legs the realised plan carries (the seed-vs-plan mismatch class ADR-0109 named). The
+  same flag reaches the secondary distance layers (braunschweig.popsim.distance_distributions)
+  and the home-office donor pool (braunschweig.synthesis.commute_day.home_office_donors_stage),
+  so a replaced day cannot follow a different purpose vocabulary than the day it replaces.
+
+  Consequence on the control universe, counted on the committed fold table: the MiD-side leisure
+  leg universe grows from 108,940 unweighted legs (codes {7, 14, 15, 16}) to 148,369 (+36.2 %;
+  code 10 is then 26.6 % of it), while the SrV-side target
+  (eqasim-data/data/braunschweig/targets/target2026_leisure_participation_by_kreis.csv, SrV
+  E_ZWECK_9 == 7) is UNCHANGED -- SrV''s leisure bucket already contains what MiD respondents
+  file as code 10 (its own residual, V_ZWECK 70 "Sonstiges", is 1.3 % of trips).
+
+  ENTD has no W_ZWECK vocabulary, so EntdSource.build_trips rejects any non-default value via
+  config_keys.ENTD_REJECTED_KEYS and both popsim_open fixtures set the OFF value explicitly.
+  purpose_subtype.LEISURE_SENTINELS additionally gains the sentinels 7704/7705 unconditionally
+  (defensive: a code-10 leg''s W_ZWD is always a sentinel, so the coverage guard can never trip
+  on one). With w_zweck_10_as_leisure false every stage is byte-identical to the pre-#373 model.'
+stages:
+- synthesis.population.trips
+- data.census.filtered
+- synthesis.population.spatial.secondary.distance_distributions
+- braunschweig.synthesis.commute_day.home_office_donors_stage
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - w_zweck_10_as_leisure
+introduced:
+  issue: '#373'
+  pr: null
+  adr: ADR-0111
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/mid/participation.py
+- braunschweig/popsim/mid/seed_loading.py
+- braunschweig/popsim/sources/base.py
+- braunschweig/popsim/sources/mid.py
+- braunschweig/popsim/sources/entd.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/popsim/purpose_subtype.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- scripts/extract_mid_w_zweck_hwzweck1.py
+evidence:
+  tests:
+  - tests/test_w_zweck_hwzweck1_fold.py
+  - tests/test_leisure_education_participation.py
+  - tests/test_popsim_trips.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_distance_distributions_by_purpose.py
+  - tests/test_commute_day_donor_pool.py
+  - tests/test_popsim_open_config.py
+  - tests/test_trips_adapter_signature_parity.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_w_zweck_hwzweck1_fold.py::test_code_10_folds_to_leisure_and_the_flag_off_keeps_other
+    note: 'The named test pins BOTH directions on the rule itself: the committed fold table says
+      code 10 -> hwzweck1 6 with share_weighted >= 0.99, and map_purpose with the flag OFF still
+      returns "other" for a code-10 leg. Every keyword in the builder chain (map_purpose,
+      expand_persons_to_trips, build_trip_table, build_validated_trip_table, trips_stage.run,
+      donor_pool.donor_trips, distance_distributions.run, participation_w_zweck) has the CODE
+      default False, so a caller that omits it is byte-identical by construction; the flag is
+      turned on only by the config key, and configs/base_bs.yml is its single production home.
+      That the flag genuinely REACHES each builder is pinned separately rather than assumed:
+      tests/test_popsim_trips.py::test_build_validated_trip_table_threads_w_zweck_10_as_leisure_to_map_purpose
+      (end-to-end through the trip table),
+      tests/test_popsim_trips_stage.py::test_run_forwards_w_zweck_10_as_leisure_to_both_builders,
+      tests/test_commute_day_donor_pool.py::test_donor_trips_forwards_w_zweck_10_as_leisure and
+      tests/test_distance_distributions_by_purpose.py::test_run_forwards_w_zweck_10_as_leisure_to_map_purpose.
+      No rng draw is involved in the mapping, so there is no stream shift on either path.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.trips] w_zweck_10_as_leisure ON'
+    note: 'map_purpose logs the relabelled leg count, the share and the weighting basis it used
+      ("W_GEW-weighted" where the column exists, else "unweighted"), so a rate far from the ~5.34 %
+      the committed fold table measures is visible on sight as a broken join or a different
+      delivery rather than as a quiet behaviour change. This is a RELABEL, not a fallback: no leg
+      can silently miss the primary path. The neighbouring true fallback in the same function --
+      an unmapped W_ZWECK code reaching DEFAULT_PURPOSE -- keeps its own WARNING and belongs to the
+      explicit_w_zweck_purposes record. The seed side logs the same decision through
+      participation_w_zweck (the leisure code set is derived, never re-typed), and the code-10
+      relabel rate has NOT yet been observed on a run (validation.state below).'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv
+    note: 'W_GEW-weighted W_ZWECK x hwzweck1 fold with n per cell, weekday (kernwo in 1,2,3) non-rbW
+      legs, written by scripts/extract_mid_w_zweck_hwzweck1.py (data record
+      mid2023_w_zweck_by_hwzweck1). An EVIDENCE TABLE, stated as such in its own header: it is not a
+      control target and no stage reads it at run time -- its only consumer is the pin test
+      tests/test_w_zweck_hwzweck1_fold.py, which asserts that PURPOSE_BY_W_ZWECK (with this flag)
+      agrees with the dominant fold for every code except the documented exceptions
+      FOLD_EXCEPTIONS = {8, 9, 6, 13} (8/9 are home codes MiD recodes to the previous leg''s
+      purpose; 6/13 are the escort family, see escort_purpose / escort_passive_from_adult).'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured on a population. ADR-0111''s pre-registered A/B (Consequences section)
+    specifies arm A (this flag plus escort_passive_from_adult, one PopulationSim run) against
+    sub-project B''s arm 1, with five rows: participation_other (baseline +8.22 pp vs SrV on the
+    committed arm-4 artefact, expected below +3 pp), participation_leisure (baseline -0.65 pp,
+    expected to move up and stay within +/- 3 pp), the leisure subtype shares and the leisure
+    distance distribution (both REPORTED, not gated -- the code-10 mass draws the code-7 subtype
+    mix, see the assumption in ADR-0111) and the code-10 relabel rate in the run log (expected
+    5-6 % of legs). To be run as Task 9 of the #373/#372/#242 SDD plan.'
+  note: 'No run has executed this code as of this record (the documentation task is written before
+    the A/B). validation.state is unvalidated, not measured_vs_reference, per CLAUDE.md
+    "convergence is not validation" and "no invented reference values": the committed fold table is
+    evidence for the DESIGN (what MiD says a code-10 leg is), not a measurement of the MODEL''s
+    output. The baseline figures quoted above come from the committed artefact of the arm-4 run
+    (participation-universe-controls-arm4-100pct-2026-09-08), which ran the model BEFORE this
+    feature existed. Do not cite ADR-0111''s A/B table as a result until a run manifest under
+    docs/runs/ records it and this record points at it.'
+assessment:
+  status: pending
+  pending_reason: 'The pre-registered A/B (ADR-0111 Consequences, Task 9 of the SDD plan) has not
+    run; nothing has been measured on a live population, so there is no basis to assess the
+    feature''s realised behaviour -- only its designed and unit-tested one. The open question the
+    A/B answers is not whether the relabel happens (that is pinned) but what it does to the leisure
+    subtype mix and the leisure distance distribution, since code-10 legs carry no W_ZWD detail and
+    therefore inherit the code-7 subtype structure.'
+notes: 'Sibling records of the same package: escort_passive_from_adult (ADR-0112, the other half of
+  arm A -- it reads THIS flag to decide what a child paired with an adult code-10 leg gets) and
+  w_zwd_codeplan_sentinels (ADR-0113, arm B). explicit_w_zweck_purposes (ADR-0091) carries the
+  coverage guard and the 14/15/16 mapping this record builds on and points here. The threading
+  list -- every consumer that must receive the flag, and the rule that a new purpose flag is
+  declared with the config_keys constants in every reader and added to ENTD_REJECTED_KEYS if the
+  trip build reads it -- lives once, in docs/codebase/notes/mid-purpose-mapping.md.'

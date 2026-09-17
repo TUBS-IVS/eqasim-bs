@@ -35,14 +35,14 @@ Maintenance duties: every new/changed stage → Stage Registry (+ `... dag` if t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
 
-**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, apply the issue-first rule for newly discovered work, and run the issue triage check (every open model issue has a type, a `step:`, an `area:` and a `**Stages:**` line; review the untriaged `prio`-less list).
+**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, apply the issue-first rule for newly discovered work, and run the issue triage check (every open model issue has a type, a `step:`, an `area:`, a `**Stages:**` line and the plain-language head `In short` / `## Problem` / `## Why it matters` / `## Done when`; review the untriaged `prio`-less list).
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the alias on a new machine:
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
 A PR mirrors its issue: branch `<fix|feature|analysis|docs|chore|test>/i<issue>-<slug>`, the issue's own `step:`/`area:` labels (never `prio:`), a title stating what the change does with `(closes #NN)`, and the same `**Stages:**` line in the body — `docs/codebase/notes/issue-and-pr-conventions.md`.
 Never push without explicit per-push confirmation (see the git policy below).
 
-Layer budgets (checked only at /close — exceeding one never blocks work): CLAUDE.md ≤ 23 KB · MEMORY.md ≤ 12 KB (one line per memory, hooks ≤ ~110 chars) · SESSION_LOG.md ≤ 10 entries. Registries have no budget (one fact per file scales).
+No size budgets. CLAUDE.md, MEMORY.md and SESSION_LOG.md have no KB or entry limit, and nothing is ever shortened, archived, or left unwritten just to hit a number. Keep them lean the only way that is safe: one fact in one place, dedupe before adding, and archive at /close what actually merged or was parked.
 
 ## Language policy
 
@@ -179,6 +179,17 @@ overstate results").
 
 ## Tests
 
+**Mandatory for every coding agent:** follow the
+[required verification gate](docs/codebase/TESTING.md#required-agent-verification-gate).
+Use `python scripts/run_tests.py` for focused checks and the final regression
+suite, with `--check` at session start. Use the committed platform locks and the
+server-mirrored Linux/WSL environment for canonical evidence. Do not replace a
+failed gate with direct pytest, import monkey-patches, silently skipped tests,
+an unpinned environment, or results from another code state. Record the tested
+commit, environment, command, exit status and pass/skip counts in the handoff/PR.
+Both regression CI platforms must pass before merge; a small-data pass does not
+replace a required real-data smoke.
+
 Add tests for non trivial logic. Prefer small unit tests for data transformations, filtering rules, assignment logic, cost calculations, aggregation logic, routing helper logic, and validation checks. Use integration tests for MATSim scenario setup or full pipeline behavior. Tests must be deterministic. Use small synthetic test data where possible; do not rely on large external datasets in unit tests.
 
 ## Performance
@@ -236,8 +247,11 @@ all branches and remotes, including `origin/main`.
 **Issue-first for newly discovered work.** When a new feature, gap, or idea surfaces
 mid-session, PROPOSE it to the user; only after explicit confirmation, open a GitHub
 issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the `eqasim-org/eqasim-bavaria`
-upstream) — with its type, `step:`/`area:` labels, a `**Stages:**` line and a
-`<stage or attribute>: <finding>` title per `docs/codebase/notes/issue-and-pr-conventions.md`
+upstream) — with its type, `step:`/`area:` labels, a `**Stages:**` line, a
+`<stage or attribute>: <finding>` title, and a body that opens with the plain-language head
+(`In short` line, `## Problem` as short bullets, `## Why it matters`, `## Done when`, in
+everyday words, understandable in thirty seconds; everything technical under `## Details`) per
+`docs/codebase/notes/issue-and-pr-conventions.md`
 (never re-create the retired `bug`/`enhancement`/`decision` labels). This guarantees
 incidental findings are tracked, not forgotten. All issues, PRs, and the Project board
 live on the fork only. The canonical feature workflow that ties this together (brainstorm
@@ -262,6 +276,8 @@ Before considering a task complete, check: code compiles; all names, comments, a
 
 When modifying code, first inspect the surrounding code and project structure. Do not guess APIs if the relevant code can be inspected. Do not invent missing classes, methods, or dependencies. If information is missing, state the uncertainty clearly. When suggesting changes, explain the reason briefly. Produce complete, consistent code, not isolated fragments, unless a fragment is explicitly requested. When a task affects scientific results, explicitly state whether the change may alter outputs. For performance improvements, explain the expected benefit and any trade off.
 
+**Answers in chat must be scientifically sound AND immediately understandable — both, never one at the cost of the other.** Simplify the packaging, not the content. Keep the substance every time: the actual numbers with their units, where each figure comes from, the distinction between observed data, model output and assumption, and any caveat that would change the user's decision (see "No invented reference values", "Research reporting"). Present it for a reader who has thirty seconds: the result first, then the short reason. Short sentences, plain words, no jargon where a normal word exists, and no narration of your own process (which tools ran, which files were opened, what was tried and dropped). Anything longer than a few lines becomes a handful of bullets or a small table, never a wall of prose, with the numbers, paths, and decisions easy to spot. Derivations, method details, and full evidence belong in the files the answer links to (registry record, ADR, run manifest), not in the chat. If a result cannot be said simply without becoming wrong, say it precisely and add one plain sentence that explains it. Chat language is German per the language policy above.
+
 ## Non negotiable rules
 
 - All code and comments must be in English.
@@ -273,3 +289,4 @@ When modifying code, first inspect the surrounding code and project structure. D
 - All input data must be validated.
 - All changes must preserve scientific credibility.
 - Completeness, consistency, reproducibility, and clarity are mandatory.
+- Every answer in chat must be scientifically sound and, at the same time, short and immediately understandable.

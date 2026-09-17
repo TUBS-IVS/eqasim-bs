@@ -66,11 +66,14 @@ def _write_mid_attribute_fixture(tmp_path):
         (3, 1), (3, 2), (3, 3), (3, 4),
     ]
     _wege_rows = [
-        "H_ID,P_ID,W_ID,W_ZWECK,hvm_imp,W_SZS,W_SZM,W_AZS,W_AZM,wegkm_imp,wegmin_imp1,W_RBW,W_SO1"
+        "H_ID,P_ID,W_ID,W_ZWECK,hvm_imp,W_SZS,W_SZM,W_AZS,W_AZM,wegkm_imp,wegmin_imp1,W_RBW,W_SO1,HP_ALTER"
     ]
     for h_id, p_id in _wege_persons:
-        _wege_rows.append(f"{h_id},{p_id},1,1,4,7,0,7,30,10.0,30,0,1")
-        _wege_rows.append(f"{h_id},{p_id},2,8,4,17,0,17,30,10.0,30,0,809")
+        # The trailing 40 is HP_ALTER, required by MID_WEGE_REQUIRED_COLS since issue #372
+        # (the passive-escort pairing reads it to identify the accompanying adult); this
+        # fixture does not exercise the pairing, so one adult age is used on every leg.
+        _wege_rows.append(f"{h_id},{p_id},1,1,4,7,0,7,30,10.0,30,0,1,40")
+        _wege_rows.append(f"{h_id},{p_id},2,8,4,17,0,17,30,10.0,30,0,809,40")
     (tmp_path / "MiD2023_Wege.csv").write_text("\n".join(_wege_rows) + "\n", encoding="utf-8")
 
 
@@ -105,6 +108,9 @@ def _inline_reference(mid_dir, *, random_seed, weekend_plan_match_on, diary_plan
         # key is never relaxed. match_person draws exactly ONE rng value per call
         # regardless of the flag, so the shared completion stream stays in lockstep.
         hard_employment=True,
+        # Same for the fine child age bands (issue #386): build_completed_donor defaults
+        # them ON, and they likewise cost exactly one rng value per call.
+        fine_child_age_bands=True,
     )
     persons = diary_facts.attach_plan_source_facts(persons, facts)
     return households, persons
@@ -238,9 +244,10 @@ class _RecordingConfigureContext:
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():
     from braunschweig.popsim.stage import (
-        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
+        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_MID_PASSENGER_AVAILABILITY,
     )
     ctx = _RecordingConfigureContext()
     cd.configure(ctx)
@@ -251,6 +258,10 @@ def test_completed_donor_configure_registers_diary_plan_match_keys():
     # Task 6 (issue #368): the un-relaxable employment boundary must be part of THIS
     # stage's config hash, or flipping it would silently reuse the cached donor build.
     assert ctx.calls[KEY_DIARY_MATCH_HARD_EMPLOYMENT] is True
+    # Issue #386: the fine child age bands change which donor a diary-less child draws,
+    # so they belong in THIS stage's config hash for the same reason.
+    assert ctx.calls[KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS] is True
+    assert ctx.calls[KEY_MID_PASSENGER_AVAILABILITY] is True
 
 
 import inspect

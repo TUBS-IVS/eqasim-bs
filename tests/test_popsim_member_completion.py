@@ -129,3 +129,71 @@ def test_load_mid_seed_default_is_unchanged(tmp_path):
         "H_ID", "P_ID", "P_GEW", "HP_ALTER", "HP_SEX", "STAAT",
     ]
     assert len(persons) == 6  # nothing filled, nothing dropped
+
+
+# --- issue #386 follow-up: fine child bands in the mirror role matching --------
+
+def _sibling_age_fixture():
+    """Host A misses one member and already has a 7-year-old; mirror B holds a
+    13-year-old (listed first) and a 7-year-old of the same sex.
+
+    _match_present_members marks the mirror members that correspond to an
+    already-present host member; the REMAINING ones become the fillers. Under the
+    coarse 6-13 band the host's 7-year-old consumes the mirror's 13-year-old slot,
+    so the filler copied in is a SECOND 7-year-old -- the mirror's sibling age
+    structure (7 + 13) is destroyed. Under the fine bands the 7-year-old matches the
+    7-year-old and the 13-year-old is filled in, which is what the module's stated
+    assumption ("the missing members resemble the surplus members of a structurally
+    similar complete household") actually says.
+    """
+    households = pd.DataFrame({
+        "H_ID": ["A", "B"], "H_GR": [4, 4], "hhgr_gr": [4, 4],
+        "oek_status": [3, 3], "RegioStaR7": [73, 73], "H_GEW": [1.0, 1.0],
+    })
+    persons = pd.DataFrame({
+        "H_ID":     ["A", "A", "A", "B", "B", "B", "B"],
+        "P_ID":     [1, 2, 3, 1, 2, 3, 4],
+        "HP_ALTER": [40, 38, 7, 41, 39, 13, 7],
+        "HP_SEX":   [1, 2, 1, 1, 2, 1, 1],
+    })
+    return households, persons
+
+
+def test_fine_child_bands_keep_the_mirror_sibling_age_structure():
+    households, persons = _sibling_age_fixture()
+    _h, coarse_p, _r = member_completion.complete_members(
+        households, persons, rng=np.random.RandomState(0), fine_child_age_bands=False)
+    _h2, fine_p, _r2 = member_completion.complete_members(
+        households, persons, rng=np.random.RandomState(0), fine_child_age_bands=True)
+
+    coarse_filler = coarse_p[coarse_p["member_imputed"] & (coarse_p["H_ID"] == "A")]
+    fine_filler = fine_p[fine_p["member_imputed"] & (fine_p["H_ID"] == "A")]
+    assert len(coarse_filler) == len(fine_filler) == 1
+    # Today: a second 7-year-old, i.e. the host ends up with twins that the mirror
+    # household does not have.
+    assert int(coarse_filler["HP_ALTER"].iloc[0]) == 7
+    assert int(coarse_filler["source_P_ID"].iloc[0]) == 4
+    # With the fine bands: the 13-year-old sibling.
+    assert int(fine_filler["HP_ALTER"].iloc[0]) == 13
+    assert int(fine_filler["source_P_ID"].iloc[0]) == 3
+
+
+def test_fine_child_bands_do_not_move_the_member_completion_rng_stream():
+    """_match_present_members consumes NO rng -- the only draw is the mirror
+    selection, which happens before it -- and the number of fillers is
+    ``H_GR - len(present)`` whatever the bands. Refining them therefore changes WHICH
+    mirror member is copied, never how many rng values the pass consumes, so the
+    shared completion stream that the weekend and diary matches continue is unmoved.
+    """
+    households, persons = _sibling_age_fixture()
+    coarse_rng = np.random.RandomState(0)
+    fine_rng = np.random.RandomState(0)
+    member_completion.complete_members(households, persons, rng=coarse_rng,
+                                       fine_child_age_bands=False)
+    member_completion.complete_members(households, persons, rng=fine_rng,
+                                       fine_child_age_bands=True)
+
+    coarse_state, fine_state = coarse_rng.get_state(), fine_rng.get_state()
+    assert coarse_state[0] == fine_state[0]
+    assert (coarse_state[1] == fine_state[1]).all()
+    assert coarse_state[2:] == fine_state[2:]

@@ -80,6 +80,7 @@ code_paths:
 - braunschweig/matsim/scenario/population.py
 - braunschweig/analysis/synthesis/work_participation_by_kreis.py
 - braunschweig/analysis/cordon_validation.py
+- scripts/extract_commute_day_diagnostics.py
 evidence:
   tests:
   - tests/test_commute_day_donor_pool.py
@@ -90,6 +91,7 @@ evidence:
   - tests/test_commute_day_state_reference_pins.py
   - tests/test_commute_day_stages.py
   - tests/test_commute_day_consumers.py
+  - tests/test_extract_commute_day_diagnostics.py
   off_path_byte_identical:
     claimed: 'true'
     test: tests/test_commute_day_stages.py::test_trips_day_stage_off_returns_the_identical_object
@@ -321,16 +323,32 @@ assessment:
     and therefore its distance to W12 (1%) and P13 (2%) -- byte-for-byte unchanged at every point
     tested, because the KEEP probability that decides who stays at_workplace never depends on the
     threshold; no default is changed and the parameter decision stays with the maintainer (#377).
-    SIX FOLLOW-UPS are named in the ADR and none is done: the 100% proof inside a scheduled
-    production run (still owed, ruling R4 substituted a proof on the cached i329 population), a
-    re-specification of check 1 (which needs a home-office attribution the population does not
-    carry), pool size per matching cell (the fourth check-4 diagnostic, still not recorded), a
-    committed JSON for the reporting-day trips diagnostics (the R8/R9 counters are log-only), the
-    37,705 workers with an assigned workplace whom the population does not flag employed, and
-    (added by the second maintainer decision) resolving whether mid2023_P13.csv and
+    SIX FOLLOW-UPS are named in the ADR. THREE ARE NOW INSTRUMENTED (issue #378, ADR-0128) and
+    THREE REMAIN OPEN.
+    Instrumented, and INSTRUMENTED IS NOT MEASURED -- no run has executed the new code, so every
+    number below stays what the 2026-09-06 re-run produced and none of it may be back-filled:
+    (a) pool size per matching cell, the fourth check-4 diagnostic, is emitted by
+    matching.match_home_office_donors as donor_pool_size_by_hard_cell (a donor census per
+    distance_class x has_active_escort x has_children_u14 x has_car) and
+    matched_cell_size_by_level (the realised cell size per matched person), and reaches the state
+    stage''s diagnostics through the matching block it already folds in -- check 4''s "pool size
+    per CELL is still UNKNOWN" therefore stands for the 2026-09-06 run and is expected to be
+    answered by the next one; (b) the reporting-day trips diagnostics (the R8/R9 counters) are
+    reported via context.set_info into the run''s pipeline.json instead of the log alone, and
+    (c) scripts/extract_commute_day_diagnostics.py pulls the state, trips and donor-pool
+    diagnostics of a working directory into the committed state_diagnostics.json that the proofs
+    previously built with an ad-hoc server snippet. The check-1 table
+    (commute_day_state_shares.csv) was already part of the standard analysis output
+    (braunschweig.analysis.synthesis.work_participation_by_kreis, in the canonical 100 % run
+    list) and is now also named in docs/runs/TEMPLATE.yml.
+    Still open: the 100% proof inside a scheduled production run (still owed, ruling R4
+    substituted a proof on the cached i329 population), a re-specification of check 1 (which
+    needs a home-office attribution the population does not carry), the 37,705 workers with an
+    assigned workplace whom the population does not flag employed, and (added by the second
+    maintainer decision) resolving whether mid2023_P13.csv and
     mid2023_P38_2_commute_distance_by_kreis.csv measure the same variable/universe before either
     is used as a bound.
-    The status is "reviewed" and not "assessed" precisely because those six are open; validation
+    The status is "reviewed" and not "assessed" precisely because those remain open; validation
     stays measured_vs_reference and NOT behaviourally_validated.'
 notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restricted, server-only)
   via the home-office donor pool (data record mid2023_home_office_day_donors) and on the committed
@@ -345,4 +363,16 @@ notes: 'Depends on the raw MiD 2023 B1 delivery at run time (mid2023_b1, restric
   "Amendments to the design" section records the three corrections Phase A forced on the design
   before this feature was built). Cache cost, deliberate (ADR-0104 Consequences): the .final alias
   switch devalidates secondary locations and everything downstream ONCE, even with the flag OFF,
-  on the order of hours at 100% scale.'
+  on the order of hours at 100% scale.
+
+  Since issue #370 (ADR-0110), the reporting-day trips also compose with an INDEPENDENT
+  general_day_absence draw (a person is trip-less when commute_day_state == "absent" OR the
+  general draw''s day_absence_state != "present"); the composition rule lives ONCE, in
+  braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s general_absence keyword
+  -- see the feature record general_day_absence, never copied here.
+
+  Since issues #123 / #384 (ADR-0114) the spliced home-office chains also go through the
+  configurable departure-time model instead of the plain eqasim jitter: plan_replacement applies
+  it exactly once per replaced person, keyed by the RECEIVING person group and the donor chain
+  first purpose -- see the feature record departure_time_model and the contributor note
+  docs/codebase/notes/departure-time-model.md, never copied here.'

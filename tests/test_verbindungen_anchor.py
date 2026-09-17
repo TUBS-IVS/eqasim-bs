@@ -10,7 +10,7 @@ Reference (zone level, observed >= 10 only):
 
 Run with::
 
-    python -m pytest tests/test_verbindungen_anchor.py -v
+    python scripts/run_tests.py tests/test_verbindungen_anchor.py -v
 """
 from __future__ import annotations
 

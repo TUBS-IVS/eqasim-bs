@@ -1,0 +1,85 @@
+# Run log excerpts, general day absence A/B arm 1 (100 %, 2026-09-09). Source logs: ~/b370_smoke.log (arm-1 absence stage, computed once by the harness smoke in the arm-1 cache), ~/b370_arm1.log.
+
+## absence stage
+15:56:04 [day absence] parameters: household_stage=True, random_seed=1234 (+7351 offset), reference bands {'0-5': 0.0334, '6-17': 0.0189, '18-29': 0.0831, '30-44': 0.0442, '45-64': 0.0489, '65-74': 0.0588, '75+': 0.0581}, sizes {1: 0.0529, 2: 0.034, 3: 0.0131, 4: 0.0149, 5: 0.0018}
+15:56:07 [day absence] 57060/1130516 persons absent (5.05%): 30690 by the household stage, 26370 by the individual stage; 63.7% of absent persons live in a fully absent household; per band {'0-5': '3.31% vs 3.34%', '6-17': '1.92% vs 1.89%', '18-29': '8.24% vs 8.31%', '30-44': '4.38% vs 4.42%', '45-64': '4.92% vs 4.89%', '65-74': '5.98% vs 5.88%', '75+': '5.82% vs 5.81%'}; per household size class (REPORTED, not targeted -- see ADR-0110 Assumptions) {1: '7.61% (n=229534)', 2: '5.85% (n=368370)', 3: '3.15% (n=213918)', 4: '3.76% (n=211912)', 5: '3.13% (n=106782)'}
+15:56:02 Executing stage braunschweig.synthesis.day_absence.absence_stage__cb2a892e4890e595cd20e9860afaadb9 ...
+15:56:08 Finished running braunschweig.synthesis.day_absence.absence_stage__cb2a892e4890e595cd20e9860afaadb9.
+
+## reporting-day trips (trips_day_stage)
+16:09:46 [commute day plan replacement] n_absent_with_escort_leg: 4869/61314 (7.94%) absent person(s) (commute- or generally-absent) carry an escort leg on their original trips
+16:09:46 [commute day plan replacement] n_children_with_absent_escorter: 2006/185532 (1.08%) present children (age <= 17) live in a household with an absent member carrying an escort leg (household-level PROXY for a linked escorter -- the chainsolver link does not exist at this stage)
+16:09:46 [commute day plan replacement] reporting-day trips built: 7008 persons replaced (+20225/-227966 trips), 1289/7008 matched donors were IMMOBILE (18.4%, is_immobile, an expected trip-less home-office day) and 6/7008 (0.1%) had zero rows although their donor did travel; 4470 persons absent (0 rows), 0 home persons unmatched (kept unchanged, 283 extra column(s) nulled on replaced rows)
+16:09:46 [commute day plan replacement] 57060 persons generally absent (216 of them also commute-absent)
+16:09:47 [commute day trips] reporting-day trips: 3455184 rows for 945826 persons (from 3662925 rows for 1001503 persons); commute_day_state_enabled=True, day_absence_enabled=True; diagnostics: {'n_persons_replaced': 7008, 'n_persons_absent': 4470, 'n_persons_absent_commute': 4470, 'n_persons_absent_general': 57060, 'n_persons_absent_both': 216, 'n_persons_absent_total': 61314, 'n_trips_removed': 227966, 'n_trips_removed_general': 181474, 'n_trips_added': 20225, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 283, 'n_donors_without_trips': 6, 'n_donors_immobile': 1289, 'n_donors_unknown_trip_count': 0, 'share_donors_without_trips': 0.0008561643835616438, 'share_donors_immobile': 0.1839326484018265, 'n_absent_with_escort_leg': 4869, 'n_children_with_absent_escorter': 2006}
+
+## plan_structure_vs_srv
+16:10:16 [plan_structure_vs_srv] reference: 4738/9476 rows for universe 'at_home_zero' from eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+16:10:28 [plan_structure_vs_srv] parameters: universe=at_home_zero, sampling_rate=1.0000, max_unmatched_home_share=0.050, trips_view=final, day_absence_enabled=True, kreise_in_scope=['03101', '03102', '03151', '03153', '03154', '03157', '03158']; writing to eqasim-data/output_bs_100pct_b370_arm1/analysis/plan_structure_vs_srv
+16:11:27 [plan_structure_vs_srv] home Kreis: 3/1130516 persons (0.00%) have no ars5 match
+16:11:27 [plan_structure_vs_srv] head-to-head universe: 1002871/1130516 persons (88.71%) live in the 7 SrV-surveyed Kreise; 127642 live in a model-only Kreis (03103), 3 have no resolvable home Kreis
+16:11:57 [plan_structure_vs_srv] headline mobility_rate: model=0.8378 srv=0.8437 delta=-0.59 pp
+16:11:57 [plan_structure_vs_srv] headline trips_per_person: model=3.0612 srv=3.1865 delta=-0.13 abs
+16:11:57 [plan_structure_vs_srv] headline trips_per_mobile_person: model=3.6539 srv=3.7767 delta=-0.12 abs
+16:11:57 [plan_structure_vs_srv] headline nonhome_acts_per_mobile: model=2.1325 srv=2.1816 delta=-0.05 abs
+16:11:57 [plan_structure_vs_srv] headline tours_per_mobile: model=1.5214 srv=1.5951 delta=-0.07 abs
+16:11:57 [plan_structure_vs_srv] headline share_mobile_first_from_home: model=1.0000 srv=0.9781 delta=2.19 pp
+16:11:57 [plan_structure_vs_srv] headline share_mobile_last_to_home: model=1.0000 srv=0.9776 delta=2.24 pp
+16:11:57 [plan_structure_vs_srv] headline share_mobile_odd_trip_count: model=0.2854 srv=0.2325 delta=5.29 pp
+16:11:57 [plan_structure_vs_srv] headline share_trips_home_based: model=0.8094 srv=0.8449 delta=-3.54 pp
+16:11:57 [plan_structure_vs_srv] headline share_trips_followed_by_same_purpose: model=0.1022 srv=0.0453 delta=5.69 pp
+16:11:57 [plan_structure_vs_srv] headline share_trips_0: model=0.1622 srv=0.1563 delta=0.59 pp
+16:11:57 [plan_structure_vs_srv] headline share_trips_1: model=0.0008 srv=0.0058 delta=-0.51 pp
+16:11:57 [plan_structure_vs_srv] headline share_trips_2: model=0.3212 srv=0.3142 delta=0.69 pp
+16:11:57 [plan_structure_vs_srv] headline participation_work: model=0.3201 srv=0.3316 delta=-1.15 pp
+16:11:57 [plan_structure_vs_srv] headline participation_education: model=0.1697 srv=0.1761 delta=-0.64 pp
+16:11:57 [plan_structure_vs_srv] headline participation_shop: model=0.2058 srv=0.2794 delta=-7.36 pp
+16:11:57 [plan_structure_vs_srv] headline participation_leisure: model=0.3564 srv=0.3832 delta=-2.68 pp
+16:11:57 [plan_structure_vs_srv] headline participation_escort: model=0.0967 srv=0.0992 delta=-0.25 pp
+16:11:57 [plan_structure_vs_srv] headline participation_other: model=0.2396 srv=0.1712 delta=6.84 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_work: model=0.1296 srv=0.1239 delta=0.57 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_education: model=0.0699 srv=0.0610 delta=0.88 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_shop: model=0.0799 srv=0.1105 delta=-3.06 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_leisure: model=0.1491 srv=0.1647 delta=-1.56 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_escort: model=0.0481 srv=0.0502 delta=-0.20 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_other: model=0.1071 srv=0.0671 delta=4.00 pp
+16:11:57 [plan_structure_vs_srv] headline purpose_share_home: model=0.4164 srv=0.4226 delta=-0.63 pp
+16:11:57 [plan_structure_vs_srv] headline mean_work_activity_h: model=5.7984 srv=6.2904 delta=-0.49 abs
+16:11:57 [plan_structure_vs_srv] accepted deviation open_end_days: model=0.0000 srv=0.0224 (closed plans by decision (issue #367; ADR in the stage record's decisions))
+16:11:57 [plan_structure_vs_srv] accepted deviation open_start_days: model=0.0000 srv=0.0219 (closed plans by decision (issue #367; ADR in the stage record's decisions))
+16:11:57 [plan_structure_vs_srv] accepted deviation single_trip_days: model=0.0008 srv=0.0058 (closed plans by decision (issue #367; ADR in the stage record's decisions))
+
+## work_participation_by_kreis (ADR-0104 check 1)
+16:12:19 [commute_day_state] general absence folded into check 1: 28826/535757 employed persons (5.38%) set to absent
+16:12:19 [commute_day_state] reporting-day states joined onto the employed universe: 372052/390724 workers matched (95.22%); 18672 (4.78%) have a person in the population that is NOT flagged employed (a universe difference, reported as n_workers_not_employed); 0 (0.00%) resolve to no employed-universe row at all (no population row, or a home Kreis outside the ZGB). All of them are excluded from every share below
+16:12:19 [commute_day_state] work participation: 535757 employed persons in the ZGB, 341597 with a work trip (63.76%). The exclusions (no home Kreis, outside the ZGB, missing employed flag) are logged and counted once by _employed_with_home_kreis and recorded in provenance.json
+16:12:20 [commute_day_state] reporting-day states over 535757 ZGB EMPLOYED persons (381022 with an assigned workplace, 28826/535757 (5.38%) of them set to 'absent' by the general day-absence draw): at_workplace 0.637 / home 0.013 / absent 0.061 / no_workplace 0.289 (SrV work_trip 0.651 / home_office_day 0.142 / neither 0.207); employed without a work trip 0.362 vs SrV remainder, delta 1.35 pp (tolerance +/- 3.0 pp, regional aggregate only)
+16:12:29 [commute_day_state] ZGB: 535757 employed persons, share_work_trip 0.638 vs SrV 0.651 (delta -1.35 pp); near-class-edge share 0.423; EXT class agreement 0.826
+
+## secondary locations
+[braunschweig.secondary_chainsolvers] success rate: 0.9998 (907233/907410 problems fully placed)
+
+## stages executed (not cache hits)
+documentation.meta_output
+synthesis.population.spatial.primary.candidates
+braunschweig.synthesis.locations.education_gravity
+braunschweig.locations.synthesis.replacement_education_gravity
+braunschweig.synthesis.commute_day.state_stage
+braunschweig.synthesis.commute_day.trips_day_stage
+braunschweig.analysis.synthesis.plan_structure_vs_srv
+braunschweig.analysis.synthesis.work_participation_by_kreis
+braunschweig.synthesis.commute_day.activities_day_stage
+braunschweig.synthesis.locations.secondary_chainsolvers
+braunschweig.synthesis.commute_day.spatial_locations_day
+braunschweig.synthesis.commute_day.output_day
+
+## error markers
+grep -cE Traceback|FileNotFoundError|MemoryError|Killed|CRITICAL = 0
+
+## start / end
+15:58:14
+ARM1 EXIT 0 2026-09-09T17:21:19+02:00
+
+## md5 trips.csv (arm 0 must equal arm 4 = pb4)
+b89cf31a2a85fa46d8e8908981fc0ac5  /home/felix/b370_data/output_bs_100pct_b370_arm1/braunschweig_100pct_b370_arm1_trips.csv
+8a46d5eedc4f18fa8ff2cc0e16b028cc  /home/felix/pb4_data/output_bs_100pct_pb4/braunschweig_100pct_pb4_trips.csv

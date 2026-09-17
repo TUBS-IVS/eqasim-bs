@@ -1,0 +1,100 @@
+dataset: srv2023_absence_by_age_band
+title: SrV 2023 whole-day absence share by age band (committed aggregate, general day-absence
+  draw reference)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown
+  in this table (per-Kreis shares are reported in ADR-0110's Context but NOT committed here or
+  used by the draw -- assumption-grade cells under SrV's stratified PSU design).
+crs: null
+roles:
+- validation_reference
+- reference_table
+used_by:
+- braunschweig.synthesis.day_absence.absence_stage
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_absence_household_by_size.csv in one run. Reads
+    SrV2023_Personen.csv (HHNR, PNR, V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and
+    SrV2023_Haushalte.csv (HHNR, GEWICHT_HH_ZENSUS). The raw microdata is local-only and never
+    committed.
+  script: scripts/extract_srv_absence.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file (this dataset's sibling, srv2023_absence_household_by_size.csv, is the
+    separate data record srv2023_absence_household_by_size). Not listed in
+    scripts/verify_braunschweig_inputs.py: the file ships committed with every clone, exactly like
+    the sibling SrV aggregates of issues #368/#369 (e.g. srv2023_work_by_employment). Definitions
+    live in braunschweig/calibration/srv_absence.py; unit tests on synthetic SrV-shaped frames
+    (universe guards, age-band and 'all'-row rates, the table invariants):
+    tests/test_srv_absence.py.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe (at_home_zero, i.e. srv_plan_structure's AT-HOME-OR-AWAY universe -- deliberately
+  wider than the at_home_only participation-control universe of issue #368, since absence IS the
+  state being measured here, so away persons are KEPT rather than excluded): every delivered
+  person with a valid positive GEWICHT_P_ZENSUS (0 dropped in the 2026-09-09 extraction) and a
+  numeric, in-range E_ANZ_WEGE (the extraction RAISES on a non-numeric value or an unexpected
+  negative code -- only -7, away from home the whole reporting day, is a known negative state).
+  Universe = 18,223 persons (the full delivery; no age or employment filter is applied, unlike
+  srv2023_work_by_employment). 2 persons have no valid V_ALTER and therefore fall into no age
+  band (kept in the 'all' row only, per the committed header's n_persons_missing_age).
+
+  Age bands (V_ALTER, INCLUSIVE bounds, srv_absence.AGE_BAND_EDGES/LABELS): 0-5, 6-17, 18-29,
+  30-44, 45-64, 65-74, 75+ -- chosen (spec 2026-09-09-general-day-absence-design.md table 1.1) so
+  every band has >= 1,081 persons and >= 31 absent persons, avoiding a band too thin for a stable
+  per-band draw probability. Away from home: E_ANZ_WEGE == -7 over the WHOLE reporting day (the
+  only negative code this delivery carries; guarded, not merely assumed -- prepare_absence_persons
+  raises on any other negative code). Weight: GEWICHT_P_ZENSUS (person expansion to Zensus 2022
+  counts; the stratum-internal GEWICHT_P must not be used across strata, ADR-0055). Universe guard
+  (raises, never adapts): every MITTL_WERKTAG == 1 (pure average-weekday Tuesday-Thursday
+  delivery).
+
+  Measured 2026-09-09 ('all' row, n_unweighted = 18,223): p_absent = 0.0498 (954 absent). By band:
+  0-5 0.0334 (31/1,081), 6-17 0.0189 (42/2,062), 18-29 0.0831 (148/1,639), 30-44 0.0442
+  (143/3,279), 45-64 0.0489 (298/5,681), 65-74 0.0588 (197/2,722), 75+ 0.0581 (95/1,757). Per-Kreis
+  shares (3.20 % Salzgitter to 6.42 % Peine) and the employment split (employed 4.82 %, not
+  employed 6.04 %) are reported in ADR-0110's Context section from the SAME 2026-09-09 extraction
+  but are NOT committed to this table and NOT used by the draw (ADR-0110 rejects per-Kreis rates:
+  assumption-grade cells under SrV's stratified PSU design, same caveat as every other per-Kreis
+  SrV table in this codebase, e.g. srv2023_work_by_employment).
+
+  Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
+  all, that only means the 'all' row implicitly excludes Wolfsburg residents, the same caveat
+  every SrV-derived table in this codebase carries.
+notes: |
+  Reference table for braunschweig.synthesis.day_absence.absence.draw_absence's INDIVIDUAL
+  residual stage (issue #370, ADR-0110): p_individual(a) = max(0, (r(a) - r_hh(a)) / (1 -
+  r_hh(a))), where r(a) is this table's p_absent for band a and r_hh(a) is measured on the SAME
+  synthetic draw's household stage. Read at run time by
+  braunschweig.synthesis.day_absence.absence.load_absence_reference, which RAISES unless the
+  table covers exactly the seven bands with every rate in [0, 1] (AbsenceReference.__post_init__)
+  -- a missing band must never silently become a NaN probability.
+
+  Companion table: srv2023_absence_household_by_size.csv (data record
+  srv2023_absence_household_by_size), the household-size reference for the HOUSEHOLD stage of the
+  same draw. Both tables are read together by the same stage
+  (braunschweig.synthesis.day_absence.absence_stage) and share one provenance header format
+  written by scripts/extract_srv_absence.py in a single run, so they are always regenerated
+  together from the same source-commit and the same raw delivery.
+
+  Role distinction from the participation-universe tables of issue #368 (e.g.
+  srv2023_work_by_employment): those EXCLUDE away-from-home persons because a synthetic
+  population previously had no such state to represent them; this table's whole purpose is to
+  give the population that state, so away persons are the quantity being measured, not an
+  exclusion. Decision record: ADR-0110.

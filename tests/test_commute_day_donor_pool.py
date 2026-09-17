@@ -195,6 +195,61 @@ def test_donor_trips_hands_the_resample_a_sex_column_without_mixed_types(monkeyp
     assert attributes["sex"].isna().any()
 
 
+def test_donor_trips_forwards_w_zweck_10_as_leisure(monkeypatch):
+    """w_zweck_10_as_leisure must reach build_validated_trip_table (issue #373 fix
+    round 1, Important finding 3c) -- accepting the keyword on donor_trips is not
+    enough if it never reaches the builder that actually calls map_purpose."""
+    captured = {}
+    real_builder = donor_pool.build_validated_trip_table
+
+    def capturing_builder(persons, wege, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        return real_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_builder)
+
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(),
+                                             _wege_fixture())
+    donor_pool.donor_trips(
+        donors, attributes, _wege_fixture(), random_seed=0,
+        escort_purpose=False, escort_passive_education=False,
+        explicit_round_trip_purposes=True, w_zweck_10_as_leisure=True,
+    )
+    assert captured["w_zweck_10_as_leisure"] is True
+
+
+def test_donor_trips_forwards_the_passive_escort_pairing_keywords(monkeypatch):
+    """escort_passive_from_adult and its gap must reach build_validated_trip_table (issue #372
+    task 4): the donor's day must be built by exactly the rules the day it replaces was."""
+    captured = {}
+    real_builder = donor_pool.build_validated_trip_table
+
+    def capturing_builder(persons, wege, **kwargs):
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        return real_builder(persons, wege, **kwargs)
+
+    monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_builder)
+
+    persons = _persons_fixture()
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(donors, persons, _households_fixture(),
+                                             _wege_fixture())
+    # HP_ALTER is what the pairing needs to identify the accompanying ADULT; the stage loads it
+    # (home_office_donors_stage.WEGE_COLUMNS), so the fixture carries it here too.
+    donor_pool.donor_trips(
+        donors, attributes, _wege_fixture().assign(HP_ALTER=[40, 40, 35, 35, 50, 50]),
+        random_seed=0,
+        escort_purpose=True, escort_passive_education=True,
+        explicit_round_trip_purposes=True, escort_passive_from_adult=True,
+        passive_pair_max_gap_minutes=20.0,
+    )
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 20.0
+
+
 def test_build_home_office_donor_pool_diagnostics_and_shapes():
     persons = _persons_fixture()
     wege = _wege_fixture()
@@ -713,7 +768,8 @@ def _golden_off_path_attributes() -> pd.DataFrame:
         "distance_km": np.array([15.0, 200.0, 200.0, np.nan], dtype="float64"),
         "distance_class": ["10_25", "100_200", "gt200", "unknown"],
         "distance_source": ["P_ARB_ENTF", "P_ARB_ENTF", "trip_length", "unknown"],
-        "n_trips": np.array([2, 2, 2, 0], dtype="int32"),
+        # The source uses astype(int): native integer width, not fixed int32.
+        "n_trips": np.array([2, 2, 2, 0], dtype=int),
         "is_immobile": [False, False, False, True],
         "has_education_leg": [False, False, False, False],
         "has_work_leg": [False, True, True, False],

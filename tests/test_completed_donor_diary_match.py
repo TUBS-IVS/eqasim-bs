@@ -208,3 +208,68 @@ def test_diary_match_keeps_the_employment_boundary_and_reports_the_crossing_rate
     # The counter is logged as a rate, not silently carried in the report only.
     assert any("employment boundary crossed by 0/" in record.getMessage()
                for record in caplog.records)
+
+
+def _make_child_band_crossing_fixture(mid_dir):
+    """Set up the one plan source whose remap can cross the fine child age band.
+
+    Person (2,4) -- female, 8, primary-school age -- loses their diary (803 with
+    mobil == 1) and must be remapped. Two weekday donors are made their perfect
+    soft-key twins and differ ONLY in age: (1,2) is turned into a 7-year-old
+    (fine band 6-9, the target's own) and (2,3) into a 10-year-old twin carrying a
+    1000x heavier P_GEW (fine band 10-13). Under the coarse 6-13 band both are
+    interchangeable and the weighted draw takes the 10-year-old; the fine bands
+    leave only the 7-year-old. Returns the (H_ID, P_ID) of the remapped person.
+    """
+    persons_path = mid_dir / "MiD2023_Personen.csv"
+    p = pd.read_csv(persons_path)
+    twin_keys = {"HP_SEX": 2, "P_TAET": 5, "P_FSCHEIN": 2, "P_FKARTE": 3}
+    diaryless = (p["H_ID"] == 2) & (p["P_ID"] == 4)
+    p.loc[diaryless, ["anzwege1", "mobil"]] = [803, 1]
+    primary = (p["H_ID"] == 1) & (p["P_ID"] == 2)
+    secondary = (p["H_ID"] == 2) & (p["P_ID"] == 3)
+    for mask, age, weight in ((primary, 7, 1.0), (secondary, 10, 1000.0)):
+        for column, value in twin_keys.items():
+            p.loc[mask, column] = value
+        p.loc[mask, "HP_ALTER"] = age
+        p.loc[mask, "P_GEW"] = weight
+    p.to_csv(persons_path, index=False)
+    return 2, 4
+
+
+def test_diary_match_uses_the_fine_child_bands_by_default_and_reports_the_crossing_rate(tmp_path, caplog):
+    _write_mid_attribute_fixture(tmp_path)
+    hid, pid = _make_child_band_crossing_fixture(tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        fine = cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None,
+                                        weekend_plan_match_on=True)
+    coarse = cd.build_completed_donor(tmp_path, random_seed=1, seed_day_filter=None,
+                                      weekend_plan_match_on=True,
+                                      donor_match_fine_child_age_bands=False)
+
+    # ON (the production default): the 8-year-old inherits the 7-year-old's diary.
+    fine_row = fine.persons[(fine.persons["H_ID"] == hid) & (fine.persons["P_ID"] == pid)].iloc[0]
+    assert (fine_row["source_H_ID"], fine_row["source_P_ID"]) == (1, 2)
+    # The weekend match hands household 3's members the same weekday plan sources, so more
+    # than one person can be sourced from the diary-less 8-year-old; the counts are
+    # asserted relative to each other rather than pinned to that fixture detail.
+    assert fine.diary_report.n_remapped_in_split_child_band >= 1
+    assert fine.diary_report.n_crossed_fine_child_age_band == 0
+    # OFF (today): the heavier 10-year-old wins inside the coarse 6-13 band, which is
+    # what makes the ON assertion above discriminating.
+    coarse_row = coarse.persons[(coarse.persons["H_ID"] == hid) & (coarse.persons["P_ID"] == pid)].iloc[0]
+    assert (coarse_row["source_H_ID"], coarse_row["source_P_ID"]) == (2, 3)
+    assert coarse.diary_report.n_crossed_fine_child_age_band >= 1
+    # The two arms do NOT have the same number of remaps: the flag also refines the
+    # WEEKEND match that runs before this one, so household 3's members are paired with
+    # different weekday donors and a different number of them end up sourced from the
+    # diary-less 8-year-old. Every remapped person in either arm is a 6-13-year-old here.
+    assert (coarse.diary_report.n_remapped_in_split_child_band
+            == coarse.diary_report.n_remapped)
+    assert (fine.diary_report.n_remapped_in_split_child_band
+            == fine.diary_report.n_remapped)
+    # The rate is logged, not silently carried in the report only.
+    assert any("fine child age band crossed by 0/" in record.getMessage()
+               and "remapped 6-13-year-olds" in record.getMessage()
+               for record in caplog.records)

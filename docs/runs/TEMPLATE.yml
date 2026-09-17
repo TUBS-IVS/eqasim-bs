@@ -1,0 +1,92 @@
+# Run-manifest TEMPLATE -- copy this file to docs/runs/<run_id>.yml and fill it in.
+#
+# NOT A RUN. braunschweig.documentation.registries.load_manifests SKIPS this one file by name
+# (MANIFEST_TEMPLATE_FILENAME), so it never becomes a row of docs/generated/RUNS.md; every other
+# *.yml in this directory is an executed run. It is still parsed by the manifest schema in
+# tests/test_documentation_registry.py, so it cannot drift away from the schema it demonstrates.
+#
+# RULES (docs/runs/README.md carries the full set; these are the ones most often broken):
+#   * `id` MUST equal the file name without .yml.
+#   * A field not recoverable from a committed source is the LITERAL string `unknown` --
+#     never an invented, remembered or plausible value.
+#   * `classification` says what the run WAS, not what you hoped it would prove. A completed run
+#     is not a validation, a smoke is not a validation, and convergence (mode shares stabilising)
+#     is never a validation.
+#   * A `validation` entry without a committed `reference` is a measurement, not a validation --
+#     say so in `notes` rather than dressing it up in `result`.
+#   * Strict keys: the schema rejects any key not listed below
+#     (braunschweig/documentation/schema.py::parse_manifest).
+#
+# Every value below is the literal `unknown` or an explanatory placeholder in <angle brackets>;
+# replace them all, and DELETE the optional blocks you have nothing to record in.
+
+# --- required -----------------------------------------------------------------------------
+id: TEMPLATE
+date: unknown                       # 'YYYY-MM-DD', the date the run was EXECUTED
+repository:
+  commit: unknown                   # full sha of the commit the run was executed from
+  branch: unknown
+  notes: <anything that makes the code state reproducible, e.g. "based on <sha>, one uncommitted
+    fix to X described here">
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - <configs/overlays/*.yml, or a server-local overlay named and described in notes>
+  notes: <the flags and parameters that decide this run's outcome, including every value that
+    differs from the canonical resolved config; name the random_seed>
+sampling:
+  rate: unknown                     # e.g. 1.0 for a 100 % run
+  scope: unknown                    # e.g. the ZGB, one Kreis (03101), a fixture region
+  notes: <what the rate is a rate OF, when it is not a population sampling rate>
+pipeline:
+  targets:
+  - <the synpp stage(s) in the run list>
+  notes: <substitutions and deviations -- a proof run on a cached population instead of the
+    scheduled one, a killed stage, a stage whose cache was reused>
+classification:                     # one or more of: smoke, wiring_proof, ab_test, calibration,
+- smoke                             # validation, production_candidate, production
+status:
+  execution: unknown                # completed | partial | killed | running | unknown
+  notes: <runtime, resources, why a partial/killed run stopped>
+source: '<where the numbers below were read from -- a log path on the run server, a committed
+  artefact, a pytest node id>'
+
+# --- optional (delete what you do not use) --------------------------------------------------
+environment: <OS; python/numpy/pandas versions; conda env; java/MATSim version where relevant>
+
+validation:
+- metric: <the quantity compared, with its universe and denominator stated>
+  reference: <the COMMITTED observed reference, or the literal `none` plus why there is none.
+    An assumption-grade bound is labelled "ASSUMPTION" here, never presented as a reference>
+  result: <VERDICT pass/fail + the numbers; no adjectives that the numbers do not support>
+  artifact: <the committed file(s) the numbers can be re-read from>
+  notes: <honest labels -- "draw coherence", "control fit", "NOT a behavioural validation">
+
+features:
+  note: <which feature records this run is evidence for, and for which claim exactly>
+
+artifacts:
+# Committed aggregates (no per-person file of a restricted-data population is ever committed).
+# For a run with commute_day_state_enabled TRUE, the standard analysis output is the seven-file
+# set of braunschweig.analysis.synthesis.work_participation_by_kreis --
+#   work_participation_by_kreis.csv, assigned_distance_classes.csv, ext_destination_distances.csv,
+#   assigned_class_by_person.csv (per-person: kept on the run server, NOT committed),
+#   summary.md, provenance.json
+# plus the ADR-0104 check-1 table
+#   commute_day_state_shares.csv   (employed-based denominators; carries the workers_not_employed
+#                                   and share_no_workplace rows -- issue #378)
+# and the check-4 diagnostics artefact
+#   state_diagnostics.json         (scripts/extract_commute_day_diagnostics.py, run against the
+#                                   run's synpp working directory -- carries the state draw, the
+#                                   donor-matching pool sizes per cell and the reporting-day
+#                                   trips counters; issue #378)
+- <path of every committed artefact, relative to the repository root>
+- <felix:/absolute/path of anything left on the run server, with its size>
+
+issues:
+- '#<the GitHub issue this run belongs to>'
+
+decisions:
+- ADR-<NNNN>
+
+notes: <anything a later reader needs that none of the blocks above has a home for>

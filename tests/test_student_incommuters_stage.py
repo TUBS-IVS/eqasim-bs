@@ -186,6 +186,7 @@ def _full_ctx():
            "education_university_max_radius_km": 150.0,
            "sampling_rate": 0.5, "random_seed": 1,
            "cordon_gate_speed_kmh": 30.0,
+           "cordon_incommuter_time_chronology": True,
            "cordon_network_source_buffer_m": 45000.0,
            "braunschweig.political_prefix": ["03101"],
            "data_path": "eqasim-data/data",

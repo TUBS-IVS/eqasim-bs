@@ -20,7 +20,127 @@ production: true
 resolves_to:
   popsim_mid: braunschweig.popsim.distance_distributions
 features:
+- escort_passive_from_adult
+- leisure_unspecified_subtype
+- purpose_main_fold_code_10
+- no_answer_codes_excluded
 - secondary_distance_by_purpose
+- secondary_mid_weekday_universe
+- w_zwd_codeplan_sentinels
 decisions:
 - ADR-0026
 - ADR-0057
+- ADR-0111
+- ADR-0112
+- ADR-0113
+- ADR-0115
+- ADR-0116
+- ADR-0117
+notes: >-
+  PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
+  production implementation braunschweig.popsim.distance_distributions declares and reads five keys
+  of the purpose package (the fifth, leisure_unspecified_subtype, has its own paragraph at the end
+  of this note), each imported from the shared constant pair in
+  braunschweig.popsim.stage.config_keys rather than retyped. Three of them are the trip-build flags
+  the stage must agree with, because it maps the donor legs' purposes ITSELF (run()'s purpose
+  harmonisation calls the same trips.map_purpose): w_zweck_10_as_leisure (so the leisure distance
+  layer contains the same legs the plan labels leisure), escort_passive_from_adult and
+  escort_passive_pair_max_gap_minutes (so a passive escort leg contributes its PAIRED purpose's
+  layer instead of the education layer). The fourth, purpose_subtype_codeplan_sentinels, is shared
+  with braunschweig.synthesis.locations.secondary_chainsolvers and governs run()'s steps 8/9: the
+  leisure and other-errand subtype donor pools are built through
+  purpose_subtype.leisure_spec(...).groups / other_errand_spec(...).groups, so the no-detail codes
+  W_ZWD 799/699 leave the donor pool exactly when the chainsolver decider stops labelling legs into
+  their group -- threading only one of the two would make the stages disagree about what
+  leisure_activity means. Gap CLOSED (issue #373 task 1, cleanup wave, corrected in fix round 1):
+  this stage now declares validate() with _HELPER_MODULES = (trips, time_imputation,
+  escort_pairing, constants, the default synthesis.population.spatial.secondary.
+  distance_distributions module) and _DEFERRED_HELPER_MODULE_NAMES = (mid, mid.donor,
+  purpose_subtype, shop_subtype, stage.config_keys), so an edit to any of those helper modules --
+  not only to the five declared purpose-package config VALUES above -- devalidates the cached distance
+  distributions (tests/test_synpp_helper_hash_invariant.py's ALLOWED_VIOLATIONS entry for this
+  stage was removed once the gate confirmed full own-package coverage). mid.donor is named
+  SEPARATELY from mid (fix round 1, IMPORTANT 1): the mid package __init__ only RE-EXPORTS
+  load_mid_wege, so hashing the package object alone hashes __init__.py's own text, never
+  donor.py's function body where load_mid_wege is actually defined -- the same transitive gap
+  braunschweig.popsim.completed_donor.py already closes for the identical module. constants
+  (ROUTED_DETOUR_FACTOR scales every distance value) and the default distance_distributions
+  module (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE inputs
+  hashed for the same reason; both were checked for import cycles (neither has any first-party
+  import) before being added. Second gap CLOSED (issue #373 task 2, ruling C-R20/C-R21, cleanup wave): this stage now
+  ALSO declares braunschweig.population.popsim.exclude_rbw_legs and .drop_leading_arrive_home_leg
+  (the same shared key/default constants braunschweig.popsim.trips_stage declares; production
+  default true/true, configs/base_bs.yml), and run() forwards a
+  trips.legs_kept_by_the_trip_build-derived pairing_candidate_mask to the new
+  trips.map_purpose(pairing_candidate_mask=...) keyword, so its passive-escort pairing's candidate
+  universe agrees with the trip build's. The DISTANCE POOL itself is unaffected by this mask -- only
+  the pairing's candidate universe is restricted; every leg still contributes a distance under
+  whichever purpose it resolves to. The effect is bounded and small -- 6,386 pairs unfiltered vs
+  6,384 filtered on the weekday legs, measured 2026-09-10 while regenerating
+  mid2023_escort_w_zweck_split.csv (ADR-0112 Assumptions 5 and 8).
+
+
+  FIFTH LEISURE SUBTYPE (issue #373, ADR-0115, feature record leisure_unspecified_subtype): this
+  stage declares a FIFTH purpose-package key, leisure_unspecified_subtype (declared default true,
+  key and default imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers; production true in configs/base_bs.yml),
+  and forwards it into run() as the keyword leisure_unspecified_subtype (its own keyword default is
+  False, so a direct caller keeps the pre-feature behaviour). With it on, a new Step 8b calls
+  _build_leisure_unspecified_layer(df) and adds the layer key "leisure_unspecified" next to the four
+  W_ZWD leisure layers -- deliberately OUTSIDE the W_ZWD-present branch, because the group is
+  defined by the raw W_ZWECK code (LEISURE_UNSPECIFIED_ZWECK, built from trips.W_ZWECK_OTHER_CODE)
+  exactly like other_escort in Step 9; an ABSENT W_ZWECK column raises rather than warning and
+  skipping, because the flag being on IS the request for this layer and no W_ZWD path could still
+  produce it. Log lines: INFO "[popsim.distance_distributions] leisure subtype %s: %d/%d leisure
+  legs %s" (the primary count against the leisure universe the group is carved out of; the rate
+  renders "(no leisure legs)" instead of "nan%" on an empty universe) and, when the group is empty,
+  WARNING "[popsim.distance_distributions] leisure subtype %s: 0 legs -- is w_zweck_10_as_leisure
+  on? The layer is not built." Configure-time guard (same shape as trips_stage's C-R22 guard, scoped
+  by ruling R8): leisure_unspecified_subtype true + w_zweck_10_as_leisure false raises a ValueError
+  naming both keys ONLY while secondary_leisure_subtype_split is on -- with the split off there are
+  no leisure subtype layers at all and the key is inert, so a popsim_open fixture that never sets it
+  is not aborted. purpose_subtype was already in _DEFERRED_HELPER_MODULE_NAMES, so the new group
+  definition is covered by the cache hash without a new entry.
+
+
+  WEEKDAY DIARY UNIVERSE (issue #373, ADR-0116, feature record secondary_mid_weekday_universe):
+  this stage declares a SIXTH purpose-package key, secondary_mid_weekday_legs_only (declared
+  default true, key and default imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers; production true in configs/base_bs.yml),
+  and forwards it into run() as the keyword weekday_legs_only (keyword default False, so a direct
+  caller keeps the pre-feature behaviour). With it on, a new Step 0a reduces the donor frame to
+  trips.restrict_to_weekday_diary_legs(df) -- the seed's own day filter
+  (trips.WEEKDAY_DIARY_KERNWO reads seed.MID_SEED_COLUMNS.day_filter_values) and no rbW summary
+  records -- BEFORE the pairing mask of Step 0b and before the purpose mapping of Step 1, so the
+  aggregate, the per-purpose and every subtype layer are built from ONE universe (67.9 % of the
+  delivered rows on the 2026-09-10 MiD delivery). Because it filters before Step 2 re-derives
+  preceding_purpose, the set of primary-both trips Step 5 excludes can change with it; under
+  exclude_rbw_legs true that moves the pool closer to the plan's own leg universe (ADR-0116
+  Consequences, ruling W5). Log line: INFO "[popsim.distance_distributions] weekday diary universe:
+  kept %d/%d legs (%.1f%%); dropped %d non-weekday (kernwo outside [1, 2, 3]), %d rbW summary
+  records" -- the two reasons partition the dropped legs. The helper RAISES when kernwo or W_RBW is
+  absent (both are needed only on this path and are deliberately NOT in REQUIRED_COLUMNS) and when
+  the universe would be empty. Cache: braunschweig.popsim.seed was added to
+  _DEFERRED_HELPER_MODULE_NAMES because the weekday definition lives there and hashing trips cannot
+  see across that import (ruling W4).
+
+
+  NO-ANSWER PURPOSE AND THE TRIP-LENGTH GUARD (issue #373, ADR-0117, feature record
+  no_answer_codes_excluded): a SEVENTH purpose-package key, exclude_no_answer_purpose_legs
+  (declared default true, imported from braunschweig.popsim.stage.config_keys, shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers; production true), forwarded into run()
+  as the keyword exclude_no_answer_purpose (keyword default False). With it on, a new Step 5b
+  drops the legs whose raw W_ZWECK is trips.W_ZWECK_NO_ANSWER_CODE (99 "keine Angabe") from every
+  donor pool -- AFTER Step 2's chain derivation and Step 5's primary-both filter, so no other
+  leg's preceding_purpose moves -- and drops legs whose distance is missing for the separate
+  reason that a leg without a length cannot contribute one; it raises if nothing survives. An
+  absent W_ZWECK column raises rather than skipping the exclusion. Log lines: INFO
+  "[popsim.distance_distributions] no-answer purpose (W_ZWECK 99) legs excluded from every donor
+  pool: %d/%d legs (%.2f%%)" and INFO "[popsim.distance_distributions] legs without a usable
+  length excluded from every donor pool: %d/%d (%.2f%%)". Measured effect on the 2026-09 delivery
+  (ad hoc): the "other" pool falls 72,183 -> 67,912 legs and its clipped mean 9.062 -> 8.863 km;
+  no other layer changes. Step 4 additionally routes wegkm_imp through
+  diary_facts.validate_trip_length_km, which RAISES on a MiD design code (>= 9994) or a
+  non-positive length -- byte-identical on this delivery, which carries none -- and counts
+  structural NaN. Cache: braunschweig.popsim.diary_facts was added to _HELPER_MODULES for that
+  guard.

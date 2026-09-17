@@ -1,0 +1,50 @@
+{
+  "scope": "bounded function benchmarks; no full-pipeline speedup claim",
+  "reference": {
+    "commit": "1502e88ef529001167f4a8848892862c39bda9cb",
+    "dirty": false
+  },
+  "candidate": {
+    "commit": "8a1a8ea7d2016a125c5fd3616e69105647544a64",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.10.10 | packaged by conda-forge | (main, Mar 24 2023, 20:00:38) [MSC v.1934 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "numpy": "1.23.5",
+    "pandas": "1.5.3",
+    "geopandas": "1.0.1",
+    "synpp": "1.6.2"
+  },
+  "size": 100,
+  "repeat": 1,
+  "random_seed": 1234,
+  "input_kind": "synthetic",
+  "cases": {
+    "donor": {
+      "original_off_on_exact": true,
+      "median_seconds": {
+        "original": 0.2597144000010303,
+        "off": 0.2673367000006692,
+        "on": 0.12289520000012999
+      },
+      "input_rows": {
+        "pool": 100,
+        "targets": 100
+      },
+      "seconds": {
+        "original": [
+          0.2597144000010303
+        ],
+        "off": [
+          0.2673367000006692
+        ],
+        "on": [
+          0.12289520000012999
+        ]
+      },
+      "speedup_original_over_on": 2.113299787141854
+    }
+  },
+  "donor_age_bands": "coarse"
+}

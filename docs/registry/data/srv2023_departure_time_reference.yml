@@ -1,0 +1,116 @@
+dataset: srv2023_departure_time_reference
+title: SrV 2023 departure-time distribution, de-rounded and as reported (committed aggregate,
+  departure-time model target and comparison reference)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown --
+  ADR-0114 rejects mapping by Kreis (assumption-grade cells under SrV's stratified PSU design,
+  the same caveat ADR-0104 / ADR-0109 record for every per-Kreis SrV rate here).
+crs: null
+roles:
+- calibration_target
+- validation_reference
+- reference_table
+used_by:
+- synthesis.population.trips
+- synthesis.population.trips.final
+- braunschweig.analysis.synthesis.departure_time_vs_srv
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_departure_times.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_activity_duration_reference.csv in one run from the same harmonised
+    frames (braunschweig.calibration.srv_plan_structure.harmonise_srv over SrV2023_Personen.csv,
+    SrV2023_Wege.csv and SrV2023_Haushalte.csv). The raw microdata is local-only and never
+    committed.
+  script: scripts/extract_srv_departure_times.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_departure_time_reference.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed with every
+    clone, exactly like the sibling SrV aggregates of issues #368 / #369 / #370 (e.g.
+    srv2023_work_by_employment, srv2023_absence_by_age_band). Definitions live in
+    braunschweig/calibration/srv_departure_times.py; the shape is validated AT LOAD by
+    srv_departure_times.validate_departure_time_table -- the ONE validator both readers run
+    (braunschweig.popsim.departure_time_model.load_departure_time_reference for position 'first'
+    only, the analysis stage's own loader for all three positions), so a table one accepts can
+    never be rejected by the other. Unit tests on synthetic SrV-shaped frames plus two pin tests
+    against this committed file: tests/test_srv_departure_times.py; loader-parity and corruption
+    tests: tests/test_departure_time_vs_srv.py, tests/test_departure_time_model.py.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: at_home_zero ONLY (every delivered person with a valid positive weight, mobile
+  persons' legs) -- unlike the plan-structure reference there is no at_home_only sensitivity,
+  because a departure time cannot be observed for a person who reported no trip at all. Weight:
+  GEWICHT_W_ZENSUS (trip-level expansion to Zensus 2022 counts; the stratum-internal GEWICHT_W
+  must not be used across strata, ADR-0055). Guards inherited from harmonise_srv (the extraction
+  RAISES rather than adapting): every STICHTAG_WTAG in [2, 3, 4] (pure Tuesday-Thursday
+  delivery), GEWICHT_P_WERKTAG == -6.0 everywhere, and a person whose harmonised group falls
+  outside srv_plan_structure.GROUPS.
+
+  Shape (measured 2026-09-10, header of the committed file): 16,128 rows = 6 segments ('all' +
+  the five srv_plan_structure.GROUPS) x 8 purposes ('all' + the seven harmonised purposes) x 3
+  positions (first / later / all) x 112 bins, DENSE -- every cell carries all 112 bins, 0.0
+  included. A cell with zero contributing legs is still EMITTED with n_unweighted 0 and BOTH
+  share columns NaN for every bin (never a fabricated 0.0, never a dropped row); the model's
+  ladder reads that as "no reference", not as a zero distribution. bin_15min =
+  floor(minute_of_day / 15), 0..111 (0-28 h); each share column sums to 1.0 per non-empty
+  (segment, purpose, position); n_unweighted repeats the cell's unweighted leg count on every row.
+
+  De-rounding: each valid leg's reported departure minute is de-rounded ONCE (the same rule the
+  model applies to the MODEL side, braunschweig/calibration/reported_time_precision.py: +/- 7.5
+  min on the quarter hour, +/- 2.5 min on the five-minute grid, 0 for a to-the-minute report),
+  seeded with the fixed constant SRV_DEROUNDING_SEED = 20260909, so the table is reproducible
+  from the raw microdata; the same de-rounded value is reused for every cell the leg contributes
+  to. share_as_reported carries the undesmeared distribution next to it, so the hour-boundary
+  bias of an as-reported comparison stays measurable rather than hidden (ADR-0114 Context).
+  ASSUMPTION: the precision of a report is read from its minute value alone -- a person who
+  genuinely departed at 7:00 is de-rounded as if they had rounded.
+
+  Exclusions (measured 2026-09-10 on the full delivery, committed in the file's header):
+  n_legs_total 58,148; 250 legs excluded because dep_min is NaN (0 negative, 0 non-integer) --
+  those cannot be de-rounded and are dropped BEFORE binning, never defaulted; 1 de-rounded bin
+  clipped into the 0..111 window (0 as reported); 27 legs whose destination purpose harmonise_srv
+  could not map (26 of them with a valid dep_min) are EXCLUDED from every named-purpose cell and
+  INCLUDED in the pooled purpose 'all', which is why the pooled cells are not simply the sum of
+  the named ones. Person-level harmonisation exclusions are carried in the same header
+  (18,223 persons, 954 away from home, 2 without a valid age).
+
+  Headline (committed header, school-age children's first education leg, AS REPORTED): hour 6 =
+  9.91 %, hour 7 = 82.57 %, hour 8 = 5.87 %, n_unweighted = 1,810. The design spec
+  2026-09-09-departure-time-srv-mapping-design.md section 1.2 states 9.9 % / 82.5 % with n 1,811
+  from an ad-hoc measurement; the two shares agree within 0.1 pp, the one-leg count difference is
+  UNEXPLAINED and recorded as such rather than harmonised away.
+
+  Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
+  all, that only means every row implicitly excludes Wolfsburg residents -- the same caveat every
+  SrV-derived table in this codebase carries.
+notes: |
+  Two ROLES in one file, deliberately kept apart (stated in the file's own header and in
+  ADR-0114): position 'first' is the CALIBRATION TARGET of the srv_mapped departure-time model --
+  braunschweig.popsim.departure_time_model.load_departure_time_reference filters to it, because
+  it is the only position the model may map from -- while positions 'later' and 'all' are
+  HOLD-OUT reference, read exclusively by
+  braunschweig.analysis.synthesis.departure_time_vs_srv. A model output matching the 'first' rows
+  is therefore evidence about the WIRING, not a validation of departure behaviour (CLAUDE.md
+  "convergence is not validation"). This is NOT a PopulationSim control target: no synthesis or
+  location stage's demand distribution is controlled to these shares.
+
+  Companion table: srv2023_activity_duration_reference.csv (data record
+  srv2023_activity_duration_reference), the entirely hold-out activity-duration reference. Both
+  come out of ONE run of scripts/extract_srv_departure_times.py, share one provenance header
+  format and are therefore always regenerated together from the same source commit and the same
+  raw delivery. Feature record: departure_time_model. Decision record: ADR-0114. Contributor
+  note: docs/codebase/notes/departure-time-model.md.

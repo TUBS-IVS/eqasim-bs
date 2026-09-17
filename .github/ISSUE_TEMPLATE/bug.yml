@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage.
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The first four fields are the plain-language head: someone who has never opened this repository must understand them. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage.
   - type: input
     id: stages
     attributes:
@@ -15,13 +15,41 @@ body:
       placeholder: "synthesis.population.trips"
     validations:
       required: true
-  - type: textarea
-    id: summary
+  - type: input
+    id: short
     attributes:
-      label: Summary
-      description: What is wrong, in one or two sentences.
+      label: In short
+      description: One plain sentence, everyday words. What is wrong and what should happen. Someone who reads only this line knows what the issue is.
     validations:
       required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong today, as two to four short bullets. One fact each, about fifteen words, everyday words ("the national travel survey", not MiD). No solution yet. A cross-reference ("see #77") is not a description.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why it matters
+      description: What this does to the results, the model or the work. One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state, one checkable outcome per line.
+      placeholder: |
+        - [ ] The wrong value is gone and a test covers the case
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ### Details
+        Everything below is the technical record. Numbers, stage ids, code paths and prior work belong here, not in the head above.
   - type: textarea
     id: reproduction
     attributes:

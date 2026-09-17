@@ -571,8 +571,14 @@ bound is not met..." above).
     realised (flag ON) **0.0737** (and, one class down, `50_100` assigned 0.1330, MiD-implied
     0.1185, model ON 0.1304). It remains valid ONLY as an internal-consistency check of the
     model's OWN keep-probability rule against itself, not as an independent regional
-    observation. Kept in that limited role: the model's 0.0737 sits **1.35 pp** above the
-    MiD-implied 0.0602, read (Decision above, unchanged) as the necessary consequence of the
+    observation. **The MiD-implied half of that comparison moved on 2026-09-11**, when ADR-0117
+    took the undetermined reporting-day state out of the denominator of
+    `share_at_workplace`: recomputing the same script against the corrected reference gives
+    `100_plus` **0.0606** and `50_100` **0.1183**. The assigned and model-realised values are
+    properties of the 2026-09-06 run and cannot move; the committed run artefact and its manifest
+    keep the numbers that run produced. Kept in that limited role: the model's 0.0737 sits
+    **1.31 pp** above the recomputed MiD-implied 0.0606 (1.35 pp against the value as computed at
+    the time), read (Decision above, unchanged) as the necessary consequence of the
     "re-draw only upwards" rule -- the model never adds a work trip for a person whose donor
     commuted farther than their assignment -- not as a new finding.
   - **(b) The remaining factor of roughly 3-4 against the regional MiD tables lies in the

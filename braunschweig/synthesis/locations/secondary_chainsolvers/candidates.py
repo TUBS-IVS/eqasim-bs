@@ -477,15 +477,15 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     pre-feature behaviour (a single ``shop`` activity at ``pot_shop``).
 
     When ``leisure_subtype_split`` is True (Task 4, issue #127) a building that
-    offers leisure is emitted under the four internal subtype activities
-    (``LEISURE_SUBTYPE_ACTIVITIES``: leisure_local/visit/activity/excursion)
-    INSTEAD OF the aggregate ``leisure`` activity. Unless
-    ``leisure_visit_building_potential`` is also ON, there is no per-subtype
-    building potential -- all four share the SAME ``pot_leisure`` value, so no
-    offer is ever dropped for a non-positive potential here (that zero-skip
-    only applies to the genuinely distinct ``SHOP_SUBTYPE_ACTIVITIES``
-    potentials). ``leisure_subtype_split`` requires ``with_potentials``. OFF
-    (default) is byte-identical.
+    offers leisure is emitted under EVERY internal subtype activity
+    (``LEISURE_SUBTYPE_ACTIVITIES``: leisure_local/visit/activity/excursion,
+    plus leisure_unspecified since issue #373) INSTEAD OF the aggregate
+    ``leisure`` activity. Unless ``leisure_visit_building_potential`` is also
+    ON, there is no per-subtype building potential -- they all share the SAME
+    ``pot_leisure`` value, so no offer is ever dropped for a non-positive
+    potential here (that zero-skip only applies to the genuinely distinct
+    ``SHOP_SUBTYPE_ACTIVITIES`` potentials). ``leisure_subtype_split`` requires
+    ``with_potentials``. OFF (default) is byte-identical.
 
     When ``leisure_visit_building_potential`` is also True (Task 5, issue #127)
     the ``leisure_visit`` subtype is REROUTED onto the dedicated residential
@@ -543,7 +543,7 @@ def _build_locations_df(df_secondary, with_potentials: bool = False,
     * an ``other``-offering row emits the aggregate ``"other"`` activity (for
       ``other_misc``) plus ``errand_authority_medical`` / ``errand_service``
       where their potential is positive;
-    * the four MiD leisure subtypes and the three MiD other subtypes are NOT
+    * the MiD leisure subtypes and the three MiD other subtypes are NOT
       emitted (``leisure_visit`` survives only because it is ALSO an SrV
       category);
     * shop and escort emission is unchanged.

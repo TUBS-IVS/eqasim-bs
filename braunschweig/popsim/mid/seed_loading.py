@@ -37,6 +37,9 @@ import pandas as pd
 from braunschweig.popsim import attributes
 from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import seed as seedmod
+# The passive-escort pairing window default lives with the trip build (the seed must use
+# the same window the plan is built with); imported, never re-typed.
+from braunschweig.popsim.trips import DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
 from braunschweig.popsim.kreis_attribute_control import EDUCATION_BY_AGE_ENTRY_NAMES
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
@@ -528,6 +531,10 @@ def _derive_participation_seed_columns(
     kreis_seed_rng,
     escort_passive_education: bool,
     exclude_rbw_legs: bool,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``load_mid_seed``.
 
@@ -551,6 +558,30 @@ def _derive_participation_seed_columns(
     fallback). ``exclude_rbw_legs`` is forwarded so the seed counts exactly the legs the
     trip build keeps (controller ruling R8); both new keywords are keyword-only with NO
     default here, so the two public callers must state them and the twins cannot drift.
+    ``w_zweck_10_as_leisure`` (issue #373, ADR-0111) is forwarded to
+    ``derive_participation_seed`` so the leisure_participation seed counts the SAME
+    W_ZWECK codes as leisure that the trip build does; keyword-only WITH a False default
+    here, unlike the two above, because it was added after them (default False keeps
+    every existing caller of this private step byte-identical; the public callers below
+    always state it explicitly).
+
+    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` (issue #372,
+    ADR-0112) are forwarded to ``derive_education_flag_seed`` alongside
+    ``escort_passive_education``, so the education_flag seed counts exactly the code-13 legs
+    the trip build realises as education (a paired child follows the accompanying adult's
+    purpose). Keyword-only WITH defaults here, like ``w_zweck_10_as_leisure`` and for the same
+    reason: they were added after the two no-default flags, and the default reproduces the
+    pre-#372 seed byte-identically.
+
+    ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
+    ``drop_leading_arrive_home_leg`` value into that SAME derivation, where it (with
+    ``exclude_rbw_legs``) defines the leg universe the passive-escort pairing runs on --
+    the plan's universe, not the raw table's (controller ruling C-R12). It is spelled
+    distinctly from the ``drop_leading_arrive_home_leg`` parameter of the trip_class
+    derivation next door, which exists only on the ``project_completed_seed`` path and
+    subtracts the dropped leg from a COUNT: same config key, two different consumers, and
+    a shared parameter name would suggest the legacy path's trip_class seed had started
+    reading it too (it has not; that path stays byte-identical).
 
     Returns: the persons frame with one derived column per active purpose plus the active
     universe seed columns (MUST be reassigned).
@@ -570,7 +601,8 @@ def _derive_participation_seed_columns(
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
                 persons, wege, purpose, rng=kreis_seed_rng,
-                household_id=columns.person_household_id, person_id=columns.person_id)
+                household_id=columns.person_household_id, person_id=columns.person_id,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
         if "work_by_employment" in active_kreis_entry_names:
             persons = derive_work_by_employment_seed(
                 persons, wege, exclude_rbw_legs=exclude_rbw_legs,
@@ -581,6 +613,10 @@ def _derive_participation_seed_columns(
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
                 exclude_rbw_legs=exclude_rbw_legs,
+                escort_passive_from_adult=escort_passive_from_adult,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+                passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -659,6 +695,10 @@ def _derive_projected_participation_seed_columns(
     kreis_seed_rng,
     escort_passive_education: bool,
     exclude_rbw_legs: bool,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``project_completed_seed``.
 
@@ -680,6 +720,28 @@ def _derive_projected_participation_seed_columns(
     (``_derive_participation_seed_columns``) because of the extra ``mid_dir``
     requirement check, whose ValueError names its caller and is raised inside the
     guarded branch, so it cannot stay with the caller.
+
+    ``w_zweck_10_as_leisure`` (issue #373, ADR-0111) is forwarded to
+    ``derive_participation_seed`` exactly like its ``load_mid_seed`` twin, so the two
+    functions cannot drift on which W_ZWECK codes count as leisure.
+
+    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` (issue #372,
+    ADR-0112) are forwarded to ``derive_education_flag_seed`` alongside
+    ``escort_passive_education``, so the education_flag seed counts exactly the code-13 legs
+    the trip build realises as education (a paired child follows the accompanying adult's
+    purpose). Keyword-only WITH defaults here, like ``w_zweck_10_as_leisure`` and for the same
+    reason: they were added after the two no-default flags, and the default reproduces the
+    pre-#372 seed byte-identically.
+
+    ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
+    ``drop_leading_arrive_home_leg`` value into that SAME derivation, where it (with
+    ``exclude_rbw_legs``) defines the leg universe the passive-escort pairing runs on --
+    the plan's universe, not the raw table's (controller ruling C-R12). It is spelled
+    distinctly from the ``drop_leading_arrive_home_leg`` parameter of the trip_class
+    derivation next door, which exists only on the ``project_completed_seed`` path and
+    subtracts the dropped leg from a COUNT: same config key, two different consumers, and
+    a shared parameter name would suggest the legacy path's trip_class seed had started
+    reading it too (it has not; that path stays byte-identical).
 
     Returns: the persons frame with one derived column per active purpose plus the active
     universe seed columns (MUST be reassigned).
@@ -708,7 +770,8 @@ def _derive_projected_participation_seed_columns(
         for purpose in _active_participation_purposes:
             persons = derive_participation_seed(
                 persons, wege, purpose, rng=kreis_seed_rng,
-                household_id=columns.person_household_id, person_id=columns.person_id)
+                household_id=columns.person_household_id, person_id=columns.person_id,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure)
         if "work_by_employment" in active_kreis_entry_names:
             persons = derive_work_by_employment_seed(
                 persons, wege, exclude_rbw_legs=exclude_rbw_legs,
@@ -719,6 +782,10 @@ def _derive_projected_participation_seed_columns(
             persons = derive_education_flag_seed(
                 persons, wege, escort_passive_education=escort_passive_education,
                 exclude_rbw_legs=exclude_rbw_legs,
+                escort_passive_from_adult=escort_passive_from_adult,
+                w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+                passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
 
@@ -773,6 +840,10 @@ def load_mid_seed(
     ebike_seed_column: Optional[str] = None,
     escort_passive_education: bool = False,
     exclude_rbw_legs: bool = True,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
 
@@ -838,6 +909,15 @@ def load_mid_seed(
             ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
             gets the PRODUCTION convention rather than a divergent one; the flag is inert
             unless a participation-universe control is active.
+        w_zweck_10_as_leisure: The value of the ``w_zweck_10_as_leisure`` trip-build flag
+            for THIS run (config key ``w_zweck_10_as_leisure``, threaded from
+            ``popsim.stage``; issue #373, ADR-0111). Read ONLY by the
+            ``leisure_participation`` seed derivation (``mid.derive_participation_seed``):
+            under the flag the trip build maps MiD ``W_ZWECK`` 10 ("anderer Zweck") to
+            leisure, so the seed must count that code as leisure too, or seed and realised
+            plan describe different days. Default False -- the same default
+            ``braunschweig.popsim.trips_stage`` declares -- so direct callers/tests are
+            unaffected; the stage always passes its configured value explicitly.
     """
     if complete_members and completion_rng is None:
         raise ValueError(
@@ -907,6 +987,10 @@ def load_mid_seed(
         kreis_seed_rng=kreis_seed_rng,
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
     households = _join_hh_type5_column(households, persons, columns)
     _hh_extra, _person_extra = _split_kreis_entries_by_level(effective_kreis_entries)
@@ -930,6 +1014,10 @@ def project_completed_seed(
     drop_leading_arrive_home_leg: bool = False,
     escort_passive_education: bool = False,
     exclude_rbw_legs: bool = True,
+    w_zweck_10_as_leisure: bool = False,
+    escort_passive_from_adult: bool = False,
+    passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    education_flag_drop_leading_arrive_home_leg: bool = False,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -1022,6 +1110,14 @@ def project_completed_seed(
             ``braunschweig.popsim.trips_stage`` declare, so a direct caller that omits it
             gets the PRODUCTION convention rather than a divergent one; the flag is inert
             unless a participation-universe control is active.
+        w_zweck_10_as_leisure: threaded from ``popsim.stage`` (issue #373, ADR-0111;
+            config key ``w_zweck_10_as_leisure``, which ``configs/base_bs.yml`` sets to
+            ``true``). Read ONLY by the ``leisure_participation`` seed derivation
+            (``mid.derive_participation_seed``): under the flag the trip build maps MiD
+            ``W_ZWECK`` 10 ("anderer Zweck") to leisure, so the seed must count that code
+            as leisure too, or seed and realised plan describe different days. Default
+            False here for the same reason as above -- it is the default
+            ``braunschweig.popsim.trips_stage`` declares.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -1071,6 +1167,10 @@ def project_completed_seed(
         kreis_seed_rng=kreis_seed_rng,
         escort_passive_education=escort_passive_education,
         exclude_rbw_legs=exclude_rbw_legs,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+        escort_passive_from_adult=escort_passive_from_adult,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
 
     households = _join_hh_type5_column(households, persons, columns)

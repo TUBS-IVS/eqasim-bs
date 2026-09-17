@@ -4,7 +4,10 @@
 leg's desired distance, applies the subtype / escort / SrV location-type
 deciders (all pre-built, passed in) and emits the chainsolvers plans frame
 plus the bookkeeping the fallback and reporting stages need.
-``SECONDARY_PURPOSES`` / ``FIXED_PURPOSES`` define the purpose taxonomy;
+``SECONDARY_PURPOSES`` defines the variable half of the purpose taxonomy
+(the fixed half lives in
+``synthesis.population.spatial.secondary.problems.FIXED_PURPOSES``, which is
+where the problem splitter reads it);
 ``PLANS_HELPER_COLUMNS`` are stripped by ``_plans_frame_for_solver`` before
 the frame is handed to chainsolvers.
 
@@ -40,12 +43,15 @@ from .srv_location_types import (
 # Plans-DF construction
 # ---------------------------------------------------------------------------
 
-# Eqasim purposes that count as "secondary" (variable). ``home``/``work``/
-# ``education`` are fixed (anchors). "escort" (issue #201) is only realised
-# when escort_purpose is ON; membership here is inert while no escort legs
-# exist, keeping the OFF path byte-identical.
+# Eqasim purposes that count as "secondary" (variable). The FIXED (anchor)
+# purposes are NOT restated here: their single home is
+# ``synthesis.population.spatial.secondary.problems.FIXED_PURPOSES``, the list
+# the problem splitter actually branches on (it carries the two boundary
+# purposes "escort_linked" (#201) and "passive_linked" (#385) this module has no
+# use for). "escort" (issue #201) is only realised when escort_purpose is ON;
+# membership here is inert while no escort legs exist, keeping the OFF path
+# byte-identical.
 SECONDARY_PURPOSES = {"shop", "leisure", "other", "escort"}
-FIXED_PURPOSES = {"home", "work", "education"}
 
 # Helper column carrying a leisure/other leg's MiD distance LABEL (the subtype
 # group that drove its distance layer) alongside the SrV placement category
@@ -369,7 +375,7 @@ def _build_plans_df(problems: List[Dict[str, Any]],
                     distance_purpose = "shop"
                     subtype_stats["distance_layer_fallback"] += 1
 
-            # Task 4 (issue #127): resolve a leisure leg to one of the four
+            # Task 4 (issue #127): resolve a leisure leg to one of the
             # LEISURE_SUBTYPE_ACTIVITIES groups. Sibling to the shop block above:
             # the group is BOTH the chainsolver activity AND (with a logged
             # fallback to the aggregate "leisure" layer when the subtype

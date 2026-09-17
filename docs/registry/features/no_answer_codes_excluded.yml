@@ -1,0 +1,152 @@
+feature: no_answer_codes_excluded
+title: 'exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose,
+  and a design code can never become a distance'
+area: secondary
+description: |
+  Two guarantees, one rule: a survey "keine Angabe" may shape nothing the model estimates, and a
+  MiD design code may never enter a distance. Issue #373, ADR-0117; the completion of the sentinel
+  work ADR-0113 started one level down (W_ZWD) and ADR-0115/ADR-0116 continued on the same donor
+  frame.
+
+  WHAT WAS WRONG. MiD W_ZWECK 99 is "keine Angabe": the respondent travelled but did not say why.
+  trips.PURPOSE_BY_W_ZWECK maps it to the eqasim purpose "other" -- right for the PLAN (a trip
+  happened and needs a purpose) but wrong for every estimation built on that purpose. On the
+  2026-09 delivery 6,029 legs carry the code, 4,271 of them in the weekday diary universe: 0.58 %
+  of its legs, but 2.80 % of everything the model calls "other" (ad-hoc measurement 2026-09-11,
+  not reproduced by committed code). They fed the "other" distance pool and the coarse
+  errand/rest split, whose local SubtypeSpec was built with sentinels=frozenset() while its two
+  siblings in the same module correctly reuse the sentinel-carrying specs of purpose_subtype.
+  Separately, four sites turned wegkm_imp into a distance with no guard at all, so a MiD design
+  code (>= 9994 "unplausibel" / "keine Angabe") would have entered a cumulative distribution as a
+  7,688 km straight-line leg -- latent, not live: the delivery carries none (measured over all
+  1,087,393 rows: no NaN, no value <= 0, maximum 950 km).
+
+  MECHANISM. trips.W_ZWECK_NO_ANSWER_CODE = 99 names the code once. Under
+  exclude_no_answer_purpose_legs (declared default true, key and default imported from
+  braunschweig.popsim.stage.config_keys by BOTH consumer stages, production true in
+  configs/base_bs.yml) distance_distributions.run drops those legs in a new Step 5b -- AFTER the
+  chain derivation of Step 2 and the primary-both filter of Step 5, so no other leg's
+  preceding_purpose changes -- with the rate logged, and the same step drops legs whose distance
+  is missing (a leg without a length cannot contribute one) and raises if nothing survives.
+  deciders._build_other_subtype_decider moves the code into the coarse spec's SENTINELS and out
+  of the "rest" group in the same breath, since SubtypeSpec refuses a code that is both grouped
+  and a sentinel; errand/escort/rest then renormalise over the legs whose purpose is known. The
+  TRIP BUILD is deliberately unchanged: the leg stays an "other" trip, because deleting it would
+  remove a trip the person made and imputing a purpose would fabricate behaviour the survey
+  explicitly does not report (ADR-0117 Rejected alternatives keeps the imputation open as a
+  separate, flagged decision). diary_facts.validate_trip_length_km is the one guard every
+  consumer that creates a distance from a trip-length column now calls (distance_distributions
+  Step 4, trips_stage's contract column, commute_day.donor_pool): an IMPOSSIBLE value (design
+  code or non-positive) RAISES naming the caller and the counts, a MISSING value is counted,
+  logged and passed through because it is structural -- the closure/dwell synthesis adds legs
+  that were never surveyed.
+
+  MEASURED EFFECT (ad-hoc 2026-09-11, production flag set, raw delivery): the "other" distance
+  pool falls from 72,183 to 67,912 legs and its clipped mean from 9.062 to 8.863 km; the coarse
+  other split moves errand 0.5304 -> 0.5540 and rest 0.4696 -> 0.4460, i.e. 2.36 pp of what the
+  model treated as "some other purpose" was a refusal to answer. No other layer changes: 99 is
+  the only no-answer purpose code and it maps to "other" alone. The trip-length guard is
+  byte-identical on this delivery (0 impossible values).
+stages:
+- synthesis.population.spatial.secondary.distance_distributions
+- synthesis.population.spatial.secondary.locations
+- synthesis.population.trips
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - exclude_no_answer_purpose_legs
+introduced:
+  issue: '#373'
+  pr: null
+  adr: ADR-0117
+detail_doc: docs/features/secondary-distances.md
+code_paths:
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/diary_facts.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+evidence:
+  tests:
+  - tests/test_diary_facts.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  - tests/test_configs_composed.py
+  - tests/test_escort_chainsolvers.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_distance_distributions_subtypes.py::test_no_answer_purpose_legs_are_kept_when_the_flag_is_off
+    note: 'The keyword default of distance_distributions.run is False and the decider''s coarse
+      spec keeps sentinels=frozenset() when the flag is off, so a direct caller or a test that
+      omits it reproduces the pre-feature behaviour exactly.
+      tests/test_distance_distributions_subtypes.py::test_no_answer_purpose_exclusion_leaves_the_other_pools_untouched
+      additionally pins the stronger property that switching the flag ON is equivalent to feeding
+      the same frame with the W_ZWECK-99 rows removed -- every other layer serialises identically
+      (bounds, values, weights, cdf) -- so the exclusion cannot leak into a purpose it does not
+      belong to. The trip-length guard changes no output at all on the current delivery: it raises
+      only on values the delivery does not contain (0 of 1,087,393 measured).'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.distance_distributions] no-answer purpose'
+    note: 'Two INFO lines from Step 5b: "no-answer purpose (W_ZWECK 99) legs excluded from every
+      donor pool: n/total (rate)" and "legs without a usable length excluded from every donor
+      pool: n/total (rate)"; the decider prints its coarse marginal after the exclusion, so the
+      renormalised errand/rest split is visible in the run log. diary_facts.validate_trip_length_km
+      logs the structural-missing rate per caller and RAISES on an impossible value, naming the
+      caller, the counts and the class.'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv
+    note: 'No new reference table: the exclusion is a filter on the donor frame, not a new
+      estimated quantity. The committed W_ZWECK fold table is the nearest committed evidence for
+      the code vocabulary this feature reasons about; the leg counts quoted in the description are
+      ad-hoc measurements labelled as such in ADR-0117.'
+validation:
+  state: unvalidated
+  runs: []
+  metric: 'Not yet measured on a population. The donor side is measured (see the description and
+    ADR-0117 Consequences): "other" pool 72,183 -> 67,912 legs, mean 9.062 -> 8.863 km, coarse
+    split errand 0.5304 -> 0.5540 / rest 0.4696 -> 0.4460. Arm E of the pre-registered ladder
+    (arm D + this flag) measures the REALISED other-subtype split and the realised "other"
+    activity distances against the decider''s own printed marginal; every expectation there is an
+    ASSUMPTION until a run manifest records it.'
+  note: 'Nothing has run. The measured numbers above are survey-side donor statistics, not model
+    output, and the trip-length guard is byte-identical on the current delivery by measurement
+    (0 impossible values in 1,087,393 rows), so it contributes nothing to observe until a delivery
+    changes. Because the code default is true, arms A to D of the ladder must set
+    exclude_no_answer_purpose_legs false explicitly, as they must for leisure_unspecified_subtype
+    (ADR-0115) and secondary_mid_weekday_legs_only (ADR-0116).'
+assessment:
+  status: pending
+  pending_reason: 'Arm E has not run, so the realised other-subtype split and the realised "other"
+    distances of the synthetic population have not been compared against the donor-side shift.
+    One deliberate non-decision is recorded rather than hidden (ADR-0117 Rejected alternatives):
+    a W_ZWECK-99 leg keeps the "other" purpose in the PLAN. Whether it should instead receive an
+    imputed purpose from comparable legs -- the policy braunschweig.popsim.missing.resolve applies
+    to person attributes -- is a separate owner decision with its own flag and arm, because it
+    would change the plan for 0.58 % of legs rather than only the estimations.'
+notes: |
+  The 2026-09-11 sweep found four instances in total; all four are fixed. Two are behind this
+  record's own flag (the W_ZWECK-99 purpose and the unguarded trip-length columns). The other two
+  were fixed in the same wave WITHOUT a flag, because each corrects the DENOMINATOR of a committed
+  reference or control target and a corrected denominator has no OFF path: the undetermined
+  reporting-day state left the workday-location share denominator (share_at_workplace 0.5209 ->
+  0.5216 on the all row, up to +0.26 pp on one distance class; the fifth column is renamed
+  state_missing_rate because its denominator differs), and an unreadable SrV employment code
+  became pd.NA instead of "not employed" (employed_share 0.5389 -> 0.5394 for the region; the
+  derived control's nonemployed_work falls by up to 0.23 pp). Both are detailed with their
+  per-class numbers in ADR-0117 Consequences, and neither is part of this feature's flag or arm.
+
+  The sweep also confirmed the parts that are already correct and must not be re-opened:
+  popsim.missing.resolve for all 13 person attributes, the complete W_ZWD no-answer family (599
+  shop, 699 errand, 799 leisure), the SrV escort destination weights (invalid BHOL excluded,
+  98.79 % coverage disclosed), the SrV location-type draw (invalid mode and length excluded with
+  rates) and every committed control target (none carries an unknown category).

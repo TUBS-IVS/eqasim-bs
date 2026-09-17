@@ -18,8 +18,15 @@ onto the `superpowers` skill chain, named in brackets.)
    worktrees**, never one working dir `[using-git-worktrees]`.
 5. **Implement TDD** — red → green → refactor. New behaviour is **flag-gated, default-ON**
    with an explicit byte-identical **OFF-path test** `[test-driven-development]`.
-6. **Verify** — real evidence: run the suite on the **server** when matsim-shadowing breaks
-   local imports; a **1% real smoke** beats mocked tests `[verification-before-completion]`.
+6. **Verify** — follow the [required agent verification gate](docs/codebase/TESTING.md#required-agent-verification-gate):
+   use the shared runner in the locked environment, run the final regression suite
+   on Linux/WSL2, record evidence, and require both Linux/Windows CI checks before
+   merge. Linux validation is the norm, not a special case for import shadowing —
+   a Windows-only pass is not evidence for data-gated goldens; compare SKIP counts,
+   not only failures, per
+   [linux-parity-testing](docs/codebase/notes/linux-parity-testing.md). Add the
+   relevant real-data smoke when model changes require it
+   `[verification-before-completion]`.
 7. **Review** — request a review before merging `[requesting-code-review]`.
 8. **Land** — open the PR **always via `git pr`** (base = the fork `TUBS-IVS/eqasim-bs`,
    never the `eqasim-org/eqasim-bavaria` upstream); after merge, delete the branch + prune
@@ -58,7 +65,10 @@ the `RUNS.md` ledger are retired pointer stubs — never write status/backlog/ru
 When a new feature/gap/idea surfaces mid-work, **propose it first**, then open a GitHub
 issue **in `TUBS-IVS/eqasim-bs`** with its native type (Bug / Feature / Analysis / Decision /
 Task), one `step:*` and one or two `area:*` labels, and a `Stages:` line naming the registry
-stage ids; the title reads `<stage or attribute>: <finding>`. The full rule is
+stage ids; the title reads `<stage or attribute>: <finding>`. The body opens with the
+plain-language head — an `In short` line, `## Problem` as short bullets, `## Why it matters`,
+`## Done when` — written in everyday words so it is understood in thirty seconds without
+opening this repository; everything technical follows under `## Details`. The full rule is
 [docs/codebase/notes/issue-and-pr-conventions.md](docs/codebase/notes/issue-and-pr-conventions.md).
 Nothing incidental gets forgotten. Decisions graduate into an ADR under `docs/decisions/`.
 
@@ -89,7 +99,7 @@ Two layers, cheapest first (issue #282). Both are required before claiming a con
 **1. Specification checks — seconds, no PopulationSim, no data:**
 
 ```powershell
-python -m pytest tests/test_control_fit_smoke.py -q
+python scripts/run_tests.py tests/test_control_fit_smoke.py -q
 ```
 
 These run against the ACTIVE catalog and registry and catch the defects a real run would only

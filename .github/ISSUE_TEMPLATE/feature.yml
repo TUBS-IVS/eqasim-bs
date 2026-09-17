@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage. Programme steps get a parent (`gh issue edit N --parent M`).
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The first four fields are the plain-language head: someone who has never opened this repository must understand them. After creating, add one `step:*` label and one or two `area:*` labels. `prio:*` is set at triage. Programme steps get a parent (`gh issue edit N --parent M`).
   - type: input
     id: stages
     attributes:
@@ -14,13 +14,42 @@ body:
       description: Registry stage id(s) touched or added (docs/registry/stages/). `unknown` is allowed.
     validations:
       required: true
-  - type: textarea
-    id: summary
+  - type: input
+    id: short
     attributes:
-      label: Summary
-      description: What should be added and why. One or two sentences.
+      label: In short
+      description: One plain sentence, everyday words. What is wrong and what should happen. Someone who reads only this line knows what the issue is.
     validations:
       required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What the model cannot do today, as two to four short bullets. One fact each, about fifteen words, everyday words. No solution yet. A cross-reference ("see #77") is not a description.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why it matters
+      description: What the gap costs the results or the work. One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state, one checkable outcome per line (tests, A/B, registry records).
+      placeholder: |
+        - [ ] The flag is ON by default and the OFF path is byte-identical (tested)
+        - [ ] The result is compared to <committed reference>
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ### Details
+        Everything below is the technical record. Numbers, stage ids, code paths and prior work belong here, not in the head above.
   - type: textarea
     id: flag
     attributes:
@@ -41,10 +70,10 @@ body:
       label: Validated against
       description: Which observed reference the result is compared to. Convergence is NOT validation.
   - type: textarea
-    id: acceptance
+    id: approach
     attributes:
-      label: Acceptance criteria
-      description: How we know it is done and correct (tests, A/B, registry records).
+      label: Approach / open questions
+      description: Sketch of the method, the alternatives still open, and anything that must be measured first.
   - type: input
     id: links
     attributes:

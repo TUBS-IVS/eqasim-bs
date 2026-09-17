@@ -105,9 +105,11 @@ and Bavaria lineage live in the Stage Registry
 
 ## Requirements
 
-- **Python 3.10** via miniforge/conda; the pinned environment is
-  [`environment.yml`](environment.yml) (env name `eqasim`). The pipeline AND
-  the test suite run in this env.
+- **Python 3.10** via miniforge/conda. Linux/WSL uses the captured
+  [production-server environment](environments/server-linux-64.lock) and its
+  [pip layer](environments/requirements-server-linux-64.txt); native Windows uses
+  [its platform lock](environments/conda-lock.yml). The pipeline AND the test
+  suite run in the `eqasim` environment. See installation below.
 - **Java**: eqasim-java 2.2.0 targets **JDK 25**; point `java_home` /
   `java_binary` at it (see `configs/base_bs.yml`). Maven is resolved by the
   pipeline.
@@ -117,16 +119,60 @@ and Bavaria lineage live in the Stage Registry
   64-core / 128 GB machine.
 - Disk: ~13 GB input data + caches (tens of GB at scale).
 
+With `mid_passenger_availability: true` (the `popsim_mid` default), the MiD
+person file must contain `P_VAUTO`, and the sibling Java checkout or supplied
+JAR must include `RunAdaptPassengerAvailabilityConfig` (issue #398). Update both
+forks together: an older JAR fails the capability check instead of silently
+ignoring the new passenger attribute. Setting the flag to `false` restores
+the previous passenger rule. Driver access remains separate. See
+[ADR-0121](docs/decisions/ADR-0121-mid-passenger-availability.md) for the survey
+definition and child-access assumptions.
+
 ## Installation
 
-```powershell
+Linux is the canonical execution environment; on Windows, use WSL2 with the
+checkout and caches inside the Linux filesystem (for example `~/projects/`),
+as recommended in [Microsoft's filesystem guide](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
+Native Windows regression tests remain supported by the Windows lock.
+
+After installing Miniforge and initialising its shell, clone the repositories:
+
+```bash
 git clone https://github.com/TUBS-IVS/eqasim-bs.git
 git clone https://github.com/TUBS-IVS/eqasim-java-bs.git   # sibling directory
 cd eqasim-bs
-& "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
-conda env create -f environment.yml
-conda activate eqasim
 ```
+
+On Linux/WSL2, reproduce the known server runtime instead of solving a new one:
+
+```bash
+conda create --name eqasim --file environments/server-linux-64.lock
+conda activate eqasim
+python -m pip install --no-deps -r environments/requirements-server-linux-64.txt
+python -m pip check
+python scripts/run_tests.py --check
+```
+
+For native Windows, install `uv` as well and use:
+
+```powershell
+& "$env:LOCALAPPDATA\miniforge3\shell\condabin\conda-hook.ps1"
+uvx --from conda-lock==4.0.2 conda-lock install --name eqasim environments/conda-lock.yml
+conda activate eqasim
+python -m pip check
+python scripts/run_tests.py --check
+```
+
+Install a fresh environment when comparing runtimes; an existing environment
+can contain extra packages even after applying a lock. See
+[environment maintenance](docs/codebase/notes/reproducible-environment.md) for
+lock regeneration and the pip/VCS installation contract.
+
+Run small-data regression tests with `python scripts/run_tests.py`; use
+`python scripts/run_tests.py --pipeline` only for an explicitly requested
+real-data synthesis/MATSim smoke. The command checks required data and a JDK 25 /
+Maven toolchain on PATH before execution; collection alone does not require them.
+See [testing](docs/codebase/TESTING.md) for focused selection and duration reports.
 
 ## Data setup
 
@@ -221,13 +267,16 @@ tables keep all reference comparisons working.
 | SrV participation-universe aggregates (committed) | `python scripts/extract_srv_participation_universe.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run | `braunschweig/srv/srv2023_work_by_employment_by_kreis.csv`, `braunschweig/srv/srv2023_education_by_age_by_kreis.csv` — build-time inputs of the participation-universe targets below, not read at run time |
 | Participation-universe Kreis targets (committed) | `python scripts/build_participation_universe_targets.py` (no raw data: reads the two SrV aggregates above and the committed `target2026_employment_status_by_kreis.csv`) | `braunschweig/targets/target2026_work_by_employment_by_kreis.csv`, `braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv` — read by the popsim stage whenever the controls of issue #368 are on (the default) |
 | MiD reporting-day work-location + home-office donor-pool references (committed) | `python scripts/extract_mid_workday_location.py --raw <mid2023_raw dir> --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>` (raw MiD microdata local-only); read at run time by the commute-day-state model (ADR-0104, below). The model's own run-time donor pool (data record `mid2023_home_office_day_donors`) has no separate file: it is rebuilt fresh from the raw MiD delivery on every run. | `braunschweig/mid/mid2023_workday_location_by_commute_distance.csv`, `braunschweig/mid/mid2023_home_office_donor_pool.csv` |
+| SrV general day-absence aggregates (committed) | `python scripts/extract_srv_absence.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run and are read at run time by the general day-absence model (ADR-0110, below) | `braunschweig/srv/srv2023_absence_by_age_band.csv`, `braunschweig/srv/srv2023_absence_household_by_size.csv` |
+| SrV departure-time + activity-duration references (committed) | `python scripts/extract_srv_departure_times.py --raw <srv2023_raw dir> --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>` (raw SciUse microdata local-only); both tables come out of one run. The departure-time table is read at run time by the departure-time model (ADR-0114, `departure_time_model: srv_mapped`), which aborts naming the path and the config key if it is missing; both are read by the `departure_time_vs_srv` analysis stage | `braunschweig/srv/srv2023_departure_time_reference.csv`, `braunschweig/srv/srv2023_activity_duration_reference.csv` |
 
-Two diagnostics check the synthesised fleet against those committed references
+Three diagnostics check the synthesised fleet against those committed references
 (they read data only and write nothing):
 
 ```bash
-python scripts/measure_combustion_split.py        # realised petrol/diesel vs 46251-02 (ZGB)
-python scripts/measure_gemeinde_join_coverage.py  # Gemeinde-name join coverage of the EV tilt
+python scripts/measure_combustion_split.py          # realised petrol/diesel vs 46251-02 (ZGB)
+python scripts/measure_gemeinde_join_coverage.py    # Gemeinde-name join coverage of the EV tilt
+python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV composition vs FZ 27.17
 ```
 
 The exhaustive acquisition companion (with every note and edge case) is
@@ -313,10 +362,75 @@ rejection is needed here.
 | `education_by_age_kreis_control` | One toggle for three 2-cell (`edu`/`noedu`) controls on the age ranges 0–5, 6–17 and 18+, each with a census-exact band total. **Replaces** `education_participation_kreis_control` |
 | `education_participation_kreis_control` | The replaced all-persons education-participation control; likewise kept for ablation configs |
 | `diary_match_hard_employment` | Forbids the diary plan match from relaxing the `employed` match key, so a person's employment attribute and their work diary cannot come from two different MiD respondents; surviving crossings are counted and logged |
+| `donor_match_fine_child_age_bands` | Bands 6-13-year-olds finely (6-9 / 10-13) wherever the MiD donor build matches a person to a donor by age — member completion's mirror role matching, the weekend plan match's member alignment, and the diary plan match's re-draw — so a primary-school child cannot inherit a 13-year-old's school day; none of the three consumes a different number of random draws, and crossings are counted and logged in both arms |
 
 Enabling a replacement together with the control it replaces — or a replacement
 while `employment_status_kreis_control` is off — fails at **config time** with a
 `ValueError` naming both keys, rather than double-constraining the same persons.
+
+**MiD purpose-mapping keys (`popsim_mid` only).** Five more keys decide which eqasim
+purpose a MiD leg gets and which W_ZWD detail codes the secondary subtype models
+estimate from (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115;
+feature records `purpose_main_fold_code_10`, `escort_passive_from_adult`,
+`w_zwd_codeplan_sentinels`, `leisure_unspecified_subtype`). They are **flat** keys — no
+`braunschweig.population.popsim.` prefix, like `escort_purpose` /
+`escort_passive_education` — and, as always, their defaults live only in
+`configs/base_bs.yml`. All five are ON there. The four purpose-mapping keys are
+byte-identical with the flag OFF; `leisure_unspecified_subtype` OFF is
+output-identical (placement, distances and purposes are unchanged, but the candidate
+frame carries one inert `leisure_unspecified` offer and the decider's log line gains a
+suffix — ADR-0115 Consequences).
+Where a key's DECLARED (stage) default differs from the value below, the table says
+so; the KEYWORD defaults inside the Python builders are always the OFF value, so a
+direct caller that omits a flag keeps the pre-feature behaviour.
+
+| Key (flat, no prefix) | Value in `configs/base_bs.yml` | Effect |
+|---|---|---|
+| `w_zweck_10_as_leisure` | `true` | Maps MiD `W_ZWECK` 10 "anderer Zweck" to `leisure` instead of `other`, following MiD's own main-purpose derivation `hwzweck1` (which folds code 10 to 6 Freizeit for 100 % of the legs, committed `mid2023_w_zweck_by_hwzweck1.csv`). Applies to the plan, the `leisure_participation` seed, the secondary distance layers and the home-office donor pool together. |
+| `escort_passive_from_adult` | `true` | Gives a passive escort leg (`W_ZWECK` 13, the escorted child's own leg) the purpose of the same-household adult leg it is paired with, instead of the flat "education" relabel; an unpaired leg keeps `escort_passive_education`. **Requires `escort_purpose`** (raises naming both keys at **configure time** — `braunschweig.popsim.trips_stage.configure()` — so a misconfigured run fails before any stage executes, not just at trip-build time inside `map_purpose`, which still raises the same check for any direct caller outside this stage's contract), which is why its DECLARED (stage) default is `false` — a configuration that does not compose this base leaves the feature off. |
+| `escort_passive_pair_max_gap_minutes` | `15` (minutes, > 0) | Pairing window for the key above: an adult leg farther than this from the child's departure leaves the leg unpaired. Inert while `escort_passive_from_adult` is `false`. |
+| `purpose_subtype_codeplan_sentinels` | `true` | Treats the two MiD W_ZWD no-detail codes 799 (`Freizeit k.A.`) and 699 (`Erledigung k.A.`) as sentinels of the leisure / other-errand subtype models rather than as members of `leisure_activity` / `other_errand_long`, per the verified codeplan. Affects the secondary subtype deciders and their distance layers only — not the trip build. |
+| `leisure_unspecified_subtype` | `true` | Gives the MiD `W_ZWECK` 10 leisure legs — 43.2 % of the labelled leisure mass on the committed weekday reference universe, and carrying no W_ZWD detail code — the fifth leisure subtype `leisure_unspecified` with its own distance layer, instead of imputing one of the four W_ZWD groups onto them (ADR-0115). **Requires `w_zweck_10_as_leisure`** (both consumer stages raise at **configure time** naming both keys, whenever `secondary_leisure_subtype_split` is on). Affects the secondary subtype decider and the distance layers only — not the trip build. |
+| `secondary_mid_weekday_legs_only` | `true` | Estimates the secondary distance layers (**all** of them: mode-only, per-purpose and every subtype layer) and the three MiD-based subtype deciders on the WEEKDAY DIARY universe — the seed's own reporting-day filter and no rbW summary records, 67.9 % of the delivered MiD Wege rows — instead of every delivered row including weekends (ADR-0116). The synthetic day IS a weekday and the committed MiD reference tables measure the same universe, so this makes the estimation and its own reference describe the same day. One universe function, `braunschweig.popsim.trips.weekday_diary_leg_mask`, is shared by both stages and by the two committed reference extractions. Affects the secondary layers and deciders only — not the trip build. |
+| `exclude_no_answer_purpose_legs` | `true` | Excludes MiD legs whose MAIN purpose is the no-answer code `W_ZWECK` 99 ("keine Angabe") from every secondary ESTIMATION: the purpose and subtype distance pools, and the coarse errand/rest probabilities. They are 0.58 % of the weekday legs but **2.80 % of everything the model calls `other`**, so excluding them moves the errand/rest split by 2.4 pp onto legs whose purpose is actually known (ADR-0117). The trip build is deliberately unchanged: the leg is a real trip and keeps `other`, because deleting it would remove a trip the person made and imputing a purpose would invent behaviour the survey does not report. |
+
+`w_zweck_10_as_leisure`, `escort_passive_from_adult` and
+`escort_passive_pair_max_gap_minutes` need MiD's `W_ZWECK` vocabulary and (for the
+pairing) the household, age and departure-time columns, so the ENTD donor source
+**rejects** any non-default value; the two `popsim_open` fixture configs set them
+explicitly. `purpose_subtype_codeplan_sentinels`, `leisure_unspecified_subtype`,
+`secondary_mid_weekday_legs_only` and `exclude_no_answer_purpose_legs` need no such rejection — the trip build reads none of
+them, and `popsim_open` keeps the ENTD distance CDFs instead of estimating on MiD at all. See
+[`docs/codebase/notes/mid-purpose-mapping.md`](docs/codebase/notes/mid-purpose-mapping.md)
+for where the MiD purpose vocabulary is produced and which consumers must read the
+same flags.
+
+**Departure-time model keys (`popsim_mid` only).** Four more flat keys decide WHEN a
+synthetic person's day starts (issues #123 / #384, ADR-0114, feature record
+`departure_time_model`). They replace the inherited eqasim jitter — one uniform offset
+per person in +/-min(30 min, first departure) — by a model that de-rounds the reported
+first departure inside its actual reporting-precision cell and, by default, maps it onto
+the committed SrV 2023 first-departure distribution of the person's (purpose × group)
+cell. The whole chain moves by one offset, so trip and activity durations are unchanged.
+The DECLARED (stage) default of `departure_time_model` is **`eqasim_uniform`** — the
+byte-identical OFF path — so a configuration that does not compose this base keeps
+today's behaviour:
+
+| Key (flat, no prefix) | Value in `configs/base_bs.yml` | Effect |
+|---|---|---|
+| `departure_time_model` | `srv_mapped` (DECLARED default `eqasim_uniform`) | `eqasim_uniform` = the inherited +/-min(30 min, first departure) jitter; `derounded` = one offset drawn inside the reporting-precision cell of the first departure (+/-7.5 min on the quarter hour, +/-2.5 min on the five-minute grid, 0 for a to-the-minute report); `srv_mapped` = `derounded` plus a rank-preserving quantile mapping of the first departure onto the de-rounded SrV 2023 distribution of the person's cell. The ENTD donor source **rejects** any non-default value (no SrV cell structure); both `popsim_open` fixtures set `eqasim_uniform` explicitly. |
+| `departure_time_mapping_min_reference_n` | `200` (unweighted SrV observations) | A reference cell below this count is too thin to map onto; the model climbs the coarsening ladder `(purpose, group)` → `(purpose, all)` → `(all, all)` → unmapped. Inert unless the model is `srv_mapped`. |
+| `departure_time_mapping_min_model_n` | `50` (persons, clamped to ≥ 1) | The count a ladder rung's **ranking base** — the distribution a person's quantile is computed in — needs before the rung is used; below it at every rung the person stays unmapped and keeps only the de-rounding. One rule at both call sites: a rung's base is the model population of that rung's own key (the cell, then every person of that purpose, then everyone), arriving either as the mapped set itself (the trip build, whose set *is* the population) or as the population *ranking context* of every person's raw first departure per cell (the reporting-day splice, whose own set is far smaller). The realised level split and the base size per cell are logged per call site. Inert unless the model is `srv_mapped`. |
+| `departure_time_mapping_max_median_shift_hours` | `2.0` (hours) | Guard: a mapping cell whose median absolute shift exceeds this WARNS, naming the cell, both medians and the level. Offsets are never clipped to it — it flags a suspect cell, it does not silently fix one. |
+
+The SrV first-departure distribution is the model's **calibration target**, so reproducing
+it proves the wiring, not the behaviour; later-trip departures and activity durations are
+the hold-out, measured by the analysis stage
+`braunschweig.analysis.synthesis.departure_time_vs_srv` (report under
+`analysis/departure_time_vs_srv/`). See
+[`docs/codebase/notes/departure-time-model.md`](docs/codebase/notes/departure-time-model.md)
+for the mechanism, the two call sites and why the older `dep_hour_share_*` rows of
+`plan_structure_vs_srv` are biased by construction.
 
 **Local open-data smokes** (no restricted MiD data needed):
 
@@ -354,12 +468,19 @@ trip that day:
 | `commute_day_absent_share_far` | `1.0` (share, `0`–`1`) | Share of not-kept far workers that become `absent` rather than `home`. **ASSUMPTION**: no observed rate exists; the pre-registered sensitivity check (ADR-0104) also runs this at `0.6`. |
 | `commute_day_max_not_replaceable_share` | `0.5` (share, `0`–`1`) | Guard: above this share of the `home` cohort without any donor at any coarsening level, the model raises rather than silently reporting a home share governed by donor-pool gaps. |
 | `cds_max_states_outside_employed_share` | `0.05` (share, `0`–`1`; code default of the analysis stage, not set in `configs/base_bs.yml`) | Diagnostic guard on `braunschweig.analysis.synthesis.work_participation_by_kreis`'s Check 1: raises above this share of drawn states falling outside the employed universe (an id-join defect, not a measurement). |
+| `day_absence_enabled` | `true` | General day absence (issue #370, ADR-0110), independent of the commute-day-state model above: every person draws a reporting-day absence state from the committed SrV 2023 tables (household stage, then an individual residual per age band). `false` leaves every person `present` and every `.final` stage byte-identical to the pre-#370 reporting day. |
+| `day_absence_household_stage_enabled` | `true` | `false` runs an individual-only draw at the SrV band rates (the pre-registered sensitivity arm); the household stage is what reproduces the observed household clustering of absent persons. |
+| `day_absence_max_band_deviation_pp` | `1.0` (percentage points) | Guard: a band with `>= 1,000` persons whose realised absence share deviates from the SrV reference by more than this WARNS (a broken join or reference mismatch, not a target). |
+| `day_absence_individual_stage_min_household_size` | `2` (persons, unclipped household size) | Minimum household size eligible for the individual residual stage (issue #388, ADR-0110 Amendment 1). Below it, "whole household absent" already IS "person absent", so the household stage alone realises the SrV single-person rate and a residual on top would over-absent singles. `1` restores the PR #387 behaviour byte-identically (every present person eligible). |
 
 The drawn state is exported as the `commute_day_state` column of `persons.csv` (empty for a
-person without an assigned workplace) and, in the MATSim population, as the person attribute
-`commuteDayState` (written only for persons that carry a state). See
+person without an assigned workplace), as `day_absence_state` (`present` / `absent_household` /
+`absent_individual`, always present) and, in the MATSim population, as the person attributes
+`commuteDayState` (written only for persons that carry a state) and `dayAbsenceState`. See
 [`docs/codebase/notes/commute-day-two-view-trips.md`](docs/codebase/notes/commute-day-two-view-trips.md)
-for the two-view trips architecture this model relies on.
+for the two-view trips architecture this model relies on and
+[`docs/codebase/notes/day-absence-state.md`](docs/codebase/notes/day-absence-state.md) for the
+general day-absence draw and how it composes with the commute-day state.
 
 ## Outputs
 

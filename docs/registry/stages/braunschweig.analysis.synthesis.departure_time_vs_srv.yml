@@ -1,0 +1,150 @@
+stage: braunschweig.analysis.synthesis.departure_time_vs_srv
+title: Realised departure times vs SrV 2023 (decomposition, 15-minute EMD, hold-out)
+layer: analysis
+description: 'Measures what the departure-time model (issue #123) actually did to the synthetic
+  day, in three steps. (1) DECOMPOSITION: every trips row carries the offset the model applied
+  (braunschweig.popsim.departure_time_model.OFFSET_COLUMN), so a realised departure splits into
+  raw (the donor''s reported MiD clock time W_SZS/W_SZM, decoded by
+  braunschweig.popsim.trips.mid_time_seconds), pre_offset (realised minus the recorded offset)
+  and realised (what MATSim simulates); decomposition.csv reports the three hourly profiles side
+  by side per (segment, purpose, position), hours 0..27. (2) 15-MINUTE COMPARISON: the model''s
+  realised departures are binned by the reference builder''s own rule and scored against BOTH
+  columns of the committed SrV table -- share_derounded (the behaviour) and share_as_reported
+  (the survey''s clock grid) -- with braunschweig.calibration.metrics.emd_on_bands over 112-bin
+  vectors. (3) HOLD-OUT: the srv_mapped model maps the FIRST departure of a chain and nothing
+  else, so every EMD row is labelled calibrated (position first) or holdout (positions
+  later/all), and activity_duration.csv compares a dimension no departure-time model touches at
+  all. Writes <output_path>/analysis/departure_time_vs_srv/. Config keys:
+  departure_time_output_subdir (default analysis/departure_time_vs_srv),
+  departure_time_trips_view (default final -- the reporting-day view
+  synthesis.population.trips.final; pre_assignment reads synthesis.population.trips), and
+  departure_time_model, which this stage only RECORDS in its report (a comparison of two runs is
+  meaningless without knowing which model produced the times) and reads from
+  braunschweig.popsim.stage.config_keys so it can never disagree with the stage that applies the
+  model. The first two are analysis parameters of this stage, not production feature flags, so
+  they live in the stage code defaults and are not carried in configs/base_bs.yml.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/* (a comparison stage writing a report next to the
+    population); the three-way time decomposition, the de-rounded/as-reported double comparison
+    and the calibrated/hold-out split are Braunschweig-specific (issue #123).
+code:
+- braunschweig/analysis/synthesis/departure_time_vs_srv.py
+- braunschweig/analysis/departure_time.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- srv2023_departure_time_reference
+- srv2023_activity_duration_reference
+features:
+- departure_time_model
+decisions:
+- ADR-0114
+notes: 'Writes six files under <output_path>/analysis/departure_time_vs_srv/:
+  decomposition.csv (segment, purpose, position, hour, share_raw, share_pre_offset,
+  share_realised, n_raw, n -- dense over hours 0..27 for all 144 cells), comparison.csv
+  (segment, purpose, position, bin_15min, share_model, share_srv_derounded,
+  share_srv_as_reported, n_model, n_srv), emd.csv (one row per compared cell with
+  emd_vs_derounded, emd_vs_as_reported, n_model, n_srv and the dimension label),
+  activity_duration.csv (segment, purpose, band, share_model, share_srv, delta_pp, n_model,
+  n_srv), summary.md and provenance.json (git commit, parameters, both reference paths,
+  raw-time coverage, per-view leg counts, clip counts and the skipped-cell counts).
+
+  TAXONOMY AND UNIVERSE: segments (all + srv_plan_structure.GROUPS), purposes (all +
+  srv_plan_structure.PURPOSES), positions (first/later/all), the 15-minute bin geometry and the
+  duration bands are IMPORTED from braunschweig.calibration.srv_departure_times, the module that
+  built the committed tables -- never re-typed, so the two sides of every comparison are
+  produced by one definition (CLAUDE.md "Validate metric apples-to-apples"). A leg''s purpose is
+  its DESTINATION purpose, harmonised by the same function the plan-structure comparison uses,
+  and the pooled "all" purpose includes legs whose purpose could not be mapped, exactly as the
+  reference builder does. Unlike plan_structure_vs_srv this stage does NOT segment by home
+  Kreis, so it declares no home-location stage and performs no VG250 join; the consequence --
+  SrV surveys seven of the eight ZGB Kreise while the model side is the whole population -- is
+  stated as a limitation in summary.md rather than silently assumed away. It also declares no
+  synthesis.population.sampled dependency: the harmonised group needs age and employment status,
+  which the enriched frame already carries in the schema
+  departure_time_model.persons_from_synthetic_schema consumes (ruling A-R13).
+
+  NO SILENT FALLBACK: a trips frame WITHOUT OFFSET_COLUMN is REFUSED with a message naming the
+  column, the trips view and the departure_time_model config key -- without it a realised time
+  cannot be decomposed at all, and a report that silently dropped the decomposition would read
+  like a measured result. On the reporting-day view a spliced home-office chain has no raw MiD
+  columns (plan_replacement nulls a replaced row''s extra columns and recomputes only
+  OFFSET_COLUMN), so share_raw is NaN-safe by construction: a cell with no usable raw time
+  carries NaN throughout instead of a fabricated zero, n_raw is that column''s per-cell
+  denominator, and the overall coverage n_raw/n is logged, recorded in provenance.json and
+  WARNED about below RAW_COVERAGE_WARN_THRESHOLD (0.5). A cell that is empty on either side is
+  SKIPPED and counted (n_cells_skipped_model_empty / n_cells_skipped_reference_empty) rather
+  than compared against substituted zeros; departures beyond hour 27 (or bin 111) are clipped
+  into the last bucket, matching srv_plan_structure.HOUR_CLIP, and the number of legs the clip
+  actually moved is counted per time column. A MISSING committed reference aborts the stage
+  (FileNotFoundError naming the path and the regeneration script). summary.md reports what was
+  MEASURED against this reference and never claims a validated or hit target.
+
+  PIPELINES: popsim_mid only. The default trips view is synthesis.population.trips.final, which
+  the record of that stage marks not_used in popsim_open and simple_ipf_open (it is absent from
+  both DAG snapshots), so this comparison cannot run there either.
+
+  TWO CLOCKS (fix-round finding): braunschweig.popsim.trips.mid_time_seconds decodes the MiD
+  report on a 0..23 h clock (anything outside is a design code, not a time), while the trip
+  build''s own times are on a 0..47 h clock because data.hts.hts.fix_trip_times shifts a
+  midnight-crossing chain by +24 h. A leg repaired that way therefore sits at hour 0-3 in the raw
+  column and at hour 24-27 in pre_offset/realised, with nothing wrong, and n_hours_clipped_raw is
+  structurally always 0. The count of such legs (a raw-vs-pre-offset difference within one minute
+  of 1440) is reported as n_legs_raw_pre_offset_differ_by_24h in provenance.json and in the log,
+  and summary.md carries a "Reading the decomposition" note stating the two clocks, that
+  raw -> pre_offset is the TRIP BUILD (fix_trip_times repairs, unfixable-plan resampling, the
+  spliced donor day) while pre_offset -> realised is the departure-time MODEL, and how to read the
+  two columns against each other.
+
+  validate() hashes braunschweig/analysis/departure_time.py plus
+  braunschweig/analysis/plan_structure.py (the purpose harmonisation this module imports),
+  braunschweig/calibration/srv_departure_times.py, braunschweig/calibration/srv_plan_structure.py,
+  braunschweig/popsim/departure_time_model.py, braunschweig/calibration/metrics.py (emd_on_bands
+  produces every value in emd.csv) and braunschweig/popsim/trips.py (mid_time_seconds decides
+  which legs have a usable raw time and therefore share_raw, n_raw and the coverage figure). The
+  last two are CROSS-PACKAGE imports that the own-package hash invariant
+  (tests/test_synpp_helper_hash_invariant.py) cannot catch, so they are listed deliberately --
+  braunschweig.popsim.trips_stage hashes braunschweig/popsim/trips.py for the same reason.
+  braunschweig/calibration/reported_time_precision.py is deliberately NOT hashed: this stage
+  de-rounds nothing (the committed reference is already de-rounded), so its half widths cannot
+  change any number it writes. The stage reads cached synthesis stages only (no MATSim), so it
+  runs on a cached population.
+
+  ONE VALIDATOR PER COMMITTED TABLE: both loaders of the departure-time table -- this stage''s
+  (all three positions) and departure_time_model.load_departure_time_reference (position first
+  only, the sole position the model may map from) -- run
+  braunschweig.calibration.srv_departure_times.validate_departure_time_table, which owns
+  REFERENCE_SUM_TOLERANCE and checks dense bins 0..111 per cell, one n_unweighted per cell and
+  BOTH share columns summing to 1 (an n_unweighted 0 cell is legitimately empty and skipped).
+  The activity-duration table is validated the same way at load by
+  validate_activity_duration_table (bands exactly DURATION_BAND_LABELS per cell, shares summing
+  to 1). Two validators could have accepted different files, so that a table the model mapped
+  from was rejected by the report meant to describe it.
+
+  Unit tests: tests/test_departure_time_vs_srv.py -- the stage tests run against the REAL
+  committed references (srv2023_departure_time_reference.csv,
+  srv2023_activity_duration_reference.csv) and monkeypatch nothing at all, since this stage
+  touches no gitignored input. Evidence:
+  ::test_configure_declares_every_stage_and_config_key_execute_reads,
+  ::test_execute_writes_the_six_report_files_against_the_committed_references,
+  ::test_execute_refuses_a_trips_frame_without_the_offset_column,
+  ::test_decomposition_share_raw_is_nan_when_the_cell_has_no_raw_time,
+  ::test_bin_comparison_skips_cells_where_either_side_is_empty,
+  ::test_emd_table_labels_the_first_position_calibrated_and_the_others_holdout.
+
+
+  REFERENCES AND ROLES. inputs names the two per-table data records
+  (srv2023_departure_time_reference, srv2023_activity_duration_reference) rather than the generic
+  srv2023_reference_tables glob, so the provenance, de-rounding seed, universe and exclusion
+  counts of each committed file are one lookup away. Which side of each comparison is CALIBRATED
+  and which is HOLD-OUT is stated in those records and in ADR-0114 -- position first of the
+  departure-time table is the target the srv_mapped model was fitted to (so matching it evidences
+  wiring, never behaviour), positions later/all and the entire activity-duration table are the
+  hold-out. The model this stage measures is the feature record departure_time_model, whose
+  validation.state stays unvalidated with runs [] until a manifest under docs/runs/ records the
+  pre-registered A/B; nothing this stage writes may be cited as validation before that.'

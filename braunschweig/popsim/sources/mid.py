@@ -20,6 +20,7 @@ import pandas as pd
 from braunschweig.popsim import mid as mid_mod
 from braunschweig.popsim import trips_stage
 from braunschweig.popsim.assembly import map_mid_person_attributes
+from braunschweig.popsim.passenger_availability import attach_car_passenger_diary_evidence
 from braunschweig.popsim.seed import MID_SEED_COLUMNS, SeedColumns
 from braunschweig.popsim.stratum import cell_urban_class_from_rs7
 
@@ -45,7 +46,10 @@ class MidSource:
         return MID_SEED_COLUMNS
 
     def load_donor(
-        self, data_dir: Union[str, Path]
+        self,
+        data_dir: Union[str, Path],
+        *,
+        include_passenger_availability: bool = False,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Load the MiD 2023 donor tables from data_dir.
 
@@ -63,8 +67,13 @@ class MidSource:
             and ``trips`` comes from :func:`braunschweig.popsim.mid.load_mid_wege`.
         """
         data_dir = Path(data_dir)
-        households, persons = mid_mod.load_mid_attributes(data_dir)
+        households, persons = mid_mod.load_mid_attributes(
+            data_dir,
+            include_passenger_availability=include_passenger_availability,
+        )
         trips = mid_mod.load_mid_wege(data_dir)
+        if include_passenger_availability:
+            persons = attach_car_passenger_diary_evidence(persons, trips)
         logger.info(
             "[MidSource] loaded donor: %d households, %d persons, %d trips from %s",
             len(households), len(persons), len(trips), data_dir,
@@ -77,6 +86,8 @@ class MidSource:
         households: pd.DataFrame,
         *,
         rng=None,
+        passenger_availability_enabled: bool = False,
+        passenger_rng=None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Map MiD donor attributes to the eqasim synthesis schema.
 
@@ -107,7 +118,13 @@ class MidSource:
             Discarding the map here would silently break the re-linking file
             written by the stage (data-protection requirement).
         """
-        return map_mid_person_attributes(persons, households, rng=rng)
+        return map_mid_person_attributes(
+            persons,
+            households,
+            rng=rng,
+            passenger_availability_enabled=passenger_availability_enabled,
+            passenger_rng=passenger_rng,
+        )
 
     def donor_stratum(self, seed_households: pd.DataFrame) -> pd.Series:
         """Return the per-household stratum label for donor stratification.
@@ -174,6 +191,15 @@ class MidSource:
         drop_leading_arrive_home_leg: bool = False,
         closure_dwell_model: str = "fixed_1h",
         closure_dwell_min_obs: int = 30,
+        w_zweck_10_as_leisure: bool = False,
+        escort_passive_from_adult: bool = False,
+        passive_pair_max_gap_minutes: float = 15.0,
+        departure_time_model: str = "eqasim_uniform",
+        departure_time_reference: pd.DataFrame = None,
+        departure_time_min_reference_n: int = 200,
+        departure_time_min_model_n: int = 50,
+        departure_time_max_median_shift_hours: float = 2.0,
+        vectorized_validation: bool = True,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -207,6 +233,29 @@ class MidSource:
         closure_dwell_min_obs:
             minimum observations per (purpose x arrival band) cell of the
             empirical dwell model (issue #367); inert for ``"fixed_1h"``.
+        w_zweck_10_as_leisure:
+            map MiD W_ZWECK 10 ("anderer Zweck") to the ``"leisure"`` purpose
+            instead of ``"other"`` (issue #373, ADR-0111), following MiD's own
+            hwzweck1 fold (mid2023_w_zweck_by_hwzweck1.csv).
+        escort_passive_from_adult:
+            give a PAIRED passive escort leg (W_ZWECK 13) the purpose derived
+            from the accompanying adult's W_ZWECK (issue #372, ADR-0112); an
+            unpaired one keeps the ``escort_passive_education`` relabel.
+        passive_pair_max_gap_minutes:
+            maximum |departure-time gap| in MINUTES for that pairing; inert
+            while ``escort_passive_from_adult`` is False.
+        departure_time_model:
+            which START-TIME model shapes the first departure (issue #123,
+            ADR-0114): ``"eqasim_uniform"`` (default, unchanged jitter),
+            ``"derounded"`` or ``"srv_mapped"``. Any other value raises
+            ``ValueError`` inside the implementation.
+        departure_time_reference:
+            the loaded SrV first-departure reference, required for
+            ``"srv_mapped"``.
+        departure_time_min_reference_n / departure_time_min_model_n:
+            thresholds of the ``"srv_mapped"`` coarsening ladder.
+        departure_time_max_median_shift_hours:
+            median-|shift| warning threshold per mapping cell, in HOURS.
 
         Returns
         -------
@@ -223,4 +272,13 @@ class MidSource:
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             closure_dwell_model=closure_dwell_model,
             closure_dwell_min_obs=closure_dwell_min_obs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+            escort_passive_from_adult=escort_passive_from_adult,
+            passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            departure_time_model=departure_time_model,
+            departure_time_reference=departure_time_reference,
+            departure_time_min_reference_n=departure_time_min_reference_n,
+            departure_time_min_model_n=departure_time_min_model_n,
+            departure_time_max_median_shift_hours=departure_time_max_median_shift_hours,
+            vectorized_validation=vectorized_validation,
         )

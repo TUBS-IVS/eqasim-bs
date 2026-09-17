@@ -392,9 +392,10 @@ def build_subtype_report(distances_by_purpose: dict) -> None:
                 lo, hi = donor_range
                 logger.info(
                     "[secondary-validate] in-sample sanity (NOT a validated target "
-                    "-- see spec docs/superpowers/specs/"
-                    "2026-07-09-wzwd-leisure-errand-split-design.md): %s realised "
-                    "mean %.1f km vs measured donor range %.1f-%.1f km.",
+                    "-- ad-hoc donor measurement recorded in ADR-0116; the frame and "
+                    "the route are stated at braunschweig.calibration."
+                    "secondary_measurement.SUBTYPE_DONOR_MEAN_KM_RANGE): %s realised "
+                    "mean %.1f km vs measured donor mean %.1f-%.1f km.",
                     group, row["mean_distance"], lo, hi,
                 )
     if not any_subtype_column_found:

@@ -59,9 +59,9 @@ _DELEGATE_BY_METHOD = {
     "build_trips": _build_trips,
 }
 
-# inspect.signature() strings pinned from the state of EntdSource on `main`
-# before #295 (PR #287's original guarantee); #295 must not change these,
-# since it touches documentation only.
+# inspect.signature() strings pin EntdSource's deliberate public protocol.
+# Documentation-only changes must not alter these; approved protocol changes
+# update this contract with their rationale.
 _EXPECTED_SIGNATURES = {
     "seed_columns": "(self) -> 'SeedColumns'",
     "built_seed_columns": "(self) -> 'SeedColumns'",
@@ -89,6 +89,25 @@ _EXPECTED_SIGNATURES = {
     # closure_dwell_min_obs (final-review minor M1) is accepted and IGNORED without a
     # rejection: it only sizes the empirical model's cells, which the closure_dwell_model
     # rejection already prevents from ever being built on this path.
+    # w_zweck_10_as_leisure was added 2026-09-09 (purpose correctness, issue #373 task 2)
+    # for the same reason as the plan-structure options above: trips_stage.execute passes
+    # it to every source adapter. EntdSource ACCEPTS and REJECTS it (no MiD W_ZWECK column
+    # to remap code 10 on) with a ValueError, unlike the NotImplementedError the three
+    # plan-structure options above raise.
+    # escort_passive_from_adult / passive_pair_max_gap_minutes were added 2026-09-09
+    # (purpose correctness, issue #372 task 4) for the same reason: trips_stage.execute
+    # passes both to every source adapter. EntdSource ACCEPTS and REJECTS both with a
+    # ValueError -- the ENTD frames carry neither the MiD W_ZWECK 13 passive leg nor the
+    # household diary (member age + departure time) the pairing needs, and the gap is
+    # rejected alongside the flag so a tuned window cannot sit silently inert (ruling C-R7).
+    # The five departure_time_* keywords were added 2026-09-10 (departure-time model, issue #123
+    # task 4, ADR-0114) for the same reason: trips_stage.execute passes all five to every source
+    # adapter. EntdSource ACCEPTS and REJECTS the MODEL with a ValueError -- its trips come from
+    # entd_trips.build_trips, which applies the eqasim jitter itself and never reaches the model
+    # -- while the loaded reference and the three thresholds are accepted and ignored, the
+    # closure_dwell_min_obs treatment (they only size a mapping the model rejection forbids).
+    # vectorized_validation was added in ADR-0122 as the default-on performance path; every
+    # source adapter accepts it so trips_stage.execute can retain the tested rollback switch.
     "build_trips": (
         "(self, persons: 'pd.DataFrame', donor_trips: 'pd.DataFrame', *, "
         "random_seed: 'int', escort_purpose: 'bool' = False, "
@@ -97,7 +116,16 @@ _EXPECTED_SIGNATURES = {
         "exclude_rbw_legs: 'bool' = False, "
         "drop_leading_arrive_home_leg: 'bool' = False, "
         "closure_dwell_model: 'str' = 'fixed_1h', "
-        "closure_dwell_min_obs: 'int' = 30) -> 'pd.DataFrame'"
+        "closure_dwell_min_obs: 'int' = 30, "
+        "w_zweck_10_as_leisure: 'bool' = False, "
+        "escort_passive_from_adult: 'bool' = False, "
+        "passive_pair_max_gap_minutes: 'float' = 15.0, "
+        "departure_time_model: 'str' = 'eqasim_uniform', "
+        "departure_time_reference: 'pd.DataFrame' = None, "
+        "departure_time_min_reference_n: 'int' = 200, "
+        "departure_time_min_model_n: 'int' = 50, "
+        "departure_time_max_median_shift_hours: 'float' = 2.0, "
+        "vectorized_validation: 'bool' = True) -> 'pd.DataFrame'"
     ),
 }
 
@@ -113,7 +141,7 @@ def test_entd_source_public_method_names_unchanged():
 
 
 def test_entd_source_method_signatures_pinned():
-    """Every EntdSource method's inspect.signature stays exactly what #287 pinned."""
+    """Every EntdSource method keeps the approved public signature contract."""
     for method_name, expected_signature in _EXPECTED_SIGNATURES.items():
         method = getattr(EntdSource, method_name)
         actual_signature = str(inspect.signature(method))

@@ -5,7 +5,7 @@ person-level fallback). Sibling of ``member_completion``; runs after it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -92,20 +92,58 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
 
 
 AGE_BAND_EDGES = (-1, 5, 13, 17, 200)
+#: Refinement of :data:`AGE_BAND_EDGES` that splits the 6-13 child band into 6-9
+#: (primary school, Grundschule) and 10-13 (lower secondary), for the DIARY plan
+#: match only (issue #386). Under the coarse band a first-grader and a 13-year-old
+#: are interchangeable donors although their school days differ systematically:
+#: on the raw MiD 2023 B1 (measured 2026-09-09) a first education leg before 07:00
+#: occurs for 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds, and
+#: secondary-school ways are longer than primary-school ways. Every coarse edge is
+#: KEPT and only the value 9 is added, so the 0-5, 14-17 and 18+ bands -- and
+#: therefore which adult donors are interchangeable -- are unchanged.
+FINE_CHILD_AGE_BAND_EDGES = (-1, 5, 9, 13, 17, 200)
 
 
-def _age_band(ages: pd.Series) -> np.ndarray:
-    return pd.cut(ages, bins=list(AGE_BAND_EDGES), labels=False).to_numpy()
+def _validate_age_band_edges(edges, *, what: str) -> list:
+    """Return ``edges`` as a list after checking it is a usable ``pd.cut`` bin spec.
 
-
-def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
-    """Greedily pair each target member to a distinct donor member by
-    (coarse age band, sex), falling back to age band only, then any free donor.
+    Raises here, naming the parameter and the caller, rather than letting ``pd.cut``
+    fail deep inside :func:`_person_keys` with a message that names neither.
     """
-    d_band = _age_band(donor_members["HP_ALTER"])
+    values = list(edges)
+    if len(values) < 2:
+        raise ValueError(f"{what}: age_band_edges needs at least 2 edges, got {values}")
+    if any(b <= a for a, b in zip(values, values[1:])):
+        raise ValueError(f"{what}: age_band_edges must be strictly increasing, got {values}")
+    return values
+
+
+def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
+    """Band index of each age under ``edges`` (default: the coarse production bands)."""
+    return pd.cut(ages, bins=list(edges), labels=False).to_numpy()
+
+
+def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
+                  age_band_edges=AGE_BAND_EDGES):
+    """Greedily pair each target member to a distinct donor member by
+    (age band, sex), falling back to age band only, then any free donor.
+
+    Each paired target member inherits its donor's plan source, so the bands decide
+    whose recorded day a child receives: under the coarse :data:`AGE_BAND_EDGES` a
+    first-grader and a 13-year-old are interchangeable here exactly as they were in the
+    diary match (issue #386). Pass :data:`FINE_CHILD_AGE_BAND_EDGES` to separate them.
+
+    The number of pairs returned is ``min(len(target_members), len(donor_members))``
+    under ANY edge set -- every target member takes some free donor through the
+    ``any_free`` fallback -- and this function consumes no rng. Changing the bands
+    therefore changes WHICH donor a member is paired with without changing how many
+    person-level fallback draws the caller makes afterwards, i.e. without moving the
+    shared completion rng stream.
+    """
+    d_band = age_band_index(donor_members["HP_ALTER"], edges=age_band_edges)
     d_sex = donor_members["HP_SEX"].to_numpy()
     used = np.zeros(len(donor_members), dtype=bool)
-    t_band = _age_band(target_members["HP_ALTER"])
+    t_band = age_band_index(target_members["HP_ALTER"], edges=age_band_edges)
     t_sex = target_members["HP_SEX"].to_numpy()
     pairs = []
     for tpos in range(len(target_members)):
@@ -121,11 +159,14 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame):
 
 
 PERSON_KEYS_BY_PRIORITY = ("has_license", "sex", "age_band", "employed", "has_pt")
+_PERSON_POOL_COLUMNS = (
+    "H_ID", "P_ID", "HP_ALTER", "HP_SEX", "P_FSCHEIN", "P_TAET", "P_FKARTE", "P_GEW",
+)
 
 
-def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
+def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES) -> pd.DataFrame:
     return pd.DataFrame({
-        "age_band": _age_band(persons["HP_ALTER"]),
+        "age_band": age_band_index(persons["HP_ALTER"], edges=age_band_edges),
         "sex": persons["HP_SEX"].to_numpy(),
         "has_license": persons["P_FSCHEIN"].eq(1).to_numpy(),
         # Canonical MiD employment (ILO-style `erwerb`), same single source of truth
@@ -137,7 +178,100 @@ def _person_keys(persons: pd.DataFrame) -> pd.DataFrame:
     }, index=persons.index)
 
 
-def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
+@dataclass
+class PreparedPersonPool:
+    """Invariant donor features and bounded candidate indexes for one exact frame.
+
+    The source frame is bound by identity and by exact snapshots of every column
+    that can affect matching. Candidate indexes are created lazily for the finite
+    subsets of :data:`PERSON_KEYS_BY_PRIORITY` requested by relaxation ladders;
+    target signatures themselves are never cached.
+    """
+    _source: pd.DataFrame = field(repr=False)
+    age_band_edges: tuple
+    _keys: pd.DataFrame = field(repr=False)
+    _items: tuple = field(repr=False)
+    _weights: np.ndarray = field(repr=False)
+    _snapshot_index: pd.Index = field(repr=False)
+    _snapshot_columns: dict = field(repr=False)
+    _candidate_indexes: dict = field(default_factory=dict, repr=False)
+
+    def validate(self, weekday_persons: pd.DataFrame, age_band_edges) -> None:
+        """Reject a prepared pool whose source, content, or age bands changed."""
+        if weekday_persons is not self._source:
+            raise ValueError(
+                "match_person: prepared_pool belongs to a different person pool")
+        if tuple(age_band_edges) != self.age_band_edges:
+            raise ValueError(
+                "match_person: prepared_pool age_band_edges do not match the requested "
+                "age_band_edges")
+        current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
+        if current_columns != tuple(self._snapshot_columns):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+        if not weekday_persons.index.equals(self._snapshot_index):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+        if any(not weekday_persons[column].equals(snapshot)
+               for column, snapshot in self._snapshot_columns.items()):
+            raise ValueError(
+                "match_person: weekday person pool changed since preparation")
+
+    def candidate_positions(self, target_keys: pd.Series, match_keys: tuple) -> tuple:
+        """Return original row positions matching one relaxation-level key set."""
+        if not match_keys:
+            return tuple(range(len(self._keys)))
+        index = self._candidate_indexes.get(match_keys)
+        if index is None:
+            index = {}
+            columns = [self._keys[key].to_numpy() for key in match_keys]
+            for position, values in enumerate(zip(*columns)):
+                if any(pd.isna(value) for value in values):
+                    continue
+                index.setdefault(tuple(values), []).append(position)
+            index = {key: tuple(positions) for key, positions in index.items()}
+            self._candidate_indexes[match_keys] = index
+        target_values = tuple(target_keys[key] for key in match_keys)
+        if any(pd.isna(value) for value in target_values):
+            return ()
+        return index.get(target_values, ())
+
+    def weighted_candidates(self, positions: tuple):
+        """Return raw item/weight pairs in the source frame's original order."""
+        return ([self._items[position] for position in positions],
+                self._weights[list(positions)])
+
+
+def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES):
+    """Prepare invariant donor features for repeated :func:`match_person` calls."""
+    edges = tuple(_validate_age_band_edges(
+        age_band_edges, what="prepare_person_pool"))
+    keys = _person_keys(weekday_persons, age_band_edges=edges)
+    if len(weekday_persons):
+        items = tuple(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]))
+        weights = weekday_persons["P_GEW"].to_numpy(copy=True)
+    else:
+        # match_person retains ownership of the established empty-pool error, so
+        # preparation of an empty correctly-shaped frame must itself be harmless.
+        items = ()
+        weights = np.empty(0, dtype=float)
+    snapshot_columns = {
+        column: weekday_persons[column].copy(deep=True)
+        for column in _PERSON_POOL_COLUMNS if column in weekday_persons.columns
+    }
+    return PreparedPersonPool(
+        _source=weekday_persons,
+        age_band_edges=edges,
+        _keys=keys,
+        _items=items,
+        _weights=weights,
+        _snapshot_index=weekday_persons.index.copy(deep=True),
+        _snapshot_columns=snapshot_columns,
+    )
+
+
+def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
+                 age_band_edges=AGE_BAND_EDGES, prepared_pool=None):
     """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
 
     Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
@@ -153,13 +287,26 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
     the boundary was crossed (see ``diary_plan_match.reassign_diaryless_plan_sources``,
     ``DiaryMatchReport.n_crossed_employment_boundary``).
 
+    ``age_band_edges`` are the ``pd.cut`` bin edges behind the ``age_band`` key
+    (default :data:`AGE_BAND_EDGES`, today's coarse 0-5 / 6-13 / 14-17 / 18+ bands).
+    :data:`FINE_CHILD_AGE_BAND_EDGES` additionally separates 6-9 from 10-13 and is
+    used by the DIARY match only (issue #386); the weekend match keeps the default,
+    whose draw sequence is a byte-identity contract. Like ``hard_keys``, the parameter
+    changes WHICH donor is drawn, never HOW MANY rng values are consumed.
+
     ``level`` counts SOFT-key relaxations, so its maximum is ``len(soft keys)``:
     with ``hard_keys`` empty that is ``len(PERSON_KEYS_BY_PRIORITY)`` (unchanged),
     with one hard key it is one less. Callers that log level histograms must
     therefore read them against the hard-key setting of the run.
 
-    BYTE-IDENTITY (mandatory): with the default ``hard_keys=frozenset()`` this
-    function takes the same branches, builds the same pools in the same order and
+    ``prepared_pool`` may hold features and candidate positions prepared explicitly
+    by :func:`prepare_person_pool`. It is accepted only for the identical, unchanged
+    ``weekday_persons`` object and identical age bands; otherwise matching fails
+    rather than silently drawing from stale candidates.
+
+    BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()`` and
+    ``age_band_edges=AGE_BAND_EDGES`` this function takes the same branches, builds
+    the same pools in the same order and
     makes the same number of ``weighted_choice`` calls (exactly one, whichever
     branch returns) as the pre-``hard_keys`` implementation. Both callers --
     ``reassign_weekend_plan_sources`` and ``diary_plan_match.
@@ -179,10 +326,37 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset()):
             raise ValueError(
                 f"match_person: unknown hard match key(s) {unknown_keys}; valid keys are "
                 f"{list(PERSON_KEYS_BY_PRIORITY)}")
-    keys = _person_keys(weekday_persons)
-    tkeys = _person_keys(pd.DataFrame([target_row])).iloc[0]
+    edges = _validate_age_band_edges(age_band_edges, what="match_person")
     hard = [key for key in PERSON_KEYS_BY_PRIORITY if key in hard_keys]
     soft = [key for key in PERSON_KEYS_BY_PRIORITY if key not in hard_keys]
+    if prepared_pool is not None:
+        if not isinstance(prepared_pool, PreparedPersonPool):
+            raise TypeError("match_person: prepared_pool must be a PreparedPersonPool")
+        prepared_pool.validate(weekday_persons, edges)
+        tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges).iloc[0]
+        active = list(soft)
+        while True:
+            match_keys = tuple(
+                key for key in PERSON_KEYS_BY_PRIORITY if key in hard or key in active)
+            positions = prepared_pool.candidate_positions(tkeys, match_keys)
+            if positions:
+                items, weights = prepared_pool.weighted_candidates(positions)
+                h, p = weighted_choice(items, weights, rng=rng)
+                return h, p, len(soft) - len(active)
+            if not active:
+                items, weights = prepared_pool.weighted_candidates(
+                    tuple(range(len(weekday_persons))))
+                h, p = weighted_choice(items, weights, rng=rng)
+                hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
+                logger.debug(
+                    "[weekend_plan_match] match_person hit the whole-pool size-only "
+                    "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
+                    hard_note, h, p)
+                return h, p, len(soft)
+            active.pop()
+
+    keys = _person_keys(weekday_persons, age_band_edges=edges)
+    tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges).iloc[0]
     hard_mask = pd.Series(True, index=weekday_persons.index)
     for key in hard:
         hard_mask &= keys[key] == tkeys[key]
@@ -225,12 +399,28 @@ class WeekendMatchReport:
     n_swept: int = 0
 
 
-def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID"):
+def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
+                                  fine_child_age_bands=True, precompute_matching=True):
+    """Give every weekend-reporting donor a matched WEEKDAY plan source.
+
+    ``fine_child_age_bands`` (default True, issue #386): band 6-13-year-olds finely
+    (6-9 / 10-13) wherever this pass matches on age -- the household-level member
+    alignment (:func:`align_members`), the person-level fallback and the mixed-household
+    sweep -- so a primary-school child cannot inherit a 13-year-old's school day. All
+    three consume the same number of rng values under either edge set (``align_members``
+    draws none and returns the same number of pairs; ``match_person`` draws exactly one
+    per call), so the flag changes the ASSIGNMENT, never the draw sequence of the
+    completion stream this pass shares with member completion and the diary match.
+
+    ``precompute_matching`` prepares the invariant weekday person pool once on
+    first use. ``False`` retains the repeated-filter baseline for exact A/B checks.
+    """
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
     from braunschweig.popsim.day_type import WEEKEND_KERNWO
     from braunschweig.popsim.seed import WEEKDAY_KERNWO
 
+    age_band_edges = FINE_CHILD_AGE_BAND_EDGES if fine_child_age_bands else AGE_BAND_EDGES
     persons = persons.copy()
     hh_dt = _dt.household_day_type(persons, household_id=household_id)
     # completed_donor_households (load_completed_donor) do NOT carry hh_type5 --
@@ -256,6 +446,17 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         (~persons["member_imputed"].astype(bool))
         & persons["kernwo"].isin(WEEKDAY_KERNWO)
     ]
+
+    prepared_pools = {}
+
+    def prepared_for(edges):
+        if not precompute_matching:
+            return None
+        key = tuple(edges)
+        if key not in prepared_pools:
+            prepared_pools[key] = prepare_person_pool(
+                weekday_pool, age_band_edges=edges)
+        return prepared_pools[key]
 
     persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
     # default trace row = own plan (correct for weekday + filler bookkeeping below)
@@ -291,7 +492,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key)
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
-            paired = align_members(target_members, donor_members)
+            paired = align_members(target_members, donor_members,
+                                   age_band_edges=age_band_edges)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
@@ -312,7 +514,9 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                     continue
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
+                                              age_band_edges=age_band_edges,
+                                              prepared_pool=prepared_for(age_band_edges))
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -322,7 +526,9 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             for tpos in range(len(target_members)):
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+                sh, sp, plevel = match_person(
+                    trow, weekday_pool, rng=rng,
+                    prepared_pool=prepared_for(AGE_BAND_EDGES))
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
@@ -353,7 +559,9 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_swept = 0
     for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
         trow = persons.loc[ridx]
-        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng)
+        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
+                                      age_band_edges=age_band_edges,
+                                      prepared_pool=prepared_for(age_band_edges))
         persons.loc[ridx, "source_H_ID"] = sh
         persons.loc[ridx, "source_P_ID"] = sp
         resolution[ridx] = "mixed_person_sweep"

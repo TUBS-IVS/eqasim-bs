@@ -994,7 +994,10 @@ def map_leisure_participation(
     rs7_conditioning: bool = True,
 ) -> pd.DataFrame:
     """Add an int-coded ``leisure_participation`` (0/1) from a per-person leisure-trip
-    flag (W_ZWECK=7; see ``mid.PARTICIPATION_W_ZWECK``).
+    flag (the leisure W_ZWECK code set -- ``{7, 14, 15, 16}`` by default, plus ``10``
+    under the ``w_zweck_10_as_leisure`` flag, issue #373 ADR-0111; see
+    ``mid.PARTICIPATION_W_ZWECK`` / ``mid.participation_w_zweck`` /
+    ``trips.leisure_w_zweck_codes``).
 
     Thin wrapper over :func:`map_participation` (name="leisure_participation"); mirrors
     ``map_work_participation`` exactly (feature #224 task 5).

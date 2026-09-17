@@ -41,6 +41,11 @@ MAX_PLAN_TIME_SECONDS = 36 * 3600
 # is the one pre-registered in the design spec (section 2.3).
 CLOSURE_CAP_WARN_RATE = 0.05
 
+# Performance switch shared by every stage that reaches PlanValidator.  Kept in
+# this leaf module so the public validator and its synpp callers cannot drift.
+KEY_VECTORIZED_PLAN_VALIDATION = "braunschweig.performance.plan_validation"
+DEFAULT_VECTORIZED_PLAN_VALIDATION = True
+
 
 @dataclass(frozen=True)
 class RepairReport:
@@ -354,17 +359,21 @@ class PlanValidator:
     """
 
     def __init__(self, *, require_home_closure: bool = True,
-                 max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS):
+                 max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS,
+                 vectorized: bool = True):
         self.require_home_closure = require_home_closure
         self.max_plan_time_seconds = max_plan_time_seconds
+        self.vectorized = vectorized
 
     def validate_trips(self, df_trips: pd.DataFrame) -> ValidationReport:
-        issues: list = []
         persons = df_trips["person_id"].nunique()
-        for person_id, group in df_trips.sort_values(
-            ["person_id", "departure_time"]
-        ).groupby("person_id", sort=False):
-            issues.extend(self._check_person(person_id, group))
+        sorted_trips = df_trips.sort_values(["person_id", "departure_time"])
+        if self.vectorized:
+            issues = self._check_person_arrays(sorted_trips)
+        else:
+            issues = []
+            for person_id, group in sorted_trips.groupby("person_id", sort=False):
+                issues.extend(self._check_person(person_id, group))
         invalid = {i.person_id for i in issues}
         counts: dict = {}
         for i in issues:
@@ -374,6 +383,116 @@ class PlanValidator:
         log("[popsim.plan_validation] %d/%d persons invalid; issues %s",
             len(invalid), persons, counts)
         return report
+
+    def _issue(self, person_id, code: str) -> PlanIssue:
+        """Create an issue from the single authoritative diagnostic message table."""
+        messages = {
+            "nan_times": "a trip has a NaN departure or arrival time (MiD coded time 99/701)",
+            "time_exceeds_bound": (
+                f"a trip time exceeds the {self.max_plan_time_seconds:.0f}s "
+                f"(~{self.max_plan_time_seconds / 3600.0:.0f}h) plan bound"
+            ),
+            "departure_after_arrival": "a trip arrives before it departs",
+            "not_time_sorted": "departure times are not non-decreasing",
+            "negative_activity_duration": "a between-trip activity has negative duration",
+            "trip_overlap": "a trip arrives after the next trip departs",
+            "no_home_start": "the day does not start at home",
+            "no_home_end": "the day does not end at home",
+        }
+        return PlanIssue(person_id, code, messages[code])
+
+    @staticmethod
+    def _group_any(row_flags: np.ndarray, group_sizes: np.ndarray) -> np.ndarray:
+        """Reduce row flags over contiguous, sorted person ranges."""
+        result = np.zeros(len(group_sizes), dtype=bool)
+        nonempty_groups = group_sizes > 0
+        nonempty_sizes = group_sizes[nonempty_groups]
+        if len(nonempty_sizes):
+            starts = np.concatenate(([0], np.cumsum(nonempty_sizes)[:-1]))
+            result[nonempty_groups] = np.logical_or.reduceat(row_flags, starts)
+        return result
+
+    def _check_person_arrays(self, sorted_trips: pd.DataFrame) -> list:
+        """Calculate per-person diagnostics without constructing group DataFrames."""
+        group_sizes_series = sorted_trips.groupby("person_id", sort=False).size()
+        # Index iteration preserves the scalar types yielded by pandas GroupBy
+        # (e.g. built-in int for an int64 index, np.int64 for nullable Int64).
+        # ``to_numpy`` coerces those cases in opposite directions.
+        person_ids = list(group_sizes_series.index)
+        group_sizes = group_sizes_series.to_numpy(dtype=np.intp)
+        if len(group_sizes) == 0:
+            return []
+        if not group_sizes.any():
+            if self.require_home_closure:
+                raise IndexError("single positional indexer is out-of-bounds")
+            return []
+
+        # Missing identifiers are excluded by groupby and nunique in the reference path.
+        grouped_rows = sorted_trips["person_id"].notna().to_numpy()
+        dep = sorted_trips["departure_time"].to_numpy()[grouped_rows]
+        arr = sorted_trips["arrival_time"].to_numpy()[grouped_rows]
+        if self.require_home_closure:
+            preceding = sorted_trips["preceding_purpose"].to_numpy()[grouped_rows]
+            following = sorted_trips["following_purpose"].to_numpy()[grouped_rows]
+
+        nan_times = self._group_any(np.isnan(dep), group_sizes) | self._group_any(
+            np.isnan(arr), group_sizes)
+        time_exceeds_bound = self._group_any(
+            dep > self.max_plan_time_seconds, group_sizes
+        ) | self._group_any(arr > self.max_plan_time_seconds, group_sizes)
+        departure_after_arrival = self._group_any(arr < dep, group_sizes)
+
+        not_time_sorted_rows = np.zeros(len(dep), dtype=bool)
+        negative_activity_rows = np.zeros(len(dep), dtype=bool)
+        trip_overlap_rows = np.zeros(len(dep), dtype=bool)
+        nonempty_sizes = group_sizes[group_sizes > 0]
+        if len(dep) > 1 and len(nonempty_sizes):
+            same_person_as_previous = np.ones(len(dep) - 1, dtype=bool)
+            group_end_positions = np.cumsum(nonempty_sizes)[:-1] - 1
+            same_person_as_previous[group_end_positions] = False
+            not_time_sorted_rows[1:] = same_person_as_previous & (dep[1:] < dep[:-1])
+            gaps = dep[1:] - arr[:-1]
+            negative_activity_rows[1:] = same_person_as_previous & (gaps < 0)
+            trip_overlap_rows[1:] = same_person_as_previous & (arr[:-1] > dep[1:])
+
+        flags = {
+            "nan_times": nan_times,
+            "time_exceeds_bound": time_exceeds_bound,
+            "departure_after_arrival": departure_after_arrival,
+            "not_time_sorted": self._group_any(not_time_sorted_rows, group_sizes),
+            "negative_activity_duration": self._group_any(
+                negative_activity_rows, group_sizes),
+            "trip_overlap": self._group_any(trip_overlap_rows, group_sizes),
+        }
+
+        nonempty_starts = np.concatenate(([0], np.cumsum(nonempty_sizes)[:-1])) \
+            if len(nonempty_sizes) else np.array([], dtype=np.intp)
+        nonempty_ends = np.cumsum(nonempty_sizes) - 1
+        first_positions = np.zeros(len(group_sizes), dtype=np.intp)
+        last_positions = np.zeros(len(group_sizes), dtype=np.intp)
+        nonempty_groups = group_sizes > 0
+        first_positions[nonempty_groups] = nonempty_starts
+        last_positions[nonempty_groups] = nonempty_ends
+
+        issues = []
+        code_order = (
+            "nan_times", "time_exceeds_bound", "departure_after_arrival",
+            "not_time_sorted", "negative_activity_duration", "trip_overlap",
+        )
+        for group_index, person_id in enumerate(person_ids):
+            for code in code_order:
+                if flags[code][group_index]:
+                    issues.append(self._issue(person_id, code))
+            if self.require_home_closure:
+                if group_sizes[group_index] == 0:
+                    # pandas' reference groupby includes unobserved categorical
+                    # levels, whose empty group fails on group.iloc[0].
+                    raise IndexError("single positional indexer is out-of-bounds")
+                if preceding[first_positions[group_index]] != "home":
+                    issues.append(self._issue(person_id, "no_home_start"))
+                if following[last_positions[group_index]] != "home":
+                    issues.append(self._issue(person_id, "no_home_end"))
+        return issues
 
     def _check_person(self, person_id, group: pd.DataFrame) -> list:
         out: list = []
@@ -385,41 +504,31 @@ class PlanValidator:
         # ANY NaN time makes the whole person unfixable (a mixed-NaN chain has no
         # reconstructible timeline), so one issue per person is sufficient.
         if np.isnan(dep).any() or np.isnan(arr).any():
-            out.append(PlanIssue(person_id, "nan_times",
-                                 "a trip has a NaN departure or arrival time "
-                                 "(MiD coded time 99/701)"))
+            out.append(self._issue(person_id, "nan_times"))
         # Times beyond the absolute plan bound: the +24h midnight shift in
         # hts.fix_trip_times is legitimate, but a chain past 36h is pathological
         # (very late / multi-shift) and must be resampled.  NaN compares False,
         # so NaN-time persons are flagged by "nan_times" above, not here.
         if (dep > self.max_plan_time_seconds).any() or (arr > self.max_plan_time_seconds).any():
-            out.append(PlanIssue(person_id, "time_exceeds_bound",
-                                 f"a trip time exceeds the {self.max_plan_time_seconds:.0f}s "
-                                 f"(~{self.max_plan_time_seconds / 3600.0:.0f}h) plan bound"))
+            out.append(self._issue(person_id, "time_exceeds_bound"))
         if (arr < dep).any():
-            out.append(PlanIssue(person_id, "departure_after_arrival",
-                                 "a trip arrives before it departs"))
+            out.append(self._issue(person_id, "departure_after_arrival"))
         if len(dep) > 1 and (dep[1:] < dep[:-1]).any():
-            out.append(PlanIssue(person_id, "not_time_sorted",
-                                 "departure times are not non-decreasing"))
+            out.append(self._issue(person_id, "not_time_sorted"))
         # activity duration = next departure - this arrival (all but last trip).
         if len(dep) > 1:
             gap = dep[1:] - arr[:-1]
             if (gap < 0).any():
-                out.append(PlanIssue(person_id, "negative_activity_duration",
-                                     "a between-trip activity has negative duration"))
+                out.append(self._issue(person_id, "negative_activity_duration"))
             if (arr[:-1] > dep[1:]).any():
-                out.append(PlanIssue(person_id, "trip_overlap",
-                                     "a trip arrives after the next trip departs"))
+                out.append(self._issue(person_id, "trip_overlap"))
         if self.require_home_closure:
             first_origin = group.iloc[0]["preceding_purpose"]
             last_dest = group.iloc[-1]["following_purpose"]
             if first_origin != "home":
-                out.append(PlanIssue(person_id, "no_home_start",
-                                     "the day does not start at home"))
+                out.append(self._issue(person_id, "no_home_start"))
             if last_dest != "home":
-                out.append(PlanIssue(person_id, "no_home_end",
-                                     "the day does not end at home"))
+                out.append(self._issue(person_id, "no_home_end"))
         return out
 
     def repair_trips(

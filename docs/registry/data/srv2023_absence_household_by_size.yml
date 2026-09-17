@@ -1,0 +1,126 @@
+dataset: srv2023_absence_household_by_size
+title: SrV 2023 whole-household absence share by household size (committed aggregate, general
+  day-absence draw reference)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown.
+crs: null
+roles:
+- validation_reference
+- reference_table
+used_by:
+- braunschweig.synthesis.day_absence.absence_stage
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
+    and its sibling srv2023_absence_by_age_band.csv in one run. Reads SrV2023_Personen.csv
+    (HHNR, PNR, V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and SrV2023_Haushalte.csv
+    (HHNR, GEWICHT_HH_ZENSUS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_absence.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_absence_household_by_size.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    One committed file (sibling srv2023_absence_by_age_band.csv is the separate data record
+    srv2023_absence_by_age_band). Not listed in scripts/verify_braunschweig_inputs.py: the file
+    ships committed with every clone, same treatment as the sibling SrV aggregates of issues
+    #368/#369. Definitions live in braunschweig/calibration/srv_absence.py; unit tests on
+    synthetic SrV-shaped frames (the household aggregation, the all-absent flag, the table
+    invariants): tests/test_srv_absence.py.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: every SrV household with at least one person in the srv2023_absence_by_age_band
+  universe (at_home_zero, valid positive GEWICHT_P_ZENSUS, average-weekday MITTL_WERKTAG == 1,
+  and only the known -7 negative E_ANZ_WEGE code) and a resolvable GEWICHT_HH_ZENSUS -- the
+  extraction RAISES if any such household has no row/weight in the household file
+  (build_absence_household_by_size), rather than silently dropping it.
+
+  ASSUMPTION: household size is the count of DELIVERED persons per HHNR in
+  SrV2023_Personen.csv (build_absence_household_by_size's per_hh groupby "n" column), not a
+  dedicated household-size variable read from SrV2023_Haushalte.csv. Verified equal to
+  V_ANZ_PERS for all 8,106 households on 2026-09-09 (ad-hoc check against the local raw file, not
+  reproduced by committed code), so the assumption holds for the current delivery; a future
+  delivery with an incomplete household roster (a person excluded from Personen.csv while still
+  counted in V_ANZ_PERS) would silently understate that household's size class.
+
+  Household size classes (srv_absence.household_size_class): 1..5, class 5 = '5 or more'
+  members -- the same top-coding convention as every household-size classification in this
+  codebase. all_absent (per household): every member's E_ANZ_WEGE == -7 (all_absent = n_absent ==
+  n). Weight: GEWICHT_HH_ZENSUS (household expansion to Zensus 2022 counts; the stratum-internal
+  GEWICHT_HH must not be used across strata, ADR-0055) -- DELIBERATELY the household, not the
+  person, weight, because the quantity measured is a share OF HOUSEHOLDS. This table's shares
+  therefore differ slightly from a person-weighted "share of absent persons in a fully absent
+  household of size k" figure for the SAME universe (reported for context in ADR-0110's Context
+  section from the same 2026-09-09 extraction, but computed with the person weight and NOT
+  committed to this table) -- the committed header states this explicitly and this dataset always
+  commits the household-weighted numbers below, never the person-weighted ones.
+
+  Measured 2026-09-09 (n households: 1,969 / 3,750 / 1,166 / 934 / 287 for size classes 1-5):
+  p_all_absent = 0.0529 (size 1, 99 households), 0.0340 (size 2, 140), 0.0131 (size 3, 17), 0.0149
+  (size 4, 9), 0.0018 (size 5+, 1). The rate falls sharply from size 1/2 to size 3+ (single
+  travellers and couples away together are far more common than an entire size-5 household being
+  simultaneously absent), which is exactly the SIGNAL this table exists to preserve: an
+  individual-only draw at the corresponding per-band person rates could not reproduce this size
+  gradient (ADR-0110, rejected alternatives).
+
+  Additional PERSON-level columns (issue #388, ADR-0110 Amendment 1, added on top of the four
+  HOUSEHOLD-level columns above, which are UNCHANGED by this addition): n_persons_unweighted,
+  n_absent_persons_unweighted, p_absent_person -- the GEWICHT_P_ZENSUS person-weighted share of
+  absent persons among ALL persons living in a household of that size class (every delivered
+  person counted once, whether or not their own household is fully absent). This differs from
+  p_all_absent, which is the household-weighted share of households where EVERY member is
+  absent -- the two columns answer different questions and are not expected to be numerically
+  close. p_absent_person is a REPORTING reference only: braunschweig.synthesis.day_absence
+  .absence.AbsenceReference.p_absent_person_by_size feeds draw_absence's by_size_class
+  diagnostic (reference_rate/delta_pp), never the draw itself (unlike p_all_absent, which the
+  household stage consumes directly), and it is what the individual-stage eligibility gate
+  (day_absence_individual_stage_min_household_size) is designed to bring the model closer to for
+  eligible households, per ADR-0110 Amendment 1.
+
+  Measured 2026-09-09 (n persons: 1,969 / 7,500 / 3,498 / 3,736 / 1,520 for size classes 1-5):
+  p_absent_person = 0.0514 (size 1), 0.0587 (size 2), 0.0543 (size 3), 0.0416 (size 4), 0.0175
+  (size 5+). Size 1's person-level rate (5.14 %) is, by construction, close to but not identical
+  to the household-level p_all_absent for size 1 (5.29 %) -- for a single-person household the
+  two events (the household is fully absent; this person is absent) coincide, and the small
+  difference between the two committed shares comes from the different weight (GEWICHT_HH_ZENSUS
+  vs GEWICHT_P_ZENSUS) rather than from a different underlying event.
+
+  Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
+  all, the region rate implicitly excludes Wolfsburg residents, the same caveat every SrV-derived
+  table in this codebase carries.
+notes: |
+  Reference table for braunschweig.synthesis.day_absence.absence.draw_absence's HOUSEHOLD stage
+  (issue #370, ADR-0110): every household of size class s is drawn absent_household with
+  probability p_all_absent(s) from this table, independent of and prior to the individual
+  residual stage (data record srv2023_absence_by_age_band). Read at run time by
+  braunschweig.synthesis.day_absence.absence.load_absence_reference, which RAISES unless the
+  table covers exactly the five size classes with every rate in [0, 1]
+  (AbsenceReference.__post_init__) -- a missing class must never silently become a NaN
+  probability. With day_absence_household_stage_enabled false (the pre-registered sensitivity
+  arm) this table is still loaded and validated but its rates are never applied
+  (draw_absence(household_stage=False) sets every household's draw probability to 0), so an
+  invalid table still fails loudly even on the sensitivity arm.
+
+  Companion table: srv2023_absence_by_age_band.csv (data record srv2023_absence_by_age_band), the
+  age-band reference for the INDIVIDUAL stage of the same draw. Both tables share one provenance
+  header format, written together by scripts/extract_srv_absence.py in a single run. Decision
+  record: ADR-0110.
+
+  p_absent_person (issue #388) is read the same way, into
+  AbsenceReference.p_absent_person_by_size (NaN accepted for an empty size class, since this is a
+  REPORTING reference, unlike p_all_absent_by_size, which the household draw consumes and which
+  must never be NaN) -- it feeds only draw_absence's by_size_class diagnostic, never the draw
+  itself. Decision record for the eligibility gate this reference now also supports: ADR-0110
+  "Amendment 1 (2026-09-09, issue #388)".

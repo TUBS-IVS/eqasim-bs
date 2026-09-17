@@ -31,7 +31,16 @@ DATA_DIRECTORY = os.path.join("docs", "registry", "data")
 RUNS_DIRECTORY = os.path.join("docs", "runs")
 
 
-def _load_directory(repo_root: str, directory: str, parser: Callable, id_key: str) -> List[dict]:
+#: Blank manifest under ``docs/runs/`` for a human to copy when recording a new run (issue
+#: #378). Skipped by :func:`load_manifests`: every OTHER ``*.yml`` in that directory is an
+#: executed run and becomes a row of ``docs/generated/RUNS.md``, and a template is not a run --
+#: listing it there would be inventing history. It is still held to the manifest schema by
+#: ``tests/test_documentation_registry.py``, since nothing else would notice it rotting.
+MANIFEST_TEMPLATE_FILENAME = "TEMPLATE.yml"
+
+
+def _load_directory(repo_root: str, directory: str, parser: Callable, id_key: str,
+                    skip: frozenset = frozenset()) -> List[dict]:
     absolute = os.path.join(repo_root, directory)
     if not os.path.isdir(absolute):
         raise FileNotFoundError(f"registry directory not found: {absolute}")
@@ -39,7 +48,7 @@ def _load_directory(repo_root: str, directory: str, parser: Callable, id_key: st
     records = []
     seen = {}
     for name in sorted(os.listdir(absolute)):
-        if not name.endswith(".yml"):
+        if not name.endswith(".yml") or name in skip:
             continue
         path = os.path.join(absolute, name)
         with open(path, encoding="utf-8") as f:
@@ -72,5 +81,10 @@ def load_data(repo_root: str, directory: str = DATA_DIRECTORY) -> List[dict]:
 
 
 def load_manifests(repo_root: str, directory: str = RUNS_DIRECTORY) -> List[dict]:
-    """Load every run manifest, sorted by file name."""
-    return _load_directory(repo_root, directory, schema.parse_manifest, "id")
+    """Load every run manifest, sorted by file name.
+
+    :data:`MANIFEST_TEMPLATE_FILENAME` is the one ``*.yml`` here that is NOT a run and is
+    therefore skipped; the three registries above have no such file and skip nothing.
+    """
+    return _load_directory(repo_root, directory, schema.parse_manifest, "id",
+                           skip=frozenset({MANIFEST_TEMPLATE_FILENAME}))

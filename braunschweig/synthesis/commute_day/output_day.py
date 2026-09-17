@@ -13,14 +13,19 @@ Aliased to ``synthesis.output``. Two things distinguish it from the vendored
    ``select_person_output_columns``): the state column is merged into the enriched persons
    frame BEFORE the vendored writer selects its columns, so the attribute is written by that
    one writer rather than by a second pass over the finished CSV.
+3. **The ``day_absence_state`` person attribute** (issue #370, ADR-0110). Independent of the
+   commute-day model above: the general day-absence draw from
+   :mod:`braunschweig.synthesis.day_absence.absence_stage` -- ``present`` /
+   ``absent_household`` / ``absent_individual`` for EVERY enriched person -- is merged in the
+   same way, through the same optional-column mechanism.
 
 The eqasim writer itself is NOT re-implemented: ``configure`` and ``execute`` are the vendored
 ones, run through the proxies of :mod:`braunschweig.synthesis.commute_day.day_view`.
 
-With ``commute_day_state_enabled`` false the ``.final`` aliases are pass-throughs of the
-pre-assignment views AND the enriched frame is handed on untouched, so no ``commute_day_state``
-column exists, ``select_person_output_columns`` returns the legacy list, and every output file
-is byte-identical to the vendored stage's.
+With ``commute_day_state_enabled`` false and ``day_absence_enabled`` false the ``.final`` aliases
+are pass-throughs of the pre-assignment views AND the enriched frame is handed on untouched, so
+neither optional column exists, ``select_person_output_columns`` returns the legacy list, and
+every output file is byte-identical to the vendored stage's.
 """
 from __future__ import annotations
 
@@ -53,6 +58,17 @@ DEFAULT_ENABLED = True
 #: Column the state stage carries and this stage exports; it must be one of
 #: ``synthesis.output.PERSON_OPTIONAL_OUTPUT_COLUMNS`` for the vendored writer to pick it up.
 STATE_COLUMN = "commute_day_state"
+
+#: General day-absence flag (issue #370) and the stage it reads when on -- independent of
+#: KEY_ENABLED (the commute-day state model above). Same names as
+#: braunschweig.synthesis.commute_day.trips_day_stage.KEY_DAY_ABSENCE_ENABLED / ABSENCE_STAGE.
+KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
+DEFAULT_DAY_ABSENCE_ENABLED = True
+ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
+
+#: Column the absence stage carries and this stage exports; it must be one of
+#: ``synthesis.output.PERSON_OPTIONAL_OUTPUT_COLUMNS`` for the vendored writer to pick it up.
+ABSENCE_STATE_COLUMN = "day_absence_state"
 
 #: Modules whose sources this stage's cache token must cover (see :func:`validate`): the shim
 #: decides WHICH frames the vendored writer sees, and the VENDORED writer itself is what
@@ -87,6 +103,11 @@ def configure(context):
     # carries the donor/state chain in its DAG for a column it never writes.
     if context.config(KEY_ENABLED):
         context.stage(STATE_STAGE)
+    # issue #370: the general day-absence draw is independent of the commute-day model above, so
+    # it gets its own flag and its own gate.
+    context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
+    if context.config(KEY_DAY_ABSENCE_ENABLED):
+        context.stage(ABSENCE_STAGE)
 
 
 def attach_commute_day_state(persons, states):
@@ -131,6 +152,49 @@ def attach_commute_day_state(persons, states):
     return merged
 
 
+def attach_day_absence_state(persons, absence):
+    """Left-join ``day_absence_state`` onto the enriched persons frame.
+
+    Unlike ``attach_commute_day_state`` (one row per WORKER on the ``states`` side), ``absence``
+    carries EXACTLY one row per enriched person on both the enabled and the disabled path
+    (:mod:`braunschweig.synthesis.day_absence.absence_stage`), so a healthy join covers every
+    person -- there is no legitimate "no assigned workplace" remainder here.
+
+    The coverage rate is logged, and a coverage of zero raises: the only way a finished
+    population contains no person with a state is a broken ``person_id`` join between the
+    absence stage and the enriched population, which would otherwise ship an all-empty column
+    that reads like a measured "nobody is ever absent" (CLAUDE.md "Fallback transparency").
+    """
+    for frame, columns, what in ((persons, ("person_id",), "the enriched persons frame"),
+                                 (absence, ("person_id", ABSENCE_STATE_COLUMN),
+                                  "the absence frame")):
+        missing = [column for column in columns if column not in frame.columns]
+        if missing:
+            raise ValueError(f"{_LOG_TAG} {what} is missing the required column(s) {missing} "
+                             f"(present: {sorted(frame.columns)[:20]})")
+    if ABSENCE_STATE_COLUMN in persons.columns:
+        raise ValueError(
+            f"{_LOG_TAG} the enriched persons frame already carries a "
+            f"{ABSENCE_STATE_COLUMN!r} column; merging the absence stage on top of it would "
+            "produce two ambiguous columns. Check whether an upstream stage started to emit "
+            "that name.")
+
+    merged = persons.merge(absence[["person_id", ABSENCE_STATE_COLUMN]], on="person_id",
+                           how="left", validate="one_to_one")
+    n_with_state = int(merged[ABSENCE_STATE_COLUMN].notna().sum())
+    counts = merged[ABSENCE_STATE_COLUMN].value_counts().to_dict()
+    logger.info("%s %d/%d persons (%.1f%%) carry a day-absence state: %s", _LOG_TAG,
+                n_with_state, len(merged), 100.0 * n_with_state / max(len(merged), 1),
+                {str(key): int(value) for key, value in sorted(counts.items())})
+    if n_with_state == 0:
+        raise ValueError(
+            f"{_LOG_TAG} not one of the {len(merged)} persons in the enriched population was "
+            f"matched to a row of the absence frame ({len(absence)} rows); this is a broken "
+            "person_id join, not a population without absences. Check the id types on both "
+            "sides before exporting an all-empty column.")
+    return merged
+
+
 def execute(context):
     day_trips = context.stage(DAY_TRIPS_STAGE)
     day_activities = context.stage(DAY_ACTIVITIES_STAGE)
@@ -144,6 +208,13 @@ def execute(context):
         # returns the legacy list -> byte-identical persons.csv.
         logger.info("%s %s is false -- the persons output keeps the legacy column set.",
                     _LOG_TAG, KEY_ENABLED)
+
+    if bool(context.config(KEY_DAY_ABSENCE_ENABLED)):
+        absence = context.stage(ABSENCE_STAGE)["absence"]
+        persons = attach_day_absence_state(persons, absence)
+    else:
+        logger.info("%s %s is false -- the persons output has no day_absence_state column.",
+                    _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
 
     return base.execute(StageOverrideContext(context, {
         TRIPS_STAGE: day_trips,

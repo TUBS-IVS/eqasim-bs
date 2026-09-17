@@ -22,7 +22,7 @@
 # employment_status margin's universe is persons 14+ with a valid V_ERW; the SrV conditional
 # rates' universe is persons 14+ INCLUDING the persons with a missing/implausible V_ERW code
 # (classed non-employed on the SrV side). The two universes differ by AT MOST
-# n_missing_employment_code=11 persons of the 14,845-person 14+ universe (0.07 pp on the
+# the persons whose V_ERW could not be read, who since ADR-0117 leave the universe (0.07 pp on the
 # employed share) -- srv2023_work_by_employment_by_kreis.csv's own "# Exclusions:" header line
 # measures that count on the 17,269-person at-home-or-mobile universe, not on the 14,845-person
 # 14+ subset, so 11 is an upper bound on how many of them are 14+ (fix round 1, item 7). The two
@@ -51,12 +51,12 @@
 # Columns: ars5, source, n_effective (the SrV row's n_unweighted), employed_work, employed_nowork,
 # nonemployed_work, nonemployed_nowork (kreis_attribute_control.WORK_BY_EMPLOYMENT_CATEGORIES).
 ars5,source,n_effective,employed_work,employed_nowork,nonemployed_work,nonemployed_nowork
-03101,employment_status_target x srv,3629,0.3604,0.1613,0.0316,0.4467
+03101,employment_status_target x srv,3624,0.3604,0.1613,0.0293,0.449
 03102,employment_status_target x srv,1492,0.3872,0.1255,0.0163,0.471
 03151,employment_status_target x srv,2916,0.3931,0.1846,0.0189,0.4034
-03153,employment_status_target x srv,1890,0.3658,0.1312,0.0125,0.4905
+03153,employment_status_target x srv,1889,0.3658,0.1312,0.0118,0.4912
 03154,employment_status_target x srv,1450,0.3504,0.1523,0.0185,0.4788
-03157,employment_status_target x srv,1942,0.3651,0.1778,0.0209,0.4362
-03158,employment_status_target x srv,1526,0.4007,0.156,0.0226,0.4207
-03103,employment_status_target x srv_region_total,14845,0.3125,0.1319,0.0263,0.5293
-Gesamt,employment_status_target x srv_region_total,14845,0.3693,0.1559,0.0224,0.4524
+03157,employment_status_target x srv,1940,0.3651,0.1778,0.02,0.4371
+03158,employment_status_target x srv,1525,0.4007,0.156,0.0217,0.4216
+03103,employment_status_target x srv_region_total,14836,0.3125,0.1319,0.0251,0.5305
+Gesamt,employment_status_target x srv_region_total,14836,0.3693,0.1559,0.0214,0.4534

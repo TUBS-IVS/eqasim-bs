@@ -18,9 +18,13 @@ The diary plan match (``diary_plan_match.reassign_diaryless_plan_sources``, issu
 match, in that order, CONTINUING the same seeded RNG instance -- they are new
 steps appended to the byte-identity contract above, never inserted before or
 between the existing two. The stage now also depends on the MiD Wege (trip)
-table (``mid.load_mid_wege``) and five additional flags (diary_plan_match,
+  table (``mid.load_mid_wege``) and six scientific flags (diary_plan_match,
 exclude_holiday_plan_sources, exclude_rbw_legs, drop_leading_arrive_home_leg,
-diary_match_hard_employment);
+diary_match_hard_employment) plus donor_match_fine_child_age_bands, which
+  applies to member completion and the weekend match as well and is therefore read
+  regardless of diary_plan_match;
+  ``braunschweig.performance.donor_matching`` additionally selects the default-ON
+  prepared matching kernel without changing model behavior;
 it remains sampling- and controls-independent, so it is still shareable across
 runs via the cache_share store. The eight ``src_*`` plan-source fact columns are
 attached to ``persons`` ALWAYS (even with diary_plan_match OFF) -- they are
@@ -42,6 +46,7 @@ import pandas as pd
 
 from braunschweig.popsim import diary_facts, diary_plan_match
 from braunschweig.popsim import mid
+from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import weekend_plan_match
 
@@ -52,6 +57,7 @@ logger = logging.getLogger(__name__)
 # popsim.stage.build_persons. Must NOT change: it defines the donor draw
 # (byte-identity contract).
 COMPLETION_RNG_OFFSET = 74513
+KEY_PERFORMANCE_DONOR_MATCHING = "braunschweig.performance.donor_matching"
 
 # Filename of the weekend-plan-match trace persisted into this stage's cache dir.
 WEEKEND_TRACE_FILE = "weekend_plan_match_trace.parquet"
@@ -74,6 +80,7 @@ DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 _HELPER_MODULES = (
     diary_facts,
     diary_plan_match,
+    passenger_availability,
     seedmod,
     weekend_plan_match,
     # The braunschweig.popsim.mid PACKAGE __init__, whose load_completed_donor /
@@ -124,7 +131,10 @@ def build_completed_donor(
     exclude_rbw_legs: bool = True,
     drop_leading_arrive_home_leg: bool = True,
     diary_match_hard_employment: bool = True,
+    donor_match_fine_child_age_bands: bool = True,
+    passenger_availability_enabled: bool = False,
     diary_trace_path: Optional[Union[str, Path]] = None,
+    precompute_matching: bool = True,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
     diary plan match), and attach the plan-source diary facts.
@@ -180,9 +190,29 @@ def build_completed_donor(
         affected: the weekend-plan match above keeps the unconstrained ladder, and
         ``match_person`` draws exactly ONE weighted value per call either way, so the
         shared completion RNG stream is unchanged (byte-identity contract above).
+    donor_match_fine_child_age_bands:
+        When True (default), the fine child bands (6-9 / 10-13 instead of one 6-13 band)
+        are used wherever THIS stage matches a person to a MiD donor by age, so a
+        primary-school child can no longer inherit a 13-year-old's school day
+        (issue #386). That is all THREE matchers of the donor build, not only the diary
+        match: member completion's mirror role matching
+        (``member_completion._match_present_members``), the weekend match's household
+        member alignment (``weekend_plan_match.align_members``) plus its person-level
+        fallback and mixed-household sweep, and the diary match's re-draw. Unlike the
+        other diary flags it is therefore NOT ignored when ``diary_plan_match_on`` is
+        False -- the first two matchers run regardless.
+        None of the three consumes a different NUMBER of rng values under the fine
+        bands (``align_members`` and ``_match_present_members`` draw none and return the
+        same number of pairs; ``match_person`` draws exactly one per call), so the shared
+        completion RNG stream stays at the same position and the byte-identity contract
+        above is intact -- the flag changes WHICH donor is assigned, never the draw
+        sequence.
     diary_trace_path:
         Where to write the diary-plan-match trace parquet (only when matching is
         on and a path is given). ``None`` -> trace not persisted (e.g. unit tests).
+    precompute_matching:
+        Prepare invariant person donor features and candidate indexes once per
+        matching pool. ``False`` retains the executable repeated-filter baseline.
 
     Notes
     -----
@@ -209,6 +239,8 @@ def build_completed_donor(
 
     households, persons, completeness_report, completion_report = mid.load_completed_donor(
         mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
+        fine_child_age_bands=donor_match_fine_child_age_bands,
+        include_passenger_availability=passenger_availability_enabled,
     )
 
     weekend_report = None
@@ -217,6 +249,8 @@ def build_completed_donor(
         # draws form one entangled seeded stream -- do NOT reseed it.
         persons, weekend_trace, weekend_report = weekend_plan_match.reassign_weekend_plan_sources(
             households, persons, rng=completion_rng,
+            fine_child_age_bands=donor_match_fine_child_age_bands,
+            precompute_matching=precompute_matching,
         )
         if trace_path is not None:
             weekend_trace.to_parquet(trace_path)
@@ -263,6 +297,8 @@ def build_completed_donor(
             exclude_holidays=exclude_holiday_plan_sources,
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             hard_employment=diary_match_hard_employment,
+            fine_child_age_bands=donor_match_fine_child_age_bands,
+            precompute_matching=precompute_matching,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
@@ -270,6 +306,10 @@ def build_completed_donor(
 
     # src_* plan-source fact columns are attached ALWAYS (facts, not behaviour).
     persons = diary_facts.attach_plan_source_facts(persons, facts)
+    if passenger_availability_enabled:
+        persons = passenger_availability.attach_car_passenger_diary_evidence(
+            persons, wege
+        )
 
     return CompletedDonor(
         households=households,
@@ -317,7 +357,8 @@ def configure(context):
     """Declare the completed-donor config dependencies.
 
     This stage depends ONLY on the MiD donor data, the random seed, the seed
-    day-filter, the weekend-plan-match flag, and the diary-plan-match flags --
+    day-filter, the weekend-plan-match flag, the diary-plan-match flags, and the
+    donor-matching performance flag --
     NOT on controls, sampling, or work_dir. That narrow dependency set is what
     makes it shareable across ALL runs (incl. control-tier changes) via the
     cache_share store.
@@ -329,11 +370,13 @@ def configure(context):
     # _DEFERRED_HELPER_MODULE_NAMES), so the narrower import is both cheaper and covered.
     from braunschweig.popsim.stage.config_keys import (
         KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
+        KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     from braunschweig.popsim.stage.config_keys import (
         DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_PLAN_MATCH,
+        DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_SEED_DAY_FILTER, DEFAULT_WEEKEND_PLAN_MATCH,
     )
@@ -341,6 +384,9 @@ def configure(context):
     context.config("random_seed")
     context.config(KEY_SEED_DAY_FILTER, DEFAULT_SEED_DAY_FILTER)
     context.config(KEY_WEEKEND_PLAN_MATCH, DEFAULT_WEEKEND_PLAN_MATCH)
+    # config_keys declares no DEFAULT_ constant for the passenger-availability flag, so the
+    # literal default stays inline here until one is added.
+    context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_EXCLUDE_RBW_LEGS, DEFAULT_EXCLUDE_RBW_LEGS)
@@ -351,6 +397,11 @@ def configure(context):
     # only (like KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES): the popsim stage never reads it
     # and inherits the invalidation through its completed_donor stage dependency.
     context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT)
+    # Issue #386: same argument for the fine child age bands -- they change which donor a
+    # diary-less child draws, so flipping them must rebuild the donor, not reuse the cache.
+    context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
+                   DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS)
+    context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)
 
 
 def execute(context) -> CompletedDonor:
@@ -367,8 +418,9 @@ def execute(context) -> CompletedDonor:
     # _DEFERRED_HELPER_MODULE_NAMES), so the narrower import is both cheaper and covered.
     from braunschweig.popsim.stage.config_keys import (
         KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
-        KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
-        KEY_EXCLUDE_RBW_LEGS, KEY_MID, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
+        KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     mid_dir = context.config(KEY_MID)
     random_seed = int(context.config("random_seed"))
@@ -382,6 +434,9 @@ def execute(context) -> CompletedDonor:
     exclude_rbw_legs = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
     drop_leading_arrive_home_leg = bool(context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG))
     diary_match_hard_employment = bool(context.config(KEY_DIARY_MATCH_HARD_EMPLOYMENT))
+    donor_match_fine_child_age_bands = bool(context.config(KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS))
+    precompute_matching = bool(context.config(KEY_PERFORMANCE_DONOR_MATCHING))
+    passenger_availability_enabled = bool(context.config(KEY_MID_PASSENGER_AVAILABILITY))
 
     result = build_completed_donor(
         mid_dir,
@@ -394,7 +449,10 @@ def execute(context) -> CompletedDonor:
         exclude_rbw_legs=exclude_rbw_legs,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         diary_match_hard_employment=diary_match_hard_employment,
+        donor_match_fine_child_age_bands=donor_match_fine_child_age_bands,
+        passenger_availability_enabled=passenger_availability_enabled,
         diary_trace_path=Path(context.path()) / DIARY_TRACE_FILE if diary_plan_match_on else None,
+        precompute_matching=precompute_matching,
     )
 
     # Surface the build reports as run info (also set on the consumer in popsim.stage
@@ -407,4 +465,8 @@ def execute(context) -> CompletedDonor:
         context.set_info("diary_plan_match_share", result.diary_report.share_remapped)
         context.set_info("diary_plan_match_crossed_employment_boundary",
                          result.diary_report.n_crossed_employment_boundary)
+        context.set_info("diary_plan_match_remapped_in_split_child_band",
+                         result.diary_report.n_remapped_in_split_child_band)
+        context.set_info("diary_plan_match_crossed_fine_child_age_band",
+                         result.diary_report.n_crossed_fine_child_age_band)
     return result

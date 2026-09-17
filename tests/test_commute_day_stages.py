@@ -19,6 +19,7 @@ distance at all, a far worker and an escort-protected far worker.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -79,6 +80,10 @@ class _StubContext:
         self._declared = declared
         self._stages = stages or {}
         self._config = config or {}
+        #: What the stage reported via ``set_info``. synpp persists this into the working
+        #: directory's ``pipeline.json`` under the stage's own hash, which is where
+        #: ``scripts/extract_commute_day_diagnostics.py`` reads it back from (issue #378).
+        self.info = {}
 
     def stage(self, name):
         assert name in self._declared.stages, f"stage '{name}' was not declared in configure()"
@@ -88,6 +93,9 @@ class _StubContext:
     def config(self, name):
         assert name in self._declared.config_keys, f"config '{name}' was not declared in configure()"
         return self._config[name]
+
+    def set_info(self, name, value):
+        self.info[name] = value
 
 
 def _context(module, stages=None, config=None):
@@ -311,6 +319,10 @@ def _write_raw_mid(directory):
         # later ones, mirroring tests/test_completed_donor_stage.py).
         "W_RBW": [0, 0, 0, 0, 0, 0],
         "W_SO1": [1, 809, 1, 809, 1, 809],
+        # The MiD Wege file repeats the household member's age on every leg; the stage loads it
+        # (WEGE_COLUMNS) because the passive-escort pairing needs it to decide who counts as the
+        # accompanying ADULT (issue #372). Matches the persons frame above leg by leg.
+        "HP_ALTER": [40, 40, 35, 35, 50, 50],
     })
     households = pd.DataFrame({"H_ID": [1, 2], "H_GR": [2, 3], "H_ANZAUTO": [1, 0]})
     persons.to_csv(os.path.join(directory, DONORS.PERSONS_FILE), index=False)
@@ -387,7 +399,27 @@ def test_configure_declares_the_documented_stages_and_defaults():
 
     trips = _ConfigureRecorder()
     TRIPS.configure(trips)
-    assert set(trips.stages) == {"synthesis.population.trips", STATE_STAGE, DONOR_STAGE}
+    # Ruling A-R13 (issue #123 Task 4): the departure-time model reuses the ALREADY declared
+    # synthesis.population.enriched persons -- this stage must NOT gain a
+    # synthesis.population.sampled dependency for it, so the stage set stays exactly this one.
+    assert set(trips.stages) == {"synthesis.population.trips", STATE_STAGE, DONOR_STAGE,
+                                 TRIPS.ABSENCE_STAGE, "synthesis.population.enriched"}
+    assert trips.config_keys[TRIPS.KEY_ENABLED] is TRIPS.DEFAULT_ENABLED
+    assert trips.config_keys[TRIPS.KEY_DAY_ABSENCE_ENABLED] is TRIPS.DEFAULT_DAY_ABSENCE_ENABLED
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+        DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MODEL,
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+    assert trips.config_keys[KEY_DEPARTURE_TIME_MODEL] == DEFAULT_DEPARTURE_TIME_MODEL
+    assert (trips.config_keys[KEY_DEPARTURE_TIME_MIN_REFERENCE_N]
+            == DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N)
+    assert trips.config_keys[KEY_DEPARTURE_TIME_MIN_MODEL_N] == DEFAULT_DEPARTURE_TIME_MIN_MODEL_N
+    assert (trips.config_keys[KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS]
+            == DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS)
+    # The committed SrV reference is read from data_path when the model is srv_mapped.
+    assert "data_path" in trips.config_keys
 
     activities = _ConfigureRecorder()
     ACT.configure(activities)
@@ -504,6 +536,46 @@ def test_donor_stage_forwards_the_plan_structure_flags_and_the_donor_filters(tmp
     assert captured["exclude_no_diary"] is True
     assert captured["exclude_holidays"] is True
     assert captured["exclude_only_rbw"] is True
+
+
+def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_path, monkeypatch):
+    """Issue #373 cleanup wave, item 3: w_zweck_10_as_leisure, escort_passive_from_adult and
+    passive_pair_max_gap_minutes reach build_home_office_donor_pool, but no test asserted the
+    VALUE arrives (the sibling test above pins the plan-structure flags and donor filters, not
+    these three). Non-default values are used (the pure builder's own keyword defaults are
+    False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a forwarding regression that
+    silently falls back to the callee's own default would be caught here."""
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE,
+    )
+
+    _write_raw_mid(str(tmp_path))
+    captured = {}
+    real_builder = DONORS.build_home_office_donor_pool
+
+    def capturing_builder(persons, wege, households, **kwargs):
+        captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
+        captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
+        captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        return real_builder(persons, wege, households, **kwargs)
+
+    monkeypatch.setattr(DONORS, "build_home_office_donor_pool", capturing_builder)
+    # escort_passive_from_adult=True requires escort_purpose=True (map_purpose's own guard).
+    context = _context(DONORS, config=_donor_stage_config(
+        tmp_path,
+        **{
+            DONORS.KEY_ESCORT_PURPOSE: True,
+            KEY_W_ZWECK_10_AS_LEISURE: True,
+            KEY_ESCORT_PASSIVE_FROM_ADULT: True,
+            KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+        }))
+
+    DONORS.execute(context)
+
+    assert captured["w_zweck_10_as_leisure"] is True
+    assert captured["escort_passive_from_adult"] is True
+    assert captured["passive_pair_max_gap_minutes"] == 22.0
 
 
 def test_donor_stage_donor_filters_follow_the_plan_source_flags(tmp_path, monkeypatch):
@@ -844,9 +916,38 @@ def test_state_stage_lets_a_person_with_an_education_location_keep_such_a_donor(
 def _trips_day_stages(states, trips=None):
     return {
         "synthesis.population.trips": _trips() if trips is None else trips,
+        "synthesis.population.enriched": _persons(),
         STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
         DONOR_STAGE: (_donor_attributes(), _donor_trips(), {"enabled": True}),
     }
+
+
+def _trips_day_config(**overrides):
+    """The trips day stage's config at its own declared defaults, with overrides.
+
+    Written as a helper (rather than a literal dict per test) since issue #123 Task 4 added the
+    four departure-time keys plus ``data_path``: the stub context refuses any key ``configure``
+    did not declare AND any key the caller did not supply, so every execute-path test must carry
+    the full surface.
+    """
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+        DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N, DEFAULT_DEPARTURE_TIME_MODEL,
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS, KEY_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N, KEY_DEPARTURE_TIME_MODEL,
+    )
+    config = {
+        "random_seed": RANDOM_SEED,
+        "data_path": DATA_PATH,
+        TRIPS.KEY_ENABLED: True,
+        TRIPS.KEY_DAY_ABSENCE_ENABLED: False,
+        KEY_DEPARTURE_TIME_MODEL: DEFAULT_DEPARTURE_TIME_MODEL,
+        KEY_DEPARTURE_TIME_MIN_REFERENCE_N: DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
+        KEY_DEPARTURE_TIME_MIN_MODEL_N: DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+        KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS: DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+    }
+    config.update(overrides)
+    return config
 
 
 def _states_frame(rows):
@@ -861,8 +962,41 @@ def _states_frame(rows):
 def test_trips_day_stage_off_returns_the_identical_object():
     trips = _trips()
     context = _context(TRIPS, stages=_trips_day_stages(_states_frame([]), trips=trips),
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: False})
+                       config=_trips_day_config(**{TRIPS.KEY_ENABLED: False,
+                                                   TRIPS.KEY_DAY_ABSENCE_ENABLED: False}))
     assert TRIPS.execute(context) is trips
+
+
+def test_trips_day_stage_off_off_returns_the_identical_object():
+    """Both flags false, driven the way the SDD brief spells the case out (issue #370, Task 4)."""
+    trips = _trips()
+    context = _context(TRIPS, stages={"synthesis.population.trips": trips},
+                       config=_trips_day_config(**{TRIPS.KEY_ENABLED: False,
+                                                   TRIPS.KEY_DAY_ABSENCE_ENABLED: False}))
+    assert TRIPS.execute(context) is trips
+
+
+def test_trips_day_stage_absence_only_removes_absent_persons():
+    """commute_day_state_enabled OFF, day_absence_enabled ON: only the general-absence removal
+    applies, through EMPTY commute-day placeholders (no state/donor stage output is touched)."""
+    trips = _trips()
+    person_ids = sorted(trips["person_id"].unique())
+    absence = pd.DataFrame({
+        "person_id": person_ids,
+        "day_absence_state": ["absent_individual"] + ["present"] * (len(person_ids) - 1),
+    })
+    context = _context(TRIPS, stages={"synthesis.population.trips": trips,
+                                      "synthesis.population.enriched": _persons(),
+                                      TRIPS.ABSENCE_STAGE: {"absence": absence,
+                                                            "diagnostics": {"enabled": True}}},
+                       config=_trips_day_config(**{TRIPS.KEY_ENABLED: False,
+                                                   TRIPS.KEY_DAY_ABSENCE_ENABLED: True}))
+
+    out = TRIPS.execute(context)
+
+    removed_person = absence["person_id"].iloc[0]
+    assert removed_person not in set(out["person_id"])
+    assert len(out) == len(trips) - int((trips["person_id"] == removed_person).sum())
 
 
 def test_trips_day_stage_on_replaces_only_the_home_persons():
@@ -876,7 +1010,7 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
         {"person_id": 6, "commute_day_state": "home", "donor_id": None},
     ])
     context = _context(TRIPS, stages=_trips_day_stages(states, trips=trips),
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True})
+                       config=_trips_day_config())
 
     day_trips = TRIPS.execute(context)
 
@@ -892,6 +1026,26 @@ def test_trips_day_stage_on_replaces_only_the_home_persons():
             trips[trips["person_id"] == person_id][list(day_trips.columns)].reset_index(drop=True))
     # The CONTRACT columns stay first, as the pre-assignment view has them.
     assert list(day_trips.columns)[:len(CONTRACT)] == CONTRACT
+
+
+def test_trips_day_stage_both_on_removes_commute_and_general_absent_persons():
+    """Both flags True (issue #370): the commute-absent and generally-absent removals compose,
+    each removing its own person while leaving everyone else's row count unchanged."""
+    trips = _trips()
+    states = _states_frame([{"person_id": 4, "commute_day_state": "absent"}])
+    absence = pd.DataFrame({"person_id": [7], "day_absence_state": ["absent_household"]})
+    stages = dict(_trips_day_stages(states, trips=trips))
+    stages[TRIPS.ABSENCE_STAGE] = {"absence": absence, "diagnostics": {"enabled": True}}
+    context = _context(TRIPS, stages=stages,
+                       config=_trips_day_config(**{TRIPS.KEY_DAY_ABSENCE_ENABLED: True}))
+
+    out = TRIPS.execute(context)
+
+    assert 4 not in set(out["person_id"])   # commute-absent
+    assert 7 not in set(out["person_id"])   # generally absent
+    for person_id in (1, 2, 3, 5, 6):
+        assert (len(out[out["person_id"] == person_id])
+                == len(trips[trips["person_id"] == person_id]))
 
 
 def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(caplog):
@@ -910,10 +1064,11 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
         {"person_id": 1, "commute_day_state": "home", "donor_id": "d4", "coarsening_level": 0},
     ])
     stages = {"synthesis.population.trips": _trips(),
+              "synthesis.population.enriched": _persons(),
               STATE_STAGE: {"states": states, "diagnostics": {"enabled": True}},
               DONOR_STAGE: (attributes, donor_trips, {"enabled": True})}
     context = _context(TRIPS, stages=stages,
-                       config={"random_seed": RANDOM_SEED, TRIPS.KEY_ENABLED: True})
+                       config=_trips_day_config())
 
     with caplog.at_level("WARNING",
                          logger="braunschweig.synthesis.commute_day.plan_replacement"):
@@ -921,6 +1076,111 @@ def test_trips_day_stage_reports_an_immobile_donor_rather_than_a_join_failure(ca
 
     assert len(day_trips[day_trips["person_id"] == 1]) == 0   # a valid trip-less home day
     assert not any("donor_id key/dtype mismatch" in message for message in caplog.messages)
+
+
+def _home_person_states():
+    """Person 1 replaced by donor d1's own (home-office) day; nobody else has a state."""
+    return _states_frame([
+        {"person_id": 1, "commute_day_state": "home", "donor_id": "d1", "coarsening_level": 0},
+    ])
+
+
+def test_trips_day_stage_srv_mapped_maps_the_spliced_chain_onto_the_srv_reference():
+    """Issue #123 Task 4: with ``departure_time_model=srv_mapped`` the stage loads the COMMITTED
+    SrV reference from ``data_path`` and hands the plan replacement the RECEIVING persons
+    (ruling A-R7), so the spliced donor day starts where the SrV distribution of the receiving
+    person's own (purpose, group) cell says -- not where the donor's diary happened to start.
+
+    ``min_model_n`` is lowered to 1 because this fixture has a single replaced person; the
+    reference threshold keeps its production default (the ``(employed, shop)`` cell carries 538
+    unweighted observations).
+    """
+    from braunschweig.popsim.departure_time_model import BIN_MINUTES, OFFSET_COLUMN
+    from braunschweig.popsim.stage.config_keys import (KEY_DEPARTURE_TIME_MIN_MODEL_N,
+                                                       KEY_DEPARTURE_TIME_MODEL)
+
+    # The real pre-assignment table always carries the recorded offset (trips_stage.run writes
+    # it); build_day_trips only keeps output columns the INPUT frame has, so a fixture without
+    # it would silently drop the very column this test reads.
+    trips = _trips().assign(**{OFFSET_COLUMN: 0.0})
+    stages = _trips_day_stages(_home_person_states(), trips=trips)
+    uniform = TRIPS.execute(_context(TRIPS, stages=stages, config=_trips_day_config()))
+    mapped = TRIPS.execute(_context(TRIPS, stages=stages, config=_trips_day_config(
+        **{KEY_DEPARTURE_TIME_MODEL: "srv_mapped", KEY_DEPARTURE_TIME_MIN_MODEL_N: 1})))
+
+    person_1 = mapped[mapped["person_id"] == 1].sort_values("trip_index").reset_index(drop=True)
+    assert list(person_1["following_purpose"]) == ["shop", "home"]
+    assert person_1[OFFSET_COLUMN].nunique() == 1          # the whole chain moves by one offset
+    donor = _donor_trips()
+    donor = donor[donor["donor_id"] == "d1"].sort_values("trip_index").reset_index(drop=True)
+    offset = float(person_1[OFFSET_COLUMN].iloc[0])
+    assert np.allclose(person_1["departure_time"], np.round(donor["departure_time"] + offset))
+    # The model actually ran: the mapped day starts in a different quarter hour than the eqasim
+    # jitter's (which can only move the donor's own 10:00 start by at most 30 minutes).
+    uniform_1 = uniform[uniform["person_id"] == 1].sort_values("trip_index").reset_index(drop=True)
+    assert (int(person_1["departure_time"].iloc[0] // (BIN_MINUTES * 60))
+            != int(uniform_1["departure_time"].iloc[0] // (BIN_MINUTES * 60)))
+    # Everyone else keeps their pre-assignment day under BOTH models.
+    for person_id in (2, 3, 5, 6, 7):
+        pd.testing.assert_frame_equal(
+            mapped[mapped["person_id"] == person_id].reset_index(drop=True),
+            trips[trips["person_id"] == person_id][list(mapped.columns)].reset_index(drop=True))
+
+
+def test_trips_day_stage_builds_the_ranking_context_from_the_pre_assignment_trips():
+    """Issue #123 cleanup item 7 (ruling A-R18): for ``srv_mapped`` the stage hands the plan
+    replacement the POPULATION's raw first departures per mapping cell, built from the
+    PRE-ASSIGNMENT trips view and the enriched persons it already reads -- so a spliced person's
+    quantile is computed in the population's distribution of their cell rather than among the few
+    home-office persons this run replaced. The other two models rank nothing and get no context.
+    """
+    from braunschweig.popsim.departure_time_model import OFFSET_COLUMN, RANKING_CONTEXT_COLUMNS
+    from braunschweig.popsim.stage.config_keys import KEY_DEPARTURE_TIME_MODEL
+
+    trips = _trips().assign(**{OFFSET_COLUMN: 120.0})
+    stages = _trips_day_stages(_home_person_states(), trips=trips)
+    mapped_context = _context(TRIPS, stages=stages, config=_trips_day_config(
+        **{KEY_DEPARTURE_TIME_MODEL: "srv_mapped"}))
+    settings = TRIPS._departure_time_settings(mapped_context, _persons(), trips, n_replaced=1)
+
+    context = settings.ranking_context
+    assert list(context.columns) == list(RANKING_CONTEXT_COLUMNS)
+    assert sorted(context["person_id"]) == [1, 2, 3, 4, 5, 6, 7]      # one row per person
+    by_person = context.set_index("person_id")
+    # Person 5's first leg is the escort trip at 27000 s; person 7 is the non-worker whose first
+    # leg goes shopping at 36000 s. The RAW time is the reported one, i.e. minus the offset a
+    # model already applied to the pre-assignment view.
+    assert by_person.loc[5, "purpose"] == "escort"
+    assert by_person.loc[5, "raw_first_departure_seconds"] == 27000.0 - 120.0
+    assert by_person.loc[7, "purpose"] == "shop"
+    assert by_person.loc[7, "group"] == "adult_18_64_not_employed"
+    assert by_person.loc[1, "group"] == "employed"
+
+    uniform_context = _context(TRIPS, stages=stages, config=_trips_day_config())
+    assert TRIPS._departure_time_settings(uniform_context, _persons(), trips,
+                                          n_replaced=1).ranking_context is None
+
+    # Review Minor 7: built LAZILY -- with nothing spliced the model never runs, so the groupby
+    # over the whole population's trips is not paid. The reference stays resolved either way (the
+    # missing-reference test below still aborts a run that splices nobody).
+    assert TRIPS._departure_time_settings(
+        _context(TRIPS, stages=stages,
+                 config=_trips_day_config(**{KEY_DEPARTURE_TIME_MODEL: "srv_mapped"})),
+        _persons(), trips, n_replaced=0).ranking_context is None
+
+
+def test_trips_day_stage_srv_mapped_raises_naming_the_key_when_the_reference_is_missing(tmp_path):
+    """No silent fallback to the eqasim jitter: a configured ``srv_mapped`` reporting day whose
+    reference is not under ``data_path`` must abort naming the path and the config key."""
+    from braunschweig.popsim.stage.config_keys import KEY_DEPARTURE_TIME_MODEL
+
+    context = _context(TRIPS, stages=_trips_day_stages(_home_person_states()),
+                       config=_trips_day_config(**{KEY_DEPARTURE_TIME_MODEL: "srv_mapped",
+                                                   "data_path": str(tmp_path)}))
+    with pytest.raises(FileNotFoundError) as excinfo:
+        TRIPS.execute(context)
+    assert KEY_DEPARTURE_TIME_MODEL in str(excinfo.value)
+    assert str(tmp_path) in str(excinfo.value)
 
 
 def test_matches_from_states_keeps_only_home_persons_with_a_donor():
@@ -974,3 +1234,82 @@ def test_activities_day_shim_rejects_an_undeclared_stage():
     shim = ACT._ActivitiesShimContext(_trips(), _persons())
     with pytest.raises(KeyError):
         shim.stage("synthesis.population.spatial.home.locations")
+
+
+# ----------------------------------------- reporting-day trips diagnostics as stage info (#378)
+# ADR-0104 check 4 had to be read out of a committed LOG EXCERPT because this stage logs its
+# diagnostics dict and writes no structured artefact. synpp persists whatever a stage reports via
+# ``context.set_info`` into the working directory's pipeline.json, under that stage's own hash --
+# which is a structured, machine-readable home that costs no second copy of the 3.4M-row
+# reporting-day frame in the cache. scripts/extract_commute_day_diagnostics.py reads it back.
+
+
+def _trips_day_info(context):
+    """The single namespaced info entry this stage reports, asserted to be present."""
+    assert TRIPS.INFO_KEY in context.info, (
+        f"the stage reported no {TRIPS.INFO_KEY!r}; it reported {sorted(context.info)}")
+    return context.info[TRIPS.INFO_KEY]
+
+
+def test_trips_day_stage_reports_its_diagnostics_as_stage_info():
+    trips = _trips()
+    states = _states_frame([
+        {"person_id": 1, "commute_day_state": "home", "donor_id": "d1", "coarsening_level": 0},
+        {"person_id": 4, "commute_day_state": "absent"},
+    ])
+    context = _context(TRIPS, stages=_trips_day_stages(states, trips=trips),
+                       config=_trips_day_config())
+
+    TRIPS.execute(context)
+
+    info = _trips_day_info(context)
+    assert info["commute_day_state_enabled"] is True
+    assert info["day_absence_enabled"] is False
+    # The R8/R9 counters check 4 previously had to quote from run_log_excerpts.txt.
+    assert info["diagnostics"]["n_persons_replaced"] == 1
+    assert info["diagnostics"]["n_persons_absent_commute"] == 1
+    for key in ("n_donors_immobile", "n_donors_without_trips", "n_trips_removed",
+                "n_trips_added"):
+        assert key in info["diagnostics"], key
+
+
+def test_trips_day_stage_info_is_strict_json_safe():
+    """It is serialised by synpp with a plain json.dump at the END of the stage: a numpy scalar
+    or a NaN there would kill a 100 % run AFTER all its work, so the payload must be plain."""
+    context = _context(TRIPS, stages=_trips_day_stages(_home_person_states()),
+                       config=_trips_day_config())
+
+    TRIPS.execute(context)
+
+    info = _trips_day_info(context)
+    assert json.loads(json.dumps(info, allow_nan=False)) == info
+
+
+def test_trips_day_stage_off_path_reports_the_flags_rather_than_inventing_zeros():
+    """Both flags off: no replacement happens, so there ARE no diagnostics. The entry still says
+    the stage ran and under which flags -- a reader must be able to tell "nothing was replaced"
+    apart from "this stage never ran", and zero counters would assert the former as a result."""
+    trips = _trips()
+    context = _context(TRIPS, stages=_trips_day_stages(_states_frame([]), trips=trips),
+                       config=_trips_day_config(**{TRIPS.KEY_ENABLED: False,
+                                                   TRIPS.KEY_DAY_ABSENCE_ENABLED: False}))
+
+    day_trips = TRIPS.execute(context)
+
+    assert day_trips is trips                      # the identity pass-through is unchanged
+    info = _trips_day_info(context)
+    assert info["commute_day_state_enabled"] is False
+    assert info["day_absence_enabled"] is False
+    assert info["diagnostics"] is None
+    assert info["n_trips_reporting_day"] == len(trips)
+
+
+def test_state_stage_diagnostics_carry_the_pool_size_per_cell():
+    """Issue #378: check 4's fourth diagnostic must reach the state stage's committed output."""
+    context = _context(STATE, stages=_state_stage_stages(), config=_state_stage_config())
+
+    matching_diagnostics = STATE.execute(context)["diagnostics"]["matching"]
+
+    assert matching_diagnostics["donor_pool_size_by_hard_cell"]
+    assert "matched_cell_size_by_level" in matching_diagnostics
+    assert "n_persons_matched_from_single_donor_cell" in matching_diagnostics

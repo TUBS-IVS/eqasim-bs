@@ -1,4 +1,4 @@
-name: ile-de-france
+name: eqasim
 
 channels:
   - conda-forge
@@ -17,10 +17,12 @@ dependencies:
   - pytables=3.9.2
   - xlrd=2.0.1
   - openpyxl=3.1.0
-  - pip=23.0.1
+  - pip=26.2.1
   - python=3.10.10
   - py7zr=0.20.8
-  - pytest=7.2.2
+  # The production server's pip layer resolves the chainsolvers requirement
+  # (pytest>=8.4.2) to pytest 9.1.1; keep Windows at that known runtime version.
+  - pytest=9.1.1
   - xlwt=1.3.0
   - fiona=1.10.1
   - sqlite=3.49.1
@@ -38,6 +40,10 @@ dependencies:
   - psutil=7.2.2
 
   - pip:
+    # conda-lock resolves pip requirements independently of conda requirements.
+    # Repeat the production-effective pytest version so the pip layer installed
+    # with chainsolvers cannot select a different release.
+    - pytest==9.1.1
     - synpp==1.6.2
     - bhepop2==2.0.0
     # Secondary-location chain solver used by

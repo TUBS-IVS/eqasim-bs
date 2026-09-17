@@ -44,6 +44,16 @@ def main(argv=None) -> int:
     # w12_mean_length_target). Default False keeps the report byte-identical.
     ap.add_argument("--escort-passive-education", dest="escort_passive_education",
                     action="store_true", default=False)
+    # Issue #372: pass through when the population was ALSO built with
+    # escort_passive_from_adult ON, so the W1 passive remainder is redistributed over the
+    # purposes the pairing actually gives those legs (ausbildung, einkauf, freizeit,
+    # heimweg, sonstiges) in the measured proportions of the pinned split table, instead of
+    # all landing on ausbildung. Kept symmetric with
+    # braunschweig/analysis/population_validation/run_population_validation.py: the same
+    # population must not be scored against two different references depending on which
+    # entry point the reader used.
+    ap.add_argument("--escort-passive-from-adult", dest="escort_passive_from_adult",
+                    action="store_true", default=False)
     ns = ap.parse_args(argv)
 
     prefix = _detect_prefix(ns.output_dir)
@@ -58,7 +68,8 @@ def main(argv=None) -> int:
                 hh[["household_id", "household_size"]], on="household_id", how="left")
 
     report = TC.build_trip_coherence_report(
-        persons, trips, DATA_PATH, escort_passive_education=ns.escort_passive_education)
+        persons, trips, DATA_PATH, escort_passive_education=ns.escort_passive_education,
+        escort_passive_from_adult=ns.escort_passive_from_adult)
 
     print(f"\n=== Trip coherence: {label} ===")
     print(f"persons={report['n_persons']:,}  trips={report['n_trips']:,}")

@@ -17,12 +17,18 @@ docstring for the stage-level context.
 SHOP_SUBTYPE_ACTIVITIES = ("shop_daily", "shop_non_daily")
 
 # Internal leisure subtype activities (chainsolver-only; Task 4, issue #127).
-# Mirror the four purpose_subtype.LEISURE_GROUPS keys exactly (kept as literal
-# strings here, not imported, matching how SHOP_SUBTYPE_ACTIVITIES mirrors
-# shop_subtype's daily/non-daily vocabulary without importing it). They never
-# leak into the eqasim output: _extract_locations maps them back to "leisure".
+# Mirror purpose_subtype.leisure_spec(True, True).group_names exactly -- the four
+# W_ZWD LEISURE_GROUPS keys plus the W_ZWECK-defined "leisure_unspecified" group
+# (issue #373, ADR-0115) -- kept as literal strings here, not imported, matching
+# how SHOP_SUBTYPE_ACTIVITIES mirrors shop_subtype's daily/non-daily vocabulary
+# without importing it. The vocabulary is the WIDEST the deciders can produce, so
+# it always carries the fifth name: with leisure_unspecified_subtype off that
+# name simply counts 0 in subtype_stats and no leg is ever tagged with it (its
+# candidate offers and its potential column are then inert). They never leak into
+# the eqasim output: _extract_locations maps them all back to "leisure".
 LEISURE_SUBTYPE_ACTIVITIES = (
     "leisure_local", "leisure_visit", "leisure_activity", "leisure_excursion",
+    "leisure_unspecified",
 )
 
 # Internal "other" errand/escort subtype activities (chainsolver-only; Task 4,

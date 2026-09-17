@@ -42,6 +42,9 @@ KEY_STRATIFY = "braunschweig.population.popsim.stratify_regiostar"
 # Default ON (project rule: new features default on); False reproduces the
 # legacy load_mid_seed + load_donor path byte-identically.
 KEY_COMPLETE_MEMBERS = "braunschweig.population.popsim.complete_members"
+# MiD P_VAUTO-based passenger availability. The intentionally short public key
+# is shared with the MATSim preparation gate; it is effective only for popsim_mid.
+KEY_MID_PASSENGER_AVAILABILITY = "mid_passenger_availability"
 # Controls source: "csv" (default, byte-identical, reads the external hand-edited
 # file at KEY_CONTROLS) or "catalog" (renders from the typed control catalog via
 # control_spec; Task 5 of the control-catalog plan).
@@ -249,6 +252,19 @@ KEY_DIARY_MATCH_HARD_EMPLOYMENT = "braunschweig.population.popsim.diary_match_ha
 # stage that declares it used to spell the default as a literal `True`, so the default and
 # the key had two independent homes and could drift apart silently.
 DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT = True
+# Use the fine child age bands (6-9 / 10-13 instead of one 6-13 band) for the
+# `age_band` match key when the diary plan match re-draws a plan source
+# (issue #386). Under the coarse band a first-grader and a 13-year-old are
+# interchangeable donors although their school days differ systematically: on the
+# raw MiD 2023 B1 (measured 2026-09-09) a first education leg before 07:00 occurs
+# for 5.4 % of 6-9-year-olds but 18.2 % of 10-13-year-olds, and secondary-school
+# ways are longer than primary-school ways. The WEEKEND plan match keeps the coarse
+# edges (its draw sequence is a pinned byte-identity contract). Default ON; read
+# ONLY by braunschweig.popsim.completed_donor, which is where the diary match runs,
+# so it is declared there (like diary_match_hard_employment) and reaches the popsim
+# stage through that stage dependency.
+KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS = "braunschweig.population.popsim.donor_match_fine_child_age_bands"
+DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS = True
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
@@ -302,6 +318,225 @@ KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE = "braunschweig.population.popsim.trip_class_
 # SAME value. Read by braunschweig.popsim.stage -> mid.derive_education_flag_seed.
 KEY_ESCORT_PASSIVE_EDUCATION = "escort_passive_education"
 DEFAULT_ESCORT_PASSIVE_EDUCATION = False
+
+# Map MiD W_ZWECK 10 ("anderer Zweck") to the leisure purpose (issue #373, ADR-0111):
+# MiD's own hwzweck1 derivation folds code 10 to 6 Freizeit for 100% of legs (committed
+# evidence table mid2023_w_zweck_by_hwzweck1.csv), so the trip build, the seed and the
+# distance layers must all treat it as leisure or they describe different days again --
+# the same seed-vs-plan mismatch class KEY_ESCORT_PASSIVE_EDUCATION exists to close. A
+# TRIP-BUILD flag, declared with this exact unprefixed key name (like
+# escort_passive_education) by every stage that reads it: braunschweig.popsim.trips_stage,
+# braunschweig.popsim.distance_distributions, braunschweig.popsim.stage (the
+# leisure_participation KREIS-control seed must count the same W_ZWECK codes as leisure
+# that the trip build does) and
+# braunschweig.synthesis.commute_day.home_office_donors_stage. Default True is the
+# PRODUCTION default (issue #373 task 2); the CODE default of the map_purpose /
+# build_trip_table / participation_w_zweck keyword arguments stays False so a direct
+# caller/test that omits it keeps today's behaviour.
+KEY_W_ZWECK_10_AS_LEISURE = "w_zweck_10_as_leisure"
+DEFAULT_W_ZWECK_10_AS_LEISURE = True
+
+# Give a PAIRED passive escort leg (MiD W_ZWECK 13, "Begleitung, passiv") the purpose derived
+# from the accompanying adult's W_ZWECK instead of the flat escort_passive_education relabel
+# (issue #372, ADR-0112): the escorted child is wherever the adult went, and raw MiD B1 analysis
+# (2026-09-09) puts the adult's own escort leg -- the only case that really is the child's own
+# Kita/school trip -- at only ~21 % of the paired code-13 legs, so the flat "education" relabel is
+# wrong for the other ~79 %. A TRIP-BUILD flag, declared with this exact unprefixed key name (like
+# escort_passive_education / w_zweck_10_as_leisure) by every stage that reads it:
+# braunschweig.popsim.trips_stage, braunschweig.popsim.distance_distributions,
+# braunschweig.popsim.stage (its education_flag KREIS-control seed must count exactly the code-13
+# legs the trip build realises as education -- the seed-vs-plan mismatch class
+# KEY_ESCORT_PASSIVE_EDUCATION exists to close) and
+# braunschweig.synthesis.commute_day.home_office_donors_stage. Default True is the PRODUCTION
+# default (project rule: new features default on); the CODE default of the map_purpose /
+# build_trip_table / trips_stage.run keyword arguments stays False so a direct caller/test that
+# omits it keeps today's behaviour.
+#
+# THE ONE STATEMENT of this flag's two defaults (referenced, never repeated, elsewhere): the
+# CODE / DECLARED default is False; the PRODUCTION value true is set in configs/base_bs.yml (added
+# by task 7 of issue #372 together with ADR-0112), so a config that does NOT compose that base
+# leaves the feature off. The declared default is False, like KEY_ESCORT_PASSIVE_EDUCATION's above and
+# unlike KEY_W_ZWECK_10_AS_LEISURE's, because this flag REQUIRES escort_purpose, whose own
+# declared default is False: a True declared default would make the declared default SET
+# internally inconsistent -- a config that sets nothing would abort inside
+# braunschweig.popsim.trips_stage after the full PopulationSim balancing, which is exactly the
+# failure issue #373 fix round 1 found and the ENTD_REJECTED_KEYS guard below exists to prevent.
+# The same split applies to KEY_PASSIVE_PAIR_MAX_GAP_MINUTES below.
+KEY_ESCORT_PASSIVE_FROM_ADULT = "escort_passive_from_adult"
+DEFAULT_ESCORT_PASSIVE_FROM_ADULT = False
+# Maximum |departure-time gap| in MINUTES between a passive escort leg and the adult leg it is
+# paired with; a nearest candidate farther than this leaves the leg UNPAIRED (it then keeps the
+# escort_passive_education rule). Unit: minutes. Valid range: > 0. Inert while
+# KEY_ESCORT_PASSIVE_FROM_ADULT is off.
+#
+# The default MUST equal braunschweig.popsim.escort_pairing.DEFAULT_MAX_GAP_MINUTES (the module
+# that OWNS the pairing, and where the 94.8 %-within-15-minutes raw-MiD measurement behind the
+# value is documented). It is repeated as a literal here because THIS module is a leaf by
+# contract (see the module docstring: no imports from this package), and pinned equal by
+# tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes.
+KEY_PASSIVE_PAIR_MAX_GAP_MINUTES = "escort_passive_pair_max_gap_minutes"
+DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
+
+# W_ZWD codeplan no-detail sentinel treatment (issue #242 Task 5, ADR-0113): moves the
+# two NO-DETAIL ("keine Angabe") W_ZWD codes -- 799 "Freizeit k.A." (in
+# purpose_subtype.LEISURE_GROUPS["leisure_activity"]) and 699 "Erledigung k.A." (in
+# purpose_subtype.OTHER_ERRAND_GROUPS["other_errand_long"]) -- out of their group and
+# into their spec's sentinel set (purpose_subtype.leisure_spec() /
+# other_errand_spec()). NOT a trip-build flag (trips_stage never reads it, so it is
+# absent from ENTD_REJECTED_KEYS below); it only governs which purpose_subtype.
+# SubtypeSpec two DOWNSTREAM MiD-only consumers estimate from. Declared with this
+# exact unprefixed key name and this exact default by BOTH
+# braunschweig.popsim.distance_distributions.configure (the leisure_activity /
+# other_errand_long DISTANCE-layer donor pool, run() Steps 8/9) and
+# braunschweig.synthesis.locations.secondary_chainsolvers.configure (the leisure/
+# other subtype deciders' ESTIMATION, re-read via the single-argument execute-context
+# form inside deciders.py's _build_leisure_subtype_decider /
+# _build_other_subtype_decider) -- all three sites import this constant rather than
+# retyping the key string, so they cannot silently resolve different keys or
+# defaults. Default True (project rule: new features default on); the production
+# value is also set in configs/base_bs.yml (issue #242 Task 7).
+KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = "purpose_subtype_codeplan_sentinels"
+DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS = True
+
+# leisure_unspecified_subtype (issue #373, ADR-0115): MiD W_ZWECK 10 legs -- leisure via
+# w_zweck_10_as_leisure, never carrying a W_ZWD detail -- form the fifth leisure subtype
+# "leisure_unspecified" with its own distance layer instead of being imputed one of the four W_ZWD
+# groups. Read by braunschweig.popsim.distance_distributions (the layer) AND
+# braunschweig.synthesis.locations.secondary_chainsolvers (the decider); both must resolve the same
+# value. Effective only with secondary_leisure_subtype_split on; REQUIRES w_zweck_10_as_leisure
+# (both stages raise at configure time otherwise: with the fold off no code-10 leg is leisure, so
+# the class would be estimated but never realised). Not a trip-build key -> not in
+# ENTD_REJECTED_KEYS (same reasoning as KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+KEY_LEISURE_UNSPECIFIED_SUBTYPE = "leisure_unspecified_subtype"
+DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
+
+# secondary_mid_weekday_legs_only (issue #373, ADR-0116): the secondary distance layers
+# (braunschweig.popsim.distance_distributions, ALL layers -- aggregate, per-purpose and every
+# subtype layer) and the three MiD-based subtype deciders
+# (braunschweig.synthesis.locations.secondary_chainsolvers.deciders) estimate on the WEEKDAY
+# diary universe -- the seed's own day filter and no rbW summary records
+# (braunschweig.popsim.trips.weekday_diary_leg_mask) -- instead of every delivered MiD Wege row.
+# The synthetic population IS a weekday, and the committed MiD reference tables measure that
+# same universe, so without this a Tuesday plan drew its leisure types and distances partly from
+# weekend diaries (ADR-0115 "Two universes"). Both stages must resolve the SAME value: the
+# decider labels a leg and the layer supplies that label's donor pool, so a config in which they
+# disagreed would pair a label from one universe with a pool from the other -- hence the single
+# home here and the imported constants in both configure() calls. Default True (project rule:
+# new features default on); the CODE default of distance_distributions.run's keyword stays False
+# so a direct caller/test that omits it keeps today's behaviour. NOT a trip-build key -> not in
+# ENTD_REJECTED_KEYS (same reasoning as KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS: popsim_open keeps
+# the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
+KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
+DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+# Departure-time (start-time) model of the trip build and of the commute-day plan replacement
+# (issue #123, ADR-0114): which of the three models in
+# braunschweig.popsim.departure_time_model.MODELS shapes a person's FIRST departure --
+# "eqasim_uniform" (the unchanged eqasim +/- min(1800 s, first departure) jitter), "derounded"
+# (de-round inside the survey's own reporting grid) or "srv_mapped" (de-round, then quantile-map
+# rank-preservingly onto the committed SrV first-departure distribution of that person's
+# (purpose x harmonised group) cell). A FLAT key (like escort_passive_education /
+# w_zweck_10_as_leisure), declared with this exact unprefixed name by every stage that reads it:
+# braunschweig.popsim.trips_stage and braunschweig.synthesis.commute_day.trips_day_stage. Both
+# must resolve the SAME value, or the pre-assignment day and the reporting day would be built
+# with different start-time models.
+#
+# THE ONE STATEMENT of this flag's two defaults: the CODE / DECLARED default is
+# "eqasim_uniform", i.e. the byte-identical OFF path -- a change of realised departure times must
+# be an explicit, flagged decision, and the OFF path is also what EntdSource.build_trips accepts
+# (see ENTD_REJECTED_KEYS below). The PRODUCTION value "srv_mapped" is set in configs/base_bs.yml
+# by task 6 of issue #123, so a config that does NOT compose that base leaves the model off.
+#
+# The value is repeated here as a literal rather than imported from
+# braunschweig.popsim.departure_time_model.MODEL_EQASIM_UNIFORM because THIS module is a leaf by
+# contract (see the module docstring: no imports from this package); the two homes are pinned
+# equal by tests/test_popsim_trips_stage.py::
+# test_departure_time_model_default_agrees_with_the_model_module -- the same treatment
+# DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES gets above.
+KEY_DEPARTURE_TIME_MODEL = "departure_time_model"
+DEFAULT_DEPARTURE_TIME_MODEL = "eqasim_uniform"
+
+# The three PARAMETERS of the srv_mapped model's coarsening ladder and its median-shift guard
+# (braunschweig.popsim.departure_time_model.quantile_map_first_departures /
+# apply_departure_time_model own the semantics; these constants only state the values the stages
+# declare them with). All three are inert unless KEY_DEPARTURE_TIME_MODEL is "srv_mapped".
+# Unlike the model key itself they are NOT MiD-only, so they are deliberately absent from
+# ENTD_REJECTED_KEYS: they size a mapping the model-key rejection already forbids on that path.
+#
+# Minimum unweighted SrV observations a reference cell must carry for the ladder to map onto it.
+# Unit: persons (unweighted survey observations). Valid range: >= 1.
+KEY_DEPARTURE_TIME_MIN_REFERENCE_N = "departure_time_mapping_min_reference_n"
+DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N = 200
+# Minimum size of a ladder rung's RANKING BASE -- the distribution a person's quantile is computed
+# in -- for that rung to be used; a thinner one climbs to the next rung instead of being ranked
+# against the reference on its own. ONE rule at both call sites (rulings A-R18 / A-R20): the base is
+# the model population of that rung's own key, arriving as the mapped set itself in the
+# whole-population trip build and as the POPULATION ranking context in the reporting-day splice.
+# Clamped to >= 1 in the model, as min_reference_n is: a rung with an EMPTY base is never usable.
+# Unit: persons (synthetic). Valid range: >= 1.
+KEY_DEPARTURE_TIME_MIN_MODEL_N = "departure_time_mapping_min_model_n"
+DEFAULT_DEPARTURE_TIME_MIN_MODEL_N = 50
+# Cell-level observability guard: a mapping cell whose median |shift| exceeds this is WARNED
+# about, naming the cell and both its medians. Unit: hours. Valid range: > 0. The offsets are
+# never clipped to it -- a large shift is a finding about the donor, not something to hide.
+KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS = "departure_time_mapping_max_median_shift_hours"
+DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS = 2.0
+
+# exclude_no_answer_purpose_legs (issue #373 follow-up, ADR-0117): MiD legs whose MAIN purpose is
+# the no-answer code W_ZWECK 99 ("keine Angabe", trips.W_ZWECK_NO_ANSWER_CODE) are excluded from
+# every secondary ESTIMATION -- the per-purpose and per-subtype distance pools
+# (braunschweig.popsim.distance_distributions) and the coarse other-split probabilities
+# (braunschweig.synthesis.locations.secondary_chainsolvers.deciders) -- so the remaining purposes'
+# shares and pools renormalise over legs whose purpose is actually known. The trip build is
+# deliberately NOT changed: the leg is a real trip and keeps the "other" purpose the map assigns,
+# because deleting it would remove a trip the person made and inventing a purpose would fabricate
+# behaviour. Both stages must resolve the SAME value (one labels, the other supplies that label's
+# pool). Not a trip-build key -> not in ENTD_REJECTED_KEYS (popsim_open keeps the ENTD CDFs and
+# never estimates on MiD, so the key is inert there).
+KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = "exclude_no_answer_purpose_legs"
+DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = True
+
+# MiD-only trip-build config keys that braunschweig.popsim.sources.entd.EntdSource.
+# build_trips REJECTS on a non-default value, mapped to the SAFE (non-rejected) value
+# each must be set to for a popsim_open (ENTD source) run -- ENTD carries none of the
+# MiD-specific codings (W_RBW rbW-leg flag, W_SO1 diary start situation, W_ZWECK purpose
+# vocabulary) or the MiD Wege table the empirical closure dwell is estimated from.
+#
+# Defined ONCE so a newly REJECTED keyword cannot silently reopen the bug issue #373 fix
+# round 1 found: two popsim_open fixtures (config_popsim_open_braunschweig.yml,
+# config_smoke_popsim_open_mini.yml) silently missed the w_zweck_10_as_leisure override
+# this key's own addition required (it defaults to True, EntdSource.build_trips rejects
+# True), so both configurations aborted inside braunschweig.popsim.trips_stage AFTER the
+# full PopulationSim balancing. EntdSource.build_trips' rejection checks read this SAME
+# dict for their comparison values (deferred import -- see that module's docstring for
+# why config_keys cannot be imported at ITS module level), and
+# tests/test_popsim_open_config.py's popsim_open config-parity guard reads it too, so a
+# future MiD-only rejection (e.g. issue #373 task 4's two passive-escort keywords) is
+# enforced on every popsim_open fixture automatically.
+#
+# Both passive-escort keys (issue #372 task 4) are listed, not only the boolean one (controller
+# ruling C-R7): the gap threshold alone cannot do anything on an ENTD run either -- there is no
+# W_ZWECK 13 to pair and no HP_ALTER/W_SZS household diary to pair it against -- so a run that
+# deliberately TUNED it would otherwise be silently inert. That is the opposite treatment from
+# closure_dwell_min_obs, which is accepted-and-ignored because it only sizes cells of a model the
+# closure_dwell_model rejection already forbids building; a tuned gap has no such second guard
+# naming it, and the parity guard over this dict is what keeps every popsim_open fixture honest.
+#
+# KEY_DEPARTURE_TIME_MODEL (issue #123 task 4) is listed for the same reason: the ENTD trip build
+# (braunschweig.popsim.sources.entd_trips.build_trips) has its own eqasim jitter call and never
+# reaches braunschweig.popsim.trips_stage.run, where the departure-time model is applied, so a
+# non-default model configured for a popsim_open run would be silently unapplied. Its three
+# NUMERIC parameters are deliberately NOT listed: they only size a mapping this rejection already
+# forbids, which is the closure_dwell_min_obs treatment rather than the passive-pair-gap one --
+# the model key itself names them in its message, so no tuned threshold can pass unnoticed.
+ENTD_REJECTED_KEYS: dict[str, object] = {
+    KEY_EXCLUDE_RBW_LEGS: False,
+    KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
+    KEY_CLOSURE_DWELL_MODEL: "fixed_1h",
+    KEY_W_ZWECK_10_AS_LEISURE: False,
+    KEY_ESCORT_PASSIVE_FROM_ADULT: False,
+    KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    KEY_DEPARTURE_TIME_MODEL: DEFAULT_DEPARTURE_TIME_MODEL,
+}
 
 
 # Config toggle per KREIS attribute control (kreis_attribute_control.REGISTRY entry).

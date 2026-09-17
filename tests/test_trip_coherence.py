@@ -417,8 +417,11 @@ def test_escort_active_length_reference_loads_code_6_row():
         load_escort_active_length_reference,
     )
     ref = load_escort_active_length_reference(DATA_PATH)
-    assert ref["mean_km"] == pytest.approx(8.4413)
-    assert ref["median_km"] == pytest.approx(2.94)
+    # Values re-pinned when mid2023_escort_w_zweck_split.csv was regenerated on the WEEKDAY
+    # reporting-day universe the PopulationSim seed keeps (issue #372 fix round 1, ruling C-R18):
+    # code_6 mean 8.4413 -> 7.3458 km, median 2.94 -> 2.85 km. The table, not the loader, changed.
+    assert ref["mean_km"] == pytest.approx(7.3458)
+    assert ref["median_km"] == pytest.approx(2.85)
     band_cols = {"d_unter_0_5km", "d_0_5_1km", "d_1_2km", "d_2_5km", "d_5_10km",
                 "d_10_20km", "d_20_50km", "d_50_100km", "d_100km_plus"}
     assert set(ref) == {"mean_km", "median_km"} | band_cols
@@ -507,7 +510,8 @@ def test_w12_mean_length_target_escort_active_reference_when_passive_education_o
     assert set(on) == set(off)
     # escort switches from the both-sides MiD W12 Begleitung mean (10.1 km) to
     # the active-only pinned-split code_6 mean; the other purposes are untouched.
-    assert on["escort"] == pytest.approx(8.4413)
+    # Re-pinned 8.4413 -> 7.3458 with the weekday-universe regeneration (ruling C-R18).
+    assert on["escort"] == pytest.approx(7.3458)
     assert on["escort"] != off["escort"]
     for p in ("work", "education", "shop", "leisure"):
         assert on[p] == pytest.approx(off[p])
@@ -551,4 +555,5 @@ def test_build_trip_coherence_report_threads_escort_passive_education():
     off_escort = {r["purpose"]: r for r in off["length"]}["escort"]
     on_escort = {r["purpose"]: r for r in on["length"]}["escort"]
     assert off_escort["target_km"] != on_escort["target_km"]
-    assert on_escort["target_km"] == pytest.approx(8.4413)
+    # Re-pinned 8.4413 -> 7.3458 with the weekday-universe regeneration (ruling C-R18).
+    assert on_escort["target_km"] == pytest.approx(7.3458)

@@ -19,6 +19,38 @@ import pandas as pd
 from .activity_types import ESCORT_CATEGORY_TO_ACTIVITY
 
 
+def _anchored_side_masks(out: pd.DataFrame, anchored: pd.MultiIndex, *,
+                         candidate_preceding=None, candidate_following=None):
+    """POSITIONAL boolean masks of the trip rows on either side of an anchored activity.
+
+    A trip's ``preceding_purpose`` reflects activity ``trip_index`` and its
+    ``following_purpose`` activity ``trip_index + 1``, so each side is probed against
+    ``anchored`` (a ``(person_id, activity_index)`` MultiIndex) with its own activity
+    index (the ``activity_offset`` below). ``candidate_preceding`` /
+    ``candidate_following`` are optional positional boolean arrays pre-selecting the rows
+    worth probing (issue #201 only rewrites rows whose purpose is already ``escort``): the
+    MultiIndex and the activity index are then built over those rows only, which is the
+    dominant cost at scale. ``None`` probes every row. The masks are positional, so a
+    non-monotonic row index is handled.
+    """
+    def _side_mask(activity_offset, candidate):
+        if candidate is None:
+            trip_index = out["trip_index"]
+            activity_index = trip_index + activity_offset if activity_offset else trip_index
+            return pd.MultiIndex.from_arrays(
+                [out["person_id"], activity_index]).isin(anchored)
+        mask = np.zeros(len(out), dtype=bool)
+        if candidate.any():
+            trip_index = out.loc[candidate, "trip_index"]
+            activity_index = trip_index + activity_offset if activity_offset else trip_index
+            mask[candidate] = pd.MultiIndex.from_arrays([
+                out.loc[candidate, "person_id"], activity_index,
+            ]).isin(anchored)
+        return mask
+
+    return _side_mask(0, candidate_preceding), _side_mask(1, candidate_following)
+
+
 def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
                                 df_anchors: pd.DataFrame) -> pd.DataFrame:
     """Return a COPY of the trips frame where ANCHORED escort activities'
@@ -42,28 +74,42 @@ def rewrite_linked_escort_trips(df_trips: pd.DataFrame,
     scale for a candidate set this small."""
     out = df_trips.copy()
     anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
-
-    candidate_preceding = (out["preceding_purpose"] == "escort").to_numpy()
-    candidate_following = (out["following_purpose"] == "escort").to_numpy()
-
-    mask_preceding = np.zeros(len(out), dtype=bool)
-    if candidate_preceding.any():
-        preceding_activity = pd.MultiIndex.from_arrays([
-            out.loc[candidate_preceding, "person_id"],
-            out.loc[candidate_preceding, "trip_index"],
-        ])
-        mask_preceding[candidate_preceding] = preceding_activity.isin(anchored)
-
-    mask_following = np.zeros(len(out), dtype=bool)
-    if candidate_following.any():
-        following_activity = pd.MultiIndex.from_arrays([
-            out.loc[candidate_following, "person_id"],
-            out.loc[candidate_following, "trip_index"] + 1,
-        ])
-        mask_following[candidate_following] = following_activity.isin(anchored)
-
+    mask_preceding, mask_following = _anchored_side_masks(
+        out, anchored,
+        candidate_preceding=(out["preceding_purpose"] == "escort").to_numpy(),
+        candidate_following=(out["following_purpose"] == "escort").to_numpy(),
+    )
+    # Boolean (positional) .loc assignment exactly as before the helper extraction.
     out.loc[mask_preceding, "preceding_purpose"] = "escort_linked"
     out.loc[mask_following, "following_purpose"] = "escort_linked"
+    return out
+
+
+def rewrite_anchored_activities(df_trips: pd.DataFrame, df_anchors: pd.DataFrame,
+                                fixed_purpose: str) -> pd.DataFrame:
+    """Return a COPY of the trips frame where BOTH sides of every anchored activity carry
+    ``fixed_purpose``, whatever the plan-level purpose was (issue #385, ADR-0119).
+
+    Unlike :func:`rewrite_linked_escort_trips`, which only touches activities whose purpose
+    is already ``escort``, the passive joint anchor applies to ``shop`` / ``leisure`` /
+    ``other`` activities, so the rewrite is keyed on ``(person_id, activity_index)`` alone.
+    A trip's ``preceding_purpose`` is activity ``trip_index``, its ``following_purpose``
+    activity ``trip_index + 1``. Only the chainsolver-local problem construction sees this
+    frame; the persisted plans keep the real purpose. Positional boolean masks, so a
+    non-monotonic AND a duplicate row index are both handled.
+    """
+    out = df_trips.copy()
+    if len(df_anchors) == 0:
+        return out
+    anchored = pd.MultiIndex.from_frame(df_anchors[["person_id", "activity_index"]])
+    # No candidate pre-filter: every activity of the pass frame may be anchored.
+    mask_preceding, mask_following = _anchored_side_masks(out, anchored)
+    # Boolean (positional) .loc assignment, exactly as in rewrite_linked_escort_trips.
+    # Passing the mask itself keeps the selection POSITIONAL; resolving it to labels first
+    # (out.index[mask]) would rewrite every row sharing a selected label, which silently
+    # corrupts an unrelated person's purposes on a frame with a duplicate index.
+    out.loc[mask_preceding, "preceding_purpose"] = fixed_purpose
+    out.loc[mask_following, "following_purpose"] = fixed_purpose
     return out
 
 

@@ -100,6 +100,24 @@ def _empty_frames(crs=CRS_METRIC):
     }
 
 
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.synthesis.incommuters",
+    "braunschweig.data.cordon.plans",
+)
+
+
+def validate(context):
+    """Include the shared assembly and time-repair helpers in the cache token."""
+    import hashlib
+    import importlib
+    import inspect
+
+    digest = hashlib.md5()
+    for name in _DEFERRED_HELPER_MODULE_NAMES:
+        digest.update(inspect.getsource(importlib.import_module(name)).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def configure(context):
     context.config("cordon_enabled")
     context.config("braunschweig.political_prefix")
@@ -112,6 +130,7 @@ def configure(context):
     context.config("random_seed")
     context.config("cordon_network_source_buffer_m")
     context.config("cordon_gate_speed_kmh", 30.0)
+    context.config("cordon_incommuter_time_chronology", True)
     context.config("data_path")
     # Mirror the keys declared by braunschweig.data.external_workplaces.configure()
     # (as braunschweig.synthesis.incommuters.configure() also does) so that
@@ -476,7 +495,8 @@ def _inject(context):
     core = assemble_incommuter_core_frames(
         person_ids, home_x, home_y, dest_x, dest_y, edu_location_ids,
         depart_home, arrive_mid, depart_mid, arrive_home, modes,
-        municipalities.crs, middle_purpose="education")
+        municipalities.crs, middle_purpose="education",
+        repair_chronology=context.config("cordon_incommuter_time_chronology"))
 
     # 10. Minimal student persons/households (no income tilt, no fleet).
     persons = _build_student_persons(ids, donors, modes)

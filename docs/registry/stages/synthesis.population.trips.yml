@@ -20,15 +20,27 @@ production: true
 resolves_to:
   popsim_mid: braunschweig.popsim.trips_stage
   popsim_open: braunschweig.popsim.trips_stage
+inputs:
+- srv2023_departure_time_reference
 features:
+- performance_equivalence
 - escort_purpose
+- escort_passive_from_adult
 - home_closure_model
+- no_answer_codes_excluded
+- purpose_main_fold_code_10
 - rbw_leg_convention
+- departure_time_model
 decisions:
+- ADR-0122
 - ADR-0072
 - ADR-0073
 - ADR-0107
 - ADR-0108
+- ADR-0111
+- ADR-0112
+- ADR-0114
+- ADR-0117
 notes: >-
   Three MiD-ONLY config keys are read by braunschweig.popsim.trips_stage (issues #366 / #367):
   braunschweig.population.popsim.exclude_rbw_legs drops MiD "regelmaessige berufliche Wege"
@@ -42,3 +54,80 @@ notes: >-
   set them to their OFF values explicitly. The stage logs the dropped-leg rates, the closure
   shares and the dwell-fallback rates; is_synthetic_closure marks the synthesised rows on the
   cached frame and deliberately does NOT reach trips.csv (explicit column list there).
+
+
+  PURPOSE CORRECTNESS (issues #373 / #372, ADR-0111 / ADR-0112, feature records
+  purpose_main_fold_code_10 and escort_passive_from_adult): three further MiD-only keys are declared
+  and read here, all UNPREFIXED (like escort_purpose / escort_passive_education, unlike the
+  braunschweig.population.popsim.* plan-structure keys above), each from the shared constant pair in
+  braunschweig.popsim.stage.config_keys so the four stages that read them cannot disagree about a
+  key name or a default. w_zweck_10_as_leisure (declared default true) relabels W_ZWECK 10 "anderer
+  Zweck" to leisure, following MiD's own hwzweck1 fold; escort_passive_from_adult (declared default
+  FALSE, production true in configs/base_bs.yml -- it REQUIRES escort_purpose, whose declared
+  default is false, so a true declared default would make the declared default set internally
+  inconsistent) gives a PAIRED passive escort leg (W_ZWECK 13) the purpose of the accompanying
+  adult's leg, with escort_passive_pair_max_gap_minutes
+  (unit: minutes, default 15.0) the pairing window. Ruling C-R22 (issue #373 cleanup wave): this
+  stage's OWN configure() now ALSO raises ValueError naming BOTH keys when
+  escort_passive_from_adult is on and escort_purpose is off, so synpp fails the whole DAG before
+  any stage executes; map_purpose's own identical check is kept as the last line of defense for a
+  direct caller outside this stage's configure()/execute() contract (previously the ONLY check,
+  which meant a misconfigured run discovered the contradiction only at trip-build time, i.e. after
+  every upstream stage -- including the full PopulationSim balancing -- had already run).
+  EntdSource.build_trips REJECTS a
+  non-default value for all three (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
+  ENTD has neither a W_ZWECK vocabulary nor the household/time columns the pairing needs) and both
+  popsim_open fixtures set the OFF values explicitly. The pairing runs on the RAW Wege frame inside
+  map_purpose, so the stage needs HP_ALTER, H_ID, W_SZS and W_SZM present at that point; the code
+  relabel and the pairing both log explicit rates. braunschweig.popsim.escort_pairing is folded into
+  this stage's _HELPER_MODULES, so a change to the pairing rule invalidates the stage's cache.
+
+
+  TRIP-LENGTH GUARD (issue #373, ADR-0117, feature record no_answer_codes_excluded): the
+  euclidean_distance column this stage puts on the trips CONTRACT is now built through
+  braunschweig.popsim.diary_facts.validate_trip_length_km instead of a bare astype(float). A MiD
+  design code (>= 9994 "unplausibel" / "keine Angabe") or a non-positive length RAISES naming this
+  stage and the counts, because such a value would leave the contract as a 7,688 km straight-line
+  leg and reach every downstream consumer, including the commute-distance donor pool that imputes
+  OTHER persons' missing distances from it. A structurally missing length is counted and logged,
+  not raised on: the closure/dwell synthesis adds legs that were never surveyed and therefore
+  carry no wegkm_imp. Byte-identical on the 2026-09 delivery, which carries no impossible value
+  in 1,087,393 rows. This stage does NOT change how a W_ZWECK 99 leg is mapped -- it keeps the
+  purpose "other", because the trip is real; only the ESTIMATIONS exclude it (ADR-0117 Decision 2).
+  DEPARTURE-TIME MODEL (issues #123 / #384, ADR-0114, feature record departure_time_model): four
+  further flat keys are declared and read here, again from the shared constant pair in
+  braunschweig.popsim.stage.config_keys. departure_time_model itself IS MiD-only (rejected by
+  EntdSource, see below) -- declared default eqasim_uniform, production srv_mapped in
+  configs/base_bs.yml. The other three -- departure_time_mapping_min_reference_n (200, unit:
+  unweighted SrV observations), departure_time_mapping_min_model_n (50, unit: persons, sizing a
+  ladder rung RANKING BASE -- the model population of that rung own key, which at this call site
+  is the mapped set itself because that set IS the whole population; this stage passes no ranking
+  context, see rulings A-R18 / A-R20 and the synthesis.population.trips.final record) and
+  departure_time_mapping_max_median_shift_hours (2.0, unit: hours) -- are deliberately NOT
+  MiD-only: they are MODEL PARAMETERS that only size the srv_mapped coarsening ladder, a mapping
+  the model-key rejection already forbids on the ENTD path, so they are inert-and-accepted there
+  rather than rejected (config_keys.py's own comment states this split explicitly). All three are
+  inert unless the model is srv_mapped. run() dispatches through
+  braunschweig.popsim.departure_time_model.apply_departure_time_model instead of calling
+  apply_per_person_jitter directly; execute() resolves the model FIRST and loads the committed
+  SrV reference (data record srv2023_departure_time_reference) via load_reference_for_model, which
+  raises naming both the expected path and the config key rather than running uncalibrated. The
+  persons frame is adapted with persons_from_synthetic_schema (age / employed, the SAME adapter
+  the plan replacement and the comparison stage use -- ruling A-R17, final fix wave item 1;
+  employed is the population's IMPUTED braunschweig.popsim.attributes.map_employed value, not a
+  raw MiD code) at the TOP of run(), built ONLY for srv_mapped (final fix wave item 2 -- derounded
+  uses no group at all), so a schema gap fails in seconds and only for the one model that consumes
+  it. EVERY model -- eqasim_uniform included -- writes the per-person offset
+  it applied as the new column departure_time_offset_seconds (OFFSET_COLUMN, declared in
+  departure_time_model and re-exported here); synthesis.output selects its columns explicitly, so
+  trips.csv is unchanged. The stage logs the model name and the coarsening-level split via
+  departure_time_model.format_level_split ("[trips_stage] departure-time model: ... mapping level:
+  ..."), the model logs its own per-cell detail under [departure time]. EntdSource.build_trips
+  REJECTS a non-default departure_time_model (config_keys.ENTD_REJECTED_KEYS) because the ENTD
+  trip build never reaches the model at all; both popsim_open fixtures set departure_time_model:
+  eqasim_uniform explicitly. _HELPER_MODULES gained departure_time_model plus the four modules it
+  imports at module level (calibration.reported_time_precision, calibration.srv_departure_times,
+  calibration.srv_plan_structure, popsim.attributes) because validate() hashes non-transitively;
+  the last four are CROSS-package, which tests/test_synpp_helper_hash_invariant.py cannot police.
+  The mechanism itself -- precision rule, mapping, ladder, guards, the second call site in the
+  reporting-day view -- lives once in docs/codebase/notes/departure-time-model.md.

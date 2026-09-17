@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 83 | stages: 123 | datasets: 72 | ADRs: 109 | run manifests: 37
+- Features: 97 | stages: 125 | datasets: 75 | ADRs: 126 | run manifests: 46
 
 ## Population synthesis
 
@@ -44,6 +44,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Housing tenure (completeness)](../registry/features/housing_tenure.yml) | active | ON | A/A/A | unvalidated |  |
 | [Income-aware #cars](../registry/features/income_aware_cars.yml) | active | off | -/-/A | unvalidated |  |
 | [Kreis income control (popsim)](../registry/features/kreis_income_control.yml) | active | off | i/i/- | unvalidated |  |
+| [MiD passenger access independent of driver access](../registry/features/mid_passenger_availability.yml) | active | ON | A/-/- | unvalidated (`smoke-mid-passenger-availability-2026-09-15`) | [#398](https://github.com/TUBS-IVS/eqasim-bs/issues/398) |
 | [Participation controls conditional on their universe (#368)](../registry/features/participation_universe_controls.yml) | active | ON | A/i/- | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | [#368](https://github.com/TUBS-IVS/eqasim-bs/issues/368) |
 | [Placement income L2 (#108)](../registry/features/placement_income_l2.yml) | active | ON | A/A/- | measured_vs_reference (`placement-income-l2-gate-2026-07-18`) | [#108](https://github.com/TUBS-IVS/eqasim-bs/issues/108) |
 | [PT subscription (P24.1, 3-margin IPF)](../registry/features/pt_subscription_conditioned.yml) | active | off | -/-/A | unvalidated |  |
@@ -54,14 +55,19 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-15 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`
+16 stage(s), 9 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Commute-day-state model (far/weekly out-commuters)](../registry/features/commute_day_state.yml) | active | ON | A/-/- | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
+| [Departure-time model (precision-aware de-rounding and SrV first-departure mapping)](../registry/features/departure_time_model.yml) | active | ON | A/i/- | unvalidated | [#123](https://github.com/TUBS-IVS/eqasim-bs/issues/123) |
+| [Passive escort legs take the purpose of the paired same-household adult leg](../registry/features/escort_passive_from_adult.yml) | active | ON | A/i/- | unvalidated | [#372](https://github.com/TUBS-IVS/eqasim-bs/issues/372) |
+| [Passive escort joint activities anchor at the accompanying adult's placed secondary location](../registry/features/escort_passive_joint_location.yml) | active | ON | A/i/- | unvalidated (`i385-passive-joint-location-smoke-03101-2026-09-11`, `i385-passive-joint-location-production-smoke-03101-2026-09-15`) | [#385](https://github.com/TUBS-IVS/eqasim-bs/issues/385) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
+| [General reporting-day absence (two-stage SrV-anchored state draw)](../registry/features/general_day_absence.yml) | active | ON | A/-/- | measured_vs_reference (`general-day-absence-arm0-100pct-2026-09-09`, `general-day-absence-arm1-100pct-2026-09-09`) | [#370](https://github.com/TUBS-IVS/eqasim-bs/issues/370) |
 | [Home-end closure with an observed dwell, counted in the seed (#367)](../registry/features/home_closure_model.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#367](https://github.com/TUBS-IVS/eqasim-bs/issues/367) |
+| [MiD W_ZWECK 10 "anderer Zweck" follows MiD's own main-purpose fold (leisure)](../registry/features/purpose_main_fold_code_10.yml) | active | ON | A/i/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [rbW legs are movement within the work activity (#366)](../registry/features/rbw_leg_convention.yml) | active | ON | A/i/- | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | [#366](https://github.com/TUBS-IVS/eqasim-bs/issues/366) |
 
 ## Vehicle fleet
@@ -72,6 +78,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Fleet consistency v2 + income-age](../registry/features/fleet_consistency_v2.yml) | active | ON | A/A/- | unvalidated |  |
 | [BEV/electric calibration](../registry/features/fleet_electric_calibration.yml) | active | ON | A/A/- | unvalidated |  |
+| [Per-Gemeinde BEV:PHEV composition tilt (structure from FZ 27.17)](../registry/features/fleet_gemeinde_bev_composition_tilt.yml) | active | ON | A/A/- | unvalidated | [#317](https://github.com/TUBS-IVS/eqasim-bs/issues/317) |
 | [HSN/TSN engine attrs (kW/ccm/fuel)](../registry/features/fleet_hsn_tsn_attributes.yml) | active | ON | A/A/- | unvalidated |  |
 | [Fleet realism upgrade (all-Kreise fuel/euro, EV-income tilt, Euro-6 substage, RS7 cross-check)](../registry/features/fleet_realism_upgrade.yml) | active | ON | A/A/- | unvalidated | [#277](https://github.com/TUBS-IVS/eqasim-bs/issues/277) |
 | [German fleet segment+brand mix](../registry/features/fleet_segment_brand_mix.yml) | active | ON | A/A/- | unvalidated |  |
@@ -120,8 +127,12 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Building potentials — secondary](../registry/features/building_potentials_secondary.yml) | active | ON | A/i/i | unvalidated |  |
 | [Calibration: Tier-3 detour/circuity curve](../registry/features/detour_circuity_curve.yml) | supported | off | i/i/i | unvalidated |  |
+| [leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype](../registry/features/leisure_unspecified_subtype.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
+| [exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose, and a design code can never become a distance](../registry/features/no_answer_codes_excluded.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [Calibration: purpose-resolved secondary](../registry/features/secondary_distance_by_purpose.yml) | active | ON | A/i/i | unvalidated |  |
+| [secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders estimate on the weekday diary universe](../registry/features/secondary_mid_weekday_universe.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [SrV-grounded secondary location types for leisure/other (#262)](../registry/features/secondary_srv_location_types.yml) | active | ON | A/-/- | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | [#262](https://github.com/TUBS-IVS/eqasim-bs/issues/262) |
+| [W_ZWD no-detail codes (799, 699) are subtype sentinels, labels verified against the codeplan](../registry/features/w_zwd_codeplan_sentinels.yml) | active | ON | A/-/- | unvalidated | [#242](https://github.com/TUBS-IVS/eqasim-bs/issues/242) |
 
 ## Cordon / external demand
 
@@ -133,6 +144,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Mode balancer](../registry/features/cordon_mode_balancer.yml) | active | ON | A/A/- | unvalidated |  |
 | [Cordon network ring + cut](../registry/features/cordon_network_ring.yml) | active | ON | A/A/- | unvalidated |  |
 | [Einpendler injection](../registry/features/einpendler_injection.yml) | active | ON | A/A/- | unvalidated |  |
+| [Preserve MiD in-commuter donor demographics](../registry/features/incommuter_donor_demographics.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
+| [Chronological in-commuter plan-time repair](../registry/features/incommuter_time_chronology.yml) | active | ON | A/A/- | unvalidated (`incommuter-donor-smoke-2026-09-14`, `incommuter-donor-pr-integration-2026-09-15`) | [#397](https://github.com/TUBS-IVS/eqasim-bs/issues/397) |
 | [Student in-commuters (#140)](../registry/features/student_incommuters.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Freight
@@ -157,7 +170,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-3 stage(s), 3 in the production DAG. Datasets: `srv2023_plan_structure_reference`
+4 stage(s), 4 in the production DAG. Datasets: `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -189,6 +202,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [CPU-accumulation hang watchdog for the pipeline's Java subprocesses](../registry/features/java_hang_watchdog.yml) | active | ON | A/A/A | unvalidated | [#330](https://github.com/TUBS-IVS/eqasim-bs/issues/330) |
 | [MATSim output archive (run-named durable copy)](../registry/features/matsim_output_archive.yml) | active | ON | A/A/A | unvalidated |  |
 | [Parallel chainsolvers](../registry/features/parallel_chainsolvers.yml) | active | ON | A/A/A | unvalidated |  |
+| [Result-preserving fleet, home, validation and donor kernels](../registry/features/performance_equivalence.yml) | active | ON | A/s/s | not_applicable (`performance-equivalence-2026-09-15`) |  |
 | [Run-config composition (base + per-scale overlay)](../registry/features/run_config_composition.yml) | active | ON | A/s/s | unvalidated |  |
 | [Per-run resource time series (tree CPU, peak per-process RSS, RAM/swap/disk/IO, stage-tagged)](../registry/features/run_resource_recorder.yml) | active | ON | A/A/A | unvalidated | [#350](https://github.com/TUBS-IVS/eqasim-bs/issues/350) |
 | [Shared stage-cache (prime-on-launch)](../registry/features/shared_stage_cache.yml) | active | ON | A/s/s | unvalidated |  |

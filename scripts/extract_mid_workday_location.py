@@ -177,7 +177,14 @@ def main(argv=None) -> int:
     right_100_200 = int(right_n.get("100_200", 0))
     workday_extra = [
         "Columns: distance_class, n_unweighted, n_missing_distance (all row only), share_at_workplace,",
-        "share_at_home, share_did_not_work, share_other_place, share_missing (weighted row shares, sum 1).",
+        "share_at_home, share_did_not_work, share_other_place: the four DETERMINED reporting-day",
+        "states, P_GEW-weighted and CONDITIONAL on the state being known, so they sum to 1 on every",
+        "row that has such a person and are NaN (never 0) on a row that has none. state_missing_rate:",
+        "how much of the row's universe those four exclude, measured against the FULL weight -- a rate",
+        "with a different denominator, deliberately not a fifth share (ADR-0117). A person whose",
+        "P_STARB1 is the no-answer code reported no state; counting them in the denominator deflated",
+        "all four real states by the non-response rate, and the consumer forms a RATIO of two of these",
+        "shares across classes whose rates differ, so the deflation did not even cancel.",
         "Invalid/absent P_ARB_ENTF distances are counted in n_missing_distance (all row only, "
         f"{n_missing_distance_all} persons in this extraction) and excluded from the per-class rows.",
         f"Heaping (measured on this extraction): {heaping['n_exact'][10.0]} persons report exactly 10 km, "

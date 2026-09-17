@@ -60,6 +60,16 @@ def _build_shop_subtype_decider(context, random_seed: int):
     MiD-estimated table with a flat marginal share (used to pin the share); when
     None the MiD conditional table is used. The labelled fraction is logged (no
     silent fallback).
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY. Applied only in the estimation branch --
+    the pinned-share branch loads no MiD frame at all. This is the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the shop_daily /
+    shop_non_daily distance layers, and both must resolve the same value or a leg
+    labelled here would draw its distance from a pool built on another universe.
     """
     if not context.config("secondary_shop_daily_split"):
         return None
@@ -72,7 +82,9 @@ def _build_shop_subtype_decider(context, random_seed: int):
         impute_subtype,
         tt_band,
     )
-    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+    from braunschweig.popsim.stage.config_keys import KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY
+    from braunschweig.popsim.trips import (
+        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
 
     pinned_share = context.config("secondary_shop_daily_share")
     min_obs = int(context.config("secondary_distance_min_obs"))
@@ -92,6 +104,12 @@ def _build_shop_subtype_decider(context, random_seed: int):
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
         mid_dir = context.config("braunschweig.population.popsim.mid_dir")
         mid_wege = mid_module.load_mid_wege(mid_dir)
+        # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
+        # execute-context read of the key declared in configure(). Applied BEFORE map_mode /
+        # the time derivation / the estimation, so every downstream count is on that universe.
+        if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+            mid_wege = restrict_to_weekday_diary_legs(
+                mid_wege, log_tag="[braunschweig.secondary_chainsolvers] shop subtype")
         # estimate_daily_probability needs columns: W_ZWECK, mode, travel_time,
         # W_ZWD, W_GEW. map_mode derives "mode" from hvm_imp; travel_time is
         # arrival - departure in seconds (the same derivation the distance
@@ -169,8 +187,10 @@ def _build_leisure_subtype_decider(context, random_seed: int):
 
     Sibling to ``_build_shop_subtype_decider``. Returns a callable
     ``(mode: str, travel_time_s: float) -> str``, one of
-    ``LEISURE_SUBTYPE_ACTIVITIES`` (the ``purpose_subtype.LEISURE_GROUPS``
-    keys), when ``secondary_leisure_subtype_split`` is ON, else ``None`` (the
+    ``LEISURE_SUBTYPE_ACTIVITIES`` (the ``group_names`` of the leisure spec the
+    two flags below select -- the four ``purpose_subtype.LEISURE_GROUPS`` keys,
+    plus ``leisure_unspecified`` when ``leisure_unspecified_subtype`` is ON),
+    when ``secondary_leisure_subtype_split`` is ON, else ``None`` (the
     byte-identical OFF path). ``P(group | mode, tt_band)`` is estimated from
     the MiD 2023 Wege survey via
     ``braunschweig.popsim.purpose_subtype.estimate_group_probabilities`` (Task
@@ -180,21 +200,82 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     (``LEISURE_SUBTYPE_SEED_OFFSET``, NOT ``random``) and resolves it via
     ``_inverse_cdf_choice`` -- see that helper's docstring for why the per-leg
     draw is done inline rather than via a per-leg call to ``impute_groups``.
+
+    Codeplan no-detail sentinels (issue #242 Task 5, ADR-0113): when the
+    ``purpose_subtype_codeplan_sentinels`` config flag is ON, estimation uses
+    ``purpose_subtype.LEISURE_SPEC_CODEPLAN`` (via ``leisure_spec``) instead of
+    ``LEISURE_SPEC``, so W_ZWD 799 ("Freizeit k.A.", a NO-DETAIL code) is
+    excluded from the ``leisure_activity`` group and treated as an unlabelled
+    sentinel leg. This is the SAME flag
+    ``braunschweig.popsim.distance_distributions.run`` reads for the leisure
+    subtype distance layer -- both must resolve the same value or a leg
+    labelled ``leisure_activity`` here would draw its distance from a donor
+    pool that still includes the excluded 799 legs.
+
+    The fifth leisure subtype (issue #373, ADR-0115): when the
+    ``leisure_unspecified_subtype`` config flag is ON, estimation uses a spec
+    whose leisure universe additionally covers the RAW W_ZWECK-10 legs
+    ("anderer Zweck") as their own group ``leisure_unspecified``, instead of
+    leaving them outside the estimation entirely. Those legs are leisure only
+    under ``w_zweck_10_as_leisure`` and carry no leisure W_ZWD detail code, so
+    without this group no W_ZWD grouping can describe them and the decider
+    would impute one of the four named groups onto them. This is again the
+    SAME flag ``braunschweig.popsim.distance_distributions.run`` reads for the
+    matching distance layer, and both stages' ``configure()`` refuse the
+    ``leisure_unspecified_subtype`` / ``w_zweck_10_as_leisure`` contradiction.
+
+    Coverage guard (issue #373 final review, ruling R14): before estimating,
+    ``purpose_subtype.code_coverage_guard`` is applied to the prepared frame,
+    so a W_ZWD code observed on a leg of the spec's W_ZWECK universe that the
+    spec maps to neither a group nor a sentinel RAISES here instead of being
+    dropped into the unlabelled share. ``_build_other_subtype_decider`` is
+    unchanged in this respect (pre-existing since issue #127).
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY -- weekend leisure carries more
+    excursions and visits, so the all-day mix over-states them (ADR-0115 "Two
+    universes"). Again the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
+    distance layers, and both must resolve the same value.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
-        LEISURE_SPEC,
+        code_coverage_guard,
         estimate_group_probabilities,
+        leisure_spec,
         tt_band,
     )
-    from braunschweig.popsim.trips import map_mode, mid_time_seconds
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+    from braunschweig.popsim.trips import (
+        map_mode, mid_time_seconds, restrict_to_weekday_diary_legs)
 
     min_obs = int(context.config("secondary_distance_min_obs"))
+    # Execute-context config() takes the key alone (declared in configure()
+    # with default True; the key name is IMPORTED, not retyped, because
+    # distance_distributions declares the identical key -- see the docstring
+    # note above and config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
+    # Same one-argument execute-context form and same imported-key rule for the
+    # fifth leisure group (issue #373, ADR-0115).
+    unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); same one-argument
+    # execute-context form and same imported-key rule as the two flags above. Applied BEFORE
+    # map_mode / the time derivation / the coverage guard / the estimation, so the labelled
+    # share and the cell coverage this builder logs describe the universe it estimated on.
+    if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+        mid_wege = restrict_to_weekday_diary_legs(
+            mid_wege, log_tag="[braunschweig.secondary_chainsolvers] leisure subtype")
     # estimate_group_probabilities needs W_ZWECK, mode, travel_time, W_GEW,
     # W_ZWD. map_mode derives "mode" from hvm_imp; travel_time is arrival -
     # departure in seconds (the same derivation as the shop decider / the
@@ -206,11 +287,24 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     tt = tt.where(tt >= 0, tt + 24 * 3600)  # repair midnight crossing
     mid_wege = mid_wege.assign(travel_time=tt)
 
-    cell_probs, marginal = estimate_group_probabilities(mid_wege, LEISURE_SPEC, min_obs=min_obs)
+    spec = leisure_spec(codeplan_sentinels, unspecified_subtype)
+    # Coverage guard BEFORE the estimation (issue #373 final review M-4, ruling R14), on the
+    # very frame the estimation reads: a W_ZWD code that is neither a group member nor a
+    # declared sentinel of `spec` would otherwise be dropped into the unlabelled share, so the
+    # estimated mix would rest on fewer legs than the delivery has and the only trace would be a
+    # lower labelled share in the log line below. Cheap: one pass over the leisure legs of the
+    # frame that is already in memory. ASYMMETRY, deliberate: _build_other_subtype_decider does
+    # NOT guard its specs (pre-existing since issue #127); widening the guard there is a
+    # separate change and is out of this scope (stated in ADR-0115).
+    code_coverage_guard(mid_wege, spec)
+
+    cell_probs, marginal = estimate_group_probabilities(mid_wege, spec, min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
         + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
+        + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'}"
+        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'})"
     )
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)
@@ -270,6 +364,26 @@ def _build_other_subtype_decider(context, random_seed: int):
     ``escort_purpose`` OFF this is value-identical to the previous 3-way split
     (same ``group_names`` tuple, same probability composition, same single
     draw).
+
+    Codeplan no-detail sentinels (issue #242 Task 5, ADR-0113): Stage 2 uses
+    ``purpose_subtype.OTHER_ERRAND_SPEC_CODEPLAN`` (via ``other_errand_spec``)
+    instead of ``OTHER_ERRAND_SPEC`` when ``purpose_subtype_codeplan_sentinels``
+    is ON, so W_ZWD 699 ("Erledigung k.A.", a NO-DETAIL code) is excluded from
+    the ``other_errand_long`` group and treated as an unlabelled sentinel leg.
+    Stage 1 is unaffected (it splits on the raw W_ZWECK code, not W_ZWD). This
+    is the SAME flag ``braunschweig.popsim.distance_distributions.run`` reads
+    for the other-errand subtype distance layer -- both must resolve the same
+    value or a leg labelled ``other_errand_long`` here would draw its distance
+    from a donor pool that still includes the excluded 699 legs.
+
+    Estimation universe (issue #373, ADR-0116): when
+    ``secondary_mid_weekday_legs_only`` is ON, the MiD Wege frame is first reduced
+    to the WEEKDAY DIARY universe (``trips.restrict_to_weekday_diary_legs``: the
+    seed's own day filter, no rbW summary records), because the leg this decider
+    labels belongs to a synthetic WEEKDAY. Both composed stages estimate on that
+    one frame, and it is the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the matching
+    distance layers.
     """
     if not context.config("secondary_other_subtype_split"):
         return None
@@ -278,18 +392,38 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     from braunschweig.popsim import mid as mid_module
     from braunschweig.popsim.purpose_subtype import (
-        OTHER_ERRAND_SPEC,
         OTHER_ERRAND_ZWECK,
         OTHER_ESCORT_ZWECK,
         SubtypeSpec,
         estimate_group_probabilities,
+        other_errand_spec,
         tt_band,
     )
-    from braunschweig.popsim.trips import PURPOSE_BY_W_ZWECK, map_mode, mid_time_seconds
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+    )
+    from braunschweig.popsim.trips import (
+        PURPOSE_BY_W_ZWECK, W_ZWECK_NO_ANSWER_CODE, map_mode, mid_time_seconds,
+        restrict_to_weekday_diary_legs)
+
+    exclude_no_answer_purpose = bool(context.config(KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS))
+
+    # Same flag/default as _build_leisure_subtype_decider and
+    # distance_distributions -- the key name is IMPORTED, not retyped (see the
+    # docstring note above and config_keys.KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS).
+    codeplan_sentinels = bool(context.config(KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS))
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
     mid_wege = mid_module.load_mid_wege(mid_dir)
+    # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
+    # execute-context read of the key declared in configure(). Applied BEFORE map_mode / the
+    # time derivation, so BOTH composed estimation stages below (the coarse W_ZWECK split and
+    # the W_ZWD errand short/long split) read the same weekday frame.
+    if bool(context.config(KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY)):
+        mid_wege = restrict_to_weekday_diary_legs(
+            mid_wege, log_tag="[braunschweig.secondary_chainsolvers] other subtype")
     mid_wege = map_mode(mid_wege)
     dep = mid_time_seconds(mid_wege, "W_SZS", "W_SZM")
     arr = mid_time_seconds(mid_wege, "W_AZS", "W_AZM")
@@ -313,11 +447,23 @@ def _build_other_subtype_decider(context, random_seed: int):
         coarse_groups = {"errand": OTHER_ERRAND_ZWECK,
                          "escort": OTHER_ESCORT_ZWECK,
                          "rest": other_zweck - OTHER_ERRAND_ZWECK - OTHER_ESCORT_ZWECK}
+    # exclude_no_answer_purpose_legs (ADR-0117): W_ZWECK 99 "keine Angabe" maps to the eqasim
+    # purpose "other", so without this it sits inside the "rest" GROUP and is estimated as if the
+    # respondent had answered "some other purpose" -- 2.80 % of everything the model calls "other"
+    # (2026-09 delivery, ad hoc). Moving it into the spec's SENTINELS takes it out of numerator
+    # AND denominator, exactly as the W_ZWD no-detail codes are handled one level down, so
+    # errand/escort/rest renormalise over the legs whose purpose is known. It must leave the
+    # "rest" group in the same breath: SubtypeSpec refuses a code that is both grouped and a
+    # sentinel.
+    coarse_sentinels = frozenset()
+    if exclude_no_answer_purpose and W_ZWECK_NO_ANSWER_CODE in other_zweck:
+        coarse_sentinels = frozenset({W_ZWECK_NO_ANSWER_CODE})
+        coarse_groups = {name: codes - coarse_sentinels for name, codes in coarse_groups.items()}
     coarse_spec = SubtypeSpec(
         purpose_label="other_coarse",
         zweck_values=other_zweck,
         groups=coarse_groups,
-        sentinels=frozenset(),
+        sentinels=coarse_sentinels,
         group_col="W_ZWECK",
     )
     coarse_cell_probs, coarse_marginal = estimate_group_probabilities(
@@ -325,7 +471,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     # Stage 2: within errand legs, the existing W_ZWD-based short/long split.
     errand_cell_probs, errand_marginal = estimate_group_probabilities(
-        mid_wege, OTHER_ERRAND_SPEC, min_obs=min_obs)
+        mid_wege, other_errand_spec(codeplan_sentinels), min_obs=min_obs)
 
     # Issue #201: "escort" is only a coarse_marginal key when escort_purpose is
     # OFF (Stage 1 above only builds that group in the 3-way OFF-path spec) --
@@ -338,7 +484,8 @@ def _build_other_subtype_decider(context, random_seed: int):
         f"{escort_summary}errand={coarse_marginal['errand']:.3f}, "
         f"rest={coarse_marginal['rest']:.3f}; errand marginal shares "
         f"other_errand_short={errand_marginal['other_errand_short']:.3f}, "
-        f"other_errand_long={errand_marginal['other_errand_long']:.3f}"
+        f"other_errand_long={errand_marginal['other_errand_long']:.3f} "
+        f"(codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'})"
     )
 
     outcome_names = ["other_errand_short", "other_errand_long", "other_rest"]

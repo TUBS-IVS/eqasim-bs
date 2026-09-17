@@ -52,6 +52,10 @@ from typing import Optional, Sequence, Union
 import pandas as pd
 
 from braunschweig.popsim import member_completion as completion
+from braunschweig.popsim.passenger_availability import (
+    ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN,
+    ATTRIBUTE_SOURCE_PERSON_COLUMN,
+)
 from braunschweig.popsim import seed as seedmod
 
 from .csv_format import detect_csv_separator
@@ -127,11 +131,18 @@ MID_WEGE_REQUIRED_COLS = (
     # the audited rbW background) and W_SO1 (first-trip start location code) feed
     # diary_facts.compute_diary_facts; both exist in the MiD 2023 B1 Wege file.
     "W_RBW", "W_SO1",
+    # HP_ALTER (the household member's age, repeated on every leg) decides who counts as the
+    # accompanying ADULT in the passive-escort pairing (escort_pairing.REQUIRED_COLUMNS, issue
+    # #372). Required rather than optional so a delivery without it fails at LOAD time with a
+    # message naming the column, instead of deep inside map_purpose after the balancing.
+    "HP_ALTER",
 )
 
 
 def load_mid_attributes(
     mid_dir: Union[str, Path],
+    *,
+    include_passenger_availability: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the MiD donor attribute columns (households + persons) for enrichment.
 
@@ -148,12 +159,28 @@ def load_mid_attributes(
     )
     _persons_sep = detect_csv_separator(persons_path)
     _persons_header = pd.read_csv(persons_path, sep=_persons_sep, nrows=0).columns
+    passenger_columns = []
+    if include_passenger_availability:
+        if "P_VAUTO" not in _persons_header:
+            raise KeyError(
+                "[popsim.mid] passenger availability is enabled, but MiD2023_Personen.csv "
+                "lacks required column 'P_VAUTO'"
+            )
+        passenger_columns.append("P_VAUTO")
     persons = pd.read_csv(
         persons_path,
         usecols=list(MID_PERSON_ATTR_COLS)
-        + [c for c in MID_PERSON_OPTIONAL_COLS if c in _persons_header],
+        + [c for c in MID_PERSON_OPTIONAL_COLS if c in _persons_header]
+        + passenger_columns,
         sep=_persons_sep,
     )
+    if include_passenger_availability:
+        # These immutable raw respondent keys are distinct from source_H_ID /
+        # source_P_ID, which member/weekend/diary matching may rewrite as the
+        # selected plan source. Member completion copies the protected keys
+        # verbatim so every filler remains tied to its original real respondent.
+        persons[ATTRIBUTE_SOURCE_HOUSEHOLD_COLUMN] = persons["H_ID"]
+        persons[ATTRIBUTE_SOURCE_PERSON_COLUMN] = persons["P_ID"]
     return households, persons
 
 
@@ -181,6 +208,8 @@ def load_completed_donor(
     *,
     completion_rng,
     day_filter_values: Optional[Sequence[int]] = None,
+    fine_child_age_bands: bool = True,
+    include_passenger_availability: bool = False,
 ) -> tuple[
     pd.DataFrame, pd.DataFrame,
     seedmod.CompletenessReport, completion.MemberCompletionReport,
@@ -204,6 +233,13 @@ def load_completed_donor(
             the standard weekday default on ``MID_SEED_COLUMNS``; an empty
             iterable DISABLES the day filter; any non-empty iterable is used
             verbatim (same tri-state contract as :func:`load_mid_seed`).
+        fine_child_age_bands: Forwarded to
+            :func:`braunschweig.popsim.member_completion.complete_members`. When True
+            (default, issue #386) the mirror role matching bands 6-13-year-olds finely
+            (6-9 / 10-13), so a present primary-school child does not consume the
+            mirror's secondary-school slot. It changes WHICH mirror member is copied,
+            never how many, so ``completion_rng`` is left at the same stream position
+            either way.
 
     Returns:
         ``(households, persons, completeness_report, completion_report)``.
@@ -217,7 +253,10 @@ def load_completed_donor(
             "load_completed_donor requires completion_rng (a seeded "
             "numpy.random.RandomState); random processes must use an explicit seed."
         )
-    households, persons = load_mid_attributes(mid_dir)
+    households, persons = load_mid_attributes(
+        mid_dir,
+        include_passenger_availability=include_passenger_availability,
+    )
 
     # Drop H_ID=0 / null sentinel before any downstream logic (donor validity).
     households, persons, _n_hh_bad, _n_p_bad = drop_invalid_households(
@@ -246,6 +285,7 @@ def load_completed_donor(
     households, persons, completion_report = completion.complete_members(
         households, persons, rng=completion_rng,
         household_id=MID_SEED_COLUMNS.household_id,
+        fine_child_age_bands=fine_child_age_bands,
     )
     return households, persons, completeness_report, completion_report
 
@@ -285,7 +325,7 @@ def load_mid_wege(
     missing = [c for c in MID_WEGE_REQUIRED_COLS if c not in df.columns]
     if missing:
         raise ValueError(
-            f"MiD Wege file is missing required columns: {missing}. "
+            f"MiD Wege file {wege_path} is missing required columns: {missing}. "
             f"Available columns: {list(df.columns[:20])} ..."
         )
     return df

@@ -69,7 +69,11 @@ assessment:
   pending_reason: Post-merge remainder (java companion PR, validation CLI flag) tracked in the
     backlog-migration issues; no owner verdict on realised escort behaviour yet.
   source: ADR-0073
-notes: 'Java companion eqasim-java-bs PR #15 and validation-CLI PR #264 landed 2026-08-13; PR
+notes: 'Since issue #372 / ADR-0112 the PASSIVE side of this family (W_ZWECK 13) is owned by the
+  separate feature record escort_passive_from_adult: a paired code-13 leg takes the accompanying
+  adult''s purpose and only an unpaired one (or a pair with an ACTIVE escort leg) still follows the
+  escort_passive_education rule listed above. The active side, the location draw and the household
+  link are unchanged by it. Java companion eqasim-java-bs PR #15 and validation-CLI PR #264 landed 2026-08-13; PR
   #260 merged 2026-08-12. PR #15 is contained in the v2.3.0 release, which is the jar the
   production runs consume (verified on the 2026-08-20 100% run, docs/runs/100pct-allfeat-i240-2026-08-20.yml)
   -- the escort activity type is therefore active in MATSim. The 5-8% docstring cardinality in

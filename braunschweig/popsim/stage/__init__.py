@@ -149,11 +149,13 @@ from braunschweig.data.mid import income_by_status as _data_mid_income_by_status
 from braunschweig.data.census import household_size as _census_household_size
 
 from braunschweig.popsim import assembly
+from braunschweig.popsim import folders
 from braunschweig.popsim import batch
 from braunschweig.popsim import income as _income
 from braunschweig.popsim import income_kreis_control as _kic
 from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import plausibility as _plausibility
+from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
@@ -233,8 +235,16 @@ from .cell_attributes import (  # noqa: F401  (re-exports)
 )
 from . import config_keys
 from .config_keys import (  # noqa: F401  (re-exports)
+    DEFAULT_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+    DEFAULT_DEPARTURE_TIME_MIN_MODEL_N,
+    DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
+    DEFAULT_DEPARTURE_TIME_MODEL,
     DEFAULT_ESCORT_PASSIVE_EDUCATION,
+    DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+    DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     DEFAULT_SEED_DAY_FILTER,
+    DEFAULT_W_ZWECK_10_AS_LEISURE,
     DEFAULT_WEEKEND_PLAN_MATCH,
     KEY_BATCH_TIMEOUT,
     KEY_BIKES_KREIS_CONTROL,
@@ -242,11 +252,17 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_CELLS,
     KEY_CLEANUP_H5,
     KEY_COMPLETE_MEMBERS,
+    KEY_MID_PASSENGER_AVAILABILITY,
     KEY_CONTROL_TIERS,
     KEY_CONTROLS,
     KEY_CONTROLS_SOURCE,
     KEY_CLOSURE_DWELL_MIN_OBS,
     KEY_CLOSURE_DWELL_MODEL,
+    KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
+    KEY_DEPARTURE_TIME_MIN_MODEL_N,
+    KEY_DEPARTURE_TIME_MIN_REFERENCE_N,
+    KEY_DEPARTURE_TIME_MODEL,
+    KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
     KEY_DIARY_MATCH_HARD_EMPLOYMENT,
     KEY_DIARY_PLAN_MATCH,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG,
@@ -261,6 +277,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EXCLUDE_RBW_LEGS,
     KEY_FINE_TEEN_AGE_BANDS,
     KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    KEY_ESCORT_PASSIVE_FROM_ADULT,
     KEY_PT_TICKET_KREIS_CONTROL,
     KEY_PT_TICKET_NEVER_GROUP,
     KEY_IMPORTANCE_PROFILE,
@@ -279,8 +296,10 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_MAX_CELLS,
     KEY_MID,
     KEY_OWNERSHIP_GRID,
+    KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     KEY_PLACEMENT_INCOME,
     KEY_POPSIMPREP,
+    KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
     KEY_SETTINGS,
     KEY_SOURCE,
@@ -295,6 +314,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
     KEY_WORKERS,
+    KEY_W_ZWECK_10_AS_LEISURE,
     _KREIS_CONTROL_DEFAULT,
     _KREIS_CONTROL_TOGGLE_KEY,
 )
@@ -394,6 +414,7 @@ _HELPER_MODULES = (
     _kic,
     _ist,
     _plausibility,
+    _passenger_availability,
     prepared_cells,
     # the one synpp stage imported at MODULE level and used here as a plain
     # function library whose dependency this stage does NOT declare, so its own
@@ -477,12 +498,19 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
-    # attributes / trips: the ONLY two second-level transitive entries, added after the
-    # 2026-08-19 hazard -- see the validate() docstring's boundary statement for why they
-    # are an explicit exception to the one-level rule.
+    # attributes / trips / escort_pairing: the second-level transitive entries -- see the
+    # validate() docstring's boundary statement for why they are explicit exceptions to the
+    # one-level rule (the first two were added after the 2026-08-19 hazard).
     "braunschweig.popsim.attributes",
     "braunschweig.popsim.control_spec",
     "braunschweig.popsim.employment_grid",
+    # escort_pairing: the THIRD second-level exception (reached via mid.participation, whose
+    # education_flag seed drops the code-13 legs the pairing does NOT resolve to education).
+    # Same evidence standard as the two above: it carries BEHAVIOUR this stage's seed depends
+    # on -- a changed pairing rule changes which persons are seeded "edu" while neither this
+    # file nor mid.participation's own source need change at all, so a warm cache would serve
+    # a seed built under the old rule (issue #372, ADR-0112).
+    "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.folders",
     "braunschweig.popsim.kreis_attribute_control",
     "braunschweig.popsim.ownership_grid",
@@ -522,16 +550,21 @@ def validate(context):
     PACKAGES enumerated ONE LEVEL DEEP (``__init__`` plus each submodule on disk,
     because ``inspect.getsource`` of a package yields only its ``__init__``). The
     transitive surface beyond that one level is deliberately NOT covered, with
-    EXACTLY TWO named exceptions: ``braunschweig.popsim.attributes`` (reached via
-    ``assembly`` and ``mid.seed_loading``) and ``braunschweig.popsim.trips``
+    EXACTLY THREE named exceptions: ``braunschweig.popsim.attributes`` (reached via
+    ``assembly`` and ``mid.seed_loading``), ``braunschweig.popsim.trips``
     (reached via ``mid.participation``, whose PARTICIPATION_W_ZWECK derives from
-    ``trips.PURPOSE_BY_W_ZWECK``). Both carry BEHAVIOUR this stage's output
+    ``trips.PURPOSE_BY_W_ZWECK``) and ``braunschweig.popsim.escort_pairing``
+    (reached via the same ``mid.participation``, whose education_flag seed drops the
+    passive escort legs the pairing does not resolve to education, issue #372).
+    All three carry BEHAVIOUR this stage's output
     depends on, and the 2026-08-19 verification smoke proved the hazard is real:
     the under-16 licence floor (attributes) and the W_ZWECK purpose fix (trips)
     changed the population while leaving this token untouched, so a warm cache
     would have silently reused the pre-fix output
-    (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). Any FURTHER
-    second-level exception needs the same standard of evidence, not convenience. Which of
+    (docs/runs/smoke-control-fit-03101-v2-2026-08-19.yml). ``escort_pairing`` is
+    admitted on the same evidence, not on convenience: it DECIDES which code-13 legs
+    the education_flag seed counts, so the identical stale-seed hazard applies to it.
+    Any FURTHER second-level exception needs that same standard of evidence. Which of
     the two tuples a module lands in is decided ONLY by its import site --
     module-level imports are hashed as module objects, function-level (deferred)
     imports by dotted name -- and not by what kind of module it is: a dotted-name
@@ -682,6 +715,7 @@ def configure(context):
     context.config(KEY_STRATIFY, False)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
+    context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     # Controls source (Task 5). Default "csv" = byte-identical to today's behaviour.
     context.config(KEY_CONTROLS_SOURCE, "csv")
     # Control tiers (Task 7). Default "tier0" = byte-identical to pre-Task-7 baseline.
@@ -856,6 +890,20 @@ def configure(context):
     # it here adds the key to THIS stage's config-validation hash set (intended: a change
     # to it changes the seed, so the stage must re-run).
     context.config(KEY_EXCLUDE_RBW_LEGS, True)
+    # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111), the same key + default
+    # braunschweig.popsim.trips_stage declares: the leisure_participation KREIS-control
+    # seed must count the same W_ZWECK codes as leisure that the trip build does, or seed
+    # and plan describe different days again (the same mismatch class
+    # escort_passive_education / exclude_rbw_legs above exist to close).
+    context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
+    # Passive escort leg -> the accompanying adult's purpose (issue #372, ADR-0112), the same
+    # keys + defaults braunschweig.popsim.trips_stage declares: the education_flag KREIS-control
+    # seed must count exactly the code-13 legs the trip build realises as education, or a child
+    # the plan sends shopping with the adult is still seeded "edu" -- the same seed-vs-plan
+    # mismatch class the three flags above exist to close. Declared default False; the production
+    # true is added to configs/base_bs.yml by task 7 (see config_keys for the one statement).
+    context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1446,7 +1494,9 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
         drop_leading_arrive_home_leg: bool = False,
-        escort_passive_education: bool = False, exclude_rbw_legs: bool = True):
+        escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
+        w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
+        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1459,11 +1509,21 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     byte-identical to before Task 7 (all three flags default False inside
     ``mid._derive_trip_class_seed_column``).
 
-    ``escort_passive_education`` and ``exclude_rbw_legs`` (Plan B issue #368, controller
-    ruling R8) are threaded into BOTH MiD branches, unlike the three flags above: the
-    participation-universe seeds they govern are derived from the MiD Wege table on either
-    path, not from the completed-donor diary facts. Both are inert unless a
-    participation-universe KREIS control is active.
+    ``escort_passive_education``, ``exclude_rbw_legs``, ``w_zweck_10_as_leisure``,
+    ``escort_passive_from_adult`` and ``passive_pair_max_gap_minutes``
+    (Plan B issue #368 controller ruling R8; issue #373 ADR-0111; issue #372 ADR-0112) are
+    threaded into BOTH MiD branches, unlike the three flags above: the participation-universe
+    seeds they govern are derived from the MiD Wege table on either path, not from the
+    completed-donor diary facts. All five are inert unless a participation(-universe)
+    KREIS control is active.
+
+    ``drop_leading_arrive_home_leg`` therefore reaches BOTH branches too, but by two DIFFERENT
+    routes and for two different consumers: as itself into ``project_completed_seed`` (where the
+    trip_class seed subtracts the dropped leg from a count, ruling R20), and as
+    ``education_flag_drop_leading_arrive_home_leg`` into both seed loaders, where -- together
+    with ``exclude_rbw_legs`` -- it defines the leg universe the education_flag seed's
+    passive-escort pairing runs on (controller ruling C-R12). The legacy branch's trip_class
+    seed still never sees it, so that path stays byte-identical.
 
     Build the PopulationSim seed.
     For source="mid": delegates to mid.load_mid_seed which reads the MiD CSV
@@ -1526,6 +1586,10 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
             escort_passive_education=escort_passive_education,
             exclude_rbw_legs=exclude_rbw_legs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+            escort_passive_from_adult=escort_passive_from_adult,
+            passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -1546,6 +1610,10 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             ebike_seed_column=ebike_seed_column_cfg,
             escort_passive_education=escort_passive_education,
             exclude_rbw_legs=exclude_rbw_legs,
+            w_zweck_10_as_leisure=w_zweck_10_as_leisure,
+            escort_passive_from_adult=escort_passive_from_adult,
+            passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
     return (
@@ -1860,7 +1928,8 @@ def _join_cell_attributes_onto_merged_output(merge_report, cells: pd.DataFrame) 
 
 
 def _load_donor_tables(context, source, source_name: str, mid_dir, complete_members: bool,
-        completed_donor_households, completed_donor_persons):
+        completed_donor_households, completed_donor_persons,
+        passenger_availability_enabled: bool = False):
     """Load the donor attribute tables through the active source adapter.
 
     For source="mid": MidSource.load_donor reads from mid_dir (byte-identical).
@@ -1894,7 +1963,12 @@ def _load_donor_tables(context, source, source_name: str, mid_dir, complete_memb
     else:
         # popsim_mid, complete_members=False (legacy): reads MiD CSV files
         # directly from mid_dir.
-        donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
+        if passenger_availability_enabled:
+            donor_households, donor_persons, _donor_trips = source.load_donor(
+                mid_dir, include_passenger_availability=True
+            )
+        else:
+            donor_households, donor_persons, _donor_trips = source.load_donor(mid_dir)
     return donor_households, donor_persons
 
 
@@ -1921,7 +1995,8 @@ def _resolve_placement_income_flag(context, source_name: str) -> bool:
 
 def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_households: pd.DataFrame,
         donor_persons: pd.DataFrame, rng, source, source_name: str, inkar_income,
-        placement_income_on: bool):
+        placement_income_on: bool, *, passenger_availability_enabled: bool = False,
+        random_seed: int | None = None):
     """Expand the merged donor households into the full eqasim persons frame.
 
     pseudonymise=True (MiD): replace raw H_ID/P_ID with sequential surrogates
@@ -1954,6 +2029,18 @@ def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_h
     from braunschweig.popsim import placement_income as _pi_path
     income_path = _pi_path.resolve_income_path(
         placement_income_on, income_kreis_control_on, _income_tilt_flag)
+    passenger_kwargs = {}
+    if passenger_availability_enabled:
+        if random_seed is None:
+            raise ValueError(
+                "[popsim.stage] passenger availability requires random_seed"
+            )
+        passenger_kwargs = {
+            "passenger_availability_enabled": True,
+            "passenger_rng": np.random.RandomState(
+                int(random_seed) + _passenger_availability.PASSENGER_AVAILABILITY_RNG_OFFSET
+            ),
+        }
     persons, pseudonym_map = assembly.build_persons(
         combined, donor_households, donor_persons,
         rng=rng,
@@ -1961,6 +2048,7 @@ def _expand_donor_households_to_persons(context, combined: pd.DataFrame, donor_h
         pseudonymise=pseudonymise,
         inkar_scale=inkar_income,
         skip_inkar_income_scale=income_path["skip_inkar_scale"],
+        **passenger_kwargs,
     )
     context.set_info("popsim_n_persons", len(persons))
     return persons, pseudonym_map, pseudonymise, income_path, _pi_path
@@ -2316,6 +2404,17 @@ def execute(context) -> pd.DataFrame:
 
     source = _resolve_source(source_name)
     logger.info("[popsim.stage] active donor source: %s", source.name)
+    passenger_availability_requested = bool(
+        context.config(KEY_MID_PASSENGER_AVAILABILITY)
+    )
+    passenger_availability_enabled = (
+        passenger_availability_requested and source_name == "mid"
+    )
+    if passenger_availability_requested and source_name != "mid":
+        logger.info(
+            "[popsim.stage] mid_passenger_availability requested but source=%s; "
+            "feature inactive for this source.", source_name,
+        )
 
     (
         control_tiers, seed_day_filter, controls_source, employment_grid_on,
@@ -2375,6 +2474,14 @@ def execute(context) -> pd.DataFrame:
     # The participation-universe seeds must count exactly the legs the trip build keeps
     # (controller ruling R8); read from the SAME key trips_stage / completed_donor read.
     exclude_rbw_legs_on = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
+    # The leisure_participation seed must count the SAME W_ZWECK codes as leisure that the
+    # trip build does (issue #373, ADR-0111); read from the SAME key trips_stage reads.
+    w_zweck_10_as_leisure_on = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
+    # The education_flag seed must count exactly the code-13 legs the trip build realises as
+    # education (issue #372, ADR-0112); read from the SAME keys trips_stage reads, so a paired
+    # child cannot be seeded "edu" while the plan sends them shopping with the adult.
+    escort_passive_from_adult_on = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
+    passive_pair_max_gap_minutes_cfg = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2386,6 +2493,9 @@ def execute(context) -> pd.DataFrame:
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
         escort_passive_education=escort_passive_education_on,
         exclude_rbw_legs=exclude_rbw_legs_on,
+        w_zweck_10_as_leisure=w_zweck_10_as_leisure_on,
+        escort_passive_from_adult=escort_passive_from_adult_on,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes_cfg,
     )
 
     run_one = _prepare_batch_runner(
@@ -2395,6 +2505,15 @@ def execute(context) -> pd.DataFrame:
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
     )
+    # Fail fast BEFORE any batch folder is written or any PopulationSim subprocess starts.
+    # PopulationSim rejects an undeclared control geography itself (setup_data_structures
+    # raises "unknown geography column"), so this is not a correctness guard but a
+    # diagnostics one: without it the run dies late, in a worker, after all the batch
+    # folders were written, with a message naming neither the settings file nor the fix.
+    # The per-Kreis attribute controls default ON and render at KREIS, which the 4-level
+    # settings file lacks.
+    folders.validate_settings_geographies(
+        Path(settings_path).read_text(encoding="utf-8"), controls_df)
     _purge_stale_batches_for_changed_config(
         controls_df, settings_path, max_cells, stratify_regiostar, source_name,
         employment_grid_on, kreis_controls_map, seed_day_filter, seed_households,
@@ -2412,6 +2531,7 @@ def execute(context) -> pd.DataFrame:
     donor_households, donor_persons = _load_donor_tables(
         context, source, source_name, mid_dir, complete_members,
         completed_donor_households, completed_donor_persons,
+        passenger_availability_enabled=passenger_availability_enabled,
     )
     placement_income_on = _resolve_placement_income_flag(context, source_name)
 
@@ -2472,6 +2592,8 @@ def execute(context) -> pd.DataFrame:
     ) = _expand_donor_households_to_persons(
         context, combined, donor_households, donor_persons, rng, source,
         source_name, inkar_income, placement_income_on,
+        passenger_availability_enabled=passenger_availability_enabled,
+        random_seed=random_seed,
     )
     persons = _apply_housing_tenure_parity(context, persons, random_seed)
 

@@ -62,8 +62,16 @@ MID_SEX_FEMALE = 2
 WORKDAY_LOCATION_TABLE = "mid2023_workday_location_by_commute_distance.csv"
 HOME_OFFICE_DONOR_POOL_TABLE = "mid2023_home_office_donor_pool.csv"
 
+#: The four DETERMINED reporting-day states. Their shares are conditional on the state being
+#: known and sum to 1.0 on every row that has at least one such person (ADR-0117): a person whose
+#: state is undetermined answered nothing, and a non-answer must not deflate the states of the
+#: people who did answer.
 SHARE_COLUMNS = ("share_at_workplace", "share_at_home", "share_did_not_work",
-                 "share_other_place", "share_missing")
+                 "share_other_place")
+#: How much of the row's universe the four shares above EXCLUDE, measured against the full
+#: P_GEW weight -- a rate, deliberately not a fifth share, because it has a different denominator
+#: (the lesson of ADR-0117: a column whose denominator differs must say so in its name).
+STATE_MISSING_RATE_COLUMN = "state_missing_rate"
 
 
 def _log_filter_step(step_description: str, n_before: int, n_after: int) -> None:
@@ -243,27 +251,46 @@ def build_mid_workday_location_table(persons: pd.DataFrame,
     Persons without a valid distance (``NaN``, ``<= 0``, or a MiD missing/filter code -- see
     ``clean_mid_commute_distance_km``) are excluded from the per-class rows entirely and are
     instead counted in ``n_missing_distance`` on the ``all`` row; they are still included in the
-    ``all`` row's weighted shares. ``share_missing`` is therefore the ``P_GEW``-weighted share of
-    universe persons whose STATE is undetermined -- it is unrelated to distance completeness. The
-    five ``share_*`` columns (``SHARE_COLUMNS``) sum to 1.0 for every row.
+    ``all`` row's weighted shares. ``state_missing_rate`` is the ``P_GEW``-weighted share of
+    universe persons whose STATE is undetermined -- it is unrelated to distance completeness, and
+    it is measured against the FULL universe weight. The four ``share_*`` columns
+    (``SHARE_COLUMNS``) are conditional on a DETERMINED state and sum to 1.0 on every row that has
+    one; a row whose persons all failed to report a state carries NaN in all four, never 0.0
+    (ADR-0117: a non-answer must not deflate the states of the people who did answer, and it must
+    not masquerade as one of them either).
 
     Returns one row per distance class actually observed in ``COMMUTE_CLASS_LABELS`` (``gt200`` is
     absent by construction: MiD top-codes distances at 200 km, see ``classify_commute_distance``)
     plus one ``all`` row, with columns ``distance_class, n_unweighted, n_missing_distance,
-    share_at_workplace, share_at_home, share_did_not_work, share_other_place, share_missing``.
+    share_at_workplace, share_at_home, share_did_not_work, share_other_place,
+    state_missing_rate``.
     """
     sel = _mid_universe(persons, classify_distance=classify_distance)
     sel["state"] = _person_state(sel)
     rows = []
 
     def _row(label, sub, n_missing_distance=0):
+        # The denominator is the DETERMINED weight, not the whole universe (ADR-0117). A person
+        # whose P_STARB1 is the no-answer code did not report a reporting-day state; counting
+        # them in the denominator deflated all four real states by the non-response rate, and the
+        # consumer (synthesis.commute_day.state.keep_probability) forms a RATIO of two of these
+        # shares across distance classes whose non-response rates differ, so the deflation did not
+        # even cancel. The rate itself is kept as its own column, measured against the FULL weight.
         weight = sub["P_GEW"].astype(float)
         total_weight = weight.sum()
+        is_determined = sub["state"] != "missing"
+        determined_weight = weight[is_determined].sum()
         row = {"distance_class": label, "n_unweighted": int(len(sub)),
                "n_missing_distance": int(n_missing_distance)}
-        for state in ("at_workplace", "at_home", "did_not_work", "other_place", "missing"):
-            share = float(weight[sub["state"] == state].sum() / total_weight) if total_weight > 0 else float("nan")
-            row[f"share_{state}"] = share
+        for state in ("at_workplace", "at_home", "did_not_work", "other_place"):
+            # NaN, never 0.0, when no person of this row reported a state at all: a 0.0 would
+            # read as "nobody here works at their workplace" instead of "nobody said".
+            row[f"share_{state}"] = (
+                float(weight[sub["state"] == state].sum() / determined_weight)
+                if determined_weight > 0 else float("nan"))
+        row[STATE_MISSING_RATE_COLUMN] = (
+            float(weight[~is_determined].sum() / total_weight) if total_weight > 0
+            else float("nan"))
         return row
 
     for label in COMMUTE_CLASS_LABELS:

@@ -118,3 +118,20 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0107](../decisions/ADR-0107-rbw-legs-are-movement-within-the-work-activity.md) | 2026-09-06 | active | rbW legs are movement within the work activity, not trips of the day plan |
 | [ADR-0108](../decisions/ADR-0108-plans-start-and-end-at-home-with-an-observed-closure-dwell.md) | 2026-09-06 | active | Plans start and end at home, with an observed closure dwell counted in the seed |
 | [ADR-0109](../decisions/ADR-0109-participation-controls-conditional-on-their-universe.md) | 2026-09-07 | active | Participation controls are conditional on their universe |
+| [ADR-0110](../decisions/ADR-0110-general-day-absence-as-a-two-stage-state-draw.md) | 2026-09-09 | active | General day absence as a two-stage state draw |
+| [ADR-0111](../decisions/ADR-0111-w-zweck-10-follows-the-mid-main-purpose-fold.md) | 2026-09-10 | active | MiD W_ZWECK 10 "anderer Zweck" follows MiD's own main-purpose fold |
+| [ADR-0112](../decisions/ADR-0112-passive-escort-purpose-from-the-paired-adult-leg.md) | 2026-09-10 | active | Passive escort legs take the purpose of the paired adult leg |
+| [ADR-0113](../decisions/ADR-0113-w-zwd-codeplan-verification-and-no-detail-sentinels.md) | 2026-09-10 | active | W_ZWD labels verified against the codeplan; the no-detail codes become sentinels |
+| [ADR-0114](../decisions/ADR-0114-srv-mapped-first-departures-replace-the-eqasim-jitter.md) | 2026-09-10 | active | SrV-mapped first departures replace the inherited eqasim +/-30 min jitter |
+| [ADR-0115](../decisions/ADR-0115-leisure-unspecified-subtype.md) | 2026-09-10 | active | Leisure legs without a detail purpose form their own subtype |
+| [ADR-0116](../decisions/ADR-0116-secondary-weekday-universe.md) | 2026-09-10 | active | The secondary distance layers and the MiD subtype deciders estimate on the weekday diary universe |
+| [ADR-0117](../decisions/ADR-0117-no-answer-codes-out-of-every-estimation.md) | 2026-09-11 | active | A survey non-answer never becomes a modelled category or a distance |
+| [ADR-0118](../decisions/ADR-0118-donor-match-fine-child-age-bands.md) | 2026-09-11 | active | The MiD donor match bands 6-13-year-olds finely (6-9 / 10-13) wherever it matches on age |
+| [ADR-0119](../decisions/ADR-0119-passive-escort-joint-activities-anchor-at-the-adults-secondary-location.md) | 2026-09-11 | active | Passive escort joint activities anchor at the accompanying adult's secondary location |
+| [ADR-0120](../decisions/ADR-0120-incommuter-donor-demographics-and-time-chronology.md) | 2026-09-14 | active | Preserve donor demographics and chronological in-commuter plans |
+| [ADR-0121](../decisions/ADR-0121-mid-passenger-availability.md) | 2026-09-15 | active | Separate MiD passenger access from driver access |
+| [ADR-0122](../decisions/ADR-0122-result-preserving-performance-kernels.md) | 2026-09-15 | -- | Optimize repeated work while preserving simulation inputs |
+| [ADR-0123](../decisions/ADR-0123-reproducible-test-environments.md) | 2026-09-15 | accepted for implementation | Reproducible test environments and measured consolidation |
+| [ADR-0124](../decisions/ADR-0124-srv-per-kreis-row-set-from-expected-geography.md) | 2026-09-16 | accepted for implementation | SrV per-Kreis row set comes from the expected geography, not the delivery |
+| [ADR-0125](../decisions/ADR-0125-gemeinde-bev-phev-composition-from-fz2717-level-from-the-2026-share.md) | 2026-09-16 | active | The per-Gemeinde BEV:PHEV composition comes from FZ 27.17 while the level stays with the 2026 combined share (issue #317) |
+| [ADR-0128](../decisions/ADR-0128-commute-day-diagnostics-as-committed-artifacts.md) | 2026-09-17 | active | Commute-day diagnostics as committed artifacts, not log excerpts |
