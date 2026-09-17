@@ -1553,9 +1553,32 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     # depend on the machine again through the back door.
     run_parallel = parallel_enabled and n_shards > 1 and n_total > 0
 
+    # The configured shard count is a CEILING at the number of persons this pass
+    # actually solves: _make_person_shards caps it at len(unique_persons), so a
+    # small pass runs FEWER shards than configured. That cap is deterministic (it
+    # depends on the population, not on the machine), so reproducibility holds --
+    # but braunschweig.chainsolvers.shards is a RESULT-DETERMINING key, and the
+    # headline print used to assert the configured value while a different
+    # partition ran ("parallel, 62 shards / 8 workers" for a 10-person pass that
+    # produced 10 shards). Compute the effective count here, print THAT, and say
+    # so explicitly when it differs (CLAUDE.md: no silent adjustments).
+    effective_n_shards = max(1, min(n_shards, n_total)) if n_total else 1
+    if run_parallel and effective_n_shards != n_shards:
+        print(
+            f"[braunschweig.secondary_chainsolvers]{pass_label} WARNING: "
+            f"braunschweig.chainsolvers.shards is {n_shards:,} but this pass solves only "
+            f"{n_total:,} persons, so the partition has {effective_n_shards:,} shard(s), "
+            f"not {n_shards:,} -- each shard needs at least one person. The realisation "
+            f"of this pass is the one for {effective_n_shards:,} shards, NOT the one the "
+            f"configured shard count would produce on a larger population. Production "
+            f"scale is unaffected (n_total far exceeds the shard count); this happens on "
+            f"fixture, smoke and single-Kreis runs.",
+            flush=True,
+        )
+
     print(
         f"[braunschweig.secondary_chainsolvers]{pass_label} running cs.solve() "
-        f"({'parallel, %d shards / %d workers' % (n_shards, n_workers) if run_parallel else 'serial'}; "
+        f"({'parallel, %d shards / %d workers' % (effective_n_shards, n_workers) if run_parallel else 'serial'}; "
         f"{n_total:,} persons)...",
         flush=True,
     )

@@ -2,10 +2,13 @@
 
 The run server is a KVM VM whose CPU/RAM allocation changes depending on who
 uses it, so every resource-sensitive configuration value pinned for one
-allocation silently drifts when the VM is resized (measured 2026-09-16: the box
-reports 94 GB while ``configs/base_bs.yml`` still asked the JVM for 100 GB).
-This module is the single place that answers "how big is this machine, and what
-may a run use of it".
+allocation silently drifts when the VM is resized (measured: the box reports
+94.28 GB total -- ``free -g`` truncates that to "94" -- while
+``configs/base_bs.yml`` still asked the JVM for 100 GB; the 94.28 figure is the
+run resource recorder's ``memory_total_kb``, recorded in
+``docs/runs/chainsolver-worker-private-memory-2026-09-17.yml``). This module is
+the single place that answers "how big is this machine, and what may a run use
+of it".
 
 Two rules keep the mechanism scientifically safe:
 
@@ -242,8 +245,8 @@ DEFAULT_CORE_RESERVE = 2
 #: ASSUMPTION: this figure has no measured source (unlike
 #: ``DEFAULT_POPSIM_WORKER_MEMORY_GB`` below, which is traceable to the
 #: 2026-07-10 OOM post-mortem). It is also the SENSITIVE parameter that decides
-#: whether a pinned ``num_workers: 3`` clamps to 2 on the measured 94 GB server:
-#: at this 8 GB reserve, 3 x 30 GB = 90 GB > 86 GB budget clamps; at roughly a
+#: whether a pinned ``num_workers: 3`` clamps to 2 on the measured 94.28 GB
+#: server: at this 8 GB reserve, 3 x 30 GB = 90 GB > 86.28 GB budget clamps; at roughly a
 #: 4 GB reserve -- what ``configs/overlays/test_100pct.yml``'s own "~90 GB on
 #: the 128 GB box" budget implies for 3 workers on this machine -- it would not.
 #: Not yet measured (see ADR-0126, Consequences); do not treat it as settled
@@ -277,15 +280,27 @@ class Resolution:
 
     - ``"pinned"`` -- the configured value fitted and was used as-is.
     - ``"clamped"`` -- it did not fit an OPERATIONAL key's budget and was
-      reduced (``java_memory``, ``braunschweig.population.popsim.num_workers``).
+      reduced. The three clamped keys are ``java_memory``,
+      ``braunschweig.population.popsim.num_workers`` and (since ADR-0126's
+      2026-09-17 amendment) ``braunschweig.chainsolvers.processes``.
     - ``"derived"`` -- the key was left at an auto sentinel and the budget
       supplied the value outright.
-    - ``"reported"`` -- a REPORTING-ONLY key (currently only ``processes``, see
-      :func:`resolve_processes`) whose configured value exceeds the budget but
-      is never adjusted, because the key is result-affecting: ``effective``
-      still equals ``configured`` verbatim, and ``note`` states what the
-      budget would have allowed, so the mismatch is visible without a false
-      claim that anything was clamped.
+    - ``"reported"`` -- the value is stated but NOT applied by the resolver that
+      produced it. Two distinct cases carry this origin:
+
+      * ``processes`` (:func:`resolve_processes`), a REPORTING-ONLY key: its pin
+        exceeds the budget but is never adjusted, because the key is
+        result-affecting. ``effective`` equals ``configured`` verbatim and
+        ``note`` states what the budget would have allowed, so the mismatch is
+        visible without a false claim that anything was clamped.
+      * ``braunschweig.chainsolvers.processes`` in :func:`build_report` only --
+        a startup PREVIEW against the core budget, because the key's real
+        ceiling also needs the live driver RSS, known only once the stage forks
+        its pool. That key IS genuinely clamped at its point of use, by
+        :func:`effective_chainsolver_workers`, which emits its own
+        ``"clamped"``/``"pinned"``/``"derived"`` resolution there. A
+        ``"reported"`` entry for it therefore means "not yet resolved", not
+        "never adjusted".
 
     ``note`` is the human-readable explanation that goes into the log and the
     run provenance.
@@ -411,8 +426,16 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
 
     Operational only: the heap size becomes ``-Xmx`` and cannot change results,
     so clamping it down on a smaller machine is safe and needs no config change.
-    A pin that fits is echoed VERBATIM -- reformatting it would silently shrink
-    a sub-gigabyte-granular value such as "1500M".
+    A pin that fits is echoed VERBATIM when it is a STRING -- reformatting it
+    would silently shrink a sub-gigabyte-granular value such as "1500M".
+
+    A NUMERIC pin is the one exception and is formatted through
+    :func:`format_memory_gb`: ``parse_memory_gb`` reads a bare number as
+    gigabytes, so an integer ``java_memory: 32`` means 32 GB, but echoing
+    ``str(32)`` would emit ``-Xmx32`` -- which the JVM reads as 32 BYTES and
+    which fails to start the VM. The formatted ``"32G"`` is the same quantity
+    the resolver validated against the budget, spelled in the unit the
+    consumers actually pass to Java.
     """
     if is_auto(configured):
         budget_text = format_memory_gb(budget.memory_gb)
@@ -433,9 +456,15 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
             note=(f"configured {configured} exceeds the memory budget; "
                   f"clamped to {budget_text}"),
         )
+    is_numeric = isinstance(configured, (int, float)) and not isinstance(configured, bool)
+    effective = format_memory_gb(requested_gb) if is_numeric else str(configured)
     return Resolution(
-        key="java_memory", configured=configured, effective=str(configured),
-        origin="pinned", note="configured value fits the memory budget",
+        key="java_memory", configured=configured, effective=effective,
+        origin="pinned",
+        note=("configured value fits the memory budget"
+              + (f" (numeric {configured} read as gigabytes and emitted as "
+                 f"{effective}, because -Xmx without a unit means bytes)"
+                 if is_numeric else "")),
     )
 
 
@@ -529,9 +558,27 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
 #: Traceable to the 2026-07-10 OOM post-mortem recorded in
 #: configs/overlays/test_100pct.yml ("the measured 25-30 GB per-worker peak");
 #: the upper bound is taken because under-estimating it is what OOMs the box.
+#: SCALE CAVEAT: that post-mortem measured a 100%-SCALE run
+#: (``configs/overlays/test_100pct.yml``, ``sampling_rate: 1.0``). No per-worker
+#: footprint has ever been measured at a smaller sampling rate, and no
+#: scale->memory relationship is assumed here (inventing one is forbidden,
+#: CLAUDE.md). :func:`build_report` therefore treats a mismatch against this
+#: figure as fatal only at the scale it was measured at -- see
+#: :data:`MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE`.
 DEFAULT_POPSIM_WORKER_MEMORY_GB = 30.0
 
+#: The sampling rate :data:`DEFAULT_POPSIM_WORKER_MEMORY_GB` was measured at.
+#: A run configured at this rate or above is the run the figure describes, so a
+#: machine that cannot fit even one worker is an ERROR there; below it the same
+#: mismatch is a WARNING naming the unmeasured scale explicitly.
+MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE = 1.0
+
 KEY_WORKER_MEMORY_GB = "braunschweig.population.popsim.worker_memory_gb"
+
+#: Config key carrying the run's sampling rate. Read only to decide the SEVERITY
+#: of a PopulationSim memory mismatch (see above); this module never resolves or
+#: clamps it.
+KEY_SAMPLING_RATE = "sampling_rate"
 
 #: Below this fraction of the core budget, a pinned ``processes`` value is
 #: reported as wasting the machine. Informational only -- the value is never
@@ -641,13 +688,44 @@ class ResourceReport:
 KEY_POPULATION_METHOD = "braunschweig.population.method"
 
 
+def _chainsolver_core_preview(configured, budget: ResourceBudget) -> int:
+    """Worker count ``braunschweig.chainsolvers.processes`` would take from CORES alone.
+
+    The auto sentinel takes the whole core budget; a positive pin is a CEILING, so
+    the preview is ``min(configured, core_budget)`` -- never the core budget
+    regardless of the pin, which would make the startup log and the run provenance
+    record a worker count the run will not use.
+
+    Deliberately does NOT apply the memory bound: that needs the live driver RSS,
+    which is only known once the stage forks its pool
+    (:func:`effective_chainsolver_workers`). The preview is therefore an UPPER
+    bound on the stage's own number, never a claim about it.
+
+    Rejects a non-integral or negative pin with the same message
+    :func:`_resolve_ceiling` would raise at stage start, so an unusable value is
+    reported at the run start (seconds) instead of hours into a run.
+    """
+    if is_auto(configured):
+        return budget.cores
+    try:
+        requested = int(configured)
+        is_integral = float(configured).is_integer()
+    except (TypeError, ValueError):
+        requested, is_integral = None, False
+    if requested is None or not is_integral or requested < 0:
+        raise ValueError(
+            "braunschweig.chainsolvers.processes must be 0 (auto) or a positive "
+            f"integer count, got {configured!r}.")
+    return max(1, min(requested, budget.cores))
+
+
 def build_report(config: dict, machine: Optional[MachineResources] = None,
                  env: Optional[dict] = None) -> ResourceReport:
     """Resolve every resource key this module clamps or reports against the machine.
 
     Uses the same ``resolve_*`` functions the stages call at their point of use,
     so the startup report cannot drift from what the run actually does. Covers
-    the two OPERATIONAL clamped keys (``java_memory``,
+    the two OPERATIONAL clamped keys resolvable at startup (``java_memory``,
     ``braunschweig.population.popsim.num_workers``), the ``processes`` and
     ``matsim_threads`` / ``matsim_qsim_threads`` warn-only keys, and a
     REPORTING-ONLY preview of ``braunschweig.chainsolvers.processes``
@@ -658,9 +736,17 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     but the full bound needs the LIVE driver RSS, which is only known once the
     stage actually starts (``_solve_problem_set`` calls
     ``effective_chainsolver_workers`` there). This startup report can therefore
-    only state what the CORE budget alone would allow; the stage's own log
+    only state what the CORE budget alone would allow, honouring a configured pin
+    as its ceiling (:func:`_chainsolver_core_preview`); the stage's own log
     line -- not this report -- is the source of truth for the value the run
     actually used.
+
+    The PopulationSim memory violation is fatal only where its 30 GB/worker
+    figure was measured: the run must select a PopulationSim method AND either
+    be configured at ``sampling_rate >= 1.0`` or set
+    ``braunschweig.population.popsim.worker_memory_gb`` explicitly. Otherwise it
+    is a warning that names the unmeasured scale (see
+    :data:`MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE`).
     """
     budget = resolve_budget(machine=machine, env=env)
     worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
@@ -670,6 +756,12 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     chainsolver_configured = config.get("braunschweig.chainsolvers.processes")
     if chainsolver_configured is None:
         chainsolver_configured = config.get("processes", "auto")
+    # The preview must report the count this run would actually start, not the
+    # core budget regardless of the pin: with `braunschweig.chainsolvers.processes: 8`
+    # the startup log and run_provenance_<stamp>.json used to both claim 62, which
+    # would have recorded the SAME effective value for both arms of the server A/B
+    # (shards: 62, processes: 8 vs 62) this mechanism owes as evidence.
+    chainsolver_preview = _chainsolver_core_preview(chainsolver_configured, budget)
 
     resolutions = [
         resolve_java_memory(config.get("java_memory", "auto"), budget),
@@ -681,14 +773,19 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         Resolution(
             key="braunschweig.chainsolvers.processes",
             configured=chainsolver_configured,
-            effective=budget.cores,
+            effective=chainsolver_preview,
             origin="reported",
             note=(
-                f"core budget alone allows up to {budget.cores} workers "
-                f"({chainsolver_worker_memory_gb:g} GB/worker assumed); the memory bound "
-                f"({KEY_CHAINSOLVER_WORKER_MEMORY_GB}, live driver RSS) is applied at "
-                "stage start and may reduce this further -- see the stage's own log "
-                "line for the value actually used, not this startup preview."
+                f"startup preview against the CORE budget only ({budget.cores} cores); "
+                + (f"the auto sentinel takes the full core budget"
+                   if is_auto(chainsolver_configured)
+                   else f"the configured pin {chainsolver_configured!r} is the ceiling")
+                + f". The memory bound ({KEY_CHAINSOLVER_WORKER_MEMORY_GB} = "
+                f"{chainsolver_worker_memory_gb:g} GB/worker, against this process's LIVE "
+                f"RSS) is applied at stage start, not here, so the final count can be "
+                f"LOWER than this preview; the stage's own "
+                f"'[resources] braunschweig.chainsolvers.processes: ... -> ceiling N "
+                f"workers' log line is the source of truth for the value actually used."
             ),
         ),
     ]
@@ -697,29 +794,67 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     workers = next(r for r in resolutions
                    if r.key == "braunschweig.population.popsim.num_workers")
     if workers.effective * worker_memory_gb > budget.memory_gb:
-        # A PopulationSim memory mismatch can only ever fire on a run that actually
-        # selects a PopulationSim population method (popsim_mid / popsim_open) --
-        # see braunschweig.population.methods.requires_populationsim. A MATSim-only
-        # run or a simple_ipf_open run never starts a PopulationSim worker, so
-        # aborting it over this key would be a false-positive gate (issue found in
-        # final review: a MATSim-only overlay on a <~38 GB developer machine was
-        # aborted before any stage ran, even though it never touches PopulationSim).
+        # Two independent conditions have to hold before this mismatch may ABORT a
+        # run, because the 30 GB figure describes one specific kind of run:
+        #
+        # 1. METHOD. A PopulationSim memory mismatch can only ever fire on a run that
+        #    actually selects a PopulationSim population method (popsim_mid /
+        #    popsim_open) -- see braunschweig.population.methods.requires_populationsim.
+        #    A MATSim-only run or a simple_ipf_open run never starts a PopulationSim
+        #    worker, so aborting it over this key would be a false-positive gate
+        #    (a MATSim-only overlay on a <~38 GB developer machine was aborted before
+        #    any stage ran, even though it never touches PopulationSim).
+        # 2. SCALE. DEFAULT_POPSIM_WORKER_MEMORY_GB is a 100%-SCALE measurement (the
+        #    2026-07-10 OOM post-mortem). Applying it at error severity to every
+        #    sampling rate aborted every small-scale popsim fixture run on a machine
+        #    below ~38 GB -- runs that demonstrably worked before this gate existed.
+        #    No scale->memory relationship is measured or assumed (CLAUDE.md forbids
+        #    inventing one), so below the measured scale the mismatch is REPORTED as a
+        #    warning that states the caveat, instead of being treated as fatal.
+        #    An operator who sets KEY_WORKER_MEMORY_GB explicitly has asserted that the
+        #    figure applies to THIS run, which makes it fatal again at any scale.
         from braunschweig.population.methods import requires_populationsim
         population_method = config.get(KEY_POPULATION_METHOD)
-        severity = "error" if requires_populationsim(population_method) else "warning"
+        popsim_selected = requires_populationsim(population_method)
+        sampling_rate = config.get(KEY_SAMPLING_RATE)
+        try:
+            # A missing (or unparseable) sampling_rate counts as "not 100 %": the
+            # figure may only be enforced where it was measured.
+            at_measured_scale = (
+                sampling_rate is not None
+                and float(sampling_rate) >= MEASURED_POPSIM_WORKER_MEMORY_SAMPLING_RATE)
+        except (TypeError, ValueError):
+            at_measured_scale = False
+        operator_asserted_figure = KEY_WORKER_MEMORY_GB in config
+        severity = ("error" if popsim_selected
+                    and (at_measured_scale or operator_asserted_figure) else "warning")
+        message = (
+            f"Even a single PopulationSim worker needs {worker_memory_gb:g} GB but "
+            f"only {budget.memory_gb:.1f} GB is budgeted on a "
+            f"{budget.machine.memory_gb:.1f} GB machine. Reduce "
+            f"{KEY_WORKER_MEMORY_GB}, run on a larger machine, or raise "
+            f"{ENV_MEM_BUDGET}."
+        )
+        if not popsim_selected:
+            message += (
+                f" Not aborting: {KEY_POPULATION_METHOD} = {population_method!r} "
+                "does not select a PopulationSim workflow, so this run never "
+                "starts a PopulationSim worker."
+            )
+        elif severity == "warning":
+            message += (
+                f" Not aborting: the {worker_memory_gb:g} GB per-worker figure is a "
+                f"100%-SCALE measurement (the 2026-07-10 OOM post-mortem) and this run "
+                f"is configured at {KEY_SAMPLING_RATE} = {sampling_rate!r}. The "
+                f"per-worker footprint at this sampling rate has NOT been measured and "
+                f"no scale-to-memory relationship is assumed, so the mismatch is "
+                f"reported rather than treated as fatal. Set {KEY_WORKER_MEMORY_GB} "
+                f"explicitly to assert a per-worker figure for this run -- that makes "
+                f"this mismatch fatal again at any scale."
+            )
         violations.append(Violation(
             key="braunschweig.population.popsim.num_workers", severity=severity,
-            message=(
-                f"Even a single PopulationSim worker needs {worker_memory_gb:g} GB but "
-                f"only {budget.memory_gb:.1f} GB is budgeted on a "
-                f"{budget.machine.memory_gb:.1f} GB machine. Reduce "
-                f"{KEY_WORKER_MEMORY_GB}, run on a larger machine, or raise "
-                f"{ENV_MEM_BUDGET}."
-                + ("" if severity == "error" else
-                   f" Not aborting: {KEY_POPULATION_METHOD} = {population_method!r} "
-                   "does not select a PopulationSim workflow, so this run never "
-                   "starts a PopulationSim worker.")
-            ),
+            message=message,
         ))
 
     processes = next(r for r in resolutions if r.key == "processes")
@@ -730,7 +865,20 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
             message=(
                 f"processes is pinned to {processes.effective} but {budget.cores} "
                 f"cores are budgeted on this machine; the run will leave capacity "
-                f"unused. Raise the pin in the config if that is not intended."
+                f"unused. This warning is EXPECTED on the canonical production "
+                f"configuration (configs/base_bs.yml pins processes: 32 against a "
+                f"62-core budget on the run server) -- do not act on it there. "
+                f"processes is RESULT-AFFECTING, not operational: raising it changes "
+                f"the np.array_split person-chunk partition and the drawn seed count "
+                f"at synthesis/population/matched.py "
+                f"(parallel_statistical_matching) and "
+                f"synthesis/population/spatial/secondary/locations.py (execute), i.e. "
+                f"the statistical-matching and secondary-location realisations. Both "
+                f"sites declare processes with volatile=True, so the affected stage "
+                f"caches will NOT notice the change and will not recompute by "
+                f"themselves (ADR-0126, Decision 3 and its stated known limitation). "
+                f"Raise the pin only deliberately, accepting a changed realisation on "
+                f"caches you must invalidate by hand."
             ),
         ))
 
