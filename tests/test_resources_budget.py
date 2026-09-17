@@ -165,11 +165,17 @@ def test_processes_auto_uses_the_core_budget():
     assert result.origin == "derived"
 
 
-def test_processes_pin_above_the_core_budget_is_clamped():
+def test_processes_pin_above_the_core_budget_is_reported_not_clamped():
+    # BLOCKER 2 (final review): processes is result-affecting at its two pure
+    # read sites and must never be silently clamped -- not even in the
+    # report. effective must stay the pinned value verbatim; only the origin
+    # and note tell the operator the pin exceeds what the machine budgets.
     budget = resources.resolve_budget(LAPTOP, env={})
     result = resources.resolve_processes(32, budget)
-    assert result.effective == 6      # 8 cores - reserve 2
-    assert result.origin == "clamped"
+    assert result.effective == 32     # never reduced to the 6-core budget
+    assert result.origin == "reported"
+    assert result.origin != "clamped"
+    assert "32" in result.note and "6" in result.note
 
 
 def test_a_negative_count_is_rejected_rather_than_treated_as_auto():

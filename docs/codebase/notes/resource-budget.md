@@ -7,14 +7,34 @@ state is the Feature Registry record `resource_adaptive_config`.
 ## What it answers
 
 One question, asked once per run: "how big is the machine this run landed on,
-and what may this run use of it?" `detect_machine()` reads the machine
-(`os.sched_getaffinity` for cores, `psutil` for memory, each with a logged
-fallback and a hard `ResourceDetectionError` if neither source works);
-`resolve_budget()` turns that into one `ResourceBudget` (cores, memory_gb)
-after subtracting a fixed OS/driver reserve, or takes `EQASIM_CPU_BUDGET` /
-`EQASIM_MEM_BUDGET` verbatim when the operator has set them. Every
-resource-sensitive config key is resolved against that ONE budget, so two
-keys can never disagree about how big the machine is.
+and what may this run use of it?" `resolve_budget()` detects cores and memory
+directly via `detect_cores()` (`os.sched_getaffinity`, falling back to
+`os.cpu_count()`) and `detect_memory_gb()` (`psutil`, falling back to
+`/proc/meminfo`) -- each with a logged fallback and a hard
+`ResourceDetectionError` if neither source works -- and detects only the
+quantity not already fixed by an explicit `EQASIM_CPU_BUDGET` /
+`EQASIM_MEM_BUDGET` override. The result becomes one `ResourceBudget` (cores,
+memory_gb) after subtracting a fixed OS/driver reserve, or the override is
+taken verbatim. `detect_machine()` still exists and bundles the same two
+detections into one `MachineResources` call, but `resolve_budget()` does not
+call it any more (the env-override fix needed to detect only the
+non-overridden quantity); as of this writing `detect_machine()` has no
+production caller left at all -- only its own tests
+(`tests/test_resources_detection.py`) exercise it directly.
+
+Every key THIS MODULE resolves (`java_memory`,
+`braunschweig.population.popsim.num_workers`, and the reporting-only
+`processes`) is resolved against that one budget, so those keys cannot
+disagree with each other about how big the machine is. But
+`braunschweig.chainsolvers.processes` -- the chainsolver pool, the largest
+process fan-out in the pipeline -- is resolved entirely outside this module:
+`context.config("braunschweig.chainsolvers.processes")` is passed to
+`parallelism.resolve_workers()` -> `parallelism.available_cores()` ->
+`os.cpu_count()`, which ignores CPU affinity (`taskset` / a cpuset
+restriction) and ignores `EQASIM_CPU_BUDGET` entirely (see the
+`DEFAULT_CORE_RESERVE` comment in `braunschweig/resources.py` for the exact
+divergence). So two keys CAN disagree about how big the machine is, on a
+machine where affinity differs from `cpu_count()`.
 
 ## The rule that must never be broken: a resolved value never enters the config
 
@@ -93,11 +113,19 @@ origin, note)`. `origin` is one of:
 - `"pinned"` -- the configured value fit the budget and is used verbatim
   (memory sizes are echoed byte-for-byte, never reformatted, so a
   sub-gigabyte pin like `"1500M"` is not silently rounded).
-- `"clamped"` -- the configured value did not fit and was reduced; always
-  logged at `WARNING` by the `effective_*` wrapper and carried into the run
-  provenance.
+- `"clamped"` -- an OPERATIONAL key's configured value did not fit and was
+  reduced (`java_memory`, `braunschweig.population.popsim.num_workers`);
+  always logged at `WARNING` by the `effective_*` wrapper and carried into
+  the run provenance.
 - `"derived"` -- the key was left at its `auto` sentinel (`0`, `""`, or
   `"auto"`, see `is_auto()`) and the budget supplied the value outright.
+- `"reported"` -- the reporting-only `processes` key's configured value
+  exceeds the budget but is NEVER reduced (see `resolve_processes`):
+  `effective` still equals `configured` verbatim, and `note` states what the
+  budget would have allowed. Never confuse this with `"clamped"` -- the
+  final review of this branch found `ResourceReport` claiming
+  `processes = 14 [clamped]` while the run actually used the pinned 32, which
+  is exactly the false claim this origin value exists to prevent.
 
 `ResourceReport` (built once per run by `build_report()` in
 `scripts/run_synpp.py`, from the RESOLVED config, so it cannot drift from

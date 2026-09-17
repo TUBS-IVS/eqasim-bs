@@ -58,7 +58,7 @@ def test_main_calls_run_from_yaml_with_installed_signature(tmp_path, monkeypatch
     monkeypatch.setattr("braunschweig.logging_setup.setup_logging",
                         lambda level="INFO": str(tmp_path / "run.log"))
     monkeypatch.setattr("braunschweig.provenance.log_and_write_run_provenance",
-                        lambda config_path: None)
+                        lambda config_path, **kwargs: None)
 
     config_path = tmp_path / "config.yml"
     config_path.write_text(textwrap.dedent("""
@@ -115,7 +115,7 @@ def test_main_two_args_composes_and_runs_merged_config(tmp_path, monkeypatch):
     monkeypatch.setattr("braunschweig.logging_setup.setup_logging",
                         lambda level="INFO": str(tmp_path / "run.log"))
     monkeypatch.setattr("braunschweig.provenance.log_and_write_run_provenance",
-                        lambda p: seen.setdefault("provenance", p))
+                        lambda p, **kwargs: seen.setdefault("provenance", p))
     monkeypatch.setattr(mod.synpp, "run_from_yaml",
                         lambda p, wd, run, ov: seen.setdefault("run", (p, wd, run, ov)))
 

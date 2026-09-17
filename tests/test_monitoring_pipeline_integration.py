@@ -150,7 +150,7 @@ def test_a_pipeline_run_records_a_series_into_its_working_directory(tmp_path, mo
 
     executed = []
     monkeypatch.setattr(logging_setup, "setup_logging", lambda **kwargs: str(log_path))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path: None)
+    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
     monkeypatch.setattr(synpp, "run_from_yaml",
                         lambda *args, **kwargs: executed.append(args))
 
@@ -185,7 +185,7 @@ def test_the_recorded_series_watches_the_run_log_of_that_run(tmp_path, monkeypat
     }), encoding="utf-8")
 
     monkeypatch.setattr(logging_setup, "setup_logging", lambda **kwargs: str(log_path))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path: None)
+    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()
@@ -215,7 +215,7 @@ def test_the_summary_artifacts_are_written_when_the_run_ends(tmp_path, monkeypat
 
     monkeypatch.setattr(logging_setup, "setup_logging",
                         lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path: None)
+    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()
@@ -247,7 +247,7 @@ def test_a_failing_run_still_leaves_the_series_and_the_summary(tmp_path, monkeyp
 
     monkeypatch.setattr(logging_setup, "setup_logging",
                         lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path: None)
+    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
     monkeypatch.setattr(synpp, "run_from_yaml", _fail)
 
     run_synpp = _load_run_synpp()
@@ -276,7 +276,7 @@ def test_monitoring_switched_off_in_the_config_leaves_no_trace(tmp_path, monkeyp
 
     monkeypatch.setattr(logging_setup, "setup_logging",
                         lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path: None)
+    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
     monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
 
     run_synpp = _load_run_synpp()

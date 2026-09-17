@@ -253,10 +253,22 @@ class ResourceBudget:
 class Resolution:
     """The effective value of one resource key and why it has that value.
 
-    ``origin`` is ``"pinned"`` (the configured value fitted and was used as-is),
-    ``"clamped"`` (it did not fit and was reduced) or ``"derived"`` (the key was
-    left at an auto sentinel). ``note`` is the human-readable explanation that
-    goes into the log and the run provenance.
+    ``origin`` is one of:
+
+    - ``"pinned"`` -- the configured value fitted and was used as-is.
+    - ``"clamped"`` -- it did not fit an OPERATIONAL key's budget and was
+      reduced (``java_memory``, ``braunschweig.population.popsim.num_workers``).
+    - ``"derived"`` -- the key was left at an auto sentinel and the budget
+      supplied the value outright.
+    - ``"reported"`` -- a REPORTING-ONLY key (currently only ``processes``, see
+      :func:`resolve_processes`) whose configured value exceeds the budget but
+      is never adjusted, because the key is result-affecting: ``effective``
+      still equals ``configured`` verbatim, and ``note`` states what the
+      budget would have allowed, so the mismatch is visible without a false
+      claim that anything was clamped.
+
+    ``note`` is the human-readable explanation that goes into the log and the
+    run provenance.
     """
 
     key: str
@@ -437,10 +449,47 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
     random seeds are drawn (``random.randint(10000, size=processes)``), so it must
     never be silently clamped (see ADR-0126, Decision 3, and the corrected worked
     example in ``docs/codebase/notes/resource-budget.md``). This resolver exists
-    only so ``build_report`` can WARN when a pinned value under-uses the machine;
-    its result is never applied to the config or to a consumer.
+    only so ``build_report`` can WARN when a pinned value under-uses the machine
+    and REPORT when a pin exceeds the budget; its result is never applied to the
+    config or to a consumer.
+
+    Unlike :func:`resolve_java_memory` / :func:`resolve_popsim_workers`
+    (built on the shared ``_resolve_ceiling`` clamp-or-pass-through helper),
+    ``effective`` here is ALWAYS the configured value verbatim -- nothing is
+    ever reduced. A pin above the budget returns ``origin="reported"`` (never
+    ``"clamped"``, which would claim a reduction that does not happen) with a
+    note stating what the budget would have allowed, so the mismatch is still
+    visible to the operator without asserting a false clamp (final review:
+    the report previously said ``processes = 14 [clamped]`` while the run
+    actually used the full pinned 32).
     """
-    return _resolve_ceiling("processes", configured, budget.cores, unit="cores")
+    if is_auto(configured):
+        return Resolution(
+            key="processes", configured=configured, effective=budget.cores,
+            origin="derived",
+            note=f"derived from the resource budget ({budget.cores} cores)",
+        )
+    try:
+        requested = int(configured)
+        is_integral = float(configured).is_integer()
+    except (TypeError, ValueError):
+        requested, is_integral = None, False
+    if requested is None or not is_integral or requested < 0:
+        raise ValueError(
+            f"processes must be 0 (auto) or a positive integer count, got {configured!r}.")
+    if requested > budget.cores:
+        return Resolution(
+            key="processes", configured=requested, effective=requested,
+            origin="reported",
+            note=(f"configured {requested} exceeds the resource budget "
+                  f"({budget.cores} cores); processes is result-affecting and is "
+                  f"never adjusted, so the run will use {requested} verbatim -- "
+                  f"only {budget.cores} cores are budgeted on this machine"),
+        )
+    return Resolution(
+        key="processes", configured=requested, effective=requested,
+        origin="pinned", note="configured value fits the resource budget (cores)",
+    )
 
 
 #: Default measured peak memory of one PopulationSim batch worker, in gigabytes.
@@ -508,7 +557,19 @@ class ResourceReport:
         return lines
 
     def format_log(self) -> str:
-        """Full human-readable report: machine, budget, resolutions, violations."""
+        """Full human-readable report: machine, budget, resolutions, violations.
+
+        NOT on the production run-start path: ``enforce_report`` logs the
+        header lines and each violation separately (see its docstring) so
+        every violation is logged exactly once, at its own severity, rather
+        than calling this method. As of this writing nothing in
+        ``scripts/run_synpp.py`` or ``enforce_report`` calls ``format_log``;
+        it is exercised directly only by
+        ``tests/test_resources_report.py::test_format_log_names_machine_sources_and_every_origin``
+        and referenced in ``enforce_report``'s docstring purely as a
+        contrast. Kept as a single-string rendering for that test and for ad
+        hoc/interactive inspection of a report.
+        """
         lines = self._header_lines()
         for violation in self.violations:
             lines.append(f"[resources]   {violation.severity.upper()}: {violation.message}")
@@ -559,10 +620,12 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     does NOT cover ``braunschweig.chainsolvers.processes``: the chainsolver
     pool -- the largest process fan-out in the pipeline -- is resolved
     entirely inside
-    ``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``
-    (`_resolve_shard_attempts` / the ``chainsolvers.processes`` config read),
-    is never routed through this module, and its per-worker memory footprint
-    has never been measured (see ADR-0126's Non-goals).
+    ``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``,
+    where ``context.config("braunschweig.chainsolvers.processes")`` is passed
+    to ``parallelism.resolve_workers`` (NOT ``_resolve_shard_attempts``, which
+    validates the separate ``braunschweig.chainsolvers.shard_attempts`` key).
+    This pool is never routed through this module, and its per-worker memory
+    footprint has never been measured (see ADR-0126's Non-goals).
     """
     budget = resolve_budget(machine=machine, env=env)
     worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
