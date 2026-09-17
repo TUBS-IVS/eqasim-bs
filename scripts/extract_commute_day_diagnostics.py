@@ -32,9 +32,11 @@ block                   source
                         ``context.set_info`` instead -- see that module's ``INFO_KEY``.
 ``donor_pool``          ``braunschweig.synthesis.commute_day.home_office_donors_stage``'s cache
                         pickle, third element of its ``(attributes, trips, diagnostics)`` tuple.
-                        OPTIONAL: a working directory whose entry has been pruned still yields a
-                        usable artefact, and the absence is then STATED in the block
-                        (``available: false`` with a reason), never silently omitted.
+                        OPTIONAL in one sense only -- ABSENCE. No entry in ``pipeline.json``, or
+                        an entry whose cache file has been pruned, still yields a usable artefact
+                        and the absence is STATED in the block (``available: false`` with a
+                        reason), never silently omitted. An AMBIGUOUS donor stage or a malformed
+                        payload ABORTS like any other stage: see :class:`MissingStageOutput`.
 ======================  =========================================================================
 
 AGGREGATES ONLY. Both pickles also carry population-sized per-person frames (the ``states`` frame
@@ -101,6 +103,22 @@ class ExtractionError(SystemExit):
     """
 
 
+class MissingStageOutput(ExtractionError):
+    """A stage's output is ABSENT from this working directory -- and only that.
+
+    Raised for the two ways a stage can simply not be there: ``pipeline.json`` holds no entry for
+    it, or it holds one whose ``<hash>.p`` has been pruned (an ephemeral stage). Both are states
+    an otherwise complete working directory can legitimately be in, so the OPTIONAL donor block
+    tolerates them and says so in the artefact.
+
+    Deliberately NOT raised for an AMBIGUOUS stage (two config variants -- a decision the caller
+    must make) nor for a malformed payload (a defect). Those stay plain
+    :class:`ExtractionError`s and abort even in the optional block: swallowing them would ship a
+    committed artefact that silently omits diagnostics from a stage that IS present, which reads
+    exactly like a stage that was never run (PR #417 review; CLAUDE.md "Fallback transparency").
+    """
+
+
 def _read_meta(working_directory: Path) -> dict:
     path = working_directory / PIPELINE_META
     if not path.is_file():
@@ -135,7 +153,7 @@ def resolve_stage_hash(meta: dict, stage_name: str, explicit: str | None) -> str
         return explicit
     candidates = sorted(_candidates(meta, stage_name))
     if not candidates:
-        raise ExtractionError(
+        raise MissingStageOutput(
             f"no cache entry for stage {stage_name!r} in {PIPELINE_META} -- this working "
             "directory holds no run of that stage. Check that the run had the commute-day model "
             "in its run list (commute_day_state_enabled, and the stage reached in the DAG).")
@@ -156,7 +174,7 @@ def _candidates(meta: dict, stage_name: str) -> list:
 def _load_pickle(working_directory: Path, stage_hash: str, stage_name: str):
     path = working_directory / f"{stage_hash}.p"
     if not path.is_file():
-        raise ExtractionError(
+        raise MissingStageOutput(
             f"{PIPELINE_META} lists stage {stage_name!r} as {stage_hash}, but its cache file "
             f"{path} is missing -- the entry was pruned (an ephemeral stage) or the directory is "
             "incomplete. The diagnostics cannot be recovered from the meta file alone.")
@@ -164,15 +182,45 @@ def _load_pickle(working_directory: Path, stage_hash: str, stage_name: str):
         return pickle.load(handle)
 
 
+#: Keys issue #378 added to the state stage's ``matching`` block. Their absence means the run
+#: predates that instrumentation, so the artefact cannot answer ADR-0104 check 4's fourth
+#: diagnostic -- which it must SAY, rather than write a file that merely happens not to contain
+#: them (PR #417 review; symmetric with :func:`trips_day_info`).
+REQUIRED_MATCHING_KEYS = ("donor_pool_size_by_hard_cell", "matched_cell_size_by_level",
+                          "n_persons_matched_from_single_donor_cell")
+
+
 def state_diagnostics(working_directory: Path, stage_hash: str) -> dict:
-    """The state stage's ``diagnostics`` dict -- never its ``states`` frame (see the module doc)."""
+    """The state stage's ``diagnostics`` dict -- never its ``states`` frame (see the module doc).
+
+    An ENABLED state stage must carry the issue-#378 pool-size keys
+    (:data:`REQUIRED_MATCHING_KEYS`); otherwise the extraction aborts naming them. Without that
+    check a pre-#378 cache entry would produce a perfectly valid-looking
+    ``state_diagnostics.json`` whose silence about the pool sizes is indistinguishable from a run
+    in which they were measured and found empty.
+
+    The OFF path is preserved: ``commute_day_state_enabled`` false makes the stage return
+    ``{"enabled": False}`` with no ``matching`` block at all, and that is a complete and correct
+    record of a run in which no donor was ever matched.
+    """
     output = _load_pickle(working_directory, stage_hash, STATE_STAGE)
     if not isinstance(output, dict) or "diagnostics" not in output:
         raise ExtractionError(
             f"the cache entry {stage_hash} does not look like {STATE_STAGE}'s output: expected a "
             f"dict with a 'diagnostics' key, found {type(output).__name__} "
             f"{sorted(output) if isinstance(output, dict) else ''}.")
-    return output["diagnostics"]
+    diagnostics = output["diagnostics"]
+    if isinstance(diagnostics, dict) and diagnostics.get("enabled"):
+        matching = diagnostics.get("matching") or {}
+        missing = [key for key in REQUIRED_MATCHING_KEYS if key not in matching]
+        if missing:
+            raise ExtractionError(
+                f"the cache entry {stage_hash} for {STATE_STAGE!r} is an ENABLED state draw whose "
+                f"'matching' block lacks {missing} (it carries {sorted(matching) or 'nothing'}). "
+                "The stage ran under code that predates issue #378, so this run cannot answer "
+                "ADR-0104 check 4's pool-size diagnostic at all; re-run the state stage to record "
+                "it rather than committing an artefact that is silent about it.")
+    return diagnostics
 
 
 def donor_diagnostics(working_directory: Path, stage_hash: str) -> dict:
@@ -216,15 +264,18 @@ def collect(working_directory: Path, stage_hashes: dict) -> dict:
                       "source": f"{PIPELINE_META}:{trips_hash}.info.{INFO_KEY}"},
     }
 
-    # OPTIONAL, and explicitly so: an absent donor block is STATED in the output rather than
+    # OPTIONAL, and explicitly so: an ABSENT donor block is STATED in the output rather than
     # left out, so a reader can never mistake "not collected" for "not reported by the stage"
-    # (CLAUDE.md "Fallback transparency" -- no silent fallbacks).
+    # (CLAUDE.md "Fallback transparency" -- no silent fallbacks). Only MissingStageOutput is
+    # tolerated, never a bare ExtractionError: an AMBIGUOUS donor stage and a malformed payload
+    # are a caller decision and a defect respectively, and both must abort rather than be
+    # recorded as an absence (PR #417 review).
     try:
         donor_hash = resolve_stage_hash(meta, DONOR_STAGE, stage_hashes.get(DONOR_STAGE))
         donor_block = donor_diagnostics(working_directory, donor_hash)
         stages[DONOR_STAGE] = {"hash": donor_hash,
                                "source": str(working_directory / f"{donor_hash}.p")}
-    except ExtractionError as error:
+    except MissingStageOutput as error:
         reason = f"{DONOR_STAGE}: {error}"
         logger.warning("donor pool diagnostics NOT collected -- %s", reason)
         donor_block = {"available": False, "reason": reason}

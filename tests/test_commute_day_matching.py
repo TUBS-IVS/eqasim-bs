@@ -523,3 +523,45 @@ def test_matched_cell_size_by_level_omits_levels_nobody_matched_at():
 
     assert set(diagnostics["matched_cell_size_by_level"]) == {"0", "4"}
     assert set(diagnostics["matched_by_level"]) == set(range(matching.MAX_COARSENING_LEVEL + 1))
+
+
+def test_donor_pool_size_by_hard_cell_never_reads_an_unresolved_flag_as_true():
+    """PR #417 review: ``bool(np.nan)`` is ``True`` and ``bool(pd.NA)`` RAISES, so converting a
+    grouped cell key straight to ``bool`` would silently file an unresolved donor under the
+    positive value (or abort). An unresolved flag is reported as the literal "unknown" -- the
+    same word ``donor_pool.DISTANCE_CLASS_UNKNOWN`` and ``state_stage`` already use."""
+    persons = _persons_home_fixture()
+    donors = _donors_fixture()
+    donors["has_children_u14"] = [False, np.nan, False]
+
+    _matches, diagnostics = _match(persons, donors, np.random.RandomState(0))
+
+    census = diagnostics["donor_pool_size_by_hard_cell"]
+    values = {record["has_children_u14"] for record in census}
+    assert "unknown" in values and True not in values
+    assert json.loads(json.dumps(census, allow_nan=False)) == census
+
+
+def test_donor_pool_size_by_hard_cell_survives_a_nullable_boolean_dtype():
+    """``pd.NA`` (nullable ``boolean`` dtype) must not abort the whole matching pass."""
+    persons = _persons_home_fixture()
+    donors = _donors_fixture()
+    donors["has_active_escort"] = pd.array([False, pd.NA, False], dtype="boolean")
+
+    _matches, diagnostics = _match(persons, donors, np.random.RandomState(0))
+
+    assert "unknown" in {record["has_active_escort"]
+                         for record in diagnostics["donor_pool_size_by_hard_cell"]}
+
+
+def test_donor_pool_size_by_hard_cell_accounts_for_every_eligible_donor():
+    """The census is a partition: its counts add back up to the donors the matching could use."""
+    donors = _donors_fixture()
+    donors["distance_class"] = ["10_25", np.nan, "25_50"]
+
+    _matches, diagnostics = _match(_persons_home_fixture(), donors, np.random.RandomState(0))
+
+    census = diagnostics["donor_pool_size_by_hard_cell"]
+    # d3 is has_car-unknown and excluded from the pass entirely, so 2 of the 3 remain.
+    assert sum(record["n_donors"] for record in census) == 2
+    assert "unknown" in {record["distance_class"] for record in census}

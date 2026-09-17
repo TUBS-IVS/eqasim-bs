@@ -63,6 +63,7 @@ days rather than a one-to-one assignment).
 from __future__ import annotations
 
 import logging
+import math
 
 import numpy as np
 import pandas as pd
@@ -122,6 +123,34 @@ def _widened_distance_labels(assigned_class: str) -> set:
     return set(COMMUTE_CLASS_LABELS[lo:hi + 1])
 
 
+#: Reported in place of an UNRESOLVED cell value in :func:`donor_pool_size_by_hard_cell` -- the
+#: same word ``donor_pool.DISTANCE_CLASS_UNKNOWN`` and ``state_stage``'s ``by_assigned_class``
+#: already use for a missing class, so one vocabulary covers all of them.
+CELL_VALUE_UNKNOWN = "unknown"
+
+
+def _cell_value(value, *, as_flag: bool = True):
+    """One census cell value: a plain ``bool`` / ``str``, or :data:`CELL_VALUE_UNKNOWN`.
+
+    NEVER a bare ``bool(value)`` on a grouped key (PR #417 review): ``bool(numpy.nan)`` is
+    ``True``, so an unresolved flag would be filed under the POSITIVE value, and ``bool(pandas.NA)``
+    -- what a nullable ``boolean`` column yields -- raises ``TypeError`` and would abort the whole
+    matching pass from inside a diagnostic. Both are silent-wrong-answer failure modes of exactly
+    the kind CLAUDE.md's fallback-transparency rule forbids, so an unresolved value is named as
+    unresolved instead. ``str(numpy.nan)`` is likewise avoided: it would render the literal
+    ``"nan"`` as though it were a distance class.
+
+    In production none of the three flags can be unresolved (``donor_pool.donor_attributes``
+    builds ``has_children_u14`` and ``has_active_escort`` with ``fillna``/``isin``, and the
+    ``has_car``-unresolved donors are excluded from the pass before the census runs), so this is a
+    guard on the function's own contract rather than a live fallback -- it must hold for any frame
+    handed to this public function, not only for the one the stage happens to pass today.
+    """
+    if value is None or value is pd.NA or (isinstance(value, float) and math.isnan(value)):
+        return CELL_VALUE_UNKNOWN
+    return bool(value) if as_flag else str(value)
+
+
 def donor_pool_size_by_hard_cell(eligible_donors: pd.DataFrame) -> list:
     """Donor count per HARD matching cell -- the census half of ADR-0104 check 4 (issue #378).
 
@@ -147,23 +176,27 @@ def donor_pool_size_by_hard_cell(eligible_donors: pd.DataFrame) -> list:
 
     Returns a list of plain-Python dicts -- never a frame or a tuple-keyed dict -- sorted by the
     four cell columns, so the census round-trips through strict JSON unchanged and two runs of
-    the same pool produce byte-identical output. ``dropna=False``: a donor with an unresolved
-    cell column is reported under the ``str`` of that value rather than silently dropped, so the
-    record count always adds back up to ``len(eligible_donors)``.
+    the same pool produce byte-identical output. ``dropna=False`` plus :func:`_cell_value`: a
+    donor whose cell column is UNRESOLVED is reported under the literal
+    :data:`CELL_VALUE_UNKNOWN` rather than dropped, so the counts always add back up to
+    ``len(eligible_donors)`` -- the census is a partition of the pool the matching could use.
     """
     columns = ["distance_class", *HARD_CRITERIA]
     _require_columns(eligible_donors, columns, "eligible donors frame")
     counts = eligible_donors.groupby(columns, dropna=False).size()
     records = [{
-        "distance_class": str(distance_class),
-        "has_active_escort": bool(has_active_escort),
-        "has_children_u14": bool(has_children_u14),
-        "has_car": bool(has_car),
+        "distance_class": _cell_value(distance_class, as_flag=False),
+        "has_active_escort": _cell_value(has_active_escort),
+        "has_children_u14": _cell_value(has_children_u14),
+        "has_car": _cell_value(has_car),
         "n_donors": int(n_donors),
     } for (distance_class, has_active_escort, has_children_u14, has_car), n_donors
         in counts.items()]
-    records.sort(key=lambda record: (record["distance_class"], record["has_active_escort"],
-                                     record["has_children_u14"], record["has_car"]))
+    # str() on every key first: a cell whose value is the bool True and one whose value is the
+    # string "unknown" are not comparable, so sorting the raw mixture would raise.
+    records.sort(key=lambda record: (str(record["distance_class"]),
+                                     str(record["has_active_escort"]),
+                                     str(record["has_children_u14"]), str(record["has_car"])))
     return records
 
 

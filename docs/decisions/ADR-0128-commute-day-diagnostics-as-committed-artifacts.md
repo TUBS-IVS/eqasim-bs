@@ -56,6 +56,14 @@ recomputing it afterwards would silently drop the R7 exclusion.
 A cell of exactly one donor is the sparsity signal the check is asking after: that donor's day
 was the only day on offer, so the draw had no freedom at all. It is counted and logged.
 
+An UNRESOLVED cell value is named as unresolved (the literal `"unknown"`, the word the codebase
+already uses for a missing distance class), never coerced: `bool(numpy.nan)` is `True`, so a bare
+conversion of a grouped key would file an unresolved donor under the POSITIVE value, and
+`bool(pandas.NA)` raises and would abort the whole matching pass from inside a diagnostic. In
+production none of the three flags can be unresolved, so this is a guard on the function's own
+contract rather than a live fallback — but a public function must not have a docstring promising
+robustness its code lacks (PR #417 review).
+
 The donor-pool builder already emits a `cells` diagnostic, and it is deliberately NOT reused:
 it is keyed on three dimensions only (`distance_class`, `has_children_u14`,
 `has_active_escort`), so it merges cells that the `has_car` hard criterion splits, and it counts
@@ -81,7 +89,17 @@ It reads a run's synpp working directory, resolves each stage name to its cache 
 state-stage diagnostics, the reporting-day trips info and the donor-pool diagnostics, each tagged
 with the hash it came from. (The donor-pool block's `cells` entry is tuple-keyed in the stage's
 own dict; `json_safe` renders those keys with `str`, so they appear as `"('lt10', True, False)"`
-strings rather than failing the write.) **Aggregates only**: both pickles also carry population-sized
+strings rather than failing the write.)
+
+Two guards keep the artefact from being quietly incomplete (both added in review of PR #417).
+The donor block is optional **only** in the sense of ABSENCE — no entry, or a pruned cache file
+(`MissingStageOutput`); an ambiguous donor stage is a decision the caller must make and a
+malformed payload is a defect, and both abort rather than being recorded as `available: false`,
+which would read exactly like a stage that never ran. And an ENABLED state stage whose `matching`
+block lacks the issue-#378 keys aborts naming them, symmetric with the reporting-day trips block:
+otherwise a pre-#378 cache entry would yield a valid-looking file whose silence about the pool
+sizes is indistinguishable from a run in which they were measured and found empty. The OFF path
+(`{"enabled": false}`, no `matching` block) stays valid. **Aggregates only**: both pickles also carry population-sized
 per-person frames, and this artefact is meant to be committed beside a run manifest.
 
 **4. `docs/runs/TEMPLATE.yml` is the blank manifest, and the loader skips it by name.**

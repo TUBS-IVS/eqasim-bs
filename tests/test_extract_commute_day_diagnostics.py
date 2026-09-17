@@ -252,3 +252,70 @@ def test_resolve_stage_hash_matches_the_name_prefix_not_a_substring(tmp_path):
 def test_resolve_stage_hash_accepts_an_unconfigured_stage_named_by_itself(tmp_path):
     """``hash_name`` returns the BARE name when a stage declares no config at all."""
     assert resolve_stage_hash({STATE_STAGE: {}}, STATE_STAGE, None) == STATE_STAGE
+
+
+# ------------------------------------------- PR #417 review: absence vs. defect, and #378 keys
+# The donor block is OPTIONAL only in the sense of ABSENT (no cache entry, or a pruned cache
+# file). An AMBIGUOUS donor stage is a decision the caller must make, and a wrong-shaped pickle
+# is a defect -- swallowing either into `available: false` would ship a committed artefact that
+# silently omits diagnostics from a stage that is actually present.
+
+
+def test_extract_tolerates_a_donor_entry_whose_cache_file_was_pruned(tmp_path):
+    """Meta lists the stage, the .p is gone (an ephemeral/pruned entry): still a usable artefact."""
+    directory = _working_directory(tmp_path)
+    (directory / f"{DONOR_HASH}.p").unlink()
+
+    payload = _run(directory, tmp_path / "out")
+
+    assert payload["donor_pool"]["available"] is False
+    assert "cache file" in payload["donor_pool"]["reason"]
+    assert payload["state"]["n_workers"] == 6          # the required blocks are unaffected
+
+
+def test_extract_raises_when_the_donor_stage_is_ambiguous(tmp_path):
+    """Two config variants of the donor stage: which one to report is the caller's decision."""
+    directory = _working_directory(tmp_path)
+    meta = json.loads((directory / "pipeline.json").read_text(encoding="utf-8"))
+    meta[f"{DONOR_STAGE}__ffff6666"] = {"info": {}, "updated": 4.0}
+    (directory / "pipeline.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--working-directory", str(directory), "--out-dir", str(tmp_path / "out")])
+    assert "--stage-hash" in str(excinfo.value)
+
+
+def test_extract_raises_when_the_donor_pickle_has_the_wrong_shape(tmp_path):
+    """A present-but-malformed donor entry is a defect, not an absence."""
+    directory = _working_directory(tmp_path)
+    with open(directory / f"{DONOR_HASH}.p", "wb") as handle:
+        pickle.dump({"not": "a 3-tuple"}, handle)
+
+    with pytest.raises(SystemExit, match="3-tuple"):
+        main(["--working-directory", str(directory), "--out-dir", str(tmp_path / "out")])
+
+
+def test_extract_raises_when_the_state_stage_predates_the_pool_size_diagnostics(tmp_path):
+    """Symmetry with trips_day_info: an artefact that cannot answer check 4 must say so, rather
+    than being written as though the pool sizes had been measured and found absent."""
+    directory = _working_directory(tmp_path)
+    diagnostics = _state_diagnostics()
+    del diagnostics["matching"]["donor_pool_size_by_hard_cell"]
+    with open(directory / f"{STATE_HASH}.p", "wb") as handle:
+        pickle.dump({"states": _states_frame(), "diagnostics": diagnostics}, handle)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--working-directory", str(directory), "--out-dir", str(tmp_path / "out")])
+    message = str(excinfo.value)
+    assert "donor_pool_size_by_hard_cell" in message and "#378" in message
+
+
+def test_extract_accepts_a_disabled_state_stage_without_a_matching_block(tmp_path):
+    """The OFF path emits {"enabled": False} and no matching block at all -- still valid."""
+    directory = _working_directory(tmp_path)
+    with open(directory / f"{STATE_HASH}.p", "wb") as handle:
+        pickle.dump({"states": _states_frame(), "diagnostics": {"enabled": False}}, handle)
+
+    payload = _run(directory, tmp_path / "out")
+
+    assert payload["state"] == {"enabled": False}
