@@ -62,8 +62,10 @@ activities), but the time fit is poor::
     gap <= 15 min   ... restricted to an adult who ALSO escorts       0 of 46 legs
     gap <= 30 min   ... restricted to an adult who ALSO escorts       0 of 46 legs
 
-The SAME-purpose row is the strict D2 rule's own headroom
-(``escort_passive_joint_surrogate_require_same_purpose``, ADR-0127): most of the
+The SAME-purpose row is an upper-bound proxy for the strict D2 rule
+(``escort_passive_joint_surrogate_require_same_purpose``, ADR-0127), measured at floor 18
+over all 46 unlinked legs (the shipped rescue runs at floor 14 over the 27
+adult-not-in-household candidates and also drops cyclic rows): most of the
 ``any household adult`` reach does NOT survive requiring the surrogate's purpose to equal
 the child's own. (Added 2026-09-17, same working directory and self-check as the RESULT
 above -- 58 / 12, unchanged.)
@@ -100,7 +102,9 @@ anchor at the child's own location instead, ADR-0127 Rejected alternatives -- ME
 not built, and changes no pipeline behaviour). Of the 17 eligible legs
 (the child's own activity secondary), NONE pairs in time with its household adult's
 ``escort`` trip at either gap: 0 of 46 unlinked legs (0.0 %) and 0 of 17 eligible legs
-(0.0 %) at gap <= 15 min, and again 0 of 46 (0.0 %) / 0 of 17 (0.0 %) at gap <= 30 min. The
+(0.0 %) at gap <= 15 min, and again 0 of 46 (0.0 %) / 0 of 17 (0.0 %) at gap <= 30 min; the
+10 / 14 legs the reconciliation row reaches therefore all belong to the 29 children whose
+own activity is education or home (19 + 10). The
 "both diaries independently attest travel at the same minute" corroboration this idea would
 need is not available in this smoke either -- the same conclusion the ``adult_also_escorts``
 headroom row above already draws, now measured directly against the escort trip's own
@@ -397,7 +401,7 @@ def summarise_headroom(candidates: pd.DataFrame, unlinked: pd.DataFrame,
     Four restrictions are reported, from the widest to the most conservative: ANY
     household adult with a secondary activity; restricted to an adult whose activity
     purpose EQUALS the child's OWN purpose (the strict D2 rule of ADR-0127,
-    ``escort_passive_joint_surrogate_require_same_purpose``); further restricted to an
+    ``escort_passive_joint_surrogate_require_same_purpose``); separately restricted to an
     adult who ALSO escorts somebody that day; and an adult whose purpose additionally
     EQUALS the DONOR adult's (the original paired adult from the survey, not the child).
     The counts are legs, not candidate rows -- a leg counts once however many surrogates

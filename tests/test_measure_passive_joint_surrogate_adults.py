@@ -203,6 +203,9 @@ def test_headroom_restrictions_narrow_monotonically():
         _all_trips(), _persons(), _no_links()), gap_minutes=(30.0,))
     reached = summary.set_index("restriction")["n_legs_reached"]
     assert reached["any_secondary_adult"] >= reached["same_purpose_as_child"]
+    # same_purpose_as_child and adult_also_escorts are SIBLING restrictions of
+    # any_secondary_adult, not nested in each other, so this ordering is observed on this
+    # fixture, not structural -- a differently shaped fixture could reverse it.
     assert reached["same_purpose_as_child"] >= reached["adult_also_escorts"]
     assert reached["adult_also_escorts"] >= reached["and_purpose_matches_donor"]
 
