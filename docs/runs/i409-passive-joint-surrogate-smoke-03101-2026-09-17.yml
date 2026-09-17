@@ -152,7 +152,7 @@ validation:
     |---|---|---|---|---|---|---|
     | strict | shop | 1 | 0.0 / 0.0 | 0.0 / 0.0 | 14699.5 / 14699.5 | 14699.5 / 14699.5 |
     | relaxed | other | 5 | 0.0 / 0.0 | 42533.3 / 33713.9 | 11615.6 / 16478.5 | 40688.1 / 36898.1 |
-    | relaxed | shop | 1 | 0.0 / 0.0 | 0.0 / 0.0 | 20394.7 / 14699.5 | 14699.5 / 14699.5 |
+    | relaxed | shop | 1 | 0.0 / 0.0 | 0.0 / 0.0 | 20394.7 / 20394.7 | 14699.5 / 14699.5 |
 
     dist_child_adult_m_arm is 0.0 in EVERY row: each rescued child activity sits exactly on its
     surrogate adult''s placed location, which is what the anchor is supposed to do. The OFF
