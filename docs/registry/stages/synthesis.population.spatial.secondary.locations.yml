@@ -54,7 +54,30 @@ decisions:
 - ADR-0116
 - ADR-0117
 - ADR-0119
+- ADR-0126
 notes: >-
+  RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
+  the chainsolver's person-shard count now has its OWN hashed config key,
+  braunschweig.chainsolvers.shards (default 62, SCIENTIFIC -- it fixes the partition
+  and every shard's derived rng seed), separated out of
+  braunschweig.chainsolvers.processes (now declared volatile=True, purely OPERATIONAL:
+  how many processes chew through the fixed shard set). Before this change the shard
+  count WAS the worker count, so a cached secondary-location artifact keyed on the
+  auto sentinel 0 was indistinguishable across machines that produced it with
+  different core counts; pinning shards: 62 reproduces the pre-existing 64-core
+  production realisation bit-for-bit, for a real population (n_total > 1; see
+  ADR-0126 Decision 4 for the n_total = 1 edge case). This IS a real, one-time cache
+  cost: adding the hashed key invalidated this stage's cache (and everything
+  downstream of it) once. The `synthesis.population.spatial.secondary.locations`
+  synpp-level `processes` config key (read by
+  synthesis/population/spatial/secondary/locations.py, NOT by the chainsolver's own
+  braunschweig.chainsolvers.processes) is UNCHANGED by this ADR and remains read
+  verbatim (`context.config("processes")`, still declared `volatile=True` per the
+  upstream eqasim-france #438 comment) -- an earlier draft of ADR-0126 clamped it
+  against the machine's detected core budget, which was reverted before merge because
+  `processes` fixes both the person-chunk partition (`np.array_split`) and the drawn
+  seed count at this exact read site, making it result-affecting, not operational
+  (see the corrected worked example in docs/codebase/notes/resource-budget.md).
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
   imported from braunschweig.popsim.stage.config_keys, shared with

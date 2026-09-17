@@ -449,10 +449,24 @@ _HELPER_MODULES = (
 # was verified against an actual function-level import site in this package:
 #
 #   braunschweig.data.mid.tenure_by_income      _apply_housing_tenure_parity
-#   braunschweig.parallelism                    no longer imported directly; retained
-#                                               because braunschweig.popsim.batch relies
-#                                               on its SINGLE_THREAD_BLAS_ENV for the
-#                                               batch subprocesses.
+#   braunschweig.parallelism                    NOT a direct import of this package --
+#                                               reached only transitively via
+#                                               braunschweig.popsim.batch (which IS a
+#                                               direct import, covered in
+#                                               _HELPER_MODULES). Strictly, the
+#                                               one-level rule below would therefore
+#                                               leave THIS file's own source uncovered
+#                                               (an edit to parallelism.py's
+#                                               SINGLE_THREAD_BLAS_ENV, unlike an edit to
+#                                               batch.py itself, would hash nothing new).
+#                                               Listed here anyway as a deliberate,
+#                                               conservative exception -- NOT a
+#                                               contradiction of "transitive imports are
+#                                               not covered" below, which describes the
+#                                               default for an UNLISTED transitive
+#                                               dependency; this one is listed precisely
+#                                               because batch's subprocess behaviour
+#                                               depends on it.
 #   braunschweig.popsim.control_spec            _load_tier3_kreis_controls,
 #                                               _derive_kreis_attribute_control_targets,
 #                                               the placement_income block,
@@ -1013,13 +1027,19 @@ def _read_batching_and_scope_config(context):
     # is treated as a ceiling and clamped down when the machine cannot carry it.
     # The configured value itself is never rewritten -- that would change this
     # stage's hash and discard the shared popsim cache.
-    from braunschweig.resources import effective_popsim_workers
+    from braunschweig import resources
     _requested_workers = context.config(KEY_WORKERS)
-    num_workers = effective_popsim_workers(
-        _requested_workers, float(context.config(KEY_WORKER_MEMORY_GB)))
+    _worker_memory_gb = float(context.config(KEY_WORKER_MEMORY_GB))
+    num_workers = resources.effective_popsim_workers(_requested_workers, _worker_memory_gb)
+    # The worker count is memory-bound, not core-bound (see the comment above),
+    # so the log names the quantity that actually decided it -- the memory
+    # budget and the per-worker memory footprint -- instead of cpu_count, which
+    # no longer determines this number at all.
+    _memory_budget_gb = resources.resolve_budget().memory_gb
     logger.info(
-        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, cpu_count=%s)",
-        num_workers, _requested_workers, os.cpu_count(),
+        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, "
+        "worker_memory_gb=%.1f, memory_budget_gb=%.1f)",
+        num_workers, _requested_workers, _worker_memory_gb, _memory_budget_gb,
     )
     work_dir = context.config(KEY_WORK_DIR)
     # Create the PopulationSim working directory up front so the stage can write

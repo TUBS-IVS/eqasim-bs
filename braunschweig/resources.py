@@ -108,13 +108,23 @@ def _affinity_cores() -> Optional[int]:
 
 
 def _meminfo_total_gb() -> Optional[float]:
-    """Total RAM from ``/proc/meminfo``, or None when the file is unavailable."""
+    """Total RAM from ``/proc/meminfo``, or None when the file is unavailable.
+
+    This is the LAST-RESORT reader, used only when ``psutil`` is not installed --
+    on exactly the platform that matters (a Linux server without psutil). A
+    malformed ``MemTotal:`` line (unexpected token count, a non-numeric field)
+    must fall through to ``None`` -- and from there to
+    :class:`ResourceDetectionError` -- rather than escape as an uncaught
+    ``ValueError``/``IndexError``, which would break the fail-loud contract this
+    module promises (CLAUDE.md: no silent fallbacks, but also no unexplained
+    crash in its place).
+    """
     try:
         with open("/proc/meminfo", encoding="utf-8") as handle:
             for line in handle:
                 if line.startswith("MemTotal:"):
                     return int(line.split()[1]) / 1024 / 1024
-    except OSError:
+    except (OSError, ValueError, IndexError):
         return None
     return None
 
@@ -325,16 +335,33 @@ def resolve_budget(machine: Optional[MachineResources] = None,
 
 
 def _resolve_ceiling(key: str, configured, ceiling: int, *, unit: str) -> Resolution:
-    """Shared pin/clamp/derive logic for one COUNT key against one ceiling."""
+    """Shared pin/clamp/derive logic for one COUNT key against one ceiling.
+
+    Matches the strictness ``_resolve_shard_attempts``
+    (``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``)
+    documents as the standard: ``int()`` truncates toward zero, so a
+    non-integral value would otherwise be silently accepted with a different
+    effective count than the config states -- ``-0.5`` would become ``0``
+    ("pinned", effective 0) and ``0.4`` would also become ``0``, and ``0``
+    then reaches ``np.array_split(df, 0)`` as a bare ``ValueError`` deep
+    inside a stage, with no hint that the config value was the real cause.
+    Both non-integral and negative values are rejected explicitly instead. An
+    integral float (a YAML ``3.0``) is a legitimate spelling of ``3`` and is
+    accepted.
+    """
     if is_auto(configured):
         return Resolution(
             key=key, configured=configured, effective=ceiling, origin="derived",
             note=f"derived from the resource budget ({ceiling} {unit})",
         )
-    requested = int(configured)
-    if requested < 0:
+    try:
+        requested = int(configured)
+        is_integral = float(configured).is_integer()
+    except (TypeError, ValueError):
+        requested, is_integral = None, False
+    if requested is None or not is_integral or requested < 0:
         raise ValueError(
-            f"{key} must be 0 (auto) or a positive count, got {configured!r}.")
+            f"{key} must be 0 (auto) or a positive integer count, got {configured!r}.")
     if requested > ceiling:
         return Resolution(
             key=key, configured=requested, effective=ceiling, origin="clamped",
@@ -457,7 +484,15 @@ class ResourceReport:
     resolutions: tuple
     violations: tuple
 
-    def format_log(self) -> str:
+    def _header_lines(self) -> list:
+        """Machine + budget + per-key resolution lines, WITHOUT violations.
+
+        Split out from :meth:`format_log` so ``enforce_report`` can log this
+        part once at INFO and log each violation once at its own severity,
+        instead of every violation appearing twice (once embedded in the
+        INFO-level ``format_log()`` dump, once again through the explicit
+        per-severity loop).
+        """
         lines = [
             f"[resources] machine: {self.machine.cores} cores "
             f"({self.machine.cores_source}), {self.machine.memory_gb:.1f} GB "
@@ -470,6 +505,11 @@ class ResourceReport:
                 f"[resources]   {resolution.key} = {resolution.effective} "
                 f"[{resolution.origin}] ({resolution.note})"
             )
+        return lines
+
+    def format_log(self) -> str:
+        """Full human-readable report: machine, budget, resolutions, violations."""
+        lines = self._header_lines()
         for violation in self.violations:
             lines.append(f"[resources]   {violation.severity.upper()}: {violation.message}")
         return "\n".join(lines)
@@ -579,16 +619,34 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
 
     # matsim_threads / matsim_qsim_threads are NEVER clamped: their effect on
     # results is unverified (issue #410) and silently changing them could change
-    # science. Oversubscription is slow, not wrong, so this only warns.
+    # science. Oversubscription is slow, not wrong, so this only warns. This is
+    # also the one place whose whole purpose is to never touch these two keys,
+    # so a non-numeric configured value (e.g. "auto", which some overlays use
+    # for other keys) must degrade to a warning rather than raise out of
+    # build_report and abort the run over a key this module does not resolve.
     for key in ("matsim_threads", "matsim_qsim_threads"):
         configured = config.get(key)
-        if configured and int(configured) > budget.cores:
+        if not configured:
+            continue
+        try:
+            configured_threads = int(configured)
+        except (TypeError, ValueError):
             violations.append(Violation(
                 key=key, severity="warning",
                 message=(
-                    f"{key} is {configured} but only {budget.cores} cores are "
-                    f"budgeted; the run will oversubscribe the machine. This value "
-                    f"is left untouched on purpose (issue #410)."
+                    f"{key} is {configured!r}, which is not an integer thread "
+                    f"count; skipping the oversubscription check for it. This "
+                    f"value is left untouched on purpose (issue #410)."
+                ),
+            ))
+            continue
+        if configured_threads > budget.cores:
+            violations.append(Violation(
+                key=key, severity="warning",
+                message=(
+                    f"{key} is {configured_threads} but only {budget.cores} cores "
+                    f"are budgeted; the run will oversubscribe the machine. This "
+                    f"value is left untouched on purpose (issue #410)."
                 ),
             ))
 
@@ -596,6 +654,20 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         machine=budget.machine, budget=budget,
         resolutions=tuple(resolutions), violations=tuple(violations),
     )
+
+
+def _log_resolution_deviation(resolution: Resolution) -> None:
+    """Log a WARNING once when a resource key's effective value differs from
+    what was configured (a clamp, or a value derived from the ``auto`` sentinel).
+
+    A pin that fits stays silent. Shared by every ``effective_*`` wrapper below
+    so the log format cannot drift between them and so each wrapper does not
+    have to hardcode its own key name -- it always logs ``resolution.key``,
+    which the matching ``resolve_*`` function already set.
+    """
+    if resolution.origin != "pinned":
+        logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
+                       resolution.configured, resolution.effective, resolution.note)
 
 
 def effective_java_memory(configured, machine: Optional[MachineResources] = None,
@@ -609,9 +681,7 @@ def effective_java_memory(configured, machine: Optional[MachineResources] = None
     clamping here changes nothing any stage hashes.
     """
     resolution = resolve_java_memory(configured, resolve_budget(machine=machine, env=env))
-    if resolution.origin != "pinned":
-        logger.warning("[resources] java_memory %s -> %s (%s)",
-                       resolution.configured, resolution.effective, resolution.note)
+    _log_resolution_deviation(resolution)
     return resolution.effective
 
 
@@ -629,19 +699,24 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     """
     resolution = resolve_popsim_workers(
         configured, resolve_budget(machine=machine, env=env), worker_memory_gb)
-    if resolution.origin != "pinned":
-        logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
-                       resolution.configured, resolution.effective, resolution.note)
+    _log_resolution_deviation(resolution)
     return int(resolution.effective)
 
 
 def enforce_report(report: ResourceReport) -> None:
     """Log the resource report and abort the run on any error-level violation.
 
+    Each violation is logged exactly ONCE, at its own severity: the machine /
+    budget / per-key resolution lines are logged at INFO via
+    :meth:`ResourceReport._header_lines`, and every violation is logged
+    separately below -- never both inside the INFO-level dump (as
+    :meth:`ResourceReport.format_log` would render it for a human reader) AND
+    again through this loop.
+
     Failing here costs seconds; the same mismatch discovered by the kernel OOM
     killer costs hours of completed work (2026-08-20 incident, ADR-0097).
     """
-    for line in report.format_log().splitlines():
+    for line in report._header_lines():
         logger.info(line)
     for violation in report.violations:
         if violation.severity == "warning":

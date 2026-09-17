@@ -1056,9 +1056,20 @@ def _resolve_chain_shards(value):
     ``n_shards > 1``, so silently accepting 0 (or a negative value) would route
     every run to the serial single-shard realisation without saying so anywhere in
     the log (CLAUDE.md: no silent fallbacks) -- fail fast and name the key instead.
+
+    A NON-INTEGRAL value is rejected too, for the same reason
+    ``_resolve_shard_attempts`` above rejects one: ``int(3.7)`` truncates to 3, so
+    the run would silently use a different shard count -- and therefore a
+    different partition and per-shard seed -- than the config states. An
+    integral float (a YAML ``62.0``) is a legitimate spelling of 62 and is
+    accepted.
     """
-    n_shards = int(value)
-    if n_shards <= 0:
+    try:
+        n_shards = int(value)
+        is_integral = float(value).is_integer()
+    except (TypeError, ValueError):
+        n_shards, is_integral = None, False
+    if n_shards is None or not is_integral or n_shards <= 0:
         raise ValueError(
             "[braunschweig.secondary_chainsolvers] braunschweig.chainsolvers.shards "
             f"must be a positive integer, got {value!r}. Unlike "

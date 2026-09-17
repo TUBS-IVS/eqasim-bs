@@ -16,3 +16,21 @@ pipelines:
 production: false
 features:
 - reactivated_person_attributes
+decisions:
+- ADR-0126
+notes: >-
+  RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
+  parallel_statistical_matching reads context.config("processes") VERBATIM, exactly
+  as before ADR-0126 -- unchanged. A draft of that ADR briefly clamped this read site
+  against the machine's detected core budget (on the classification that it "splits a
+  matching workload across a pool with no worker-index-dependent seed"), but reading
+  the consumer shows `processes` fixes BOTH the person-chunk partition
+  (`np.array_split(df_target, processes)`) and the seed count
+  (`random.randint(10000, size=len(chunks))`) drawn from the configured `random_seed`
+  -- result-affecting, not operational -- so the clamp was reverted before merge (see
+  the corrected worked example in docs/codebase/notes/resource-budget.md). `processes`
+  stays declared `volatile=True` here (upstream eqasim-france #438: an execution
+  detail, not scientific config in synpp's cache-hash sense), and is now reported and
+  warned about only (build_report warns when a pin sits below 75% of the machine's
+  core budget), never adjusted -- treated exactly like `matsim_threads` /
+  `matsim_qsim_threads`.

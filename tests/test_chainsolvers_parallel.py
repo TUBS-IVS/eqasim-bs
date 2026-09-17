@@ -111,7 +111,7 @@ def test_make_person_shards_covers_every_person_once_in_order():
     assert max(sizes) - min(sizes) <= 1
 
 
-def test_make_person_shards_caps_workers_at_person_count():
+def test_make_person_shards_caps_shards_at_person_count():
     shards = scs._make_person_shards(["a", "b"], 8)
     assert len(shards) == 2
     assert [uid for _i, uids in shards for uid in uids] == ["a", "b"]
@@ -334,3 +334,12 @@ def test_chain_shards_must_be_a_positive_integer():
     with pytest.raises(ValueError, match="got -1"):
         scs._resolve_chain_shards(-1)
     assert scs._resolve_chain_shards(62) == 62
+
+
+def test_chain_shards_rejects_a_non_integral_value():
+    # int(3.7) truncates to 3, silently using a different shard count -- and
+    # therefore a different partition and per-shard seed -- than the config
+    # states. An integral float is still a legitimate spelling of an int.
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        scs._resolve_chain_shards(3.7)
+    assert scs._resolve_chain_shards(62.0) == 62
