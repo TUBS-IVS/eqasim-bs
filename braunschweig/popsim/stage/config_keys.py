@@ -9,6 +9,39 @@ so any other submodule may import these names directly without risking a
 partial-initialisation ordering problem.
 """
 
+
+def require_positive(key: str, value):
+    """Validate that a config value is strictly positive, at DAG-build (``configure()``) time.
+
+    Several config keys in this module are documented "valid range > 0" (e.g.
+    KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS); calling this
+    from the ``configure()`` that declares such a key turns a bad YAML value into a synpp
+    DAG-build failure within seconds, instead of a silently wrong result discovered only
+    after the run (or not at all -- see CLAUDE.md "Fallback transparency").
+
+    Args:
+        key: The config key name, used only to name the offending value in the error.
+        value: The resolved config value to check.
+
+    Returns:
+        ``value`` unchanged, so this can wrap a ``context.config(...)`` call in place.
+
+    Raises:
+        ValueError: If ``value`` is not > 0, or is not a number at all (``None`` reaches this
+            when a context resolves the key to nothing -- reported as the same configuration
+            error rather than as a bare TypeError from the comparison).
+    """
+    try:
+        positive = value > 0
+    except TypeError:
+        raise ValueError(
+            f"{key} must be a number > 0, got {value!r}"
+        ) from None
+    if not positive:
+        raise ValueError(f"{key} must be > 0, got {value!r}")
+    return value
+
+
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
 KEY_MID = "braunschweig.population.popsim.mid_raw_path"

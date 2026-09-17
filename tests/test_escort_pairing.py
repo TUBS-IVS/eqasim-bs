@@ -210,3 +210,41 @@ def test_module_default_adult_min_age_is_eighteen():
     """The pre-parameter behaviour: legal adulthood, the value every caller used before the
     floor became configurable (issue #409 follow-up). Unit: years."""
     assert EP.DEFAULT_ADULT_MIN_AGE == 18
+
+
+# --------------------------------------------------------- parameter range guards (#409)
+# Both pairing parameters are documented "valid range > 0" in config_keys and in
+# configs/base_bs.yml. A non-positive floor is the dangerous one: it admits EVERY household
+# member as an escorting adult, so a toddler pairs with the child it supposedly escorts and
+# the module's only alarm (WARN_PAIRED_SHARE, a LOW pairing share) never fires. The guard
+# therefore lives at the point of use, covering the derivation scripts too.
+
+def _toddler_household():
+    """One household with no adult at all: a 3-year-old's shop leg and a 5-year-old's code-13
+    leg two minutes later. At a floor of 0 the 3-year-old would become the escorting adult."""
+    return pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 2], "W_ZWECK": [4, 13],
+        "W_SZS": [8, 8], "W_SZM": [0, 2], "HP_ALTER": [3, 5],
+    })
+
+
+@pytest.mark.parametrize("floor", [0, -1])
+def test_pairing_rejects_a_non_positive_adult_min_age(floor):
+    with pytest.raises(ValueError, match="adult_min_age must be > 0"):
+        EP.pair_passive_legs(_toddler_household(), max_gap_minutes=15.0, adult_min_age=floor)
+
+
+@pytest.mark.parametrize("gap", [0.0, -1.0])
+def test_pairing_rejects_a_non_positive_max_gap(gap):
+    with pytest.raises(ValueError, match="max_gap_minutes must be > 0"):
+        EP.pair_passive_legs(_toddler_household(), max_gap_minutes=gap, adult_min_age=18)
+
+
+def test_the_documented_defaults_still_pair_normally():
+    # The guard must not disturb the valid range: the household above has no member at or
+    # above the default floor, so the leg is correctly reported as having no adult.
+    out, diagnostics = EP.pair_passive_legs(
+        _toddler_household(), max_gap_minutes=EP.DEFAULT_MAX_GAP_MINUTES,
+        adult_min_age=EP.DEFAULT_ADULT_MIN_AGE)
+    assert out.loc[1, "passive_pair_status"] == EP.STATUS_UNPAIRED_NO_ADULT
+    assert diagnostics["n_passive"] == 1

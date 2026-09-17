@@ -1022,6 +1022,7 @@ def configure(context):
         KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
         KEY_EXCLUDE_NO_ANSWER_PURPOSE_LEGS,
         KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY, KEY_W_ZWECK_10_AS_LEISURE,
+        require_positive,
     )
     context.config("braunschweig.population.popsim.mid_dir")
     # random_seed is not consumed here (the default stage also does not use one)
@@ -1098,13 +1099,23 @@ def configure(context):
     # Declared default False; the production true is added to configs/base_bs.yml by task 7
     # (see config_keys for the one statement of both defaults).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # require_positive (issue #409 range-guard follow-up): both pairing parameters are
+    # documented "valid range > 0"; validating the resolved value at DAG-build time turns a
+    # bad YAML into a synpp failure within seconds instead of a value silently reaching
+    # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked.
+    require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
     # ... and the pairing's adult-age floor (issue #409 follow-up), the SAME shared
     # key/default constants the trip build declares: a leg the plan pairs (and sends to
     # "shop") must contribute to the shop layer here too, which it only does if both
     # stages pair against the same candidate adults. Unit: years; default 18 = production.
-    context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-                   DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)
+    require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     # Passive-escort pairing candidate universe (issue #373 task 2, ruling C-R20/C-R21):
     # the SAME shared key/default constants braunschweig.popsim.trips_stage declares, so
     # this stage's pairing agrees with the trip build's about which legs even exist to be

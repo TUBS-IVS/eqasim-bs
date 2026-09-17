@@ -848,7 +848,7 @@ def configure(context):
         KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_W_ZWECK_10_AS_LEISURE, require_positive,
     )
     # Read from synthesis.population.sampled (not the raw producer): sampled carries the
     # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
@@ -899,7 +899,15 @@ def configure(context):
     # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
     escort_passive_from_adult = context.config(
         KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # require_positive (issue #409 range-guard follow-up): both pairing parameters are
+    # documented "valid range > 0" (config_keys); a non-positive value would otherwise reach
+    # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked -- see that module's own
+    # guard for why a non-positive floor is silently WRONG rather than merely low-yield.
+    # Validating at DAG-build time turns a bad YAML into a synpp failure within seconds.
+    require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
     # The pairing's SECOND parameter (issue #409 follow-up): who counts as the escorting adult.
     # Declared with the SHARED key/default constants for the same reason the gap is -- every
     # consumer of the pairing (this trip build, the popsim education_flag seed, the distance
@@ -907,8 +915,11 @@ def configure(context):
     # code-13 legs are paired at all. Unit: years; the declared default 18 is also the
     # production value in configs/base_bs.yml, so this stays byte-identical to the pre-parameter
     # behaviour (see config_keys.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS).
-    context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-                   DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)
+    require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     # Ruling C-R22 (issue #373 cleanup wave, item 6): trips.map_purpose already raises this
     # exact contradiction ("escort_passive_from_adult requires escort_purpose"), but only at
     # TRIP-BUILD time -- i.e. after synpp has already resolved and run every UPSTREAM stage,

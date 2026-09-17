@@ -65,7 +65,12 @@ class _ConfigureRecorder:
         self.stages.append(name)
 
     def config(self, name, default=None):
+        # Return the default, as synpp's ConfigurationContext.config(name, default) does: a
+        # configure() that VALIDATES what it declares (e.g. config_keys.require_positive on
+        # the passive-escort pairing parameters) reads the resolved value back, so a stub
+        # that returned None would fail the validation instead of the config.
         self.config_keys[name] = default
+        return default
 
 
 class _StubContext:

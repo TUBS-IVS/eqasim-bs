@@ -898,13 +898,24 @@ def configure(context):
     # mismatch class the three flags above exist to close. Declared default False; the production
     # true is added to configs/base_bs.yml by task 7 (see config_keys for the one statement).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # config_keys.require_positive (issue #409 range-guard follow-up): both pairing
+    # parameters are documented "valid range > 0"; validating the resolved value at
+    # DAG-build time turns a bad YAML into a synpp failure within seconds rather than a
+    # value silently reaching braunschweig.popsim.escort_pairing.pair_passive_legs, whose
+    # own guard would otherwise be the first (much later) place this is caught.
+    config_keys.require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
     # The pairing's adult-age floor (issue #409 follow-up), declared with the SAME shared
     # key/default constants braunschweig.popsim.trips_stage declares: the education_flag seed
     # must pair the code-13 legs against the same candidate adults the trip build does, or the
     # seed and the plan disagree again. Unit: years; declared default 18 = the production value.
-    context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-                   DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)
+    config_keys.require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
