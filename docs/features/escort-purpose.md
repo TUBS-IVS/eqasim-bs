@@ -96,8 +96,9 @@ pair. Method:
 1. **Pairing** (pure module `braunschweig/popsim/escort_pairing.py`,
    `pair_passive_legs`, run on the RAW Wege frame inside `map_purpose`): each
    code-13 leg is paired with the leg of a same-household person aged >=
-   `adult_min_age` (18) whose departure time is nearest, if the gap is within
-   `escort_passive_pair_max_gap_minutes` (default 15). Ties resolve in this
+   `escort_passive_pair_adult_min_age_years` (default 18) whose departure time is
+   nearest, if the gap is within `escort_passive_pair_max_gap_minutes` (default 15).
+   Ties resolve in this
    order: smallest gap -> the candidate whose `wegkm_imp` equals the passive
    leg's (a shared distance is the only independent signal that two legs are
    the same trip; a missing value counts as a mismatch) -> lowest adult `P_ID`

@@ -110,8 +110,9 @@ every consumer of the purpose vocabulary at once, or it is not added.
 
 Trip-build flags -- `escort_purpose`, `escort_passive_education`,
 `explicit_round_trip_purposes`, `w_zweck_10_as_leisure`, `escort_passive_from_adult`,
-`escort_passive_pair_max_gap_minutes` (plus the plan-structure keys
-`exclude_rbw_legs`, `drop_leading_arrive_home_leg`, `closure_dwell_model`) -- reach:
+`escort_passive_pair_max_gap_minutes`, `escort_passive_pair_adult_min_age_years` (plus the
+plan-structure keys `exclude_rbw_legs`, `drop_leading_arrive_home_leg`,
+`closure_dwell_model`) -- reach:
 
 | Module | Entry points that carry the flags |
 |---|---|

@@ -191,7 +191,9 @@ notes: 'Part of the escort purpose family (feature record escort_purpose, ADR-00
   config key of this feature, escort_passive_pair_adult_min_age_years (unit: years, valid > 0,
   default 18, production 18), makes the pairing''s accompanying-adult floor configurable instead of a
   braunschweig/popsim/escort_pairing.py module default no caller overrode; pre-amendment behaviour
-  is byte-identical. It is also not a production.flags entry. See the ADR-0112 2026-09-17 amendment
+  is byte-identical. Its default is pinned equal across its own three homes by
+  tests/test_popsim_trips.py::test_passive_pair_adult_min_age_default_agrees_across_its_three_homes,
+  the floor''s twin of the gap''s pin test above. It is also not a production.flags entry. See the ADR-0112 2026-09-17 amendment
   (issue #409) for why it exists (ADR-0127 introduces the separate SYNTHETIC-side surrogate floor,
   default 14) and why 18 is kept until a full-population rerun measures a lower floor. Phase 2 --
   anchoring the child''s joint activity at the ADULT''s chosen secondary location -- is deliberately

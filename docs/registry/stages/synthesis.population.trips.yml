@@ -78,7 +78,7 @@ notes: >-
   which meant a misconfigured run discovered the contradiction only at trip-build time, i.e. after
   every upstream stage -- including the full PopulationSim balancing -- had already run).
   EntdSource.build_trips REJECTS a
-  non-default value for all three (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
+  non-default value for all four (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
   ENTD has neither a W_ZWECK vocabulary nor the household/time columns the pairing needs) and both
   popsim_open fixtures set the OFF values explicitly. The pairing runs on the RAW Wege frame inside
   map_purpose, so the stage needs HP_ALTER, H_ID, W_SZS and W_SZM present at that point; the code
