@@ -70,11 +70,17 @@ _LOG_TAG = "[i409 effect]"
 
 def _placed(locations: gpd.GeoDataFrame, person_ids, activity_indices, *, what: str
             ) -> gpd.GeoSeries:
-    """The placed geometry of each (person, activity); raises naming the first miss."""
+    """The placed geometry of each (person, activity); raises naming the first miss or the
+    first duplicated (person_id, activity_index) key."""
     index = pd.MultiIndex.from_arrays([locations["person_id"].astype("int64"),
                                        locations["activity_index"].astype("int64")])
     placed = gpd.GeoSeries(locations["geometry"].to_numpy(), index=index, crs=locations.crs)
-    placed = placed[~placed.index.duplicated(keep="first")]
+    duplicated = placed.index.duplicated(keep=False)
+    if duplicated.any():
+        first = placed.index[duplicated][0]
+        raise ValueError(f"{_LOG_TAG} {what}: {int(duplicated.sum())} placed rows share a "
+                         f"(person_id, activity_index) key (first: person {first[0]} activity "
+                         f"{first[1]}); the stage output must hold one placement per activity.")
     wanted = pd.MultiIndex.from_arrays([pd.Index(person_ids).astype("int64"),
                                         pd.Index(activity_indices).astype("int64")])
     out = placed.reindex(wanted)
@@ -109,7 +115,13 @@ def surrogate_effect_rows(arm: str, surrogate_links: pd.DataFrame,
     adult_off = _placed(locations_off, links["adult_person_id"], links["adult_activity_index"],
                         what="OFF arm, surrogate")
 
-    households = persons[["person_id", "household_id"]].drop_duplicates("person_id").rename(
+    duplicated_persons = persons["person_id"].duplicated()
+    if duplicated_persons.any():
+        first_person = persons.loc[duplicated_persons, "person_id"].iloc[0]
+        raise ValueError(f"{_LOG_TAG} {int(duplicated_persons.sum())} rows share a person_id "
+                         f"(first: {first_person!r}) in the persons frame; the stage output "
+                         "must hold one row per person.")
+    households = persons[["person_id", "household_id"]].rename(
         columns={"person_id": "child_person_id"})
     links = links.merge(households, on="child_person_id", how="left")
     home_by_household = gpd.GeoSeries(homes["geometry"].to_numpy(),

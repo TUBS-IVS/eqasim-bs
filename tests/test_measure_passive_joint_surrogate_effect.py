@@ -55,6 +55,20 @@ def test_effect_rows_raise_when_a_linked_activity_has_no_placement():
         surrogate_effect_rows("strict", surrogate_links, on, on, homes, persons, child_purposes)
 
 
+def test_effect_rows_raise_when_a_placed_activity_key_is_duplicated():
+    surrogate_links = pd.DataFrame({
+        "child_person_id": [5], "child_activity_index": [1], "adult_person_id": [4],
+        "adult_activity_index": [1], "adult_purpose": ["shop"], "link_source": ["surrogate"],
+        "gap_minutes": [5.0],
+    })
+    on = _locations([(4, 1, Point(1000, 0)), (5, 1, Point(1000, 0)), (5, 1, Point(900, 0))])
+    homes = gpd.GeoDataFrame({"household_id": [20], "geometry": [Point(0, 0)]}, geometry="geometry", crs=CRS)
+    persons = pd.DataFrame({"person_id": [4, 5], "household_id": [20, 20]})
+    child_purposes = pd.DataFrame({"person_id": [5], "trip_index": [0], "following_purpose": ["shop"]})
+    with pytest.raises(ValueError, match="share a"):
+        surrogate_effect_rows("strict", surrogate_links, on, on, homes, persons, child_purposes)
+
+
 def test_summary_aggregates_per_arm_and_purpose():
     rows = pd.DataFrame({
         "arm": ["strict", "strict", "relaxed"], "child_person_id": [5, 6, 5],
