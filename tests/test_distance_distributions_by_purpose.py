@@ -355,14 +355,17 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_map_purpose(monkeyp
     def capturing_map_purpose(wege, **kwargs):
         captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        captured["passive_pair_adult_min_age_years"] = kwargs.get(
+            "passive_pair_adult_min_age_years")
         kwargs["escort_passive_from_adult"] = False
         return real_map_purpose(wege, **kwargs)
 
     monkeypatch.setattr(dd, "map_purpose", capturing_map_purpose)
     dd.run(_synthetic_wege(), escort_purpose=True, escort_passive_from_adult=True,
-           passive_pair_max_gap_minutes=20.0)
+           passive_pair_max_gap_minutes=20.0, passive_pair_adult_min_age_years=16)
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 20.0
+    assert captured["passive_pair_adult_min_age_years"] == 16
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +486,24 @@ class _RecordingConfigureContext:
 
     def stage(self, name, alias=None, **kwargs):
         pass
+
+
+def test_configure_declares_the_passive_pairing_parameters_like_the_trip_build():
+    """The distance layer pairs the passive legs itself, so it must declare BOTH pairing
+    parameters with the SAME shared defaults the trip build declares (the issue #409
+    follow-up added the age floor): a different floor pairs a different set of legs and
+    sends their distances into a different layer than the plan realises."""
+    from braunschweig.popsim import distance_distributions as dd
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    )
+
+    ctx = _RecordingConfigureContext()
+    dd.configure(ctx)
+    assert ctx.calls[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES] == DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
+    assert (ctx.calls[KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS]
+            == DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS == 18)
 
 
 def test_configure_declares_the_shared_leg_drop_keys_with_the_production_defaults():

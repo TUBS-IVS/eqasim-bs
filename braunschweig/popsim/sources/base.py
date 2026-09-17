@@ -41,6 +41,7 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             closure_dwell_min_obs=30, w_zweck_10_as_leisure=False,
             escort_passive_from_adult=False,
             passive_pair_max_gap_minutes=15.0,
+            passive_pair_adult_min_age_years=18,
             departure_time_model="eqasim_uniform",
             departure_time_reference=None,
             departure_time_min_reference_n=200,
@@ -64,8 +65,10 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
     non-default value for the same reason. ``escort_passive_from_adult`` gives a
     PAIRED passive escort leg (MiD W_ZWECK 13) the accompanying adult's purpose
     (issue #372, ADR-0112), with ``passive_pair_max_gap_minutes`` the pairing's
-    time window in minutes; both are MiD-specific and must be REJECTED on a
-    non-default value by an adapter that cannot pair.
+    time window in minutes and ``passive_pair_adult_min_age_years`` the minimum
+    age in years at which a household member counts as that escorting adult; all
+    three are MiD-specific and must be REJECTED on a non-default value by an
+    adapter that cannot pair.
     ``departure_time_model`` selects the START-TIME model applied to the finished
     chains (issue #123, ADR-0114) and ``departure_time_reference`` carries the
     loaded SrV reference the ``"srv_mapped"`` model maps onto, with the three
@@ -205,6 +208,7 @@ class PopsimSource(Protocol):
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        passive_pair_adult_min_age_years: int = 18,
         departure_time_model: str = "eqasim_uniform",
         departure_time_reference: pd.DataFrame = None,
         departure_time_min_reference_n: int = 200,
@@ -272,6 +276,10 @@ class PopsimSource(Protocol):
             while ``escort_passive_from_adult`` is False, but an adapter that
             rejects the flag must reject a non-default gap too, so a
             deliberately tuned value cannot pass silently unapplied.
+        passive_pair_adult_min_age_years:
+            minimum age in YEARS at which a household member's leg counts as a
+            candidate escorting adult in that pairing. Unit: years; valid range
+            > 0. Same inertness and the same rejection rule as the gap above.
         departure_time_model:
             which START-TIME model shapes each person's first departure (issue
             #123, ADR-0114): one of

@@ -194,6 +194,7 @@ class MidSource:
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        passive_pair_adult_min_age_years: int = 18,
         departure_time_model: str = "eqasim_uniform",
         departure_time_reference: pd.DataFrame = None,
         departure_time_min_reference_n: int = 200,
@@ -244,6 +245,11 @@ class MidSource:
         passive_pair_max_gap_minutes:
             maximum |departure-time gap| in MINUTES for that pairing; inert
             while ``escort_passive_from_adult`` is False.
+        passive_pair_adult_min_age_years:
+            minimum age in YEARS (MiD ``HP_ALTER``) at which a household
+            member's leg counts as a candidate escorting adult in that pairing;
+            unit years, valid range > 0; inert while
+            ``escort_passive_from_adult`` is False.
         departure_time_model:
             which START-TIME model shapes the first departure (issue #123,
             ADR-0114): ``"eqasim_uniform"`` (default, unchanged jitter),
@@ -275,6 +281,7 @@ class MidSource:
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
             departure_time_model=departure_time_model,
             departure_time_reference=departure_time_reference,
             departure_time_min_reference_n=departure_time_min_reference_n,

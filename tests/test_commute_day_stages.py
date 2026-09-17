@@ -360,13 +360,19 @@ def test_configure_declares_the_documented_stages_and_defaults():
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     )
     for key in (DONORS.KEY_ESCORT_PURPOSE, DONORS.KEY_ESCORT_PASSIVE_EDUCATION,
                 DONORS.KEY_EXPLICIT_ROUND_TRIP_PURPOSES,
                 # Issue #374: the plan-structure flags must be declared with trips_stage's
                 # defaults too, or the donor day would be built by different rules again.
                 KEY_EXCLUDE_RBW_LEGS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
-                KEY_CLOSURE_DWELL_MODEL, KEY_CLOSURE_DWELL_MIN_OBS):
+                KEY_CLOSURE_DWELL_MODEL, KEY_CLOSURE_DWELL_MIN_OBS,
+                # Both passive-escort PAIRING parameters, for the same reason (the gap in
+                # MINUTES since issue #372, the candidate-adult age floor in YEARS since
+                # the issue #409 follow-up): a donor day paired by a different rule than
+                # the day it replaces carries a different purpose vocabulary.
+                KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS):
         assert donors.config_keys[key] == trips_stage_recorder.config_keys[key]
 
     # The two donor-filter keys are the plan-source realisability flags completed_donor declares;
@@ -531,15 +537,17 @@ def test_donor_stage_forwards_the_plan_structure_flags_and_the_donor_filters(tmp
 
 
 def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_path, monkeypatch):
-    """Issue #373 cleanup wave, item 3: w_zweck_10_as_leisure, escort_passive_from_adult and
-    passive_pair_max_gap_minutes reach build_home_office_donor_pool, but no test asserted the
-    VALUE arrives (the sibling test above pins the plan-structure flags and donor filters, not
-    these three). Non-default values are used (the pure builder's own keyword defaults are
-    False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a forwarding regression that
+    """Issue #373 cleanup wave, item 3 (+ the issue #409 follow-up): w_zweck_10_as_leisure,
+    escort_passive_from_adult, passive_pair_max_gap_minutes and
+    passive_pair_adult_min_age_years reach build_home_office_donor_pool, but no test asserted
+    the VALUE arrives (the sibling test above pins the plan-structure flags and donor filters,
+    not these four). Non-default values are used (the pure builder's own keyword defaults are
+    False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES /
+    DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS) so a forwarding regression that
     silently falls back to the callee's own default would be caught here."""
     from braunschweig.popsim.stage.config_keys import (
-        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
 
     _write_raw_mid(str(tmp_path))
@@ -550,6 +558,8 @@ def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_p
         captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
         captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        captured["passive_pair_adult_min_age_years"] = kwargs.get(
+            "passive_pair_adult_min_age_years")
         return real_builder(persons, wege, households, **kwargs)
 
     monkeypatch.setattr(DONORS, "build_home_office_donor_pool", capturing_builder)
@@ -561,6 +571,7 @@ def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_p
             KEY_W_ZWECK_10_AS_LEISURE: True,
             KEY_ESCORT_PASSIVE_FROM_ADULT: True,
             KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+            KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: 16,
         }))
 
     DONORS.execute(context)
@@ -568,6 +579,7 @@ def test_donor_stage_forwards_the_purpose_correctness_flags_to_the_builder(tmp_p
     assert captured["w_zweck_10_as_leisure"] is True
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 22.0
+    assert captured["passive_pair_adult_min_age_years"] == 16
 
 
 def test_donor_stage_donor_filters_follow_the_plan_source_flags(tmp_path, monkeypatch):

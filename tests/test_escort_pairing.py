@@ -171,3 +171,42 @@ def test_max_gap_is_configurable_and_low_pairing_warns(caplog):
 def test_missing_required_column_raises():
     with pytest.raises(KeyError, match="HP_ALTER"):
         EP.pair_passive_legs(_wege().drop(columns=["HP_ALTER"]))
+
+
+def _teenage_sibling_wege():
+    """One household, no adult: a 4-year-old's passive leg at 08:00 and a 15-year-old
+    sibling's shop leg at 08:05 -- the smallest frame on which the age floor decides."""
+    return pd.DataFrame({
+        "H_ID":      [1, 1],
+        "P_ID":      [1, 2],
+        "W_ID":      [1, 1],
+        "W_ZWECK":   [13, 4],
+        "W_SZS":     [8, 8],
+        "W_SZM":     [0, 5],
+        "HP_ALTER":  [4, 15],
+        "wegkm_imp": [2.0, 2.0],
+    })
+
+
+def test_adult_min_age_decides_whether_a_teenage_sibling_is_an_eligible_escort():
+    """The donor-side age floor is a real parameter, not a constant (issue #409 follow-up):
+    the 15-year-old sibling is an eligible escorting adult at a floor of 14 and is NOT one at
+    the default floor of 18, where the household has no eligible adult leg at all."""
+    at_default, diag_default = EP.pair_passive_legs(_teenage_sibling_wege())
+    passive_default = at_default[at_default["W_ZWECK"] == EP.PASSIVE_W_ZWECK]
+    assert passive_default["passive_pair_status"].item() == EP.STATUS_UNPAIRED_NO_ADULT
+    assert diag_default["n_paired"] == 0
+
+    at_fourteen, diag_fourteen = EP.pair_passive_legs(_teenage_sibling_wege(), adult_min_age=14)
+    passive_fourteen = at_fourteen[at_fourteen["W_ZWECK"] == EP.PASSIVE_W_ZWECK]
+    assert passive_fourteen["passive_pair_status"].item() == EP.STATUS_PAIRED
+    assert passive_fourteen["passive_pair_adult_p_id"].item() == 2
+    assert passive_fourteen["passive_pair_adult_w_zweck"].item() == 4
+    assert passive_fourteen["passive_pair_gap_minutes"].item() == 5.0
+    assert diag_fourteen["n_paired"] == 1
+
+
+def test_module_default_adult_min_age_is_eighteen():
+    """The pre-parameter behaviour: legal adulthood, the value every caller used before the
+    floor became configurable (issue #409 follow-up). Unit: years."""
+    assert EP.DEFAULT_ADULT_MIN_AGE == 18

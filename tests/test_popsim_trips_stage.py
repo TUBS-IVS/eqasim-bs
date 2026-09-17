@@ -481,6 +481,22 @@ class _RecordingConfigureContext:
         self.stages.append((name, alias))
 
 
+def test_trips_stage_configure_registers_the_passive_pairing_parameters():
+    """Both pairing parameters must be DECLARED with the shared defaults (the issue #409
+    follow-up added the age floor next to the gap): an undeclared key cannot be read in
+    execute(), and a second literal default here is exactly the drift the shared constants
+    exist to remove. Unit of the floor: years."""
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    )
+    ctx = _RecordingConfigureContext()
+    trips_stage.configure(ctx)
+    assert ctx.calls[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES] == DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
+    assert (ctx.calls[KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS]
+            == DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS == 18)
+
+
 def test_trips_stage_configure_registers_the_plan_structure_keys():
     from braunschweig.popsim.stage import (
         KEY_CLOSURE_DWELL_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_EXCLUDE_RBW_LEGS,
@@ -652,6 +668,7 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monke
     def dwell_spy(*args, **kwargs):
         seen["dwell_flag"] = kwargs.get("escort_passive_from_adult")
         seen["dwell_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        seen["dwell_floor"] = kwargs.get("passive_pair_adult_min_age_years")
         return original_dwell(*args, **kwargs)
 
     original_build = popsim_trips.build_validated_trip_table
@@ -659,6 +676,7 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monke
     def build_spy(*args, **kwargs):
         seen["build_flag"] = kwargs.get("escort_passive_from_adult")
         seen["build_gap"] = kwargs.get("passive_pair_max_gap_minutes")
+        seen["build_floor"] = kwargs.get("passive_pair_adult_min_age_years")
         return original_build(*args, **kwargs)
 
     monkeypatch.setattr(trips_stage, "build_closure_dwell_model", dwell_spy)
@@ -667,9 +685,11 @@ def test_run_forwards_the_passive_escort_pairing_keywords_to_both_builders(monke
     wege = wege.assign(HP_ALTER=40)
     trips_stage.run(persons, wege, random_seed=1, escort_purpose=True,
                     escort_passive_education=True, escort_passive_from_adult=True,
-                    passive_pair_max_gap_minutes=20.0)
+                    passive_pair_max_gap_minutes=20.0,
+                    passive_pair_adult_min_age_years=16)
     assert seen["dwell_flag"] is True and seen["build_flag"] is True
     assert seen["dwell_gap"] == 20.0 and seen["build_gap"] == 20.0
+    assert seen["dwell_floor"] == 16 and seen["build_floor"] == 16
 
 
 # ---------------------------------------------------------------------------

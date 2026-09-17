@@ -92,6 +92,14 @@ config:
   escort_passive_from_adult: true
   # Unit: minutes; valid range > 0. Inert while escort_passive_from_adult is false.
   escort_passive_pair_max_gap_minutes: 15
+  # Minimum age a same-household member must have to count as the escorting adult in that
+  # DONOR-side pairing. Unit: years; valid range > 0. Inert while escort_passive_from_adult
+  # is false. ASSUMPTION (no external source prescribes it, ADR-0112 point 5): 18 = legal
+  # adulthood, which keeps the pre-parameter behaviour byte-identical; 14 would align this
+  # floor with the SYNTHETIC-side surrogate floor of ADR-0127
+  # (escort_passive_joint_surrogate_min_age_years below) at the cost that ADR-0127's
+  # sibling-age histogram measures -- see the ADR-0112 2026-09-17 amendment (issue #409).
+  escort_passive_pair_adult_min_age_years: 18
   # Phase 2 of #372 (issue #385, ADR-0119): a linked child's joint activity (shop / leisure /
   # other taken along with the paired adult) is anchored at the adult's PLACED secondary
   # location -- the chainsolver solves adults first, then the children. Requires

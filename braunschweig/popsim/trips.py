@@ -150,6 +150,14 @@ ADULT_ESCORT_W_ZWECK = 6
 #: ``tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes``.
 DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
 
+#: Default minimum age (YEARS) a household member must have for their leg to count as a
+#: candidate escorting adult in that pairing. MUST equal
+#: ``escort_pairing.DEFAULT_ADULT_MIN_AGE``, which OWNS the value, for the same
+#: import-direction reason as the gap default above; the three homes are pinned equal by
+#: ``tests/test_popsim_trips.py::
+#: test_passive_pair_adult_min_age_default_agrees_across_its_three_homes``.
+DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS = 18
+
 
 #: MiD W_ZWECK codes that mean "arrived at home" -- the destination a LEADING arrive-home leg
 #: has (see :func:`leading_arrive_home_leg_index`). Same two codes ``PURPOSE_BY_W_ZWECK`` maps to
@@ -410,6 +418,7 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
                 w_zweck_10_as_leisure: bool = False,
                 escort_passive_from_adult: bool = False,
                 passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
                 pairing_candidate_mask: pd.Series | None = None,
                 ) -> pd.DataFrame:
     """Add the eqasim activity ``purpose`` from MiD ``W_ZWECK``.
@@ -469,6 +478,13 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
         paired with an adult leg; forwarded verbatim to ``pair_passive_legs``.
         Inert unless ``escort_passive_from_adult`` is True. Default
         :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
+    passive_pair_adult_min_age_years:
+        Minimum age in YEARS (MiD ``HP_ALTER``) a household member must have for
+        their leg to count as a candidate escorting adult; forwarded verbatim to
+        ``pair_passive_legs`` as ``adult_min_age``. Unit: years; valid range
+        > 0. Inert unless ``escort_passive_from_adult`` is True. Default
+        :data:`DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS` (18, legal adulthood --
+        the value this pairing used before the floor became configurable).
     pairing_candidate_mask:
         Issue #373 task 2 (ruling C-R20/C-R21). Optional boolean ``pd.Series``,
         indexed IDENTICALLY to ``wege`` (raises ``ValueError`` otherwise),
@@ -644,7 +660,8 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
             # Today's behaviour, kept BYTE-IDENTICAL: the pairing considers every leg in
             # `out` as both a possible passive leg and a possible candidate adult leg.
             paired_frame, pairing = pair_passive_legs(
-                out, max_gap_minutes=passive_pair_max_gap_minutes)
+                out, max_gap_minutes=passive_pair_max_gap_minutes,
+                adult_min_age=passive_pair_adult_min_age_years)
             is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
             out.loc[is_paired, "purpose"] = passive_purpose_for_pairs(
                 paired_frame.loc[is_paired, "passive_pair_adult_w_zweck"],
@@ -697,7 +714,8 @@ def map_purpose(wege: pd.DataFrame, *, zweck_col: str = "W_ZWECK",
             mask = pairing_candidate_mask.astype(bool)
             candidates = out.loc[mask]
             paired_frame, pairing = pair_passive_legs(
-                candidates, max_gap_minutes=passive_pair_max_gap_minutes)
+                candidates, max_gap_minutes=passive_pair_max_gap_minutes,
+                adult_min_age=passive_pair_adult_min_age_years)
             paired_status = paired_frame["passive_pair_status"] == STATUS_PAIRED
             is_paired_series = pd.Series(False, index=out.index)
             is_paired_series.loc[paired_status.index[paired_status]] = True
@@ -838,6 +856,7 @@ def build_trip_table(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -935,6 +954,11 @@ def build_trip_table(
         Maximum |departure-time gap| in MINUTES for a passive leg to count as
         paired (forwarded to ``map_purpose`` via ``expand_persons_to_trips``). Inert unless
         ``escort_passive_from_adult`` is True.
+    passive_pair_adult_min_age_years:
+        Minimum age in YEARS for a household member's leg to count as a
+        candidate escorting adult in that pairing (forwarded to ``map_purpose``
+        via ``expand_persons_to_trips``). Unit: years; valid range > 0. Inert
+        unless ``escort_passive_from_adult`` is True.
 
     Returns
     -------
@@ -977,6 +1001,7 @@ def build_trip_table(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
     )
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
@@ -1055,6 +1080,7 @@ def expand_persons_to_trips(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
 ) -> pd.DataFrame:
     """Join the donor MiD Wege onto the synthetic persons -> one row per trip.
 
@@ -1109,6 +1135,11 @@ def expand_persons_to_trips(
     passive_pair_max_gap_minutes:
         Maximum |departure-time gap| in MINUTES for a passive leg to count as
         paired (forwarded to ``map_purpose``). Inert unless
+        ``escort_passive_from_adult`` is True.
+    passive_pair_adult_min_age_years:
+        Minimum age in YEARS for a household member's leg to count as a
+        candidate escorting adult in that pairing (forwarded to
+        ``map_purpose``). Unit: years; valid range > 0. Inert unless
         ``escort_passive_from_adult`` is True.
 
     Raises
@@ -1181,6 +1212,7 @@ def expand_persons_to_trips(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
     ))
     merged = persons.merge(
         wege, on=[household_col, person_col], how="inner", suffixes=("", "_weg")
@@ -1231,6 +1263,7 @@ def build_validated_trip_table(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     dwell_model=None,
     vectorized_validation: bool = True,
     **kwargs,
@@ -1325,6 +1358,11 @@ def build_validated_trip_table(
         Maximum |departure-time gap| in MINUTES for a passive leg to count as
         paired (forwarded to ``build_trip_table`` / ``map_purpose``). Inert unless
         ``escort_passive_from_adult`` is True.
+    passive_pair_adult_min_age_years:
+        Minimum age in YEARS for a household member's leg to count as a
+        candidate escorting adult in that pairing (forwarded to
+        ``build_trip_table`` / ``map_purpose``). Unit: years; valid range > 0.
+        Inert unless ``escort_passive_from_adult`` is True.
     dwell_model:
         Optional ``braunschweig.popsim.closure_dwell.ClosureDwellModel`` forwarded
         to every ``PlanValidator.repair_trips`` call this function makes
@@ -1372,7 +1410,8 @@ def build_validated_trip_table(
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
-        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes, **kwargs,
+        passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years, **kwargs,
     )
     validator = PlanValidator(
         require_home_closure=require_home_closure,
