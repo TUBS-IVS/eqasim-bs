@@ -65,7 +65,11 @@ class _GuardProbeContext:
         self._bad_value = bad_value
         self.declared = {}
 
-    def config(self, name, default=None):
+    def config(self, name, default=None, volatile=False):
+        # ``volatile`` mirrors synpp's ConfigurationContext (ADR-0126 declares the
+        # operational keys with volatile=True); the probe records the value either way,
+        # because volatility is a cache-hash property and never changes what configure()
+        # reads back.
         value = self._bad_value if name == self._bad_key else default
         self.declared[name] = value
         return value
