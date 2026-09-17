@@ -567,7 +567,7 @@ def configure(context):
             "escort_purpose (escort_passive_from_adult itself requires it)."
         )
 
-    # Surrogate anchor (issue #409 option 1, ADR-0124): re-point a paired passive child whose
+    # Surrogate anchor (issue #409 option 1, ADR-0127): re-point a paired passive child whose
     # donor adult is absent from the synthetic household to a household member's nearest
     # secondary activity. Extends the ADR-0119 link table, so it requires that flag. Keys and
     # defaults are owned by passive_joint_links (imported, never retyped).
@@ -1116,7 +1116,7 @@ def _passive_joint_link_table(df_persons_link, df_trips_original, *, surrogate_e
     """The link table the two-pass composition consumes (issues #385 and #409).
 
     Plan-source identity links (ADR-0119, ``build_passive_joint_links``) plus, when
-    ``surrogate_enabled``, the surrogate rescue (ADR-0124, ``rescue_with_surrogates``) for
+    ``surrogate_enabled``, the surrogate rescue (ADR-0127, ``rescue_with_surrogates``) for
     the children whose donor adult is absent from the synthetic household. Returns
     ``(links, link_stats, rescue_stats)``. With the rescue OFF the frame is the identity
     table itself, carrying exactly ``LINK_COLUMNS`` -- the pre-#409 table, byte for byte --

@@ -61,7 +61,7 @@ ANCHOR_COLUMNS = ["person_id", "activity_index", "location_id", "geometry"]
 #: rate landing exactly on the threshold warns instead of staying silent.
 DEFAULT_UNRESOLVED_ANCHOR_WARNING_SHARE = 0.5
 
-#: Config keys and code defaults of the surrogate rescue (issue #409 option 1, ADR-0124, written
+#: Config keys and code defaults of the surrogate rescue (issue #409 option 1, ADR-0127, written
 #: by the same change). The keys live HERE, in the module that owns the rule, and are imported by
 #: the chainsolver stage (never retyped). Code default of the flag is False, mirroring ADR-0112
 #: ruling C-R9 / ADR-0119: the rescue extends the ADR-0119 link table, which itself needs the
@@ -76,7 +76,7 @@ DEFAULT_SURROGATE_MAX_GAP_MINUTES = 15.0
 #: Unit: years. ASSUMPTION (a user judgment, bounded by a measurement on the raw MiD 2023
 #: delivery): accompaniment by a household member under 18 is rare above 14 and, below about
 #: 12, the nearest-in-time "partner" is a co-travelling small child, not an accompanying
-#: person. Both the record (ADR-0124) and the reproducible measurement (the --mid-dir mode of
+#: person. Both the record (ADR-0127) and the reproducible measurement (the --mid-dir mode of
 #: scripts/measure_passive_joint_surrogate_adults.py) are ADDED BY THE SAME CHANGE as this
 #: constant (issue #409); neither exists in a checkout that predates it.
 DEFAULT_SURROGATE_MIN_AGE_YEARS = 14
@@ -473,7 +473,7 @@ def rescue_with_surrogates(links: pd.DataFrame, df_persons: pd.DataFrame,
                            ) -> tuple[pd.DataFrame, dict]:
     """Surrogate links for the children whose donor adult is absent from the household.
 
-    Issue #409 option 1 (ADR-0124, written by the same change). For every paired passive leg that
+    Issue #409 option 1 (ADR-0127, written by the same change). For every paired passive leg that
     :func:`build_passive_joint_links` excluded as ``adult_not_in_household`` and whose child
     activity is secondary, the nearest-in-time secondary activity of another household member
     of at least ``min_age_years`` becomes the anchor, provided its departure lies within

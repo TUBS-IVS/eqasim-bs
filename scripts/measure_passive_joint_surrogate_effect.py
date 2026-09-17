@@ -1,4 +1,4 @@
-"""Realised effect of the passive escort surrogate anchor (issue #409 option 1, ADR-0124):
+"""Realised effect of the passive escort surrogate anchor (issue #409 option 1, ADR-0127):
 ON vs OFF, per rescued child activity.
 
 Reads THREE completed runs of the chainsolver stage over the SAME upstream population --

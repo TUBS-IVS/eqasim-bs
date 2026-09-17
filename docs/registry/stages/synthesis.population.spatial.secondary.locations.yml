@@ -34,6 +34,7 @@ features:
 - building_potentials_secondary
 - detour_circuity_curve
 - escort_passive_joint_location
+- escort_passive_joint_surrogate
 - escort_purpose
 - leisure_unspecified_subtype
 - no_answer_codes_excluded
@@ -54,6 +55,7 @@ decisions:
 - ADR-0116
 - ADR-0117
 - ADR-0119
+- ADR-0127
 notes: >-
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default

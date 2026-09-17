@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 96 | stages: 125 | datasets: 75 | ADRs: 123 | run manifests: 46
+- Features: 97 | stages: 125 | datasets: 75 | ADRs: 124 | run manifests: 47
 
 ## Population synthesis
 
@@ -63,6 +63,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Departure-time model (precision-aware de-rounding and SrV first-departure mapping)](../registry/features/departure_time_model.yml) | active | ON | A/i/- | unvalidated | [#123](https://github.com/TUBS-IVS/eqasim-bs/issues/123) |
 | [Passive escort legs take the purpose of the paired same-household adult leg](../registry/features/escort_passive_from_adult.yml) | active | ON | A/i/- | unvalidated | [#372](https://github.com/TUBS-IVS/eqasim-bs/issues/372) |
 | [Passive escort joint activities anchor at the accompanying adult's placed secondary location](../registry/features/escort_passive_joint_location.yml) | active | ON | A/i/- | unvalidated (`i385-passive-joint-location-smoke-03101-2026-09-11`, `i385-passive-joint-location-production-smoke-03101-2026-09-15`) | [#385](https://github.com/TUBS-IVS/eqasim-bs/issues/385) |
+| [Passive escort children whose donor adult left the household anchor at a household surrogate](../registry/features/escort_passive_joint_surrogate.yml) | active | ON | A/i/- | unvalidated (`i409-passive-joint-surrogate-smoke-03101-2026-09-17`) | [#409](https://github.com/TUBS-IVS/eqasim-bs/issues/409) |
 | [Escort purpose family: dedicated purpose, household anchoring, distance-by-type, passive education (#201/#256/#257)](../registry/features/escort_purpose.yml) | active | ON | A/-/- | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | [#201](https://github.com/TUBS-IVS/eqasim-bs/issues/201) |
 | [Explicit W_ZWECK purpose mapping with a coverage guard](../registry/features/explicit_w_zweck_purposes.yml) | active | ON | A/-/- | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | [#241](https://github.com/TUBS-IVS/eqasim-bs/issues/241) |
 | [General reporting-day absence (two-stage SrV-anchored state draw)](../registry/features/general_day_absence.yml) | active | ON | A/-/- | measured_vs_reference (`general-day-absence-arm0-100pct-2026-09-09`, `general-day-absence-arm1-100pct-2026-09-09`) | [#370](https://github.com/TUBS-IVS/eqasim-bs/issues/370) |

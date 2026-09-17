@@ -172,6 +172,34 @@ and adult end up at the same place" -- only the mechanism's own rates are
 checked. See `docs/registry/features/escort_passive_joint_location.yml` for
 the current production state and measured rates.
 
+## Surrogate anchor (ADR-0127)
+`escort_passive_joint_surrogate` (issue #409 option 1; code default OFF, `true` in
+configs/base_bs.yml; requires `escort_passive_joint_location`) rescues the paired
+passive children the identity link loses to `adult_not_in_household` -- the
+diary plan match remapped them onto a foreign donor diary, so the paired adult
+is not in their synthetic household. The child is anchored instead at the
+nearest-in-time secondary activity of another household member: same household,
+`HP_ALTER >= escort_passive_joint_surrogate_min_age_years` (14, an ASSUMPTION
+bounded by the MiD sibling-age probe in
+`scripts/measure_passive_joint_surrogate_adults.py --mid-dir`), not a linked child,
+an activity that is not itself a paired passive leg, departing within
+`escort_passive_joint_surrogate_max_gap_minutes` (15) of the child's own leg;
+with `escort_passive_joint_surrogate_require_same_purpose` (true) the purposes
+must be equal. Deterministic, no random draw
+(`passive_joint_links.rescue_with_surrogates`); the two-pass solve is unchanged
+and receives the identity table plus provenance-tagged surrogate rows
+(`secondary_chainsolvers._passive_joint_link_table`). With the flag off the
+identity table passes through untouched.
+
+The rescue rate with its split (child purpose not secondary / no admissible
+candidate activity / gap exceeded) and the combined plan-source + surrogate
+total are logged and printed every run; WARNING when candidate material
+existed and nothing linked. Headroom, reconciliation with the issue's own
+numbers and the age histogram: the measurement script's header. Realised
+effect ON vs OFF: `scripts/measure_passive_joint_surrogate_effect.py` and the
+run manifest named in `docs/registry/features/escort_passive_joint_surrogate.yml`.
+A smoke, not a validation: no observed reference exists for joint locations.
+
 ## Validation
 With `escort_passive_education` ON the model's `escort` purpose is active-only,
 so the W1 scoring uses the active-adjusted target (begleitung x active_share;

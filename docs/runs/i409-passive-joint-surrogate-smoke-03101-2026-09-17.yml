@@ -202,7 +202,7 @@ validation:
     median gaps 4.92 and 10.56 min). Run against ~/i409_runs/cache_strict, i.e. the same
     population the arms used.'
 features:
-  note: 'escort_passive_joint_surrogate (issue #409 option 1, ADR-0124) on top of the ON
+  note: 'escort_passive_joint_surrogate (issue #409 option 1, ADR-0127) on top of the ON
     production escort family. A SMOKE on a 1 %-sampled single Kreis: n = 27 rescue candidates
     and 17 eligible legs in 9 households are smoke-scale counts, not population rates. Both
     solver passes share ONE RandomState (ADR-0119), so an arm comparison is a different
@@ -219,7 +219,7 @@ issues:
 - '#409'
 - '#385'
 decisions:
-- ADR-0124
+- ADR-0127
 - ADR-0119
 source: '.superpowers/sdd/2026-09-16-passive-escort-surrogate-anchor/ (task 8 brief and report;
   the three-arm procedure and the 0700430a-plus-branch-diff ruling are recorded there)'

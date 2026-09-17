@@ -466,7 +466,7 @@ def sibling_age_histogram(wege: pd.DataFrame, *, floors=(16, 14, 12, 10, 6),
     reference floor (18, the production value) and at each lower floor, and reports, per
     floor, how many of the legs UNPAIRED at the reference floor newly pair, with the age
     histogram of their partners. This is the committed source of the
-    ``escort_passive_joint_surrogate_min_age_years`` default (ADR-0124): a marginal table,
+    ``escort_passive_joint_surrogate_min_age_years`` default (ADR-0127): a marginal table,
     because with a low floor a sibling can also WIN over an adult that is close in time, which
     is not the question. Restricted to passive legs of minors (HP_ALTER <= 17).
     """
