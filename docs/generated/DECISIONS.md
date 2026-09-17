@@ -134,3 +134,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0123](../decisions/ADR-0123-reproducible-test-environments.md) | 2026-09-15 | accepted for implementation | Reproducible test environments and measured consolidation |
 | [ADR-0124](../decisions/ADR-0124-srv-per-kreis-row-set-from-expected-geography.md) | 2026-09-16 | accepted for implementation | SrV per-Kreis row set comes from the expected geography, not the delivery |
 | [ADR-0125](../decisions/ADR-0125-gemeinde-bev-phev-composition-from-fz2717-level-from-the-2026-share.md) | 2026-09-16 | active | The per-Gemeinde BEV:PHEV composition comes from FZ 27.17 while the level stays with the 2026 combined share (issue #317) |
+| [ADR-0127](../decisions/ADR-0127-passive-escort-surrogate-anchor-household-member.md) | 2026-09-17 | active | A passive escort child whose donor adult left the household anchors at a household surrogate's secondary location |
