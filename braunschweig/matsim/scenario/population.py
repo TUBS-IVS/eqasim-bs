@@ -35,7 +35,9 @@ import inspect
 import logging
 
 import matsim.scenario.population as base
+from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
+from braunschweig.synthesis.incommuter_merge import _base as _incommuter_merge_base
 from braunschweig.synthesis.incommuter_merge._base import (assert_unique_ids,
                                                             concat_frame)
 
@@ -49,7 +51,13 @@ _LOG_TAG = "[commute day population]"
 #: ``add_person``/``OPTIONAL_PERSON_FIELDS``) would otherwise leave a stale cached plans.xml.gz in
 #: place although the writer that produced it changed (final-review fix wave, Important finding
 #: 8; same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
-_HELPER_MODULES = (base,)
+#: ``day_view`` owns :class:`StageOverrideContext`, i.e. WHICH frames the vendored ``load_raw``
+#: is handed in place of the pre-assignment ones, and ``incommuter_merge._base`` owns
+#: ``assert_unique_ids`` / ``concat_frame``, i.e. how the incommuter rows are appended and which
+#: id collisions are rejected. Both therefore decide the CONTENT of the written plans while
+#: leaving this file's own source untouched; both were module-level imports outside the token
+#: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
+_HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads

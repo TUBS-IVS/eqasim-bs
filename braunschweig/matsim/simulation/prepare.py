@@ -19,6 +19,7 @@ attribution against the supplied shapefile).
 """
 
 import hashlib
+import importlib
 import inspect
 import shutil
 import os.path
@@ -26,14 +27,45 @@ import os.path
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 
-_HELPER_MODULES = (delegate,)
+#: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
+#: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
+#: arguments, so a change there changes the prepared scenario without touching this file
+#: (#327 gate).
+_HELPER_MODULES = (delegate, eqasim)
+
+#: The two cordon helpers this stage reaches through FUNCTION-LEVEL imports inside
+#: :func:`_cut_to_cordon`, hashed by dotted NAME because they are not module objects here.
+#: ``spatial.cordon`` decides the cordon POLYGON and the buffer width and
+#: ``cordon.extent`` writes the extent file the cutter is driven by, so both shape the cut
+#: scenario. Under the default (cross-cordon off) they are never imported at run time, but a
+#: token must not depend on a flag: hashing them unconditionally is what makes the cached
+#: scenario of a cordon RUN trustworthy, and it costs nothing when the flag is off.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.cordon.extent",
+    "braunschweig.data.spatial.cordon",
+)
 
 
 def validate(context):
-    """Invalidate this wrapper when its delegated preparation helper changes."""
+    """Invalidate this wrapper when its delegated preparation helper changes.
+
+    A deferred module that fails to import raises rather than being skipped: skipping it
+    would keep a stale prepared scenario alive exactly when the helper is broken.
+    """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"matsim.simulation.prepare validate(): cannot hash the deferred helper "
+                f"module {module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse a stale prepared scenario."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 def configure(context):

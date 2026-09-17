@@ -149,7 +149,18 @@ def test_a_package_entry_does_not_credit_its_submodules():
 # is that COVERING the module would be worse than not covering it (a downstream stage hashing
 # a large upstream package would be re-run by every unrelated edit to it), and in that case
 # the right fix is usually to narrow the IMPORT instead.
-EXPECTED_UNCOVERED: dict[str, tuple[str, ...]] = {}
+EXPECTED_UNCOVERED: dict[str, tuple[str, ...]] = {
+    # The one deliberate exception, and it is the case this register exists for: covering it
+    # WOULD be worse. braunschweig.analysis.json_output decides only how the INFO_KEY
+    # diagnostics of the reporting-day trips are RENDERED -- never one value of the returned
+    # frame -- so folding it into the token would devalidate this stage, and at 100 % scale
+    # hours of everything downstream of it, on a pure formatting change. The reasoning is
+    # stated at the module's own _HELPER_MODULES; narrowing the import cannot help, because
+    # the stage genuinely calls json_safe() on the diagnostics it reports.
+    "braunschweig.synthesis.commute_day.trips_day_stage": (
+        "braunschweig.analysis.json_output",
+    ),
+}
 
 
 def test_every_source_hashing_stage_covers_its_required_helpers():

@@ -546,9 +546,6 @@ ALLOWED_VIOLATIONS: dict[str, tuple[str, ...]] = {
     "braunschweig.ipf.prepare": (
         "braunschweig.ipf.joint_age_size",
     ),
-    "braunschweig.synthesis.incommuters": (
-        "braunschweig.synthesis.vehicles.fleet_sampling_de",
-    ),
     "braunschweig.synthesis.locations.education_gravity": (
         "braunschweig.synthesis.locations.education_gravity_model",
     ),

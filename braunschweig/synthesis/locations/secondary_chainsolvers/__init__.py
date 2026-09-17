@@ -329,6 +329,11 @@ _HELPER_MODULES: Tuple[Any, ...] = (
 #: helper-hash re-audit.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.parallelism",
+    # configure() and execute() reach the KEY_/DEFAULT_ constants of this stage through
+    # FUNCTION-LEVEL imports of config_keys, so its source is invisible to
+    # inspect.getsource of this file. A changed DEFAULT_ there changes what the stage
+    # computed under without touching any file this token otherwise covers.
+    "braunschweig.popsim.stage.config_keys",
     "braunschweig.synthesis.locations.escort_links",
 )
 
