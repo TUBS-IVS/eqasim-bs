@@ -7,8 +7,10 @@ description: 'Gives a PAIRED MiD passive escort leg (W_ZWECK 13, the escorted ch
   #372, ADR-0112. An UNPAIRED leg keeps the previous rule, counted and logged.
 
   Pairing (pure module braunschweig/popsim/escort_pairing.py, pair_passive_legs): the leg of a
-  same-household person aged >= adult_min_age (18) whose departure is nearest in time, within
-  escort_passive_pair_max_gap_minutes (default 15.0 min). Ties resolve smallest gap -> equal
+  same-household person aged >= adult_min_age whose departure is nearest in time, within
+  escort_passive_pair_max_gap_minutes (default 15.0 min). The adult floor is itself a config key,
+  escort_passive_pair_adult_min_age_years (default 18, production 18 -- pre-amendment behaviour
+  byte-identical; ADR-0112 2026-09-17 amendment, issue #409). Ties resolve smallest gap -> equal
   wegkm_imp with the passive leg -> lowest adult P_ID -> lowest W_ID; status precedence is
   own-time invalidity first (unpaired_no_time > unpaired_no_adult > unpaired_gap), and an adult
   leg whose own W_ZWECK is 13 is excluded from the candidate pool (a person being escorted cannot
@@ -185,7 +187,13 @@ notes: 'Part of the escort purpose family (feature record escort_purpose, ADR-00
   escort_passive_pair_max_gap_minutes (unit: minutes, valid > 0, default 15.0, production 15), is a
   parameter rather than a switch and is therefore not listed under production.flags; its default is
   pinned equal across its three homes by
-  tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes. Phase 2 --
+  tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes. A third
+  config key of this feature, escort_passive_pair_adult_min_age_years (unit: years, valid > 0,
+  default 18, production 18), makes the pairing''s accompanying-adult floor configurable instead of a
+  braunschweig/popsim/escort_pairing.py module default no caller overrode; pre-amendment behaviour
+  is byte-identical. It is also not a production.flags entry. See the ADR-0112 2026-09-17 amendment
+  (issue #409) for why it exists (ADR-0127 introduces the separate SYNTHETIC-side surrogate floor,
+  default 14) and why 18 is kept until a full-population rerun measures a lower floor. Phase 2 --
   anchoring the child''s joint activity at the ADULT''s chosen secondary location -- is deliberately
   NOT in this feature and is tracked as issue #385. The threading list and the single-home rule for
   purpose flags live once, in docs/codebase/notes/mid-purpose-mapping.md.'

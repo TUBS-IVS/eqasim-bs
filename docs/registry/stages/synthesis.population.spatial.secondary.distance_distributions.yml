@@ -38,15 +38,19 @@ decisions:
 - ADR-0117
 notes: >-
   PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
-  production implementation braunschweig.popsim.distance_distributions declares and reads five keys
-  of the purpose package (the fifth, leisure_unspecified_subtype, has its own paragraph at the end
+  production implementation braunschweig.popsim.distance_distributions declares and reads six keys
+  of the purpose package (the sixth, leisure_unspecified_subtype, has its own paragraph at the end
   of this note), each imported from the shared constant pair in
-  braunschweig.popsim.stage.config_keys rather than retyped. Three of them are the trip-build flags
+  braunschweig.popsim.stage.config_keys rather than retyped. Four of them are the trip-build flags
   the stage must agree with, because it maps the donor legs' purposes ITSELF (run()'s purpose
   harmonisation calls the same trips.map_purpose): w_zweck_10_as_leisure (so the leisure distance
   layer contains the same legs the plan labels leisure), escort_passive_from_adult and
   escort_passive_pair_max_gap_minutes (so a passive escort leg contributes its PAIRED purpose's
-  layer instead of the education layer). The fourth, purpose_subtype_codeplan_sentinels, is shared
+  layer instead of the education layer), joined by escort_passive_pair_adult_min_age_years
+  (unit: years, default 18, production 18), the pairing's accompanying-adult floor, declared from
+  the same shared constant pair and byte-identical pre-amendment (feature record
+  escort_passive_from_adult; ADR-0112 2026-09-17 amendment, issue #409). The fifth,
+  purpose_subtype_codeplan_sentinels, is shared
   with braunschweig.synthesis.locations.secondary_chainsolvers and governs run()'s steps 8/9: the
   leisure and other-errand subtype donor pools are built through
   purpose_subtype.leisure_spec(...).groups / other_errand_spec(...).groups, so the no-detail codes
