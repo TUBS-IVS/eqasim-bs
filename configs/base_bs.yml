@@ -590,8 +590,17 @@ config:
   # 64-core server; it is deliberately NOT derived from the machine, so a run is
   # reproducible on any box. Changing it changes results.
   braunschweig.chainsolvers.shards: 62
-  # Worker processes for the parallel solve. OPERATIONAL: auto-scale (0 -> cpu_count - 2).
+  # Worker processes for the parallel solve. OPERATIONAL: auto = min(core budget,
+  # (memory budget - live driver RSS) / worker_memory_gb below), applied at stage
+  # start against this process's OWN live RSS (ADR-0126 amendment; the pool is
+  # forked from it). Typical server runs: unchanged at 62 (core-bound); a heavier
+  # driver process can reduce this below 62 -- logged in the stage's own output.
   braunschweig.chainsolvers.processes: 0
+  # Measured MAXIMUM private per-worker memory footprint (ADR-0126 amendment),
+  # traceable to docs/runs/chainsolver-worker-private-memory-2026-09-17.yml (seven
+  # deduplicated 100% ZGB-8 executions on the felix server). OPERATIONAL, volatile:
+  # sizes the pool above, never the partition, so it has no influence on any result.
+  braunschweig.chainsolvers.worker_memory_gb: 0.86
   # Executor generations for the shard set before the stage gives up (ADR-0097).
   # A worker killed outright -- on 2026-08-20 the kernel OOM killer took one of 62
   # while a second heavy run competed for memory -- used to make the stage wait

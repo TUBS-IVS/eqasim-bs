@@ -64,6 +64,15 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
+# Imported at MODULE level (used directly by _solve_problem_set below, and for that
+# reason also a module OBJECT this file can list in _HELPER_MODULES, same import-site
+# rule the popsim stage follows and the same reason purpose_subtype/trips/seed below
+# are imported here): since ADR-0126, braunschweig.resources.effective_chainsolver_workers
+# decides THIS stage's worker count (braunschweig.chainsolvers.processes), so a change
+# confined to resources.py (even an operational-only change, e.g. the memory bound's
+# arithmetic) must feed this stage's validate() source-hash token too -- exactly like
+# every other helper module in _HELPER_MODULES.
+from braunschweig import resources
 # Imported at module level (not deferred, unlike deciders.py's own per-function
 # imports of this module) SOLELY so it is a module OBJECT this file can list in
 # _HELPER_MODULES below (controller ruling C-R15, issue #242): the stage
@@ -294,6 +303,9 @@ def __getattr__(name):
 # see a change on the other side of that import. PLUS escort_links (#201) and
 # passive_joint_links (#385): both are reached only through function-level imports in
 # execute(), so an edit confined to them would otherwise reuse a stale cached stage output.
+# PLUS braunschweig.resources (ADR-0126): it now decides this stage's worker count
+# (effective_chainsolver_workers, called from _solve_problem_set), so its source must
+# feed this stage's validate() token too, same as every helper module below.
 _HELPER_MODULES: Tuple[Any, ...] = (
     activity_types,
     candidate_columns,
@@ -308,6 +320,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     plans,
     purpose_subtype,
     reporting,
+    resources,
     results,
     seed,
     solver_defaults,
@@ -385,6 +398,13 @@ def configure(context):
     # it no longer influences the result, so it is volatile and may scale with the
     # machine. None -> fall back to the global "processes" config.
     context.config("braunschweig.chainsolvers.processes", None, volatile = True)
+    # Measured per-worker memory footprint (ADR-0126 amendment): bounds the pool
+    # so it also fits the machine's MEMORY budget, not just its core count (see
+    # _build_shared_solve_state / _solve_problem_set). Purely OPERATIONAL -- it
+    # sizes the pool, never the partition -- so it has no influence on any
+    # result; declared volatile so changing it never invalidates the cache.
+    context.config(resources.KEY_CHAINSOLVER_WORKER_MEMORY_GB,
+                   resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB, volatile = True)
     # How many executor generations the shard set may be run through before the
     # stage gives up (issue #344). A worker killed outright -- the 2026-08-20 night
     # run lost one of 62 to the kernel OOM killer while a second heavy run competed
@@ -1284,14 +1304,29 @@ def _build_shared_solve_state(context, crs):
 
     parallel_enabled = bool(context.config("braunschweig.chainsolvers.parallel"))
     # chainsolvers.processes (when set) overrides the synpp `processes` count; either
-    # honours the auto sentinel (0/null/"auto" -> cores - reserve) so the chain solver
-    # scales with the box. A key left unset (None) defers to `processes`. An explicit
-    # positive integer is used verbatim (resolve_workers is the identity there), so
-    # existing configs stay byte-identical. Resolved to ONE requested worker count here
-    # (the pass only caps it at the person count it actually solves).
+    # honours the auto sentinel (0/null/"auto") so the chain solver scales with the
+    # box under BOTH ceilings ADR-0126 applies at stage start (effective_chainsolver_
+    # workers, called from _solve_problem_set): the CORE budget, as before, and now
+    # also the MEMORY budget net of this process's live RSS, divided by the measured
+    # per-worker footprint (worker_memory_gb, read just below). A key left unset
+    # (None) defers to `processes`. Resolved to ONE requested worker count here (the
+    # pass only caps it at the person count it actually solves and applies the live
+    # memory bound).
     configured_procs = context.config("braunschweig.chainsolvers.processes")
     if configured_procs is None:
         configured_procs = context.config("processes")
+    # Measured per-worker memory footprint for the ceiling above (ADR-0126). Read
+    # once here, like configured_procs, so both passes of the two-pass mode (#385)
+    # apply the identical bound. Validated eagerly (not left for effective_chainsolver_
+    # workers to discover) so a misconfigured value is reported against the key
+    # that caused it rather than surfacing deep inside the resource resolver.
+    worker_memory_gb = float(context.config(resources.KEY_CHAINSOLVER_WORKER_MEMORY_GB))
+    if worker_memory_gb <= 0:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] "
+            f"{resources.KEY_CHAINSOLVER_WORKER_MEMORY_GB} must be a positive number "
+            f"of gigabytes, got {worker_memory_gb!r}."
+        )
     shard_attempts = _resolve_shard_attempts(
         context.config("braunschweig.chainsolvers.shard_attempts"))
     # SCIENTIFIC, unlike configured_procs above: the shard count fixes the
@@ -1339,6 +1374,7 @@ def _build_shared_solve_state(context, crs):
         "solver_name": solver_name,
         "parallel_enabled": parallel_enabled,
         "configured_procs": configured_procs,
+        "worker_memory_gb": worker_memory_gb,
         "shard_attempts": shard_attempts,
         "n_shards": n_shards,
         "crs": crs,
@@ -1380,6 +1416,7 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     solver_name = shared["solver_name"]
     parallel_enabled = shared["parallel_enabled"]
     configured_procs = shared["configured_procs"]
+    worker_memory_gb = shared["worker_memory_gb"]
     shard_attempts = shared["shard_attempts"]
     n_shards = shared["n_shards"]
     crs = shared["crs"]
@@ -1506,9 +1543,10 @@ def _solve_problem_set(df_trips_pass, df_primary, activity_anchors, shared, *, p
     n_total = len(unique_persons)
 
     # The requested worker count is resolved once in the shared state; only the cap at
-    # the number of persons this pass actually solves is per pass.
-    from braunschweig.parallelism import resolve_workers
-    n_workers = resolve_workers(configured_procs)
+    # the number of persons this pass actually solves is per pass. ADR-0126: bounded
+    # by BOTH the core budget and the measured per-worker memory footprint against
+    # this process's LIVE RSS (the worker pool is forked from it), not by cores alone.
+    n_workers = resources.effective_chainsolver_workers(configured_procs, worker_memory_gb)
     n_workers = max(1, min(n_workers, n_total)) if n_total else 1
     # Gate on the SHARD count, not the worker count: a run with a single worker
     # must still produce the sharded realisation, otherwise the result would

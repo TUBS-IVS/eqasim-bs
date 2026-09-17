@@ -40,7 +40,11 @@ BYTES_PER_GIGABYTE = 1024 ** 3
 #: human-written budgets ("512M"), expressed in gigabytes.
 _MEMORY_SUFFIX_GB = {"K": 1 / 1024 ** 2, "M": 1 / 1024, "G": 1.0, "T": 1024.0}
 
-_MEMORY_PATTERN = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGT])?B?\s*$", re.IGNORECASE)
+#: The suffix is captured whole (an optional size letter, an optional trailing
+#: "B") so a LONE "B" with no size letter can be told apart from a real unit
+#: ("G", "GB", "M", "MB", ...) and rejected instead of silently defaulting to
+#: gigabytes -- see the lone-"B" check in :func:`parse_memory_gb`.
+_MEMORY_PATTERN = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?B?)\s*$", re.IGNORECASE)
 
 
 class ResourceDetectionError(RuntimeError):
@@ -56,7 +60,11 @@ def parse_memory_gb(value) -> float:
 
     Accepts the ``java_memory`` spelling ("100G", "512M"), a bare number of
     gigabytes ("94", 94, 94.5) and lowercase suffixes. Raises ``ValueError`` for
-    anything else rather than guessing.
+    anything else rather than guessing -- including a LONE "B" suffix with no
+    size letter ("5B"): bytes are not a supported unit here, and silently
+    treating "5B" as 5 gigabytes (the previous behaviour, since a lone "B" fell
+    through to the "no suffix -> gigabytes" default) would be exactly the kind
+    of silent misinterpretation CLAUDE.md forbids.
     """
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
@@ -66,7 +74,15 @@ def parse_memory_gb(value) -> float:
             f"Cannot parse memory size {value!r}. Expected a number of gigabytes "
             f"(94) or a suffixed size (100G, 512M)."
         )
-    amount, suffix = match.group(1), (match.group(2) or "G").upper()
+    amount, suffix_text = match.group(1), match.group(2).upper()
+    if suffix_text == "B":
+        raise ValueError(
+            f"Cannot parse memory size {value!r}: a lone 'B' suffix with no size "
+            f"letter (K/M/G/T) is not a supported unit here. Expected a number of "
+            f"gigabytes ({amount}, without the 'B') or a suffixed size "
+            f"(100G, 512M, 100GB)."
+        )
+    suffix = (suffix_text[:-1] if suffix_text.endswith("B") else suffix_text) or "G"
     return float(amount) * _MEMORY_SUFFIX_GB[suffix]
 
 
@@ -203,19 +219,23 @@ def detect_machine(affinity_reader: Optional[Callable[[], Optional[int]]] = _aff
 
 
 #: Cores left free for the OS and the orchestrating synpp driver when deriving a
-#: budget. Numerically matches ``parallelism.DEFAULT_CORE_RESERVE``, but the two
-#: mechanisms do NOT resolve the same way and CAN disagree in practice: the
-#: chainsolver pool resolves its worker count through
-#: ``parallelism.resolve_workers`` -> ``available_cores()`` -> ``os.cpu_count()``,
-#: which ignores CPU affinity (``taskset`` / a cpuset restriction) and ignores
-#: ``EQASIM_CPU_BUDGET`` entirely, while this module's ``detect_cores()``
-#: deliberately prefers ``sched_getaffinity`` and honours ``EQASIM_CPU_BUDGET``.
-#: On a machine where affinity differs from ``cpu_count()`` (a taskset'd
-#: container, a shared box under an operator override), the two mechanisms
-#: reserve the same NUMBER of cores off two DIFFERENT totals, and can therefore
-#: arrive at different core budgets for the same run. Keeping the constant equal
-#: is a deliberate convention (both reserves mean "leave the OS/driver two
-#: cores"), not a guarantee that the two mechanisms agree on how big the box is.
+#: budget. Historically this NUMBER matched ``parallelism.DEFAULT_CORE_RESERVE``
+#: while the two mechanisms still disagreed in practice: the chainsolver pool
+#: used to resolve its worker count through ``parallelism.resolve_workers`` ->
+#: ``available_cores()`` -> ``os.cpu_count()``, which ignored CPU affinity
+#: (``taskset`` / a cpuset restriction) and ``EQASIM_CPU_BUDGET`` entirely,
+#: while this module's ``detect_cores()`` deliberately prefers
+#: ``sched_getaffinity`` and honours ``EQASIM_CPU_BUDGET``. ADR-0126's
+#: memory-bound amendment closed that gap: the chainsolver pool now resolves
+#: through THIS module (``resolve_chainsolver_workers`` /
+#: ``effective_chainsolver_workers``, called from
+#: ``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``),
+#: exactly like every other key, so it honours ``sched_getaffinity`` and
+#: ``EQASIM_CPU_BUDGET`` like the rest of the mechanism.
+#: ``parallelism.resolve_workers`` has been removed (no production caller
+#: survived the switch); this constant is kept for the OS/driver reserve this
+#: module itself applies, not to stay numerically aligned with a second
+#: mechanism that no longer exists.
 DEFAULT_CORE_RESERVE = 2
 
 #: Memory left free for the OS, the page cache and the synpp driver, in gigabytes.
@@ -394,8 +414,8 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
     A pin that fits is echoed VERBATIM -- reformatting it would silently shrink
     a sub-gigabyte-granular value such as "1500M".
     """
-    budget_text = format_memory_gb(budget.memory_gb)
     if is_auto(configured):
+        budget_text = format_memory_gb(budget.memory_gb)
         return Resolution(
             key="java_memory", configured=configured, effective=budget_text,
             origin="derived",
@@ -406,6 +426,7 @@ def resolve_java_memory(configured, budget: ResourceBudget) -> Resolution:
         raise ValueError(
             f"java_memory must be a positive size, got {configured!r}.")
     if requested_gb > budget.memory_gb:
+        budget_text = format_memory_gb(budget.memory_gb)
         return Resolution(
             key="java_memory", configured=configured, effective=budget_text,
             origin="clamped",
@@ -430,8 +451,20 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
     Worker count cannot change results: ``popsim.batch.run_batches`` submits one
     independent subprocess per batch folder and no seed depends on the worker
     index, so clamping is safe.
+
+    Raises ``ValueError`` for a non-positive ``worker_memory_gb``: dividing the
+    memory budget by zero or a negative number is meaningless. Validated ONCE
+    here (this function used to floor it to ``0.1`` instead, while
+    :func:`build_report` used the raw, unguarded value in its own violation
+    check -- the two call sites could therefore disagree about what a
+    non-positive figure means); :func:`build_report` relies on this raising
+    rather than re-checking.
     """
-    memory_bound = max(1, int(math.floor(budget.memory_gb / max(0.1, float(worker_memory_gb)))))
+    if worker_memory_gb <= 0:
+        raise ValueError(
+            f"worker_memory_gb must be a positive number of gigabytes, got "
+            f"{worker_memory_gb!r}.")
+    memory_bound = max(1, int(math.floor(budget.memory_gb / worker_memory_gb)))
     ceiling = max(1, min(memory_bound, budget.cores))
     return _resolve_ceiling(
         "braunschweig.population.popsim.num_workers", configured, ceiling,
@@ -616,19 +649,27 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
     so the startup report cannot drift from what the run actually does. Covers
     the two OPERATIONAL clamped keys (``java_memory``,
     ``braunschweig.population.popsim.num_workers``), the ``processes`` and
-    ``matsim_threads`` / ``matsim_qsim_threads`` warn-only keys. Deliberately
-    does NOT cover ``braunschweig.chainsolvers.processes``: the chainsolver
-    pool -- the largest process fan-out in the pipeline -- is resolved
-    entirely inside
-    ``braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py``,
-    where ``context.config("braunschweig.chainsolvers.processes")`` is passed
-    to ``parallelism.resolve_workers`` (NOT ``_resolve_shard_attempts``, which
-    validates the separate ``braunschweig.chainsolvers.shard_attempts`` key).
-    This pool is never routed through this module, and its per-worker memory
-    footprint has never been measured (see ADR-0126's Non-goals).
+    ``matsim_threads`` / ``matsim_qsim_threads`` warn-only keys, and a
+    REPORTING-ONLY preview of ``braunschweig.chainsolvers.processes``
+    (``origin="reported"``): the chainsolver pool -- the largest process
+    fan-out in the pipeline -- IS memory-bounded since ADR-0126's amendment
+    (:func:`resolve_chainsolver_workers` / :func:`effective_chainsolver_workers`;
+    measured basis: ``docs/runs/chainsolver-worker-private-memory-2026-09-17.yml``),
+    but the full bound needs the LIVE driver RSS, which is only known once the
+    stage actually starts (``_solve_problem_set`` calls
+    ``effective_chainsolver_workers`` there). This startup report can therefore
+    only state what the CORE budget alone would allow; the stage's own log
+    line -- not this report -- is the source of truth for the value the run
+    actually used.
     """
     budget = resolve_budget(machine=machine, env=env)
     worker_memory_gb = float(config.get(KEY_WORKER_MEMORY_GB, DEFAULT_POPSIM_WORKER_MEMORY_GB))
+    chainsolver_worker_memory_gb = float(
+        config.get(KEY_CHAINSOLVER_WORKER_MEMORY_GB, DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB))
+
+    chainsolver_configured = config.get("braunschweig.chainsolvers.processes")
+    if chainsolver_configured is None:
+        chainsolver_configured = config.get("processes", "auto")
 
     resolutions = [
         resolve_java_memory(config.get("java_memory", "auto"), budget),
@@ -636,6 +677,19 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
         resolve_popsim_workers(
             config.get("braunschweig.population.popsim.num_workers", "auto"),
             budget, worker_memory_gb,
+        ),
+        Resolution(
+            key="braunschweig.chainsolvers.processes",
+            configured=chainsolver_configured,
+            effective=budget.cores,
+            origin="reported",
+            note=(
+                f"core budget alone allows up to {budget.cores} workers "
+                f"({chainsolver_worker_memory_gb:g} GB/worker assumed); the memory bound "
+                f"({KEY_CHAINSOLVER_WORKER_MEMORY_GB}, live driver RSS) is applied at "
+                "stage start and may reduce this further -- see the stage's own log "
+                "line for the value actually used, not this startup preview."
+            ),
         ),
     ]
 
@@ -762,6 +816,172 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     """
     resolution = resolve_popsim_workers(
         configured, resolve_budget(machine=machine, env=env), worker_memory_gb)
+    _log_resolution_deviation(resolution)
+    return int(resolution.effective)
+
+
+#: Measured MAXIMUM private per-worker memory footprint of the chainsolver
+#: process pool, in gigabytes. Traceable to the run manifest
+#: ``docs/runs/chainsolver-worker-private-memory-2026-09-17.yml``: seven
+#: deduplicated 100% ZGB-8 executions of
+#: ``braunschweig.synthesis.locations.secondary_chainsolvers`` on the felix
+#: server (2026-09-05 to 2026-09-09), each worker's PRIVATE footprint measured
+#: as (available-memory drop during the stage, driver growth being 0.0 in
+#: every run) / live worker count, ranging 0.475-0.862 GB/worker across the
+#: seven runs. 0.86 is the observed MAXIMUM (the pb4_arm4 run) -- the upper
+#: bound is taken because under-estimating it is what OOMs the box (same
+#: reasoning as ``DEFAULT_POPSIM_WORKER_MEMORY_GB`` above). Per-worker RSS is
+#: NOT usable for this bound: on the 125.78 GB server the summed worker RSS
+#: reads 1200-1860 GB because more than 95% of each forked worker's RSS is
+#: copy-on-write pages inherited from the driver at fork time, not memory the
+#: pool actually needs.
+DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB = 0.86
+
+KEY_CHAINSOLVER_WORKER_MEMORY_GB = "braunschweig.chainsolvers.worker_memory_gb"
+
+
+def _psutil_process_rss_gb() -> Optional[float]:
+    """This process's RSS via psutil, or None when psutil is not importable."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    return psutil.Process().memory_info().rss / BYTES_PER_GIGABYTE
+
+
+def _proc_self_status_rss_gb() -> Optional[float]:
+    """This process's RSS from ``/proc/self/status``, or None when unavailable.
+
+    LAST-RESORT reader, mirroring :func:`_meminfo_total_gb`: a malformed
+    ``VmRSS:`` line must fall through to ``None`` rather than escape as an
+    uncaught ``ValueError``/``IndexError``, which would break the fail-loud
+    contract this module promises.
+    """
+    try:
+        with open("/proc/self/status", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024 / 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def current_process_rss_gb(
+    psutil_reader: Optional[Callable[[], Optional[float]]] = _psutil_process_rss_gb,
+    status_reader: Optional[Callable[[], Optional[float]]] = _proc_self_status_rss_gb,
+) -> Optional[float]:
+    """This process's current resident set size in gigabytes, or ``None``.
+
+    The chainsolver worker pool is FORKED from this (driver) process, so its
+    private memory competes with the pool for the same memory budget --
+    :func:`effective_chainsolver_workers` subtracts it before dividing the
+    remainder by ``worker_memory_gb``. ``psutil`` is preferred; the last-resort
+    ``/proc/self/status`` reader (the only other option on a Linux server
+    without ``psutil``) is used only when ``psutil`` is unavailable, and that
+    fallback is logged at INFO -- no silent fallback (CLAUDE.md). Readers are
+    injected so tests never depend on the process they run in. ``None`` when
+    neither source is available; the caller decides how to degrade, and must
+    never silently treat that as "0 GB used".
+    """
+    if psutil_reader is not None:
+        rss_gb = psutil_reader()
+        if rss_gb:
+            return float(rss_gb)
+    if status_reader is not None:
+        rss_gb = status_reader()
+        if rss_gb:
+            logger.info(
+                "[resources] psutil unavailable; using /proc/self/status for "
+                "this process's RSS."
+            )
+            return float(rss_gb)
+    return None
+
+
+def _chainsolver_worker_ceiling(budget: ResourceBudget, worker_memory_gb: float,
+                                driver_rss_gb: float) -> int:
+    """Ceiling arithmetic for the chainsolver worker pool (ADR-0126 amendment).
+
+    ``workers = max(1, min(core_budget, floor((memory_budget_gb - driver_rss_gb)
+    / worker_memory_gb)))`` -- the driver's own live memory is subtracted first
+    because the worker pool is FORKED from it and both compete for the same
+    budget (this is the run's own deterministic state, not other users'
+    contention, so it is consistent with the "scale off the total allocation,
+    not free capacity" decision, ADR-0126). See
+    :data:`DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB` for the measured basis of
+    ``worker_memory_gb``. Raises ``ValueError`` for a non-positive
+    ``worker_memory_gb`` (division by a non-positive number is meaningless) or
+    a negative ``driver_rss_gb`` (a fabricated footprint).
+    """
+    if worker_memory_gb <= 0:
+        raise ValueError(
+            f"worker_memory_gb must be a positive number of gigabytes, got "
+            f"{worker_memory_gb!r}.")
+    if driver_rss_gb < 0:
+        raise ValueError(f"driver_rss_gb must be >= 0, got {driver_rss_gb!r}.")
+    memory_bound = int(math.floor((budget.memory_gb - driver_rss_gb) / worker_memory_gb))
+    return max(1, min(budget.cores, memory_bound))
+
+
+def resolve_chainsolver_workers(configured, budget: ResourceBudget,
+                                worker_memory_gb: float, driver_rss_gb: float) -> Resolution:
+    """Resolve ``braunschweig.chainsolvers.processes`` against BOTH the core
+    budget and the measured memory footprint of the worker pool.
+
+    Operational since ADR-0126's shard/worker split: this key no longer
+    influences the secondary-location realisation (``braunschweig.chainsolvers.
+    shards`` does that), so clamping it down when it does not fit is safe.
+    Raises ``ValueError`` for a non-positive ``worker_memory_gb`` or a negative
+    ``driver_rss_gb`` (see :func:`_chainsolver_worker_ceiling`).
+    """
+    ceiling = _chainsolver_worker_ceiling(budget, worker_memory_gb, driver_rss_gb)
+    return _resolve_ceiling(
+        "braunschweig.chainsolvers.processes", configured, ceiling,
+        unit=(f"workers ({budget.memory_gb:.1f} GB memory budget - "
+              f"{driver_rss_gb:.2f} GB driver RSS, {worker_memory_gb:g} GB/worker, "
+              f"{budget.cores} cores)"),
+    )
+
+
+def effective_chainsolver_workers(configured, worker_memory_gb: float,
+                                  machine: Optional[MachineResources] = None,
+                                  env: Optional[dict] = None,
+                                  driver_rss_gb: Optional[float] = None) -> int:
+    """Effective chainsolver worker-pool size for this machine and this run, logged.
+
+    Called at the point of use (``_solve_problem_set``), not resolved into the
+    config: ``braunschweig.chainsolvers.processes`` stays ``volatile=True``
+    (ADR-0126), so clamping here changes nothing any stage hashes. Unlike the
+    other ``effective_*`` wrappers, the ceiling also depends on THIS process's
+    live RSS (``driver_rss_gb``), because the worker pool is forked from it and
+    both compete for the same memory budget. When ``driver_rss_gb`` is not
+    injected it is measured via :func:`current_process_rss_gb`; if that also
+    fails, a WARNING is logged and the memory bound is NOT applied for this run
+    (``driver_rss_gb`` treated as 0.0, so only the core budget binds) -- no
+    silent fallback (CLAUDE.md). One INFO line is always logged, naming the
+    budget, the driver RSS actually used, ``worker_memory_gb`` and the
+    resulting ceiling, so the effective parallelism is traceable even when
+    nothing was clamped.
+    """
+    budget = resolve_budget(machine=machine, env=env)
+    if driver_rss_gb is None:
+        driver_rss_gb = current_process_rss_gb()
+        if driver_rss_gb is None:
+            logger.warning(
+                "[resources] braunschweig.chainsolvers.processes: this process's RSS "
+                "could not be measured (psutil not installed and /proc/self/status "
+                "unavailable) -- the chainsolver memory bound is NOT applied for this "
+                "run; falling back to the core bound only."
+            )
+            driver_rss_gb = 0.0
+    resolution = resolve_chainsolver_workers(configured, budget, worker_memory_gb, driver_rss_gb)
+    ceiling = _chainsolver_worker_ceiling(budget, worker_memory_gb, driver_rss_gb)
+    logger.info(
+        "[resources] braunschweig.chainsolvers.processes: budget %d cores / %.1f GB "
+        "memory, driver RSS %.2f GB, worker_memory_gb %.2f GB -> ceiling %d workers",
+        budget.cores, budget.memory_gb, driver_rss_gb, worker_memory_gb, ceiling,
+    )
     _log_resolution_deviation(resolution)
     return int(resolution.effective)
 
