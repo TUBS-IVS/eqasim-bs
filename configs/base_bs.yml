@@ -19,6 +19,42 @@
 ##   5. sibling Java project at ~/eqasim-java-bs (eqasim_source_path)
 
 config:
+  # --- Resource-adaptive configuration (ADR-0126) -------------------------
+  # braunschweig/resources.py detects this run's machine (cores, total memory) at
+  # startup, derives one budget from it and resolves the resource-sensitive keys
+  # against that budget. scripts/run_synpp.py logs the budget and every key's
+  # outcome before any stage executes, records them in run_provenance_<stamp>.json,
+  # and aborts if a configuration cannot fit at all. Override the detected budget
+  # explicitly with the environment variables EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET
+  # (e.g. to deliberately share a box with another run).
+  #
+  # EXACTLY THREE KEYS ARE CLAMPED (used verbatim when they fit, reduced and logged
+  # when they do not). They are OPERATIONAL: they size machinery, not results.
+  #   - java_memory                                  (below, "-Xmx" only)
+  #   - braunschweig.population.popsim.num_workers   (set per scale in
+  #     configs/overlays/*.yml; one independent subprocess per batch folder)
+  #   - braunschweig.chainsolvers.processes          (below; since the ADR-0126
+  #     shard/worker split the worker count no longer fixes the partition)
+  # The pinned VALUE in this file is never rewritten by a clamp, so no synpp stage
+  # hash changes and no shared cache is invalidated by clamping. (Landing ADR-0126
+  # itself DOES invalidate the full-scale PopulationSim and chainsolver caches once,
+  # and every later edit to braunschweig/resources.py re-invalidates both -- that is
+  # the new hashed shard key plus the helper-module hash, not the clamps.)
+  #
+  # `processes` below is NOT one of them. It is REPORTED-ONLY and
+  # RESULT-AFFECTING, in the same category as matsim_threads / matsim_qsim_threads
+  # (below, "MATSim runtime"): at its two read sites,
+  # synthesis/population/matched.py and
+  # synthesis/population/spatial/secondary/locations.py, it fixes the
+  # np.array_split person-chunk PARTITION and the number of random seeds drawn, so
+  # changing it changes the statistical-matching and secondary-location
+  # realisations. It is therefore never adjusted -- only reported and warned about.
+  #
+  # EXPECTED WARNING, do not act on it: 32 sits below 75 % of the 62-core budget on
+  # the run server, so every production run logs "[resources] processes is pinned to
+  # 32 but 62 cores are budgeted ...". That is the mechanism reporting a deliberate
+  # pin, not a defect. Raising it would change results, and both read sites declare
+  # `processes` volatile=True, so their caches would NOT recompute by themselves.
   processes: 32
   hts: entd
   random_seed: 1234
@@ -426,6 +462,13 @@ config:
     # only on mid/seed/day_filter/weekend -> cached once, shared across ALL runs.
     - braunschweig.popsim.completed_donor
 
+  # CEILING, not a fixed heap size (ADR-0126): one of the three CLAMPED keys, cut
+  # down to the detected memory budget at the point of use (matsim/runtime/java.py,
+  # data/osm/osmosis.py) when the machine is smaller than this; see the
+  # resource-adaptive configuration note at the top of this file. The config value
+  # itself is left untouched on purpose, so this line stays the pin every machine
+  # is measured against. Always give it a unit: a bare number is read as gigabytes
+  # and emitted as "<n>G", but write "100G" so the file says what it means.
   java_memory: 100G
 
   mode_choice: false
@@ -451,6 +494,15 @@ config:
   # --- MATSim runtime (64-core box) ---
   matsim_write_events_interval: 0
   matsim_write_plans_interval: 5
+  # NOT clamped by braunschweig/resources.py (ADR-0126), unlike the three clamped
+  # keys java_memory / braunschweig.population.popsim.num_workers /
+  # braunschweig.chainsolvers.processes -- and for a DIFFERENT reason than
+  # `processes` above: `processes` is positively known to be result-affecting,
+  # while these two are simply unverified (their effect on results has never been
+  # measured and MATSim parallelisation is known to scale poorly on this server),
+  # so silently adjusting them could change science without anyone deciding to.
+  # They keep these pinned values unconditionally; the startup resource report
+  # only WARNS when they exceed the detected core budget. Revisit under issue #410.
   matsim_threads: 56
   matsim_qsim_threads: 16
 
@@ -575,9 +627,30 @@ config:
   # ADOPTED BUT UNVALIDATED in this model -- no A/B against "carla" yet.
   braunschweig.chainsolvers.solver: carla_sample
 
-  # --- Parallel chainsolvers: auto-scale (0 -> cpu_count - 2) ---
+  # --- Parallel chainsolvers ---
   braunschweig.chainsolvers.parallel: true
+  # Person shards for the parallel solve. SCIENTIFIC, not operational: determines
+  # the partition and each shard's rng seed, hence the secondary-location
+  # realisation. Must be a positive integer -- unlike braunschweig.chainsolvers.
+  # processes directly below, 0 is NOT an auto-scale sentinel for this key (there
+  # is no machine-derived shard count, only a chosen partition; the stage raises
+  # at run time if this is <= 0). 62 reproduces every production run on the
+  # 64-core server; it is deliberately NOT derived from the machine, so a run is
+  # reproducible on any box. Changing it changes results.
+  braunschweig.chainsolvers.shards: 62
+  # Worker processes for the parallel solve. OPERATIONAL, and one of the three
+  # CLAMPED keys: auto = min(core budget, (memory budget - live driver RSS) /
+  # worker_memory_gb below), applied at stage start against this process's OWN live
+  # RSS (ADR-0126 amendment; the pool is forked from it). On the run server the
+  # bound drops below the 62-worker core budget from roughly 33 GB of driver RSS
+  # upwards; what the driver actually weighs at that moment has not been measured
+  # yet, so the stage logs the ceiling it used on every run.
   braunschweig.chainsolvers.processes: 0
+  # Measured MAXIMUM private per-worker memory footprint (ADR-0126 amendment),
+  # traceable to docs/runs/chainsolver-worker-private-memory-2026-09-17.yml (seven
+  # deduplicated 100% ZGB-8 executions on the felix server). OPERATIONAL, volatile:
+  # sizes the pool above, never the partition, so it has no influence on any result.
+  braunschweig.chainsolvers.worker_memory_gb: 0.86
   # Executor generations for the shard set before the stage gives up (ADR-0097).
   # A worker killed outright -- on 2026-08-20 the kernel OOM killer took one of 62
   # while a second heavy run competed for memory -- used to make the stage wait

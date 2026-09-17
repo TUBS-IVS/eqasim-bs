@@ -10,7 +10,7 @@ def test_configure_registers_batch_timeout_default():
     seen = {}
 
     class FakeContext:
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             seen[key] = default
             return default
 

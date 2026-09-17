@@ -11,7 +11,7 @@ def test_configure_registers_kreis_control_defaults():
     seen = {}
 
     class FakeContext:
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             seen[key] = default
             return default
         def stage(self, *a, **k):
@@ -27,7 +27,7 @@ def test_configure_registers_pareto_defaults():
     seen = {}
 
     class FakeContext:
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):
             seen[key] = default
             return default
         def stage(self, *a, **k):

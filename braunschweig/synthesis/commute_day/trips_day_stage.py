@@ -40,6 +40,7 @@ import logging
 
 import pandas as pd
 
+from braunschweig.analysis import json_output as _json_output
 from braunschweig.calibration import reported_time_precision as _reported_time_precision
 from braunschweig.calibration import srv_departure_times as _srv_departure_times
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
@@ -66,9 +67,30 @@ _LOG_TAG = "[commute day trips]"
 #: ``tests/test_synpp_helper_hash_invariant.py`` (scoped to own-package siblings) cannot catch a
 #: missing one -- this comment is the guard. (``braunschweig.popsim.attributes`` is deliberately
 #: absent: only ``persons_from_mid_schema`` reads it, and this stage uses the SYNTHETIC-schema
-#: adapter.)
+#: adapter. ``braunschweig.analysis.json_output`` is deliberately absent TOO, for a different
+#: reason: it decides only how the :data:`INFO_KEY` diagnostics are RENDERED, never one value of
+#: the returned frame, so folding it in would devalidate this stage -- and, at 100 % scale, hours
+#: of everything downstream of it -- on a pure formatting change. The price is that a CACHED
+#: stage keeps the pipeline.json entry it wrote when it last ran, which is the correct reading of
+#: a cached stage anyway.)
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
                    _srv_departure_times, _srv_plan_structure, _plan_validation)
+
+#: ``context.set_info`` key under which this stage reports its diagnostics (issue #378).
+#:
+#: synpp persists a stage's info into the working directory's ``pipeline.json``, keyed by that
+#: stage's own hash (``"<stage name>__<md5 of its config>"``), and keeps it across runs in which
+#: the stage is cached rather than re-executed. That makes it a STRUCTURED, machine-readable home
+#: for the R8/R9 counters that ADR-0104 check 4 previously had to quote out of a committed log
+#: excerpt -- and it costs nothing, whereas returning the diagnostics alongside the frame would
+#: mean either breaking every consumer of the ``synthesis.population.trips.final`` alias or
+#: adding a pass-through stage that caches a second copy of the reporting-day trips (3.4 M rows
+#: at 100 % scale). ``scripts/extract_commute_day_diagnostics.py`` reads it back.
+#:
+#: ONE namespaced key holding the whole payload, not one key per counter: synpp's verbose run
+#: FLATTENS every stage's info into a single dict, where bare names like ``n_trips_added`` would
+#: collide with another stage's.
+INFO_KEY = "commute_day_trips_diagnostics"
 
 KEY_ENABLED = "commute_day_state_enabled"
 DEFAULT_ENABLED = True
@@ -267,6 +289,31 @@ def _departure_time_settings(context, persons: pd.DataFrame, trips: pd.DataFrame
     return settings
 
 
+def _report_info(context, day_trips, commute_on, absence_on, diagnostics):
+    """Report this run's reporting-day diagnostics under :data:`INFO_KEY` (issue #378).
+
+    ``diagnostics`` is :func:`~braunschweig.synthesis.commute_day.plan_replacement.build_day_trips`'
+    dict, or ``None`` on the pass-through path where no replacement is performed at all. It stays
+    ``None`` there rather than becoming a block of zeros: a reader must be able to tell "this run
+    replaced nobody" apart from "this stage never ran", and zero counters would assert the former
+    as a measured result (CLAUDE.md "No invented reference values").
+
+    Every value goes through :func:`braunschweig.analysis.json_output.json_safe` first. synpp
+    serialises the whole meta with a plain ``json.dump(meta, f)`` once the stage returns, and the
+    two failure modes differ: a numpy scalar raises ``TypeError`` there and aborts a 100 % run
+    AFTER all of its work, while a ``NaN`` passes (``allow_nan`` defaults true) and writes a bare
+    ``NaN`` literal that every strict JSON reader afterwards rejects. ``json_safe`` closes both,
+    and is the same strict-JSON rule the analysis side-cars follow, so the two cannot drift.
+    """
+    context.set_info(INFO_KEY, _json_output.json_safe({
+        "commute_day_state_enabled": commute_on,
+        "day_absence_enabled": absence_on,
+        "n_trips_reporting_day": len(day_trips),
+        "n_persons_reporting_day": int(day_trips["person_id"].nunique()),
+        "diagnostics": diagnostics,
+    }))
+
+
 def execute(context):
     trips = context.stage("synthesis.population.trips")
     commute_on = bool(context.config(KEY_ENABLED))
@@ -276,6 +323,7 @@ def execute(context):
         logger.info("%s %s and %s are both false -- the reporting-day trips are the "
                     "pre-assignment trips (%d rows, unchanged).", _LOG_TAG, KEY_ENABLED,
                     KEY_DAY_ABSENCE_ENABLED, len(trips))
+        _report_info(context, trips, commute_on, absence_on, None)
         return trips
 
     # issue #370: the general day-absence frame is independent of the commute-day model, so it is
@@ -322,4 +370,5 @@ def execute(context):
                 "%s=%s, %s=%s; diagnostics: %s", _LOG_TAG, len(day_trips),
                 day_trips["person_id"].nunique(), len(trips), trips["person_id"].nunique(),
                 KEY_ENABLED, commute_on, KEY_DAY_ABSENCE_ENABLED, absence_on, diagnostics)
+    _report_info(context, day_trips, commute_on, absence_on, diagnostics)
     return day_trips

@@ -55,8 +55,67 @@ decisions:
 - ADR-0116
 - ADR-0117
 - ADR-0119
+- ADR-0126
 - ADR-0127
 notes: >-
+  RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
+  the chainsolver's person-shard count now has its OWN hashed config key,
+  braunschweig.chainsolvers.shards (default 62, SCIENTIFIC -- it fixes the partition
+  and every shard's derived rng seed), separated out of
+  braunschweig.chainsolvers.processes (now declared volatile=True, purely OPERATIONAL:
+  how many processes chew through the fixed shard set). Before this change the shard
+  count WAS the worker count, so a cached secondary-location artifact keyed on the
+  auto sentinel 0 was indistinguishable across machines that produced it with
+  different core counts; pinning shards: 62 reproduces the pre-existing 64-core
+  production realisation bit-for-bit, for a real population (n_total > 1; see
+  ADR-0126 Decision 4 for the n_total = 1 edge case). This IS a real, one-time cache
+  cost: adding the hashed key invalidates this stage's cache (and everything
+  downstream of it) on the first run after the change lands -- no such run has been
+  executed yet, so the recompute is still owed, not spent. The
+  `synthesis.population.spatial.secondary.locations`
+  synpp-level `processes` config key (read by
+  synthesis/population/spatial/secondary/locations.py, NOT by the chainsolver's own
+  braunschweig.chainsolvers.processes) is UNCHANGED by this ADR and remains read
+  verbatim (`context.config("processes")`, still declared `volatile=True` per the
+  upstream eqasim-france #438 comment) -- an earlier draft of ADR-0126 clamped it
+  against the machine's detected core budget, which was reverted before merge because
+  `processes` fixes both the person-chunk partition (`np.array_split`) and the drawn
+  seed count at this exact read site, making it result-affecting, not operational
+  (see the corrected worked example in docs/codebase/notes/resource-budget.md).
+
+  MEMORY-BOUNDED WORKER POOL (2026-09-17 amendment to ADR-0126): the stage now also
+  declares `braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
+  `volatile=True` -- sizes the pool, never the partition, so it has no influence on
+  any result), and `_solve_problem_set` resolves its worker count through
+  `braunschweig.resources.effective_chainsolver_workers` instead of the removed
+  `braunschweig.parallelism.resolve_workers`: `workers = max(1, min(core_budget,
+  floor((memory_budget_gb - driver_rss_gb_live) / worker_memory_gb)))`, where
+  `driver_rss_gb_live` is THIS process's own live RSS (the pool is forked from it,
+  measured fresh at stage start, logged at INFO). The 0.86 GB/worker default is the
+  MAXIMUM measured private per-worker footprint over seven recorded 100% ZGB-8
+  executions (docs/runs/chainsolver-worker-private-memory-2026-09-17.yml); per-worker
+  RSS itself is not usable for this bound because more than 95% of a forked worker's
+  RSS is copy-on-write pages inherited from the driver, not private memory the pool
+  needs. `braunschweig.resources` therefore joins this stage's `_HELPER_MODULES` /
+  `validate()` token, alongside `purpose_subtype` / `trips` / `seed` /
+  `escort_links` / `passive_joint_links` above. On the current 94.28 GB server
+  (86.28 GB budget) the memory term drops the pool below the 62-worker core budget
+  from roughly 32.96 GB of driver RSS upwards; whether any real run sits above that
+  threshold is UNVERIFIED, because the recorder never sampled the fork-point RSS the
+  code reads (it captured a 19-36 GB before-stage baseline and a 19.6-30.1 GB
+  during-stage minimum). The stage logs the ceiling it used on every run, and the
+  server smoke is the outstanding evidence -- see ADR-0126 point 5 and the
+  sampling-point row of the run manifest.
+
+  EFFECTIVE SHARD COUNT IN THE LOG: `_make_person_shards` caps the shard count at the
+  number of persons a pass actually solves, so a fixture, smoke or single-Kreis pass
+  runs FEWER shards than `braunschweig.chainsolvers.shards` configures and produces
+  the realisation for that smaller number. The cap is deterministic (population, not
+  machine), but it adjusts a result-determining key, so `_solve_problem_set` prints
+  the EFFECTIVE shard count in its headline line and warns, naming the key, when it
+  differs from the configured one. The headline previously asserted the configured
+  value.
+
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
   imported from braunschweig.popsim.stage.config_keys, shared with

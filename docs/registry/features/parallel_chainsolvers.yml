@@ -1,9 +1,26 @@
 feature: parallel_chainsolvers
 title: Parallel chainsolvers
 area: infrastructure
-description: Runs the secondary-location chainsolvers (carla) across worker processes (auto-scaled
-  to cpu_count - 2) instead of single-threaded. A worker killed outright (OOM) reports a broken
-  executor instead of hanging the stage, and its shard alone is retried (ADR-0097).
+description: >
+  Runs the secondary-location chainsolvers (carla) across worker processes instead of
+  single-threaded. Since ADR-0126 the person-shard count (braunschweig.chainsolvers.shards,
+  SCIENTIFIC, default 62) is a separate, hashed config key from the worker-process count
+  (braunschweig.chainsolvers.processes, OPERATIONAL, volatile, auto-scaled under the sentinel 0)
+  -- the shard count fixes the person partition and every shard's derived rng seed, so it, not
+  the worker count, determines the secondary-location realisation, and the worker count only
+  decides how many processes chew through that fixed shard set. Before ADR-0126 the two
+  were the same number, so a run's result silently depended on the machine's core count.
+  A 2026-09-17 amendment to ADR-0126 additionally bounds the worker count by the pool's
+  MEASURED memory footprint, not just cpu_count - 2: a new config key
+  braunschweig.chainsolvers.worker_memory_gb (OPERATIONAL, volatile, default 0.86 GB --
+  the maximum private per-worker footprint measured over seven recorded production
+  executions, docs/runs/chainsolver-worker-private-memory-2026-09-17.yml) is divided into
+  the memory budget net of this process's own live RSS (the pool is forked from it), and
+  the worker count is capped at min(core budget, that memory bound). braunschweig.resources
+  .effective_chainsolver_workers applies this at stage start and logs the resulting ceiling;
+  a worker killed outright (OOM) reports a broken executor instead of hanging the stage, and
+  its shard alone is retried (ADR-0097, whose own "rejected: a static memory cap" alternative
+  this amendment supersedes now that the shard/worker split removed its premise).
 stages:
 - synthesis.population.spatial.secondary.locations
 pipelines:
@@ -15,6 +32,12 @@ production:
   enabled: true
   flags:
   - braunschweig.chainsolvers.parallel
+  # NOT a boolean flag: an integer person-shard count. The Feature Registry schema
+  # has no other field for a production-relevant config key (production accepts only
+  # `enabled` and `flags`), and this key is the one that decides the realisation this
+  # record describes, so it is listed here deliberately rather than dropped. Its
+  # semantics are in the description above and in ADR-0126, Decision 4.
+  - braunschweig.chainsolvers.shards
 introduced:
   issue: null
   pr: null

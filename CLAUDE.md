@@ -35,7 +35,7 @@ Maintenance duties: every new/changed stage → Stage Registry (+ `... dag` if t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> `git pr` -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around.
 
-**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, apply the issue-first rule for newly discovered work, and run the issue triage check (every open model issue has a type, a `step:`, an `area:` and a `**Stages:**` line; review the untriaged `prio`-less list).
+**Mandatory at `/close` (end of every session):** update the registries/ADRs/run manifests for what happened (step 9 of `CONTRIBUTING.md`), rebuild + check the generated docs, update `SESSION_LOG.md`, sync the GitHub Project board, apply the issue-first rule for newly discovered work, and run the issue triage check (every open model issue has a type, a `step:`, an `area:`, a `**Stages:**` line and the plain-language head `In short` / `## Problem` / `## Why it matters` / `## Done when`; review the untriaged `prio`-less list).
 
 **PRs ALWAYS via `git pr`** (a local alias pinned to base `TUBS-IVS/eqasim-bs`, the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). To recreate the alias on a new machine:
 `git config alias.pr '!gh pr create --repo TUBS-IVS/eqasim-bs --base main'`.
@@ -247,8 +247,11 @@ all branches and remotes, including `origin/main`.
 **Issue-first for newly discovered work.** When a new feature, gap, or idea surfaces
 mid-session, PROPOSE it to the user; only after explicit confirmation, open a GitHub
 issue — ALWAYS in the fork `TUBS-IVS/eqasim-bs` (never the `eqasim-org/eqasim-bavaria`
-upstream) — with its type, `step:`/`area:` labels, a `**Stages:**` line and a
-`<stage or attribute>: <finding>` title per `docs/codebase/notes/issue-and-pr-conventions.md`
+upstream) — with its type, `step:`/`area:` labels, a `**Stages:**` line, a
+`<stage or attribute>: <finding>` title, and a body that opens with the plain-language head
+(`In short` line, `## Problem` as short bullets, `## Why it matters`, `## Done when`, in
+everyday words, understandable in thirty seconds; everything technical under `## Details`) per
+`docs/codebase/notes/issue-and-pr-conventions.md`
 (never re-create the retired `bug`/`enhancement`/`decision` labels). This guarantees
 incidental findings are tracked, not forgotten. All issues, PRs, and the Project board
 live on the fork only. The canonical feature workflow that ties this together (brainstorm

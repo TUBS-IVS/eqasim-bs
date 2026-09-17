@@ -57,7 +57,31 @@ decisions:
 - ADR-0109
 - ADR-0111
 - ADR-0112
+- ADR-0126
 notes: >-
+  RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
+  the popsim_mid/popsim_open producer (braunschweig.popsim.stage) now clamps
+  braunschweig.population.popsim.num_workers against the MACHINE's memory budget at
+  its point of use (_read_batching_and_scope_config,
+  braunschweig/resources.py::effective_popsim_workers), bounded by measured per-worker
+  memory via braunschweig.population.popsim.worker_memory_gb (default 30 GB,
+  traceable to the 2026-07-10 OOM post-mortem). The clamp is operational only
+  (PopulationSim submits one independent subprocess per batch folder with no
+  worker-index-dependent seed) and never rewrites the configured value, so this
+  stage's synpp cache hash is unaffected by the clamp itself. It IS affected,
+  permanently, by a second consequence: braunschweig/resources.py is now listed in
+  this stage's _DEFERRED_HELPER_MODULE_NAMES (its validate() source-hash token),
+  because the worker-count resolution is a direct dependency of this stage's result
+  -- so any future edit to resources.py, including a docstring-only change,
+  invalidates the cached PopulationSim output and forces a recompute (a deliberate
+  consequence of the repository's import-site cache-boundary rule, see ADR-0126
+  Consequences and validate()'s own docstring, not a bug). On the server measured for
+  ADR-0126 (94 GB -> 86 GB budget, 30 GB/worker), every overlay pinning num_workers: 3
+  clamps to 2 and smoke_kreis_control_fit.yml's num_workers: 4 clamps to 2 as well -- a
+  material, expected drop in parallelism on this stage, not yet exercised in a
+  real-machine smoke (see the Feature Registry's validation.note).
+
+
   SETTINGS/GEOGRAPHY FAIL-FAST: before any batch folder is written or any PopulationSim
   subprocess starts, this stage validates the file at
   braunschweig.population.popsim.settings_path against the rendered controls frame

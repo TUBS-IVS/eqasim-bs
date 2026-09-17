@@ -138,3 +138,49 @@ def test_data_registry_verifier_entries_resolve():
             assert entry in prefixes, (
                 f"{record['dataset']}: verifier_entry '{entry}' does not match any "
                 "Input name prefix in scripts/verify_braunschweig_inputs.py")
+
+
+# ------------------------------------------- the run-manifest template (issue #378, bullet 3)
+# docs/runs/TEMPLATE.yml is a blank manifest for a human to copy. Every other *.yml in that
+# directory is an executed run, and the loader turns each into a row of docs/generated/RUNS.md
+# -- so the template MUST be skipped there ("never invent history": a template is not a run),
+# while still being held to the very schema it is a template for, or it silently rots.
+
+
+def test_the_run_manifest_template_exists_and_is_skipped_by_the_loader():
+    template = os.path.join(REPO_ROOT, registries.RUNS_DIRECTORY,
+                            registries.MANIFEST_TEMPLATE_FILENAME)
+    assert os.path.isfile(template), (
+        f"{registries.MANIFEST_TEMPLATE_FILENAME} is missing; the loader skips that name, so a "
+        "run manifest must never be given it either")
+
+    manifest_ids = {record["id"] for record in registries.load_manifests(REPO_ROOT)}
+
+    assert "TEMPLATE" not in manifest_ids
+
+
+def test_the_run_manifest_template_still_satisfies_the_manifest_schema():
+    """Skipped by the loader, so nothing else would notice it drifting from the schema."""
+    import yaml
+
+    from braunschweig.documentation import schema
+
+    path = os.path.join(REPO_ROOT, registries.RUNS_DIRECTORY,
+                        registries.MANIFEST_TEMPLATE_FILENAME)
+    with open(path, encoding="utf-8") as handle:
+        document = yaml.safe_load(handle)
+
+    record = schema.parse_manifest(document, "docs/runs/TEMPLATE.yml")
+
+    assert record["id"] == "TEMPLATE"
+
+
+def test_the_run_manifest_template_names_the_commute_day_check_1_artifact():
+    """Issue #378: commute_day_state_shares.csv must be listed where a run records artifacts."""
+    path = os.path.join(REPO_ROOT, registries.RUNS_DIRECTORY,
+                        registries.MANIFEST_TEMPLATE_FILENAME)
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+
+    assert "commute_day_state_shares.csv" in text
+    assert "state_diagnostics.json" in text

@@ -34,6 +34,7 @@ features:
 - commute_day_state
 decisions:
 - ADR-0104
+- ADR-0128
 notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_far_threshold_km
   (200.0 km -- ASSUMPTION, the MiD P_ARB_ENTF top-code, so the survey resolves nothing beyond it
   and no evidence for a different threshold exists), commute_day_absent_share_far (1.0 --
@@ -90,6 +91,20 @@ notes: 'Config keys and defaults: commute_day_state_enabled (true), commute_day_
   n_persons_education_restricted (ruling R7),
   donor_source_by_assigned_class, share_donor_source_primary, final_state_counts (AFTER the
   not-replaceable downgrade -- the draw''s own n_at_workplace/n_home/n_absent are BEFORE it).
+  SINCE ISSUE #378 (ADR-0128) the matching dict also carries ADR-0104 check 4''s fourth
+  diagnostic, the pool size per matching cell, as TWO quantities neither of which implies the
+  other: donor_pool_size_by_hard_cell (a CENSUS of the donor pool -- donors per distance_class x
+  has_active_escort x has_children_u14 x has_car, i.e. per cell the coarsening cascade can never
+  leave, including cells no person was drawn from) and matched_cell_size_by_level (the REALISED
+  draw -- how many donors were eligible at the level each matched person matched at, summarised
+  per level as min/p25/median/p75/max plus n_persons_single_donor_cell, with empty levels omitted
+  because a level nobody matched at has no distribution), plus the headline
+  n_persons_matched_from_single_donor_cell. The realised size is captured from the mask that
+  actually selected the donor, so it includes the person''s own ruling-R7 exclusion, which the
+  census cannot see. INSTRUMENTED, NOT YET MEASURED: no run has executed this code, so the pool
+  sizes of the 2026-09-06 proof stay unknown and must not be back-filled.
+  The whole diagnostics dict is pulled into a committed state_diagnostics.json by
+  scripts/extract_commute_day_diagnostics.py (aggregates only, never the states frame beside it).
   The random draw is seeded with random_seed + COMMUTE_DAY_SEED_OFFSET (7301), a fixed additive
   offset so this model''s RNG stream never collides with another stage''s use of the same base
   seed.

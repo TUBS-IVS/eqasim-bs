@@ -19,6 +19,7 @@ distance at all, a far worker and an escort-protected far worker.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -84,6 +85,10 @@ class _StubContext:
         self._declared = declared
         self._stages = stages or {}
         self._config = config or {}
+        #: What the stage reported via ``set_info``. synpp persists this into the working
+        #: directory's ``pipeline.json`` under the stage's own hash, which is where
+        #: ``scripts/extract_commute_day_diagnostics.py`` reads it back from (issue #378).
+        self.info = {}
 
     def stage(self, name):
         assert name in self._declared.stages, f"stage '{name}' was not declared in configure()"
@@ -93,6 +98,9 @@ class _StubContext:
     def config(self, name):
         assert name in self._declared.config_keys, f"config '{name}' was not declared in configure()"
         return self._config[name]
+
+    def set_info(self, name, value):
+        self.info[name] = value
 
 
 def _context(module, stages=None, config=None):
@@ -1243,3 +1251,82 @@ def test_activities_day_shim_rejects_an_undeclared_stage():
     shim = ACT._ActivitiesShimContext(_trips(), _persons())
     with pytest.raises(KeyError):
         shim.stage("synthesis.population.spatial.home.locations")
+
+
+# ----------------------------------------- reporting-day trips diagnostics as stage info (#378)
+# ADR-0104 check 4 had to be read out of a committed LOG EXCERPT because this stage logs its
+# diagnostics dict and writes no structured artefact. synpp persists whatever a stage reports via
+# ``context.set_info`` into the working directory's pipeline.json, under that stage's own hash --
+# which is a structured, machine-readable home that costs no second copy of the 3.4M-row
+# reporting-day frame in the cache. scripts/extract_commute_day_diagnostics.py reads it back.
+
+
+def _trips_day_info(context):
+    """The single namespaced info entry this stage reports, asserted to be present."""
+    assert TRIPS.INFO_KEY in context.info, (
+        f"the stage reported no {TRIPS.INFO_KEY!r}; it reported {sorted(context.info)}")
+    return context.info[TRIPS.INFO_KEY]
+
+
+def test_trips_day_stage_reports_its_diagnostics_as_stage_info():
+    trips = _trips()
+    states = _states_frame([
+        {"person_id": 1, "commute_day_state": "home", "donor_id": "d1", "coarsening_level": 0},
+        {"person_id": 4, "commute_day_state": "absent"},
+    ])
+    context = _context(TRIPS, stages=_trips_day_stages(states, trips=trips),
+                       config=_trips_day_config())
+
+    TRIPS.execute(context)
+
+    info = _trips_day_info(context)
+    assert info["commute_day_state_enabled"] is True
+    assert info["day_absence_enabled"] is False
+    # The R8/R9 counters check 4 previously had to quote from run_log_excerpts.txt.
+    assert info["diagnostics"]["n_persons_replaced"] == 1
+    assert info["diagnostics"]["n_persons_absent_commute"] == 1
+    for key in ("n_donors_immobile", "n_donors_without_trips", "n_trips_removed",
+                "n_trips_added"):
+        assert key in info["diagnostics"], key
+
+
+def test_trips_day_stage_info_is_strict_json_safe():
+    """It is serialised by synpp with a plain json.dump at the END of the stage: a numpy scalar
+    or a NaN there would kill a 100 % run AFTER all its work, so the payload must be plain."""
+    context = _context(TRIPS, stages=_trips_day_stages(_home_person_states()),
+                       config=_trips_day_config())
+
+    TRIPS.execute(context)
+
+    info = _trips_day_info(context)
+    assert json.loads(json.dumps(info, allow_nan=False)) == info
+
+
+def test_trips_day_stage_off_path_reports_the_flags_rather_than_inventing_zeros():
+    """Both flags off: no replacement happens, so there ARE no diagnostics. The entry still says
+    the stage ran and under which flags -- a reader must be able to tell "nothing was replaced"
+    apart from "this stage never ran", and zero counters would assert the former as a result."""
+    trips = _trips()
+    context = _context(TRIPS, stages=_trips_day_stages(_states_frame([]), trips=trips),
+                       config=_trips_day_config(**{TRIPS.KEY_ENABLED: False,
+                                                   TRIPS.KEY_DAY_ABSENCE_ENABLED: False}))
+
+    day_trips = TRIPS.execute(context)
+
+    assert day_trips is trips                      # the identity pass-through is unchanged
+    info = _trips_day_info(context)
+    assert info["commute_day_state_enabled"] is False
+    assert info["day_absence_enabled"] is False
+    assert info["diagnostics"] is None
+    assert info["n_trips_reporting_day"] == len(trips)
+
+
+def test_state_stage_diagnostics_carry_the_pool_size_per_cell():
+    """Issue #378: check 4's fourth diagnostic must reach the state stage's committed output."""
+    context = _context(STATE, stages=_state_stage_stages(), config=_state_stage_config())
+
+    matching_diagnostics = STATE.execute(context)["diagnostics"]["matching"]
+
+    assert matching_diagnostics["donor_pool_size_by_hard_cell"]
+    assert "matched_cell_size_by_level" in matching_diagnostics
+    assert "n_persons_matched_from_single_donor_cell" in matching_diagnostics

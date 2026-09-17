@@ -18,3 +18,14 @@ pipelines:
   popsim_open: active
   simple_ipf_open: active
 production: true
+decisions:
+- ADR-0126
+notes: >-
+  RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
+  java.run's helper clamps the configured java_memory against the machine's detected
+  memory budget at the point of use (braunschweig/resources.py::effective_java_memory)
+  before it becomes the JVM's -Xmx argument -- e.g. the live 2026-09-16 defect,
+  java_memory: 100G configured on a 94 GB machine, clamps to 86G. Operational only
+  (the value only ever becomes -Xmx and cannot change any result), and the configured
+  value is never rewritten, so this stage's cache hash -- inherited by every
+  Java-dependent stage (network, routing, freight, MATSim) -- is unaffected.

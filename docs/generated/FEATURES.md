@@ -17,7 +17,7 @@ may only name run manifests (no run, no claim).
 | [building_potentials_work](../registry/features/building_potentials_work.yml) | work | active | ON | A/i/i | 2 | not claimed | none | none | unvalidated | pending |
 | [carless_routing_remode](../registry/features/carless_routing_remode.yml) | matsim | active | ON | A/A/s | 1 | -- | none | none | unvalidated | pending |
 | [cell_accurate_homes](../registry/features/cell_accurate_homes.yml) | home | active | ON | A/A/- | 2 | -- | marker | none | unvalidated | pending |
-| [commute_day_state](../registry/features/commute_day_state.yml) | behavior | active | ON | A/-/- | 8 | proven | marker | committed | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-06 |
+| [commute_day_state](../registry/features/commute_day_state.yml) | behavior | active | ON | A/-/- | 9 | proven | marker | committed | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-06 |
 | [commute_day_state_measurement](../registry/features/commute_day_state_measurement.yml) | validation | active | ON | A/s/s | 5 | -- | marker | committed | measured_vs_reference (`commute-day-state-phase-a-2026-09-05`) | pending |
 | [consistent_car_availability](../registry/features/consistent_car_availability.yml) | attributes | active | off | -/-/A | 2 | proven | marker | committed | unvalidated | pending |
 | [cordon_gates](../registry/features/cordon_gates.yml) | cordon | active | ON | A/A/- | 5 | -- | marker | none | unvalidated | pending |
@@ -87,6 +87,7 @@ may only name run manifests (no run, no claim).
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
+| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 20 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |

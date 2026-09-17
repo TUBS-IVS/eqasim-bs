@@ -313,6 +313,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_WORK_BY_EMPLOYMENT_CONTROL,
     KEY_WORK_DIR,
     KEY_WORK_PARTICIPATION_CONTROL,
+    KEY_WORKER_MEMORY_GB,
     KEY_WORKERS,
     KEY_W_ZWECK_10_AS_LEISURE,
     _KREIS_CONTROL_DEFAULT,
@@ -450,7 +451,24 @@ _HELPER_MODULES = (
 # was verified against an actual function-level import site in this package:
 #
 #   braunschweig.data.mid.tenure_by_income      _apply_housing_tenure_parity
-#   braunschweig.parallelism                    _read_batching_and_scope_config
+#   braunschweig.parallelism                    NOT a direct import of this package --
+#                                               reached only transitively via
+#                                               braunschweig.popsim.batch (which IS a
+#                                               direct import, covered in
+#                                               _HELPER_MODULES). Strictly, the
+#                                               one-level rule below would therefore
+#                                               leave THIS file's own source uncovered
+#                                               (an edit to parallelism.py's
+#                                               SINGLE_THREAD_BLAS_ENV, unlike an edit to
+#                                               batch.py itself, would hash nothing new).
+#                                               Listed here anyway as a deliberate,
+#                                               conservative exception -- NOT a
+#                                               contradiction of "transitive imports are
+#                                               not covered" below, which describes the
+#                                               default for an UNLISTED transitive
+#                                               dependency; this one is listed precisely
+#                                               because batch's subprocess behaviour
+#                                               depends on it.
 #   braunschweig.popsim.control_spec            _load_tier3_kreis_controls,
 #                                               _derive_kreis_attribute_control_targets,
 #                                               the placement_income block,
@@ -497,6 +515,10 @@ _HELPER_MODULES = (
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.parallelism",
+    # Resolves this stage's worker count against the detected machine (memory-bound
+    # ceiling). Imported inside _read_batching_and_scope_config; listed here because the
+    # boundary is decided by import site, not by whether the module can change results.
+    "braunschweig.resources",
     # attributes / trips / escort_pairing: the second-level transitive entries -- see the
     # validate() docstring's boundary statement for why they are explicit exceptions to the
     # one-level rule (the first two were added after the 2026-08-19 hazard).
@@ -588,7 +610,8 @@ def validate(context):
     function body -- ``braunschweig.popsim.control_spec`` (the control catalog
     itself), ``kreis_attribute_control``, ``ownership_grid``, ``placement_income``,
     ``employment_grid``, ``zensus_employment_age``, ``folders``,
-    ``braunschweig.parallelism``, ``braunschweig.data.mid.tenure_by_income``, and
+    ``braunschweig.parallelism``, ``braunschweig.resources`` (the machine-derived
+    worker-count ceiling), ``braunschweig.data.mid.tenure_by_income``, and
     the ``braunschweig.synthesis.population.enriched`` package one level deep
     (``__init__`` plus ``availability`` / ``base`` / ``economic_status`` /
     ``housing_tenure`` / ``income_distribution`` / ``vehicle_ownership``), which is
@@ -696,6 +719,15 @@ def configure(context):
     context.config(KEY_UV)
     context.config(KEY_MAX_CELLS, 3000)
     context.config(KEY_WORKERS, 3)
+    # Measured peak memory of ONE PopulationSim batch worker (2026-07-10 OOM
+    # post-mortem: 25-30 GB per worker). Bounds num_workers against the machine's
+    # RAM at the point of use (_read_batching_and_scope_config), never against the
+    # core count. Declared volatile: an operational bound with no influence on
+    # any result, so changing it never invalidates the (expensive) popsim stage
+    # cache. KEY_WORKERS above keeps its own declaration and default unchanged.
+    from braunschweig import resources
+    context.config(KEY_WORKER_MEMORY_GB, resources.DEFAULT_POPSIM_WORKER_MEMORY_GB,
+                   volatile = True)
     context.config(KEY_WORK_DIR)
     context.config(KEY_BATCH_TIMEOUT, batch.DEFAULT_POPSIM_TIMEOUT_S)
     # Cleanup of the dead per-batch pipeline.h5 checkpoint store (issue #153).
@@ -1009,15 +1041,24 @@ def _read_batching_and_scope_config(context):
     exist_ok=True)``) and logs the resolved worker count.
     """
     max_cells = int(context.config(KEY_MAX_CELLS))
-    # Worker count honours the auto sentinel (0/null/"auto" -> cores - reserve), so
-    # the batch runner scales with the box it lands on. An explicit positive integer
-    # is used verbatim (pin it when byte-reproducibility across machines matters).
-    from braunschweig.parallelism import resolve_workers
+    # The worker count is MEMORY-bound, not core-bound: each worker drives its own
+    # PopulationSim subprocess with a measured 25-30 GB peak, so a configured value
+    # is treated as a ceiling and clamped down when the machine cannot carry it.
+    # The configured value itself is never rewritten -- that would change this
+    # stage's hash and discard the shared popsim cache.
+    from braunschweig import resources
     _requested_workers = context.config(KEY_WORKERS)
-    num_workers = resolve_workers(_requested_workers)
+    _worker_memory_gb = float(context.config(KEY_WORKER_MEMORY_GB))
+    num_workers = resources.effective_popsim_workers(_requested_workers, _worker_memory_gb)
+    # The worker count is memory-bound, not core-bound (see the comment above),
+    # so the log names the quantity that actually decided it -- the memory
+    # budget and the per-worker memory footprint -- instead of cpu_count, which
+    # no longer determines this number at all.
+    _memory_budget_gb = resources.resolve_budget().memory_gb
     logger.info(
-        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, cpu_count=%s)",
-        num_workers, _requested_workers, os.cpu_count(),
+        "[popsim.stage] PopulationSim batch workers: %d (requested=%r, "
+        "worker_memory_gb=%.1f, memory_budget_gb=%.1f)",
+        num_workers, _requested_workers, _worker_memory_gb, _memory_budget_gb,
     )
     work_dir = context.config(KEY_WORK_DIR)
     # Create the PopulationSim working directory up front so the stage can write

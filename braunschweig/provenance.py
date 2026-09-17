@@ -68,11 +68,16 @@ def git_commit(repo_path: str) -> str:
         return "unknown"
 
 
-def collect_run_provenance(config_path: str) -> dict:
+def collect_run_provenance(config_path: str, resource_report=None) -> dict:
     """Assemble the launch-time provenance record for a synpp config.
 
     Reads the YAML config (never raises on a malformed one -- the record then
-    carries an ``error`` note instead, and the run proceeds).
+    carries an ``error`` note instead, and the run proceeds). ``resource_report``
+    is an optional :class:`braunschweig.resources.ResourceReport`; when given,
+    its :meth:`~braunschweig.resources.ResourceReport.as_dict` is embedded under
+    the ``"resources"`` key so the machine and effective resource values that
+    produced this run are reconstructible afterwards. Kept optional so existing
+    callers that do not yet build a report are unaffected.
     """
     record: dict = {
         "launched_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -81,6 +86,8 @@ def collect_run_provenance(config_path: str) -> dict:
         "pipeline_commit": git_commit(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__)))),
     }
+    if resource_report is not None:
+        record["resources"] = resource_report.as_dict()
     try:
         with open(config_path, encoding="utf-8") as f:
             doc = yaml.safe_load(f) or {}
@@ -114,15 +121,16 @@ def collect_run_provenance(config_path: str) -> dict:
     return record
 
 
-def log_and_write_run_provenance(config_path: str) -> dict:
+def log_and_write_run_provenance(config_path: str, resource_report=None) -> dict:
     """Log the provenance banner and persist it next to the run's cache.
 
     Writes ``run_provenance_<UTC-stamp>.json`` into the config's
     ``working_directory`` (created if needed) so a killed run still leaves the
     record; a missing working_directory downgrades to log-only (warned).
-    Never raises.
+    Never raises. ``resource_report`` is forwarded to
+    :func:`collect_run_provenance` unchanged; see there for its meaning.
     """
-    record = collect_run_provenance(config_path)
+    record = collect_run_provenance(config_path, resource_report=resource_report)
     logger.info(
         "[provenance] pipeline_commit=%s eqasim_java_commit=%s config=%s "
         "sampling_rate=%s hts=%s random_seed=%s population.method=%s python=%s",

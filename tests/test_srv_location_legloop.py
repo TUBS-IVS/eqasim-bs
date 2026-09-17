@@ -664,7 +664,7 @@ class _ConfigureCtx:
         self.registered = {}
         self.staged = []
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
         if key in self.registered:
             return self.registered[key]
         value = self.overrides.get(key, default)

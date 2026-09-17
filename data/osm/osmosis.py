@@ -25,7 +25,12 @@ def run(context, arguments = [], cwd = None):
     # Prepare environment
     environment = os.environ.copy()
     environment["JAVACMD"] = shutil.which(context.config("java_binary"))
-    environment["JAVACMD_OPTIONS"] = "-Xmx%s" % context.config("java_memory")
+    # Clamp the configured heap to the machine this run actually landed on. The
+    # config value stays untouched on purpose: java_memory is part of this
+    # stage's hash, so rewriting it would invalidate every Java-dependent stage.
+    from braunschweig.resources import effective_java_memory
+    environment["JAVACMD_OPTIONS"] = "-Xmx%s" % effective_java_memory(
+        context.config("java_memory"))
 
     # Run Osmosis
     return_code = sp.check_call(command_line, cwd = cwd, env = environment)

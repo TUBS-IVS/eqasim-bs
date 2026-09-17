@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. An Analysis carries the `step:*` of the thing it measures (a commute-distance validation is `step:distribution`). Convergence is not validation.
+        Conventions: `docs/codebase/notes/issue-and-pr-conventions.md`. The first four fields are the plain-language head: someone who has never opened this repository must understand them. An Analysis carries the `step:*` of the thing it measures (a commute-distance validation is `step:distribution`). Convergence is not validation.
   - type: input
     id: stages
     attributes:
@@ -14,13 +14,42 @@ body:
       description: Registry stage id(s) whose output is measured (docs/registry/stages/). `unknown` is allowed.
     validations:
       required: true
-  - type: textarea
-    id: question
+  - type: input
+    id: short
     attributes:
-      label: Question
-      description: What is measured and what decision the result feeds.
+      label: In short
+      description: One plain sentence, everyday words. What is wrong and what should happen. Someone who reads only this line knows what the issue is.
     validations:
       required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is unknown today, as two to four short bullets. One fact each, about fifteen words, everyday words. Say which decision waits on the answer.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why it matters
+      description: What the open question costs the results or the work. One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state, one checkable outcome per line. An Analysis ends in committed evidence, not in a code change.
+      placeholder: |
+        - [ ] The measurement is recorded in docs/runs/<run_id>.yml
+        - [ ] The result is compared to <committed reference> and the verdict is stated
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ### Details
+        Everything below is the technical record. Numbers, stage ids, code paths and prior work belong here, not in the head above.
   - type: textarea
     id: reference
     attributes:
