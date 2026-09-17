@@ -93,10 +93,7 @@ def execute(context):
     ))
 
     # Segment into subsamples
-    # Clamp the configured pool size to the machine this run landed on. The config
-    # value is untouched, so this stage's hash is unchanged.
-    from braunschweig.resources import effective_processes
-    processes = effective_processes(context.config("processes"))
+    processes = context.config("processes")
 
     unique_person_ids = df_trips["person_id"].unique()
     number_of_persons = len(unique_person_ids)

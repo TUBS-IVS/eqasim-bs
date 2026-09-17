@@ -1,7 +1,15 @@
-"""The generic worker count is clamped down, and under-use is made visible."""
+"""``processes`` is result-affecting at its two consumers (it decides both the
+person-chunk partition and the seed count) and must therefore never be silently
+clamped -- see the CRITICAL fix in ADR-0126, Decision 3, and the corrected
+worked example in ``docs/codebase/notes/resource-budget.md``. There is no
+``effective_processes`` wrapper any more: ``synthesis/population/matched.py``
+and ``synthesis/population/spatial/secondary/locations.py`` read
+``context.config("processes")`` verbatim, exactly as before this branch. The
+only thing this module still does with ``processes`` is WARN in the startup
+report when a pin under-uses the machine, which is purely informational.
+"""
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 
@@ -13,32 +21,6 @@ from braunschweig import resources  # noqa: E402
 SERVER = resources.MachineResources(
     cores=64, memory_gb=94.0, cores_source="sched_getaffinity", memory_source="psutil",
 )
-LAPTOP = resources.MachineResources(
-    cores=8, memory_gb=16.0, cores_source="cpu_count", memory_source="psutil",
-)
-
-
-def test_processes_pin_is_clamped_on_a_smaller_machine():
-    assert resources.effective_processes(32, machine=LAPTOP, env={}) == 6
-
-
-def test_processes_pin_that_fits_is_untouched():
-    assert resources.effective_processes(32, machine=SERVER, env={}) == 32
-
-
-def test_clamping_is_logged_as_a_warning(caplog):
-    # CLAUDE.md: a clamp that fires silently is the failure mode this whole
-    # mechanism exists to prevent.
-    with caplog.at_level(logging.WARNING):
-        resources.effective_processes(32, machine=LAPTOP, env={})
-    assert any("processes" in record.getMessage() for record in caplog.records)
-
-
-def test_a_fitting_pin_is_neither_changed_nor_warned_about(caplog):
-    with caplog.at_level(logging.WARNING):
-        result = resources.effective_processes(32, machine=SERVER, env={})
-    assert result == 32
-    assert not [r for r in caplog.records if "processes" in r.getMessage()]
 
 
 def test_report_flags_a_processes_pin_that_wastes_the_machine():
@@ -59,3 +41,9 @@ def test_report_does_not_flag_a_processes_pin_that_uses_the_machine():
         machine=SERVER, env={},
     )
     assert not [v for v in report.violations if v.key == "processes"]
+
+
+def test_effective_processes_no_longer_exists():
+    # The revert (ADR-0126, Decision 3): processes is result-affecting at its
+    # two pure read sites, so no effective_* wrapper may exist to clamp it.
+    assert not hasattr(resources, "effective_processes")

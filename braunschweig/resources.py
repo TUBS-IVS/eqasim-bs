@@ -355,7 +355,18 @@ def resolve_popsim_workers(configured, budget: ResourceBudget,
 
 
 def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
-    """Resolve the generic synpp worker count against the core budget."""
+    """Resolve ``processes`` against the core budget for REPORTING only.
+
+    ``processes`` is result-affecting at its two pure read sites
+    (``synthesis/population/matched.py``,
+    ``synthesis/population/spatial/secondary/locations.py``): it decides both the
+    person-chunk partition (``np.array_split(..., processes)``) and how many
+    random seeds are drawn (``random.randint(10000, size=processes)``), so it must
+    never be silently clamped (see ADR-0126, Decision 3, and the corrected worked
+    example in ``docs/codebase/notes/resource-budget.md``). This resolver exists
+    only so ``build_report`` can WARN when a pinned value under-uses the machine;
+    its result is never applied to the config or to a consumer.
+    """
     return _resolve_ceiling("processes", configured, budget.cores, unit="cores")
 
 
@@ -542,16 +553,6 @@ def effective_popsim_workers(configured, worker_memory_gb: float,
     if resolution.origin != "pinned":
         logger.warning("[resources] %s %s -> %s (%s)", resolution.key,
                        resolution.configured, resolution.effective, resolution.note)
-    return int(resolution.effective)
-
-
-def effective_processes(configured, machine: Optional[MachineResources] = None,
-                        env: Optional[dict] = None) -> int:
-    """Effective generic worker count for this machine, logged when it changes."""
-    resolution = resolve_processes(configured, resolve_budget(machine=machine, env=env))
-    if resolution.origin != "pinned":
-        logger.warning("[resources] processes %s -> %s (%s)", resolution.configured,
-                       resolution.effective, resolution.note)
     return int(resolution.effective)
 
 
