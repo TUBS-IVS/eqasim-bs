@@ -100,6 +100,9 @@ _EXPECTED_SIGNATURES = {
     # ValueError -- the ENTD frames carry neither the MiD W_ZWECK 13 passive leg nor the
     # household diary (member age + departure time) the pairing needs, and the gap is
     # rejected alongside the flag so a tuned window cannot sit silently inert (ruling C-R7).
+    # passive_pair_adult_min_age_years (the issue #409 follow-up) joined them for exactly the
+    # same reason: it is the pairing's SECOND parameter (who counts as the escorting adult),
+    # equally MiD-only and equally rejected rather than accepted-and-ignored.
     # The five departure_time_* keywords were added 2026-09-10 (departure-time model, issue #123
     # task 4, ADR-0114) for the same reason: trips_stage.execute passes all five to every source
     # adapter. EntdSource ACCEPTS and REJECTS the MODEL with a ValueError -- its trips come from
@@ -120,6 +123,7 @@ _EXPECTED_SIGNATURES = {
         "w_zweck_10_as_leisure: 'bool' = False, "
         "escort_passive_from_adult: 'bool' = False, "
         "passive_pair_max_gap_minutes: 'float' = 15.0, "
+        "passive_pair_adult_min_age_years: 'int' = 18, "
         "departure_time_model: 'str' = 'eqasim_uniform', "
         "departure_time_reference: 'pd.DataFrame' = None, "
         "departure_time_min_reference_n: 'int' = 200, "

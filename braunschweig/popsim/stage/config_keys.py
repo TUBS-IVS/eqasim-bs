@@ -9,6 +9,39 @@ so any other submodule may import these names directly without risking a
 partial-initialisation ordering problem.
 """
 
+
+def require_positive(key: str, value):
+    """Validate that a config value is strictly positive, at DAG-build (``configure()``) time.
+
+    Several config keys in this module are documented "valid range > 0" (e.g.
+    KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS); calling this
+    from the ``configure()`` that declares such a key turns a bad YAML value into a synpp
+    DAG-build failure within seconds, instead of a silently wrong result discovered only
+    after the run (or not at all -- see CLAUDE.md "Fallback transparency").
+
+    Args:
+        key: The config key name, used only to name the offending value in the error.
+        value: The resolved config value to check.
+
+    Returns:
+        ``value`` unchanged, so this can wrap a ``context.config(...)`` call in place.
+
+    Raises:
+        ValueError: If ``value`` is not > 0, or is not a number at all (``None`` reaches this
+            when a context resolves the key to nothing -- reported as the same configuration
+            error rather than as a bare TypeError from the comparison).
+    """
+    try:
+        positive = value > 0
+    except TypeError:
+        raise ValueError(
+            f"{key} must be a number > 0, got {value!r}"
+        ) from None
+    if not positive:
+        raise ValueError(f"{key} must be > 0, got {value!r}")
+    return value
+
+
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
 KEY_MID = "braunschweig.population.popsim.mid_raw_path"
@@ -376,6 +409,25 @@ DEFAULT_ESCORT_PASSIVE_FROM_ADULT = False
 # tests/test_popsim_trips.py::test_passive_pair_gap_default_agrees_across_its_three_homes.
 KEY_PASSIVE_PAIR_MAX_GAP_MINUTES = "escort_passive_pair_max_gap_minutes"
 DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES = 15.0
+# Minimum age in YEARS a household member must have for their leg to count as a candidate
+# ESCORTING ADULT in that same DONOR-side pairing; a passive leg whose household has no member
+# at or above this age is UNPAIRED_NO_ADULT (it then keeps the escort_passive_education rule).
+# Unit: years. Valid range: > 0 (integer). Inert while KEY_ESCORT_PASSIVE_FROM_ADULT is off.
+#
+# Distinct from the SYNTHETIC-side surrogate floor
+# (braunschweig.synthesis.locations.passive_joint_links.KEY_SURROGATE_MIN_AGE_YEARS, default 14,
+# ADR-0127): that one picks a stand-in household member for an already-paired child whose donor
+# adult is absent from the synthetic household, this one decides who the DONOR pairing may treat
+# as the escorting adult in the MiD diary in the first place. Two parameters, two defaults,
+# deliberately visible side by side (ADR-0112 amendment).
+#
+# The default MUST equal braunschweig.popsim.escort_pairing.DEFAULT_ADULT_MIN_AGE (the module
+# that OWNS the pairing). It is repeated as a literal here for the same reason the gap's default
+# is -- THIS module is a leaf by contract (see the module docstring: no imports from this
+# package) -- and pinned equal by tests/test_popsim_trips.py::
+# test_passive_pair_adult_min_age_default_agrees_across_its_three_homes.
+KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS = "escort_passive_pair_adult_min_age_years"
+DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS = 18
 
 # W_ZWD codeplan no-detail sentinel treatment (issue #242 Task 5, ADR-0113): moves the
 # two NO-DETAIL ("keine Angabe") W_ZWD codes -- 799 "Freizeit k.A." (in
@@ -513,10 +565,12 @@ DEFAULT_EXCLUDE_NO_ANSWER_PURPOSE_LEGS = True
 # future MiD-only rejection (e.g. issue #373 task 4's two passive-escort keywords) is
 # enforced on every popsim_open fixture automatically.
 #
-# Both passive-escort keys (issue #372 task 4) are listed, not only the boolean one (controller
-# ruling C-R7): the gap threshold alone cannot do anything on an ENTD run either -- there is no
+# All THREE passive-escort keys (issue #372 task 4; the age floor added by the issue #409
+# follow-up) are listed, not only the boolean one (controller ruling C-R7): neither the gap
+# threshold nor the adult age floor can do anything on an ENTD run either -- there is no
 # W_ZWECK 13 to pair and no HP_ALTER/W_SZS household diary to pair it against -- so a run that
-# deliberately TUNED it would otherwise be silently inert. That is the opposite treatment from
+# deliberately TUNED one of them would otherwise be silently inert. That is the opposite
+# treatment from
 # closure_dwell_min_obs, which is accepted-and-ignored because it only sizes cells of a model the
 # closure_dwell_model rejection already forbids building; a tuned gap has no such second guard
 # naming it, and the parity guard over this dict is what keeps every popsim_open fixture honest.
@@ -535,6 +589,7 @@ ENTD_REJECTED_KEYS: dict[str, object] = {
     KEY_W_ZWECK_10_AS_LEISURE: False,
     KEY_ESCORT_PASSIVE_FROM_ADULT: False,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     KEY_DEPARTURE_TIME_MODEL: DEFAULT_DEPARTURE_TIME_MODEL,
 }
 

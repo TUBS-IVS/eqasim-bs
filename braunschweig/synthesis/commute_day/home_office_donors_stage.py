@@ -185,11 +185,14 @@ def configure(context):
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DIARY_PLAN_MATCH,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
+        require_positive,
     )
     context.config(KEY_MID_DIR)
     context.config(KEY_ESCORT_PURPOSE, DEFAULT_ESCORT_PURPOSE)
@@ -201,7 +204,19 @@ def configure(context):
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, _trips_stage.DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # require_positive (issue #409 range-guard follow-up): both pairing parameters are
+    # documented "valid range > 0" (config_keys); a non-positive value would otherwise reach
+    # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked -- see that module's own
+    # guard for why a non-positive floor is silently WRONG rather than merely low-yield.
+    require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
+    require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
     context.config(KEY_ENABLED, DEFAULT_ENABLED)
@@ -349,6 +364,7 @@ def execute(context):
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     if not bool(context.config(KEY_ENABLED)):
@@ -390,6 +406,8 @@ def execute(context):
         w_zweck_10_as_leisure=bool(context.config(KEY_W_ZWECK_10_AS_LEISURE)),
         escort_passive_from_adult=bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT)),
         passive_pair_max_gap_minutes=float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES)),
+        passive_pair_adult_min_age_years=int(
+            context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)),
         vectorized_validation=bool(
             context.config(_plan_validation.KEY_VECTORIZED_PLAN_VALIDATION)),
         **filter_flags,

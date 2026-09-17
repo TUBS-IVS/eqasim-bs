@@ -1,0 +1,128 @@
+feature: escort_passive_joint_surrogate
+title: Passive escort children whose donor adult left the household anchor at a household surrogate
+area: behavior
+description: 'Extends escort_passive_joint_location (#385, ADR-0119). For a PAIRED passive escort
+  child whose plan-source adult is absent from the synthetic household (the adult_not_in_household
+  exclusion of the identity link -- the diary plan match remapped the child onto a foreign donor
+  diary), the nearest-in-time secondary activity of another household member becomes the anchor:
+  same synthetic household, HP_ALTER >= escort_passive_joint_surrogate_min_age_years (14), not a
+  linked child (acyclic), an activity that is not itself a paired passive leg, departing within
+  escort_passive_joint_surrogate_max_gap_minutes (15) of the child; with
+  escort_passive_joint_surrogate_require_same_purpose (true) the purposes must be equal. Nearest gap
+  wins, deterministic tie-break (lowest adult person id, then that adult''s earliest activity), no
+  random draw. Issue #409 option 1, ADR-0127 (drafted as ADR-0124 and renumbered -- see that
+  record''s Numbering paragraph).
+
+  Pure rule braunschweig/synthesis/locations/passive_joint_links.py::rescue_with_surrogates;
+  composition secondary_chainsolvers._passive_joint_link_table (identity links alone when OFF --
+  exactly LINK_COLUMNS, the pre-#409 table -- identity plus provenance-tagged surrogate rows when
+  ON). _compose_two_pass and resolve_joint_anchors are unchanged. Requires
+  escort_passive_joint_location; code default False, production ON only via configs/base_bs.yml.
+  Rescue rate, per-reason split and the combined plan-source + surrogate total are logged
+  ([passive_joint_links]) and printed per run; WARNING when candidate material existed but nothing
+  linked.'
+stages:
+- synthesis.population.spatial.secondary.locations
+pipelines:
+  popsim_mid: active
+  popsim_open: inactive
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - escort_passive_joint_surrogate
+introduced:
+  issue: '#409'
+  pr: null
+  adr: ADR-0127
+detail_doc: docs/features/escort-purpose.md
+code_paths:
+- braunschweig/synthesis/locations/passive_joint_links.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- scripts/measure_passive_joint_surrogate_adults.py
+- scripts/measure_passive_joint_surrogate_effect.py
+evidence:
+  tests:
+  - tests/test_passive_joint_links.py
+  - tests/test_passive_joint_two_pass.py
+  - tests/test_configs_composed.py
+  - tests/test_measure_passive_joint_surrogate_adults.py
+  - tests/test_measure_passive_joint_surrogate_effect.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: 'tests/test_passive_joint_two_pass.py::test_link_table_without_the_rescue_is_exactly_todays_identity_table
+      (unit: the OFF link table equals build_passive_joint_links output, no column added) plus
+      docs/runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml (stage output FRAME-EQUAL to
+      the pre-change cached pickle ...__d137bcd97c724066484a3947ee32360e.p on the Kreis-03101 smoke:
+      3,096 location rows and 2,093 convergence rows on both sides)'
+    note: 'With the flag off, execute() reaches neither the rescue nor the concat; the two-pass
+      composition receives the identity table itself. The smoke comparison is a one-off check of two
+      stage pickles across commits (pandas assert_frame_equal on the non-geometry columns,
+      elementwise equality on the geometry column, assert_frame_equal on the convergence frame), the
+      unit test is the regression guard. The manifest also records that the task spec had expected
+      "3,415 location rows" (the row count of the DIFFERENT reduced-fixture #385 smoke); the measured
+      frame has 3,096 rows on BOTH sides, the equality assertion -- the actual claim -- passed, and
+      the 3,415 figure is not carried forward for this run.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[passive_joint_links]'
+    note: 'rescue_with_surrogates logs n_surrogate_linked/n_rescue_candidates with the split (child
+      purpose not secondary / no admissible candidate activity / gap exceeded) and the row drops
+      (purpose mismatch, cyclic); WARNING when candidate activities existed and nothing linked. The
+      stage prints the same rate plus the COMBINED total plan-source + surrogate over all paired legs.
+      Unrescued children keep the independent draw -- the fallback IS that draw, counted, never
+      silent. Measured (docs/runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml): strict arm
+      (require_same_purpose true, the production setting) 1/27 = 3.7 %, split child purpose not
+      secondary 12, no admissible candidate activity 10, gap exceeded 4, purpose-mismatch rows dropped
+      55, cyclic rows dropped 0, combined 13/58 = 22.4 %; relaxed arm (require_same_purpose false)
+      6/27 = 22.2 %, split 12 / 0 / 9, purpose-mismatch rows dropped 0, cyclic 0, combined 18/58 =
+      31.0 %; OFF arm 12/58 = 20.7 % and no surrogate line printed at all. Anchor resolution was
+      100 % in every arm (12/12, 13/13, 18/18, 0 unresolved). n = 27 candidates on a 1 %-sampled
+      single Kreis is a smoke-scale count.'
+  reference:
+    kind: committed
+    path: scripts/measure_passive_joint_surrogate_adults.py
+    note: 'No observed reference exists for joint locations. The script header carries the headroom
+      measurement the decision rests on (6 / 9 reachable legs at 15 / 30 min; 0 with an escorting
+      surrogate; the reconciliation with issue #409''s table) and the MiD sibling-age histogram behind
+      the age-floor default -- all descriptive facts, never targets.'
+validation:
+  state: unvalidated
+  runs:
+  - i409-passive-joint-surrogate-smoke-03101-2026-09-17
+  metric: 'Three arms of the chainsolver stage over ONE cached upstream population (Kreis 03101, 1 %
+    sampling rate, host felix, 2026-09-17; see the manifest''s configuration.notes for the code
+    actually executed). Link rates: off 12/58 plan-source only = 20.7 %; strict 12/58 plan-source +
+    1/27 surrogate = 13/58 = 22.4 %; relaxed 12/58 + 6/27 = 18/58 = 31.0 %. Anchors resolved 12/12,
+    13/13, 18/18 (100 %, 0 unresolved). Solver success 1.0000 in every arm. All three arms reproduce
+    the pre-measured headroom expectations exactly. Realised effect per rescued child activity
+    (scripts/measure_passive_joint_surrogate_effect.py, metres, EPSG:25832): dist_child_adult_m is
+    0.0 in EVERY rescued row in the ON arms -- the anchor took. Strict, shop, n = 1: unchanged
+    against OFF (child-surrogate 0.0 there too, home distance 14699.5 m in both) -- the independent
+    draw had already landed on the same facility. Relaxed, other, n = 5: child-surrogate mean/median
+    0.0 / 0.0 against 42533.3 / 33713.9 OFF, home distance mean/median 11615.6 / 16478.5 against
+    40688.1 / 36898.1 OFF. Relaxed, shop, n = 1: child-surrogate 0.0 both sides, home distance
+    20394.7 against 14699.5 OFF. OFF-path check: FRAME-EQUAL to the pre-change cached stage output
+    (3,096 location rows, 2,093 convergence rows).'
+  note: 'A smoke, not a validation: no observed reference exists for joint locations, for the
+    realised distances or for the age floor, and none is claimed. Both solver passes share one
+    RandomState (ADR-0119), so arm comparisons are different Monte-Carlo realisations for the
+    unlinked persons; the rescued activities themselves are anchored deterministically. n = 27 rescue
+    candidates, and the headroom measurement''s 17 eligible legs sit in 9 households, on a 1 %
+    single-Kreis sample. The code executed was NOT the merged branch HEAD: per the manifest, the arms
+    ran commit 0700430a -- the commit that produced the reused production cache -- with this branch''s
+    diff applied as a clean patch, because at the merged HEAD 19 upstream stages devalidate (five
+    config keys added to main after 0700430a) and a HEAD smoke would recompute the whole population;
+    the merged HEAD is therefore NOT smoke-tested on the server, although its unit suite is green
+    (154 tests on the server at branch commit 3898fbd3).'
+assessment:
+  status: pending
+  pending_reason: 'Kreis-03101 smoke recorded; full-region evidence remains outstanding, as does a
+    smoke at the merged HEAD (the arms ran a patched 0700430a tree -- see validation.note). The
+    production value of escort_passive_joint_surrogate_require_same_purpose stays the shipped strict
+    default (true); a decision for the relaxed rule after fuller evidence would change the base config
+    line and ADR-0127 together (ADR-0127 Consequences).'
+notes: 'Phase 3 of the escort purpose family (escort_passive_from_adult -> escort_passive_joint_location
+  -> this record). Separate follow-ups named in ADR-0127: lowering the DONOR-side pairing floor
+  (ADR-0112), and re-pointing the ADULT''s escort anchor to the child''s location (#201).'

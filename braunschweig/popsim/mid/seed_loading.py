@@ -39,7 +39,8 @@ from braunschweig.popsim import member_completion as completion
 from braunschweig.popsim import seed as seedmod
 # The passive-escort pairing window default lives with the trip build (the seed must use
 # the same window the plan is built with); imported, never re-typed.
-from braunschweig.popsim.trips import DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
+from braunschweig.popsim.trips import (
+    DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
 from braunschweig.popsim.kreis_attribute_control import EDUCATION_BY_AGE_ENTRY_NAMES
 from braunschweig.popsim.kreis_attribute_control import KreisAttributeControl
 from braunschweig.popsim.kreis_attribute_control import REGISTRY as KREIS_CONTROL_REGISTRY
@@ -534,6 +535,7 @@ def _derive_participation_seed_columns(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``load_mid_seed``.
@@ -565,12 +567,13 @@ def _derive_participation_seed_columns(
     every existing caller of this private step byte-identical; the public callers below
     always state it explicitly).
 
-    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` (issue #372,
-    ADR-0112) are forwarded to ``derive_education_flag_seed`` alongside
+    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` /
+    ``escort_passive_pair_adult_min_age_years`` (issue #372, ADR-0112; the age floor by the
+    issue #409 follow-up) are forwarded to ``derive_education_flag_seed`` alongside
     ``escort_passive_education``, so the education_flag seed counts exactly the code-13 legs
     the trip build realises as education (a paired child follows the accompanying adult's
     purpose). Keyword-only WITH defaults here, like ``w_zweck_10_as_leisure`` and for the same
-    reason: they were added after the two no-default flags, and the default reproduces the
+    reason: they were added after the two no-default flags, and the defaults reproduce the
     pre-#372 seed byte-identically.
 
     ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
@@ -616,6 +619,7 @@ def _derive_participation_seed_columns(
                 escort_passive_from_adult=escort_passive_from_adult,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure,
                 passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
                 drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
@@ -698,6 +702,7 @@ def _derive_projected_participation_seed_columns(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> pd.DataFrame:
     """Derive the participation seed columns for ``project_completed_seed``.
@@ -725,12 +730,13 @@ def _derive_projected_participation_seed_columns(
     ``derive_participation_seed`` exactly like its ``load_mid_seed`` twin, so the two
     functions cannot drift on which W_ZWECK codes count as leisure.
 
-    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` (issue #372,
-    ADR-0112) are forwarded to ``derive_education_flag_seed`` alongside
+    ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` /
+    ``escort_passive_pair_adult_min_age_years`` (issue #372, ADR-0112; the age floor by the
+    issue #409 follow-up) are forwarded to ``derive_education_flag_seed`` alongside
     ``escort_passive_education``, so the education_flag seed counts exactly the code-13 legs
     the trip build realises as education (a paired child follows the accompanying adult's
     purpose). Keyword-only WITH defaults here, like ``w_zweck_10_as_leisure`` and for the same
-    reason: they were added after the two no-default flags, and the default reproduces the
+    reason: they were added after the two no-default flags, and the defaults reproduce the
     pre-#372 seed byte-identically.
 
     ``education_flag_drop_leading_arrive_home_leg`` carries the trip build's
@@ -785,6 +791,7 @@ def _derive_projected_participation_seed_columns(
                 escort_passive_from_adult=escort_passive_from_adult,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure,
                 passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
                 drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
                 household_id=columns.person_household_id, person_id=columns.person_id)
     return persons
@@ -843,6 +850,7 @@ def load_mid_seed(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     education_flag_drop_leading_arrive_home_leg: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, seedmod.CompletenessReport]:
     """Load the consistent MiD seed (complete-household filtered) -- performant.
@@ -990,6 +998,7 @@ def load_mid_seed(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
     households = _join_hh_type5_column(households, persons, columns)
@@ -1017,6 +1026,7 @@ def project_completed_seed(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     education_flag_drop_leading_arrive_home_leg: bool = False,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
@@ -1170,6 +1180,7 @@ def project_completed_seed(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         education_flag_drop_leading_arrive_home_leg=education_flag_drop_leading_arrive_home_leg,
     )
 

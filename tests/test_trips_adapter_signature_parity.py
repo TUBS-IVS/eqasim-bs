@@ -52,8 +52,10 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         # Added 2026-09-09 (purpose correctness, issue #372 task 4, controller ruling C-R3):
         # a PAIRED passive escort leg (MiD W_ZWECK 13) takes the accompanying adult's purpose
         # (ADR-0112), with the pairing's time window in minutes. trips_stage.execute reads and
-        # passes both, so all four layers must carry them.
+        # passes both, so all four layers must carry them. The issue #409 follow-up added
+        # the pairing's candidate-adult age floor (YEARS) as a third, threaded the same way.
         "escort_passive_from_adult", "passive_pair_max_gap_minutes",
+        "passive_pair_adult_min_age_years",
         # Added 2026-09-10 (departure-time model, issue #123 task 4, controller ruling A-R6):
         # which start-time model the trip build applies (ADR-0114), the loaded SrV reference
         # frame the srv_mapped model maps onto, and the three thresholds of its coarsening
@@ -112,6 +114,7 @@ def test_mid_adapter_forwards_the_round_trip_flag_to_the_implementation(monkeypa
 @pytest.mark.parametrize("keyword,value,key_in_message", [
     ("escort_passive_from_adult", True, "escort_passive_from_adult"),
     ("passive_pair_max_gap_minutes", 20.0, "escort_passive_pair_max_gap_minutes"),
+    ("passive_pair_adult_min_age_years", 14, "escort_passive_pair_adult_min_age_years"),
 ])
 def test_entd_adapter_rejects_each_passive_escort_keyword_by_name(keyword, value, key_in_message):
     """Fix round 1 (m9): accepting the keyword is not enough -- the ENTD donor has no MiD

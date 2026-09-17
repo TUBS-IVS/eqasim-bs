@@ -241,6 +241,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     DEFAULT_DEPARTURE_TIME_MODEL,
     DEFAULT_ESCORT_PASSIVE_EDUCATION,
     DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
+    DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     DEFAULT_W_ZWECK_10_AS_LEISURE,
@@ -294,6 +295,7 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_MAX_CELLS,
     KEY_MID,
     KEY_OWNERSHIP_GRID,
+    KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
     KEY_PLACEMENT_INCOME,
     KEY_POPSIMPREP,
@@ -928,7 +930,24 @@ def configure(context):
     # mismatch class the three flags above exist to close. Declared default False; the production
     # true is added to configs/base_bs.yml by task 7 (see config_keys for the one statement).
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # config_keys.require_positive (issue #409 range-guard follow-up): both pairing
+    # parameters are documented "valid range > 0"; validating the resolved value at
+    # DAG-build time turns a bad YAML into a synpp failure within seconds rather than a
+    # value silently reaching braunschweig.popsim.escort_pairing.pair_passive_legs, whose
+    # own guard would otherwise be the first (much later) place this is caught.
+    config_keys.require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
+    # The pairing's adult-age floor (issue #409 follow-up), declared with the SAME shared
+    # key/default constants braunschweig.popsim.trips_stage declares: the education_flag seed
+    # must pair the code-13 legs against the same candidate adults the trip build does, or the
+    # seed and the plan disagree again. Unit: years; declared default 18 = the production value.
+    config_keys.require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     if context.config(KEY_INCOME_KC, True):
         context.config("data_path")  # MiD income tables + Zensus household file
         context.config("braunschweig.zensus_households_path",
@@ -1515,7 +1534,8 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         drop_leading_arrive_home_leg: bool = False,
         escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
         w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
-        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES):
+        passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS):
     """Build the PopulationSim seed through the active donor source.
 
     ``trip_class_counts_closure`` / ``forbid_no_diary_sources`` /
@@ -1529,11 +1549,14 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     ``mid._derive_trip_class_seed_column``).
 
     ``escort_passive_education``, ``exclude_rbw_legs``, ``w_zweck_10_as_leisure``,
-    ``escort_passive_from_adult`` and ``passive_pair_max_gap_minutes``
-    (Plan B issue #368 controller ruling R8; issue #373 ADR-0111; issue #372 ADR-0112) are
+    ``escort_passive_from_adult``, ``passive_pair_max_gap_minutes`` and
+    ``passive_pair_adult_min_age_years`` (the pairing's window in MINUTES and its
+    candidate-adult age floor in YEARS)
+    (Plan B issue #368 controller ruling R8; issue #373 ADR-0111; issue #372 ADR-0112; the age
+    floor by the issue #409 follow-up) are
     threaded into BOTH MiD branches, unlike the three flags above: the participation-universe
     seeds they govern are derived from the MiD Wege table on either path, not from the
-    completed-donor diary facts. All five are inert unless a participation(-universe)
+    completed-donor diary facts. All six are inert unless a participation(-universe)
     KREIS control is active.
 
     ``drop_leading_arrive_home_leg`` therefore reaches BOTH branches too, but by two DIFFERENT
@@ -1608,6 +1631,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
             education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
         # Surface the build reports on THIS run too (so they are present even when
@@ -1632,6 +1656,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
             education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         )
     context.set_info("seed_completeness_rate", report.completeness_rate)
@@ -2494,10 +2519,14 @@ def execute(context) -> pd.DataFrame:
     # trip build does (issue #373, ADR-0111); read from the SAME key trips_stage reads.
     w_zweck_10_as_leisure_on = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     # The education_flag seed must count exactly the code-13 legs the trip build realises as
-    # education (issue #372, ADR-0112); read from the SAME keys trips_stage reads, so a paired
+    # education (issue #372, ADR-0112); read from the SAME keys trips_stage reads -- including
+    # the pairing's adult-age floor (issue #409 follow-up), since a different floor pairs a
+    # different set of legs -- so a paired
     # child cannot be seeded "edu" while the plan sends them shopping with the adult.
     escort_passive_from_adult_on = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
     passive_pair_max_gap_minutes_cfg = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
+    passive_pair_adult_min_age_years_cfg = int(
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS))
     (
         completed_donor_households, completed_donor_persons, seed_households,
         seed_persons,
@@ -2512,6 +2541,7 @@ def execute(context) -> pd.DataFrame:
         w_zweck_10_as_leisure=w_zweck_10_as_leisure_on,
         escort_passive_from_adult=escort_passive_from_adult_on,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes_cfg,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years_cfg,
     )
 
     run_one = _prepare_batch_runner(

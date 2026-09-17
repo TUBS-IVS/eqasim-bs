@@ -57,7 +57,7 @@ notes: >-
 
 
   PURPOSE CORRECTNESS (issues #373 / #372, ADR-0111 / ADR-0112, feature records
-  purpose_main_fold_code_10 and escort_passive_from_adult): three further MiD-only keys are declared
+  purpose_main_fold_code_10 and escort_passive_from_adult): four further MiD-only keys are declared
   and read here, all UNPREFIXED (like escort_purpose / escort_passive_education, unlike the
   braunschweig.population.popsim.* plan-structure keys above), each from the shared constant pair in
   braunschweig.popsim.stage.config_keys so the four stages that read them cannot disagree about a
@@ -67,7 +67,10 @@ notes: >-
   default is false, so a true declared default would make the declared default set internally
   inconsistent) gives a PAIRED passive escort leg (W_ZWECK 13) the purpose of the accompanying
   adult's leg, with escort_passive_pair_max_gap_minutes
-  (unit: minutes, default 15.0) the pairing window. Ruling C-R22 (issue #373 cleanup wave): this
+  (unit: minutes, default 15.0) the pairing window and escort_passive_pair_adult_min_age_years
+  (unit: years, default 18, production 18) the accompanying-adult floor -- a fourth config key next
+  to the gap, declared from the same shared constant pair and byte-identical pre-amendment (feature
+  record escort_passive_from_adult; ADR-0112 2026-09-17 amendment, issue #409). Ruling C-R22 (issue #373 cleanup wave): this
   stage's OWN configure() now ALSO raises ValueError naming BOTH keys when
   escort_passive_from_adult is on and escort_purpose is off, so synpp fails the whole DAG before
   any stage executes; map_purpose's own identical check is kept as the last line of defense for a
@@ -75,7 +78,7 @@ notes: >-
   which meant a misconfigured run discovered the contradiction only at trip-build time, i.e. after
   every upstream stage -- including the full PopulationSim balancing -- had already run).
   EntdSource.build_trips REJECTS a
-  non-default value for all three (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
+  non-default value for all four (config_keys.ENTD_REJECTED_KEYS, the single home of that list;
   ENTD has neither a W_ZWECK vocabulary nor the household/time columns the pairing needs) and both
   popsim_open fixtures set the OFF values explicitly. The pairing runs on the RAW Wege frame inside
   map_purpose, so the stage needs HP_ALTER, H_ID, W_SZS and W_SZM present at that point; the code

@@ -598,6 +598,37 @@ def configure(context):
             "escort_purpose (escort_passive_from_adult itself requires it)."
         )
 
+    # Surrogate anchor (issue #409 option 1, ADR-0127): re-point a paired passive child whose
+    # donor adult is absent from the synthetic household to a household member's nearest
+    # secondary activity. Extends the ADR-0119 link table, so it requires that flag. Keys and
+    # defaults are owned by passive_joint_links (imported, never retyped).
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        DEFAULT_SURROGATE_MAX_GAP_MINUTES, DEFAULT_SURROGATE_MIN_AGE_YEARS,
+        DEFAULT_SURROGATE_REQUIRE_SAME_PURPOSE, KEY_SURROGATE_ENABLED,
+        KEY_SURROGATE_MAX_GAP_MINUTES, KEY_SURROGATE_MIN_AGE_YEARS,
+        KEY_SURROGATE_REQUIRE_SAME_PURPOSE,
+    )
+    surrogate = bool(context.config(KEY_SURROGATE_ENABLED, False))
+    surrogate_gap = context.config(KEY_SURROGATE_MAX_GAP_MINUTES, DEFAULT_SURROGATE_MAX_GAP_MINUTES)
+    surrogate_age = context.config(KEY_SURROGATE_MIN_AGE_YEARS, DEFAULT_SURROGATE_MIN_AGE_YEARS)
+    context.config(KEY_SURROGATE_REQUIRE_SAME_PURPOSE, DEFAULT_SURROGATE_REQUIRE_SAME_PURPOSE)
+    if surrogate and not joint_location:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_ENABLED} requires "
+            "escort_passive_joint_location (the surrogate rescue extends that flag's link "
+            f"table); set both or disable {KEY_SURROGATE_ENABLED}."
+        )
+    if not float(surrogate_gap) > 0:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_MAX_GAP_MINUTES} must be > 0 "
+            f"(minutes), got {surrogate_gap!r}."
+        )
+    if not int(surrogate_age) > 0:
+        raise ValueError(
+            f"[braunschweig.secondary_chainsolvers] {KEY_SURROGATE_MIN_AGE_YEARS} must be > 0 "
+            f"(years), got {surrogate_age!r}."
+        )
+
     # Escort distance-by-type (A3): scale the MiD escort distance layer per
     # drawn destination type with SrV-derived structure factors.
     context.config("escort_distance_by_type", False)
@@ -1148,6 +1179,64 @@ def _passive_joint_link_summary(link_stats) -> str:
         f"purpose not secondary {link_stats['n_purpose_not_secondary']:,} "
         f"({_rate_pct(link_stats['n_purpose_not_secondary'], n_paired):.1f}%); "
         "unlinked children keep the independent draw."
+    )
+
+
+def _passive_joint_link_table(df_persons_link, df_trips_original, *, surrogate_enabled,
+                              max_gap_minutes, min_age_years, require_same_purpose):
+    """The link table the two-pass composition consumes (issues #385 and #409).
+
+    Plan-source identity links (ADR-0119, ``build_passive_joint_links``) plus, when
+    ``surrogate_enabled``, the surrogate rescue (ADR-0127, ``rescue_with_surrogates``) for
+    the children whose donor adult is absent from the synthetic household. Returns
+    ``(links, link_stats, rescue_stats)``. With the rescue OFF the frame is the identity
+    table itself, carrying exactly ``LINK_COLUMNS`` -- the pre-#409 table, byte for byte --
+    and ``rescue_stats`` is None. With the rescue ON every row carries ``link_source``
+    (``plan_source`` / ``surrogate``); the rescue's ``gap_minutes`` column is dropped here
+    because ``_compose_two_pass`` and ``resolve_joint_anchors`` select columns by name and
+    the two-pass wiring has no use for it (the run log line carries the gaps' summary).
+    """
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        LINK_SOURCE_PLAN_SOURCE, build_passive_joint_links, rescue_with_surrogates,
+    )
+    links, link_stats = build_passive_joint_links(df_persons_link, df_trips_original)
+    if not surrogate_enabled:
+        return links, link_stats, None
+    surrogate_links, rescue_stats = rescue_with_surrogates(
+        links, df_persons_link, df_trips_original, max_gap_minutes=max_gap_minutes,
+        min_age_years=min_age_years, require_same_purpose=require_same_purpose)
+    links = links.assign(link_source=LINK_SOURCE_PLAN_SOURCE)
+    links = pd.concat([links, surrogate_links.drop(columns=["gap_minutes"])],
+                      ignore_index=True)
+    return links, link_stats, rescue_stats
+
+
+def _passive_joint_surrogate_summary(link_stats, rescue_stats) -> str:
+    """The stage's one-line surrogate RESCUE rate (issue #409), printed after the #385 line.
+
+    A rescued child is anchored at a household surrogate's location instead of keeping the
+    independent draw, so this is a primary-vs-fallback rate that must stay observable per run.
+    WARNING when candidate activities existed for at least one eligible leg and still nothing
+    was linked (CLAUDE.md fallback transparency rule 2); a rescue set whose legs all lack
+    material (education/home children, no household activity) is a legitimate zero and stays
+    plain. Pure: builds a string.
+    """
+    n = rescue_stats["n_rescue_candidates"]
+    material = (n - rescue_stats["n_rescue_ineligible_child_purpose"]
+                - rescue_stats["n_rescue_no_candidate_activity"])
+    prefix = ("WARNING: " if n > 0 and rescue_stats["n_surrogate_linked"] == 0 and material > 0
+              else "")
+    total = link_stats["n_linked"] + rescue_stats["n_surrogate_linked"]
+    return (
+        f"[braunschweig.secondary_chainsolvers] {prefix}passive joint surrogate: "
+        f"{rescue_stats['n_surrogate_linked']:,}/{n:,} adult-not-in-household legs re-pointed "
+        f"to a household surrogate ({_rate_pct(rescue_stats['n_surrogate_linked'], n):.1f}%); "
+        f"child purpose not secondary {rescue_stats['n_rescue_ineligible_child_purpose']:,}, "
+        f"no admissible candidate activity {rescue_stats['n_rescue_no_candidate_activity']:,}, "
+        f"gap exceeded {rescue_stats['n_rescue_gap_exceeded']:,}; total linked "
+        f"{total:,}/{link_stats['n_passive_paired']:,} (plan-source {link_stats['n_linked']:,} "
+        f"+ surrogate {rescue_stats['n_surrogate_linked']:,}). Unrescued children keep the "
+        "independent draw."
     )
 
 
@@ -1763,23 +1852,36 @@ def execute(context):
     # OFF: ONE pass over the whole population, frame-equal to the pre-extraction
     # inline solve.
     if bool(context.config("escort_passive_joint_location")):
-        from braunschweig.synthesis.locations.passive_joint_links import build_passive_joint_links
+        from braunschweig.synthesis.locations.passive_joint_links import (
+            KEY_SURROGATE_ENABLED, KEY_SURROGATE_MAX_GAP_MINUTES, KEY_SURROGATE_MIN_AGE_YEARS,
+            KEY_SURROGATE_REQUIRE_SAME_PURPOSE,
+        )
         # synthesis.population.sampled is already a declared dependency of this stage
         # (configure), so reading it here adds no edge to the DAG.
         df_persons_link = context.stage("synthesis.population.sampled")
+        surrogate_enabled = bool(context.config(KEY_SURROGATE_ENABLED))
         persons_columns = ["person_id", "household_id", "source_H_ID", "source_P_ID"]
+        if surrogate_enabled:
+            persons_columns.append("HP_ALTER")      # the surrogate age floor reads it
         missing = [c for c in persons_columns if c not in df_persons_link.columns]
         if missing:
             raise RuntimeError(
-                "[braunschweig.secondary_chainsolvers] escort_passive_joint_location needs "
-                f"{missing} on synthesis.population.sampled (popsim_mid persons carry them); "
-                "disable the flag for producers without plan-source ids."
+                "[braunschweig.secondary_chainsolvers] escort_passive_joint_location"
+                + (f" / {KEY_SURROGATE_ENABLED}" if surrogate_enabled else "")
+                + f" needs {missing} on synthesis.population.sampled (popsim_mid persons carry "
+                "them); disable the flag(s) for producers without these columns."
             )
-        links, link_stats = build_passive_joint_links(
-            df_persons_link[persons_columns], df_trips_original)
-        # The link rate in the stage's own print stream, next to the #201 escort-link line
-        # (build_passive_joint_links also logs it, and its per-exclusion breakdown, at INFO).
+        links, link_stats, rescue_stats = _passive_joint_link_table(
+            df_persons_link[persons_columns], df_trips_original,
+            surrogate_enabled=surrogate_enabled,
+            max_gap_minutes=float(context.config(KEY_SURROGATE_MAX_GAP_MINUTES)),
+            min_age_years=int(context.config(KEY_SURROGATE_MIN_AGE_YEARS)),
+            require_same_purpose=bool(context.config(KEY_SURROGATE_REQUIRE_SAME_PURPOSE)))
+        # The link rates in the stage's own print stream, next to the #201 escort-link line
+        # (the link module also logs them, with the full exclusion splits, at INFO).
         print(_passive_joint_link_summary(link_stats))
+        if rescue_stats is not None:
+            print(_passive_joint_surrogate_summary(link_stats, rescue_stats))
         df_locations, df_convergence, reports, _anchor_stats = _compose_two_pass(
             df_trips, df_primary, escort_activity_anchors, links, shared)
     else:

@@ -893,6 +893,8 @@ def _capture_education_flag_seed(monkeypatch):
         # of escort_passive_from_adult was pinned above).
         captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        captured["passive_pair_adult_min_age_years"] = kwargs.get(
+            "passive_pair_adult_min_age_years")
         return real(persons, wege, **kwargs)
 
     monkeypatch.setattr(seed_loading, "derive_education_flag_seed", capturing)
@@ -909,6 +911,7 @@ def test_load_mid_seed_forwards_the_education_flag_leading_drop(tmp_path, monkey
         escort_passive_education=True, exclude_rbw_legs=True,
         escort_passive_from_adult=True,
         w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
+        passive_pair_adult_min_age_years=16,
         education_flag_drop_leading_arrive_home_leg=True)
     assert captured["escort_passive_from_adult"] is True
     assert captured["drop_leading_arrive_home_leg"] is True
@@ -917,6 +920,7 @@ def test_load_mid_seed_forwards_the_education_flag_leading_drop(tmp_path, monkey
     # be caught here, not just a KeyError on a missing kwarg.
     assert captured["w_zweck_10_as_leisure"] is True
     assert captured["passive_pair_max_gap_minutes"] == 22.0
+    assert captured["passive_pair_adult_min_age_years"] == 16
 
 
 def test_project_completed_seed_forwards_the_education_flag_leading_drop(tmp_path, monkeypatch):
@@ -930,11 +934,13 @@ def test_project_completed_seed_forwards_the_education_flag_leading_drop(tmp_pat
         escort_passive_education=True, exclude_rbw_legs=True,
         escort_passive_from_adult=True,
         w_zweck_10_as_leisure=True, passive_pair_max_gap_minutes=22.0,
+        passive_pair_adult_min_age_years=16,
         education_flag_drop_leading_arrive_home_leg=True)
     assert captured["escort_passive_from_adult"] is True
     assert captured["drop_leading_arrive_home_leg"] is True
     assert captured["w_zweck_10_as_leisure"] is True
     assert captured["passive_pair_max_gap_minutes"] == 22.0
+    assert captured["passive_pair_adult_min_age_years"] == 16
 
 
 class _SeedInfoContext:
@@ -1005,8 +1011,10 @@ def test_build_populationsim_seed_forwards_the_leading_drop_to_both_mid_branches
 
 def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both_mid_branches(
         monkeypatch):
-    """Issue #373 cleanup wave, item 3: escort_passive_from_adult, w_zweck_10_as_leisure and
-    passive_pair_max_gap_minutes reach BOTH mid.load_mid_seed and mid.project_completed_seed
+    """Issue #373 cleanup wave, item 3 (+ the issue #409 follow-up's age floor):
+    escort_passive_from_adult, w_zweck_10_as_leisure,
+    passive_pair_max_gap_minutes and passive_pair_adult_min_age_years
+    reach BOTH mid.load_mid_seed and mid.project_completed_seed
     from _build_populationsim_seed, but no test asserted the VALUE arrives -- the sibling test
     above only pins education_flag_drop_leading_arrive_home_leg. Non-default values are used
     (module code defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES) so a
@@ -1024,6 +1032,8 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
             "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
             "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
             "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+            "passive_pair_adult_min_age_years": kwargs.get(
+                "passive_pair_adult_min_age_years"),
         }
         return pd.DataFrame(), pd.DataFrame(), _Report()
 
@@ -1032,6 +1042,8 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
             "escort_passive_from_adult": kwargs.get("escort_passive_from_adult"),
             "w_zweck_10_as_leisure": kwargs.get("w_zweck_10_as_leisure"),
             "passive_pair_max_gap_minutes": kwargs.get("passive_pair_max_gap_minutes"),
+            "passive_pair_adult_min_age_years": kwargs.get(
+                "passive_pair_adult_min_age_years"),
         }
         return pd.DataFrame(), pd.DataFrame()
 
@@ -1057,17 +1069,18 @@ def test_build_populationsim_seed_forwards_the_purpose_correctness_flags_to_both
         _SeedInfoContext(), _Source(), "mid", "unused", False, (),
         set(), np.random.RandomState(0), None,
         escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
-        passive_pair_max_gap_minutes=22.0)
+        passive_pair_max_gap_minutes=22.0, passive_pair_adult_min_age_years=16)
     popsim_stage._build_populationsim_seed(
         _SeedInfoContext({"completed_donor": _Donor()}), _Source(), "mid", "unused", True, (),
         set(), np.random.RandomState(0), None,
         escort_passive_from_adult=True, w_zweck_10_as_leisure=True,
-        passive_pair_max_gap_minutes=22.0)
+        passive_pair_max_gap_minutes=22.0, passive_pair_adult_min_age_years=16)
 
     expected = {
         "escort_passive_from_adult": True,
         "w_zweck_10_as_leisure": True,
         "passive_pair_max_gap_minutes": 22.0,
+        "passive_pair_adult_min_age_years": 16,
     }
     assert captured["load_mid_seed"] == expected
     assert captured["project_completed_seed"] == expected
@@ -1121,13 +1134,15 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
-        # The three flags under test -- all NON-DEFAULT (the pure function's own keyword
-        # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0), so a
+        # The four flags under test -- all NON-DEFAULT (the pure function's own keyword
+        # defaults are False / False / DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES=15.0 /
+        # DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS=18), so a
         # forwarding regression that silently falls back to the callee's default is caught
         # by a value mismatch below, not just a missing-kwarg KeyError.
         popsim_stage.KEY_W_ZWECK_10_AS_LEISURE: True,
         popsim_stage.KEY_ESCORT_PASSIVE_FROM_ADULT: True,
         popsim_stage.KEY_PASSIVE_PAIR_MAX_GAP_MINUTES: 22.0,
+        popsim_stage.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS: 16,
     }
     context = _StrictExecuteContext(values)
 
@@ -1171,6 +1186,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         captured["w_zweck_10_as_leisure"] = kwargs.get("w_zweck_10_as_leisure")
         captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        captured["passive_pair_adult_min_age_years"] = kwargs.get(
+            "passive_pair_adult_min_age_years")
         raise _StopAtSeedBuild()
 
     monkeypatch.setattr(popsim_stage, "_build_populationsim_seed", capturing_build_populationsim_seed)
@@ -1181,3 +1198,4 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert captured["w_zweck_10_as_leisure"] is True
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 22.0
+    assert captured["passive_pair_adult_min_age_years"] == 16

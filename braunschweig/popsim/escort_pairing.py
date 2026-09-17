@@ -126,8 +126,34 @@ def pair_passive_legs(
           excluded from the adult candidate pool in the first place.
 
     Raises:
+        ValueError: If ``max_gap_minutes`` or ``adult_min_age`` is not > 0 (both are
+            documented "valid range > 0"; see CLAUDE.md "Fallback transparency" -- a
+            non-positive value would silently defeat the pairing rather than merely
+            producing a low pairing share).
         KeyError: If ``wege`` is missing one or more REQUIRED_COLUMNS.
     """
+    # Guard both donor-side pairing parameters before any work: a non-positive value would
+    # not merely produce a low (and therefore WARN_PAIRED_SHARE-flagged) pairing rate -- it
+    # would silently corrupt the result in the opposite direction. A non-positive
+    # adult_min_age makes every household member, including the child on the very passive
+    # leg being paired, qualify as an escorting adult, so a wrong pairing is reported PAIRED
+    # with share_paired == 1.0 and no warning ever fires (see the module docstring's
+    # WARN_PAIRED_SHARE discussion). A non-positive max_gap_minutes instead leaves every
+    # passive leg UNPAIRED_GAP, which the warning DOES catch, but a caller that ignores the
+    # warning and continues should never have reached this silently in the first place.
+    if not max_gap_minutes > 0:
+        raise ValueError(
+            f"{_LOG_TAG} max_gap_minutes must be > 0 minutes, got {max_gap_minutes!r}: a "
+            "non-positive gap threshold would leave every passive leg UNPAIRED_GAP, "
+            "discarding the pairing while the run continues"
+        )
+    if not adult_min_age > 0:
+        raise ValueError(
+            f"{_LOG_TAG} adult_min_age must be > 0 years, got {adult_min_age!r}: a "
+            "non-positive floor would make every household member -- including a child on "
+            "another passive escort leg -- qualify as an escorting adult"
+        )
+
     missing = [column for column in REQUIRED_COLUMNS if column not in wege.columns]
     if missing:
         raise KeyError(f"{_LOG_TAG} Wege frame lacks required column(s) {missing}")

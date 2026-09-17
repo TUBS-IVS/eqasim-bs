@@ -489,6 +489,65 @@ def test_passive_pair_gap_default_agrees_across_its_three_homes():
     assert DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES == escort_pairing.DEFAULT_MAX_GAP_MINUTES
 
 
+def test_passive_pair_adult_min_age_default_agrees_across_its_three_homes():
+    """The 18-year age floor lives in escort_pairing (the module that owns the pairing); the
+    trip-build keyword default and the synpp config default repeat the literal because neither
+    module can import it (leaf / cycle constraints). Pin the three together, exactly like the
+    15-minute gap above (issue #409 follow-up). Unit: years."""
+    from braunschweig.popsim import escort_pairing
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)
+    assert trips.DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS == escort_pairing.DEFAULT_ADULT_MIN_AGE
+    assert DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS == escort_pairing.DEFAULT_ADULT_MIN_AGE
+
+
+def _teenage_sibling_household_wege():
+    """One household without an adult: a 5-year-old's passive leg at 08:00 and a 15-year-old
+    sibling's shop leg at 08:05. Pairing it depends only on the age floor."""
+    return pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 1],
+        "W_ZWECK": [4, 13], "W_SZS": [8, 8], "W_SZM": [5, 0],
+        "HP_ALTER": [15, 5], "W_GEW": [1.0, 1.0],
+    })
+
+
+def test_map_purpose_passive_pair_adult_min_age_years_reaches_the_pairing():
+    """The configurable donor-side floor must actually change which legs pair (issue #409
+    follow-up): at 14 the 15-year-old sibling's shop leg gives the child "shop"; at the
+    default 18 no eligible adult exists and the leg keeps the escort_passive_education rule."""
+    at_fourteen = trips.map_purpose(
+        _teenage_sibling_household_wege(), escort_purpose=True,
+        escort_passive_education=True, escort_passive_from_adult=True,
+        passive_pair_adult_min_age_years=14)
+    at_default = trips.map_purpose(
+        _teenage_sibling_household_wege(), escort_purpose=True,
+        escort_passive_education=True, escort_passive_from_adult=True)
+    passive = at_fourteen["W_ZWECK"] == 13
+    assert at_fourteen.loc[passive, "purpose"].item() == "shop"
+    assert at_default.loc[passive, "purpose"].item() == "education"
+
+
+def test_build_validated_trip_table_threads_the_adult_min_age_floor_to_map_purpose():
+    """The floor must survive the FULL builder chain (build_validated_trip_table ->
+    build_trip_table -> expand_persons_to_trips -> map_purpose), like the gap before it."""
+    persons = pd.DataFrame({"person_id": ["A_1_0_2"], "H_ID": [1], "P_ID": [2]})
+    wege = pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 1],
+        "W_ZWECK": [4, 13], "hvm_imp": [4, 3],
+        "W_SZS": [8, 8], "W_SZM": [5, 0],
+        "W_AZS": [8, 8], "W_AZM": [35, 30],
+        "HP_ALTER": [15, 5], "W_GEW": [1.0, 1.0],
+    })
+    table_fourteen, _ = trips.build_validated_trip_table(
+        persons, wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=True, passive_pair_adult_min_age_years=14)
+    table_default, _ = trips.build_validated_trip_table(
+        persons, wege, escort_purpose=True, escort_passive_education=True,
+        escort_passive_from_adult=True)
+    assert table_fourteen[table_fourteen["trip_index"] == 0].iloc[0]["following_purpose"] == "shop"
+    assert table_default[table_default["trip_index"] == 0].iloc[0]["following_purpose"] == "education"
+
+
 def test_build_validated_trip_table_threads_escort_passive_from_adult_to_map_purpose():
     """The flag must survive the FULL builder chain (build_validated_trip_table ->
     build_trip_table -> expand_persons_to_trips -> map_purpose), like w_zweck_10_as_leisure."""
