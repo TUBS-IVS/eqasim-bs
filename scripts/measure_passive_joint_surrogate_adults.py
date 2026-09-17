@@ -89,8 +89,10 @@ an anchor, being pinned to a school by issue #201 / ADR-0072).
 SIBLING-AGE HISTOGRAM (2026-09-16, raw MiD 2023 B1, 10,905 passive legs of minors, gap 15
 min): floor 18 pairs 10,343 (94.8 %), 562 unpaired; newly paired at floor 16: 6 (16:3, 17:3)
 · 14: 15 (14:5, 15:4, 16:3, 17:3) · 12: 19 · 10: 27 · 6: 56 (dominated by 7- and 9-year-olds,
-i.e. co-travelling children). Re-measured by this mode in Task 8; replace these figures with
-that run's output if they differ.
+i.e. co-travelling children). Re-measured by this mode on 2026-09-17 on the server and
+reproduced EXACTLY, figure for figure (run manifest
+``docs/runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml``, artifact
+``mid_sibling_age_histogram.csv``).
 
 LIMITS. n = 46 unlinked legs in ONE Kreis at a 1 % sampling rate, and the 17 eligible legs
 sit in only 9 households. The error bars are wide and no reference value exists for any of

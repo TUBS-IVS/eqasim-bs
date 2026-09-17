@@ -27,7 +27,28 @@ Run on the server (paths are the three arms' stage pickles; see the run manifest
         --relaxed ~/i409_runs/cache_relaxed/braunschweig.synthesis.locations.secondary_chainsolvers__<hash>.p \
         --out ~/i409_effect
 
-RESULT: filled in by Task 8 of the plan from the run's own output (never quoted from chat).
+RESULT (2026-09-17, host felix; run manifest
+``docs/runs/i409-passive-joint-surrogate-smoke-03101-2026-09-17.yml``). Three arms of the
+chainsolver stage over ONE cached upstream population (Kreis 03101, 1 % sampling rate;
+executed on commit 0700430a plus this branch's diff -- see the manifest's
+configuration.notes for why not at HEAD). Identity links 12/58 in every arm; surrogate links
+1/27 (strict, 3.7 %) and 6/27 (relaxed, 22.2 %). Per rescued child activity, metres,
+mean / median, rounded to 0.1 m::
+
+    arm      purpose  n   child-surrogate arm  child-surrogate OFF  home arm             home OFF
+    strict   shop     1   0.0 / 0.0            0.0 / 0.0            14699.5 / 14699.5    14699.5 / 14699.5
+    relaxed  other    5   0.0 / 0.0            42533.3 / 33713.9    11615.6 / 16478.5    40688.1 / 36898.1
+    relaxed  shop     1   0.0 / 0.0            0.0 / 0.0            20394.7 / 20394.7    14699.5 / 14699.5
+
+``dist_child_adult_m_arm`` is 0.0 in EVERY row: the anchor took for every rescued activity,
+which is the mechanism check this script exists for. The five relaxed ``other`` activities
+are where the rescue actually moves something -- the independent draw had placed child and
+surrogate a mean 42.5 km apart, and the mean home distance falls from 40.7 km (OFF) to
+11.6 km. Both ``shop`` rows show 0.0 in the OFF column as well: there the independent draw
+had already landed on the same facility, so the strict arm's single rescued activity did not
+move at all. n = 1 and n = 5 are smoke-scale counts; the unlinked persons of two arms are a
+different Monte-Carlo realisation (ADR-0119, one shared RandomState); no reference exists for
+either distance. Descriptive only -- a smoke, not a validation.
 """
 from __future__ import annotations
 

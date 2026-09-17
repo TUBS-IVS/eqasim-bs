@@ -1,0 +1,225 @@
+id: i409-passive-joint-surrogate-smoke-03101-2026-09-17
+date: '2026-09-17'
+repository:
+  commit: 3898fbd3
+  branch: feature/i409-measure-surrogate-adults
+configuration:
+  base: 'configs/base_bs.yml -- every behaviour flag from the base; the three arms differ only
+    in escort_passive_joint_surrogate and escort_passive_joint_surrogate_require_same_purpose,
+    set in the per-arm scale overlay (gitignored, server-side). Verified by diffing the three
+    overlays against each other: the only differing lines are those two flags and the
+    per-arm working_directory.'
+  overlays:
+  - 'configs/config_local_i409_{off,strict,relaxed}.yml (gitignored): working_directory
+    /home/felix/i409_runs/cache_<arm> (a PHYSICAL copy of eqasim-data/cache_i385_smoke, the
+    production smoke of i385-passive-joint-location-production-smoke-03101-2026-09-15), run
+    target braunschweig.synthesis.locations.secondary_chainsolvers, sampling_rate 0.01,
+    political_prefix [''03101''], popsim max_cells 750, num_workers 2. The overlays also carry
+    five per-scale keys at the i385 smoke''s EXACT values, read from that run''s own resolved
+    config (<working_directory>/.merged_config.yml): popsim.work_dir, analysis_working_directory,
+    output_path, output_prefix and matsim_last_iteration. They are required (the stages request
+    them) and their values enter the stage hashes, so copying them verbatim is what keeps every
+    upstream stage on the hash it was cached under. One launcher-only key was added,
+    cache_share_export: false, so this throwaway run cannot write its artifacts back into the
+    shared store; it is not a stage config parameter and cannot affect any stage hash.'
+  notes: 'Host felix, Linux, eqasim env (python 3.10.10, synpp 1.6.2, pandas 1.5.3,
+    geopandas 1.0.1), isolated checkout ~/i409_code.
+
+
+    (1) CODE EXECUTED. Not the branch HEAD: the runs executed commit 0700430a -- the commit
+    that produced cache_i385_smoke -- with the branch diff ``git diff b1dfb244..3898fbd3 --
+    braunschweig configs scripts`` applied on top as a clean patch (b1dfb244 is the branch''s
+    merge-base with origin/main, confirmed with git merge-base). The patched tree was verified
+    before use: 0700430a''s copy of secondary_chainsolvers/__init__.py plus that diff
+    reconstructs the patched file byte-for-byte, the two measurement scripts are
+    content-identical to the branch''s (CRLF only), passive_joint_links.py is identical, and
+    the branch''s own tests pass against the patched tree (tests/test_passive_joint_links.py
+    49/49; the configure/link-table/summary wiring tests 13/13, run by the controller). On this
+    code base only the chainsolver stage''s hash moves (its four newly declared surrogate keys
+    plus its helper-module hash), so the A/B isolates this change over the very population the
+    #409 headroom decision was measured on, and the OFF-path identity check against the
+    pre-change pickle is meaningful.
+
+
+    (2) WHY NOT HEAD, AND WHAT THAT COSTS. At the merged HEAD, 19 stages devalidate -- the whole
+    population chain (braunschweig.popsim.stage, popsim.completed_donor, gravity.model,
+    synthesis.population.sampled, commute_day.trips_day_stage, locations.home_cell, ...) --
+    because five config keys were added to main in the 101 commits between 0700430a and the
+    branch''s merge-base, and the current stage code requests all five:
+    mid_passenger_availability (commit 1b95e621), braunschweig.performance.donor_matching
+    (64893fb8), and braunschweig.performance.{home_coordinates, plan_validation,
+    fleet_home_lookup} (eb919ed0). They are absent from every cached stage config in the
+    smoke''s pipeline.json, so every dependent stage hash moved. Deleting them from the run
+    config does NOT restore the hashes (tested directly: the stages request them
+    unconditionally and synpp records the resolved default), and removing them would in any
+    case change upstream behaviour, so there is no config-only route. A HEAD smoke therefore
+    means recomputing the whole population (~2.5-3 h, on a host with an OOM history at
+    locations.home_cell -- see the i385 manifest''s environment fact). CONSEQUENCE, STATED
+    PLAINLY: the merged HEAD is NOT smoke-tested on the server. Its unit suite passes (154
+    tests green on the server at HEAD, incl. the five passive-joint/measurement files), and the
+    pipeline-behaviour evidence below is from the patched 0700430a tree.
+
+
+    (3) FIRST ATTEMPT, ABORTED -- AND A CACHE-COPY HAZARD IT EXPOSED. A first attempt ran the
+    arms at the merged HEAD and was killed by the stale-stage guard 5.5 min in, once synpp
+    logged "Devalidating 19 stages" and upstream population synthesis had started executing.
+    That attempt used hardlink copies of the cache (cp -al), and it demonstrated the hazard
+    that method carries: it re-executed a stage whose hash was UNCHANGED
+    (braunschweig.popsim.distance_distributions__b988794a...) and rewrote that artifact, which
+    a hardlink propagates back into the copy source. The copies were physical-copy contained,
+    so the write landed in a working copy and never in the user checkout; the user''s cache was
+    afterwards verified untouched (diff -rq against ~/eqasim-bs/eqasim-data/cache_i385_smoke
+    reported no differences, and no file under it has a mtime from that day). THIS run
+    therefore used three independent PHYSICAL copies (cp -a, ~6.9 GB each, link count 1 on both
+    sides), never hardlinks.
+
+
+    (4) PRE-CHECK. Before launching, a registry-hash pre-check (compose base+overlay ->
+    synpp_deterministic.install() -> synpp.pipeline.process_stages -> compare each stage hash
+    against the artifacts present in the arm''s working directory) reported: 50 stages in the
+    graph, pre-check: 1 stale stage, braunschweig.synthesis.locations.secondary_chainsolvers.
+    synpp''s own devalidation at run time then reported 2 stages in each of the three arms: the
+    chainsolver plus braunschweig.synthesis.locations.secondary_candidates__f02dfd489bafdfeb...,
+    whose hash is UNCHANGED (it is the hash the cache already held) and which synpp
+    re-executed rather than loaded -- a deterministic re-run of one dependency, not a
+    configuration-driven recompute. It is reported here rather than smoothed over; the OFF-arm
+    frame equality below is the empirical check that it changed nothing. Note that synpp''s
+    dryrun cannot be used for this pre-check: synpp 1.6.2 returns from run(..., dryrun=True)
+    before staleness is computed.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: Kreis 03101 only
+pipeline:
+  targets:
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+classification:
+- smoke
+- ab_test
+status:
+  execution: completed
+  notes: 'Three arms, all exit 0, run 2026-09-17 03:58-04:08 on felix: off 212 s, strict 194 s,
+    relaxed 217 s (sequential, one log per arm). An earlier attempt the same morning, at the
+    merged HEAD instead of the patched 0700430a tree, was aborted after 5.5 min by the
+    stale-stage guard when synpp devalidated 19 stages and began recomputing the population; it
+    produced no measurement and none of its output is used here. See configuration.notes (2)
+    and (3).'
+environment: 'server (felix, Linux, eqasim env)'
+validation:
+- metric: 'OFF-path frame equality: escort_passive_joint_surrogate false vs the pre-change cached
+    stage output (pickle ...__d137bcd97c724066484a3947ee32360e.p of the production smoke)'
+  reference: 'the pre-change stage output itself (a byte-identity check, not a behavioural target)'
+  result: 'FRAME-EQUAL: 3096 location rows, 2093 convergence rows; old
+    braunschweig.synthesis.locations.secondary_chainsolvers__d137bcd97c724066484a3947ee32360e.p
+    vs new braunschweig.synthesis.locations.secondary_chainsolvers__61a4a1cd0508b30f8532434394081ed7.p.
+    Compared with pandas.testing.assert_frame_equal on the non-geometry columns, elementwise
+    equality on the geometry column, and assert_frame_equal on the convergence frame. The OFF
+    path is therefore unchanged by this feature. Note on the count: the task spec expected
+    "3,415 location rows"; the measured frame has 3,096 rows on BOTH sides. The equality
+    assertion -- the actual claim -- passed; the 3,415 figure is not reproduced by this run and
+    is not carried forward. 2,093 convergence rows matches the arm''s own "2093/2093 problems
+    fully placed".'
+- metric: 'link rates per arm (printed stage lines; the run log carries the full splits)'
+  reference: 'none -- descriptive rates; the expected values were pre-measured on this cache by
+    scripts/measure_passive_joint_surrogate_adults.py (commit 3efd8875)'
+  result: |
+    | arm | plan-source | surrogate | total | anchors resolved |
+    |---|---|---|---|---|
+    | off | 12/58 | (rescue off) | 12/58 = 20.7 % | 12/12 = 100 %, 0 unresolved |
+    | strict | 12/58 | 1/27 = 3.7 % | 13/58 = 22.4 % | 13/13 = 100 %, 0 unresolved |
+    | relaxed | 12/58 | 6/27 = 22.2 % | 18/58 = 31.0 % | 18/18 = 100 %, 0 unresolved |
+
+    All three arms reproduce the pre-measured expectations exactly. The OFF arm printed no
+    surrogate line at all (the rescue is off), so the flag gates the code path and not merely
+    its outcome. Per-arm rescue splits, quoted from the logs:
+    strict -- "1/27 adult-not-in-household legs re-pointed to a household surrogate (3.7%);
+    child purpose not secondary 12, no admissible candidate activity 10, gap exceeded 4"
+    (purpose-mismatch rows dropped 55, cyclic rows dropped 0, require_same_purpose=True,
+    min_age_years=14);
+    relaxed -- "6/27 ... (22.2%); child purpose not secondary 12, no admissible candidate
+    activity 0, gap exceeded 9" (purpose-mismatch rows dropped 0, cyclic rows dropped 0,
+    require_same_purpose=False, min_age_years=14).
+    Solver success was 1.0000 in every arm (2093/2093, 2094/2094, 2092/2092 problems fully
+    placed). n = 58 paired legs and n = 27 rescue candidates are smoke-scale counts on a
+    1 %-sampled single Kreis, not population rates.
+- metric: 'realised effect per rescued child activity (scripts/measure_passive_joint_surrogate_effect.py):
+    child-surrogate distance and home-activity distance, arm vs OFF, metres, EPSG:25832'
+  reference: 'none -- descriptive; no observed reference exists for joint locations'
+  result: |
+    Means and medians in metres, rounded to 0.1 m; full precision in the artifact
+    surrogate_effect_summary.csv, one row per rescued activity in surrogate_effect_rows.csv.
+
+    | arm | child purpose | n | child-surrogate arm (mean/median) | child-surrogate OFF (mean/median) | home-distance arm (mean/median) | home-distance OFF (mean/median) |
+    |---|---|---|---|---|---|---|
+    | strict | shop | 1 | 0.0 / 0.0 | 0.0 / 0.0 | 14699.5 / 14699.5 | 14699.5 / 14699.5 |
+    | relaxed | other | 5 | 0.0 / 0.0 | 42533.3 / 33713.9 | 11615.6 / 16478.5 | 40688.1 / 36898.1 |
+    | relaxed | shop | 1 | 0.0 / 0.0 | 0.0 / 0.0 | 20394.7 / 14699.5 | 14699.5 / 14699.5 |
+
+    dist_child_adult_m_arm is 0.0 in EVERY row: each rescued child activity sits exactly on its
+    surrogate adult''s placed location, which is what the anchor is supposed to do. The OFF
+    column shows what the independent draw did with the same activities: for the five relaxed
+    "other" activities it placed child and surrogate a mean 42.5 km apart, and their home
+    distance falls from a mean 40.7 km (OFF) to 11.6 km (relaxed) -- the rescue replaces long
+    independent draws with the adult''s own location. The two "shop" rows show 0.0 in the OFF
+    column as well: there the independent draw happened to land on the same facility, so the
+    anchor changed nothing for the strict arm''s single rescued activity (its home distance is
+    identical, 14699.5 m in both). n = 1 and n = 5 are smoke-scale; both arms'' unlinked persons
+    are a different Monte-Carlo realisation (ADR-0119, one shared RandomState), so these
+    distances describe the rescued activities, not a population effect.
+- metric: 'departure times and escort participation'
+  reference: 'ADR-0114 (SrV first departures) and the #227/#332 per-Kreis escort controls'
+  result: 'UNCHANGED BY CONSTRUCTION: the rescue changes locations only; all arms read the one
+    cached trips frame. Stated, not re-measured. The effect script asserts the premise it rests
+    on (exactly one pickle per upstream stage in the shared working directory).'
+- metric: 'MiD sibling-age histogram (--mid-dir mode), the committed source of the age-floor default'
+  reference: 'raw MiD 2023 B1 delivery (local-only), phase-1 pairing at gap 15 min'
+  result: |
+    Re-measured on 2026-09-17; reproduces the figures in the script header exactly (they are
+    therefore kept, not replaced). 10,905 passive legs of minors; at the reference floor of
+    18 years, 10,343 pair (94.8 %) and 562 remain unpaired.
+
+    | age floor (years) | paired at floor | newly paired vs floor 18 | share of the 562 unpaired | partner ages |
+    |---|---|---|---|---|
+    | 18 | 10343 | 0 | 0.0 % | - |
+    | 16 | 10349 | 6 | 1.1 % | 16:3, 17:3 |
+    | 14 | 10358 | 15 | 2.7 % | 14:5, 15:4, 16:3, 17:3 |
+    | 12 | 10362 | 19 | 3.4 % | 12:4, 14:5, 15:4, 16:3, 17:3 |
+    | 10 | 10370 | 27 | 4.8 % | 10:3, 11:5, 12:4, 14:5, 15:4, 16:3, 17:3 |
+    | 6 | 10399 | 56 | 10.0 % | 6:4, 7:10, 8:4, 9:11, 10:3, 11:5, 12:4, 14:5, 15:4, 16:3, 17:3 |
+
+    Lowering the floor below 14 buys little and buys it from the wrong ages: the floor-6 row is
+    dominated by 7- and 9-year-old partners, i.e. co-travelling children rather than
+    accompanying minors. This supports the default of 14 years but does not validate it -- no
+    observed reference for the floor exists.
+- metric: 'headroom self-check re-run against the strict arm''s working directory
+    (scripts/measure_passive_joint_surrogate_adults.py --cache)'
+  reference: 'the production smoke baseline the script self-checks against: 58 paired passive
+    legs, 12 linked'
+  result: 'Self-check passed (the script aborts on a mismatch), and the headroom accounting
+    reproduces the script header exactly: 46 unlinked legs, 17 eligible by the child''s own
+    purpose, 16 of them with a household candidate, 65 candidate activities. The issue-#409
+    reconciliation table is likewise reproduced (any secondary adult, child purpose ignored:
+    13 legs at 15 min / 20 at 30 min; escorting adult with the escort trip as the pair: 10 / 14;
+    median gaps 4.92 and 10.56 min). Run against ~/i409_runs/cache_strict, i.e. the same
+    population the arms used.'
+features:
+  note: 'escort_passive_joint_surrogate (issue #409 option 1, ADR-0124) on top of the ON
+    production escort family. A SMOKE on a 1 %-sampled single Kreis: n = 27 rescue candidates
+    and 17 eligible legs in 9 households are smoke-scale counts, not population rates. Both
+    solver passes share ONE RandomState (ADR-0119), so an arm comparison is a different
+    Monte-Carlo realisation for the unlinked persons; the rescued activities themselves are
+    anchored deterministically. A smoke is not a validation: no observed reference exists for
+    joint locations, for the realised distances, or for the age floor, and none is claimed here.
+    The code measured is the patched 0700430a tree described in configuration.notes, not the
+    merged branch HEAD.'
+artifacts:
+- 'server (gitignored): ~/i409_runs/cache_{off,strict,relaxed}, ~/i409_runs/run_<arm>.log,
+  ~/i409_runs/status.txt, ~/i409_effect/{surrogate_effect_rows,surrogate_effect_summary}.csv,
+  ~/i409_headroom/mid_sibling_age_histogram.csv, ~/i409_headroom_check/*.csv (host felix)'
+issues:
+- '#409'
+- '#385'
+decisions:
+- ADR-0124
+- ADR-0119
+source: '.superpowers/sdd/2026-09-16-passive-escort-surrogate-anchor/ (task 8 brief and report;
+  the three-arm procedure and the 0700430a-plus-branch-diff ruling are recorded there)'
