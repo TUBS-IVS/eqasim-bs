@@ -32,6 +32,11 @@ production:
   enabled: true
   flags:
   - braunschweig.chainsolvers.parallel
+  # NOT a boolean flag: an integer person-shard count. The Feature Registry schema
+  # has no other field for a production-relevant config key (production accepts only
+  # `enabled` and `flags`), and this key is the one that decides the realisation this
+  # record describes, so it is listed here deliberately rather than dropped. Its
+  # semantics are in the description above and in ADR-0126, Decision 4.
   - braunschweig.chainsolvers.shards
 introduced:
   issue: null

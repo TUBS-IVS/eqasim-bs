@@ -48,7 +48,7 @@ environment: 'felix (125.78 GB total RAM, 64 cores); the seven recorder series m
 validation:
 - metric: private per-worker memory (arm0, 2026-09-05 19:30:26)
   reference: none (measurement)
-  result: driver RSS 19.60 GB at the stage''s memory minimum, available-memory drop
+  result: driver RSS 19.60 GB at the stage's memory minimum, available-memory drop
     37.87 GB over 62 live workers -> 0.611 GB/worker
 - metric: private per-worker memory (arm0, 2026-09-05 22:42:49)
   reference: none (measurement)
@@ -91,6 +91,40 @@ validation:
     driver process at fork time, not memory the pool actually needs. The
     available-memory delta above is the only quantity that isolates the pool's real
     private footprint.
+- metric: current run-server total memory (memory_total_kb)
+  reference: none (measurement)
+  result: '94.28 GB. The run resource recorder writes the machine''s memory_total_kb
+    into every series it records; it reads 94.28 GB for the 2026-09-15 and 2026-09-17
+    series under /home/felix/i409_runs/* and
+    /home/felix/eqasim-bs/eqasim-data/cache_i385_smoke/monitoring/ on felix. This is
+    the CURRENT box, smaller than the 125.78 GB machine the seven runs above were
+    measured on. `free -g` on the same box on 2026-09-16 printed total 94 (ADR-0126,
+    Context): `free -g` truncates to whole gibibytes, so 94 and 94.28 are the same
+    machine read at different precision, and 94.28 is the figure every document,
+    test and comment of ADR-0126 uses. The derived budget is therefore 94.28 - 8 =
+    86.28 GB (braunschweig.resources.DEFAULT_MEMORY_RESERVE_GB). These per-run JSONL
+    series are local to the server and are not committed to this repository.'
+- metric: sampling-point ambiguity of the driver-RSS quantity (UNRESOLVED)
+  reference: none (method statement)
+  result: 'This manifest records TWO driver-RSS quantities, and the memory bound
+    derived from it reads a THIRD that was never sampled. (a) Per run above: driver
+    RSS at the stage''s memory minimum, 19.60-30.09 GB. (b) In the method row: the
+    baseline driver RSS BEFORE the stage, 19-36 GB across the seven runs. (c) What
+    braunschweig.resources.effective_chainsolver_workers actually reads: this
+    process''s live RSS at the FORK POINT -- the call sits inside _solve_problem_set,
+    after plans_for_cs is built and before the pool is created. The recorder sampled
+    neither (a) nor (b) at that instant. On the current 94.28 GB box (86.28 GB
+    budget, 0.86 GB/worker) the bound falls below the 62-worker core budget from a
+    driver RSS of roughly 32.96 GB upwards, which lies INSIDE the recorded 19-36 GB
+    baseline range and above the recorded 19.6-30.1 GB during-stage range. Whether
+    the bound would have throttled any of the seven historical runs is therefore
+    UNVERIFIED: at the low end of the recorded ranges it would not have; at the top
+    of the recorded baseline range it would have (to 58 workers). This is stated
+    rather than resolved by picking whichever number suits. The outstanding evidence
+    is the server smoke named in the feature record
+    docs/registry/features/resource_adaptive_config.yml, whose
+    "[resources] braunschweig.chainsolvers.processes: ... driver RSS <measured> GB
+    ... -> ceiling <n> workers" line records the fork-point value directly.'
 decisions:
 - ADR-0126
 source: Post-hoc measurement over the run resource recorder's (issue 350) committed

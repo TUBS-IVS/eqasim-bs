@@ -1,8 +1,6 @@
 # ADR-0126 · 2026-09-16 · Scale resource-sensitive configuration off the machine's total allocation, never its free capacity
 
-## Status
-
-Active.
+- **Status:** active; amended 2026-09-17 by point 5 (memory-bounded chainsolver worker pool)
 
 ## Context
 
@@ -32,6 +30,17 @@ report the VM's true allocation: detection is meaningful. Nothing in the
 pipeline had ever compared a pinned value to the machine it actually ran on,
 so the mismatch was invisible until a run failed.
 
+**On the memory figure.** `free -g` prints whole gibibytes and truncates, so
+its `total 94` is a rounded reading of this box, not its exact size. The
+traceable exact figure is the run resource recorder's `memory_total_kb`, which
+reads **94.28 GB** for the 2026-09-15 and 2026-09-17 series under
+`/home/felix/i409_runs/*` and
+`/home/felix/eqasim-bs/eqasim-data/cache_i385_smoke/monitoring/` (recorded in
+`docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`). This document,
+`braunschweig/resources.py` and the tests use **94.28 GB total / 86.28 GB
+budget** consistently; the `free -g` line above is kept as the 2026-09-16
+observation it is.
+
 A second, related defect surfaced while designing the fix:
 `braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py`
 partitioned the secondary-location solve into as many person shards as
@@ -55,9 +64,13 @@ hand), so it is fixed as part of this decision rather than left for later.
    MemTotal`, again logged), raising `ResourceDetectionError` if neither
    source of a quantity is available -- a guessed value would silently size
    every worker pool and JVM heap of the run wrongly. A fixed OS/driver
-   reserve (`cores - 2`, `memory_gb - 8`, matching
-   `parallelism.DEFAULT_CORE_RESERVE`) is subtracted to produce one
-   `ResourceBudget` per run. `EQASIM_CPU_BUDGET` / `EQASIM_MEM_BUDGET` let an
+   reserve (`cores - 2`, `memory_gb - 8`, `resources.DEFAULT_CORE_RESERVE` /
+   `resources.DEFAULT_MEMORY_RESERVE_GB`) is subtracted to produce one
+   `ResourceBudget` per run. The core reserve historically matched
+   `parallelism.DEFAULT_CORE_RESERVE`, but that constant was deleted in this
+   change along with `parallelism.resolve_workers` (no production caller
+   survived the switch), so there is no second mechanism left to stay aligned
+   with. `EQASIM_CPU_BUDGET` / `EQASIM_MEM_BUDGET` let an
    operator override the detected budget explicitly (e.g. to deliberately
    share a box), taken verbatim with no further reserve subtracted.
 2. **A configured value is a ceiling, not a target -- for OPERATIONAL keys
@@ -87,9 +100,14 @@ hand), so it is fixed as part of this decision rather than left for later.
    on the claim that they "split a matching/solve workload across a pool with
    no worker-index-dependent seed". That claim does not survive reading the
    consumers: both sites do `np.array_split(<ids or frame>, processes)` --
-   `processes` fixes the person-chunk PARTITION -- and then
-   `random.randint(10000, size=processes)` -- `processes` also fixes how many
-   seeds are drawn. Changing `processes` therefore changes which persons
+   `processes` fixes the person-chunk PARTITION -- and then draw one seed per
+   chunk, `synthesis/population/matched.py` as
+   `random.randint(10000, size = len(chunks))` and
+   `synthesis/population/spatial/secondary/locations.py` as
+   `random.randint(10000, size = processes)`. The two spellings are the same
+   quantity (`len(chunks) == processes`, since the chunks come straight from
+   `np.array_split(..., processes)`), so at BOTH sites `processes` also fixes
+   how many seeds are drawn. Changing `processes` therefore changes which persons
    share a chunk and which seed each chunk gets, exactly the chainsolver
    defect this ADR otherwise fixes (point 4 below), just unfixed at these two
    sites. `processes` is therefore treated exactly like `matsim_threads` /
@@ -97,6 +115,26 @@ hand), so it is fixed as part of this decision rather than left for later.
    when a pin sits below 75% of the core budget, i.e. under-uses the
    machine), never adjusted. The two consumers read
    `context.config("processes")` verbatim, unchanged from before this ADR.
+   **That under-use warning fires on EVERY production run and is expected
+   output.** `configs/base_bs.yml` pins `processes: 32` against a 62-core
+   budget on the run server, i.e. below the 75% threshold, so every run logs
+   `[resources] processes is pinned to 32 but 62 cores are budgeted ...`. It is
+   the mechanism reporting a deliberate pin, not a defect; nobody should act on
+   it. It is named as expected output here, in
+   `docs/registry/features/resource_adaptive_config.yml`'s expected-smoke list,
+   and in the `configs/base_bs.yml` comment itself.
+   **Known limitation of that warning, stated rather than fixed.** Both read
+   sites declare `processes` with `volatile = True` (pre-existing, from the
+   upstream eqasim-france #438 comment), so raising the pin the warning draws
+   attention to would change the statistical-matching and secondary-location
+   realisations WITHOUT invalidating those two stages' caches -- the change
+   would stay invisible until the caches are cleared by hand. Changing those
+   two declarations would itself invalidate two more full-scale caches and is
+   deliberately out of scope here. The warning text therefore carries the whole
+   caveat (`braunschweig/resources.py`, `build_report`): it states that the key
+   is result-affecting, what raising it changes, and that the caches will not
+   notice. The residual mismatch -- an advisory warning about a key whose cache
+   does not track it -- is accepted and recorded, not hidden.
    `matsim_threads` and `matsim_qsim_threads` are excluded from clamping for
    an independent reason: their effect on results is unverified and MATSim
    parallelisation is known to scale poorly on this server (issue #410). They
@@ -118,7 +156,21 @@ hand), so it is fixed as part of this decision rather than left for later.
    recorded in two committed comments (`parallel_solving.py`'s "one of 62"
    and the stage's own `configure()`) before this change existed --
    pinning 62 therefore reproduces the existing production realisation
-   bit-for-bit on any machine, FOR A REAL POPULATION (`n_total > 1`). At
+   bit-for-bit on any machine, FOR A REAL POPULATION (`n_total > 1`).
+   **That reproduction claim is an INFERENCE from reading the pre-change code,
+   not a measured or tested result.** The argument is: before this change the
+   pool size came from `parallelism.resolve_workers(0)` =
+   `available_cores(reserve=2)` = `os.cpu_count() - 2` = 62 on the 64-core
+   server, the shard count WAS the pool size, and `_make_person_shards` /
+   `_derive_shard_seed` are unchanged -- so a run pinned to `shards: 62`
+   partitions and seeds identically to every past production run on that box.
+   No test verifies it (none could without a production artifact to compare
+   against), and no artifact comparison has been run; it is argued here so a
+   reader can check the argument, not asserted as evidence.
+   `tests/test_chainsolvers_parallel.py::test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers`
+   pins the structural half of it -- that the shard tasks depend only on the
+   shard count and the pool size follows the worker count -- on any platform.
+   At
    exactly one unique person, `_make_person_shards` caps the shard count at
    `len(unique_persons) = 1` regardless of the configured 62, so that single
    shard is seeded via `_derive_shard_seed(base_seed, 0)` -- the same
@@ -128,6 +180,17 @@ hand), so it is fixed as part of this decision rather than left for later.
    the stage's own startup warning for that case). Production never runs at
    `n_total = 1`, so this does not affect the reproduction claim above; it is
    recorded so the claim is not overstated for a tiny fixture or smoke run.
+   More generally, `_make_person_shards` caps the shard count at
+   `len(unique_persons)` for ANY population smaller than the configured shard
+   count, so a fixture, smoke or single-Kreis pass runs FEWER shards than
+   configured and produces the realisation for that smaller number. The cap is
+   deterministic (it depends on the population, not on the machine), so
+   reproducibility holds -- but it silently adjusts a result-determining key, so
+   `_solve_problem_set` now prints the EFFECTIVE shard count in its headline
+   line and warns, naming `braunschweig.chainsolvers.shards`, whenever it
+   differs from the configured one. The headline previously asserted the
+   configured value, e.g. "parallel, 62 shards / 8 workers" for a pass that
+   actually ran 10 shards.
    A run previously executed on a machine with a
    different core count (e.g. a developer laptop) produces a different --
    equally valid -- realisation once under this default; that is the
@@ -167,13 +230,37 @@ hand), so it is fixed as part of this decision rather than left for later.
    Decision 1's "scale off the total allocation, not free capacity". The new
    config key `braunschweig.chainsolvers.worker_memory_gb` (default 0.86,
    OPERATIONAL, `volatile=True`) carries the measured figure; it sizes the
-   pool, never the partition, so it has no influence on any result. On the
-   server measured for the original decision above (94 GB total, 86.28 GB
-   budget), a typical driver RSS (~25 GB) still yields 71 workers, capped at
-   62 by cores -- unchanged; a heavier driver process (~36 GB, the upper end
-   of the observed 19-36 GB baseline range) now yields 58 workers instead of
-   risking the OOM that an unbounded 62-worker pool would have risked at that
-   driver size. This ALSO reverses the "deliberately excluded / unmeasured"
+   pool, never the partition, so it has no influence on any result.
+   **Where the bound actually binds, and what is NOT known about it.** On the
+   server measured for the original decision above (94.28 GB total, 86.28 GB
+   budget, 0.86 GB/worker), the memory term drops the pool below the 62-worker
+   core budget from a driver RSS of roughly **32.96 GB** upwards
+   (`86.28 - 62 x 0.86`): at ~25 GB the arithmetic yields 71 workers and cores
+   still cap it at 62 (unchanged); at 36 GB it yields 58. Whether any real run
+   sits above or below that threshold is **UNVERIFIED**, because the quantity
+   the code reads was never sampled: `effective_chainsolver_workers` is called
+   inside `_solve_problem_set`, after `plans_for_cs` is built and immediately
+   before the pool is forked, while the run resource recorder captured a
+   BEFORE-stage baseline driver RSS (19-36 GB across the seven runs) and a
+   DURING-stage minimum (19.6-30.1 GB) -- neither is the fork-point value. The
+   binding threshold of ~33 GB lies inside the recorded baseline range, so at
+   the low end of that range the bound would not have throttled a historical
+   run and at its top it would have (to 58 workers). This ADR does not resolve
+   that by picking the convenient number: the ambiguity is recorded as its own
+   row in `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`, and the
+   outstanding evidence is the server smoke, whose
+   `[resources] braunschweig.chainsolvers.processes: ... driver RSS <measured>
+   GB ... -> ceiling <n> workers` line logs the fork-point value directly. The
+   decision to apply the bound does not depend on resolving it: a bound that
+   never binds costs nothing, and one that binds prevents an overcommit. Stated
+   precisely, that overcommit is of the run's own BUDGET, not of the machine:
+   an unbounded 62-worker pool at a 36 GB driver would want
+   `36 + 62 x 0.86 = 89.3 GB`, which exceeds the 86.28 GB budget but still fits
+   inside the 94.28 GB the box physically has. It eats the OS/page-cache reserve
+   rather than killing the run outright -- the reserve exists so that a second,
+   unannounced run on the same box does not turn that into the 2026-08-20
+   kernel OOM kill (ADR-0097).
+   This ALSO reverses the "deliberately excluded / unmeasured"
    framing this ADR, `docs/codebase/notes/resource-budget.md` and
    `braunschweig/resources.py`'s own `build_report` docstring and
    `DEFAULT_CORE_RESERVE` comment previously carried: those documents stated
@@ -226,11 +313,11 @@ this decision tries to prevent by watching load.
   value in the first place.
 - **The `popsim.num_workers` clamp is not free operationally: it is a real,
   material drop in parallelism on the most expensive stage.** On the server
-  measured for this ADR (94 GB total -> 86 GB budget, 30 GB/worker ->
-  ceiling 2), every overlay that pins `num_workers: 3`
+  measured for this ADR (94.28 GB total -> 86.28 GB budget, 30 GB/worker ->
+  ceiling 2), all SEVEN overlays that pin `num_workers: 3`
   (`configs/overlays/test.yml`, `test_1pct.yml`, `test_25pct.yml`,
-  `test_100pct.yml`, `escort_reuse_5pct.yml`,
-  `srv_location_reuse_5pct.yml`) is clamped 3 -> 2 (a ~33% drop), and
+  `test_100pct.yml`, `test_matsim.yml`, `escort_reuse_5pct.yml`,
+  `srv_location_reuse_5pct.yml`) are clamped 3 -> 2 (a ~33% drop), and
   `configs/overlays/smoke_kreis_control_fit.yml`, which pins `num_workers: 4`,
   is clamped 4 -> 2 (a ~50% drop). This is exactly the deviation the startup
   report and the run provenance are built to surface (never silently), but
@@ -238,14 +325,28 @@ this decision tries to prevent by watching load.
   behaviour, not as a free correctness fix, and is expected in the
   outstanding real-machine smoke evidence (see the Feature Registry's
   `validation.note`).
+- **The 30 GB/worker figure may only ABORT a run at the scale it was measured
+  at.** It comes from a 100%-scale post-mortem, and applying it at error
+  severity to every sampling rate aborted both committed 1% PopulationSim
+  fixtures (`configs/fixtures/config_popsim_mid_braunschweig.yml`,
+  `config_smoke_popsim_mid_mini.yml`) before any stage ran on a developer
+  machine below ~38 GB -- runs that worked before this gate existed.
+  `build_report` therefore raises an ERROR only when the run selects a
+  PopulationSim method AND either is configured at `sampling_rate >= 1.0` or
+  sets `braunschweig.population.popsim.worker_memory_gb` explicitly (the
+  operator asserting the figure applies to this run). Otherwise it WARNS, with
+  the caveat spelled out in the message. A missing `sampling_rate` counts as
+  "not 100 %". No scale-to-memory relationship is assumed or invented: the
+  per-worker footprint below 100% is simply unmeasured, and the gate says so
+  instead of extrapolating (CLAUDE.md: no invented reference values).
 - **The 30 GB/worker figure is traceable evidence (the 2026-07-10 OOM
   post-mortem); the 8 GB memory reserve subtracted before that bound is
   applied is NOT.** `DEFAULT_MEMORY_RESERVE_GB = 8.0` has no committed
   source and is the number that decides whether the clamp above fires at
-  all: at `reserve = 8`, `3 x 30 = 90 > 86` clamps to 2, but at
+  all: at `reserve = 8`, `3 x 30 = 90 > 86.28` clamps to 2, but at
   `reserve = 4` -- roughly what `configs/overlays/test_100pct.yml`'s own
   "~90 GB on the 128 GB box" budget implies for 3 workers on the machine
-  this ADR measures -- `3 x 30 = 90 <= 90` would NOT have clamped. The value
+  this ADR measures -- `3 x 30 = 90 <= 90.28` would NOT have clamped. The value
   is labelled an ASSUMPTION at its definition in `braunschweig/resources.py`
   (CLAUDE.md "No invented reference values") and is not yet measured; a
   server measurement of the OS/driver/page-cache footprint next to a real
@@ -289,43 +390,71 @@ this decision tries to prevent by watching load.
   chainsolver cache. This is the same deliberate, permanent cost the bullet
   above already accepts for PopulationSim, now doubled to a second stage; it
   is recorded here rather than left implicit.
-- **AMENDMENT (2026-09-17): typical server runs keep the unchanged 62 workers;
-  the worst measured shape is now bounded instead of risking an OOM.** On the
-  94 GB / 86.28 GB-budget server this ADR measures, a typical driver RSS
-  (~25 GB) still yields 71 workers, capped at 62 by cores exactly as before
-  this amendment; a heavier driver process (~36 GB, the upper end of the
-  observed 19-36 GB baseline range across the seven runs measured in
-  `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`) now yields 58
-  workers instead of the unbounded 62 that risked exhausting the box. None of
-  the seven runs actually measured there was, by itself, heavy enough to bind
-  the new bound below 62 on the current server (the heaviest, 30.09 GB driver
-  RSS, still leaves headroom) -- the 58-worker case above is the amendment's
-  own worked hypothetical for a heavier driver than any of the seven measured,
-  not a claim that the seven historical runs would themselves have been
-  throttled.
+- **AMENDMENT (2026-09-17): whether the chainsolver bound would ever have bound
+  in practice is UNVERIFIED, and the smoke is the evidence that settles it.**
+  On the 94.28 GB / 86.28 GB-budget server this ADR measures, with 0.86
+  GB/worker, the memory term drops the pool below the 62-worker core budget
+  from a driver RSS of about **32.96 GB** upwards (`86.28 - 62 x 0.86`); at
+  ~25 GB the pool is still core-bound at 62, at 36 GB it is 58. The code reads
+  the driver's RSS at the FORK POINT inside `_solve_problem_set`, and the run
+  resource recorder sampled neither that instant nor anything equivalent to it:
+  it recorded a BEFORE-stage baseline of 19-36 GB and a DURING-stage minimum of
+  19.6-30.1 GB across the seven runs in
+  `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`. The ~33 GB
+  threshold sits INSIDE the recorded baseline range -- at its low end the bound
+  would not have throttled a historical run, at its top it would have (to 58
+  workers). An earlier wording of this bullet called the 58-worker case "a
+  worked hypothetical for a driver heavier than any of the seven measured"
+  while simultaneously sourcing the 36 GB figure from the observed baseline
+  range; that is self-contradictory and is retracted. The honest statement is
+  the one above: the bound's practical effect on past runs is unknown, and the
+  server smoke -- which logs the fork-point driver RSS and the resulting
+  ceiling -- is the outstanding evidence. The sampling-point ambiguity is
+  recorded as its own row in the run manifest.
 - `matsim_threads` / `matsim_qsim_threads` are untouched; an oversubscribed
   run on a shrunk machine is slower, not silently wrong, and the mismatch is
   now visible as a startup warning instead of invisible, pending the tuning
   work tracked under issue #410.
 - **Limitation, stated rather than buried.** The claim "secondary locations
   no longer depend on the machine" is verified for the shard partition, the
-  per-shard seeds and the recombination order, and the production
-  realisation is reproduced bit-for-bit at `shards: 62`
+  per-shard seeds and the recombination order
   (`tests/test_chainsolvers_parallel.py`, in particular
+  `test_shard_partition_depends_only_on_the_shard_count` and
+  `test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers`,
+  the platform-independent one that pins the split itself).
+  **The separate "reproduces the production realisation bit-for-bit at
+  `shards: 62`" claim is an inference from reading the pre-change code
+  (Decision 4), NOT a test result.** An earlier wording of this bullet cited
   `test_solve_chains_parallel_is_invariant_to_the_worker_count` and
-  `test_a_single_worker_still_produces_the_sharded_realisation`). It is NOT
-  verified end-to-end against the real solver: those tests inject a
-  stateless fake `chainsolvers` module (the optional package is not
-  installed in the environment these tests were written and run in) and
-  exercise the actual process pool only where the `fork` start method is
-  available (Linux/CI; Windows has none). Off the server -- e.g.
-  `processes: 8` with `shards: 62` -- several shards now run sequentially
-  inside one worker process; if the real `carla_sample` solver holds any
-  process-global RNG state or cache outside the context it is explicitly
-  passed, results could still depend on the worker count through that back
-  door. The discharge this ADR owes and has not yet collected: a server A/B
-  at `shards: 62` comparing `processes: 8` against `processes: 62`, asserting
-  byte-identical secondary-location output against the real solver.
+  `test_a_single_worker_still_produces_the_sharded_realisation` as its
+  verification; they do not verify it. Both run at `n_shards = 8` over 50
+  synthetic persons against a stateless fake `chainsolvers` module (the
+  optional package is not installed in the environment they were written in),
+  neither exercises 62 shards, neither compares against a production artifact,
+  and both are fork-gated (skipped on Windows). What they DO establish is
+  worker-count invariance at a fixed shard count, on that fake, where `fork`
+  exists -- which is worth having, and is all they are cited for now.
+  The end-to-end claim against the real solver is NOT verified. Off the
+  server -- e.g. `processes: 8` with `shards: 62` -- several shards run
+  sequentially inside one worker process; if the real `carla_sample` solver
+  held any process-global RNG state or cache outside the context it is
+  explicitly passed, results could still depend on the worker count through
+  that back door. The discharge this ADR owes and has not yet collected: a
+  server A/B at `shards: 62` comparing `processes: 8` against `processes: 62`,
+  asserting byte-identical secondary-location output against the real solver.
+- **Code inspection of the installed `chainsolvers` package (supporting, NOT a
+  substitute for the A/B above).** Reading the installed optional package:
+  all randomness flows through `RunnerContext.rng`, constructed fresh per
+  `cs.setup(rng_seed=...)` in its `run.py::_normalize_rng`; there is no
+  module-level RNG, no `lru_cache` and no other global state. Worker REUSE is
+  therefore state-free in the real package, not only in the test fake, which
+  materially strengthens the limitation above -- the "back door" it names has
+  no visible opening in the version currently installed. This is an inspection
+  of a pinned third-party version at one point in time, so it cannot discharge
+  the A/B: it does not cover a future version of the package, anything the
+  solver reaches through its own dependencies, or a difference the fake hides.
+  It is recorded so the residual risk is known to be small and WHY, not to
+  close the item.
 
 ## Evidence
 
@@ -338,14 +467,20 @@ this decision tries to prevent by watching load.
   `matsim_qsim_threads`)
 - Tests: `tests/test_resources_detection.py`, `tests/test_resources_budget.py`,
   `tests/test_resources_java_memory.py`, `tests/test_resources_popsim_workers.py`,
-  `tests/test_resources_processes.py`, `tests/test_resources_report.py`,
+  `tests/test_resources_processes.py`, `tests/test_resources_report.py`
+  (including the scale gate and the two committed popsim fixtures),
   `tests/test_resources_run_start.py`, `tests/test_chainsolvers_parallel.py`,
   `tests/test_resources_chainsolver_workers.py` (point 5 amendment),
+  `tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record`
+  and `tests/test_run_provenance.py` (the run-start contract and the
+  `"resources"` embedding),
   `tests/test_passive_joint_two_pass.py::test_solve_problem_set_obtains_its_worker_count_from_resources`
+  and its two effective-shard-count cases
 - Measured machine state (2026-09-16, `ssh felix`): `systemd-detect-virt` ->
   `kvm`; cgroup v2 `cpu.max` / `memory.max` absent; `nproc` =
   `os.cpu_count()` = `len(sched_getaffinity(0))` = 64; `free -g` total 94,
-  available 92, swap 1.
+  available 92, swap 1 -- `free -g` truncates to whole gibibytes; the exact
+  total is 94.28 GB (see Context and the run manifest).
 - Measured chainsolver worker-pool memory (2026-09-17 amendment, point 5):
   `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml` (seven
   deduplicated 100% ZGB-8 executions, felix, 2026-09-05 to 2026-09-09).

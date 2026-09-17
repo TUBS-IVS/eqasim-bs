@@ -76,10 +76,20 @@ consistent with this module's "scale off the total allocation, not free
 capacity" rule (ADR-0126), not an exception to it. The new config key
 `braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
 `volatile=True`) carries the measured constant; it sizes the pool, never the
-partition, so it has no influence on any result. Typical server runs still
-yield the unchanged 62 workers (core-bound); a heavier driver process can now
-reduce the pool below 62 instead of risking the OOM an unbounded pool could
-previously cause on a smaller machine. See ADR-0126's point 5 amendment for
+partition, so it has no influence on any result.
+
+**Where the bound bites, and what is NOT known.** On the current 94.28 GB
+server (86.28 GB budget, 0.86 GB/worker) the memory term drops the pool below
+the 62-worker core budget from a driver RSS of roughly **32.96 GB** upwards
+(`86.28 - 62 x 0.86`). Whether any real run sits above that threshold is
+**UNVERIFIED**: the code reads the driver's RSS at the FORK POINT inside
+`_solve_problem_set`, and the run resource recorder never sampled that instant
+-- it captured a before-stage baseline of 19-36 GB and a during-stage minimum
+of 19.6-30.1 GB, and the ~33 GB threshold lies inside the first range. So do
+not read "typical runs are unaffected" as established; read it as "at the low
+end of what was recorded, the bound does not bind". The server smoke logs the
+fork-point value and the ceiling it produced, and is the outstanding evidence.
+See ADR-0126's point 5 amendment for
 the full decision and its Consequences for the permanent cache-dependency
 cost this adds to the chainsolver stage (`resources.py` is now a helper
 module of BOTH the PopulationSim stage and the chainsolver stage, so any
@@ -136,9 +146,12 @@ produces it?**
   (`parallel_statistical_matching`) and
   `synthesis/population/spatial/secondary/locations.py` (`execute`) both do
   `np.array_split(<ids or frame>, processes)` -- `processes` fixes the
-  person-chunk PARTITION -- immediately followed by
-  `random.randint(10000, size=processes)` -- `processes` also fixes how many
-  seeds are drawn, and which chunk gets which seed. Both are structurally
+  person-chunk PARTITION -- immediately followed by one seed per chunk:
+  `random.randint(10000, size = len(chunks))` in `matched.py` and
+  `random.randint(10000, size = processes)` in `locations.py`. The two
+  spellings are the same quantity (`np.array_split(..., processes)` always
+  returns exactly `processes` chunks), so at both sites `processes` also fixes
+  how many seeds are drawn, and which chunk gets which seed. Both are structurally
   identical to the chainsolver defect one paragraph up: a `processes` pin of
   4 on one machine and 8 on another produces a different partition and a
   different seed draw for the SAME configured `random_seed`, on a stage
@@ -170,18 +183,34 @@ origin, note)`. `origin` is one of:
   (memory sizes are echoed byte-for-byte, never reformatted, so a
   sub-gigabyte pin like `"1500M"` is not silently rounded).
 - `"clamped"` -- an OPERATIONAL key's configured value did not fit and was
-  reduced (`java_memory`, `braunschweig.population.popsim.num_workers`);
-  always logged at `WARNING` by the `effective_*` wrapper and carried into
-  the run provenance.
+  reduced. There are THREE such keys: `java_memory`,
+  `braunschweig.population.popsim.num_workers` and -- since the 2026-09-17
+  amendment -- `braunschweig.chainsolvers.processes`. Always logged at
+  `WARNING` by the `effective_*` wrapper and carried into the run provenance.
 - `"derived"` -- the key was left at its `auto` sentinel (`0`, `""`, or
   `"auto"`, see `is_auto()`) and the budget supplied the value outright.
-- `"reported"` -- the reporting-only `processes` key's configured value
-  exceeds the budget but is NEVER reduced (see `resolve_processes`):
-  `effective` still equals `configured` verbatim, and `note` states what the
-  budget would have allowed. Never confuse this with `"clamped"` -- the
-  final review of this branch found `ResourceReport` claiming
-  `processes = 14 [clamped]` while the run actually used the pinned 32, which
-  is exactly the false claim this origin value exists to prevent.
+- `"reported"` -- the value is stated but NOT applied by the resolver that
+  produced it. **Two different situations carry this origin; do not read them
+  as the same thing.**
+  - `processes` (`resolve_processes`) is REPORTING-ONLY forever: its pin
+    exceeds the budget and is NEVER reduced, because the key is
+    result-affecting. `effective` equals `configured` verbatim and `note`
+    states what the budget would have allowed.
+  - `braunschweig.chainsolvers.processes` carries `"reported"` **only in
+    `build_report`'s startup preview**, because its real ceiling also needs
+    the live driver RSS, known only once the stage forks its pool. That key IS
+    genuinely clamped at its point of use: `effective_chainsolver_workers`
+    emits its own `"pinned"` / `"clamped"` / `"derived"` resolution there, and
+    that one is the value the run used. A `"reported"` entry for this key means
+    "not yet resolved", not "never adjusted"; the preview is an UPPER bound
+    (`min(configured, core budget)`), never a claim about the final count.
+
+  Never confuse either with `"clamped"` -- the final review of this branch
+  found `ResourceReport` claiming `processes = 14 [clamped]` while the run
+  actually used the pinned 32, which is exactly the false claim this origin
+  value exists to prevent. The same review found the chainsolver preview
+  reporting the core budget regardless of a configured pin, which is the
+  mirror-image error (a true-looking number the run would not use).
 
 `ResourceReport` (built once per run by `build_report()` in
 `scripts/run_synpp.py`, from the RESOLVED config, so it cannot drift from
@@ -207,7 +236,16 @@ what the run actually does) collects every key's `Resolution` plus a list of
 4. Add the key's resolution to `build_report()` so the startup log and the
    run provenance see it, and add a `Violation` there if an impossible
    configuration for this key deserves an abort (memory-bound cases) or only
-   a warning (everything else, including underuse).
+   a warning (everything else, including underuse). **An abort may only fire
+   where the figure behind it was measured.** `DEFAULT_POPSIM_WORKER_MEMORY_GB`
+   is a 100%-scale measurement, and applying it at error severity to every
+   sampling rate aborted both committed 1% popsim fixtures on a 32 GB machine --
+   runs that worked before the gate existed. Gate an abort on the conditions
+   that make the figure apply (here: the popsim method AND
+   `sampling_rate >= 1.0`, or an explicit
+   `braunschweig.population.popsim.worker_memory_gb` by which the operator
+   asserts it), warn otherwise, and say in the message WHY it is only a warning.
+   Never bridge the gap with an invented scale-to-memory relationship.
 5. Add table-driven tests mirroring `tests/test_resources_budget.py`: a pin
    that fits is passed through verbatim, a pin that does not fit is clamped
    AND warns, and the auto sentinel is derived from the budget. Inject every
@@ -221,14 +259,27 @@ what the run actually does) collects every key's `Resolution` plus a list of
    WARN when it looks unsafe, exactly like `matsim_threads` /
    `matsim_qsim_threads`.
 
-## Known limitation (do not silently "fix" this without new evidence)
+## Known limitations (do not silently "fix" these without new evidence)
 
-The chainsolver shard/worker split's machine-independence claim is verified
-for the partition, the per-shard seeds and the recombination order using a
-stateless fake `chainsolvers` module (the optional package is not installed
-in the environment these tests were written in), and only through the real
-process pool where the `fork` start method exists (Linux/CI, not Windows).
-It has not been verified end-to-end against the real `carla_sample` solver.
-See ADR-0126's Consequences section for the exact discharge this owes (a
-server A/B at `shards: 62` comparing `processes: 8` against `processes: 62`)
-before treating that claim as fully closed.
+**1. The shard/worker split against the real solver.** The
+machine-independence claim is verified for the partition, the per-shard seeds
+and the recombination order using a stateless fake `chainsolvers` module (the
+optional package is not installed in the environment these tests were written
+in), and only through the real process pool where the `fork` start method
+exists (Linux/CI, not Windows). It has not been verified end-to-end against
+the real `carla_sample` solver. The separate "reproduces the production
+realisation bit-for-bit at `shards: 62`" claim is an INFERENCE from reading
+the pre-change code (ADR-0126, Decision 4), not a test result -- no test
+exercises 62 shards against a production artifact. See ADR-0126's Consequences
+for the exact discharge this owes (a server A/B at `shards: 62` comparing
+`processes: 8` against `processes: 62`), and for the code inspection of the
+installed `chainsolvers` package that narrows, but does not close, the risk.
+
+**2. The `processes` under-use warning advises changing a key whose caches do
+not track it.** `build_report` warns when `processes` sits below 75% of the
+core budget, but both read sites declare it `volatile = True`, so raising it
+changes the statistical-matching and secondary-location realisations WITHOUT
+invalidating those stages' caches. Changing the declarations would invalidate
+two more full-scale caches and is out of scope; the warning text therefore
+states the whole caveat instead. Do not "simplify" that text back to "raise the
+pin if that is not intended".

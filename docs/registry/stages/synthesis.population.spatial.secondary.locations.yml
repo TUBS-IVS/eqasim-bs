@@ -67,8 +67,10 @@ notes: >-
   different core counts; pinning shards: 62 reproduces the pre-existing 64-core
   production realisation bit-for-bit, for a real population (n_total > 1; see
   ADR-0126 Decision 4 for the n_total = 1 edge case). This IS a real, one-time cache
-  cost: adding the hashed key invalidated this stage's cache (and everything
-  downstream of it) once. The `synthesis.population.spatial.secondary.locations`
+  cost: adding the hashed key invalidates this stage's cache (and everything
+  downstream of it) on the first run after the change lands -- no such run has been
+  executed yet, so the recompute is still owed, not spent. The
+  `synthesis.population.spatial.secondary.locations`
   synpp-level `processes` config key (read by
   synthesis/population/spatial/secondary/locations.py, NOT by the chainsolver's own
   braunschweig.chainsolvers.processes) is UNCHANGED by this ADR and remains read
@@ -94,10 +96,23 @@ notes: >-
   RSS is copy-on-write pages inherited from the driver, not private memory the pool
   needs. `braunschweig.resources` therefore joins this stage's `_HELPER_MODULES` /
   `validate()` token, alongside `purpose_subtype` / `trips` / `seed` /
-  `escort_links` / `passive_joint_links` above. Typical server runs still yield the
-  unchanged 62 workers (core-bound); a heavier driver process can now reduce the
-  pool below 62 instead of risking the OOM an unbounded pool could previously cause
-  on a smaller machine.
+  `escort_links` / `passive_joint_links` above. On the current 94.28 GB server
+  (86.28 GB budget) the memory term drops the pool below the 62-worker core budget
+  from roughly 32.96 GB of driver RSS upwards; whether any real run sits above that
+  threshold is UNVERIFIED, because the recorder never sampled the fork-point RSS the
+  code reads (it captured a 19-36 GB before-stage baseline and a 19.6-30.1 GB
+  during-stage minimum). The stage logs the ceiling it used on every run, and the
+  server smoke is the outstanding evidence -- see ADR-0126 point 5 and the
+  sampling-point row of the run manifest.
+
+  EFFECTIVE SHARD COUNT IN THE LOG: `_make_person_shards` caps the shard count at the
+  number of persons a pass actually solves, so a fixture, smoke or single-Kreis pass
+  runs FEWER shards than `braunschweig.chainsolvers.shards` configures and produces
+  the realisation for that smaller number. The cap is deterministic (population, not
+  machine), but it adjusts a result-determining key, so `_solve_problem_set` prints
+  the EFFECTIVE shard count in its headline line and warns, naming the key, when it
+  differs from the configured one. The headline previously asserted the configured
+  value.
 
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default

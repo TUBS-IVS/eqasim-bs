@@ -20,9 +20,22 @@ description: >
   -- see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml for the measured
   basis) -- and a configured value is a CEILING: used verbatim when it fits, clamped
   down and logged when it does not. The resolved value never enters the config, so no
-  synpp stage hash changes and no shared cache is invalidated by these three clamps
+  synpp stage hash changes and no shared cache is invalidated by the CLAMPING itself
   (the chainsolver clamp's driver-RSS term is measured fresh every run, so it is a
   point-of-use resolution like the other two, not a config-independent constant).
+  THE FEATURE AS A WHOLE IS NOT CACHE-FREE, and a planner must budget for two costs
+  that come from other parts of it. ONE-TIME: landing this work invalidates BOTH the
+  full-scale PopulationSim cache and the full-scale chainsolver cache -- the first
+  because braunschweig/popsim/stage adds "braunschweig.resources" to its
+  _DEFERRED_HELPER_MODULE_NAMES source-hash token, the second because the chainsolver
+  stage adds the new HASHED key braunschweig.chainsolvers.shards to its configure()
+  and lists braunschweig.resources in its _HELPER_MODULES. At 100 % scale that is a
+  multi-hour recompute of both stages and everything downstream of them. PERMANENT:
+  because both stages hash braunschweig/resources.py by import site via
+  inspect.getsource (whole file, not a semantic diff), EVERY future edit to that file
+  -- a log-message wording change or a docstring-only edit included -- invalidates
+  BOTH full-scale caches again. braunschweig/resources.py must therefore be treated
+  as an expensive file to touch. See ADR-0126 Consequences for both costs in full.
   `processes` (the synpp-level key, NOT braunschweig.chainsolvers.processes above) is
   DELIBERATELY NOT in this list: at its two pure read sites
   (synthesis/population/matched.py,
@@ -41,12 +54,17 @@ description: >
   config at startup, logs it, aborts on an error-severity violation ONLY when
   braunschweig.population.method actually selects a PopulationSim workflow (so a
   MATSim-only or simple_ipf_open run is never aborted by a popsim.num_workers mismatch
-  it will never hit), and records the report in the run provenance under "resources"
-  (the chainsolver clamp is previewed there as a core-budget-only, origin="reported"
-  entry, because the live driver RSS is only known once the stage itself starts; the
-  stage's own log line is the source of truth for the value actually used). See
-  ADR-0126 for the full decision, including the rejected free-resources alternative
-  and the 2026-09-17 amendment that added the chainsolver memory bound.
+  it will never hit) and only at the SCALE the 30 GB/worker figure was measured at
+  (sampling_rate >= 1.0, or an explicit
+  braunschweig.population.popsim.worker_memory_gb by which the operator asserts the
+  figure applies to this run; otherwise the mismatch is a warning that names the
+  unmeasured scale -- no scale-to-memory relationship is invented), and records the
+  report in the run provenance under "resources" (the chainsolver clamp is previewed
+  there as a core-budget-only, origin="reported" entry capped by any configured pin,
+  because the live driver RSS is only known once the stage itself starts; the stage's
+  own log line is the source of truth for the value actually used). See ADR-0126 for
+  the full decision, including the rejected free-resources alternative and the
+  2026-09-17 amendment that added the chainsolver memory bound.
 stages:
 - matsim.runtime.java
 - data.osm.osmosis
@@ -71,8 +89,6 @@ code_paths:
 - scripts/run_synpp.py
 - matsim/runtime/java.py
 - data/osm/osmosis.py
-- synthesis/population/matched.py
-- synthesis/population/spatial/secondary/locations.py
 - braunschweig/popsim/stage/__init__.py
 - braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
 - braunschweig/synthesis/locations/secondary_chainsolvers/parallel_solving.py
@@ -87,15 +103,23 @@ evidence:
   - tests/test_resources_report.py
   - tests/test_resources_run_start.py
   - tests/test_resources_chainsolver_workers.py
+  - tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record
+  - tests/test_run_provenance.py::test_collect_embeds_the_resource_report_under_resources
+  - tests/test_run_provenance.py::test_log_and_write_persists_the_resource_report_to_disk
+  - tests/test_chainsolvers_parallel.py::test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers
+  - tests/test_chainsolvers_parallel.py::test_shard_partition_depends_only_on_the_shard_count
   - tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
   - tests/test_chainsolvers_parallel.py::test_a_single_worker_still_produces_the_sharded_realisation
   - tests/test_chainsolvers_parallel.py::test_shard_count_is_hashed_but_worker_count_is_volatile
   - tests/test_passive_joint_two_pass.py::test_solve_problem_set_obtains_its_worker_count_from_resources
+  - tests/test_passive_joint_two_pass.py::test_a_pass_smaller_than_the_shard_count_prints_the_effective_shard_count
   off_path_byte_identical:
-    claimed: true
-    test: tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
+    claimed: false
+    test: tests/test_chainsolvers_parallel.py::test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers
     note: >
-      Two claims, verified separately. (1) The java_memory / num_workers clamps
+      claimed is FALSE on purpose: neither of the two claims below is a PROVEN
+      byte-identity, and "true" renders as "proven" in docs/generated/FEATURES.md.
+      Two claims, argued separately. (1) The java_memory / num_workers clamps
       cannot change a result by construction (each key is classified OPERATIONAL in
       the design spec by reading its consumers: java_memory only ever becomes -Xmx;
       PopulationSim submits one independent subprocess per batch with no
@@ -108,22 +132,32 @@ evidence:
       neither clamped nor claimed byte-identical here -- it is reported and warned
       about only, exactly like matsim_threads / matsim_qsim_threads (an earlier draft
       of this record misclassified it as operational; ADR-0126, Decision 3, corrects
-      that). (2) The chainsolver shard/worker split IS
-      pinned: test_solve_chains_parallel_is_invariant_to_the_worker_count and
-      test_a_single_worker_still_produces_the_sharded_realisation assert
-      byte-identical secondary-location output across different worker counts at a
-      fixed shard count, and the production default shards:62 reproduces every
-      production run on the 64-core server bit-for-bit. This is NOT verified
-      end-to-end against the real carla_sample solver: both tests inject a stateless
-      fake chainsolvers module (the optional package is not installed in the
-      environment these tests were written in) and only exercise the real process pool
-      where the 'fork' start method is available (Linux/CI; Windows has none). Off the
-      server several shards can run sequentially inside one worker process; if the
-      real solver holds any process-global RNG or cache state outside the context it
-      is explicitly passed, results could still depend on the worker count through
-      that back door. Outstanding discharge (not yet run): a server A/B at shards:62
-      comparing processes:8 against processes:62, asserting byte-identical
-      secondary-location output against the real solver. See ADR-0126, Consequences.
+      that). (2) The chainsolver shard/worker split's STRUCTURAL invariance is pinned
+      platform-independently by
+      test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers and
+      test_shard_partition_depends_only_on_the_shard_count: the shard tasks depend
+      only on the shard count, and the pool size follows the worker count.
+      test_solve_chains_parallel_is_invariant_to_the_worker_count and
+      test_a_single_worker_still_produces_the_sharded_realisation add output
+      invariance across worker counts at a fixed shard count -- but at n_shards=8
+      over 50 synthetic persons, against an injected stateless fake chainsolvers
+      module (the optional package is not installed in the environment they were
+      written in), and only where the 'fork' start method exists (Linux/CI; skipped on
+      Windows). The SEPARATE claim that the production default shards:62 reproduces
+      every past production run on the 64-core server bit-for-bit is an INFERENCE from
+      reading the pre-change code (parallelism.resolve_workers(0) = cpu_count - 2 = 62
+      there, with the shard count equal to the pool size and _make_person_shards /
+      _derive_shard_seed unchanged), argued in ADR-0126 Decision 4. No test verifies
+      it: neither test above runs at 62 shards or compares against a production
+      artifact, and citing them as its verification (as an earlier draft of this
+      record did) over-attributes the evidence. Off the server several shards can run
+      sequentially inside one worker process; a code inspection of the installed
+      chainsolvers package (ADR-0126 Consequences) finds all randomness flowing
+      through a per-setup RunnerContext.rng with no module-level RNG, lru_cache or
+      global state, which narrows but does not close that back door. Outstanding
+      discharge (not yet run): a server A/B at shards:62 comparing processes:8 against
+      processes:62, asserting byte-identical secondary-location output against the
+      real solver. See ADR-0126, Consequences.
   fallback_rate:
     instrumented: true
     log_marker: '[resources] sched_getaffinity unavailable'
@@ -159,27 +193,46 @@ validation:
     configs/overlays/test.yml) that must show a "[resources] machine: 64 cores" log
     block, a "java_memory 100G -> 86G" clamp line, AND a
     "braunschweig.population.popsim.num_workers 3 -> 2" clamp line (the pinned
-    num_workers: 3 in this overlay does not fit the measured 86 GB budget at 30
+    num_workers: 3 in this overlay does not fit the measured 86.28 GB budget at 30
     GB/worker; the same clamp applies to test_1pct.yml, test_25pct.yml,
-    test_100pct.yml, escort_reuse_5pct.yml and srv_location_reuse_5pct.yml, all
-    pinned at 3, and smoke_kreis_control_fit.yml, pinned at 4, clamps to 2 as well --
-    see ADR-0126 Consequences for the full list and the ~33-50% parallelism drop this
+    test_100pct.yml, test_matsim.yml, escort_reuse_5pct.yml and
+    srv_location_reuse_5pct.yml, all seven pinned at 3, and
+    smoke_kreis_control_fit.yml, pinned at 4, clamps to 2 as well -- see ADR-0126
+    Consequences for the full list and the ~33-50% parallelism drop this
     represents), the run proceeding, and the resources block landing in
     run_provenance_<stamp>.json, as the outstanding evidence before this feature can
-    be called production-proven; it has not been executed as of this record. The
-    2026-09-17 chainsolver memory-bound amendment adds one more expected line to that
-    same smoke: "[resources] braunschweig.chainsolvers.processes: budget 62 cores /
+    be called production-proven; it has not been executed as of this record.
+    EXPECTED, NOT A DEFECT, in that same smoke: "[resources] processes is pinned to
+    32 but 62 cores are budgeted ..." -- configs/base_bs.yml pins processes: 32 below
+    the 75% under-use threshold on purpose, and the key is result-affecting, so this
+    warning fires on EVERY production run and must not be acted on (ADR-0126,
+    Decision 3). The 2026-09-17 chainsolver memory-bound amendment adds one more
+    expected line: "[resources] braunschweig.chainsolvers.processes: budget 62 cores /
     86.3 GB memory, driver RSS <measured> GB, worker_memory_gb 0.86 GB -> ceiling
     <n> workers", logged by effective_chainsolver_workers at
     braunschweig.synthesis.locations.secondary_chainsolvers stage start -- also not
-    yet observed on a real server run. The
+    yet observed on a real server run. ("86.3" is 86.28 GB at the log line's one
+    decimal place: 94.28 GB detected total minus the 8 GB reserve, the 94.28 figure
+    being the run resource recorder's memory_total_kb recorded in the run manifest;
+    "free -g" truncates the same machine to 94.) That <measured> driver RSS is the
+    single most important number the smoke produces: it is the FORK-POINT quantity
+    the bound divides into, which no recorded series has ever sampled, and on this
+    box the bound starts to bite from about 32.96 GB upwards. Until it is observed,
+    whether the chainsolver memory bound ever binds in practice is UNVERIFIED. The
     chainsolver-worker-private-memory-2026-09-17 manifest listed in validation.runs
     is a POST-HOC RESOURCE MEASUREMENT establishing the 0.86 GB/worker constant's
     measured basis, over seven already-recorded production executions -- it is NOT a
     smoke or validation run of this feature (no config, resolution, or clamp behaviour
-    of this mechanism was exercised by it). Unit-level coverage (detection fallbacks, budget derivation, per-key resolution,
-    the startup gate, the chainsolver shard/worker invariance) is in place and green;
-    see evidence.tests.
+    of this mechanism was exercised by it). Unit-level coverage is in place and green:
+    detection fallbacks, budget derivation, per-key resolution, the popsim gate in
+    both its method and its scale dimension (including two cases that load the
+    committed popsim fixtures), the chainsolver shard/worker invariance, and the
+    run-start contract itself -- that scripts/run_synpp.py builds a report, enforces
+    it and embeds it in the run provenance under "resources" is pinned by
+    tests/test_run_synpp_arity.py::test_main_hands_the_resource_report_to_the_provenance_record
+    and tests/test_run_provenance.py, NOT by tests/test_resources_run_start.py, which
+    despite its name exercises resources.enforce_report directly and never imports
+    the launcher. See evidence.tests.
 assessment:
   status: pending
   by: null
