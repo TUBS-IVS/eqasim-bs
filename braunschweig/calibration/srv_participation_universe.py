@@ -53,13 +53,18 @@ Definitions (SrV codebook ``SrV2023_Datenkodierung_SciUse.xlsx``):
   :func:`srv_distance_targets.kreis_from_ags` (never re-implemented, and never the survey design
   stratum ``ST_CODE``, which does not correspond 1:1 to a Kreis).
 
-Rows: one row per Kreis PRESENT in the universe plus one region-total row coded
-:data:`REGION_CODE`, so ``sum(kreis n_unweighted) == total n_unweighted`` holds by construction
-(:func:`check_invariants` enforces it). Wolfsburg (03103) is NOT surveyed by SrV and therefore
-has no row -- the same convention as ``srv2023_participation_by_kreis.csv``, whose consumer
-``scripts/build_participation_target.py`` fills Wolfsburg from the region total as a documented
-assumption. An absent expected Kreis is logged on every run so a delivery that loses another
-Kreis is visible.
+Rows: one row per EXPECTED Kreis (``expected_kreise``, by default the eight
+:data:`srv_distance_targets.ZGB_KREISE`) plus one region-total row coded :data:`REGION_CODE`, so
+``sum(kreis n_unweighted) == total n_unweighted`` holds by construction
+(:func:`check_invariants` enforces it). The row set comes from the expected geography, never
+from the data (issue #405): a Kreis the delivery does not cover -- Wolfsburg (03103), which SrV
+does not survey -- is emitted as a ZERO row (``n_unweighted == 0``, NaN shares), never dropped.
+This is the convention of the sibling builder
+:mod:`braunschweig.calibration.srv_work_participation`, and the one this module already applies
+to empty age BANDS; a reader therefore never has to know how many Kreise to expect, and a Kreis
+that collapses is visible as a zero instead of as a table one row shorter. Because an absent
+Kreis can no longer show up as a missing row, :func:`check_kreis_coverage` rejects a SURVEYED
+Kreis whose count is zero (and a delivery that suddenly covers an unsurveyed one).
 
 Known asymmetry to the MiD seed side (documented, not corrected here): the seed column defines
 a work leg as a DIRECTLY RECORDED leg (MiD ``W_RBW == 0``), which excludes legs reconstructed
@@ -94,6 +99,12 @@ EDUCATION_E_ZWECK_9 = frozenset({3, 4})   # Kita/Schule, Ausbildung/Studium
 MIN_AGE_WORK = 14                         # V_ERW is asked from 14; universe of the 14+ control
 AVERAGE_WEEKDAY = 1                       # MITTL_WERKTAG
 REGION_CODE = "03ZGB"                     # region-total row code, as in the sibling aggregates
+
+# Kreise that exist in the expected geography but that SrV does not survey: they are emitted as
+# ZERO rows (issue #405), and check_kreis_coverage expects exactly them to be empty. Kept as a
+# named constant rather than an inline WOLFSBURG_KREIS so a future delivery that adds or drops a
+# surveyed Kreis is a one-line, reviewable change with this docstring next to it.
+UNSURVEYED_KREISE = (WOLFSBURG_KREIS,)
 
 # Age bands of the three education controls: (band name, minimum age years, maximum age years),
 # bounds INCLUSIVE. 200 is an upper sentinel far above any plausible age, not a real bound.
@@ -145,6 +156,30 @@ def _log_drop(n_dropped: int, n_before: int, step: str) -> None:
 def _person_ids(frame: pd.DataFrame) -> pd.Series:
     """Person key ``<HHNR>_<PNR>``, the same composite key the SrV files are joined on."""
     return frame["HHNR"].astype(str) + "_" + frame["PNR"].astype(str)
+
+
+def _groups_by_kreis(universe: pd.DataFrame, expected_kreise, name: str) -> dict:
+    """One sub-frame per EXPECTED Kreis code, empty where the universe has no person.
+
+    This is what makes the row set a property of the expected geography rather than of the
+    delivery (issue #405): the caller iterates ``expected_kreise`` and always gets a frame, so a
+    Kreis the delivery does not cover becomes a zero row instead of a missing one.
+
+    Raises ``ValueError`` if the universe holds a Kreis code that is NOT expected. Such a person
+    would otherwise sit in the region-total row while belonging to no Kreis row, which
+    :func:`check_invariants` would later report only as an unexplained Kreis-sum mismatch; the
+    failure is raised here instead, where it can name the offending codes.
+    """
+    expected = list(expected_kreise)
+    groups = {code: group for code, group in universe.groupby("kreis")}
+    unexpected = sorted(set(groups) - set(expected))
+    if unexpected:
+        raise ValueError(
+            "%s aggregate: the universe holds Kreis code(s) %s that are not in the expected set "
+            "%s; those persons would be counted in the %s row but in no Kreis row."
+            % (name, unexpected, expected, REGION_CODE))
+    empty = universe.iloc[0:0]
+    return {code: groups.get(code, empty) for code in expected}
 
 
 def _weighted_share(weight: pd.Series, mask) -> float:
@@ -338,10 +373,10 @@ def prepare_universe_persons(persons: pd.DataFrame,
                 n_missing_age, n_unreadable_employment_code)
     missing_kreise = [code for code in ZGB_KREISE if code not in set(universe["kreis"])]
     if missing_kreise:
-        logger.info("%s ZGB Kreise with no person in this universe: %s (%s is Wolfsburg, which "
-                    "SrV does not survey, and is expected here; any OTHER code means the "
-                    "delivery changed and is rejected by check_kreis_coverage)",
-                    _LOG_TAG, missing_kreise, WOLFSBURG_KREIS)
+        logger.info("%s ZGB Kreise with no person in this universe: %s -- each gets a ZERO row, "
+                    "not a missing one (%s is Wolfsburg, which SrV does not survey, and is "
+                    "expected here; any OTHER code means the delivery changed and is rejected "
+                    "by check_kreis_coverage)", _LOG_TAG, missing_kreise, WOLFSBURG_KREIS)
 
     diagnostics = {
         "n_persons_total": n_persons_total,
@@ -357,7 +392,8 @@ def prepare_universe_persons(persons: pd.DataFrame,
 
 # --------------------------------------------------------------------------- work aggregate
 def build_work_by_employment_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
-                                       households: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+                                       households: pd.DataFrame,
+                                       expected_kreise=ZGB_KREISE) -> tuple[pd.DataFrame, dict]:
     """Employed share and the two conditional work-participation rates per Kreis, ages 14+.
 
     Universe: :func:`prepare_universe_persons` narrowed to ``age >= MIN_AGE_WORK`` -- the
@@ -366,8 +402,10 @@ def build_work_by_employment_aggregate(persons: pd.DataFrame, legs: pd.DataFrame
     ``n_missing_age``, since ``NaN >= 14`` is False) rather than being assigned to either class.
 
     Returns ``(table, diagnostics)``. ``table`` has :data:`WORK_COLUMNS`, one
-    ``level == "kreis"`` row per Kreis present in the universe plus one ``level == "total"`` row
-    coded :data:`REGION_CODE` over exactly the union of those Kreis rows:
+    ``level == "kreis"`` row per code in ``expected_kreise`` -- a Kreis with no person in the
+    universe gets a ZERO row with NaN shares rather than no row at all (issue #405) -- plus one
+    ``level == "total"`` row coded :data:`REGION_CODE` over exactly the union of those Kreis
+    rows:
 
     * ``n_unweighted``, ``n_employed_unweighted``, ``n_nonemployed_unweighted`` -- unweighted
       person counts (the last two partition the first);
@@ -403,8 +441,8 @@ def build_work_by_employment_aggregate(persons: pd.DataFrame, legs: pd.DataFrame
     work_pids, leg_diagnostics = persons_with_purpose(legs, WORK_E_ZWECK_9)
     adults["has_work"] = adults["pid"].isin(work_pids)
 
-    rows = [_work_row(LEVEL_KREIS, code, group)
-            for code, group in sorted(adults.groupby("kreis"), key=lambda item: item[0])]
+    groups = _groups_by_kreis(adults, expected_kreise, "work")
+    rows = [_work_row(LEVEL_KREIS, code, groups[code]) for code in expected_kreise]
     rows.append(_work_row(LEVEL_TOTAL, REGION_CODE, adults))
     table = pd.DataFrame(rows, columns=WORK_COLUMNS)
 
@@ -440,20 +478,21 @@ def _work_row(level: str, code: str, group: pd.DataFrame) -> dict:
 
 # --------------------------------------------------------------------------- education aggregate
 def build_education_by_age_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
-                                     households: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+                                     households: pd.DataFrame,
+                                     expected_kreise=ZGB_KREISE) -> tuple[pd.DataFrame, dict]:
     """Education-participation rate per Kreis and age band on the at-home-or-mobile universe.
 
     Universe: :func:`prepare_universe_persons` (all ages). Each person falls into exactly one
     band of :data:`EDUCATION_AGE_BANDS` (bounds inclusive); a person with no valid age falls
     into NO band and is counted as ``n_missing_age``.
 
-    Returns ``(table, diagnostics)``. ``table`` has :data:`EDUCATION_COLUMNS`, one row per
-    (Kreis present in the universe) x band plus one ``level == "total"`` row per band coded
-    :data:`REGION_CODE`. A band with no person in a Kreis is still emitted, with
-    ``n_unweighted == 0`` and a ``NaN`` share -- never dropped, so a consumer never has to guess
-    whether a band is missing or empty. ``p_education`` is the ``GEWICHT_P_ZENSUS``-weighted
-    share of the band's persons with at least one education leg (``E_ZWECK_9`` in
-    :data:`EDUCATION_E_ZWECK_9`).
+    Returns ``(table, diagnostics)``. ``table`` has :data:`EDUCATION_COLUMNS`, one row per code
+    in ``expected_kreise`` x band plus one ``level == "total"`` row per band coded
+    :data:`REGION_CODE`. Neither a band with no person in a Kreis nor a KREIS with no person at
+    all is dropped: both are emitted with ``n_unweighted == 0`` and a ``NaN`` share (issue
+    #405), so a consumer never has to guess whether a row is missing or empty.
+    ``p_education`` is the ``GEWICHT_P_ZENSUS``-weighted share of the band's persons with at
+    least one education leg (``E_ZWECK_9`` in :data:`EDUCATION_E_ZWECK_9`).
 
     ``diagnostics`` extends the universe diagnostics with ``n_legs_total``,
     ``n_legs_missing_purpose`` and one ``n_band_<band>`` count per band. The number of persons
@@ -467,11 +506,10 @@ def build_education_by_age_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
     universe = universe.copy()
     universe["has_education"] = universe["pid"].isin(education_pids)
 
-    codes = sorted(set(universe["kreis"]))
+    groups = _groups_by_kreis(universe, expected_kreise, "education")
     rows = []
-    for code in codes:
-        in_kreis = universe[universe["kreis"] == code]
-        rows.extend(_education_rows(LEVEL_KREIS, code, in_kreis))
+    for code in expected_kreise:
+        rows.extend(_education_rows(LEVEL_KREIS, code, groups[code]))
     rows.extend(_education_rows(LEVEL_TOTAL, REGION_CODE, universe))
     table = pd.DataFrame(rows, columns=EDUCATION_COLUMNS)
 
@@ -495,7 +533,7 @@ def build_education_by_age_aggregate(persons: pd.DataFrame, legs: pd.DataFrame,
                        "in no band total", _LOG_TAG, n_no_band, len(universe),
                        diagnostics["n_missing_age"], n_above_top_band, top_bound)
     logger.info("%s education-by-age table: %d rows (%d Kreis x %d bands + %d total bands)",
-                _LOG_TAG, len(table), len(codes), len(EDUCATION_AGE_BANDS),
+                _LOG_TAG, len(table), len(expected_kreise), len(EDUCATION_AGE_BANDS),
                 len(EDUCATION_AGE_BANDS))
     return table, diagnostics
 
@@ -574,40 +612,128 @@ def check_invariants(work_table: pd.DataFrame, education_table: pd.DataFrame) ->
                                     sorted(outside.unique().tolist())[:5]))
 
 
-def check_kreis_coverage(work_table: pd.DataFrame, education_table: pd.DataFrame,
-                         expected_kreise=ZGB_KREISE) -> None:
-    """Raise ``ValueError`` if a Kreis that SrV surveys has no row in either table.
+def validated_kreis_counts(kreis_rows: pd.DataFrame, context: str) -> pd.Series:
+    """Return ``kreis_rows["n_unweighted"]`` as validated non-negative whole-number counts.
 
-    Both builders emit one row per Kreis PRESENT in the universe, which keeps
-    ``sum(kreis) == total`` exact but means a delivery that lost a whole Kreis would produce a
-    table that is one row shorter and still satisfies every invariant of
-    :func:`check_invariants`. Wolfsburg (:data:`srv_distance_targets.WOLFSBURG_KREIS`) is the
-    one legitimately absent code -- SrV does not survey it -- so exactly that code may be
-    missing and nothing else.
+    Raises ``ValueError`` naming the offending code(s) if any value is missing, non-numeric,
+    non-finite, negative or fractional.
+
+    Why a reader must never coerce a broken count to zero: every consumer of the issue #405 row
+    convention decides "does this Kreis have its own rate?" from ``n_unweighted > 0``, so a
+    ``to_numeric(errors="coerce").fillna(0)`` would route a CORRUPTED Kreis onto the documented
+    region-total fallback -- producing a plausible-looking target built from an unusable source,
+    with nothing in the output saying so. Only an explicit zero means "not surveyed"; anything
+    unreadable means the source is broken (CLAUDE.md: no silent fallbacks, fail early on invalid
+    input).
+    """
+    counts = pd.to_numeric(kreis_rows["n_unweighted"], errors="coerce")
+    invalid = ~np.isfinite(counts.to_numpy(dtype=float)) | (counts < 0) | (counts % 1 != 0)
+    if invalid.any():
+        offenders = {str(code): value for code, value
+                     in zip(kreis_rows.loc[invalid, "code"], kreis_rows.loc[invalid, "n_unweighted"])}
+        raise ValueError(
+            "%s: n_unweighted must be a finite, non-negative whole number on every Kreis row, "
+            "got %s. A count that cannot be read is NOT an empty Kreis: reading it as zero would "
+            "route a corrupted Kreis onto the documented region-total fallback and ship a "
+            "plausible target built from an unusable source." % (context, offenders))
+    return counts.astype(int)
+
+
+def require_unique_kreis_codes(kreis_rows: pd.DataFrame, context: str) -> None:
+    """Raise ``ValueError`` if a Kreis code appears on more than one row.
+
+    The row convention is one row per expected Kreis, so a set-based completeness check alone
+    would accept a duplicated row: the duplicate would be emitted twice and produce ambiguous
+    ``ars5`` keys in the written target rather than failing the source contract.
+    """
+    duplicates = sorted(set(kreis_rows.loc[kreis_rows["code"].duplicated(), "code"]))
+    if duplicates:
+        raise ValueError(
+            "%s: kreis code(s) %s appear on more than one row; the row convention is exactly one "
+            "row per expected Kreis, and a duplicate would reach the written target as an "
+            "ambiguous key." % (context, duplicates))
+
+
+def check_kreis_coverage(work_table: pd.DataFrame, education_table: pd.DataFrame,
+                         expected_kreise=ZGB_KREISE,
+                         unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
+    """Raise ``ValueError`` if the Kreis rows of BOTH universe tables describe the expected
+    geography; see :func:`check_table_kreis_coverage` for the four checks applied per table.
 
     Separate from :func:`check_invariants` because coverage is a property of a FULL delivery,
     not of the builders: a caller working on a subset of Kreise (a unit-test fixture, a
-    single-Kreis diagnostic) passes a narrower ``expected_kreise`` or does not call this at all,
-    whereas ``scripts/extract_srv_participation_universe.py`` always calls it with the full
-    :data:`srv_distance_targets.ZGB_KREISE`.
+    single-Kreis diagnostic) passes a narrower ``expected_kreise``/``unsurveyed_kreise`` or does
+    not call this at all, whereas ``scripts/extract_srv_participation_universe.py`` always calls
+    it with the full :data:`srv_distance_targets.ZGB_KREISE`.
     """
-    expected = {code for code in expected_kreise if code != WOLFSBURG_KREIS}
     for table, name in ((work_table, "work"), (education_table, "education")):
-        present = set(table.loc[table["level"] == LEVEL_KREIS, "code"])
-        absent = sorted(expected - present)
-        if absent:
-            raise ValueError(
-                "%s table: expected a kreis row for every surveyed ZGB Kreis but %s "
-                "%s missing (present: %s; %s is Wolfsburg, which SrV does not survey, and is "
-                "the only code allowed to be absent). A delivery that lost a Kreis must not "
-                "silently produce a shorter table."
-                % (name, absent, "is" if len(absent) == 1 else "are", sorted(present),
-                   WOLFSBURG_KREIS))
-        unexpected = sorted(present - set(expected_kreise))
-        if unexpected:
-            raise ValueError(
-                "%s table: kreis row(s) %s are not in the expected Kreis set %s"
-                % (name, unexpected, list(expected_kreise)))
+        check_table_kreis_coverage(table, name, expected_kreise=expected_kreise,
+                                   unsurveyed_kreise=unsurveyed_kreise)
+
+
+def check_table_kreis_coverage(table: pd.DataFrame, name: str, expected_kreise=ZGB_KREISE,
+                               unsurveyed_kreise=UNSURVEYED_KREISE) -> None:
+    """Raise ``ValueError`` if ONE ``code,level`` table's Kreis rows do not describe the
+    expected geography; ``name`` identifies the table in the error message.
+
+    Four ways a delivery can be wrong:
+
+    1. an expected Kreis has NO row -- impossible from the builders, which always emit the full
+       row set, but a hand-edited or externally produced table can still be short;
+    2. a row carries a code outside ``expected_kreise``;
+    3. a SURVEYED Kreis has ``n_unweighted == 0``. This is the check that carries the detection
+       power the data-driven row set used to provide for free: when a Kreis without persons
+       produced no row, a lost Kreis showed up as a missing row; now it shows up as a zero row,
+       so an unexpected zero must be rejected explicitly or a delivery that lost a Kreis would
+       pass every check while shipping a hole (issue #405);
+    4. an UNSURVEYED Kreis (``unsurveyed_kreise``, by default Wolfsburg
+       :data:`srv_distance_targets.WOLFSBURG_KREIS`) has persons. Every consumer carries the
+       documented ASSUMPTION that its rates come from the region total because SrV does not
+       survey it -- real data makes that assumption stale while it keeps being applied, so the
+       extraction stops rather than adapting silently.
+
+    Shared by every builder of the ``code,level`` family -- the two universe aggregates through
+    :func:`check_kreis_coverage`, and ``scripts/build_srv_participation_aggregate.py`` for
+    ``srv2023_participation_by_kreis.csv`` -- so the same four broken deliveries are rejected
+    everywhere instead of only in whichever builder happened to grow the check (ADR-0124).
+    """
+    expected = list(expected_kreise)
+    unsurveyed = {code for code in unsurveyed_kreise if code in set(expected)}
+    kreis_rows = table[table["level"] == LEVEL_KREIS]
+    present = set(kreis_rows["code"])
+    absent = sorted(set(expected) - present)
+    if absent:
+        raise ValueError(
+            "%s table: expected a kreis row for every Kreis in %s but %s %s missing "
+            "(present: %s). A Kreis the delivery does not cover is a ZERO row, never an "
+            "absent one, so a shorter table means the table was not built by this module."
+            % (name, expected, absent, "is" if len(absent) == 1 else "are", sorted(present)))
+    unexpected = sorted(present - set(expected))
+    if unexpected:
+        raise ValueError(
+            "%s table: kreis row(s) %s are not in the expected Kreis set %s"
+            % (name, unexpected, expected))
+
+    # One code spans several rows in the education table (one per band), so a code is empty
+    # only when ALL of its rows are: sum over the code rather than checking one row.
+    counts = validated_kreis_counts(kreis_rows, "%s table" % name).groupby(kreis_rows["code"]).sum()
+    empty_surveyed = sorted(code for code in expected
+                            if code not in unsurveyed and int(counts.get(code, 0)) == 0)
+    if empty_surveyed:
+        raise ValueError(
+            "%s table: surveyed Kreis %s %s n_unweighted == 0. Only %s (not surveyed by "
+            "SrV) may be empty; a surveyed Kreis that collapses to zero is a broken "
+            "delivery, not a zero measurement."
+            % (name, empty_surveyed, "has" if len(empty_surveyed) == 1 else "have",
+               sorted(unsurveyed) or "no code"))
+    populated_unsurveyed = sorted(code for code in unsurveyed if int(counts.get(code, 0)) > 0)
+    if populated_unsurveyed:
+        raise ValueError(
+            "%s table: Kreis %s carries persons but is recorded as NOT surveyed by SrV. "
+            "Every consumer fills it from the %s region total as a documented assumption; "
+            "that assumption is now stale. Revisit those consumers (and this module's "
+            "UNSURVEYED_KREISE) before regenerating."
+            % (name, populated_unsurveyed, REGION_CODE))
 
 
 def _check_levels(table: pd.DataFrame, name: str) -> None:

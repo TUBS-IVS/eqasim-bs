@@ -81,7 +81,9 @@ variables.
 | [srv2023_license_by_sex_cohort](../registry/data/srv2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv` | -/-/o | no |
 | [srv2023_plan_structure_reference](../registry/data/srv2023_plan_structure_reference.yml) | validation_reference | committed (`scripts/extract_srv_plan_structure.py`) | `data/braunschweig/srv/srv2023_plan_structure_reference.csv` | -/-/r | no |
 | [srv2023_primary_distance_targets](../registry/data/srv2023_primary_distance_targets.yml) | calibration_target, validation_reference | committed (`scripts/extract_srv_primary_distance_targets.py`) | `data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv` | -/-/r | no |
-| [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/ (raw SUF local-only)` | -/-/o | YES |
+| [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv, codebook
+in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
+` | -/-/o | YES |
 | [srv2023_reference_tables](../registry/data/srv2023_reference_tables.yml) | control, calibration_target, validation_reference | committed | `data/braunschweig/srv/srv2023_*.csv` | o/-/r | no |
 | [srv2023_ticket_groups4_14plus_by_kreis](../registry/data/srv2023_ticket_groups4_14plus_by_kreis.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_ticket_groups4_14plus_by_kreis.csv` | -/-/o | no |
 | [srv2023_work_by_employment](../registry/data/srv2023_work_by_employment.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_participation_universe.py`) | `data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv` | -/-/o | no |

@@ -545,6 +545,13 @@ config:
   fleet_ev_income_tilt: true
   fleet_euro6_substage: true
   fleet_wohnmobile_age_tilt: true
+  # Per-Gemeinde BEV-vs-PHEV composition (issue #317, ADR-0125). The 2026
+  # per-Gemeinde EV source publishes only the COMBINED electric share, so
+  # ADR-0086 had to tilt both electric powertrains by one factor; this restores
+  # the spatial BEV-vs-PHEV structure from the FZ 27.17 composition while the
+  # combined share keeps supplying the level. Rescaled per Gemeinde so the
+  # electric TOTAL is untouched.
+  fleet_gemeinde_bev_composition_tilt: true
   # Grid mode adds the sub-communal 5 km EV tilt on top of the Gemeinde tilt; its
   # input kba_ev_grid.csv (714 cells) is committed since #277. Falls back to
   # Gemeinde-only (logged) if the CSV or the home-location geometry is missing.

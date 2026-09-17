@@ -219,7 +219,11 @@ def test_education_share_is_weighted_and_pooled_over_persons():
 def test_education_by_age_emits_empty_bands_with_nan():
     """No 0-5 person exists in the fixture: the band row is emitted with n=0 and a NaN share."""
     persons, wege, households = _raw()
-    df, _ = spu.build_education_by_age_aggregate(persons, wege, households)
+    # The fixture geography, not the full ZGB default, so this stays a test about empty BANDS:
+    # with the default the six Kreise the fixture has no person for would add zero rows of their
+    # own and the count below would measure the geography instead.
+    df, _ = spu.build_education_by_age_aggregate(persons, wege, households,
+                                                 expected_kreise=("03101", "03102"))
     assert list(df.columns) == ["code", "level", "band", "n_unweighted", "p_education"]
     zero_to_five = df[df["band"] == "education_0_5"]
     assert len(zero_to_five) == 3                      # 03101, 03102 and the region total
@@ -257,30 +261,103 @@ def test_invariants_reject_a_share_outside_the_unit_interval():
         spu.check_invariants(w.assign(p_work_employed=1.5), e)
 
 
-# --------------------------------------------------------------------------- Kreis coverage
-def _fixture_tables():
+# --------------------------------------------------------------------------- row-set contract
+def test_work_table_emits_a_zero_row_for_a_kreis_without_persons():
+    """A Kreis with no person in the delivery is a ZERO row, never an absent one (issue #405).
+
+    The row set is taken from the expected geography, not from the data, so a reader never has
+    to know how many Kreise to expect: a Kreis that the delivery does not cover is visible as
+    ``n_unweighted == 0`` with NaN (not 0.0) shares instead of as a table one row shorter. This
+    is the convention the sibling builder
+    :func:`braunschweig.calibration.srv_work_participation.build_srv_work_participation`
+    already follows, and the one this module already applies to empty age BANDS.
+    """
     persons, wege, households = _raw()
-    work, _ = spu.build_work_by_employment_aggregate(persons, wege, households)
-    education, _ = spu.build_education_by_age_aggregate(persons, wege, households)
+    df, _ = spu.build_work_by_employment_aggregate(
+        persons, wege, households, expected_kreise=("03101", "03102", WOLFSBURG_KREIS))
+    row = df[df["code"] == WOLFSBURG_KREIS].iloc[0]
+    assert row["level"] == spu.LEVEL_KREIS
+    assert row["n_unweighted"] == 0
+    assert row["n_employed_unweighted"] == 0 and row["n_nonemployed_unweighted"] == 0
+    assert all(pd.isna(row[column]) for column in spu.WORK_SHARE_COLUMNS)
+
+
+def test_education_table_emits_zero_band_rows_for_a_kreis_without_persons():
+    """Every band of an uncovered Kreis is emitted too -- a consumer reading one band must not
+    have to discover that this Kreis is the one with no rows at all."""
+    persons, wege, households = _raw()
+    df, _ = spu.build_education_by_age_aggregate(
+        persons, wege, households, expected_kreise=("03101", "03102", WOLFSBURG_KREIS))
+    rows = df[df["code"] == WOLFSBURG_KREIS]
+    assert set(rows["band"]) == {band for band, _, _ in spu.EDUCATION_AGE_BANDS}
+    assert (rows["n_unweighted"] == 0).all()
+    assert rows["p_education"].isna().all()
+
+
+def test_zero_rows_preserve_every_invariant():
+    """A zero row adds nothing to the Kreis sum, so the region row stays exactly the union of
+    the Kreis rows -- the property the target builder relies on."""
+    work, education = _fixture_tables(("03101", "03102", WOLFSBURG_KREIS))
+    spu.check_invariants(work, education)
+
+
+# --------------------------------------------------------------------------- Kreis coverage
+def _fixture_tables(expected_kreise=("03101", "03102")):
+    persons, wege, households = _raw()
+    work, _ = spu.build_work_by_employment_aggregate(persons, wege, households,
+                                                     expected_kreise=expected_kreise)
+    education, _ = spu.build_education_by_age_aggregate(persons, wege, households,
+                                                        expected_kreise=expected_kreise)
     return work, education
 
 
 def test_kreis_coverage_accepts_the_fixture_geography():
     work, education = _fixture_tables()
-    spu.check_kreis_coverage(work, education, expected_kreise=("03101", "03102"))
+    spu.check_kreis_coverage(work, education, expected_kreise=("03101", "03102"),
+                             unsurveyed_kreise=())
 
 
-def test_kreis_coverage_allows_only_wolfsburg_to_be_absent():
-    """Wolfsburg is not surveyed by SrV, so its absence must never be an error."""
-    work, education = _fixture_tables()
+def test_kreis_coverage_accepts_a_zero_row_for_the_unsurveyed_kreis():
+    """Wolfsburg is not surveyed by SrV, so its ZERO row must never be an error."""
+    work, education = _fixture_tables(("03101", "03102", WOLFSBURG_KREIS))
     spu.check_kreis_coverage(work, education,
                              expected_kreise=("03101", "03102", WOLFSBURG_KREIS))
 
 
-def test_kreis_coverage_rejects_a_missing_surveyed_kreis():
-    """A delivery that lost a whole Kreis satisfies every table invariant while emitting one
-    row fewer, which is why coverage needs its own check (fix round 1, item 2).
+def test_kreis_coverage_rejects_a_surveyed_kreis_that_collapsed_to_zero():
+    """The detection power the old data-driven row set provided, restored at its new shape.
+
+    When a Kreis with no person produced NO row, a lost Kreis showed up as a missing row. Now
+    it shows up as a zero row, so coverage must reject a SURVEYED Kreis whose count is zero --
+    otherwise a delivery that lost a Kreis would pass every check while shipping a hole.
     """
+    work, education = _fixture_tables(("03101", "03102", WOLFSBURG_KREIS))
+    work.loc[work["code"] == "03102", ["n_unweighted", "n_employed_unweighted",
+                                       "n_nonemployed_unweighted"]] = 0
+    with pytest.raises(ValueError, match="03102"):
+        spu.check_kreis_coverage(work, education,
+                                 expected_kreise=("03101", "03102", WOLFSBURG_KREIS))
+
+
+def test_kreis_coverage_rejects_persons_for_an_unsurveyed_kreis():
+    """A delivery that suddenly covers Wolfsburg must stop the extraction, not pass silently.
+
+    Every downstream consumer carries a documented ASSUMPTION that Wolfsburg's rates are taken
+    from the region total because SrV does not survey it. Real data for that Kreis makes the
+    assumption stale while it keeps being applied -- the module's "the extraction raises, it
+    never adapts" rule covers exactly this case.
+    """
+    work, education = _fixture_tables(("03101", "03102", WOLFSBURG_KREIS))
+    work.loc[work["code"] == WOLFSBURG_KREIS, "n_unweighted"] = 7
+    work.loc[work["code"] == WOLFSBURG_KREIS, "n_nonemployed_unweighted"] = 7
+    with pytest.raises(ValueError, match=WOLFSBURG_KREIS):
+        spu.check_kreis_coverage(work, education,
+                                 expected_kreise=("03101", "03102", WOLFSBURG_KREIS))
+
+
+def test_kreis_coverage_rejects_a_missing_surveyed_kreis():
+    """The builders now always emit the full row set, but a hand-edited or externally produced
+    table can still be short, so the presence check stays (fix round 1, item 2)."""
     work, education = _fixture_tables()
     spu.check_invariants(work, education)              # the invariants alone do NOT catch it
     with pytest.raises(ValueError, match="03153"):     # Goslar has no row in the fixture
@@ -290,7 +367,8 @@ def test_kreis_coverage_rejects_a_missing_surveyed_kreis():
 def test_kreis_coverage_rejects_a_kreis_row_outside_the_expected_set():
     work, education = _fixture_tables()
     with pytest.raises(ValueError, match="03102"):
-        spu.check_kreis_coverage(work, education, expected_kreise=("03101",))
+        spu.check_kreis_coverage(work, education, expected_kreise=("03101",),
+                                 unsurveyed_kreise=())
 
 
 # --------------------------------------------------------------------------- ADR-0117

@@ -28,6 +28,7 @@ features:
 - performance_equivalence
 - fleet_consistency_v2
 - fleet_electric_calibration
+- fleet_gemeinde_bev_composition_tilt
 - fleet_hsn_tsn_attributes
 - fleet_realism_upgrade
 - fleet_segment_brand_mix
@@ -44,4 +45,5 @@ decisions:
 - ADR-0084
 - ADR-0085
 - ADR-0086
+- ADR-0125
 - ADR-0093
