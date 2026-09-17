@@ -121,9 +121,26 @@
     catch-all `other` purpose on the child's side, and by construction admits a surrogate whose
     activity purpose differs -- the relaxed arm dropped 0 purpose-mismatch candidate rows against 55
     in the strict arm -- so such a rescued child is placed at a facility chosen for the SURROGATE's
-    purpose. Production setting: the strict default (`true`) as shipped. The relaxed rule's measured
-    effect is recorded above; if the user decides for it, the base config line and this paragraph
-    change together in one commit.
+    purpose.
+  - **Production setting: the RELAXED rule (`escort_passive_joint_surrogate_require_same_purpose:
+    false` in `configs/base_bs.yml`), user decision 2026-09-17.** The reason is the semantics of the
+    mechanism, not the larger count: a passively escorted child does not choose its destination --
+    it travels where the accompanying adult travels (the same-destination reading carried over from
+    ADR-0112 / ADR-0119, assumption 3 below). Requiring the surrogate's purpose to equal the
+    CHILD's therefore imposes an agreement the mechanism never asserts, and it is near-inert where
+    it was measured: the strict arm dropped 55 candidate rows and rescued one leg whose location did
+    not move. Five of the six legs the relaxed rule rescues carry the catch-all `other` purpose on
+    the child's side, where purpose equality is least meaningful in the first place.
+    **The price, stated plainly:** a rescued child is placed at a facility chosen for the
+    SURROGATE's purpose, so the child's own activity purpose and the facility type of its location
+    can differ -- a purpose-specific destination statistic over the output will contain such rows.
+    The code default stays `true` (the conservative value for anyone running without
+    `configs/base_bs.yml`); only the production config carries the relaxed setting, per the family
+    convention (ADR-0112 C-R9 / ADR-0119).
+    **What this decision does NOT rest on:** the realised distances (the relaxed arm's mean home
+    distance of 11.6 km against 40.7 km OFF for the five `other` legs) are DESCRIPTIVE. No observed
+    reference for joint locations exists, so "more plausible distances" is an argument about
+    plausibility, not a validated improvement -- see "Smoke, not validation" above.
 - **Assumptions (explicit):**
   1. **Time proximity alone carries the substitution.** The measured median gap of the reachable
      legs is 10.56 min, not the 4.92 min of the issue's escort-trip row (escort trips cannot carry an

@@ -154,9 +154,15 @@ config:
   # accompaniment by a household member under 18 is rare above 14 and below ~12 the nearest
   # "partner" is a co-travelling small child.
   escort_passive_joint_surrogate_min_age_years: 14
-  # true = the surrogate's activity purpose must equal the child's (ADR-0119 invariant kept);
-  # both settings were measured on the smoke, see ADR-0127 for the choice.
-  escort_passive_joint_surrogate_require_same_purpose: true
+  # true = the surrogate's activity purpose must equal the child's; false = any secondary
+  # purpose is admissible. Production runs FALSE (user decision 2026-09-17, ADR-0127
+  # Consequences): a passively escorted child does not choose its destination -- it travels
+  # where the accompanying adult travels -- so purpose equality is a constraint the
+  # mechanism itself never asserts, and it is near-inert in the smoke (55 candidate rows
+  # dropped, 1 leg rescued, and that one did not move). PRICE, stated: a rescued child is
+  # placed at a facility chosen for the SURROGATE's purpose, so its own activity purpose and
+  # the facility type can differ. Both settings were measured on the smoke; see ADR-0127.
+  escort_passive_joint_surrogate_require_same_purpose: false
   # W_ZWD no-detail codes 799 (Freizeit k.A.) and 699 (Erledigung k.A.) are sentinels of
   # the subtype models, per the codebook (ADR-0113). false = the 2026-07-09 groups.
   purpose_subtype_codeplan_sentinels: true

@@ -185,8 +185,9 @@ bounded by the MiD sibling-age probe in
 `scripts/measure_passive_joint_surrogate_adults.py --mid-dir`), not a linked child,
 an activity that is not itself a paired passive leg, departing within
 `escort_passive_joint_surrogate_max_gap_minutes` (15) of the child's own leg;
-with `escort_passive_joint_surrogate_require_same_purpose` (true) the purposes
-must be equal. Deterministic, no random draw
+with `escort_passive_joint_surrogate_require_same_purpose` the purposes must be
+equal -- code default true, production **false** (the relaxed rule; ADR-0127
+Consequences carries the reasoning and the price). Deterministic, no random draw
 (`passive_joint_links.rescue_with_surrogates`); the two-pass solve is unchanged
 and receives the identity table plus provenance-tagged surrogate rows
 (`secondary_chainsolvers._passive_joint_link_table`). With the flag off the
