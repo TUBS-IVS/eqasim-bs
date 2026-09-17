@@ -26,6 +26,20 @@ machinery) and a home activity is the household's own location. Only the eligibl
 remainder can ever change a realised LOCATION, and that count -- not the raw link rate --
 is the number the build-or-drop decision rests on.
 
+These counts are an UPPER BOUND on what the implemented rescue reaches, and are meant to
+be: the candidate join applies the child-purpose, household, age and self-exclusion rules,
+but not the two further exclusions ``passive_joint_links.rescue_with_surrogates`` applies
+-- the acyclic guard (a linked or rescued child can never itself be a surrogate) and the
+own-passive-leg rule (an activity the would-be surrogate is TAKEN ALONG on cannot carry an
+anchor, because that person is not the one travelling to the place). A headroom figure
+here can therefore exceed the realised rescue; it can never fall short of it. The
+divergence is pinned by
+``tests/test_measure_passive_joint_surrogate_adults.py::test_the_headroom_candidate_set_counts_an_adult_the_production_rescue_excludes``.
+On the population the decision was taken on the two happened to coincide -- the 03101
+smoke realised 6 relaxed and 1 strict surrogate link against the 6-of-46 and 1-of-46 below
+(run manifest ``i409-passive-joint-surrogate-smoke-03101-2026-09-17``) -- but that is an
+observation about that population, not a property of the method.
+
 Read-only against a COMPLETED working directory; never runs synpp. Run on the server:
 
     python scripts/measure_passive_joint_surrogate_adults.py \

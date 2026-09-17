@@ -329,3 +329,84 @@ def test_sibling_age_histogram_rejects_a_floor_at_or_above_the_reference():
         sibling_age_histogram(_wege_two_households(), floors=(16, 18), reference_floor=18)
     with pytest.raises(ValueError, match="20"):
         sibling_age_histogram(_wege_two_households(), floors=(16, 20), reference_floor=18)
+
+
+# --------------------------------------------------- headroom is an UPPER BOUND, and why
+#
+# The candidate join above applies the child-purpose, household, age and self-exclusion
+# rules, but NOT the two further exclusions the production rescue applies
+# (braunschweig.synthesis.locations.passive_joint_links.rescue_with_surrogates): the
+# acyclic guard (a linked or rescued child can never itself be a surrogate) and the
+# own-passive-leg rule (an activity the would-be surrogate is TAKEN ALONG on cannot carry
+# an anchor -- that person is not the one travelling to the place). The headroom figures
+# in the script header are therefore an UPPER BOUND on what the implemented rescue
+# reaches, which is what a pre-implementation headroom measurement is for. The test below
+# pins that relationship on one input instead of asserting it in prose, so a later change
+# to either side cannot move them apart unnoticed.
+#
+# On the population the decision was taken on the two counts coincided anyway: the 03101
+# smoke realised 6 relaxed and 1 strict surrogate link against the header's 6-of-46 and
+# 1-of-46 (run manifest i409-passive-joint-surrogate-smoke-03101-2026-09-17). That is an
+# observation about that population, not a guarantee.
+
+def _taken_along_adult_persons():
+    """Household 70, built so that exactly the two production-only exclusions bite.
+
+    20: the rescue candidate -- a child whose donor adult (source P_ID 9) is absent.
+    21: the only household adult with a SECONDARY activity, but he is himself taken along
+        on that very shop leg (his donor is adult 22, who is present).
+    22: present, so 21's leg is not a rescue candidate itself, but travels to WORK, so he
+        can neither anchor 20 nor make 21's leg linkable.
+    """
+    return pd.DataFrame({
+        "person_id":    [20, 21, 22],
+        "household_id": [70, 70, 70],
+        "source_H_ID":  [700, 700, 700],
+        "source_P_ID":  [2, 1, 3],
+        "HP_ALTER":     [8, 40, 42],
+    })
+
+
+def _taken_along_adult_trips():
+    """Child 20 departs at 08:00, adult 21's paired shop leg 5 minutes later -- inside the
+    15-minute gap, so nothing but the two exclusions can keep them apart."""
+    return pd.DataFrame({
+        "person_id":               [20, 21, 22],
+        "trip_index":              [0, 0, 0],
+        "following_purpose":       ["shop", "shop", "work"],
+        "departure_time":          [28800.0, 29100.0, 28800.0],
+        "W_ID":                    [1, 2, 3],
+        "passive_pair_status":     ["paired", "paired", NAN],
+        "passive_pair_adult_p_id": [9.0, 3.0, NAN],
+        "passive_pair_adult_w_id": [50.0, 3.0, NAN],
+        "passive_pair_adult_w_zweck": [4.0, 1.0, NAN],
+        "passive_pair_gap_minutes": [3.0, 2.0, NAN],
+    })
+
+
+def test_the_headroom_candidate_set_counts_an_adult_the_production_rescue_excludes():
+    """The script counts adult 21 as reachable headroom; rescue_with_surrogates does not
+    link him, because his own shop leg is a paired passive leg. Same input, both sides
+    asserted: the headroom number is an upper bound, never the realised rescue."""
+    from braunschweig.synthesis.locations.passive_joint_links import (
+        build_passive_joint_links, rescue_with_surrogates,
+    )
+    persons, trips = _taken_along_adult_persons(), _taken_along_adult_trips()
+
+    unlinked = unlinked_paired_legs(trips, persons, _no_links())
+    candidates, stats = build_surrogate_candidates(unlinked, persons, trips)
+    assert stats["n_eligible_with_candidate"] == 1
+    assert candidates["adult_person_id"].tolist() == [21]
+
+    links, _link_stats = build_passive_joint_links(persons, trips)
+    surrogate_links, rescue_stats = rescue_with_surrogates(
+        links, persons, trips, max_gap_minutes=15.0, min_age_years=14,
+        require_same_purpose=True)
+    assert rescue_stats["n_rescue_candidates"] == 1   # the same leg IS a rescue candidate
+    assert len(surrogate_links) == 0                  # ... but nothing anchors it
+    # ... and for the documented reason: adult 21's shop leg is the household's only
+    # secondary activity, and the own-passive-leg rule removes it before the gap is ever
+    # tested, so no candidate activity remains (not a gap or purpose exclusion).
+    assert rescue_stats["n_rescue_no_candidate_activity"] == 1
+    assert rescue_stats["n_rescue_gap_exceeded"] == 0
+    assert rescue_stats["n_rescue_ineligible_child_purpose"] == 0
