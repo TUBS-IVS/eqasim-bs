@@ -110,8 +110,16 @@ def resolve_matching_columns(configured, reactivate_person_attributes):
 
 
 def configure(context):
-    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
-    context.config("processes", volatile = True)
+    # HASHED, deliberately diverging from upstream eqasim-france #438 (ported here in
+    # 79f7f492), which marks `processes` an "execution detail" at every declaration.
+    # That premise does not hold HERE: parallel_statistical_matching splits the target
+    # frame with np.array_split(df_target, processes) and then draws one seed per chunk,
+    # so the value decides which persons share a chunk AND which seed each chunk is
+    # matched with -- 8 -> 32 changes the seed of 19 of 20 persons. Declaring it volatile
+    # kept it out of the stage hash, so a changed value silently reused a cached match
+    # built under a different partition (ADR-0126). The two MATSim stages that only
+    # forward `processes` as a thread count keep volatile=True: there the premise holds.
+    context.config("processes")
     context.config("random_seed")
     context.config("matching_minimum_observations", 20)
     context.config("matching_attributes", DEFAULT_MATCHING_ATTRIBUTES)

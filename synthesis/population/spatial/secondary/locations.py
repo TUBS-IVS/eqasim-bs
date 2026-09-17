@@ -17,8 +17,16 @@ def configure(context):
     context.stage("synthesis.locations.secondary")
 
     context.config("random_seed")
-    # Execution detail, not scientific config: changing it must not devalidate cached stages (upstream eqasim-france #438)
-    context.config("processes", volatile = True)
+    # HASHED, deliberately diverging from upstream eqasim-france #438 (ported here in
+    # 79f7f492), which marks `processes` an "execution detail" at every declaration.
+    # That premise does not hold HERE: execute() splits the persons with
+    # np.array_split(unique_person_ids, processes) and draws random_seeds of exactly
+    # that length, so the value decides which persons share a batch AND which seed
+    # solves it -- 8 -> 32 changes the seed of 19 of 20 persons. Declaring it volatile
+    # kept it out of the stage hash, so a changed value silently reused cached secondary
+    # locations built under a different partition (ADR-0126). The two MATSim stages that
+    # only forward `processes` as a thread count keep volatile=True.
+    context.config("processes")
 
     context.config("secloc_maximum_iterations", np.inf)
 

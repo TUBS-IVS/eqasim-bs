@@ -46,7 +46,14 @@ description: >
   len(chunks) == processes -- so it is result-affecting and is treated exactly like
   matsim_threads /
   matsim_qsim_threads: reported and warned about (below 75% of the core budget), never
-  adjusted. matsim_threads / matsim_qsim_threads are excluded for the independent
+  adjusted. Since the 2026-09-17 amendment both sites also declare it HASHED
+  (`context.config("processes")`): they used to carry `volatile=True` from upstream
+  eqasim-france #438, which kept a result-affecting key out of those two stages'
+  hashes, so a changed pin served a cached realisation built under a different
+  partition (measured: 8 -> 32 changes the drawn seed of 19 of 20 persons). The two
+  MATSim stages that only forward the value as a thread count keep `volatile=True`.
+  Cost: those two stage hashes change once, and every later change to `processes`
+  recomputes them -- the correct price of a changed realisation. matsim_threads / matsim_qsim_threads are excluded for the independent
   reason that their effect on results is unverified (issue #410): the startup report
   only warns about them. A companion fix separates the secondary-location chainsolver's
   person-shard count (new hashed key braunschweig.chainsolvers.shards, default 62,
@@ -110,6 +117,7 @@ evidence:
   - tests/test_run_provenance.py::test_collect_embeds_the_resource_report_under_resources
   - tests/test_run_provenance.py::test_log_and_write_persists_the_resource_report_to_disk
   - tests/test_chainsolvers_parallel.py::test_shard_tasks_are_invariant_to_the_worker_count_and_pool_follows_workers
+  - tests/test_processes_hash_coverage.py
   - tests/test_chainsolvers_parallel.py::test_shard_partition_depends_only_on_the_shard_count
   - tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
   - tests/test_chainsolvers_parallel.py::test_a_single_worker_still_produces_the_sharded_realisation
