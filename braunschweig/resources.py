@@ -506,11 +506,16 @@ def resolve_processes(configured, budget: ResourceBudget) -> Resolution:
 
     ``processes`` is result-affecting at its two pure read sites
     (``synthesis/population/matched.py``,
-    ``synthesis/population/spatial/secondary/locations.py``): it decides both the
-    person-chunk partition (``np.array_split(..., processes)``) and how many
-    random seeds are drawn (``random.randint(10000, size=processes)``), so it must
-    never be silently clamped (see ADR-0126, Decision 3, and the corrected worked
-    example in ``docs/codebase/notes/resource-budget.md``). This resolver exists
+    ``synthesis/population/spatial/secondary/locations.py``): both do
+    ``np.array_split(..., processes)`` to fix the person-chunk partition, then
+    draw one seed per chunk -- ``matched.py`` as
+    ``random.randint(10000, size=len(chunks))`` and ``locations.py`` as
+    ``random.randint(10000, size=processes)``. The two spellings are the same
+    quantity (``len(chunks) == processes``, since the chunks come straight from
+    ``np.array_split(..., processes)``), so at both sites ``processes`` also
+    fixes how many seeds are drawn. It must therefore never be silently clamped
+    (see ADR-0126, Decision 3, and the corrected worked example in
+    ``docs/codebase/notes/resource-budget.md``). This resolver exists
     only so ``build_report`` can WARN when a pinned value under-uses the machine
     and REPORT when a pin exceeds the budget; its result is never applied to the
     config or to a consumer.

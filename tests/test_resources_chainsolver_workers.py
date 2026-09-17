@@ -59,8 +59,8 @@ MEASURED_SHAPES = [
 # driver + workers * worker_memory_gb <= budget for each measured shape. That
 # holds by construction of the floor for every non-degenerate input, so it could
 # not fail; the two tests below assert the concrete expected worker counts on
-# both machines instead, and test_the_design_rules_own_worked_examples pins the
-# case where the memory bound actually binds.
+# both machines instead, and test_the_bound_binds_from_about_33gb_of_driver_rss
+# pins the case where the memory bound actually binds.
 
 
 def test_measured_shapes_reproduce_62_workers_on_the_125_78gb_server_they_ran_on():

@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO))
 from braunschweig import resources  # noqa: E402
 
 SERVER = resources.MachineResources(
-    cores=64, memory_gb=94.0, cores_source="sched_getaffinity", memory_source="psutil",
+    cores=64, memory_gb=94.28, cores_source="sched_getaffinity", memory_source="psutil",
 )
 
 

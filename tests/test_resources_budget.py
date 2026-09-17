@@ -1,8 +1,9 @@
 """Tests for budget derivation and per-key resolution in braunschweig.resources.
 
 Every case injects a MachineResources, so nothing depends on the machine the
-suite runs on. The server measured on 2026-09-16 (64 cores, 94 GB) is used as
-the realistic case throughout.
+suite runs on. The server measured on 2026-09-16 (64 cores, 94.28 GB memory --
+the run resource recorder's ``memory_total_kb``; ``free -g`` truncates it to
+"94") is used as the realistic case throughout.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ sys.path.insert(0, str(REPO))
 from braunschweig import resources  # noqa: E402
 
 SERVER = resources.MachineResources(
-    cores=64, memory_gb=94.0, cores_source="sched_getaffinity", memory_source="psutil",
+    cores=64, memory_gb=94.28, cores_source="sched_getaffinity", memory_source="psutil",
 )
 LAPTOP = resources.MachineResources(
     cores=8, memory_gb=16.0, cores_source="cpu_count", memory_source="psutil",
@@ -27,7 +28,7 @@ LAPTOP = resources.MachineResources(
 def test_budget_reserves_cores_and_memory_for_the_os():
     budget = resources.resolve_budget(SERVER, env={})
     assert budget.cores == 62            # 64 - DEFAULT_CORE_RESERVE
-    assert budget.memory_gb == pytest.approx(86.0)   # 94 - DEFAULT_MEMORY_RESERVE_GB
+    assert budget.memory_gb == pytest.approx(86.28)   # 94.28 - DEFAULT_MEMORY_RESERVE_GB
     assert budget.machine is SERVER
 
 
@@ -112,7 +113,7 @@ def test_java_memory_pin_that_fits_is_passed_through_verbatim():
 
 
 def test_java_memory_pin_that_exceeds_the_machine_is_clamped():
-    # The live 2026-09-16 defect: 100G configured on a 94 GB box.
+    # The live 2026-09-16 defect: 100G configured on a 94.28 GB box.
     budget = resources.resolve_budget(SERVER, env={})
     result = resources.resolve_java_memory("100G", budget)
     assert result.effective == "86G"
@@ -128,7 +129,7 @@ def test_java_memory_auto_is_derived_from_the_budget():
 
 
 def test_popsim_workers_are_bounded_by_memory_not_by_cores():
-    # 86 GB budget / 30 GB per worker -> 2, even though 62 cores are free.
+    # 86.28 GB budget / 30 GB per worker -> 2, even though 62 cores are free.
     budget = resources.resolve_budget(SERVER, env={})
     result = resources.resolve_popsim_workers(3, budget, worker_memory_gb=30.0)
     assert result.effective == 2

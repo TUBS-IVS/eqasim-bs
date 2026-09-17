@@ -452,14 +452,20 @@ this decision tries to prevent by watching load.
   therefore state-free in the real package, not only in the test fake -- the
   "back door" the limitation above names has no visible opening in this version:
   nothing survives from one `setup()` to the next inside a reused process.
-  Two unseeded `numpy.random.default_rng()` fallbacks do exist and are stated
-  rather than glossed over, because neither is module-level state:
+  Three unseeded `numpy.random.default_rng()` fallbacks do exist and are stated
+  rather than glossed over, because none is module-level state:
   `scoring_selection.Selector.select` falls back per CALL when it is passed no
-  rng (pre-existing, explicitly out of scope for this branch), and
+  rng (pre-existing, explicitly out of scope for this branch);
   `solvers/dp.py`'s constructor falls back per INSTANCE when constructed without
   one (unreachable through `_instantiate_solver`, which always passes a
-  Generator). They can make a run non-reproducible; they cannot make it depend
-  on the worker count. This is an inspection of a pinned third-party version at
+  Generator); and `run.py::_normalize_rng` itself falls back when called with
+  neither `rng` nor `rng_seed`. The third is unreachable from this project:
+  `parallel_solving.py::_solve_person_shard` always calls `cs.setup` with
+  `rng_seed=int(shard_seed)`, so `_normalize_rng` always takes its
+  `rng_seed is not None` branch (`np.random.default_rng(int(rng_seed))`), never
+  the bare `np.random.default_rng()` fallback. They can make a run
+  non-reproducible; they cannot make it depend on the worker count. This is an
+  inspection of a pinned third-party version at
   one point in time, so it cannot discharge the A/B: it does not cover a future
   version of the package, anything the solver reaches through its own
   dependencies, or a difference the fake hides. It is recorded so the residual

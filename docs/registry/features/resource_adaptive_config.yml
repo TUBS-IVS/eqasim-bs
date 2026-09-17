@@ -40,8 +40,11 @@ description: >
   DELIBERATELY NOT in this list: at its two pure read sites
   (synthesis/population/matched.py,
   synthesis/population/spatial/secondary/locations.py) it fixes both the person-chunk
-  partition (np.array_split) and the seed count (random.randint(..., size=processes)),
-  so it is result-affecting and is treated exactly like matsim_threads /
+  partition (np.array_split) and the seed count -- matched.py as
+  random.randint(10000, size=len(chunks)) and locations.py as
+  random.randint(10000, size=processes), the same quantity spelled two ways since
+  len(chunks) == processes -- so it is result-affecting and is treated exactly like
+  matsim_threads /
   matsim_qsim_threads: reported and warned about (below 75% of the core budget), never
   adjusted. matsim_threads / matsim_qsim_threads are excluded for the independent
   reason that their effect on results is unverified (issue #410): the startup report
@@ -127,8 +130,10 @@ evidence:
       byte-identity test against, so this claim rests on the classification itself,
       not on a dedicated test. `processes` is NOT part of this claim: reading its two
       pure consumers shows it fixes both the person-chunk partition
-      (np.array_split(..., processes)) and the seed count
-      (random.randint(10000, size=processes)), so it is result-affecting and is
+      (np.array_split(..., processes)) and the seed count -- matched.py as
+      random.randint(10000, size=len(chunks)) and locations.py as
+      random.randint(10000, size=processes), the same quantity spelled two ways
+      since len(chunks) == processes -- so it is result-affecting and is
       neither clamped nor claimed byte-identical here -- it is reported and warned
       about only, exactly like matsim_threads / matsim_qsim_threads (an earlier draft
       of this record misclassified it as operational; ADR-0126, Decision 3, corrects
