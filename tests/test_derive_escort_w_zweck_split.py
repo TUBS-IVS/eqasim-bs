@@ -269,3 +269,17 @@ def test_derivation_gap_default_matches_the_composed_production_config():
     config = _composed_production_config()
     assert float(config[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES]) == pytest.approx(
         float(DEFAULT_MAX_GAP_MINUTES))
+
+
+def test_derivation_adult_min_age_default_matches_the_composed_production_config():
+    """The pairing's accompanying-adult floor is not in DERIVATION_FLAGS either (it is the
+    module's own DEFAULT_ADULT_MIN_AGE, passed as a CLI argument), so pin it against the
+    production value separately -- the sibling guard of the gap test above (final-review fix
+    wave, #409): without it, a production floor that drifts from this derivation would
+    silently de-validate the committed fold, the education_flag seed and the W1 reference."""
+    from braunschweig.popsim import escort_pairing
+    from braunschweig.popsim.stage.config_keys import KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS
+
+    config = _composed_production_config()
+    assert int(config[KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS]) == int(
+        escort_pairing.DEFAULT_ADULT_MIN_AGE)

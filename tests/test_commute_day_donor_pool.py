@@ -221,14 +221,17 @@ def test_donor_trips_forwards_w_zweck_10_as_leisure(monkeypatch):
 
 
 def test_donor_trips_forwards_the_passive_escort_pairing_keywords(monkeypatch):
-    """escort_passive_from_adult and its gap must reach build_validated_trip_table (issue #372
-    task 4): the donor's day must be built by exactly the rules the day it replaces was."""
+    """escort_passive_from_adult, its gap and its candidate-adult age floor must reach
+    build_validated_trip_table (issue #372 task 4; the floor by the issue #409 follow-up):
+    the donor's day must be built by exactly the rules the day it replaces was."""
     captured = {}
     real_builder = donor_pool.build_validated_trip_table
 
     def capturing_builder(persons, wege, **kwargs):
         captured["escort_passive_from_adult"] = kwargs.get("escort_passive_from_adult")
         captured["passive_pair_max_gap_minutes"] = kwargs.get("passive_pair_max_gap_minutes")
+        captured["passive_pair_adult_min_age_years"] = kwargs.get(
+            "passive_pair_adult_min_age_years")
         return real_builder(persons, wege, **kwargs)
 
     monkeypatch.setattr(donor_pool, "build_validated_trip_table", capturing_builder)
@@ -244,10 +247,11 @@ def test_donor_trips_forwards_the_passive_escort_pairing_keywords(monkeypatch):
         random_seed=0,
         escort_purpose=True, escort_passive_education=True,
         explicit_round_trip_purposes=True, escort_passive_from_adult=True,
-        passive_pair_max_gap_minutes=20.0,
+        passive_pair_max_gap_minutes=20.0, passive_pair_adult_min_age_years=16,
     )
     assert captured["escort_passive_from_adult"] is True
     assert captured["passive_pair_max_gap_minutes"] == 20.0
+    assert captured["passive_pair_adult_min_age_years"] == 16
 
 
 def test_build_home_office_donor_pool_diagnostics_and_shapes():

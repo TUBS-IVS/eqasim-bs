@@ -35,6 +35,7 @@ may only name run manifests (no run, no claim).
 | [eqasim_java_fork](../registry/features/eqasim_java_fork.yml) | infrastructure | active | ON | A/A/A | 0 | -- | none | none | unvalidated (`matsim-e2e-2.2.0-kreis03101-2026-07-23`) | pending |
 | [escort_passive_from_adult](../registry/features/escort_passive_from_adult.yml) | behavior | active | ON | A/i/- | 10 | proven | marker | committed | unvalidated | pending |
 | [escort_passive_joint_location](../registry/features/escort_passive_joint_location.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | unvalidated (`i385-passive-joint-location-smoke-03101-2026-09-11`, `i385-passive-joint-location-production-smoke-03101-2026-09-15`) | pending |
+| [escort_passive_joint_surrogate](../registry/features/escort_passive_joint_surrogate.yml) | behavior | active | ON | A/i/- | 5 | proven | marker | committed | unvalidated (`i409-passive-joint-surrogate-smoke-03101-2026-09-17`) | pending |
 | [escort_purpose](../registry/features/escort_purpose.yml) | behavior | active | ON | A/-/- | 5 | proven | none | committed | measured_vs_reference (`escort-AB-5pct-2026-08-11`, `escort-anchorfix-5pct-2026-08-12`) | pending |
 | [explicit_w_zweck_purposes](../registry/features/explicit_w_zweck_purposes.yml) | behavior | active | ON | A/-/- | 2 | proven | marker | none | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | pending |
 | [fine_teen_age_bands](../registry/features/fine_teen_age_bands.yml) | population | active | ON | A/A/- | 5 | proven | marker | none | unvalidated (`smoke-control-fit-03101-2026-08-19`, `smoke-control-fit-03101-v2-2026-08-19`) | pending |
@@ -86,7 +87,7 @@ may only name run manifests (no run, no claim).
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
-| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 20 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) | pending |
+| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |

@@ -398,6 +398,7 @@ def test_mid_source_and_trips_execute_forward_off_switch(monkeypatch):
                 "w_zweck_10_as_leisure": False,
                 "escort_passive_from_adult": False,
                 "escort_passive_pair_max_gap_minutes": 15.0,
+                "escort_passive_pair_adult_min_age_years": 18,
                 "departure_time_model": "eqasim_uniform",
                 "departure_time_mapping_min_reference_n": 200,
                 "departure_time_mapping_min_model_n": 50,

@@ -726,7 +726,8 @@ def derive_work_by_employment_seed(persons, wege, *, exclude_rbw_legs,
 
 def _wege_without_non_education_passive_legs(
     wege, *, escort_passive_education: bool, w_zweck_10_as_leisure: bool,
-    passive_pair_max_gap_minutes: float, exclude_rbw_legs: bool,
+    passive_pair_max_gap_minutes: float, passive_pair_adult_min_age_years: int,
+    exclude_rbw_legs: bool,
     drop_leading_arrive_home_leg: bool, household_id: str = "H_ID", person_id: str = "P_ID",
     trip_id: str = "W_ID",
 ):
@@ -760,6 +761,9 @@ def _wege_without_non_education_passive_legs(
             to leisure or other, never education) but is threaded rather than assumed, so the
             seed's derivation stays literally the trip build's.
         passive_pair_max_gap_minutes: the pairing window in MINUTES.
+        passive_pair_adult_min_age_years: the minimum age in YEARS (MiD ``HP_ALTER``) a
+            household member must have for their leg to count as a candidate escorting
+            adult. Unit: years; valid range > 0.
         exclude_rbw_legs / drop_leading_arrive_home_leg: the trip build's two leg-drop flags,
             applied through the SAME helpers ``trips.expand_persons_to_trips`` uses.
         household_id / person_id / trip_id: the MiD key columns those helpers order by.
@@ -784,7 +788,8 @@ def _wege_without_non_education_passive_legs(
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
         household_col=household_id, person_col=person_id, trip_col=trip_id)
     paired, _diagnostics = pair_passive_legs(
-        realised_legs, max_gap_minutes=passive_pair_max_gap_minutes)
+        realised_legs, max_gap_minutes=passive_pair_max_gap_minutes,
+        adult_min_age=passive_pair_adult_min_age_years)
     is_paired = (paired["passive_pair_status"] == STATUS_PAIRED).to_numpy()
     realised_purpose = trips.passive_purpose_for_pairs(
         paired.loc[is_paired, "passive_pair_adult_w_zweck"],
@@ -810,6 +815,8 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
                                w_zweck_10_as_leisure: bool = False,
                                passive_pair_max_gap_minutes: float =
                                trips.DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                               passive_pair_adult_min_age_years: int =
+                               trips.DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
                                drop_leading_arrive_home_leg: bool = False,
                                household_id="H_ID", person_id="P_ID"):
     """Derive the ``education_flag`` seed column (``EDUCATION_FLAG_CATEGORIES``:
@@ -844,10 +851,14 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
         passive_pair_max_gap_minutes: the pairing window in MINUTES (config key
             ``escort_passive_pair_max_gap_minutes``); inert while ``escort_passive_from_adult``
             is False.
+        passive_pair_adult_min_age_years: the minimum age in YEARS a household member must
+            have for their leg to count as a candidate escorting adult (config key
+            ``escort_passive_pair_adult_min_age_years``); unit years, valid range > 0;
+            inert while ``escort_passive_from_adult`` is False.
         drop_leading_arrive_home_leg: the trip build's flag of the same name. Together with
             ``exclude_rbw_legs`` it defines the leg universe the pairing runs on, which must be
             the plan's (controller ruling C-R12); inert while ``escort_passive_from_adult`` is
-            False. These four have DEFAULTS, unlike the two flags above, because they were added
+            False. These five have DEFAULTS, unlike the two flags above, because they were added
             later: the default reproduces the pre-#372 seed byte-identically.
 
     Logs the ``edu`` share as a count AND a rate per education-by-age band
@@ -865,6 +876,7 @@ def derive_education_flag_seed(persons, wege, *, escort_passive_education,
                 wege, escort_passive_education=escort_passive_education,
                 w_zweck_10_as_leisure=w_zweck_10_as_leisure,
                 passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+                passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
                 exclude_rbw_legs=exclude_rbw_legs,
                 drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
                 household_id=household_id, person_id=person_id)

@@ -250,3 +250,31 @@
   `docs/features/escort-purpose.md`; contributor note `docs/codebase/notes/mid-purpose-mapping.md`.
   **No run has executed this code as of this record.** The measured evidence is the committed MiD
   tables and the arm-4 baseline artefact; the A/B is a plan, not a result.
+- **Amendment 2026-09-17 (issue #409):** The donor-side pairing's accompanying-adult floor
+  (Assumption 5 above: "18 years is the adult threshold") is now the config key
+  `escort_passive_pair_adult_min_age_years` (constants `KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS` /
+  `DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS` in `braunschweig/popsim/stage/config_keys.py`),
+  threaded along exactly the path `escort_passive_pair_max_gap_minutes` already takes and
+  declared by the same four stages (`braunschweig.popsim.trips_stage`, `braunschweig.popsim.stage`,
+  `braunschweig.popsim.distance_distributions`,
+  `braunschweig.synthesis.commute_day.home_office_donors_stage`). Declared default and production
+  value are both 18 (`configs/base_bs.yml`), so this amendment changes nothing about the pairing
+  itself: pre-amendment behaviour is byte-identical. It exists because ADR-0127 (issue #409)
+  introduces a SECOND, SYNTHETIC-side age floor for a different rescue
+  (`escort_passive_joint_surrogate_min_age_years`, default 14); with this donor-side floor still a
+  hard-coded module default, the two ages would look like one fact governed by two mechanisms
+  instead of two deliberately distinct, independently configured parameters. What a lower floor
+  here would cost or gain is exactly what ADR-0127 measured while choosing its OWN floor, not a new
+  measurement: its Assumptions §2 states that of the 562 minors' passive legs the production floor
+  18 leaves unpaired, a floor of 16 / 14 / 12 / 10 / 6 newly pairs 6 / 15 / 19 / 27 / 56, and below
+  about 12 the newly paired partners are 7- and 9-year-olds, i.e. co-travelling children rather than
+  adults; its Rejected Alternatives section states the same floor-14 result over the full universe
+  as "15 of 10,905 raw legs". Fifteen more paired legs out of roughly eleven thousand is not a
+  measurement of what a floor of 14 would do downstream: the same pairing feeds the
+  `education_flag` seed (`mid.participation.derive_education_flag_seed`), the committed validation
+  fold (`mid2023_escort_w_zweck_split.csv`) and the `education_by_age` control, so changing the
+  floor devalidates the seed and needs a full-population rerun to know whether the newly paired
+  legs move any of those quantities in a direction that matters. Until such a rerun exists and is
+  recorded in a run manifest, the decision is to KEEP the floor at 18 (both the declared default and
+  the production value); a floor-14 (or lower) experiment is separate follow-up work, exactly as
+  ADR-0127 itself treats it as a rejected-for-now alternative rather than an adopted change.

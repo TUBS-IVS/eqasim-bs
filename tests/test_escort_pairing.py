@@ -171,3 +171,80 @@ def test_max_gap_is_configurable_and_low_pairing_warns(caplog):
 def test_missing_required_column_raises():
     with pytest.raises(KeyError, match="HP_ALTER"):
         EP.pair_passive_legs(_wege().drop(columns=["HP_ALTER"]))
+
+
+def _teenage_sibling_wege():
+    """One household, no adult: a 4-year-old's passive leg at 08:00 and a 15-year-old
+    sibling's shop leg at 08:05 -- the smallest frame on which the age floor decides."""
+    return pd.DataFrame({
+        "H_ID":      [1, 1],
+        "P_ID":      [1, 2],
+        "W_ID":      [1, 1],
+        "W_ZWECK":   [13, 4],
+        "W_SZS":     [8, 8],
+        "W_SZM":     [0, 5],
+        "HP_ALTER":  [4, 15],
+        "wegkm_imp": [2.0, 2.0],
+    })
+
+
+def test_adult_min_age_decides_whether_a_teenage_sibling_is_an_eligible_escort():
+    """The donor-side age floor is a real parameter, not a constant (issue #409 follow-up):
+    the 15-year-old sibling is an eligible escorting adult at a floor of 14 and is NOT one at
+    the default floor of 18, where the household has no eligible adult leg at all."""
+    at_default, diag_default = EP.pair_passive_legs(_teenage_sibling_wege())
+    passive_default = at_default[at_default["W_ZWECK"] == EP.PASSIVE_W_ZWECK]
+    assert passive_default["passive_pair_status"].item() == EP.STATUS_UNPAIRED_NO_ADULT
+    assert diag_default["n_paired"] == 0
+
+    at_fourteen, diag_fourteen = EP.pair_passive_legs(_teenage_sibling_wege(), adult_min_age=14)
+    passive_fourteen = at_fourteen[at_fourteen["W_ZWECK"] == EP.PASSIVE_W_ZWECK]
+    assert passive_fourteen["passive_pair_status"].item() == EP.STATUS_PAIRED
+    assert passive_fourteen["passive_pair_adult_p_id"].item() == 2
+    assert passive_fourteen["passive_pair_adult_w_zweck"].item() == 4
+    assert passive_fourteen["passive_pair_gap_minutes"].item() == 5.0
+    assert diag_fourteen["n_paired"] == 1
+
+
+def test_module_default_adult_min_age_is_eighteen():
+    """The pre-parameter behaviour: legal adulthood, the value every caller used before the
+    floor became configurable (issue #409 follow-up). Unit: years."""
+    assert EP.DEFAULT_ADULT_MIN_AGE == 18
+
+
+# --------------------------------------------------------- parameter range guards (#409)
+# Both pairing parameters are documented "valid range > 0" in config_keys and in
+# configs/base_bs.yml. A non-positive floor is the dangerous one: it admits EVERY household
+# member as an escorting adult, so a toddler pairs with the child it supposedly escorts and
+# the module's only alarm (WARN_PAIRED_SHARE, a LOW pairing share) never fires. The guard
+# therefore lives at the point of use, covering the derivation scripts too.
+
+def _toddler_household():
+    """One household with no adult at all: a 3-year-old's shop leg and a 5-year-old's code-13
+    leg two minutes later. At a floor of 0 the 3-year-old would become the escorting adult."""
+    return pd.DataFrame({
+        "H_ID": [1, 1], "P_ID": [1, 2], "W_ID": [1, 2], "W_ZWECK": [4, 13],
+        "W_SZS": [8, 8], "W_SZM": [0, 2], "HP_ALTER": [3, 5],
+    })
+
+
+@pytest.mark.parametrize("floor", [0, -1])
+def test_pairing_rejects_a_non_positive_adult_min_age(floor):
+    with pytest.raises(ValueError, match="adult_min_age must be > 0"):
+        EP.pair_passive_legs(_toddler_household(), max_gap_minutes=15.0, adult_min_age=floor)
+
+
+@pytest.mark.parametrize("gap", [0.0, -1.0])
+def test_pairing_rejects_a_non_positive_max_gap(gap):
+    with pytest.raises(ValueError, match="max_gap_minutes must be > 0"):
+        EP.pair_passive_legs(_toddler_household(), max_gap_minutes=gap, adult_min_age=18)
+
+
+def test_the_documented_defaults_still_pair_normally():
+    # The guard must not disturb the valid range: the household above has no member at or
+    # above the default floor, so the leg is correctly reported as having no adult.
+    out, diagnostics = EP.pair_passive_legs(
+        _toddler_household(), max_gap_minutes=EP.DEFAULT_MAX_GAP_MINUTES,
+        adult_min_age=EP.DEFAULT_ADULT_MIN_AGE)
+    assert out.loc[1, "passive_pair_status"] == EP.STATUS_UNPAIRED_NO_ADULT
+    assert diagnostics["n_passive"] == 1

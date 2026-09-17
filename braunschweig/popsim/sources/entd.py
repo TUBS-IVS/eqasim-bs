@@ -417,6 +417,7 @@ class EntdSource:
         w_zweck_10_as_leisure: bool = False,
         escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = 15.0,
+        passive_pair_adult_min_age_years: int = 18,
         departure_time_model: str = "eqasim_uniform",
         departure_time_reference: pd.DataFrame = None,
         departure_time_min_reference_n: int = 200,
@@ -450,15 +451,16 @@ class EntdSource:
         a popsim_open run believing the remap happened would be a silent no-op
         masquerading as an applied flag.
 
-        ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes``
-        (issue #372, ADR-0112) are rejected on a non-default value for the same
-        reason: the pairing needs the MiD W_ZWECK 13 code plus the household id,
-        member age and departure time of a MiD household diary, none of which the
-        ENTD frames carry. The GAP is rejected alongside the flag (controller
-        ruling C-R7) although the flag's own rejection already guarantees no
-        pairing happens: unlike ``closure_dwell_min_obs``, nothing else names the
-        gap, so a deliberately tuned value would otherwise sit silently inert in a
-        popsim_open config.
+        ``escort_passive_from_adult`` / ``escort_passive_pair_max_gap_minutes`` /
+        ``escort_passive_pair_adult_min_age_years`` (issue #372, ADR-0112; the age
+        floor by the issue #409 follow-up) are rejected on a non-default value for
+        the same reason: the pairing needs the MiD W_ZWECK 13 code plus the household
+        id, member age and departure time of a MiD household diary, none of which the
+        ENTD frames carry. The GAP and the AGE FLOOR are rejected alongside the flag
+        (controller ruling C-R7) although the flag's own rejection already guarantees
+        no pairing happens: unlike ``closure_dwell_min_obs``, nothing else names
+        either of them, so a deliberately tuned value would otherwise sit silently
+        inert in a popsim_open config.
 
         ``departure_time_model`` (issue #123, ADR-0114) is rejected on a
         non-default value because the ENTD trip build
@@ -473,7 +475,7 @@ class EntdSource:
         model rejection already guarantees never runs, and the model key's own
         message names the feature, so nothing tuned can pass unnoticed.
 
-        The seven checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
+        The eight checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
         deferred import, like every other ``config_keys`` reference from this
         package -- see that module's own docstring for why it cannot be imported at
         THIS module's level) rather than a second hand-typed literal, so this
@@ -484,7 +486,8 @@ class EntdSource:
         from braunschweig.popsim.stage.config_keys import (
             ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MODEL,
             KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
-            KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+            KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+            KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
             KEY_W_ZWECK_10_AS_LEISURE,
         )
         if departure_time_model != ENTD_REJECTED_KEYS[KEY_DEPARTURE_TIME_MODEL]:
@@ -509,6 +512,15 @@ class EntdSource:
                 f"{passive_pair_max_gap_minutes!r} is not supported for the ENTD donor (the "
                 "passive-escort pairing it sizes cannot run at all here); leave it at "
                 f"{ENTD_REJECTED_KEYS[KEY_PASSIVE_PAIR_MAX_GAP_MINUTES]!r} for popsim_open runs."
+            )
+        if (passive_pair_adult_min_age_years
+                != ENTD_REJECTED_KEYS[KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS]):
+            raise ValueError(
+                "[popsim.sources.entd] escort_passive_pair_adult_min_age_years="
+                f"{passive_pair_adult_min_age_years!r} is not supported for the ENTD donor "
+                "(the passive-escort pairing whose candidate adults it bounds cannot run at "
+                "all here -- there is no HP_ALTER household diary); leave it at "
+                f"{ENTD_REJECTED_KEYS[KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS]!r} for popsim_open runs."
             )
         if w_zweck_10_as_leisure != ENTD_REJECTED_KEYS[KEY_W_ZWECK_10_AS_LEISURE]:
             raise ValueError(

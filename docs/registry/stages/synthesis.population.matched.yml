@@ -28,9 +28,19 @@ notes: >-
   (`np.array_split(df_target, processes)`) and the seed count
   (`random.randint(10000, size=len(chunks))`) drawn from the configured `random_seed`
   -- result-affecting, not operational -- so the clamp was reverted before merge (see
-  the corrected worked example in docs/codebase/notes/resource-budget.md). `processes`
-  stays declared `volatile=True` here (upstream eqasim-france #438: an execution
-  detail, not scientific config in synpp's cache-hash sense), and is now reported and
-  warned about only (build_report warns when a pin sits below 75% of the machine's
-  core budget), never adjusted -- treated exactly like `matsim_threads` /
+  the corrected worked example in docs/codebase/notes/resource-budget.md). It is
+  reported and warned about only (build_report warns when a pin sits below 75% of the
+  machine's core budget), never adjusted -- treated exactly like `matsim_threads` /
   `matsim_qsim_threads`.
+
+  PROCESSES IS NOW HASHED (2026-09-17 amendment to ADR-0126): this stage used to
+  declare `context.config("processes", volatile=True)`, carried in from upstream
+  eqasim-france #438 (ported in 79f7f492), whose comment calls the key an "execution
+  detail, not scientific config". That premise is false here, so the declaration is
+  now `context.config("processes")` -- a deliberate divergence from upstream at this
+  site, documented in the code comment. Measured: 8 -> 32 changes the drawn seed of
+  19 of 20 persons. While the key was volatile it was excluded from this stage's
+  hash, so changing it served a cached match built under a different partition. The
+  stage hash therefore changes once, and every later change to `processes` recomputes
+  this stage -- the correct cost of a changed realisation. Pinned by
+  tests/test_processes_hash_coverage.py.

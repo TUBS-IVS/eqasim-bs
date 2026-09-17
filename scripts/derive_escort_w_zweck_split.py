@@ -312,6 +312,8 @@ def derive_passive_education_share(
             "[derive_escort_w_zweck_split] total passive-escort (W_ZWECK "
             f"{PASSIVE_W_ZWECK}) weight is zero; the education share is undefined.")
 
+    # Deliberately keeps the module default adult floor (18), not escort_passive_pair_adult_min_age_years,
+    # so mid2023_escort_w_zweck_split.csv stays reproducible; revisit if that key's production value changes.
     paired_frame, diagnostics = pair_passive_legs(legs, max_gap_minutes=gap)
     is_paired = (paired_frame["passive_pair_status"] == STATUS_PAIRED).to_numpy()
     realised = trips.passive_purpose_for_pairs(

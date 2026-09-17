@@ -1024,11 +1024,10 @@ def build_report(config: dict, machine: Optional[MachineResources] = None,
                 f"(parallel_statistical_matching) and "
                 f"synthesis/population/spatial/secondary/locations.py (execute), i.e. "
                 f"the statistical-matching and secondary-location realisations. Both "
-                f"sites declare processes with volatile=True, so the affected stage "
-                f"caches will NOT notice the change and will not recompute by "
-                f"themselves (ADR-0126, Decision 3 and its stated known limitation). "
-                f"Raise the pin only deliberately, accepting a changed realisation on "
-                f"caches you must invalidate by hand."
+                f"sites declare it HASHED (not volatile), so raising the pin correctly "
+                f"devalidates those two stages and they recompute by themselves -- the "
+                f"recompute is the cost of a changed realisation, not a defect "
+                f"(ADR-0126, Decision 3). Raise the pin only deliberately."
             ),
         ))
 

@@ -34,6 +34,7 @@ features:
 - building_potentials_secondary
 - detour_circuity_curve
 - escort_passive_joint_location
+- escort_passive_joint_surrogate
 - escort_purpose
 - leisure_unspecified_subtype
 - no_answer_codes_excluded
@@ -55,6 +56,7 @@ decisions:
 - ADR-0117
 - ADR-0119
 - ADR-0126
+- ADR-0127
 notes: >-
   RESOURCE-ADAPTIVE CONFIGURATION (ADR-0126, feature record resource_adaptive_config):
   the chainsolver's person-shard count now has its OWN hashed config key,
@@ -73,13 +75,21 @@ notes: >-
   `synthesis.population.spatial.secondary.locations`
   synpp-level `processes` config key (read by
   synthesis/population/spatial/secondary/locations.py, NOT by the chainsolver's own
-  braunschweig.chainsolvers.processes) is UNCHANGED by this ADR and remains read
-  verbatim (`context.config("processes")`, still declared `volatile=True` per the
-  upstream eqasim-france #438 comment) -- an earlier draft of ADR-0126 clamped it
-  against the machine's detected core budget, which was reverted before merge because
-  `processes` fixes both the person-chunk partition (`np.array_split`) and the drawn
-  seed count at this exact read site, making it result-affecting, not operational
-  (see the corrected worked example in docs/codebase/notes/resource-budget.md).
+  braunschweig.chainsolvers.processes) is still read verbatim
+  (`context.config("processes")`, never clamped) -- an earlier draft of ADR-0126
+  clamped it against the machine's detected core budget, which was reverted before
+  merge because `processes` fixes both the person-chunk partition (`np.array_split`)
+  and the drawn seed count at this exact read site, making it result-affecting, not
+  operational (see the corrected worked example in
+  docs/codebase/notes/resource-budget.md). Since the 2026-09-17 amendment it is also
+  declared HASHED: the `volatile=True` it carried from upstream eqasim-france #438
+  (ported in 79f7f492, "an execution detail, not scientific config") kept it out of
+  this stage's hash, so changing it served cached secondary locations built under a
+  different partition. Measured: 8 -> 32 changes the drawn seed of 19 of 20 persons.
+  The stage hash therefore changes once, and every later change to `processes`
+  recomputes this stage -- the correct cost of a changed realisation. This is a
+  deliberate divergence from upstream at this site, documented in the code comment
+  and pinned by tests/test_processes_hash_coverage.py.
 
   MEMORY-BOUNDED WORKER POOL (2026-09-17 amendment to ADR-0126): the stage now also
   declares `braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
@@ -248,3 +258,18 @@ notes: >-
   donor matchers all differ) and is NOT separable into its causes with the runs performed.
   No new stage, DAG unchanged: the stage already reads synthesis.population.sampled and
   synthesis.population.trips.final.
+
+
+  PASSIVE JOINT SURROGATE (issue #409 option 1, ADR-0127; feature record
+  docs/registry/features/escort_passive_joint_surrogate.yml): with escort_passive_joint_surrogate on
+  (requires escort_passive_joint_location; code default false, production true in
+  configs/base_bs.yml), _passive_joint_link_table extends the ADR-0119 identity link table with
+  passive_joint_links.rescue_with_surrogates for exactly the legs excluded as
+  adult_not_in_household, tagging every row's provenance (link_source: plan_source / surrogate)
+  instead of returning LINK_COLUMNS alone; with the flag off the table is unchanged, byte for byte.
+  _compose_two_pass and resolve_joint_anchors are untouched -- both still select columns by name.
+  Two lines print after the #385 link-rate line: the surrogate rescue rate
+  (_passive_joint_surrogate_summary, n_surrogate_linked/n_rescue_candidates with the per-reason
+  split) and the combined plan-source + surrogate total against all paired legs, escalating to
+  WARNING when candidate material existed and nothing was linked. See the feature record and
+  ADR-0127 for the rescue rule, the measured rates and the Consequences of enabling it.

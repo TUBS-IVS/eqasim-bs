@@ -67,10 +67,12 @@ from braunschweig.popsim.departure_time_model import (
     DEFAULT_MIN_REFERENCE_N as DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
     MODEL_EQASIM_UNIFORM, MODEL_SRV_MAPPED, MODELS, OFFSET_COLUMN, apply_departure_time_model,
     persons_from_synthetic_schema)
-# The passive-escort pairing gap default lives with the trip build (braunschweig.popsim.trips)
-# and is re-exported through it here rather than re-typed, so this stage and map_purpose can
-# never disagree on the threshold a run uses when the config leaves it unset.
-from braunschweig.popsim.trips import DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES
+# The passive-escort pairing gap and adult-age-floor defaults live with the trip build
+# (braunschweig.popsim.trips) and are re-exported through it here rather than re-typed, so this
+# stage and map_purpose can never disagree on the thresholds a run uses when the config leaves
+# them unset.
+from braunschweig.popsim.trips import (
+    DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
 from braunschweig.popsim.plan_validation import HOME_CLOSURE_DWELL_S
 # Authoritative plan-time bound lives in plan_validation (where bound-exceeding
 # persons are classified unfixable + resampled); re-exported here for the final
@@ -311,6 +313,7 @@ def build_closure_dwell_model(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
 ):
     """Build the :class:`ClosureDwellModel` selected by ``closure_dwell_model``.
 
@@ -362,6 +365,12 @@ def build_closure_dwell_model(
         Maximum |departure-time gap| in MINUTES for the pairing (forwarded to
         the donor trip table build). Inert unless
         ``escort_passive_from_adult`` is True.
+    passive_pair_adult_min_age_years:
+        Minimum age in YEARS for a household member's leg to count as a
+        candidate escorting adult in that pairing (forwarded to the donor trip
+        table build). Unit: years; valid range > 0. Must match the value the
+        main trip table is built with, for the same reason the gap must. Inert
+        unless ``escort_passive_from_adult`` is True.
 
     Returns
     -------
@@ -398,6 +407,7 @@ def build_closure_dwell_model(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
     )
     return ClosureDwellModel.from_trips(
         donor_trips, rng=np.random.RandomState(random_seed + CLOSURE_SEED_OFFSET),
@@ -552,6 +562,7 @@ def run(
     w_zweck_10_as_leisure: bool = False,
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     departure_time_model: str = MODEL_EQASIM_UNIFORM,
     departure_time_reference: pd.DataFrame = None,
     departure_time_min_reference_n: int = DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
@@ -622,6 +633,12 @@ def run(
         ``escort_passive_pair_max_gap_minutes``); inert while
         ``escort_passive_from_adult`` is False. Default
         :data:`DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES`.
+    passive_pair_adult_min_age_years:
+        minimum age in YEARS (MiD ``HP_ALTER``) for a household member's leg to
+        count as a candidate escorting adult in that pairing (config key
+        ``escort_passive_pair_adult_min_age_years``); unit years, valid range
+        > 0; inert while ``escort_passive_from_adult`` is False. Default
+        :data:`DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS`.
     departure_time_model:
         which START-TIME model shapes the person's first departure (issue #123,
         ADR-0114): one of
@@ -704,6 +721,7 @@ def run(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
     )
     table, report = popsim_trips.build_validated_trip_table(
         persons, mid_wege,
@@ -718,6 +736,7 @@ def run(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
     )
@@ -829,14 +848,16 @@ def configure(context):
         DEFAULT_DEPARTURE_TIME_MIN_MODEL_N, DEFAULT_DEPARTURE_TIME_MIN_REFERENCE_N,
         DEFAULT_DEPARTURE_TIME_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
         DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
-        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
         KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
         KEY_DEPARTURE_TIME_MIN_MODEL_N, KEY_DEPARTURE_TIME_MIN_REFERENCE_N,
         KEY_DEPARTURE_TIME_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
-        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
-        KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE, require_positive,
     )
     # Read from synthesis.population.sampled (not the raw producer): sampled carries the
     # reassigned integer person_id and the preserved donor keys H_ID/P_ID, so the trip
@@ -887,7 +908,27 @@ def configure(context):
     # (see config_keys.KEY_ESCORT_PASSIVE_FROM_ADULT for the ONE statement of both defaults).
     escort_passive_from_adult = context.config(
         KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
-    context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES)
+    # require_positive (issue #409 range-guard follow-up): both pairing parameters are
+    # documented "valid range > 0" (config_keys); a non-positive value would otherwise reach
+    # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked -- see that module's own
+    # guard for why a non-positive floor is silently WRONG rather than merely low-yield.
+    # Validating at DAG-build time turns a bad YAML into a synpp failure within seconds.
+    require_positive(
+        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES),
+    )
+    # The pairing's SECOND parameter (issue #409 follow-up): who counts as the escorting adult.
+    # Declared with the SHARED key/default constants for the same reason the gap is -- every
+    # consumer of the pairing (this trip build, the popsim education_flag seed, the distance
+    # layers, the commute-day donor pool) must resolve the same floor, or they disagree on which
+    # code-13 legs are paired at all. Unit: years; the declared default 18 is also the
+    # production value in configs/base_bs.yml, so this stays byte-identical to the pre-parameter
+    # behaviour (see config_keys.KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS).
+    require_positive(
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+                       DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS),
+    )
     # Ruling C-R22 (issue #373 cleanup wave, item 6): trips.map_purpose already raises this
     # exact contradiction ("escort_passive_from_adult requires escort_purpose"), but only at
     # TRIP-BUILD time -- i.e. after synpp has already resolved and run every UPSTREAM stage,
@@ -984,7 +1025,8 @@ def execute(context):
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
         KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_EXCLUDE_RBW_LEGS,
-        KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
+        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+        KEY_W_ZWECK_10_AS_LEISURE,
     )
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
@@ -996,6 +1038,8 @@ def execute(context):
     w_zweck_10_as_leisure = bool(context.config(KEY_W_ZWECK_10_AS_LEISURE))
     escort_passive_from_adult = bool(context.config(KEY_ESCORT_PASSIVE_FROM_ADULT))
     passive_pair_max_gap_minutes = float(context.config(KEY_PASSIVE_PAIR_MAX_GAP_MINUTES))
+    passive_pair_adult_min_age_years = int(
+        context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS))
     vectorized_validation = bool(
         context.config(_plan_validation.KEY_VECTORIZED_PLAN_VALIDATION))
     return source.build_trips(
@@ -1011,6 +1055,7 @@ def execute(context):
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         departure_time_model=departure_time_model_name,
         departure_time_reference=departure_time_reference,
         departure_time_min_reference_n=departure_time_min_reference_n,

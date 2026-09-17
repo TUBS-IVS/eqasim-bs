@@ -65,7 +65,8 @@ from braunschweig.popsim.chain_matching import derive_age_class
 from braunschweig.popsim.diary_facts import compute_diary_facts, validate_trip_length_km
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES
 from braunschweig.popsim.trips import (
-    DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, build_validated_trip_table)
+    DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+    build_validated_trip_table)
 from braunschweig.popsim.trips_stage import (
     CONTRACT,
     DEFAULT_CLOSURE_DWELL_MIN_OBS,
@@ -617,13 +618,16 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
                 w_zweck_10_as_leisure: bool = False,
                 escort_passive_from_adult: bool = False,
                 passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                passive_pair_adult_min_age_years: int =
+                DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
                 dwell_model=None, vectorized_validation: bool = True) -> pd.DataFrame:
     """The donors' own trip chains in the ``synthesis.population.trips`` CONTRACT, ``donor_id``-keyed.
 
     Built with :func:`braunschweig.popsim.trips.build_validated_trip_table` using the keyword
     arguments :func:`braunschweig.popsim.trips_stage.run` passes -- ``resample=True``, the
     escort/round-trip/``w_zweck_10_as_leisure``/``escort_passive_from_adult`` flags (the last
-    with its ``passive_pair_max_gap_minutes`` window), ``random_seed``, and the three
+    with its ``passive_pair_max_gap_minutes`` window and its
+    ``passive_pair_adult_min_age_years`` candidate-adult age floor), ``random_seed``, and the three
     plan-structure arguments ``exclude_rbw_legs`` / ``drop_leading_arrive_home_leg`` /
     ``dwell_model`` -- ruling R2, but
     WITHOUT ``trips_stage.run``'s per-person departure-time jitter step
@@ -716,6 +720,7 @@ def donor_trips(donors: pd.DataFrame, attributes: pd.DataFrame, wege: pd.DataFra
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
     )
@@ -820,6 +825,8 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
                                  escort_passive_from_adult: bool = False,
                                  passive_pair_max_gap_minutes: float =
                                  DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
+                                 passive_pair_adult_min_age_years: int =
+                                 DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
                                  exclude_no_diary: bool = False,
                                  exclude_holidays: bool = False,
                                  exclude_only_rbw: bool = False,
@@ -850,7 +857,9 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
       purpose instead of ``"other"`` (issue #373, ADR-0111), forwarded to
       :func:`build_closure_dwell_model` (when a dwell model is built) and :func:`donor_trips`,
       following MiD's own hwzweck1 fold. Default False keeps the pre-#373 output byte-identical.
-    * ``escort_passive_from_adult`` / ``passive_pair_max_gap_minutes`` -- give a PAIRED passive
+    * ``escort_passive_from_adult`` / ``passive_pair_max_gap_minutes`` /
+      ``passive_pair_adult_min_age_years`` (the window in MINUTES and the candidate-adult age
+      floor in YEARS) -- give a PAIRED passive
       escort leg (MiD W_ZWECK 13) the accompanying adult's purpose (issue #372, ADR-0112),
       forwarded to :func:`build_closure_dwell_model` (when a dwell model is built) and
       :func:`donor_trips`. The donor's day must follow the same purpose vocabulary as the day it
@@ -920,6 +929,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
             w_zweck_10_as_leisure=w_zweck_10_as_leisure,
             escort_passive_from_adult=escort_passive_from_adult,
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+            passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         )
     trips = donor_trips(
         donors, attributes, wege, random_seed=random_seed, escort_purpose=escort_purpose,
@@ -930,6 +940,7 @@ def build_home_office_donor_pool(persons: pd.DataFrame, wege: pd.DataFrame, hous
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
         dwell_model=dwell_model,
         vectorized_validation=vectorized_validation,
     )
