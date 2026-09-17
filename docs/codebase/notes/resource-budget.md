@@ -23,18 +23,68 @@ production caller left at all -- only its own tests
 (`tests/test_resources_detection.py`) exercise it directly.
 
 Every key THIS MODULE resolves (`java_memory`,
-`braunschweig.population.popsim.num_workers`, and the reporting-only
-`processes`) is resolved against that one budget, so those keys cannot
-disagree with each other about how big the machine is. But
-`braunschweig.chainsolvers.processes` -- the chainsolver pool, the largest
-process fan-out in the pipeline -- is resolved entirely outside this module:
-`context.config("braunschweig.chainsolvers.processes")` is passed to
-`parallelism.resolve_workers()` -> `parallelism.available_cores()` ->
-`os.cpu_count()`, which ignores CPU affinity (`taskset` / a cpuset
-restriction) and ignores `EQASIM_CPU_BUDGET` entirely (see the
-`DEFAULT_CORE_RESERVE` comment in `braunschweig/resources.py` for the exact
-divergence). So two keys CAN disagree about how big the machine is, on a
-machine where affinity differs from `cpu_count()`.
+`braunschweig.population.popsim.num_workers`, the reporting-only `processes`,
+and -- since the 2026-09-17 amendment below -- `braunschweig.chainsolvers.processes`)
+is resolved against that one budget, so those keys cannot disagree with each
+other about how big the machine is. This was NOT always true: before the
+amendment, `braunschweig.chainsolvers.processes` -- the chainsolver pool, the
+largest process fan-out in the pipeline -- was resolved entirely outside this
+module, through the now-deleted `parallelism.resolve_workers()` ->
+`parallelism.available_cores()` -> `os.cpu_count()`, which ignored CPU
+affinity and `EQASIM_CPU_BUDGET` entirely, so it COULD disagree with the rest
+of the mechanism about how big the machine is on an affinity-restricted box.
+That divergence is closed: the chainsolver pool now resolves through this
+module's own `resolve_budget()`, exactly like every other key.
+
+### The chainsolver worker pool is now memory-bounded too (2026-09-17 amendment)
+
+`braunschweig.chainsolvers.processes` was, until 2026-09-17, the one
+resource-sensitive key this module deliberately left CORE-bound only ("no
+per-worker footprint has ever been measured for that stage, and inventing one
+is forbidden", per the original design spec's Non-goals). That is no longer
+the case: the run resource recorder (issue #350) recorded seven deduplicated
+100% ZGB-8 executions of the chainsolver stage on the felix server
+(2026-09-05 to 2026-09-09), and a post-hoc measurement over those recorder
+series (`docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`)
+established the pool's MAXIMUM measured private per-worker memory footprint
+at 0.86 GB (`DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB`), computed as
+(available-memory drop during the stage, minus driver RSS growth, which was
+0.0 GB in every run) divided by the 62 live workers.
+
+**Per-worker RSS itself is NOT usable for this bound.** On the 125.78 GB
+machine the summed worker RSS reads 1200-1860 GB across these runs, because
+more than 95% of each forked worker's RSS is copy-on-write pages inherited
+from the driver process at fork time, not memory the pool actually needs.
+The available-memory DELTA is the only quantity that isolates the pool's real
+private footprint, which is why the rule below subtracts a live measurement
+rather than summing `ps`/`/proc` RSS across the pool.
+
+`resolve_chainsolver_workers` / `effective_chainsolver_workers` bound the
+pool by:
+
+    workers = max(1, min(core_budget, floor((memory_budget_gb - driver_rss_gb_live) / worker_memory_gb)))
+
+`driver_rss_gb_live` is THIS process's OWN live RSS at stage start
+(`current_process_rss_gb`: psutil first, then `/proc/self/status VmRSS`,
+logged at INFO which source was used; a WARNING is logged and the bound
+falls back to core-only, `driver_rss_gb` treated as 0.0, when neither source
+is available -- no silent fallback), measured fresh every run rather than
+injected from config, because the worker pool is FORKED from the driver and
+both compete for the same memory budget -- this is the run's OWN
+deterministic state, not other users' contention, so subtracting it is
+consistent with this module's "scale off the total allocation, not free
+capacity" rule (ADR-0126), not an exception to it. The new config key
+`braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
+`volatile=True`) carries the measured constant; it sizes the pool, never the
+partition, so it has no influence on any result. Typical server runs still
+yield the unchanged 62 workers (core-bound); a heavier driver process can now
+reduce the pool below 62 instead of risking the OOM an unbounded pool could
+previously cause on a smaller machine. See ADR-0126's point 5 amendment for
+the full decision and its Consequences for the permanent cache-dependency
+cost this adds to the chainsolver stage (`resources.py` is now a helper
+module of BOTH the PopulationSim stage and the chainsolver stage, so any
+future edit to this file, wording-only or not, invalidates both stages'
+full-scale caches).
 
 ## The rule that must never be broken: a resolved value never enters the config
 
@@ -46,7 +96,8 @@ same logical run, and the shared cache -- built once at real scale, reused by
 every subsequent run -- would silently stop being shared. This is why
 `resolve_*` functions return a `Resolution` (the effective value plus WHY) and
 the `effective_*` wrapper functions (`effective_java_memory`,
-`effective_popsim_workers` -- exactly the two OPERATIONAL keys; there is no
+`effective_popsim_workers`, and -- since the 2026-09-17 amendment --
+`effective_chainsolver_workers`: the three OPERATIONAL keys; there is no
 `effective_processes`, see the worked example below) are called at the point
 of use inside each consumer, never used to rewrite `context.config(...)`. If
 you are about to add a line that writes a detected or clamped value back into
@@ -63,7 +114,12 @@ produces it?**
   does not depend on the size chosen. `java_memory` only ever becomes an
   `-Xmx` argument. PopulationSim's `num_workers` submits one independent
   subprocess per batch folder with no seed depending on the worker index.
-  That is the WHOLE list today -- exactly two keys.
+  `braunschweig.chainsolvers.processes` joined this list on 2026-09-17: since
+  ADR-0126's shard/worker split, the worker count only decides how many
+  processes chew through the fixed, separately-hashed shard set
+  (`braunschweig.chainsolvers.shards`), so sizing the pool by measured memory
+  cannot change the secondary-location realisation either. That is the WHOLE
+  list today -- three keys.
 - **Result-affecting** (must never be clamped silently): the key decides a
   partition, a seed, or anything else a result is derived from. This is not
   hypothetical here -- it is exactly the defect ADR-0126 fixes, and the

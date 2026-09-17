@@ -78,6 +78,27 @@ notes: >-
   `processes` fixes both the person-chunk partition (`np.array_split`) and the drawn
   seed count at this exact read site, making it result-affecting, not operational
   (see the corrected worked example in docs/codebase/notes/resource-budget.md).
+
+  MEMORY-BOUNDED WORKER POOL (2026-09-17 amendment to ADR-0126): the stage now also
+  declares `braunschweig.chainsolvers.worker_memory_gb` (default 0.86, OPERATIONAL,
+  `volatile=True` -- sizes the pool, never the partition, so it has no influence on
+  any result), and `_solve_problem_set` resolves its worker count through
+  `braunschweig.resources.effective_chainsolver_workers` instead of the removed
+  `braunschweig.parallelism.resolve_workers`: `workers = max(1, min(core_budget,
+  floor((memory_budget_gb - driver_rss_gb_live) / worker_memory_gb)))`, where
+  `driver_rss_gb_live` is THIS process's own live RSS (the pool is forked from it,
+  measured fresh at stage start, logged at INFO). The 0.86 GB/worker default is the
+  MAXIMUM measured private per-worker footprint over seven recorded 100% ZGB-8
+  executions (docs/runs/chainsolver-worker-private-memory-2026-09-17.yml); per-worker
+  RSS itself is not usable for this bound because more than 95% of a forked worker's
+  RSS is copy-on-write pages inherited from the driver, not private memory the pool
+  needs. `braunschweig.resources` therefore joins this stage's `_HELPER_MODULES` /
+  `validate()` token, alongside `purpose_subtype` / `trips` / `seed` /
+  `escort_links` / `passive_joint_links` above. Typical server runs still yield the
+  unchanged 62 workers (core-bound); a heavier driver process can now reduce the
+  pool below 62 instead of risking the OOM an unbounded pool could previously cause
+  on a smaller machine.
+
   W_ZWD CODEPLAN SENTINELS (issue #242, ADR-0113, feature record w_zwd_codeplan_sentinels): the
   chainsolver stage declares purpose_subtype_codeplan_sentinels (default true, key and default
   imported from braunschweig.popsim.stage.config_keys, shared with

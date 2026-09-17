@@ -1,0 +1,99 @@
+id: chainsolver-worker-private-memory-2026-09-17
+date: '2026-09-17'
+repository:
+  commit: unknown
+  branch: unknown
+  notes: The seven recorded runs below were executed at various commits of their own
+    branches (issue 350's run resource recorder, arms of the b370 all-features popsim
+    caching work); this manifest records a POST-HOC measurement over their committed
+    recorder series, not a single run at a single commit. 'unknown' is stated rather
+    than guessed (CLAUDE.md).
+configuration:
+  base: configs/base_bs.yml
+  notes: Production configs/base_bs.yml-based 100% runs of the
+    braunschweig.synthesis.locations.secondary_chainsolvers stage, braunschweig.chainsolvers.processes
+    0 (auto) -> 62 workers on the 64-core felix server (available_cores(reserve=2)).
+    The exact per-run overlay files are not independently confirmed for each of the
+    seven series in this measurement (likely a 100% ZGB-8 overlay equivalent to
+    configs/overlays/test_100pct.yml); stated as an assumption rather than invented as
+    a fact.
+sampling:
+  rate: 100 %
+  scope: ZGB-8
+pipeline:
+  targets:
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+  notes: Measurement only; no stage was re-executed for this manifest. The seven
+    executions were the stage's own production runs, recorded live by the run resource
+    recorder (issue 350) while they ran.
+classification:
+- validation
+status:
+  execution: completed
+  notes: Post-hoc resource measurement over seven recorded production-configuration
+    executions of the chainsolver stage; this is NOT a model-quality validation (no
+    scientific output is assessed here) and is not a smoke test of a new feature --
+    it establishes the measured basis for the chainsolver worker pool's memory bound
+    (ADR-0126 amendment, braunschweig.resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB).
+environment: 'felix (125.78 GB total RAM, 64 cores); the seven recorder series measured
+  are b370_data/cache_bs_100pct_b370_arm0''s runs at 20260905T193026, 20260905T224249,
+  20260907T083207, 20260908T002422 (the "pb4_arm4" run) and 20260909T172119, plus
+  b370_data/cache_bs_100pct_b370_arm1''s run at 20260909T155814 and
+  b370_data/cache_bs_100pct_b370_arm2''s run at 20260909T190904 (each series path:
+  <arm working directory>/monitoring/resource_series_<stamp>.jsonl on felix; these
+  per-run JSONL series are local to the server and are not committed to this
+  repository).
+
+  '
+validation:
+- metric: private per-worker memory (arm0, 2026-09-05 19:30:26)
+  reference: none (measurement)
+  result: driver RSS 19.60 GB at the stage''s memory minimum, available-memory drop
+    37.87 GB over 62 live workers -> 0.611 GB/worker
+- metric: private per-worker memory (arm0, 2026-09-05 22:42:49)
+  reference: none (measurement)
+  result: driver RSS 19.62 GB at the stage's memory minimum, available-memory drop
+    36.26 GB over 62 live workers -> 0.585 GB/worker
+- metric: private per-worker memory (arm0, 2026-09-07 08:32:07)
+  reference: none (measurement)
+  result: driver RSS 21.84 GB at the stage's memory minimum, available-memory drop
+    36.19 GB over 62 live workers -> 0.584 GB/worker
+- metric: private per-worker memory (arm0, 2026-09-08 00:24:22, the pb4_arm4 run)
+  reference: none (measurement)
+  result: driver RSS 30.09 GB at the stage's memory minimum, available-memory drop
+    53.44 GB over 62 live workers -> 0.862 GB/worker -- the MEASURED MAXIMUM across
+    all seven runs, adopted as braunschweig.resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB
+    (rounded down to 0.86)
+- metric: private per-worker memory (arm0, 2026-09-09 17:21:19)
+  reference: none (measurement)
+  result: driver RSS 21.83 GB at the stage's memory minimum, available-memory drop
+    44.45 GB over 62 live workers -> 0.717 GB/worker
+- metric: private per-worker memory (arm1, 2026-09-09 15:58:14)
+  reference: none (measurement)
+  result: driver RSS 20.85 GB at the stage's memory minimum, available-memory drop
+    30.80 GB over 62 live workers -> 0.497 GB/worker
+- metric: private per-worker memory (arm2, 2026-09-09 19:09:04)
+  reference: none (measurement)
+  result: driver RSS 20.43 GB at the stage's memory minimum, available-memory drop
+    29.48 GB over 62 live workers -> 0.475 GB/worker
+- metric: measurement method
+  reference: none (method statement)
+  result: per-worker private memory = (memory_available_kb in the last sample before
+    the stage MINUS its minimum during the stage, minus driver RSS growth during the
+    stage) / 62 live workers. Driver RSS growth during the stage was 0.0 GB in every
+    one of the seven runs; baseline driver RSS before the stage ranged 19-36 GB across
+    the seven runs.
+- metric: copy-on-write caveat
+  reference: none (method statement)
+  result: per-worker RSS itself is NOT usable as the per-worker cost -- summed worker
+    RSS reads 1200-1860 GB across these runs on a 125.78 GB machine, because more
+    than 95% of each forked worker's RSS is copy-on-write pages inherited from the
+    driver process at fork time, not memory the pool actually needs. The
+    available-memory delta above is the only quantity that isolates the pool's real
+    private footprint.
+decisions:
+- ADR-0126
+source: Post-hoc measurement over the run resource recorder's (issue 350) committed
+  JSONL series from seven deduplicated 100% ZGB-8 executions on felix, performed on
+  2026-09-17 to establish the measured basis for the chainsolver worker pool's memory
+  bound (ADR-0126 amendment).

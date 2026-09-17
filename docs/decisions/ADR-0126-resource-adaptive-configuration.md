@@ -133,6 +133,66 @@ hand), so it is fixed as part of this decision rather than left for later.
    equally valid -- realisation once under this default; that is the
    intended, one-time correction, stated here rather than absorbed silently.
 
+5. **AMENDMENT (2026-09-17): the chainsolver worker pool IS now memory-bounded,
+   on measured grounds.** The "Non-goals" section of the design spec this ADR
+   implements (`docs/superpowers/specs/2026-09-16-resource-adaptive-config-design.md`)
+   stated that the chainsolver pool's worker count "stays CPU-derived, as
+   today" because "no per-worker footprint has ever been measured for that
+   stage, and inventing one is forbidden (CLAUDE.md)"; `braunschweig/resources.py`'s
+   own `build_report` docstring and `DEFAULT_CORE_RESERVE` comment made the
+   same claim in code. That premise no longer holds: the run resource recorder
+   (issue #350) recorded seven deduplicated 100% ZGB-8 executions of
+   `braunschweig.synthesis.locations.secondary_chainsolvers` on the felix
+   server (2026-09-05 to 2026-09-09), and a post-hoc measurement over those
+   recorder series (`docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`)
+   establishes the pool's MAXIMUM measured private per-worker memory footprint
+   at 0.86 GB (`braunschweig.resources.DEFAULT_CHAINSOLVER_WORKER_MEMORY_GB`),
+   computed as (available-memory drop during the stage, minus driver RSS
+   growth, which was 0.0 GB in every run) divided by the 62 live workers.
+   Per-worker RSS itself is NOT usable for this bound: on the 125.78 GB
+   machine the summed worker RSS reads 1200-1860 GB, because more than 95% of
+   each forked worker's RSS is copy-on-write pages inherited from the driver
+   at fork time, not memory the pool actually needs.
+   `braunschweig.resources.resolve_chainsolver_workers` /
+   `effective_chainsolver_workers` now bound the pool by
+   `workers = max(1, min(core_budget, floor((memory_budget_gb -
+   driver_rss_gb_live) / worker_memory_gb)))`, called from the stage's
+   `_solve_problem_set` at stage start. `driver_rss_gb_live` is THIS process's
+   own live RSS at that moment (`current_process_rss_gb`, psutil first, then
+   `/proc/self/status VmRSS`, logged at INFO which source was used; a WARNING
+   is logged and the bound falls back to core-only when neither is available
+   -- CLAUDE.md: no silent fallbacks), because the worker pool is forked from
+   the driver and both compete for the same budget; this is the run's own
+   deterministic state, not other users' contention, so it is consistent with
+   Decision 1's "scale off the total allocation, not free capacity". The new
+   config key `braunschweig.chainsolvers.worker_memory_gb` (default 0.86,
+   OPERATIONAL, `volatile=True`) carries the measured figure; it sizes the
+   pool, never the partition, so it has no influence on any result. On the
+   server measured for the original decision above (94 GB total, 86.28 GB
+   budget), a typical driver RSS (~25 GB) still yields 71 workers, capped at
+   62 by cores -- unchanged; a heavier driver process (~36 GB, the upper end
+   of the observed 19-36 GB baseline range) now yields 58 workers instead of
+   risking the OOM that an unbounded 62-worker pool would have risked at that
+   driver size. This ALSO reverses the "deliberately excluded / unmeasured"
+   framing this ADR, `docs/codebase/notes/resource-budget.md` and
+   `braunschweig/resources.py`'s own `build_report` docstring and
+   `DEFAULT_CORE_RESERVE` comment previously carried: those documents stated
+   the pool's footprint was "unmeasured" and the pool was resolved "entirely
+   outside this module" via `parallelism.resolve_workers` -- that is no longer
+   true (`parallelism.resolve_workers` has been removed outright, having lost
+   its only production caller), and this ADR says so plainly rather than
+   leaving the earlier, now-incorrect statement standing.
+   **This adopts, on measured grounds, the memory cap ADR-0097 explicitly
+   rejected** ("Rejected: a static memory cap on the pool", citing "the shard
+   count IS the worker count, so lowering the pool size makes workers process
+   several shards sequentially" as the reason a cap would cost wall clock for
+   no benefit). Decision 4 above is exactly what removed that premise: since
+   the shard/worker split, the shard count and the worker count are
+   independent, so a memory-bounded pool that falls below the shard count
+   simply runs more shards per worker sequentially -- costing wall clock only
+   when the bound actually bites, never a permanent, unconditional tax. See
+   ADR-0097's Status entry for its own acknowledgement of this supersession.
+
 ## Rejected alternative
 
 Scaling off CURRENTLY FREE resources (contention-aware sizing: "how much of
@@ -219,6 +279,30 @@ this decision tries to prevent by watching load.
   expensive to touch" discipline as any other module already in that stage's
   covered set, and a future contributor changing it should expect the next
   full popsim run to recompute.
+- **AMENDMENT (2026-09-17): the chainsolver stage now carries the identical
+  permanent cache dependency on `braunschweig/resources.py`.** Since the
+  memory-bound amendment (point 5 above), `secondary_chainsolvers/__init__.py`
+  imports `braunschweig.resources` at module level and lists it in
+  `_HELPER_MODULES`, exactly like the popsim stage's `_DEFERRED_HELPER_MODULE_NAMES`
+  entry -- any future edit to `resources.py`, including a wording-only change,
+  now invalidates BOTH the full-scale PopulationSim cache and the full-scale
+  chainsolver cache. This is the same deliberate, permanent cost the bullet
+  above already accepts for PopulationSim, now doubled to a second stage; it
+  is recorded here rather than left implicit.
+- **AMENDMENT (2026-09-17): typical server runs keep the unchanged 62 workers;
+  the worst measured shape is now bounded instead of risking an OOM.** On the
+  94 GB / 86.28 GB-budget server this ADR measures, a typical driver RSS
+  (~25 GB) still yields 71 workers, capped at 62 by cores exactly as before
+  this amendment; a heavier driver process (~36 GB, the upper end of the
+  observed 19-36 GB baseline range across the seven runs measured in
+  `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml`) now yields 58
+  workers instead of the unbounded 62 that risked exhausting the box. None of
+  the seven runs actually measured there was, by itself, heavy enough to bind
+  the new bound below 62 on the current server (the heaviest, 30.09 GB driver
+  RSS, still leaves headroom) -- the 58-worker case above is the amendment's
+  own worked hypothetical for a heavier driver than any of the seven measured,
+  not a claim that the seven historical runs would themselves have been
+  throttled.
 - `matsim_threads` / `matsim_qsim_threads` are untouched; an oversubscribed
   run on a shrunk machine is slower, not silently wrong, and the mismatch is
   now visible as a startup warning instead of invisible, pending the tuning
@@ -255,8 +339,13 @@ this decision tries to prevent by watching load.
 - Tests: `tests/test_resources_detection.py`, `tests/test_resources_budget.py`,
   `tests/test_resources_java_memory.py`, `tests/test_resources_popsim_workers.py`,
   `tests/test_resources_processes.py`, `tests/test_resources_report.py`,
-  `tests/test_resources_run_start.py`, `tests/test_chainsolvers_parallel.py`
+  `tests/test_resources_run_start.py`, `tests/test_chainsolvers_parallel.py`,
+  `tests/test_resources_chainsolver_workers.py` (point 5 amendment),
+  `tests/test_passive_joint_two_pass.py::test_solve_problem_set_obtains_its_worker_count_from_resources`
 - Measured machine state (2026-09-16, `ssh felix`): `systemd-detect-virt` ->
   `kvm`; cgroup v2 `cpu.max` / `memory.max` absent; `nproc` =
   `os.cpu_count()` = `len(sched_getaffinity(0))` = 64; `free -g` total 94,
   available 92, swap 1.
+- Measured chainsolver worker-pool memory (2026-09-17 amendment, point 5):
+  `docs/runs/chainsolver-worker-private-memory-2026-09-17.yml` (seven
+  deduplicated 100% ZGB-8 executions, felix, 2026-09-05 to 2026-09-09).

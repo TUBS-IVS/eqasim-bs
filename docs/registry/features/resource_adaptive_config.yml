@@ -6,15 +6,26 @@ description: >
   os.sched_getaffinity with an os.cpu_count fallback, memory via psutil with a
   /proc/meminfo fallback, raising ResourceDetectionError if neither source reports a
   value) and derives one ResourceBudget per run (cores - 2, memory_gb - 8, overridable
-  by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). TWO OPERATIONAL config keys are resolved
+  by EQASIM_CPU_BUDGET / EQASIM_MEM_BUDGET). THREE OPERATIONAL config keys are resolved
   against that budget at their point of use -- java_memory (matsim/runtime/java.py,
-  data/osm/osmosis.py) and braunschweig.population.popsim.num_workers
+  data/osm/osmosis.py), braunschweig.population.popsim.num_workers
   (braunschweig/popsim/stage/__init__.py, bounded by measured per-worker memory via
-  braunschweig.population.popsim.worker_memory_gb, default 30 GB) -- and a configured
-  value is a CEILING: used verbatim when it fits, clamped down and logged when it does
-  not. The resolved value never enters the config, so no synpp stage hash changes and
-  no shared cache is invalidated by these two clamps. `processes` is DELIBERATELY NOT
-  in this list: at its two pure read sites (synthesis/population/matched.py,
+  braunschweig.population.popsim.worker_memory_gb, default 30 GB), and (2026-09-17
+  amendment) braunschweig.chainsolvers.processes (braunschweig/synthesis/locations/
+  secondary_chainsolvers/__init__.py's _solve_problem_set, bounded by BOTH the core
+  budget and a measured per-worker memory footprint via
+  braunschweig.chainsolvers.worker_memory_gb, default 0.86 GB, against THIS process's
+  own live RSS at stage start since the pool is forked from it: workers = max(1,
+  min(core_budget, floor((memory_budget_gb - driver_rss_gb_live) / worker_memory_gb)))
+  -- see docs/runs/chainsolver-worker-private-memory-2026-09-17.yml for the measured
+  basis) -- and a configured value is a CEILING: used verbatim when it fits, clamped
+  down and logged when it does not. The resolved value never enters the config, so no
+  synpp stage hash changes and no shared cache is invalidated by these three clamps
+  (the chainsolver clamp's driver-RSS term is measured fresh every run, so it is a
+  point-of-use resolution like the other two, not a config-independent constant).
+  `processes` (the synpp-level key, NOT braunschweig.chainsolvers.processes above) is
+  DELIBERATELY NOT in this list: at its two pure read sites
+  (synthesis/population/matched.py,
   synthesis/population/spatial/secondary/locations.py) it fixes both the person-chunk
   partition (np.array_split) and the seed count (random.randint(..., size=processes)),
   so it is result-affecting and is treated exactly like matsim_threads /
@@ -30,9 +41,12 @@ description: >
   config at startup, logs it, aborts on an error-severity violation ONLY when
   braunschweig.population.method actually selects a PopulationSim workflow (so a
   MATSim-only or simple_ipf_open run is never aborted by a popsim.num_workers mismatch
-  it will never hit), and records the report in the run provenance under "resources".
-  See ADR-0126 for the full decision, including the rejected free-resources
-  alternative.
+  it will never hit), and records the report in the run provenance under "resources"
+  (the chainsolver clamp is previewed there as a core-budget-only, origin="reported"
+  entry, because the live driver RSS is only known once the stage itself starts; the
+  stage's own log line is the source of truth for the value actually used). See
+  ADR-0126 for the full decision, including the rejected free-resources alternative
+  and the 2026-09-17 amendment that added the chainsolver memory bound.
 stages:
 - matsim.runtime.java
 - data.osm.osmosis
@@ -72,8 +86,11 @@ evidence:
   - tests/test_resources_processes.py
   - tests/test_resources_report.py
   - tests/test_resources_run_start.py
+  - tests/test_resources_chainsolver_workers.py
   - tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
   - tests/test_chainsolvers_parallel.py::test_a_single_worker_still_produces_the_sharded_realisation
+  - tests/test_chainsolvers_parallel.py::test_shard_count_is_hashed_but_worker_count_is_volatile
+  - tests/test_passive_joint_two_pass.py::test_solve_problem_set_obtains_its_worker_count_from_resources
   off_path_byte_identical:
     claimed: true
     test: tests/test_chainsolvers_parallel.py::test_solve_chains_parallel_is_invariant_to_the_worker_count
@@ -133,7 +150,8 @@ evidence:
       to an external reference value.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - chainsolver-worker-private-memory-2026-09-17
   metric: null
   note: >
     No real-machine smoke run has been recorded yet. The brief for this work names a
@@ -148,8 +166,18 @@ validation:
     see ADR-0126 Consequences for the full list and the ~33-50% parallelism drop this
     represents), the run proceeding, and the resources block landing in
     run_provenance_<stamp>.json, as the outstanding evidence before this feature can
-    be called production-proven; it has not been executed as of this record.
-    Unit-level coverage (detection fallbacks, budget derivation, per-key resolution,
+    be called production-proven; it has not been executed as of this record. The
+    2026-09-17 chainsolver memory-bound amendment adds one more expected line to that
+    same smoke: "[resources] braunschweig.chainsolvers.processes: budget 62 cores /
+    86.3 GB memory, driver RSS <measured> GB, worker_memory_gb 0.86 GB -> ceiling
+    <n> workers", logged by effective_chainsolver_workers at
+    braunschweig.synthesis.locations.secondary_chainsolvers stage start -- also not
+    yet observed on a real server run. The
+    chainsolver-worker-private-memory-2026-09-17 manifest listed in validation.runs
+    is a POST-HOC RESOURCE MEASUREMENT establishing the 0.86 GB/worker constant's
+    measured basis, over seven already-recorded production executions -- it is NOT a
+    smoke or validation run of this feature (no config, resolution, or clamp behaviour
+    of this mechanism was exercised by it). Unit-level coverage (detection fallbacks, budget derivation, per-key resolution,
     the startup gate, the chainsolver shard/worker invariance) is in place and green;
     see evidence.tests.
 assessment:
