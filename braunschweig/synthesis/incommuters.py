@@ -26,11 +26,16 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
+from braunschweig import constants as _constants
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
+from braunschweig.data.cordon import demand as _demand
 from braunschweig.data.cordon.demand import (
     expand_to_agents, make_incommuter_ids, select_inbound_flows)
+from braunschweig.data.cordon import gate_assignment as _gate_assignment
 from braunschweig.data.cordon.gate_assignment import sample_gate_per_agent
+from braunschweig.data.cordon import mode_balancer as _mode_balancer
 from braunschweig.data.cordon.mode_balancer import balance_incommuter_modes
+from braunschweig.data.cordon import mode_reference as _mode_reference
 from braunschweig.data.cordon.mode_reference import (
     MID_DISTANCE_EDGES, restrict_to_modes, route_distance_band)
 from braunschweig.data.cordon import plans as _plans
@@ -41,6 +46,7 @@ from braunschweig.data.cordon.plans import (
     sample_donors, select_commuter_donors, straight_line_distance_km)
 # Per-Bundesland in-commuter mode reference (#129): origin-Kreis ARS -> Bundesland.
 # mikrozensus.reference imports only from cordon.mode_reference (no cycle with this module).
+from braunschweig.data.mikrozensus import reference as _mikrozensus_reference
 from braunschweig.data.mikrozensus.reference import bundesland_of_ars
 
 logger = logging.getLogger(__name__)
@@ -1127,17 +1133,57 @@ def _empty_frames(crs):
         od_target=pd.DataFrame(columns=["ars5", "direction", "n_target"]))
 
 
-_HELPER_MODULES = (_plans,)
+#: Every module whose source decides a value of the in-commuter frames this stage returns.
+#: synpp hashes only THIS module's source, so each of them could otherwise be edited while a
+#: warm cache kept serving in-commuters built under the previous rule (#327 gate):
+#: ``demand`` expands the OD flows into agents and mints their ids, ``gate_assignment`` picks
+#: every agent's cordon gate, ``mode_balancer`` decides the realised mode split,
+#: ``mode_reference`` owns the distance bands and the mode restriction, ``plans`` owns the
+#: shared plan repairs, ``mikrozensus.reference`` maps an origin ARS to the Bundesland whose
+#: mode reference is applied, and ``constants`` carries ``ROUTED_DETOUR_FACTOR``, with which
+#: every straight-line distance here is converted.
+_HELPER_MODULES = (_plans, _constants, _demand, _gate_assignment, _mode_balancer,
+                   _mode_reference, _mikrozensus_reference)
+
+#: The same requirement for the five helpers reached through FUNCTION-LEVEL imports, hashed by
+#: dotted NAME because no module object exists at this file's top level: ``pt_reachability``
+#: (imported locally to break the documented cycle above) weights the entry stations,
+#: ``incommuter_origins`` places the origins, ``network`` owns the clip-signature check,
+#: ``external_workplaces`` supplies the Gemeinden the destinations are drawn in, and
+#: ``fleet_sampling_de`` draws the in-commuters' vehicles.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.cordon.incommuter_origins",
+    "braunschweig.data.cordon.network",
+    "braunschweig.data.cordon.pt_reachability",
+    "braunschweig.data.external_workplaces",
+    "braunschweig.synthesis.vehicles.fleet_sampling_de",
+)
 
 
 def validate(context):
-    """Include shared plan repairs in synpp's stage cache identity."""
+    """Include shared plan repairs in synpp's stage cache identity.
+
+    A deferred module that fails to import raises rather than being skipped: skipping it
+    would keep the stale cached in-commuters alive exactly when the helper is broken.
+    """
     import hashlib
+    import importlib
     import inspect
 
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"incommuters validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached in-commuters."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from scripts import extract_mid_ownership_by_rs7_haustyp as mod
 from scripts.extract_mid_ownership_by_rs7_haustyp import build_ownership_conditional_tables
 
 
@@ -67,3 +68,39 @@ def test_committed_conditionals_match_the_2026_08_19_spike_pins():
     b = bikes[(bikes["rs7"] == 72) & (bikes["ht"] == 3)].iloc[0]
     assert b["bikes_0"] == pytest.approx(0.328313, abs=5e-6)
     assert b["n_unweighted"] == 1538
+
+
+def test_universe_log_reports_the_rs7_and_weight_exclusion_rates(caplog):
+    """The universe log must name EVERY exclusion reason as its own rate.
+
+    ``base`` drops a household for three independent reasons -- an out-of-range
+    RegioStaR7, a haustyp outside 1..4, and a missing/non-positive H_GEW -- and the count
+    column adds a fourth. Only two of the four were logged, so a delivery that silently
+    lost its weights or arrived with a different RS7 coding would shrink the universe with
+    nothing in the log attributing the loss (project rule: a fallback/exclusion must be
+    observable, not merely correct).
+    """
+    import logging
+
+    households = pd.DataFrame({
+        # rows 0-1 valid; row 2 out-of-range RS7; row 3 haustyp 95; row 4 zero weight.
+        "RegioStaR7": [71, 71, 99, 71, 71],
+        "haustyp": [1, 1, 1, 95, 1],
+        "H_ANZAUTO": [0, 1, 1, 1, 1],
+        "anzpedrad": [0, 1, 1, 1, 1],
+        "H_GEW": [1.0, 1.0, 1.0, 1.0, 0.0],
+    })
+    # Complete the 28-cell grid so the completeness guard does not raise first.
+    filler = pd.DataFrame([
+        {"RegioStaR7": r, "haustyp": h, "H_ANZAUTO": 1, "anzpedrad": 1, "H_GEW": 1.0}
+        for r in mod.RS7_CLASSES for h in mod.HAUSTYP_CLASSES])
+    frame = pd.concat([households, filler], ignore_index=True)
+
+    with caplog.at_level(logging.INFO, logger="extract_mid_ownership_by_rs7_haustyp"):
+        mod.build_ownership_conditional_tables(frame)
+
+    universe_lines = [r.getMessage() for r in caplog.records if "universe:" in r.getMessage()]
+    assert len(universe_lines) == 2, caplog.text  # one per conditional (cars, bikes)
+    for line in universe_lines:
+        assert "RegioStaR7 outside" in line
+        assert "H_GEW" in line

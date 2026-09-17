@@ -35,6 +35,7 @@ way -- see :func:`execute`.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 
@@ -76,6 +77,15 @@ _LOG_TAG = "[commute day trips]"
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
                    _srv_departure_times, _srv_plan_structure, _plan_validation)
 
+#: Helper modules this stage reaches only through FUNCTION-LEVEL imports, hashed by dotted
+#: NAME because there is no module object at this file's top level to list above.
+#: ``config_keys`` owns every KEY_/DEFAULT_ constant ``configure`` declares and ``execute``
+#: reads: a changed DEFAULT_ there changes the parameters this stage's trips were built
+#: under while leaving every module the tuple above covers untouched (#327 gate).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.stage.config_keys",
+)
+
 #: ``context.set_info`` key under which this stage reports its diagnostics (issue #378).
 #:
 #: synpp persists a stage's info into the working directory's ``pipeline.json``, keyed by that
@@ -116,10 +126,24 @@ def validate(context):
     changed. The token folds those sources in, so a helper edit devalidates the stage exactly
     like an edit here (same mechanism as
     ``braunschweig.synthesis.locations.secondary_chainsolvers.validate``).
+
+    A deferred module that fails to import raises rather than being skipped: skipping it
+    would keep the stale cache alive exactly when the helper is broken.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"trips_day_stage validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached trips."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

@@ -436,19 +436,27 @@ def test_validate_hashes_the_pure_module_and_the_reference_builders():
     invariant (tests/test_synpp_helper_hash_invariant.py) cannot catch: ``emd_on_bands``
     produces every value in emd.csv, and ``mid_time_seconds``'s design-code rule decides which
     legs have a usable raw time and therefore share_raw, n_raw and the coverage figure.
+
+    ``config_keys`` and ``provenance`` joined the token when the #327 full-surface gate
+    (tests/test_audit_synpp_helper_hash.py) was re-run after merging ``main``, which had
+    given this stage its ``validate()`` with those two module-level imports outside it: a
+    changed ``DEFAULT_`` decides what the report was computed under, and ``provenance``
+    writes the record it is judged from.
     """
+    from braunschweig import provenance
     from braunschweig.analysis import departure_time, plan_structure
     from braunschweig.calibration import metrics, srv_departure_times, srv_plan_structure
     from braunschweig.popsim import departure_time_model
     from braunschweig.popsim import trips as popsim_trips
+    from braunschweig.popsim.stage import config_keys
 
     assert set(S._HELPER_MODULES) == {departure_time, plan_structure, srv_departure_times,
                                       srv_plan_structure, departure_time_model, metrics,
-                                      popsim_trips}
+                                      popsim_trips, config_keys, provenance}
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0
     assert token == S.validate(None)
-    # The token really is the md5 over those seven sources, in the declared order.
+    # The token really is the md5 over exactly those sources, in the declared order.
     import hashlib
     import inspect
     expected = hashlib.md5()

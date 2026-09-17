@@ -55,6 +55,7 @@ change devalidates the cached stage output exactly like an edit here.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import time
 from typing import Any, Dict, List, Tuple
@@ -63,6 +64,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.calibration import secondary_measurement as _secondary_measurement
 from braunschweig.calibration.secondary_measurement import boundary_clip_share
 # Imported at MODULE level (used directly by _solve_problem_set below, and for that
 # reason also a module OBJECT this file can list in _HELPER_MODULES, same import-site
@@ -101,6 +103,7 @@ from braunschweig.popsim import seed  # noqa: F401  (cache-hash only)
 # edit confined to one of them would otherwise reuse a stale cached stage output.
 from braunschweig.synthesis.locations import escort_links  # noqa: F401  (cache-hash only)
 from braunschweig.synthesis.locations import passive_joint_links  # noqa: F401  (cache-hash only)
+from synthesis.population.spatial.secondary import problems as _secondary_problems
 from synthesis.population.spatial.secondary.problems import (
     find_assignment_problems,
 )
@@ -306,7 +309,12 @@ def __getattr__(name):
 # PLUS braunschweig.resources (ADR-0126): it now decides this stage's worker count
 # (effective_chainsolver_workers, called from _solve_problem_set), so its source must
 # feed this stage's validate() token too, same as every helper module below.
+# PLUS _secondary_measurement (boundary_clip_share, the placement quality measure) and
+# _secondary_problems (the upstream problem construction this solver consumes): both were
+# module-level imports outside the token until the #327 helper-hash re-audit.
 _HELPER_MODULES: Tuple[Any, ...] = (
+    _secondary_measurement,
+    _secondary_problems,
     activity_types,
     candidate_columns,
     candidates,
@@ -330,6 +338,21 @@ _HELPER_MODULES: Tuple[Any, ...] = (
 )
 
 
+#: Hashed by dotted NAME because they are imported inside a function body rather than at
+#: module level: escort_links (the escort anchor/link build) and parallelism (which resolves
+#: the worker count the chainsolver runs with). Both were outside the token until the #327
+#: helper-hash re-audit.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.parallelism",
+    # configure() and execute() reach the KEY_/DEFAULT_ constants of this stage through
+    # FUNCTION-LEVEL imports of config_keys, so its source is invisible to
+    # inspect.getsource of this file. A changed DEFAULT_ there changes what the stage
+    # computed under without touching any file this token otherwise covers.
+    "braunschweig.popsim.stage.config_keys",
+    "braunschweig.synthesis.locations.escort_links",
+)
+
+
 def validate(context):
     """synpp validation token: md5 over the helper submodules' sources.
 
@@ -340,6 +363,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"secondary_chainsolvers validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

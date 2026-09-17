@@ -43,8 +43,10 @@ devalidates the cached stage output exactly like an edit here.
 """
 
 import hashlib
+import importlib
 import inspect
 
+from braunschweig.data.mid import reference_tables as _mid_reference_tables
 from braunschweig.data.mid.reference_tables import load_class_midpoint_eur
 
 # ---------------------------------------------------------------------------
@@ -126,13 +128,28 @@ from .vehicle_ownership import (  # noqa: F401  (re-exports)
 # without the validate() hook below a change confined to a helper submodule
 # would silently reuse the stale cached stage output on a partial rerun.
 # Every submodule extracted from this package MUST be listed here.
+# _mid_reference_tables owns load_class_midpoint_eur, which converts every MiD income
+# class into the euro midpoint this stage assigns -- a module-level import that sat
+# outside the token until the #327 helper-hash re-audit.
 _HELPER_MODULES = (
+    _mid_reference_tables,
     availability,
     base,
     economic_status,
     housing_tenure,
     income_distribution,
     vehicle_ownership,
+)
+
+
+#: Hashed by dotted NAME because they are imported inside a function body rather than at
+#: module level: the three MiD distribution loaders this stage draws income and tenure from.
+#: Their tables ARE this stage's enrichment, so an edit to one changes the enriched population
+#: -- they were outside the token until the #327 helper-hash re-audit.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.mid.income_by_size",
+    "braunschweig.data.mid.income_by_status",
+    "braunschweig.data.mid.tenure_by_income",
 )
 
 
@@ -146,6 +163,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"enriched validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

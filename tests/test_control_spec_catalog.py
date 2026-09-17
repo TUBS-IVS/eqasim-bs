@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from braunschweig.popsim import control_spec as cs
 
 
@@ -239,3 +241,53 @@ def test_full_catalog_ownership_grid_flag():
 def test_grid_shape_importance_group():
     assert cs.importance_group_for_field("OWN_CARS_0_agg_ZENSUS1km") == "grid_shape"
     assert cs.IMPORTANCE_PROFILES["optimized_2026_06_30"]["grid_shape"] == 500
+
+
+def test_ownership_grid_controls_reject_a_transposed_category_order(monkeypatch):
+    """A registry category ORDER change must fail, not silently mis-pair the columns.
+
+    ``ownership_grid_controls`` zips the registry categories against the grid columns
+    positionally, and checked only that the two COUNTS agree. The column name carries the
+    category label (``OWN_CARS_<label>_agg``), so transposing two registry categories
+    would pair category "2" with column ``OWN_CARS_1_agg``: the 1km shape control for
+    one-car households would then select two-car households, with every count still
+    summing correctly and no test failing. Three names being present is not enough --
+    their ORDER is load-bearing (issue #327).
+    """
+    from dataclasses import replace
+
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    transposed = []
+    for control in kac.REGISTRY:
+        if control.name == "number_of_cars":
+            cats = list(control.categories)
+            cats[1], cats[2] = cats[2], cats[1]
+            control = replace(control, categories=tuple(cats))
+        transposed.append(control)
+    monkeypatch.setattr(kac, "REGISTRY", tuple(transposed))
+
+    with pytest.raises(ValueError, match="category") as excinfo:
+        cs.ownership_grid_controls()
+    message = str(excinfo.value)
+    assert "number_of_cars" in message
+    # The mismatching pair is named, so the reader does not have to diff two lists.
+    assert "OWN_CARS_1_agg" in message
+
+
+def test_ownership_grid_controls_name_a_renamed_registry_entry(monkeypatch):
+    """A renamed REGISTRY entry must produce a message, not a bare KeyError.
+
+    ``by_name[entry_name]`` raised KeyError('number_of_cars') -- which reads like a
+    missing dict key in this function rather than "the registry no longer carries the
+    entry this layer is built on" (issue #327).
+    """
+    from braunschweig.popsim import kreis_attribute_control as kac
+
+    monkeypatch.setattr(
+        kac, "REGISTRY",
+        tuple(c for c in kac.REGISTRY if c.name != "number_of_cars"))
+
+    with pytest.raises(ValueError, match="number_of_cars") as excinfo:
+        cs.ownership_grid_controls()
+    assert "REGISTRY" in str(excinfo.value)

@@ -49,7 +49,25 @@ def _detect_prefix(directory: Path) -> str:
 def _read_dir(directory: Path, prefix: str, kind: str) -> PopulationFrames:
     persons = pd.read_csv(directory / f"{prefix}persons.csv", sep=";")
     households = pd.read_csv(directory / f"{prefix}households.csv", sep=";")
-    homes = gpd.read_file(directory / f"{prefix}homes.gpkg")
+    homes_path = directory / f"{prefix}homes.gpkg"
+    if not homes_path.exists():
+        # A cache/output that stopped before the LOCATIONS stage carries the population
+        # CSVs but no home geometry. Every geography-keyed check downstream needs it
+        # (spatial.assign_geographies derives the Kreis from these points), so this cannot
+        # be skipped without turning the report into a silently partial one -- the report
+        # would still claim to validate the controls while omitting every per-Kreis fit.
+        # Fail here instead, naming what is missing and the route that does work, because
+        # the bare geopandas read error names only a path (issue #327).
+        raise FileNotFoundError(
+            f"{prefix}homes.gpkg is missing from {directory}, so this is a POPULATION-ONLY "
+            f"{kind} (the locations stage has not run, e.g. an interrupted run or a "
+            "population-only smoke). run_population_validation needs the home geometry for "
+            "every geography-keyed check and deliberately does not produce a partial report "
+            "without it. Either point --run-output-dir / --sim-cache at a run that reached "
+            "the locations stage, or read the aggregates from the stage pickle directly, "
+            "which is the supported route for a population-only cache "
+            "(docs/registry/features/population_validation.yml records it).")
+    homes = gpd.read_file(homes_path)
     vehicles_path = directory / f"{prefix}vehicles.csv"
     vehicles = pd.read_csv(vehicles_path, sep=";") if vehicles_path.exists() else None
     trips_path = directory / f"{prefix}trips.csv"

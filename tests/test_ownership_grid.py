@@ -369,3 +369,177 @@ def test_select_load_columns_does_not_duplicate_an_already_requested_column():
     present = og.DWELLING_INPUT_COLUMNS[0]
     out = og.select_load_columns(["GITTER_ID_100m", present], ["GITTER_ID_100m", present])
     assert out.count(present) == 1
+
+
+def test_the_rs7_guard_is_what_keeps_the_two_parent_aggregations_aligned():
+    """A NaN RegioStaR7 must be rejected BEFORE the per-parent aggregations run.
+
+    Two aggregations over the same frame define the parent set: ``dom_rs7`` groups by
+    ``["parent", "rs7"]`` and therefore DROPS a parent whose every cell has a NaN rs7,
+    while ``hh1`` groups by parent alone and keeps it. Every per-parent array
+    (``rs7_p``, ``kreis_p``, the target matrix) is indexed by ``hh1``, so a divergence
+    would allocate the target matrix one row short and leave ``rs7_p`` carrying a NaN
+    that addresses no prior.
+
+    That divergence is UNREACHABLE, and this test records why: the cell-level RS7 guard
+    above rejects any cell outside 71..77 -- NaN included -- so ``dom_rs7`` always covers
+    exactly ``hh1``'s parents. #327 recorded the coupling as "always equal today"; it is
+    in fact enforced, and this test is what would notice if that guard were ever relaxed
+    without the aggregations being re-aligned. ``n_parent`` is nevertheless taken from
+    ``hh1``, the frame the arrays are actually indexed by, so a relaxed guard would
+    produce a loud misalignment rather than a short array.
+    """
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    # Parent B's only cell loses its RS7; A and C keep theirs.
+    cells = cells.copy()
+    cells.loc[cells["ZENSUS1km"] == "B", "RegioStaR7"] = np.nan
+
+    with pytest.raises(ValueError, match="RegioStaR7 outside") as excinfo:
+        og.add_ownership_grid_columns(cells, cars_t, bikes_t, cond, bcond,
+                                      kreis_per_cell=kreis_per_cell)
+    # The guard must name NaN explicitly, since that is the case this coupling rests on.
+    assert "NaN" in str(excinfo.value)
+
+
+def test_add_ownership_grid_columns_names_a_misaligned_kreis_per_cell_index():
+    """A ``kreis_per_cell`` Series on a FOREIGN index must name that as the cause.
+
+    ``pd.Series(kreis_per_cell, index=cells.index)`` REINDEXES a Series, so a caller who
+    passes a correct resolution carrying a different index (a filtered or reset frame) gets
+    NaN for every cell. ``.astype(str)`` then turns those into the literal string "nan",
+    and the failure surfaced several layers later as
+    ``rake_ownership_targets[cars]: Kreis nan has cells but no row in the target table`` --
+    which points at the target table, the one thing that is not wrong (issue #327).
+    """
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    # Same values, same order, but an index that shares nothing with cells.index.
+    foreign = kreis_per_cell.copy()
+    foreign.index = [100, 101, 102, 103]
+
+    with pytest.raises(ValueError, match="kreis_per_cell") as excinfo:
+        og.add_ownership_grid_columns(cells, cars_t, bikes_t, cond, bcond,
+                                      kreis_per_cell=foreign)
+    message = str(excinfo.value)
+    assert "index" in message
+    # The old symptom must not be what the caller sees.
+    assert "no row in the target table" not in message
+
+
+def test_add_ownership_grid_columns_accepts_a_positional_kreis_per_cell():
+    """A list / ndarray without an index stays a legitimate call form.
+
+    The alignment guard must key on "is a Series whose index disagrees", not on "is not a
+    Series": a positional sequence is aligned by position by construction, and rejecting it
+    would break callers that never carried an index.
+    """
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    out = og.add_ownership_grid_columns(cells, cars_t, bikes_t, cond, bcond,
+                                        kreis_per_cell=list(kreis_per_cell))
+    assert out.loc[kreis_per_cell == "03101", "OWN_CARS_0_agg"].sum() == pytest.approx(20.0)
+
+
+def test_the_absent_dwelling_error_states_the_actual_column_count():
+    """The "none of the N dwelling columns" error must COUNT the columns, not spell a word.
+
+    The message hard-coded "ten". DWELLING_COLUMNS_BY_HAUSTYP holds ten columns today, so
+    the word is right today and would silently become wrong the moment a class gains or
+    loses one -- in an error message whose whole job is to tell a reader which load-column
+    selection to check.
+    """
+    cond = _uniform_conditional(list(og._CARS_SHARE_COLUMNS))
+    bcond = _uniform_conditional(list(og._BIKES_SHARE_COLUMNS))
+    cells, kreis_per_cell = _mini_cells()
+    cars_t, bikes_t = _mini_targets()
+    expected_total = sum(len(v) for v in og.DWELLING_COLUMNS_BY_HAUSTYP.values())
+    dwelling_columns = [c for cols in og.DWELLING_COLUMNS_BY_HAUSTYP.values() for c in cols]
+    stripped = cells.drop(columns=[c for c in dwelling_columns if c in cells.columns])
+
+    with pytest.raises(ValueError, match="dwelling composition columns") as excinfo:
+        og.add_ownership_grid_columns(stripped, cars_t, bikes_t, cond, bcond,
+                                      kreis_per_cell=kreis_per_cell)
+    assert f"none of the {expected_total} dwelling composition columns" in str(excinfo.value)
+
+
+def test_rake_logs_the_pre_renormalisation_share_drift(caplog):
+    """The renormalisation of a published target row must be OBSERVABLE.
+
+    ``shares / shares.sum()`` silently absorbs whatever the row summed to. That is safe
+    today only because the loader validates the committed rows to 1e-3 upstream; a target
+    reaching this function from anywhere else -- a hand-built frame in a test, a future
+    caller, a loader whose tolerance is relaxed -- would be quietly rescaled with nothing
+    saying by how much (issue #327; project rule: no silent fallbacks).
+    """
+    import logging
+
+    cond_cols = og._CARS_SHARE_COLUMNS
+    prior = np.full((2, 4), 0.25)
+    hh = np.array([100.0, 100.0])
+    kreis = np.array(["03101", "03102"])
+    # 03101 sums to 1.0 exactly; 03102 sums to 0.80 -- a 20 pp drift.
+    targets = pd.DataFrame(
+        {"cars_0": [0.25, 0.20], "cars_1": [0.25, 0.20],
+         "cars_2": [0.25, 0.20], "cars_3plus": [0.25, 0.20]},
+        index=pd.Index(["03101", "03102"], name="ars5"))
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.ownership_grid"):
+        raked = og.rake_ownership_targets(prior, hh, kreis, targets, cond_cols, "cars")
+
+    # Renormalisation still happens: each Kreis keeps its household total.
+    np.testing.assert_allclose(raked.sum(axis=1), hh, rtol=1e-9)
+    drift_lines = [r.getMessage() for r in caplog.records
+                   if "renormalis" in r.getMessage()]
+    assert len(drift_lines) == 1, caplog.text
+    assert "cars" in drift_lines[0]
+    # The WORST drift is what a reader needs, and the Kreis that carries it.
+    assert "03102" in drift_lines[0]
+    assert "0.2" in drift_lines[0]
+
+
+def test_rake_warns_when_the_drift_exceeds_the_loader_tolerance(caplog):
+    """A drift beyond the upstream 1e-3 validation must be a WARNING, not an info line.
+
+    Reaching this function with a row that the committed-table loader would have rejected
+    means the target did not come through that loader, so the guarantee this
+    renormalisation relies on does not hold for that row.
+    """
+    import logging
+
+    cond_cols = og._CARS_SHARE_COLUMNS
+    prior = np.full((1, 4), 0.25)
+    targets = pd.DataFrame(
+        {"cars_0": [0.20], "cars_1": [0.20], "cars_2": [0.20], "cars_3plus": [0.20]},
+        index=pd.Index(["03101"], name="ars5"))
+
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.ownership_grid"):
+        og.rake_ownership_targets(prior, np.array([10.0]), np.array(["03101"]),
+                                  targets, cond_cols, "cars")
+
+    warnings = [r for r in caplog.records
+                if r.levelno >= logging.WARNING and "renormalis" in r.getMessage()]
+    assert len(warnings) == 1, caplog.text
+
+
+def test_rake_stays_quiet_when_the_rows_already_sum_to_one(caplog):
+    """Discrimination: no drift line when there is no drift worth reporting.
+
+    Without this, the two assertions above would pass on an implementation that logs the
+    same line on every call regardless of the rows.
+    """
+    import logging
+
+    cond_cols = og._CARS_SHARE_COLUMNS
+    targets = _shares_frame(cond_cols)
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.ownership_grid"):
+        og.rake_ownership_targets(np.full((2, 4), 0.25), np.array([10.0, 10.0]),
+                                  np.array(["03101", "03102"]), targets, cond_cols, "cars")
+    assert not [r for r in caplog.records
+                if r.levelno >= logging.WARNING and "renormalis" in r.getMessage()]

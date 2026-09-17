@@ -100,9 +100,29 @@ def _empty_frames(crs=CRS_METRIC):
     }
 
 
+#: Every helper whose source decides a value of the student in-commuter frames. This stage
+#: reaches all of them through FUNCTION-LEVEL imports, so they are hashed by dotted NAME --
+#: synpp hashes only THIS module's source, and none of these is visible in it.
+#:
+#: The first two are the shared assembly and time-repair helpers. The eight added by the #327
+#: gate re-run are the ones that decide WHICH students exist and WHERE they come from:
+#: ``student_incommuter_counts`` and ``student_origins`` are the counts and the origin
+#: distribution itself, ``cordon.demand`` expands them into agents, ``incommuter_origins``
+#: places the origins, ``mode_reference`` owns the distance bands and the mode restriction,
+#: ``mikrozensus.reference`` maps an origin ARS to the Bundesland whose mode reference applies,
+#: ``external_workplaces`` supplies the Gemeinden geometry, and ``constants`` carries
+#: ``ROUTED_DETOUR_FACTOR``, with which the straight-line distances are converted.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.incommuters",
     "braunschweig.data.cordon.plans",
+    "braunschweig.constants",
+    "braunschweig.data.cordon.demand",
+    "braunschweig.data.cordon.incommuter_origins",
+    "braunschweig.data.cordon.mode_reference",
+    "braunschweig.data.education.student_incommuter_counts",
+    "braunschweig.data.education.student_origins",
+    "braunschweig.data.external_workplaces",
+    "braunschweig.data.mikrozensus.reference",
 )
 
 

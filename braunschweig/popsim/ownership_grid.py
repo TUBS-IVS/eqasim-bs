@@ -197,8 +197,20 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
     upstream zero-weight RS7 stratum) would silently exhaust max_iter and fall through
     to returning NaN-poisoned output.
     """
+    # The tolerance load_kreis_target validates the committed target rows against; read
+    # from its single home rather than re-typed (kreis_attribute_control imports only
+    # `attributes` + numpy/pandas, so a lazy import here cannot cycle back).
+    from braunschweig.popsim.kreis_attribute_control import TARGET_SHARE_TOLERANCE
+
     hh = np.asarray(hh, dtype=float)
     out = np.zeros_like(prior, dtype=float)
+    # Worst pre-renormalisation drift over the Kreise, reported ONCE after the loop rather
+    # than per Kreis: `shares / shares.sum()` below absorbs whatever a published row summed
+    # to, which is safe only because load_kreis_target validates the committed rows to
+    # TARGET_SHARE_TOLERANCE. A target reaching this function from anywhere else would
+    # otherwise be rescaled with nothing saying by how much (issue #327).
+    worst_drift = 0.0
+    worst_drift_kreis = None
     for ars5 in pd.unique(kreis):
         if ars5 not in target_shares.index:
             raise ValueError(
@@ -207,7 +219,16 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
         m = kreis == ars5
         hh_k = hh[m]
         shares = target_shares.loc[ars5, list(share_columns)].to_numpy(dtype=float)
-        shares = shares / shares.sum()  # renormalise the integer-rounded published row
+        share_sum = float(shares.sum())
+        if not np.isfinite(share_sum) or share_sum <= 0.0:
+            raise ValueError(
+                f"rake_ownership_targets[{label}]: Kreis {ars5} target shares sum to "
+                f"{share_sum!r}, so they cannot be renormalised into counts; the row is "
+                "missing, all-zero or non-finite (refusing a silent rescale).")
+        drift = abs(share_sum - 1.0)
+        if drift > worst_drift:
+            worst_drift, worst_drift_kreis = drift, ars5
+        shares = shares / share_sum  # renormalise the integer-rounded published row
         target_counts = shares * hh_k.sum()
         M = prior[m] * hh_k[:, None]
         err = np.inf
@@ -231,6 +252,15 @@ def rake_ownership_targets(prior, hh, kreis, target_shares, share_columns, label
                 f"{max_iter} iterations (relative margin error {err:.2e}); the prior cannot "
                 "supply the target margin (check for structurally-zero categories).")
         out[m] = M
+    if worst_drift_kreis is not None:
+        # Above TARGET_SHARE_TOLERANCE the row would have been REJECTED by
+        # load_kreis_target, so it did not come through that loader and the guarantee this
+        # renormalisation relies on does not hold for it -- warn rather than inform.
+        _log = logger.warning if worst_drift > TARGET_SHARE_TOLERANCE else logger.info
+        _log(
+            "[ownership_grid] %s: target rows renormalised before raking; worst "
+            "pre-renormalisation drift |sum-1| = %.6f (Kreis %s), tolerance %.0e",
+            label, worst_drift, worst_drift_kreis, TARGET_SHARE_TOLERANCE)
     return out
 
 
@@ -288,6 +318,21 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
         logger.info("[ownership_grid] %d/%d cells have NaN %s -> treated as 0 households",
                     n_hh_nan, len(out), hh_col)
     hh100 = hh_raw.fillna(0.0).to_numpy(dtype=float)
+    # A Series is REINDEXED by pd.Series(..., index=out.index), so a correct resolution
+    # carried on a foreign index (a filtered or reset frame) silently becomes all-NaN --
+    # and .astype(str) then turns those into the literal string "nan", which surfaced
+    # layers later as "Kreis nan has cells but no row in the target table", blaming the
+    # target table (issue #327). Check the alignment here, where the cause is still
+    # visible. A sequence without an index is aligned by position by construction and
+    # stays a legitimate call form.
+    if isinstance(kreis_per_cell, pd.Series) and not kreis_per_cell.index.equals(out.index):
+        n_shared = len(kreis_per_cell.index.intersection(out.index))
+        raise ValueError(
+            "add_ownership_grid_columns: kreis_per_cell is a Series whose index does not "
+            f"match the cells frame ({n_shared} of {len(out)} labels shared), so aligning "
+            "it would produce NaN for the unmatched cells instead of a Kreis. Pass "
+            "mid.resolved_kreis_per_cell built from THIS frame, reindex it to "
+            "cells.index yourself, or pass a positional sequence.")
     kreis100 = pd.Series(kreis_per_cell, index=out.index).astype(str).to_numpy()
     rs7_100 = pd.to_numeric(out["RegioStaR7"], errors="coerce")
     bad_rs7 = ~rs7_100.isin(RS7_CLASSES)
@@ -315,10 +360,12 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
         class_sums.append(_cells.sum_columns_logging_nan(
             out, present, f"ownership-grid dwelling sum haustyp {ht_class}").to_numpy(dtype=float))
     if n_present_total == 0:
+        n_expected_total = sum(len(cols) for cols in DWELLING_COLUMNS_BY_HAUSTYP.values())
         raise ValueError(
-            "add_ownership_grid_columns: NONE of the ten dwelling composition columns is "
-            "present on the cells frame; the prior would be a 100% RS7-marginal fallback. "
-            "Check the parquet load-column selection (select_load_columns).")
+            f"add_ownership_grid_columns: none of the {n_expected_total} dwelling "
+            "composition columns is present on the cells frame; the prior would be a "
+            "100% RS7-marginal fallback. Check the parquet load-column selection "
+            "(select_load_columns).")
     dw100 = np.column_stack(class_sums)
 
     grp = pd.DataFrame({"parent": out["ZENSUS1km"].astype(str), "kreis": kreis100,
@@ -336,13 +383,19 @@ def add_ownership_grid_columns(cells, cars_targets, bikes_targets, cars_cond, bi
                   .sort_values(["hh", "rs7"], ascending=[False, True])
                   .drop_duplicates("parent").set_index("parent")["rs7"])
     parent_kreis = grp.drop_duplicates("parent").set_index("parent")["kreis"]
-    n_parent = len(dom_rs7)
+    hh1 = grp.groupby("parent")["hh"].sum()
+    # Counted from hh1, NOT from dom_rs7: every per-parent array below is indexed by hh1,
+    # so this is the number of rows the target matrix must have. The two aggregations
+    # cover the same parents only because the cell-level RS7 guard above rejects a NaN
+    # rs7 -- dom_rs7 groups by ["parent", "rs7"] and would otherwise drop such a parent
+    # while hh1 keeps it, allocating the matrix one row short (issue #327; the coupling is
+    # pinned by tests/test_ownership_grid.py).
+    n_parent = len(hh1)
     n_multi_rs7 = int((grp.groupby("parent")["rs7"].nunique() > 1).sum())
     logger.info(
         "[ownership_grid] %d 1km parents; RS7-mixing %d (%.1f%%) -> household-weighted "
         "dominant RS7 assigned", n_parent, n_multi_rs7, 100.0 * n_multi_rs7 / max(n_parent, 1))
 
-    hh1 = grp.groupby("parent")["hh"].sum()
     dw1 = (pd.DataFrame(dw100, index=grp["parent"].to_numpy()).groupby(level=0).sum()
              .reindex(hh1.index))
     parents = hh1.index.to_numpy()

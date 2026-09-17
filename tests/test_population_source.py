@@ -38,3 +38,34 @@ def test_exactly_one_source_required(tmp_path):
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_population_only_cache_names_the_missing_locations_output(tmp_path):
+    """A population-only cache must fail with an ACTIONABLE message, not a bare
+    read error from deep inside geopandas.
+
+    A synpp cache that stopped before the locations stage (an interrupted 100 % run, or a
+    population-only smoke) carries persons.csv and households.csv but no homes.gpkg. The
+    loader used to hand that case straight to gpd.read_file, whose error names a path and
+    nothing else -- the #240 smoke and the 2026-08-20 night run both had to fall back to
+    reading the stage pickle without the CLI ever saying why. The message must name the
+    missing file, say that the cache is population-only, and point at the supported route.
+    """
+    prefix = "test_"
+    pd.DataFrame({"person_id": [1], "household_id": [10], "age": [40],
+                  "sex": ["male"]}).to_csv(
+        tmp_path / f"{prefix}persons.csv", sep=";", index=False)
+    pd.DataFrame({"household_id": [10], "household_size": [1],
+                  "number_of_cars": [0]}).to_csv(
+        tmp_path / f"{prefix}households.csv", sep=";", index=False)
+    # No homes.gpkg written: this is exactly a population-only cache.
+
+    try:
+        ps.load_population(sim_cache=str(tmp_path), prefix=prefix)
+        assert False, "expected FileNotFoundError"
+    except FileNotFoundError as error:
+        message = str(error)
+    assert f"{prefix}homes.gpkg" in message
+    assert "population-only" in message
+    # The supported alternative is named, so the caller is not left guessing.
+    assert "run_population_validation" in message or "stage pickle" in message

@@ -391,26 +391,36 @@ def test_validate_hashes_the_metric_helpers_and_the_spatial_module():
     """The cache token must cover every module that shapes the comparison.
 
     synpp hashes only the stage module's own source; ``plan_structure`` and
-    ``srv_plan_structure`` define the harmonisation and every metric, and
+    ``srv_plan_structure`` define the harmonisation and every metric,
+    ``srv_distance_targets`` supplies the committed SrV reference bands and the Kreis set,
+    ``provenance`` writes the provenance record the output is judged from, and
     ``braunschweig.analysis.spatial.assign_geographies`` decides every person's home Kreis and
     therefore the whole head-to-head universe.
+    ``day_absence`` decides which persons the FINAL reporting-day view drops.
+
+    ``srv_distance_targets`` and ``provenance`` joined the token in the #327 helper-hash
+    re-audit, which found them imported at module level and unhashed.
     """
+    from braunschweig import provenance
     from braunschweig.analysis import plan_structure, spatial
-    from braunschweig.calibration import srv_plan_structure
+    from braunschweig.calibration import srv_distance_targets, srv_plan_structure
     from braunschweig.synthesis.day_absence import absence as day_absence
 
-    assert set(S._HELPER_MODULES) == {plan_structure, srv_plan_structure, day_absence}
+    assert set(S._HELPER_MODULES) == {
+        plan_structure, srv_plan_structure, srv_distance_targets, provenance, day_absence}
     assert S._DEFERRED_HELPER_MODULE_NAMES == ("braunschweig.analysis.spatial",)
 
     token = S.validate(None)
     assert len(token) == 32 and int(token, 16) >= 0        # md5 hex digest
     assert token == S.validate(None)                       # deterministic
     # The token really depends on the deferred module's source, not only on the direct helpers:
-    # hashing the four sources by hand must reproduce it.
+    # hand-hashing every source it names must reproduce it.
     import hashlib
     import inspect
     expected = hashlib.md5()
-    for module in (plan_structure, srv_plan_structure, day_absence, spatial):
+    # Order matters: validate() digests _HELPER_MODULES in tuple order, then the deferred
+    # names -- so this hand-hash follows the tuple, not an alphabetical guess.
+    for module in (*S._HELPER_MODULES, spatial):
         expected.update(inspect.getsource(module).encode("utf-8"))
     assert token == expected.hexdigest()
 

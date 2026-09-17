@@ -4,7 +4,12 @@ provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microd
 vintage: 2023 survey year
 geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); rows per home Kreis (8
   ZGB Kreise) plus one zgb total. Covers 7 of 8 Kreise natively; Wolfsburg (03103) is not
-  surveyed and its row carries n_persons = 0 with NaN shares.
+  surveyed and its row carries n_persons = 0 with NaN shares. This table is the documented
+  EXCEPTION to the shape the other SrV per-Kreis tables use (level before code, lowercase
+  zgb total, eight rows) - read
+  docs/codebase/notes/srv-kreis-table-conventions.md before copying it for a new table or
+  reading both shapes in one consumer. Kreis-code-to-name mapping lives in
+  braunschweig.analysis.spatial.ZGB8.
 crs: null
 roles:
 - validation_reference

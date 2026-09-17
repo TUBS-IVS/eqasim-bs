@@ -41,6 +41,9 @@ Restricted datasets are never committed or redistributed.
 | [lsn_kitas](../registry/data/lsn_kitas.yml) | supply_input | manual_download (`scripts/extract_nds_kitas.py`) | `data/braunschweig/schools/nds_kitas_zgb.csv` | o/-/r | no |
 | [lsn_schools](../registry/data/lsn_schools.yml) | supply_input | manual_download (`scripts/extract_nds_schools.py`) | `data/braunschweig/schools/nds_schools_zgb.csv` | o/-/r | no |
 | [lsn_universities](../registry/data/lsn_universities.yml) | supply_input | manual_download (`scripts/seed_nds_hochschulen.py`) | `data/braunschweig/schools/nds_hochschulen.csv` | o/-/r | no |
+| [mid2023_P13](../registry/data/mid2023_P13.yml) | calibration_target, validation_reference, reference_table | committed (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/mid2023_P13.csv` | o/-/o | no |
+| [mid2023_P13_commute_distance_by_rs7](../registry/data/mid2023_P13_commute_distance_by_rs7.yml) | calibration_target, reference_table | committed (`scripts/extract_mid_p13_rs7.py`) | `data/braunschweig/mid/mid2023_P13_commute_distance_by_rs7.csv` | -/-/- | no |
+| [mid2023_T43_school_distance_by_rs7](../registry/data/mid2023_T43_school_distance_by_rs7.yml) | calibration_target, validation_reference | committed (`scripts/seed_mid_t43_school_distance.py`) | `data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` | -/-/- | no |
 | [mid2023_b1](../registry/data/mid2023_b1.yml) | donor, reference_table | restricted_delivery | `The B1 package lives OUTSIDE this repository, in the sibling popsimprep checkout:
   <popsimprep>/inputs/MiD2023/MiD2023_B1_Datensatzpaket/CSV/MiD2023_{Haushalte,Personen,Wege,
   Autos,Etappen,Reisen,Tagesreisen}.csv
@@ -79,6 +82,7 @@ variables.
 | [srv2023_education_by_age](../registry/data/srv2023_education_by_age.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_participation_universe.py`) | `data/braunschweig/srv/srv2023_education_by_age_by_kreis.csv` | -/-/o | no |
 | [srv2023_fine_purpose_reference](../registry/data/srv2023_fine_purpose_reference.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_fine_purpose_reference.py`) | `data/braunschweig/srv/srv2023_fine_purpose_reference.csv` | -/-/- | no |
 | [srv2023_license_by_sex_cohort](../registry/data/srv2023_license_by_sex_cohort.yml) | validation_reference | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_car_license_by_sex_cohort_18plus_by_kreis.csv` | -/-/o | no |
+| [srv2023_participation](../registry/data/srv2023_participation.yml) | control, reference_table | committed (`scripts/build_srv_participation_aggregate.py`) | `data/braunschweig/srv/srv2023_participation_by_kreis.csv` | o/-/o | no |
 | [srv2023_plan_structure_reference](../registry/data/srv2023_plan_structure_reference.yml) | validation_reference | committed (`scripts/extract_srv_plan_structure.py`) | `data/braunschweig/srv/srv2023_plan_structure_reference.csv` | -/-/r | no |
 | [srv2023_primary_distance_targets](../registry/data/srv2023_primary_distance_targets.yml) | calibration_target, validation_reference | committed (`scripts/extract_srv_primary_distance_targets.py`) | `data/braunschweig/srv/srv2023_commute_distance_by_kreis.csv` | -/-/r | no |
 | [srv2023_raw](../registry/data/srv2023_raw.yml) | calibration_target, validation_reference | restricted_delivery (`scripts/derive_srv_location_types.py`) | `data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv, codebook

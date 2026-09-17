@@ -46,3 +46,17 @@ assessment:
   pending_reason: |
     ADR-0031 documents the decision to build this package; no owner verdict exists, and the underlying Zensus/DESTATIS reference tables are not committed (see reference.note).
   source: ADR-0031
+notes: |
+  SUPPORTED ROUTE FOR A POPULATION-ONLY CACHE (issue #327). The CLI needs the home
+  geometry: run_population_validation loads <prefix>homes.gpkg and derives every
+  geography-keyed check from those points (spatial.assign_geographies). A synpp cache or
+  output directory that stopped BEFORE the locations stage -- an interrupted run, or a
+  population-only smoke such as the #282 layer-2 one -- has no such file, so neither
+  --run-output-dir nor --sim-cache can validate it. The loader
+  (braunschweig.analysis.population_validation.population_source._read_dir) fails there on
+  purpose, naming the missing file, rather than emitting a report that omits the per-Kreis
+  fits while still presenting itself as a control validation.
+  For that case read the aggregates from the STAGE PICKLE of the population stage directly
+  instead of through this CLI. That is what the #240 ownership-grid smoke and the
+  2026-08-20 night run did, and it is the route to use until a population-only mode with
+  explicit per-check skip logging is built (not currently planned).

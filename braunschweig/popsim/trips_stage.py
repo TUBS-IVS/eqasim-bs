@@ -48,6 +48,7 @@ from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import escort_pairing as _escort_pairing
 from braunschweig.popsim import plan_validation as _plan_validation
+from braunschweig import constants as _constants
 from braunschweig.popsim import trips as popsim_trips
 from braunschweig.popsim.closure_dwell import CLOSURE_SEED_OFFSET, ClosureDwellModel
 # OFFSET_COLUMN is declared in departure_time_model, not here, so that module (Task 3, issue
@@ -95,11 +96,19 @@ logger = logging.getLogger(__name__)
 # and therefore which diaries this stage builds trips from, so a change there changes
 # this stage's input semantics; over-hashing only costs a cache rebuild, while
 # under-hashing silently serves stale trips (the 2026-08-19 hazard above).
+# braunschweig.constants carries ROUTED_DETOUR_FACTOR, with which this stage converts every
+# routed MiD trip length to the straight-line distance it writes -- so the constant's VALUE
+# is part of the trip table, and an edit to it must rebuild these trips. It sits in
+# _HELPER_MODULES rather than the deferred names below because the import site decides the
+# tuple (module level -> module object) and this one is module level, at the top of this
+# file. Found by the #327 helper-hash re-audit: it was in neither tuple, so changing the
+# detour factor would have left a warm cache serving trips built with the old one.
 _HELPER_MODULES = (
     popsim_trips,
     _plan_validation,
     _closure_dwell,
     _diary_facts,
+    _constants,
     # escort_pairing decides WHICH adult leg each passive escort leg (W_ZWECK 13) is paired
     # with, and therefore the purpose the child's leg receives under escort_passive_from_adult
     # (issue #372); trips.py only applies the mapping. A change to the pairing rule changes this

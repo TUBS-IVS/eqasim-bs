@@ -130,8 +130,13 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 #: ``reported_time_precision`` is deliberately NOT hashed: this stage de-rounds nothing (the
 #: committed reference is already de-rounded), so its half widths cannot change any number
 #: written here.
+#: ``config_keys`` owns the KEY_/DEFAULT_ constants ``configure`` declares and ``execute``
+#: reads, so a changed default silently changes what this comparison was computed under, and
+#: ``run_provenance`` writes the provenance record the output is judged from. Both are
+#: module-level imports that sat outside the token until the #327 gate was re-run against a
+#: ``main`` that had meanwhile given this stage a ``validate()``.
 _HELPER_MODULES = (D, _plan_structure, SRVDT, _srv_plan_structure, _departure_time_model,
-                   _metrics, _popsim_trips)
+                   _metrics, _popsim_trips, _config_keys, run_provenance)
 
 
 def validate(context):

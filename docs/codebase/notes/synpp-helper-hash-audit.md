@@ -1,35 +1,93 @@
 # synpp stage helper-hash coverage audit
 
-> **Snapshot as of 2026-08-14, commit `4175515a`.** This is a point-in-time
-> inventory, not a live view: every stage count, category, and uncovered-module
-> list below was derived once, by the method in this file, against that
-> commit. Re-run the method (see "Method") to refresh it; treat any number
-> here as stale the moment the codebase changes. Produced for issue #290; it
-> deliberately fixes nothing (see "Scope").
+> **Snapshot as of 2026-09-17**, re-run on the merge of `origin/main` into
+> `chore/triaged-minor-findings-cleanup` (the #327 re-audit itself was 2026-09-09, commit
+> `c27b4307`; the snapshot before that was 2026-08-14, commit `4175515a`). This is a
+> point-in-time inventory, not a live view: treat any number here as stale the moment the
+> codebase changes. The 2026-08-14 pass was produced by hand for issue #290; every refresh
+> since RE-RUNS its method as an executable script,
+> `scripts/audit_synpp_helper_hash.py`, so a refresh is a command rather
+> than a repeat of that manual exercise. The 2026-08-14 pass deliberately fixed
+> nothing; the two since did (see the closure statement below and "Scope").
 >
-> **Already fixed since the snapshot:** `braunschweig.gravity.model` moved from
-> category (c) to (b) — issue #289 folded its four uncovered package siblings
-> into `validate()` via `_DEFERRED_HELPER_MODULE_NAMES`, so the (c) count is now
-> 85 (36 production-reachable). No other row has changed.
+> **Why this file was re-run a second time within a week, and what that demonstrates.** The
+> #327 re-audit measured a branch that was 227 commits behind `main`. In those commits `main`
+> gave FIVE further stages a source-hashing `validate()` with partial coverage
+> (`analysis.synthesis.departure_time_vs_srv`, `matsim.scenario.population`,
+> `matsim.simulation.prepare`, `synthesis.incommuters`, `synthesis.student_incommuters`) and
+> added imports to two already-gated ones (`commute_day.trips_day_stage`,
+> `locations.secondary_chainsolvers`). None of that was visible from the branch, and each PR
+> was green on its own base -- the #284/#287 merge-order class. The 28 resulting gaps were
+> closed on the merge; the numbers below are that post-merge re-run. The standing consequence:
+> re-run this audit AFTER merging `main`, never only against the branch's original base.
 >
-> **Gated since issue #291:** `tests/test_synpp_helper_hash_invariant.py`
-> enforces the narrower **own-package-siblings-only** slice of this inventory
-> (a stage's helper submodules living in its own directory — the #267
-> sibling-split pattern, not every first-party import counted above) as a
-> shrinking allow-list; a NEW own-package coverage gap now fails CI instead of
-> silently joining this file's uncovered-module lists. The full first-party
-> surface this audit inventories remains un-gated, un-fixed debt — see that
-> test module's docstring for exactly why the scope is narrower than this
-> file's counts, and for the two concrete AST-resolver bugs (an
-> `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare
-> `from . import name` relative-import binding) that a rough sizing probe for
-> that gate hit and that are recorded there so they are not reintroduced.
+> **What the re-audit changed, and why the old numbers were wrong.** #327 recorded
+> that the category-(b) row for `braunschweig.popsim.stage` was stale by seven
+> modules that had joined `_DEFERRED_HELPER_MODULE_NAMES`
+> (`employment_grid`, `folders`, `kreis_attribute_control`, `placement_income`,
+> `zensus_employment_age`, `attributes`, `trips`) after the 44/46 figure was
+> written and after the 45/47 addendum. The 2026-09-09 re-run confirmed it independently:
+> required was 45 that day, exactly as that addendum predicted, and covered 54 = 47 + 7.
+> (The table below carries the CURRENT pair; do not read these historical figures as it.)
+> The codebase also grew from 564 to 620 scanned `.py` files and from 230 to 242
+> stages, and — the substantive change — the number of stages whose `validate()`
+> hashes Python source at all rose from **5 to 24** (16 at the #327 re-audit, 24 after
+> merging `main`).
 >
-> **Grown since issue #240:** `braunschweig.popsim.stage`'s deferred helper
-> set grew by `braunschweig.popsim.ownership_grid`, covered via
-> `_DEFERRED_HELPER_MODULE_NAMES` and pinned by
-> `tests/test_popsim_stage_validate_token.py`; the category (b) row's
-> required/covered counts move from 44/46 to 45/47. No other row has changed.
+> **EVERY gap either pass found is now closed, and gated.** All 24 source-hashing stages
+> cover their full first-party surface but for the ONE documented exception below: the #327
+> pass closed 20 unhashed modules across eight stages, and the post-merge re-run closed a
+> further 28 across seven.
+> The fixes are of three kinds. Most were a missing entry in `_HELPER_MODULES` (module-level
+> import) or in a new `_DEFERRED_HELPER_MODULE_NAMES` (function-level import). Four stages
+> had no deferred list at all and gained one plus the loop that digests it. And ONE was fixed
+> by NARROWING the import instead: `completed_donor` read its `KEY_*` names from the
+> `braunschweig.popsim.stage` package, so covering them would have meant hashing a
+> ~3000-line DOWNSTREAM package and re-running a 49-minute donor build on every unrelated
+> edit to it -- it now reads them from the `config_keys` leaf it already hashed.
+>
+> Two of the 20 were behaviour-bearing constants that would have bitten quietly:
+> `braunschweig.constants` (`ROUTED_DETOUR_FACTOR`) fed both `trips_stage` and
+> `state_stage`, and `braunschweig.data.mid.reference_tables`
+> (`load_class_midpoint_eur`) fed the enriched population's income assignment.
+>
+> **Closing a gap devalidates that stage's cache -- necessarily**, since the token is what
+> changes. Where the previously unhashed code has not changed since the cached run, the
+> recompute reproduces the identical output, so the cost is compute once and the gain is that
+> the cache can no longer lie.
+>
+> **The gate:** `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
+> re-runs this audit and fails on ANY unhashed first-party import, against an
+> `EXPECTED_UNCOVERED` register holding exactly ONE entry:
+> `commute_day.trips_day_stage` -> `braunschweig.analysis.json_output`. That one is a
+> deliberate exception of the kind the register exists for -- `json_output` decides only how
+> that stage's `INFO_KEY` diagnostics are RENDERED, never a value of the returned frame, so
+> hashing it would devalidate a 3.4 M-row stage (and hours of everything downstream at 100 %
+> scale) on a pure formatting change, and narrowing the import cannot help because the stage
+> genuinely calls `json_safe()`. The register is a debt list, not a mute button: the gate
+> fails if that set changes at all, and on any NEW unhashed import. The inventory below can
+> therefore no longer drift back into debt unnoticed.
+>
+> **The live authority is the gate, not this file.**
+> `tests/test_synpp_helper_hash_invariant.py` enforces the narrower
+> **own-package-siblings-only** slice (a stage's helper submodules living in its
+> own directory — the #267 sibling-split pattern, not every first-party import
+> counted here) as a SHRINKING allow-list, so a new own-package gap fails CI
+> instead of quietly joining a list in this file. Read that test's
+> `ALLOWED_VIOLATIONS` for the current, verified own-package state. The WIDER
+> first-party surface this file inventories is no longer un-gated either: since the
+> 2026-09-09 re-audit
+> `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
+> enforces it for every source-hashing stage. That test's
+> docstring also records the two AST-resolver bugs (an `ast.AnnAssign`-typed
+> `_HELPER_MODULES` declaration, and a bare `from . import name` relative-import
+> binding) that a sizing probe hit — the re-audit script reproduced BOTH on its
+> first pass before they were fixed there, which is the best argument for keeping
+> the method in code where it can be corrected once.
+>
+> **Reproduce:** `python scripts/audit_synpp_helper_hash.py . --json <out.json>`.
+> The counts below are that script's output; the per-name category (a) and (c)
+> LISTS further down are still the 2026-08-14 enumeration and are marked as such.
 
 ## Scope
 
@@ -48,15 +106,34 @@ audit answers, for **every** synpp stage in the repo, not just those two:
 4. Which stages use another synpp stage module as a plain function library
    without declaring it via `context.stage(...)` (undeclared cache edge).
 
-This is an **inventory**, not a fix: no behaviour, cache token, or
-`_HELPER_MODULES` tuple was changed while producing it.
+The 2026-08-14 pass was an **inventory**, not a fix: no behaviour, cache token
+or `_HELPER_MODULES` tuple was changed while producing it. The 2026-09-09
+re-audit DID fix, on the user's decision: all 20 unhashed modules across the
+eight incompletely covered source-hashing stages were folded into their tokens,
+and the result is gated (see the banner). No stage BEHAVIOUR changed -- only
+which sources feed a cache token, so the sole consequence is that those stages
+recompute once.
 
 ## Method
 
-A pure static-analysis pass over the repository's Python AST; nothing was
-imported or executed except the final cross-check in "Verification" below,
-which imports five already-existing modules to read their own tuples (no
-`configure`/`execute` was ever called).
+A pure static-analysis pass over the repository's Python AST; nothing is
+imported or executed.
+
+**The method now lives in `scripts/audit_synpp_helper_hash.py`** -- run
+`python scripts/audit_synpp_helper_hash.py . --json <out.json>` to refresh every
+count in this file. The four steps below are that script's docstringed structure,
+kept here because they state WHY each step is drawn where it is; the script is the
+authority on HOW. Its AST resolver is itself pinned by
+`tests/test_audit_synpp_helper_hash.py`, which regression-tests the two bugs this
+file has always warned about (the bare `from . import name` binding and the
+`ast.AnnAssign` tuple form) plus the "one reading per imported name" rule -- all
+three were live defects on the script's first passes, so they are exactly the
+places a hand-run of this method goes wrong.
+
+The 2026-08-14 pass ran one extra cross-check ("Verification" below) that imported
+five modules to read their `_HELPER_MODULES` tuples back at runtime. The script does
+NOT do that: it reads the tuples statically, which is what lets it run without
+importing the stage packages at all.
 
 **Step 1 — enumerate stages.** Walked every `.py` file under the five
 first-party roots — `braunschweig/`, `data/`, `eqasim_common/`, `matsim/`,
@@ -130,13 +207,28 @@ risk, resolved by actually importing each of the five modules in this
 environment and reading `{m.__name__ for m in mod._HELPER_MODULES}` back —
 module import only, no stage execution.
 
-## Stage count
+## Stage count (2026-09-17 post-merge re-run)
 
-**230 stage modules** found across the five roots (`braunschweig` 84, `data`
+**242 stage modules** found across the five roots (`braunschweig` 96, `data`
 57, `eqasim_common` 45, `synthesis` 29, `matsim` 15 — both stand-alone modules
-and package `__init__.py`s counted by their package's dotted name). 564 `.py`
-files were scanned in total across the five roots; 230 of them define both
-`configure` and `execute` at module level.
+and package `__init__.py`s counted by their package's dotted name). 620 `.py`
+files were scanned in total across the five roots; 242 of them define both
+`configure` and `execute` at module level. (2026-09-09: 607 files, 240 stages,
+`braunschweig` 94. 2026-08-14: 564 files, 230 stages, `braunschweig` 84 — every
+stage added since is under `braunschweig`.)
+
+Category totals from this re-run: **(a) 143** stages with no first-party helper,
+**(b) 23** with helpers and complete coverage, **(c) 76** with helpers and no or
+incomplete coverage. The 2026-09-09 figures were 144 / 16 / 80 and the
+2026-08-14 ones 143 / 2 / 86. Category (b) grew in two waves: on 2026-09-09
+because the `braunschweig.synthesis.commute_day` family and
+`braunschweig.analysis.cordon_validation` added source-hashing `validate()`
+hooks that cover their whole required set and because `trips_stage`'s
+`braunschweig.constants` gap was closed, and on 2026-09-17 because the five
+stages `main` had newly given a partial token plus the two it had added imports
+to were completed (see the banner). 24 stages hash source; 23 of them are
+category (b), the 24th being `commute_day.trips_day_stage` with its one
+documented `json_output` exception.
 
 ## Category (a) — no first-party helpers (143 stages)
 
@@ -154,16 +246,68 @@ since by definition there is nothing left uncovered:
 - **matsim** (11): `matsim.output`, `matsim.runtime.eqasim`, `matsim.runtime.git`, `matsim.runtime.java`, `matsim.runtime.maven`, `matsim.runtime.pt2matsim`, `matsim.scenario.supply.gtfs`, `matsim.scenario.supply.osm`, `matsim.scenario.supply.processed`, `matsim.simulation.prepare` *(vendored `matsim.simulation.prepare`; the BS override `braunschweig.matsim.simulation.prepare` is a separate stage, listed under category (c)/(d) below)*, `matsim.simulation.run`
 - **synthesis** (22): `synthesis.locations.education`, `synthesis.locations.home.addresses`, `synthesis.locations.home.locations`, `synthesis.locations.home.output`, `synthesis.locations.secondary`, `synthesis.locations.work`, `synthesis.output`, `synthesis.population.activities`, `synthesis.population.income.selected`, `synthesis.population.projection.ipu`, `synthesis.population.projection.reweighted`, `synthesis.population.sampled`, `synthesis.population.spatial.commute_distance`, `synthesis.population.spatial.home.zones`, `synthesis.population.spatial.locations`, `synthesis.population.spatial.primary.locations`, `synthesis.population.spatial.secondary.distance_distributions`, `synthesis.population.trips`, `synthesis.vehicles.cars.default`, `synthesis.vehicles.cars.fleet_sampling`, `synthesis.vehicles.passengers.default`, `synthesis.vehicles.vehicles`
 
-## Category (b) — has helpers, fully covered (2 stages)
+## Category (b) — has helpers, fully covered (23 stages, 2026-09-17)
 
-| Stage | Path | Required helpers | Covered | Uncovered |
-|---|---|---|---|---|
-| `braunschweig.popsim.stage` | `braunschweig/popsim/stage/__init__.py` | 44 | 46 | none |
-| `braunschweig.popsim.trips_stage` | `braunschweig/popsim/trips_stage.py` | 4 | 8 | none |
+Generated by `python scripts/audit_synpp_helper_hash.py`, not re-typed: the two pre-fix
+inventory tables the 2026-09-09 pass carried here were what went stale within a week, so
+this section now records only the audit's own output. "Covered" exceeds "required" wherever
+a stage deliberately over-hashes (a parent package, or a module one edge further out).
 
-`braunschweig.popsim.stage` covers 46 = its 44 direct helpers plus TWO deliberate
+| Stage | Required helpers | Covered |
+|---|---|---|
+| `braunschweig.analysis.cordon_validation` | 3 | 3 |
+| `braunschweig.analysis.synthesis.departure_time_vs_srv` | 9 | 9 |
+| `braunschweig.analysis.synthesis.plan_structure_vs_srv` | 6 | 6 |
+| `braunschweig.analysis.synthesis.work_participation_by_kreis` | 7 | 7 |
+| `braunschweig.data.hts.mid_donor` | 7 | 8 |
+| `braunschweig.gravity.model` | 9 | 9 |
+| `braunschweig.matsim.scenario.population` | 3 | 3 |
+| `braunschweig.matsim.simulation.prepare` | 4 | 4 |
+| `braunschweig.popsim.completed_donor` | 7 | 9 |
+| `braunschweig.popsim.distance_distributions` | 10 | 12 |
+| `braunschweig.popsim.stage` | 46 | 56 |
+| `braunschweig.popsim.trips_stage` | 13 | 18 |
+| `braunschweig.synthesis.commute_day.activities_day_stage` | 1 | 1 |
+| `braunschweig.synthesis.commute_day.home_office_donors_stage` | 11 | 11 |
+| `braunschweig.synthesis.commute_day.output_day` | 2 | 2 |
+| `braunschweig.synthesis.commute_day.spatial_locations_day` | 2 | 2 |
+| `braunschweig.synthesis.commute_day.state_stage` | 5 | 5 |
+| `braunschweig.synthesis.day_absence.absence_stage` | 2 | 2 |
+| `braunschweig.synthesis.incommuters` | 12 | 12 |
+| `braunschweig.synthesis.locations.secondary_candidates` | 2 | 2 |
+| `braunschweig.synthesis.locations.secondary_chainsolvers` | 23 | 23 |
+| `braunschweig.synthesis.population.enriched` | 10 | 10 |
+| `braunschweig.synthesis.student_incommuters` | 10 | 10 |
+
+### The 24th source-hashing stage
+
+`braunschweig.synthesis.commute_day.trips_day_stage` requires 8 and covers 7: it is the
+single `EXPECTED_UNCOVERED` entry, `braunschweig.analysis.json_output`, whose exclusion is
+argued at that module's own `_HELPER_MODULES` and in the banner above. It is therefore the
+one source-hashing stage outside category (b), by decision rather than by omission.
+
+### What a non-zero "uncovered" means
+
+A non-zero "uncovered" is a MECHANICAL finding -- the module is imported and its source is
+outside the token -- and not by itself a verdict that a run is wrong: some entries are
+constant leaves or parent-package `__init__` files whose change could not alter the stage's
+output. Each still needs deciding individually. Since 2026-09-09 the deciding is no longer
+optional, because the gate fails on any such finding that is not argued in
+`EXPECTED_UNCOVERED`.
+
+Ranking the 2026-09-09 findings by consequence, recorded because it is the reasoning that
+decided the fix ORDER: the two ANALYSIS stages (`plan_structure_vs_srv`,
+`work_participation_by_kreis`) were the least consequential of the then non-empty rows --
+they produce comparison tables, not population or plans, so a stale cached table is a
+reporting error a re-run corrects rather than a silently wrong population, whereas
+`state_stage`'s and `secondary_chainsolvers`' rows carried model behaviour. All of them are
+closed now, so the ranking no longer selects work; it records why nothing was deferred.
+
+`braunschweig.popsim.stage`'s token is its direct helpers plus exactly TWO deliberate
 second-level exceptions (`braunschweig.popsim.attributes` via `assembly` /
-`mid.seed_loading`, `braunschweig.popsim.trips` via `mid.participation`), added after the
+`mid.seed_loading`, `braunschweig.popsim.trips` via `mid.participation`) -- the RULE, stated
+without an arithmetic count here on purpose, because that count is what went stale twice and
+the table above carries the current figures. The two exceptions were added after the
 2026-08-19 verification smoke proved the hazard live: both modules changed behaviour (the
 under-16 licence floor, the W_ZWECK purpose fix) while the stage hash AND the token stayed
 identical, so a warm cache reused the pre-fix population
@@ -187,7 +331,19 @@ otherwise qualify for both (b) and (d) is listed under (b) (coverage is what
 determines cache correctness) and flagged as also exhibiting the (d) pattern,
 rather than invented as a fifth category.
 
-## Category (c) — has helpers, no or incomplete coverage (86 stages)
+## Category (c) — has helpers, no or incomplete coverage (76 stages, 2026-09-17)
+
+> **The per-name lists in this section are the 2026-08-14 enumeration (86 stages)**
+> and were NOT re-typed by either re-audit; only the COUNT above comes from
+> the re-run. It moved 86 -> 80 -> 76 as stages gained complete tokens and left for (b),
+> against new stages arriving. Regenerate the names with
+> `python scripts/audit_synpp_helper_hash.py . --json <out.json>` and read the
+> `required_helpers` / `uncovered` fields, rather than trusting a name below to still
+> be in this category. One known movement since 2026-08-14:
+> `braunschweig.gravity.model` LEFT for category (b) (issue #289).
+> `braunschweig.popsim.trips_stage` would have JOINED -- its `braunschweig.constants`
+> import sat outside its token -- but that gap was closed in the same change as this
+> re-audit, so it remains in (b).
 
 37 of these are reachable in the resolved production config (see
 "Prioritisation"); those are listed first, sorted by name. The remaining 49

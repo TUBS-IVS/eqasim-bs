@@ -83,6 +83,11 @@ _HELPER_MODULES = (
     passenger_availability,
     seedmod,
     weekend_plan_match,
+    # The braunschweig.popsim.mid PACKAGE __init__, whose load_completed_donor /
+    # load_mid_wege / project_completed_seed ARE this stage's build. Its submodule
+    # mid.donor is covered separately below; a package entry hashes only its own
+    # __init__.py, never its submodules (#327 helper-hash re-audit).
+    mid,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.member_completion",
@@ -358,21 +363,29 @@ def configure(context):
     makes it shareable across ALL runs (incl. control-tier changes) via the
     cache_share store.
     """
-    from braunschweig.popsim.stage import (
-        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+    # From the LEAF module, not from the braunschweig.popsim.stage package that re-exports
+    # it: the package's __init__ is this stage's own source dependency otherwise, and hashing
+    # a ~3000-line downstream package would re-run this 49-minute donor build on every
+    # unrelated popsim.stage edit. config_keys IS hashed (see
+    # _DEFERRED_HELPER_MODULE_NAMES), so the narrower import is both cheaper and covered.
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
         KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )
     from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS, DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT,
-        DEFAULT_DIARY_PLAN_MATCH, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
-        DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_DIARY_MATCH_HARD_EMPLOYMENT, DEFAULT_DIARY_PLAN_MATCH,
+        DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS,
+        DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
+        DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_SEED_DAY_FILTER, DEFAULT_WEEKEND_PLAN_MATCH,
     )
     context.config(KEY_MID)
     context.config("random_seed")
-    context.config(KEY_SEED_DAY_FILTER, "default")
-    context.config(KEY_WEEKEND_PLAN_MATCH, True)
+    context.config(KEY_SEED_DAY_FILTER, DEFAULT_SEED_DAY_FILTER)
+    context.config(KEY_WEEKEND_PLAN_MATCH, DEFAULT_WEEKEND_PLAN_MATCH)
+    # config_keys declares no DEFAULT_ constant for the passenger-availability flag, so the
+    # literal default stays inline here until one is added.
     context.config(KEY_MID_PASSENGER_AVAILABILITY, True)
     context.config(KEY_DIARY_PLAN_MATCH, DEFAULT_DIARY_PLAN_MATCH)
     context.config(KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES)
@@ -398,9 +411,14 @@ def execute(context) -> CompletedDonor:
     ``context.stage("completed_donor")`` and reuses the frames for BOTH the
     PopulationSim seed and the expansion donor tables.
     """
-    from braunschweig.popsim.stage import (
-        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DIARY_MATCH_HARD_EMPLOYMENT,
-        KEY_DIARY_PLAN_MATCH, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+    # From the LEAF module, not from the braunschweig.popsim.stage package that re-exports
+    # it: the package's __init__ is this stage's own source dependency otherwise, and hashing
+    # a ~3000-line downstream package would re-run this 49-minute donor build on every
+    # unrelated popsim.stage edit. config_keys IS hashed (see
+    # _DEFERRED_HELPER_MODULE_NAMES), so the narrower import is both cheaper and covered.
+    from braunschweig.popsim.stage.config_keys import (
+        KEY_DIARY_MATCH_HARD_EMPLOYMENT, KEY_DIARY_PLAN_MATCH,
+        KEY_DONOR_MATCH_FINE_CHILD_AGE_BANDS, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_MID,
         KEY_MID_PASSENGER_AVAILABILITY, KEY_SEED_DAY_FILTER, KEY_WEEKEND_PLAN_MATCH,
     )

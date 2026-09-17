@@ -1032,12 +1032,33 @@ def ownership_grid_controls(importance: int = GRID_SHAPE_IMPORTANCE_DEFAULT) -> 
     out: List[CatalogControl] = []
     for entry_name, columns in (("number_of_cars", CARS_COLUMNS),
                                 ("number_of_bicycles", BIKES_COLUMNS)):
+        if entry_name not in by_name:
+            # A bare KeyError here reads as a missing dict key in this function rather
+            # than as "the registry this layer is built on no longer carries the entry".
+            raise ValueError(
+                f"ownership_grid_controls: kreis_attribute_control.REGISTRY has no entry "
+                f"{entry_name!r}, which the 1km ownership shape layer is built on "
+                f"(present entries: {sorted(by_name)}). A renamed entry must be renamed "
+                "here too, or the two layers stop sharing one category scheme.")
         ctl = by_name[entry_name]
         if len(ctl.categories) != len(columns):
             raise ValueError(
                 f"ownership_grid_controls: {entry_name} registry has {len(ctl.categories)} "
                 f"categories but the grid defines {len(columns)} columns; the two layers "
                 "must share one category scheme.")
+        # The COUNT agreeing is not enough: the zip below pairs by POSITION, and each grid
+        # column name encodes the category label it belongs to (OWN_<WHAT>_<label>_agg).
+        # A transposition of two registry categories would therefore render the shape
+        # control for one category over another category's seed universe, with every count
+        # still summing correctly and nothing failing (issue #327).
+        for (label, _predicate), col in zip(ctl.categories, columns):
+            if not col.endswith(f"_{label}_agg"):
+                raise ValueError(
+                    f"ownership_grid_controls: {entry_name} category {label!r} is paired "
+                    f"with grid column {col!r}, whose name does not carry that label; the "
+                    "registry category ORDER and the grid column order must agree "
+                    f"(registry: {[lab for lab, _ in ctl.categories]}, grid: "
+                    f"{list(columns)}).")
         for (label, predicate), col in zip(ctl.categories, columns):
             out.append(CatalogControl(
                 name=col, geography=GEO_1KM, seed_table=SEED_TABLE_HOUSEHOLDS,
@@ -1123,6 +1144,24 @@ def full_catalog(include_tiers: Sequence[str] = ("tier0",), *, include_employmen
         building_type (3) controls at 100m. ``"tier3"`` adds the 7 employment/education
         controls at KREIS geography (MiD-only; ENTD drops all via controls_for_seed).
         Full ``("tier0","tier1","tier2","tier3")`` = 21 + 10 + 5 + 7 = 43.
+    include_employment_grid:
+        Adds :func:`employment_grid_controls` -- the 1km employment/education SHAPE
+        controls (issue #201). MiD-only. Independent of ``"tier3"``, which carries the
+        same attributes at KREIS geography; the grid layer refines their spatial
+        distribution and is raked to them, so the two do not conflict.
+    include_ownership_grid:
+        Adds :func:`ownership_grid_controls` -- the 9 1km car/bike ownership SHAPE
+        controls (issue #240, ADR-0092). MiD-only, and the per-cell target columns must
+        have been injected by ``braunschweig.popsim.ownership_grid`` first, or the
+        controls reference census columns that are not on the cells frame.
+    include_status_kreis:
+        Backward-compatible ALIAS for ``kreis_control_names=("economic_status",)``; it
+        appends that name when it is not already listed, so passing both is not double
+        counted. Prefer ``kreis_control_names``.
+    kreis_control_names:
+        Names of ``kreis_attribute_control.REGISTRY`` entries to render as GEO_KREIS
+        attribute controls (:func:`attribute_kreis_controls`). Empty means none. An
+        unknown name raises rather than being skipped.
     fine_teen_age_bands:
         Forwarded to :func:`tier0_backbone_catalog`; ``True`` (default, issue #320) adds
         4 controls by splitting the 10-19 band into 10-15 / 16-17 / 18-19 per sex.

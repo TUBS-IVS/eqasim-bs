@@ -328,6 +328,33 @@ def age_universe_entries(active_entries, *, single_year_max=SINGLE_YEAR_MAX_AGE)
     return tuple(entries)
 
 
+def age_band_by_entry_name(active_entries, *, single_year_max=SINGLE_YEAR_MAX_AGE):
+    """``{entry name: (lower, upper)}`` -- the inclusive single-year band each ACTIVE
+    age-universe entry's per-Kreis denominator is summed over.
+
+    A thin name-keyed view of :func:`age_universe_entries`, which is the single home of the
+    "which entries have an age universe, and over which years" rule that
+    :func:`universe_age_census_columns` (the parquet load set) reads too. The stage keys its
+    per-Kreis denominator cache on the band returned here rather than on an entry's RAW
+    ``(min_age, max_age)`` pair, which has two consequences:
+
+    * the denominator is summed over exactly the years that were LOADED -- deriving the
+      band a second time at the derivation site is how the load set and the denominator
+      drifted apart before (``education_6_17`` silently computed over ages 10-17); and
+    * entries whose universes COINCIDE share one cache entry, because the bounds are
+      normalised here (an omitted ``min_age`` is age 0, an omitted ``max_age`` is
+      ``single_year_max``) instead of appearing as two distinct raw keys for the same band.
+
+    Entries with no age universe contribute no key; the caller falls back to the all-ages
+    per-Kreis total for them (:func:`person_total_by_kreis`).
+    """
+    return {
+        control.name: (lower, upper)
+        for control, lower, upper in age_universe_entries(
+            active_entries, single_year_max=single_year_max)
+    }
+
+
 def universe_age_census_columns(active_entries, *, single_year_max=SINGLE_YEAR_MAX_AGE):
     """The single-year ``{M,F}_AGE_<year>`` columns the ACTIVE age-restricted person-level
     KREIS attribute controls need as their per-Kreis denominator.

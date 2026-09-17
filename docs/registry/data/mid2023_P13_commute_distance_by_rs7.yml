@@ -1,0 +1,79 @@
+dataset: mid2023_P13_commute_distance_by_rs7
+title: MiD 2023 P13 commute-distance band shares by RegioStaR7 (committed reference table)
+provider: derived in-repo from the MiD 2023 Grossraum Braunschweig result tables (infas 7555;
+  BMDV / infas)
+vintage: 2023 survey year
+geography: |
+  Grossraum Braunschweig -- the REGIONAL infas 7555 evaluation, not the national MiD. Rows are
+  RegioStaR-7 classes 72..77 (six rows). Class 71 (Metropole) is ABSENT because the region
+  contains none, which is itself the evidence that this table is regional rather than national
+  (ADR-0102 records the same reading).
+crs: null
+roles:
+- calibration_target
+- reference_table
+# used_by is deliberately absent: it lists STAGE ids, and no pipeline stage reads this
+# table. Its consumers are named under notes instead.
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_p13_rs7.py [--pdf <path>] [--out <path>].
+    Extracts the "Raumtyp" block of Tabelle A P13 "Entfernung Arbeitsstaette", page 77, from
+    Ergebnistabellen_MiD2023_Version2_infas_7555_Grossraum_Braunschweig.pdf via pdfplumber. The
+    source PDF is a restricted infas delivery and is NOT committed; only this extracted
+    aggregate is. The extractor matches the RS7 rows by fixed label prefixes because the PDF's
+    German labels lose their umlauts in extraction -- see RS7_CROSSWALK in that script.
+  script: scripts/extract_mid_p13_rs7.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_P13_commute_distance_by_rs7.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py and not in the README input tables:
+    there is nothing for a contributor to download or check the presence of, because the file
+    ships committed with the checkout, and requirements.production is not_needed. This mirrors
+    how its committed braunschweig/mid/mid2023_*_by_rs7 siblings are handled (stated in
+    dataset mid2023_cars_by_rs7_haustyp's verification notes).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values transcribed from a restricted infas result-table delivery
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The underlying infas 7555 PDF is restricted and must not be redistributed; these
+    per-RS7 aggregate percentages are not.
+limitations: |
+  Construct: the raw columns are INTEGER PERCENT values as printed in the PDF, not shares
+  summing exactly to 1. braunschweig.calibration.targets._p13_row_to_band_shares folds them
+  into seven bands -- [0,5) (d_0 + d_0_5), [5,10), [10,20), [20,30), [30,50), [50,100),
+  [100,inf) -- and RENORMALISES, after excluding the two non-distance columns
+  keine_feste_arbeit and keine_angabe, so the result describes the distance-class distribution
+  only. A row whose distance total is zero yields None and cannot be used as a target.
+  Universe: Pendeldistanz -- the distance to the USUAL workplace, including non-daily
+  commuters -- which is NOT the same universe as a realised weekday trip distance. ADR-0102
+  rejected P13 as the SOLE distance reference for exactly that reason and made SrV 2023 the
+  calibration target; this table stays alongside as a second reference.
+  The mittel column is the printed mean commute distance in km per class and is descriptive
+  only; no consumer calibrates against it.
+  Sample sizes are small at class level (n_unweighted 46 for RS7 77 up to 704 for RS7 72), so
+  a single class's band shares carry visible sampling noise -- class 72 was flagged in the
+  anchor-holdout evaluation (ADR-0068).
+notes: |
+  Distinct from its per-Kreis sibling eqasim-data/data/braunschweig/mid/mid2023_P13.csv, which
+  is keyed by ars5 (plus an 03ZGB Gesamt row) and read by
+  braunschweig.calibration.targets.load_p13_band_shares. Both come from Tabelle A P13; only
+  THIS one is keyed by RegioStaR-7 class. The sibling has no Data Registry record yet.
+  Consumed only by offline calibration and diagnostic tooling, never by a synpp stage
+  (ADR-0035 keeps the calibration corner out of the pipeline import graph), which is why every
+  requirements level is not_needed even though the table is committed and load-bearing for the
+  gravity-distribution calibration and the anchor holdout. The consumers are
+  braunschweig.calibration.targets.load_p13_band_shares_by_rs7 (the loader) and, through it,
+  scripts/calibrate_gravity_distribution.py, scripts/run_anchor_holdout.py and
+  scripts/diagnose_anchor_p13.py.
+  Cited as the reference of feature verbindungen_anchor (docs/registry/features), whose
+  measured metric records "P13-by-RS7 EMD improves 5/6 classes".

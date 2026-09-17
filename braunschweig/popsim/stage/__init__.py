@@ -244,7 +244,9 @@ from .config_keys import (  # noqa: F401  (re-exports)
     DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     DEFAULT_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
+    DEFAULT_SEED_DAY_FILTER,
     DEFAULT_W_ZWECK_10_AS_LEISURE,
+    DEFAULT_WEEKEND_PLAN_MATCH,
     KEY_BATCH_TIMEOUT,
     KEY_BIKES_KREIS_CONTROL,
     KEY_CARS_KREIS_CONTROL,
@@ -323,6 +325,7 @@ from . import controls_builder
 from .controls_builder import (  # noqa: F401  (re-exports)
     _grid_geography_controls,
     _kreis_controls_map,
+    age_band_by_entry_name,
     age_universe_entries,
     build_aggregation_map,
     build_controls_df,
@@ -868,8 +871,11 @@ def configure(context):
         for k, default in _kreis_control_keys_and_defaults
     ):
         context.config("data_path")
-    # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr.
-    context.config(KEY_SEED_DAY_FILTER, "default")
+    # Seed reporting-day filter. Default "default" = legacy (1,2,3) Mo-Fr. The value is
+    # named from config_keys because braunschweig.popsim.completed_donor declares the SAME
+    # key: the donor is built under this filter and the seed assembled from that donor, so
+    # the two declarations must not drift (tests/test_trip_flag_declaration_parity.py).
+    context.config(KEY_SEED_DAY_FILTER, DEFAULT_SEED_DAY_FILTER)
     # Spatial income tilt (Task 3). Default ON (project rule: features default on).
     # When OFF, the income frame is unchanged (byte-identical); no cells parquet
     # re-read occurs.
@@ -887,7 +893,8 @@ def configure(context):
     # MiD-only (needs the hheink_gr1 donor income); inactive for source="entd".
     context.config(KEY_PLACEMENT_INCOME, True)
     # Weekend-plan match (default ON; OFF = byte-identical to pre-feature donor build).
-    context.config(KEY_WEEKEND_PLAN_MATCH, True)
+    # Named from config_keys for the same cross-stage reason as KEY_SEED_DAY_FILTER above.
+    context.config(KEY_WEEKEND_PLAN_MATCH, DEFAULT_WEEKEND_PLAN_MATCH)
     # Diary plan match + trip_class-seed closure + leading arrive-home drop (issues
     # #365 / #367 / #366, plan-structure-fix Task 7 and controller ruling R20). All
     # three are already declared by braunschweig.popsim.completed_donor
@@ -1271,14 +1278,28 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
     # parquet load set and add the single-year {M,F}_AGE_<year> input columns (the age
     # SHAPE denominator, y>=16) that ARE present in the parquet. When OFF, load_cols is
     # untouched (byte-identical).
+    # The cleaned parquet column names, read ONCE and shared by both grid branches: the
+    # schema is a property of the file, not of the grid asking for it, and each branch
+    # opening the file itself parsed the footer of a several-hundred-column file twice in
+    # the production state where both grids are on (issue #327). Resolved lazily so an OFF
+    # /OFF configuration still touches no parquet.
+    _available_cells_columns = None
+
+    def _cells_columns_available():
+        nonlocal _available_cells_columns
+        if _available_cells_columns is None:
+            import pyarrow.parquet as _pq
+
+            _available_cells_columns = [
+                prepared_cells.clean_col_name(_n)
+                for _n in _pq.ParquetFile(cells_path).schema.names]
+        return _available_cells_columns
+
     if employment_grid_on:
         from braunschweig.popsim import employment_grid as _eg
-        import pyarrow.parquet as _pq_eg
 
-        _eg_raw_names = _pq_eg.ParquetFile(cells_path).schema.names
-        _eg_available = [prepared_cells.clean_col_name(_n) for _n in _eg_raw_names]
         load_cols = _eg.select_load_columns(
-            load_cols, _eg_available,
+            load_cols, _cells_columns_available(),
             computed_cols={
                 "EMPLOYED_M_16_29_agg", "EMPLOYED_M_30_39_agg", "EMPLOYED_M_40_49_agg",
                 "EMPLOYED_M_50_59_agg", "EMPLOYED_M_60plus_agg",
@@ -1287,17 +1308,18 @@ def _resolve_cell_load_columns(context, controls_source, source_name: str, contr
             },
         )
 
-    # Ownership grid (issue #240): the nine OWN_*_agg targets are COMPUTED per cell
-    # (not stored in the parquet); add the Zensus dwelling-composition input columns
-    # plus the geography/weight inputs that ARE present. When OFF, load_cols is
+    # Ownership grid (issue #240): the nine OWN_*_agg targets are COMPUTED per cell (not
+    # stored in the parquet), and select_load_columns adds ONLY the Zensus
+    # dwelling-composition input columns that exist. It does NOT add the geography or
+    # weight inputs -- ZENSUS1km is derived from the 100m id by the loader,
+    # RegionalSchlussel_ARS / RegioStaR7 / POP_TOTAL arrive via
+    # mid.control_cells._EXTRA_CELL_COLUMNS, and the HH_TOTAL census column is already a
+    # tier0 base column (see that function's own docstring). When OFF, load_cols is
     # untouched (byte-identical).
     if ownership_grid_on:
         from braunschweig.popsim import ownership_grid as _og
-        import pyarrow.parquet as _pq_og
 
-        _og_raw_names = _pq_og.ParquetFile(cells_path).schema.names
-        _og_available = [prepared_cells.clean_col_name(_n) for _n in _og_raw_names]
-        load_cols = _og.select_load_columns(load_cols, _og_available)
+        load_cols = _og.select_load_columns(load_cols, _cells_columns_available())
 
     # Participation-universe denominators (Plan B, issue #368): every ACTIVE person-level
     # REGISTRY entry with an age universe partitions the single-year census total of its
@@ -1733,11 +1755,14 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # employment_status: 14+, or an age-RANGE universe such as an education control,
         # Plan B #368) use the single-year age columns instead
         # (person_total_by_kreis_min_age / person_total_by_kreis_age_range) and are cached
-        # PER (min_age, max_age) pair, so two entries sharing the same bounds reuse one
-        # computation while different bounds recompute correctly (no cross-entry reuse
-        # of the wrong universe -- the #97 universe trap this whole field exists to avoid).
-        # Per-Kreis person totals of an age BAND, keyed by the normalised
-        # (low_age, max_age) pair; holds both min-age-only and full-range universes.
+        # PER NORMALISED [lower, upper] band, so two entries sharing a universe reuse one
+        # computation while different bands recompute correctly (no cross-entry reuse of
+        # the wrong universe -- the #97 universe trap this whole field exists to avoid).
+        # The bands come from controls_builder.age_band_by_entry_name, i.e. from the SAME
+        # predicate universe_age_census_columns builds the parquet load set from, so this
+        # denominator is summed over exactly the years that were loaded; re-deriving the
+        # bounds here is how the two drifted apart before (education_6_17 over ages 10-17).
+        _kac_age_bands = age_band_by_entry_name(active_entries)
         _kac_persons_by_kreis_age_band: dict = {}
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
@@ -1764,25 +1789,25 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
             # max_age (an age-RANGE universe, e.g. an education control, Plan B #368)
             # partition the [min_age, max_age] band total instead.
             if _ctl.level == "person":
-                _entry_min_age = getattr(_ctl, "min_age", None)
-                _entry_max_age = getattr(_ctl, "max_age", None)
-                # Normalise the lower bound ONCE: an entry with min_age unset and one with
-                # min_age=0 describe the same band, so they must share a cache entry
-                # instead of recomputing the identical per-Kreis total under two keys.
-                _entry_low_age = _entry_min_age if _entry_min_age is not None else 0
-                _entry_age_key = (_entry_low_age, _entry_max_age)
-                if _entry_max_age is not None:
-                    if _entry_age_key not in _kac_persons_by_kreis_age_band:
-                        _kac_persons_by_kreis_age_band[_entry_age_key] = person_total_by_kreis_age_range(
-                            cells, _kac_kreis, _entry_low_age, _entry_max_age)
-                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_age_key]
-                    _total_label = f"persons (age {_entry_low_age}-{_entry_max_age})"
-                elif _entry_min_age is not None:
-                    if _entry_age_key not in _kac_persons_by_kreis_age_band:
-                        _kac_persons_by_kreis_age_band[_entry_age_key] = person_total_by_kreis_min_age(
-                            cells, _kac_kreis, _entry_min_age)
-                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_age_key]
-                    _total_label = f"persons (age>={_entry_min_age})"
+                _entry_band = _kac_age_bands.get(_ctl.name)
+                if _entry_band is not None:
+                    _lo, _hi = _entry_band
+                    if _entry_band not in _kac_persons_by_kreis_age_band:
+                        # Both entry points sum the SAME single-year columns over the band;
+                        # an entry with no max_age keeps the min_age one so a
+                        # coverage failure names the function its caller would recognise.
+                        if getattr(_ctl, "max_age", None) is None:
+                            _kac_persons_by_kreis_age_band[_entry_band] = person_total_by_kreis_min_age(
+                                cells, _kac_kreis, _lo)
+                        else:
+                            _kac_persons_by_kreis_age_band[_entry_band] = person_total_by_kreis_age_range(
+                                cells, _kac_kreis, _lo, _hi)
+                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_band]
+                    # An open-ended universe is reported as "age>=lower": its upper bound is
+                    # the single-year census cap, not a bound the control itself declares.
+                    _total_label = (f"persons (age>={_lo})"
+                                    if getattr(_ctl, "max_age", None) is None
+                                    else f"persons (age {_lo}-{_hi})")
                 else:
                     if _kac_persons_by_kreis is None:
                         _kac_persons_by_kreis = person_total_by_kreis(

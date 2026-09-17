@@ -1,0 +1,80 @@
+dataset: mid2023_P13
+title: MiD 2023 P13 commute-distance band shares per Kreis (committed reference table)
+provider: derived in-repo from the MiD 2023 Grossraum Braunschweig result tables (infas 7555;
+  BMDV / infas)
+vintage: 2023 survey year
+geography: |
+  Grossraum Braunschweig -- the REGIONAL infas 7555 evaluation, not the national MiD. Nine
+  rows keyed by ars5: all EIGHT ZGB Kreise (Wolfsburg 03103 included, unlike most SrV tables)
+  plus a "Gesamt" region row coded 03ZGB. Kreis-code-to-name mapping lives in
+  braunschweig.analysis.spatial.ZGB8; the kreis column here carries the PDF's own German
+  labels ("Landkreis Wolfenbuettel"), which are display text and not a second mapping.
+crs: null
+roles:
+- calibration_target
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_mid_tables.py. That script parses the fixed-width
+    tabular TEXT of Tabelle A P13 "Entfernung Arbeitsstaette", pages 77-78, out of
+    Ergebnistabellen_MiD2023_Version2_infas_7555_Grossraum_Braunschweig.pdf and writes this
+    file together with mid2023_P9.csv, mid2023_P12_1.csv and mid2023_P17_1.csv. The source PDF
+    is a restricted infas delivery (input B10) and is NOT committed; only the extracted
+    aggregates are.
+  script: scripts/extract_mid_tables.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_P13.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: B10a
+  notes: |
+    Listed in scripts/verify_braunschweig_inputs.py under the B10a glob entry, together with
+    its three sibling extracted tables, because that entry checks a locally GENERATED
+    directory. The file itself ships committed, so a fresh checkout satisfies the check
+    without running the extractor.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values transcribed from a restricted infas result-table delivery
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The underlying infas 7555 PDF is restricted and must not be redistributed; these per-Kreis
+    aggregate percentages are not.
+limitations: |
+  Construct: the distance columns are INTEGER PERCENT values as printed in the PDF, not shares
+  summing exactly to 1. braunschweig.calibration.targets._p13_row_to_band_shares folds them
+  into seven bands -- [0,5) (d_0 + d_0_5), [5,10), [10,20), [20,30), [30,50), [50,100),
+  [100,inf) -- and RENORMALISES, after excluding the two non-distance columns
+  keine_feste_arbeit and keine_angabe, so the result describes the distance-class distribution
+  only. mittel is the printed mean commute distance in km and is descriptive.
+  Universe: Pendeldistanz -- the distance to the USUAL workplace, including non-daily
+  commuters -- which is NOT a realised weekday trip distance. ADR-0102 rejected P13 as the
+  SOLE distance reference for exactly that universe mismatch and made SrV 2023 the calibration
+  target; this table stays alongside as a second reference.
+  SMALL PER-KREIS SAMPLES, the reason ADR-0102 gives first: n_unweighted runs from 126
+  (Wolfsburg) to 356 (Braunschweig) persons per Kreis, and the region-wide Gesamt row is 1,583
+  -- itself smaller than SrV's ZGB total of 4,543, whose thinnest Kreis is 387. A single
+  Kreis's band shares therefore carry visible sampling noise and must not be read as a precise
+  per-Kreis truth. Report a per-Kreis figure from this table with its n, or use the Gesamt row.
+  ars5 must be read as a STRING: int64 inference strips the leading zero irreversibly
+  ("03101" -> 3101). Today only the "03ZGB" Gesamt row forces object dtype by accident, so
+  every reader passes dtype={"ars5": str} deliberately (pinned by
+  tests/test_matching_audit_wave2.py::test_load_p13_band_shares_keeps_leading_zero).
+notes: |
+  used_by is absent because that field lists STAGE ids and no pipeline stage reads this file.
+  The consumers are braunschweig.calibration.targets.load_p13_band_shares (the loader),
+  scripts/calibrate_gravity_distribution.py and scripts/calibrate_detour_circuity.py (offline
+  calibration), braunschweig.analysis.dashboard.mid_reference and the presentation figures
+  under braunschweig/analysis/presentation/figs/ (reporting). ADR-0035 keeps the calibration
+  corner out of the pipeline import graph, which is why every requirements level is optional
+  rather than required.
+  Distinct from its sibling dataset mid2023_P13_commute_distance_by_rs7, which comes from the
+  SAME Tabelle A P13 but from its "Raumtyp" block and is keyed by RegioStaR-7 class rather
+  than by Kreis. An earlier version of ADR-0102 wrongly described THIS file as RS7-keyed; it
+  is the per-Kreis one.

@@ -99,18 +99,24 @@ def test_universe_raises_on_an_unexpected_negative_trip_count():
         spu.prepare_universe_persons(persons, households)
 
 
-def test_universe_raises_on_a_non_numeric_trip_count():
+@pytest.mark.parametrize("non_numeric", ["not stated", "n/a", "", "  ", "keine Angabe"])
+def test_universe_raises_on_a_non_numeric_trip_count(non_numeric):
     """Controller ruling R16: a non-numeric E_ANZ_WEGE coerces to NaN, which passes both
     'NaN < 0' and 'NaN == -7' as False -- the person would stay in the universe with an unknown
     reporting-day state and appear in NO exclusion class. It must raise, not slip through.
+
+    Parametrised over several shapes of "not a number" -- a word, an abbreviation, an empty
+    cell, a whitespace-only cell and the German label a mis-delivered SrV export actually
+    carries -- because the guard must key on the COERCION result, not on any particular text.
+    The German literal is verbatim survey content and belongs here (the English-only rule
+    governs identifiers, comments and messages, not the data a fixture imitates, #368 review),
+    but it is only ONE of the values: a guard that matched that label rather than the NaN
+    would pass on it and let every other non-numeric cell through, which the four
+    English/empty cases are what catch.
     """
     persons, wege, households = _raw()
     persons["E_ANZ_WEGE"] = persons["E_ANZ_WEGE"].astype(object)
-    # The German literal is DELIBERATE and stays: it is verbatim survey content, the exact
-    # string a mis-delivered SrV export would carry in this numeric column. The English-only
-    # rule governs identifiers, comments and messages, not the data a fixture imitates -- an
-    # invented English value would test a case the delivery cannot produce (#368 review).
-    persons.loc[2, "E_ANZ_WEGE"] = "keine Angabe"
+    persons.loc[2, "E_ANZ_WEGE"] = non_numeric
     with pytest.raises(ValueError, match="non-numeric E_ANZ_WEGE"):
         spu.prepare_universe_persons(persons, households)
 

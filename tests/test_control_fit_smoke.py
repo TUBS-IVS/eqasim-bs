@@ -148,7 +148,17 @@ def test_census_sources_available_with_both_grids_on():
     """The ACTIVE production catalog runs both grids; their census sources are injected
     per cell by the stage, and the ownership grid's dwelling INPUT columns must exist
     in the parquet (a cleaned-name mismatch here is exactly the silent-zero-control
-    class of defect this smoke exists to catch)."""
+    class of defect this smoke exists to catch).
+
+    KNOWN LIMIT of the injected half: ``injected_cell_columns()`` derives the injected
+    names from the same constants the controls are rendered from, so for that column class
+    the check is structurally circular -- it proves the two agree, not that the stage
+    really produces them at run time. That is the pre-existing employment-grid pattern, and
+    the RUNTIME names are covered by the stage tests instead (the OWN_* / EMPLOYED_* columns
+    are asserted on real frames in tests/test_ownership_grid.py and the stage suite). The
+    non-circular half is the dwelling INPUT assertion above and the parquet-availability
+    check for every non-injected source (issue #327).
+    """
     from braunschweig.popsim import ownership_grid as og
 
     catalog = cs.controls_for_seed(
@@ -166,6 +176,13 @@ def test_census_sources_available_with_both_grids_on():
         aggregation_map=cs.build_aggregation_map(grid),
         injected_columns=cfs.injected_cell_columns())
     assert report.failures == [], report.failures
+    # Without this, an empty report would satisfy "no failures" vacuously -- the sibling
+    # test above carries the same assertion and this one had lost it (issue #327).
+    assert report.n_controls_checked == len(grid)
+    # ...and the grid really is the BOTH-grids catalog, not the smaller single-grid one.
+    grid_names = {c.name for c in grid}
+    assert set(og.OWNERSHIP_COLUMNS) <= grid_names
+    assert any(n.startswith("EMPLOYED_") for n in grid_names)
 
 
 def test_every_kreis_target_loads_and_partitions_every_kreis():
