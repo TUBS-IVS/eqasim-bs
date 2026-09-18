@@ -6,6 +6,13 @@ with EXACTLY one row per enriched person (asserted). OFF: every person ``present
 ``disabled``, no reference file is read, diagnostics ``{"enabled": False}`` -- but the frame's
 SCHEMA (dtypes) and its derived ``age_band`` / ``household_size_class`` attributes are identical to
 the ON path (see :func:`_disabled_frame`), so a consumer never has to branch on the flag.
+
+Escort protection (issue #425, ADR-0110 Amendment 2): with ``day_absence_escort_protection_enabled``
+the stage ALSO declares ``synthesis.population.trips`` (the pre-assignment trips) and hands the
+persons carrying an escort leg (:func:`braunschweig.synthesis.escort_duty.escort_person_ids`) to
+the draw as ineligible for the individual stage. The input is declared ONLY when the flag is on
+(the conditional-declaration pattern of :mod:`braunschweig.matsim.scenario.population`), so the
+OFF path has exactly the inputs it had before and no new DAG edge.
 """
 from __future__ import annotations
 
@@ -19,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.calibration import srv_absence
+from braunschweig.synthesis import escort_duty
 from braunschweig.synthesis.day_absence import absence as _absence
 from braunschweig.synthesis.day_absence.absence import (ABSENCE_COLUMNS, DAY_ABSENCE_SEED_OFFSET,
                                                           REASON_DISABLED, STATE_PRESENT, draw_absence,
@@ -34,12 +42,21 @@ STAGE_NAME = "braunschweig.synthesis.day_absence.absence_stage"
 #: :data:`AGE_BAND_EDGES`, :data:`HOUSEHOLD_SIZE_CLASS_TOP`, :func:`age_band`,
 #: :func:`household_size_class`) -- an edit there changes what a person is drawn AGAINST just as
 #: much as an edit to :mod:`absence` changes HOW they are drawn, so both must devalidate the cache.
-_HELPER_MODULES = (_absence, srv_absence)
+#: :mod:`braunschweig.synthesis.escort_duty` (issue #425) decides WHO is escort-protected, so an
+#: edit to the escort-leg definition must devalidate the cache too.
+_HELPER_MODULES = (_absence, srv_absence, escort_duty)
+#: Pre-assignment trips, declared as an input ONLY when escort protection is on.
+TRIPS_STAGE = "synthesis.population.trips"
 
 KEY_ENABLED = "day_absence_enabled"
 DEFAULT_ENABLED = True
 KEY_HOUSEHOLD_STAGE = "day_absence_household_stage_enabled"
 DEFAULT_HOUSEHOLD_STAGE = True
+#: Issue #425 / ADR-0110 Amendment 2. CODE default False = byte-identical to PR #389 (arm 3);
+#: configs/base_bs.yml sets true (the same code-default/config-default split as
+#: KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE below).
+KEY_ESCORT_PROTECTION = "day_absence_escort_protection_enabled"
+DEFAULT_ESCORT_PROTECTION = False
 KEY_MAX_BAND_DEVIATION_PP = "day_absence_max_band_deviation_pp"
 DEFAULT_MAX_BAND_DEVIATION_PP = 1.0
 #: Issue #388: minimum UNCLIPPED household size eligible for the individual residual stage. The
@@ -77,6 +94,11 @@ def configure(context):
     context.config(KEY_HOUSEHOLD_STAGE, DEFAULT_HOUSEHOLD_STAGE)
     context.config(KEY_MAX_BAND_DEVIATION_PP, DEFAULT_MAX_BAND_DEVIATION_PP)
     context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE, DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE)
+    # The trips are needed only to find escort legs; declare them -- and the DAG edge -- only on
+    # the ON path (issue #425), so the OFF path keeps exactly the inputs it had before.
+    context.config(KEY_ESCORT_PROTECTION, DEFAULT_ESCORT_PROTECTION)
+    if context.config(KEY_ESCORT_PROTECTION):
+        context.stage(TRIPS_STAGE)
 
 
 def _disabled_frame(persons):
@@ -138,9 +160,17 @@ def execute(context):
     ``n_households``, ``n_absent_household``, ``n_absent_individual``, ``n_absent_total``,
     ``share_absent_total``, ``share_absent_in_fully_absent_households``, ``n_bands_overshoot``,
     ``n_bands_unreachable``, ``household_stage``, ``individual_stage_min_household_size``,
-    ``n_persons_ineligible_individual_stage``, ``by_band``, ``by_size_class``) plus
-    ``n_band_guard_hits`` (see the deviation guard below). On the OFF path: ``{"enabled": False}``
-    only.
+    ``n_persons_ineligible_individual_stage``, ``n_persons_ineligible_household_size``,
+    ``n_persons_escort_protected``, ``by_band``, ``by_size_class``) plus ``n_band_guard_hits`` (see
+    the deviation guard below) and ``escort_protection`` (the flag as read, issue #425). On the OFF
+    path: ``{"enabled": False}`` only.
+
+    Escort protection (issue #425): when ``day_absence_escort_protection_enabled`` is true the
+    pre-assignment trips are read and every person with an escort leg becomes ineligible for the
+    individual stage. Fallback transparency: the protected share is logged as a rate, and an EMPTY
+    escort set next to a NON-EMPTY trips table WARNS -- that combination is the "escort purpose is
+    off in the synthetic trips" defect class ``commute_day.state_stage`` warns about, not a
+    population that escorts nobody.
     """
     persons = context.stage("synthesis.population.enriched")
     for column in ("person_id", "household_id", "age"):
@@ -154,15 +184,26 @@ def execute(context):
     max_dev_pp = float(context.config(KEY_MAX_BAND_DEVIATION_PP))
     individual_stage_min_household_size = _validate_individual_stage_min_household_size(
         context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE))
+    escort_protection = bool(context.config(KEY_ESCORT_PROTECTION))
     reference = load_absence_reference(os.path.join(str(context.config("data_path")), *SRV_SUBDIR))
-    logger.info("%s parameters: household_stage=%s, %s=%d, random_seed=%d (+%d offset), reference bands %s, "
-                "sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
-                individual_stage_min_household_size, random_seed, DAY_ABSENCE_SEED_OFFSET,
-                {b: round(v, 4) for b, v in reference.p_absent_by_band.items()},
+    logger.info("%s parameters: household_stage=%s, %s=%d, %s=%s, random_seed=%d (+%d offset), reference "
+                "bands %s, sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+                individual_stage_min_household_size, KEY_ESCORT_PROTECTION, escort_protection, random_seed,
+                DAY_ABSENCE_SEED_OFFSET, {b: round(v, 4) for b, v in reference.p_absent_by_band.items()},
                 {k: round(v, 4) for k, v in reference.p_all_absent_by_size.items()})
+    escort_protected_person_ids = None
+    if escort_protection:
+        trips = context.stage(TRIPS_STAGE)
+        escort_protected_person_ids = escort_duty.escort_person_ids(trips)
+        if not escort_protected_person_ids and len(trips) > 0:
+            logger.warning("%s %s is true but NO person carries an %r leg although the trips table has %d "
+                           "rows -- this almost always means the escort purpose is OFF in the synthetic "
+                           "trips, not that nobody escorts; the gate is inert in this run.", _LOG_TAG,
+                           KEY_ESCORT_PROTECTION, escort_duty.ESCORT_PURPOSE, len(trips))
     rng = np.random.RandomState(random_seed + DAY_ABSENCE_SEED_OFFSET)
     absence, diagnostics = draw_absence(persons, reference, rng, household_stage=household_stage,
-                                        individual_stage_min_household_size=individual_stage_min_household_size)
+                                        individual_stage_min_household_size=individual_stage_min_household_size,
+                                        escort_protected_person_ids=escort_protected_person_ids)
     assert len(absence) == len(persons) and not absence["person_id"].duplicated().any(), (
         f"{_LOG_TAG} the absence frame must carry exactly one row per person")
     n_guard_hits = 0
@@ -188,12 +229,28 @@ def execute(context):
                    cell["delta_pp"], cell["n"])
     n_total = diagnostics["n_persons"]
     n_ineligible = diagnostics["n_persons_ineligible_individual_stage"]
+    n_by_size = diagnostics["n_persons_ineligible_household_size"]
+    n_by_escort = diagnostics["n_persons_escort_protected"]
     ineligible_rate = n_ineligible / n_total if n_total else float("nan")
-    logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
-               "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
-               100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
-               individual_stage_min_household_size)
+    if escort_protection:
+        logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage: %d by "
+                   "household size below %s=%d, %d by escort protection", _LOG_TAG, n_ineligible, n_total,
+                   100.0 * ineligible_rate, n_by_size, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+                   individual_stage_min_household_size, n_by_escort)
+    else:
+        # An inactive gate is not named, so an OFF-path log never suggests escort protection ran.
+        logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
+                   "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
+                   100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+                   individual_stage_min_household_size)
+    if escort_protection:
+        # Fallback-transparency rate for the escort gate on its own (issue #425).
+        n_present = n_total - diagnostics["n_absent_household"]
+        logger.info("%s escort protection: %d/%d present persons (%.2f%%) carry an escort leg and are "
+                   "ineligible for the individual stage", _LOG_TAG, n_by_escort, n_present,
+                   100.0 * n_by_escort / max(n_present, 1))
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
+    diagnostics["escort_protection"] = escort_protection
     diagnostics["n_band_guard_hits"] = n_guard_hits
     return {"absence": absence, "diagnostics": diagnostics}

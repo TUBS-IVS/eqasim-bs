@@ -185,8 +185,8 @@ def _residual_probability_eligible(target_n: float, absent_hh_n: float, n_eligib
 
 
 def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.random.RandomState, *,
-                 household_stage: bool = True, individual_stage_min_household_size: int = 1
-                 ) -> tuple[pd.DataFrame, dict]:
+                 household_stage: bool = True, individual_stage_min_household_size: int = 1,
+                 escort_protected_person_ids=None) -> tuple[pd.DataFrame, dict]:
     """Two-stage seeded draw over ``persons`` (``person_id``, ``household_id``, ``age``).
 
     Row order of ``persons`` does not matter (sorted internally); the draw sequence is
@@ -207,6 +207,19 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     includes -- but is not limited to -- an EMPTY eligible pool) logs a WARNING naming the
     shortfall rather than silently under-shooting; ``diagnostics["n_bands_unreachable"]`` counts
     how many bands this happened to.
+
+    ``escort_protected_person_ids`` (issue #425, ADR-0110 Amendment 2, CODE default ``None`` =
+    no protection, byte-identical to today) is a SECOND eligibility gate on the individual stage
+    only: a person in it is never drawn ``absent_individual`` (an escort leg on the reporting day
+    evidences presence, ADR-0104 Assumption 4), but stays drawable by the HOUSEHOLD stage -- a
+    household that leaves as a whole takes its escorter along and strands nobody. Any non-empty
+    set forces the general eligible-pool residual formula even at
+    ``individual_stage_min_household_size == 1``, because the legacy expression assumes every
+    present person is eligible. ``diagnostics["n_persons_escort_protected"]`` counts the present
+    persons the escort gate ALONE removed (those the size gate had not already removed), and
+    ``diagnostics["n_persons_ineligible_household_size"]`` the size gate's own removals, so the two
+    gates are observable separately while ``n_persons_ineligible_individual_stage`` keeps its
+    union meaning.
     """
     missing = [c for c in ("person_id", "household_id", "age") if c not in persons.columns]
     if missing:
@@ -238,7 +251,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     # Eligibility for the individual residual stage (issue #388): a MASK on top of "present", never
     # a change to who is drawn -- u_ind below is still drawn for every person regardless.
     is_present = ~is_hh_absent
-    is_eligible = is_present & (household_size >= individual_stage_min_household_size)
+    size_ok = household_size >= individual_stage_min_household_size
+    # Escort protection (issue #425): a second MASK on the individual stage, same discipline --
+    # u_ind is still drawn for everyone below. Empty when no set is given.
+    protected_ids = set(escort_protected_person_ids) if escort_protected_person_ids is not None else set()
+    is_escort_protected = p["person_id"].isin(protected_ids).to_numpy()
+    is_eligible = is_present & size_ok & ~is_escort_protected
+    # Present persons the escort gate ALONE removes (the size gate had not already removed them).
+    is_escort_removed = is_present & size_ok & is_escort_protected
 
     residual_by_band, by_band, n_overshoot, n_unreachable = {}, {}, 0, 0
     for label in AGE_BAND_LABELS:
@@ -248,13 +268,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         absent_hh_n = int(is_hh_absent[in_band].sum())
         realised_hh = float(absent_hh_n / n_band) if n_band else 0.0
         n_eligible = int(is_eligible[in_band].sum())
+        n_escort_removed = int(is_escort_removed[in_band].sum())
         target_n = target * n_band
         # An overshoot is realised_hh > target, checked directly rather than only via a negative
         # residual: at realised_hh == 1.0 (a band fully absorbed by the household stage) the
         # residual formula below is bypassed by the division-by-zero guard, so a residual-only
         # check would silently miss that case and never emit the mandatory WARNING.
         overshoot = realised_hh > target
-        if individual_stage_min_household_size == 1:
+        if individual_stage_min_household_size == 1 and not protected_ids:
             # Byte-identical to PR #387: every present person is eligible when the threshold is 1
             # (household_size >= 1 always holds), so the legacy expression is kept verbatim
             # rather than routed through the general (algebraically equivalent, but not
@@ -285,7 +306,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                            absent_hh_n, n_eligible, shortfall)
         residual_by_band[label] = residual
         by_band[label] = {"n": n_band, "reference_rate": target, "realised_household_rate": realised_hh,
-                          "residual_p": residual, "n_eligible_present": n_eligible}
+                          "residual_p": residual, "n_eligible_present": n_eligible,
+                          "n_escort_protected": n_escort_removed}
     p["p_individual"] = p["age_band"].map(residual_by_band).astype(float)
     u_ind = rng.random_sample(len(p))  # drawn for ALL persons, exactly as before; eligibility is a mask
     is_ind_absent = is_eligible & (u_ind < p["p_individual"].to_numpy())
@@ -336,6 +358,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         }
 
     n_persons_ineligible_individual_stage = int((is_present & ~is_eligible).sum())
+    n_persons_ineligible_household_size = int((is_present & ~size_ok).sum())
+    n_persons_escort_protected = int(is_escort_removed.sum())
     diagnostics = {"n_persons": int(len(out)), "n_households": int(len(households)),
                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
                    "n_absent_total": n_abs, "share_absent_total": float(n_abs / max(len(out), 1)),
@@ -344,6 +368,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                    "household_stage": bool(household_stage),
                    "individual_stage_min_household_size": int(individual_stage_min_household_size),
                    "n_persons_ineligible_individual_stage": n_persons_ineligible_individual_stage,
+                   "n_persons_ineligible_household_size": n_persons_ineligible_household_size,
+                   "n_persons_escort_protected": n_persons_escort_protected,
                    "by_band": by_band, "by_size_class": by_size_class}
     logger.info("%s %d/%d persons absent (%.2f%%): %d by the household stage, %d by the individual stage; "
                 "%.1f%% of absent persons live in a fully absent household; per band %s; per household size "
