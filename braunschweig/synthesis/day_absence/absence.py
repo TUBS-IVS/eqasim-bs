@@ -1,18 +1,22 @@
-"""General day absence: the seeded two-stage state draw (issue #370, ADR-0110; issue #388).
+"""General day absence: the seeded two-stage state draw (issue #370, ADR-0110; issues #388, #425).
 
 Every person gets ``day_absence_state`` in {present, absent_household, absent_individual}:
 
 1. HOUSEHOLD stage -- with probability ``p_all_absent[size_class]`` (SrV, by household size) the
-   whole household is away (family vacation, joint travel): ``absent_household``.
-2. INDIVIDUAL residual stage -- restricted to ELIGIBLE present persons, where eligibility is
-   ``present & (household_size >= individual_stage_min_household_size)`` (``household_size`` is the
-   UNCLIPPED member count, not the capped ``household_size_class``): per age band the SrV
-   person-level rate ``r(a)`` minus what stage 1 already realised in that band, ``r_hh(a)``, gives a
-   residual probability that every ELIGIBLE present person draws against. With the CODE default
-   ``individual_stage_min_household_size=1`` every present person is eligible and the residual is
-   the PR #387 expression ``p_individual(a) = (r(a) - r_hh(a)) / (1 - r_hh(a))`` (clipped at 0, an
-   overshoot is WARNED) kept BYTE-IDENTICAL in :func:`_residual_probability_legacy`; a higher
-   threshold routes non-eligible households out of the residual pool via the general
+   whole household is away (family vacation, joint travel): ``absent_household``. NEITHER
+   eligibility gate below applies here: a household leaving as a whole takes its escorter along.
+2. INDIVIDUAL residual stage -- restricted to ELIGIBLE present persons. Eligibility is
+   ``present & (household_size >= individual_stage_min_household_size) & ~escort_protected``
+   (``household_size`` is the UNCLIPPED member count, not the capped ``household_size_class``;
+   ``escort_protected`` is issue #425 / ADR-0110 Amendment 2 -- persons with an escort leg on their
+   pre-assignment day, whose leg evidences presence at home, ADR-0104 Assumption 4). Per age band
+   the SrV person-level rate ``r(a)`` minus what stage 1 already realised in that band, ``r_hh(a)``,
+   gives a residual probability that every ELIGIBLE present person draws against. With the CODE
+   defaults ``individual_stage_min_household_size=1`` AND no protection set, every present person
+   is eligible and the residual is the PR #387 expression
+   ``p_individual(a) = (r(a) - r_hh(a)) / (1 - r_hh(a))`` (clipped at 0, an overshoot is WARNED)
+   kept BYTE-IDENTICAL in :func:`_residual_probability_legacy`; a higher threshold OR a non-empty
+   protection set routes non-eligible persons out of the residual pool via the general
    :func:`_residual_probability_eligible` expression, WARNING when a band's target cannot be
    reached because the eligible pool is too small -- empty OR merely insufficient to cover the
    shortfall (issue #388: this is what makes the individual-stage residual scientifically
@@ -219,7 +223,11 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     persons the escort gate ALONE removed (those the size gate had not already removed), and
     ``diagnostics["n_persons_ineligible_household_size"]`` the size gate's own removals, so the two
     gates are observable separately while ``n_persons_ineligible_individual_stage`` keeps its
-    union meaning.
+    union meaning. Both escort counts are MARGINAL-effect counts, not population counts: they hold
+    the persons the escort gate ALONE removed, so ``size + escort == union`` holds exactly even
+    when a person is both a single and an escorter. The same definition applies per band, in
+    ``by_band[a]["n_escort_protected"]``. A non-empty protection set that matches NO person in the
+    frame WARNS (an empty join is a defect signal, not a result -- CLAUDE.md "no silent fallbacks").
     """
     missing = [c for c in ("person_id", "household_id", "age") if c not in persons.columns]
     if missing:
@@ -256,6 +264,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     # u_ind is still drawn for everyone below. Empty when no set is given.
     protected_ids = set(escort_protected_person_ids) if escort_protected_person_ids is not None else set()
     is_escort_protected = p["person_id"].isin(protected_ids).to_numpy()
+    if protected_ids and not is_escort_protected.any():
+        # A non-empty set that joins NOBODY leaves the gate silently inert -- every count reads 0
+        # and the rate line reads "0/N (0.00%)", indistinguishable from a correctly inert gate.
+        # CLAUDE.md "no silent fallbacks": an empty join is a defect signal, not a result.
+        logger.warning("%s escort protection was given %d person id(s) but matched 0 persons in the "
+                       "persons frame -- almost certainly a person_id dtype or key mismatch, not a "
+                       "population in which nobody escorts; the gate is INERT for this draw.",
+                       _LOG_TAG, len(protected_ids))
     is_eligible = is_present & size_ok & ~is_escort_protected
     # Present persons the escort gate ALONE removes (the size gate had not already removed them).
     is_escort_removed = is_present & size_ok & is_escort_protected
@@ -295,9 +311,12 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         # 20 eligible persons drawn absent) and still realises only ~2%, with nothing logged under
         # the old n_eligible == 0 check alone. `target_n - absent_hh_n > n_eligible` subsumes that
         # old check (n_eligible == 0 makes it `target_n > absent_hh_n`) and additionally catches
-        # this partial-pool shortfall. Unreachable under individual_stage_min_household_size == 1,
-        # where n_eligible == n_band - absent_hh_n always (every present person eligible), so
-        # target_n - absent_hh_n - n_eligible == target_n - n_band == n_band * (target - 1) <= 0.
+        # this partial-pool shortfall. Unreachable under individual_stage_min_household_size == 1
+        # AND no escort protection, where n_eligible == n_band - absent_hh_n always (every present
+        # person eligible), so target_n - absent_hh_n - n_eligible == target_n - n_band ==
+        # n_band * (target - 1) <= 0. With escort protection (issue #425) that equality no longer
+        # holds and this warning IS reachable at threshold 1 -- it is the guard ADR-0110
+        # Amendment 2's band-tolerance row relies on.
         shortfall = target_n - absent_hh_n - n_eligible
         if shortfall > 0:
             n_unreachable += 1

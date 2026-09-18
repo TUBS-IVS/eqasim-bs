@@ -202,7 +202,18 @@ validation:
     external reference'
   result: 'MEASURED, and it is the one place where arm 3 is WORSE than arm 1: children living in a
     household with an absent member who carried an escort leg number 2,574, against 2,006 in arm 1
-    (arm 2, the individual-only counterfactual, had 4,095). Absent persons carrying an escort leg:
+    (arm 2, the individual-only counterfactual, had 4,095). Two further escort figures of THIS run
+    are recorded here because ADR-0110 Amendment 2 (issue #425) sizes its pre-registration with
+    them and a run''s measured numbers belong in its manifest, not in an ADR: 113,819 of 1,001,503
+    persons with a trip (11.4 %) carry an escort leg on their pre-assignment day
+    ("[commute day state] escort duty" line of ~/b370_arm3.log, the SAME both-trip-ends definition
+    braunschweig.synthesis.escort_duty.escort_person_ids uses, i.e. exactly the population the
+    #425 gate would protect), and 752 far commuters were kept present by the pre-existing ADR-0104
+    escort protection ("escort-protected from absent" in the same log). A third, DIFFERENT escort
+    count in this run is 108,500 escorters linked by braunschweig.synthesis.locations.escort_links
+    (57,476 of them, 53.0 %, linked to education locations) -- that is the chainsolver''s linking
+    population, NOT the escort-leg population, and the two must not be confused. Absent persons
+    carrying an escort leg:
     5,315 (arm 1 4,869, arm 2 5,617). The direction is expected and follows from the gate: moving
     residual draws off singles and onto multi-person households necessarily strands more children
     whose escorter is absent while they themselves are present. The effect is small next to what the

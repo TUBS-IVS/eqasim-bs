@@ -345,8 +345,8 @@ def test_band_target_still_hit_when_escort_protected_persons_leave_the_residual_
     assert abs(band["realised_rate"] - 0.10) < 0.01
     absent = out["day_absence_state"] != D.STATE_PRESENT
     assert absent[out["person_id"].isin(_escorters(persons))].sum() == 0
-    unprotected_couple_members = out["age"].eq(36) if "age" in out.columns else \
-        out["person_id"].isin(persons.loc[persons["age"] == 36, "person_id"])
+    # out is p[ABSENCE_COLUMNS] and carries no age column; select the 36-year-olds by id.
+    unprotected_couple_members = out["person_id"].isin(persons.loc[persons["age"] == 36, "person_id"])
     assert absent[unprotected_couple_members].mean() > 0.13
     assert band["residual_p"] == pytest.approx(0.15, abs=0.005)
 
@@ -381,6 +381,34 @@ def test_escort_protection_diagnostics_are_reported_separately_from_the_size_gat
     assert diag["n_persons_escort_protected"] == present_escorters
     assert diag["n_persons_ineligible_individual_stage"] == present_singles + present_escorters
     assert diag["by_band"]["30-44"]["n_escort_protected"] == present_escorters
+
+
+def test_a_non_empty_escort_set_that_matches_nobody_warns_that_the_gate_is_inert(caplog):
+    """CLAUDE.md fallback transparency: "a format mismatch, an empty join, a wrong key".
+
+    A protection set whose ids do not join the persons frame (e.g. a person_id dtype mismatch)
+    leaves the gate silently inert: every count reads 0 and the INFO rate line reads "0/N (0.00%)",
+    which is indistinguishable from a correctly inert gate. On the 100 % population that is the
+    single reading the A/B most needs to trust, so it must WARN rather than look clean."""
+    persons = _persons(100)
+    ref = _reference(p_band=0.10, p_size={k: 0.0 for k in range(1, 6)})
+    with caplog.at_level("WARNING"):
+        _out, diag = D.draw_absence(persons, ref, np.random.RandomState(37),
+                                    escort_protected_person_ids={"no-such-person", -1})
+    assert diag["n_persons_escort_protected"] == 0
+    assert any("matched 0" in message or "matched no" in message for message in caplog.messages), \
+        caplog.messages
+
+
+def test_an_escort_set_that_matches_someone_does_not_warn(caplog):
+    """The guard must not cry wolf on the healthy path."""
+    persons = _persons(100)
+    ref = _reference(p_band=0.10, p_size={k: 0.0 for k in range(1, 6)})
+    with caplog.at_level("WARNING"):
+        _out, diag = D.draw_absence(persons, ref, np.random.RandomState(37),
+                                    escort_protected_person_ids=_escorters(persons))
+    assert diag["n_persons_escort_protected"] > 0
+    assert not any("matched" in message for message in caplog.messages), caplog.messages
 
 
 def test_escort_protection_combines_with_the_household_size_gate():

@@ -420,8 +420,9 @@
      cannot contain the combination: a respondent away all day has zero trips and therefore no
      escort trip, so absence and escort duty are mutually exclusive on a person-day BY
      CONSTRUCTION of the data. The far-commuter model already encodes this -- ADR-0104 Assumption 4,
-     "an escort leg evidences presence at home", reason `home_escort_protected`, 752 persons in
-     arm 3 -- and the general absence draw did not.
+     "an escort leg evidences presence at home", reason `home_escort_protected`, which kept 752 far
+     commuters present in arm 3 (figure recorded in that run's manifest) -- and the general absence
+     draw did not.
   2. **The rule.** `braunschweig.synthesis.day_absence.absence.draw_absence` gains the keyword
      `escort_protected_person_ids` (CODE default `None`, byte-identical to PR #389); eligibility
      for the individual residual stage becomes `eligible = present & (household_size >=
@@ -456,11 +457,24 @@
      absent persons have no escort legs) but it is still an ASSUMPTION about who, within a band,
      is away: the SrV cannot say whether escort-duty persons are less often away on OTHER days,
      only that they are not away on the day they escort. The eligible residual pool shrinks by
-     roughly the escort share (108,199 persons carried an escort leg in arm 3, ~11 % of persons
-     with trips) on top of Amendment 1's 19.24 %, so the per-band residual rate rises further over
-     fewer people; the per-band marginal is still exact in expectation, and the pre-existing
-     "eligible pool too small" WARNING covers a band that can no longer reach its target. Nothing
-     here targets a per-size or per-escort absence rate; Amendment 1's retained limitation stands.
+     roughly the escort share -- 113,819 of 1,001,503 persons with a trip, 11.4 %, in arm 3, on the
+     SAME both-trip-ends definition this gate uses (figure recorded in that run's manifest; not to
+     be confused with `escort_links`'s 108,500 linked escorters, a different population) -- on top
+     of Amendment 1's 19.24 %, so the per-band residual rate rises further over fewer people; the
+     per-band marginal is still exact in expectation, and the pre-existing "eligible pool too
+     small" WARNING covers a band that can no longer reach its target (that warning was previously
+     unreachable at threshold 1 and IS reachable now, which is why the band row below is the one
+     that can break). Nothing here targets a per-size or per-escort absence rate; Amendment 1's
+     retained limitation stands.
+
+     **Retained, NOT closed by this amendment:** the REVERSE incoherence. The gate blocks
+     "escorter absent, escorted child present"; it does not block an escorted CHILD being drawn
+     `absent_individual` while the escorting parent stays present and still makes the escort trip
+     -- a phantom escort leg, symmetric to the defect fixed here and reachable for any child in a
+     multi-person household. `n_children_with_absent_escorter` does not measure it, so arm 4's
+     "0 by construction" row says nothing about it. Escort coherence is therefore IMPROVED, not
+     closed; the reverse case belongs with issue #385 (passive escort coherence) and is named here
+     so no reader takes this amendment for a complete fix.
   5. **Pre-registered arm 4 (server, cached population; not run as part of this record).** Arm 4
      = arm 3 plus this amendment's default (`day_absence_escort_protection_enabled: true`, already
      the base config default at the measurement commit, so no override). Same cache, same seed,

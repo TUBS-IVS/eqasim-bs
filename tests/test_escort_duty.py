@@ -45,3 +45,40 @@ def test_escort_purpose_constant_agrees_with_the_two_existing_copies():
     from braunschweig.synthesis.commute_day import plan_replacement, state_stage
     assert E.ESCORT_PURPOSE == "escort"
     assert E.ESCORT_PURPOSE == state_stage.ESCORT_PURPOSE == plan_replacement.ESCORT_PURPOSE
+
+
+def test_the_three_escort_masks_select_the_same_persons_on_a_shared_fixture():
+    """The rule is implemented three times (this module, ``state_stage._escort_person_ids``, and
+    ``plan_replacement``'s inline ``escort_leg_mask``). Pinning only the PURPOSE STRING would let a
+    future edit -- a purpose alias, a third trip end, an inverted condition -- diverge in one place
+    and still pass: ADR-0110 Amendment 2's "stranded children = 0 by construction" holds only while
+    the day-absence gate (this module) and the stranded-children metric (``plan_replacement``)
+    select the SAME persons. This pins the masks, not the constant.
+
+    ``state_stage._escort_person_ids`` takes a donors frame for its own diagnostics; an empty one
+    with the column it inspects exercises the mask without the donor warning."""
+    import pandas as pd
+
+    from braunschweig.synthesis.commute_day import plan_replacement, state_stage
+
+    trips = _trips([
+        (1, "escort", "home"),       # escort on following_purpose
+        (2, "home", "escort"),       # escort on preceding_purpose
+        (3, "escort", "escort"),     # both ends
+        (4, "work", "home"),         # neither
+        (4, "home", "work"),
+        (5, "leisure", "shop"),
+    ])
+    expected = {1, 2, 3}
+
+    # 1. this module
+    assert E.escort_person_ids(trips) == expected
+
+    # 2. the commute-day state stage
+    donors = pd.DataFrame({"has_active_escort": pd.Series(dtype=bool)})
+    assert state_stage._escort_person_ids(trips, donors) == expected
+
+    # 3. plan_replacement's inline mask, applied exactly as build_day_trips applies it
+    mask = ((trips["preceding_purpose"] == plan_replacement.ESCORT_PURPOSE)
+            | (trips["following_purpose"] == plan_replacement.ESCORT_PURPOSE))
+    assert set(trips.loc[mask, "person_id"]) == expected

@@ -86,9 +86,15 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   whole takes its escorter along, nobody is stranded). Any non-empty set forces the eligible-pool
   residual expression even at individual_stage_min_household_size 1. Logged as "escort
   protection: n/present (x.xx%) carry an escort leg and are ineligible for the individual stage";
-  an inactive gate is never named in the log; an EMPTY escort set next to a NON-EMPTY trips table
-  WARNS (the "escort purpose is off in the synthetic trips" defect class state_stage warns
-  about) and the gate is inert for that run.
+  an inactive gate is never named in the log. TWO inert-gate guards, because "the gate had no
+  effect" must never be indistinguishable from "the gate is broken" (CLAUDE.md "no silent
+  fallbacks"): an EMPTY escort set next to a NON-EMPTY trips table WARNS in the stage (the "escort
+  purpose is off in the synthetic trips" defect class state_stage warns about), and a NON-EMPTY
+  protection set that matches ZERO persons in the persons frame WARNS in draw_absence itself
+  (a person_id dtype/key mismatch -- an empty join, which would otherwise leave every count at 0
+  and the rate line reading "0/N (0.00%)"). The declaration of TRIPS_STAGE is gated on BOTH
+  day_absence_enabled and day_absence_escort_protection_enabled, so it matches exactly what
+  execute() reads (the disabled path returns before touching the trips).
 
   Draw rule (absence.draw_absence): every household gets size_class = min(household size, 5)
   (household_size_class.HOUSEHOLD_SIZE_CLASS_TOP) via braunschweig.calibration.srv_absence

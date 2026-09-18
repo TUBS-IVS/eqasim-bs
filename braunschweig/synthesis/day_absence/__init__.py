@@ -15,11 +15,17 @@ the reference loader):
    WHOLE household is away: ``absent_household``. This is what reproduces the observed clustering
    of absent persons into fully absent households.
 2. **Individual residual stage.** Per age band, the SrV person-level rate minus what the household
-   stage already realised in that band gives a residual probability; every still-present person is
-   drawn ``absent_individual`` at that rate. In expectation the per-band absence rates match the
-   SrV rates regardless of how much the household stage already contributed; an age band where the
-   household stage alone overshoots the SrV rate gets a residual of 0 and a WARNING (never a
-   silent negative probability).
+   stage already realised in that band gives a residual probability; every still-present ELIGIBLE
+   person is drawn ``absent_individual`` at that rate. Two eligibility gates narrow that pool, both
+   on this stage only -- the household stage is never gated, because a household leaving as a whole
+   takes its members along and strands nobody: household size below
+   ``day_absence_individual_stage_min_household_size`` (issue #388, ADR-0110 Amendment 1) and an
+   escort leg on the person's pre-assignment day (issue #425, Amendment 2). In expectation the
+   per-band absence rates match the SrV rates regardless of how much the household stage already
+   contributed or how far the gates shrink the pool; an age band where the household stage alone
+   overshoots the SrV rate gets a residual of 0 and a WARNING, and a band whose remaining eligible
+   pool cannot cover the residual WARNS as well (never a silent negative probability, never a
+   silent under-shoot).
 
 Composition with the commute-day state (ADR-0104): the two mechanisms are independent and are
 combined only in the REPORTING-DAY view of the day plan. A person is trip-less there when
@@ -29,14 +35,22 @@ solo day-absence does). This mirrors the two views ADR-0104 already established,
 dependency cycle is introduced:
 
 * ``synthesis.population.trips`` / ``synthesis.population.activities`` (the pre-assignment view)
-  are unaffected by this package and keep feeding location assignment.
+  are never MODIFIED by this package and keep feeding location assignment. Since issue #425 the
+  stage does READ ``synthesis.population.trips`` when ``day_absence_escort_protection_enabled`` is
+  on, to find who carries an escort leg. That is a read of the PRE-assignment view, whose producer
+  is upstream of this stage, so it introduces no cycle: the reporting-day view
+  ``synthesis.population.trips.final`` is the consumer of this stage, not its input.
 * ``synthesis.population.trips.final`` / ``synthesis.population.activities.final`` (the
   reporting-day view) is where a person's commute-day state and general-day-absence state are
   composed into the trips that actually reach the MATSim population and synthesis output.
 
-The synpp stage that reads ``synthesis.population.enriched``, calls :func:`absence.draw_absence`
-and wires the result into the reporting-day view (plus the ``day_absence_enabled`` /
-``day_absence_household_stage_enabled`` flags in ``configs/base_bs.yml``) is added in a later task
-of issue #370; with the feature disabled every person stays ``present`` (``reason = "disabled"``)
-and the reporting-day view is byte-identical to today.
+The synpp stage (:mod:`absence_stage`) reads ``synthesis.population.enriched`` -- plus
+``synthesis.population.trips`` on the escort-protection path -- calls :func:`absence.draw_absence`
+and is wired into the reporting-day view by
+:mod:`braunschweig.synthesis.commute_day.trips_day_stage`. Flags in ``configs/base_bs.yml``:
+``day_absence_enabled``, ``day_absence_household_stage_enabled``,
+``day_absence_individual_stage_min_household_size``, ``day_absence_escort_protection_enabled``.
+With the feature disabled every person stays ``present`` (``reason = "disabled"``), no reference
+file is read, no trips are read, and the reporting-day view is byte-identical to a pipeline
+without this package.
 """

@@ -244,6 +244,14 @@ def test_configure_declares_the_trips_stage_only_when_escort_protection_is_on():
     assert off.stages == ["synthesis.population.enriched"]
 
 
+def test_the_trips_stage_is_not_declared_when_day_absence_itself_is_off():
+    """execute() returns on the disabled path before it ever touches the trips, so declaring the
+    input there would carry a DAG edge nothing reads. The declaration is gated on BOTH flags."""
+    recorder = _ConfigureRecorder(config={S.KEY_ENABLED: False, S.KEY_ESCORT_PROTECTION: True})
+    S.configure(recorder)
+    assert recorder.stages == ["synthesis.population.enriched"]
+
+
 def test_escort_protection_keeps_an_escorter_present_that_the_individual_stage_would_otherwise_take(monkeypatch):
     """_enriched(): person 0 is a single (out by the size gate), persons 1-2 a couple, persons 3-5
     a family. With every eligible person drawn absent with certainty, ONLY the size gate and the

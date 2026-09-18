@@ -176,11 +176,19 @@ evidence:
       WITH the draw applied). The guards therefore have a first live baseline; they remain guards,
       not targets.
 
-      Escort gate (issue #425): the stage logs "escort protection: n/present (x %) carry an escort
-      leg and are ineligible for the individual stage" as an explicit rate and never names the gate
-      when it is off; an EMPTY escort set next to a NON-EMPTY trips table WARNS (the "escort purpose
-      is off in the synthetic trips" defect class commute_day.state_stage already warns about --
-      tests/test_day_absence_stage.py::test_escort_protection_warns_when_trips_have_rows_but_no_escort_leg).
+      Escort gate (issue #425): the stage logs the gate''s marginal effect as an explicit rate
+      ("escort protection: n/present (x %) are excluded from the individual stage by escort
+      protection") and never names the gate when it is off. TWO inert-gate guards, so "no effect"
+      is never indistinguishable from "broken": an EMPTY escort set next to a NON-EMPTY trips table
+      WARNS in the stage (the "escort purpose is off in the synthetic trips" defect class
+      commute_day.state_stage already warns about --
+      tests/test_day_absence_stage.py::test_escort_protection_warns_when_trips_have_rows_but_no_escort_leg),
+      and a NON-EMPTY protection set matching ZERO persons WARNS in the draw itself (an empty
+      person_id join --
+      tests/test_day_absence.py::test_a_non_empty_escort_set_that_matches_nobody_warns_that_the_gate_is_inert,
+      with a sibling test pinning that the healthy path does not cry wolf). The second guard was
+      added on review before arm 4 ran, because a zero-effect gate on the 100 % population is the
+      one reading that arm most needs to trust.
       The two eligibility gates are counted separately (n_persons_ineligible_household_size,
       n_persons_escort_protected, per band n_escort_protected) so neither hides inside the union
       count. NOT YET MEASURED on the 100 % population; arm 4 will give it a first live baseline.'

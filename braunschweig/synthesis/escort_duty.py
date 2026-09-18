@@ -1,7 +1,7 @@
 """Escort duty on the pre-assignment reporting day (issue #425).
 
-One pure question, answered once for every consumer: which persons carry an escort leg in their
-own (pre-assignment) trip table? An escort leg evidences presence at home on that day
+One pure question: which persons carry an escort leg in their own (pre-assignment) trip table?
+An escort leg evidences presence at home on that day
 (ADR-0104 Assumption 4), which is why the far-commuter model
 (``braunschweig.synthesis.commute_day.state_stage``) never sets such a person ``absent`` and why
 the general day-absence draw (``braunschweig.synthesis.day_absence``, ADR-0110 Amendment 2)
@@ -12,9 +12,19 @@ activity (``following_purpose``), the return leg DEPARTS from it (``preceding_pu
 
 This module deliberately carries no synpp stage logic and no donor-pool knowledge, so it can be
 folded into a stage's helper-module hash (``_HELPER_MODULES``) without pulling a whole stage
-module along. ``state_stage`` and ``plan_replacement`` keep their own local ``ESCORT_PURPOSE``
-literals for the same cross-module-avoidance reason; ``tests/test_escort_duty.py`` pins all
-three equal.
+module along.
+
+**The rule is currently implemented THREE times and they must not diverge.** This module,
+``braunschweig.synthesis.commute_day.state_stage._escort_person_ids`` and the escort-leg mask in
+``braunschweig.synthesis.commute_day.plan_replacement`` each apply it independently -- a deliberate
+cross-module-avoidance choice, since importing one into another would devalidate stage caches that
+have nothing to do with the importing change. The cost is that a future edit to one (a purpose
+alias, a third trip end) would silently disagree with the others, and ADR-0110 Amendment 2's
+"stranded children = 0 by construction" depends on the day-absence gate and
+``plan_replacement``'s stranded-children metric using the SAME rule.
+``tests/test_escort_duty.py`` therefore pins not only the three ``ESCORT_PURPOSE`` literals but
+the three MASKS, on a shared fixture. Consolidating them is tracked separately; until then, an
+edit here must be made in all three places and the pin test is what catches a miss.
 """
 from __future__ import annotations
 

@@ -97,7 +97,9 @@ def configure(context):
     # The trips are needed only to find escort legs; declare them -- and the DAG edge -- only on
     # the ON path (issue #425), so the OFF path keeps exactly the inputs it had before.
     context.config(KEY_ESCORT_PROTECTION, DEFAULT_ESCORT_PROTECTION)
-    if context.config(KEY_ESCORT_PROTECTION):
+    # Both flags, so the declaration matches exactly what execute() reads: with day_absence_enabled
+    # false execute returns before ever touching the trips, and the edge would be dead weight.
+    if context.config(KEY_ENABLED) and context.config(KEY_ESCORT_PROTECTION):
         context.stage(TRIPS_STAGE)
 
 
@@ -246,8 +248,12 @@ def execute(context):
     if escort_protection:
         # Fallback-transparency rate for the escort gate on its own (issue #425).
         n_present = n_total - diagnostics["n_absent_household"]
-        logger.info("%s escort protection: %d/%d present persons (%.2f%%) carry an escort leg and are "
-                   "ineligible for the individual stage", _LOG_TAG, n_by_escort, n_present,
+        # n_by_escort is the gate's MARGINAL effect (escort leg, not already excluded by household
+        # size), which is what "how much did this gate change" means; the wording says so, because
+        # "present persons with an escort leg" alone would be a larger, different number.
+        logger.info("%s escort protection: %d/%d present persons (%.2f%%) are excluded from the "
+                   "individual stage by escort protection (escort leg, not already excluded by "
+                   "household size)", _LOG_TAG, n_by_escort, n_present,
                    100.0 * n_by_escort / max(n_present, 1))
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
