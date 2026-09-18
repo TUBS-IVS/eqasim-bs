@@ -489,11 +489,16 @@
      `n_children_with_absent_escorter` is a household-level PROXY rather than an exact count. It is
      recorded here as an open limitation with no issue attached, so no reader takes this amendment
      for a complete fix and no one looks for it behind a closed issue.
-  5. **Pre-registered arm 4 (server, cached population; not run as part of this record).** Arm 4
-     = arm 3 plus this amendment's default (`day_absence_escort_protection_enabled: true`, already
-     the base config default at the measurement commit, so no override). Same cache, same seed,
-     same `plan_structure_vs_srv` / `work_participation_by_kreis` stages as arms 0-3, plus the
-     `build_day_trips` escort diagnostics read directly:
+  5. **Pre-registered arm 4 -- RUN on 2026-09-18, manifest
+     `general-day-absence-arm4-100pct-2026-09-18`, every row MET.** Arm 4 = arm 3 plus this
+     amendment's gate. The measurement base is arm 3's commit `00a4a1cc` plus the #425 changes to
+     `braunschweig/synthesis/day_absence/` and `braunschweig/synthesis/escort_duty.py` applied as a
+     patch (shipped beside the manifest's artefacts), with the flag set in the overlay because
+     `base_bs.yml` at `00a4a1cc` does not carry the key -- the arm-2 shape, ONE flag differing from
+     the previous arm. The `commute_day` consolidation of point 3 was NOT part of the measured code
+     (it conflicts with the base commit and is behaviour-neutral, pinned by test). Same cache, same
+     seed, same `plan_structure_vs_srv` / `work_participation_by_kreis` stages as arms 0-3, plus the
+     `build_day_trips` escort diagnostics read directly. Pre-registered bounds, then the result:
 
      | metric | reference | expected arm 4 (ASSUMPTION) |
      |---|---|---|
@@ -506,6 +511,19 @@
 
      A band rate outside +/- 1.0 pp or a positive stranded-children count stops the ladder for
      diagnosis, the same discipline as the original A/B and Amendment 1.
+
+     **Result (from the manifest; nothing here was known when the table above was written):**
+     `n_children_with_absent_escorter` **0** (arm 3: 2,574); absent persons carrying an escort leg
+     2,295 (arm 3: 5,315), all household-stage draws whose children are away too. Largest per-band
+     deviation **0.08 pp** (65-74: 5.96 % vs 5.88 %) -- the row that could break, held. Clustering
+     54.3 % (arm 3 54.4), singles 5.26 % (identical), household stage 30,690 (identical for the
+     third arm), mobility 0.8379 / -0.58 pp, check-1 0.6373 / -1.38 pp, at_home_only participation
+     within 0.32 pp of arm 0. The gate removed 102,848 present persons (9.35 %) from the residual
+     pool; the escort set was 113,819; neither inert-gate guard fired. Escort participation on
+     at_home_zero moved from -0.29 pp to **-0.02 pp** against SrV -- keeping escorters present
+     restores the escort trips their absence used to delete, a gain the pre-registration did not
+     anticipate. Reported hold-out: sizes 2-5+ at 6.69 / 3.46 / 4.29 / 3.84 % (arm 3: 6.57 / 3.57
+     / 4.34 / 3.82), the multi-person pool absorbing a second redistributed residual.
   6. **Evidence.** Issue **#425**; code `braunschweig/synthesis/escort_duty.py`
      (`ESCORT_PURPOSE`, `escort_person_ids`), `braunschweig/synthesis/day_absence/absence.py`
      (`escort_protected_person_ids` keyword, `is_escort_removed`, the widened legacy-branch
@@ -514,6 +532,8 @@
      `tests/test_escort_duty.py`, `tests/test_day_absence.py`, `tests/test_day_absence_stage.py`;
      feature record `docs/registry/features/general_day_absence.yml`; stage record
      `docs/registry/stages/braunschweig.synthesis.day_absence.absence_stage.yml`; contributor note
-     `docs/codebase/notes/day-absence-state.md`; README flag table. Arm 4 is recorded in its own
-     run manifest once it has run; until then this amendment's default has no measured evidence,
-     exactly as Amendment 1 had none when first written.
+     `docs/codebase/notes/day-absence-state.md`; README flag table; run manifest
+     `docs/runs/general-day-absence-arm4-100pct-2026-09-18.yml` with the committed artefacts under
+     `eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/`
+     (incl. the code patch the measurement applied). This amendment's default therefore HAS
+     measured evidence on the 100 % population, unlike Amendment 1 when it was first written.

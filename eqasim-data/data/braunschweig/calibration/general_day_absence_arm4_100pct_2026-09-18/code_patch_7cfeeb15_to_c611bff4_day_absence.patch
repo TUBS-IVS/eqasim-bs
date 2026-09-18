@@ -1,0 +1,452 @@
+diff --git a/braunschweig/synthesis/day_absence/__init__.py b/braunschweig/synthesis/day_absence/__init__.py
+index e2a2c555..ac657c84 100644
+--- a/braunschweig/synthesis/day_absence/__init__.py
++++ b/braunschweig/synthesis/day_absence/__init__.py
+@@ -15,11 +15,17 @@ the reference loader):
+    WHOLE household is away: ``absent_household``. This is what reproduces the observed clustering
+    of absent persons into fully absent households.
+ 2. **Individual residual stage.** Per age band, the SrV person-level rate minus what the household
+-   stage already realised in that band gives a residual probability; every still-present person is
+-   drawn ``absent_individual`` at that rate. In expectation the per-band absence rates match the
+-   SrV rates regardless of how much the household stage already contributed; an age band where the
+-   household stage alone overshoots the SrV rate gets a residual of 0 and a WARNING (never a
+-   silent negative probability).
++   stage already realised in that band gives a residual probability; every still-present ELIGIBLE
++   person is drawn ``absent_individual`` at that rate. Two eligibility gates narrow that pool, both
++   on this stage only -- the household stage is never gated, because a household leaving as a whole
++   takes its members along and strands nobody: household size below
++   ``day_absence_individual_stage_min_household_size`` (issue #388, ADR-0110 Amendment 1) and an
++   escort leg on the person's pre-assignment day (issue #425, Amendment 2). In expectation the
++   per-band absence rates match the SrV rates regardless of how much the household stage already
++   contributed or how far the gates shrink the pool; an age band where the household stage alone
++   overshoots the SrV rate gets a residual of 0 and a WARNING, and a band whose remaining eligible
++   pool cannot cover the residual WARNS as well (never a silent negative probability, never a
++   silent under-shoot).
+ 
+ Composition with the commute-day state (ADR-0104): the two mechanisms are independent and are
+ combined only in the REPORTING-DAY view of the day plan. A person is trip-less there when
+@@ -29,14 +35,22 @@ solo day-absence does). This mirrors the two views ADR-0104 already established,
+ dependency cycle is introduced:
+ 
+ * ``synthesis.population.trips`` / ``synthesis.population.activities`` (the pre-assignment view)
+-  are unaffected by this package and keep feeding location assignment.
++  are never MODIFIED by this package and keep feeding location assignment. Since issue #425 the
++  stage does READ ``synthesis.population.trips`` when ``day_absence_escort_protection_enabled`` is
++  on, to find who carries an escort leg. That is a read of the PRE-assignment view, whose producer
++  is upstream of this stage, so it introduces no cycle: the reporting-day view
++  ``synthesis.population.trips.final`` is the consumer of this stage, not its input.
+ * ``synthesis.population.trips.final`` / ``synthesis.population.activities.final`` (the
+   reporting-day view) is where a person's commute-day state and general-day-absence state are
+   composed into the trips that actually reach the MATSim population and synthesis output.
+ 
+-The synpp stage that reads ``synthesis.population.enriched``, calls :func:`absence.draw_absence`
+-and wires the result into the reporting-day view (plus the ``day_absence_enabled`` /
+-``day_absence_household_stage_enabled`` flags in ``configs/base_bs.yml``) is added in a later task
+-of issue #370; with the feature disabled every person stays ``present`` (``reason = "disabled"``)
+-and the reporting-day view is byte-identical to today.
++The synpp stage (:mod:`absence_stage`) reads ``synthesis.population.enriched`` -- plus
++``synthesis.population.trips`` on the escort-protection path -- calls :func:`absence.draw_absence`
++and is wired into the reporting-day view by
++:mod:`braunschweig.synthesis.commute_day.trips_day_stage`. Flags in ``configs/base_bs.yml``:
++``day_absence_enabled``, ``day_absence_household_stage_enabled``,
++``day_absence_individual_stage_min_household_size``, ``day_absence_escort_protection_enabled``.
++With the feature disabled every person stays ``present`` (``reason = "disabled"``), no reference
++file is read, no trips are read, and the reporting-day view is byte-identical to a pipeline
++without this package.
+ """
+diff --git a/braunschweig/synthesis/day_absence/absence.py b/braunschweig/synthesis/day_absence/absence.py
+index cc8b9764..8463f71e 100644
+--- a/braunschweig/synthesis/day_absence/absence.py
++++ b/braunschweig/synthesis/day_absence/absence.py
+@@ -1,18 +1,22 @@
+-"""General day absence: the seeded two-stage state draw (issue #370, ADR-0110; issue #388).
++"""General day absence: the seeded two-stage state draw (issue #370, ADR-0110; issues #388, #425).
+ 
+ Every person gets ``day_absence_state`` in {present, absent_household, absent_individual}:
+ 
+ 1. HOUSEHOLD stage -- with probability ``p_all_absent[size_class]`` (SrV, by household size) the
+-   whole household is away (family vacation, joint travel): ``absent_household``.
+-2. INDIVIDUAL residual stage -- restricted to ELIGIBLE present persons, where eligibility is
+-   ``present & (household_size >= individual_stage_min_household_size)`` (``household_size`` is the
+-   UNCLIPPED member count, not the capped ``household_size_class``): per age band the SrV
+-   person-level rate ``r(a)`` minus what stage 1 already realised in that band, ``r_hh(a)``, gives a
+-   residual probability that every ELIGIBLE present person draws against. With the CODE default
+-   ``individual_stage_min_household_size=1`` every present person is eligible and the residual is
+-   the PR #387 expression ``p_individual(a) = (r(a) - r_hh(a)) / (1 - r_hh(a))`` (clipped at 0, an
+-   overshoot is WARNED) kept BYTE-IDENTICAL in :func:`_residual_probability_legacy`; a higher
+-   threshold routes non-eligible households out of the residual pool via the general
++   whole household is away (family vacation, joint travel): ``absent_household``. NEITHER
++   eligibility gate below applies here: a household leaving as a whole takes its escorter along.
++2. INDIVIDUAL residual stage -- restricted to ELIGIBLE present persons. Eligibility is
++   ``present & (household_size >= individual_stage_min_household_size) & ~escort_protected``
++   (``household_size`` is the UNCLIPPED member count, not the capped ``household_size_class``;
++   ``escort_protected`` is issue #425 / ADR-0110 Amendment 2 -- persons with an escort leg on their
++   pre-assignment day, whose leg evidences presence at home, ADR-0104 Assumption 4). Per age band
++   the SrV person-level rate ``r(a)`` minus what stage 1 already realised in that band, ``r_hh(a)``,
++   gives a residual probability that every ELIGIBLE present person draws against. With the CODE
++   defaults ``individual_stage_min_household_size=1`` AND no protection set, every present person
++   is eligible and the residual is the PR #387 expression
++   ``p_individual(a) = (r(a) - r_hh(a)) / (1 - r_hh(a))`` (clipped at 0, an overshoot is WARNED)
++   kept BYTE-IDENTICAL in :func:`_residual_probability_legacy`; a higher threshold OR a non-empty
++   protection set routes non-eligible persons out of the residual pool via the general
+    :func:`_residual_probability_eligible` expression, WARNING when a band's target cannot be
+    reached because the eligible pool is too small -- empty OR merely insufficient to cover the
+    shortfall (issue #388: this is what makes the individual-stage residual scientifically
+@@ -185,8 +189,8 @@ def _residual_probability_eligible(target_n: float, absent_hh_n: float, n_eligib
+ 
+ 
+ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.random.RandomState, *,
+-                 household_stage: bool = True, individual_stage_min_household_size: int = 1
+-                 ) -> tuple[pd.DataFrame, dict]:
++                 household_stage: bool = True, individual_stage_min_household_size: int = 1,
++                 escort_protected_person_ids=None) -> tuple[pd.DataFrame, dict]:
+     """Two-stage seeded draw over ``persons`` (``person_id``, ``household_id``, ``age``).
+ 
+     Row order of ``persons`` does not matter (sorted internally); the draw sequence is
+@@ -207,6 +211,23 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+     includes -- but is not limited to -- an EMPTY eligible pool) logs a WARNING naming the
+     shortfall rather than silently under-shooting; ``diagnostics["n_bands_unreachable"]`` counts
+     how many bands this happened to.
++
++    ``escort_protected_person_ids`` (issue #425, ADR-0110 Amendment 2, CODE default ``None`` =
++    no protection, byte-identical to today) is a SECOND eligibility gate on the individual stage
++    only: a person in it is never drawn ``absent_individual`` (an escort leg on the reporting day
++    evidences presence, ADR-0104 Assumption 4), but stays drawable by the HOUSEHOLD stage -- a
++    household that leaves as a whole takes its escorter along and strands nobody. Any non-empty
++    set forces the general eligible-pool residual formula even at
++    ``individual_stage_min_household_size == 1``, because the legacy expression assumes every
++    present person is eligible. ``diagnostics["n_persons_escort_protected"]`` counts the present
++    persons the escort gate ALONE removed (those the size gate had not already removed), and
++    ``diagnostics["n_persons_ineligible_household_size"]`` the size gate's own removals, so the two
++    gates are observable separately while ``n_persons_ineligible_individual_stage`` keeps its
++    union meaning. Both escort counts are MARGINAL-effect counts, not population counts: they hold
++    the persons the escort gate ALONE removed, so ``size + escort == union`` holds exactly even
++    when a person is both a single and an escorter. The same definition applies per band, in
++    ``by_band[a]["n_escort_protected"]``. A non-empty protection set that matches NO person in the
++    frame WARNS (an empty join is a defect signal, not a result -- CLAUDE.md "no silent fallbacks").
+     """
+     missing = [c for c in ("person_id", "household_id", "age") if c not in persons.columns]
+     if missing:
+@@ -238,7 +259,22 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+     # Eligibility for the individual residual stage (issue #388): a MASK on top of "present", never
+     # a change to who is drawn -- u_ind below is still drawn for every person regardless.
+     is_present = ~is_hh_absent
+-    is_eligible = is_present & (household_size >= individual_stage_min_household_size)
++    size_ok = household_size >= individual_stage_min_household_size
++    # Escort protection (issue #425): a second MASK on the individual stage, same discipline --
++    # u_ind is still drawn for everyone below. Empty when no set is given.
++    protected_ids = set(escort_protected_person_ids) if escort_protected_person_ids is not None else set()
++    is_escort_protected = p["person_id"].isin(protected_ids).to_numpy()
++    if protected_ids and not is_escort_protected.any():
++        # A non-empty set that joins NOBODY leaves the gate silently inert -- every count reads 0
++        # and the rate line reads "0/N (0.00%)", indistinguishable from a correctly inert gate.
++        # CLAUDE.md "no silent fallbacks": an empty join is a defect signal, not a result.
++        logger.warning("%s escort protection was given %d person id(s) but matched 0 persons in the "
++                       "persons frame -- almost certainly a person_id dtype or key mismatch, not a "
++                       "population in which nobody escorts; the gate is INERT for this draw.",
++                       _LOG_TAG, len(protected_ids))
++    is_eligible = is_present & size_ok & ~is_escort_protected
++    # Present persons the escort gate ALONE removes (the size gate had not already removed them).
++    is_escort_removed = is_present & size_ok & is_escort_protected
+ 
+     residual_by_band, by_band, n_overshoot, n_unreachable = {}, {}, 0, 0
+     for label in AGE_BAND_LABELS:
+@@ -248,13 +284,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+         absent_hh_n = int(is_hh_absent[in_band].sum())
+         realised_hh = float(absent_hh_n / n_band) if n_band else 0.0
+         n_eligible = int(is_eligible[in_band].sum())
++        n_escort_removed = int(is_escort_removed[in_band].sum())
+         target_n = target * n_band
+         # An overshoot is realised_hh > target, checked directly rather than only via a negative
+         # residual: at realised_hh == 1.0 (a band fully absorbed by the household stage) the
+         # residual formula below is bypassed by the division-by-zero guard, so a residual-only
+         # check would silently miss that case and never emit the mandatory WARNING.
+         overshoot = realised_hh > target
+-        if individual_stage_min_household_size == 1:
++        if individual_stage_min_household_size == 1 and not protected_ids:
+             # Byte-identical to PR #387: every present person is eligible when the threshold is 1
+             # (household_size >= 1 always holds), so the legacy expression is kept verbatim
+             # rather than routed through the general (algebraically equivalent, but not
+@@ -274,9 +311,12 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+         # 20 eligible persons drawn absent) and still realises only ~2%, with nothing logged under
+         # the old n_eligible == 0 check alone. `target_n - absent_hh_n > n_eligible` subsumes that
+         # old check (n_eligible == 0 makes it `target_n > absent_hh_n`) and additionally catches
+-        # this partial-pool shortfall. Unreachable under individual_stage_min_household_size == 1,
+-        # where n_eligible == n_band - absent_hh_n always (every present person eligible), so
+-        # target_n - absent_hh_n - n_eligible == target_n - n_band == n_band * (target - 1) <= 0.
++        # this partial-pool shortfall. Unreachable under individual_stage_min_household_size == 1
++        # AND no escort protection, where n_eligible == n_band - absent_hh_n always (every present
++        # person eligible), so target_n - absent_hh_n - n_eligible == target_n - n_band ==
++        # n_band * (target - 1) <= 0. With escort protection (issue #425) that equality no longer
++        # holds and this warning IS reachable at threshold 1 -- it is the guard ADR-0110
++        # Amendment 2's band-tolerance row relies on.
+         shortfall = target_n - absent_hh_n - n_eligible
+         if shortfall > 0:
+             n_unreachable += 1
+@@ -285,7 +325,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+                            absent_hh_n, n_eligible, shortfall)
+         residual_by_band[label] = residual
+         by_band[label] = {"n": n_band, "reference_rate": target, "realised_household_rate": realised_hh,
+-                          "residual_p": residual, "n_eligible_present": n_eligible}
++                          "residual_p": residual, "n_eligible_present": n_eligible,
++                          "n_escort_protected": n_escort_removed}
+     p["p_individual"] = p["age_band"].map(residual_by_band).astype(float)
+     u_ind = rng.random_sample(len(p))  # drawn for ALL persons, exactly as before; eligibility is a mask
+     is_ind_absent = is_eligible & (u_ind < p["p_individual"].to_numpy())
+@@ -336,6 +377,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+         }
+ 
+     n_persons_ineligible_individual_stage = int((is_present & ~is_eligible).sum())
++    n_persons_ineligible_household_size = int((is_present & ~size_ok).sum())
++    n_persons_escort_protected = int(is_escort_removed.sum())
+     diagnostics = {"n_persons": int(len(out)), "n_households": int(len(households)),
+                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
+                    "n_absent_total": n_abs, "share_absent_total": float(n_abs / max(len(out), 1)),
+@@ -344,6 +387,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
+                    "household_stage": bool(household_stage),
+                    "individual_stage_min_household_size": int(individual_stage_min_household_size),
+                    "n_persons_ineligible_individual_stage": n_persons_ineligible_individual_stage,
++                   "n_persons_ineligible_household_size": n_persons_ineligible_household_size,
++                   "n_persons_escort_protected": n_persons_escort_protected,
+                    "by_band": by_band, "by_size_class": by_size_class}
+     logger.info("%s %d/%d persons absent (%.2f%%): %d by the household stage, %d by the individual stage; "
+                 "%.1f%% of absent persons live in a fully absent household; per band %s; per household size "
+diff --git a/braunschweig/synthesis/day_absence/absence_stage.py b/braunschweig/synthesis/day_absence/absence_stage.py
+index d8f4c0eb..9f6b983f 100644
+--- a/braunschweig/synthesis/day_absence/absence_stage.py
++++ b/braunschweig/synthesis/day_absence/absence_stage.py
+@@ -6,6 +6,13 @@ with EXACTLY one row per enriched person (asserted). OFF: every person ``present
+ ``disabled``, no reference file is read, diagnostics ``{"enabled": False}`` -- but the frame's
+ SCHEMA (dtypes) and its derived ``age_band`` / ``household_size_class`` attributes are identical to
+ the ON path (see :func:`_disabled_frame`), so a consumer never has to branch on the flag.
++
++Escort protection (issue #425, ADR-0110 Amendment 2): with ``day_absence_escort_protection_enabled``
++the stage ALSO declares ``synthesis.population.trips`` (the pre-assignment trips) and hands the
++persons carrying an escort leg (:func:`braunschweig.synthesis.escort_duty.escort_person_ids`) to
++the draw as ineligible for the individual stage. The input is declared ONLY when the flag is on
++(the conditional-declaration pattern of :mod:`braunschweig.matsim.scenario.population`), so the
++OFF path has exactly the inputs it had before and no new DAG edge.
+ """
+ from __future__ import annotations
+ 
+@@ -19,6 +26,7 @@ import numpy as np
+ import pandas as pd
+ 
+ from braunschweig.calibration import srv_absence
++from braunschweig.synthesis import escort_duty
+ from braunschweig.synthesis.day_absence import absence as _absence
+ from braunschweig.synthesis.day_absence.absence import (ABSENCE_COLUMNS, DAY_ABSENCE_SEED_OFFSET,
+                                                           REASON_DISABLED, STATE_PRESENT, draw_absence,
+@@ -34,12 +42,21 @@ STAGE_NAME = "braunschweig.synthesis.day_absence.absence_stage"
+ #: :data:`AGE_BAND_EDGES`, :data:`HOUSEHOLD_SIZE_CLASS_TOP`, :func:`age_band`,
+ #: :func:`household_size_class`) -- an edit there changes what a person is drawn AGAINST just as
+ #: much as an edit to :mod:`absence` changes HOW they are drawn, so both must devalidate the cache.
+-_HELPER_MODULES = (_absence, srv_absence)
++#: :mod:`braunschweig.synthesis.escort_duty` (issue #425) decides WHO is escort-protected, so an
++#: edit to the escort-leg definition must devalidate the cache too.
++_HELPER_MODULES = (_absence, srv_absence, escort_duty)
++#: Pre-assignment trips, declared as an input ONLY when escort protection is on.
++TRIPS_STAGE = "synthesis.population.trips"
+ 
+ KEY_ENABLED = "day_absence_enabled"
+ DEFAULT_ENABLED = True
+ KEY_HOUSEHOLD_STAGE = "day_absence_household_stage_enabled"
+ DEFAULT_HOUSEHOLD_STAGE = True
++#: Issue #425 / ADR-0110 Amendment 2. CODE default False = byte-identical to PR #389 (arm 3);
++#: configs/base_bs.yml sets true (the same code-default/config-default split as
++#: KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE below).
++KEY_ESCORT_PROTECTION = "day_absence_escort_protection_enabled"
++DEFAULT_ESCORT_PROTECTION = False
+ KEY_MAX_BAND_DEVIATION_PP = "day_absence_max_band_deviation_pp"
+ DEFAULT_MAX_BAND_DEVIATION_PP = 1.0
+ #: Issue #388: minimum UNCLIPPED household size eligible for the individual residual stage. The
+@@ -77,6 +94,13 @@ def configure(context):
+     context.config(KEY_HOUSEHOLD_STAGE, DEFAULT_HOUSEHOLD_STAGE)
+     context.config(KEY_MAX_BAND_DEVIATION_PP, DEFAULT_MAX_BAND_DEVIATION_PP)
+     context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE, DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE)
++    # The trips are needed only to find escort legs; declare them -- and the DAG edge -- only on
++    # the ON path (issue #425), so the OFF path keeps exactly the inputs it had before.
++    context.config(KEY_ESCORT_PROTECTION, DEFAULT_ESCORT_PROTECTION)
++    # Both flags, so the declaration matches exactly what execute() reads: with day_absence_enabled
++    # false execute returns before ever touching the trips, and the edge would be dead weight.
++    if context.config(KEY_ENABLED) and context.config(KEY_ESCORT_PROTECTION):
++        context.stage(TRIPS_STAGE)
+ 
+ 
+ def _disabled_frame(persons):
+@@ -138,9 +162,17 @@ def execute(context):
+     ``n_households``, ``n_absent_household``, ``n_absent_individual``, ``n_absent_total``,
+     ``share_absent_total``, ``share_absent_in_fully_absent_households``, ``n_bands_overshoot``,
+     ``n_bands_unreachable``, ``household_stage``, ``individual_stage_min_household_size``,
+-    ``n_persons_ineligible_individual_stage``, ``by_band``, ``by_size_class``) plus
+-    ``n_band_guard_hits`` (see the deviation guard below). On the OFF path: ``{"enabled": False}``
+-    only.
++    ``n_persons_ineligible_individual_stage``, ``n_persons_ineligible_household_size``,
++    ``n_persons_escort_protected``, ``by_band``, ``by_size_class``) plus ``n_band_guard_hits`` (see
++    the deviation guard below) and ``escort_protection`` (the flag as read, issue #425). On the OFF
++    path: ``{"enabled": False}`` only.
++
++    Escort protection (issue #425): when ``day_absence_escort_protection_enabled`` is true the
++    pre-assignment trips are read and every person with an escort leg becomes ineligible for the
++    individual stage. Fallback transparency: the protected share is logged as a rate, and an EMPTY
++    escort set next to a NON-EMPTY trips table WARNS -- that combination is the "escort purpose is
++    off in the synthetic trips" defect class ``commute_day.state_stage`` warns about, not a
++    population that escorts nobody.
+     """
+     persons = context.stage("synthesis.population.enriched")
+     for column in ("person_id", "household_id", "age"):
+@@ -154,15 +186,26 @@ def execute(context):
+     max_dev_pp = float(context.config(KEY_MAX_BAND_DEVIATION_PP))
+     individual_stage_min_household_size = _validate_individual_stage_min_household_size(
+         context.config(KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE))
++    escort_protection = bool(context.config(KEY_ESCORT_PROTECTION))
+     reference = load_absence_reference(os.path.join(str(context.config("data_path")), *SRV_SUBDIR))
+-    logger.info("%s parameters: household_stage=%s, %s=%d, random_seed=%d (+%d offset), reference bands %s, "
+-                "sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+-                individual_stage_min_household_size, random_seed, DAY_ABSENCE_SEED_OFFSET,
+-                {b: round(v, 4) for b, v in reference.p_absent_by_band.items()},
++    logger.info("%s parameters: household_stage=%s, %s=%d, %s=%s, random_seed=%d (+%d offset), reference "
++                "bands %s, sizes %s", _LOG_TAG, household_stage, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
++                individual_stage_min_household_size, KEY_ESCORT_PROTECTION, escort_protection, random_seed,
++                DAY_ABSENCE_SEED_OFFSET, {b: round(v, 4) for b, v in reference.p_absent_by_band.items()},
+                 {k: round(v, 4) for k, v in reference.p_all_absent_by_size.items()})
++    escort_protected_person_ids = None
++    if escort_protection:
++        trips = context.stage(TRIPS_STAGE)
++        escort_protected_person_ids = escort_duty.escort_person_ids(trips)
++        if not escort_protected_person_ids and len(trips) > 0:
++            logger.warning("%s %s is true but NO person carries an %r leg although the trips table has %d "
++                           "rows -- this almost always means the escort purpose is OFF in the synthetic "
++                           "trips, not that nobody escorts; the gate is inert in this run.", _LOG_TAG,
++                           KEY_ESCORT_PROTECTION, escort_duty.ESCORT_PURPOSE, len(trips))
+     rng = np.random.RandomState(random_seed + DAY_ABSENCE_SEED_OFFSET)
+     absence, diagnostics = draw_absence(persons, reference, rng, household_stage=household_stage,
+-                                        individual_stage_min_household_size=individual_stage_min_household_size)
++                                        individual_stage_min_household_size=individual_stage_min_household_size,
++                                        escort_protected_person_ids=escort_protected_person_ids)
+     assert len(absence) == len(persons) and not absence["person_id"].duplicated().any(), (
+         f"{_LOG_TAG} the absence frame must carry exactly one row per person")
+     n_guard_hits = 0
+@@ -188,12 +231,32 @@ def execute(context):
+                    cell["delta_pp"], cell["n"])
+     n_total = diagnostics["n_persons"]
+     n_ineligible = diagnostics["n_persons_ineligible_individual_stage"]
++    n_by_size = diagnostics["n_persons_ineligible_household_size"]
++    n_by_escort = diagnostics["n_persons_escort_protected"]
+     ineligible_rate = n_ineligible / n_total if n_total else float("nan")
+-    logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
+-               "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
+-               100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+-               individual_stage_min_household_size)
++    if escort_protection:
++        logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage: %d by "
++                   "household size below %s=%d, %d by escort protection", _LOG_TAG, n_ineligible, n_total,
++                   100.0 * ineligible_rate, n_by_size, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
++                   individual_stage_min_household_size, n_by_escort)
++    else:
++        # An inactive gate is not named, so an OFF-path log never suggests escort protection ran.
++        logger.info("%s %d/%d (%.2f%%) persons are present but ineligible for the individual stage "
++                   "(household size below %s=%d)", _LOG_TAG, n_ineligible, n_total,
++                   100.0 * ineligible_rate, KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
++                   individual_stage_min_household_size)
++    if escort_protection:
++        # Fallback-transparency rate for the escort gate on its own (issue #425).
++        n_present = n_total - diagnostics["n_absent_household"]
++        # n_by_escort is the gate's MARGINAL effect (escort leg, not already excluded by household
++        # size), which is what "how much did this gate change" means; the wording says so, because
++        # "present persons with an escort leg" alone would be a larger, different number.
++        logger.info("%s escort protection: %d/%d present persons (%.2f%%) are excluded from the "
++                   "individual stage by escort protection (escort leg, not already excluded by "
++                   "household size)", _LOG_TAG, n_by_escort, n_present,
++                   100.0 * n_by_escort / max(n_present, 1))
+     diagnostics = dict(diagnostics)
+     diagnostics["enabled"] = True
++    diagnostics["escort_protection"] = escort_protection
+     diagnostics["n_band_guard_hits"] = n_guard_hits
+     return {"absence": absence, "diagnostics": diagnostics}
+diff --git a/braunschweig/synthesis/escort_duty.py b/braunschweig/synthesis/escort_duty.py
+new file mode 100644
+index 00000000..3e4aed1f
+--- /dev/null
++++ b/braunschweig/synthesis/escort_duty.py
+@@ -0,0 +1,80 @@
++"""Escort duty on the pre-assignment reporting day (issue #425).
++
++One pure question: which persons carry an escort leg in their own (pre-assignment) trip table?
++An escort leg evidences presence at home on that day
++(ADR-0104 Assumption 4), which is why the far-commuter model
++(``braunschweig.synthesis.commute_day.state_stage``) never sets such a person ``absent`` and why
++the general day-absence draw (``braunschweig.synthesis.day_absence``, ADR-0110 Amendment 2)
++excludes them from its individual residual stage.
++
++Both trip ends are inspected: the escorting person's outbound leg ARRIVES at the escort
++activity (``following_purpose``), the return leg DEPARTS from it (``preceding_purpose``).
++
++This module deliberately carries no synpp stage logic and no donor-pool knowledge, so it can be
++folded into a stage's helper-module hash (``_HELPER_MODULES``) without pulling a whole stage
++module along.
++
++**This module is the SINGLE implementation of the rule** (issue #425). It previously existed
++three times -- here, in ``braunschweig.synthesis.commute_day.state_stage._escort_person_ids`` and
++as an inline mask in ``braunschweig.synthesis.commute_day.plan_replacement`` -- which was a
++deliberate cross-module-avoidance choice at the time. Both now call this function, and both
++re-export :data:`ESCORT_PURPOSE` from here for callers that refer to it by their module name.
++What each keeps is only what is genuinely its own: ``state_stage`` its donor-pool guard
++(an empty escort set beside a donor pool that carries escorting donors), ``plan_replacement``
++nothing but the diagnostic it computes from the set.
++
++This matters beyond tidiness: ADR-0110 Amendment 2's "stranded children = 0 by construction"
++holds only while the day-absence gate and ``plan_replacement``'s stranded-children metric select
++the SAME persons, and three independent copies could have diverged on a purpose alias or a third
++trip end without any test failing. ``tests/test_escort_duty.py`` pins the three call sites to the
++same behaviour on a shared fixture, so a future re-divergence fails rather than passes quietly.
++
++Both consuming stages fold this module into their cache token (``_HELPER_MODULES`` of
++``state_stage`` and of ``trips_day_stage``, the latter because it hashes ``plan_replacement``,
++whose source no longer contains the rule), so an edit here devalidates every stage that depends
++on the definition -- exactly as an inline copy would have.
++"""
++from __future__ import annotations
++
++import logging
++
++import pandas as pd
++
++logger = logging.getLogger(__name__)
++
++_LOG_TAG = "[escort duty]"
++
++#: Purpose label of an escort activity in the synthetic trip table (``following_purpose`` /
++#: ``preceding_purpose``). Pinned equal to the local copies in ``state_stage`` and
++#: ``plan_replacement`` by ``tests/test_escort_duty.py``.
++ESCORT_PURPOSE = "escort"
++
++_REQUIRED_COLUMNS = ("person_id", "following_purpose", "preceding_purpose")
++
++
++def escort_person_ids(trips: pd.DataFrame, *, log: bool = True) -> set:
++    """Person ids with an escort leg on either trip end of their pre-assignment reporting day.
++
++    ``trips`` needs ``person_id``, ``following_purpose`` and ``preceding_purpose``; a missing
++    column raises a ``ValueError`` naming it. The share of persons with a trip that carry an
++    escort leg is logged (fallback transparency: a consumer that receives an EMPTY set while the
++    trip table has rows is looking at an ``escort_purpose: false`` trip table, not at a population
++    that escorts nobody -- the consumer decides whether that is a warning in its context).
++
++    ``log=False`` suppresses that line for a caller that only needs the set for a DIAGNOSTIC
++    (``plan_replacement``'s stranded-children metric) rather than owning a decision based on it,
++    so one run does not repeat the same rate once per caller.
++    """
++    missing = [column for column in _REQUIRED_COLUMNS if column not in trips.columns]
++    if missing:
++        raise ValueError(f"{_LOG_TAG} the trips frame lacks column(s) {missing!r}; "
++                         f"escort duty needs {list(_REQUIRED_COLUMNS)!r}")
++    is_escort = ((trips["following_purpose"] == ESCORT_PURPOSE)
++                 | (trips["preceding_purpose"] == ESCORT_PURPOSE))
++    escort_persons = set(trips.loc[is_escort, "person_id"])
++    if log:
++        n_persons = int(trips["person_id"].nunique())
++        logger.info("%s escort duty: %d/%d persons with a trip (%.1f%%) have an %r leg on their "
++                    "pre-assignment day", _LOG_TAG, len(escort_persons), n_persons,
++                    100.0 * len(escort_persons) / max(n_persons, 1), ESCORT_PURPOSE)
++    return escort_persons
