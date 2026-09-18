@@ -307,3 +307,122 @@ def test_individual_stage_min_household_size_diagnostics_are_reported():
     present_singles = int(((out["household_size_class"] == 1) &
                            (out["day_absence_state"] == D.STATE_PRESENT)).sum())
     assert diag["n_persons_ineligible_individual_stage"] == present_singles
+
+
+# --------------------------------------------------------------- escort protection (issue #425)
+
+def _escorters(persons):
+    """Every 35-year-old (one member of each couple in _persons) carries an escort leg."""
+    return set(persons.loc[persons["age"] == 35, "person_id"])
+
+
+def test_escort_protected_persons_are_never_drawn_by_the_individual_stage_but_can_be_by_the_household_stage():
+    """The gate protects a person from the INDIVIDUAL residual only: a household that leaves as a
+    whole takes its escorter along (the child is absent too, nobody is stranded), so the
+    household stage must stay unprotected (ADR-0110 Amendment 2)."""
+    persons = _persons(4000)
+    ref = _reference(p_band=0.10, p_size={1: 0.0, 2: 0.5, 3: 0.0, 4: 0.0, 5: 0.0})
+    out, _diag = D.draw_absence(persons, ref, np.random.RandomState(21),
+                                escort_protected_person_ids=_escorters(persons))
+    protected = out[out["person_id"].isin(_escorters(persons))]
+    assert set(protected["day_absence_state"]) <= {D.STATE_PRESENT, D.STATE_ABSENT_HOUSEHOLD}
+    assert (protected["day_absence_state"] == D.STATE_ABSENT_HOUSEHOLD).sum() > 0
+    assert (protected["day_absence_state"] == D.STATE_ABSENT_INDIVIDUAL).sum() == 0
+
+
+def test_band_target_still_hit_when_escort_protected_persons_leave_the_residual_pool():
+    """With the household stage off and every 35-year-old protected, the band target must still
+    be met in expectation by the REMAINING pool (singles aged 40 and the 36-year-olds), whose
+    residual rises accordingly. This is the row that can break in production (the pool shrinks by
+    ~11 %), and it also forces the eligible-pool residual formula even at
+    individual_stage_min_household_size=1: the legacy expression (residual == band rate over
+    EVERY present person) would realise only ~6.7 % here, not 10 %."""
+    persons = _persons(4000)
+    ref = _reference(p_band=0.10, p_size={k: 0.0 for k in range(1, 6)})
+    out, diag = D.draw_absence(persons, ref, np.random.RandomState(23),
+                               escort_protected_person_ids=_escorters(persons))
+    band = diag["by_band"]["30-44"]
+    assert abs(band["realised_rate"] - 0.10) < 0.01
+    absent = out["day_absence_state"] != D.STATE_PRESENT
+    assert absent[out["person_id"].isin(_escorters(persons))].sum() == 0
+    # out is p[ABSENCE_COLUMNS] and carries no age column; select the 36-year-olds by id.
+    unprotected_couple_members = out["person_id"].isin(persons.loc[persons["age"] == 36, "person_id"])
+    assert absent[unprotected_couple_members].mean() > 0.13
+    assert band["residual_p"] == pytest.approx(0.15, abs=0.005)
+
+
+def test_escort_protected_person_ids_none_is_byte_identical_to_the_default():
+    """The keyword's CODE default is None (no protection), so passing it explicitly must reproduce
+    today's output exactly -- including the legacy residual expression on the
+    individual_stage_min_household_size == 1 path."""
+    persons = _persons(4000)
+    ref = _reference(p_band=0.10, p_size={1: 0.05, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    with_keyword, diag_with = D.draw_absence(persons, ref, np.random.RandomState(13),
+                                             escort_protected_person_ids=None)
+    without_keyword, diag_without = D.draw_absence(persons, ref, np.random.RandomState(13))
+    pd.testing.assert_frame_equal(with_keyword, without_keyword, check_exact=True)
+    assert diag_with["n_persons_escort_protected"] == 0
+    assert diag_without["n_persons_escort_protected"] == 0
+
+
+def test_escort_protection_diagnostics_are_reported_separately_from_the_size_gate():
+    """Two gates, two counts (CLAUDE.md fallback transparency): the size gate and the escort gate
+    must each be observable on their own, and the pre-existing union count keeps its meaning
+    (present but not eligible for the individual stage, for whatever reason)."""
+    persons = _persons(4000)
+    ref = _reference(p_band=0.10, p_size={1: 0.05, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    out, diag = D.draw_absence(persons, ref, np.random.RandomState(29),
+                               individual_stage_min_household_size=2,
+                               escort_protected_person_ids=_escorters(persons))
+    present = out["day_absence_state"] == D.STATE_PRESENT
+    present_singles = int((present & (out["household_size_class"] == 1)).sum())
+    present_escorters = int((present & out["person_id"].isin(_escorters(persons))).sum())
+    assert diag["n_persons_ineligible_household_size"] == present_singles
+    assert diag["n_persons_escort_protected"] == present_escorters
+    assert diag["n_persons_ineligible_individual_stage"] == present_singles + present_escorters
+    assert diag["by_band"]["30-44"]["n_escort_protected"] == present_escorters
+
+
+def test_a_non_empty_escort_set_that_matches_nobody_warns_that_the_gate_is_inert(caplog):
+    """CLAUDE.md fallback transparency: "a format mismatch, an empty join, a wrong key".
+
+    A protection set whose ids do not join the persons frame (e.g. a person_id dtype mismatch)
+    leaves the gate silently inert: every count reads 0 and the INFO rate line reads "0/N (0.00%)",
+    which is indistinguishable from a correctly inert gate. On the 100 % population that is the
+    single reading the A/B most needs to trust, so it must WARN rather than look clean."""
+    persons = _persons(100)
+    ref = _reference(p_band=0.10, p_size={k: 0.0 for k in range(1, 6)})
+    with caplog.at_level("WARNING"):
+        _out, diag = D.draw_absence(persons, ref, np.random.RandomState(37),
+                                    escort_protected_person_ids={"no-such-person", -1})
+    assert diag["n_persons_escort_protected"] == 0
+    assert any("matched 0" in message or "matched no" in message for message in caplog.messages), \
+        caplog.messages
+
+
+def test_an_escort_set_that_matches_someone_does_not_warn(caplog):
+    """The guard must not cry wolf on the healthy path."""
+    persons = _persons(100)
+    ref = _reference(p_band=0.10, p_size={k: 0.0 for k in range(1, 6)})
+    with caplog.at_level("WARNING"):
+        _out, diag = D.draw_absence(persons, ref, np.random.RandomState(37),
+                                    escort_protected_person_ids=_escorters(persons))
+    assert diag["n_persons_escort_protected"] > 0
+    assert not any("matched" in message for message in caplog.messages), caplog.messages
+
+
+def test_escort_protection_combines_with_the_household_size_gate():
+    """Singles out by size, 35-year-olds out by escort duty: only the 36-year-olds remain eligible
+    in band 30-44, so they alone carry the residual -- target 600 of 6,000 minus ~100 singles
+    absorbed by the household stage, over 2,000 eligible persons = a residual of ~0.25."""
+    persons = _persons(4000)
+    ref = _reference(p_band=0.10, p_size={1: 0.05, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0})
+    out, diag = D.draw_absence(persons, ref, np.random.RandomState(31),
+                               individual_stage_min_household_size=2,
+                               escort_protected_person_ids=_escorters(persons))
+    absent = out["day_absence_state"] != D.STATE_PRESENT
+    thirty_six = out["person_id"].isin(persons.loc[persons["age"] == 36, "person_id"])
+    assert absent[out["person_id"].isin(_escorters(persons))].sum() == 0
+    assert abs(absent[thirty_six].mean() - 0.25) < 0.02
+    assert abs(absent[out["household_size_class"] == 1].mean() - 0.05) < 0.01
+    assert abs(diag["by_band"]["30-44"]["realised_rate"] - 0.10) < 0.01

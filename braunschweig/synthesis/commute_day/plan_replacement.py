@@ -64,6 +64,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.popsim.departure_time_model import (MODEL_EQASIM_UNIFORM, OFFSET_COLUMN,
                                                       apply_departure_time_model,
                                                       persons_from_synthetic_schema)
@@ -106,10 +107,12 @@ STATE_AT_WORKPLACE = "at_workplace"
 STATE_PRESENT_GENERAL = "present"
 
 #: Escort-leg purpose, matching ``following_purpose`` / ``preceding_purpose`` of the CONTRACT
-#: (issue #370 final-review fix wave, ruling R10, spec 2.1 point 4). Kept as a local literal
-#: rather than importing ``braunschweig.synthesis.commute_day.state_stage.ESCORT_PURPOSE`` for the
-#: same cross-module-avoidance reason as :data:`STATE_PRESENT_GENERAL` above.
-ESCORT_PURPOSE = "escort"
+#: (issue #370 final-review fix wave, ruling R10, spec 2.1 point 4). Re-exported from
+#: :mod:`braunschweig.synthesis.escort_duty`, which owns the definition since issue #425: the
+#: earlier local literal existed to avoid importing ``state_stage`` (a STAGE module) from this
+#: pure one, and the shared pure module removes that reason while keeping the attribute for
+#: callers and tests that refer to ``plan_replacement.ESCORT_PURPOSE``.
+ESCORT_PURPOSE = _escort_duty.ESCORT_PURPOSE
 
 #: Upper (inclusive) age in years counted as a "child" for :func:`build_day_trips`'s
 #: ``n_children_with_absent_escorter`` diagnostic (spec 2026-09-09-general-day-absence-design.md
@@ -509,9 +512,11 @@ def build_day_trips(trips: pd.DataFrame, states: pd.DataFrame, matches: pd.DataF
     # Ruling R10 (final-review fix wave, spec 2.1 point 4): escort-coherence diagnostics. Both
     # counts are read from the ORIGINAL trips table, not from the (possibly already-removed)
     # output rows -- an absent person's escort leg still existed before their day was cleared.
-    escort_leg_mask = ((trips["preceding_purpose"] == ESCORT_PURPOSE)
-                       | (trips["following_purpose"] == ESCORT_PURPOSE))
-    persons_with_escort_leg = set(trips.loc[escort_leg_mask, "person_id"])
+    # The escort-leg rule lives once, in braunschweig.synthesis.escort_duty (issue #425); this is
+    # a DIAGNOSTIC consumer, so it does not repeat that module's rate line (log=False). The rule
+    # must match the day-absence gate's exactly: ADR-0110 Amendment 2's "stranded children = 0 by
+    # construction" holds only while the gate and this metric select the same persons.
+    persons_with_escort_leg = _escort_duty.escort_person_ids(trips, log=False)
     absent_persons_with_escort_leg = absent_persons & persons_with_escort_leg
     n_absent_with_escort_leg = len(absent_persons_with_escort_leg)
     n_absent_total = len(absent_persons)

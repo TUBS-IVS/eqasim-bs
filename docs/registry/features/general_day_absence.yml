@@ -60,6 +60,7 @@ production:
   enabled: true
   flags:
   - day_absence_enabled
+  - day_absence_escort_protection_enabled
 introduced:
   issue: 370
   pr: 387
@@ -69,6 +70,7 @@ code_paths:
 - scripts/extract_srv_absence.py
 - braunschweig/synthesis/day_absence/absence.py
 - braunschweig/synthesis/day_absence/absence_stage.py
+- braunschweig/synthesis/escort_duty.py
 - braunschweig/synthesis/commute_day/plan_replacement.py
 - braunschweig/synthesis/commute_day/trips_day_stage.py
 - synthesis/output.py
@@ -83,6 +85,7 @@ evidence:
   - tests/test_srv_absence.py
   - tests/test_day_absence.py
   - tests/test_day_absence_stage.py
+  - tests/test_escort_duty.py
   - tests/test_commute_day_plan_replacement.py
   - tests/test_commute_day_stages.py
   - tests/test_commute_day_consumers.py
@@ -123,7 +126,17 @@ evidence:
       (simple_ipf_open) leaves the flag at its code default for the identical no-consumer reason.
       The plain DAG non-wiring in the no-consumer cases is what actually keeps those byte-identical
       (same precedent as commute_day_state_enabled''s "redundant but explicit" fixture setting, see
-      docs/codebase/notes/commute-day-two-view-trips.md).'
+      docs/codebase/notes/commute-day-two-view-trips.md).
+
+      day_absence_escort_protection_enabled (issue #425, ADR-0110 Amendment 2) has its own OFF
+      path: CODE default False, so the pure draw with escort_protected_person_ids None reproduces
+      PR #389 exactly (tests/test_day_absence.py::test_escort_protected_person_ids_none_is_byte_identical_to_the_default,
+      and the legacy residual branch stays pinned by the ada06b61 golden), and the stage neither
+      declares nor reads synthesis.population.trips when the flag is off
+      (tests/test_day_absence_stage.py::test_configure_declares_the_trips_stage_only_when_escort_protection_is_on
+      and ::test_escort_protection_off_never_reads_the_trips_stage_and_reports_zero_protected,
+      whose stub context asserts on any undeclared-stage access). configs/base_bs.yml sets it
+      true; the fixtures that disable day_absence_enabled never reach the gate.'
   fallback_rate:
     instrumented: true
     log_marker: '[day absence]'
@@ -161,7 +174,27 @@ evidence:
       downstream guards stayed silent as expected (28,826 of 535,757 employed persons were
       overridden to absent in work_participation_by_kreis; plan_structure_vs_srv ran at_home_zero
       WITH the draw applied). The guards therefore have a first live baseline; they remain guards,
-      not targets.'
+      not targets.
+
+      Escort gate (issue #425): the stage logs the gate''s marginal effect as an explicit rate
+      ("escort protection: n/present (x %) are excluded from the individual stage by escort
+      protection") and never names the gate when it is off. TWO inert-gate guards, so "no effect"
+      is never indistinguishable from "broken": an EMPTY escort set next to a NON-EMPTY trips table
+      WARNS in the stage (the "escort purpose is off in the synthetic trips" defect class
+      commute_day.state_stage already warns about --
+      tests/test_day_absence_stage.py::test_escort_protection_warns_when_trips_have_rows_but_no_escort_leg),
+      and a NON-EMPTY protection set matching ZERO persons WARNS in the draw itself (an empty
+      person_id join --
+      tests/test_day_absence.py::test_a_non_empty_escort_set_that_matches_nobody_warns_that_the_gate_is_inert,
+      with a sibling test pinning that the healthy path does not cry wolf). The second guard was
+      added on review before arm 4 ran, because a zero-effect gate on the 100 % population is the
+      one reading that arm most needs to trust.
+      The two eligibility gates are counted separately (n_persons_ineligible_household_size,
+      n_persons_escort_protected, per band n_escort_protected) so neither hides inside the union
+      count. MEASURED on the 100 % population (run manifest
+      general-day-absence-arm4-100pct-2026-09-18): neither inert-gate guard fired; the escort set
+      was 113,819 persons and the gate removed 102,848 present persons (9.35 %) from the residual
+      pool -- the primary path demonstrably ran.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv
@@ -177,6 +210,9 @@ validation:
   runs:
   - general-day-absence-arm0-100pct-2026-09-09
   - general-day-absence-arm1-100pct-2026-09-09
+  - general-day-absence-arm2-100pct-2026-09-09
+  - general-day-absence-arm3-100pct-2026-09-18
+  - general-day-absence-arm4-100pct-2026-09-18
   metric: 'ADR-0110''s pre-registered A/B (Consequences section), arms 0 (OFF) and 1 (ON,
     two-stage = base default) run at 100 % on the cached arm-4 population on 2026-09-09; every
     number below is from the two run manifests. ALL FIVE BOUNDED ROWS MET in arm 1: (1) mobility
@@ -192,8 +228,61 @@ validation:
     +0.08, other -0.06). Row 6, REPORTED not targeted: realised absence by household size class
     7.61 / 5.85 / 3.15 / 3.76 / 3.13 % for sizes 1..5+, i.e. singles over- and size-3 households
     under-absent, the limitation ADR-0110 names and issue #388 (arm 3) addresses. Byte identity:
-    the arm-0 trips.csv md5 equals the arm-4 trips.csv md5 (8a46d5ee...). Arm 2 (individual-only
-    sensitivity) is recorded in its own manifest once complete.'
+    the arm-0 trips.csv md5 equals the arm-4 trips.csv md5 (8a46d5ee...). ARM 2 (individual-only
+    sensitivity, day_absence_household_stage_enabled false) is now recorded in
+    general-day-absence-arm2-100pct-2026-09-09 and settles what the household stage buys: it is the
+    ONLY row-3 discriminator in the ladder. Arm 2 misses the clustering band at 24.2 % against arm
+    1 63.7 % (SrV 55.8 %, band 45-65 %), while rows 1, 2 and 4 and the whole at_home_zero
+    participation block sit within 0.07 pp of arm 1 -- the headline metrics cannot see the
+    household stage at all. Two further arm-2 readings: singles absence 5.53 % against arm 1 7.61 %
+    (reference 5.14 %), which isolates the DOUBLE draw on single-person households, not the
+    household stage, as the cause of the #388 defect; and children in a household with an absent
+    escorter 4,095 against arm 1 2,006, i.e. the household stage halves an escort-coherence gap
+    (issue #385) that no pre-registered row measures. Arm 2 is PARTIAL by execution (synthesis.output
+    did not finish; both analysis targets did) and has NO at_home_only reading, so pre-registered
+    row 5 is unmeasured for it.
+
+    ARM 3 (general-day-absence-arm3-100pct-2026-09-18) completes the ladder and is the ONLY arm that
+    measures the PRODUCTION default: it ran the base config of the #388 merge 00a4a1cc with no flag
+    override, i.e. day_absence_individual_stage_min_household_size 2, while arms 0-2 were all
+    measured at the pre-#388 value 1. Complete (12/12 stages, 1 h 29 min, zero error markers, plus
+    an at_home_only follow-up). ALL FIVE bounded rows MET, and both Amendment-1 bounds MET:
+    (A) singles 5.26 % against the SrV person-level 5.14 % = +0.11 pp (bound +/- 0.6; arm 1 +2.47);
+    (B) clustering 54.4 % against 55.8 % (arm 1 63.7 % at the band''s upper end, arm 2 24.2 %).
+    The household stage drew the SAME 30,690 persons as in arm 1, so the clustering gain is not
+    bought by absenting more households -- arm 1''s excess WAS the singles double-draw, exactly as
+    arm 2 had indicated. Rows 1, 2 and 4 move by at most 0.04 pp against arm 1 (mobility 0.8377 /
+    -0.61 pp; largest per-band deviation 0.06 pp; check-1 0.6374 / -1.37 pp), and row 5 on
+    at_home_only moves at most 0.34 pp against arm 0 (education), matching arm 1''s 0.35 pp. Row 2
+    is the row that could have broken, because the eligibility gate excludes 217,471 persons
+    (19.24 %) from the residual pool so the rate must rise over fewer people to hold the band
+    marginal; it held. TWO COSTS are recorded, neither pre-registered: escort coherence worsens
+    (children with an absent escorter 2,006 -> 2,574; arm 2 had 4,095), further motivating issue
+    #385, and household sizes 2 and 5+ overshoot more than in arm 1 (6.57 % and 3.82 % against
+    5.87 % and 1.75 %) because they absorb the redistributed residual -- the limitation ADR-0110
+    Amendment 1 explicitly retains.
+
+    ARM 4 (general-day-absence-arm4-100pct-2026-09-18) measures the #425 escort gate = the
+    PRODUCTION default since this feature''s Amendment 2 (day_absence_escort_protection_enabled
+    true), run from the arm-3 base 00a4a1cc plus the #425 day_absence/escort_duty code as a patch,
+    one flag set in the overlay -- the arm-2 shape, so arm 3 vs arm 4 isolates the gate. Complete
+    (12/12 stages, 1 h 25 min, zero error markers, at_home_only follow-up). ALL pre-registered rows
+    MET, and the row the gate exists for is met exactly: n_children_with_absent_escorter fell from
+    2,574 (arm 3) to 0, absent persons carrying an escort leg from 5,315 to 2,295 (all of them
+    household-stage draws, whose children are away too). The gate removed 102,848 present persons
+    (9.35 %) from the individual residual pool on top of the size gate''s 217,471 (union 320,319 =
+    28.33 % of all persons), the escort set being 113,819 of 1,001,503 persons with a trip
+    (11.4 %, identical to arm 3''s commute-day line). Row 2 -- the one that could break -- held:
+    largest per-band deviation 0.08 pp (65-74: 5.96 % vs 5.88 %). Rows 1, 3, 4 and 5 within noise
+    of arm 3: mobility 0.8379 / -0.58 pp (arm 3 -0.61); clustering 54.3 % (54.4); singles 5.26 %
+    (identical, the gate never touches size 1); check-1 0.6373 / -1.38 pp (-1.37); at_home_only
+    participation moved at most 0.32 pp against arm 0 (education +0.32, escort +0.32; bound 0.5).
+    Household stage 30,690 for the third arm running. Neither inert-gate guard fired -- the gate
+    demonstrably ran on the primary path. Escort participation on at_home_zero is now -0.02 pp
+    against SrV (arm 3 -0.29): keeping escorters present restores the escort trips their absence
+    used to delete. Reported hold-out: sizes 2-5+ moved slightly further from their reference
+    (6.69 / 3.46 / 4.29 / 3.84 %) as the multi-person pool absorbs a second redistributed
+    residual.'
   note: 'measured_vs_reference, not behaviourally_validated: rows 1 and 2 are met BY CONSTRUCTION
     (the SrV band rates are the parameters of the draw), so they prove the wiring from the draw
     to the reporting-day view, not predictive power; rows 3, 4 and 5 are the ones the design could
@@ -205,12 +294,25 @@ validation:
     be.'
 assessment:
   status: pending
-  pending_reason: 'Arms 0 and 1 of the pre-registered A/B are measured and recorded (all five
-    bounded rows met, see validation.metric); the sensitivity arm 2 (individual-only draw) and
-    the owner''s verdict on keeping the two-stage draw as the default are outstanding, and arm 3
-    (issue #388, residual only on households of size >= 2) is the announced follow-up for the
-    per-size limitation. The record moves to reviewed once the owner has read the three
-    manifests.'
+  pending_reason: 'THE PRE-REGISTERED A/B LADDER IS COMPLETE THROUGH ARM 4 and every arm''s
+    evidence is recorded (see validation.metric and validation.runs): arm 1 met all five bounded
+    rows; arm 2 established by measurement that the household stage is what carries the
+    clustering; arm 3 measured the #388 size gate and met all rows plus both Amendment-1 bounds;
+    arm 4 measured the #425 escort gate -- THE PRODUCTION DEFAULT as configs/base_bs.yml stands --
+    and met all rows plus the Amendment-2 row it exists for (stranded children 2,574 -> 0). The
+    production configuration therefore HAS measured evidence, for the first time since #388
+    changed it. What remains is the OWNER''S VERDICT: (a) keep the two-stage draw with both
+    eligibility gates as the default; (b) accept the two stated costs -- absence within the parent
+    bands falls on non-escorters, and household sizes 2 and 5+ overshoot their reference (6.69 %
+    and 3.84 % against 5.87 % and 1.75 %) because the multi-person pool absorbs two redistributed
+    residuals; (c) decide whether the REVERSE escort incoherence (692 children on arm 3, ADR-0110
+    Amendment 2 "retained") is accepted as a documented limitation until issue #426 lands -- the
+    symmetric gate that would close it directly was rejected once arm 4 exposed the root cause
+    (no partial-household draw pattern, so the individual stage draws children alone). The record
+    moves to reviewed on that verdict. Two items are
+    deliberately NOT blockers and are recorded as gaps: arm 2 has no at_home_only reading (row 5
+    unmeasured for that arm only), and arm 2''s synthesis.output was interrupted so it has no
+    population CSV set.'
 notes: 'Composes with the commute_day_state feature (docs/registry/features/commute_day_state.yml),
   which carries a one-sentence pointer back to this record for the composition rule -- the rule
   itself lives ONCE, in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
@@ -229,7 +331,40 @@ notes: 'Composes with the commute_day_state feature (docs/registry/features/comm
   whole eligible pool, not separately per household-size class within it, so draw_absence''s
   by_size_class diagnostic (reference_rate/delta_pp against the newly committed
   p_absent_person_by_size, srv2023_absence_household_by_size.csv) stays REPORTED, never a target,
-  for those sizes. Pre-registered arm 3 (not yet run) compares singles'' realised absence against
-  the SrV person-level rate (5.14 %, +/- 0.6 pp), the household-clustering share against 55.8 %,
-  and the per-band rates (unchanged within 1 pp); sizes 2-5 are reported as a hold-out with no
-  tolerance, per the retained limitation.'
+  for those sizes. Pre-registered arm 3 RAN on 2026-09-18 (manifest
+  general-day-absence-arm3-100pct-2026-09-18, from the #388 merge 00a4a1cc) and MET both of its
+  bounds: singles'' realised absence 5.26 % against the SrV person-level rate 5.14 % (+0.11 pp,
+  bound +/- 0.6 pp, from arm 1''s 7.61 %) and the household-clustering share 54.4 % against 55.8 %
+  (arm 1 63.7 %), with the per-band rates unchanged (largest deviation 0.06 pp) even though the
+  residual is now drawn over a 19.24 % smaller eligible pool. Sizes 2-5+ are reported as the
+  pre-registered hold-out with no tolerance and all moved upward against arm 1 (6.57 / 3.57 / 4.34 /
+  3.82 % for sizes 2/3/4/5+), the mechanical consequence of redistributing the residual the singles
+  no longer receive -- the retained limitation, now measured.
+
+  Amendment 2 (issue #425, ADR-0110 "Amendment 2" section): a SECOND eligibility gate on the
+  individual stage -- persons with an escort leg on their pre-assignment day
+  (braunschweig.synthesis.escort_duty.escort_person_ids, both trip ends, the state_stage
+  definition) are never drawn absent_individual, because an escort leg evidences presence
+  (ADR-0104 Assumption 4) and the SrV cannot contain "away all day" and "escorted someone" on one
+  person-day; the household stage stays unprotected (a family on holiday takes the child along).
+  Motivated by arm 3''s 2,574 present children with an absent escort-leg household member (arm 1
+  2,006, arm 2 4,095), every one an individual-stage draw. Flag day_absence_escort_protection_enabled,
+  CODE default False (byte-identical to PR #389), CONFIGURED true; synthesis.population.trips is
+  declared as a stage input ONLY when on. ASSUMPTION stated in the ADR: absent persons in the
+  parent bands become disproportionately non-escorters, and the eligible pool shrinks by roughly
+  the escort share (~11 % of persons with trips in arm 3) on top of Amendment 1''s 19.24 %. The
+  pre-registered arm 4 RAN on 2026-09-18 (manifest general-day-absence-arm4-100pct-2026-09-18) and
+  MET every row: n_children_with_absent_escorter 0 (from 2,574), per-band rates within 0.08 pp,
+  clustering 54.3 % and singles 5.26 % unchanged from arm 3; the with/without-escort-leg absence
+  split is REPORTED there with no reference. Retained and stated in the ADR: the REVERSE
+  incoherence (an escorted child drawn absent_individual while its escorting parent stays present
+  and still makes the escort trip) is NOT covered by this gate -- measured on arm 3 at 692
+  children (484 in band 0-5, 208 in 6-17), 689 on arm 4. A symmetric gate on children in escorter
+  households would remove it at the price of halving the 0-5 residual pool (50.7 % left), and was
+  REJECTED for a better reason than cost: arm 4 exposed the root cause one level down. The draw has
+  only two patterns, whole-household and single-person, and no PARTIAL-household pattern, so the
+  individual stage draws children alone -- 1,721 of 1,739 individually absent children on arm 4
+  have a present adult at home, 446 under three. Banning solo children outright breaks the band row
+  (the household stage alone reaches ~1.56 % for ages 0-5 against 3.34 %). Issue #426 carries the
+  partial-household draw and is explicitly gated on first measuring that pattern in the SrV
+  microdata, since no committed reference for it exists.'

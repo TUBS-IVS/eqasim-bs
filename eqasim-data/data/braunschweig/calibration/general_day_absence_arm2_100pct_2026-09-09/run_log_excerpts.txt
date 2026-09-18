@@ -1,0 +1,48 @@
+# Arm 2 (individual-only draw, day_absence_household_stage_enabled=false) -- log excerpts
+# Source: felix:~/b370_arm2.log (run 2026-09-09 19:09:04 -> 19:31:28 CEST, file mtime 19:32:49).
+# Overlay: felix:~/b370_arm2.yml. Worktree: felix:~/wt-b370 (detached at 9184f594).
+
+## Absence stage parameters and realised draw
+19:09:07 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] parameters: household_stage=False, random_seed=1234 (+7351 offset), reference bands {'0-5': 0.0334, '6-17': 0.0189, '18-29': 0.0831, '30-44': 0.0442, '45-64': 0.0489, '65-74': 0.0588, '75+': 0.0581}, sizes {1: 0.0529, 2: 0.034, 3: 0.0131, 4: 0.0149, 5: 0.0018}
+19:09:11 │ INFO    │ synthesis.day_absence.absence │ [day absence] 57017/1130516 persons absent (5.04%): 0 by the household stage, 57017 by the individual stage; 24.2% of absent persons live in a fully absent household; per band {'0-5': '3.28% vs 3.34%', '6-17': '1.89% vs 1.89%', '18-29': '8.25% vs 8.31%', '30-44': '4.40% vs 4.42%', '45-64': '4.93% vs 4.89%', '65-74': '5.90% vs 5.88%', '75+': '5.82% vs 5.81%'}; per household size class (REPORTED, not targeted -- see ADR-0110 Assumptions) {1: '5.53% (n=229534)', 2: '5.46% (n=368370)', 3: '4.03% (n=213918)', 4: '4.68% (n=211912)', 5: '5.30% (n=106782)'}
+
+## Reporting-day composition
+/home/felix/wt-b370/braunschweig/synthesis/commute_day/plan_replacement.py:341: FutureWarning: Behavior when concatenating bool-dtype and numeric-dtype arrays is deprecated; in a future version these will cast to object dtype (instead of coercing bools to numeric values). To retain the old behavior, explicitly cast bool-dtype arrays to numeric dtype.
+19:21:30 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] n_absent_with_escort_leg: 5617/61255 (9.17%) absent person(s) (commute- or generally-absent) carry an escort leg on their original trips
+19:21:30 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] n_children_with_absent_escorter: 4095/185532 (2.21%) present children (age <= 17) live in a household with an absent member carrying an escort leg (household-level PROXY for a linked escorter -- the chainsolver link does not exist at this stage)
+19:21:30 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] reporting-day trips built: 6979 persons replaced (+20108/-227708 trips), 1285/6979 matched donors were IMMOBILE (18.4%, is_immobile, an expected trip-less home-office day) and 6/6979 (0.1%) had zero rows although their donor did travel; 4470 persons absent (0 rows), 0 home persons unmatched (kept unchanged, 283 extra column(s) nulled on replaced rows)
+19:21:30 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] 57017 persons generally absent (232 of them also commute-absent)
+19:21:31 │ INFO    │ synthesis.commute_day.trips_day_stage │ [commute day trips] reporting-day trips: 3455325 rows for 945920 persons (from 3662925 rows for 1001503 persons); commute_day_state_enabled=True, day_absence_enabled=True; diagnostics: {'n_persons_replaced': 6979, 'n_persons_absent': 4470, 'n_persons_absent_commute': 4470, 'n_persons_absent_general': 57017, 'n_persons_absent_both': 232, 'n_persons_absent_total': 61255, 'n_trips_removed': 227708, 'n_trips_removed_general': 181379, 'n_trips_added': 20108, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 283, 'n_donors_without_trips': 6, 'n_donors_immobile': 1285, 'n_donors_unknown_trip_count': 0, 'share_donors_without_trips': 0.0008597220232124946, 'share_donors_immobile': 0.1841237999713426, 'n_absent_with_escort_leg': 5617, 'n_children_with_absent_escorter': 4095}
+19:25:35 │ INFO    │ synthesis.commute_day.activities_day_stage │ [commute day activities] reporting-day activities: 4585841 rows for 1130516 persons (from 3455325 reporting-day trips)
+
+## Commute-day state and ADR-0104 check 1
+19:24:19 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] reporting-day states joined onto the employed universe: 372052/390724 workers matched (95.22%); 18672 (4.78%) have a person in the population that is NOT flagged employed (a universe difference, reported as n_workers_not_employed); 0 (0.00%) resolve to no employed-universe row at all (no population row, or a home Kreis outside the ZGB). All of them are excluded from every share below
+19:24:19 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] general absence folded into check 1: 29077/535757 employed persons (5.43%) set to absent
+19:24:20 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] reporting-day states over 535757 ZGB EMPLOYED persons (380980 with an assigned workplace, 29077/535757 (5.43%) of them set to 'absent' by the general day-absence draw): at_workplace 0.637 / home 0.012 / absent 0.062 / no_workplace 0.289 (SrV work_trip 0.651 / home_office_day 0.142 / neither 0.207); employed without a work trip 0.363 vs SrV remainder, delta 1.40 pp (tolerance +/- 3.0 pp, regional aggregate only)
+19:24:21 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers (no home geometry): 0/390724 (0.00%) with no home Kreis (ars5) match
+19:24:21 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers: 0/390724 (0.00%) with no home Kreis (ars5) match
+19:24:25 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] realised work: 390724 workers input, 0 without home geometry dropped, 0 without a home Kreis, 0 without a workplace row, 0 with a NaN distance dropped, 390724 kept; external destinations 50128 (12.83%), destinations without a resolvable Kreis 0 (0.00%: 0 with no workplace row, 0 with a malformed workplace commune_id)
+19:24:26 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] EXT destinations: 50128 workers over 645 (home, destination) Kreis pairs; 0 pair(s) have no BA Pendler flow (the BA export suppresses small cells, so the flow is unknown, not zero); 0 pair(s) have no Kreis centroid
+19:24:27 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] near-class-edge share: 165425/390724 workers (42.34%) lie within 5.0 km of a class edge [10.0, 25.0, 50.0, 100.0, 200.0]
+19:24:28 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] wrote 7 report files to eqasim-data/output_bs_100pct_b370_arm2/analysis/commute_day_state_phase_a
+19:24:28 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 535757 employed persons, share_work_trip 0.637 vs SrV 0.651 (delta -1.40 pp); near-class-edge share 0.423; EXT class agreement 0.826
+19:24:28 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.synthesis.work_participation_by_kreis__50d06e3856d90d89e947b32341f50f77
+19:24:28 │ INFO    │ synpp            │ Finished running braunschweig.analysis.synthesis.work_participation_by_kreis__50d06e3856d90d89e947b32341f50f77.
+
+## Stages that FINISHED
+braunschweig.analysis.synthesis.plan_structure_vs_srv
+braunschweig.analysis.synthesis.work_participation_by_kreis
+braunschweig.locations.synthesis.replacement_education_gravity
+braunschweig.synthesis.commute_day.activities_day_stage
+braunschweig.synthesis.commute_day.state_stage
+braunschweig.synthesis.commute_day.trips_day_stage
+braunschweig.synthesis.day_absence.absence_stage
+braunschweig.synthesis.locations.education_gravity
+documentation.meta_output
+synthesis.population.spatial.primary.candidates
+
+## Last log line (run did not reach the end of synthesis.output)
+[braunschweig.secondary_chainsolvers] running cs.solve() (parallel, 62 workers; 907,539 persons)...
+
+## Error-marker count (Traceback|FileNotFoundError|MemoryError|Killed|CRITICAL)
+0

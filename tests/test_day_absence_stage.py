@@ -24,12 +24,24 @@ DATA_PATH = __import__("os").path.join(REPO, "eqasim-data", "data")
 
 
 class _ConfigureRecorder:
-    """Records what ``configure`` declares, with synpp's two-argument config() signature."""
+    """Records what ``configure`` declares, with synpp's two-argument config() signature.
 
-    def __init__(self): self.stages, self.config_keys = [], {}
+    ``config()`` also RETURNS the effective value, because ``configure`` may branch on an option
+    it just declared (``context.config(key, default)`` followed by ``if context.config(key):``,
+    the conditional-declaration pattern of ``braunschweig.matsim.scenario.population`` that the
+    escort-protection input of this stage reuses, issue #425). The declared default is remembered
+    on the first call and an override from ``config`` wins, exactly as synpp's
+    ``ConfigurationContext`` behaves; a recorder returning ``None`` would make every such branch
+    look disabled.
+    """
+
+    def __init__(self, config=None):
+        self.stages, self.config_keys, self._config = [], {}, config or {}
     def stage(self, name, **_kwargs): self.stages.append(name)
     def config(self, name, default=None):
-        self.config_keys[name] = default; return default
+        if name not in self.config_keys:
+            self.config_keys[name] = default
+        return self._config.get(name, self.config_keys[name])
 
 
 class _StubContext:
@@ -50,7 +62,9 @@ class _StubContext:
 
 
 def _context(stages, config):
-    recorder = _ConfigureRecorder(); S.configure(recorder)
+    # configure sees the SAME values execute will read, so a conditionally declared input is
+    # declared exactly when execute is going to ask for it.
+    recorder = _ConfigureRecorder(config=config); S.configure(recorder)
     return _StubContext(recorder, stages=stages, config=config)
 
 
@@ -61,8 +75,24 @@ def _enriched():
 def _config(**overrides):
     base = {"random_seed": 1234, "data_path": DATA_PATH, S.KEY_ENABLED: True,
             S.KEY_HOUSEHOLD_STAGE: True, S.KEY_MAX_BAND_DEVIATION_PP: 1.0,
-            S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: S.DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE}
+            S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: S.DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+            S.KEY_ESCORT_PROTECTION: S.DEFAULT_ESCORT_PROTECTION}
     base.update(overrides); return base
+
+
+def _trips(rows):
+    """Minimal pre-assignment trips frame: the three columns escort duty is read from."""
+    return pd.DataFrame(rows, columns=["person_id", "following_purpose", "preceding_purpose"])
+
+
+def _certain_reference():
+    """Band rate 1.0 everywhere, household stage 0.0: every ELIGIBLE person is drawn
+    absent_individual with certainty (a random_sample draw is always < 1.0), so who ends up
+    present is decided by the eligibility gates alone -- deterministic, no sampling."""
+    return D.AbsenceReference(
+        p_absent_by_band={band: 1.0 for band in D.AGE_BAND_LABELS},
+        p_all_absent_by_size={k: 0.0 for k in range(1, 6)},
+        p_absent_person_by_size={k: float("nan") for k in range(1, 6)})
 
 
 def test_configure_declares_exactly_the_documented_inputs():
@@ -70,7 +100,8 @@ def test_configure_declares_exactly_the_documented_inputs():
     assert recorder.stages == ["synthesis.population.enriched"]
     assert set(recorder.config_keys) == {"random_seed", "data_path", S.KEY_ENABLED, S.KEY_HOUSEHOLD_STAGE,
                                          S.KEY_MAX_BAND_DEVIATION_PP,
-                                         S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE}
+                                         S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE,
+                                         S.KEY_ESCORT_PROTECTION}
 
 
 def test_configure_declares_the_individual_stage_min_household_size_default():
@@ -190,3 +221,93 @@ def test_individual_stage_min_household_size_accepts_a_numpy_integer():
     out = S.execute(_context({"synthesis.population.enriched": _enriched()},
                              _config(**{S.KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE: np.int64(2)})))
     assert out["diagnostics"]["individual_stage_min_household_size"] == 2
+
+
+# --- Issue #425: day_absence_escort_protection_enabled -----------------------------------------
+
+def test_configure_declares_escort_protection_with_code_default_off():
+    """CODE default False = byte-identical to PR #389 (arm 3); configs/base_bs.yml turns it on --
+    the same code-default/config-default split as day_absence_individual_stage_min_household_size."""
+    recorder = _ConfigureRecorder(); S.configure(recorder)
+    assert recorder.config_keys[S.KEY_ESCORT_PROTECTION] is False
+    assert S.DEFAULT_ESCORT_PROTECTION is False
+
+
+def test_configure_declares_the_trips_stage_only_when_escort_protection_is_on():
+    """The pre-assignment trips are needed ONLY to find escort legs, so the input -- and with it
+    the DAG edge -- exists only on the ON path (the conditional-declaration pattern of
+    braunschweig.matsim.scenario.population). OFF keeps the stage's inputs exactly as before."""
+    on = _ConfigureRecorder(config={S.KEY_ESCORT_PROTECTION: True}); S.configure(on)
+    off = _ConfigureRecorder(config={S.KEY_ESCORT_PROTECTION: False}); S.configure(off)
+    assert "synthesis.population.trips" in on.stages
+    assert on.stages[0] == "synthesis.population.enriched"
+    assert off.stages == ["synthesis.population.enriched"]
+
+
+def test_the_trips_stage_is_not_declared_when_day_absence_itself_is_off():
+    """execute() returns on the disabled path before it ever touches the trips, so declaring the
+    input there would carry a DAG edge nothing reads. The declaration is gated on BOTH flags."""
+    recorder = _ConfigureRecorder(config={S.KEY_ENABLED: False, S.KEY_ESCORT_PROTECTION: True})
+    S.configure(recorder)
+    assert recorder.stages == ["synthesis.population.enriched"]
+
+
+def test_escort_protection_keeps_an_escorter_present_that_the_individual_stage_would_otherwise_take(monkeypatch):
+    """_enriched(): person 0 is a single (out by the size gate), persons 1-2 a couple, persons 3-5
+    a family. With every eligible person drawn absent with certainty, ONLY the size gate and the
+    escort gate decide who stays present: person 0 (single) and person 1 (escort leg)."""
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: _certain_reference())
+    trips = _trips([(1, "escort", "home"), (1, "home", "escort"), (3, "work", "home"), (4, "shop", "home")])
+    out = S.execute(_context({"synthesis.population.enriched": _enriched(),
+                              "synthesis.population.trips": trips},
+                             _config(**{S.KEY_ESCORT_PROTECTION: True})))
+    absence = out["absence"].set_index("person_id")["day_absence_state"]
+    assert absence[1] == D.STATE_PRESENT
+    assert absence[0] == D.STATE_PRESENT
+    assert (absence.drop([0, 1]) == D.STATE_ABSENT_INDIVIDUAL).all()
+    assert out["diagnostics"]["n_persons_escort_protected"] == 1
+    assert out["diagnostics"]["escort_protection"] is True
+
+
+def test_escort_protection_off_never_reads_the_trips_stage_and_reports_zero_protected(monkeypatch, caplog):
+    """The stub context asserts on any access to an undeclared stage, and no trips frame is even
+    supplied here -- so this test passing PROVES the OFF path does not touch the trips table."""
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: _certain_reference())
+    with caplog.at_level("INFO", logger=S.logger.name):
+        out = S.execute(_context({"synthesis.population.enriched": _enriched()},
+                                 _config(**{S.KEY_ESCORT_PROTECTION: False})))
+    absence = out["absence"].set_index("person_id")["day_absence_state"]
+    assert absence[1] == D.STATE_ABSENT_INDIVIDUAL   # nothing protects the escorter now
+    assert out["diagnostics"]["n_persons_escort_protected"] == 0
+    assert out["diagnostics"]["escort_protection"] is False
+    assert not any("escort protection" in message for message in caplog.messages)
+
+
+def test_escort_protection_logs_the_protected_rate(monkeypatch, caplog):
+    """CLAUDE.md fallback transparency: the gate's effect is logged as an explicit rate."""
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: _certain_reference())
+    trips = _trips([(1, "escort", "home"), (3, "work", "home")])
+    with caplog.at_level("INFO", logger=S.logger.name):
+        S.execute(_context({"synthesis.population.enriched": _enriched(),
+                            "synthesis.population.trips": trips},
+                           _config(**{S.KEY_ESCORT_PROTECTION: True})))
+    # The dedicated rate line starts "escort protection:"; the combined ineligibility line only
+    # says "... by escort protection" and must not be mistaken for it.
+    rate_lines = [m for m in caplog.messages if "escort protection:" in m]
+    assert rate_lines, caplog.messages
+    assert "1/" in rate_lines[0] and "%" in rate_lines[0]
+
+
+def test_escort_protection_warns_when_trips_have_rows_but_no_escort_leg(monkeypatch, caplog):
+    """An EMPTY escort set with a non-empty trips table is the 'escort purpose is off in the
+    synthetic trips' defect class braunschweig.synthesis.commute_day.state_stage already warns
+    about -- a population that escorts NOBODY is not what it looks like. The draw still runs."""
+    monkeypatch.setattr(S, "load_absence_reference", lambda _srv_dir: _certain_reference())
+    trips = _trips([(1, "work", "home"), (3, "shop", "home")])
+    with caplog.at_level("WARNING", logger=S.logger.name):
+        out = S.execute(_context({"synthesis.population.enriched": _enriched(),
+                                  "synthesis.population.trips": trips},
+                                 _config(**{S.KEY_ESCORT_PROTECTION: True})))
+    assert any("escort" in message and "NO person" in message for message in caplog.messages)
+    assert out["diagnostics"]["n_persons_escort_protected"] == 0
+    assert len(out["absence"]) == 6

@@ -1,0 +1,77 @@
+# Arm 4 (ADR-0110 Amendment 2: escort protection, day_absence_escort_protection_enabled=true) -- log excerpts
+# Sources: felix:~/b370_arm4_smoke.log (absence stage, 17:09:15-17:09:51 CEST),
+#          felix:~/b370_arm4.log (arm run, 17:10:20-18:35:42 CEST, 1 h 25 min),
+#          felix:~/b370_arm4_aho.log (at_home_only follow-up, exit 0).
+# Code: worktree ~/wt-b425 detached at 00a4a1cc + the patch shipped beside this file
+#       (git diff 7cfeeb15..c611bff4 -- braunschweig/synthesis/day_absence/ braunschweig/synthesis/escort_duty.py).
+# Overlays: ~/b370_arm4_smoke.yml, ~/b370_arm4.yml, ~/b370_arm4_aho.yml. Data: ~/b425_data (data -> ~/b388_data/data).
+
+## Escort set, absence-stage parameters, realised draw, both gates (from the smoke)
+17:09:19 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] parameters: household_stage=True, day_absence_individual_stage_min_household_size=2, day_absence_escort_protection_enabled=True, random_seed=1234 (+7351 offset), reference bands {'0-5': 0.0334, '6-17': 0.0189, '18-29': 0.0831, '30-44': 0.0442, '45-64': 0.0489, '65-74': 0.0588, '75+': 0.0581}, sizes {1: 0.0529, 2: 0.034, 3: 0.0131, 4: 0.0149, 5: 0.0018}
+17:09:46 │ INFO    │ synthesis.escort_duty │ [escort duty] escort duty: 113819/1001503 persons with a trip (11.4%) have an 'escort' leg on their pre-assignment day
+17:09:49 │ INFO    │ synthesis.day_absence.absence │ [day absence] 57314/1130516 persons absent (5.07%): 30690 by the household stage, 26624 by the individual stage; 54.3% of absent persons live in a fully absent household; per band {'0-5': '3.32% vs 3.34% (n_eligible=54752)', '6-17': '1.93% vs 1.89% (n_eligible=114834)', '18-29': '8.30% vs 8.31% (n_eligible=104238)', '30-44': '4.40% vs 4.42% (n_eligible=129242)', '45-64': '4.95% vs 4.89% (n_eligible=218329)', '65-74': '5.96% vs 5.88% (n_eligible=82661)', '75+': '5.84% vs 5.81% (n_eligible=75451)'}; per household size class (REPORTED, not targeted -- see ADR-0110 Assumptions) {1: '5.26% (n=229534)', 2: '6.69% (n=368370)', 3: '3.46% (n=213918)', 4: '4.29% (n=211912)', 5: '3.84% (n=106782)'}
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 0-5: realised 3.32% vs reference 3.34% (n=63410, n_eligible=54752)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 6-17: realised 1.93% vs reference 1.89% (n=122122, n_eligible=114834)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 18-29: realised 8.30% vs reference 8.31% (n=145117, n_eligible=104238)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 30-44: realised 4.40% vs reference 4.42% (n=211625, n_eligible=129242)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 45-64: realised 4.95% vs reference 4.89% (n=337649, n_eligible=218329)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 65-74: realised 5.96% vs reference 5.88% (n=126138, n_eligible=82661)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] band 75+: realised 5.84% vs reference 5.81% (n=124455, n_eligible=75451)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] size 1: realised 5.26% vs SrV 5.14% (delta 0.11 pp, n=229534)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] size 2: realised 6.69% vs SrV 5.87% (delta 0.82 pp, n=368370)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] size 3: realised 3.46% vs SrV 5.43% (delta -1.97 pp, n=213918)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] size 4: realised 4.29% vs SrV 4.16% (delta 0.13 pp, n=211912)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] size 5: realised 3.84% vs SrV 1.75% (delta 2.08 pp, n=106782)
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] 320319/1130516 (28.33%) persons are present but ineligible for the individual stage: 217471 by household size below day_absence_individual_stage_min_household_size=2, 102848 by escort protection
+17:09:49 │ INFO    │ synthesis.day_absence.absence_stage │ [day absence] escort protection: 102848/1099826 present persons (9.35%) are excluded from the individual stage by escort protection (escort leg, not already excluded by household size)
+
+## Reporting-day composition incl. the pre-registered stranded-children count (arm run)
+17:23:17 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] n_absent_with_escort_leg: 2295/61532 (3.73%) absent person(s) (commute- or generally-absent) carry an escort leg on their original trips
+17:23:17 │ INFO    │ synthesis.commute_day.plan_replacement │ [commute day plan replacement] n_children_with_absent_escorter: 0/185532 (0.00%) present children (age <= 17) live in a household with an absent member carrying an escort leg (household-level PROXY for a linked escorter -- the chainsolver link does not exist at this stage)
+17:23:17 │ INFO    │ synthesis.commute_day.trips_day_stage │ [commute day trips] reporting-day trips: 3462277 rows for 946041 persons (from 3662925 rows for 1001503 persons); commute_day_state_enabled=True, day_absence_enabled=True; diagnostics: {'n_persons_replaced': 7038, 'n_persons_absent': 4470, 'n_persons_absent_commute': 4470, 'n_persons_absent_general': 57314, 'n_persons_absent_both': 252, 'n_persons_absent_total': 61532, 'n_trips_removed': 221095, 'n_trips_removed_general': 174356, 'n_trips_added': 20447, 'n_home_unmatched': 0, 'n_extra_columns_nulled': 283, 'n_donors_without_trips': 6, 'n_donors_immobile': 1272, 'n_donors_unknown_trip_count': 0, 'share_donors_without_trips': 0.0008525149190110827, 'share_donors_immobile': 0.18073316283034954, 'n_absent_with_escort_leg': 2295, 'n_children_with_absent_escorter': 0}
+17:27:35 │ INFO    │ synthesis.commute_day.activities_day_stage │ [commute day activities] reporting-day activities: 4592793 rows for 1130516 persons (from 3462277 reporting-day trips)
+
+## Commute-day state and ADR-0104 check 1
+17:26:13 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] workers: 0/390724 (0.00%) with no home Kreis (ars5) match
+17:26:17 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] realised work: 390724 workers input, 0 without home geometry dropped, 0 without a home Kreis, 0 without a workplace row, 0 with a NaN distance dropped, 390724 kept; external destinations 50128 (12.83%), destinations without a resolvable Kreis 0 (0.00%: 0 with no workplace row, 0 with a malformed workplace commune_id)
+17:26:18 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] EXT destinations: 50128 workers over 645 (home, destination) Kreis pairs; 0 pair(s) have no BA Pendler flow (the BA export suppresses small cells, so the flow is unknown, not zero); 0 pair(s) have no Kreis centroid
+17:26:18 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] near-class-edge share: 165425/390724 workers (42.34%) lie within 5.0 km of a class edge [10.0, 25.0, 50.0, 100.0, 200.0]
+17:26:20 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] wrote 7 report files to eqasim-data/output_bs_100pct_b370_arm4/analysis/commute_day_state_phase_a
+17:26:20 │ INFO    │ analysis.synthesis.work_participation_by_kreis │ [commute_day_state] ZGB: 535757 employed persons, share_work_trip 0.637 vs SrV 0.651 (delta -1.38 pp); near-class-edge share 0.423; EXT class agreement 0.826
+17:26:20 │ INFO    │ synpp            │ Writing cache for braunschweig.analysis.synthesis.work_participation_by_kreis__e80fb04403b9aa48fe00a945cd505e71
+17:26:20 │ INFO    │ synpp            │ Finished running braunschweig.analysis.synthesis.work_participation_by_kreis__e80fb04403b9aa48fe00a945cd505e71.
+
+## Chainsolver
+[braunschweig.secondary_chainsolvers] success rate: 0.9998 (908976/909133 problems fully placed)
+
+## Stages that FINISHED (arm run; the absence stage was a cache hit from the smoke)
+braunschweig.analysis.synthesis.plan_structure_vs_srv
+braunschweig.analysis.synthesis.work_participation_by_kreis
+braunschweig.locations.synthesis.replacement_education_gravity
+braunschweig.synthesis.commute_day.activities_day_stage
+braunschweig.synthesis.commute_day.output_day
+braunschweig.synthesis.commute_day.spatial_locations_day
+braunschweig.synthesis.commute_day.state_stage
+braunschweig.synthesis.commute_day.trips_day_stage
+braunschweig.synthesis.locations.education_gravity
+braunschweig.synthesis.locations.secondary_chainsolvers
+documentation.meta_output
+synthesis.population.spatial.primary.candidates
+
+## Completion
+18:35:42 │ INFO    │ synpp            │ Pipeline progress: 12/12 (100.00%)
+
+## Error-marker count (Traceback|FileNotFoundError|MemoryError|Killed|CRITICAL)
+b370_arm4.log: 0
+b370_arm4_smoke.log: 0
+b370_arm4_aho.log: 0
+
+## WARNING lines other than the known provenance one
+/home/felix/b370_arm4.log:WARNING! osmconvert of at least version 0.8.x is recommended!
+/home/felix/b370_arm4.log:17:24:12 │ WARNING │ analysis.plan_structure │ [plan structure model] 3 persons have no resolvable home Kreis; they are KEPT in the harmonised frame (dropping them here would shrink the model side invisibly), but the comparison stage excludes them from the head-to-head universe and raises above its configured unmatched-home share
+/home/felix/b370_arm4_aho.log:18:37:31 │ WARNING │ analysis.plan_structure │ [plan structure model] 3 persons have no resolvable home Kreis; they are KEPT in the harmonised frame (dropping them here would shrink the model side invisibly), but the comparison stage excludes them from the head-to-head universe and raises above its configured unmatched-home share
+/home/felix/b370_arm4_aho.log:WARNING! osmconvert of at least version 0.8.x is recommended!
+
+## md5 of the reporting-day trip tables
+arm4: 359a2f6401691a999da7b57da631fc13
+arm3: 46abe99543cd7a6092909a2915fc4f84

@@ -12,15 +12,19 @@ description: 'Draws EVERY enriched person''s reporting-day absence state -- pres
   #388, ADR-0110 Amendment 1): household_size (unclipped member count) >=
   day_absence_individual_stage_min_household_size, CONFIGURED default 2 -- households of size 1
   skip the residual, since the household stage alone already realises their SrV person-level
-  rate. Universe: every person in synthesis.population.enriched (no workplace or
+  rate -- AND (issue #425, ADR-0110 Amendment 2) not carrying an escort leg on the pre-assignment
+  day, since an escort leg evidences presence (ADR-0104 Assumption 4) and the SrV cannot contain
+  "away all day" and "escorted someone" on one person-day; the household stage stays unprotected.
+  Universe: every person in synthesis.population.enriched (no workplace or
   employment precondition, unlike braunschweig.synthesis.commute_day.state_stage). Output
   {"absence": DataFrame(person_id, household_id, day_absence_state, age_band,
   household_size_class, p_household, p_individual, reason), "diagnostics": dict} with EXACTLY
   one row per person. Config keys: day_absence_enabled, day_absence_household_stage_enabled,
-  day_absence_max_band_deviation_pp, day_absence_individual_stage_min_household_size. With the
-  flag false every person is present with reason "disabled", no reference file is read, but the
-  frame''s schema and derived columns (age_band, household_size_class) stay identical to the ON
-  path.'
+  day_absence_max_band_deviation_pp, day_absence_individual_stage_min_household_size,
+  day_absence_escort_protection_enabled (declares synthesis.population.trips as a stage input
+  ONLY when true). With the flag false every person is present with reason "disabled", no
+  reference file is read, but the frame''s schema and derived columns (age_band,
+  household_size_class) stay identical to the ON path.'
 lineage:
   type: braunschweig_new
   upstream: null
@@ -29,6 +33,7 @@ lineage:
 code:
 - braunschweig/synthesis/day_absence/absence_stage.py
 - braunschweig/synthesis/day_absence/absence.py
+- braunschweig/synthesis/escort_duty.py
 - braunschweig/calibration/srv_absence.py
 pipelines:
   popsim_mid: active
@@ -66,7 +71,30 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   realised x.xx% vs SrV y.yy% (delta z.zz pp, n=N)" (against draw_absence''s by_size_class
   diagnostic) and the ineligible share as "n/total (x.xx%) persons are present but ineligible
   for the individual stage (household size below
-  day_absence_individual_stage_min_household_size=k)".
+  day_absence_individual_stage_min_household_size=k)" -- or, with escort protection on, split
+  as ": a by household size below ...=k, b by escort protection".
+  day_absence_escort_protection_enabled (issue #425, ADR-0110 Amendment 2,
+  KEY_ESCORT_PROTECTION) -- CODE default False (byte-identical to PR #389), CONFIGURED true in
+  configs/base_bs.yml. When true the stage declares synthesis.population.trips (TRIPS_STAGE) as
+  an input -- ONLY then, the conditional-declaration pattern of
+  braunschweig.matsim.scenario.population, so the OFF path keeps its previous inputs and adds
+  no DAG edge -- and hands braunschweig.synthesis.escort_duty.escort_person_ids(trips) (persons
+  with following_purpose OR preceding_purpose == "escort" on any leg, the both-ends definition
+  commute_day.state_stage uses) to draw_absence as escort_protected_person_ids: a second
+  eligibility mask on the INDIVIDUAL stage only (eligible = present & size_ok &
+  ~escort_protected); the household stage is unprotected on purpose (a household leaving as a
+  whole takes its escorter along, nobody is stranded). Any non-empty set forces the eligible-pool
+  residual expression even at individual_stage_min_household_size 1. Logged as "escort
+  protection: n/present (x.xx%) carry an escort leg and are ineligible for the individual stage";
+  an inactive gate is never named in the log. TWO inert-gate guards, because "the gate had no
+  effect" must never be indistinguishable from "the gate is broken" (CLAUDE.md "no silent
+  fallbacks"): an EMPTY escort set next to a NON-EMPTY trips table WARNS in the stage (the "escort
+  purpose is off in the synthetic trips" defect class state_stage warns about), and a NON-EMPTY
+  protection set that matches ZERO persons in the persons frame WARNS in draw_absence itself
+  (a person_id dtype/key mismatch -- an empty join, which would otherwise leave every count at 0
+  and the rate line reading "0/N (0.00%)"). The declaration of TRIPS_STAGE is gated on BOTH
+  day_absence_enabled and day_absence_escort_protection_enabled, so it matches exactly what
+  execute() reads (the disabled path returns before touching the trips).
 
   Draw rule (absence.draw_absence): every household gets size_class = min(household size, 5)
   (household_size_class.HOUSEHOLD_SIZE_CLASS_TOP) via braunschweig.calibration.srv_absence
@@ -117,13 +145,15 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   final-review fix wave: count of bands whose eligible pool was too small to cover the residual
   shortfall), household_stage (bool),
   individual_stage_min_household_size (int, issue #388), n_persons_ineligible_individual_stage
-  (issue #388), by_band (per-band n, reference_rate, realised_household_rate, residual_p,
-  realised_rate, n_eligible_present [issue #388]), by_size_class (per household_size_class 1..5,
+  (issue #388, the UNION of both gates), n_persons_ineligible_household_size and
+  n_persons_escort_protected (issue #425, the two gates counted separately), by_band (per-band
+  n, reference_rate, realised_household_rate, residual_p, realised_rate, n_eligible_present
+  [issue #388], n_escort_protected [issue #425]), by_size_class (per household_size_class 1..5,
   n, realised_rate, reference_rate and delta_pp against the newly committed
   p_absent_person_by_size [issue #388] -- REPORTED, not targeted; the model does not fit a
   per-size person-level absence rate within the eligible pool, see ADR-0110 Assumptions/
-  Consequences and Amendment 1) -- plus the stage''s own enabled and n_band_guard_hits. OFF
-  path: {"enabled": False} only.
+  Consequences and Amendment 1) -- plus the stage''s own enabled, escort_protection (the flag as
+  read, issue #425) and n_band_guard_hits. OFF path: {"enabled": False} only.
 
   OFF-path schema stability (execute._disabled_frame): the disabled frame carries EVERY column
   of the enabled frame with the SAME dtypes, including age_band and household_size_class derived
@@ -134,15 +164,16 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   failing on data the enabled path would reject -- the OFF path must never fail where the ON path
   would.
 
-  The cache token (validate()) is an md5 of TWO pure modules'' sources, not the absence module
-  alone (final-review fix wave, Important finding 3): synpp hashes only absence_stage.py itself,
-  so an edit to either helper module would otherwise leave a stale cached output in place. The
-  draw module absence.py owns the household/individual composition and the overshoot guard; the
-  band edges/labels and the household-size-class top -- what a person is drawn AGAINST -- live in
-  braunschweig.calibration.srv_absence (AGE_BAND_LABELS, AGE_BAND_EDGES,
-  HOUSEHOLD_SIZE_CLASS_TOP, age_band, household_size_class), so an edit there must devalidate the
-  stage just as much as an edit to absence.py -- the same mechanism as
-  braunschweig.synthesis.commute_day.state_stage.validate.
+  The cache token (validate()) is an md5 of THREE pure modules'' sources, not the absence module
+  alone (final-review fix wave, Important finding 3; issue #425 added the third): synpp hashes
+  only absence_stage.py itself, so an edit to a helper module would otherwise leave a stale
+  cached output in place. The draw module absence.py owns the household/individual composition
+  and the overshoot guard; the band edges/labels and the household-size-class top -- what a
+  person is drawn AGAINST -- live in braunschweig.calibration.srv_absence (AGE_BAND_LABELS,
+  AGE_BAND_EDGES, HOUSEHOLD_SIZE_CLASS_TOP, age_band, household_size_class); and WHO is
+  escort-protected is decided in braunschweig.synthesis.escort_duty (ESCORT_PURPOSE,
+  escort_person_ids). An edit to any of the three must devalidate the stage just as much as an
+  edit to absence.py -- the same mechanism as braunschweig.synthesis.commute_day.state_stage.validate.
 
   Composition with the commute-day-state model (ADR-0104): this stage''s output is INDEPENDENT of
   braunschweig.synthesis.commute_day.state_stage''s draw -- neither reads the other''s output, and
@@ -160,5 +191,7 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   not_used there is the DAG''s own statement, not merely an unexercised default. Evidence:
   tests/test_srv_absence.py (the raw-table extraction rules), tests/test_day_absence.py (the pure
   draw_absence rules: household/individual composition, the overshoot guard, determinism,
-  reference-coverage validation) and tests/test_day_absence_stage.py (the stage''s configure/
-  execute wiring, the OFF path''s schema-identical frame, the validate() token).'
+  reference-coverage validation, both eligibility gates), tests/test_escort_duty.py (the
+  escort-leg definition and the three-literal pin, issue #425) and tests/test_day_absence_stage.py
+  (the stage''s configure/execute wiring incl. the conditional trips declaration, the OFF path''s
+  schema-identical frame, the validate() token).'

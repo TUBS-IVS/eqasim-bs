@@ -45,6 +45,7 @@ import pandas as pd
 from braunschweig import constants as _constants
 from braunschweig.calibration import commute_day_state_reference as _state_reference
 from braunschweig.popsim import chain_matching as _chain_matching
+from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.calibration.commute_day_state_reference import MID_CHILD_MAX_AGE
 from braunschweig.calibration.commute_day_state_reference import load_workday_location_table
 from braunschweig.constants import ROUTED_DETOUR_FACTOR
@@ -70,7 +71,8 @@ _LOG_TAG = "[commute day state]"
 # _constants owns ROUTED_DETOUR_FACTOR, with which this stage converts assigned commute
 # distances; _chain_matching owns derive_age_class, the binning the donor match relies on.
 # All three were module-level imports outside the token (#327 helper-hash re-audit).
-_HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching)
+# _escort_duty owns the escort-leg definition this stage's escort protection reads (#425).
+_HELPER_MODULES = (_state, _matching, _state_reference, _constants, _chain_matching, _escort_duty)
 
 # --------------------------------------------------------------------------- config keys
 
@@ -98,8 +100,10 @@ MID_REFERENCE_SUBDIR = ("braunschweig", "mid")
 
 #: eqasim trip purpose marking an escort leg (issue #201); a person with such a leg on their own
 #: pre-assignment day evidences presence at home and may become ``home`` but never ``absent``
-#: (ADR-0104 Assumption 4).
-ESCORT_PURPOSE = "escort"
+#: (ADR-0104 Assumption 4). Re-exported from :mod:`braunschweig.synthesis.escort_duty` (issue
+#: #425), which owns the definition; kept as a module attribute because callers and tests refer
+#: to ``state_stage.ESCORT_PURPOSE``.
+ESCORT_PURPOSE = _escort_duty.ESCORT_PURPOSE
 
 #: Columns of the ``states`` frame this stage returns.
 STATE_COLUMNS = ("person_id", "commute_day_state", "p_keep", "redraw_eligible", "reason",
@@ -160,27 +164,23 @@ def _require_columns(frame, columns, what):
 
 
 def _escort_person_ids(trips, donors):
-    """Person ids with an escort leg on their own pre-assignment reporting day.
+    """Person ids with an escort leg on their own pre-assignment reporting day, plus this stage's
+    own donor-pool guard.
 
-    Both trip ends are inspected (``following_purpose`` and ``preceding_purpose``): the escorting
-    person's outbound leg ARRIVES at the escort activity, the return leg DEPARTS from it, and
-    either is evidence of the escort duty (ADR-0104 Assumption 4).
+    The RULE itself lives once, in :func:`braunschweig.synthesis.escort_duty.escort_person_ids`
+    (both trip ends: the escorting person's outbound leg ARRIVES at the escort activity, the
+    return leg DEPARTS from it, and either is evidence of the duty -- ADR-0104 Assumption 4). It
+    was duplicated here and in ``plan_replacement`` until issue #425; the shared module is folded
+    into this stage's cache token (:data:`_HELPER_MODULES`), so an edit to the definition
+    devalidates this stage exactly as an inline copy would have.
 
-    The resulting share is logged, and a share of ZERO alongside a donor pool that DOES carry
-    escorting donors is warned about: ``has_active_escort`` is a HARD matching criterion, so in
-    that situation every escorting donor is excluded for every person -- which is what an
-    ``escort_purpose: false`` run looks like (no leg ever carries the ``escort`` purpose), not a
-    population that genuinely escorts nobody.
+    What stays here is the guard that is specific to THIS stage: a share of ZERO alongside a donor
+    pool that DOES carry escorting donors is warned about, because ``has_active_escort`` is a HARD
+    matching criterion -- in that situation every escorting donor is excluded for every person,
+    which is what an ``escort_purpose: false`` run looks like (no leg ever carries the ``escort``
+    purpose), not a population that genuinely escorts nobody.
     """
-    _require_columns(trips, ("person_id", "following_purpose", "preceding_purpose"),
-                     "the trips frame")
-    is_escort = ((trips["following_purpose"] == ESCORT_PURPOSE)
-                 | (trips["preceding_purpose"] == ESCORT_PURPOSE))
-    escort_persons = set(trips.loc[is_escort, "person_id"])
-    n_persons = trips["person_id"].nunique()
-    logger.info("%s escort duty: %d/%d persons with a trip (%.1f%%) have an %r leg on their "
-                "pre-assignment day", _LOG_TAG, len(escort_persons), n_persons,
-                100.0 * len(escort_persons) / max(n_persons, 1), ESCORT_PURPOSE)
+    escort_persons = _escort_duty.escort_person_ids(trips)
     n_escorting_donors = (int(donors["has_active_escort"].sum())
                           if "has_active_escort" in donors.columns else 0)
     if not escort_persons and n_escorting_donors > 0:
