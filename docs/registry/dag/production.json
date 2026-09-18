@@ -974,6 +974,10 @@
   ],
   [
    "synthesis.population.trips",
+   "braunschweig.synthesis.day_absence.absence_stage"
+  ],
+  [
+   "synthesis.population.trips",
    "matsim.scenario.population"
   ],
   [

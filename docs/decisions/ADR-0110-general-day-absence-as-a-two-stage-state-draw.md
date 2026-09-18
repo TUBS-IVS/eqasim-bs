@@ -406,3 +406,86 @@
      `docs/codebase/notes/day-absence-state.md`. No run has executed this amendment's default as of
      this record; arm 3 above is a plan, not a result, exactly as the original A/B was when ADR-0110
      was first written.
+- **Amendment 2 (2026-09-18, issue #425): persons with an escort leg are excluded from the
+  individual residual stage.** This amendment adds a second eligibility gate next to Amendment 1's
+  size gate; it changes WHO carries the individual residual, not how much of it there is, and it
+  leaves the household stage untouched.
+  1. **The defect.** The draw reads only the person table and knows nothing about trips, so it
+     could stamp a person `absent_individual` whose pre-assignment diary carries an escort leg. The
+     reporting-day view then deletes the escorter's trips while the escorted child keeps its
+     escorted leg -- a child travelling with no escorter. Arm 3 (manifest
+     `general-day-absence-arm3-100pct-2026-09-18`) measured 2,574 present children aged <= 17 in a
+     household with an absent escort-leg member (arm 1: 2,006; arm 2, individual-only: 4,095), all
+     of them individual-stage draws, since the household stage takes the child along. The SrV
+     cannot contain the combination: a respondent away all day has zero trips and therefore no
+     escort trip, so absence and escort duty are mutually exclusive on a person-day BY
+     CONSTRUCTION of the data. The far-commuter model already encodes this -- ADR-0104 Assumption 4,
+     "an escort leg evidences presence at home", reason `home_escort_protected`, 752 persons in
+     arm 3 -- and the general absence draw did not.
+  2. **The rule.** `braunschweig.synthesis.day_absence.absence.draw_absence` gains the keyword
+     `escort_protected_person_ids` (CODE default `None`, byte-identical to PR #389); eligibility
+     for the individual residual stage becomes `eligible = present & (household_size >=
+     individual_stage_min_household_size) & ~escort_protected`. The escort set is computed by the
+     new pure module `braunschweig.synthesis.escort_duty.escort_person_ids` on the pre-assignment
+     trips (`synthesis.population.trips`): a person with `following_purpose` OR
+     `preceding_purpose == "escort"` on any leg, the same both-ends definition
+     `commute_day.state_stage` uses. The person draw vector is still drawn for EVERY person
+     (a mask, never a re-draw). Any non-empty set forces the eligible-pool residual expression
+     `_residual_probability_eligible` even at `individual_stage_min_household_size == 1`, because
+     the legacy expression assumes every present person is eligible; `None` keeps the legacy
+     path, pinned by the existing `ada06b61` golden hash. The two gates are counted separately
+     (`n_persons_ineligible_household_size`, `n_persons_escort_protected`, per band
+     `n_escort_protected`) while `n_persons_ineligible_individual_stage` keeps its union meaning.
+  3. **The stage and its default.** `braunschweig.synthesis.day_absence.absence_stage` gains the
+     config key `day_absence_escort_protection_enabled` (CODE default `False`, `configs/base_bs.yml`
+     `true` -- the same code-default/config-default split as Amendment 1) and declares
+     `synthesis.population.trips` as an input ONLY when the flag is on, the conditional-declaration
+     pattern of `braunschweig.matsim.scenario.population`, so the OFF path has exactly the inputs it
+     had and no new DAG edge. Fallback transparency: the escort share is logged as a rate
+     (`escort protection: n/present (x %)`), an inactive gate is never named in the log, and an
+     EMPTY escort set next to a NON-EMPTY trips table WARNS -- the "escort purpose is off in the
+     synthetic trips" defect class `state_stage` already warns about. The escort module is folded
+     into the stage's cache token (`_HELPER_MODULES`), so an edit to the escort-leg definition
+     devalidates the stage. The two pre-existing local `ESCORT_PURPOSE` literals in
+     `commute_day.state_stage` and `commute_day.plan_replacement` are deliberately NOT replaced by
+     an import: `plan_replacement` documents the duplication as intentional cross-module
+     avoidance, and touching either module devalidates commute-day stages unrelated to this
+     change; `tests/test_escort_duty.py` pins all three literals equal instead.
+  4. **Assumption and cost, stated.** The gate makes absent persons in the parent bands (30-64)
+     disproportionately NON-escorters. This is consistent with the data structure (the SrV's
+     absent persons have no escort legs) but it is still an ASSUMPTION about who, within a band,
+     is away: the SrV cannot say whether escort-duty persons are less often away on OTHER days,
+     only that they are not away on the day they escort. The eligible residual pool shrinks by
+     roughly the escort share (108,199 persons carried an escort leg in arm 3, ~11 % of persons
+     with trips) on top of Amendment 1's 19.24 %, so the per-band residual rate rises further over
+     fewer people; the per-band marginal is still exact in expectation, and the pre-existing
+     "eligible pool too small" WARNING covers a band that can no longer reach its target. Nothing
+     here targets a per-size or per-escort absence rate; Amendment 1's retained limitation stands.
+  5. **Pre-registered arm 4 (server, cached population; not run as part of this record).** Arm 4
+     = arm 3 plus this amendment's default (`day_absence_escort_protection_enabled: true`, already
+     the base config default at the measurement commit, so no override). Same cache, same seed,
+     same `plan_structure_vs_srv` / `work_participation_by_kreis` stages as arms 0-3, plus the
+     `build_day_trips` escort diagnostics read directly:
+
+     | metric | reference | expected arm 4 (ASSUMPTION) |
+     |---|---|---|
+     | present children with an absent escort-leg household member (`n_children_with_absent_escorter`) | none (a model-coherence count) | **0** by construction -- commute-day already protects escorters, so any positive count is a defect signal, not sampling |
+     | absent share per age band | table in Context above | unchanged within +/- 1.0 pp per band (THE row that can break: ~108k fewer eligible persons) |
+     | absent persons in fully absent households (clustering) | 55.8 % | inside 45-65 %, expected close to arm 3's 54.4 % (the household stage is untouched) |
+     | singles' realised absence (size 1) | 5.14 % | unchanged from arm 3's 5.26 % (singles are already outside the residual pool) |
+     | mobility rate, ADR-0104 check-1 work share | as arms 0-3 | within 0.1 pp of arm 3 (report) |
+     | absence rate among persons WITH vs WITHOUT an escort leg | **none exists** -- the SrV cannot contain this split | REPORTED only, no tolerance |
+
+     A band rate outside +/- 1.0 pp or a positive stranded-children count stops the ladder for
+     diagnosis, the same discipline as the original A/B and Amendment 1.
+  6. **Evidence.** Issue **#425**; code `braunschweig/synthesis/escort_duty.py`
+     (`ESCORT_PURPOSE`, `escort_person_ids`), `braunschweig/synthesis/day_absence/absence.py`
+     (`escort_protected_person_ids` keyword, `is_escort_removed`, the widened legacy-branch
+     condition), `braunschweig/synthesis/day_absence/absence_stage.py` (`KEY_ESCORT_PROTECTION`,
+     `TRIPS_STAGE`, the conditional declaration, the empty-set WARNING); tests
+     `tests/test_escort_duty.py`, `tests/test_day_absence.py`, `tests/test_day_absence_stage.py`;
+     feature record `docs/registry/features/general_day_absence.yml`; stage record
+     `docs/registry/stages/braunschweig.synthesis.day_absence.absence_stage.yml`; contributor note
+     `docs/codebase/notes/day-absence-state.md`; README flag table. Arm 4 is recorded in its own
+     run manifest once it has run; until then this amendment's default has no measured evidence,
+     exactly as Amendment 1 had none when first written.

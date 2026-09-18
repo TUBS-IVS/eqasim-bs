@@ -60,6 +60,7 @@ production:
   enabled: true
   flags:
   - day_absence_enabled
+  - day_absence_escort_protection_enabled
 introduced:
   issue: 370
   pr: 387
@@ -69,6 +70,7 @@ code_paths:
 - scripts/extract_srv_absence.py
 - braunschweig/synthesis/day_absence/absence.py
 - braunschweig/synthesis/day_absence/absence_stage.py
+- braunschweig/synthesis/escort_duty.py
 - braunschweig/synthesis/commute_day/plan_replacement.py
 - braunschweig/synthesis/commute_day/trips_day_stage.py
 - synthesis/output.py
@@ -83,6 +85,7 @@ evidence:
   - tests/test_srv_absence.py
   - tests/test_day_absence.py
   - tests/test_day_absence_stage.py
+  - tests/test_escort_duty.py
   - tests/test_commute_day_plan_replacement.py
   - tests/test_commute_day_stages.py
   - tests/test_commute_day_consumers.py
@@ -123,7 +126,17 @@ evidence:
       (simple_ipf_open) leaves the flag at its code default for the identical no-consumer reason.
       The plain DAG non-wiring in the no-consumer cases is what actually keeps those byte-identical
       (same precedent as commute_day_state_enabled''s "redundant but explicit" fixture setting, see
-      docs/codebase/notes/commute-day-two-view-trips.md).'
+      docs/codebase/notes/commute-day-two-view-trips.md).
+
+      day_absence_escort_protection_enabled (issue #425, ADR-0110 Amendment 2) has its own OFF
+      path: CODE default False, so the pure draw with escort_protected_person_ids None reproduces
+      PR #389 exactly (tests/test_day_absence.py::test_escort_protected_person_ids_none_is_byte_identical_to_the_default,
+      and the legacy residual branch stays pinned by the ada06b61 golden), and the stage neither
+      declares nor reads synthesis.population.trips when the flag is off
+      (tests/test_day_absence_stage.py::test_configure_declares_the_trips_stage_only_when_escort_protection_is_on
+      and ::test_escort_protection_off_never_reads_the_trips_stage_and_reports_zero_protected,
+      whose stub context asserts on any undeclared-stage access). configs/base_bs.yml sets it
+      true; the fixtures that disable day_absence_enabled never reach the gate.'
   fallback_rate:
     instrumented: true
     log_marker: '[day absence]'
@@ -161,7 +174,16 @@ evidence:
       downstream guards stayed silent as expected (28,826 of 535,757 employed persons were
       overridden to absent in work_participation_by_kreis; plan_structure_vs_srv ran at_home_zero
       WITH the draw applied). The guards therefore have a first live baseline; they remain guards,
-      not targets.'
+      not targets.
+
+      Escort gate (issue #425): the stage logs "escort protection: n/present (x %) carry an escort
+      leg and are ineligible for the individual stage" as an explicit rate and never names the gate
+      when it is off; an EMPTY escort set next to a NON-EMPTY trips table WARNS (the "escort purpose
+      is off in the synthetic trips" defect class commute_day.state_stage already warns about --
+      tests/test_day_absence_stage.py::test_escort_protection_warns_when_trips_have_rows_but_no_escort_leg).
+      The two eligibility gates are counted separately (n_persons_ineligible_household_size,
+      n_persons_escort_protected, per band n_escort_protected) so neither hides inside the union
+      count. NOT YET MEASURED on the 100 % population; arm 4 will give it a first live baseline.'
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv
@@ -238,18 +260,21 @@ validation:
     be.'
 assessment:
   status: pending
-  pending_reason: 'THE PRE-REGISTERED A/B LADDER IS COMPLETE: all four arms are run and recorded
-    (see validation.metric and validation.runs). Arm 1 met all five bounded rows; arm 2 established
-    by measurement, not design argument, that the household stage is what carries the clustering;
-    arm 3 measured the PRODUCTION default (the #388 eligibility gate) and met all five bounded rows
-    plus both Amendment-1 bounds. Only the OWNER''S VERDICT is outstanding -- on keeping the
-    two-stage draw with the size-2 eligibility gate as the default, and on accepting the two
-    recorded costs of the gate (escort coherence 2,006 -> 2,574 children with an absent escorter,
-    and the larger overshoot at household sizes 2 and 5+ that absorb the redistributed residual).
-    The record moves to reviewed once the owner has read the four manifests. Two items are
-    deliberately NOT blockers and are recorded as gaps instead: arm 2 has no at_home_only reading
-    (row 5 unmeasured for that arm only; arms 0, 1 and 3 have one), and arm 2''s synthesis.output
-    was interrupted so it has no population CSV set.'
+  pending_reason: 'Arms 0-3 of the pre-registered A/B ladder are run and recorded (see
+    validation.metric and validation.runs): arm 1 met all five bounded rows; arm 2 established by
+    measurement, not design argument, that the household stage is what carries the clustering;
+    arm 3 measured the #388 size gate and met all five bounded rows plus both Amendment-1 bounds.
+    Arm 3 also surfaced the escort-coherence cost (2,006 -> 2,574 present children with an absent
+    escorter), which ADR-0110 Amendment 2 / issue #425 closes with a second eligibility gate that
+    is NOW THE PRODUCTION DEFAULT (day_absence_escort_protection_enabled true in
+    configs/base_bs.yml) and has NOT been measured: ARM 4 (pre-registered in Amendment 2, run
+    from a worktree at the #388 merge 00a4a1cc plus the #425 commits so the arm-4 population cache
+    still applies) is outstanding, and until it is recorded the production configuration again has
+    no measured evidence -- the same gap arm 3 closed for Amendment 1. After arm 4, the OWNER''S
+    VERDICT on keeping the two-stage draw with both gates as the default is what moves the record
+    to reviewed. Two items are deliberately NOT blockers and are recorded as gaps: arm 2 has no
+    at_home_only reading (row 5 unmeasured for that arm only), and arm 2''s synthesis.output was
+    interrupted so it has no population CSV set.'
 notes: 'Composes with the commute_day_state feature (docs/registry/features/commute_day_state.yml),
   which carries a one-sentence pointer back to this record for the composition rule -- the rule
   itself lives ONCE, in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
@@ -276,4 +301,20 @@ notes: 'Composes with the commute_day_state feature (docs/registry/features/comm
   residual is now drawn over a 19.24 % smaller eligible pool. Sizes 2-5+ are reported as the
   pre-registered hold-out with no tolerance and all moved upward against arm 1 (6.57 / 3.57 / 4.34 /
   3.82 % for sizes 2/3/4/5+), the mechanical consequence of redistributing the residual the singles
-  no longer receive -- the retained limitation, now measured.'
+  no longer receive -- the retained limitation, now measured.
+
+  Amendment 2 (issue #425, ADR-0110 "Amendment 2" section): a SECOND eligibility gate on the
+  individual stage -- persons with an escort leg on their pre-assignment day
+  (braunschweig.synthesis.escort_duty.escort_person_ids, both trip ends, the state_stage
+  definition) are never drawn absent_individual, because an escort leg evidences presence
+  (ADR-0104 Assumption 4) and the SrV cannot contain "away all day" and "escorted someone" on one
+  person-day; the household stage stays unprotected (a family on holiday takes the child along).
+  Motivated by arm 3''s 2,574 present children with an absent escort-leg household member (arm 1
+  2,006, arm 2 4,095), every one an individual-stage draw. Flag day_absence_escort_protection_enabled,
+  CODE default False (byte-identical to PR #389), CONFIGURED true; synthesis.population.trips is
+  declared as a stage input ONLY when on. ASSUMPTION stated in the ADR: absent persons in the
+  parent bands become disproportionately non-escorters, and the eligible pool shrinks by roughly
+  the escort share (~11 % of persons with trips in arm 3) on top of Amendment 1''s 19.24 %. The
+  pre-registered arm 4 (not yet run) expects n_children_with_absent_escorter = 0 by construction,
+  per-band rates within 1 pp (the row that can break), clustering and singles unchanged from arm 3,
+  and reports the with/without-escort-leg absence split for which no reference exists.'

@@ -47,6 +47,24 @@ unlike the commute-day-state model, which only ever states a *worker*.
    A band whose target cannot be reached because it has no eligible present
    person left (small households already absorbing the whole band) logs a
    WARNING naming the band, rather than silently under-shooting.
+   **Second gate -- escort protection (issue #425, ADR-0110 Amendment 2).**
+   `draw_absence(..., escort_protected_person_ids=...)` removes persons with an
+   escort leg on their pre-assignment day from the eligible pool as well:
+   `eligible = present & size_ok & ~escort_protected`. An escort leg evidences
+   presence at home (ADR-0104 Assumption 4), and the SrV cannot contain "away
+   all day" and "escorted someone" on one person-day. The household stage is
+   deliberately NOT protected -- a household that leaves as a whole takes its
+   escorter along, nobody is stranded. The escort set comes from the pure
+   module `braunschweig/synthesis/escort_duty.py` (`escort_person_ids`, both
+   trip ends, purpose `"escort"` -- the `state_stage` definition; the two
+   existing local `ESCORT_PURPOSE` literals in `state_stage` and
+   `plan_replacement` stay untouched and are pinned equal by
+   `tests/test_escort_duty.py`). Any non-empty set forces the eligible-pool
+   residual expression even at `individual_stage_min_household_size=1`; the
+   `None` default keeps the legacy path byte-identical. The two gates are
+   counted separately (`n_persons_ineligible_household_size`,
+   `n_persons_escort_protected`, per band `n_escort_protected`) while
+   `n_persons_ineligible_individual_stage` keeps its union meaning.
 
 The two stages together hit the committed per-band rates in expectation while
 reproducing the household clustering (55.8 % of absent persons live in a
@@ -82,8 +100,16 @@ not depend on the input frame's row order.
 
 Owns only the synpp plumbing: config keys (`day_absence_enabled`,
 `day_absence_household_stage_enabled`, `day_absence_max_band_deviation_pp`,
-`day_absence_individual_stage_min_household_size`),
-loading the two committed reference tables, and the per-band deviation guard
+`day_absence_individual_stage_min_household_size`,
+`day_absence_escort_protection_enabled`), loading the two committed reference
+tables, the escort set (with escort protection on, `configure()` declares
+`synthesis.population.trips` as an input -- ONLY then, the
+conditional-declaration pattern of `braunschweig.matsim.scenario.population`,
+so the OFF path adds no DAG edge -- and `execute()` hands
+`escort_duty.escort_person_ids(trips)` to the draw; an EMPTY set next to a
+NON-EMPTY trips table WARNS, the "escort purpose is off in the synthetic
+trips" defect class `state_stage` warns about; an inactive gate is never named
+in the log), and the per-band deviation guard
 (bands with `>= 1,000` persons whose realised share deviates from the
 reference by more than `day_absence_max_band_deviation_pp` WARN). With the
 flag off, `_disabled_frame` returns a schema- and dtype-identical frame
