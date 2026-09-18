@@ -56,10 +56,16 @@ unlike the commute-day-state model, which only ever states a *worker*.
    deliberately NOT protected -- a household that leaves as a whole takes its
    escorter along, nobody is stranded. The escort set comes from the pure
    module `braunschweig/synthesis/escort_duty.py` (`escort_person_ids`, both
-   trip ends, purpose `"escort"` -- the `state_stage` definition; the two
-   existing local `ESCORT_PURPOSE` literals in `state_stage` and
-   `plan_replacement` stay untouched and are pinned equal by
-   `tests/test_escort_duty.py`). Any non-empty set forces the eligible-pool
+   trip ends, purpose `"escort"`), which since issue #425 is the SINGLE
+   implementation of that rule: `state_stage._escort_person_ids` and
+   `plan_replacement` both call it and re-export `ESCORT_PURPOSE` from it,
+   each keeping only what is its own (`state_stage` its donor-pool guard).
+   The module is in BOTH stages' `_HELPER_MODULES`, so an edit to the rule
+   devalidates every stage that depends on it, and
+   `tests/test_escort_duty.py` pins the three call sites to the same
+   behaviour -- "stranded children = 0 by construction" holds only while the
+   gate and `plan_replacement`'s metric select the same persons.
+   Any non-empty set forces the eligible-pool
    residual expression even at `individual_stage_min_household_size=1`; the
    `None` default keeps the legacy path byte-identical. The two gates are
    counted separately (`n_persons_ineligible_household_size`,

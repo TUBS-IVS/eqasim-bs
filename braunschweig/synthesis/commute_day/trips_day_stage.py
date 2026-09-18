@@ -47,6 +47,7 @@ from braunschweig.calibration import srv_departure_times as _srv_departure_times
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
 from braunschweig.popsim import plan_validation as _plan_validation
+from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement
 from braunschweig.synthesis.commute_day.plan_replacement import (DepartureTimeSettings,
@@ -74,8 +75,10 @@ _LOG_TAG = "[commute day trips]"
 #: of everything downstream of it -- on a pure formatting change. The price is that a CACHED
 #: stage keeps the pipeline.json entry it wrote when it last ran, which is the correct reading of
 #: a cached stage anyway.)
+# _escort_duty owns the escort-leg rule _plan_replacement reads for its stranded-children
+# diagnostic (#425); hashing _plan_replacement alone would not cover an edit to that rule.
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
-                   _srv_departure_times, _srv_plan_structure, _plan_validation)
+                   _srv_departure_times, _srv_plan_structure, _plan_validation, _escort_duty)
 
 #: Helper modules this stage reaches only through FUNCTION-LEVEL imports, hashed by dotted
 #: NAME because there is no module object at this file's top level to list above.

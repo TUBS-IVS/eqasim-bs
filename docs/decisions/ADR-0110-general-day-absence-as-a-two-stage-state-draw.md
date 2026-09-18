@@ -447,11 +447,19 @@
      EMPTY escort set next to a NON-EMPTY trips table WARNS -- the "escort purpose is off in the
      synthetic trips" defect class `state_stage` already warns about. The escort module is folded
      into the stage's cache token (`_HELPER_MODULES`), so an edit to the escort-leg definition
-     devalidates the stage. The two pre-existing local `ESCORT_PURPOSE` literals in
-     `commute_day.state_stage` and `commute_day.plan_replacement` are deliberately NOT replaced by
-     an import: `plan_replacement` documents the duplication as intentional cross-module
-     avoidance, and touching either module devalidates commute-day stages unrelated to this
-     change; `tests/test_escort_duty.py` pins all three literals equal instead.
+     devalidates the stage. The rule previously existed THREE times -- `escort_duty`,
+     `commute_day.state_stage._escort_person_ids` and an inline mask in
+     `commute_day.plan_replacement` -- each a deliberate cross-module-avoidance choice at the time.
+     Review re-examined that reason and it does not hold here: both `state_stage` and
+     `trips_day_stage` (which hashes `plan_replacement`) recompute in EVERY arm of this ladder, so
+     consolidating costs no extra runtime in the measurement chain. All three now call
+     `escort_duty.escort_person_ids` and re-export `ESCORT_PURPOSE` from it; each keeps only what
+     is genuinely its own (`state_stage` its donor-pool guard, whose "escorting donors exist but
+     nobody escorts" warning is specific to the hard `has_active_escort` match). `escort_duty` is
+     folded into BOTH stages' `_HELPER_MODULES`, so an edit to the rule devalidates every stage
+     depending on it, and `tests/test_escort_duty.py` pins the three call sites to the same
+     behaviour on a shared fixture -- because the "stranded children = 0 by construction" row below
+     holds only while the gate and `plan_replacement`'s metric select the same persons.
   4. **Assumption and cost, stated.** The gate makes absent persons in the parent bands (30-64)
      disproportionately NON-escorters. This is consistent with the data structure (the SrV's
      absent persons have no escort legs) but it is still an ASSUMPTION about who, within a band,
@@ -473,8 +481,14 @@
      -- a phantom escort leg, symmetric to the defect fixed here and reachable for any child in a
      multi-person household. `n_children_with_absent_escorter` does not measure it, so arm 4's
      "0 by construction" row says nothing about it. Escort coherence is therefore IMPROVED, not
-     closed; the reverse case belongs with issue #385 (passive escort coherence) and is named here
-     so no reader takes this amendment for a complete fix.
+     closed. It is NOT covered by issue #385 (passive escort joint location), which closed on
+     2026-09-16 along with its follow-up #409 and solved a different problem -- WHERE a passively
+     escorted child is placed, not WHETHER an escort leg survives when one of its two participants
+     is drawn away. Fixing the reverse case needs the child-to-escort-leg link, which does not
+     exist at draw time (it is established later, by the chain solver) -- the same reason
+     `n_children_with_absent_escorter` is a household-level PROXY rather than an exact count. It is
+     recorded here as an open limitation with no issue attached, so no reader takes this amendment
+     for a complete fix and no one looks for it behind a closed issue.
   5. **Pre-registered arm 4 (server, cached population; not run as part of this record).** Arm 4
      = arm 3 plus this amendment's default (`day_absence_escort_protection_enabled: true`, already
      the base config default at the measurement commit, so no override). Same cache, same seed,
