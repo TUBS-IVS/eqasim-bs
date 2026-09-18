@@ -487,8 +487,20 @@
      is drawn away. Fixing the reverse case needs the child-to-escort-leg link, which does not
      exist at draw time (it is established later, by the chain solver) -- the same reason
      `n_children_with_absent_escorter` is a household-level PROXY rather than an exact count. It is
-     recorded here as an open limitation with no issue attached, so no reader takes this amendment
-     for a complete fix and no one looks for it behind a closed issue.
+     recorded here as an open limitation so no reader takes this amendment for a complete fix.
+
+     **Root cause, found while deciding whether to close it symmetrically (issue #426).** Blocking
+     escorted children from the individual stage would remove the reverse case, but arm 4 shows the
+     real defect is one level down: the draw has only TWO patterns, whole-household and
+     single-person, and no PARTIAL-household pattern (a parent travelling with a child while the
+     rest of the household stays). Lacking it, the individual stage fills the gap by drawing
+     children on their own -- 1,721 of 1,739 individually absent children on arm 4 have a present
+     adult at home, 446 of them under three. A plain ban cannot be the fix either: the household
+     stage alone reaches only ~1.56 % for ages 0-5 against the committed 3.34 %, so the band row
+     would break. The size reference shows the same gap directly (household size 4: `p_all_absent`
+     1.49 % against `p_absent_person` 4.16 %). Issue #426 carries the partial-household draw, and
+     explicitly gates it on first measuring that pattern's size in the SrV microdata -- there is no
+     committed reference for it today, so nothing may be drawn against it yet.
   5. **Pre-registered arm 4 -- RUN on 2026-09-18, manifest
      `general-day-absence-arm4-100pct-2026-09-18`, every row MET.** Arm 4 = arm 3 plus this
      amendment's gate. The measurement base is arm 3's commit `00a4a1cc` plus the #425 changes to

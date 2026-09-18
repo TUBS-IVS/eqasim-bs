@@ -306,8 +306,10 @@ assessment:
     bands falls on non-escorters, and household sizes 2 and 5+ overshoot their reference (6.69 %
     and 3.84 % against 5.87 % and 1.75 %) because the multi-person pool absorbs two redistributed
     residuals; (c) decide whether the REVERSE escort incoherence (692 children on arm 3, ADR-0110
-    Amendment 2 "retained") is closed by a symmetric gate as a further arm or accepted as a
-    documented limitation. The record moves to reviewed on that verdict. Two items are
+    Amendment 2 "retained") is accepted as a documented limitation until issue #426 lands -- the
+    symmetric gate that would close it directly was rejected once arm 4 exposed the root cause
+    (no partial-household draw pattern, so the individual stage draws children alone). The record
+    moves to reviewed on that verdict. Two items are
     deliberately NOT blockers and are recorded as gaps: arm 2 has no at_home_only reading (row 5
     unmeasured for that arm only), and arm 2''s synthesis.output was interrupted so it has no
     population CSV set.'
@@ -357,6 +359,12 @@ notes: 'Composes with the commute_day_state feature (docs/registry/features/comm
   split is REPORTED there with no reference. Retained and stated in the ADR: the REVERSE
   incoherence (an escorted child drawn absent_individual while its escorting parent stays present
   and still makes the escort trip) is NOT covered by this gate -- measured on arm 3 at 692
-  children (484 in band 0-5, 208 in 6-17); a symmetric gate on children in escorter households
-  would remove it by construction at the price of halving the 0-5 residual pool (50.7 % left) and
-  is the owner''s call, not part of #425.'
+  children (484 in band 0-5, 208 in 6-17), 689 on arm 4. A symmetric gate on children in escorter
+  households would remove it at the price of halving the 0-5 residual pool (50.7 % left), and was
+  REJECTED for a better reason than cost: arm 4 exposed the root cause one level down. The draw has
+  only two patterns, whole-household and single-person, and no PARTIAL-household pattern, so the
+  individual stage draws children alone -- 1,721 of 1,739 individually absent children on arm 4
+  have a present adult at home, 446 under three. Banning solo children outright breaks the band row
+  (the household stage alone reaches ~1.56 % for ages 0-5 against 3.34 %). Issue #426 carries the
+  partial-household draw and is explicitly gated on first measuring that pattern in the SrV
+  microdata, since no committed reference for it exists.'
