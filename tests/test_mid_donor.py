@@ -127,10 +127,20 @@ def test_configure_respects_explicit_mid_raw_path():
 
 
 _MID_DIR = "eqasim-data/data/braunschweig/popsim/mid2023_raw"
+#: The three CSVs ``MidSource.load_donor`` actually reads (see its docstring). Guarding on
+#: the DIRECTORY was not enough: the raw MiD B1 microdata is gitignored, so on every checkout
+#: without it the directory exists (empty, or holding only the codebook) while the CSVs do
+#: not, and this test FAILED deep inside the loader instead of skipping -- a data gap that
+#: read as a code defect. Naming the files individually also makes the skip reason say which
+#: one is missing.
+_MID_RAW_FILES = ("MiD2023_Haushalte.csv", "MiD2023_Personen.csv", "MiD2023_Wege.csv")
+_MISSING_MID_RAW_FILES = tuple(
+    name for name in _MID_RAW_FILES if not os.path.isfile(os.path.join(_MID_DIR, name)))
 
 
-@pytest.mark.skipif(not os.path.isdir(_MID_DIR),
-                    reason="needs the committed MiD 2023 raw survey (data-complete env)")
+@pytest.mark.skipif(
+    bool(_MISSING_MID_RAW_FILES),
+    reason=f"needs the MiD 2023 raw survey, missing: {_MISSING_MID_RAW_FILES}")
 def test_execute_on_real_mid_yields_commute_donors():
     class Ctx:
         def config(self, k, d=None):
