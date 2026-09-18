@@ -177,6 +177,7 @@ validation:
   runs:
   - general-day-absence-arm0-100pct-2026-09-09
   - general-day-absence-arm1-100pct-2026-09-09
+  - general-day-absence-arm2-100pct-2026-09-09
   metric: 'ADR-0110''s pre-registered A/B (Consequences section), arms 0 (OFF) and 1 (ON,
     two-stage = base default) run at 100 % on the cached arm-4 population on 2026-09-09; every
     number below is from the two run manifests. ALL FIVE BOUNDED ROWS MET in arm 1: (1) mobility
@@ -192,8 +193,19 @@ validation:
     +0.08, other -0.06). Row 6, REPORTED not targeted: realised absence by household size class
     7.61 / 5.85 / 3.15 / 3.76 / 3.13 % for sizes 1..5+, i.e. singles over- and size-3 households
     under-absent, the limitation ADR-0110 names and issue #388 (arm 3) addresses. Byte identity:
-    the arm-0 trips.csv md5 equals the arm-4 trips.csv md5 (8a46d5ee...). Arm 2 (individual-only
-    sensitivity) is recorded in its own manifest once complete.'
+    the arm-0 trips.csv md5 equals the arm-4 trips.csv md5 (8a46d5ee...). ARM 2 (individual-only
+    sensitivity, day_absence_household_stage_enabled false) is now recorded in
+    general-day-absence-arm2-100pct-2026-09-09 and settles what the household stage buys: it is the
+    ONLY row-3 discriminator in the ladder. Arm 2 misses the clustering band at 24.2 % against arm
+    1 63.7 % (SrV 55.8 %, band 45-65 %), while rows 1, 2 and 4 and the whole at_home_zero
+    participation block sit within 0.07 pp of arm 1 -- the headline metrics cannot see the
+    household stage at all. Two further arm-2 readings: singles absence 5.53 % against arm 1 7.61 %
+    (reference 5.14 %), which isolates the DOUBLE draw on single-person households, not the
+    household stage, as the cause of the #388 defect; and children in a household with an absent
+    escorter 4,095 against arm 1 2,006, i.e. the household stage halves an escort-coherence gap
+    (issue #385) that no pre-registered row measures. Arm 2 is PARTIAL by execution (synthesis.output
+    did not finish; both analysis targets did) and has NO at_home_only reading, so pre-registered
+    row 5 is unmeasured for it.'
   note: 'measured_vs_reference, not behaviourally_validated: rows 1 and 2 are met BY CONSTRUCTION
     (the SrV band rates are the parameters of the draw), so they prove the wiring from the draw
     to the reporting-day view, not predictive power; rows 3, 4 and 5 are the ones the design could
@@ -205,12 +217,22 @@ validation:
     be.'
 assessment:
   status: pending
-  pending_reason: 'Arms 0 and 1 of the pre-registered A/B are measured and recorded (all five
-    bounded rows met, see validation.metric); the sensitivity arm 2 (individual-only draw) and
-    the owner''s verdict on keeping the two-stage draw as the default are outstanding, and arm 3
-    (issue #388, residual only on households of size >= 2) is the announced follow-up for the
-    per-size limitation. The record moves to reviewed once the owner has read the three
-    manifests.'
+  pending_reason: 'Arms 0, 1 and 2 of the pre-registered A/B are measured and recorded (see
+    validation.metric): arm 1 met all five bounded rows, and arm 2 established by measurement --
+    not by design argument -- that the household stage is what carries the clustering. TWO things
+    remain. (1) ARM 3 (issue #388, individual residual only on households of size >=
+    day_absence_individual_stage_min_household_size) has NOT been run, and this is the substantive
+    gap rather than a formality: configs/base_bs.yml sets that key to 2, so PRODUCTION RUNS THE #388
+    BEHAVIOUR, while every recorded arm here was measured at the pre-#388 value 1. The A/B evidence
+    in this record therefore describes a configuration that is no longer the production default,
+    and arm 1 shows exactly the limitation #388 removes (singles 7.61 % against the SrV 5.14 %).
+    Arm 3 must be run from the #388 merge 00a4a1cc, NOT from current main: that merge is 7 commits
+    after the arm-run commit 9184f594 and touches only braunschweig/synthesis/day_absence/
+    {absence,absence_stage}.py in pipeline code, so the arm-4 population cache still applies and
+    arm 1 vs arm 3 isolates the change as ADR-0110 pre-registered; current main is 291 commits away
+    with popsim itself changed, which would both force a full re-synthesis and confound the
+    contrast. (2) The owner''s verdict on keeping the two-stage draw as the default is outstanding.
+    The record moves to reviewed once arm 3 is recorded and the owner has read the four manifests.'
 notes: 'Composes with the commute_day_state feature (docs/registry/features/commute_day_state.yml),
   which carries a one-sentence pointer back to this record for the composition rule -- the rule
   itself lives ONCE, in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
