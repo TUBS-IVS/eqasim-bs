@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -198,9 +200,24 @@ def _full_ctx():
     return FullCtx(cfg, stages)
 
 
+#: Both gitignored inputs this test reads, named INDIVIDUALLY so a skip says which one is
+#: missing. The guard used to name only the DESTATIS table, but ``_inject`` also reaches the
+#: VG250 archive through ``external_workplaces._load_gemeinden`` (the two ``germany.*`` keys
+#: in ``_full_ctx`` above). A checkout that has the committed CSV but not the ~1 GB VG250
+#: download -- the ordinary state of a fresh clone -- therefore FAILED here with
+#: ``DataSourceError: ... DE_VG250.gpkg does not exist`` instead of skipping, and the failure
+#: read as a code defect. The mocked sibling below is the one that runs anywhere.
+_FULL_INJECTION_INPUTS = (
+    "eqasim-data/data/braunschweig/12411-0018_de.csv",
+    "eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip",
+)
+_MISSING_FULL_INJECTION_INPUTS = tuple(
+    path for path in _FULL_INJECTION_INPUTS if not os.path.exists(path))
+
+
 @pytest.mark.skipif(
-    not __import__("os").path.exists("eqasim-data/data/braunschweig/12411-0018_de.csv"),
-    reason="needs committed DESTATIS 12411-0018 table (run on a data-complete env)")
+    bool(_MISSING_FULL_INJECTION_INPUTS),
+    reason=f"needs committed/downloaded inputs, missing: {_MISSING_FULL_INJECTION_INPUTS}")
 def test_injection_produces_education_incommuters():
     frames = si.execute(_full_ctx())
     # enrollment 1000*0.5 = 500, residents 2 -> 498 in-commuters.
