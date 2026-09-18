@@ -178,6 +178,7 @@ validation:
   - general-day-absence-arm0-100pct-2026-09-09
   - general-day-absence-arm1-100pct-2026-09-09
   - general-day-absence-arm2-100pct-2026-09-09
+  - general-day-absence-arm3-100pct-2026-09-18
   metric: 'ADR-0110''s pre-registered A/B (Consequences section), arms 0 (OFF) and 1 (ON,
     two-stage = base default) run at 100 % on the cached arm-4 population on 2026-09-09; every
     number below is from the two run manifests. ALL FIVE BOUNDED ROWS MET in arm 1: (1) mobility
@@ -205,7 +206,27 @@ validation:
     escorter 4,095 against arm 1 2,006, i.e. the household stage halves an escort-coherence gap
     (issue #385) that no pre-registered row measures. Arm 2 is PARTIAL by execution (synthesis.output
     did not finish; both analysis targets did) and has NO at_home_only reading, so pre-registered
-    row 5 is unmeasured for it.'
+    row 5 is unmeasured for it.
+
+    ARM 3 (general-day-absence-arm3-100pct-2026-09-18) completes the ladder and is the ONLY arm that
+    measures the PRODUCTION default: it ran the base config of the #388 merge 00a4a1cc with no flag
+    override, i.e. day_absence_individual_stage_min_household_size 2, while arms 0-2 were all
+    measured at the pre-#388 value 1. Complete (12/12 stages, 1 h 29 min, zero error markers, plus
+    an at_home_only follow-up). ALL FIVE bounded rows MET, and both Amendment-1 bounds MET:
+    (A) singles 5.26 % against the SrV person-level 5.14 % = +0.11 pp (bound +/- 0.6; arm 1 +2.47);
+    (B) clustering 54.4 % against 55.8 % (arm 1 63.7 % at the band''s upper end, arm 2 24.2 %).
+    The household stage drew the SAME 30,690 persons as in arm 1, so the clustering gain is not
+    bought by absenting more households -- arm 1''s excess WAS the singles double-draw, exactly as
+    arm 2 had indicated. Rows 1, 2 and 4 move by at most 0.04 pp against arm 1 (mobility 0.8377 /
+    -0.61 pp; largest per-band deviation 0.06 pp; check-1 0.6374 / -1.37 pp), and row 5 on
+    at_home_only moves at most 0.34 pp against arm 0 (education), matching arm 1''s 0.35 pp. Row 2
+    is the row that could have broken, because the eligibility gate excludes 217,471 persons
+    (19.24 %) from the residual pool so the rate must rise over fewer people to hold the band
+    marginal; it held. TWO COSTS are recorded, neither pre-registered: escort coherence worsens
+    (children with an absent escorter 2,006 -> 2,574; arm 2 had 4,095), further motivating issue
+    #385, and household sizes 2 and 5+ overshoot more than in arm 1 (6.57 % and 3.82 % against
+    5.87 % and 1.75 %) because they absorb the redistributed residual -- the limitation ADR-0110
+    Amendment 1 explicitly retains.'
   note: 'measured_vs_reference, not behaviourally_validated: rows 1 and 2 are met BY CONSTRUCTION
     (the SrV band rates are the parameters of the draw), so they prove the wiring from the draw
     to the reporting-day view, not predictive power; rows 3, 4 and 5 are the ones the design could
@@ -217,22 +238,18 @@ validation:
     be.'
 assessment:
   status: pending
-  pending_reason: 'Arms 0, 1 and 2 of the pre-registered A/B are measured and recorded (see
-    validation.metric): arm 1 met all five bounded rows, and arm 2 established by measurement --
-    not by design argument -- that the household stage is what carries the clustering. TWO things
-    remain. (1) ARM 3 (issue #388, individual residual only on households of size >=
-    day_absence_individual_stage_min_household_size) has NOT been run, and this is the substantive
-    gap rather than a formality: configs/base_bs.yml sets that key to 2, so PRODUCTION RUNS THE #388
-    BEHAVIOUR, while every recorded arm here was measured at the pre-#388 value 1. The A/B evidence
-    in this record therefore describes a configuration that is no longer the production default,
-    and arm 1 shows exactly the limitation #388 removes (singles 7.61 % against the SrV 5.14 %).
-    Arm 3 must be run from the #388 merge 00a4a1cc, NOT from current main: that merge is 7 commits
-    after the arm-run commit 9184f594 and touches only braunschweig/synthesis/day_absence/
-    {absence,absence_stage}.py in pipeline code, so the arm-4 population cache still applies and
-    arm 1 vs arm 3 isolates the change as ADR-0110 pre-registered; current main is 291 commits away
-    with popsim itself changed, which would both force a full re-synthesis and confound the
-    contrast. (2) The owner''s verdict on keeping the two-stage draw as the default is outstanding.
-    The record moves to reviewed once arm 3 is recorded and the owner has read the four manifests.'
+  pending_reason: 'THE PRE-REGISTERED A/B LADDER IS COMPLETE: all four arms are run and recorded
+    (see validation.metric and validation.runs). Arm 1 met all five bounded rows; arm 2 established
+    by measurement, not design argument, that the household stage is what carries the clustering;
+    arm 3 measured the PRODUCTION default (the #388 eligibility gate) and met all five bounded rows
+    plus both Amendment-1 bounds. Only the OWNER''S VERDICT is outstanding -- on keeping the
+    two-stage draw with the size-2 eligibility gate as the default, and on accepting the two
+    recorded costs of the gate (escort coherence 2,006 -> 2,574 children with an absent escorter,
+    and the larger overshoot at household sizes 2 and 5+ that absorb the redistributed residual).
+    The record moves to reviewed once the owner has read the four manifests. Two items are
+    deliberately NOT blockers and are recorded as gaps instead: arm 2 has no at_home_only reading
+    (row 5 unmeasured for that arm only; arms 0, 1 and 3 have one), and arm 2''s synthesis.output
+    was interrupted so it has no population CSV set.'
 notes: 'Composes with the commute_day_state feature (docs/registry/features/commute_day_state.yml),
   which carries a one-sentence pointer back to this record for the composition rule -- the rule
   itself lives ONCE, in braunschweig.synthesis.commute_day.plan_replacement.build_day_trips''s
@@ -251,7 +268,12 @@ notes: 'Composes with the commute_day_state feature (docs/registry/features/comm
   whole eligible pool, not separately per household-size class within it, so draw_absence''s
   by_size_class diagnostic (reference_rate/delta_pp against the newly committed
   p_absent_person_by_size, srv2023_absence_household_by_size.csv) stays REPORTED, never a target,
-  for those sizes. Pre-registered arm 3 (not yet run) compares singles'' realised absence against
-  the SrV person-level rate (5.14 %, +/- 0.6 pp), the household-clustering share against 55.8 %,
-  and the per-band rates (unchanged within 1 pp); sizes 2-5 are reported as a hold-out with no
-  tolerance, per the retained limitation.'
+  for those sizes. Pre-registered arm 3 RAN on 2026-09-18 (manifest
+  general-day-absence-arm3-100pct-2026-09-18, from the #388 merge 00a4a1cc) and MET both of its
+  bounds: singles'' realised absence 5.26 % against the SrV person-level rate 5.14 % (+0.11 pp,
+  bound +/- 0.6 pp, from arm 1''s 7.61 %) and the household-clustering share 54.4 % against 55.8 %
+  (arm 1 63.7 %), with the per-band rates unchanged (largest deviation 0.06 pp) even though the
+  residual is now drawn over a 19.24 % smaller eligible pool. Sizes 2-5+ are reported as the
+  pre-registered hold-out with no tolerance and all moved upward against arm 1 (6.57 / 3.57 / 4.34 /
+  3.82 % for sizes 2/3/4/5+), the mechanical consequence of redistributing the residual the singles
+  no longer receive -- the retained limitation, now measured.'
