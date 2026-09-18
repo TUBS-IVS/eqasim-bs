@@ -234,6 +234,13 @@ config:
   # and any residual on top over-absents singles. 2 (default) = residual only on
   # multi-person households; 1 = the PR #387 behaviour (byte-identical).
   day_absence_individual_stage_min_household_size: 2
+  # Persons with an escort leg in their pre-assignment diary are ineligible for the
+  # INDIVIDUAL residual stage (issue #425, ADR-0110 Amendment 2): an escort leg evidences
+  # presence at home (ADR-0104 Assumption 4), and the SrV cannot contain "away all day" and
+  # "escorted someone" on one person-day. The household stage stays unprotected -- a family
+  # on holiday takes the child along. Declares synthesis.population.trips as a stage input
+  # only when true. false = the PR #389 behaviour (byte-identical).
+  day_absence_escort_protection_enabled: true
   # Departure-time model (ADR-0114). eqasim shifts every person's day by one uniform
   # offset in +/-min(30 min, first departure) to break the survey's reporting grid; that
   # is four times wider than the grid (quarter-hour / 5-minute reports) and flattened the
