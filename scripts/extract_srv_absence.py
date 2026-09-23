@@ -1,13 +1,19 @@
-"""Extract the two committed SrV 2023 full-day absence aggregates (issue #370, sub-project B).
+"""Extract the four committed SrV 2023 full-day absence aggregates (issue #370, sub-project B).
 
 Reads the LOCAL-ONLY SrV 2023 "Braunschweig und RGB" scientific-use microdata (persons,
-households; cp1252, semicolon, decimal comma) and writes two small aggregate tables to
+households; cp1252, semicolon, decimal comma) and writes four small aggregate tables to
 ``--out-dir`` (default ``eqasim-data/data/braunschweig/srv``):
 
     srv2023_absence_by_age_band.csv           (share of persons away from home the whole
                                                reporting day, per age band, GEWICHT_P_ZENSUS)
     srv2023_absence_household_by_size.csv     (share of households in which EVERY member is
                                                away, per household size class, GEWICHT_HH_ZENSUS)
+    srv2023_absence_composition_by_age_band.csv (issue #426: ABSENT persons per age band split
+                                               into whole household away / part away WITH another
+                                               absent adult / part away WITHOUT, GEWICHT_P_ZENSUS)
+    srv2023_absence_partial_subset_size.csv   (issue #426: how many members travel together in a
+                                               PARTIALLY absent household, per size class,
+                                               GEWICHT_HH_ZENSUS)
 
 Both are a VALIDATION-ANCHORED DRAW REFERENCE for the general-day-absence state draw of
 ``braunschweig.synthesis.day_absence`` -- NOT a PopulationSim control target: no synthesis or
@@ -136,11 +142,11 @@ def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, clu
         "#   braunschweig.calibration.srv_absence.clustering_share(prepared) -- the traceable",
         "#   source of the household-clustering figure ADR-0110 cites (issue #370 final-review",
         "#   fix wave, ruling R12).",
-        "# ASSUMPTION: household size = the count of DELIVERED persons per HHNR in",
-        "#   SrV2023_Personen.csv, not a dedicated household-size variable from",
-        "#   SrV2023_Haushalte.csv; verified equal to V_ANZ_PERS for all 8,106 households on",
-        "#   2026-09-09 (ad-hoc check against the local raw file, not reproduced by committed",
-        "#   code).",
+        "# Household size = the count of DELIVERED persons per HHNR in SrV2023_Personen.csv;",
+        "#   VERIFIED IN CODE for this run: build_absence_household_by_size raises unless that count",
+        "#   equals SrV2023_Haushalte.csv's V_ANZ_PERS for every household",
+        "#   (srv_absence.check_household_roster; %d/%d households checked, 0 mismatches)."
+        % (int(table["n_households_unweighted"].sum()), int(table["n_households_unweighted"].sum())),
         "# Household size classes: 1..%d, class %d = '%d or more' members."
         % (A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP),
         "# Columns: size_class, n_households_unweighted, n_all_absent_unweighted, p_all_absent",
@@ -161,13 +167,19 @@ def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, clu
         "#   columns answer different questions and are not expected to be numerically close. A",
         "#   size class with no persons is still emitted, with n_persons_unweighted=0 and a NaN",
         "#   share (never dropped).",
+        "# Additional columns (issue #426, HOUSEHOLD-level, GEWICHT_HH_ZENSUS, added on top of the",
+        "#   seven columns above, which are UNCHANGED): n_partial_absent_unweighted, p_partial_absent",
+        "#   -- the weighted share of the size class's households in which SOME but not ALL delivered",
+        "#   members are away (0 < n_absent < n). Together with p_all_absent this partitions the",
+        "#   class: p_none = 1 - p_all_absent - p_partial_absent. Size class 1 is 0 by construction.",
     ]
     lines += ["#   size %d: n_households_unweighted=%d, p_all_absent=%s, n_persons_unweighted=%d, "
-              "p_absent_person=%s"
+              "p_absent_person=%s, p_partial_absent=%s"
               % (int(row["size_class"]), int(row["n_households_unweighted"]),
                  "NaN" if pd.isna(row["p_all_absent"]) else "%.4f" % row["p_all_absent"],
                  int(row["n_persons_unweighted"]),
-                 "NaN" if pd.isna(row["p_absent_person"]) else "%.4f" % row["p_absent_person"])
+                 "NaN" if pd.isna(row["p_absent_person"]) else "%.4f" % row["p_absent_person"],
+                 "NaN" if pd.isna(row["p_partial_absent"]) else "%.4f" % row["p_partial_absent"])
               for _, row in table.iterrows()]
     lines += [
         "# Rows: %d size classes." % len(table),
@@ -176,6 +188,86 @@ def _size_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, clu
         % A.HOUSEHOLD_SIZE_CLASS_TOP,
         "#   n_absent_persons_unweighted <= n_persons_unweighted per row; sum(n_persons_unweighted)",
         "#   equals the by-age table's 'all' row n_unweighted.",
+        "#   n_all_absent_unweighted + n_partial_absent_unweighted <= n_households_unweighted per row;",
+        "#   size class 1 has n_partial_absent_unweighted 0.",
+    ]
+    return lines
+
+
+def _composition_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
+    """Provenance header for the absence-composition-by-age-band table (issue #426)."""
+    lines = _common_header(A.ABSENCE_COMPOSITION_TABLE, diagnostics, source_commit)
+    children = table[table["band"] == A.CHILDREN_ROW].iloc[0]
+    n_children = int(children["n_absent_unweighted"])
+    interval_lines = []
+    for pattern, count_column, share_column in zip(A.PATTERNS, A.COMPOSITION_COUNT_COLUMNS, A.COMPOSITION_SHARE_COLUMNS):
+        low, high = A.wilson_interval(int(children[count_column]), n_children)
+        interval_lines.append("#   %s: %d/%d unweighted, p_weighted=%s, Wilson 95%% on the unweighted counts [%.4f, %.4f]"
+                              % (pattern, int(children[count_column]), n_children,
+                                 "NaN" if pd.isna(children[share_column]) else "%.4f" % children[share_column],
+                                 low, high))
+    lines += [
+        "# ROLE (issue #426): ACCEPTANCE REFERENCE for a partial-household absence pattern. The '%s'"
+        % A.CHILDREN_ROW,
+        "#   children row is the row the criterion is evaluated on; the seven age bands are DIAGNOSTIC",
+        "#   ONLY (thin cells). Pre-registered bound: a model share is accepted when it lies inside the",
+        "#   Wilson 95 % interval of this row's UNWEIGHTED counts (ASSUMPTION: the design effect of the",
+        "#   expansion weights is unknown, so the interval is computed on unweighted counts and the",
+        "#   weighted point estimate is reported beside it). Nothing in the pipeline reads this table.",
+        "# Patterns (braunschweig.calibration.srv_absence.classify_absence_composition), evaluated per",
+        "#   ABSENT person on their OWN household: whole_household = every delivered member absent;",
+        "#   partial_with_absent_adult = not every member absent AND at least one OTHER member aged",
+        "#   >= %d absent; partial_no_absent_adult = not every member absent and no other adult absent."
+        % A.ADULT_MIN_AGE,
+        "#   Child = age <= %d, adult = age >= %d; a person without a valid age is counted as a member,"
+        % (A.CHILD_MAX_AGE, A.ADULT_MIN_AGE),
+        "#   never as an adult, and appears in the 'all' row only. A child away 'without an absent",
+        "#   adult' of its household may still be accompanied (class trip, grandparents, the other",
+        "#   parent) -- the table measures the HOUSEHOLD pattern, not supervision.",
+        "# Columns: band (%s + '%s' + 'all'), age_min, age_max (INCLUSIVE), n_absent_unweighted,"
+        % (list(A.AGE_BAND_LABELS), A.CHILDREN_ROW),
+        "#   %s (unweighted counts), %s (GEWICHT_P_ZENSUS-weighted shares of the row's ABSENT persons;"
+        % (list(A.COMPOSITION_COUNT_COLUMNS), list(A.COMPOSITION_SHARE_COLUMNS)),
+        "#   the three sum to 1 per row, NaN when the row has no absent person).",
+        "# '%s' row (n_absent_unweighted=%d):" % (A.CHILDREN_ROW, n_children),
+    ] + interval_lines + [
+        "# Rows: %d bands + '%s' + 'all' = %d total." % (len(A.AGE_BAND_LABELS), A.CHILDREN_ROW, len(table)),
+        "# Invariants (checked before writing, the extraction raises on a violation): exactly the rows",
+        "#   above, in that order; pattern counts sum to n_absent_unweighted; shares in [0, 1] and",
+        "#   summing to 1 in every populated row; the 'all' row's n_absent_unweighted equals the",
+        "#   by-age table's 'all' row n_absent_unweighted.",
+    ]
+    return lines
+
+
+def _partial_subset_header(table: pd.DataFrame, by_size: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
+    """Provenance header for the partial-subset-size table (issue #426)."""
+    lines = _common_header(A.ABSENCE_PARTIAL_SUBSET_TABLE, diagnostics, source_commit)
+    lines += [
+        "# ROLE (issue #426): sizes the 'a SUBSET of the household travels together' pattern for a",
+        "#   future partial-household draw. Nothing in the pipeline reads this table today.",
+        "# Universe of rows: PARTIALLY absent households only (0 < n_absent < n, the by-size table's",
+        "#   n_partial_absent_unweighted per size class); size class 1 cannot be partial and has no row.",
+        "# Columns: size_class (2..%d, %d = '%d or more' members), n_absent_members (1..%d, %d = '%d or"
+        % (A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP, A.HOUSEHOLD_SIZE_CLASS_TOP,
+           A.PARTIAL_SUBSET_TOP, A.PARTIAL_SUBSET_TOP, A.PARTIAL_SUBSET_TOP),
+        "#   more'; only k <= size_class - 1 rows exist), n_households_unweighted, share_within_partial",
+        "#   (GEWICHT_HH_ZENSUS-weighted share among the class's partially absent households; NaN when",
+        "#   the class has no partial household). Every (class, k) row is emitted even when empty.",
+    ]
+    by_size_partial = by_size.set_index("size_class")["n_partial_absent_unweighted"]
+    for size_class, group in table.groupby("size_class"):
+        lines.append("#   size %d: n_partial=%d; " % (int(size_class), int(by_size_partial.loc[size_class]))
+                     + ", ".join("k=%d: %d (%s)" % (int(r["n_absent_members"]), int(r["n_households_unweighted"]),
+                                                    "NaN" if pd.isna(r["share_within_partial"])
+                                                    else "%.4f" % r["share_within_partial"])
+                                 for _, r in group.iterrows()))
+    lines += [
+        "# Rows: %d." % len(table),
+        "# Invariants (checked before writing, the extraction raises on a violation): exactly the",
+        "#   (size_class, n_absent_members) rows above; shares in [0, 1] and summing to 1 within every",
+        "#   populated class; per class, the row counts sum to the by-size table's",
+        "#   n_partial_absent_unweighted.",
     ]
     return lines
 
@@ -207,13 +299,19 @@ def main(argv=None) -> int:
     prepared, diagnostics = A.prepare_absence_persons(persons)
     by_age = A.build_absence_by_age_band(prepared)
     by_size = A.build_absence_household_by_size(prepared, households)
+    composition = A.build_absence_composition_by_band(prepared)
+    partial_subset = A.build_absence_partial_subset_size(prepared, households)
     clustering = A.clustering_share(prepared)
-    A.check_invariants(by_age, by_size)
+    A.check_invariants(by_age, by_size, composition, partial_subset)
     logger.info("invariants passed; diagnostics: %s; clustering: %s", diagnostics, clustering)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE, _age_header(by_age, diagnostics, args.source_commit))
     _write(by_size, args.out_dir / A.ABSENCE_HOUSEHOLD_TABLE,
-          _size_header(by_size, diagnostics, args.source_commit, clustering))
+           _size_header(by_size, diagnostics, args.source_commit, clustering))
+    _write(composition, args.out_dir / A.ABSENCE_COMPOSITION_TABLE,
+           _composition_header(composition, diagnostics, args.source_commit))
+    _write(partial_subset, args.out_dir / A.ABSENCE_PARTIAL_SUBSET_TABLE,
+           _partial_subset_header(partial_subset, by_size, diagnostics, args.source_commit))
     return 0
 
 
