@@ -101,3 +101,13 @@ def test_compare_composition_raises_on_a_reference_with_missing_rows():
     model = M.model_absence_composition_by_band(_persons())
     with pytest.raises(ValueError, match="rows"):
         M.compare_composition(model, _reference_with_children_row(73, 35, 12, 26).iloc[:-1])
+
+
+@pytest.mark.parametrize("bad_age", ["unknown", None, -1])
+def test_persons_to_absence_frame_raises_on_an_invalid_age(bad_age):
+    """Pipeline ages must be valid: a non-numeric, missing or negative age is a pipeline defect,
+    never silently coerced to NaN (which would drop the person from every band)."""
+    bad = _persons().astype({"age": object}); bad.loc[1, "age"] = bad_age
+    with pytest.raises(ValueError, match="age") as error:
+        M.persons_to_absence_frame(bad)
+    assert "2" in str(error.value)                     # the offending person_id is named

@@ -41,8 +41,10 @@ def persons_to_absence_frame(persons: pd.DataFrame) -> pd.DataFrame:
     """Persons table -> the ``prepared``-shaped frame the srv_absence builders consume.
 
     Raises when the state column is missing (``day_absence_state`` is written only with
-    ``day_absence_enabled`` true), when a state is not one of the draw's states, or when NOBODY is
-    absent -- an empty composition must never pass for a measurement."""
+    ``day_absence_enabled`` true), when a state is not one of the draw's states, when an age is
+    non-numeric, missing or negative (pipeline ages must be valid; silently coercing them would
+    drop persons from every band), or when NOBODY is absent -- an empty composition must never
+    pass for a measurement."""
     missing = [column for column in MODEL_PERSON_COLUMNS if column not in persons.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} persons table lacks column(s) {missing}; day_absence_state exists in "
@@ -57,6 +59,11 @@ def persons_to_absence_frame(persons: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"{_LOG_TAG} no absent person among {len(persons)} rows -- the draw is off or "
                          "broken, there is nothing to compose")
     age = pd.to_numeric(persons["age"], errors="coerce")
+    invalid_age = age.isna() | (age < 0)
+    if invalid_age.any():
+        examples = persons.loc[invalid_age.to_numpy(), "person_id"].head(5).tolist()
+        raise ValueError(f"{_LOG_TAG} {int(invalid_age.sum())} person(s) have a non-numeric, missing or negative "
+                         f"age; pipeline ages must be valid (example person_ids {examples})")
     frame = pd.DataFrame({"hhnr": persons["household_id"].to_numpy(), "pnr": persons["person_id"].to_numpy(),
                           "age": age.to_numpy(), "weight": 1.0, "absent": absent})
     frame["band"] = A.age_band(frame["age"]).to_numpy()

@@ -256,7 +256,8 @@ def _composition_header(table: pd.DataFrame, diagnostics: dict, source_commit: s
         "# Invariants (checked before writing, the extraction raises on a violation): exactly the rows",
         "#   above, in that order; pattern counts sum to n_absent_unweighted; shares in [0, 1] and",
         "#   summing to 1 in every populated row; the 'all' row's n_absent_unweighted equals the",
-        "#   by-age table's 'all' row n_absent_unweighted.",
+        "#   by-age table's 'all' row n_absent_unweighted; every count column of rows 0-5 + 6-17",
+        "#   equals the '%s' row (a negative, i.e. missing, age code is in neither)." % A.CHILDREN_ROW,
     ]
     return lines
 
@@ -319,9 +320,12 @@ def main(argv=None) -> int:
     households = pd.read_csv(households_path, usecols=A.HOUSEHOLD_COLUMNS, **CSV_READ_KWARGS)
     logger.info("read %d persons, %d households", len(persons), len(households))
     prepared, diagnostics = A.prepare_absence_persons(persons)
-    n_roster_checked = A.check_household_roster(A.household_absence_patterns(prepared), households)
     by_age = A.build_absence_by_age_band(prepared)
+    # The by-size builder runs FIRST: it attaches the household weights (a household missing from
+    # the household file raises "no row / weight" there) and then runs the roster guard itself;
+    # the explicit call below only yields the guard's own count for the provenance header.
     by_size = A.build_absence_household_by_size(prepared, households)
+    n_roster_checked = A.check_household_roster(A.household_absence_patterns(prepared), households)
     composition = A.build_absence_composition_by_band(prepared)
     partial_subset = A.build_absence_partial_subset_size(prepared, households)
     clustering = A.clustering_share(prepared)

@@ -275,13 +275,18 @@ def _composition_row(label: str, age_min: int, age_max: int, group: pd.DataFrame
 def build_absence_composition_by_band(prepared: pd.DataFrame) -> pd.DataFrame:
     """Per age band + the ``0-17`` children aggregate + ``all``: counts and GEWICHT_P_ZENSUS-weighted
     shares of ABSENT persons per pattern. The three shares partition each row (sum to 1 unless
-    the row has no absent person, then all NaN)."""
+    the row has no absent person, then all NaN).
+
+    The children row takes ``0 <= age <= CHILD_MAX_AGE``: the SrV delivery encodes a missing age as
+    a NEGATIVE code, which is not a valid age, so such a person falls into no band and not into
+    ``0-17`` either -- they appear in the ``all`` row only (and ``0-5`` + ``6-17`` = ``0-17``)."""
     classified = classify_absence_composition(prepared)
     rows = []
     for band in AGE_BAND_LABELS:
         lo, hi = AGE_BAND_BOUNDS[band]
         rows.append(_composition_row(band, lo, hi, classified[classified["band"] == band]))
-    rows.append(_composition_row(CHILDREN_ROW, 0, CHILD_MAX_AGE, classified[classified["age"] <= CHILD_MAX_AGE]))
+    is_child = (classified["age"] >= 0) & (classified["age"] <= CHILD_MAX_AGE)
+    rows.append(_composition_row(CHILDREN_ROW, 0, CHILD_MAX_AGE, classified[is_child]))
     rows.append(_composition_row(ALL_BAND, 0, 200, classified))
     table = pd.DataFrame(rows, columns=COMPOSITION_COLUMNS)
     children = table[table["band"] == CHILDREN_ROW].iloc[0]
@@ -314,16 +319,18 @@ def build_absence_partial_subset_size(prepared: pd.DataFrame, households: pd.Dat
     return pd.DataFrame(rows, columns=PARTIAL_SUBSET_COLUMNS)
 
 
-def wilson_interval(k: int, n: int, z: float = 1.959964) -> tuple:
-    """Wilson score interval for a binomial share k/n (default 95 %). ``(nan, nan)`` for n == 0.
+def wilson_interval(k: int, n: int, z: float = 1.959964) -> tuple[float, float]:
+    """Wilson score interval for a binomial share k/n (default 95 %). ``(nan, nan)`` for
+    k == n == 0; raises when k is outside ``[0, n]`` (checked first, so ``k > 0`` with ``n == 0``
+    raises rather than returning NaN).
 
     The pre-registered acceptance bound of issue #426 for thin cells: computed on UNWEIGHTED
     counts because the design effect of the expansion weights is unknown (ASSUMPTION, stated in
     every consumer)."""
-    if n <= 0:
-        return (float("nan"), float("nan"))
     if k < 0 or k > n:
         raise ValueError(f"{_LOG_TAG} wilson_interval: k={k} must satisfy 0 <= k <= n={n}")
+    if n <= 0:
+        return (float("nan"), float("nan"))
     share = k / n
     denominator = 1.0 + z * z / n
     centre = (share + z * z / (2.0 * n)) / denominator
@@ -414,6 +421,15 @@ def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame, composition: p
         counts = composition[list(COMPOSITION_COUNT_COLUMNS)].sum(axis=1)
         if (counts != composition["n_absent_unweighted"]).any():
             raise ValueError(f"{_LOG_TAG} composition: pattern counts do not sum to n_absent_unweighted")
+        # The children row is exactly the union of the two child bands (a negative age code is in
+        # neither), so every count column must reconcile: 0-5 + 6-17 == 0-17.
+        by_band = composition.set_index("band")
+        for column in ("n_absent_unweighted", *COMPOSITION_COUNT_COLUMNS):
+            bands_sum = int(by_band.loc["0-5", column]) + int(by_band.loc["6-17", column])
+            children_count = int(by_band.loc[CHILDREN_ROW, column])
+            if bands_sum != children_count:
+                raise ValueError(f"{_LOG_TAG} composition: {column} of rows 0-5 + 6-17 = {bands_sum} does not "
+                                 f"equal the {CHILDREN_ROW} row's {children_count}")
         populated = composition[composition["n_absent_unweighted"] > 0]
         shares = populated[list(COMPOSITION_SHARE_COLUMNS)]
         if ((shares < 0) | (shares > 1)).any().any():

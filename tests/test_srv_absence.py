@@ -333,6 +333,21 @@ def test_composition_by_band_rows_children_row_and_shares():
     assert row.loc[A.ALL_BAND, "p_whole_household"] == pytest.approx(3 / 7)
 
 
+def test_composition_negative_age_code_counts_in_all_but_in_no_band_and_not_in_children_row():
+    """SrV encodes a missing age as a NEGATIVE code (e.g. -10): such an absent person belongs to
+    the 'all' row only -- neither a band nor the '0-17' children row may count them."""
+    persons = pd.concat([_persons_with_partial_households(), pd.DataFrame({
+        "HHNR": [7], "PNR": [1], "V_ALTER": [-10], "E_ANZ_WEGE": [-7],
+        "GEWICHT_P_ZENSUS": [1.0], "MITTL_WERKTAG": [1]})], ignore_index=True)
+    prepared, _ = A.prepare_absence_persons(persons)
+    row = A.build_absence_composition_by_band(prepared).set_index("band")
+    assert row.loc[A.ALL_BAND, "n_absent_unweighted"] == 8                      # 7 + the missing-age person
+    assert row.loc[A.ALL_BAND, "n_whole_household_unweighted"] == 4             # single-person household, away
+    assert int(row.loc[list(A.AGE_BAND_LABELS), "n_absent_unweighted"].sum()) == 7   # in no band
+    assert row.loc[A.CHILDREN_ROW, "n_absent_unweighted"] == 2                  # NOT a child
+    assert row.loc[A.CHILDREN_ROW, "n_whole_household_unweighted"] == 0
+
+
 def test_composition_shares_are_person_weighted():
     persons = _persons_with_partial_households()
     persons.loc[(persons["HHNR"] == 4) & (persons["PNR"] == 2), "GEWICHT_P_ZENSUS"] = 3.0   # child 10
@@ -388,6 +403,10 @@ def test_wilson_interval_edge_cases():
     assert np.isnan(low) and np.isnan(high)
     with pytest.raises(ValueError, match="k"):
         A.wilson_interval(5, 4)
+    with pytest.raises(ValueError, match="k"):          # k is validated before the n == 0 early return
+        A.wilson_interval(5, 0)
+    with pytest.raises(ValueError, match="k"):
+        A.wilson_interval(-1, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -426,3 +445,15 @@ def test_invariants_reject_subset_counts_that_do_not_reconcile_with_by_size():
     broken = partial_subset.copy(); broken.loc[0, "n_households_unweighted"] = 7   # class 2, k=1
     with pytest.raises(ValueError, match="n_partial_absent_unweighted"):
         A.check_invariants(by_age, by_size, composition, broken)
+
+
+def test_invariants_reject_a_children_row_that_is_not_the_sum_of_its_two_bands():
+    by_age, by_size, composition, partial_subset = _all_tables()
+    broken = composition.copy()
+    children = broken["band"] == A.CHILDREN_ROW
+    # keep the row internally consistent (pattern counts still sum to n_absent) so only the
+    # 0-5 + 6-17 = 0-17 reconciliation can catch it
+    broken.loc[children, "n_absent_unweighted"] += 1
+    broken.loc[children, "n_whole_household_unweighted"] += 1
+    with pytest.raises(ValueError, match="0-17"):
+        A.check_invariants(by_age, by_size, broken, partial_subset)
