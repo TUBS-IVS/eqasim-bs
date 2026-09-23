@@ -297,10 +297,17 @@ validation:
     be.'
 assessment:
   status: reviewed
-  by: Lasse Bienzeisler with Claude (Opus 5)
-  date: '2026-09-18'
-  source: ADR-0110 with Amendments 1 and 2; run manifests general-day-absence-arm{0,1,2,3,4}-100pct
-  note: 'OWNER''S VERDICT RECORDED 2026-09-18, on the complete pre-registered A/B ladder: arm 1
+  by: Lasse Bienzeisler with Claude (Fable 5.1)
+  date: '2026-09-23'
+  source: ADR-0110 with Amendments 1, 2 and 3; run manifests general-day-absence-arm{0,1,2,3,4}-100pct (arm 4 incl. the 2026-09-23 composition row)
+  note: 'RE-ASSESSED 2026-09-23 after the issue-#426 measurement (ADR-0110 Amendment 3): the code
+    change since 2026-09-18 is measurement-only -- new builders in
+    braunschweig/calibration/srv_absence.py, the extended scripts/extract_srv_absence.py, the new
+    braunschweig/analysis/synthesis/absence_composition.py and its CLI -- while the draw in
+    braunschweig/synthesis/day_absence is unchanged, so parts (a) and (b) of the verdict stand as
+    recorded; part (c) was rewritten with the traceable arm-4 composition numbers and the owner''s
+    2026-09-23 decision that #426 is judged by the SrV composition quota, not by a ban on
+    solo-absent children. ORIGINAL VERDICT FOLLOWS. OWNER''S VERDICT RECORDED 2026-09-18, on the complete pre-registered A/B ladder: arm 1
     (two-stage draw) met all five bounded rows; arm 2 established BY MEASUREMENT, not design
     argument, that the household stage is what carries the observed clustering (24.2 % against
     arm 1''s 63.7 %) while every headline metric stayed within 0.07 pp -- those metrics cannot see
