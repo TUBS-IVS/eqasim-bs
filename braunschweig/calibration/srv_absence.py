@@ -130,12 +130,14 @@ def _attach_household_weight(per_hh: pd.DataFrame, households: pd.DataFrame) -> 
     return per_hh
 
 
-def check_household_roster(per_hh: pd.DataFrame, households: pd.DataFrame) -> None:
+def check_household_roster(per_hh: pd.DataFrame, households: pd.DataFrame) -> int:
     """Raise unless every household's DELIVERED person count equals the household file's V_ANZ_PERS.
 
     The by-size tables define household size as the number of delivered persons per HHNR. That is
     an assumption about the delivery's roster completeness; this guard turns the former ad-hoc
-    check into committed code and logs the verified count as an explicit rate."""
+    check into committed code and logs the verified count as an explicit rate. Returns the number
+    of households checked (``len(per_hh)``), so a caller can cite the guard's OWN count in a
+    provenance header instead of inferring it from an unrelated total."""
     roster = households[["HHNR", "V_ANZ_PERS"]].rename(columns={"HHNR": "hhnr"})
     merged = per_hh[["hhnr", "n"]].merge(roster, on="hhnr", how="left")
     declared = pd.to_numeric(merged["V_ANZ_PERS"], errors="coerce")
@@ -147,6 +149,7 @@ def check_household_roster(per_hh: pd.DataFrame, households: pd.DataFrame) -> No
                          f"examples {examples}")
     logger.info("%s household roster: %d/%d households (100.0%%) have delivered persons == V_ANZ_PERS",
                 _LOG_TAG, len(merged), len(merged))
+    return int(len(merged))
 
 
 def prepare_absence_persons(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:

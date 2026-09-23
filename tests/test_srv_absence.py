@@ -281,6 +281,15 @@ def test_build_absence_household_by_size_names_a_household_missing_from_the_hous
         A.build_absence_household_by_size(prepared, _households()[_households()["HHNR"] != 3])
 
 
+def test_check_household_roster_returns_the_number_of_households_it_checked():
+    """The guard's return value is the caller's own source for how many households it verified
+    (issue #426 review: a provenance header must cite the guard's own count, not an inferred
+    N/N from an unrelated total)."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    per_hh = A.household_absence_patterns(prepared)
+    assert A.check_household_roster(per_hh, _households()) == 3
+
+
 # ---------------------------------------------------------------------------
 # Composition of ABSENT persons by household pattern (issue #426): whole_household /
 # partial_with_absent_adult / partial_no_absent_adult -- a partition per age band, plus the
