@@ -128,6 +128,59 @@ def income_class_from_eur(eur_values, class_midpoint_eur: dict[str, float]) -> n
     return np.asarray(labels_sorted, dtype=object)[idx]
 
 
+# Labels of the three per-Kreis lookups of build_kreis_income_targets, and what a
+# fill of EVERY in-scope Kreis with 1.0 means for the targets it produces.
+_LOOKUP_INKAR_SCALE = "INKAR scale"
+_LOOKUP_MEAN_SIZE = "mean household size"
+_LOOKUP_HH_COUNT = "household count"
+_ALL_FILLED_CONSEQUENCE = {
+    _LOOKUP_INKAR_SCALE: "Every Kreis enters at the INKAR average, so the INKAR "
+                         "between-Kreis relativity is NOT applied.",
+    _LOOKUP_MEAN_SIZE: "The household-size construct correction is NOT applied.",
+    _LOOKUP_HH_COUNT: "The mean-1 normalisation is unweighted instead of "
+                      "household-count-weighted.",
+}
+
+
+def _log_target_lookup_coverage(scope, lookups) -> None:
+    """Log the primary-versus-fallback coverage of the per-Kreis target lookups.
+
+    ``scope`` is the list of in-scope Kreis keys (5-digit ars5 strings); ``lookups`` is a
+    list of ``(label, mapping)`` pairs keyed by ars5. A Kreis absent from a mapping is
+    filled with 1.0 by the caller, which is a fallback (CLAUDE.md "no silent
+    fallbacks"): one INFO line summarises every lookup as an explicit rate, and each
+    lookup with at least one fill gets a WARNING naming the missing Kreise. A fill of
+    every in-scope Kreis almost always means a key-format mismatch; its WARNING states
+    what the targets then lose. Side effects: logging only.
+    """
+    n_total = len(scope)
+    if n_total == 0:
+        logger.warning(
+            "[income_kreis_control] INKAR Kreis targets: no Kreis in scope, so no "
+            "per-Kreis target is built.")
+        return
+    summary = []
+    for label, lookup in lookups:
+        missing = [k for k in scope if k not in lookup]
+        n_fallback = len(missing)
+        n_primary = n_total - n_fallback
+        summary.append("%s primary %d/%d (%.1f%%), fallback %d (%.1f%%)" % (
+            label, n_primary, n_total, 100.0 * n_primary / n_total,
+            n_fallback, 100.0 * n_fallback / n_total))
+        if n_fallback == 0:
+            continue
+        consequence = (" " + _ALL_FILLED_CONSEQUENCE[label]) if n_fallback == n_total else ""
+        logger.warning(
+            "[income_kreis_control] INKAR Kreis target fallback: %s primary %d/%d "
+            "(%.1f%%), fallback %d (%.1f%%) filled with 1.0. Missing Kreise: %s.%s "
+            "Check that the lookup's ars5 keys match the in-scope Kreis keys "
+            "(5-digit, zero-padded strings).",
+            label, n_primary, n_total, 100.0 * n_primary / n_total,
+            n_fallback, 100.0 * n_fallback / n_total, missing, consequence)
+    logger.info("[income_kreis_control] INKAR Kreis target lookups over %d Kreise: %s.",
+                n_total, "; ".join(summary))
+
+
 def build_kreis_income_targets(
     inkar_df: pd.DataFrame,
     kreis_stats_df: pd.DataFrame,
@@ -143,6 +196,12 @@ def build_kreis_income_targets(
 
     Region-relative on purpose: imposing only the BETWEEN-Kreis relativity preserves
     the region-wide income level set by the MiD draw. Single Kreis -> rf_k == 1 (no-op).
+
+    A Kreis missing from one of the three lookups (INKAR scale, mean household size,
+    household count) is filled with 1.0. The fill is a fallback, not a result: the
+    primary-versus-fallback count of every lookup is logged by
+    ``_log_target_lookup_coverage`` and every fill is warned with the Kreis named.
+    Side effects: logging only; the returned factors do not depend on it.
     """
     scope = [str(a) for a in in_scope_ars5]
     scale = dict(zip(inkar_df["ars5"].astype(str), inkar_df["scale"].astype(float)))
@@ -150,6 +209,14 @@ def build_kreis_income_targets(
                          kreis_stats_df["mean_size"].astype(float)))
     hh_count = dict(zip(kreis_stats_df["ars5"].astype(str),
                         kreis_stats_df["hh_count"].astype(float)))
+
+    # The mean size is read only under the household-size correction, so only then is
+    # its coverage reported.
+    lookups = [(_LOOKUP_INKAR_SCALE, scale)]
+    if hhsize_correct:
+        lookups.append((_LOOKUP_MEAN_SIZE, mean_size))
+    lookups.append((_LOOKUP_HH_COUNT, hh_count))
+    _log_target_lookup_coverage(scope, lookups)
 
     raw, weight = {}, {}
     for k in scope:
