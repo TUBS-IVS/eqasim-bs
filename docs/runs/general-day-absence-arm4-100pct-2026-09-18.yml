@@ -238,6 +238,42 @@ validation:
     it would shrink the present residual pool of band 0-5 to 50.7 % and of band 6-17 to 67.6 %.
     That trade-off is the owner''s decision and is not part of #425.'
   artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/run_log_excerpts.txt'
+- metric: 'MEASURED AFTER THE FACT (2026-09-23, issue #426, NOT pre-registered for this arm) -- composition
+    of ABSENT children (age <= 17) by household pattern: whole household away / part of the household
+    away WITH another absent adult / part away with NO other absent adult
+    (braunschweig.analysis.synthesis.absence_composition via scripts/measure_absence_composition.py at
+    commit 0f6c49dd, on this run''s persons.csv, 1,130,516 rows, md5 fab2c4028a62190a199e4705c2a403cb)'
+  reference: 'eqasim-data/data/braunschweig/srv/srv2023_absence_composition_by_age_band.csv, row 0-17
+    (n_absent_unweighted 73): whole_household 35 (55.17 % weighted),
+    partial_with_absent_adult 12 (18.88 %), partial_no_absent_adult 26 (25.95 %);
+    pre-registered bound (ADR-0110 Amendment 3): the model share must lie inside the Wilson 95 % interval
+    of the UNWEIGHTED counts -- [36.88, 59.22] %, [9.66, 26.57] %,
+    [25.60, 47.07] % (ASSUMPTION: unknown design effect of the expansion weights)'
+  result: 'Model 0-17 (n_absent 4458): whole_household 61.33 % (OUTSIDE),
+    partial_with_absent_adult 2.40 % (OUTSIDE), partial_no_absent_adult 36.27 % (INSIDE).
+    The two-stage draw can produce the partial-with-adult pattern only by chance co-draws of two
+    individuals in one household, which is why that share is small (2.40 %) -- the structural gap issue
+    #426 is about, now sized against a committed reference. This measurement REPLACES the ad-hoc figure
+    "1,721 of 1,739 individually absent children have a present adult at home, 446 under three" quoted
+    for this arm in issue #426 and in ADR-0110 Amendment 2 point 4: that figure appears in no manifest
+    and was produced by no committed code, and it conditioned on the INDIVIDUAL stage only (1,739),
+    whereas the comparable quantity is the composition of ALL absent children (4458 here). It
+    also corrects the premise attached to it -- the SrV contains children absent without an absent
+    co-resident adult (26 of 73), so a solo-absent child is not a combination the survey
+    cannot contain. Not a validation of the draw: one row, 73 survey children, wide intervals.
+    Caveat on the bound: (i) the rule is on UNWEIGHTED counts by design, pre-registered before this
+    measurement; (ii) the SrV''s WEIGHTED share itself lies outside that interval in 8 of the 27
+    populated cells of this row''s artefact (absence_composition_vs_srv.csv), including both the
+    whole_household and the partial_no_absent_adult cell of the all row -- the interval is centred
+    off the weighted estimate systematically (bands 30-44, 45-64, 65-74 and all), not in one cell;
+    the three 0-17 cells are all inside; (iii) for 0-17 / partial_no_absent_adult the weighted
+    share (25.95 %) sits 0.34 pp (unrounded) above the lower end ([25.60, 47.07] %; unweighted
+    26/73 = 35.62 %); (iv) the whole_household OUTSIDE verdict above depends on this rule, the
+    partial_with_absent_adult OUTSIDE verdict does not; (v) a rule on the weighted share with an
+    effective sample size (Kish n_eff, which the extraction would then commit as a column) is the alternative
+    the owner may choose -- a follow-up issue, not part of this record (ADR-0110 Amendment 3).'
+  artifact: 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/absence_composition_vs_srv.csv
+    (and absence_composition_model.csv, the full per-band model table)'
 artifacts:
 - 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/ -- the
   committed aggregate: comparison.csv, headline.csv, by_kreis.csv, closure.csv,
@@ -251,6 +287,9 @@ artifacts:
   the error-marker counts of all three logs, the non-provenance WARNING scan and the two trip-table
   md5 sums), and code_patch_7cfeeb15_to_c611bff4_day_absence.patch -- the exact code this arm
   measured on top of 00a4a1cc.'
+- 'eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/absence_composition_model.csv,
+  absence_composition_vs_srv.csv -- the after-the-fact composition measurement of 2026-09-23 (issue #426),
+  headers carry the persons.csv path, md5 and the code commit'
 - 'felix:~/b425_data/output_bs_100pct_b370_arm4/ (persons, households, trips, activities, vehicles,
   vehicle_types, the GeoPackages and both analysis directories), ~/b425_data/cache_bs_100pct_b370_arm4/,
   ~/b425_data/data -> ~/b388_data/data'
@@ -261,6 +300,7 @@ issues:
 - '#425'
 - '#388'
 - '#370'
+- '#426'
 decisions:
 - ADR-0110
 - ADR-0104

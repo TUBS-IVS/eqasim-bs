@@ -11,7 +11,9 @@ Two committed tables for the general-day-absence state draw
   PERSON-level reporting reference for issue #388 (``n_persons_unweighted``,
   ``n_absent_persons_unweighted``, ``p_absent_person``): the ``GEWICHT_P_ZENSUS`` person-weighted
   share of absent persons among ALL persons living in a household of that size class, distinct
-  from the household-level ``p_all_absent`` above.
+  from the household-level ``p_all_absent`` above. Issue #426 adds ``n_partial_absent_unweighted`` /
+  ``p_partial_absent`` (household-weighted share of the class's households with SOME but not ALL
+  members away) so that none / partial / all partition each size class.
 
 Universe: every delivered person with a valid positive person weight (the SrV ``at_home_zero``
 universe of :mod:`braunschweig.calibration.srv_plan_structure` -- absence IS the state being
@@ -22,6 +24,7 @@ be -7. Pure module: no file I/O; ``scripts/extract_srv_absence.py`` owns the CLI
 from __future__ import annotations
 
 import logging
+import math
 
 import numpy as np
 import pandas as pd
@@ -43,12 +46,38 @@ AGE_BAND_BOUNDS = {"0-5": (0, 5), "6-17": (6, 17), "18-29": (18, 29), "30-44": (
 ALL_BAND = "all"
 HOUSEHOLD_SIZE_CLASS_TOP = 5
 AVERAGE_WEEKDAY = 1  # MITTL_WERKTAG
+#: Child / adult split used by the composition tables and the model-side analysis (issue #426);
+#: the same age <= 17 convention as the arm-4 manifest's children rows.
+CHILD_MAX_AGE = 17
+ADULT_MIN_AGE = 18
 
 PERSON_COLUMNS = ["HHNR", "PNR", "V_ALTER", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS", "MITTL_WERKTAG"]
-HOUSEHOLD_COLUMNS = ["HHNR", "GEWICHT_HH_ZENSUS"]
+#: V_ANZ_PERS is read ONLY to verify the roster assumption (check_household_roster), never as
+#: the household size itself.
+HOUSEHOLD_COLUMNS = ["HHNR", "GEWICHT_HH_ZENSUS", "V_ANZ_PERS"]
 BY_AGE_COLUMNS = ["band", "age_min", "age_max", "n_unweighted", "n_absent_unweighted", "p_absent"]
 BY_SIZE_COLUMNS = ["size_class", "n_households_unweighted", "n_all_absent_unweighted", "p_all_absent",
-                  "n_persons_unweighted", "n_absent_persons_unweighted", "p_absent_person"]
+                  "n_persons_unweighted", "n_absent_persons_unweighted", "p_absent_person",
+                  "n_partial_absent_unweighted", "p_partial_absent"]
+
+ABSENCE_COMPOSITION_TABLE = "srv2023_absence_composition_by_age_band.csv"
+ABSENCE_PARTIAL_SUBSET_TABLE = "srv2023_absence_partial_subset_size.csv"
+#: Children aggregate row of the composition table: the row the #426 acceptance criterion is
+#: evaluated on (the seven bands are diagnostic -- thin cells).
+CHILDREN_ROW = "0-17"
+#: Mutually exclusive household patterns of an ABSENT person (classify_absence_composition).
+PATTERN_WHOLE = "whole_household"
+PATTERN_PARTIAL_WITH_ADULT = "partial_with_absent_adult"
+PATTERN_PARTIAL_NO_ADULT = "partial_no_absent_adult"
+PATTERNS = (PATTERN_WHOLE, PATTERN_PARTIAL_WITH_ADULT, PATTERN_PARTIAL_NO_ADULT)
+COMPOSITION_COUNT_COLUMNS = ("n_whole_household_unweighted", "n_partial_with_absent_adult_unweighted",
+                             "n_partial_no_absent_adult_unweighted")
+COMPOSITION_SHARE_COLUMNS = ("p_whole_household", "p_partial_with_absent_adult", "p_partial_no_absent_adult")
+COMPOSITION_COLUMNS = ["band", "age_min", "age_max", "n_absent_unweighted",
+                       *COMPOSITION_COUNT_COLUMNS, *COMPOSITION_SHARE_COLUMNS]
+#: n_absent_members of a partially absent household is top-coded at HOUSEHOLD_SIZE_CLASS_TOP - 1.
+PARTIAL_SUBSET_TOP = HOUSEHOLD_SIZE_CLASS_TOP - 1
+PARTIAL_SUBSET_COLUMNS = ["size_class", "n_absent_members", "n_households_unweighted", "share_within_partial"]
 
 
 def _require_columns(frame, required, name):
@@ -66,6 +95,61 @@ def age_band(ages) -> pd.Series:
 def household_size_class(sizes) -> np.ndarray:
     """Household size -> class 1..HOUSEHOLD_SIZE_CLASS_TOP (top class = 'or more')."""
     return np.minimum(np.asarray(sizes, dtype=int), HOUSEHOLD_SIZE_CLASS_TOP)
+
+
+def household_absence_patterns(prepared: pd.DataFrame) -> pd.DataFrame:
+    """One row per household: ``n`` delivered members, ``n_absent``, ``n_adult_absent`` (absent
+    members aged >= ADULT_MIN_AGE), ``all_absent`` (every member absent), ``partial`` (some but not
+    all absent) and ``size_class``. A person without a valid age counts as a member but never as
+    an adult. Pure; the shared basis of the by-size, composition and subset-size tables."""
+    _require_columns(prepared, ["hhnr", "pnr", "age", "absent"], "prepared")
+    adult_absent = (prepared["age"] >= ADULT_MIN_AGE) & prepared["absent"]
+    per_hh = (prepared.assign(adult_absent=adult_absent)
+              .groupby("hhnr")
+              .agg(n=("pnr", "size"), n_absent=("absent", "sum"), n_adult_absent=("adult_absent", "sum"))
+              .reset_index())
+    per_hh["all_absent"] = per_hh["n_absent"] == per_hh["n"]
+    per_hh["partial"] = (per_hh["n_absent"] > 0) & ~per_hh["all_absent"]
+    per_hh["size_class"] = household_size_class(per_hh["n"])
+    return per_hh
+
+
+def _attach_household_weight(per_hh: pd.DataFrame, households: pd.DataFrame) -> pd.DataFrame:
+    """Left-join GEWICHT_HH_ZENSUS onto the per-household frame; raise on a missing or non-positive
+    weight (a household of the person file MUST resolve in the household file)."""
+    hh = households[["HHNR", "GEWICHT_HH_ZENSUS"]].rename(columns={"HHNR": "hhnr"})
+    per_hh = per_hh.merge(hh, on="hhnr", how="left")
+    n_unweighted_hh = int(per_hh["GEWICHT_HH_ZENSUS"].isna().sum())
+    if n_unweighted_hh:
+        raise ValueError(f"{_LOG_TAG} {n_unweighted_hh} households of the person file have no row / weight "
+                         "in the household file")
+    n_non_positive_weight_hh = int((per_hh["GEWICHT_HH_ZENSUS"] <= 0).sum())
+    if n_non_positive_weight_hh:
+        raise ValueError(f"{_LOG_TAG} {n_non_positive_weight_hh} household(s) have a non-positive "
+                         "GEWICHT_HH_ZENSUS; a household weight must be > 0")
+    return per_hh
+
+
+def check_household_roster(per_hh: pd.DataFrame, households: pd.DataFrame) -> int:
+    """Raise unless every household's DELIVERED person count equals the household file's V_ANZ_PERS.
+
+    The by-size tables define household size as the number of delivered persons per HHNR. That is
+    an assumption about the delivery's roster completeness; this guard turns the former ad-hoc
+    check into committed code and logs the verified count as an explicit rate. Returns the number
+    of households checked (``len(per_hh)``), so a caller can cite the guard's OWN count in a
+    provenance header instead of inferring it from an unrelated total."""
+    roster = households[["HHNR", "V_ANZ_PERS"]].rename(columns={"HHNR": "hhnr"})
+    merged = per_hh[["hhnr", "n"]].merge(roster, on="hhnr", how="left")
+    declared = pd.to_numeric(merged["V_ANZ_PERS"], errors="coerce")
+    mismatch = merged[declared.isna() | (declared != merged["n"])]
+    if len(mismatch):
+        examples = mismatch.head(5).to_dict("records")
+        raise ValueError(f"{_LOG_TAG} {len(mismatch)}/{len(merged)} households: delivered person count "
+                         f"differs from V_ANZ_PERS, so 'household size = delivered roster' would be wrong; "
+                         f"examples {examples}")
+    logger.info("%s household roster: %d/%d households (100.0%%) have delivered persons == V_ANZ_PERS",
+                _LOG_TAG, len(merged), len(merged))
+    return int(len(merged))
 
 
 def prepare_absence_persons(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -135,19 +219,9 @@ def build_absence_by_age_band(prepared: pd.DataFrame) -> pd.DataFrame:
 
 def build_absence_household_by_size(prepared: pd.DataFrame, households: pd.DataFrame) -> pd.DataFrame:
     _require_columns(households, HOUSEHOLD_COLUMNS, "households")
-    per_hh = prepared.groupby("hhnr").agg(n=("pnr", "size"), n_absent=("absent", "sum")).reset_index()
-    per_hh["all_absent"] = per_hh["n_absent"] == per_hh["n"]
-    per_hh["size_class"] = household_size_class(per_hh["n"])
-    hh = households[["HHNR", "GEWICHT_HH_ZENSUS"]].rename(columns={"HHNR": "hhnr"})
-    per_hh = per_hh.merge(hh, on="hhnr", how="left")
-    n_unweighted_hh = int(per_hh["GEWICHT_HH_ZENSUS"].isna().sum())
-    if n_unweighted_hh:
-        raise ValueError(f"{_LOG_TAG} {n_unweighted_hh} households of the person file have no row / weight "
-                         "in the household file")
-    n_non_positive_weight_hh = int((per_hh["GEWICHT_HH_ZENSUS"] <= 0).sum())
-    if n_non_positive_weight_hh:
-        raise ValueError(f"{_LOG_TAG} {n_non_positive_weight_hh} household(s) have a non-positive "
-                         "GEWICHT_HH_ZENSUS; a household weight must be > 0")
+    per_hh = household_absence_patterns(prepared)
+    per_hh = _attach_household_weight(per_hh, households)
+    check_household_roster(per_hh, households)
     # Person-level size class (issue #388): join each PERSON row -- not each household -- to its
     # household's size class, so the PERSON-weighted absence rate can be aggregated per class as a
     # reporting reference distinct from the household-level "every member absent" share above.
@@ -156,13 +230,112 @@ def build_absence_household_by_size(prepared: pd.DataFrame, households: pd.DataF
     for size_class in range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1):
         g = per_hh[per_hh["size_class"] == size_class]
         g_persons = persons_sized[persons_sized["size_class"] == size_class]
+        hh_weight = g["GEWICHT_HH_ZENSUS"].astype(float)
         rows.append({"size_class": size_class, "n_households_unweighted": int(len(g)),
                      "n_all_absent_unweighted": int(g["all_absent"].sum()),
-                     "p_all_absent": _weighted_share(g["GEWICHT_HH_ZENSUS"].astype(float), g["all_absent"]),
+                     "p_all_absent": _weighted_share(hh_weight, g["all_absent"]),
                      "n_persons_unweighted": int(len(g_persons)),
                      "n_absent_persons_unweighted": int(g_persons["absent"].sum()),
-                     "p_absent_person": _weighted_share(g_persons["weight"].astype(float), g_persons["absent"])})
+                     "p_absent_person": _weighted_share(g_persons["weight"].astype(float), g_persons["absent"]),
+                     # issue #426: SOME but not ALL members away, the pattern the draw lacks
+                     "n_partial_absent_unweighted": int(g["partial"].sum()),
+                     "p_partial_absent": _weighted_share(hh_weight, g["partial"])})
     return pd.DataFrame(rows, columns=BY_SIZE_COLUMNS)
+
+
+def classify_absence_composition(prepared: pd.DataFrame) -> pd.DataFrame:
+    """ABSENT persons only, with a ``pattern`` column (one of :data:`PATTERNS`).
+
+    Evaluated on the person's OWN household: ``whole_household`` when every delivered member is
+    absent; otherwise ``partial_with_absent_adult`` when at least one OTHER member aged
+    >= ADULT_MIN_AGE is absent (a sibling does not count), else ``partial_no_absent_adult``.
+    The 'other' excludes the person themselves, so an absent adult whose partner is home is
+    ``partial_no_absent_adult`` even though the household has one absent adult (them)."""
+    per_hh = household_absence_patterns(prepared)
+    merged = prepared.merge(per_hh[["hhnr", "all_absent", "n_adult_absent"]], on="hhnr", how="left")
+    absent = merged[merged["absent"]].copy()
+    self_is_adult = (absent["age"] >= ADULT_MIN_AGE).astype(int)
+    other_adult_absent = absent["n_adult_absent"] - self_is_adult
+    absent["pattern"] = np.where(absent["all_absent"], PATTERN_WHOLE,
+                                 np.where(other_adult_absent > 0, PATTERN_PARTIAL_WITH_ADULT,
+                                          PATTERN_PARTIAL_NO_ADULT))
+    return absent
+
+
+def _composition_row(label: str, age_min: int, age_max: int, group: pd.DataFrame) -> dict:
+    weight = group["weight"].astype(float)
+    row = {"band": label, "age_min": age_min, "age_max": age_max, "n_absent_unweighted": int(len(group))}
+    for pattern, count_column, share_column in zip(PATTERNS, COMPOSITION_COUNT_COLUMNS, COMPOSITION_SHARE_COLUMNS):
+        mask = group["pattern"] == pattern
+        row[count_column] = int(mask.sum())
+        row[share_column] = _weighted_share(weight, mask)     # NaN when the row has no absent person
+    return row
+
+
+def build_absence_composition_by_band(prepared: pd.DataFrame) -> pd.DataFrame:
+    """Per age band + the ``0-17`` children aggregate + ``all``: counts and GEWICHT_P_ZENSUS-weighted
+    shares of ABSENT persons per pattern. The three shares partition each row (sum to 1 unless
+    the row has no absent person, then all NaN).
+
+    The children row takes ``0 <= age <= CHILD_MAX_AGE``: the SrV delivery encodes a missing age as
+    a NEGATIVE code, which is not a valid age, so such a person falls into no band and not into
+    ``0-17`` either -- they appear in the ``all`` row only (and ``0-5`` + ``6-17`` = ``0-17``)."""
+    classified = classify_absence_composition(prepared)
+    rows = []
+    for band in AGE_BAND_LABELS:
+        lo, hi = AGE_BAND_BOUNDS[band]
+        rows.append(_composition_row(band, lo, hi, classified[classified["band"] == band]))
+    is_child = (classified["age"] >= 0) & (classified["age"] <= CHILD_MAX_AGE)
+    rows.append(_composition_row(CHILDREN_ROW, 0, CHILD_MAX_AGE, classified[is_child]))
+    rows.append(_composition_row(ALL_BAND, 0, 200, classified))
+    table = pd.DataFrame(rows, columns=COMPOSITION_COLUMNS)
+    children = table[table["band"] == CHILDREN_ROW].iloc[0]
+    logger.info("%s composition %s (n_absent=%d): %s", _LOG_TAG, CHILDREN_ROW, int(children["n_absent_unweighted"]),
+                ", ".join("%s %d (%.1f%% weighted)" % (p, int(children[c]), 100.0 * children[s])
+                          for p, c, s in zip(PATTERNS, COMPOSITION_COUNT_COLUMNS, COMPOSITION_SHARE_COLUMNS)
+                          if not pd.isna(children[s])))
+    return table
+
+
+def build_absence_partial_subset_size(prepared: pd.DataFrame, households: pd.DataFrame) -> pd.DataFrame:
+    """Among PARTIALLY absent households of each size class 2..TOP: how many members are away
+    (1..PARTIAL_SUBSET_TOP, top-coded), as unweighted counts and GEWICHT_HH_ZENSUS-weighted shares
+    within the class. Rows exist for every (class, k <= min(class - 1, TOP)) even when empty; a
+    class with no partial household reports NaN shares."""
+    _require_columns(households, HOUSEHOLD_COLUMNS, "households")
+    per_hh = _attach_household_weight(household_absence_patterns(prepared), households)
+    partial = per_hh[per_hh["partial"]].copy()
+    partial["n_absent_members"] = np.minimum(partial["n_absent"].astype(int), PARTIAL_SUBSET_TOP)
+    rows = []
+    for size_class in range(2, HOUSEHOLD_SIZE_CLASS_TOP + 1):
+        g = partial[partial["size_class"] == size_class]
+        total_weight = float(g["GEWICHT_HH_ZENSUS"].sum())
+        for k in range(1, min(size_class - 1, PARTIAL_SUBSET_TOP) + 1):
+            mask = g["n_absent_members"] == k
+            rows.append({"size_class": size_class, "n_absent_members": k,
+                         "n_households_unweighted": int(mask.sum()),
+                         "share_within_partial": (float(g.loc[mask, "GEWICHT_HH_ZENSUS"].sum() / total_weight)
+                                                  if total_weight > 0 else float("nan"))})
+    return pd.DataFrame(rows, columns=PARTIAL_SUBSET_COLUMNS)
+
+
+def wilson_interval(k: int, n: int, z: float = 1.959964) -> tuple[float, float]:
+    """Wilson score interval for a binomial share k/n (default 95 %). ``(nan, nan)`` for
+    k == n == 0; raises when k is outside ``[0, n]`` (checked first, so ``k > 0`` with ``n == 0``
+    raises rather than returning NaN).
+
+    The pre-registered acceptance bound of issue #426 for thin cells: computed on UNWEIGHTED
+    counts because the design effect of the expansion weights is unknown (ASSUMPTION, stated in
+    every consumer)."""
+    if k < 0 or k > n:
+        raise ValueError(f"{_LOG_TAG} wilson_interval: k={k} must satisfy 0 <= k <= n={n}")
+    if n <= 0:
+        return (float("nan"), float("nan"))
+    share = k / n
+    denominator = 1.0 + z * z / n
+    centre = (share + z * z / (2.0 * n)) / denominator
+    half_width = z * math.sqrt(share * (1.0 - share) / n + z * z / (4.0 * n * n)) / denominator
+    return (max(0.0, centre - half_width), min(1.0, centre + half_width))
 
 
 def clustering_share(prepared: pd.DataFrame) -> dict:
@@ -207,7 +380,8 @@ def clustering_share(prepared: pd.DataFrame) -> dict:
            "unweighted_share": unweighted_share, "weighted_share": weighted_share}
 
 
-def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame) -> None:
+def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame, composition: pd.DataFrame = None,
+                     partial_subset: pd.DataFrame = None) -> None:
     if list(by_age["band"]) != list(AGE_BAND_LABELS) + [ALL_BAND]:
         raise ValueError(f"{_LOG_TAG} by-age table must carry exactly the bands {AGE_BAND_LABELS} + 'all'")
     bands = by_age[by_age["band"] != ALL_BAND]
@@ -215,7 +389,8 @@ def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame) -> None:
     if int(bands["n_unweighted"].sum()) > all_row_n_unweighted:
         raise ValueError(f"{_LOG_TAG} band person counts exceed the 'all' row")
     for name, table, col in (("by_age", by_age, "p_absent"), ("by_size", by_size, "p_all_absent"),
-                             ("by_size", by_size, "p_absent_person")):
+                             ("by_size", by_size, "p_absent_person"),
+                             ("by_size", by_size, "p_partial_absent")):
         shares = table[col].dropna()
         if ((shares < 0) | (shares > 1)).any():
             raise ValueError(f"{_LOG_TAG} {name}: {col} outside [0, 1]")
@@ -231,3 +406,57 @@ def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame) -> None:
     if n_persons_total != all_row_n_unweighted:
         raise ValueError(f"{_LOG_TAG} by_size: sum(n_persons_unweighted)={n_persons_total} does not match "
                          f"the by-age 'all' row n_unweighted={all_row_n_unweighted}")
+    # Partial-household columns (issue #426): none / partial / all partition each size class.
+    if int(by_size.loc[by_size["size_class"] == 1, "n_partial_absent_unweighted"].iloc[0]) != 0:
+        raise ValueError(f"{_LOG_TAG} by_size: size class 1 reports n_partial_absent_unweighted != 0, "
+                         "but a single-person household cannot be partially absent")
+    if ((by_size["n_all_absent_unweighted"] + by_size["n_partial_absent_unweighted"])
+            > by_size["n_households_unweighted"]).any():
+        raise ValueError(f"{_LOG_TAG} by_size: n_all_absent_unweighted + n_partial_absent_unweighted exceeds "
+                         "n_households_unweighted for at least one size class")
+    if composition is not None:
+        expected_rows = list(AGE_BAND_LABELS) + [CHILDREN_ROW, ALL_BAND]
+        if list(composition["band"]) != expected_rows:
+            raise ValueError(f"{_LOG_TAG} composition table must carry exactly the rows {expected_rows}")
+        counts = composition[list(COMPOSITION_COUNT_COLUMNS)].sum(axis=1)
+        if (counts != composition["n_absent_unweighted"]).any():
+            raise ValueError(f"{_LOG_TAG} composition: pattern counts do not sum to n_absent_unweighted")
+        # The children row is exactly the union of the two child bands (a negative age code is in
+        # neither), so every count column must reconcile: 0-5 + 6-17 == 0-17.
+        by_band = composition.set_index("band")
+        for column in ("n_absent_unweighted", *COMPOSITION_COUNT_COLUMNS):
+            bands_sum = int(by_band.loc["0-5", column]) + int(by_band.loc["6-17", column])
+            children_count = int(by_band.loc[CHILDREN_ROW, column])
+            if bands_sum != children_count:
+                raise ValueError(f"{_LOG_TAG} composition: {column} of rows 0-5 + 6-17 = {bands_sum} does not "
+                                 f"equal the {CHILDREN_ROW} row's {children_count}")
+        populated = composition[composition["n_absent_unweighted"] > 0]
+        shares = populated[list(COMPOSITION_SHARE_COLUMNS)]
+        if ((shares < 0) | (shares > 1)).any().any():
+            raise ValueError(f"{_LOG_TAG} composition: a share is outside [0, 1]")
+        if (np.abs(shares.sum(axis=1) - 1.0) > 1e-9).any():
+            raise ValueError(f"{_LOG_TAG} composition: the three pattern shares do not sum to 1 in every populated row")
+        n_absent_all = int(composition.loc[composition["band"] == ALL_BAND, "n_absent_unweighted"].iloc[0])
+        n_absent_by_age = int(by_age.loc[by_age["band"] == ALL_BAND, "n_absent_unweighted"].iloc[0])
+        if n_absent_all != n_absent_by_age:
+            raise ValueError(f"{_LOG_TAG} composition 'all' n_absent_unweighted={n_absent_all} does not match the "
+                             f"by-age 'all' row n_absent_unweighted={n_absent_by_age}")
+    if partial_subset is not None:
+        expected_keys = [(s, k) for s in range(2, HOUSEHOLD_SIZE_CLASS_TOP + 1)
+                         for k in range(1, min(s - 1, PARTIAL_SUBSET_TOP) + 1)]
+        if list(zip(partial_subset["size_class"], partial_subset["n_absent_members"])) != expected_keys:
+            raise ValueError(f"{_LOG_TAG} partial-subset table must carry exactly the rows {expected_keys}")
+        shares = partial_subset["share_within_partial"].dropna()
+        if ((shares < 0) | (shares > 1)).any():
+            raise ValueError(f"{_LOG_TAG} partial_subset: share_within_partial outside [0, 1]")
+        per_class = partial_subset.groupby("size_class").agg(n=("n_households_unweighted", "sum"),
+                                                              share=("share_within_partial", "sum"),
+                                                              populated=("share_within_partial", "count"))
+        if ((per_class["populated"] > 0) & (np.abs(per_class["share"] - 1.0) > 1e-9)).any():
+            raise ValueError(f"{_LOG_TAG} partial_subset: shares within a size class do not sum to 1")
+        by_size_partial = by_size.set_index("size_class")["n_partial_absent_unweighted"]
+        for size_class, n_subset in per_class["n"].items():
+            if int(n_subset) != int(by_size_partial.loc[size_class]):
+                raise ValueError(f"{_LOG_TAG} partial_subset: size class {size_class} counts {int(n_subset)} partial "
+                                 f"households but by_size reports n_partial_absent_unweighted="
+                                 f"{int(by_size_partial.loc[size_class])}")

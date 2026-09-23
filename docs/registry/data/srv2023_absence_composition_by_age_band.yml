@@ -1,0 +1,100 @@
+dataset: srv2023_absence_composition_by_age_band
+title: SrV 2023 composition of absent persons by household pattern and age band (committed aggregate,
+  acceptance reference of issue #426)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown.
+crs: null
+roles:
+- validation_reference
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table and
+    its three siblings (srv2023_absence_by_age_band.csv, srv2023_absence_household_by_size.csv,
+    srv2023_absence_partial_subset_size.csv) in one run. Reads SrV2023_Personen.csv (HHNR, PNR,
+    V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and SrV2023_Haushalte.csv (HHNR,
+    GEWICHT_HH_ZENSUS, V_ANZ_PERS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_absence.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_absence_composition_by_age_band.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Committed file, ships with every clone; not listed in scripts/verify_braunschweig_inputs.py (same
+    treatment as its siblings). Definitions in braunschweig/calibration/srv_absence.py
+    (classify_absence_composition, build_absence_composition_by_band, wilson_interval); unit tests on
+    synthetic SrV-shaped frames: tests/test_srv_absence.py (pattern assignment per person, the rows and
+    shares, person weighting, the invariants). The model-side counterpart that reads this table is
+    braunschweig/analysis/synthesis/absence_composition.py via scripts/measure_absence_composition.py,
+    tested in tests/test_absence_composition.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: the srv2023_absence_by_age_band universe (every delivered person with a valid positive
+  GEWICHT_P_ZENSUS, MITTL_WERKTAG == 1 guard, only -7 as a negative E_ANZ_WEGE code), restricted to
+  ABSENT persons (E_ANZ_WEGE == -7). Rows: the seven age bands of the by-age table, a '0-17'
+  children aggregate row and 'all'. Weight: GEWICHT_P_ZENSUS for the shares; counts are unweighted.
+
+  Patterns (srv_absence.classify_absence_composition), mutually exclusive per ABSENT person on their
+  OWN household: whole_household = every delivered member absent; partial_with_absent_adult = not
+  every member absent AND at least one OTHER member aged >= 18 absent; partial_no_absent_adult = not
+  every member absent and no other adult absent. Child = 0 <= age <= 17 (a negative, i.e. missing,
+  age code is no child), adult = age >= 18 (the arm-4
+  manifest's convention); a person without a valid age is a member, never an adult, and appears in
+  the 'all' row only. A child in partial_no_absent_adult may well be accompanied -- class trip,
+  grandparents, the other parent -- the table measures the HOUSEHOLD pattern, not supervision.
+
+  THIN CELLS -- read the counts before the shares. The '0-17' row has n_absent_unweighted = 73
+  absent children (35 whole_household, 12 partial_with_absent_adult, 26
+  partial_no_absent_adult); the child bands are thinner still (0-5: 31, 6-17: 42).
+  Therefore the '0-17' row is the ONLY acceptance row of issue #426 and the bands are diagnostic.
+  Pre-registered bound (ADR-0110 Amendment 3): a model share is accepted when it lies inside the
+  Wilson 95 % interval of the row's UNWEIGHTED counts -- whole_household [36.88, 59.22] %,
+  partial_with_absent_adult [9.66, 26.57] %, partial_no_absent_adult [25.60, 47.07] %.
+  ASSUMPTION: the design effect of the expansion weights is unknown, so the interval is computed on
+  unweighted counts while the weighted point estimate is reported beside it (the committed header
+  carries both). Measured caveat: (i) the rule is on UNWEIGHTED counts by design, pre-registered
+  before the model measurement; (ii) the WEIGHTED share itself lies outside that interval in 8 of
+  the 27 populated cells of the committed arm-4 comparison (absence_composition_vs_srv.csv, run
+  manifest general-day-absence-arm4-100pct-2026-09-18), including both the whole_household and the
+  partial_no_absent_adult cell of the 'all' row -- the interval is centred off the weighted
+  estimate systematically (bands 30-44, 45-64, 65-74 and 'all'), not in one cell; the three
+  '0-17' cells are all inside; (iii) for '0-17' / partial_no_absent_adult the weighted share
+  (25.95 %) sits 0.34 pp (unrounded) above the lower end (25.60 %; unweighted 26/73 = 35.62 %);
+  (iv) the arm-4 whole_household OUTSIDE verdict depends on this rule, the
+  partial_with_absent_adult OUTSIDE verdict does not; (v) a rule on the weighted share with an
+  effective sample size (Kish n_eff, which the extraction would then commit as a column) is the alternative the
+  owner may choose -- a follow-up issue, not part of this record (ADR-0110 Amendment 3).
+
+  Measured 2026-09-23 ('0-17', weighted shares): whole_household 55.17 %,
+  partial_with_absent_adult 18.88 %, partial_no_absent_adult 25.95 %. 'all' row
+  (n_absent_unweighted = 954): 55.85 / 7.62 / 36.54 %; its
+  whole_household share equals the by-size table's "# Clustering" figure by construction (same
+  definition, same weight). Wolfsburg (03103) is not surveyed by SrV, the usual caveat.
+notes: |
+  ACCEPTANCE REFERENCE for a partial-household absence pattern (issue #426): the absence draw of
+  braunschweig.synthesis.day_absence knows whole-household and single-person absence but no "part of
+  the household leaves together" pattern, so it cannot produce partial_with_absent_adult except by
+  chance co-draws. Measured on the arm-4 population with braunschweig.analysis.synthesis
+  .absence_composition (run manifest general-day-absence-arm4-100pct-2026-09-18, row of 2026-09-23):
+  model 0-17 whole_household 61.33 % (OUTSIDE), partial_with_absent_adult 2.40 %
+  (OUTSIDE), partial_no_absent_adult 36.27 % (INSIDE).
+
+  This table also corrects the premise issue #426 was opened with: the SrV DOES contain children absent
+  without an absent co-resident adult (26 of 73), so "a drawn child is never absent on its
+  own" would move the model AWAY from the survey; the criterion is the quota of this row (owner
+  decision 2026-09-23, ADR-0110 Amendment 3). Not read by any pipeline stage (used_by empty); read by
+  scripts/measure_absence_composition.py. Sibling: srv2023_absence_partial_subset_size (how many
+  members leave together). Decision record: ADR-0110 Amendment 3.
