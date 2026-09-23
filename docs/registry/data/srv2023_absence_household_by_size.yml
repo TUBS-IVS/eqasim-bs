@@ -15,9 +15,11 @@ acquisition:
   source: |
     Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
     --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
-    and its sibling srv2023_absence_by_age_band.csv in one run. Reads SrV2023_Personen.csv
+    and its three siblings srv2023_absence_by_age_band.csv, srv2023_absence_composition_by_age_band.csv
+    and srv2023_absence_partial_subset_size.csv in one run. Reads SrV2023_Personen.csv
     (HHNR, PNR, V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and SrV2023_Haushalte.csv
-    (HHNR, GEWICHT_HH_ZENSUS). The raw microdata is local-only and never committed.
+    (HHNR, GEWICHT_HH_ZENSUS, V_ANZ_PERS -- the latter read only to verify the roster). The raw
+    microdata is local-only and never committed.
   script: scripts/extract_srv_absence.py
 storage:
   expected_path: eqasim-data/data/braunschweig/srv/srv2023_absence_household_by_size.csv
@@ -30,8 +32,8 @@ verification:
     srv2023_absence_by_age_band). Not listed in scripts/verify_braunschweig_inputs.py: the file
     ships committed with every clone, same treatment as the sibling SrV aggregates of issues
     #368/#369. Definitions live in braunschweig/calibration/srv_absence.py; unit tests on
-    synthetic SrV-shaped frames (the household aggregation, the all-absent flag, the table
-    invariants): tests/test_srv_absence.py.
+    synthetic SrV-shaped frames (the household aggregation, the all-absent and partial flags, the
+    V_ANZ_PERS roster guard, the table invariants): tests/test_srv_absence.py.
 requirements:
   synthesis: required
   matsim: not_needed
@@ -47,13 +49,15 @@ limitations: |
   extraction RAISES if any such household has no row/weight in the household file
   (build_absence_household_by_size), rather than silently dropping it.
 
-  ASSUMPTION: household size is the count of DELIVERED persons per HHNR in
-  SrV2023_Personen.csv (build_absence_household_by_size's per_hh groupby "n" column), not a
-  dedicated household-size variable read from SrV2023_Haushalte.csv. Verified equal to
-  V_ANZ_PERS for all 8,106 households on 2026-09-09 (ad-hoc check against the local raw file, not
-  reproduced by committed code), so the assumption holds for the current delivery; a future
-  delivery with an incomplete household roster (a person excluded from Personen.csv while still
-  counted in V_ANZ_PERS) would silently understate that household's size class.
+  Household size is the count of DELIVERED persons per HHNR in SrV2023_Personen.csv
+  (household_absence_patterns' "n"), not a household-size variable read as such. Since issue #426
+  this is VERIFIED IN CODE on every extraction: build_absence_household_by_size calls
+  srv_absence.check_household_roster, which RAISES unless that count equals SrV2023_Haushalte.csv's
+  V_ANZ_PERS for every household (2026-09-23 extraction: 8,106
+  households checked, 0 mismatches; test
+  tests/test_srv_absence.py::test_build_absence_household_by_size_raises_when_roster_differs_from_v_anz_pers).
+  A future delivery with an incomplete roster therefore fails the extraction loudly instead of
+  silently understating a household's size class.
 
   Household size classes (srv_absence.household_size_class): 1..5, class 5 = '5 or more'
   members -- the same top-coding convention as every household-size classification in this
@@ -100,6 +104,20 @@ limitations: |
   Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
   all, the region rate implicitly excludes Wolfsburg residents, the same caveat every SrV-derived
   table in this codebase carries.
+
+  Additional HOUSEHOLD-level columns (issue #426, ADR-0110 Amendment 3, added on top of the seven
+  columns above, which are UNCHANGED -- data rows verified identical against the 2026-09-09 file):
+  n_partial_absent_unweighted, p_partial_absent -- the GEWICHT_HH_ZENSUS-weighted share of the size
+  class's households in which SOME but not ALL delivered members are away (0 < n_absent < n). With
+  p_all_absent it partitions the class (p_none = 1 - p_all_absent - p_partial_absent); size class 1
+  is 0 by construction. Measured 2026-09-23 (n partial households: 0 / 217 /
+  122 / 75 / 21 for size classes 1-5): p_partial_absent =
+  0.00 / 5.50 / 9.68 / 7.23 / 7.87 %. Partial absence
+  is the DOMINANT multi-person pattern (several times p_all_absent from size 3 on), which is what the
+  absence draw's two patterns -- whole household, single person drawn independently -- can reproduce
+  only in its one-member form; how many members leave together is data record
+  srv2023_absence_partial_subset_size, who leaves (child with or without an adult) is
+  srv2023_absence_composition_by_age_band. No stage reads these two columns today.
 notes: |
   Reference table for braunschweig.synthesis.day_absence.absence.draw_absence's HOUSEHOLD stage
   (issue #370, ADR-0110): every household of size class s is drawn absent_household with
@@ -124,3 +142,7 @@ notes: |
   must never be NaN) -- it feeds only draw_absence's by_size_class diagnostic, never the draw
   itself. Decision record for the eligibility gate this reference now also supports: ADR-0110
   "Amendment 1 (2026-09-09, issue #388)".
+
+  Companion tables since issue #426: srv2023_absence_composition_by_age_band.csv and
+  srv2023_absence_partial_subset_size.csv (data records of the same names), written by the same
+  script run; neither is read by the pipeline. Decision record: ADR-0110 Amendment 3.

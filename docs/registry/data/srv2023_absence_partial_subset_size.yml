@@ -1,0 +1,63 @@
+dataset: srv2023_absence_partial_subset_size
+title: SrV 2023 number of members away together in partially absent households, by household size
+  (committed aggregate, issue #426)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: Braunschweig + Regionalverband Grossraum Braunschweig (ZGB); no per-Kreis breakdown.
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table and
+    its three siblings (srv2023_absence_by_age_band.csv, srv2023_absence_household_by_size.csv,
+    srv2023_absence_composition_by_age_band.csv) in one run. Reads SrV2023_Personen.csv (HHNR, PNR,
+    V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and SrV2023_Haushalte.csv (HHNR,
+    GEWICHT_HH_ZENSUS, V_ANZ_PERS). The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_absence.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_absence_partial_subset_size.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Committed file, ships with every clone; not listed in scripts/verify_braunschweig_inputs.py (same
+    treatment as its siblings). Definitions in braunschweig/calibration/srv_absence.py
+    (build_absence_partial_subset_size); unit tests on synthetic SrV-shaped frames:
+    tests/test_srv_absence.py (rows, shares, top-coding, reconciliation with the by-size table).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values (data-protection reviewed); raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Universe: PARTIALLY absent households of the srv2023_absence_household_by_size universe (0 <
+  n_absent < n delivered members), size classes 2..5 (5 = five or more; class 1 cannot be partial).
+  n_absent_members is 1..4, top-coded at 4 ('4 or more'), and only k <= size_class - 1 rows exist
+  (10 rows). Weight: GEWICHT_HH_ZENSUS for share_within_partial (share among the class's partial
+  households); counts unweighted. Every (class, k) row is emitted even when empty; a class without
+  a partial household reports NaN shares.
+
+  Measured 2026-09-23 (unweighted households, weighted share): size 2 -- k=1 217 (100 % by
+  construction); size 3 -- k=1 99 (81.31 %), k=2 23 (18.69 %); size 4
+  -- k=1 56 (74.09 %), k=2 17 (22.90 %), k=3 2 (3.01 %);
+  size 5+ -- k=1 17 (76.14 %), k=2 4 (23.86 %), k=3 0
+  (0.00 %), k=4+ 0 (0.00 %). The one-member form dominates every class;
+  the "two or more leave together while someone stays" form -- the one the absence draw cannot
+  produce except by chance -- is the remainder. Cells with k >= 2 are thin (tens of households);
+  a future draw must state that when it consumes them. Wolfsburg (03103) is not surveyed by SrV.
+notes: |
+  Sizes the "a SUBSET of the household travels together" pattern for a future partial-household
+  absence draw (issue #426, ADR-0110 Amendment 3). Not read by any pipeline stage today (used_by
+  empty) and not part of the #426 acceptance criterion, which is the '0-17' row of
+  srv2023_absence_composition_by_age_band; committed now because the restricted raw delivery was at
+  hand and the same extraction run produces it. Companion tables: srv2023_absence_household_by_size
+  (its n_partial_absent_unweighted per class is what this table's counts sum to -- an invariant the
+  extraction checks) and srv2023_absence_composition_by_age_band.
