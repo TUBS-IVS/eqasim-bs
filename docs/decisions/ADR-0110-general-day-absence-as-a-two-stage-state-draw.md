@@ -549,3 +549,82 @@
      `eqasim-data/data/braunschweig/calibration/general_day_absence_arm4_100pct_2026-09-18/`
      (incl. the code patch the measurement applied). This amendment's default therefore HAS
      measured evidence on the 100 % population, unlike Amendment 1 when it was first written.
+- **Amendment 3 (2026-09-23, issue #426): the partial-household pattern is measured in the SrV,
+  and #426's acceptance criterion is the SrV composition quota, not a ban on solo-absent children.**
+  This amendment adds no code to the draw. It commits the reference the issue was gated on, corrects
+  a premise this ADR itself carried, and fixes the criterion any partial-household draw will be
+  judged by.
+  1. **Measurement (committed 2026-09-23, `scripts/extract_srv_absence.py` at `0f6c49dd`).**
+     Three additions from the same extraction run and the same universe as the two existing tables:
+     (a) `srv2023_absence_household_by_size.csv` gains `p_partial_absent` -- the household-weighted
+     share of each size class with SOME but not ALL members away: 5.50 / 9.68 /
+     7.23 / 7.87 % for sizes 2-5+ (217 / 122 / 75 /
+     21 households), against `p_all_absent` of 3.40 / 1.31 / 1.49 / 0.18 % -- from size 3
+     on, partial absence is several times more common than whole-household absence; (b) NEW
+     `srv2023_absence_composition_by_age_band.csv` -- every ABSENT person classified on their own
+     household as `whole_household`, `partial_with_absent_adult` (another member aged >= 18 is away
+     too) or `partial_no_absent_adult`, per age band plus a `0-17` children row and `all`; (c) NEW
+     `srv2023_absence_partial_subset_size.csv` -- how many members are away together in a partially
+     absent household, per size class. Data records of the same names; the seven pre-existing
+     by-size columns and the by-age table are byte-identical in their data rows (checked at
+     regeneration), and the delivered-roster assumption behind "household size" is now a raising
+     guard (`srv_absence.check_household_roster`, 0 mismatches in 8,106 households).
+  2. **Corrected premise.** Amendment 2 point 4 and issue #426 as opened state that a child away
+     while its parents stay home is "a combination the survey cannot contain". It is not: of the
+     73 absent children in the SrV, 26 (25.95 % weighted) live in a partially absent
+     household with NO other absent adult -- class trips, grandparents, the other parent; the table
+     measures the household pattern, not supervision. 35 (55.17 %) are in a fully
+     absent household and 12 (18.88 %) in a partially absent household WITH another
+     absent adult. The defect is therefore not that the model produces solo-absent children, but
+     that it cannot produce the third pattern at all.
+  3. **Superseded figures.** The numbers "1,721 of 1,739 individually absent children have a present
+     adult at home, 446 under three" and "the household stage alone reaches ~1.56 % for ages 0-5"
+     (Amendment 2 point 4, issue #426, the feature record) were ad-hoc probes on the arm-4 output:
+     no run manifest carries them and no committed code produced them, and the first one conditions
+     on the individual stage only, which is not the quantity the survey table measures. They are
+     left in Amendment 2 as written (this file is append-only) and are SUPERSEDED by point 5 below.
+  4. **Decision: quota, not ban.** The acceptance criterion for a partial-household draw (#426) is:
+     the model's `0-17` composition shares lie inside the Wilson 95 % intervals of the reference
+     row's UNWEIGHTED counts -- `whole_household` [36.88, 59.22] %,
+     `partial_with_absent_adult` [9.66, 26.57] %, `partial_no_absent_adult`
+     [25.60, 47.07] % -- while the per-band absence rates keep holding within 1.0 pp
+     (Consequences table). The seven bands are diagnostic only (0-5 has 31 absent children,
+     6-17 42). ASSUMPTION: the design effect of the expansion weights is unknown, so the
+     interval is on unweighted counts with the weighted point estimate reported beside it.
+     Measured caveat (2026-09-23): for `partial_no_absent_adult` the weighted SrV share (25.95 %)
+     lies only 0.34 pp above the interval's lower end (25.60 %; unweighted 26/73 = 35.62 %) -- the
+     bound is tight on that pattern, and the owner may revisit it before an A/B.
+     **Rejected alternative -- "a drawn child is never absent on its own"** (issue #426's original
+     Done-when): it would drive `partial_no_absent_adult` to 0 against a survey value of
+     25.95 % with a lower interval bound of 25.60 %, i.e. move the model away from the
+     data, and it breaks the band row (point 5: the household stage carries only part of the 0-5
+     rate). Owner decision 2026-09-23.
+  5. **Model measured on arm 4 (after the fact, 2026-09-23; committed code
+     `braunschweig/analysis/synthesis/absence_composition.py` via
+     `scripts/measure_absence_composition.py` at `0f6c49dd`, on the arm-4 `persons.csv`, md5 in
+     the artefact header; manifest `general-day-absence-arm4-100pct-2026-09-18`, last validation
+     row).** Of 4,458 absent children: `whole_household` 61.33 % (OUTSIDE the
+     interval), `partial_with_absent_adult` 2.40 % (OUTSIDE), `partial_no_absent_adult`
+     36.27 % (INSIDE). The near-zero middle share is the structural gap: the two-stage draw
+     produces "part of the household away together" only by chance co-draws. The household stage
+     carries 47.74 % of the 0-5 band's absences (`absence_composition_model.csv`, row 0-5),
+     about 1.59 pp of the realised 3.32 % -- the traceable form of the superseded "~1.56 %".
+     Not a validation of the draw: one row, 73 survey children, wide intervals.
+  6. **Not decided here.** Whether a third draw stage is worth building. Its size is now on the
+     table: the missing pattern is 18.88 % of absent children (roughly
+     840 children in the 100 % population if the model matched the point
+     estimate) and 7.62 % of all absent persons; the "two or more leave together" form
+     is a minority of partial households in every size class (`srv2023_absence_partial_subset_size`).
+     Issue #426 is unblocked and rewritten with this criterion; building it, or accepting the gap as a
+     documented limitation, is the owner's call on these numbers.
+  7. **Evidence.** Issue **#426**; code `braunschweig/calibration/srv_absence.py`
+     (`household_absence_patterns`, `check_household_roster`, `classify_absence_composition`,
+     `build_absence_composition_by_band`, `build_absence_partial_subset_size`, `wilson_interval`,
+     `check_invariants`), `scripts/extract_srv_absence.py`,
+     `braunschweig/analysis/synthesis/absence_composition.py`, `scripts/measure_absence_composition.py`;
+     tests `tests/test_srv_absence.py`, `tests/test_absence_composition.py`; data records
+     `srv2023_absence_household_by_size`, `srv2023_absence_composition_by_age_band`,
+     `srv2023_absence_partial_subset_size`; feature record `docs/registry/features/general_day_absence.yml`;
+     run manifest `docs/runs/general-day-absence-arm4-100pct-2026-09-18.yml` with the artefacts
+     `absence_composition_model.csv` / `absence_composition_vs_srv.csv`; README SrV row. No draw code,
+     no stage, no config key and no DAG node changed.
