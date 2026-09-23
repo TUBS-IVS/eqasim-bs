@@ -22,7 +22,28 @@ def _persons():
 
 
 def _households():
-    return pd.DataFrame({"HHNR": [1, 2, 3], "GEWICHT_HH_ZENSUS": [1.0, 1.0, 1.0]})
+    return pd.DataFrame({"HHNR": [1, 2, 3], "GEWICHT_HH_ZENSUS": [1.0, 1.0, 1.0],
+                         "V_ANZ_PERS": [1, 2, 3]})
+
+
+def _persons_with_partial_households():
+    """The tiny fixture plus three PARTIALLY absent households (issue #426):
+    hh 4 (size 3): adult 45 absent, child 10 absent, adult 44 present   -> child away WITH an adult
+    hh 5 (size 2): adult 60 absent, adult 58 present                    -> one adult away alone
+    hh 6 (size 4): child 7 absent, adults 40/39 present, child 12 present -> child away, NO adult away
+    """
+    extra = pd.DataFrame({
+        "HHNR": [4, 4, 4, 5, 5, 6, 6, 6, 6], "PNR": [1, 2, 3, 1, 2, 1, 2, 3, 4],
+        "V_ALTER": [45, 10, 44, 60, 58, 7, 40, 39, 12],
+        "E_ANZ_WEGE": [-7, -7, 2, -7, 3, -7, 3, 2, 4],
+        "GEWICHT_P_ZENSUS": [1.0] * 9, "MITTL_WERKTAG": [1] * 9,
+    })
+    return pd.concat([_persons(), extra], ignore_index=True)
+
+
+def _households_with_partial():
+    return pd.DataFrame({"HHNR": [1, 2, 3, 4, 5, 6], "GEWICHT_HH_ZENSUS": [1.0] * 6,
+                         "V_ANZ_PERS": [1, 2, 3, 3, 2, 4]})
 
 
 def test_age_band_edges_match_the_spec():
@@ -193,3 +214,60 @@ def test_clustering_share_returns_nan_when_nobody_is_absent():
     result = A.clustering_share(prepared)
     assert result["n_absent_persons"] == 0
     assert np.isnan(result["unweighted_share"]) and np.isnan(result["weighted_share"])
+
+
+# ---------------------------------------------------------------------------
+# Partial-household absence (issue #426): a household is WHOLE (every member absent), PARTIAL
+# (some but not all absent) or NONE. p_none + p_partial + p_all == 1 per size class.
+# ---------------------------------------------------------------------------
+
+def test_household_absence_patterns_flags_whole_partial_and_adult_counts():
+    prepared, _ = A.prepare_absence_persons(_persons_with_partial_households())
+    per_hh = A.household_absence_patterns(prepared).set_index("hhnr")
+    assert per_hh.loc[1, "all_absent"] and not per_hh.loc[1, "partial"]          # single, away
+    assert per_hh.loc[2, "all_absent"] and not per_hh.loc[2, "partial"]          # couple, both away
+    assert not per_hh.loc[3, "all_absent"] and not per_hh.loc[3, "partial"]      # nobody away
+    assert per_hh.loc[4, "partial"] and per_hh.loc[4, "n_absent"] == 2 and per_hh.loc[4, "n_adult_absent"] == 1
+    assert per_hh.loc[5, "partial"] and per_hh.loc[5, "n_adult_absent"] == 1
+    assert per_hh.loc[6, "partial"] and per_hh.loc[6, "n_absent"] == 1 and per_hh.loc[6, "n_adult_absent"] == 0
+    assert per_hh["size_class"].tolist() == [1, 2, 3, 3, 2, 4]
+
+
+def test_by_household_size_partial_share_partitions_with_all_absent():
+    prepared, _ = A.prepare_absence_persons(_persons_with_partial_households())
+    table = A.build_absence_household_by_size(prepared, _households_with_partial()).set_index("size_class")
+    assert table.loc[1, "n_partial_absent_unweighted"] == 0 and table.loc[1, "p_partial_absent"] == pytest.approx(0.0)
+    # size 2: hh2 fully absent, hh5 partially absent -> 0.5 / 0.5
+    assert table.loc[2, "n_households_unweighted"] == 2
+    assert table.loc[2, "p_all_absent"] == pytest.approx(0.5) and table.loc[2, "p_partial_absent"] == pytest.approx(0.5)
+    # size 3: hh3 nobody absent, hh4 partial -> p_partial 0.5, p_all 0
+    assert table.loc[3, "p_partial_absent"] == pytest.approx(0.5) and table.loc[3, "p_all_absent"] == pytest.approx(0.0)
+    # size 4: hh6 partial only
+    assert table.loc[4, "n_partial_absent_unweighted"] == 1 and table.loc[4, "p_partial_absent"] == pytest.approx(1.0)
+    assert np.isnan(table.loc[5, "p_partial_absent"]) and table.loc[5, "n_households_unweighted"] == 0
+    assert list(table.columns) == A.BY_SIZE_COLUMNS[1:]
+
+
+def test_by_household_size_first_seven_columns_are_unchanged_by_the_partial_columns():
+    """Additivity: the pre-#426 columns keep their names, order and values on the tiny fixture."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    table = A.build_absence_household_by_size(prepared, _households())
+    assert list(table.columns[:7]) == ["size_class", "n_households_unweighted", "n_all_absent_unweighted",
+                                       "p_all_absent", "n_persons_unweighted", "n_absent_persons_unweighted",
+                                       "p_absent_person"]
+    assert table.set_index("size_class").loc[2, "p_all_absent"] == pytest.approx(1.0)
+
+
+def test_build_absence_household_by_size_raises_when_roster_differs_from_v_anz_pers():
+    """Household size = DELIVERED persons per HHNR is an ASSUMPTION about the delivery; it is now
+    verified in code, not ad hoc: a mismatch with V_ANZ_PERS must raise, naming the household."""
+    prepared, _ = A.prepare_absence_persons(_persons())
+    households = _households(); households.loc[households["HHNR"] == 3, "V_ANZ_PERS"] = 4
+    with pytest.raises(ValueError, match="V_ANZ_PERS"):
+        A.build_absence_household_by_size(prepared, households)
+
+
+def test_build_absence_household_by_size_requires_the_roster_column():
+    prepared, _ = A.prepare_absence_persons(_persons())
+    with pytest.raises(ValueError, match="V_ANZ_PERS"):
+        A.build_absence_household_by_size(prepared, _households().drop(columns=["V_ANZ_PERS"]))
