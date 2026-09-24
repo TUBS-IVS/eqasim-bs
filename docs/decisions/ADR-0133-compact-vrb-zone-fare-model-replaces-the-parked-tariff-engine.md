@@ -130,6 +130,12 @@ Its tests price a single synthetic city ticket (360 ct) only.
   tickets that prices a 60 km ride at about 7.60 EUR, below every ticket DB sells.
 - **Deutschlandticket holders at 0 EUR on long-distance rides, assuming they take the parallel regional train:**
   proposed and rejected by the maintainer on 2026-09-24; the priced ride is the routed one.
+- **Best of two PT routes inside mode choice (the fastest route and, when it contains a long-distance ride, a
+  regional-only route, each valued with the person's own fare; the better one becomes the PT alternative):**
+  the price-aware fix for the routing limitation below, preferred over a second PT mode (two near-identical
+  logit alternatives would inflate the PT share). Rejected by the maintainer on 2026-09-24 as too much work for
+  this feature; it needs a second router on a schedule without long-distance lines and a wrapper around the PT
+  trip estimator.
 
 ## Consequences
 
