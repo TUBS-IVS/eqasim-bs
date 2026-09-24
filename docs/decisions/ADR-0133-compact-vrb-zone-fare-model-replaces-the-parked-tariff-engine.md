@@ -140,10 +140,12 @@ Its tests price a single synthetic city ticket (360 ct) only.
   DMC prefix seam) were carried over.
 - `vrb_zone_fares_enabled` is OFF in `configs/base_bs.yml` until a 1 % smoke recorded in a run manifest shows a
   fallback share below 5 % and a plausible price distribution.
-- The router chooses the fastest connection without looking at prices, so a Deutschlandticket holder routed onto
-  an ICE between Braunschweig, Wolfsburg and Hanover pays 21.90 EUR although a regional train is free for them;
-  PT is over-priced for exactly these trips. Excluding long-distance services from the routed timetable is
-  issue #431; the smoke's `long_distance_flat` share measures how often the case occurs.
+- Long-distance services stay in the routed timetable (maintainer decision 2026-09-24, issue #431 closed as not
+  planned): an ICE or IC between Wolfsburg, Braunschweig and Hanover is a real option for these trips, and with
+  the flat price it is no longer priced as a fallback. Known limitation: the router chooses the fastest
+  connection without looking at prices, so a Deutschlandticket holder routed onto an ICE pays 21.90 EUR although
+  a regional train is free for them; the smoke's `long_distance_flat` share states how often a routed PT trip
+  contains a long-distance ride.
 - A scenario prepared with the flag ON cannot be run with `vrbFare.enabled=false` or a command-line override:
   its schedule carries `vrbTariffZone` instead of the ring attributes the legacy cost model reads. Re-prepare
   with the flag OFF instead.
