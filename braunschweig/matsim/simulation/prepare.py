@@ -50,6 +50,7 @@ VRB_FARE_DEFAULTS = {
     "vrb_fare_maximum_unsupported_share": 0.05,        # ASSUMPTION: diagnostic threshold, not an accuracy target
     "vrb_fare_external_local_single_cents": 370,       # ASSUMPTION: GVH one-zone single 2026 for every external operator
     "vrb_fare_rail_distance_factor": 1.0,              # ASSUMPTION: ridden stop distance -> tariff distance
+    "vrb_fare_long_distance_single_cents": 2190,       # ASSUMPTION: DB Sparpreis entry price 2026, every ticket
     # ASSUMPTION: GTFS route ids become the schedule line ids (pt2matsim), so nearly every line must have a
     # scope row; a lower share means the ids diverged, not that a few lines are legitimately unknown.
     "vrb_fare_minimum_line_scope_coverage": 0.99,
@@ -227,6 +228,7 @@ def _write_vrb_fare_inputs(context, config_name):
         snapshot_date=context.config("vrb_fare_snapshot_date"),
         assumptions={"external_local_single_cents": int(context.config("vrb_fare_external_local_single_cents")),
                      "rail_distance_factor": float(context.config("vrb_fare_rail_distance_factor")),
+                     "long_distance_single_cents": int(context.config("vrb_fare_long_distance_single_cents")),
                      "unsupported_fallback_cents": int(context.config("vrb_fare_unsupported_fallback_cents"))})
     fare_model_export.write_fare_model(root / model_name, model)
     fare_config_xml.write_vrb_fare_module(root / config_name, {

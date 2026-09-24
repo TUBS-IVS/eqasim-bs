@@ -40,6 +40,10 @@ DEFAULT_ASSUMPTIONS = {
     "rail_distance_factor": 1.0,
     # Price of a counted fallback outcome; the fare model JSON is its only home (the Java side reads it there).
     "unsupported_fallback_cents": 370,
+    # DB Sparpreis entry price 2026 (21.90 EUR, unchanged at the December 2025 timetable change) for every
+    # journey with a long-distance ride (DB Fernverkehr, Flix), whatever the ticket: no Germany-wide or VRB
+    # pass is valid there (maintainer decision 2026-09-24, ADR-0133 D6). An advertised minimum, not a mean.
+    "long_distance_single_cents": 2190,
     # VRB Tarifbestimmungen 2026 section 2.3: child fares for ages 6 to 14 inclusive.
     "child_minimum_age": 6,
     "child_maximum_age": 14,
@@ -114,7 +118,7 @@ def load_rail_bands(path=None, tariff_id="niedersachsentarif") -> tuple[list[dic
 
 def _check_assumptions(assumptions: Mapping) -> dict:
     values = dict(DEFAULT_ASSUMPTIONS, **assumptions)
-    for key in ("external_local_single_cents", "unsupported_fallback_cents"):
+    for key in ("external_local_single_cents", "unsupported_fallback_cents", "long_distance_single_cents"):
         if type(values[key]) is not int or values[key] < 0:
             raise ValueError(f"{key} must be a nonnegative integer number of cents, got {values[key]!r}")
     if not (float(values["rail_distance_factor"]) > 0):
@@ -133,7 +137,7 @@ def build_fare_model(*, snapshot_date: str, assumptions: Mapping) -> dict:
     if len(short) != 1:
         raise ValueError(f"short-trip price differs by class in the source: {sorted(short)}")
     return {
-        "schema_version": 1, "tariff_snapshot_date": snapshot_date, "money_price_year": int(snapshot_date[:4]),
+        "schema_version": 2, "tariff_snapshot_date": snapshot_date, "money_price_year": int(snapshot_date[:4]),
         "currency": "EUR", "zones": zones, "city_zones": list(CITY_ZONES), "price_classes": list(PRICE_CLASSES),
         "single_adult_cents": {c: prices[("single_adult", c)] for c in PRICE_CLASSES},
         "single_child_cents": {c: prices[("single_child_age_6_to_14", c)] for c in PRICE_CLASSES},
@@ -145,6 +149,7 @@ def build_fare_model(*, snapshot_date: str, assumptions: Mapping) -> dict:
         "external": {"rail_distance_bands_adult": adult_bands, "rail_distance_bands_child": child_bands,
                      "distance_factor": float(values["rail_distance_factor"]),
                      "local_single_cents": values["external_local_single_cents"]},
+        "long_distance": {"single_cents": values["long_distance_single_cents"]},
         "fallback": {"unsupported_ride_cents": values["unsupported_fallback_cents"]},
         # Content hashes make a cached model recognisable as stale when a committed table is corrected.
         "sources": [_file_source("vrb_prices_2026", PRICE_INPUTS), _file_source("vrb_matrix_2022", MATRIX_CSV),
@@ -155,6 +160,8 @@ def build_fare_model(*, snapshot_date: str, assumptions: Mapping) -> dict:
             "ASSUMPTION: job/semester tickets count as Germany-wide flat; monthly and weekly passes as VRB-network flat (D5).",
             f"ASSUMPTION: external local single {values['external_local_single_cents']} ct for every non-VRB bus/tram ride (D7).",
             f"ASSUMPTION: rail tariff distance = ridden stop distance x {values['rail_distance_factor']} (D7).",
+            f"ASSUMPTION: every journey with a long-distance ride costs {values['long_distance_single_cents'] / 100:.2f} "
+            "EUR for every traveller of 6 or older, the DB Sparpreis entry price 2026 (D6).",
         ],
     }
 

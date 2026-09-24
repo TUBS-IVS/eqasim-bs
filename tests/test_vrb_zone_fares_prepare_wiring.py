@@ -37,6 +37,7 @@ ON_VALUES = {
     "vrb_fare_snapshot_date": "2026-06-20", "vrb_fare_day_ticket_cap_enabled": True,
     "vrb_fare_unsupported_fallback_cents": 370, "vrb_fare_maximum_unsupported_share": 0.05,
     "vrb_fare_external_local_single_cents": 370, "vrb_fare_rail_distance_factor": 1.0,
+    "vrb_fare_long_distance_single_cents": 2190,
     "vrb_fare_minimum_line_scope_coverage": 0.99, "vrb_fare_minimum_facility_zone_coverage": 0.10,
 }
 MODEL_NAME = "bs_vrb_fare_model_2026-06-20.json"
@@ -63,7 +64,7 @@ def test_on_declares_polygon_stage_cleaned_gtfs_and_assumption_keys(tmp_path):
     for key in ("vrb_fare_snapshot_date", "vrb_fare_day_ticket_cap_enabled", "vrb_fare_unsupported_fallback_cents",
                 "vrb_fare_maximum_unsupported_share", "vrb_fare_external_local_single_cents",
                 "vrb_fare_rail_distance_factor", "vrb_fare_minimum_line_scope_coverage",
-                "vrb_fare_minimum_facility_zone_coverage"):
+                "vrb_fare_minimum_facility_zone_coverage", "vrb_fare_long_distance_single_cents"):
         assert key in context.declared_config
 
 
@@ -110,7 +111,9 @@ def test_on_execute_writes_inputs_module_and_report(tmp_path, monkeypatch):
     root = Path(context.path())
     assert (root / "vrb_tariff_zones.shp").is_file() and (root / "bs_vrb_line_scopes.csv").is_file()
     # The fare model name carries the output prefix and the tariff snapshot it was built for.
-    assert json.loads((root / MODEL_NAME).read_text())["tariff_snapshot_date"] == "2026-06-20"
+    written = json.loads((root / MODEL_NAME).read_text())
+    assert written["tariff_snapshot_date"] == "2026-06-20"
+    assert written["long_distance"] == {"single_cents": 2190}
     module = prepare.fare_config_xml.read_vrb_fare_module(root / "bs_config.xml")
     assert module["enabled"] == "true" and module["fareModelPath"] == MODEL_NAME
     assert module["lineScopesPath"] == "bs_vrb_line_scopes.csv"

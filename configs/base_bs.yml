@@ -575,6 +575,9 @@ config:
   vrb_fare_maximum_unsupported_share: 0.05
   vrb_fare_external_local_single_cents: 370
   vrb_fare_rail_distance_factor: 1.0
+  # ASSUMPTION: DB Sparpreis entry price 2026 for every journey with a long-distance ride (DB Fernverkehr,
+  # Flix), whatever the ticket (ADR-0133 D6).
+  vrb_fare_long_distance_single_cents: 2190
   # Preparation guards (ASSUMPTIONS, failure detectors rather than accuracy targets): the share of
   # schedule lines with a tariff scope row and of final-schedule stop facilities with a VRB zone.
   vrb_fare_minimum_line_scope_coverage: 0.99

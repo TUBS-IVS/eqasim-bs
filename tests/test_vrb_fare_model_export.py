@@ -8,7 +8,7 @@ from braunschweig.data.vrb import fare_model_export as fme
 
 def test_model_from_committed_inputs_has_the_documented_shape():
     model = fme.build_fare_model(snapshot_date="2026-06-20", assumptions=fme.DEFAULT_ASSUMPTIONS)
-    assert model["schema_version"] == 1 and model["money_price_year"] == 2026
+    assert model["schema_version"] == 2 and model["money_price_year"] == 2026
     assert len(model["zones"]) == 48 and model["city_zones"] == ["20", "40", "80"]
     assert model["single_adult_cents"] == {"city": 360, "ps1": 390, "ps2": 560, "ps3": 770, "ps4": 1230}
     assert model["single_child_cents"]["ps4"] == 740 and model["short_trip_cents"] == 200
@@ -24,6 +24,9 @@ def test_model_from_committed_inputs_has_the_documented_shape():
     assert model["external"]["rail_distance_bands_adult"][0]["up_to_km"] > 0
     assert model["external"]["distance_factor"] == 1.0 and model["external"]["local_single_cents"] == 370
     assert model["fallback"]["unsupported_ride_cents"] == 370
+    # DB Sparpreis entry price 2026 for every long-distance ride (maintainer decision 2026-09-24).
+    assert model["long_distance"] == {"single_cents": 2190}
+    assert any("21.90" in text and "long-distance" in text for text in model["assumptions"])
     assert any("2022" in text for text in model["assumptions"])
 
 
@@ -43,6 +46,9 @@ def test_assumption_parameters_are_validated():
     bad = dict(fme.DEFAULT_ASSUMPTIONS, external_local_single_cents=-1)
     with pytest.raises(ValueError, match="external_local_single_cents"):
         fme.build_fare_model(snapshot_date="2026-06-20", assumptions=bad)
+    with pytest.raises(ValueError, match="long_distance_single_cents"):
+        fme.build_fare_model(snapshot_date="2026-06-20",
+                             assumptions=dict(fme.DEFAULT_ASSUMPTIONS, long_distance_single_cents=21.9))
     with pytest.raises(ValueError, match="rail_distance_factor"):
         fme.build_fare_model(snapshot_date="2026-06-20",
                              assumptions=dict(fme.DEFAULT_ASSUMPTIONS, rail_distance_factor=0))
@@ -57,7 +63,7 @@ def test_write_is_deterministic(tmp_path):
     model = fme.build_fare_model(snapshot_date="2026-06-20", assumptions=fme.DEFAULT_ASSUMPTIONS)
     a = fme.write_fare_model(tmp_path / "a.json", model).read_bytes()
     b = fme.write_fare_model(tmp_path / "b.json", model).read_bytes()
-    assert a == b and json.loads(a)["schema_version"] == 1
+    assert a == b and json.loads(a)["schema_version"] == 2
 
 
 def test_sources_record_the_content_hash_of_every_committed_input():
