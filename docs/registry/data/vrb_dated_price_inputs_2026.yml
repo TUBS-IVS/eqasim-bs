@@ -7,7 +7,8 @@ geography: VRB
 crs: null
 roles:
 - reference_table
-used_by: []
+used_by:
+- matsim.simulation.prepare
 acquisition:
   method: committed
   source: https://www.vrb-online.de/de/service/downloads?file=files%2Fmedia%2Fservice%2Fdownloads%2Ftarifinformationen%2Fvrb-tarifflyer.pdf&cid=658

@@ -20,5 +20,7 @@ production: false
 inputs:
 - vrb_tariff_zone_polygons
 - gtfs_feed
-features: []
-decisions: []
+features:
+- vrb_zone_fare_model
+decisions:
+- ADR-0133

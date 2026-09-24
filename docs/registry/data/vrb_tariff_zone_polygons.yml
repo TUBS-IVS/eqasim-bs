@@ -10,7 +10,8 @@ crs: EPSG:25832
 roles:
 - spatial_input
 - supply_input
-used_by: []
+used_by:
+- braunschweig.data.vrb.zone_polygons
 acquisition:
   method: manual_download
   source: https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0

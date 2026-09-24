@@ -8,7 +8,8 @@ crs: null
 roles:
 - assumption_basis
 - reference_table
-used_by: []
+used_by:
+- matsim.simulation.prepare
 acquisition:
   method: committed
   source: https://www.vrb-online.de/de/service/downloads?file=files/media/service/downloads/tarifinformationen/vrb-preisstufenmatrix.pdf&cid=658

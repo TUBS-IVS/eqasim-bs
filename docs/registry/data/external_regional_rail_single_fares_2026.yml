@@ -8,7 +8,8 @@ crs: null
 roles:
 - reference_table
 - assumption_basis
-used_by: []
+used_by:
+- matsim.simulation.prepare
 acquisition:
   method: derived
   source: official price-list PDFs named inside the JSON (source.url, sha256)

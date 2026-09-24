@@ -1,0 +1,73 @@
+feature: vrb_zone_fare_model
+title: VRB zone fare model (compact, sourced prices)
+area: matsim
+description: Prices every routed PT trip with the VRB tariff 2026 (official zone polygons, 2022
+  price-stage matrix as assumption, 2026 prices), Germany-wide flat / VRB-network flat / no
+  entitlement from ptSubscriptionType, rule-based external pricing (Niedersachsentarif bands, local
+  single) and a day-ticket cap over the DMC prefix; every quote is counted by outcome and a high
+  fallback share fails the run. Replaces the placeholder ring cost model when vrb_zone_fares_enabled.
+  The flag-only stage braunschweig.data.vrb.zone_polygons joins the stage list when the flag is on
+  in the canonical config (it is absent from the DAG snapshots while off).
+stages:
+- matsim.simulation.prepare
+- matsim.output
+pipelines:
+  popsim_mid: supported
+  popsim_open: supported
+  simple_ipf_open: supported
+lifecycle: experimental
+production:
+  enabled: false
+  flags:
+  - vrb_zone_fares_enabled
+introduced:
+  issue: '#430'
+  pr: null
+  adr: ADR-0133
+detail_doc: docs/codebase/notes/vrb-zone-fare-model.md
+code_paths:
+- braunschweig/data/vrb/zone_polygons.py
+- braunschweig/data/vrb/line_scopes.py
+- braunschweig/data/vrb/fare_model_export.py
+- braunschweig/data/vrb/fare_config_xml.py
+- braunschweig/matsim/simulation/prepare.py
+- matsim/output.py
+evidence:
+  tests:
+  - tests/test_vrb_zone_polygons.py
+  - tests/test_vrb_line_scopes.py
+  - tests/test_vrb_fare_model_export.py
+  - tests/test_vrb_fare_config_xml.py
+  - tests/test_vrb_zone_fares_prepare_wiring.py
+  - tests/test_vrb_price_stage_matrix.py
+  - tests/test_vrb_dated_price_inputs.py
+  off_path_byte_identical:
+    claimed: true
+    test: tests/test_vrb_zone_fares_prepare_wiring.py::test_off_execute_does_not_touch_config_or_call_the_zone_tool
+    note: OFF keeps the legacy ring tool call and leaves the prepared config byte-identical; the Java
+      pt cost model and estimator names are unchanged without the vrbFare module
+      (eqasim-java-bs BraunschweigConfiguratorVrbFareTest). No full-simulation byte identity is claimed.
+  fallback_rate:
+    instrumented: true
+    log_marker: '[vrb-fares]'
+    note: Per-iteration outcome counts in ITERS/it.N/N.vrb_fare_outcomes.csv over all evaluated PT
+      quotes; the run fails when the fallback share exceeds maximumUnsupportedShare (0.05, an
+      assumption). Preparation reports facility zone coverage and enforces line scope coverage >= 0.99.
+  reference:
+    kind: committed
+    path: docs/data/vrb-dated-price-inputs.json
+    note: Prices and the price-stage matrix are committed tariff facts; no observed-behaviour
+      reference is compared by this feature.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: Unit and wiring tests only until the 1 % ON/OFF smoke is recorded; convergence of that smoke
+    is not validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: Awaiting the 1 % ON/OFF smoke on the run server and its run manifest.
+  note: Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.fares.zonal,
+    org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation) with its own unit tests.
