@@ -55,6 +55,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.verbindungen.margins](../registry/stages/braunschweig.data.verbindungen.margins.yml) | validation | braunschweig_new | x | A/-/- | -- | -- |
 | [braunschweig.data.verbindungen.work_od](../registry/stages/braunschweig.data.verbindungen.work_od.yml) | work | braunschweig_new | x | A/A/A | -- | verbindungen_anchor, verbindungen_od_validation |
 | [braunschweig.data.verbindungen.zones](../registry/stages/braunschweig.data.verbindungen.zones.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
+| [braunschweig.data.vrb.zone_polygons](../registry/stages/braunschweig.data.vrb.zone_polygons.yml) | matsim | braunschweig_new | -- | -/-/- | -- | -- |
 | [braunschweig.data.vrb.zones](../registry/stages/braunschweig.data.vrb.zones.yml) | matsim | braunschweig_new | x | A/A/A | -- | -- |
 | [braunschweig.data.zensus_grid.population](../registry/stages/braunschweig.data.zensus_grid.population.yml) | home | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.freight.extraction](../registry/stages/braunschweig.freight.extraction.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
