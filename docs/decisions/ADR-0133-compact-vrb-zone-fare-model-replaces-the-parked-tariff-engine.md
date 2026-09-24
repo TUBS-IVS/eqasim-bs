@@ -30,9 +30,15 @@ Its tests price a single synthetic city ticket (360 ct) only.
    the existing eqasim `@Named("pt") CostModel` selection (eqasim France pattern), switched by the MATSim module
    `vrbFare`. Routing, DMC model type, selector and utility formula stay unchanged (D11).
 2. **Zones (D2).** Zone membership of a stop facility is the official Regionalverband polygon covering it
-   (Data Registry `vrb_tariff_zone_polygons`; facility attribute `vrbTariffZone`). Zones 55/56 are 300 m buffers
-   around the GTFS stops named Hämelerwald/Dedenhausen (ASSUMPTION; VRB terms 2026 §9.2). Overlap slivers go to
-   the lower zone id; a facility on a shared border takes the lower id and is counted as a tie.
+   (Data Registry `vrb_tariff_zone_polygons`; facility attribute `vrbTariffZone`). Zones 55/56 are point zones
+   around the station complexes Hämelerwald and Dedenhausen (VRB terms 2026 §9.2): the rail-served cleaned-GTFS
+   stops carrying the station name plus every stop sharing their GTFS parent station (the forecourt bus bays),
+   each buffered by 50 m (ASSUMPTION: a tolerance for coordinate rounding), refused when the complex spreads
+   more than 300 m around its centroid (ASSUMPTION). The other stops of the villages that carry the place name
+   are not part of the zone; the first implementation buffered all stops with the name and was corrected in the
+   final review. Overlap slivers above 1 m² (ASSUMPTION: smaller ones are digitisation noise) go to the lower zone
+   id; a facility on a shared border takes the lower id and is counted as a tie. Every zone id on a stop facility
+   must be a zone of the fare model, checked when the cost model is built.
 3. **Price class (D3).** The cell (first boarding zone, last alighting zone) of the matrix printed 01.01.2022,
    applied to 2026 as an ASSUMPTION: VRB still publishes 48 zones, and the 2026 selector agreed with the matrix
    on 2026-09-23 for 40->70 (stage 2), 40->20 (stage 3) and 40->40 (city tariff). `ST` -> city, `1..4` -> ps1..ps4.
@@ -57,20 +63,36 @@ Its tests price a single synthetic city ticket (360 ct) only.
 8. **Fallbacks (D8).** Every quote carries exactly one outcome label, counted per iteration
    (`ITERS/it.N/N.vrb_fare_outcomes.csv`, log marker `[vrb-fares]`). Fallback outcomes (`category_missing`,
    `category_unknown`, `line_scope_missing`, `long_distance_fallback`, `vrb_pair_undefined_fallback`,
-   `external_rail_beyond_bands`) cost `unsupportedFallbackPriceCents` (default 370, ASSUMPTION) — except the two
-   category outcomes, which keep the no-entitlement price — and the run fails after an iteration whose fallback
+   `external_rail_beyond_bands`) cost the fare model's `fallback.unsupported_ride_cents` (pipeline key
+   `vrb_fare_unsupported_fallback_cents`, default 370, ASSUMPTION; the JSON is the only home of every price and
+   the `vrbFare` module carries none) — except the two category outcomes, which keep the no-entitlement price and,
+   priced as a VRB single, take part in the day-ticket cap — and the run fails after an iteration whose fallback
    share of the evaluated quotes exceeds `maximumUnsupportedShare` (default 0.05, ASSUMPTION for diagnostics).
-   One ride never crashes the run.
+   One ride never crashes the run; a person without an age attribute does, because the child rules need it.
 9. **Day-ticket cap (D9).** The DMC is tour-based, so the earlier trips of the candidate tour and of the already
-   selected tours are known. A person's VRB cash for the day is min(sum of VRB singles, day ticket of the highest
-   price class used); the current trip pays the increase. The prefix-aware estimator seam passes DMC's previous
-   trips; a prefix-aware tour estimator adds the selected earlier tours; `pt` is removed from the DMC cached modes.
-   Earlier trips are re-priced without counting, and the informational label `day_ticket_cap_applied` is not
-   part of the quote total. Without the cap two city singles already equal the city day ticket (7.20 EUR), so
-   every further trip of the day would be over-priced.
-10. **Inputs (D10).** Preparation writes `vrb_tariff_zones.shp`, `vrb_line_scopes.csv`, `vrb_fare_model_2026.json`,
-    the `vrbFare` module and `vrb_fare_inputs_report.json` (line-scope coverage below 99 % fails the stage);
-    `matsim.output` copies the three data files unprefixed next to the config, which references them.
+   selected tours are known. A person's VRB cash for the day is the cheapest of all VRB singles or, for every
+   price class k, one day ticket of class k plus the singles of the trips above k (a second day ticket never
+   helps); the current trip pays the increase, which lies between 0 and its own single. The first formulation
+   min(sum of singles, day ticket of the highest class) over-priced a higher-class trip after capped city trips
+   (three city trips then ps3: 8.20 instead of 7.70 EUR) and was replaced in the final review. The PT utility is
+   estimated at the trip's own single fare and stays in the DMC estimate cache; `DayTicketCapTourEstimator` (the
+   native cumulative estimator with the selected earlier tours added to the prefix) adds the cap correction per
+   mode chain as the monetary utility term at the marginal fare minus the one at the single, which is exact
+   because the monetary term is the only fare-dependent term. Earlier trips are re-priced without counting; the
+   informational label `day_ticket_cap_applied` counts the chain evaluations where the cap binds and is not part
+   of the quote total. The cap requires the tour-based DMC model with the cumulative tour estimator and fails
+   loudly otherwise. ASSUMPTION: a day ticket of class k covers every VRB trip of class k or lower wherever it
+   runs. The VRB price table has no child day ticket (the day ticket is priced by party size only), so children
+   are capped by the same one-person day ticket. Without the cap two city singles already equal the city day
+   ticket (7.20 EUR), so every further trip of the day would be over-priced.
+10. **Inputs (D10).** Preparation writes `vrb_tariff_zones.shp`, `<prefix>vrb_line_scopes.csv`,
+    `<prefix>vrb_fare_model_<snapshot>.json` (carrying the sha256 of every committed source table), the `vrbFare`
+    module and `<prefix>vrb_fare_inputs_report.json`, whose coverage is counted on the final (cut) schedule the run
+    prices with. Two guards fail the stage: line-scope coverage below 99 % (ASSUMPTION; the GTFS route ids and the
+    schedule line ids diverged) and stop-facility zone coverage below 10 % (ASSUMPTION; the zone attribution broke,
+    which the run guard cannot see because external pricing is not a fallback outcome). The committed price,
+    matrix and rail tables are part of the stage's cache token. `matsim.output` copies the files the report lists
+    next to the config, which references them by these names.
 
 ## Rejected alternatives
 
@@ -83,6 +105,11 @@ Its tests price a single synthetic city ticket (360 ct) only.
   on the parked branch), and the affected pass group is about 1 % of persons; deferred.
 - **A purely myopic purchase rule (parked ADR-0130 item 4):** over-prices every PT trip beyond the second one of
   a day; replaced by the cap above.
+- **Removing `pt` from the DMC estimate cache for the cap (first implementation of D9):** re-routes the PT trip
+  once per enumerated mode chain of a tour and multiplies the outcome counts by the chain count; replaced by the
+  cached estimate at the single fare plus the per-chain utility correction, which needs no eqasim-core change.
+- **A configurable fallback price in the `vrbFare` module:** the cost model never read it (the price comes from
+  the fare model JSON); one fact in two homes, removed in the final review.
 
 ## Consequences
 
@@ -93,6 +120,9 @@ Its tests price a single synthetic city ticket (360 ct) only.
   DMC prefix seam) were carried over.
 - `vrb_zone_fares_enabled` is OFF in `configs/base_bs.yml` until a 1 % smoke recorded in a run manifest shows a
   fallback share below 5 % and a plausible price distribution.
+- A scenario prepared with the flag ON cannot be run with `vrbFare.enabled=false` or a command-line override:
+  its schedule carries `vrbTariffZone` instead of the ring attributes the legacy cost model reads. Re-prepare
+  with the flag OFF instead.
 - Limitations to state with every result: no ticket reuse within validity windows, no six-ride packages, one flat
   single for every external local operator, ridden distance as tariff distance for rail, children under 14
   without their real school tickets (the population marks them `never_pt`), ticket categories from the 2023

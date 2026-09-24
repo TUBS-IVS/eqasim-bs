@@ -39,6 +39,7 @@ evidence:
   - tests/test_vrb_fare_model_export.py
   - tests/test_vrb_fare_config_xml.py
   - tests/test_vrb_zone_fares_prepare_wiring.py
+  - tests/test_vrb_fare_output_copy.py
   - tests/test_vrb_price_stage_matrix.py
   - tests/test_vrb_dated_price_inputs.py
   off_path_byte_identical:
@@ -52,7 +53,9 @@ evidence:
     log_marker: '[vrb-fares]'
     note: Per-iteration outcome counts in ITERS/it.N/N.vrb_fare_outcomes.csv over all evaluated PT
       quotes; the run fails when the fallback share exceeds maximumUnsupportedShare (0.05, an
-      assumption). Preparation reports facility zone coverage and enforces line scope coverage >= 0.99.
+      assumption). Preparation enforces line scope coverage >= 0.99 and final-schedule stop-facility zone
+      coverage >= 0.10 (both assumptions, failure detectors); the ON controller injector is built by
+      eqasim-java-bs VrbFareInjectorTest.
   reference:
     kind: committed
     path: docs/data/vrb-dated-price-inputs.json
