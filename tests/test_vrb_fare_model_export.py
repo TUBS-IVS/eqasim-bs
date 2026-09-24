@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -57,3 +58,20 @@ def test_write_is_deterministic(tmp_path):
     a = fme.write_fare_model(tmp_path / "a.json", model).read_bytes()
     b = fme.write_fare_model(tmp_path / "b.json", model).read_bytes()
     assert a == b and json.loads(a)["schema_version"] == 1
+
+
+def test_sources_record_the_content_hash_of_every_committed_input():
+    # A cached fare model must be recognisable as stale: each source carries the sha256 of the file it was built from.
+    model = fme.build_fare_model(snapshot_date="2026-06-20", assumptions=fme.DEFAULT_ASSUMPTIONS)
+    by_path = {source["path"]: source["sha256"] for source in model["sources"]}
+    for path in fme.committed_input_paths():
+        committed = path.read_bytes().replace(b"\r\n", b"\n")
+        assert by_path[path.relative_to(fme.REPO).as_posix()] == hashlib.sha256(committed).hexdigest()
+
+
+def test_content_hash_ignores_the_checkout_line_endings(tmp_path):
+    lf, crlf = tmp_path / "lf.csv", tmp_path / "crlf.csv"
+    lf.write_bytes(b"a,b\n1,2\n")
+    crlf.write_bytes(b"a,b\r\n1,2\r\n")
+    assert fme.content_sha256(lf) == fme.content_sha256(crlf) == hashlib.sha256(b"a,b\n1,2\n").hexdigest()
+

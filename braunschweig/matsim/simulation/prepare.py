@@ -26,6 +26,7 @@ import json
 import shutil
 import os.path
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 import matsim.runtime.eqasim as eqasim
@@ -49,7 +50,13 @@ VRB_FARE_DEFAULTS = {
     "vrb_fare_maximum_unsupported_share": 0.05,        # ASSUMPTION: diagnostic threshold, not an accuracy target
     "vrb_fare_external_local_single_cents": 370,       # ASSUMPTION: GVH one-zone single 2026 for every external operator
     "vrb_fare_rail_distance_factor": 1.0,              # ASSUMPTION: ridden stop distance -> tariff distance
-    "vrb_fare_minimum_line_scope_coverage": 0.99,      # share of schedule lines that must have a scope row
+    # ASSUMPTION: GTFS route ids become the schedule line ids (pt2matsim), so nearly every line must have a
+    # scope row; a lower share means the ids diverged, not that a few lines are legitimately unknown.
+    "vrb_fare_minimum_line_scope_coverage": 0.99,
+    # ASSUMPTION: floor on the share of final-schedule stop facilities carrying a VRB zone. A broken attribution
+    # (CRS mismatch, misread zone field) gives almost 0; the timetable legitimately reaches far beyond the VRB,
+    # so this is a failure detector, not a coverage target. Revisit against the smoke's reported share.
+    "vrb_fare_minimum_facility_zone_coverage": 0.10,
 }
 VRB_ZONE_TOOL = "org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation"
 
@@ -75,6 +82,10 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
+    # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
+    for path in fare_model_export.committed_input_paths():
+        digest.update(fare_model_export.content_sha256(path).encode("ascii"))
     for module_name in _DEFERRED_HELPER_MODULE_NAMES:
         try:
             deferred_module = importlib.import_module(module_name)
@@ -175,51 +186,80 @@ def _attach_vrb_tariff_zones(context):
     ])
 
 
-def _schedule_line_ids(schedule_path):
+def _schedule_summary(schedule_path) -> dict:
+    """Line ids and the VRB zone counts of the stop facilities of a MATSim schedule, in one streaming pass.
+
+    Each finished stopFacility / transitLine element is cleared after reading, so a large schedule is not
+    kept in memory as a whole tree.
+    """
+    line_ids, facilities, zoned_by_zone = set(), 0, Counter()
     with gzip.open(schedule_path, "rb") as stream:
-        return {element.get("id") for _, element in ET.iterparse(stream) if element.tag == "transitLine"}
+        for _, element in ET.iterparse(stream):
+            if element.tag == "stopFacility":
+                facilities += 1
+                zone = next((attribute.text for attribute in element.iter("attribute")
+                             if attribute.get("name") == "vrbTariffZone"), None)
+                if zone is not None and zone.strip():
+                    zoned_by_zone[zone.strip()] += 1
+                element.clear()
+            elif element.tag == "transitLine":
+                line_ids.add(element.get("id"))
+                element.clear()
+    return {"line_ids": line_ids, "facilities": facilities, "zoned_facilities": sum(zoned_by_zone.values()),
+            "zoned_by_zone": dict(sorted(zoned_by_zone.items()))}
 
 
 def _write_vrb_fare_inputs(context, config_name):
     """Line scopes, fare model, vrbFare config module and a coverage report for the enabled fare model.
 
-    Facility zone coverage is reported, not enforced: the timetable legitimately reaches 45 km beyond
-    the VRB. Line scope coverage below ``vrb_fare_minimum_line_scope_coverage`` fails the stage,
-    because a missing scope row means the GTFS route ids and the schedule line ids diverge.
+    Coverage is counted on the FINAL schedule (after the cordon cut and freight injection), which is the one
+    the run prices with; the zone tool's own counts are kept as ``pre_cut_zone_tool``. Two guards fail the
+    stage: line scope coverage below ``vrb_fare_minimum_line_scope_coverage`` (the GTFS route ids and the
+    schedule line ids diverged) and stop facility zone coverage below ``vrb_fare_minimum_facility_zone_coverage``
+    (the zone attribution broke, which would silently turn every trip into external pricing).
     """
     root = Path(context.path())
+    model_name, scopes_name, report_name = fare_config_xml.fare_input_file_names(
+        context.config("output_prefix"), context.config("vrb_fare_snapshot_date"))
     scopes = line_scopes.build_line_scopes(Path(context.path("data.gtfs.cleaned")) / "output")
-    line_scopes.write_line_scopes(scopes, root / "vrb_line_scopes.csv")
+    line_scopes.write_line_scopes(scopes, root / scopes_name)
     model = fare_model_export.build_fare_model(
         snapshot_date=context.config("vrb_fare_snapshot_date"),
         assumptions={"external_local_single_cents": int(context.config("vrb_fare_external_local_single_cents")),
                      "rail_distance_factor": float(context.config("vrb_fare_rail_distance_factor")),
                      "unsupported_fallback_cents": int(context.config("vrb_fare_unsupported_fallback_cents"))})
-    fare_model_export.write_fare_model(root / "vrb_fare_model_2026.json", model)
+    fare_model_export.write_fare_model(root / model_name, model)
     fare_config_xml.write_vrb_fare_module(root / config_name, {
-        "enabled": "true", "fareModelPath": "vrb_fare_model_2026.json", "lineScopesPath": "vrb_line_scopes.csv",
+        "enabled": "true", "fareModelPath": model_name, "lineScopesPath": scopes_name,
         "dayTicketCapEnabled": str(bool(context.config("vrb_fare_day_ticket_cap_enabled"))).lower(),
-        "unsupportedFallbackPriceCents": str(int(context.config("vrb_fare_unsupported_fallback_cents"))),
         "maximumUnsupportedShare": repr(float(context.config("vrb_fare_maximum_unsupported_share"))),
     })
-    zone_report = json.loads((root / "vrb_tariff_zone_report.json").read_text(encoding="utf-8"))
-    line_ids = _schedule_line_ids(root / "{}transit_schedule.xml.gz".format(context.config("output_prefix")))
+    zone_tool = json.loads((root / "vrb_tariff_zone_report.json").read_text(encoding="utf-8"))
+    summary = _schedule_summary(root / "{}transit_schedule.xml.gz".format(context.config("output_prefix")))
+    line_ids = summary["line_ids"]
     covered = line_ids & set(scopes["line_id"])
     line_coverage = len(covered) / max(len(line_ids), 1)
-    facility_coverage = zone_report["zoned"] / max(zone_report["facilities"], 1)
-    report = {"facility_zone_coverage": facility_coverage, "facilities": zone_report["facilities"],
-              "zoned_facilities": zone_report["zoned"], "boundary_ties": zone_report["boundary_ties"],
-              "by_mode": zone_report["by_mode"], "schedule_lines": len(line_ids), "lines_with_scope": len(covered),
+    facility_coverage = summary["zoned_facilities"] / max(summary["facilities"], 1)
+    report = {"fare_input_files": [model_name, scopes_name, report_name],
+              "facility_zone_coverage": facility_coverage, "facilities": summary["facilities"],
+              "zoned_facilities": summary["zoned_facilities"], "zoned_facilities_by_zone": summary["zoned_by_zone"],
+              "pre_cut_zone_tool": zone_tool, "schedule_lines": len(line_ids), "lines_with_scope": len(covered),
               "line_scope_coverage": line_coverage, "lines_without_scope": sorted(line_ids - covered)[:50]}
-    (root / "vrb_fare_inputs_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print("[vrb-fares] prepared inputs: facilities zoned %d/%d (%.2f%%), lines with scope %d/%d (%.2f%%), "
-          "boundary ties %d" % (zone_report["zoned"], zone_report["facilities"], 100 * facility_coverage,
-                                len(covered), len(line_ids), 100 * line_coverage, zone_report["boundary_ties"]))
+    (root / report_name).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print("[vrb-fares] prepared inputs (final schedule): facilities zoned %d/%d (%.2f%%), lines with scope %d/%d "
+          "(%.2f%%), boundary ties %d (zone tool)" % (
+              summary["zoned_facilities"], summary["facilities"], 100 * facility_coverage, len(covered),
+              len(line_ids), 100 * line_coverage, zone_tool["boundary_ties"]))
     minimum = float(context.config("vrb_fare_minimum_line_scope_coverage"))
     if line_coverage < minimum:
         raise RuntimeError("[vrb-fares] only %.2f%% of schedule lines have a tariff scope row (minimum %.2f%%); "
                            "first missing ids: %s" % (100 * line_coverage, 100 * minimum,
                                                       report["lines_without_scope"][:10]))
+    minimum = float(context.config("vrb_fare_minimum_facility_zone_coverage"))
+    if facility_coverage < minimum:
+        raise RuntimeError("[vrb-fares] only %.2f%% of the final schedule's stop facilities carry a VRB zone "
+                           "(minimum %.2f%%); check the CRS of the schedule and the zone polygons and the zone "
+                           "field of the polygon layer" % (100 * facility_coverage, 100 * minimum))
 
 
 def _cut_to_cordon(context):

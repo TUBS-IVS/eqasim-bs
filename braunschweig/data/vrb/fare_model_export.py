@@ -8,6 +8,7 @@ euro cents, distances in kilometres, validity in minutes.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Mapping
@@ -37,7 +38,7 @@ DEFAULT_ASSUMPTIONS = {
     "external_local_single_cents": 370,
     # Ridden stop-to-stop distance -> published tariff distance; uncalibrated.
     "rail_distance_factor": 1.0,
-    # Price of a counted fallback outcome.
+    # Price of a counted fallback outcome; the fare model JSON is its only home (the Java side reads it there).
     "unsupported_fallback_cents": 370,
     # VRB Tarifbestimmungen 2026 section 2.3: child fares for ages 6 to 14 inclusive.
     "child_minimum_age": 6,
@@ -45,8 +46,35 @@ DEFAULT_ASSUMPTIONS = {
 }
 
 
-def load_prices(snapshot_date: str, path=PRICE_INPUTS) -> dict[tuple[str, str], int]:
+def committed_input_paths() -> tuple[Path, Path, Path]:
+    """The committed tables the fare model is built from, resolved at call time.
+
+    ``braunschweig.matsim.simulation.prepare.validate`` hashes their bytes, so a corrected table
+    invalidates a cached prepared scenario; ``build_fare_model`` records the same hashes in ``sources``.
+    """
+    return PRICE_INPUTS, MATRIX_CSV, RAIL_TABLE
+
+
+def content_sha256(path) -> str:
+    """sha256 of a committed text file as git stores it (LF line endings).
+
+    A Windows checkout with core.autocrlf holds CRLF; hashing the LF-normalised bytes keeps the
+    recorded provenance identical on every platform and equal to the committed content.
+    """
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _file_source(source_id: str, path: Path) -> dict:
+    try:
+        shown = path.relative_to(REPO).as_posix()
+    except ValueError:
+        shown = path.as_posix()
+    return {"source_id": source_id, "path": shown, "sha256": content_sha256(path)}
+
+
+def load_prices(snapshot_date: str, path=None) -> dict[tuple[str, str], int]:
     """(product_id, price_field) -> cents for one tariff snapshot; null source cells are skipped."""
+    path = PRICE_INPUTS if path is None else path
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     table = {}
     for snapshot in data["snapshots"]:
@@ -58,8 +86,9 @@ def load_prices(snapshot_date: str, path=PRICE_INPUTS) -> dict[tuple[str, str], 
     return table
 
 
-def load_price_stage_matrix(path=MATRIX_CSV) -> tuple[list[str], dict[str, str]]:
+def load_price_stage_matrix(path=None) -> tuple[list[str], dict[str, str]]:
     """Sorted zone ids and 'origin|destination' -> price class for every defined matrix cell."""
+    path = MATRIX_CSV if path is None else path
     zones, classes = set(), {}
     with Path(path).open(encoding="utf-8", newline="") as stream:
         rows = [line for line in stream if not line.startswith("#")]
@@ -70,14 +99,17 @@ def load_price_stage_matrix(path=MATRIX_CSV) -> tuple[list[str], dict[str, str]]
     return sorted(zones, key=int), classes
 
 
-def load_rail_bands(path=RAIL_TABLE, tariff_id="niedersachsentarif") -> tuple[list[dict], list[dict], dict]:
-    """Adult and child single-fare bands of one tariff plus its source identity."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+def load_rail_bands(path=None, tariff_id="niedersachsentarif") -> tuple[list[dict], list[dict], dict]:
+    """Adult and child single-fare bands of one tariff plus its source identity (committed file and document)."""
+    path = Path(RAIL_TABLE if path is None else path)
+    data = json.loads(path.read_text(encoding="utf-8"))
     tariff = next(t for t in data["tariffs"] if t["tariff_id"] == tariff_id)
     adult = [{"up_to_km": t["up_to_km"], "price_cents": int(t["adult_single_cents"])} for t in tariff["tiers"]]
     child = [{"up_to_km": t["up_to_km"], "price_cents": int(t["child_single_cents"])} for t in tariff["tiers"]]
-    return adult, child, {"source_id": f"{tariff_id}_single_table", "url": tariff["source"]["url"],
-                          "sha256": tariff["source"].get("sha256"), "valid_from": tariff["valid_from"]}
+    source = _file_source(f"{tariff_id}_single_table", path)
+    source.update({"url": tariff["source"]["url"], "source_document_sha256": tariff["source"].get("sha256"),
+                   "valid_from": tariff["valid_from"]})
+    return adult, child, source
 
 
 def _check_assumptions(assumptions: Mapping) -> dict:
@@ -114,8 +146,9 @@ def build_fare_model(*, snapshot_date: str, assumptions: Mapping) -> dict:
                      "distance_factor": float(values["rail_distance_factor"]),
                      "local_single_cents": values["external_local_single_cents"]},
         "fallback": {"unsupported_ride_cents": values["unsupported_fallback_cents"]},
-        "sources": [{"source_id": "vrb_prices_2026", "path": PRICE_INPUTS.relative_to(REPO).as_posix()},
-                    {"source_id": "vrb_matrix_2022", "path": MATRIX_CSV.relative_to(REPO).as_posix()}, rail_source],
+        # Content hashes make a cached model recognisable as stale when a committed table is corrected.
+        "sources": [_file_source("vrb_prices_2026", PRICE_INPUTS), _file_source("vrb_matrix_2022", MATRIX_CSV),
+                    rail_source],
         "assumptions": [
             "ASSUMPTION: the VRB price-stage matrix printed 01.01.2022 is applied to the 2026 scenario (ADR-0133 D3).",
             "ASSUMPTION: ticket validity windows are not modelled; every PT trip is priced on its own (D4).",

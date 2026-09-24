@@ -56,27 +56,72 @@ def test_overlap_sliver_is_trimmed_to_lower_zone_id(tmp_path):
     assert by_id["40"].intersection(by_id["70"]).area == pytest.approx(0.0)
 
 
-def test_station_point_zones_are_built_from_gtfs_stop_names(tmp_path):
-    zones, _ = zp.load_zone_polygons(_three_zones(tmp_path), expected_feature_count=3)
-    # WGS84 coordinates far east of the synthetic squares (which sit at the EPSG:25832 origin).
-    stops = pd.DataFrame([
-        {"stop_id": "a", "stop_name": "Haemelerwald", "stop_lat": 52.4, "stop_lon": 10.1},
-        {"stop_id": "b", "stop_name": "Haemelerwald, Bahnhof", "stop_lat": 52.4005, "stop_lon": 10.1},
-        {"stop_id": "c", "stop_name": "Dedenhausen", "stop_lat": 52.45, "stop_lon": 10.05},
-    ])
-    points = zp.station_point_zones(stops, {"55": "Haemelerwald", "56": "Dedenhausen"}, 300.0, zones)
-    assert sorted(points["zone_id"]) == ["55", "56"]
-    assert points.geometry.area.min() == pytest.approx(3.1416 * 300 ** 2, rel=0.01)
+# A station complex as the cleaned DELFI feed writes it (see the stop rows of "Hämelerwald Bahnhof"):
+# the parent station (location_type "1.0", parent "nan"), the rail platform stop and the forecourt bus
+# stop as its children (parent ids written as floats, "402454.0"), and village bus stops about 800 m away
+# that also carry the place name. WGS84 coordinates, far from the synthetic squares at the origin.
+GTFS_STOPS = [
+    {"stop_name": "Hämelerwald Bahnhof", "parent_station": "nan", "stop_id": "402454",
+     "stop_lat": 52.3480, "stop_lon": 10.1100, "location_type": "1.0"},
+    {"stop_name": "Hämelerwald", "parent_station": "402454.0", "stop_id": "273565",
+     "stop_lat": 52.3481, "stop_lon": 10.1097, "location_type": ""},
+    {"stop_name": "Hämelerwald Bahnhof", "parent_station": "402454.0", "stop_id": "184038",
+     "stop_lat": 52.3478, "stop_lon": 10.1099, "location_type": ""},
+    {"stop_name": "Hämelerwald Försterstraße", "parent_station": "4402.0", "stop_id": "466850",
+     "stop_lat": 52.3408, "stop_lon": 10.1130, "location_type": ""},
+    {"stop_name": "Dedenhausen", "parent_station": "486545.0", "stop_id": "547191",
+     "stop_lat": 52.4322, "stop_lon": 10.2387, "location_type": ""},
+    {"stop_name": "Dedenhausen Eltzer Straße", "parent_station": "73671.0", "stop_id": "653480",
+     "stop_lat": 52.4390, "stop_lon": 10.2370, "location_type": ""},
+]
+RAIL_STOPS = {"273565", "547191"}
+STATIONS = {"55": "Hämelerwald", "56": "Dedenhausen"}
 
 
-def test_station_point_zones_fail_loudly_on_missing_or_scattered_names(tmp_path):
+def _stops():
+    return pd.DataFrame(GTFS_STOPS, dtype=str)
+
+
+def test_point_zone_is_the_rail_station_complex_not_the_village(tmp_path):
     zones, _ = zp.load_zone_polygons(_three_zones(tmp_path), expected_feature_count=3)
-    stops = pd.DataFrame([{"stop_id": "a", "stop_name": "Haemelerwald", "stop_lat": 52.4, "stop_lon": 10.1},
-                          {"stop_id": "b", "stop_name": "Haemelerwald Sued", "stop_lat": 52.5, "stop_lon": 10.1}])
-    with pytest.raises(ValueError, match="no GTFS stop named like 'Dedenhausen'"):
-        zp.station_point_zones(stops, {"56": "Dedenhausen"}, 300.0, zones)
+    points = zp.station_point_zones(_stops(), RAIL_STOPS, STATIONS, radius_m=50.0, maximum_spread_m=300.0,
+                                    existing=zones).set_index("zone_id")
+    assert points.loc["55", "rail_stop_ids"] == ["273565"]
+    # The forecourt bus stop shares the parent station; the village stop 800 m away does not belong to it.
+    assert points.loc["55", "station_stop_ids"] == ["184038", "273565"]
+    assert points.loc["56", "station_stop_ids"] == ["547191"]
+    stop_points = gpd.GeoSeries(gpd.points_from_xy(_stops().stop_lon.astype(float), _stops().stop_lat.astype(float)),
+                                index=_stops().stop_id, crs="EPSG:4326").to_crs(CRS)
+    assert points.loc["55", "geometry"].contains(stop_points["273565"])
+    assert points.loc["55", "geometry"].contains(stop_points["184038"])
+    assert not points.loc["55", "geometry"].contains(stop_points["466850"])
+    assert not points.loc["56", "geometry"].contains(stop_points["653480"])
+
+
+def test_point_zone_needs_a_rail_served_stop_with_the_station_name(tmp_path):
+    zones, _ = zp.load_zone_polygons(_three_zones(tmp_path), expected_feature_count=3)
+    with pytest.raises(ValueError, match="no rail-served GTFS stop named like 'Dedenhausen'"):
+        zp.station_point_zones(_stops(), {"273565"}, STATIONS, radius_m=50.0, maximum_spread_m=300.0, existing=zones)
+
+
+def test_station_complex_wider_than_the_spread_limit_is_rejected(tmp_path):
+    zones, _ = zp.load_zone_polygons(_three_zones(tmp_path), expected_feature_count=3)
     with pytest.raises(ValueError, match="spread"):
-        zp.station_point_zones(stops, {"55": "Haemelerwald"}, 300.0, zones)
+        zp.station_point_zones(_stops(), RAIL_STOPS, STATIONS, radius_m=50.0, maximum_spread_m=10.0, existing=zones)
+
+
+def test_rail_served_stops_come_from_rail_route_types(tmp_path):
+    gtfs = tmp_path / "gtfs"
+    gtfs.mkdir()
+    pd.DataFrame([{"route_id": "re", "route_type": 2}, {"route_id": "bus", "route_type": 3},
+                  {"route_id": "ext", "route_type": 106}]).to_csv(gtfs / "routes.txt", index=False)
+    pd.DataFrame([{"route_id": "re", "trip_id": "t1"}, {"route_id": "bus", "trip_id": "t2"},
+                  {"route_id": "ext", "trip_id": "t3"}]).to_csv(gtfs / "trips.txt", index=False)
+    pd.DataFrame([{"trip_id": "t1", "stop_id": "273565"}, {"trip_id": "t2", "stop_id": "184038"},
+                  {"trip_id": "t3", "stop_id": "547191"}, {"trip_id": "t2", "stop_id": "466850"}]
+                 ).to_csv(gtfs / "stop_times.txt", index=False)
+    candidates = {"273565", "184038", "547191", "466850"}
+    assert zp.rail_served_stop_ids(gtfs, candidates, chunk_rows=2) == {"273565", "547191"}
 
 
 class _Context:
@@ -85,8 +130,9 @@ class _Context:
         self._path.mkdir()
         self._cleaned = cleaned_dir
         self.values = {"data_path": str(data_path), "vrb_zone_polygons_path": "zones.geojson",
-                       "vrb_zone_polygon_feature_count": 3, "vrb_zone_point_radius_m": 300.0,
-                       "vrb_zone_point_stations": {"55": "Haemelerwald", "56": "Dedenhausen"}}
+                       "vrb_zone_polygon_feature_count": 3, "vrb_zone_point_radius_m": 50.0,
+                       "vrb_zone_point_maximum_station_spread_m": 300.0, "vrb_zone_minimum_overlap_m2": 1.0,
+                       "vrb_zone_point_stations": STATIONS}
         self.declared = []
 
     def config(self, key, default=None):
@@ -105,9 +151,11 @@ def test_stage_execute_writes_gpkg_report_and_returns_48_style_frame(tmp_path):
     _three_zones(tmp_path)
     cleaned = tmp_path / "cleaned"
     (cleaned / "output").mkdir(parents=True)
-    pd.DataFrame([{"stop_id": "a", "stop_name": "Haemelerwald", "stop_lat": 52.4, "stop_lon": 10.1},
-                  {"stop_id": "c", "stop_name": "Dedenhausen", "stop_lat": 52.45, "stop_lon": 10.05}]
-                 ).to_csv(cleaned / "output" / "stops.txt", index=False)
+    _stops().to_csv(cleaned / "output" / "stops.txt", index=False)
+    pd.DataFrame([{"route_id": "re", "route_type": 2}]).to_csv(cleaned / "output" / "routes.txt", index=False)
+    pd.DataFrame([{"route_id": "re", "trip_id": "t1"}]).to_csv(cleaned / "output" / "trips.txt", index=False)
+    pd.DataFrame([{"trip_id": "t1", "stop_id": stop} for stop in sorted(RAIL_STOPS)]).to_csv(
+        cleaned / "output" / "stop_times.txt", index=False)
     context = _Context(tmp_path, cleaned, tmp_path)
     zp.configure(context)
     assert ("stage", "data.gtfs.cleaned") in context.declared
@@ -117,3 +165,6 @@ def test_stage_execute_writes_gpkg_report_and_returns_48_style_frame(tmp_path):
     report = json.loads((Path(context.path()) / "zone_polygons_report.json").read_text())
     assert report["polygon_count"] == 3 and report["point_zone_count"] == 2
     assert report["trimmed_overlaps"][0]["trimmed_zone"] == "70"
+    assert report["point_zones"]["55"] == {"rail_stop_ids": ["273565"], "station_stop_ids": ["184038", "273565"],
+                                           "spread_m": report["point_zones"]["55"]["spread_m"]}
+    assert report["point_zones"]["55"]["spread_m"] < 50.0

@@ -1,7 +1,7 @@
 """Insert the MATSim ``vrbFare`` module into a prepared config without touching anything else.
 
-The Java side (``BraunschweigConfigurator.updateConfig``) promotes the generic module to the typed
-``VrbFareConfigGroup`` at load time (ADR-0133). The text is edited in place so the XML declaration
+The Java side (``EqasimConfigurator.updateConfig``, called by ``BraunschweigConfigurator``) turns the
+generic module into the typed ``VrbFareConfigGroup`` at load time (ADR-0133). The text is edited in place so the XML declaration
 and the MATSim DOCTYPE survive (ElementTree would drop the DOCTYPE on write). An identical existing
 module is left as it is; a conflicting one is refused rather than overwritten.
 """
@@ -13,6 +13,22 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import quoteattr
 
 MODULE_NAME = "vrbFare"
+
+
+def fare_inputs_report_name(output_prefix: str) -> str:
+    """Name of the preparation report; it lists the fare input files (see ``fare_input_file_names``)."""
+    return f"{output_prefix}vrb_fare_inputs_report.json"
+
+
+def fare_input_file_names(output_prefix: str, snapshot_date: str) -> list[str]:
+    """Fare model, line scopes and report written next to ``<prefix>config.xml``, in that order.
+
+    The vrbFare module refers to the first two relative to the config file, and ``matsim.output`` exports
+    all three under these names. The output prefix keeps two scenarios in one output path apart, and the
+    fare model name carries the tariff snapshot it was built for.
+    """
+    return [f"{output_prefix}vrb_fare_model_{snapshot_date}.json", f"{output_prefix}vrb_line_scopes.csv",
+            fare_inputs_report_name(output_prefix)]
 
 
 def read_vrb_fare_module(config_path) -> dict[str, str] | None:
