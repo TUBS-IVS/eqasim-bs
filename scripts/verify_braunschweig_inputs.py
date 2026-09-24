@@ -230,6 +230,19 @@ INPUTS: List[Input] = [
         matsim_only=True,
         glob=True,
     ),
+    Input(
+        name="D4  VRB tariff zone polygons (Regionalverband Grossraum Braunschweig ArcGIS REST)",
+        rel_path="vrb/vrb_tarifzonen_rgb_25832.geojson",
+        source="https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0",
+        notes=(
+            "Official VRB zones 10..90 as 46 polygons, EPSG:25832, zone id in field 'Tarifzone'; "
+            "export the layer with the REST 'query' endpoint (where=1=1, outFields=*, outSR=25832, "
+            "f=geojson), exact curl in docs/registry/data/vrb_tariff_zone_polygons.yml. Zones 55/56 "
+            "(Haemelerwald, Dedenhausen) are not in the layer. Licence unconfirmed: keep local-only."
+        ),
+        matsim_only=True,
+        optional=True,
+    ),
 ]
 
 

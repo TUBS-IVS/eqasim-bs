@@ -100,6 +100,7 @@ in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 | [urbistat_gemeinde_age](../registry/data/urbistat_gemeinde_age.yml) | derived_input | scrape (`scripts/scrape_urbistat_bs.py`) | `data/braunschweig/urbistat_age_gemeinden.csv` | o/-/- | no |
 | [verbindungen](../registry/data/verbindungen.yml) | validation_reference, calibration_target, spatial_input | auto_script (`scripts/download_verbindungen.py`) | `data/verbindungen/` | r/-/r | no |
 | [vg250_ew](../registry/data/vg250_ew.yml) | spatial_input | manual_download | `data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` | r/r/r | no |
+| [vrb_tariff_zone_polygons](../registry/data/vrb_tariff_zone_polygons.yml) | spatial_input, supply_input | manual_download | `data/vrb/vrb_tarifzonen_rgb_25832.geojson` | -/o/o | no |
 | [vrb_tariff_zones](../registry/data/vrb_tariff_zones.yml) | supply_input | scrape (`scripts/build_vrb_stations_json.py`) | `data/vrb/tarifzonen.html -> vrb/stations.json` | -/r/r | no |
 | [zensus2022_age_sex_size](../registry/data/zensus2022_age_sex_size.yml) | control | manual_download | `data/braunschweig/1000A-3082_de_flat.zip` | o/-/- | no |
 | [zensus2022_employment_age](../registry/data/zensus2022_employment_age.yml) | control | manual_download | `data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv` | o/-/r | no |

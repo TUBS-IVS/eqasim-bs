@@ -27,5 +27,10 @@ licensing:
   license: VRB terms
   restricted: false
   redistribution: restricted
-limitations: null
-notes: Feeds the OeV fare module of the Java simulation.
+limitations: >-
+  The HTML scrape assigns zones by locality NAME and therefore inherits the five wrong
+  locality entries of the VRB website (see docs/data/vrb-tariff-zone-polygons-provider-notes.md)
+  and leaves same-name localities in different Gemeinden ambiguous. Zone MEMBERSHIP should be
+  taken from the official polygon layer (record vrb_tariff_zone_polygons) via the script's
+  --waben mode; the scrape remains a cross-check only.
+notes: Feeds the OeV fare module of the Java simulation (legacy ring remap in braunschweig.data.vrb.zones).

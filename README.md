@@ -230,6 +230,7 @@ setup-oriented summary; all target paths are **relative to `eqasim-data/data/`**
 | **LSN Hochschulstatistik** (SS 2025) | statistik.niedersachsen.de | processed to `braunschweig/schools/nds_hochschulen.csv` via `scripts/seed_nds_hochschulen.py` |
 | **LSN Kindertageseinrichtungen** (K2300112) | [nls.niedersachsen.de](https://www1.nls.niedersachsen.de/statistik/) | processed to `braunschweig/schools/nds_kitas_zgb.csv` via `scripts/extract_nds_kitas.py` |
 | **VRB tariff zones** | [vrb-online.de](https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen) | `vrb/tarifzonen.html` → `vrb/stations.json` via `scripts/build_vrb_stations_json.py` |
+| **VRB tariff zone polygons** (official, Regionalverband Großraum Braunschweig ArcGIS REST; licence confirmation pending, keep local) | [webgis.regionalverband-braunschweig.de](https://webgis.regionalverband-braunschweig.de/server/rest/services/Verkehr/Tarifzonen/MapServer/0) — layer `query` with `where=1=1`, `outFields=*`, `outSR=25832`, `f=geojson` (exact `curl` in `docs/registry/data/vrb_tariff_zone_polygons.yml`) | `vrb/vrb_tarifzonen_rgb_25832.geojson` |
 
 ### Restricted / non-public inputs (never committed, never redistributed)
 
