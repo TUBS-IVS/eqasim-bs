@@ -53,8 +53,19 @@ Its tests price a single synthetic city ticket (360 ct) only.
    (`V_OEV_FK_VRB` codes 7 and 9) are about 1.2 % of persons 14+; the Deutschlandsemesterticket exists since
    WS 2024/25; the 2026 Plus-Abo (73.50 EUR city) costs more than the Deutschlandticket (63 EUR).
 6. **Line scope (D6).** From the cleaned GTFS: extended route types 101/102 or an agency matching
-   `fernverkehr|flix` -> `long_distance` (Deutschlandticket invalid; priced with the fallback); everything else
-   `regional`.
+   `fernverkehr|flix` -> `long_distance`; everything else `regional`. In the cleaned DELFI feed long-distance
+   trains carry the basic route type 2, so the agency rule is the effective classifier. A journey with a
+   long-distance ride costs the fare model's `long_distance.single_cents` (pipeline key
+   `vrb_fare_long_distance_single_cents`, default 2190 ct) for every traveller of 6 or older, whatever the ticket
+   category (maintainer decision 2026-09-24): neither the Deutschlandticket nor a VRB pass is valid on DB
+   Fernverkehr or Flix. The value is the DB Sparpreis entry price 2026 (21.90 EUR, unchanged at the December 2025
+   timetable change; DB press release). ASSUMPTION: an advertised minimum, not a mean, applied to every relation
+   and to children of 6-14 alike. On the relations of the cut timetable it agrees with a distance rule built on
+   the Bundesnetzagentur's average long-distance revenue of 12.6 ct per passenger-kilometre (Marktuntersuchung
+   Eisenbahnen 2025, reporting year 2024) with the entry price as floor, because 21.90 EUR / 12.6 ct is about
+   174 km and the long-distance relations inside the timetable are shorter; the flat price keeps one parameter
+   instead of two. The outcome label is `long_distance_flat`; it is no fallback outcome and no VRB cash, so it
+   neither enters the run guard nor the day-ticket cap.
 7. **External rides (D7).** When a leg touches an unzoned stop and the holder has no Germany-wide flat: rail legs
    -> Niedersachsentarif second-class single by band on the sum of ridden stop-to-stop distances x 1.0
    (ASSUMPTION; `docs/data/external-regional-rail-single-fares-2026.json`), child band for 6-14; no rail -> 370 ct
@@ -62,8 +73,7 @@ Its tests price a single synthetic city ticket (360 ct) only.
    journey is priced once as external; a VRB-network flat does not reduce it.
 8. **Fallbacks (D8).** Every quote carries exactly one outcome label, counted per iteration
    (`ITERS/it.N/N.vrb_fare_outcomes.csv`, log marker `[vrb-fares]`). Fallback outcomes (`category_missing`,
-   `category_unknown`, `line_scope_missing`, `long_distance_fallback`, `vrb_pair_undefined_fallback`,
-   `external_rail_beyond_bands`) cost the fare model's `fallback.unsupported_ride_cents` (pipeline key
+   `category_unknown`, `line_scope_missing`, `vrb_pair_undefined_fallback`, `external_rail_beyond_bands`) cost the fare model's `fallback.unsupported_ride_cents` (pipeline key
    `vrb_fare_unsupported_fallback_cents`, default 370, ASSUMPTION; the JSON is the only home of every price and
    the `vrbFare` module carries none) — except the two category outcomes, which keep the no-entitlement price and,
    priced as a VRB single, take part in the day-ticket cap — and the run fails after an iteration whose fallback
@@ -110,6 +120,16 @@ Its tests price a single synthetic city ticket (360 ct) only.
   cached estimate at the single fare plus the per-chain utility correction, which needs no eqasim-core change.
 - **A configurable fallback price in the `vrbFare` module:** the cost model never read it (the price comes from
   the fare model JSON); one fact in two homes, removed in the final review.
+- **Long-distance rides at the 370 ct fallback (first implementation of D6):** far below any DB long-distance
+  ticket and counted as unsupported, so it both under-priced these rides and inflated the fallback share.
+- **Long-distance prices from DB relation fares:** the Flexpreis is set per relation and published only per
+  query on bahn.de; automated queries through the unofficial clients are rate-limited and blocked
+  (db-vendo-client documentation), and the only public price monitoring (vzbv, 2024-2026) covers the five
+  largest cities. Not reproducible for a committed input.
+- **The average revenue per passenger-kilometre alone (12.6 ct):** a mean over BahnCard, saver and season
+  tickets that prices a 60 km ride at about 7.60 EUR, below every ticket DB sells.
+- **Deutschlandticket holders at 0 EUR on long-distance rides, assuming they take the parallel regional train:**
+  proposed and rejected by the maintainer on 2026-09-24; the priced ride is the routed one.
 
 ## Consequences
 
@@ -120,6 +140,10 @@ Its tests price a single synthetic city ticket (360 ct) only.
   DMC prefix seam) were carried over.
 - `vrb_zone_fares_enabled` is OFF in `configs/base_bs.yml` until a 1 % smoke recorded in a run manifest shows a
   fallback share below 5 % and a plausible price distribution.
+- The router chooses the fastest connection without looking at prices, so a Deutschlandticket holder routed onto
+  an ICE between Braunschweig, Wolfsburg and Hanover pays 21.90 EUR although a regional train is free for them;
+  PT is over-priced for exactly these trips. Excluding long-distance services from the routed timetable is
+  issue #431; the smoke's `long_distance_flat` share measures how often the case occurs.
 - A scenario prepared with the flag ON cannot be run with `vrbFare.enabled=false` or a command-line override:
   its schedule carries `vrbTariffZone` instead of the ring attributes the legacy cost model reads. Re-prepare
   with the flag OFF instead.
@@ -134,5 +158,10 @@ Its tests price a single synthetic city ticket (360 ct) only.
   `vrb_dated_price_inputs_2026`, `external_regional_rail_single_fares_2026`.
 - VRB Tarifbestimmungen 01.01.2026 (§2.2 price-stage matrix, §3.2 validity and short trip, §3.4 day ticket,
   §9 tariff transitions); VRB Tarifflyer 2026; Deutschlandticket scope (bahn.de); GVH prices 2026 (hannover.de).
+- Long-distance price (D6): DB press release "Ab Dezember: Super Sparpreise weiterhin ab 17,90 Euro erhältlich"
+  (Sparpreis from 21.90 EUR); Bundesnetzagentur, Marktuntersuchung Eisenbahnen 2025, section 2.4.1 (long-distance
+  revenue 12.6 ct per passenger-kilometre in 2024); DB Fernverkehr AG annual report 2025 (6,407 million EUR
+  revenue, 45.2 billion passenger-kilometres); vzbv DB price monitoring 2024-2026 (cheapest daytime fares above
+  the advertised minimum on 76 % of the observed days).
 - Java unit tests in eqasim-java-bs `org.eqasim.braunschweig.fares.zonal` and
   `org.eqasim.braunschweig.scenario.TariffZoneAssignerTest`; Python tests listed in the feature record.

@@ -48,7 +48,8 @@ One note for the mechanism that prices PT trips when `vrb_zone_fares_enabled` is
 ## Known limitations
 
 No ticket reuse within validity windows, no six-ride packages, one flat local single for every external
-operator, ridden distance as tariff distance for rail, children under 14 without school tickets, 2023
+operator, one flat long-distance price for every relation and ticket (Deutschlandticket holders routed onto
+an ICE pay it although a regional train is free for them; #431), ridden distance as tariff distance for rail, children under 14 without school tickets, 2023
 survey ticket categories, and the optional standalone mode choice inside `matsim.simulation.prepare`
 prices with the legacy model. The full tariff-law engine is parked on the branches
 `codex/regional-pt-fares` (eqasim-bs 8ea3c55b, eqasim-java-bs 18e111771).
