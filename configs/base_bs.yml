@@ -565,6 +565,16 @@ config:
 
   gtfs_path: gtfs_cordon
   vrb_stations_path: vrb/stations.json
+  # VRB zone fare model (ADR-0133, issue #430): official zone polygons + 2022 price-stage matrix
+  # (2026 assumption) + 2026 prices instead of the placeholder rings. OFF until the 1 % ON/OFF
+  # smoke is recorded in a run manifest. Assumption parameters: see ADR-0133 D7/D8.
+  vrb_zone_fares_enabled: false
+  vrb_fare_snapshot_date: "2026-06-20"
+  vrb_fare_day_ticket_cap_enabled: true
+  vrb_fare_unsupported_fallback_cents: 370
+  vrb_fare_maximum_unsupported_share: 0.05
+  vrb_fare_external_local_single_cents: 370
+  vrb_fare_rail_distance_factor: 1.0
 
   # --- Braunschweig region scope (ZGB-8) ---
   braunschweig.political_prefix:

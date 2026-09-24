@@ -118,6 +118,9 @@ def configure(context):
     # copy as fallback. Default ON so every run leaves a durable, findable
     # artefact; a cache-dir wipe no longer destroys the only copy (issue #156).
     context.config("archive_matsim_output", True)
+    # VRB zone fare model (ADR-0133): the prepared config references its two input files, so they
+    # travel with the scenario when the flag is on.
+    context.config("vrb_zone_fares_enabled", False)
     need_osm = context.config("export_detailed_network", False)
     if need_osm:
         context.stage("matsim.scenario.supply.osm")
@@ -147,6 +150,14 @@ def execute(context):
             "%s/%s" % (context.path("matsim.simulation.prepare"), name),
             "%s/%s" % (context.config("output_path"), name)
         )
+
+    if context.config("vrb_zone_fares_enabled"):
+        # Unprefixed names: the vrbFare module in <prefix>config.xml refers to them relative to the config.
+        for name in ("vrb_fare_model_2026.json", "vrb_line_scopes.csv", "vrb_fare_inputs_report.json"):
+            shutil.copy(
+                "%s/%s" % (context.path("matsim.simulation.prepare"), name),
+                "%s/%s" % (context.config("output_path"), name)
+            )
 
     if context.config("export_detailed_network"):
         shutil.copy(
