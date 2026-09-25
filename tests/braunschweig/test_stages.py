@@ -93,10 +93,6 @@ class TestIncomePlaceholder:
 
 
 # ---------------------------------------------------------------------------
-# 3. braunschweig.locations.secondary (activity flags + id format)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # 4. braunschweig.synthesis.spatial.commute_distance._draw_from_cdf
 # ---------------------------------------------------------------------------
 
@@ -267,31 +263,34 @@ class TestCommuteOverride:
 # 6. enriched._derive_kreis_ars5 (BS resident flag -> ARS5)
 # ---------------------------------------------------------------------------
 
-class TestDeriveKreisArs5:
-    def test_maps_inside_flags_to_ars5_codes(self):
-        from braunschweig.synthesis.population.enriched import (
-            INSIDE_FLAG_TO_ARS5, _derive_kreis_ars5,
-        )
+# The eight ZGB districts and their official Kreis codes (Destatis AGS), written out
+# literally: expectations taken from INSIDE_FLAG_TO_ARS5 itself would let a wrong code in
+# that map pass.
+_ZGB_INSIDE_FLAG_ARS5 = [
+    ("inside_braunschweig", "03101"), ("inside_salzgitter", "03102"),
+    ("inside_wolfsburg", "03103"), ("inside_gifhorn", "03151"),
+    ("inside_goslar", "03153"), ("inside_helmstedt", "03154"),
+    ("inside_peine", "03157"), ("inside_wolfenbuettel", "03158"),
+]
 
-        df = pd.DataFrame({
-            "person_id":           [1, 2, 3, 4, 5],
-            "inside_braunschweig": [True, False, False, False, False],
-            "inside_salzgitter":   [False, True, False, False, False],
-            "inside_gifhorn":      [False, False, True, False, False],
-            # Person 4: no inside flag set -> empty string.
-            # Person 5: multiple flags set -> first match wins
-            #          (iteration order of INSIDE_FLAG_TO_ARS5).
-            "inside_peine":        [False, False, False, False, True],
-            "inside_wolfsburg":    [False, False, False, False, True],
-        })
+
+class TestDeriveKreisArs5:
+    def test_every_inside_flag_maps_to_its_official_kreis_code(self):
+        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
+
+        flags = [flag for flag, _ in _ZGB_INSIDE_FLAG_ARS5]
+        # One person per district, then a person without any flag (-> ""), then a person
+        # with two flags (peine and wolfsburg): the first flag in map order wins.
+        rows = [[i == j for j in range(len(flags))] for i in range(len(flags))]
+        rows.append([False] * len(flags))
+        rows.append([flag in ("inside_peine", "inside_wolfsburg") for flag in flags])
+        df = pd.DataFrame(rows, columns=flags, index=range(100, 100 + len(rows)))
+
         out = _derive_kreis_ars5(df)
-        assert out.tolist()[:4] == ["03101", "03102", "03151", ""]
-        # Person 5: first key in INSIDE_FLAG_TO_ARS5 that matches wins.
-        first_match_key = next(
-            k for k in INSIDE_FLAG_TO_ARS5
-            if k in df.columns and df[k].iloc[4]
-        )
-        assert out.tolist()[4] == INSIDE_FLAG_TO_ARS5[first_match_key]
+
+        assert out.tolist() == [code for _, code in _ZGB_INSIDE_FLAG_ARS5] + ["", "03103"]
+        # Index is preserved (used as a Series elsewhere in execute()).
+        assert list(out.index) == list(df.index)
 
 
 # ---------------------------------------------------------------------------
@@ -523,27 +522,6 @@ class TestSampleCountsFallbackTransparency:
 # ---------------------------------------------------------------------------
 
 class TestDeriveKreisArs5AllFlags:
-    def test_all_eight_inside_flags_map_to_expected_ars5(self):
-        """Every one of the 8 ZGB inside_<kreis> flags must resolve to its
-        AGS-5 Kreis code, in the same order as INSIDE_FLAG_TO_ARS5."""
-        from braunschweig.synthesis.population.enriched import (
-            INSIDE_FLAG_TO_ARS5, _derive_kreis_ars5,
-        )
-
-        flags = list(INSIDE_FLAG_TO_ARS5.keys())
-        n = len(flags)
-        # One person per flag: person i has only flags[i] set to True.
-        data = {"person_id": list(range(n))}
-        for j, flag in enumerate(flags):
-            data[flag] = [i == j for i in range(n)]
-        df = pd.DataFrame(data)
-
-        out = _derive_kreis_ars5(df)
-        expected = [INSIDE_FLAG_TO_ARS5[flag] for flag in flags]
-        assert out.tolist() == expected
-        # Index is preserved (used as a Series elsewhere in execute()).
-        assert list(out.index) == list(df.index)
-
     def test_nan_flags_treated_as_false(self):
         """NaN in an inside flag must be treated as False (fillna), not raise."""
         from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
@@ -557,10 +535,6 @@ class TestDeriveKreisArs5AllFlags:
         # Person 2: both flags NaN -> no Kreis -> empty string.
         assert out.tolist() == ["03101", "", "03102"]
 
-
-# ---------------------------------------------------------------------------
-# 8. enriched._build_income_size_map (scheme detection)
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # 8b. enriched._execute_base reproducibility / cache-mutation guards
@@ -641,13 +615,4 @@ class TestRandomSeedOffsetsDistinct:
         assert len(offsets) >= 2
         assert len(offsets) == len(set(offsets)), \
             f"RNG seed offsets must all be distinct, got {offsets} (FIX 2.6)"
-
-
-# ---------------------------------------------------------------------------
-# 9. braunschweig.gravity.model.evaluate_gravity (doubly-constrained gravity)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# 10. braunschweig.gravity.model._gemeinde_to_kreis (AGS-8 -> AGS-5)
-# ---------------------------------------------------------------------------
 

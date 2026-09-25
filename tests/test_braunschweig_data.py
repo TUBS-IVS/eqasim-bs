@@ -202,40 +202,15 @@ class TestEnrichedFork:
         data_path = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
         return load_kreis_share_table(data_path, fname)
 
-    def test_cars_shares_are_probability_distributions(self):
-        by_kreis, region, values = self._load_share_csv(
-            "mid2023_H7_cars_by_kreis.csv")
+    @pytest.mark.parametrize("table", [
+        "mid2023_H7_cars_by_kreis.csv", "mid2023_H12_3_bikes_by_kreis.csv"])
+    def test_share_tables_are_probability_distributions(self, table):
+        by_kreis, region, values = self._load_share_csv(table)
         for ars, shares in by_kreis.items():
             assert len(shares) == len(values)
             assert abs(sum(shares) - 1.0) < 0.05, \
-                f"H7 cars[{ars}] sums to {sum(shares)}"
+                f"{table}[{ars}] sums to {sum(shares)}"
         assert abs(sum(region) - 1.0) < 0.05
-
-    def test_bikes_shares_are_probability_distributions(self):
-        by_kreis, region, values = self._load_share_csv(
-            "mid2023_H12_3_bikes_by_kreis.csv")
-        for ars, shares in by_kreis.items():
-            assert len(shares) == len(values)
-            assert abs(sum(shares) - 1.0) < 0.05, \
-                f"H12.3 bikes[{ars}] sums to {sum(shares)}"
-        assert abs(sum(region) - 1.0) < 0.05
-
-    def test_inside_flag_map_covers_all_zgb_kreise(self):
-        from braunschweig.synthesis.population.enriched import INSIDE_FLAG_TO_ARS5
-        assert set(INSIDE_FLAG_TO_ARS5.values()) == set(ZGB_KREISE)
-
-    def test_derive_kreis_ars5_reads_flags(self):
-        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
-
-        df = pd.DataFrame({
-            "person_id":           [1, 2, 3, 4],
-            "inside_braunschweig": [True, False, False, False],
-            "inside_wolfsburg":    [False, True, False, False],
-            "inside_gifhorn":      [False, False, True, False],
-        })
-        got = _derive_kreis_ars5(df).tolist()
-        assert got == ["03101", "03103", "03151", ""]
-
 
 # ---------------------------------------------------------------------------
 # Household size / income Kategorien
@@ -773,16 +748,26 @@ class TestIpfFeatureFlags:
     """Validate that the new IPF flags exist with safe defaults."""
 
     def test_dirichlet_prior_default_zero(self):
-        # Static check: configure() sets default 0.0; reading the source
-        # is the safest test that does not require the full IPF stack.
-        import inspect
-
+        """configure() DECLARES the flags with safe defaults: no Dirichlet prior (0.0) and
+        the employment margin off. It runs configure() against a recorder instead of
+        searching its source text, which a comment naming the keys would satisfy."""
         from braunschweig.ipf import model as ipf_model
 
-        src = inspect.getsource(ipf_model.configure)
-        assert "braunschweig.ipf.dirichlet_prior_strength" in src
-        assert "braunschweig.ipf.use_employment_margin" in src
-        assert "braunschweig.ipf.employment_by_hhsize_path" in src
+        declared = {}
+
+        class _ConfigureRecorder:
+            def stage(self, name, *args, **kwargs):
+                return None
+
+            def config(self, name, *args, **kwargs):
+                # Resolve to the first declared default, as synpp does after configure().
+                declared.setdefault(name, args[0] if args else kwargs.get("default"))
+                return declared[name]
+
+        ipf_model.configure(_ConfigureRecorder())
+        assert declared["braunschweig.ipf.dirichlet_prior_strength"] == 0.0
+        assert declared["braunschweig.ipf.use_employment_margin"] is False
+        assert "braunschweig.ipf.employment_by_hhsize_path" in declared
 
 
 

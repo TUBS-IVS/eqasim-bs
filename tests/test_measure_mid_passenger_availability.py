@@ -141,8 +141,16 @@ def test_evaluate_reports_age_car_rates_and_conflicting_diary_measure():
 
 
 def test_passenger_rng_uses_production_offset_and_reports_effective_seed():
-    """Changing the passenger stream to the shared attribute RNG must fail this protocol check."""
-    rng, provenance = measurement.passenger_rng_with_provenance(1234, 74517)
+    """The passenger stream is seeded with seed + the PRODUCTION offset and reports both.
+
+    It passes the production constant, so a changed offset fails against the hand-computed
+    75751. What it cannot see is the wiring inside ``_run_raw_measurement``, which needs
+    the raw MiD; the production stream itself is pinned in
+    tests/test_mid_passenger_availability.py.
+    """
+    from braunschweig.popsim.passenger_availability import PASSENGER_AVAILABILITY_RNG_OFFSET
+
+    rng, provenance = measurement.passenger_rng_with_provenance(1234, PASSENGER_AVAILABILITY_RNG_OFFSET)
 
     assert rng.randint(0, 1_000_000) == np.random.RandomState(75751).randint(0, 1_000_000)
     assert provenance == {
