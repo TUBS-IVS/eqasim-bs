@@ -108,5 +108,5 @@ may only name run manifests (no run, no claim).
 | [urban_parking](../registry/features/urban_parking.yml) | matsim | active | ON | A/A/i | 4 | -- | none | none | unvalidated | pending |
 | [verbindungen_anchor](../registry/features/verbindungen_anchor.yml) | work | active | ON | A/A/A | 1 | proven | none | committed | measured_vs_reference (`anchor-holdout-2026-07-17`) | pending |
 | [verbindungen_od_validation](../registry/features/verbindungen_od_validation.yml) | validation | active | ON | A/-/- | 2 | -- | none | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
-| [vrb_zone_fare_model](../registry/features/vrb_zone_fare_model.yml) | matsim | experimental | ON | A/s/s | 8 | proven | marker | committed | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`) | pending |
+| [vrb_zone_fare_model](../registry/features/vrb_zone_fare_model.yml) | matsim | experimental | ON | A/s/s | 8 | proven | marker | committed | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | pending |
 | [w_zwd_codeplan_sentinels](../registry/features/w_zwd_codeplan_sentinels.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |

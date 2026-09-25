@@ -66,15 +66,18 @@ validation:
   state: unvalidated
   runs:
   - vrb-zone-fares-smoke-1pct-2026-09-25
+  - vrb-zone-fares-routing-surcharge-1pct-2026-09-25
   metric: null
   note: The 1 % ON/OFF smoke is a wiring proof (fallback share 0, 76 % of the final schedule's stop
-    facilities zoned, all lines scoped, no replanning cost); it compares no observed reference, so the
-    feature stays unvalidated. Convergence of a run is not validation.
+    facilities zoned, all lines scoped, no replanning cost); the routing-surcharge rerun on the same
+    prepared scenario shows the surcharge active (no long-distance route offered to mode choice, no
+    replanning cost). Neither compares an observed reference, so the feature stays unvalidated.
+    Convergence of a run is not validation.
 assessment:
   status: pending
   by: null
   date: null
-  pending_reason: Maintainer review of the smoke manifest vrb-zone-fares-smoke-1pct-2026-09-25 and of the
-    enabled production flag.
+  pending_reason: Maintainer review of the run manifests vrb-zone-fares-smoke-1pct-2026-09-25 and
+    vrb-zone-fares-routing-surcharge-1pct-2026-09-25 and of the enabled production flag.
   note: Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.fares.zonal,
     org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation) with its own unit tests.

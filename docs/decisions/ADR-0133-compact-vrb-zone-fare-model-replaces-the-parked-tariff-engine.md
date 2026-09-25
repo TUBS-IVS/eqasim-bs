@@ -175,7 +175,9 @@ Its tests price a single synthetic city ticket (360 ct) only.
   the flat price it is no longer priced as a fallback. The router adds the flat price as in-vehicle cost (D6), so
   an ICE is only chosen when its time saving is worth the fare at the mode choice's value of time. In the 1 %
   smoke, which ran before the routing surcharge existed, none of 2,637 final-plan PT trips contained a
-  long-distance ride.
+  long-distance ride; rerun with the surcharge on the same prepared scenario
+  (`vrb-zone-fares-routing-surcharge-1pct-2026-09-25`), the router offered mode choice no long-distance route at
+  all (51 of about 50,000 PT candidates before, 0 after).
 - A scenario prepared with the flag ON cannot be run with `vrbFare.enabled=false` or a command-line override:
   its schedule carries `vrbTariffZone` instead of the ring attributes the legacy cost model reads. Re-prepare
   with the flag OFF instead.

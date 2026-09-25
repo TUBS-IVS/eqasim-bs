@@ -1,0 +1,85 @@
+{
+  "long_distance_lines": 384,
+  "before": {
+    "fare_iterations": 20,
+    "quotes_iterations_1_20": 49984,
+    "long_distance_flat_quotes_iterations_1_20": 51,
+    "long_distance_flat_share_iterations_1_20": 0.00102,
+    "fallback_quotes_iterations_1_20": 0,
+    "day_ticket_cap_applied_iterations_1_20": 8777,
+    "outcomes_iterations_1_20": {
+      "child_free": 1240,
+      "external_local_flat": 238,
+      "external_national_flat": 105,
+      "external_rail_nt": 515,
+      "long_distance_flat": 51,
+      "no_pt_leg": 20726,
+      "vrb_flat_national": 3494,
+      "vrb_flat_regional": 1468,
+      "vrb_short_trip": 2951,
+      "vrb_single_adult": 17744,
+      "vrb_single_child": 1452
+    },
+    "runtime_iterations_1_20": {
+      "iterations": 20,
+      "replanning_s_mean": 1.8,
+      "mobsim_s_mean": 68.6,
+      "iteration_s_mean": 74.6
+    },
+    "modestats_last_iteration": {
+      "bicycle": 0.1024,
+      "car": 0.4725,
+      "car_passenger": 0.1204,
+      "outside": 0.0341,
+      "pt": 0.0708,
+      "truck": 0.0136,
+      "walk": 0.1861
+    },
+    "final_plan_pt_trips": 2637,
+    "final_plan_pt_trips_with_long_distance": 0
+  },
+  "after": {
+    "fare_iterations": 20,
+    "quotes_iterations_1_20": 49979,
+    "long_distance_flat_quotes_iterations_1_20": 0,
+    "long_distance_flat_share_iterations_1_20": 0.0,
+    "fallback_quotes_iterations_1_20": 0,
+    "day_ticket_cap_applied_iterations_1_20": 8840,
+    "outcomes_iterations_1_20": {
+      "child_free": 1239,
+      "external_local_flat": 238,
+      "external_national_flat": 106,
+      "external_rail_nt": 519,
+      "no_pt_leg": 20731,
+      "vrb_flat_national": 3500,
+      "vrb_flat_regional": 1465,
+      "vrb_short_trip": 2955,
+      "vrb_single_adult": 17772,
+      "vrb_single_child": 1454
+    },
+    "runtime_iterations_1_20": {
+      "iterations": 20,
+      "replanning_s_mean": 1.6,
+      "mobsim_s_mean": 70.0,
+      "iteration_s_mean": 75.8
+    },
+    "modestats_last_iteration": {
+      "bicycle": 0.1024,
+      "car": 0.4727,
+      "car_passenger": 0.1203,
+      "outside": 0.0341,
+      "pt": 0.0706,
+      "truck": 0.0136,
+      "walk": 0.1862
+    },
+    "final_plan_pt_trips": 2630,
+    "final_plan_pt_trips_with_long_distance": 0
+  },
+  "after_surcharge_log": {
+    "calculator": [
+      "long-distance routing surcharge on 17 vehicles of 5 lines; reference person 16025 s (267.1 min) of in-vehicle time, valued per person and trip during routing"
+    ],
+    "stop_finder_last": null,
+    "reference_fallback_warnings": 0
+  }
+}
