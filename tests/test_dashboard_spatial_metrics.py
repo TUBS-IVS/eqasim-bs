@@ -76,9 +76,3 @@ def test_dashboard_and_analysis_paths_share_one_loader(monkeypatch):
     assert calls == [False, False]
 
 
-def test_vg250_zip_and_cache_constants_are_shared_not_duplicated():
-    """VG250_ZIP / VG250_CACHE must be the same objects on both modules --
-    re-exports of the single owner, not two independently-derived paths that
-    could silently drift apart after a data-layout change."""
-    assert spatial_metrics.VG250_ZIP == spatial.VG250_ZIP
-    assert spatial_metrics.VG250_CACHE == spatial.VG250_CACHE

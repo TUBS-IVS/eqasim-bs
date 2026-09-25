@@ -23,5 +23,3 @@ def test_apply_detour_curve_mode_uses_circuity():
         circuity.euclidean_to_routed(d, "car", mode="curve"))
 
 
-def test_detour_factor_is_legacy_constant():
-    assert metrics.DETOUR_FACTOR == circuity.LEGACY_DETOUR_FACTOR

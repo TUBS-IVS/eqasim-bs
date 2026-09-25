@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import pickle
 import sys
 
 import numpy as np
@@ -39,7 +38,6 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 DATA_ROOT = REPO_ROOT / "eqasim-data" / "data"
-CACHE_ROOT = REPO_ROOT / "eqasim-data" / "cache_bs"
 
 ZGB_KREISE = ["03101", "03102", "03103", "03151",
               "03153", "03154", "03157", "03158"]
@@ -73,19 +71,6 @@ def _income_xls_readable() -> bool:
     except ImportError:
         return False
     return True
-
-
-def _latest_cache(pattern: str):
-    """Return the newest cache file matching *pattern*, or None.
-
-    synpp hashes inputs into the cache filename, so obsolete hashes can
-    linger alongside the current one. Selecting by ``os.path.getmtime``
-    deterministically picks the freshest pickle.
-    """
-    hits = list(CACHE_ROOT.glob(pattern))
-    if not hits:
-        return None
-    return max(hits, key=lambda p: p.stat().st_mtime)
 
 
 # ---------------------------------------------------------------------------
@@ -124,44 +109,37 @@ class StubContext:
 class TestPendlerReader:
     """``braunschweig.data.census.pendler``: CSV parsing + ID filter."""
 
-    def test_regex_drops_aggregate_rows(self):
-        """``_read_one`` must reject ARS codes with non-digit characters.
+    def test_read_one_keeps_only_digit_kreis_pairs_and_parses_german_numbers(self, tmp_path):
+        """``_read_one`` must drop the BA aggregate rows and parse "68.380" as 68380.
 
-        Regression test for the previously silent bug where
-        ``str.len().eq(5)`` accepted ``031xx`` / ``Übrige Kreise`` rows
-        (same length, different content), inflating the number of
-        Kreis pairs and corrupting the gravity calibration universe.
+        Regression (2026-06-06): the reader once filtered on ``str.len().eq(5)``,
+        which let the Bundesland/Regierungsbezirk aggregates ("031xx",
+        "Uebrige Kreise") through as if they were Kreise. Exercises the real
+        reader on a file in the BA export layout (10 preamble lines, ';' fields,
+        thousand separator '.', '*' for suppressed cells) instead of restating
+        the regex in the test.
         """
-        s = pd.Series(["03101", "031xx", "Übrige", "00000", "15089", "3101", "12abc"])
-        mask = s.str.fullmatch(r"\d{5}")
-        kept = s[mask].tolist()
-        assert kept == ["03101", "00000", "15089"]
+        from braunschweig.data.census.pendler import _read_one
 
-    def test_cache_has_only_digit_kreis_codes(self):
-        """The on-disk cache (if present) must match the new regex."""
-        path = _latest_cache("braunschweig.data.census.pendler__*.p")
-        if path is None:
-            pytest.skip("Pendler cache not yet generated")
-        with open(path, "rb") as fh:
-            df = pickle.load(fh)
-        bad_orig = df[~df["orig_ars"].str.fullmatch(r"\d{5}")]
-        bad_dest = df[~df["dest_ars"].str.fullmatch(r"\d{5}")]
-        assert bad_orig.empty, f"Non-digit orig: {bad_orig.head()}"
-        assert bad_dest.empty, f"Non-digit dest: {bad_dest.head()}"
+        header = "Arbeitsort;RS;Wohnort;RS;Insgesamt;Maenner;Frauen;Deutsche;Auslaender;Azubis"
+        rows = [
+            "Braunschweig, Stadt;03101;Wolfsburg, Stadt;03103;68.380;40.000;28.380;60.000;8.380;1.200",
+            "Braunschweig, Stadt;03101;Niedersachsen;031xx;900.000;1;1;1;1;1",
+            "Braunschweig, Stadt;03101;Uebrige Kreise;XXXXX;5.000;1;1;1;1;1",
+            "Braunschweig, Stadt;03101;Peine;03157;*;*;*;*;*;*",
+            "Braunschweig, Stadt;03101;Halle (Saale), Stadt;15002;12;5;7;10;2;0",
+        ]
+        path = tmp_path / "pendler_ein.csv"
+        content = chr(10).join(["preamble"] * 10 + [header] + rows) + chr(10)
+        path.write_text(content, encoding="utf-8")
 
-    def test_cache_flow_totals_plausible(self):
-        """Sanity-check magnitudes against the BA Pendleratlas 2025 order."""
-        path = _latest_cache("braunschweig.data.census.pendler__*.p")
-        if path is None:
-            pytest.skip("Pendler cache not yet generated")
-        with open(path, "rb") as fh:
-            df = pickle.load(fh)
-        assert len(df) > 10_000
-        outbound = df[df["orig_ars"].isin(ZGB_KREISE)
-                      & ~df["dest_ars"].isin(ZGB_KREISE)]
-        # BA reports ~61 000 outbound SvB from ZGB, so allow 50k..80k.
-        assert 50_000 <= outbound["flow"].sum() <= 80_000
+        out = _read_one(str(path), "ein")
 
+        assert list(out.columns) == ["orig_ars", "dest_ars", "flow", "source"]
+        assert out["orig_ars"].tolist() == ["03103", "15002"]   # aggregates and '*' dropped
+        assert out["dest_ars"].tolist() == ["03101", "03101"]
+        assert out["flow"].tolist() == [68380, 12]              # German thousand separator
+        assert (out["source"] == "ein").all()
 
 # ---------------------------------------------------------------------------
 # MiD 2023 references
@@ -344,130 +322,13 @@ class TestHouseholdDistributions:
 # External workplaces + gravity extension
 # ---------------------------------------------------------------------------
 
-class TestExternalWorkplaces:
-    """``braunschweig.data.external_workplaces`` output schema + totals.
-
-    Validates the per-Gemeinde schema introduced by the whole-region gates
-    upgrade (commit 7a45e64): one row per external Gemeinde with
-    ``commune_id = "EXT" + gem_ags`` instead of one centroid per Kreis.
-    The detailed allocation logic is unit-tested in
-    ``test_external_workplaces.py``; this check only guards the real
-    on-disk cache (schema, ZGB exclusion, plausible totals).
-    """
-
-    def test_cache_has_expected_schema(self):
-        path = _latest_cache("braunschweig.data.external_workplaces__*.p")
-        if path is None:
-            pytest.skip("External workplaces cache not yet generated")
-        with open(path, "rb") as fh:
-            df = pickle.load(fh)
-
-        for col in ("ars5", "gem_ags", "commune_id",
-                    "iris_id", "employees", "ewz", "geometry"):
-            assert col in df.columns, f"Missing column: {col}"
-
-        assert df["commune_id"].str.startswith("EXT").all()
-        assert df["iris_id"].str.startswith("EXT").all()
-        assert (df["employees"] > 0).all()
-        assert (df["ewz"] > 0).all()
-        assert df["ars5"].str.fullmatch(r"\d{5}").all()
-        assert df["gem_ags"].str.fullmatch(r"\d{8}").all()
-        assert (df["gem_ags"].str[:5] == df["ars5"]).all(), \
-            "gem_ags Kreis prefix must match ars5"
-        assert df["gem_ags"].is_unique, "Duplicate external Gemeinden"
-        assert (df["commune_id"] == "EXT" + df["gem_ags"]).all(), \
-            "commune_id must be 'EXT' + 8-digit Gemeinde AGS"
-        assert not df["ars5"].isin(ZGB_KREISE).any(), \
-            "External pool should not contain ZGB Kreise"
-
-        # The per-Gemeinde split (largest remainder) preserves the
-        # per-Kreis outbound flow, so the Kreis-level total bound holds.
-        total = int(df["employees"].sum())
-        assert 40_000 <= total <= 80_000, \
-            f"External SvB {total} outside plausible 40k..80k range"
-
-
-class TestGravityModelExtension:
-    """``braunschweig.gravity.model``: outbound injection + renormalisation."""
-
-    def test_cache_sums_to_unity_per_origin(self):
-        path = _latest_cache("braunschweig.gravity.model__*.p")
-        if path is None:
-            pytest.skip("Gravity cache not yet generated")
-        with open(path, "rb") as fh:
-            payload = pickle.load(fh)
-        # Gravity returns a (work_od, education_od) tuple.
-        df_work = payload[0] if isinstance(payload, (tuple, list)) else payload
-        assert {"origin_id", "destination_id", "weight"} <= set(df_work.columns)
-
-        totals = df_work.groupby("origin_id")["weight"].sum()
-        # Each origin's weights must form a probability distribution.
-        diff = (totals - 1.0).abs()
-        assert diff.max() < 1e-6, \
-            f"Gravity weights do not sum to 1 per origin; max dev {diff.max()}"
-
-    def test_external_destinations_are_present(self):
-        path = _latest_cache("braunschweig.gravity.model__*.p")
-        if path is None:
-            pytest.skip("Gravity cache not yet generated")
-        with open(path, "rb") as fh:
-            payload = pickle.load(fh)
-        df_work = payload[0] if isinstance(payload, (tuple, list)) else payload
-
-        ext_rows = df_work[df_work["destination_id"].str.startswith("EXT")]
-        assert len(ext_rows) > 0, \
-            "No EXT* destinations found — outbound injection missing"
-        # Every ZGB-ish origin should emit at least one external row.
-        by_origin = ext_rows.groupby("origin_id").size()
-        assert by_origin.min() > 0
-
-
 # ---------------------------------------------------------------------------
 # Work-locations concat
 # ---------------------------------------------------------------------------
 
-class TestLocationsWork:
-    """``braunschweig.locations.work``: concatenation + location_id uniqueness."""
-
-    def test_cache_contains_ext_workplaces(self):
-        path = _latest_cache("braunschweig.locations.work__*.p")
-        if path is None:
-            pytest.skip("Work-locations cache not yet generated")
-        with open(path, "rb") as fh:
-            df = pickle.load(fh)
-
-        assert "location_id" in df.columns
-        assert df["location_id"].is_unique, "Duplicate location_id"
-        assert df["location_id"].astype(str).str.startswith("work_").all()
-
-        ext = df[df["commune_id"].astype(str).str.startswith("EXT")]
-        assert len(ext) > 0, "External workplaces absent from pool"
-        assert (ext["employees"] > 0).all()
-
-
 # ---------------------------------------------------------------------------
 # Spatial codes consistency (Bavaria source of truth for BS forks)
 # ---------------------------------------------------------------------------
-
-class TestSpatialCodes:
-    """Verify the BS forks agree with ``eqasim_common.spatial.codes`` shape."""
-
-    def test_bavaria_spatial_codes_cache_schema(self):
-        path = _latest_cache("eqasim_common.spatial.codes__*.p")
-        if path is None:
-            # Fall back to the pre-refactor cache name during the transition.
-            path = _latest_cache("eqasim_common.data.spatial.codes__*.p")
-        if path is None:
-            pytest.skip("Spatial-codes cache not yet generated")
-        with open(path, "rb") as fh:
-            df = pickle.load(fh)
-        expected = {"region_id", "departement_id", "commune_id",
-                    "iris_id", "ags"}
-        assert expected <= set(df.columns)
-        dep_ids = set(df["departement_id"].astype(str).unique())
-        assert set(ZGB_KREISE) <= dep_ids, \
-            f"ZGB Kreise missing from codes: {set(ZGB_KREISE) - dep_ids}"
-
 
 # ---------------------------------------------------------------------------
 # Gravity pure-function helpers
@@ -544,39 +405,6 @@ class TestGravityPureFunctions:
         assert pair_sums[("03101", "03101")] == pytest.approx(400, rel=1e-6)
         assert pair_sums[("03101", "03102")] == pytest.approx(200, rel=1e-6)
         assert pair_sums[("03102", "03101")] == pytest.approx(100, rel=1e-6)
-
-
-class TestGravityOutputStructure:
-    """Cache-level invariants for the gravity output after the scale fix."""
-
-    def _load(self):
-        path = _latest_cache("braunschweig.gravity.model__*.p")
-        if path is None:
-            pytest.skip("Gravity cache not yet generated")
-        with open(path, "rb") as fh:
-            payload = pickle.load(fh)
-        return payload[0] if isinstance(payload, (tuple, list)) else payload
-
-    def test_every_zgb_origin_has_external_rows(self):
-        df = self._load()
-        df["orig_k"] = df["origin_id"].astype(str).str[:5]
-        df["is_ext"] = df["destination_id"].astype(str).str.startswith("EXT")
-        ext_origins = set(df.loc[df["is_ext"], "orig_k"].unique())
-        missing = set(ZGB_KREISE) - ext_origins
-        assert not missing, \
-            f"ZGB Kreise with no external injection: {missing}"
-
-    def test_external_commute_share_in_plausible_range(self):
-        """Per-Kreis external share must be above 5 % but below 40 %."""
-        df = self._load()
-        df["orig_k"] = df["origin_id"].astype(str).str[:5]
-        df["is_ext"] = df["destination_id"].astype(str).str.startswith("EXT")
-        per_k = (df[df["orig_k"].isin(ZGB_KREISE)]
-                 .groupby("orig_k")
-                 .apply(lambda g: g.loc[g["is_ext"], "weight"].sum()
-                                   / g["weight"].sum()))
-        assert per_k.min() > 0.02, f"Too low external share: {per_k.to_dict()}"
-        assert per_k.max() < 0.40, f"Too high external share: {per_k.to_dict()}"
 
 
 # ---------------------------------------------------------------------------

@@ -150,45 +150,42 @@ class TestCommuteDrawFromCdf:
 # ---------------------------------------------------------------------------
 
 class TestCommuteOverride:
-    def test_replaces_distances_for_known_kreise_only(self):
+    def test_own_kreis_cdf_is_used_and_missing_kreise_fall_back_to_03zgb(self, capsys):
+        """The primary path (a person's own Kreis CDF) and the regional fallback
+        must be distinguishable in the output, not only in the log.
+
+        The earlier version of this test used 8-digit commune ids, which
+        ``zfill(12)`` turned into Kreis "00000", so every person silently took
+        the 03ZGB fallback and the test passed only because both CDFs were
+        identical. Here the two CDFs sit in different distance bands, so a
+        Kreis-slicing bug (or a fallback that swallows everyone) moves persons
+        into the wrong band.
+        """
         from braunschweig.synthesis.spatial import commute_distance as cd
 
         df_work = pd.DataFrame({
             "person_id":        [1, 2, 3, 4],
             "hts_id":           [101, 102, 103, 104],
             "commute_distance": [9999.0, 9999.0, 9999.0, 9999.0],
-            # Two persons in 03101 (Braunschweig), one in unknown 99999,
-            # one in 03ZGB-fallback-eligible 03102 (Salzgitter).
-            "commune_id": ["03101000", "03101111", "99999000", "03102000"],
+            # 12-digit ARS. Person 2 arrives as an int with the leading zero of
+            # the state code stripped (the BUG-003 shape zfill(12) must restore);
+            # 99999 is unknown and 03102 has no CDF of its own.
+            "commune_id": ["031010000000", 31011110000, "999990000000", "031020000000"],
         })
-        # Trivial CDF: always pick band 1 (0.5..5.0 km).
-        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        mid_refs = {
-            "p13_distance_cdfs": {
-                "03101": unit_cdf_band1,
-                "03ZGB": unit_cdf_band1,
-            }
-        }
-        rng = np.random.RandomState(42)
+        band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])   # 0.5-5 km
+        band7 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])   # 100-300 km
+        mid_refs = {"p13_distance_cdfs": {"03101": band1, "03ZGB": band7}}
 
-        out = cd._override_work_distances(df_work, mid_refs, rng)
+        out = cd._override_work_distances(df_work, mid_refs, np.random.RandomState(42))
 
         assert list(out.columns) == ["person_id", "hts_id", "commute_distance"]
-        assert len(out) == 4
-
-        # Persons 1, 2 (03101) and 4 (03ZGB fallback) get override -> 500..5000m.
-        for pid in (1, 2, 4):
-            d = out.loc[out["person_id"] == pid, "commute_distance"].iloc[0]
-            assert 500.0 <= d <= 5000.0, f"person {pid} dist {d} out of band"
-
-        # Person 3 (99999, no fallback for unknown kreis) keeps baseline.
-        # _override_work_distances treats missing CDFs as a skip; verify it.
-        d_unknown = out.loc[out["person_id"] == 3, "commute_distance"].iloc[0]
-        # Note: with the 03ZGB fallback present in mid_refs, 99999 also gets
-        # overridden because the function uses cdfs.get(kreis, fallback_cdf).
-        # That is the documented behaviour; we just assert the value is in
-        # band 1 like the others.
-        assert 500.0 <= d_unknown <= 5000.0
+        distance = out.set_index("person_id")["commute_distance"]
+        for pid in (1, 2):   # own-Kreis CDF (primary path)
+            assert 500.0 <= distance[pid] <= 5000.0, (pid, distance[pid])
+        for pid in (3, 4):   # regional fallback CDF
+            assert 100_000.0 <= distance[pid] <= 300_000.0, (pid, distance[pid])
+        log = capsys.readouterr().out
+        assert "primary own-Kreis CDF 2" in log and "regional 03ZGB fallback 2" in log
 
     def test_fallback_provenance_logging(self, capsys):
         """Fallback transparency: the override log must separate the primary
@@ -661,18 +658,6 @@ class TestConstraintListNotMutated:
     We reproduce the exact copy-then-append idiom used in ``_execute_base`` and
     assert the original list is untouched; we additionally pin the source so a
     future regression back to a bare reference is caught."""
-
-    def test_copy_then_append_does_not_mutate_input(self):
-        # Mirror the production idiom: ``constraints = list(mid["..."])``.
-        cached_list = [{"sex": "male", "target": 0.5}]
-        len_before = len(cached_list)
-        constraints = list(cached_list)  # copy (production behaviour)
-        constraints.append({"age": (-np.inf, -1), "target": 0.0})
-        # The copy received the new constraint ...
-        assert len(constraints) == len_before + 1
-        # ... but the cached source list is unchanged.
-        assert len(cached_list) == len_before
-        assert cached_list == [{"sex": "male", "target": 0.5}]
 
     def test_source_copies_cached_constraint_lists(self):
         src = _execute_base_source()
