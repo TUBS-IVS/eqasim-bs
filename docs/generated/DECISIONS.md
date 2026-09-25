@@ -138,3 +138,4 @@ One row per record under `docs/decisions/` (numbering notes:
 | [ADR-0127](../decisions/ADR-0127-passive-escort-surrogate-anchor-household-member.md) | 2026-09-17 | active | A passive escort child whose donor adult left the household anchors at a household surrogate's secondary location |
 | [ADR-0128](../decisions/ADR-0128-commute-day-diagnostics-as-committed-artifacts.md) | 2026-09-17 | active | Commute-day diagnostics as committed artifacts, not log excerpts |
 | [ADR-0133](../decisions/ADR-0133-compact-vrb-zone-fare-model-replaces-the-parked-tariff-engine.md) | 2026-09-24 | accepted (maintainer decision "A", 2026-09-24); production flag ON since the 1 % ON/OFF smoke | A compact VRB zone fare model replaces the parked tariff engine |
+| [ADR-0134](../decisions/ADR-0134-tests-are-sized-by-the-defect-they-catch-and-built-cheap.md) | 2026-09-25 | accepted (maintainer request, 2026-09-25) | Tests are sized by the defect they catch, and built cheap |
