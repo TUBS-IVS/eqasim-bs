@@ -1,0 +1,174 @@
+{
+ "before": {
+  "modestats_last_iteration": {
+   "bicycle": 0.1024,
+   "car": 0.4727,
+   "car_passenger": 0.1203,
+   "outside": 0.0341,
+   "pt": 0.0706,
+   "truck": 0.0136,
+   "walk": 0.1862
+  },
+  "runtime_iterations_1_20_s_mean": {
+   "replanning": 1.6,
+   "mobsim": 70.0,
+   "iteration.1": 75.8
+  },
+  "pt_legs": 4680,
+  "pt_legs_by_mode": {
+   "bus": 3321,
+   "tram": 658,
+   "rail": 656
+  },
+  "pt_legs_at_stations": {
+   "Hämelerwald": {
+    "boarding": 25,
+    "alighting": 0
+   },
+   "Hoheneggelsen": {
+    "boarding": 22,
+    "alighting": 0
+   },
+   "Harsum": {
+    "boarding": 0,
+    "alighting": 0
+   },
+   "Sehnde": {
+    "boarding": 0,
+    "alighting": 0
+   },
+   "Immensen-Arpke": {
+    "boarding": 20,
+    "alighting": 0
+   },
+   "Derneburg(Han)": {
+    "boarding": 11,
+    "alighting": 0
+   },
+   "Wefensleben": {
+    "boarding": 7,
+    "alighting": 0
+   },
+   "Bad Gandersheim": {
+    "boarding": 5,
+    "alighting": 0
+   },
+   "Osterode am Harz Leege": {
+    "boarding": 0,
+    "alighting": 0
+   },
+   "Rätzlingen": {
+    "boarding": 5,
+    "alighting": 0
+   },
+   "Darlingerode": {
+    "boarding": 7,
+    "alighting": 0
+   },
+   "Bad Bodenteich": {
+    "boarding": 1,
+    "alighting": 6
+   },
+   "Braunschweig Hbf": {
+    "boarding": 135,
+    "alighting": 142
+   },
+   "Wolfsburg Hbf": {
+    "boarding": 35,
+    "alighting": 45
+   },
+   "Helmstedt": {
+    "boarding": 12,
+    "alighting": 18
+   }
+  },
+  "long_distance_flat_quotes_iterations_1_20": 0,
+  "quotes_iterations_1_20": 49979
+ },
+ "after": {
+  "modestats_last_iteration": {
+   "bicycle": 0.102,
+   "car": 0.4727,
+   "car_passenger": 0.1202,
+   "outside": 0.0341,
+   "pt": 0.0731,
+   "truck": 0.0136,
+   "walk": 0.1843
+  },
+  "runtime_iterations_1_20_s_mean": {
+   "replanning": 1.8,
+   "mobsim": 60.1,
+   "iteration.1": 66.3
+  },
+  "pt_legs": 4815,
+  "pt_legs_by_mode": {
+   "bus": 3344,
+   "rail": 777,
+   "tram": 660
+  },
+  "pt_legs_at_stations": {
+   "Hämelerwald": {
+    "boarding": 28,
+    "alighting": 25
+   },
+   "Hoheneggelsen": {
+    "boarding": 27,
+    "alighting": 22
+   },
+   "Harsum": {
+    "boarding": 4,
+    "alighting": 1
+   },
+   "Sehnde": {
+    "boarding": 0,
+    "alighting": 4
+   },
+   "Immensen-Arpke": {
+    "boarding": 21,
+    "alighting": 35
+   },
+   "Derneburg(Han)": {
+    "boarding": 9,
+    "alighting": 18
+   },
+   "Wefensleben": {
+    "boarding": 7,
+    "alighting": 5
+   },
+   "Bad Gandersheim": {
+    "boarding": 5,
+    "alighting": 10
+   },
+   "Osterode am Harz Leege": {
+    "boarding": 0,
+    "alighting": 1
+   },
+   "Rätzlingen": {
+    "boarding": 5,
+    "alighting": 7
+   },
+   "Darlingerode": {
+    "boarding": 4,
+    "alighting": 7
+   },
+   "Bad Bodenteich": {
+    "boarding": 1,
+    "alighting": 6
+   },
+   "Braunschweig Hbf": {
+    "boarding": 145,
+    "alighting": 155
+   },
+   "Wolfsburg Hbf": {
+    "boarding": 47,
+    "alighting": 50
+   },
+   "Helmstedt": {
+    "boarding": 12,
+    "alighting": 18
+   }
+  },
+  "long_distance_flat_quotes_iterations_1_20": 0,
+  "quotes_iterations_1_20": 50120
+ }
+}

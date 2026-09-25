@@ -1,0 +1,3 @@
+cut routes 4644, not a contiguous part of their mapped route: 0
+starts_at_original_first_stop: 13178 departures, 0 with a shifted time at the first kept stop, 0 (departure, kept stop) pairs off the mapped time
+entering: 1745 departures, 0 with a shifted time at the first kept stop, 0 (departure, kept stop) pairs off the mapped time

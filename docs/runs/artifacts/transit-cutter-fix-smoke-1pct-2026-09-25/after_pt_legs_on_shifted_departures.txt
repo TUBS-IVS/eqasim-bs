@@ -1,0 +1,1 @@
+PT legs 4815; with timetable key found 4781; on a shifted departure 0 (0.0%); persons 0
