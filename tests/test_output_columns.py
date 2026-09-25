@@ -39,33 +39,14 @@ def test_person_columns_legacy_byte_identical_when_optionals_absent():
     assert cols == BASE_PERSON
 
 
-def test_person_columns_append_license_type_and_economic_status_when_present():
-    available = set(BASE_PERSON) | {"license_type", "economic_status"}
-    cols = select_person_output_columns(available, "is_urban_resident")
-    # Base columns keep their exact order; the new attributes are appended.
-    assert cols[:len(BASE_PERSON)] == BASE_PERSON
-    assert "license_type" in cols
-    assert "economic_status" in cols
-
-
-def test_person_columns_append_employment_status_when_present():
-    # employment_status (P9 taxonomy, MiD P_BKAT; popsim_mid only) follows the same
-    # additive-optional-attribute contract as license_type / economic_status.
-    available = set(BASE_PERSON) | {"employment_status"}
-    cols = select_person_output_columns(available, "is_urban_resident")
-    assert cols[:len(BASE_PERSON)] == BASE_PERSON
-    assert "employment_status" in cols
-
-
-def test_person_columns_append_passenger_availability_facts_when_present():
-    available = set(BASE_PERSON) | {
-        "car_passenger_availability", "passenger_availability_source",
-    }
-    cols = select_person_output_columns(available, "is_urban_resident")
-    assert cols[:len(BASE_PERSON)] == BASE_PERSON
-    assert cols[-2:] == [
-        "car_passenger_availability", "passenger_availability_source",
-    ]
+def test_person_columns_append_every_optional_attribute_after_the_legacy_block():
+    # Base columns keep their exact order; each optional attribute (license type, economic
+    # status, the P9 employment status of popsim_mid, the passenger-availability facts) is
+    # appended in its contract order when the frame carries it.
+    optionals = ["license_type", "economic_status", "employment_status",
+                 "car_passenger_availability", "passenger_availability_source"]
+    cols = select_person_output_columns(set(BASE_PERSON) | set(optionals), "is_urban_resident")
+    assert cols == BASE_PERSON + optionals
 
 
 def test_passenger_attribute_origin_ids_stay_out_of_public_person_csv():
@@ -106,16 +87,12 @@ def test_household_columns_legacy_byte_identical_when_optionals_absent():
     assert cols == BASE_HOUSEHOLD
 
 
-def test_household_columns_existing_optional_inserts_preserved():
-    available = set(BASE_HOUSEHOLD) | {"household_income_eur", "hh_type"}
-    cols = select_household_output_columns(available)
-    assert cols.index("household_income_eur") == cols.index("high_income") - 1
-    assert cols.index("hh_type") == cols.index("household_size") + 1
-
-
-def test_household_columns_append_housing_tenure_when_present():
-    available = set(BASE_HOUSEHOLD) | {"housing_tenure"}
-    cols = select_household_output_columns(available)
-    assert "housing_tenure" in cols
-    # Legacy columns unchanged in order.
-    assert cols[:len(BASE_HOUSEHOLD)] == BASE_HOUSEHOLD
+def test_household_columns_place_every_optional_attribute():
+    # household_income_eur and hh_type are INSERTED next to their related legacy columns;
+    # housing_tenure is appended after the legacy block.
+    available = set(BASE_HOUSEHOLD) | {"household_income_eur", "hh_type", "housing_tenure"}
+    assert select_household_output_columns(available) == [
+        "household_id", "car_availability", "bicycle_availability", "number_of_cars",
+        "number_of_bicycles", "income", "household_income_eur", "high_income",
+        "household_size", "hh_type", "census_household_id", "housing_tenure",
+    ]
