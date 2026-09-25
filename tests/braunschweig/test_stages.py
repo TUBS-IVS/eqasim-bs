@@ -212,14 +212,14 @@ class TestCommuteOverride:
         # 50% fallback rate exceeds the 5% threshold -> WARNING raised.
         assert "WARNING" in log_b
 
-    def test_fallback_split_does_not_change_drawn_distances(self):
-        """Output preservation: instrumenting the provenance split must not
-        change which CDF is used, the draw, or the RNG. The drawn distances
-        must equal a reference computation using the documented
-        cdfs.get(kreis, fallback_cdf) selection on the same seeded RNG."""
+    def test_the_seeded_override_draw_is_pinned(self):
+        """Reproducibility of the override draw (per-Kreis groups in appearance order
+        on one seeded RNG), pinned on literal distances in metres for seed 7
+        (computed 2026-09-25). It replaces a replay that re-implemented the group loop
+        and so would have agreed with any change made to both."""
         from braunschweig.synthesis.spatial import commute_distance as cd
 
-        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         df_work = pd.DataFrame({
             "person_id":        [1, 2, 3, 4],
             "hts_id":           [101, 102, 103, 104],
@@ -227,36 +227,12 @@ class TestCommuteOverride:
             "commune_id": ["031010000000", "031011110000",
                            "999990000000", "031020000000"],
         })
-        mid_refs = {
-            "p13_distance_cdfs": {
-                "03101": unit_cdf_band1,
-                "03ZGB": unit_cdf_band1,
-            }
-        }
+        mid_refs = {"p13_distance_cdfs": {"03101": band1, "03ZGB": band1}}
 
-        # Actual output from the instrumented function.
-        out = cd._override_work_distances(
-            df_work.copy(), mid_refs, np.random.RandomState(7))
+        out = cd._override_work_distances(df_work, mid_refs, np.random.RandomState(7))
 
-        # Reference: replicate the exact per-group selection + draw with the
-        # same fresh RNG, mirroring cdfs.get(kreis, fallback_cdf).
-        cdfs = mid_refs["p13_distance_cdfs"]
-        fallback_cdf = cdfs.get("03ZGB")
-        ref = df_work.copy()
-        ref["kreis"] = ref["commune_id"].astype(str).str.zfill(12).str[:5]
-        ref_rng = np.random.RandomState(7)
-        for kreis, group_idx in ref.groupby("kreis", sort=False,
-                                            dropna=True).groups.items():
-            cdf = cdfs.get(str(kreis), fallback_cdf)
-            if cdf is None:
-                continue
-            samples = cd._draw_from_cdf(cdf, ref_rng, len(group_idx))
-            ref.loc[group_idx, "commute_distance"] = samples * 1000.0
-
-        merged = out.merge(ref[["person_id", "commute_distance"]],
-                           on="person_id", suffixes=("_out", "_ref"))
-        assert np.allclose(merged["commute_distance_out"],
-                           merged["commute_distance_ref"])
+        assert np.allclose(out["commute_distance"],
+                           [2472.841541, 3755.5933, 2923.231417, 824.2301])
 
 
 # ---------------------------------------------------------------------------
@@ -326,97 +302,42 @@ class TestSampleCounts:
         assert (df1.loc[:9, "n_cars"] == 1).all()
         assert (df1.loc[10:, "n_cars"] == 2).all()
 
-    def test_kreis_argument_matches_local_derivation(self):
-        """Passing the pre-derived ``kreis`` Series must be output-identical to
-        letting ``_sample_counts`` derive it internally (the FIX A refactor that
-        derives the Kreis once in execute() and reuses it across cars/bikes/
-        income instead of rebuilding it on every call)."""
+    def test_pinned_draw_in_sorted_kreis_order_with_a_region_fallback(self):
+        """FIX 2.1 and the fallback instrumentation, pinned on literal values.
+
+        Persons are listed Gifhorn, Braunschweig, Salzgitter -- NOT in sorted ARS order --
+        and Salzgitter has no own share vector, so it draws from the region-wide one.
+        _sample_counts must consume the RNG over the Kreise in sorted order (a set or
+        appearance-order iteration yields [1, 2, 0, 0, 1, 1, 2, 2, 1, 1, 0, 2] here,
+        checked 2026-09-25), the counting must not change the draw, and a pre-derived
+        ``kreis`` argument (the FIX A reuse path) must give the identical result.
+        """
         from braunschweig.synthesis.population.enriched import (
             _derive_kreis_ars5, _sample_counts,
         )
 
         df = pd.DataFrame({
-            "person_id":           list(range(20)),
-            "inside_braunschweig": [True] * 10 + [False] * 10,
-            "inside_salzgitter":   [False] * 10 + [True] * 10,
-        })
-        values = np.array([0, 1, 2, 3])
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-            "03102": (0.2, 0.2, 0.3, 0.3),
-        }
-        region_shares = (0.25, 0.25, 0.25, 0.25)
-
-        df_local = df.copy()
-        df_reused = df.copy()
-        # Local derivation path (kreis=None).
-        _sample_counts(df_local, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(7))
-        # Reuse path: derive once, pass it in.
-        kreis = _derive_kreis_ars5(df_reused)
-        _sample_counts(df_reused, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(7), kreis=kreis)
-
-        assert df_local["n_cars"].tolist() == df_reused["n_cars"].tolist(), \
-            "passing kreis= must yield identical output to local derivation"
-
-    def test_kreis_iteration_order_is_sorted_and_deterministic(self):
-        """FIX 2.1: ``_sample_counts`` must consume the shared RNG stream over
-        the Kreise in a deterministic SORTED order, not the hash-dependent
-        ``set()`` iteration order (which varies with PYTHONHASHSEED).
-
-        We verify this by replaying the exact draws the function should make if
-        it iterates the Kreis codes in ``sorted`` order, drawing ``n`` values
-        per Kreis from a fresh RNG with the same seed, and assert the function
-        reproduces that per-person assignment. A ``set()``-based iteration would
-        consume the per-Kreis blocks in a different (hash-dependent) order and
-        therefore generally mismatch this sorted-order replay."""
-        from braunschweig.synthesis.population.enriched import _sample_counts
-
-        values = np.array([0, 1, 2, 3])
-        # Non-degenerate shares so the actual draw depends on the position in
-        # the consumed RNG stream (degenerate 1.0 shares would hide the order).
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-            "03102": (0.2, 0.2, 0.3, 0.3),
-            "03151": (0.3, 0.3, 0.2, 0.2),
-        }
-        region_shares = (0.25, 0.25, 0.25, 0.25)
-
-        df = pd.DataFrame({
             "person_id":           list(range(12)),
-            "inside_braunschweig": [True] * 4 + [False] * 8,
-            "inside_salzgitter":   [False] * 4 + [True] * 4 + [False] * 4,
-            "inside_gifhorn":      [False] * 8 + [True] * 4,
+            "inside_gifhorn":      [True] * 4 + [False] * 8,
+            "inside_braunschweig": [False] * 4 + [True] * 4 + [False] * 4,
+            "inside_salzgitter":   [False] * 8 + [True] * 4,
         })
+        values = np.array([0, 1, 2, 3])
+        kreis_shares = {"03101": (0.1, 0.4, 0.3, 0.2), "03151": (0.3, 0.3, 0.2, 0.2)}
+        region_shares = (0.2, 0.3, 0.3, 0.2)
+        expected = [1, 1, 0, 2, 2, 2, 1, 0, 1, 0, 2, 2]
 
-        df_out = df.copy()
-        _sample_counts(df_out, "n_cars", values, region_shares, kreis_shares,
+        local = df.copy()
+        _sample_counts(local, "n_cars", values, region_shares, kreis_shares,
                        np.random.RandomState(2024))
+        reused = df.copy()
+        _sample_counts(reused, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(2024), kreis=_derive_kreis_ars5(reused))
 
-        # Independent sorted-order replay of the same draws.
-        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
-        kreis = _derive_kreis_ars5(df)
-        replay = np.zeros(len(df), dtype=int)
-        rng = np.random.RandomState(2024)
-        for ars in sorted(kreis.unique()):
-            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
-            shares = shares / shares.sum()
-            mask = (kreis == ars).values
-            n = int(mask.sum())
-            if n == 0:
-                continue
-            replay[mask] = rng.choice(values, size=n, p=shares)
-
-        assert df_out["n_cars"].tolist() == replay.tolist(), \
-            "_sample_counts must consume the RNG in sorted Kreis order (FIX 2.1)"
-
-        # And it must be reproducible across two executions with equal seeds.
-        df_again = df.copy()
-        _sample_counts(df_again, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(2024))
-        assert df_again["n_cars"].tolist() == df_out["n_cars"].tolist()
-
+        assert local["n_cars"].tolist() == expected
+        assert reused["n_cars"].tolist() == expected
+        assert local.attrs["n_cars_kreis_share_fallback_count"] == 4
+        assert local.attrs["n_cars_kreis_share_fallback_kreise"] == ["03102"]
 
 # ---------------------------------------------------------------------------
 # 7a. enriched._sample_counts per-Kreis share fallback transparency
@@ -481,42 +402,6 @@ class TestSampleCountsFallbackTransparency:
         assert df["number_of_cars"].isin(values).all()
         assert len(df["number_of_cars"]) == 20
 
-    def test_fallback_accounting_does_not_change_sampled_values(self):
-        """The added counting/logging must be output-preserving: the sampled
-        per-person values with an absent Kreis must equal an independent
-        sorted-order RNG replay that uses the same region fallback vector."""
-        from braunschweig.synthesis.population.enriched import (
-            _derive_kreis_ars5, _sample_counts,
-        )
-
-        df = self._build_population()
-        values = np.array([0, 1, 2, 3])
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-        }
-        region_shares = (0.2, 0.3, 0.3, 0.2)
-
-        df_out = df.copy()
-        _sample_counts(df_out, "number_of_cars", values, region_shares,
-                       kreis_shares, np.random.RandomState(99))
-
-        # Independent sorted-order replay with the identical fallback vector.
-        kreis = _derive_kreis_ars5(df)
-        replay = np.zeros(len(df), dtype=int)
-        rng = np.random.RandomState(99)
-        for ars in sorted(kreis.unique()):
-            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
-            shares = shares / shares.sum()
-            mask = (kreis == ars).values
-            n = int(mask.sum())
-            if n == 0:
-                continue
-            replay[mask] = rng.choice(values, size=n, p=shares)
-
-        assert df_out["number_of_cars"].tolist() == replay.tolist(), \
-            "fallback instrumentation must not change the sampled values/RNG"
-
-
 # ---------------------------------------------------------------------------
 # 7b. enriched._derive_kreis_ars5 over all eight political-prefix flags
 # ---------------------------------------------------------------------------
@@ -541,78 +426,74 @@ class TestDeriveKreisArs5AllFlags:
 #     (FIX 2.2 cached-list mutation, FIX 2.6 distinct RNG seed offsets)
 # ---------------------------------------------------------------------------
 
-import inspect
-
-from braunschweig.synthesis.population import enriched as _enriched_module
-
-
-def _execute_base_source():
-    """Source of ``_execute_base`` together with its ``_step_*`` helpers.
-
-    ``_execute_base`` was decomposed into named ``_step_*`` orchestration steps
-    (issue #267), so the blocks pinned below now live in those step functions
-    rather than in ``_execute_base`` itself. This is FUNCTION-FAMILY-scoped
-    rather than module-scoped: it concatenates the source of ``_execute_base``,
-    every ``_step_*``-named attribute of its defining module, and the
-    ``_condition_pt_subscription_for_sampling`` sub-helper of
-    ``_step_sample_pt_subscription`` (A6; a non-``_step_`` name because it is not
-    itself called by the orchestrator). Scoping to the family rather than the
-    whole module means the pins keep following this exact function group even if
-    unrelated code is later added to (or moved out of) the defining module.
-    """
-    module = inspect.getmodule(_enriched_module._execute_base)
-    functions = [_enriched_module._execute_base]
-    functions += [
-        getattr(module, name) for name in dir(module) if name.startswith("_step_")
-    ]
-    functions.append(module._condition_pt_subscription_for_sampling)
-    return "\n".join(inspect.getsource(fn) for fn in functions)
-
-
 class TestConstraintListNotMutated:
     """FIX 2.2: the car/bike availability blocks must copy the cached MiD
     constraint list (``list(mid["..."])``) before ``.append(...)`` so the
     cached ``braunschweig.data.mid.data`` stage object is never mutated in
     place.
 
-    We reproduce the exact copy-then-append idiom used in ``_execute_base`` and
-    assert the original list is untouched; we additionally pin the source so a
-    future regression back to a bare reference is caught."""
+    The two imputation steps run twice, as on an in-process re-run, and the cached
+    constraint lists must come out unchanged; a step that appended to the cached
+    list directly would grow it by one age constraint per run. (It replaces a check
+    on the source text, which any other spelling of the copy would have failed.)"""
 
-    def test_source_copies_cached_constraint_lists(self):
-        src = _execute_base_source()
-        # Both availability blocks must take a copy before appending.
-        assert 'list(mid["car_availability_constraints"])' in src, \
-            "car constraints must be copied before append (FIX 2.2)"
-        assert 'list(mid["bicycle_availability_constraints"])' in src, \
-            "bicycle constraints must be copied before append (FIX 2.2)"
-        # Guard against the regressed bare-reference form.
-        assert 'constraints = mid["car_availability_constraints"]\n' not in src
-        assert 'constraints = mid["bicycle_availability_constraints"]\n' not in src
+    def test_imputation_steps_leave_the_cached_constraint_lists_untouched(self):
+        from braunschweig.synthesis.population.enriched.base import (
+            _step_impute_bicycle_availability, _step_impute_car_availability,
+        )
+
+        class _Context:
+            def config(self, key, *args, **kwargs):
+                return {"braunschweig.minimum_age.car_availability": 18,
+                        "braunschweig.minimum_age.bicycle_availability": 6}[key]
+
+            def progress(self, iterable, **kwargs):
+                return iterable
+
+        mid = {
+            "car_availability_constraints": [{"sex": "male", "target": 0.8}],
+            "bicycle_availability_constraints": [{"sex": "female", "target": 0.6}],
+        }
+        persons = pd.DataFrame({"age": [5, 30, 45], "sex": ["male", "female", "male"]})
+        for _run in range(2):
+            _step_impute_car_availability(_Context(), persons, mid, iterations=2)
+            _step_impute_bicycle_availability(_Context(), persons, mid, iterations=2)
+
+        assert mid["car_availability_constraints"] == [{"sex": "male", "target": 0.8}]
+        assert mid["bicycle_availability_constraints"] == [{"sex": "female", "target": 0.6}]
 
 
 class TestRandomSeedOffsetsDistinct:
     """FIX 2.6: the PT-subscription draw and the car/bike availability draw are
     independent attributes and must NOT share the same uniform RNG stream. Their
     ``random_seed`` offsets therefore have to differ (previously both used
-    +8572, making the two draws correlated by construction)."""
+    +8572, making the two draws correlated by construction).
 
-    def test_pt_and_car_bike_seed_offsets_differ(self):
-        src = _execute_base_source()
-        import re
+    A policy lint over EVERY module of the enriched package, reading only real
+    ``RandomState(<seed> + N)`` / ``default_rng(<seed> + N)`` calls from the syntax tree:
+    the earlier regex scanned two functions of one module, while seven further streams
+    live in availability, vehicle ownership, income, economic status and housing."""
 
-        offsets = [
-            int(m) for m in re.findall(
-                r"RandomState\(context\.config\(\"random_seed\"\)\s*\+\s*(\d+)\)",
-                src,
-            )
-        ]
-        # PT block (+8572) and car/bike block must both be present and distinct.
-        assert 8572 in offsets, "PT block must keep its +8572 offset"
-        # There must be at least two RandomState constructions across
-        # _execute_base and its steps, and no offset may be used twice (every
-        # independent draw is its own stream).
-        assert len(offsets) >= 2
+    def test_every_rng_stream_of_the_enriched_package_has_its_own_offset(self):
+        import ast
+
+        from braunschweig.synthesis.population import enriched
+
+        package = pathlib.Path(enriched.__file__).parent
+        streams = []
+        for path in sorted(package.rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Call) and node.args):
+                    continue
+                name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+                seed = node.args[0]
+                if (name in ("RandomState", "default_rng") and isinstance(seed, ast.BinOp)
+                        and isinstance(seed.op, ast.Add) and isinstance(seed.right, ast.Constant)):
+                    streams.append((seed.right.value, f"{path.name}:{node.lineno}"))
+
+        offsets = [offset for offset, _ in streams]
+        assert 8572 in offsets, "the PT block must keep its +8572 offset"
+        assert len(offsets) >= 8, streams  # the lint must actually see the package's streams
         assert len(offsets) == len(set(offsets)), \
-            f"RNG seed offsets must all be distinct, got {offsets} (FIX 2.6)"
+            f"RNG seed offsets must all be distinct (FIX 2.6): {sorted(streams)}"
 
