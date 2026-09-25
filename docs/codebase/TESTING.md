@@ -114,15 +114,17 @@ runner; direct pytest does not satisfy the required agent gate.
 
 ## Test design
 
+The binding rules (failure modes first, highest useful level, no reflex tests,
+behaviour over implementation, one contract per test, cheap by construction, what
+must always stay covered) live in [CLAUDE.md](../../CLAUDE.md#tests) and are not
+repeated here. Operational notes:
+
 - Prefer small deterministic synthetic fixtures and real production helpers.
-- Preserve conservation, assignment, error handling, primary/fallback-path,
-  reproducibility and promised OFF-path checks.
-- For identical inputs, check a coherent output contract in one test rather than
-  rerunning the same export for each field. Keep distinct inputs and edge cases
-  separately identifiable. Parametrization reduces repeated code, not test cases.
-- Static source inspection is appropriate only for a specifically
-  justified structural constraint; prefer observable behavior for logic.
-- Never remove tests solely to meet a numeric budget. Measure durations first.
+- Keep distinct inputs and edge cases separately identifiable; parametrization
+  reduces repeated code, not test cases.
+- Measure before and after any speed or consolidation change
+  (`--durations=30`, the JUnit report); a removed test names the test that
+  still catches its failure.
 - PopulationSim control changes additionally require the specification checks and
   numerical smoke described in [CONTRIBUTING](../../CONTRIBUTING.md#after-touching-a-populationsim-control).
 
