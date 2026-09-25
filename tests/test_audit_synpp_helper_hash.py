@@ -22,37 +22,23 @@ def _tuples(source: str, own_module: str):
     return audit.helper_tuples(ast.parse(source), own_module)
 
 
-def test_a_bare_relative_import_binds_the_local_name():
-    """``from . import batch_cache`` binds ``batch_cache`` -> the package submodule.
-
-    Resolver bug 1. Reading only ``alias.asname`` misses this form entirely, so every
-    own-package sibling listed in ``_HELPER_MODULES`` by its bare name resolves to
-    nothing and the stage's coverage looks empty.
-    """
-    _aliases, _deferred, alias_map = _tuples(
-        "from . import batch_cache\n_HELPER_MODULES = (batch_cache,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["batch_cache"] == "braunschweig.popsim.stage.batch_cache"
-
-
-def test_an_aliased_absolute_import_binds_the_alias():
-    """``from braunschweig.popsim import income as _income`` binds ``_income``."""
-    _aliases, _deferred, alias_map = _tuples(
-        "from braunschweig.popsim import income as _income\n_HELPER_MODULES = (_income,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["_income"] == "braunschweig.popsim.income"
-
-
-def test_an_unaliased_absolute_import_binds_the_imported_name():
-    """``from braunschweig.popsim import assembly`` binds ``assembly``.
-
-    The same shape as bug 1 without the relative level; both were missed by an
-    asname-only reading.
-    """
-    _aliases, _deferred, alias_map = _tuples(
-        "from braunschweig.popsim import assembly\n_HELPER_MODULES = (assembly,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["assembly"] == "braunschweig.popsim.assembly"
+@pytest.mark.parametrize("import_line, bound_name, module", [
+    # Resolver bug 1: reading only ``alias.asname`` misses this form entirely, so every
+    # own-package sibling listed in ``_HELPER_MODULES`` by its bare name resolved to
+    # nothing and the stage's coverage looked empty.
+    pytest.param("from . import batch_cache", "batch_cache",
+                 "braunschweig.popsim.stage.batch_cache", id="bare-relative-import"),
+    pytest.param("from braunschweig.popsim import income as _income", "_income",
+                 "braunschweig.popsim.income", id="aliased-absolute-import"),
+    # The same shape as bug 1 without the relative level; both were missed by an
+    # asname-only reading.
+    pytest.param("from braunschweig.popsim import assembly", "assembly",
+                 "braunschweig.popsim.assembly", id="unaliased-absolute-import"),
+])
+def test_every_import_form_binds_the_name_the_helper_tuple_lists(import_line, bound_name, module):
+    source = f"{import_line}\n_HELPER_MODULES = ({bound_name},)\n"
+    _aliases, _deferred, alias_map = _tuples(source, "braunschweig.popsim.stage")
+    assert alias_map[bound_name] == module
 
 
 def test_an_annassign_declared_helper_tuple_is_read():
