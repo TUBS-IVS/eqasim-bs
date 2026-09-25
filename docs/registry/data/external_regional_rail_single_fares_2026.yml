@@ -25,7 +25,7 @@ verification:
 requirements:
   synthesis: not_needed
   matsim: optional
-  production: optional
+  production: required
 licensing:
   license: public tariff publication (facts), attribution to the two tariff authorities
   restricted: false

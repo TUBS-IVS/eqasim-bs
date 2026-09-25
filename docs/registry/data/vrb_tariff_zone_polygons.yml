@@ -41,8 +41,8 @@ verification:
     529 m, zones 35/72) plus one point contact (87/88).
 requirements:
   synthesis: not_needed
-  matsim: optional
-  production: optional
+  matsim: required
+  production: required
 licensing:
   license: unknown
   restricted: false

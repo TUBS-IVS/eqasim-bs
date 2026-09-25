@@ -5,20 +5,22 @@ description: Loads the Regionalverband Grossraum Braunschweig polygon layer (46 
   repairs invalid rings, trims overlap slivers to the lower zone id, adds zones 55/56 as point zones
   around the rail station complexes found in the cleaned GTFS (rail-served stops carrying the station
   name plus the stops of their parent station, 50 m buffers), writes vrb_tariff_zones.gpkg plus a
-  report naming the matched stops. Only wired when vrb_zone_fares_enabled is true.
+  report naming the matched stops. Wired when vrb_zone_fares_enabled is true, the canonical
+  configuration since the 1 % smoke vrb-zone-fares-smoke-1pct-2026-09-25.
 lineage:
   type: braunschweig_new
   upstream: null
   notes: Replaces the name-based scrape of braunschweig.data.vrb.zones for zone membership (ADR-0133 D2).
-    Conditional on vrb_zone_fares_enabled, which is off in the committed workflow configurations.
+    Conditional on vrb_zone_fares_enabled, which is on in configs/base_bs.yml (popsim_mid) and off in
+    the open workflow fixture configurations.
 code:
 - braunschweig/data/vrb/zone_polygons.py
 - braunschweig/data/vrb/line_scopes.py
 pipelines:
-  popsim_mid: not_used
+  popsim_mid: active
   popsim_open: not_used
   simple_ipf_open: not_used
-production: false
+production: true
 inputs:
 - vrb_tariff_zone_polygons
 - gtfs_feed

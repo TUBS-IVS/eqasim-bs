@@ -24,7 +24,7 @@ Restricted datasets are never committed or redistributed.
 | [destatis_population_kreis](../registry/data/destatis_population_kreis.yml) | control | manual_download | `data/braunschweig/12411-0018_de.csv` | r/-/o | no |
 | [detour_circuity_params](../registry/data/detour_circuity_params.yml) | calibration_target | committed | `data/braunschweig/calibration/detour_circuity_params.csv` | o/-/o | no |
 | [entd_2008](../registry/data/entd_2008.yml) | donor | manual_download | `data/entd_2008/{Q_individu,Q_tcm_individu,Q_menage,Q_tcm_menage_0,K_deploc,Q_ind_lieu_teg}.csv` | r/-/r | no |
-| [external_regional_rail_single_fares_2026](../registry/data/external_regional_rail_single_fares_2026.yml) | reference_table, assumption_basis | derived (`scripts/normalize_external_rail_single_fares.py`) | `docs/data/external-regional-rail-single-fares-2026.json` | -/o/o | no |
+| [external_regional_rail_single_fares_2026](../registry/data/external_regional_rail_single_fares_2026.yml) | reference_table, assumption_basis | derived (`scripts/normalize_external_rail_single_fares.py`) | `docs/data/external-regional-rail-single-fares-2026.json` | -/o/r | no |
 | [genesis_svb_residence](../registry/data/genesis_svb_residence.yml) | control | manual_download | `data/braunschweig/13111-06-02-4.xlsx` | r/-/o | no |
 | [genesis_svb_workplace](../registry/data/genesis_svb_workplace.yml) | control | manual_download | `data/braunschweig/13111-01-03-5.xlsx` | r/-/r | no |
 | [german_wide_freight_v3](../registry/data/german_wide_freight_v3.yml) | supply_input, network, assumption_basis | auto_script (`scripts/download_german_wide_freight.py`) | `data/braunschweig/freight/german-wide-freight-v3/` | -/r/r | no |
@@ -101,10 +101,10 @@ in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 | [urbistat_gemeinde_age](../registry/data/urbistat_gemeinde_age.yml) | derived_input | scrape (`scripts/scrape_urbistat_bs.py`) | `data/braunschweig/urbistat_age_gemeinden.csv` | o/-/- | no |
 | [verbindungen](../registry/data/verbindungen.yml) | validation_reference, calibration_target, spatial_input | auto_script (`scripts/download_verbindungen.py`) | `data/verbindungen/` | r/-/r | no |
 | [vg250_ew](../registry/data/vg250_ew.yml) | spatial_input | manual_download | `data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip` | r/r/r | no |
-| [vrb_dated_price_inputs_2026](../registry/data/vrb_dated_price_inputs_2026.yml) | reference_table | committed | `docs/data/vrb-dated-price-inputs.json` | -/o/o | no |
-| [vrb_price_stage_matrix_2022](../registry/data/vrb_price_stage_matrix_2022.yml) | assumption_basis, reference_table | committed | `docs/data/vrb-price-stage-matrix-2022.csv` | -/o/o | no |
-| [vrb_tariff_zone_polygons](../registry/data/vrb_tariff_zone_polygons.yml) | spatial_input, supply_input | manual_download | `data/vrb/vrb_tarifzonen_rgb_25832.geojson` | -/o/o | no |
-| [vrb_tariff_zones](../registry/data/vrb_tariff_zones.yml) | supply_input | scrape (`scripts/build_vrb_stations_json.py`) | `data/vrb/tarifzonen.html -> vrb/stations.json` | -/r/r | no |
+| [vrb_dated_price_inputs_2026](../registry/data/vrb_dated_price_inputs_2026.yml) | reference_table | committed | `docs/data/vrb-dated-price-inputs.json` | -/o/r | no |
+| [vrb_price_stage_matrix_2022](../registry/data/vrb_price_stage_matrix_2022.yml) | assumption_basis, reference_table | committed | `docs/data/vrb-price-stage-matrix-2022.csv` | -/o/r | no |
+| [vrb_tariff_zone_polygons](../registry/data/vrb_tariff_zone_polygons.yml) | spatial_input, supply_input | manual_download | `data/vrb/vrb_tarifzonen_rgb_25832.geojson` | -/r/r | no |
+| [vrb_tariff_zones](../registry/data/vrb_tariff_zones.yml) | supply_input | scrape (`scripts/build_vrb_stations_json.py`) | `data/vrb/tarifzonen.html -> vrb/stations.json` | -/o/o | no |
 | [zensus2022_age_sex_size](../registry/data/zensus2022_age_sex_size.yml) | control | manual_download | `data/braunschweig/1000A-3082_de_flat.zip` | o/-/- | no |
 | [zensus2022_employment_age](../registry/data/zensus2022_employment_age.yml) | control | manual_download | `data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv` | o/-/r | no |
 | [zensus2022_grid_cells](../registry/data/zensus2022_grid_cells.yml) | control | derived | `data/braunschweig/popsim/cells/zensus2022_grid_{100m_de_prepared,1km_de_binned}.parquet` | r/-/r | no |

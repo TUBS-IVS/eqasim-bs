@@ -10,9 +10,9 @@ lineage:
 code:
 - braunschweig/data/vrb/zones.py
 pipelines:
-  popsim_mid: active
+  popsim_mid: not_used
   popsim_open: active
   simple_ipf_open: active
-production: true
+production: false
 inputs:
 - vrb_tariff_zones

@@ -21,8 +21,8 @@ verification:
   verifier_entry: null
 requirements:
   synthesis: not_needed
-  matsim: required
-  production: required
+  matsim: optional
+  production: optional
 licensing:
   license: VRB terms
   restricted: false

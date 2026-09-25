@@ -566,9 +566,10 @@ config:
   gtfs_path: gtfs_cordon
   vrb_stations_path: vrb/stations.json
   # VRB zone fare model (ADR-0133, issue #430): official zone polygons + 2022 price-stage matrix
-  # (2026 assumption) + 2026 prices instead of the placeholder rings. OFF until the 1 % ON/OFF
-  # smoke is recorded in a run manifest. Assumption parameters: see ADR-0133 D7/D8.
-  vrb_zone_fares_enabled: false
+  # (2026 assumption) + 2026 prices instead of the placeholder rings. ON since the 1 % ON/OFF smoke
+  # docs/runs/vrb-zone-fares-smoke-1pct-2026-09-25.yml (fallback share 0, no measurable replanning cost).
+  # Assumption parameters: see ADR-0133 D6-D9.
+  vrb_zone_fares_enabled: true
   vrb_fare_snapshot_date: "2026-06-20"
   vrb_fare_day_ticket_cap_enabled: true
   vrb_fare_unsupported_fallback_cents: 370

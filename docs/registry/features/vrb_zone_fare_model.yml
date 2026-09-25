@@ -7,18 +7,17 @@ description: Prices every routed PT trip with the VRB tariff 2026 (official zone
   single), a flat long-distance price (DB Sparpreis entry price 2026) for every ticket and a
   day-ticket cap over the DMC prefix; every quote is counted by outcome and a high
   fallback share fails the run. Replaces the placeholder ring cost model when vrb_zone_fares_enabled.
-  The flag-only stage braunschweig.data.vrb.zone_polygons joins the stage list when the flag is on
-  in the canonical config (it is absent from the DAG snapshots while off).
 stages:
+- braunschweig.data.vrb.zone_polygons
 - matsim.simulation.prepare
 - matsim.output
 pipelines:
-  popsim_mid: supported
+  popsim_mid: active
   popsim_open: supported
   simple_ipf_open: supported
 lifecycle: experimental
 production:
-  enabled: false
+  enabled: true
   flags:
   - vrb_zone_fares_enabled
 introduced:
@@ -64,14 +63,17 @@ evidence:
       reference is compared by this feature.
 validation:
   state: unvalidated
-  runs: []
+  runs:
+  - vrb-zone-fares-smoke-1pct-2026-09-25
   metric: null
-  note: Unit and wiring tests only until the 1 % ON/OFF smoke is recorded; convergence of that smoke
-    is not validation.
+  note: The 1 % ON/OFF smoke is a wiring proof (fallback share 0, 76 % of the final schedule's stop
+    facilities zoned, all lines scoped, no replanning cost); it compares no observed reference, so the
+    feature stays unvalidated. Convergence of a run is not validation.
 assessment:
   status: pending
   by: null
   date: null
-  pending_reason: Awaiting the 1 % ON/OFF smoke on the run server and its run manifest.
+  pending_reason: Maintainer review of the smoke manifest vrb-zone-fares-smoke-1pct-2026-09-25 and of the
+    enabled production flag.
   note: Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.fares.zonal,
     org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation) with its own unit tests.

@@ -238,10 +238,11 @@ INPUTS: List[Input] = [
             "Official VRB zones 10..90 as 46 polygons, EPSG:25832, zone id in field 'Tarifzone'; "
             "export the layer with the REST 'query' endpoint (where=1=1, outFields=*, outSR=25832, "
             "f=geojson), exact curl in docs/registry/data/vrb_tariff_zone_polygons.yml. Zones 55/56 "
-            "(Haemelerwald, Dedenhausen) are not in the layer. Licence unconfirmed: keep local-only."
+            "(Haemelerwald, Dedenhausen) are not in the layer. Licence unconfirmed: keep local-only. "
+            "Required since vrb_zone_fares_enabled is on in configs/base_bs.yml."
         ),
         matsim_only=True,
-        optional=True,
+        optional=False,
     ),
 ]
 
