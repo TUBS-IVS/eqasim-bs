@@ -2,6 +2,7 @@ stage: braunschweig.data.vrb.zones
 title: VRB tariff zones
 layer: matsim
 description: Parses the VRB tariff-zone table into the stations.json the Java fare module consumes.
+  Legacy ring remap for the placeholder cost model; not used when vrb_zone_fares_enabled (ADR-0133).
 lineage:
   type: braunschweig_new
   upstream: null
@@ -9,9 +10,9 @@ lineage:
 code:
 - braunschweig/data/vrb/zones.py
 pipelines:
-  popsim_mid: active
+  popsim_mid: not_used
   popsim_open: active
   simple_ipf_open: active
-production: true
+production: false
 inputs:
 - vrb_tariff_zones
