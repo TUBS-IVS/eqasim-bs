@@ -3,7 +3,10 @@ title: MATSim run preparation
 layer: matsim
 description: Prepares the MATSim run (config, freight injection, urban parking, subpopulations)
   via braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
-  the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133).
+  the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133). With
+  cordon_enabled it cuts the scenario to the cordon extent with eqasim's RunScenarioCutter; the fork's
+  TransitScheduleCutter keeps the last inside stop and the scheduled times of every cut transit route
+  (docs/codebase/notes/eqasim-transit-schedule-cutter.md).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
