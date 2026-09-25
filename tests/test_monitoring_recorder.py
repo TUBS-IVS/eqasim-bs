@@ -44,7 +44,8 @@ class _CannedSampler:
 
 
 def test_every_sample_is_appended_as_one_json_line(tmp_path):
-    series = tmp_path / "series.jsonl"
+    # A nested path: the recorder creates its output directory explicitly.
+    series = tmp_path / "monitoring" / "nested" / "series.jsonl"
     resource_recorder = recorder.ResourceRecorder(str(series), _CannedSampler())
 
     resource_recorder.sample_once()
@@ -53,14 +54,6 @@ def test_every_sample_is_appended_as_one_json_line(tmp_path):
     lines = series.read_text(encoding="utf-8").strip().splitlines()
     assert [json.loads(line)["sample_index"] for line in lines] == [0, 1]
     assert resource_recorder.written_sample_count == 2
-
-
-def test_the_output_directory_is_created_explicitly(tmp_path):
-    series = tmp_path / "monitoring" / "nested" / "series.jsonl"
-
-    recorder.ResourceRecorder(str(series), _CannedSampler()).sample_once()
-
-    assert series.exists()
 
 
 def test_a_failing_sample_is_counted_and_the_recording_continues(tmp_path, caplog):
@@ -76,6 +69,9 @@ def test_a_failing_sample_is_counted_and_the_recording_continues(tmp_path, caplo
     assert (resource_recorder.failed_sample_count,
             resource_recorder.written_sample_count) == (1, 1)
     assert any("monitoring" in record.message for record in caplog.records)
+    # ... and the summary states the failure next to the written samples.
+    record = resource_recorder.write_summary()
+    assert (record["failed_sample_count"], record["sample_count"]) == (1, 1)
 
 
 def test_the_sampling_loop_stops_when_a_stop_is_requested(tmp_path):
@@ -114,19 +110,6 @@ def test_a_run_that_raises_still_leaves_its_measurement_behind(tmp_path):
     assert (tmp_path / "series.summary.json").exists()
 
 
-def test_the_summary_states_how_many_samples_failed(tmp_path):
-    series = tmp_path / "series.jsonl"
-    resource_recorder = recorder.ResourceRecorder(str(series),
-                                                 _CannedSampler(raise_on=(1,)))
-    resource_recorder.sample_once()
-    resource_recorder.sample_once()
-
-    record = resource_recorder.write_summary()
-
-    assert record["failed_sample_count"] == 1
-    assert record["sample_count"] == 1
-
-
 def _write_config(tmp_path, working_directory, **monitoring_keys):
     config = {
         "working_directory": str(working_directory),
@@ -145,40 +128,20 @@ def test_the_configured_sampling_interval_is_used(tmp_path):
         assert handle.interval_seconds == pytest.approx(17.5)
 
 
-def test_the_recorded_filesystems_include_the_working_directory_and_the_output_path(tmp_path):
-    working_directory = tmp_path / "work"
-    output_path = tmp_path / "out"
-    output_path.mkdir()
-    config_path = _write_config(tmp_path, working_directory,
-                                output_path=str(output_path))
+@pytest.mark.parametrize("key, directory, expected", [
+    pytest.param("output_path", "out", ["work", "out"], id="working-directory-and-output-path"),
+    # PopulationSim's per-batch pipeline.h5 files are ~9 GB each and may sit on another disk.
+    pytest.param("braunschweig.population.popsim.work_dir", "popsim_work",
+                 ["work", "popsim_work"], id="populationsim-working-directory"),
+    pytest.param("output_path", "work", ["work"], id="a-path-configured-twice-is-recorded-once"),
+])
+def test_the_recorded_filesystems_are_exactly_the_configured_directories(
+        tmp_path, key, directory, expected):
+    (tmp_path / directory).mkdir(exist_ok=True)
+    config_path = _write_config(tmp_path, tmp_path / "work", **{key: str(tmp_path / directory)})
 
     with recorder.record_from_config(config_path, interval_seconds=0.0) as handle:
         row = handle.sample_once()
 
     paths = [filesystem["path"] for filesystem in row["filesystems"]]
-    assert str(working_directory) in paths and str(output_path) in paths
-
-
-def test_the_populationsim_working_directory_is_watched_for_free_space_too(tmp_path):
-    """Its per-batch pipeline.h5 files are ~9 GB each and may sit on another disk."""
-    popsim_work = tmp_path / "popsim_work"
-    config_path = _write_config(
-        tmp_path, tmp_path / "work",
-        **{"braunschweig.population.popsim.work_dir": str(popsim_work)})
-
-    with recorder.record_from_config(config_path, interval_seconds=0.0) as handle:
-        row = handle.sample_once()
-
-    assert str(popsim_work) in [filesystem["path"] for filesystem in row["filesystems"]]
-
-
-def test_a_path_configured_twice_is_recorded_once(tmp_path):
-    working_directory = tmp_path / "work"
-    config_path = _write_config(tmp_path, working_directory,
-                                output_path=str(working_directory))
-
-    with recorder.record_from_config(config_path, interval_seconds=0.0) as handle:
-        row = handle.sample_once()
-
-    assert [filesystem["path"] for filesystem in row["filesystems"]] == \
-        [str(working_directory)]
+    assert sorted(paths) == sorted(str(tmp_path / name) for name in expected)
