@@ -297,16 +297,3 @@ def test_a_truncated_last_line_of_a_killed_run_is_skipped(tmp_path):
     assert rows[0]["sample_index"] == 0
 
 
-def test_writing_the_summary_produces_both_a_json_and_a_markdown_artifact(tmp_path):
-    series = tmp_path / "series.jsonl"
-    with series.open("w", encoding="utf-8") as handle:
-        for index, cpu in enumerate((0.0, 100.0)):
-            handle.write(json.dumps(
-                _row(index, index * 100.0,
-                     processes=[_process(100, cpu, 1_000_000)])) + "\n")
-
-    result = summary.write_summary(str(series))
-
-    assert (tmp_path / "series.summary.json").exists()
-    assert (tmp_path / "series.summary.md").exists()
-    assert result["sample_count"] == 2

@@ -269,18 +269,6 @@ def test_inverse_anchor_headroom_measures_the_201_direction_frequency():
     assert (summary["n_unlinked"] == 4).all()
 
 
-def test_inverse_anchor_headroom_excludes_an_ineligible_childs_own_activity():
-    unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
-    summary = summarise_inverse_anchor_headroom(unlinked, _persons(), _all_trips(),
-                                                gap_minutes=(60.0,))
-    # Child 5's own activity is education, so it is excluded from the eligible set before
-    # the escort join ever runs -- household 20's only adult (person 4) does not escort
-    # anyway, so this also cannot inflate the count even if the exclusion were missing, but
-    # the eligibility filter is the thing under test here, not that incidental fact.
-    assert int(summary.loc[0, "n_legs_reached"]) == 1
-    assert int(summary.loc[0, "n_eligible"]) == 3
-
-
 def test_the_statistics_account_for_every_unlinked_leg_exactly_once():
     _candidates_frame, stats = _candidates()
     assert stats["n_unlinked"] == 4

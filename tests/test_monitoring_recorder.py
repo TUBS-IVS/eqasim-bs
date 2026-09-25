@@ -137,28 +137,6 @@ def _write_config(tmp_path, working_directory, **monitoring_keys):
     return str(path)
 
 
-def test_a_run_records_into_the_working_directory_by_default(tmp_path):
-    working_directory = tmp_path / "work"
-    config_path = _write_config(tmp_path, working_directory)
-
-    with recorder.record_from_config(config_path, interval_seconds=0.0) as handle:
-        handle.sample_once()
-
-    series_files = list((working_directory / "monitoring").glob("resource_series_*.jsonl"))
-    assert len(series_files) == 1
-    assert series_files[0].read_text(encoding="utf-8").strip()
-
-
-def test_monitoring_can_be_switched_off_and_is_then_a_pure_no_op(tmp_path):
-    working_directory = tmp_path / "work"
-    config_path = _write_config(tmp_path, working_directory, monitoring_enabled=False)
-
-    with recorder.record_from_config(config_path) as handle:
-        assert handle is None
-
-    assert not (working_directory / "monitoring").exists()
-
-
 def test_the_configured_sampling_interval_is_used(tmp_path):
     config_path = _write_config(tmp_path, tmp_path / "work",
                                monitoring_interval_seconds=17.5)

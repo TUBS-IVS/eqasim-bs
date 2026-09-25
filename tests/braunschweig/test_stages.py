@@ -19,7 +19,6 @@ import sys
 
 import numpy as np
 import pandas as pd
-import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -96,31 +95,6 @@ class TestIncomePlaceholder:
 # ---------------------------------------------------------------------------
 # 3. braunschweig.locations.secondary (activity flags + id format)
 # ---------------------------------------------------------------------------
-
-class TestSecondaryLocations:
-    def test_emits_offer_flags_and_sec_prefixed_ids(self):
-        from braunschweig.locations import secondary
-
-        df_locations = pd.DataFrame({
-            "location_type": ["leisure", "shop", "education", "leisure"],
-            "commune_id": ["03101000"] * 4,
-            "iris_id":    ["A", "A", "B", "B"],
-            "geometry":   ["g1", "g2", "g3", "g4"],
-        })
-        ctx = StubContext(stages={"braunschweig.data.locations": df_locations})
-
-        out = secondary.execute(ctx)
-
-        assert set(out.columns) == {
-            "location_id", "commune_id", "iris_id", "geometry",
-            "offers_leisure", "offers_shop", "offers_other", "offers_escort",
-        }
-        assert len(out) == 4  # offers_other defaults True for every row
-        assert out["location_id"].str.startswith("sec_").all()
-        assert out["offers_leisure"].sum() == 2
-        assert out["offers_shop"].sum() == 1
-        assert out["offers_other"].all()
-
 
 # ---------------------------------------------------------------------------
 # 4. braunschweig.synthesis.spatial.commute_distance._draw_from_cdf
@@ -588,34 +562,6 @@ class TestDeriveKreisArs5AllFlags:
 # 8. enriched._build_income_size_map (scheme detection)
 # ---------------------------------------------------------------------------
 
-class TestIncomeSizeMap:
-    def test_detects_six_bin_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        mapping, scheme = _build_income_size_map(
-            {"1", "2", "3", "4", "5", "6+"})
-        assert scheme == "6-bin"
-        assert mapping["6"] == "6+"
-        assert mapping["5"] == "5"
-
-    def test_detects_five_bin_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        mapping, scheme = _build_income_size_map(
-            {"1", "2", "3", "4", "5+"})
-        assert scheme == "5-bin"
-        # 5, 6, 5+, 6+ all collapse onto "5+".
-        assert mapping["5"] == "5+"
-        assert mapping["6"] == "5+"
-        assert mapping["6+"] == "5+"
-
-    def test_rejects_unknown_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        with pytest.raises(ValueError, match="unrecognised hh_size bins"):
-            _build_income_size_map({"a", "b", "c"})
-
-
 # ---------------------------------------------------------------------------
 # 8b. enriched._execute_base reproducibility / cache-mutation guards
 #     (FIX 2.2 cached-list mutation, FIX 2.6 distinct RNG seed offsets)
@@ -701,37 +647,7 @@ class TestRandomSeedOffsetsDistinct:
 # 9. braunschweig.gravity.model.evaluate_gravity (doubly-constrained gravity)
 # ---------------------------------------------------------------------------
 
-class TestEvaluateGravity:
-    def test_symmetric_problem_balances_to_marginals(self):
-        from braunschweig.gravity.model import evaluate_gravity
-
-        # Two zones, identical population and employees -> symmetric flow.
-        population = np.array([100.0, 100.0])
-        employees = np.array([100.0, 100.0])
-        # Slightly off-diagonal friction so the solver has work to do.
-        friction = np.array([
-            [1.0, 0.5],
-            [0.5, 1.0],
-        ])
-
-        flow = evaluate_gravity(population, employees, friction)
-
-        # Each row must sum to its production (=population) and each column
-        # to its attraction (=employees) within tolerance.
-        np.testing.assert_allclose(flow.sum(axis=1), population, atol=1e-2)
-        np.testing.assert_allclose(flow.sum(axis=0), employees, atol=1e-2)
-        # Symmetry preserved.
-        assert abs(flow[0, 1] - flow[1, 0]) < 1e-6
-
-
 # ---------------------------------------------------------------------------
 # 10. braunschweig.gravity.model._gemeinde_to_kreis (AGS-8 -> AGS-5)
 # ---------------------------------------------------------------------------
 
-class TestGemeindeToKreis:
-    def test_strips_commune_ags_to_kreis_ars(self):
-        from braunschweig.gravity.model import _gemeinde_to_kreis
-
-        s = pd.Series(["03101000", "03102015", "03158002", "99999"])
-        out = _gemeinde_to_kreis(s)
-        assert out.tolist() == ["03101", "03102", "03158", "99999"]

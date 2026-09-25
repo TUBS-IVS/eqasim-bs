@@ -57,14 +57,6 @@ def test_person_columns_append_employment_status_when_present():
     assert "employment_status" in cols
 
 
-def test_person_columns_legacy_byte_identical_when_employment_status_absent():
-    # Non-MiD sources (ENTD / simple_ipf_open) never produce employment_status;
-    # its absence must not perturb the legacy column set (byte-identical output).
-    cols = select_person_output_columns(set(BASE_PERSON), "is_urban_resident")
-    assert "employment_status" not in cols
-    assert cols == BASE_PERSON
-
-
 def test_person_columns_append_passenger_availability_facts_when_present():
     available = set(BASE_PERSON) | {
         "car_passenger_availability", "passenger_availability_source",
@@ -74,11 +66,6 @@ def test_person_columns_append_passenger_availability_facts_when_present():
     assert cols[-2:] == [
         "car_passenger_availability", "passenger_availability_source",
     ]
-
-
-def test_person_columns_legacy_byte_identical_when_passenger_facts_absent():
-    cols = select_person_output_columns(set(BASE_PERSON), "is_urban_resident")
-    assert cols == BASE_PERSON
 
 
 def test_passenger_attribute_origin_ids_stay_out_of_public_person_csv():

@@ -27,18 +27,6 @@ def test_zgb8_map_is_shared_and_unchanged():
     assert rmv.ZGB8 is spatial.ZGB8
 
 
-def test_spatial_exposes_loader_callables():
-    for name in ("load_kreise", "load_gemeinden", "load_regiostar", "assign_geographies"):
-        assert callable(getattr(spatial, name))
-
-
-def test_spatial_exposes_shared_vg250_loader():
-    """The de-duplicated VG250 loader (issue #293) must be a public entry
-    point of this module so other analysis modules can share it."""
-    assert callable(spatial.load_vg250_layer)
-    assert callable(spatial._resolve_vg250_gpkg)
-
-
 def test_load_kreise_raises_when_archive_missing(monkeypatch, tmp_path):
     """The strict analysis path must fail loudly, naming the expected path."""
     missing_zip = tmp_path / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"

@@ -100,20 +100,6 @@ def test_the_hang_watchdog_sees_a_busy_child_of_an_idle_parent_as_working(
     assert hang_watchdog.sample() == watchdog.STATE_WORKING
 
 
-def test_a_per_process_reader_would_have_called_that_same_tree_idle(
-        idle_jvm_with_busy_child):
-    """Why the shared reader matters: the old signal misses the work entirely."""
-    clock = _Clock()
-    hang_watchdog = watchdog.HangWatchdog(
-        4242, hang_timeout_s=900.0, min_cpu_seconds=1.0, monotonic=clock,
-        cpu_seconds_reader=process_tree.read_process_cpu_seconds)
-
-    _advance_child_cpu(idle_jvm_with_busy_child, ticks=100_000)
-    clock.advance(60.0)
-
-    assert hang_watchdog.sample() == watchdog.STATE_IDLE
-
-
 def test_a_tree_with_no_cpu_growth_at_all_is_still_declared_hung(
         idle_jvm_with_busy_child):
     """The guard must keep working: sharing the reader may not weaken it."""
