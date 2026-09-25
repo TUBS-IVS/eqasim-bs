@@ -51,6 +51,8 @@ VRB_FARE_DEFAULTS = {
     "vrb_fare_external_local_single_cents": 370,       # ASSUMPTION: GVH one-zone single 2026 for every external operator
     "vrb_fare_rail_distance_factor": 1.0,              # ASSUMPTION: ridden stop distance -> tariff distance
     "vrb_fare_long_distance_single_cents": 2190,       # ASSUMPTION: DB Sparpreis entry price 2026, every ticket
+    # The router adds that price to long-distance rides, converted with the mode choice's value of time (D6).
+    "vrb_fare_long_distance_routing_surcharge_enabled": True,
     # ASSUMPTION: GTFS route ids become the schedule line ids (pt2matsim), so nearly every line must have a
     # scope row; a lower share means the ids diverged, not that a few lines are legitimately unknown.
     "vrb_fare_minimum_line_scope_coverage": 0.99,
@@ -234,6 +236,8 @@ def _write_vrb_fare_inputs(context, config_name):
     fare_config_xml.write_vrb_fare_module(root / config_name, {
         "enabled": "true", "fareModelPath": model_name, "lineScopesPath": scopes_name,
         "dayTicketCapEnabled": str(bool(context.config("vrb_fare_day_ticket_cap_enabled"))).lower(),
+        "longDistanceRoutingSurchargeEnabled":
+            str(bool(context.config("vrb_fare_long_distance_routing_surcharge_enabled"))).lower(),
         "maximumUnsupportedShare": repr(float(context.config("vrb_fare_maximum_unsupported_share"))),
     })
     zone_tool = json.loads((root / "vrb_tariff_zone_report.json").read_text(encoding="utf-8"))

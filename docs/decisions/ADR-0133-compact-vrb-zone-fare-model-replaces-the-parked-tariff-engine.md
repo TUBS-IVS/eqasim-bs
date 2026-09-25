@@ -66,7 +66,19 @@ Its tests price a single synthetic city ticket (360 ct) only.
    Eisenbahnen 2025, reporting year 2024) with the entry price as floor, because 21.90 EUR / 12.6 ct is about
    174 km and the long-distance relations inside the timetable are shorter; the flat price keeps one parameter
    instead of two. The outcome label is `long_distance_flat`; it is no fallback outcome and no VRB cash, so it
-   neither enters the run guard nor the day-ticket cap.
+   neither enters the run guard nor the day-ticket cap. The router sees the price too (maintainer decision
+   2026-09-25, `vrbFare.longDistanceRoutingSurchargeEnabled`, pipeline key
+   `vrb_fare_long_distance_routing_surcharge_enabled`, default on): `LongDistanceFareRaptorCostCalculator` replaces
+   SwissRailRaptor's default in-vehicle cost and adds, to every ride on a long-distance vehicle, the flat price
+   converted into equivalent in-vehicle seconds with the mode choice's value of time (PT in-vehicle time utility
+   over cost utility, 0.082 EUR per minute with the default Braunschweig parameters, so 21.90 EUR equal about
+   267 minutes), valued at the ride's marginal utility of travel time. SwissRailRaptorCore calls the calculator
+   once per ride, so the surcharge counts once; under-6s get none. ASSUMPTIONS: the reference person of the cost
+   term (the model's value of time grows with distance, so long journeys get a somewhat larger surcharge than
+   their own valuation), and the full flat price as the difference to the regional alternative, exact for pass
+   holders and an upper bound for travellers who would pay a VRB single on the regional train. The router cannot
+   price the VRB zone fare itself: it depends on the first and last zone of the whole journey and is not
+   additive per ride.
 7. **External rides (D7).** When a leg touches an unzoned stop and the holder has no Germany-wide flat: rail legs
    -> Niedersachsentarif second-class single by band on the sum of ridden stop-to-stop distances x 1.0
    (ASSUMPTION; `docs/data/external-regional-rail-single-fares-2026.json`), child band for 6-14; no rail -> 370 ct
@@ -136,7 +148,11 @@ Its tests price a single synthetic city ticket (360 ct) only.
   the price-aware fix for the routing limitation below, preferred over a second PT mode (two near-identical
   logit alternatives would inflate the PT share). Rejected by the maintainer on 2026-09-24 as too much work for
   this feature; it needs a second router on a schedule without long-distance lines and a wrapper around the PT
-  trip estimator.
+  trip estimator. The routing surcharge of D6 was built instead.
+- **A per-person, per-mode travel-time utility for long-distance trains (`RaptorParametersForPerson`):** needs
+  the long-distance routes re-tagged with an own transport mode first (they are `rail` like regional trains in
+  the prepared schedule) and turns a fixed fare into a cost per minute; the per-ride in-vehicle cost prices the
+  fare as what it is.
 
 ## Consequences
 
@@ -151,10 +167,10 @@ Its tests price a single synthetic city ticket (360 ct) only.
   feature stays unvalidated until a run compares it with an observed reference.
 - Long-distance services stay in the routed timetable (maintainer decision 2026-09-24, issue #431 closed as not
   planned): an ICE or IC between Wolfsburg, Braunschweig and Hanover is a real option for these trips, and with
-  the flat price it is no longer priced as a fallback. Known limitation: the router chooses the fastest
-  connection without looking at prices, so a Deutschlandticket holder routed onto an ICE pays 21.90 EUR although
-  a regional train is free for them; the smoke's `long_distance_flat` share states how often a routed PT trip
-  contains a long-distance ride.
+  the flat price it is no longer priced as a fallback. The router adds the flat price as in-vehicle cost (D6), so
+  an ICE is only chosen when its time saving is worth the fare at the mode choice's value of time. In the 1 %
+  smoke, which ran before the routing surcharge existed, none of 2,637 final-plan PT trips contained a
+  long-distance ride.
 - A scenario prepared with the flag ON cannot be run with `vrbFare.enabled=false` or a command-line override:
   its schedule carries `vrbTariffZone` instead of the ring attributes the legacy cost model reads. Re-prepare
   with the flag OFF instead.

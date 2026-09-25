@@ -579,6 +579,9 @@ config:
   # ASSUMPTION: DB Sparpreis entry price 2026 for every journey with a long-distance ride (DB Fernverkehr,
   # Flix), whatever the ticket (ADR-0133 D6).
   vrb_fare_long_distance_single_cents: 2190
+  # The router adds the long-distance price to DB Fernverkehr/Flix rides, converted into in-vehicle time
+  # with the mode choice's value of time, so it takes a regional train unless the time saving is worth it.
+  vrb_fare_long_distance_routing_surcharge_enabled: true
   # Preparation guards (ASSUMPTIONS, failure detectors rather than accuracy targets): the share of
   # schedule lines with a tariff scope row and of final-schedule stop facilities with a VRB zone.
   vrb_fare_minimum_line_scope_coverage: 0.99

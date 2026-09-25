@@ -4,7 +4,8 @@ area: matsim
 description: Prices every routed PT trip with the VRB tariff 2026 (official zone polygons, 2022
   price-stage matrix as assumption, 2026 prices), Germany-wide flat / VRB-network flat / no
   entitlement from ptSubscriptionType, rule-based external pricing (Niedersachsentarif bands, local
-  single), a flat long-distance price (DB Sparpreis entry price 2026) for every ticket and a
+  single), a flat long-distance price (DB Sparpreis entry price 2026) for every ticket that the PT
+  router also sees as in-vehicle cost, and a
   day-ticket cap over the DMC prefix; every quote is counted by outcome and a high
   fallback share fails the run. Replaces the placeholder ring cost model when vrb_zone_fares_enabled.
 stages:
