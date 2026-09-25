@@ -32,6 +32,7 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
+from tests.fleet_frames import make_fleet_cars as _make_cars  # noqa: E402
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 
 DATA_PATH = str(DATA)
@@ -251,24 +252,6 @@ class TestEuro6SubstageModelFallbackChain:
         assert model.pmf_for(AGS_B, "gas") is None  # fully absent
         after = (model._kreis_primary, model._national_fallback, model._absent_fallback)
         assert before == after
-
-
-# --------------------------------------------------------------------------- #
-# Full-population synthetic household car frame (mirrors test_fleet_sampling_de.py)
-# --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 3000, seed: int = 0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    statuses = list(ft.STATUS_LABELS)
-    rows = []
-    for kreis in ft.ZGB_KREISE_AGS5:
-        for _ in range(n_per_kreis):
-            rows.append({
-                "economic_status": rng.choice(statuses),
-                "kreis_ags5": kreis,
-                "gemeinde": np.nan,
-                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
-            })
-    return pd.DataFrame(rows)
 
 
 AGS_6D_HEAVY = _ZGB[0]

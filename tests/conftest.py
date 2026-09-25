@@ -1,6 +1,7 @@
 """Shared pytest fixtures for eqasim-bs test suite."""
 from __future__ import annotations
 
+import copy
 import logging
 from pathlib import Path
 
@@ -40,6 +41,57 @@ def popsim_stage_package_source_text() -> str:
         )
     )
     return "\n".join(path.read_text(encoding="utf-8") for path in module_paths)
+
+
+_COMMITTED_DATA_PATH = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
+
+
+@pytest.fixture(scope="session")
+def committed_fleet_sampler():
+    """One FleetSampler over the committed KBA tables for the whole session.
+
+    ``sample_fleet`` re-applies every per-call setting to the sampler it is given,
+    so a reused sampler draws exactly what a fresh one would; the OFF-path goldens
+    in test_fleet_sampling_de and test_fleet_consistency_e2e pin that.
+    """
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+
+    return fs.FleetSampler.from_data_path(_COMMITTED_DATA_PATH)
+
+
+@pytest.fixture(scope="session")
+def _default_fleet_sample_once(committed_fleet_sampler):
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+    from tests.fleet_frames import make_fleet_cars
+
+    return fs.sample_fleet(make_fleet_cars(), _COMMITTED_DATA_PATH, random_seed=42,
+                           sampler=committed_fleet_sampler)
+
+
+@pytest.fixture(scope="session")
+def _default_fleet_sample_legacy_once(committed_fleet_sampler):
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+    from tests.fleet_frames import make_fleet_cars
+
+    return fs.sample_fleet(make_fleet_cars(), _COMMITTED_DATA_PATH, random_seed=42,
+                           sampler=committed_fleet_sampler, consistency_v2=False)
+
+
+@pytest.fixture
+def default_fleet_sample(_default_fleet_sample_once):
+    """``(df_spec, df_types, summary)`` of the default consistency-v2 draw of
+    ``make_fleet_cars()`` (32,000 cars, random_seed=42), sampled once per session;
+    each test gets its own copies."""
+    df_spec, df_types, summary = _default_fleet_sample_once
+    return df_spec.copy(), df_types.copy(), copy.deepcopy(summary)
+
+
+@pytest.fixture
+def default_fleet_sample_legacy(_default_fleet_sample_legacy_once):
+    """``(df_spec, df_types)`` of the same frame and seed on the legacy path
+    (``consistency_v2=False``), sampled once per session; copies per test."""
+    df_spec, df_types = _default_fleet_sample_legacy_once
+    return df_spec.copy(), df_types.copy()
 
 
 @pytest.fixture(autouse=True)

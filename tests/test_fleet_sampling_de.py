@@ -36,6 +36,7 @@ sys.path.insert(0, str(REPO))
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
+from tests.fleet_frames import make_fleet_cars as _make_cars  # noqa: E402
 
 DATA_PATH = str(DATA)
 
@@ -58,37 +59,19 @@ def _load_golden(name: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-# --------------------------------------------------------------------------- #
-# Synthetic household-car frame: many cars per ZGB Kreis, status/raumtyp varied.
-# --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 4000, seed: int = 0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    statuses = list(ft.STATUS_LABELS)
-    rows = []
-    for kreis in ft.ZGB_KREISE_AGS5:
-        for _ in range(n_per_kreis):
-            rows.append({
-                "economic_status": rng.choice(statuses),
-                "kreis_ags5": kreis,
-                "gemeinde": np.nan,           # Kreis-level (no Gemeinde tilt)
-                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
-            })
-    return pd.DataFrame(rows)
-
-
 @pytest.fixture(scope="module")
-def sampler():
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+def sampler(committed_fleet_sampler):
+    return committed_fleet_sampler
 
 
-@pytest.fixture(scope="module")
-def sampled_full(sampler):
-    """The default consistency-v2 sample and its validation summary."""
-    df_cars = _make_cars()
-    return fs.sample_fleet(df_cars, DATA_PATH, random_seed=42, sampler=sampler)
+@pytest.fixture
+def sampled_full(default_fleet_sample):
+    """The default consistency-v2 sample and its validation summary (shared with
+    test_fleet_consistency_e2e through the session fixture in conftest.py)."""
+    return default_fleet_sample
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def sampled(sampled_full):
     """Backward-compatible two-frame view for existing fixture consumers."""
     df_spec, df_types, _ = sampled_full
@@ -370,13 +353,10 @@ def test_gemeinde_tilt_bridges_umlaut_and_suffix_mismatch(sampler):
 # --------------------------------------------------------------------------- #
 # Task 5 — sonstige redistribution (consistency_v2).
 # --------------------------------------------------------------------------- #
-@pytest.fixture(scope="module")
-def sampled_v2_off(sampler):
-    """sample_fleet with consistency_v2=False (legacy path)."""
-    df_cars = _make_cars()
-    df_spec, df_types = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=False)
-    return df_spec, df_types
+@pytest.fixture
+def sampled_v2_off(default_fleet_sample_legacy):
+    """sample_fleet with consistency_v2=False (legacy path) on the same frame and seed."""
+    return default_fleet_sample_legacy
 
 
 def test_default_consistency_v2_redistributes_sonstige(sampled):
