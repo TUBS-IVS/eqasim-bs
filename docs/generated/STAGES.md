@@ -55,7 +55,8 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.data.verbindungen.margins](../registry/stages/braunschweig.data.verbindungen.margins.yml) | validation | braunschweig_new | x | A/-/- | -- | -- |
 | [braunschweig.data.verbindungen.work_od](../registry/stages/braunschweig.data.verbindungen.work_od.yml) | work | braunschweig_new | x | A/A/A | -- | verbindungen_anchor, verbindungen_od_validation |
 | [braunschweig.data.verbindungen.zones](../registry/stages/braunschweig.data.verbindungen.zones.yml) | spatial | braunschweig_new | x | A/A/A | -- | -- |
-| [braunschweig.data.vrb.zones](../registry/stages/braunschweig.data.vrb.zones.yml) | matsim | braunschweig_new | x | A/A/A | -- | -- |
+| [braunschweig.data.vrb.zone_polygons](../registry/stages/braunschweig.data.vrb.zone_polygons.yml) | matsim | braunschweig_new | x | A/-/- | -- | vrb_zone_fare_model |
+| [braunschweig.data.vrb.zones](../registry/stages/braunschweig.data.vrb.zones.yml) | matsim | braunschweig_new | -- | -/A/A | -- | -- |
 | [braunschweig.data.zensus_grid.population](../registry/stages/braunschweig.data.zensus_grid.population.yml) | home | braunschweig_new | -- | -/-/A | -- | -- |
 | [braunschweig.freight.extraction](../registry/stages/braunschweig.freight.extraction.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
 | [braunschweig.freight.trips](../registry/stages/braunschweig.freight.trips.yml) | freight | braunschweig_new | x | A/-/- | -- | freight_longhaul_v3 |
@@ -96,7 +97,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [eqasim_common.gravity.distance_matrix](../registry/stages/eqasim_common.gravity.distance_matrix.yml) | work | extended | x | A/A/A | -- | -- |
 | [eqasim_common.locations.synthesis.education](../registry/stages/eqasim_common.locations.synthesis.education.yml) | education | inherited | -- | -/-/A | -- | -- |
 | [eqasim_common.spatial.codes](../registry/stages/eqasim_common.spatial.codes.yml) | spatial | inherited | x | A/A/A | -- | -- |
-| [matsim.output](../registry/stages/matsim.output.yml) | matsim | extended | x | A/A/A | -- | matsim_output_archive |
+| [matsim.output](../registry/stages/matsim.output.yml) | matsim | extended | x | A/A/A | -- | matsim_output_archive, vrb_zone_fare_model |
 | [matsim.runtime.eqasim](../registry/stages/matsim.runtime.eqasim.yml) | infrastructure | extended | x | A/A/A | -- | eqasim_java_fork |
 | [matsim.runtime.git](../registry/stages/matsim.runtime.git.yml) | infrastructure | inherited | x | A/A/A | -- | -- |
 | [matsim.runtime.java](../registry/stages/matsim.runtime.java.yml) | infrastructure | extended | x | A/A/A | -- | -- |
@@ -109,7 +110,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [matsim.scenario.supply.osm](../registry/stages/matsim.scenario.supply.osm.yml) | matsim | configured | x | A/A/A | -- | -- |
 | [matsim.scenario.supply.processed](../registry/stages/matsim.scenario.supply.processed.yml) | matsim | inherited | x | A/A/A | -- | -- |
 | [matsim.scenario.vehicles](../registry/stages/matsim.scenario.vehicles.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.scenario.vehicles`<br>popsim_open: `braunschweig.matsim.scenario.vehicles` | -- |
-| [matsim.simulation.prepare](../registry/stages/matsim.simulation.prepare.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.simulation.prepare`<br>popsim_open: `braunschweig.matsim.simulation.prepare`<br>simple_ipf_open: `braunschweig.matsim.simulation.prepare` | cordon_network_ring, freight_assumptions, mid_passenger_availability, mode_choice |
+| [matsim.simulation.prepare](../registry/stages/matsim.simulation.prepare.yml) | matsim | overridden | x | A/A/A | popsim_mid: `braunschweig.matsim.simulation.prepare`<br>popsim_open: `braunschweig.matsim.simulation.prepare`<br>simple_ipf_open: `braunschweig.matsim.simulation.prepare` | cordon_network_ring, freight_assumptions, mid_passenger_availability, mode_choice, vrb_zone_fare_model |
 | [matsim.simulation.run](../registry/stages/matsim.simulation.run.yml) | matsim | extended | x | A/A/A | -- | simwrapper_layer1 |
 | [synthesis.locations.education](../registry/stages/synthesis.locations.education.yml) | education | overridden | x | A/A/A | popsim_mid: `eqasim_common.locations.education`<br>popsim_open: `eqasim_common.locations.education`<br>simple_ipf_open: `eqasim_common.locations.education` | building_potentials_education |
 | [synthesis.locations.home.locations](../registry/stages/synthesis.locations.home.locations.yml) | home | overridden | -- | -/-/A | popsim_mid: `braunschweig.locations.home`<br>popsim_open: `braunschweig.locations.home`<br>simple_ipf_open: `braunschweig.locations.home` | -- |

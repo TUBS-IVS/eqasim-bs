@@ -1,0 +1,175 @@
+{
+  "quotes_iterations_1_20": 49984,
+  "outcomes_iterations_1_20_share": {
+    "child_free": 0.0248,
+    "external_local_flat": 0.0048,
+    "external_national_flat": 0.0021,
+    "external_rail_nt": 0.0103,
+    "long_distance_flat": 0.001,
+    "no_pt_leg": 0.4147,
+    "vrb_flat_national": 0.0699,
+    "vrb_flat_regional": 0.0294,
+    "vrb_short_trip": 0.059,
+    "vrb_single_adult": 0.355,
+    "vrb_single_child": 0.029
+  },
+  "outcomes_last_iteration": {
+    "child_free": 48,
+    "external_local_flat": 14,
+    "external_national_flat": 7,
+    "external_rail_nt": 14,
+    "long_distance_flat": 1,
+    "no_pt_leg": 776,
+    "vrb_flat_national": 125,
+    "vrb_flat_regional": 58,
+    "vrb_short_trip": 136,
+    "vrb_single_adult": 695,
+    "vrb_single_child": 68
+  },
+  "fallback_quotes_iterations_1_20": 0,
+  "day_ticket_cap_applied_iterations_1_20": 8777,
+  "inputs": {
+    "facilities": 10224,
+    "zoned_facilities": 7766,
+    "facility_zone_coverage": 0.759585289514867,
+    "schedule_lines": 467,
+    "lines_with_scope": 467,
+    "line_scope_coverage": 1.0,
+    "zoned_facilities_zone_55_56": {
+      "55": 3,
+      "56": 4
+    },
+    "pre_cut_zone_tool": {
+      "facilities": 31022,
+      "zoned": 7771,
+      "boundary_ties": 0
+    }
+  },
+  "zone_polygons": {
+    "polygon_count": 46,
+    "point_zone_count": 2,
+    "invalid_repaired": [
+      "38"
+    ],
+    "point_zones": {
+      "55": {
+        "rail_stop_ids": [
+          "273565"
+        ],
+        "station_stop_ids": [
+          "184038",
+          "273565"
+        ],
+        "spread_m": 17.7
+      },
+      "56": {
+        "rail_stop_ids": [
+          "547191"
+        ],
+        "station_stop_ids": [
+          "323548",
+          "547191"
+        ],
+        "spread_m": 67.8
+      }
+    },
+    "trimmed_overlaps": [
+      {
+        "kept_zone": "15",
+        "trimmed_zone": "20",
+        "area_m2": 1797.7
+      }
+    ]
+  },
+  "runtime_iterations_1_20": {
+    "off": {
+      "iterations": 20,
+      "replanning_s_mean": 1.8,
+      "mobsim_s_mean": 69.9,
+      "iteration_s_mean": 75.7
+    },
+    "on": {
+      "iterations": 20,
+      "replanning_s_mean": 1.8,
+      "mobsim_s_mean": 68.6,
+      "iteration_s_mean": 74.6
+    },
+    "ratio_on_off": {
+      "replanning_s_mean": 1.0,
+      "mobsim_s_mean": 0.981,
+      "iteration_s_mean": 0.985
+    }
+  },
+  "modestats_last_iteration_off": {
+    "bicycle": 0.1033,
+    "car": 0.472,
+    "car_passenger": 0.1204,
+    "outside": 0.0341,
+    "pt": 0.0703,
+    "truck": 0.0136,
+    "walk": 0.1862
+  },
+  "eqasim_trips_off": 36849,
+  "eqasim_trip_mode_share_off": {
+    "car": 0.4795,
+    "walk": 0.1861,
+    "car_passenger": 0.1232,
+    "bicycle": 0.1062,
+    "pt": 0.0712,
+    "outside": 0.0338
+  },
+  "modestats_last_iteration_on": {
+    "bicycle": 0.1024,
+    "car": 0.4725,
+    "car_passenger": 0.1204,
+    "outside": 0.0341,
+    "pt": 0.0708,
+    "truck": 0.0136,
+    "walk": 0.1861
+  },
+  "eqasim_trips_on": 36861,
+  "eqasim_trip_mode_share_on": {
+    "car": 0.48,
+    "walk": 0.186,
+    "car_passenger": 0.1232,
+    "bicycle": 0.1052,
+    "pt": 0.0717,
+    "outside": 0.0338
+  },
+  "final_plan_pt_trips": 2637,
+  "final_plan_pt_trips_with_long_distance": 0,
+  "final_plan_pt_trips_by_category": {
+    "deutschlandticket": {
+      "pt_trips": 518,
+      "with_long_distance": 0
+    },
+    "job_or_semester_ticket": {
+      "pt_trips": 232,
+      "with_long_distance": 0
+    },
+    "monthly_or_annual_subscription": {
+      "pt_trips": 245,
+      "with_long_distance": 0
+    },
+    "multi_ride_ticket": {
+      "pt_trips": 76,
+      "with_long_distance": 0
+    },
+    "never_pt": {
+      "pt_trips": 874,
+      "with_long_distance": 0
+    },
+    "other_ticket": {
+      "pt_trips": 86,
+      "with_long_distance": 0
+    },
+    "single_ticket": {
+      "pt_trips": 497,
+      "with_long_distance": 0
+    },
+    "weekly_monthly_no_subscription": {
+      "pt_trips": 109,
+      "with_long_distance": 0
+    }
+  }
+}
