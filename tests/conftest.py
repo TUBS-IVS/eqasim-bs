@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import copy
+import io
 import logging
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -92,6 +95,37 @@ def default_fleet_sample_legacy(_default_fleet_sample_legacy_once):
     (``consistency_v2=False``), sampled once per session; copies per test."""
     df_spec, df_types = _default_fleet_sample_legacy_once
     return df_spec.copy(), df_types.copy()
+
+
+# The upstream MATSim writers wrap every output file in an io.BufferedWriter with a 2 GiB
+# buffer, a throughput choice for 100 % populations. Windows commits that memory up front,
+# so parallel test workers (pytest -n) writing at the same time run out of it (MemoryError).
+# Tests cap the buffer at 16 MiB through a module-local ``io`` stand-in: buffering decides
+# when bytes are flushed, never which bytes are written, and the production modules stay
+# untouched (their source is part of the synpp stage hashes). Nothing is imported here, so
+# the metadata-only documentation workflow (no pandas) still loads this conftest.
+_MATSIM_WRITER_MODULES = (
+    "matsim.scenario.facilities", "matsim.scenario.households",
+    "matsim.scenario.population", "matsim.scenario.vehicles",
+)
+_TEST_WRITE_BUFFER_BYTES = 16 * 1024 ** 2
+
+
+def _capped_buffered_writer(raw, buffer_size=io.DEFAULT_BUFFER_SIZE):
+    return io.BufferedWriter(raw, buffer_size=min(buffer_size, _TEST_WRITE_BUFFER_BYTES))
+
+
+_CAPPED_IO = types.SimpleNamespace(
+    **{name: getattr(io, name) for name in dir(io) if not name.startswith("__")})
+_CAPPED_IO.BufferedWriter = _capped_buffered_writer
+
+
+@pytest.fixture(autouse=True)
+def _cap_matsim_writer_buffers(monkeypatch):
+    for name in _MATSIM_WRITER_MODULES:
+        module = sys.modules.get(name)
+        if module is not None:
+            monkeypatch.setattr(module, "io", _CAPPED_IO)
 
 
 @pytest.fixture(autouse=True)
