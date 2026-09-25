@@ -1,6 +1,7 @@
 # ADR-0133 · 2026-09-24 · A compact VRB zone fare model replaces the parked tariff engine
 
-- **Status:** accepted (maintainer decision "A", 2026-09-24); production flag OFF until the 1 % ON/OFF smoke is recorded
+- **Status:** accepted (maintainer decision "A", 2026-09-24); production flag ON since the 1 % ON/OFF smoke
+  `vrb-zone-fares-smoke-1pct-2026-09-25`
 - **Numbering:** ADR-0133 is the next free id. Checked on 2026-09-24 across all local and remote branches: `main`
   holds up to ADR-0128; ADR-0129 to ADR-0132 exist only on the parked branch `codex/regional-pt-fares` and stay
   reserved for it.
@@ -144,8 +145,10 @@ Its tests price a single synthetic city ticket (360 ct) only.
   decision (#23); the legacy distance interaction on cost stays in the utility.
 - The parked engine branches stay parked; only their data artefacts (prices, rail tables, polygon record, the
   DMC prefix seam) were carried over.
-- `vrb_zone_fares_enabled` is OFF in `configs/base_bs.yml` until a 1 % smoke recorded in a run manifest shows a
-  fallback share below 5 % and a plausible price distribution.
+- `vrb_zone_fares_enabled` was OFF in `configs/base_bs.yml` until a 1 % smoke recorded in a run manifest showed a
+  fallback share below 5 % and a plausible price distribution; it is ON since the smoke
+  `vrb-zone-fares-smoke-1pct-2026-09-25` (fallback share 0 in every iteration). A smoke is not a validation: the
+  feature stays unvalidated until a run compares it with an observed reference.
 - Long-distance services stay in the routed timetable (maintainer decision 2026-09-24, issue #431 closed as not
   planned): an ICE or IC between Wolfsburg, Braunschweig and Hanover is a real option for these trips, and with
   the flat price it is no longer priced as a fallback. Known limitation: the router chooses the fastest
