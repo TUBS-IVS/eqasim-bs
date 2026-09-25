@@ -8,8 +8,6 @@ FileNotFoundError naming the expected archive path -- when the archive is
 missing, because a missing per-Kreis geography would otherwise silently
 invalidate the whole validation run (CLAUDE.md "Fallback transparency").
 """
-import logging
-
 import pytest
 
 from braunschweig.analysis import spatial
@@ -27,41 +25,20 @@ def test_zgb8_map_is_shared_and_unchanged():
     assert rmv.ZGB8 is spatial.ZGB8
 
 
-def test_load_kreise_raises_when_archive_missing(monkeypatch, tmp_path):
-    """The strict analysis path must fail loudly, naming the expected path."""
+@pytest.mark.parametrize("load", [
+    pytest.param(lambda: spatial.load_kreise(homes_crs="EPSG:25832"), id="load_kreise"),
+    pytest.param(lambda: spatial.load_gemeinden(homes_crs="EPSG:25832"), id="load_gemeinden"),
+    pytest.param(lambda: spatial.load_vg250_layer("vg250_gem"), id="load_vg250_layer-strict-default"),
+])
+def test_strict_loaders_raise_naming_the_archive_and_the_fix(monkeypatch, tmp_path, load):
+    """The strict analysis path must fail loudly, naming the expected path and the fix.
+    (The dashboard's tolerant branch is pinned in tests/test_dashboard_spatial_metrics.py.)"""
     missing_zip = tmp_path / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
     monkeypatch.setattr(spatial, "VG250_ZIP", missing_zip)
     monkeypatch.setattr(spatial, "VG250_CACHE", tmp_path / "cache" / "DE_VG250.gpkg")
 
-    with pytest.raises(FileNotFoundError, match=r"VG250 archive missing.*Re-run the synpp data download"):
-        spatial.load_kreise(homes_crs="EPSG:25832")
-
-    with pytest.raises(FileNotFoundError, match=str(missing_zip).replace("\\", "\\\\")):
-        spatial.load_gemeinden(homes_crs="EPSG:25832")
-
-
-def test_load_vg250_layer_strict_default_raises_naming_the_archive_path(monkeypatch, tmp_path):
-    missing_zip = tmp_path / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
-    monkeypatch.setattr(spatial, "VG250_ZIP", missing_zip)
-
     with pytest.raises(FileNotFoundError) as excinfo:
-        spatial.load_vg250_layer("vg250_gem")  # strict=True is the default
+        load()
 
     assert str(missing_zip) in str(excinfo.value)
-
-
-def test_resolve_vg250_tolerant_mode_returns_none_and_warns(monkeypatch, tmp_path, caplog):
-    """The tolerant (strict=False) branch is the dashboard's contract, but it
-    is implemented once here -- pin that it also logs an explicit warning
-    (not just a silent None), per CLAUDE.md "Fallback transparency"."""
-    missing_zip = tmp_path / "vg250-ew_12-31.utm32s.gpkg.ebenen.zip"
-    monkeypatch.setattr(spatial, "VG250_ZIP", missing_zip)
-
-    with caplog.at_level(logging.WARNING, logger="braunschweig.analysis.spatial"):
-        result = spatial._resolve_vg250_gpkg(strict=False)
-
-    assert result is None
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert len(warnings) == 1
-    assert str(missing_zip) in warnings[0].getMessage()
-    assert "omitted" in warnings[0].getMessage()
+    assert "Re-run the synpp data download" in str(excinfo.value)
