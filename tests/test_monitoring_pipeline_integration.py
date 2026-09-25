@@ -119,156 +119,77 @@ def _load_run_synpp():
     return module
 
 
-def test_a_pipeline_run_records_a_series_into_its_working_directory(tmp_path, monkeypatch):
+def _run_main(tmp_path, monkeypatch, config, run_from_yaml, log_text=None):
+    """Drive ``run_synpp.main`` end to end with the pipeline itself stubbed out.
+
+    Only the collaborators that would start real work are replaced (logging setup,
+    provenance, synpp, the cache store); the monitoring recorder under test runs for real.
+    Returns the exit code, or re-raises what ``main`` raised.
+    """
     import braunschweig.logging_setup as logging_setup
     import braunschweig.provenance as provenance
     import synpp
 
     working_directory = tmp_path / "work"
     log_path = tmp_path / "run.log"
-    log_path.write_text("Executing stage braunschweig.data.first\n", encoding="utf-8")
+    if log_text is not None:
+        log_path.write_text(log_text, encoding="utf-8")
     config_path = tmp_path / "config.yml"
-    config_path.write_text(yaml.safe_dump({
-        "working_directory": str(working_directory),
-        "run": ["synthesis.output"],
-        "config": {"monitoring_interval_seconds": 0.0, "monitoring_kernel_events": False},
-    }), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump({"working_directory": str(working_directory), **config}),
+                           encoding="utf-8")
 
-    executed = []
     monkeypatch.setattr(logging_setup, "setup_logging", lambda **kwargs: str(log_path))
     monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
-    monkeypatch.setattr(synpp, "run_from_yaml",
-                        lambda *args, **kwargs: executed.append(args))
+    monkeypatch.setattr(synpp, "run_from_yaml", run_from_yaml)
 
     run_synpp = _load_run_synpp()
     _pin_resource_gate(monkeypatch)
     monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
     monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
-
-    exit_code = run_synpp.main([str(config_path)])
-
-    assert exit_code == 0 and executed
-    series_files = list((working_directory / "monitoring").glob("resource_series_*.jsonl"))
-    assert len(series_files) == 1
-    assert series_files[0].read_text(encoding="utf-8").strip()
+    return run_synpp.main([str(config_path)])
 
 
-def test_the_recorded_series_watches_the_run_log_of_that_run(tmp_path, monkeypatch):
-    """The stage tag and the liveness signal both come from the run's own log."""
+_RECORDING_CONFIG = {"config": {"monitoring_interval_seconds": 0.0, "monitoring_kernel_events": False}}
+
+
+def test_a_successful_run_records_a_series_that_watches_its_own_log_and_a_summary(
+        tmp_path, monkeypatch):
+    """One run, the whole recording contract: a series in the run's working directory,
+    tagged with the stage and log size read from the run's OWN log, plus one summary."""
     import json
 
-    import braunschweig.logging_setup as logging_setup
-    import braunschweig.provenance as provenance
-    import synpp
+    executed = []
+    exit_code = _run_main(
+        tmp_path, monkeypatch, {"run": ["synthesis.output"], **_RECORDING_CONFIG},
+        run_from_yaml=lambda *args, **kwargs: executed.append(args),
+        log_text="Executing stage braunschweig.popsim.batch" + chr(10))
 
-    working_directory = tmp_path / "work"
-    log_path = tmp_path / "run.log"
-    log_path.write_text("Executing stage braunschweig.popsim.batch\n", encoding="utf-8")
-    config_path = tmp_path / "config.yml"
-    config_path.write_text(yaml.safe_dump({
-        "working_directory": str(working_directory),
-        "config": {"monitoring_interval_seconds": 0.0, "monitoring_kernel_events": False},
-    }), encoding="utf-8")
-
-    monkeypatch.setattr(logging_setup, "setup_logging", lambda **kwargs: str(log_path))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
-    monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
-
-    run_synpp = _load_run_synpp()
-    _pin_resource_gate(monkeypatch)
-    monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
-    monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
-
-    run_synpp.main([str(config_path)])
-
-    series = list((working_directory / "monitoring").glob("resource_series_*.jsonl"))[0]
-    first_row = json.loads(series.read_text(encoding="utf-8").splitlines()[0])
+    assert exit_code == 0 and executed
+    monitoring = tmp_path / "work" / "monitoring"
+    series_files = list(monitoring.glob("resource_series_*.jsonl"))
+    assert len(series_files) == 1
+    lines = series_files[0].read_text(encoding="utf-8").splitlines()
+    assert lines, "the series must not be empty"
+    first_row = json.loads(lines[0])
     assert first_row["stage"] == "braunschweig.popsim.batch"
-    assert first_row["log_size_bytes"] == log_path.stat().st_size
-
-
-def test_the_summary_artifacts_are_written_when_the_run_ends(tmp_path, monkeypatch):
-    import braunschweig.logging_setup as logging_setup
-    import braunschweig.provenance as provenance
-    import synpp
-
-    working_directory = tmp_path / "work"
-    config_path = tmp_path / "config.yml"
-    config_path.write_text(yaml.safe_dump({
-        "working_directory": str(working_directory),
-        "config": {"monitoring_interval_seconds": 0.0, "monitoring_kernel_events": False},
-    }), encoding="utf-8")
-
-    monkeypatch.setattr(logging_setup, "setup_logging",
-                        lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
-    monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
-
-    run_synpp = _load_run_synpp()
-    _pin_resource_gate(monkeypatch)
-    monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
-    monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
-
-    run_synpp.main([str(config_path)])
-
-    summaries = list((working_directory / "monitoring").glob("*.summary.md"))
-    assert len(summaries) == 1
+    assert first_row["log_size_bytes"] == (tmp_path / "run.log").stat().st_size
+    assert len(list(monitoring.glob("*.summary.md"))) == 1
 
 
 def test_a_failing_run_still_leaves_the_series_and_the_summary(tmp_path, monkeypatch):
     """A killed or failed run is exactly the one whose resource record is wanted."""
-    import braunschweig.logging_setup as logging_setup
-    import braunschweig.provenance as provenance
-    import synpp
-
-    working_directory = tmp_path / "work"
-    config_path = tmp_path / "config.yml"
-    config_path.write_text(yaml.safe_dump({
-        "working_directory": str(working_directory),
-        "config": {"monitoring_interval_seconds": 0.0, "monitoring_kernel_events": False},
-    }), encoding="utf-8")
-
     def _fail(*args, **kwargs):
         raise RuntimeError("stage exploded")
 
-    monkeypatch.setattr(logging_setup, "setup_logging",
-                        lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
-    monkeypatch.setattr(synpp, "run_from_yaml", _fail)
-
-    run_synpp = _load_run_synpp()
-    _pin_resource_gate(monkeypatch)
-    monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
-    monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
-
     with pytest.raises(RuntimeError):
-        run_synpp.main([str(config_path)])
+        _run_main(tmp_path, monkeypatch, _RECORDING_CONFIG, run_from_yaml=_fail)
 
-    assert list((working_directory / "monitoring").glob("resource_series_*.jsonl"))
-    assert list((working_directory / "monitoring").glob("*.summary.json"))
+    monitoring = tmp_path / "work" / "monitoring"
+    assert list(monitoring.glob("resource_series_*.jsonl"))
+    assert list(monitoring.glob("*.summary.json"))
 
 
 def test_monitoring_switched_off_in_the_config_leaves_no_trace(tmp_path, monkeypatch):
-    import braunschweig.logging_setup as logging_setup
-    import braunschweig.provenance as provenance
-    import synpp
-
-    working_directory = tmp_path / "work"
-    config_path = tmp_path / "config.yml"
-    config_path.write_text(yaml.safe_dump({
-        "working_directory": str(working_directory),
-        "config": {"monitoring_enabled": False},
-    }), encoding="utf-8")
-
-    monkeypatch.setattr(logging_setup, "setup_logging",
-                        lambda **kwargs: str(tmp_path / "run.log"))
-    monkeypatch.setattr(provenance, "log_and_write_run_provenance", lambda path, **kwargs: None)
-    monkeypatch.setattr(synpp, "run_from_yaml", lambda *args, **kwargs: None)
-
-    run_synpp = _load_run_synpp()
-    _pin_resource_gate(monkeypatch)
-    monkeypatch.setattr(run_synpp, "prime_from_config", lambda path: None)
-    monkeypatch.setattr(run_synpp, "export_to_store_from_config", lambda path: None)
-
-    assert run_synpp.main([str(config_path)]) == 0
-    assert not (working_directory / "monitoring").exists()
+    assert _run_main(tmp_path, monkeypatch, {"config": {"monitoring_enabled": False}},
+                     run_from_yaml=lambda *args, **kwargs: None) == 0
+    assert not (tmp_path / "work" / "monitoring").exists()
