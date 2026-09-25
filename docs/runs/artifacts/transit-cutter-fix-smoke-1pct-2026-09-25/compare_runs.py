@@ -20,6 +20,9 @@ from pathlib import Path
 
 import pandas as pd
 
+#: The replanning iterations the runtime and fare-outcome figures cover (iteration 0 has no replanning).
+FIRST_ITERATION, LAST_ITERATION = 1, 20
+
 
 def seconds(value):
     if pd.isna(value) or str(value).strip() == "":
@@ -46,9 +49,10 @@ def summary(directory: Path, stations):
 
     stopwatch = pd.read_csv(directory / "stopwatch.csv", sep=";")
     stopwatch.columns = [c.strip() for c in stopwatch.columns]
-    stopwatch = stopwatch[stopwatch["iteration"] >= 1]
+    stopwatch = stopwatch[stopwatch["iteration"].between(FIRST_ITERATION, LAST_ITERATION)]
     result["runtime_iterations_1_20_s_mean"] = {c: round(stopwatch[c].map(seconds).mean(), 1)
                                                 for c in ("replanning", "mobsim", "iteration.1")}
+    result["runtime_iterations_included"] = int(len(stopwatch))
 
     legs = pd.read_csv(directory / "eqasim_pt.csv.gz", sep=";", dtype=str)
     result["pt_legs"] = int(len(legs))
@@ -62,7 +66,8 @@ def summary(directory: Path, stations):
     frames = [pd.read_csv(p) for p in glob.glob(str(directory / "ITERS/it.*/*vrb_fare_outcomes.csv"))]
     if frames:
         outcomes = pd.concat(frames)
-        outcomes = outcomes[outcomes["iteration"] >= 1]
+        outcomes = outcomes[outcomes["iteration"].between(FIRST_ITERATION, LAST_ITERATION)]
+        result["fare_outcome_iterations_included"] = int(outcomes["iteration"].nunique())
         totals = outcomes.groupby("outcome")["count"].sum()
         result["long_distance_flat_quotes_iterations_1_20"] = int(totals.get("long_distance_flat", 0))
         result["quotes_iterations_1_20"] = int(totals.drop(labels=["day_ticket_cap_applied"], errors="ignore").sum())

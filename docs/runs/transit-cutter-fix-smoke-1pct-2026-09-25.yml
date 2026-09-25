@@ -78,8 +78,10 @@ validation:
     docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_long_distance_layers.txt'
 - metric: simulated PT legs (eqasim_pt.csv.gz, final iteration) on a departure whose time the cut shifted
   reference: 'the mapped schedule time at the leg''s access stop'
-  result: 'Before: 291 of 4,680 legs (6.2 %, 258 persons; 241 rail, 50 bus) boarded a shifted departure, 3 to 76
-    min early (median 18 min). After: 0 of 4,815.'
+  result: 'Before: 291 of 4,635 rides (6.3 %, 258 persons; 241 rail, 50 bus) boarded a shifted departure, 3 to 76
+    min early (median 18 min). After: 0 of 4,781 rides. Every ride was found in both schedules (the check fails
+    otherwise); the 45 (before) and 34 (after) PT legs without a transit line id carry no ride (every ride field
+    empty, boarding time 0) and are counted apart.'
   artifact: 'docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/before_pt_legs_on_shifted_departures.txt,
     docs/runs/artifacts/transit-cutter-fix-smoke-1pct-2026-09-25/after_pt_legs_on_shifted_departures.txt'
 - metric: final-iteration outcomes, before vs after
