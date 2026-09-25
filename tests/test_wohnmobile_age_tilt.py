@@ -330,7 +330,9 @@ def test_tilt_changes_motorhome_owner_ages(sampler):
     owner_age, so this preserves the test's intent without touching production
     code or the shared consistency_v2/model_brands gate (out of scope for #315).
     """
-    df = _synthetic_frame(n=20000, seed=3)
+    # ~200 motorhomes at n=10000; the realised gap is ~6.5 years against the
+    # 2-year threshold (measured 2026-09-25), so a larger frame buys only time.
+    df = _synthetic_frame(n=10000, seed=3)
     on, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
                                   wohnmobile_age_tilt=True)
     off, _, _ = fleet.sample_fleet(df, DATA_PATH, random_seed=5, sampler=sampler,
@@ -385,7 +387,9 @@ def test_acceptance_composition_and_preserved_aggregate(sampler):
     ``dev_untilted_pp`` (tilt-neutrality evidence, never flagged, carries the
     sonstige-redraw leak per ADR-0093); fallback rate ~0 on a frame with full
     owner ages."""
-    df = _synthetic_frame(n=60000, seed=13)
+    # ~600 motorhomes at n=30000; the MC band widens with n_eff, so the check
+    # stays calibrated (band_pp 2-8 here vs 2-5 at n=60000, measured 2026-09-25).
+    df = _synthetic_frame(n=30000, seed=13)
     df_spec, _, summary = fleet.sample_fleet(
         df, DATA_PATH, random_seed=99, sampler=sampler,
         wohnmobile_age_tilt=True)

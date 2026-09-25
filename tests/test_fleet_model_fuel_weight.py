@@ -430,8 +430,9 @@ def test_diesel_bias_observable_for_high_diesel_model(sampler_real):
         pytest.skip("No model with petrol+diesel feasible set found; "
                     "cannot verify soft-weight bias.")
 
-    # Build a large car frame using only one Kreis for speed.
-    n = 6000
+    # One Kreis, 3000 cars: the model-restricted subset (skip guard below) stays
+    # well above 30 cars and a 95%-vs-uniform diesel contrast is unmistakable.
+    n = 3000
     kreis = ft.ZGB_KREISE_AGS5[0]
     rng = np.random.default_rng(17)
     statuses = list(ft.STATUS_LABELS)

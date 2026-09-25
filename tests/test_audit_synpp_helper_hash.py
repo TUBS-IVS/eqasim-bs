@@ -11,6 +11,9 @@ rather than a hope in a document.
 from __future__ import annotations
 
 import ast
+from pathlib import Path
+
+import pytest
 
 from scripts import audit_synpp_helper_hash as audit
 
@@ -100,18 +103,21 @@ def test_a_function_body_import_is_classified_lazy():
     assert lazy == {"braunschweig.popsim.cells"}
 
 
-def test_the_real_repository_reports_popsim_stage_as_fully_covered():
+@pytest.fixture(scope="module")
+def real_repository_report():
+    """The audit report of the actual tree, built once: it walks every stage module
+    (about 14 s), and the tests below only read it."""
+    return audit.build_report(Path(__file__).resolve().parents[1])
+
+
+def test_the_real_repository_reports_popsim_stage_as_fully_covered(real_repository_report):
     """End-to-end sanity on the actual tree: the one stage the project has pinned as
     fully covered (tests/test_popsim_stage_validate_token.py) must come out covered.
 
     Without this, every unit above could pass while the assembled pass still misreports
     the repository -- which is exactly what happened on the first two runs.
     """
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    report = audit.build_report(repo)
-    entry = report["braunschweig.popsim.stage"]
+    entry = real_repository_report["braunschweig.popsim.stage"]
     assert entry["hashes_source"] is True
     assert entry["uncovered"] == []
     assert entry["required_helpers"], "an empty required set would pass vacuously"
@@ -163,17 +169,14 @@ EXPECTED_UNCOVERED: dict[str, tuple[str, ...]] = {
 }
 
 
-def test_every_source_hashing_stage_covers_its_required_helpers():
+def test_every_source_hashing_stage_covers_its_required_helpers(real_repository_report):
     """No stage with a source-hashing validate() may leave a first-party import unhashed.
 
     Discovered by the #327 re-audit: eight of the sixteen source-hashing stages did. This
     gate is what keeps the audit note's inventory from drifting back into debt -- a new
     unhashed import fails here instead of quietly joining a list in a dated document.
     """
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    report = audit.build_report(repo)
+    report = real_repository_report
     offenders = {name: tuple(entry["uncovered"])
                  for name, entry in sorted(report.items())
                  if entry["hashes_source"] and entry["uncovered"]}

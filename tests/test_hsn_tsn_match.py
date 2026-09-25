@@ -117,7 +117,10 @@ def test_model_family_normalisation():
 # --------------------------------------------------------------------------- #
 # Matcher on a representative fleet sample
 # --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 2000, seed: int = 0) -> pd.DataFrame:
+def _make_cars(n_per_kreis: int = 500, seed: int = 0) -> pd.DataFrame:
+    # 4000 cars: the rate floors below (0.5 exact+model, 0.95 positive
+    # displacement) sit far from the ~0.8-0.99 realised rates, so the frame
+    # only needs to cover the brand/model mix, not to be large.
     rng = np.random.default_rng(seed)
     statuses = list(ft.STATUS_LABELS)
     rows = []

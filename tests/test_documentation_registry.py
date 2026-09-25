@@ -10,6 +10,7 @@ and the committed DAG snapshots, never against the local eqasim-data tree.
 """
 from __future__ import annotations
 
+import functools
 import os
 
 from braunschweig.documentation import dag, registries
@@ -17,8 +18,30 @@ from braunschweig.documentation import dag, registries
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# Each loader parses every committed record (one to two seconds apiece); the tests
+# only read the records, so each registry is parsed once per module.
+@functools.cache
+def _features():
+    return registries.load_features(REPO_ROOT)
+
+
+@functools.cache
+def _stages():
+    return registries.load_stages(REPO_ROOT)
+
+
+@functools.cache
+def _data():
+    return registries.load_data(REPO_ROOT)
+
+
+@functools.cache
+def _snapshots():
+    return dag.load_all_snapshots(REPO_ROOT)
+
+
 def _dag_union_nodes():
-    snapshots = dag.load_all_snapshots(REPO_ROOT)
+    snapshots = _snapshots()
     nodes = set()
     for snapshot in snapshots.values():
         nodes.update(snapshot["nodes"])
@@ -26,7 +49,7 @@ def _dag_union_nodes():
 
 
 def test_feature_registry_parses_and_is_complete():
-    records = registries.load_features(REPO_ROOT)
+    records = _features()
     assert len(records) >= 69, (
         "the feature registry lost records -- 67 migrated readiness declarations "
         "plus the escort and SrV-location-type features are the 2026-08 baseline")
@@ -34,7 +57,7 @@ def test_feature_registry_parses_and_is_complete():
 
 def test_feature_stage_references_resolve_against_the_dag():
     nodes = _dag_union_nodes()
-    for record in registries.load_features(REPO_ROOT):
+    for record in _features():
         for stage in record["stages"]:
             assert stage in nodes, (
                 f"{record['feature']}: stage '{stage}' is not a node of any "
@@ -42,13 +65,13 @@ def test_feature_stage_references_resolve_against_the_dag():
 
 
 def test_feature_active_pipelines_have_reachable_stages():
-    snapshots = dag.load_all_snapshots(REPO_ROOT)
+    snapshots = _snapshots()
     pipeline_nodes = {
         "popsim_mid": set(snapshots["production"]["nodes"]),
         "popsim_open": set(snapshots["popsim_open"]["nodes"]),
         "simple_ipf_open": set(snapshots["simple_ipf_open"]["nodes"]),
     }
-    for record in registries.load_features(REPO_ROOT):
+    for record in _features():
         for pipeline, applicability in record["pipelines"].items():
             if applicability == "active" and record["stages"]:
                 assert any(stage in pipeline_nodes[pipeline]
@@ -58,7 +81,7 @@ def test_feature_active_pipelines_have_reachable_stages():
 
 
 def test_feature_code_paths_and_tests_exist():
-    for record in registries.load_features(REPO_ROOT):
+    for record in _features():
         for path in record["code_paths"]:
             assert os.path.exists(os.path.join(REPO_ROOT, path)), (
                 f"{record['feature']}: code path missing: {path}")
@@ -72,7 +95,7 @@ def test_stage_registry_covers_every_dag_node():
     """Every DAG node has a stage record; records outside every DAG must be the
     explicitly parked ones (production False, all pipelines not_used)."""
     nodes = _dag_union_nodes()
-    records = {record["stage"]: record for record in registries.load_stages(REPO_ROOT)}
+    records = {record["stage"]: record for record in _stages()}
     missing = nodes - set(records)
     assert not missing, f"DAG stages without a registry record: {sorted(missing)}"
     for stage, record in records.items():
@@ -84,38 +107,38 @@ def test_stage_registry_covers_every_dag_node():
 
 def test_stage_production_flag_matches_the_production_dag():
     production_nodes = set(dag.load_snapshot(REPO_ROOT, "production")["nodes"])
-    for record in registries.load_stages(REPO_ROOT):
+    for record in _stages():
         assert record["production"] == (record["stage"] in production_nodes), (
             f"{record['stage']}: production flag contradicts the production DAG")
 
 
 def test_stage_feature_references_resolve():
-    feature_ids = {record["feature"] for record in registries.load_features(REPO_ROOT)}
-    for record in registries.load_stages(REPO_ROOT):
+    feature_ids = {record["feature"] for record in _features()}
+    for record in _stages():
         for feature in record.get("features") or []:
             assert feature in feature_ids, (
                 f"{record['stage']}: unknown feature reference '{feature}'")
 
 
 def test_stage_code_paths_exist():
-    for record in registries.load_stages(REPO_ROOT):
+    for record in _stages():
         for path in record["code"]:
             assert os.path.exists(os.path.join(REPO_ROOT, path)), (
                 f"{record['stage']}: code path missing: {path}")
 
 
 def test_data_registry_parses_and_covers_every_stage_input():
-    datasets = {record["dataset"] for record in registries.load_data(REPO_ROOT)}
+    datasets = {record["dataset"] for record in _data()}
     assert len(datasets) >= 52
-    for record in registries.load_stages(REPO_ROOT):
+    for record in _stages():
         for dataset in record.get("inputs") or []:
             assert dataset in datasets, (
                 f"{record['stage']}: unknown dataset reference '{dataset}'")
 
 
 def test_data_registry_used_by_references_resolve():
-    stage_ids = {record["stage"] for record in registries.load_stages(REPO_ROOT)}
-    for record in registries.load_data(REPO_ROOT):
+    stage_ids = {record["stage"] for record in _stages()}
+    for record in _data():
         for stage in record.get("used_by") or []:
             assert stage in stage_ids, (
                 f"{record['dataset']}: unknown stage reference '{stage}'")
@@ -132,7 +155,7 @@ def test_data_registry_verifier_entries_resolve():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     prefixes = {entry.name.split()[0] for entry in module.INPUTS}
-    for record in registries.load_data(REPO_ROOT):
+    for record in _data():
         entry = (record.get("verification") or {}).get("verifier_entry")
         if entry:
             assert entry in prefixes, (

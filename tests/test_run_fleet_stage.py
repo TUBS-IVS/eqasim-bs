@@ -195,6 +195,43 @@ def _stub(config_overrides=None, path=None):
 # --------------------------------------------------------------------------- #
 # 1. The stage configure + execute resolve end-to-end (ON / default).
 # --------------------------------------------------------------------------- #
+def _fresh_copies(frames):
+    """Per-test copies, so no test can see another test's in-place edits."""
+    return tuple(frame.copy() for frame in frames)
+
+
+# One execute() per configuration: the stage run is dominated by loading the fleet
+# tables (the scenario has five persons), and the tests below only read its output.
+@pytest.fixture(scope="module")
+def _default_run():
+    return hh.execute(_stub())
+
+
+@pytest.fixture
+def default_run(_default_run):
+    return _fresh_copies(_default_run)
+
+
+@pytest.fixture(scope="module")
+def _fleet_model_disabled_run():
+    return hh.execute(_stub(config_overrides={"fleet_model_enabled": False}))
+
+
+@pytest.fixture
+def fleet_model_disabled_run(_fleet_model_disabled_run):
+    return _fresh_copies(_fleet_model_disabled_run)
+
+
+@pytest.fixture(scope="module")
+def _hsn_tsn_off_run():
+    return hh.execute(_stub(config_overrides={"fleet_hsn_tsn_attributes": False}))
+
+
+@pytest.fixture
+def hsn_tsn_off_run(_hsn_tsn_off_run):
+    return _fresh_copies(_hsn_tsn_off_run)
+
+
 def test_stage_configure_declares_dependencies():
     ctx = _stub()
     hh.configure(ctx)
@@ -208,12 +245,11 @@ def test_stage_configure_declares_dependencies():
 
 
 @_needs_hsn_tsn_lookup
-def test_stage_execute_produces_valid_fleet():
+def test_stage_execute_produces_valid_fleet(default_run):
     # Runs with the production default (fleet_hsn_tsn_attributes=True) so the
     # all-features path is what gets tested; skips only where the local-only
     # hsn_tsn_lookup.csv is absent.
-    ctx = _stub()
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    df_vehicle_types, df_vehicles = default_run
 
     # 4 typed household cars (2 + 0 + 1 + 1) PLUS 1 routing default_car for the carless
     # non-owner member (hh2 person 201) added by _add_default_cars_for_non_owners = 5.
@@ -234,10 +270,9 @@ def test_stage_execute_produces_valid_fleet():
 # 2. The produced frames write a valid MATSim vehicles file (stage -> writer).
 # --------------------------------------------------------------------------- #
 @_needs_hsn_tsn_lookup
-def test_stage_output_writes_valid_matsim_vehicles(tmp_path):
+def test_stage_output_writes_valid_matsim_vehicles(tmp_path, default_run):
     # Production default (hsn/tsn ON); skips only without the local lookup.
-    ctx = _stub()
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    df_vehicle_types, df_vehicles = default_run
 
     # Add the dummy passenger type the real vehicles stage concatenates so the
     # written type table is complete (mirrors synthesis.vehicles.vehicles).
@@ -273,9 +308,8 @@ def test_stage_output_writes_valid_matsim_vehicles(tmp_path):
 # --------------------------------------------------------------------------- #
 # 3. OFF-equivalence: fleet_model_enabled:false -> legacy one-car-per-person.
 # --------------------------------------------------------------------------- #
-def test_fleet_model_disabled_reproduces_legacy(tmp_path):
-    ctx = _stub(config_overrides={"fleet_model_enabled": False})
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+def test_fleet_model_disabled_reproduces_legacy(fleet_model_disabled_run):
+    df_vehicle_types, df_vehicles = fleet_model_disabled_run
 
     # Legacy: one car per person, single default_car type, four legacy attributes.
     assert len(df_vehicles) == len(_persons())
@@ -288,9 +322,8 @@ def test_fleet_model_disabled_reproduces_legacy(tmp_path):
         assert col not in df_vehicles.columns
 
 
-def test_fleet_model_disabled_writes_single_type(tmp_path):
-    ctx = _stub(config_overrides={"fleet_model_enabled": False})
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+def test_fleet_model_disabled_writes_single_type(tmp_path, fleet_model_disabled_run):
+    df_vehicle_types, df_vehicles = fleet_model_disabled_run
     write_ctx = _StubContext({}, {}, path=tmp_path)
     writer.write_vehicles(str(Path(tmp_path) / "vehicles.xml.gz"),
                           df_vehicle_types, df_vehicles, write_ctx)
@@ -324,18 +357,16 @@ HSN_TSN_COLUMNS = [
 
 
 @_needs_hsn_tsn_lookup
-def test_hsn_tsn_attributes_on_adds_engine_columns():
-    ctx = _stub()  # fleet_hsn_tsn_attributes defaults True
-    _, df_vehicles = hh.execute(ctx)
+def test_hsn_tsn_attributes_on_adds_engine_columns(default_run):
+    _, df_vehicles = default_run  # fleet_hsn_tsn_attributes defaults True
     for col in HSN_TSN_COLUMNS:
         assert col in df_vehicles.columns
     # Power is always populated (global-median fallback at worst).
     assert (df_vehicles["engine_power_kw"] > 0).all()
 
 
-def test_hsn_tsn_attributes_off_omits_engine_columns():
-    ctx = _stub(config_overrides={"fleet_hsn_tsn_attributes": False})
-    _, df_vehicles = hh.execute(ctx)
+def test_hsn_tsn_attributes_off_omits_engine_columns(hsn_tsn_off_run):
+    _, df_vehicles = hsn_tsn_off_run
     for col in HSN_TSN_COLUMNS:
         assert col not in df_vehicles.columns
     # The rest of the German spec is unaffected.
@@ -343,11 +374,10 @@ def test_hsn_tsn_attributes_off_omits_engine_columns():
     assert "brand" in df_vehicles.columns
 
 
-def test_hsn_tsn_attributes_off_writes_no_engine_attributes(tmp_path):
+def test_hsn_tsn_attributes_off_writes_no_engine_attributes(tmp_path, hsn_tsn_off_run):
     """OFF -> the vehicles XML carries none of the engine attributes on any
     vehicle (the legacy + non-engine German attributes only)."""
-    ctx = _stub(config_overrides={"fleet_hsn_tsn_attributes": False})
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    df_vehicle_types, df_vehicles = hsn_tsn_off_run
     write_ctx = _StubContext({}, {}, path=tmp_path)
     writer.write_vehicles(str(Path(tmp_path) / "vehicles.xml.gz"),
                           df_vehicle_types, df_vehicles, write_ctx)
@@ -362,10 +392,9 @@ def test_hsn_tsn_attributes_off_writes_no_engine_attributes(tmp_path):
 
 
 @_needs_hsn_tsn_lookup
-def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path):
+def test_hsn_tsn_attributes_on_writes_engine_attributes(tmp_path, default_run):
     """ON -> at least one vehicle carries the engine attributes in the XML."""
-    ctx = _stub()
-    df_vehicle_types, df_vehicles = hh.execute(ctx)
+    df_vehicle_types, df_vehicles = default_run
     write_ctx = _StubContext({}, {}, path=tmp_path)
     writer.write_vehicles(str(Path(tmp_path) / "vehicles.xml.gz"),
                           df_vehicle_types, df_vehicles, write_ctx)
@@ -393,7 +422,7 @@ CANONICAL_EURO_VOCAB = set(ft.EURO_CLASS_LABELS) | {hbefa.ELECTRIC_EURO}
 
 
 @_needs_hsn_tsn_lookup
-def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab():
+def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab(default_run):
     """The typed household fleet and the eqasim-core routing placeholder
     (``default_car``) coexist in the same ``df_vehicles`` frame with two
     DIFFERENT vocabularies for technology/euro/euro_class:
@@ -408,8 +437,7 @@ def test_default_car_rows_identifiable_and_non_default_rows_use_canonical_vocab(
         pre-existing, byte-comparability-preserving quirk (F10), NOT a bug to
         silently mix into the German vocab.
     """
-    ctx = _stub()
-    _, df_vehicles = hh.execute(ctx)
+    _, df_vehicles = default_run
 
     is_default = df_vehicles["type_id"] == "default_car"
     assert is_default.any(), "fixture must include at least one routing default_car"

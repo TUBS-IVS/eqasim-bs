@@ -308,8 +308,16 @@ def _skip_if_no_data():
         pytest.skip("KBA derived CSVs not available; skipping sample_fleet threading tests")
 
 
+@pytest.fixture(scope="module")
+def sampler():
+    """One FleetSampler for the module; sample_fleet re-applies every per-call
+    setting, so a reused sampler draws exactly what a fresh one would."""
+    _skip_if_no_data()
+    return fs.FleetSampler.from_data_path(DATA_PATH_REAL)
+
+
 class TestSampleFleetGridColumnsOptional:
-    def test_without_grid_columns_runs_byte_identical(self):
+    def test_without_grid_columns_runs_byte_identical(self, sampler):
         """df_cars without grid_ev_share / gemeinde_grid_mean -> results are
         byte-identical to a run without those columns (None -> T9a no-op)."""
         _skip_if_no_data()
@@ -317,16 +325,16 @@ class TestSampleFleetGridColumnsOptional:
         df_cars_b = df_cars_a.copy()
         # Run A: no grid columns
         result_a, _, _ = fs.sample_fleet(
-            df_cars_a, DATA_PATH_REAL, random_seed=123, consistency_v2=True)
+            df_cars_a, DATA_PATH_REAL, random_seed=123, consistency_v2=True, sampler=sampler)
         # Run B: explicitly same (no grid columns) -- should be identical
         result_b, _, _ = fs.sample_fleet(
-            df_cars_b, DATA_PATH_REAL, random_seed=123, consistency_v2=True)
+            df_cars_b, DATA_PATH_REAL, random_seed=123, consistency_v2=True, sampler=sampler)
         pd.testing.assert_frame_equal(
             result_a[["powertrain", "segment", "euro_class"]],
             result_b[["powertrain", "segment", "euro_class"]],
         )
 
-    def test_grid_columns_absent_equals_baseline(self):
+    def test_grid_columns_absent_equals_baseline(self, sampler):
         """When grid columns are absent from df_cars, sample_fleet must produce
         the SAME result as when the columns are completely missing from the frame.
         This verifies that car.get('grid_ev_share') returning None is handled
@@ -335,16 +343,16 @@ class TestSampleFleetGridColumnsOptional:
         df_base = _make_cars_for_threading(n=50, seed=99)
         # Without any grid columns -> baseline
         r_base, _, _ = fs.sample_fleet(
-            df_base, DATA_PATH_REAL, random_seed=77, consistency_v2=True)
+            df_base, DATA_PATH_REAL, random_seed=77, consistency_v2=True, sampler=sampler)
         # Same cars, same seed: still no grid columns -> must be identical
         r_same, _, _ = fs.sample_fleet(
-            df_base.copy(), DATA_PATH_REAL, random_seed=77, consistency_v2=True)
+            df_base.copy(), DATA_PATH_REAL, random_seed=77, consistency_v2=True, sampler=sampler)
         pd.testing.assert_frame_equal(
             r_base[["powertrain"]],
             r_same[["powertrain"]],
         )
 
-    def test_with_grid_columns_high_share_household_gets_more_ev_mass(self):
+    def test_with_grid_columns_high_share_household_gets_more_ev_mass(self, sampler):
         """When grid_ev_share >> gemeinde_grid_mean for every car, the expected
         bev/phev share of the sampled fleet should exceed the no-grid baseline."""
         _skip_if_no_data()
@@ -353,7 +361,7 @@ class TestSampleFleetGridColumnsOptional:
 
         # Baseline: no grid columns
         r_base, _, _ = fs.sample_fleet(
-            df_cars.copy(), DATA_PATH_REAL, random_seed=11, consistency_v2=True)
+            df_cars.copy(), DATA_PATH_REAL, random_seed=11, consistency_v2=True, sampler=sampler)
         base_electric = float(
             r_base["powertrain"].isin(["bev", "phev"]).mean()
         )
@@ -364,7 +372,7 @@ class TestSampleFleetGridColumnsOptional:
         df_high["grid_ev_share"] = 0.10
         df_high["gemeinde_grid_mean"] = 0.02
         r_high, _, _ = fs.sample_fleet(
-            df_high, DATA_PATH_REAL, random_seed=11, consistency_v2=True)
+            df_high, DATA_PATH_REAL, random_seed=11, consistency_v2=True, sampler=sampler)
         high_electric = float(
             r_high["powertrain"].isin(["bev", "phev"]).mean()
         )
@@ -373,7 +381,7 @@ class TestSampleFleetGridColumnsOptional:
             f"base={base_electric:.4f}, high={high_electric:.4f}"
         )
 
-    def test_with_grid_columns_nan_share_same_as_baseline(self):
+    def test_with_grid_columns_nan_share_same_as_baseline(self, sampler):
         """NaN grid_ev_share (suppressed/unmatched) -> T9a no-op -> result
         identical to no-grid baseline (seeded run)."""
         _skip_if_no_data()
@@ -381,14 +389,14 @@ class TestSampleFleetGridColumnsOptional:
         df_base = _make_cars_for_threading(n=n, seed=3)
 
         r_base, _, _ = fs.sample_fleet(
-            df_base.copy(), DATA_PATH_REAL, random_seed=55, consistency_v2=True)
+            df_base.copy(), DATA_PATH_REAL, random_seed=55, consistency_v2=True, sampler=sampler)
 
         # NaN grid columns -> every car falls back -> byte-identical
         df_nan = df_base.copy()
         df_nan["grid_ev_share"] = float("nan")
         df_nan["gemeinde_grid_mean"] = 0.05
         r_nan, _, _ = fs.sample_fleet(
-            df_nan.copy(), DATA_PATH_REAL, random_seed=55, consistency_v2=True)
+            df_nan.copy(), DATA_PATH_REAL, random_seed=55, consistency_v2=True, sampler=sampler)
 
         pd.testing.assert_frame_equal(
             r_base[["powertrain", "segment", "euro_class"]],
@@ -400,29 +408,29 @@ class TestSampleFleetLegacyPathGridColumnsIgnored:
     """Legacy path (consistency_v2=False) must also accept optional grid columns
     gracefully (None -> T9a no-op) and produce byte-identical results."""
 
-    def test_legacy_path_no_grid_columns_identical(self):
+    def test_legacy_path_no_grid_columns_identical(self, sampler):
         _skip_if_no_data()
         df_a = _make_cars_for_threading(n=30, seed=20)
         df_b = df_a.copy()
         r_a, _ = fs.sample_fleet(
-            df_a, DATA_PATH_REAL, random_seed=200, consistency_v2=False)
+            df_a, DATA_PATH_REAL, random_seed=200, consistency_v2=False, sampler=sampler)
         r_b, _ = fs.sample_fleet(
-            df_b, DATA_PATH_REAL, random_seed=200, consistency_v2=False)
+            df_b, DATA_PATH_REAL, random_seed=200, consistency_v2=False, sampler=sampler)
         pd.testing.assert_frame_equal(
             r_a[["powertrain", "segment"]],
             r_b[["powertrain", "segment"]],
         )
 
-    def test_legacy_path_with_nan_grid_columns_identical_to_no_columns(self):
+    def test_legacy_path_with_nan_grid_columns_identical_to_no_columns(self, sampler):
         _skip_if_no_data()
         df_base = _make_cars_for_threading(n=30, seed=20)
         r_base, _ = fs.sample_fleet(
-            df_base.copy(), DATA_PATH_REAL, random_seed=200, consistency_v2=False)
+            df_base.copy(), DATA_PATH_REAL, random_seed=200, consistency_v2=False, sampler=sampler)
         df_nan = df_base.copy()
         df_nan["grid_ev_share"] = float("nan")
         df_nan["gemeinde_grid_mean"] = 0.05
         r_nan, _ = fs.sample_fleet(
-            df_nan, DATA_PATH_REAL, random_seed=200, consistency_v2=False)
+            df_nan, DATA_PATH_REAL, random_seed=200, consistency_v2=False, sampler=sampler)
         pd.testing.assert_frame_equal(
             r_base[["powertrain", "segment"]],
             r_nan[["powertrain", "segment"]],

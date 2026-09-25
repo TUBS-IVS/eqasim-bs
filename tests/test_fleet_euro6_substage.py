@@ -329,7 +329,9 @@ def contrast_data_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def contrast_sampled(contrast_data_path):
     sampler = fs.FleetSampler.from_data_path(contrast_data_path)
-    df_cars = _make_cars(n_per_kreis=3000, seed=7)
+    # 1000 per Kreis (~300 diesel each) clears the >50 diesel / >20 Euro-6 guards
+    # below by a wide margin; the validator bands scale with n_eff.
+    df_cars = _make_cars(n_per_kreis=1000, seed=7)
     df_spec, df_types, summary = fs.sample_fleet(
         df_cars, contrast_data_path, random_seed=123, sampler=sampler)
     return df_spec, df_types, summary
