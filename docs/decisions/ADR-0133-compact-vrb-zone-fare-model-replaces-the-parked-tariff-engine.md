@@ -70,15 +70,20 @@ Its tests price a single synthetic city ticket (360 ct) only.
    2026-09-25, `vrbFare.longDistanceRoutingSurchargeEnabled`, pipeline key
    `vrb_fare_long_distance_routing_surcharge_enabled`, default on): `LongDistanceFareRaptorCostCalculator` replaces
    SwissRailRaptor's default in-vehicle cost and adds, to every ride on a long-distance vehicle, the flat price
-   converted into equivalent in-vehicle seconds with the mode choice's value of time (PT in-vehicle time utility
-   over cost utility, 0.082 EUR per minute with the default Braunschweig parameters, so 21.90 EUR equal about
-   267 minutes), valued at the ride's marginal utility of travel time. SwissRailRaptorCore calls the calculator
-   once per ride, so the surcharge counts once; under-6s get none. ASSUMPTIONS: the reference person of the cost
-   term (the model's value of time grows with distance, so long journeys get a somewhat larger surcharge than
-   their own valuation), and the full flat price as the difference to the regional alternative, exact for pass
-   holders and an upper bound for travellers who would pay a VRB single on the regional train. The router cannot
-   price the VRB zone fare itself: it depends on the first and last zone of the whole journey and is not
-   additive per ride.
+   converted into equivalent in-vehicle seconds with the value of time the Braunschweig PT utility applies to this
+   person and trip (maintainer decision 2026-09-25): PT in-vehicle time utility over cost utility times the
+   estimator's own distance and income interaction terms, with the trip's straight-line distance and the
+   person's household income (reference income when missing, as in the estimator). With the default parameters
+   21.90 EUR equal about 267 min for the reference person at 4.4 km, about 163 min at 30 km and 136 min at
+   60 km at the reference income, and about 92 / 77 min at twice that income. `LongDistanceSurchargeStopFinder`,
+   wrapping SwissRailRaptor's default stop finder, is the first component of a request that sees origin,
+   destination and person; it values the surcharge and hands it to the in-vehicle cost through a per-thread
+   context bound to the person object. A ride without a recorded valuation uses the reference person and is
+   counted and logged. The surcharge is valued at the ride's marginal utility of travel time; SwissRailRaptorCore
+   calls the calculator once per ride, so it counts once; under-6s get none. ASSUMPTION: the full flat price as
+   the difference to the regional alternative, exact for pass holders and an upper bound for travellers who
+   would pay a VRB single on the regional train. The router cannot price the VRB zone fare itself: it depends on
+   the first and last zone of the whole journey and is not additive per ride.
 7. **External rides (D7).** When a leg touches an unzoned stop and the holder has no Germany-wide flat: rail legs
    -> Niedersachsentarif second-class single by band on the sum of ridden stop-to-stop distances x 1.0
    (ASSUMPTION; `docs/data/external-regional-rail-single-fares-2026.json`), child band for 6-14; no rail -> 370 ct

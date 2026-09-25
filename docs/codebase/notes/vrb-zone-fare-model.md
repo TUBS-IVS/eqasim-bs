@@ -40,6 +40,8 @@ One note for the mechanism that prices PT trips when `vrb_zone_fares_enabled` is
   the vrbFare module and `matsim.output` all read them from there (via the report).
 - The cap correction must stay a pure function of the monetary term: `DayTicketCapTourEstimator` adds it
   to a cached utility, so any new fare-dependent utility term breaks the exactness argument of ADR-0133 D9.
+- The routing surcharge reads the same cost interaction terms as `BraunschweigPtUtilityEstimator`
+  (`ModeChoiceValueOfTime`); a change of the PT cost term must change both.
 - The OFF path must stay byte-identical (`tests/test_vrb_zone_fares_prepare_wiring.py`).
 - A scenario prepared with the flag ON has no ring attributes: never switch `vrbFare.enabled` off on it,
   re-prepare with the flag off instead.
@@ -49,8 +51,8 @@ One note for the mechanism that prices PT trips when `vrb_zone_fares_enabled` is
 
 No ticket reuse within validity windows, no six-ride packages, one flat local single for every external
 operator, one flat long-distance price for every relation and ticket (the router adds it as in-vehicle cost
-at the reference value of time, `LongDistanceFareRaptorCostCalculator`; long-distance services stay routed,
-ADR-0133 D6), ridden distance as tariff distance for rail, children under 14 without school tickets, 2023
+at the value of time the mode choice applies to the person and trip, `LongDistanceFareRaptorCostCalculator`
+with `LongDistanceSurchargeStopFinder`; long-distance services stay routed, ADR-0133 D6), ridden distance as tariff distance for rail, children under 14 without school tickets, 2023
 survey ticket categories, and the optional standalone mode choice inside `matsim.simulation.prepare`
 prices with the legacy model. The full tariff-law engine is parked on the branches
 `codex/regional-pt-fares` (eqasim-bs 8ea3c55b, eqasim-java-bs 18e111771).
