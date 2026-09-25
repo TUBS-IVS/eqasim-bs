@@ -1,0 +1,39 @@
+{
+  "source": "eqasim-data/data/vrb/vrb_tarifzonen_rgb_25832.geojson",
+  "feature_count": 46,
+  "invalid_repaired": [
+    "38"
+  ],
+  "total_area_km2": 5090.4,
+  "polygon_count": 46,
+  "point_zone_count": 2,
+  "point_zones": {
+    "55": {
+      "rail_stop_ids": [
+        "273565"
+      ],
+      "station_stop_ids": [
+        "184038",
+        "273565"
+      ],
+      "spread_m": 17.7
+    },
+    "56": {
+      "rail_stop_ids": [
+        "547191"
+      ],
+      "station_stop_ids": [
+        "323548",
+        "547191"
+      ],
+      "spread_m": 67.8
+    }
+  },
+  "trimmed_overlaps": [
+    {
+      "kept_zone": "15",
+      "trimmed_zone": "20",
+      "area_m2": 1797.7
+    }
+  ]
+}
