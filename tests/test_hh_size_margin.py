@@ -13,7 +13,6 @@ import pathlib
 import sys
 
 import pandas as pd
-import pytest
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]

@@ -712,29 +712,34 @@ class TestFleetSamplerFromDataPathWithEuroCSV:
 # ---------------------------------------------------------------------------
 
 
+def _mirror_without_kreis_euro(tmp_path: Path) -> str:
+    """Mirror the committed derived CSVs into ``tmp_path`` WITHOUT kba_kreis_euro.csv.
+
+    The absence has to be CONSTRUCTED: the table is committed since issue #277, so
+    the real data path always takes the per-Kreis (primary) branch.
+    """
+    real_derived = DATA / "braunschweig" / "kba" / "derived"
+    if not real_derived.exists():
+        pytest.skip("real derived data directory absent")
+    derived = tmp_path / "braunschweig" / "kba" / "derived"
+    derived.mkdir(parents=True)
+    for src in real_derived.glob("*.csv"):
+        if src.name == "kba_kreis_euro.csv":
+            continue
+        try:
+            (derived / src.name).symlink_to(src)
+        except OSError:
+            shutil.copy2(src, derived / src.name)
+    return str(tmp_path)
+
+
 class TestFleetSamplerFallbackNoEuroCSV:
     """Fallback: kba_kreis_euro.csv absent -> age_euro_joint_kreis is None."""
 
     def test_age_euro_joint_kreis_is_none_when_the_euro_csv_is_absent(self, tmp_path):
-        """With kba_kreis_euro.csv absent, age_euro_joint_kreis must be None.
-
-        The absence is CONSTRUCTED: the table is committed since issue #277, so
-        reading the real data path would assert the opposite of what this test is
-        for (and would pass vacuously before the table existed).
-        """
-        real_derived = DATA / "braunschweig" / "kba" / "derived"
-        if not real_derived.exists():
-            pytest.skip("real derived data directory absent")
-        derived = tmp_path / "braunschweig" / "kba" / "derived"
-        derived.mkdir(parents=True)
-        for src in real_derived.glob("*.csv"):
-            if src.name == "kba_kreis_euro.csv":
-                continue
-            try:
-                (derived / src.name).symlink_to(src)
-            except OSError:
-                shutil.copy2(src, derived / src.name)
-        sampler = fs.FleetSampler.from_data_path(str(tmp_path))
+        """With kba_kreis_euro.csv absent, age_euro_joint_kreis must be None
+        (and would pass vacuously on the real data path, see the helper)."""
+        sampler = fs.FleetSampler.from_data_path(_mirror_without_kreis_euro(tmp_path))
         assert sampler.age_euro_joint_kreis is None, (
             "age_euro_joint_kreis must be None when kba_kreis_euro.csv is absent; "
             f"got {type(sampler.age_euro_joint_kreis)}"
@@ -760,22 +765,23 @@ class TestFleetSamplerFallbackNoEuroCSV:
             f"got: {msgs!r}"
         )
 
-    def test_sample_fleet_euro_byte_identical_on_fallback(self):
-        """Without the euro CSV the sampled euro_class column is identical to before.
+    def test_sample_fleet_euro_byte_identical_on_fallback(self, tmp_path):
+        """On the fallback path (no per-Kreis euro table) the draw runs through the
+        national joint and is reproducible for a seed.
 
-        Build two samplers from the same data path (kba_kreis_euro.csv absent),
-        run sample_fleet twice with the SAME seed.  The ``euro_class`` column must
-        be identical -- this verifies that the new code path does not perturb the
-        draw when age_euro_joint_kreis is None (national joint used, unchanged).
+        Until 2026-09-25 this test sampled the REAL data path, where the table has
+        been committed since #277, so it never reached the fallback it names; it
+        now samples the constructed mirror without the table.
         """
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
+        data_path = _mirror_without_kreis_euro(tmp_path)
+        sampler = fs.FleetSampler.from_data_path(data_path)
+        assert sampler.age_euro_joint_kreis is None  # really the fallback path
 
         cars = _make_minimal_cars(n=200, seed=42)
         result1 = fs.sample_fleet(
-            cars, DATA_PATH, random_seed=7, consistency_v2=True, age_euro_joint=True)
+            cars, data_path, random_seed=7, sampler=sampler, consistency_v2=True, age_euro_joint=True)
         result2 = fs.sample_fleet(
-            cars, DATA_PATH, random_seed=7, consistency_v2=True, age_euro_joint=True)
+            cars, data_path, random_seed=7, sampler=sampler, consistency_v2=True, age_euro_joint=True)
         # consistency_v2=True returns (df_spec, df_vehicle_types, validation_summary)
         df1 = result1[0]
         df2 = result2[0]

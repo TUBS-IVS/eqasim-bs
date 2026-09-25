@@ -22,7 +22,6 @@ import logging
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -30,7 +29,6 @@ REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "eqasim-data" / "data"
 sys.path.insert(0, str(REPO))
 
-from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.data.kba import hsn_tsn  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 from tests.fleet_frames import make_fleet_cars as _make_cars  # noqa: E402

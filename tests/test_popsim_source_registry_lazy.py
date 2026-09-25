@@ -60,14 +60,14 @@ def _run_subprocess_check(code: str) -> str:
 # Importing the registry must not import a non-selected adapter.
 # ---------------------------------------------------------------------------
 
-def test_importing_sources_package_imports_no_adapter_module():
-    """``import braunschweig.popsim.sources`` alone must not import either
-    adapter module (``mid`` or ``entd``), nor any of the seven ENTD siblings.
+def _key_values(stdout: str) -> dict:
+    return dict(line.split("=", 1) for line in stdout.splitlines() if "=" in line)
 
-    This is the core regression this issue guards against: before the fix,
-    the package ``__init__`` imported both ``mid.py`` and ``entd.py`` (and,
-    transitively, everything ``entd.py`` imports) unconditionally.
-    """
+
+@pytest.fixture(scope="module")
+def after_package_import():
+    """``sys.modules`` facts of a fresh interpreter right after
+    ``from braunschweig.popsim import sources``; one subprocess serves both tests."""
     code = (
         "import sys\n"
         "from braunschweig.popsim import sources\n"
@@ -77,27 +77,30 @@ def test_importing_sources_package_imports_no_adapter_module():
         "    and m != 'braunschweig.popsim.sources.base'\n"
         "]\n"
         "print('ADAPTER_MODULES=' + ','.join(sorted(adapter_modules)))\n"
+        "print('BASE_IMPORTED=' + str('braunschweig.popsim.sources.base' in sys.modules))\n"
     )
-    stdout = _run_subprocess_check(code)
-    line = next(l for l in stdout.splitlines() if l.startswith("ADAPTER_MODULES="))
-    imported = line[len("ADAPTER_MODULES="):]
+    return _key_values(_run_subprocess_check(code))
+
+
+def test_importing_sources_package_imports_no_adapter_module(after_package_import):
+    """``import braunschweig.popsim.sources`` alone must not import either
+    adapter module (``mid`` or ``entd``), nor any of the seven ENTD siblings.
+
+    This is the core regression this issue guards against: before the fix,
+    the package ``__init__`` imported both ``mid.py`` and ``entd.py`` (and,
+    transitively, everything ``entd.py`` imports) unconditionally.
+    """
+    imported = after_package_import["ADAPTER_MODULES"]
     assert imported == "", (
         f"importing braunschweig.popsim.sources imported adapter submodule(s): "
         f"{imported!r} (expected none -- adapters must resolve lazily)"
     )
 
 
-def test_importing_sources_package_imports_base_only():
+def test_importing_sources_package_imports_base_only(after_package_import):
     """The ONE adapter-package submodule that MUST still be eager is ``base``
     (the shared ``PopsimSource`` Protocol interface, per the issue)."""
-    code = (
-        "import sys\n"
-        "from braunschweig.popsim import sources\n"
-        "assert 'braunschweig.popsim.sources.base' in sys.modules\n"
-        "print('OK')\n"
-    )
-    stdout = _run_subprocess_check(code)
-    assert "OK" in stdout
+    assert after_package_import["BASE_IMPORTED"] == "True"
 
 
 # ---------------------------------------------------------------------------
@@ -127,31 +130,32 @@ def test_get_source_mid_does_not_import_entd():
 # get_source("entd") must work and return an EntdSource.
 # ---------------------------------------------------------------------------
 
-def test_get_source_entd_returns_entd_source():
-    code = (
-        "from braunschweig.popsim import sources\n"
-        "from braunschweig.popsim.sources.entd import EntdSource\n"
-        "src = sources.get_source('entd')\n"
-        "assert isinstance(src, EntdSource), type(src)\n"
-        "assert src.name == 'entd'\n"
-        "print('OK')\n"
-    )
-    stdout = _run_subprocess_check(code)
-    assert "OK" in stdout
-
-
-def test_get_source_entd_does_not_import_mid_adapter():
-    """Requesting 'entd' must not import the MiD adapter module either
-    (symmetry check: laziness must not be one-directional)."""
+@pytest.fixture(scope="module")
+def after_get_source_entd():
+    """A fresh interpreter that only calls ``get_source('entd')``. The MiD check
+    is taken BEFORE the explicit ``EntdSource`` import the type check needs, so
+    one subprocess answers both tests exactly as two separate ones did."""
     code = (
         "import sys\n"
         "from braunschweig.popsim import sources\n"
-        "sources.get_source('entd')\n"
+        "src = sources.get_source('entd')\n"
         "print('MID_IMPORTED=' + str('braunschweig.popsim.sources.mid' in sys.modules))\n"
+        "from braunschweig.popsim.sources.entd import EntdSource\n"
+        "print('IS_ENTD_SOURCE=' + str(isinstance(src, EntdSource)))\n"
+        "print('NAME=' + src.name)\n"
     )
-    stdout = _run_subprocess_check(code)
-    lines = dict(l.split("=", 1) for l in stdout.splitlines() if "=" in l)
-    assert lines["MID_IMPORTED"] == "False"
+    return _key_values(_run_subprocess_check(code))
+
+
+def test_get_source_entd_returns_entd_source(after_get_source_entd):
+    assert after_get_source_entd["IS_ENTD_SOURCE"] == "True"
+    assert after_get_source_entd["NAME"] == "entd"
+
+
+def test_get_source_entd_does_not_import_mid_adapter(after_get_source_entd):
+    """Requesting 'entd' must not import the MiD adapter module either
+    (symmetry check: laziness must not be one-directional)."""
+    assert after_get_source_entd["MID_IMPORTED"] == "False"
 
 
 # ---------------------------------------------------------------------------

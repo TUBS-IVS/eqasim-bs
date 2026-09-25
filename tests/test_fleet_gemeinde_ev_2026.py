@@ -344,11 +344,14 @@ def test_2026_primary_tilt_increases_bev(tmp_data_with_high_bev_gemeinde):
     tmp_dp, kreis, gemeinde_norm, kreis_bev, high_bev = tmp_data_with_high_bev_gemeinde
 
     # Build cars: same Kreis, one batch with no Gemeinde, one with high-BEV Gemeinde.
-    base_cars = _make_synthetic_cars(kreis, np.nan, n=4000, seed=11)   # type: ignore[arg-type]
-    tilted_cars = _make_synthetic_cars(kreis, gemeinde_norm, n=4000, seed=11)
+    # 1500 cars each: 85 vs 156 BEVs (measured 2026-09-25), about 4.6 Poisson SD
+    # apart; the draw is seeded, so the margin only guards future model changes.
+    base_cars = _make_synthetic_cars(kreis, np.nan, n=1500, seed=11)   # type: ignore[arg-type]
+    tilted_cars = _make_synthetic_cars(kreis, gemeinde_norm, n=1500, seed=11)
 
-    spec_base, _, _ = fs.sample_fleet(base_cars, tmp_dp, random_seed=99)
-    spec_tilt, _, _ = fs.sample_fleet(tilted_cars, tmp_dp, random_seed=99)
+    sampler = fs.FleetSampler.from_data_path(tmp_dp)
+    spec_base, _, _ = fs.sample_fleet(base_cars, tmp_dp, random_seed=99, sampler=sampler)
+    spec_tilt, _, _ = fs.sample_fleet(tilted_cars, tmp_dp, random_seed=99, sampler=sampler)
 
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())
