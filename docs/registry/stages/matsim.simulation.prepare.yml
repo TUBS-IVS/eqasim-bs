@@ -2,7 +2,8 @@ stage: matsim.simulation.prepare
 title: MATSim run preparation
 layer: matsim
 description: Prepares the MATSim run (config, freight injection, urban parking, subpopulations)
-  via braunschweig.matsim.simulation.prepare.
+  via braunschweig.matsim.simulation.prepare. With vrb_zone_fares_enabled it attaches vrbTariffZone from
+  the official polygons and writes the VRB fare inputs and the vrbFare module (ADR-0133).
 lineage:
   type: overridden
   upstream: matsim.simulation.prepare
@@ -25,7 +26,9 @@ features:
 - cordon_network_ring
 - freight_assumptions
 - mode_choice
+- vrb_zone_fare_model
 decisions:
 - ADR-0121
 - ADR-0030
 - ADR-0039
+- ADR-0133

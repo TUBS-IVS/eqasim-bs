@@ -1,0 +1,34 @@
+dataset: vrb_price_stage_matrix_2022
+title: VRB price-stage matrix (48 x 48, printed Stand 01.01.2022)
+inventory_id: null
+provider: Verkehrsverbund Region Braunschweig GmbH
+vintage: printed 01.01.2022; applied to the 2026 scenario as an assumption (ADR-0133)
+geography: 48 VRB tariff zones incl. 55/56
+crs: null
+roles:
+- assumption_basis
+- reference_table
+used_by:
+- matsim.simulation.prepare
+acquisition:
+  method: committed
+  source: https://www.vrb-online.de/de/service/downloads?file=files/media/service/downloads/tarifinformationen/vrb-preisstufenmatrix.pdf&cid=658
+  script: null
+  notes: Parsed on the parked branch codex/regional-pt-fares (scripts/export_vrb_price_stage_matrix.py, commit 238359cd); PDF SHA-256 175c58b14f2c9e94029644fa7a8a0a036af8fa438c5cb6bc4145409b99efa7e6.
+storage:
+  expected_path: docs/data/vrb-price-stage-matrix-2022.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: tests/test_vrb_price_stage_matrix.py pins 2,304 cells, the stage counts (1684/366/202/47/3/2), symmetry and the three city-tariff cells.
+requirements:
+  synthesis: not_needed
+  matsim: optional
+  production: required
+licensing:
+  license: public tariff publication (facts), attribution to VRB GmbH
+  restricted: false
+  redistribution: allowed
+limitations: The two undefined cells are the within-zone pairs of the single-station zones 55 and 56; 2026 validity of the whole matrix is an ASSUMPTION supported by three spot checks only.
+notes: Consumed by braunschweig.data.vrb.fare_model_export (ST -> city, 1..4 -> ps1..ps4) once the compact fare model is wired (ADR-0133).

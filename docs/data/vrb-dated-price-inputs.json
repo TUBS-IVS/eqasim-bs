@@ -1,0 +1,2092 @@
+{
+  "currency": "EUR",
+  "fare_class_order": [
+    "city",
+    "ps1",
+    "ps2",
+    "ps3",
+    "ps4"
+  ],
+  "limitations": [
+    "Null amounts preserve blank or unavailable source cells.",
+    "This export does not resolve price-stage matrix applicability, stop/service mappings, or production coverage."
+  ],
+  "price_unit": "cent",
+  "schema_version": "1.0",
+  "snapshots": [
+    {
+      "price_source_applicability": "supported_for_date",
+      "price_source_id": "kvg_prices_2025",
+      "prices": [
+        {
+          "amount_minor": 190,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "short_trip",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 190,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "short_trip",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 190,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "short_trip",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "short_trip",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "short_trip",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 340,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "single_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 370,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "single_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 530,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "single_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 730,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "single_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1170,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "single_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 220,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 310,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 440,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 700,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1700,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1850,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2650,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3650,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 5850,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1000,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1100,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1550,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2200,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3500,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 680,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 740,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1060,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1460,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2340,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1000,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1060,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1390,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1950,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2960,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1320,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1380,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1720,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2440,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3580,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1640,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1700,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2050,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2930,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 4200,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1960,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2020,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2380,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3420,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 4820,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 4290,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 4560,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 6690,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 9130,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 14620,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8510,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8760,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 10570,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 14440,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 19670,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 7220,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 7550,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8990,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 10340,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 11450,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 7000,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 7250,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8730,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 11900,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 16230,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 5560,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 5790,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 6980,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8170,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 9350,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 6010,
+          "currency": "EUR",
+          "price_field": "senior_subscription.prices_cent_per_month.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 6240,
+          "currency": "EUR",
+          "price_field": "senior_subscription.prices_cent_per_month.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 7420,
+          "currency": "EUR",
+          "price_field": "senior_subscription.prices_cent_per_month.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 8550,
+          "currency": "EUR",
+          "price_field": "senior_subscription.prices_cent_per_month.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 9460,
+          "currency": "EUR",
+          "price_field": "senior_subscription.prices_cent_per_month.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3000,
+          "currency": "EUR",
+          "price_field": "student_monthly_network.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 36000,
+          "currency": "EUR",
+          "price_field": "student_annual_network.price_cent_per_year",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2000,
+          "currency": "EUR",
+          "price_field": "student_monthly_braunschweig_zone_40.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2370,
+          "currency": "EUR",
+          "price_field": "u21_monthly_network.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1960,
+          "currency": "EUR",
+          "price_field": "u21_subscription_network.price_cent_per_month",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2500,
+          "currency": "EUR",
+          "price_field": "bs_mobil.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 3300,
+          "currency": "EUR",
+          "price_field": "bs_mobil_plus.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 1500,
+          "currency": "EUR",
+          "price_field": "bs_mobil_student.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "adult_price_cent",
+          "product_id": "social_ticket_wolfenbuettel",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "child_price_cent",
+          "product_id": "social_ticket_wolfenbuettel",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "adult_price_cent",
+          "product_id": "social_ticket_salzgitter",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "child_price_cent",
+          "product_id": "social_ticket_salzgitter",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 300,
+          "currency": "EUR",
+          "price_field": "price_cent",
+          "product_id": "extension_ticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 5800,
+          "currency": "EUR",
+          "price_field": "price_cent_per_month",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 5510,
+          "currency": "EUR",
+          "price_field": "job_price_cent_per_month_before_employer_subsidy",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 2940,
+          "currency": "EUR",
+          "price_field": "semester_ticket_price_cent_per_month_for_listed_2025_product",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2025-05-01"
+        },
+        {
+          "amount_minor": 100,
+          "currency": "EUR",
+          "price_field": "price_cent_per_ride",
+          "product_id": "ast_door_to_door_supplement",
+          "snapshot_date": "2025-05-01"
+        }
+      ],
+      "products": {
+        "ast_door_to_door_supplement": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_718_724",
+            "vrb_terms_2025_05_01:pdf_page_42"
+          ],
+          "price_cent_per_ride": 100
+        },
+        "bs_mobil_local_passes": {
+          "applicability_confidence": "high_for_2025_date",
+          "bs_mobil": {
+            "price_cent_per_month": 2500,
+            "weekday_start_time": "08:30:00"
+          },
+          "bs_mobil_plus": {
+            "daily_time_restriction": null,
+            "price_cent_per_month": 3300
+          },
+          "bs_mobil_student": {
+            "daily_time_restriction": null,
+            "price_cent_per_month": 1500
+          },
+          "common_coverage": "zone_40_braunschweig",
+          "common_holder_requirement": "Braunschweig Pass; the student variant additionally requires qualifying full-time general-school attendance and excludes holders entitled to D-Ticket SSZK and vocational students.",
+          "companion_rights": false,
+          "person_bound": true,
+          "price_evidence": "city_bs_pass_current",
+          "rule_evidence": "vrb_terms_2025_05_01:pdf_pages_42_43"
+        },
+        "day_ticket": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_471_512",
+            "vrb_terms_2025_05_01:pdf_pages_12_13"
+          ],
+          "party_size_prices_cent": {
+            "1": {
+              "city": 680,
+              "ps1": 740,
+              "ps2": 1060,
+              "ps3": 1460,
+              "ps4": 2340
+            },
+            "2": {
+              "city": 1000,
+              "ps1": 1060,
+              "ps2": 1390,
+              "ps3": 1950,
+              "ps4": 2960
+            },
+            "3": {
+              "city": 1320,
+              "ps1": 1380,
+              "ps2": 1720,
+              "ps3": 2440,
+              "ps4": 3580
+            },
+            "4": {
+              "city": 1640,
+              "ps1": 1700,
+              "ps2": 2050,
+              "ps3": 2930,
+              "ps4": 4200
+            },
+            "5": {
+              "city": 1960,
+              "ps1": 2020,
+              "ps2": 2380,
+              "ps3": 3420,
+              "ps4": 4820
+            }
+          }
+        },
+        "deutschlandticket": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_639_660",
+            "vrb_terms_2025_05_01:pdf_pages_19_21",
+            "vrb_terms_2025_05_01:pdf_pages_58_62"
+          ],
+          "job_price_cent_per_month_before_employer_subsidy": 5510,
+          "price_cent_per_month": 5800,
+          "semester_ticket_price_cent_per_month_for_listed_2025_product": 2940,
+          "vrb_companion_upgrade_cent_per_month": 1000
+        },
+        "eight_day_ticket": {
+          "day_sections": 8,
+          "evidence": [
+            "kvg_prices_2025:html_lines_523_536",
+            "vrb_terms_2025_05_01:pdf_pages_13_14"
+          ],
+          "package_prices_cent": {
+            "city": 4290,
+            "ps1": 4560,
+            "ps2": 6690,
+            "ps3": 9130,
+            "ps4": 14620
+          }
+        },
+        "extension_ticket": {
+          "coverage": "entire_vrb_for_one_direction",
+          "evidence": [
+            "kvg_prices_2025:html_lines_752_759",
+            "vrb_terms_2025_05_01:pdf_page_28"
+          ],
+          "price_cent": 300,
+          "validity_minutes": 150
+        },
+        "regular_time_passes": {
+          "nine_oclock_subscription": {
+            "prices_cent_per_month": {
+              "city": 5560,
+              "ps1": 5790,
+              "ps2": 6980,
+              "ps3": 8170,
+              "ps4": 9350
+            }
+          },
+          "plus_monthly": {
+            "prices_cent": {
+              "city": 8510,
+              "ps1": 8760,
+              "ps2": 10570,
+              "ps3": 14440,
+              "ps4": 19670
+            }
+          },
+          "plus_subscription": {
+            "prices_cent_per_month": {
+              "city": 7000,
+              "ps1": 7250,
+              "ps2": 8730,
+              "ps3": 11900,
+              "ps4": 16230
+            }
+          },
+          "senior_monthly": {
+            "minimum_age": 65,
+            "prices_cent": {
+              "city": 7220,
+              "ps1": 7550,
+              "ps2": 8990,
+              "ps3": 10340,
+              "ps4": 11450
+            }
+          },
+          "senior_subscription": {
+            "minimum_age": 65,
+            "prices_cent_per_month": {
+              "city": 6010,
+              "ps1": 6240,
+              "ps2": 7420,
+              "ps3": 8550,
+              "ps4": 9460
+            }
+          },
+          "student_annual_network": {
+            "price_cent_per_year": 36000
+          },
+          "student_monthly_braunschweig_zone_40": {
+            "available_through": "2025-07-31",
+            "not_extendable": true,
+            "price_cent": 2000,
+            "price_evidence": "vrb_terms_2025_05_01:pdf_page_32"
+          },
+          "student_monthly_network": {
+            "price_cent": 3000
+          },
+          "table_evidence": "kvg_prices_2025:html_lines_546_629",
+          "u21_monthly_network": {
+            "price_cent": 2370
+          },
+          "u21_subscription_network": {
+            "price_cent_per_month": 1960
+          }
+        },
+        "short_trip": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_390_395",
+            "vrb_terms_2025_05_01:pdf_page_11"
+          ],
+          "null_reason": "The PS3 and PS4 cells are blank in the source table.",
+          "prices_cent": {
+            "city": 190,
+            "ps1": 190,
+            "ps2": 190,
+            "ps3": null,
+            "ps4": null
+          }
+        },
+        "single_adult": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_415_420"
+          ],
+          "prices_cent": {
+            "city": 340,
+            "ps1": 370,
+            "ps2": 530,
+            "ps3": 730,
+            "ps4": 1170
+          }
+        },
+        "single_child_age_6_to_14": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_423_429",
+            "vrb_terms_2025_05_01:pdf_page_8"
+          ],
+          "prices_cent": {
+            "city": 200,
+            "ps1": 220,
+            "ps2": 310,
+            "ps3": 440,
+            "ps4": 700
+          }
+        },
+        "six_ride_adult": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_447_453",
+            "vrb_terms_2025_05_01:pdf_pages_11_12"
+          ],
+          "package_prices_cent": {
+            "city": 1700,
+            "ps1": 1850,
+            "ps2": 2650,
+            "ps3": 3650,
+            "ps4": 5850
+          },
+          "rides": 6
+        },
+        "six_ride_child_age_6_to_14": {
+          "evidence": [
+            "kvg_prices_2025:html_lines_455_461",
+            "vrb_terms_2025_05_01:pdf_pages_11_12"
+          ],
+          "package_prices_cent": {
+            "city": 1000,
+            "ps1": 1100,
+            "ps2": 1550,
+            "ps3": 2200,
+            "ps4": 3500
+          },
+          "rides": 6
+        },
+        "social_ticket_salzgitter": {
+          "adult_price_cent": null,
+          "child_price_cent": null,
+          "coverage": "zone_60_salzgitter",
+          "person_bound": true,
+          "price_status": "unknown_for_scenario_date",
+          "rule_evidence": "vrb_terms_2025_05_01:pdf_pages_44_45",
+          "validity": "calendar month through end of service"
+        },
+        "social_ticket_wolfenbuettel": {
+          "adult_price_cent": null,
+          "child_price_cent": null,
+          "coverage": "selected zones among 70 through 79 as set by Landkreis Wolfenbüttel",
+          "person_bound": true,
+          "price_status": "unknown_for_scenario_date",
+          "rule_evidence": "vrb_terms_2025_05_01:pdf_pages_43_44",
+          "validity": "calendar month through end of service"
+        }
+      },
+      "rule_source_id": "vrb_terms_2025_05_01",
+      "snapshot_date": "2025-05-01",
+      "source_ids": [
+        "city_bs_pass_current",
+        "kvg_prices_2025",
+        "vrb_terms_2025_05_01"
+      ]
+    },
+    {
+      "price_source_applicability": "supported_for_date",
+      "price_source_id": "vrb_prices_2026",
+      "prices": [
+        {
+          "amount_minor": 190,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_price_cent",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 200,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "short_trip",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 350,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_price_cent",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 360,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 390,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 560,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 770,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1230,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "single_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 210,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_price_cent",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 210,
+          "currency": "EUR",
+          "price_field": "prices_cent.city",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 230,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps1",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 330,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps2",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 460,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps3",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 740,
+          "currency": "EUR",
+          "price_field": "prices_cent.ps4",
+          "product_id": "single_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1750,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_package_price_cent",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1800,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1950,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2800,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3850,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 6150,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "six_ride_adult",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1050,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_package_price_cent",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1050,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1150,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1650,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2300,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3700,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "six_ride_child_age_6_to_14",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 720,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 780,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1120,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1540,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2460,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.1.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1080,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1140,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1490,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2090,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3160,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.2.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1440,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1500,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1860,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2640,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3860,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.3.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1800,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1860,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2230,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3190,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 4560,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.4.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2160,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.city",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2220,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2600,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3740,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 5260,
+          "currency": "EUR",
+          "price_field": "party_size_prices_cent.5.ps4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 700,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_party_size_prices_cent.1",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1040,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_party_size_prices_cent.2",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1380,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_party_size_prices_cent.3",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1720,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_party_size_prices_cent.4",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2060,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_party_size_prices_cent.5",
+          "product_id": "day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 4370,
+          "currency": "EUR",
+          "price_field": "advance_braunschweig_package_price_cent",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 4500,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.city",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 4790,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps1",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7020,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps2",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 9590,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps3",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 15350,
+          "currency": "EUR",
+          "price_field": "package_prices_cent.ps4",
+          "product_id": "eight_day_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 8730,
+          "currency": "EUR",
+          "price_field": "plus_monthly.advance_braunschweig_price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 8940,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 9200,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 11100,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 15160,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 20650,
+          "currency": "EUR",
+          "price_field": "plus_monthly.prices_cent.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7190,
+          "currency": "EUR",
+          "price_field": "senior_monthly.advance_braunschweig_price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7630,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7930,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 9440,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 10860,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 12020,
+          "currency": "EUR",
+          "price_field": "senior_monthly.prices_cent.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7350,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7610,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 9170,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 12500,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 17040,
+          "currency": "EUR",
+          "price_field": "plus_subscription.prices_cent_per_month.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 5840,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.city",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 6080,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps1",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 7330,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps2",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 8580,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps3",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 9820,
+          "currency": "EUR",
+          "price_field": "nine_oclock_subscription.prices_cent_per_month.ps4",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3000,
+          "currency": "EUR",
+          "price_field": "student_monthly_network.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3000,
+          "currency": "EUR",
+          "price_field": "student_annual_network.price_cent_per_month",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2000,
+          "currency": "EUR",
+          "price_field": "student_monthly_braunschweig_zone_40.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2000,
+          "currency": "EUR",
+          "price_field": "student_annual_braunschweig_zone_40.price_cent_per_month",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2490,
+          "currency": "EUR",
+          "price_field": "u21_monthly_network.price_cent",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2060,
+          "currency": "EUR",
+          "price_field": "u21_subscription_network.price_cent_per_month",
+          "product_id": "regular_time_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 2500,
+          "currency": "EUR",
+          "price_field": "bs_mobil.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 3300,
+          "currency": "EUR",
+          "price_field": "bs_mobil_plus.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 1500,
+          "currency": "EUR",
+          "price_field": "bs_mobil_student.price_cent_per_month",
+          "product_id": "bs_mobil_local_passes",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "adult_price_cent",
+          "product_id": "social_ticket_wolfenbuettel",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "child_price_cent",
+          "product_id": "social_ticket_wolfenbuettel",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "adult_price_cent",
+          "product_id": "social_ticket_salzgitter",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "child_price_cent",
+          "product_id": "social_ticket_salzgitter",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 320,
+          "currency": "EUR",
+          "price_field": "price_cent",
+          "product_id": "extension_ticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 6300,
+          "currency": "EUR",
+          "price_field": "price_cent_per_month",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 5985,
+          "currency": "EUR",
+          "price_field": "job_price_cent_per_month_before_employer_subsidy",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": null,
+          "currency": "EUR",
+          "price_field": "semester_ticket_exact_price_cent",
+          "product_id": "deutschlandticket",
+          "snapshot_date": "2026-06-20"
+        },
+        {
+          "amount_minor": 100,
+          "currency": "EUR",
+          "price_field": "price_cent_per_ride",
+          "product_id": "ast_door_to_door_supplement",
+          "snapshot_date": "2026-06-20"
+        }
+      ],
+      "products": {
+        "ast_door_to_door_supplement": {
+          "evidence": [
+            "vrb_prices_2026:pdf_page_1",
+            "vrb_terms_2026_06_20:pdf_pages_40_41"
+          ],
+          "price_cent_per_ride": 100
+        },
+        "bs_mobil_local_passes": {
+          "applicability_confidence": "qualified_for_2026_date",
+          "applicability_note": "The official city page retrieved in September 2026 still lists the prices and states they apply from 2025-02-01, but no snapshot dated exactly 2026-06-20 was obtained.",
+          "bs_mobil": {
+            "price_cent_per_month": 2500,
+            "weekday_start_time": "08:30:00"
+          },
+          "bs_mobil_plus": {
+            "daily_time_restriction": null,
+            "price_cent_per_month": 3300
+          },
+          "bs_mobil_student": {
+            "daily_time_restriction": null,
+            "price_cent_per_month": 1500
+          },
+          "common_coverage": "zone_40_braunschweig",
+          "common_holder_requirement": "Braunschweig Pass; the student variant additionally requires qualifying full-time general-school attendance and excludes holders entitled to D-Ticket SSZK and vocational students.",
+          "companion_rights": false,
+          "person_bound": true,
+          "price_evidence": "city_bs_pass_current",
+          "rule_evidence": "vrb_terms_2026_06_20:pdf_pages_41_42"
+        },
+        "day_ticket": {
+          "advance_braunschweig_party_size_prices_cent": {
+            "1": 700,
+            "2": 1040,
+            "3": 1380,
+            "4": 1720,
+            "5": 2060
+          },
+          "evidence": "vrb_prices_2026:pdf_page_1",
+          "party_size_prices_cent": {
+            "1": {
+              "city": 720,
+              "ps1": 780,
+              "ps2": 1120,
+              "ps3": 1540,
+              "ps4": 2460
+            },
+            "2": {
+              "city": 1080,
+              "ps1": 1140,
+              "ps2": 1490,
+              "ps3": 2090,
+              "ps4": 3160
+            },
+            "3": {
+              "city": 1440,
+              "ps1": 1500,
+              "ps2": 1860,
+              "ps3": 2640,
+              "ps4": 3860
+            },
+            "4": {
+              "city": 1800,
+              "ps1": 1860,
+              "ps2": 2230,
+              "ps3": 3190,
+              "ps4": 4560
+            },
+            "5": {
+              "city": 2160,
+              "ps1": 2220,
+              "ps2": 2600,
+              "ps3": 3740,
+              "ps4": 5260
+            }
+          }
+        },
+        "deutschlandticket": {
+          "evidence": [
+            "vrb_prices_2026:pdf_page_1",
+            "vrb_terms_2026_06_20:pdf_pages_19_21",
+            "vrb_terms_2026_06_20:pdf_pages_57_61"
+          ],
+          "job_price_cent_per_month_before_employer_subsidy": 5985,
+          "price_cent_per_month": 6300,
+          "semester_ticket_exact_price_cent": null,
+          "semester_ticket_price_status": "not_listed_in_2026_price_pdf; rule is 60 percent of the reference Deutschlandticket price fixed eight months before the semester",
+          "vrb_companion_upgrade_cent_per_month": 1000
+        },
+        "eight_day_ticket": {
+          "advance_braunschweig_package_price_cent": 4370,
+          "day_sections": 8,
+          "evidence": "vrb_prices_2026:pdf_page_1",
+          "package_prices_cent": {
+            "city": 4500,
+            "ps1": 4790,
+            "ps2": 7020,
+            "ps3": 9590,
+            "ps4": 15350
+          }
+        },
+        "extension_ticket": {
+          "coverage": "entire_vrb_for_one_direction",
+          "evidence": [
+            "vrb_prices_2026:pdf_page_1",
+            "vrb_terms_2026_06_20:pdf_pages_27_28"
+          ],
+          "price_cent": 320,
+          "validity_minutes": 150
+        },
+        "regular_time_passes": {
+          "nine_oclock_subscription": {
+            "prices_cent_per_month": {
+              "city": 5840,
+              "ps1": 6080,
+              "ps2": 7330,
+              "ps3": 8580,
+              "ps4": 9820
+            }
+          },
+          "plus_monthly": {
+            "advance_braunschweig_price_cent": 8730,
+            "prices_cent": {
+              "city": 8940,
+              "ps1": 9200,
+              "ps2": 11100,
+              "ps3": 15160,
+              "ps4": 20650
+            }
+          },
+          "plus_subscription": {
+            "prices_cent_per_month": {
+              "city": 7350,
+              "ps1": 7610,
+              "ps2": 9170,
+              "ps3": 12500,
+              "ps4": 17040
+            }
+          },
+          "rule_evidence": "vrb_terms_2026_06_20:pdf_pages_14_18_and_31_36",
+          "senior_monthly": {
+            "advance_braunschweig_price_cent": 7190,
+            "minimum_age": 65,
+            "prices_cent": {
+              "city": 7630,
+              "ps1": 7930,
+              "ps2": 9440,
+              "ps3": 10860,
+              "ps4": 12020
+            }
+          },
+          "student_annual_braunschweig_zone_40": {
+            "available_through": "2026-12-31",
+            "not_extendable": true,
+            "price_cent_per_month": 2000
+          },
+          "student_annual_network": {
+            "price_cent_per_month": 3000
+          },
+          "student_monthly_braunschweig_zone_40": {
+            "available_through": "2026-12-31",
+            "not_extendable": true,
+            "price_cent": 2000
+          },
+          "student_monthly_network": {
+            "price_cent": 3000
+          },
+          "table_evidence": "vrb_prices_2026:pdf_page_1",
+          "u21_monthly_network": {
+            "price_cent": 2490
+          },
+          "u21_subscription_network": {
+            "price_cent_per_month": 2060
+          }
+        },
+        "short_trip": {
+          "advance_braunschweig_price_cent": 190,
+          "evidence": [
+            "vrb_prices_2026:pdf_page_1",
+            "vrb_terms_2026_06_20:pdf_page_11"
+          ],
+          "prices_cent": {
+            "city": 200,
+            "ps1": 200,
+            "ps2": 200,
+            "ps3": 200,
+            "ps4": 200
+          }
+        },
+        "single_adult": {
+          "advance_braunschweig_price_cent": 350,
+          "evidence": "vrb_prices_2026:pdf_page_1",
+          "prices_cent": {
+            "city": 360,
+            "ps1": 390,
+            "ps2": 560,
+            "ps3": 770,
+            "ps4": 1230
+          }
+        },
+        "single_child_age_6_to_14": {
+          "advance_braunschweig_price_cent": 210,
+          "evidence": [
+            "vrb_prices_2026:pdf_page_1",
+            "vrb_terms_2026_06_20:pdf_page_8"
+          ],
+          "prices_cent": {
+            "city": 210,
+            "ps1": 230,
+            "ps2": 330,
+            "ps3": 460,
+            "ps4": 740
+          }
+        },
+        "six_ride_adult": {
+          "advance_braunschweig_package_price_cent": 1750,
+          "evidence": "vrb_prices_2026:pdf_page_1",
+          "package_prices_cent": {
+            "city": 1800,
+            "ps1": 1950,
+            "ps2": 2800,
+            "ps3": 3850,
+            "ps4": 6150
+          },
+          "rides": 6
+        },
+        "six_ride_child_age_6_to_14": {
+          "advance_braunschweig_package_price_cent": 1050,
+          "evidence": "vrb_prices_2026:pdf_page_1",
+          "package_prices_cent": {
+            "city": 1050,
+            "ps1": 1150,
+            "ps2": 1650,
+            "ps3": 2300,
+            "ps4": 3700
+          },
+          "rides": 6
+        },
+        "social_ticket_salzgitter": {
+          "adult_price_cent": null,
+          "child_price_cent": null,
+          "coverage": "zone_60_salzgitter",
+          "person_bound": true,
+          "price_status": "unknown_for_scenario_date",
+          "rule_evidence": "vrb_terms_2026_06_20:pdf_page_43",
+          "validity": "calendar month through end of service"
+        },
+        "social_ticket_wolfenbuettel": {
+          "adult_price_cent": null,
+          "child_price_cent": null,
+          "coverage": "selected zones among 70 through 79 as set by Landkreis Wolfenbüttel",
+          "person_bound": true,
+          "price_status": "unknown_for_scenario_date",
+          "rule_evidence": "vrb_terms_2026_06_20:pdf_pages_42_43",
+          "validity": "calendar month through end of service"
+        }
+      },
+      "rule_source_id": "vrb_terms_2026_06_20",
+      "snapshot_date": "2026-06-20",
+      "source_ids": [
+        "city_bs_pass_current",
+        "vrb_prices_2026",
+        "vrb_terms_2026_06_20"
+      ]
+    }
+  ],
+  "source_evidence_sha256": "a8bb121c4b612114e281d9b68c36e5eb236f6b0bd52e5c3dc1bee722a976741d",
+  "sources": [
+    {
+      "kind": "official_web_page",
+      "publisher": "Stadt Braunschweig",
+      "qualification": "The current city page still lists the three BS-Mobil prices and says the rules are effective from 2025-02-01. There is no archived snapshot pinned specifically to 2026-06-20.",
+      "retrieved_on": "2026-09-15",
+      "source_id": "city_bs_pass_current",
+      "stated_effective_from": "2025-02-01",
+      "stated_effective_to": null,
+      "url": "https://www.braunschweig.de/leben/soziales/bs-pass/verguenstigungen.php"
+    },
+    {
+      "kind": "official_operator_html_snapshot",
+      "local_filename": "../kvg-prices-2025.html",
+      "publisher": "Kraftverkehrsgesellschaft mbH Braunschweig",
+      "qualification": "The page labels the table valid from 2025-01-01 and separately links 2026 prices. It does not state an end date; the 2025-05-01 terms refer to the currently valid price table.",
+      "retrieved_on": "2026-09-15",
+      "sha256": "1409E1A155BFF1EECE222098BD7CADEC7BE75C3917F5D345E159572169EC661A",
+      "source_id": "kvg_prices_2025",
+      "stated_effective_from": "2025-01-01",
+      "stated_effective_to": null,
+      "url": "https://intranet.kvg-bs.de/Tickets-und-Preise/Preisuebersicht/"
+    },
+    {
+      "kind": "official_pdf",
+      "local_filename": "../vrb-preisstufenmatrix.pdf",
+      "page_count": 1,
+      "printed_status_date": "2022-01-01",
+      "publisher": "Verkehrsverbund Region Braunschweig GmbH",
+      "retrieved_on": "2026-09-15",
+      "sha256": "175C58B14F2C9E94029644FA7A8A0A036AF8FA438C5CB6BC4145409B99EFA7E6",
+      "source_id": "vrb_matrix_2022",
+      "url": "https://www.vrb-online.de/de/service/downloads?file=files/media/service/downloads/tarifinformationen/vrb-preisstufenmatrix.pdf&cid=658"
+    },
+    {
+      "kind": "official_pdf",
+      "local_filename": "../vrb-prices-2026.pdf",
+      "page_count": 1,
+      "publisher": "Verkehrsverbund Region Braunschweig GmbH",
+      "retrieved_on": "2026-09-15",
+      "sha256": "33F13C7B5FC7FA0B86A4F65840DD9042342AF384CDD0A447FBCABA6B08306944",
+      "source_id": "vrb_prices_2026",
+      "stated_effective_from": "2026-01-01",
+      "stated_effective_to": null,
+      "url": "https://www.vrb-online.de/de/tickets/ticketuebersicht?file=files/media/tickets/ticketuebersicht/vrb-fahrpreisuebersicht.pdf&cid=2971"
+    },
+    {
+      "kind": "official_html_snapshot",
+      "local_filename": "../vrb-tarifzonen.html",
+      "publisher": "Verkehrsverbund Region Braunschweig GmbH",
+      "qualification": "Contains a locality-to-zone selector and zone geometry, but no GTFS stop IDs or authoritative MATSim stop mapping.",
+      "retrieved_on": "2026-09-15",
+      "sha256": "32B4A8871346B2229D6915A426981DD1013FDF396BD9AC8EB5DEBF0147761859",
+      "source_id": "vrb_tariff_zones_current",
+      "url": "https://www.vrb-online.de/de/tickets/tarifzonen-preisstufen"
+    },
+    {
+      "kind": "official_pdf_hosted_by_bsvg",
+      "local_filename": "../vrb-terms-2025-05-01.pdf",
+      "page_count": 62,
+      "printed_status_date": "2025-05-01",
+      "publisher": "Verkehrsverbund Region Braunschweig GmbH",
+      "retrieved_on": "2026-09-15",
+      "sha256": "FD54CCD0B518A4EC1AF4438257B5A0A625EE9F5FCEC37901326E8825C8E443BB",
+      "source_id": "vrb_terms_2025_05_01",
+      "url": "https://www.bsvg.net/fileadmin/user_upload/downloads/Tarifbest_Befoerderungbed/ab_01.05.2025/2025-05-01-VRB_Tarifbestimmungen.pdf"
+    },
+    {
+      "kind": "official_pdf",
+      "local_filename": "../vrb-terms-2026-06-20.pdf",
+      "page_count": 61,
+      "printed_status_date": "2026-06-20",
+      "publisher": "Verkehrsverbund Region Braunschweig GmbH",
+      "qualification": "The embedded Deutschlandticket appendix is dated 2026-05-01.",
+      "retrieved_on": "2026-09-15",
+      "sha256": "8B88BE38CF86DF3FF0DB4AB1B886AD071A5227200045E3B82AC04369F05A70D8",
+      "source_id": "vrb_terms_2026_06_20",
+      "url": "https://www.vrb-online.de/de/tickets/tarifbestimmungen-befoerderungsbedingungen?file=files/media/service/downloads/tarifinformationen/vrb-tarifbestimmungen.pdf&cid=1043"
+    }
+  ],
+  "status": "partial_evidence_only",
+  "supplemental_evidence_sha256": "e74e903ad33ec6f08fbe580f3b4ceb6152b729f5d6e5f7a8262db9d659ebb6c4",
+  "supplemental_price_facts": [
+    {
+      "applicability": "supported_for_scenario_date",
+      "evidence_locator": "Captured official HTML lines 13 and 24; line 13 states model project through and including 2025, line 24 states adult/child prices.",
+      "prices_cent": {
+        "adult_age_15_plus": 2500,
+        "child_age_6_to_14": 1500
+      },
+      "product_id": "social_ticket_salzgitter",
+      "qualification": "Current official page retrieved on 2026-09-23, not an archived 2025 capture. Its explicit project end supports the 2025 snapshot; no price is carried into 2026.",
+      "snapshot_date": "2025-05-01",
+      "source_id": "salzgitter_social_ticket_city_page"
+    }
+  ],
+  "supplemental_sources": [
+    {
+      "kind": "official_web_page_capture",
+      "publisher": "Stadt Salzgitter",
+      "qualification": "The page says the project was introduced 2019-01-01 and is funded through 2025 inclusive. The page remains live after expiry; values are used only for the 2025-05-01 snapshot.",
+      "retrieved_on": "2026-09-23",
+      "sha256": "b64f1dfca9fc446a5a0c20aac6c2b1c66845a4897025d0f3d4ac401d89567225",
+      "source_id": "salzgitter_social_ticket_city_page",
+      "stated_valid_from": "2019-01-01",
+      "stated_valid_until_inclusive": "2025-12-31",
+      "url": "https://www.salzgitter.de/soziales/soziale-dienstleistungen/sozialticket.php?loc=de"
+    }
+  ]
+}

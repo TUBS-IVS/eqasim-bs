@@ -101,6 +101,24 @@ def archive_simulation_output(run_path, output_path):
     return hardlink_count, copy_count, file_count
 
 
+def copy_vrb_fare_inputs(prepare_path, output_path, output_prefix):
+    """Export the VRB fare inputs (ADR-0133) listed in the preparation report, under their prefixed names.
+
+    The vrbFare module in <prefix>config.xml refers to the fare model and the line scopes relative to the
+    config, so they travel with the scenario under the same names. A listed file that is missing fails.
+    """
+    from braunschweig.data.vrb.fare_config_xml import fare_inputs_report_name
+
+    report_path = os.path.join(str(prepare_path), fare_inputs_report_name(output_prefix))
+    with open(report_path, encoding="utf-8") as stream:
+        names = json.load(stream)["fare_input_files"]
+    for name in names:
+        source = os.path.join(str(prepare_path), name)
+        if not os.path.isfile(source):
+            raise FileNotFoundError("VRB fare input %s listed in %s is missing" % (source, report_path))
+        shutil.copy(source, os.path.join(str(output_path), name))
+
+
 def configure(context):
     if context.config("run_matsim", True):
         # allow disabling performing one run of the simulation
@@ -118,6 +136,9 @@ def configure(context):
     # copy as fallback. Default ON so every run leaves a durable, findable
     # artefact; a cache-dir wipe no longer destroys the only copy (issue #156).
     context.config("archive_matsim_output", True)
+    # VRB zone fare model (ADR-0133): the prepared config references its two input files, so they
+    # travel with the scenario when the flag is on.
+    context.config("vrb_zone_fares_enabled", False)
     need_osm = context.config("export_detailed_network", False)
     if need_osm:
         context.stage("matsim.scenario.supply.osm")
@@ -147,6 +168,10 @@ def execute(context):
             "%s/%s" % (context.path("matsim.simulation.prepare"), name),
             "%s/%s" % (context.config("output_path"), name)
         )
+
+    if context.config("vrb_zone_fares_enabled"):
+        copy_vrb_fare_inputs(context.path("matsim.simulation.prepare"), context.config("output_path"),
+                             context.config("output_prefix"))
 
     if context.config("export_detailed_network"):
         shutil.copy(

@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 101 stages, 259 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 101 stages, 261 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -148,7 +148,8 @@ flowchart LR
 | `braunschweig.data.verbindungen.margins` | validation | x | -- | -- |
 | `braunschweig.data.verbindungen.work_od` | work | x | x | x |
 | `braunschweig.data.verbindungen.zones` | spatial | x | x | x |
-| `braunschweig.data.vrb.zones` | matsim | x | x | x |
+| `braunschweig.data.vrb.zone_polygons` | matsim | x | -- | -- |
+| `braunschweig.data.vrb.zones` | matsim | -- | x | x |
 | `braunschweig.data.zensus_grid.population` | home | -- | -- | x |
 | `braunschweig.freight.extraction` | freight | x | -- | -- |
 | `braunschweig.freight.trips` | freight | x | -- | -- |
