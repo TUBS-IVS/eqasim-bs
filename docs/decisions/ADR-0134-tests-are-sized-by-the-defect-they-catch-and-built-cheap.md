@@ -46,6 +46,12 @@
    next to it in the test.
 4. Tests that cannot fail are deleted; tests that never reach the path they name are
    rewritten against the real code.
+5. The suite is kept parallel-safe under `pytest-xdist`, but parallel runs stay optional
+   development feedback and the required gate stays serial. A parallel trial with eight
+   workers on Windows (3:19 instead of 6:53 min) failed ten tests with `MemoryError`: the
+   upstream MATSim writers allocate a 2 GiB write buffer per file, which Windows commits up
+   front. The tests cap that buffer at 16 MiB through a module-local `io` stand-in
+   (`tests/conftest.py`), leaving the writers themselves unchanged.
 
 ## Rejected alternatives
 
@@ -57,6 +63,18 @@
 - **Shrink the statistical acceptance samples below what their bands need** (motorhome owner
   age, per-district BEV share against KBA FZ 27.15): kept at the size their tolerance
   requires; reduced only where the margin was measured.
+- **Add `pytest-xdist` to the locked environments now:** the Linux lock is a captured
+  production-server snapshot and changes only through a new snapshot of the server
+  (`docs/codebase/notes/reproducible-environment.md`), and re-locking Windows can move other
+  pins. Adopting it as the gate is left to the maintainer: install it on the server, capture
+  a new snapshot, re-lock Windows, then switch the runner and CI to `-n`.
+- **Reduce the writers' 2 GiB buffer in production:** the writers are synpp stage modules,
+  so any edit changes their stage hash and invalidates the cached population and everything
+  downstream of it; a test-side cap has the same effect on the tests at no such cost.
+- **Cache inside `cars_probabilities` or pass a sampler into `build_incommuter_fleet`:**
+  production already uses the vectorised `cars_probabilities_table` once per run and builds
+  the in-commuter fleet once per run, so only tests would gain, while the stage hashes would
+  change.
 
 ## Consequences
 

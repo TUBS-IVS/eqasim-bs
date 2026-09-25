@@ -70,6 +70,16 @@ python scripts/run_tests.py -k passenger --durations=20
 python scripts/run_tests.py -q --durations=30 --junitxml=test-results.xml
 ```
 
+Parallel runs are optional development feedback. With `pytest-xdist` installed,
+`python scripts/run_tests.py -n 8 -q` runs the same selection in eight worker
+processes (3:19 instead of 6:53 min on the Windows development machine,
+2026-09-25). `pytest-xdist` is not part of the locked environments: the Linux
+lock is a captured server snapshot and changes only with a new one (see
+[reproducible-environment](notes/reproducible-environment.md)), so the required
+gate stays the serial command. Keep tests parallel-safe: write only below
+`tmp_path`, depend on no test order, and remember that session fixtures run once
+per worker.
+
 Test counts depend on the commit, parametrization and selection; collect them
 instead of maintaining a number in this overview:
 
