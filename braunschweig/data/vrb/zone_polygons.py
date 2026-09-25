@@ -26,7 +26,7 @@ import pandas as pd
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from braunschweig.data.vrb import line_scopes
+from braunschweig.data.vrb import fare_model_export, line_scopes
 
 log = logging.getLogger(__name__)
 
@@ -46,14 +46,31 @@ DEFAULT_MAXIMUM_STATION_SPREAD_M = 300.0
 DEFAULT_MINIMUM_OVERLAP_M2 = 1.0
 #: stop_times.txt of the cleaned DELFI feed is about 110 MB; it is read in chunks and filtered.
 STOP_TIMES_CHUNK_ROWS = 1_000_000
-#: The rail/bus classification is line_scopes.mode_class; hashed into validate() because this stage reads it.
-_HELPER_MODULES = (line_scopes,)
+#: The rail/bus classification is line_scopes.mode_class and the expected zone ids come from
+#: fare_model_export.load_price_stage_matrix; both are hashed into validate() because this stage runs them.
+_HELPER_MODULES = (line_scopes, fare_model_export)
 OUTPUT_GPKG = "vrb_tariff_zones.gpkg"
 OUTPUT_REPORT = "zone_polygons_report.json"
 
 
-def load_zone_polygons(path, *, expected_feature_count=DEFAULT_FEATURE_COUNT, zone_field=ZONE_FIELD):
-    """Read the layer, check CRS/count/ids, repair invalid rings; return (zones, report)."""
+def _zone_order(zone_id: str):
+    return (0, int(zone_id)) if zone_id.isdigit() else (1, zone_id)
+
+
+def expected_polygon_zone_ids(point_zone_ids) -> set[str]:
+    """The zones the polygon layer must carry: every zone of the fare model's price-stage matrix
+    (the committed docs/data table) except the point zones, which the layer does not contain."""
+    matrix_zones, _ = fare_model_export.load_price_stage_matrix()
+    return set(matrix_zones) - {str(zone_id) for zone_id in point_zone_ids}
+
+
+def load_zone_polygons(path, *, expected_feature_count=DEFAULT_FEATURE_COUNT, zone_field=ZONE_FIELD,
+                       expected_zone_ids=None):
+    """Read the layer, check CRS/count/ids, repair invalid rings; return (zones, report).
+
+    With ``expected_zone_ids`` the layer must carry exactly these ids: the count and duplicate checks alone
+    would pass a layer in which one zone is missing and another id took its place.
+    """
     zones = gpd.read_file(path)
     if zones.crs is None or zones.crs.to_epsg() != 25832:
         raise ValueError(f"{path}: zone polygons must be EPSG:25832, found {zones.crs}")
@@ -65,6 +82,13 @@ def load_zone_polygons(path, *, expected_feature_count=DEFAULT_FEATURE_COUNT, zo
     duplicates = sorted(ids[ids.duplicated()].unique())
     if duplicates:
         raise ValueError(f"{path}: duplicate zone id(s) {duplicates}")
+    if expected_zone_ids is not None:
+        expected, found = {str(zone_id) for zone_id in expected_zone_ids}, set(ids)
+        missing = sorted(expected - found, key=_zone_order)
+        unexpected = sorted(found - expected, key=_zone_order)
+        if missing or unexpected:
+            raise ValueError(f"{path}: zone ids differ from the fare model's polygon zones: missing {missing}, "
+                             f"unexpected {unexpected}")
     invalid_mask = ~zones.geometry.is_valid
     repaired = zones.geometry.copy()
     repaired[invalid_mask] = zones.geometry[invalid_mask].apply(make_valid)
@@ -181,20 +205,24 @@ def _polygons_path(context) -> Path:
 
 
 def validate(context):
-    """Cache token: the polygon file bytes (a new download must invalidate the stage) and the helper source."""
+    """Cache token: the polygon file bytes (a new download must invalidate the stage), the price-stage matrix
+    the expected zone ids come from, and the helper source."""
     path = _polygons_path(context)
     if not path.is_file():
         raise RuntimeError(f"VRB zone polygons missing at {path}; download them with the curl command in "
                            "docs/registry/data/vrb_tariff_zone_polygons.yml")
     digest = hashlib.sha256(path.read_bytes())
+    _, matrix_path, _ = fare_model_export.committed_input_paths()
+    digest.update(Path(matrix_path).read_bytes())
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
     return digest.hexdigest()
 
 
 def execute(context):
-    zones, report = load_zone_polygons(_polygons_path(context),
-                                       expected_feature_count=context.config("vrb_zone_polygon_feature_count"))
+    zones, report = load_zone_polygons(
+        _polygons_path(context), expected_feature_count=context.config("vrb_zone_polygon_feature_count"),
+        expected_zone_ids=expected_polygon_zone_ids(context.config("vrb_zone_point_stations")))
     zones, trimmed = resolve_overlaps(zones, minimum_overlap_m2=float(context.config("vrb_zone_minimum_overlap_m2")))
     gtfs_dir = Path(context.path("data.gtfs.cleaned")) / "output"
     stops_path = gtfs_dir / "stops.txt"

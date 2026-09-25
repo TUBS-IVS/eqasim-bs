@@ -2,7 +2,9 @@ stage: braunschweig.data.vrb.zone_polygons
 title: Official VRB tariff-zone polygons
 layer: matsim
 description: Loads the Regionalverband Grossraum Braunschweig polygon layer (46 zones, EPSG:25832),
-  repairs invalid rings, trims overlap slivers to the lower zone id, adds zones 55/56 as point zones
+  requires its zone ids to be exactly the price-stage matrix zones minus the point zones (a missing
+  or substituted id fails the stage), repairs invalid rings, trims overlap slivers to the lower zone
+  id, adds zones 55/56 as point zones
   around the rail station complexes found in the cleaned GTFS (rail-served stops carrying the station
   name plus the stops of their parent station, 50 m buffers), writes vrb_tariff_zones.gpkg plus a
   report naming the matched stops. Wired when vrb_zone_fares_enabled is true, the canonical

@@ -46,6 +46,15 @@ def test_load_rejects_wrong_feature_count_and_duplicate_ids(tmp_path):
         zp.load_zone_polygons(tmp_path / "dup.geojson", expected_feature_count=2)
 
 
+def test_load_rejects_a_layer_whose_zone_ids_differ_from_the_expected_set(tmp_path):
+    path = _three_zones(tmp_path)  # zones 20, 40, 70
+    zones, _ = zp.load_zone_polygons(path, expected_feature_count=3, expected_zone_ids={"20", "40", "70"})
+    assert sorted(zones["zone_id"]) == ["20", "40", "70"]
+    # Same count, no duplicate: zone 71 is missing and zone 70 replaced it.
+    with pytest.raises(ValueError, match=r"missing \['71'\], unexpected \['70'\]"):
+        zp.load_zone_polygons(path, expected_feature_count=3, expected_zone_ids={"20", "40", "71"})
+
+
 def test_overlap_sliver_is_trimmed_to_lower_zone_id(tmp_path):
     zones, _ = zp.load_zone_polygons(_three_zones(tmp_path), expected_feature_count=3)
     resolved, trimmed = zp.resolve_overlaps(zones, minimum_overlap_m2=1.0)
@@ -147,7 +156,13 @@ class _Context:
         return str(self._cleaned if name == "data.gtfs.cleaned" else self._path)
 
 
-def test_stage_execute_writes_gpkg_report_and_returns_48_style_frame(tmp_path):
+def _matrix_zones(monkeypatch, zones):
+    """Stand-in for the committed price-stage matrix: only its zone list matters to this stage."""
+    monkeypatch.setattr(zp.fare_model_export, "load_price_stage_matrix", lambda path=None: (list(zones), {}))
+
+
+def test_stage_execute_writes_gpkg_report_and_returns_48_style_frame(tmp_path, monkeypatch):
+    _matrix_zones(monkeypatch, ["20", "40", "55", "56", "70"])
     _three_zones(tmp_path)
     cleaned = tmp_path / "cleaned"
     (cleaned / "output").mkdir(parents=True)
@@ -168,3 +183,28 @@ def test_stage_execute_writes_gpkg_report_and_returns_48_style_frame(tmp_path):
     assert report["point_zones"]["55"] == {"rail_stop_ids": ["273565"], "station_stop_ids": ["184038", "273565"],
                                            "spread_m": report["point_zones"]["55"]["spread_m"]}
     assert report["point_zones"]["55"]["spread_m"] < 50.0
+
+
+def test_stage_execute_requires_the_matrix_zones_minus_the_point_zones(tmp_path, monkeypatch):
+    # The fare model knows zone 71, the layer carries 70 instead: the stage must fail before writing anything.
+    _matrix_zones(monkeypatch, ["20", "40", "55", "56", "71"])
+    _three_zones(tmp_path)
+    cleaned = tmp_path / "cleaned"
+    (cleaned / "output").mkdir(parents=True)
+    context = _Context(tmp_path, cleaned, tmp_path)
+    with pytest.raises(ValueError, match=r"missing \['71'\], unexpected \['70'\]"):
+        zp.execute(context)
+    assert not (Path(context.path()) / "vrb_tariff_zones.gpkg").exists()
+
+
+def test_validate_token_changes_when_the_price_stage_matrix_changes(tmp_path, monkeypatch):
+    _three_zones(tmp_path)
+    matrix = tmp_path / "matrix.csv"
+    header = "origin_zone,destination_zone,status,price_stage"
+    matrix.write_text("\n".join([header, "40,40,defined,1", ""]), encoding="utf-8")
+    prices, _, rail = zp.fare_model_export.committed_input_paths()
+    monkeypatch.setattr(zp.fare_model_export, "committed_input_paths", lambda: (prices, matrix, rail))
+    context = _Context(tmp_path, tmp_path, tmp_path)
+    before = zp.validate(context)
+    matrix.write_text("\n".join([header, "40,71,defined,1", ""]), encoding="utf-8")
+    assert zp.validate(context) != before
