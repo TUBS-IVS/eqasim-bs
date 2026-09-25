@@ -143,6 +143,8 @@ def test_landuse_flag_off_returns_empty_no_raise(tmp_path):
     from braunschweig.data.inspire import landuse
     gdf = landuse.execute(_landuse_ctx(tmp_path, flag=False))
     assert len(gdf) == 0
+    # The empty OFF frame keeps its CRS so a downstream concat cannot break.
+    assert gdf.crs is not None and gdf.crs.to_epsg() == 3035
     assert landuse.validate(_landuse_ctx(tmp_path, flag=False)) == 0
 
 

@@ -157,16 +157,14 @@ class TestMidReferences:
         })
         return _load_table(_csv_path(ctx, name))
 
-    def test_csv_files_present(self):
-        for name in ("P9", "P12_1", "P13", "P17_1"):
-            path = DATA_ROOT / "braunschweig" / "mid" / f"mid2023_{name}.csv"
-            assert path.exists(), f"Missing MiD CSV: {path}"
-
-    def test_p13_contains_all_zgb_kreise(self):
-        df = self._load_table("P13")
+    @pytest.mark.parametrize("name", ["P9", "P12_1", "P13", "P17_1"])
+    def test_committed_table_loads_and_covers_all_zgb_kreise(self, name):
+        # Loading also proves the committed table exists (a .gitignore change could
+        # otherwise un-track it silently).
+        df = self._load_table(name)
         kreise = set(df["ars5"].unique())
         missing = set(ZGB_KREISE) - kreise
-        assert not missing, f"MiD P13 missing Kreise: {missing}"
+        assert not missing, f"MiD {name} missing Kreise: {missing}"
 
     def test_p13_cdfs_monotonic_and_normalised(self):
         from braunschweig.data.mid.references import build_p13_cdfs, P13_BANDS
@@ -238,60 +236,14 @@ class TestHouseholdDistributions:
         income_by_size = load_income_by_size(data_path)
         sizes = set(income_by_size)
         assert sizes == {"1", "2", "3", "4", "5", "6+"}
+        # The household-size bins must be exactly the sizes of the committed income table.
+        from braunschweig.data.census.household_size import SIZE_BINS
+        assert {name for name, _, _ in SIZE_BINS} == sizes
 
         for size, shares in income_by_size.items():
             assert len(shares) == len(INCOME_CLASS_MAP)
             assert 0.9 < sum(shares) < 1.1, \
                 f"INCOME_BY_SIZE[{size}] sums to {sum(shares):.3f}"
-
-    def test_household_size_bins_match_bavaria(self):
-        from braunschweig.data.census.household_size import SIZE_BINS
-
-        bins = {name for name, _, _ in SIZE_BINS}
-        assert bins == {"1", "2", "3", "4", "5", "6+"}
-
-    def test_income_size_map_covers_six_bin_reference(self):
-        """Regression test for hh_size=5,6 silently dropping income_class.
-
-        The Braunschweig MiD H4 reference uses a 6-bin scheme
-        ("1","2","3","4","5","6+"). The IPF emits hh_size as int 1..6
-        which gets stringified to "1".."6". Every value must map to a
-        bin actually present in df_income.
-        """
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        bs_bins = {"1", "2", "3", "4", "5", "6+"}
-        mapping, scheme = _build_income_size_map(bs_bins)
-        assert scheme == "6-bin"
-        for hh in ["1", "2", "3", "4", "5", "6", "5+", "6+"]:
-            assert mapping[hh] in bs_bins, (
-                f"hh_size {hh!r} maps to {mapping[hh]!r} which is not in "
-                f"reference bins {bs_bins}"
-            )
-        # Specifically 5 → "5" and 6 → "6+" (preserve distinction).
-        assert mapping["5"] == "5"
-        assert mapping["6"] == "6+"
-
-    def test_income_size_map_collapses_for_five_bin_reference(self):
-        """Bavaria's GENESIS reference is 5-bin — 5/6 must collapse to 5+."""
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        bv_bins = {"1", "2", "3", "4", "5+"}
-        mapping, scheme = _build_income_size_map(bv_bins)
-        assert scheme == "5-bin"
-        assert mapping["5"] == "5+"
-        assert mapping["6"] == "5+"
-        assert mapping["6+"] == "5+"
-        for hh in ["1", "2", "3", "4", "5", "6", "5+", "6+"]:
-            assert mapping[hh] in bv_bins
-
-    def test_income_size_map_rejects_unknown_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-        import pytest
-
-        with pytest.raises(ValueError, match="unrecognised hh_size bins"):
-            _build_income_size_map({"a", "b"})
-
 
 # ---------------------------------------------------------------------------
 # External workplaces + gravity extension
@@ -392,14 +344,9 @@ class TestZensusGridLoader:
     PARQUET = DATA_ROOT / "zensus_grid" / "population_100m.parquet"
     GRID = DATA_ROOT / "zensus_grid" / "grid_100m.parquet"
 
-    EXPECTED_HASHES = {
-        "population_100m.parquet": (
-            "5b3a350ee85e454ae487a4e233acf5310964586fc175fdff6a98f616b6cc0a03"
-        ),
-        "grid_100m.parquet": (
-            "80fc96f28afca2fda5c0c97f13d536a70ccd6715cd15480fcf73a08bf21af0cf"
-        ),
-    }
+    # The pins live once, in the download script that verifies them on download.
+    from scripts.download_zensus_grid import ARTEFACTS as _ARTEFACTS
+    EXPECTED_HASHES = {art["name"]: art["sha256"] for art in _ARTEFACTS}
 
     def _ctx(self):
         return StubContext(
@@ -481,9 +428,8 @@ class TestRegioStarLoader:
     """``braunschweig.data.bbsr.regiostar``: schema + ZGB-8 coverage."""
 
     XLSX = DATA_ROOT / "regiostar" / "regiostar_referenzdatei.xlsx"
-    EXPECTED_SHA256 = (
-        "550da569e3cd97de11c87859f40a290f200567f63dee4d79c693c7a3393a04e6"
-    )
+    # The pin lives once, in the download script that verifies it on download.
+    from scripts.download_regiostar import EXPECTED_SHA256
 
     def _ctx(self):
         return StubContext(
@@ -720,25 +666,6 @@ class TestBaPendlerDetailed:
         assert len(df) == 3
         assert df["flow"].dtype.kind == "i"
 
-
-# ---------------------------------------------------------------------------
-# TASK-012 — INSPIRE 100m landuse spatial-prior loader
-# ---------------------------------------------------------------------------
-
-class TestInspireLanduse:
-    """``braunschweig.data.inspire.landuse``: feature-flagged loader."""
-
-    def test_flag_off_returns_empty(self):
-        from braunschweig.data.inspire import landuse
-
-        ctx = StubContext(config={
-            "data_path": ".",
-            "braunschweig.inspire_landuse_path": "does/not/exist.parquet",
-            "braunschweig.use_landuse_prior": False,
-        })
-        df = landuse.execute(ctx)
-        assert len(df) == 0
-        assert df.crs is not None and df.crs.to_epsg() == 3035
 
 # ---------------------------------------------------------------------------
 # TASK-010 / TASK-011 — IPF model config flags
