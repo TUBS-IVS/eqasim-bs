@@ -36,6 +36,7 @@ sys.path.insert(0, str(REPO))
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
+from tests.fleet_frames import make_fleet_cars as _make_cars  # noqa: E402
 
 DATA_PATH = str(DATA)
 
@@ -58,37 +59,19 @@ def _load_golden(name: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-# --------------------------------------------------------------------------- #
-# Synthetic household-car frame: many cars per ZGB Kreis, status/raumtyp varied.
-# --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 4000, seed: int = 0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    statuses = list(ft.STATUS_LABELS)
-    rows = []
-    for kreis in ft.ZGB_KREISE_AGS5:
-        for _ in range(n_per_kreis):
-            rows.append({
-                "economic_status": rng.choice(statuses),
-                "kreis_ags5": kreis,
-                "gemeinde": np.nan,           # Kreis-level (no Gemeinde tilt)
-                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
-            })
-    return pd.DataFrame(rows)
-
-
 @pytest.fixture(scope="module")
-def sampler():
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+def sampler(committed_fleet_sampler):
+    return committed_fleet_sampler
 
 
-@pytest.fixture(scope="module")
-def sampled_full(sampler):
-    """The default consistency-v2 sample and its validation summary."""
-    df_cars = _make_cars()
-    return fs.sample_fleet(df_cars, DATA_PATH, random_seed=42, sampler=sampler)
+@pytest.fixture
+def sampled_full(default_fleet_sample):
+    """The default consistency-v2 sample and its validation summary (shared with
+    test_fleet_consistency_e2e through the session fixture in conftest.py)."""
+    return default_fleet_sample
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def sampled(sampled_full):
     """Backward-compatible two-frame view for existing fixture consumers."""
     df_spec, df_types, _ = sampled_full
@@ -245,41 +228,41 @@ def test_brand_model_populated_for_most_cars(sampled):
 # --------------------------------------------------------------------------- #
 # Fallback observability + determinism.
 # --------------------------------------------------------------------------- #
-def test_fallback_rate_logged(caplog):
+def test_fallback_rate_logged(caplog, sampler):
     df_cars = _make_cars(n_per_kreis=200)
     with caplog.at_level(logging.INFO):
-        fs.sample_fleet(df_cars, DATA_PATH, random_seed=7)
+        fs.sample_fleet(df_cars, DATA_PATH, random_seed=7, sampler=sampler)
     text = " ".join(r.message for r in caplog.records).lower()
     assert "primary" in text and "fallback" in text
 
 
-def test_unknown_kreis_falls_back_and_logs(caplog):
+def test_unknown_kreis_falls_back_and_logs(caplog, sampler):
     df_cars = pd.DataFrame([{
         "economic_status": "medium", "kreis_ags5": "09999",
         "gemeinde": np.nan, "raumtyp": 73,
     }] * 50)
     with caplog.at_level(logging.WARNING):
-        df_spec, _, _summary = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
+        df_spec, _, _summary = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1, sampler=sampler)
     assert len(df_spec) == 50  # never drops a car
     text = " ".join(r.message for r in caplog.records).lower()
     assert "fallback" in text
 
 
-def test_deterministic_given_seed():
+def test_deterministic_given_seed(sampler):
     df_cars = _make_cars(n_per_kreis=300)
-    a, _, _s1 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
-    b, _, _s2 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123)
+    a, _, _s1 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
+    b, _, _s2 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
     pd.testing.assert_frame_equal(a, b)
 
 
-def test_different_seed_changes_draw():
+def test_different_seed_changes_draw(sampler):
     df_cars = _make_cars(n_per_kreis=300)
-    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
-    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=2)
+    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1, sampler=sampler)
+    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=2, sampler=sampler)
     assert not a["powertrain"].equals(b["powertrain"])
 
 
-def test_gemeinde_tilt_raises_local_bev_share():
+def test_gemeinde_tilt_raises_local_bev_share(sampler):
     """A Gemeinde with a high private BEV share should get more BEVs than the
     same cars assigned at Kreis level (the FZ 27.17 tilt is observable)."""
     df_gem = ft.load_gemeinde_private_bev(DATA_PATH)
@@ -299,8 +282,8 @@ def test_gemeinde_tilt_raises_local_bev_share():
     tilted = base.copy()
     tilted["gemeinde"] = gemeinde
 
-    spec_base, _, _ = fs.sample_fleet(base, DATA_PATH, random_seed=5)
-    spec_tilt, _, _ = fs.sample_fleet(tilted, DATA_PATH, random_seed=5)
+    spec_base, _, _ = fs.sample_fleet(base, DATA_PATH, random_seed=5, sampler=sampler)
+    spec_tilt, _, _ = fs.sample_fleet(tilted, DATA_PATH, random_seed=5, sampler=sampler)
     bev_base = float((spec_base["powertrain"] == "bev").mean())
     bev_tilt = float((spec_tilt["powertrain"] == "bev").mean())
     assert bev_tilt > bev_base, (bev_base, bev_tilt, top["ratio"])
@@ -370,13 +353,10 @@ def test_gemeinde_tilt_bridges_umlaut_and_suffix_mismatch(sampler):
 # --------------------------------------------------------------------------- #
 # Task 5 — sonstige redistribution (consistency_v2).
 # --------------------------------------------------------------------------- #
-@pytest.fixture(scope="module")
-def sampled_v2_off(sampler):
-    """sample_fleet with consistency_v2=False (legacy path)."""
-    df_cars = _make_cars()
-    df_spec, df_types = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42, sampler=sampler, consistency_v2=False)
-    return df_spec, df_types
+@pytest.fixture
+def sampled_v2_off(default_fleet_sample_legacy):
+    """sample_fleet with consistency_v2=False (legacy path) on the same frame and seed."""
+    return default_fleet_sample_legacy
 
 
 def test_default_consistency_v2_redistributes_sonstige(sampled):
@@ -443,11 +423,11 @@ def test_euro_age_consistent_after_recalibration(sampled):
     assert (bev["hbefa_emission"] == "PC BEV").all()
 
 
-def test_recalibration_deterministic_given_seed():
+def test_recalibration_deterministic_given_seed(sampler):
     """Same seed -> identical raked output (the Task 7 rake uses no fresh rng)."""
     df_cars = _make_cars(n_per_kreis=400)
-    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
-    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True)
+    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True, sampler=sampler)
+    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True, sampler=sampler)
     pd.testing.assert_frame_equal(a, b)
 
 
@@ -716,7 +696,7 @@ def _make_cars_multi_status(n_per_status: int = 3000, seed: int = 99) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def test_income_age_gradient_in_output():
+def test_income_age_gradient_in_output(sampler):
     """With age_income_coupling=True, very_low status has clearly older cars
     than very_high status (income->age signal is observable in the output).
 
@@ -727,7 +707,7 @@ def test_income_age_gradient_in_output():
     df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
         consistency_v2=True,
-        age_income_coupling=True,
+        age_income_coupling=True, sampler=sampler
     )
     mean_age_by_status = df_spec.groupby("economic_status")["age"].mean()
     age_very_low = mean_age_by_status["very_low"]
@@ -742,7 +722,7 @@ def test_income_age_gradient_in_output():
 
 
 @_needs_hsn_tsn_lookup
-def test_age_income_off_unchanged():
+def test_age_income_off_unchanged(sampler):
     """age_income_coupling=False must produce age columns byte-identical to the
     committed golden fixture (``tests/fixtures/feature_b_age_off_golden.parquet``).
 
@@ -809,7 +789,7 @@ def test_age_income_off_unchanged():
 
     df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True, age_income_coupling=False)
+        consistency_v2=True, age_income_coupling=False, sampler=sampler)
 
     # Byte-identical assertion against the frozen baseline.
     pd.testing.assert_frame_equal(
@@ -822,7 +802,7 @@ def test_age_income_off_unchanged():
     # Also verify the coupling=True run produces DIFFERENT ages (tilt is active).
     df_spec_on, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True, age_income_coupling=True)
+        consistency_v2=True, age_income_coupling=True, sampler=sampler)
     # With n=2500 cars the age distribution must differ somewhere.
     assert not df_spec["age"].equals(df_spec_on["age"]), (
         "coupling=True and coupling=False produced identical age columns; "
@@ -834,7 +814,7 @@ def test_age_income_off_unchanged():
 # Task 5 (final) — age x status validation panel + MiD-match e2e.
 # --------------------------------------------------------------------------- #
 
-def test_synthetic_age_status_matches_mid():
+def test_synthetic_age_status_matches_mid(sampler):
     """Validation panel: Feature B income-age gradient checks (three assertions).
 
     Uses a representative fleet built with age_income_coupling=True (Feature B
@@ -863,7 +843,7 @@ def test_synthetic_age_status_matches_mid():
     df_cars = _make_cars_multi_status(n_per_status=3000)
     df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True, age_income_coupling=True,
+        consistency_v2=True, age_income_coupling=True, sampler=sampler
     )
 
     panel = FAS.build_panel(df_spec, DATA_PATH)
@@ -1017,7 +997,7 @@ def test_effective_expected_with_tilt_sums_to_one():
         )
 
 
-def test_sample_fleet_validation_not_flagged(caplog):
+def test_sample_fleet_validation_not_flagged(caplog, sampler):
     """sample_fleet (consistency_v2=True) emits a validation summary with
     any_flagged=False on a correctly implemented model (healthy fleet).
 
@@ -1040,7 +1020,7 @@ def test_sample_fleet_validation_not_flagged(caplog):
     with caplog.at_level(logging.INFO):
         result = fs.sample_fleet(
             df_cars, DATA_PATH, random_seed=7,
-            consistency_v2=True, age_income_coupling=True,
+            consistency_v2=True, age_income_coupling=True, sampler=sampler
         )
 
     # Task 3 returns a 3-tuple (df_spec, df_types, validation_summary).

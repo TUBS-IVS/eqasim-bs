@@ -5,26 +5,15 @@ from braunschweig import theme
 from braunschweig.progress import format_rate
 
 
-def test_phase_of_popsim_loggers():
-    assert theme.phase_of("popsim.seed") == "acquire"
-    assert theme.phase_of("popsim.mid") == "transform"
-    assert theme.phase_of("popsim.income_spatial_tilt") == "controls"
-    assert theme.phase_of("synpp") == "orchestrate"
-
-
-def test_phase_of_unmapped_is_misc():
+def test_a_stage_is_coloured_by_its_phase_and_never_like_a_severity_level():
+    """The phase map itself is cosmetic and not re-listed here; what matters is that a
+    mapped logger gets its phase's colour, an unmapped one falls back to "misc", and no
+    phase colour can be mistaken for a log severity."""
+    phase = theme.phase_of("popsim.seed")
+    assert theme.stage_color("popsim.seed") == theme.PHASE_COLOR[phase]
     assert theme.phase_of("census.filtered") == "misc"
-
-
-def test_stage_color_returns_phase_ansi():
-    assert theme.stage_color("popsim.seed") == theme.PHASE_COLOR["acquire"]
-    assert theme.stage_color("popsim.seed").startswith("\x1b[38;5;")
-
-
-def test_phase_colors_distinct_from_severity():
     severity = set(theme.LEVEL_COLOR.values())
-    for hue in theme.PHASE_COLOR.values():
-        assert hue not in severity
+    assert not severity & set(theme.PHASE_COLOR.values())
 
 
 def test_want_color_no_color(monkeypatch):

@@ -38,6 +38,12 @@ from braunschweig.synthesis.vehicles.cars import household as hh  # noqa: E402
 DATA_PATH = str(DATA)
 
 
+@pytest.fixture(scope="module")
+def sampler(committed_fleet_sampler):
+    """The session's FleetSampler over the committed tables (tests/conftest.py)."""
+    return committed_fleet_sampler
+
+
 # --------------------------------------------------------------------------- #
 # Synthetic enriched persons + home commune frame.
 # --------------------------------------------------------------------------- #
@@ -175,12 +181,12 @@ def test_extra_cars_round_robin_to_licensed_adults():
     assert set(hh3["owner_id"]) == {301}
 
 
-def test_sample_fleet_runs_on_built_frame():
+def test_sample_fleet_runs_on_built_frame(sampler):
     from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
 
     df_cars = hh.build_household_car_frame(
         _make_persons(), _make_homes(), _make_regiostar())
-    df_spec, df_types, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1)
+    df_spec, df_types, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1, sampler=sampler)
     assert len(df_spec) == len(df_cars)
     for col in ("segment", "powertrain", "euro_class", "type_id",
                 "hbefa_cat", "hbefa_tech", "hbefa_size", "hbefa_emission"):
@@ -263,7 +269,7 @@ def test_fleet_age_income_coupling_registered_with_default_true():
     )
 
 
-def test_fleet_age_income_coupling_off_produces_flat_age():
+def test_fleet_age_income_coupling_off_produces_flat_age(sampler):
     """With age_income_coupling=False, car age must NOT be status-stratified.
 
     When the flag is False the tilt block is skipped; the age distribution
@@ -292,7 +298,7 @@ def test_fleet_age_income_coupling_off_produces_flat_age():
 
     df_spec, _, _ = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True, age_income_coupling=False)
+        consistency_v2=True, age_income_coupling=False, sampler=sampler)
 
     mean_age = df_spec.groupby("economic_status")["age"].mean()
     age_very_low = mean_age["very_low"]

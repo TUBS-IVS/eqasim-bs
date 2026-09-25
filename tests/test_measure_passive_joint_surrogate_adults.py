@@ -81,20 +81,18 @@ def _no_links():
 
 # --------------------------------------------------------------------------- unlinked set
 
-def test_unlinked_returns_every_paired_leg_when_nothing_is_linked():
-    unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
-    assert list(unlinked.columns) == UNLINKED_COLUMNS
-    assert sorted(unlinked["child_person_id"].tolist()) == [3, 5, 6, 9]
-
-
 def test_unlinked_excludes_the_legs_already_linked():
     links = pd.DataFrame({"child_person_id": [9], "child_activity_index": [1]})
     unlinked = unlinked_paired_legs(_all_trips(), _persons(), links)
     assert sorted(unlinked["child_person_id"].tolist()) == [3, 5, 6]
 
 
-def test_unlinked_carries_the_childs_own_activity_and_the_donor_adults_purpose():
+def test_unlinked_legs_when_nothing_is_linked():
+    """Every paired leg comes back, carrying the child's own activity and the donor
+    adult's purpose."""
     unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
+    assert list(unlinked.columns) == UNLINKED_COLUMNS
+    assert sorted(unlinked["child_person_id"].tolist()) == [3, 5, 6, 9]
     row = unlinked.set_index("child_person_id").loc[3]
     assert row["child_activity_index"] == 1
     assert row["child_purpose"] == "shop"
@@ -121,45 +119,46 @@ def _candidates():
     return build_surrogate_candidates(unlinked, _persons(), _all_trips())
 
 
-def test_candidate_rows_have_the_documented_shape():
-    candidates, _stats = _candidates()
-    assert list(candidates.columns) == CANDIDATE_COLUMNS
+def test_candidate_search_on_the_four_household_fixture():
+    """The whole candidate contract of one search: schema, secondary-only adults, gap in
+    minutes, no self-candidate, purpose and age eligibility, escort flag, donor purpose
+    match, and statistics that account for every unlinked leg exactly once."""
+    candidates, stats = _candidates()
+    assert list(candidates.columns) == CANDIDATE_COLUMNS, "documented schema"
 
-
-def test_every_secondary_activity_of_every_household_adult_is_a_candidate():
-    candidates, _stats = _candidates()
     child_three = candidates[candidates["child_person_id"] == 3]
     # Person 1's shop trip and person 2's leisure trip; person 1's escort and home trips
     # are NOT secondary and must not appear.
-    assert sorted(child_three["adult_person_id"].tolist()) == [1, 2]
+    assert sorted(child_three["adult_person_id"].tolist()) == [1, 2], "secondary-only adults"
     assert sorted(child_three["adult_purpose"].tolist()) == ["leisure", "shop"]
+    by_adult = child_three.set_index("adult_person_id")
+    assert by_adult.loc[1, "gap_minutes"] == pytest.approx(5.0), "absolute gap in minutes"
+    assert by_adult.loc[2, "gap_minutes"] == pytest.approx(60.0), "absolute gap in minutes"
+    assert bool(by_adult.loc[1, "adult_escorts"]) is True, "escort flag"
+    assert bool(by_adult.loc[2, "adult_escorts"]) is False, "escort flag"
+    # The donor adult was shopping (W_ZWECK 4): person 1 shops, person 2 does leisure.
+    assert bool(by_adult.loc[1, "purpose_matches_donor"]) is True, "donor purpose match"
+    assert bool(by_adult.loc[2, "purpose_matches_donor"]) is False, "donor purpose match"
 
-
-def test_the_gap_is_the_absolute_departure_difference_in_minutes():
-    candidates, _stats = _candidates()
-    by_adult = candidates[candidates["child_person_id"] == 3].set_index("adult_person_id")
-    assert by_adult.loc[1, "gap_minutes"] == pytest.approx(5.0)
-    assert by_adult.loc[2, "gap_minutes"] == pytest.approx(60.0)
-
-
-def test_the_child_is_never_its_own_candidate():
-    candidates, _stats = _candidates()
-    assert not (candidates["adult_person_id"] == candidates["child_person_id"]).any()
-
-
-def test_a_child_whose_own_activity_is_not_secondary_is_ineligible():
-    candidates, stats = _candidates()
+    assert not (candidates["adult_person_id"] == candidates["child_person_id"]).any(), \
+        "a child is never its own candidate"
     # Child 5 goes to its own education activity; anchoring it on an adult is meaningless,
     # so it yields no candidate row and is counted as ineligible.
-    assert candidates[candidates["child_person_id"] == 5].empty
-    assert stats["n_ineligible_child_purpose"] == 1
-
-
-def test_a_minor_is_not_an_eligible_surrogate_adult():
-    candidates, stats = _candidates()
+    assert candidates[candidates["child_person_id"] == 5].empty, "child purpose eligibility"
     # Household 30 holds only the 16-year-old person 7, below the 18-year threshold.
-    assert candidates[candidates["child_person_id"] == 6].empty
+    assert candidates[candidates["child_person_id"] == 6].empty, "adult age eligibility"
+
+    # Children 3 and 9 shop, child 5 goes to education, child 6 has no adult at home.
+    assert stats["n_unlinked"] == 4
+    assert stats["n_ineligible_child_purpose"] == 1
     assert stats["n_eligible_without_candidate"] == 1
+    assert stats["n_eligible_child_purpose"] == 3
+    assert stats["n_eligible_with_candidate"] == 2
+    assert stats["n_candidate_rows"] == 3
+    assert (stats["n_ineligible_child_purpose"]
+            + stats["n_eligible_with_candidate"]
+            + stats["n_eligible_without_candidate"]) == stats["n_unlinked"], \
+        "every unlinked leg is counted exactly once"
 
 
 def test_adult_min_age_is_configurable():
@@ -169,32 +168,25 @@ def test_adult_min_age_is_configurable():
     assert candidates[candidates["child_person_id"] == 6]["adult_person_id"].tolist() == [7]
 
 
-def test_the_escort_flag_marks_adults_who_escort_somebody_that_day():
-    candidates, _stats = _candidates()
-    by_adult = candidates[candidates["child_person_id"] == 3].set_index("adult_person_id")
-    assert bool(by_adult.loc[1, "adult_escorts"]) is True
-    assert bool(by_adult.loc[2, "adult_escorts"]) is False
-
-
-def test_the_donor_purpose_match_compares_against_the_original_paired_adult():
-    candidates, _stats = _candidates()
-    by_adult = candidates[candidates["child_person_id"] == 3].set_index("adult_person_id")
-    # The donor adult was shopping (W_ZWECK 4): person 1 shops, person 2 does leisure.
-    assert bool(by_adult.loc[1, "purpose_matches_donor"]) is True
-    assert bool(by_adult.loc[2, "purpose_matches_donor"]) is False
-
-
 # ------------------------------------------------------------------- headroom summaries
 
-def test_headroom_counts_legs_not_candidate_rows():
+def test_headroom_at_15_min_counts_legs_and_the_same_purpose_restriction_keeps_both():
     candidates, _stats = _candidates()
     summary = summarise_headroom(candidates, unlinked_paired_legs(
-        _all_trips(), _persons(), _no_links()), gap_minutes=(15.0,))
-    wide = summary.set_index("restriction").loc["any_secondary_adult"]
+        _all_trips(), _persons(), _no_links()), gap_minutes=(15.0,)).set_index("restriction")
+    wide = summary.loc["any_secondary_adult"]
     # Child 3 has TWO surrogates but only one is within 15 minutes; child 9 has one at
     # 1 minute. Two legs, not three candidate rows.
     assert wide["n_legs_reached"] == 2
     assert wide["n_unlinked"] == 4
+    # Child 3's only candidate within 15 min is person 1's shop trip (5 min away, same
+    # "shop" purpose as the child); person 2's leisure candidate (60 min away, a different
+    # purpose) is already excluded by the gap, so it cannot distinguish the restrictions
+    # here. Child 9's only candidate is person 8's shop trip (1 min away, also "shop").
+    # Both legs survive the same-purpose restriction.
+    same_purpose = summary.loc["same_purpose_as_child"]
+    assert same_purpose["n_legs_reached"] == 2
+    assert same_purpose["n_unlinked"] == 4
 
 
 def test_headroom_restrictions_narrow_monotonically():
@@ -208,22 +200,6 @@ def test_headroom_restrictions_narrow_monotonically():
     # fixture, not structural -- a differently shaped fixture could reverse it.
     assert reached["same_purpose_as_child"] >= reached["adult_also_escorts"]
     assert reached["adult_also_escorts"] >= reached["and_purpose_matches_donor"]
-
-
-def test_headroom_same_purpose_as_child_restriction_reaches_both_legs_at_15_min():
-    candidates, _stats = _candidates()
-    summary = summarise_headroom(candidates, unlinked_paired_legs(
-        _all_trips(), _persons(), _no_links()), gap_minutes=(15.0,))
-    same_purpose = summary.set_index("restriction").loc["same_purpose_as_child"]
-    # Child 3's only candidate within 15 min is person 1's shop trip (5 min away, same
-    # "shop" purpose as the child); person 2's leisure candidate (60 min away, a different
-    # purpose) is already excluded by the gap at BOTH 15 and 30 min in this fixture, so it
-    # cannot distinguish the two restrictions here. Child 9's only candidate is person 8's
-    # shop trip (1 min away, also "shop"). Both legs survive the same-purpose restriction,
-    # so it reaches the same 2 legs as "any_secondary_adult" at this gap -- verified by
-    # running, not assumed.
-    assert same_purpose["n_legs_reached"] == 2
-    assert same_purpose["n_unlinked"] == 4
 
 
 def test_the_issue_cut_is_wider_because_it_ignores_the_childs_own_purpose():
@@ -267,30 +243,6 @@ def test_inverse_anchor_headroom_measures_the_201_direction_frequency():
     # are carried on every row so both denominators sit next to the count.
     assert (summary["n_eligible"] == 3).all()
     assert (summary["n_unlinked"] == 4).all()
-
-
-def test_inverse_anchor_headroom_excludes_an_ineligible_childs_own_activity():
-    unlinked = unlinked_paired_legs(_all_trips(), _persons(), _no_links())
-    summary = summarise_inverse_anchor_headroom(unlinked, _persons(), _all_trips(),
-                                                gap_minutes=(60.0,))
-    # Child 5's own activity is education, so it is excluded from the eligible set before
-    # the escort join ever runs -- household 20's only adult (person 4) does not escort
-    # anyway, so this also cannot inflate the count even if the exclusion were missing, but
-    # the eligibility filter is the thing under test here, not that incidental fact.
-    assert int(summary.loc[0, "n_legs_reached"]) == 1
-    assert int(summary.loc[0, "n_eligible"]) == 3
-
-
-def test_the_statistics_account_for_every_unlinked_leg_exactly_once():
-    _candidates_frame, stats = _candidates()
-    assert stats["n_unlinked"] == 4
-    assert (stats["n_ineligible_child_purpose"]
-            + stats["n_eligible_with_candidate"]
-            + stats["n_eligible_without_candidate"]) == stats["n_unlinked"]
-    # Children 3 and 9 shop, child 5 goes to education, child 6 has no adult at home.
-    assert stats["n_eligible_child_purpose"] == 3
-    assert stats["n_eligible_with_candidate"] == 2
-    assert stats["n_candidate_rows"] == 3
 
 
 from scripts.measure_passive_joint_surrogate_adults import sibling_age_histogram  # noqa: E402

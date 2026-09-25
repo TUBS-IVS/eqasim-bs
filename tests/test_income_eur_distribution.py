@@ -251,9 +251,11 @@ def test_income_eur_never_below_floor():
     implausible near-zero household_income_eur (observed 1 EUR, tripping the
     post-enrichment sanity floor [100, 20000]). The lowest-bracket draw is now
     floored at INCOME_MIN_EUR and the final value is clamped after the INKAR tilt.
-    The breach is RNG-rare, so check across several seeds."""
+    Without the floor a breach is near-certain in ONE seed (the open-bottom
+    bracket draws uniformly in [0, 500), so ~20% of its draws fall below 100
+    EUR); a few seeds cover the different INKAR tilts."""
     from braunschweig.synthesis.population.enriched import INCOME_MIN_EUR
-    for seed in range(15):
+    for seed in range(3):
         df = _make_population(n_households=3000, seed=seed)
         df = _run_distribution(df, seed=seed)
         got_min = float(df["household_income_eur"].min())

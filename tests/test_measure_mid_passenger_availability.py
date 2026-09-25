@@ -53,6 +53,15 @@ def test_evaluate_preserves_each_valid_14plus_own_response_mapping():
         "member_completion_borrowed_imputation": 0,
     }
     assert set(table["age_group"]) == {"under14", "14to17", "18plus"}
+    # The aggregate table retains each age/car cell and the P_VAUTO=3 conflict count.
+    assert report["counts"]["children_under14"] == 1
+    assert report["counts"]["missing_or_proxy_rows"] == 0
+    assert report["counts"]["p_vauto_none_with_passenger_diary_evidence"] == 1
+    rows = table.set_index(["age_group", "household_cars"])
+    assert rows.loc[("under14", "positive"), "new_eligible_rate"] == 1.0
+    assert rows.loc[("14to17", "positive"), "old_eligible_rate"] == 0.0
+    assert rows.loc[("18plus", "0"), "n_persons"] == 2
+    assert rows.loc[("18plus", "0"), "newly_excluded"] == 1
 
 
 def test_evaluate_rejects_a_changed_valid_own_response():
@@ -126,23 +135,17 @@ def test_evaluate_counts_borrowed_member_values_separately_from_own_answers():
     assert report["source_category_counts"]["member_completion_borrowed_imputation"] == 1
 
 
-def test_evaluate_reports_age_car_rates_and_conflicting_diary_measure():
-    """The aggregate table must retain each age/car cell and P_VAUTO=3 conflict count."""
-    report, table = measurement.evaluate_passenger_availability(_persons(), input_households=2)
-
-    assert report["counts"]["children_under14"] == 1
-    assert report["counts"]["missing_or_proxy_rows"] == 0
-    assert report["counts"]["p_vauto_none_with_passenger_diary_evidence"] == 1
-    rows = table.set_index(["age_group", "household_cars"])
-    assert rows.loc[("under14", "positive"), "new_eligible_rate"] == 1.0
-    assert rows.loc[("14to17", "positive"), "old_eligible_rate"] == 0.0
-    assert rows.loc[("18plus", "0"), "n_persons"] == 2
-    assert rows.loc[("18plus", "0"), "newly_excluded"] == 1
-
-
 def test_passenger_rng_uses_production_offset_and_reports_effective_seed():
-    """Changing the passenger stream to the shared attribute RNG must fail this protocol check."""
-    rng, provenance = measurement.passenger_rng_with_provenance(1234, 74517)
+    """The passenger stream is seeded with seed + the PRODUCTION offset and reports both.
+
+    It passes the production constant, so a changed offset fails against the hand-computed
+    75751. What it cannot see is the wiring inside ``_run_raw_measurement``, which needs
+    the raw MiD; the production stream itself is pinned in
+    tests/test_mid_passenger_availability.py.
+    """
+    from braunschweig.popsim.passenger_availability import PASSENGER_AVAILABILITY_RNG_OFFSET
+
+    rng, provenance = measurement.passenger_rng_with_provenance(1234, PASSENGER_AVAILABILITY_RNG_OFFSET)
 
     assert rng.randint(0, 1_000_000) == np.random.RandomState(75751).randint(0, 1_000_000)
     assert provenance == {

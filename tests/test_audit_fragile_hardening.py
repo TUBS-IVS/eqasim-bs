@@ -47,14 +47,18 @@ class StubContext:
 # Item 1a -- keep_valid_kreis5 helper
 # ---------------------------------------------------------------------------
 
-def test_keep_valid_kreis5_drops_float_and_aggregate_keys():
+def test_keep_valid_kreis5_drops_float_and_aggregate_keys_and_logs_the_rate(caplog):
     df = pd.DataFrame({
         "ars5": ["03101", "3101.0", "DG", "03153"],
         "value": [1, 2, 3, 4],
     })
-    kept = keep_valid_kreis5(df, "ars5", source="test")
+    with caplog.at_level(logging.WARNING):
+        kept = keep_valid_kreis5(df, "ars5", source="test")
     assert list(kept["ars5"]) == ["03101", "03153"]
     assert list(kept["value"]) == [1, 4]
+    # The mandated drop rate carries the counts (kept 2 of 4, 2 dropped), not just a label.
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("kept 2/4" in m and "dropped 2" in m for m in warnings), warnings
 
 
 def test_keep_valid_kreis5_multi_column_requires_both_valid():
@@ -72,13 +76,6 @@ def test_keep_valid_kreis5_raises_when_all_dropped():
     df = pd.DataFrame({"ars5": ["3101.0", "DG"], "value": [1, 2]})
     with pytest.raises(RuntimeError, match="dropped ALL"):
         keep_valid_kreis5(df, "ars5", source="test")
-
-
-def test_keep_valid_kreis5_logs_drop_rate(caplog):
-    df = pd.DataFrame({"ars5": ["03101", "DG"], "value": [1, 2]})
-    with caplog.at_level(logging.WARNING):
-        keep_valid_kreis5(df, "ars5", source="test")
-    assert any("Kreis-key guard" in r.message for r in caplog.records)
 
 
 def test_keep_valid_kreis5_empty_frame_does_not_raise():
@@ -143,6 +140,8 @@ def test_landuse_flag_off_returns_empty_no_raise(tmp_path):
     from braunschweig.data.inspire import landuse
     gdf = landuse.execute(_landuse_ctx(tmp_path, flag=False))
     assert len(gdf) == 0
+    # The empty OFF frame keeps its CRS so a downstream concat cannot break.
+    assert gdf.crs is not None and gdf.crs.to_epsg() == 3035
     assert landuse.validate(_landuse_ctx(tmp_path, flag=False)) == 0
 
 

@@ -3,14 +3,6 @@ import logging
 from braunschweig import logging_setup as ls
 
 
-def test_want_color_respects_no_color(monkeypatch):
-    monkeypatch.setenv("NO_COLOR", "1")
-    assert ls._want_color("auto") is False
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    assert ls._want_color(True) is True
-    assert ls._want_color(False) is False
-
-
 def test_color_formatter_plain_and_coloured():
     rec = logging.LogRecord("braunschweig.popsim.stage", logging.INFO, __file__, 1,
                             "hello", None, None)

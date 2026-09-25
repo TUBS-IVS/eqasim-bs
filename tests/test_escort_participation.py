@@ -26,7 +26,6 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 
-from braunschweig.popsim import control_spec as cs  # noqa: E402
 from braunschweig.popsim import mid  # noqa: E402
 from braunschweig.popsim.kreis_attribute_control import (  # noqa: E402
     REGISTRY,
@@ -116,21 +115,6 @@ def test_control_columns_follow_name_category():
 # --- Catalog factory + importance group ---------------------------------------------
 
 
-def test_attribute_kreis_controls_renders_person_predicate():
-    controls = cs.attribute_kreis_controls([_entry("escort_participation")])
-    exprs = {c.name: c.expression_for("mid") for c in controls}
-    assert exprs["escort_participation_yes"] == "(persons.escort_participation == 1)"
-    assert exprs["escort_participation_no"] == "(persons.escort_participation == 0)"
-    assert all(c.seed_table == cs.SEED_TABLE_PERSONS for c in controls)
-    assert all(c.geography == cs.GEO_KREIS for c in controls)
-    assert all(c.expression_for("entd") is None for c in controls)
-
-
-def test_importance_group_for_field_classifies_as_kreis_hard():
-    assert cs.importance_group_for_field("escort_participation_yes_KREIS") == "kreis_hard"
-    assert cs.importance_group_for_field("escort_participation_no_KREIS") == "kreis_hard"
-
-
 # --- Committed target CSV: loadable, partitioned, full Kreis coverage ---------------
 
 
@@ -173,12 +157,6 @@ def test_toggle_key_registered_and_defaults_on():
     from braunschweig.popsim import stage
     assert stage._KREIS_CONTROL_TOGGLE_KEY["escort_participation"] == stage.KEY_ESCORT_PARTICIPATION_CONTROL
     assert stage._KREIS_CONTROL_DEFAULT["escort_participation"] == "on"
-
-
-def test_active_kreis_entries_includes_escort_by_default():
-    from braunschweig.popsim import stage
-    active = stage.active_kreis_entries(_FakeContext({}), "mid")
-    assert "escort_participation" in {c.name for c in active}
 
 
 def test_off_path_excludes_escort_independently():

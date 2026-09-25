@@ -1,7 +1,11 @@
 """Shared pytest fixtures for eqasim-bs test suite."""
 from __future__ import annotations
 
+import copy
+import io
 import logging
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -40,6 +44,88 @@ def popsim_stage_package_source_text() -> str:
         )
     )
     return "\n".join(path.read_text(encoding="utf-8") for path in module_paths)
+
+
+_COMMITTED_DATA_PATH = str(Path(__file__).resolve().parents[1] / "eqasim-data" / "data")
+
+
+@pytest.fixture(scope="session")
+def committed_fleet_sampler():
+    """One FleetSampler over the committed KBA tables for the whole session.
+
+    ``sample_fleet`` re-applies every per-call setting to the sampler it is given,
+    so a reused sampler draws exactly what a fresh one would; the OFF-path goldens
+    in test_fleet_sampling_de and test_fleet_consistency_e2e pin that.
+    """
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+
+    return fs.FleetSampler.from_data_path(_COMMITTED_DATA_PATH)
+
+
+@pytest.fixture(scope="session")
+def _default_fleet_sample_once(committed_fleet_sampler):
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+    from tests.fleet_frames import make_fleet_cars
+
+    return fs.sample_fleet(make_fleet_cars(), _COMMITTED_DATA_PATH, random_seed=42,
+                           sampler=committed_fleet_sampler)
+
+
+@pytest.fixture(scope="session")
+def _default_fleet_sample_legacy_once(committed_fleet_sampler):
+    from braunschweig.synthesis.vehicles import fleet_sampling_de as fs
+    from tests.fleet_frames import make_fleet_cars
+
+    return fs.sample_fleet(make_fleet_cars(), _COMMITTED_DATA_PATH, random_seed=42,
+                           sampler=committed_fleet_sampler, consistency_v2=False)
+
+
+@pytest.fixture
+def default_fleet_sample(_default_fleet_sample_once):
+    """``(df_spec, df_types, summary)`` of the default consistency-v2 draw of
+    ``make_fleet_cars()`` (32,000 cars, random_seed=42), sampled once per session;
+    each test gets its own copies."""
+    df_spec, df_types, summary = _default_fleet_sample_once
+    return df_spec.copy(), df_types.copy(), copy.deepcopy(summary)
+
+
+@pytest.fixture
+def default_fleet_sample_legacy(_default_fleet_sample_legacy_once):
+    """``(df_spec, df_types)`` of the same frame and seed on the legacy path
+    (``consistency_v2=False``), sampled once per session; copies per test."""
+    df_spec, df_types = _default_fleet_sample_legacy_once
+    return df_spec.copy(), df_types.copy()
+
+
+# The upstream MATSim writers wrap every output file in an io.BufferedWriter with a 2 GiB
+# buffer, a throughput choice for 100 % populations. Windows commits that memory up front,
+# so parallel test workers (pytest -n) writing at the same time run out of it (MemoryError).
+# Tests cap the buffer at 16 MiB through a module-local ``io`` stand-in: buffering decides
+# when bytes are flushed, never which bytes are written, and the production modules stay
+# untouched (their source is part of the synpp stage hashes). Nothing is imported here, so
+# the metadata-only documentation workflow (no pandas) still loads this conftest.
+_MATSIM_WRITER_MODULES = (
+    "matsim.scenario.facilities", "matsim.scenario.households",
+    "matsim.scenario.population", "matsim.scenario.vehicles",
+)
+_TEST_WRITE_BUFFER_BYTES = 16 * 1024 ** 2
+
+
+def _capped_buffered_writer(raw, buffer_size=io.DEFAULT_BUFFER_SIZE):
+    return io.BufferedWriter(raw, buffer_size=min(buffer_size, _TEST_WRITE_BUFFER_BYTES))
+
+
+_CAPPED_IO = types.SimpleNamespace(
+    **{name: getattr(io, name) for name in dir(io) if not name.startswith("__")})
+_CAPPED_IO.BufferedWriter = _capped_buffered_writer
+
+
+@pytest.fixture(autouse=True)
+def _cap_matsim_writer_buffers(monkeypatch):
+    for name in _MATSIM_WRITER_MODULES:
+        module = sys.modules.get(name)
+        if module is not None:
+            monkeypatch.setattr(module, "io", _CAPPED_IO)
 
 
 @pytest.fixture(autouse=True)

@@ -32,6 +32,7 @@ sys.path.insert(0, str(REPO))
 
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
+from tests.fleet_frames import make_fleet_cars as _make_cars  # noqa: E402
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 
 DATA_PATH = str(DATA)
@@ -253,24 +254,6 @@ class TestEuro6SubstageModelFallbackChain:
         assert before == after
 
 
-# --------------------------------------------------------------------------- #
-# Full-population synthetic household car frame (mirrors test_fleet_sampling_de.py)
-# --------------------------------------------------------------------------- #
-def _make_cars(n_per_kreis: int = 3000, seed: int = 0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    statuses = list(ft.STATUS_LABELS)
-    rows = []
-    for kreis in ft.ZGB_KREISE_AGS5:
-        for _ in range(n_per_kreis):
-            rows.append({
-                "economic_status": rng.choice(statuses),
-                "kreis_ags5": kreis,
-                "gemeinde": np.nan,
-                "raumtyp": int(rng.choice([71, 72, 73, 74, 75, 76, 77])),
-            })
-    return pd.DataFrame(rows)
-
-
 AGS_6D_HEAVY = _ZGB[0]
 AGS_6AB_HEAVY = _ZGB[1]
 
@@ -329,7 +312,9 @@ def contrast_data_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def contrast_sampled(contrast_data_path):
     sampler = fs.FleetSampler.from_data_path(contrast_data_path)
-    df_cars = _make_cars(n_per_kreis=3000, seed=7)
+    # 1000 per Kreis (~300 diesel each) clears the >50 diesel / >20 Euro-6 guards
+    # below by a wide margin; the validator bands scale with n_eff.
+    df_cars = _make_cars(n_per_kreis=1000, seed=7)
     df_spec, df_types, summary = fs.sample_fleet(
         df_cars, contrast_data_path, random_seed=123, sampler=sampler)
     return df_spec, df_types, summary

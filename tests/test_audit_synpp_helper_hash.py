@@ -11,6 +11,9 @@ rather than a hope in a document.
 from __future__ import annotations
 
 import ast
+from pathlib import Path
+
+import pytest
 
 from scripts import audit_synpp_helper_hash as audit
 
@@ -19,37 +22,23 @@ def _tuples(source: str, own_module: str):
     return audit.helper_tuples(ast.parse(source), own_module)
 
 
-def test_a_bare_relative_import_binds_the_local_name():
-    """``from . import batch_cache`` binds ``batch_cache`` -> the package submodule.
-
-    Resolver bug 1. Reading only ``alias.asname`` misses this form entirely, so every
-    own-package sibling listed in ``_HELPER_MODULES`` by its bare name resolves to
-    nothing and the stage's coverage looks empty.
-    """
-    _aliases, _deferred, alias_map = _tuples(
-        "from . import batch_cache\n_HELPER_MODULES = (batch_cache,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["batch_cache"] == "braunschweig.popsim.stage.batch_cache"
-
-
-def test_an_aliased_absolute_import_binds_the_alias():
-    """``from braunschweig.popsim import income as _income`` binds ``_income``."""
-    _aliases, _deferred, alias_map = _tuples(
-        "from braunschweig.popsim import income as _income\n_HELPER_MODULES = (_income,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["_income"] == "braunschweig.popsim.income"
-
-
-def test_an_unaliased_absolute_import_binds_the_imported_name():
-    """``from braunschweig.popsim import assembly`` binds ``assembly``.
-
-    The same shape as bug 1 without the relative level; both were missed by an
-    asname-only reading.
-    """
-    _aliases, _deferred, alias_map = _tuples(
-        "from braunschweig.popsim import assembly\n_HELPER_MODULES = (assembly,)\n",
-        "braunschweig.popsim.stage")
-    assert alias_map["assembly"] == "braunschweig.popsim.assembly"
+@pytest.mark.parametrize("import_line, bound_name, module", [
+    # Resolver bug 1: reading only ``alias.asname`` misses this form entirely, so every
+    # own-package sibling listed in ``_HELPER_MODULES`` by its bare name resolved to
+    # nothing and the stage's coverage looked empty.
+    pytest.param("from . import batch_cache", "batch_cache",
+                 "braunschweig.popsim.stage.batch_cache", id="bare-relative-import"),
+    pytest.param("from braunschweig.popsim import income as _income", "_income",
+                 "braunschweig.popsim.income", id="aliased-absolute-import"),
+    # The same shape as bug 1 without the relative level; both were missed by an
+    # asname-only reading.
+    pytest.param("from braunschweig.popsim import assembly", "assembly",
+                 "braunschweig.popsim.assembly", id="unaliased-absolute-import"),
+])
+def test_every_import_form_binds_the_name_the_helper_tuple_lists(import_line, bound_name, module):
+    source = f"{import_line}\n_HELPER_MODULES = ({bound_name},)\n"
+    _aliases, _deferred, alias_map = _tuples(source, "braunschweig.popsim.stage")
+    assert alias_map[bound_name] == module
 
 
 def test_an_annassign_declared_helper_tuple_is_read():
@@ -100,18 +89,21 @@ def test_a_function_body_import_is_classified_lazy():
     assert lazy == {"braunschweig.popsim.cells"}
 
 
-def test_the_real_repository_reports_popsim_stage_as_fully_covered():
+@pytest.fixture(scope="module")
+def real_repository_report():
+    """The audit report of the actual tree, built once: it walks every stage module
+    (about 14 s), and the tests below only read it."""
+    return audit.build_report(Path(__file__).resolve().parents[1])
+
+
+def test_the_real_repository_reports_popsim_stage_as_fully_covered(real_repository_report):
     """End-to-end sanity on the actual tree: the one stage the project has pinned as
     fully covered (tests/test_popsim_stage_validate_token.py) must come out covered.
 
     Without this, every unit above could pass while the assembled pass still misreports
     the repository -- which is exactly what happened on the first two runs.
     """
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    report = audit.build_report(repo)
-    entry = report["braunschweig.popsim.stage"]
+    entry = real_repository_report["braunschweig.popsim.stage"]
     assert entry["hashes_source"] is True
     assert entry["uncovered"] == []
     assert entry["required_helpers"], "an empty required set would pass vacuously"
@@ -163,17 +155,14 @@ EXPECTED_UNCOVERED: dict[str, tuple[str, ...]] = {
 }
 
 
-def test_every_source_hashing_stage_covers_its_required_helpers():
+def test_every_source_hashing_stage_covers_its_required_helpers(real_repository_report):
     """No stage with a source-hashing validate() may leave a first-party import unhashed.
 
     Discovered by the #327 re-audit: eight of the sixteen source-hashing stages did. This
     gate is what keeps the audit note's inventory from drifting back into debt -- a new
     unhashed import fails here instead of quietly joining a list in a dated document.
     """
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    report = audit.build_report(repo)
+    report = real_repository_report
     offenders = {name: tuple(entry["uncovered"])
                  for name, entry in sorted(report.items())
                  if entry["hashes_source"] and entry["uncovered"]}

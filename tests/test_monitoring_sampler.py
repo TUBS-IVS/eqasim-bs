@@ -192,16 +192,8 @@ def test_one_sample_carries_the_tree_the_system_state_and_the_stage(proc_root, t
     assert row["source"] == "proc"
     assert row["processes"][0]["tag"].endswith("synpp")
     assert row["timestamp"]
-
-
-def test_successive_samples_carry_an_increasing_index(proc_root):
-    resource_sampler = sampler.ResourceSampler(root_pid=100, proc_root=str(proc_root),
-                                               dmesg_reader=lambda: "")
-
-    first = resource_sampler.sample()
-    second = resource_sampler.sample()
-
-    assert (first["sample_index"], second["sample_index"]) == (0, 1)
+    # Successive samples are numbered.
+    assert (row["sample_index"], resource_sampler.sample()["sample_index"]) == (0, 1)
 
 
 def test_per_process_rows_can_be_switched_off_to_keep_a_long_series_small(proc_root):

@@ -9,6 +9,8 @@
 - **Why:** Zensus 2022 table 1000A-2081 reports PERSONS in private households by size class, not
   household counts — pinned by the committed test
   `tests/test_hh_size_margin.py::TestHouseholdTypeLoader.test_zgb_persons_match_zensus_reference`
+  (a cache-gated test removed on 2026-09-25: it had skipped on every checkout since the popsim
+  workflow replaced that IPF run; the person-basis fact it pinned stands)
   (ZGB total ~1.135M persons, not ~0.56M households), and `braunschweig/ipf/prepare.py` consumes it
   "in persons". The control's target loader is therefore a person share, while the realized side
   counted households — comparing household-shares against person-shares produced a spurious deviation

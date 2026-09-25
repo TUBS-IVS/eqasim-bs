@@ -16,6 +16,8 @@ from __future__ import annotations
 import importlib.util
 import os
 
+import pytest
+
 _SCRIPT = os.path.join(os.path.dirname(__file__), "..", "scripts",
                        "audit_test_data_dependencies.py")
 
@@ -27,58 +29,32 @@ def _load():
     return module
 
 
-def test_a_failing_test_that_probed_an_absent_input_is_a_false_red():
+_LOCAL_ONLY_INPUT = "eqasim-data/data/braunschweig/x.csv"
+
+
+@pytest.mark.parametrize("outcome, test_id, probes, expected_class", [
+    pytest.param("failed", "tests/test_x.py::test_a", [_LOCAL_ONLY_INPUT], "CLASS_FALSE_RED",
+                 id="failing-test-that-probed-an-absent-input-is-a-false-red"),
+    pytest.param("passed", "tests/test_x.py::test_b", [_LOCAL_ONLY_INPUT], "CLASS_CANDIDATE",
+                 id="passing-test-that-probed-an-absent-input-is-a-vacuous-green-candidate"),
+    pytest.param("skipped", "tests/test_x.py::test_c", [_LOCAL_ONLY_INPUT], "CLASS_DECLARED",
+                 id="skipped-test-has-declared-its-dependency"),
+    # The audit must not turn every passing test into a finding.
+    pytest.param("passed", "tests/test_x.py::test_d", [], None,
+                 id="test-that-probed-nothing-absent-is-not-classified"),
+    # Tests that assert "a missing input raises" point at a path that is absent BY DESIGN;
+    # counting those as findings would bury the real ones.
+    pytest.param("passed", "tests/test_x.py::test_missing_csv_raises",
+                 ["eqasim-data/data/_does_not_exist/table.csv"], "CLASS_BY_DESIGN",
+                 id="intentionally-absent-probe-path-is-a-negative-test"),
+])
+def test_classify_puts_each_outcome_into_exactly_one_class(outcome, test_id, probes, expected_class):
     audit = _load()
 
-    classified = audit.classify([
-        ("failed", "tests/test_x.py::test_a", ["eqasim-data/data/braunschweig/x.csv"]),
-    ])
+    classified = audit.classify([(outcome, test_id, probes)])
 
-    assert classified[audit.CLASS_FALSE_RED] == [
-        ("tests/test_x.py::test_a", ["eqasim-data/data/braunschweig/x.csv"])]
-
-
-def test_a_passing_test_that_probed_an_absent_input_is_a_vacuous_green_candidate():
-    audit = _load()
-
-    classified = audit.classify([
-        ("passed", "tests/test_x.py::test_b", ["eqasim-data/data/braunschweig/y.csv"]),
-    ])
-
-    assert [entry[0] for entry in classified[audit.CLASS_CANDIDATE]] == \
-        ["tests/test_x.py::test_b"]
-
-
-def test_a_skipped_test_has_declared_its_dependency():
-    audit = _load()
-
-    classified = audit.classify([
-        ("skipped", "tests/test_x.py::test_c", ["eqasim-data/data/braunschweig/z.csv"]),
-    ])
-
-    assert [entry[0] for entry in classified[audit.CLASS_DECLARED]] == \
-        ["tests/test_x.py::test_c"]
-
-
-def test_a_test_that_probed_nothing_absent_is_not_classified_at_all():
-    """The audit must not turn every passing test into a finding."""
-    audit = _load()
-
-    classified = audit.classify([("passed", "tests/test_x.py::test_d", [])])
-
-    assert all(not entries for entries in classified.values())
-
-
-def test_an_intentionally_absent_probe_path_is_recognised_as_a_negative_test():
-    """Tests that assert "a missing input raises" point at a path that is absent BY
-    DESIGN; counting those as findings would bury the real ones."""
-    audit = _load()
-
-    classified = audit.classify([
-        ("passed", "tests/test_x.py::test_missing_csv_raises",
-         ["eqasim-data/data/_does_not_exist/table.csv"]),
-    ])
-
-    assert classified[audit.CLASS_CANDIDATE] == []
-    assert [entry[0] for entry in classified[audit.CLASS_BY_DESIGN]] == \
-        ["tests/test_x.py::test_missing_csv_raises"]
+    expected = getattr(audit, expected_class) if expected_class else None
+    for name, entries in classified.items():
+        assert [entry[0] for entry in entries] == ([test_id] if name == expected else []), name
+    if expected_class == "CLASS_FALSE_RED":
+        assert classified[audit.CLASS_FALSE_RED] == [(test_id, probes)]

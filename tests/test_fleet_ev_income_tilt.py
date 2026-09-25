@@ -36,6 +36,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pandas.testing as pdt
+import copy
+
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
@@ -80,8 +82,8 @@ def _synthetic_antrieb_df(bev_very_high: float = 0.30, bev_very_low: float = 0.0
 # --------------------------------------------------------------------------- #
 # Fixtures
 # --------------------------------------------------------------------------- #
-@pytest.fixture()
-def sampler():
+@pytest.fixture(scope="module")
+def _sampler_built():
     """A real FleetSampler built from the committed local data.
 
     ``mid2023_antrieb_by_status.csv`` IS committed (built from the MiD 2023 B1
@@ -89,6 +91,13 @@ def sampler():
     model here -- this fixture exercises the PRIMARY path.
     """
     return fs.FleetSampler.from_data_path(DATA_PATH)
+
+
+@pytest.fixture()
+def sampler(_sampler_built):
+    """A per-test shallow copy: tests below replace ``ev_income_tilt`` on it, and
+    ``sample_fleet`` re-applies every per-call setting, so one build serves all."""
+    return copy.copy(_sampler_built)
 
 
 def _data_path_without_antrieb_csv(tmp_path: Path) -> str:
@@ -233,7 +242,9 @@ def test_ev_income_tilt_redistributes_within_kreis_and_preserves_aggregate(
         "and aggregate preservation"
     )
 
-    n_per_status = 6000
+    # 3000 per status: ~18 expected very_low BEVs (base ~3% x factor 0.2) and a
+    # pooled-share SE of ~0.2pp against the 2pp tolerance below.
+    n_per_status = 3000
     df_cars = _make_status_cars(kreis, ["very_high", "very_low"], n_per_status)
     df_spec, _df_types, _summary = fs.sample_fleet(
         df_cars, DATA_PATH, random_seed=7, sampler=sampler, ev_income_tilt=True,

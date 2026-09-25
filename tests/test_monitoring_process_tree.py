@@ -78,15 +78,18 @@ def test_threads_count_towards_the_thread_total_not_the_process_count(proc_root)
     assert sample.cpu_seconds == pytest.approx(2.0)
 
 
-def test_peak_rss_is_reported_even_when_current_rss_has_already_dropped(proc_root):
-    """A PopulationSim worker past its peak still knows its high-water mark."""
-    write_process(proc_root, pid=100, ppid=1, rss_kb=1_000_000, peak_rss_kb=29_900_000)
+def test_one_process_row_carries_rss_peak_command_line_and_io(proc_root):
+    """Every per-process field is read from its own /proc file: a PopulationSim worker past
+    its peak still knows its high-water mark, the tag names the command so a pid can be
+    attributed, and the io counters are read where the kernel exposes them."""
+    write_process(proc_root, pid=100, ppid=1, rss_kb=1_000_000, peak_rss_kb=29_900_000,
+                  cmdline="python -m populationsim.run", read_bytes=4096, write_bytes=8192)
 
-    sample = process_tree.sample_tree(100, proc_root=str(proc_root))
-    process = sample.processes[0]
+    process = process_tree.sample_tree(100, proc_root=str(proc_root)).processes[0]
 
-    assert process.rss_kb == 1_000_000
-    assert process.peak_rss_kb == 29_900_000
+    assert (process.rss_kb, process.peak_rss_kb) == (1_000_000, 29_900_000)
+    assert "populationsim" in process.tag
+    assert (process.read_bytes, process.write_bytes) == (4096, 8192)
 
 
 def test_an_unreadable_memory_line_yields_none_not_zero(proc_root):
@@ -111,23 +114,6 @@ def test_a_process_that_disappears_mid_sample_is_skipped_without_failing(proc_ro
 
     assert [process.pid for process in sample.processes] == [100]
     assert sample.cpu_seconds == pytest.approx(1.0)
-
-
-def test_the_process_tag_carries_the_command_line_so_a_pid_can_be_attributed(proc_root):
-    write_process(proc_root, pid=100, ppid=1, cmdline="python -m populationsim.run")
-
-    process = process_tree.sample_tree(100, proc_root=str(proc_root)).processes[0]
-
-    assert "populationsim" in process.tag
-
-
-def test_per_process_io_bytes_are_read_when_the_kernel_exposes_them(proc_root):
-    write_process(proc_root, pid=100, ppid=1, read_bytes=4096, write_bytes=8192)
-
-    process = process_tree.sample_tree(100, proc_root=str(proc_root)).processes[0]
-
-    assert process.read_bytes == 4096
-    assert process.write_bytes == 8192
 
 
 def test_an_absent_proc_root_reports_no_cpu_signal_instead_of_no_progress(tmp_path):

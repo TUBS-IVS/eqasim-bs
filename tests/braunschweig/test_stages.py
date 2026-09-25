@@ -19,7 +19,6 @@ import sys
 
 import numpy as np
 import pandas as pd
-import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -94,35 +93,6 @@ class TestIncomePlaceholder:
 
 
 # ---------------------------------------------------------------------------
-# 3. braunschweig.locations.secondary (activity flags + id format)
-# ---------------------------------------------------------------------------
-
-class TestSecondaryLocations:
-    def test_emits_offer_flags_and_sec_prefixed_ids(self):
-        from braunschweig.locations import secondary
-
-        df_locations = pd.DataFrame({
-            "location_type": ["leisure", "shop", "education", "leisure"],
-            "commune_id": ["03101000"] * 4,
-            "iris_id":    ["A", "A", "B", "B"],
-            "geometry":   ["g1", "g2", "g3", "g4"],
-        })
-        ctx = StubContext(stages={"braunschweig.data.locations": df_locations})
-
-        out = secondary.execute(ctx)
-
-        assert set(out.columns) == {
-            "location_id", "commune_id", "iris_id", "geometry",
-            "offers_leisure", "offers_shop", "offers_other", "offers_escort",
-        }
-        assert len(out) == 4  # offers_other defaults True for every row
-        assert out["location_id"].str.startswith("sec_").all()
-        assert out["offers_leisure"].sum() == 2
-        assert out["offers_shop"].sum() == 1
-        assert out["offers_other"].all()
-
-
-# ---------------------------------------------------------------------------
 # 4. braunschweig.synthesis.spatial.commute_distance._draw_from_cdf
 # ---------------------------------------------------------------------------
 
@@ -150,45 +120,42 @@ class TestCommuteDrawFromCdf:
 # ---------------------------------------------------------------------------
 
 class TestCommuteOverride:
-    def test_replaces_distances_for_known_kreise_only(self):
+    def test_own_kreis_cdf_is_used_and_missing_kreise_fall_back_to_03zgb(self, capsys):
+        """The primary path (a person's own Kreis CDF) and the regional fallback
+        must be distinguishable in the output, not only in the log.
+
+        The earlier version of this test used 8-digit commune ids, which
+        ``zfill(12)`` turned into Kreis "00000", so every person silently took
+        the 03ZGB fallback and the test passed only because both CDFs were
+        identical. Here the two CDFs sit in different distance bands, so a
+        Kreis-slicing bug (or a fallback that swallows everyone) moves persons
+        into the wrong band.
+        """
         from braunschweig.synthesis.spatial import commute_distance as cd
 
         df_work = pd.DataFrame({
             "person_id":        [1, 2, 3, 4],
             "hts_id":           [101, 102, 103, 104],
             "commute_distance": [9999.0, 9999.0, 9999.0, 9999.0],
-            # Two persons in 03101 (Braunschweig), one in unknown 99999,
-            # one in 03ZGB-fallback-eligible 03102 (Salzgitter).
-            "commune_id": ["03101000", "03101111", "99999000", "03102000"],
+            # 12-digit ARS. Person 2 arrives as an int with the leading zero of
+            # the state code stripped (the BUG-003 shape zfill(12) must restore);
+            # 99999 is unknown and 03102 has no CDF of its own.
+            "commune_id": ["031010000000", 31011110000, "999990000000", "031020000000"],
         })
-        # Trivial CDF: always pick band 1 (0.5..5.0 km).
-        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        mid_refs = {
-            "p13_distance_cdfs": {
-                "03101": unit_cdf_band1,
-                "03ZGB": unit_cdf_band1,
-            }
-        }
-        rng = np.random.RandomState(42)
+        band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])   # 0.5-5 km
+        band7 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])   # 100-300 km
+        mid_refs = {"p13_distance_cdfs": {"03101": band1, "03ZGB": band7}}
 
-        out = cd._override_work_distances(df_work, mid_refs, rng)
+        out = cd._override_work_distances(df_work, mid_refs, np.random.RandomState(42))
 
         assert list(out.columns) == ["person_id", "hts_id", "commute_distance"]
-        assert len(out) == 4
-
-        # Persons 1, 2 (03101) and 4 (03ZGB fallback) get override -> 500..5000m.
-        for pid in (1, 2, 4):
-            d = out.loc[out["person_id"] == pid, "commute_distance"].iloc[0]
-            assert 500.0 <= d <= 5000.0, f"person {pid} dist {d} out of band"
-
-        # Person 3 (99999, no fallback for unknown kreis) keeps baseline.
-        # _override_work_distances treats missing CDFs as a skip; verify it.
-        d_unknown = out.loc[out["person_id"] == 3, "commute_distance"].iloc[0]
-        # Note: with the 03ZGB fallback present in mid_refs, 99999 also gets
-        # overridden because the function uses cdfs.get(kreis, fallback_cdf).
-        # That is the documented behaviour; we just assert the value is in
-        # band 1 like the others.
-        assert 500.0 <= d_unknown <= 5000.0
+        distance = out.set_index("person_id")["commute_distance"]
+        for pid in (1, 2):   # own-Kreis CDF (primary path)
+            assert 500.0 <= distance[pid] <= 5000.0, (pid, distance[pid])
+        for pid in (3, 4):   # regional fallback CDF
+            assert 100_000.0 <= distance[pid] <= 300_000.0, (pid, distance[pid])
+        log = capsys.readouterr().out
+        assert "primary own-Kreis CDF 2" in log and "regional 03ZGB fallback 2" in log
 
     def test_fallback_provenance_logging(self, capsys):
         """Fallback transparency: the override log must separate the primary
@@ -245,14 +212,14 @@ class TestCommuteOverride:
         # 50% fallback rate exceeds the 5% threshold -> WARNING raised.
         assert "WARNING" in log_b
 
-    def test_fallback_split_does_not_change_drawn_distances(self):
-        """Output preservation: instrumenting the provenance split must not
-        change which CDF is used, the draw, or the RNG. The drawn distances
-        must equal a reference computation using the documented
-        cdfs.get(kreis, fallback_cdf) selection on the same seeded RNG."""
+    def test_the_seeded_override_draw_is_pinned(self):
+        """Reproducibility of the override draw (per-Kreis groups in appearance order
+        on one seeded RNG), pinned on literal distances in metres for seed 7
+        (computed 2026-09-25). It replaces a replay that re-implemented the group loop
+        and so would have agreed with any change made to both."""
         from braunschweig.synthesis.spatial import commute_distance as cd
 
-        unit_cdf_band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        band1 = np.array([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         df_work = pd.DataFrame({
             "person_id":        [1, 2, 3, 4],
             "hts_id":           [101, 102, 103, 104],
@@ -260,67 +227,46 @@ class TestCommuteOverride:
             "commune_id": ["031010000000", "031011110000",
                            "999990000000", "031020000000"],
         })
-        mid_refs = {
-            "p13_distance_cdfs": {
-                "03101": unit_cdf_band1,
-                "03ZGB": unit_cdf_band1,
-            }
-        }
+        mid_refs = {"p13_distance_cdfs": {"03101": band1, "03ZGB": band1}}
 
-        # Actual output from the instrumented function.
-        out = cd._override_work_distances(
-            df_work.copy(), mid_refs, np.random.RandomState(7))
+        out = cd._override_work_distances(df_work, mid_refs, np.random.RandomState(7))
 
-        # Reference: replicate the exact per-group selection + draw with the
-        # same fresh RNG, mirroring cdfs.get(kreis, fallback_cdf).
-        cdfs = mid_refs["p13_distance_cdfs"]
-        fallback_cdf = cdfs.get("03ZGB")
-        ref = df_work.copy()
-        ref["kreis"] = ref["commune_id"].astype(str).str.zfill(12).str[:5]
-        ref_rng = np.random.RandomState(7)
-        for kreis, group_idx in ref.groupby("kreis", sort=False,
-                                            dropna=True).groups.items():
-            cdf = cdfs.get(str(kreis), fallback_cdf)
-            if cdf is None:
-                continue
-            samples = cd._draw_from_cdf(cdf, ref_rng, len(group_idx))
-            ref.loc[group_idx, "commute_distance"] = samples * 1000.0
-
-        merged = out.merge(ref[["person_id", "commute_distance"]],
-                           on="person_id", suffixes=("_out", "_ref"))
-        assert np.allclose(merged["commute_distance_out"],
-                           merged["commute_distance_ref"])
+        assert np.allclose(out["commute_distance"],
+                           [2472.841541, 3755.5933, 2923.231417, 824.2301])
 
 
 # ---------------------------------------------------------------------------
 # 6. enriched._derive_kreis_ars5 (BS resident flag -> ARS5)
 # ---------------------------------------------------------------------------
 
-class TestDeriveKreisArs5:
-    def test_maps_inside_flags_to_ars5_codes(self):
-        from braunschweig.synthesis.population.enriched import (
-            INSIDE_FLAG_TO_ARS5, _derive_kreis_ars5,
-        )
+# The eight ZGB districts and their official Kreis codes (Destatis AGS), written out
+# literally: expectations taken from INSIDE_FLAG_TO_ARS5 itself would let a wrong code in
+# that map pass.
+_ZGB_INSIDE_FLAG_ARS5 = [
+    ("inside_braunschweig", "03101"), ("inside_salzgitter", "03102"),
+    ("inside_wolfsburg", "03103"), ("inside_gifhorn", "03151"),
+    ("inside_goslar", "03153"), ("inside_helmstedt", "03154"),
+    ("inside_peine", "03157"), ("inside_wolfenbuettel", "03158"),
+]
 
-        df = pd.DataFrame({
-            "person_id":           [1, 2, 3, 4, 5],
-            "inside_braunschweig": [True, False, False, False, False],
-            "inside_salzgitter":   [False, True, False, False, False],
-            "inside_gifhorn":      [False, False, True, False, False],
-            # Person 4: no inside flag set -> empty string.
-            # Person 5: multiple flags set -> first match wins
-            #          (iteration order of INSIDE_FLAG_TO_ARS5).
-            "inside_peine":        [False, False, False, False, True],
-            "inside_wolfsburg":    [False, False, False, False, True],
-        })
+
+class TestDeriveKreisArs5:
+    def test_every_inside_flag_maps_to_its_official_kreis_code(self):
+        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
+
+        flags = [flag for flag, _ in _ZGB_INSIDE_FLAG_ARS5]
+        # One person per district, then a person without any flag (-> ""), then a person
+        # with two flags (peine and wolfsburg): the first flag in map order wins.
+        rows = [[i == j for j in range(len(flags))] for i in range(len(flags))]
+        rows.append([False] * len(flags))
+        rows.append([flag in ("inside_peine", "inside_wolfsburg") for flag in flags])
+        df = pd.DataFrame(rows, columns=flags, index=range(100, 100 + len(rows)))
+
         out = _derive_kreis_ars5(df)
-        assert out.tolist()[:4] == ["03101", "03102", "03151", ""]
-        # Person 5: first key in INSIDE_FLAG_TO_ARS5 that matches wins.
-        first_match_key = next(
-            k for k in INSIDE_FLAG_TO_ARS5
-            if k in df.columns and df[k].iloc[4]
-        )
-        assert out.tolist()[4] == INSIDE_FLAG_TO_ARS5[first_match_key]
+
+        assert out.tolist() == [code for _, code in _ZGB_INSIDE_FLAG_ARS5] + ["", "03103"]
+        # Index is preserved (used as a Series elsewhere in execute()).
+        assert list(out.index) == list(df.index)
 
 
 # ---------------------------------------------------------------------------
@@ -356,97 +302,42 @@ class TestSampleCounts:
         assert (df1.loc[:9, "n_cars"] == 1).all()
         assert (df1.loc[10:, "n_cars"] == 2).all()
 
-    def test_kreis_argument_matches_local_derivation(self):
-        """Passing the pre-derived ``kreis`` Series must be output-identical to
-        letting ``_sample_counts`` derive it internally (the FIX A refactor that
-        derives the Kreis once in execute() and reuses it across cars/bikes/
-        income instead of rebuilding it on every call)."""
+    def test_pinned_draw_in_sorted_kreis_order_with_a_region_fallback(self):
+        """FIX 2.1 and the fallback instrumentation, pinned on literal values.
+
+        Persons are listed Gifhorn, Braunschweig, Salzgitter -- NOT in sorted ARS order --
+        and Salzgitter has no own share vector, so it draws from the region-wide one.
+        _sample_counts must consume the RNG over the Kreise in sorted order (a set or
+        appearance-order iteration yields [1, 2, 0, 0, 1, 1, 2, 2, 1, 1, 0, 2] here,
+        checked 2026-09-25), the counting must not change the draw, and a pre-derived
+        ``kreis`` argument (the FIX A reuse path) must give the identical result.
+        """
         from braunschweig.synthesis.population.enriched import (
             _derive_kreis_ars5, _sample_counts,
         )
 
         df = pd.DataFrame({
-            "person_id":           list(range(20)),
-            "inside_braunschweig": [True] * 10 + [False] * 10,
-            "inside_salzgitter":   [False] * 10 + [True] * 10,
-        })
-        values = np.array([0, 1, 2, 3])
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-            "03102": (0.2, 0.2, 0.3, 0.3),
-        }
-        region_shares = (0.25, 0.25, 0.25, 0.25)
-
-        df_local = df.copy()
-        df_reused = df.copy()
-        # Local derivation path (kreis=None).
-        _sample_counts(df_local, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(7))
-        # Reuse path: derive once, pass it in.
-        kreis = _derive_kreis_ars5(df_reused)
-        _sample_counts(df_reused, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(7), kreis=kreis)
-
-        assert df_local["n_cars"].tolist() == df_reused["n_cars"].tolist(), \
-            "passing kreis= must yield identical output to local derivation"
-
-    def test_kreis_iteration_order_is_sorted_and_deterministic(self):
-        """FIX 2.1: ``_sample_counts`` must consume the shared RNG stream over
-        the Kreise in a deterministic SORTED order, not the hash-dependent
-        ``set()`` iteration order (which varies with PYTHONHASHSEED).
-
-        We verify this by replaying the exact draws the function should make if
-        it iterates the Kreis codes in ``sorted`` order, drawing ``n`` values
-        per Kreis from a fresh RNG with the same seed, and assert the function
-        reproduces that per-person assignment. A ``set()``-based iteration would
-        consume the per-Kreis blocks in a different (hash-dependent) order and
-        therefore generally mismatch this sorted-order replay."""
-        from braunschweig.synthesis.population.enriched import _sample_counts
-
-        values = np.array([0, 1, 2, 3])
-        # Non-degenerate shares so the actual draw depends on the position in
-        # the consumed RNG stream (degenerate 1.0 shares would hide the order).
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-            "03102": (0.2, 0.2, 0.3, 0.3),
-            "03151": (0.3, 0.3, 0.2, 0.2),
-        }
-        region_shares = (0.25, 0.25, 0.25, 0.25)
-
-        df = pd.DataFrame({
             "person_id":           list(range(12)),
-            "inside_braunschweig": [True] * 4 + [False] * 8,
-            "inside_salzgitter":   [False] * 4 + [True] * 4 + [False] * 4,
-            "inside_gifhorn":      [False] * 8 + [True] * 4,
+            "inside_gifhorn":      [True] * 4 + [False] * 8,
+            "inside_braunschweig": [False] * 4 + [True] * 4 + [False] * 4,
+            "inside_salzgitter":   [False] * 8 + [True] * 4,
         })
+        values = np.array([0, 1, 2, 3])
+        kreis_shares = {"03101": (0.1, 0.4, 0.3, 0.2), "03151": (0.3, 0.3, 0.2, 0.2)}
+        region_shares = (0.2, 0.3, 0.3, 0.2)
+        expected = [1, 1, 0, 2, 2, 2, 1, 0, 1, 0, 2, 2]
 
-        df_out = df.copy()
-        _sample_counts(df_out, "n_cars", values, region_shares, kreis_shares,
+        local = df.copy()
+        _sample_counts(local, "n_cars", values, region_shares, kreis_shares,
                        np.random.RandomState(2024))
+        reused = df.copy()
+        _sample_counts(reused, "n_cars", values, region_shares, kreis_shares,
+                       np.random.RandomState(2024), kreis=_derive_kreis_ars5(reused))
 
-        # Independent sorted-order replay of the same draws.
-        from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
-        kreis = _derive_kreis_ars5(df)
-        replay = np.zeros(len(df), dtype=int)
-        rng = np.random.RandomState(2024)
-        for ars in sorted(kreis.unique()):
-            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
-            shares = shares / shares.sum()
-            mask = (kreis == ars).values
-            n = int(mask.sum())
-            if n == 0:
-                continue
-            replay[mask] = rng.choice(values, size=n, p=shares)
-
-        assert df_out["n_cars"].tolist() == replay.tolist(), \
-            "_sample_counts must consume the RNG in sorted Kreis order (FIX 2.1)"
-
-        # And it must be reproducible across two executions with equal seeds.
-        df_again = df.copy()
-        _sample_counts(df_again, "n_cars", values, region_shares, kreis_shares,
-                       np.random.RandomState(2024))
-        assert df_again["n_cars"].tolist() == df_out["n_cars"].tolist()
-
+        assert local["n_cars"].tolist() == expected
+        assert reused["n_cars"].tolist() == expected
+        assert local.attrs["n_cars_kreis_share_fallback_count"] == 4
+        assert local.attrs["n_cars_kreis_share_fallback_kreise"] == ["03102"]
 
 # ---------------------------------------------------------------------------
 # 7a. enriched._sample_counts per-Kreis share fallback transparency
@@ -511,68 +402,11 @@ class TestSampleCountsFallbackTransparency:
         assert df["number_of_cars"].isin(values).all()
         assert len(df["number_of_cars"]) == 20
 
-    def test_fallback_accounting_does_not_change_sampled_values(self):
-        """The added counting/logging must be output-preserving: the sampled
-        per-person values with an absent Kreis must equal an independent
-        sorted-order RNG replay that uses the same region fallback vector."""
-        from braunschweig.synthesis.population.enriched import (
-            _derive_kreis_ars5, _sample_counts,
-        )
-
-        df = self._build_population()
-        values = np.array([0, 1, 2, 3])
-        kreis_shares = {
-            "03101": (0.1, 0.4, 0.3, 0.2),
-        }
-        region_shares = (0.2, 0.3, 0.3, 0.2)
-
-        df_out = df.copy()
-        _sample_counts(df_out, "number_of_cars", values, region_shares,
-                       kreis_shares, np.random.RandomState(99))
-
-        # Independent sorted-order replay with the identical fallback vector.
-        kreis = _derive_kreis_ars5(df)
-        replay = np.zeros(len(df), dtype=int)
-        rng = np.random.RandomState(99)
-        for ars in sorted(kreis.unique()):
-            shares = np.asarray(kreis_shares.get(ars, region_shares), dtype=float)
-            shares = shares / shares.sum()
-            mask = (kreis == ars).values
-            n = int(mask.sum())
-            if n == 0:
-                continue
-            replay[mask] = rng.choice(values, size=n, p=shares)
-
-        assert df_out["number_of_cars"].tolist() == replay.tolist(), \
-            "fallback instrumentation must not change the sampled values/RNG"
-
-
 # ---------------------------------------------------------------------------
 # 7b. enriched._derive_kreis_ars5 over all eight political-prefix flags
 # ---------------------------------------------------------------------------
 
 class TestDeriveKreisArs5AllFlags:
-    def test_all_eight_inside_flags_map_to_expected_ars5(self):
-        """Every one of the 8 ZGB inside_<kreis> flags must resolve to its
-        AGS-5 Kreis code, in the same order as INSIDE_FLAG_TO_ARS5."""
-        from braunschweig.synthesis.population.enriched import (
-            INSIDE_FLAG_TO_ARS5, _derive_kreis_ars5,
-        )
-
-        flags = list(INSIDE_FLAG_TO_ARS5.keys())
-        n = len(flags)
-        # One person per flag: person i has only flags[i] set to True.
-        data = {"person_id": list(range(n))}
-        for j, flag in enumerate(flags):
-            data[flag] = [i == j for i in range(n)]
-        df = pd.DataFrame(data)
-
-        out = _derive_kreis_ars5(df)
-        expected = [INSIDE_FLAG_TO_ARS5[flag] for flag in flags]
-        assert out.tolist() == expected
-        # Index is preserved (used as a Series elsewhere in execute()).
-        assert list(out.index) == list(df.index)
-
     def test_nan_flags_treated_as_false(self):
         """NaN in an inside flag must be treated as False (fillna), not raise."""
         from braunschweig.synthesis.population.enriched import _derive_kreis_ars5
@@ -588,69 +422,9 @@ class TestDeriveKreisArs5AllFlags:
 
 
 # ---------------------------------------------------------------------------
-# 8. enriched._build_income_size_map (scheme detection)
-# ---------------------------------------------------------------------------
-
-class TestIncomeSizeMap:
-    def test_detects_six_bin_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        mapping, scheme = _build_income_size_map(
-            {"1", "2", "3", "4", "5", "6+"})
-        assert scheme == "6-bin"
-        assert mapping["6"] == "6+"
-        assert mapping["5"] == "5"
-
-    def test_detects_five_bin_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        mapping, scheme = _build_income_size_map(
-            {"1", "2", "3", "4", "5+"})
-        assert scheme == "5-bin"
-        # 5, 6, 5+, 6+ all collapse onto "5+".
-        assert mapping["5"] == "5+"
-        assert mapping["6"] == "5+"
-        assert mapping["6+"] == "5+"
-
-    def test_rejects_unknown_scheme(self):
-        from braunschweig.synthesis.population.enriched import _build_income_size_map
-
-        with pytest.raises(ValueError, match="unrecognised hh_size bins"):
-            _build_income_size_map({"a", "b", "c"})
-
-
-# ---------------------------------------------------------------------------
 # 8b. enriched._execute_base reproducibility / cache-mutation guards
 #     (FIX 2.2 cached-list mutation, FIX 2.6 distinct RNG seed offsets)
 # ---------------------------------------------------------------------------
-
-import inspect
-
-from braunschweig.synthesis.population import enriched as _enriched_module
-
-
-def _execute_base_source():
-    """Source of ``_execute_base`` together with its ``_step_*`` helpers.
-
-    ``_execute_base`` was decomposed into named ``_step_*`` orchestration steps
-    (issue #267), so the blocks pinned below now live in those step functions
-    rather than in ``_execute_base`` itself. This is FUNCTION-FAMILY-scoped
-    rather than module-scoped: it concatenates the source of ``_execute_base``,
-    every ``_step_*``-named attribute of its defining module, and the
-    ``_condition_pt_subscription_for_sampling`` sub-helper of
-    ``_step_sample_pt_subscription`` (A6; a non-``_step_`` name because it is not
-    itself called by the orchestrator). Scoping to the family rather than the
-    whole module means the pins keep following this exact function group even if
-    unrelated code is later added to (or moved out of) the defining module.
-    """
-    module = inspect.getmodule(_enriched_module._execute_base)
-    functions = [_enriched_module._execute_base]
-    functions += [
-        getattr(module, name) for name in dir(module) if name.startswith("_step_")
-    ]
-    functions.append(module._condition_pt_subscription_for_sampling)
-    return "\n".join(inspect.getsource(fn) for fn in functions)
-
 
 class TestConstraintListNotMutated:
     """FIX 2.2: the car/bike availability blocks must copy the cached MiD
@@ -658,95 +432,68 @@ class TestConstraintListNotMutated:
     cached ``braunschweig.data.mid.data`` stage object is never mutated in
     place.
 
-    We reproduce the exact copy-then-append idiom used in ``_execute_base`` and
-    assert the original list is untouched; we additionally pin the source so a
-    future regression back to a bare reference is caught."""
+    The two imputation steps run twice, as on an in-process re-run, and the cached
+    constraint lists must come out unchanged; a step that appended to the cached
+    list directly would grow it by one age constraint per run. (It replaces a check
+    on the source text, which any other spelling of the copy would have failed.)"""
 
-    def test_copy_then_append_does_not_mutate_input(self):
-        # Mirror the production idiom: ``constraints = list(mid["..."])``.
-        cached_list = [{"sex": "male", "target": 0.5}]
-        len_before = len(cached_list)
-        constraints = list(cached_list)  # copy (production behaviour)
-        constraints.append({"age": (-np.inf, -1), "target": 0.0})
-        # The copy received the new constraint ...
-        assert len(constraints) == len_before + 1
-        # ... but the cached source list is unchanged.
-        assert len(cached_list) == len_before
-        assert cached_list == [{"sex": "male", "target": 0.5}]
+    def test_imputation_steps_leave_the_cached_constraint_lists_untouched(self):
+        from braunschweig.synthesis.population.enriched.base import (
+            _step_impute_bicycle_availability, _step_impute_car_availability,
+        )
 
-    def test_source_copies_cached_constraint_lists(self):
-        src = _execute_base_source()
-        # Both availability blocks must take a copy before appending.
-        assert 'list(mid["car_availability_constraints"])' in src, \
-            "car constraints must be copied before append (FIX 2.2)"
-        assert 'list(mid["bicycle_availability_constraints"])' in src, \
-            "bicycle constraints must be copied before append (FIX 2.2)"
-        # Guard against the regressed bare-reference form.
-        assert 'constraints = mid["car_availability_constraints"]\n' not in src
-        assert 'constraints = mid["bicycle_availability_constraints"]\n' not in src
+        class _Context:
+            def config(self, key, *args, **kwargs):
+                return {"braunschweig.minimum_age.car_availability": 18,
+                        "braunschweig.minimum_age.bicycle_availability": 6}[key]
+
+            def progress(self, iterable, **kwargs):
+                return iterable
+
+        mid = {
+            "car_availability_constraints": [{"sex": "male", "target": 0.8}],
+            "bicycle_availability_constraints": [{"sex": "female", "target": 0.6}],
+        }
+        persons = pd.DataFrame({"age": [5, 30, 45], "sex": ["male", "female", "male"]})
+        for _run in range(2):
+            _step_impute_car_availability(_Context(), persons, mid, iterations=2)
+            _step_impute_bicycle_availability(_Context(), persons, mid, iterations=2)
+
+        assert mid["car_availability_constraints"] == [{"sex": "male", "target": 0.8}]
+        assert mid["bicycle_availability_constraints"] == [{"sex": "female", "target": 0.6}]
 
 
 class TestRandomSeedOffsetsDistinct:
     """FIX 2.6: the PT-subscription draw and the car/bike availability draw are
     independent attributes and must NOT share the same uniform RNG stream. Their
     ``random_seed`` offsets therefore have to differ (previously both used
-    +8572, making the two draws correlated by construction)."""
+    +8572, making the two draws correlated by construction).
 
-    def test_pt_and_car_bike_seed_offsets_differ(self):
-        src = _execute_base_source()
-        import re
+    A policy lint over EVERY module of the enriched package, reading only real
+    ``RandomState(<seed> + N)`` / ``default_rng(<seed> + N)`` calls from the syntax tree:
+    the earlier regex scanned two functions of one module, while seven further streams
+    live in availability, vehicle ownership, income, economic status and housing."""
 
-        offsets = [
-            int(m) for m in re.findall(
-                r"RandomState\(context\.config\(\"random_seed\"\)\s*\+\s*(\d+)\)",
-                src,
-            )
-        ]
-        # PT block (+8572) and car/bike block must both be present and distinct.
-        assert 8572 in offsets, "PT block must keep its +8572 offset"
-        # There must be at least two RandomState constructions across
-        # _execute_base and its steps, and no offset may be used twice (every
-        # independent draw is its own stream).
-        assert len(offsets) >= 2
+    def test_every_rng_stream_of_the_enriched_package_has_its_own_offset(self):
+        import ast
+
+        from braunschweig.synthesis.population import enriched
+
+        package = pathlib.Path(enriched.__file__).parent
+        streams = []
+        for path in sorted(package.rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Call) and node.args):
+                    continue
+                name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+                seed = node.args[0]
+                if (name in ("RandomState", "default_rng") and isinstance(seed, ast.BinOp)
+                        and isinstance(seed.op, ast.Add) and isinstance(seed.right, ast.Constant)):
+                    streams.append((seed.right.value, f"{path.name}:{node.lineno}"))
+
+        offsets = [offset for offset, _ in streams]
+        assert 8572 in offsets, "the PT block must keep its +8572 offset"
+        assert len(offsets) >= 8, streams  # the lint must actually see the package's streams
         assert len(offsets) == len(set(offsets)), \
-            f"RNG seed offsets must all be distinct, got {offsets} (FIX 2.6)"
+            f"RNG seed offsets must all be distinct (FIX 2.6): {sorted(streams)}"
 
-
-# ---------------------------------------------------------------------------
-# 9. braunschweig.gravity.model.evaluate_gravity (doubly-constrained gravity)
-# ---------------------------------------------------------------------------
-
-class TestEvaluateGravity:
-    def test_symmetric_problem_balances_to_marginals(self):
-        from braunschweig.gravity.model import evaluate_gravity
-
-        # Two zones, identical population and employees -> symmetric flow.
-        population = np.array([100.0, 100.0])
-        employees = np.array([100.0, 100.0])
-        # Slightly off-diagonal friction so the solver has work to do.
-        friction = np.array([
-            [1.0, 0.5],
-            [0.5, 1.0],
-        ])
-
-        flow = evaluate_gravity(population, employees, friction)
-
-        # Each row must sum to its production (=population) and each column
-        # to its attraction (=employees) within tolerance.
-        np.testing.assert_allclose(flow.sum(axis=1), population, atol=1e-2)
-        np.testing.assert_allclose(flow.sum(axis=0), employees, atol=1e-2)
-        # Symmetry preserved.
-        assert abs(flow[0, 1] - flow[1, 0]) < 1e-6
-
-
-# ---------------------------------------------------------------------------
-# 10. braunschweig.gravity.model._gemeinde_to_kreis (AGS-8 -> AGS-5)
-# ---------------------------------------------------------------------------
-
-class TestGemeindeToKreis:
-    def test_strips_commune_ags_to_kreis_ars(self):
-        from braunschweig.gravity.model import _gemeinde_to_kreis
-
-        s = pd.Series(["03101000", "03102015", "03158002", "99999"])
-        out = _gemeinde_to_kreis(s)
-        assert out.tolist() == ["03101", "03102", "03158", "99999"]

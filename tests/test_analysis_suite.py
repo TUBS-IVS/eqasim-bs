@@ -235,39 +235,25 @@ def test_configure_never_declares_matsim_run_stage(tmp_path):
     assert "synthesis.output" in configuration.declared_stages
 
 
-def test_dashboard_runs_from_matsim_archive(tmp_path, monkeypatch):
+def test_dashboard_and_mid_validation_read_the_matsim_archive(tmp_path, monkeypatch):
     """With simwrapper_include_matsim=True the sim outputs are resolved from the
     <output_path>/matsim_output archive (config-derived), NOT from
-    context.path("matsim.simulation.run") -- paths stays empty on purpose."""
-    DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
-    _write_min_output(tmp_path)
-    _install_pop_spy(monkeypatch, [])
-    archive = _write_matsim_archive(tmp_path)
-    dash_calls = []
-    monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
-    ctx = _execute_context(tmp_path, simwrapper_include_matsim=True)
-    AS.execute(ctx)
-    assert len(dash_calls) == 1
-    argv = dash_calls[0]
-    assert argv[argv.index("--sim-cache") + 1] == str(archive)
-
-
-def test_mid_validation_receives_archive_as_sim_cache(tmp_path, monkeypatch):
+    context.path("matsim.simulation.run") -- paths stays empty on purpose. Both
+    consumers receive the archive as --sim-cache (the stubs also keep the test from
+    writing real run records into the repository's dashboard/runs/)."""
     MID = pytest.importorskip("braunschweig.analysis.run_mid_validation")
     DASH = pytest.importorskip("braunschweig.analysis.dashboard.build_dashboard")
     _write_min_output(tmp_path)
     _install_pop_spy(monkeypatch, [])
     archive = _write_matsim_archive(tmp_path)
-    mid_calls = []
+    mid_calls, dash_calls = [], []
     monkeypatch.setattr(MID, "main", lambda argv: mid_calls.append(argv))
-    # The archive makes the dashboard ready too; stub it so the test never
-    # writes real run records into the repository's dashboard/runs/.
-    monkeypatch.setattr(DASH, "main", lambda: None)
+    monkeypatch.setattr(DASH, "main", lambda: dash_calls.append(list(sys.argv)))
     ctx = _execute_context(tmp_path, simwrapper_include_matsim=True)
     AS.execute(ctx)
-    assert len(mid_calls) == 1
-    argv = mid_calls[0]
-    assert argv[argv.index("--sim-cache") + 1] == str(archive)
+    assert len(mid_calls) == 1 and len(dash_calls) == 1
+    for argv in (mid_calls[0], dash_calls[0]):
+        assert argv[argv.index("--sim-cache") + 1] == str(archive)
 
 
 def test_matsim_panels_skip_loudly_when_archive_missing(tmp_path, monkeypatch):
