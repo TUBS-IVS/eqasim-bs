@@ -378,7 +378,7 @@ def test_match_household_draws_proportional_to_h_gew():
     })
     rng = np.random.RandomState(0)
     counts = {100: 0, 200: 0}
-    for _ in range(2000):
+    for _ in range(500):  # 9:1 weights vs a 3:1 bar: 500 draws leave no room for chance
         mid, _ = wpm.match_household(7, target, weekday, rng=rng)
         counts[mid] += 1
     assert counts[200] > counts[100] * 3  # heavy HH dominates
@@ -395,7 +395,7 @@ def test_match_person_draws_proportional_to_p_gew():
     target = pd.Series({"HP_ALTER": 41, "HP_SEX": 1, "P_FSCHEIN": 1, "P_TAET": 1, "P_FKARTE": 1})
     rng = np.random.RandomState(0)
     counts = {50: 0, 60: 0}
-    for _ in range(2000):
+    for _ in range(500):  # 9:1 weights vs a 3:1 bar: 500 draws leave no room for chance
         h, _p, _l = wpm.match_person(target, weekday, rng=rng)
         counts[h] += 1
     assert counts[50] > counts[60] * 3  # heavy person dominates
