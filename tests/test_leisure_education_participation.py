@@ -142,7 +142,9 @@ def test_control_columns_follow_name_category(purpose):
 # --- Catalog factory: person-level predicate rendering -----------------------------
 
 
-@pytest.mark.parametrize("purpose", ["leisure", "education"])
+# One home for every binary person-level participation control (work and escort used
+# to carry their own copies of this check and the importance one below).
+@pytest.mark.parametrize("purpose", ["leisure", "education", "work", "escort"])
 def test_attribute_kreis_controls_renders_person_predicate(purpose):
     name = f"{purpose}_participation"
     controls = cs.attribute_kreis_controls([_entry(name)])
@@ -158,7 +160,7 @@ def test_attribute_kreis_controls_renders_person_predicate(purpose):
 # --- Importance profile: tier="hard" auto-classifies into the "kreis_hard" group ---
 
 
-@pytest.mark.parametrize("purpose", ["leisure", "education"])
+@pytest.mark.parametrize("purpose", ["leisure", "education", "work", "escort"])
 def test_importance_group_for_field_classifies_as_kreis_hard(purpose):
     name = f"{purpose}_participation"
     assert cs.importance_group_for_field(f"{name}_yes_KREIS") == "kreis_hard"
@@ -186,25 +188,6 @@ def test_toggle_key_registered_with_the_decided_default(purpose, key_name, expec
     name = f"{purpose}_participation"
     assert stage._KREIS_CONTROL_TOGGLE_KEY[name] == getattr(stage, key_name)
     assert stage._KREIS_CONTROL_DEFAULT[name] == expected_default
-
-
-def test_active_kreis_entries_includes_leisure_and_excludes_education_participation_by_default():
-    """education_participation is retired by default (Plan B, issue #368, ADR-0109),
-    replaced by the three education_by_age entries; leisure_participation has no
-    replacement and stays active. See tests/test_participation_universe_controls.py for
-    the full replacement/contradiction semantics."""
-    from braunschweig.popsim import stage
-    active = stage.active_kreis_entries(_FakeContext({}), "mid")
-    names = {c.name for c in active}
-    assert "education_participation" not in names
-    # The PT entry appears as pt_ticket_group4: the four-group refinement replaces the
-    # three-group entry while pt_ticket_never_group is on (the default, issue #329).
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group4",
-        "leisure_participation", "escort_participation",
-        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
-    }
 
 
 def test_off_path_excludes_leisure_participation():

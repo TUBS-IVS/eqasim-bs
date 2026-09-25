@@ -34,9 +34,9 @@ def _default_active_kreis_entry_names() -> set:
     The per-toggle tests below assert "switching this entry off drops EXACTLY this entry",
     which is the behaviour under test; they derive the expected remainder from the registry
     instead of re-listing it, so adding a control (e.g. pt_ticket_group, issue #321) does not
-    require touching every one of them. The full default-on set stays pinned explicitly in
-    tests/test_popsim_seed_kreis_columns.py::test_all_kreis_entries_default_on, so a
-    silently vanishing entry is still caught.
+    require touching every one of them. The full default-on list stays pinned explicitly,
+    in order, by test_active_kreis_entries_all_default_on_for_mid below, so a silently
+    vanishing entry is still caught (the one pin; the per-control files no longer copy it).
 
     ``pt_ticket_group`` is excluded because it is not merely registered but SUBSTITUTED:
     with ``pt_ticket_never_group`` on (the default, issue #329) the four-group
@@ -240,6 +240,7 @@ def test_active_kreis_entries_empty_for_non_mid_source():
 
     # KREIS attribute controls are MiD-only (no ENTD pendant) -> empty for any other source.
     assert stage.active_kreis_entries(_FakeContext({}), "entd") == []
+
 
 
 def test_active_kreis_entries_all_off_is_empty():

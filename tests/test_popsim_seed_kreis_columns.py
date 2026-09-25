@@ -288,25 +288,6 @@ def test_project_completed_seed_has_ebike_requires_ebike_seed_column():
 from tests.stage_context import KreisToggleContext as _FakeContext  # noqa: E402
 
 
-def test_all_kreis_entries_default_on():
-    from braunschweig.popsim.stage import active_kreis_entries
-
-    active = active_kreis_entries(_FakeContext(), "mid")
-    names = {c.name for c in active}
-    # pt_ticket_group appears as its four-group refinement pt_ticket_group4: with
-    # pt_ticket_never_group on (the default, issue #329) the finer entry REPLACES the
-    # three-group one (same marginal, never both). work_participation /
-    # education_participation are registered but default OFF (Plan B, issue #368,
-    # ADR-0109): work_by_employment / education_0_5 / education_6_17 / education_18plus
-    # REPLACE them and default ON instead.
-    assert names == {
-        "economic_status", "number_of_cars", "number_of_bicycles", "has_ebike",
-        "trip_class", "employment_status", "pt_ticket_group4",
-        "leisure_participation", "escort_participation",
-        "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
-    }
-
-
 # --- The seeded-RNG classification must cover EVERY drawing entry (silent-fallback guard) ---
 
 
@@ -334,7 +315,8 @@ def test_classify_rng_style_covers_every_drawing_default_active_entry():
     The classification is a hand-maintained literal list, so a drawing entry added to the
     REGISTRY does not update it (that structural weakness is why this assertion exists).
     Pinned here against the default-active set that
-    ``test_all_kreis_entries_default_on`` locks, so a PT entry silently dropping out of
+    ``tests/test_kreis_control_stage_wiring.py::test_active_kreis_entries_all_default_on_for_mid``
+    locks, so a PT entry silently dropping out of
     the classification again fails a test instead of degrading a run's reproducibility.
     """
     from braunschweig.popsim.mid.seed_loading import _classify_rng_style_kreis_entries
