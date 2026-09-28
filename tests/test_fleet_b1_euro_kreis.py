@@ -28,7 +28,6 @@ import logging
 import os
 import shutil
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
@@ -371,12 +370,16 @@ class TestNonZgbKreisIsPrimary:
             "recompute the IPF joint"
         )
 
-    def test_from_data_path_stays_well_under_ten_seconds_at_scale(self, tmp_path):
-        """FleetSampler.from_data_path must build quickly even when the fuel +
-        euro tables cover the full ~400 German Kreis universe (measured at
-        ~15 s wall-time for the EAGER per-Kreis euro joint build), because the
-        per-Kreis euro joint is now computed lazily instead of eagerly for
-        every (kreis, powertrain) pair."""
+    def test_from_data_path_computes_no_per_kreis_joint_at_scale(self, tmp_path, monkeypatch):
+        """FleetSampler.from_data_path must not compute a single per-(Kreis,
+        powertrain) age-euro IPF joint, even when the fuel + euro tables cover the
+        full ~400 German Kreis universe: the EAGER build of every pair measured
+        ~15 s at that scale, and the lazy index defers each joint to its first draw.
+
+        Until 2026-09-28 this was a 10 s wall-clock bound. Machine load broke it
+        (27.65 s and 15.54 s) while the build took exactly as long as the 9-Kreis
+        build of the neighbouring tests, so the clock measured the load, not the
+        scale. Counting the joints the build computes is exact under any load."""
         n_extra = 383  # + 8 ZGB + 1 non-ZGB (base fixture) = ~392 Kreise
         fuel_rows = _make_kreis_fuel_df_all_zgb_plus_extra().to_dict("records")
         euro_rows = _make_kreis_euro_df_all_zgb_plus_extra().to_dict("records")
@@ -403,15 +406,23 @@ class TestNonZgbKreisIsPrimary:
         df_euro = pd.DataFrame(euro_rows)
         tmp_data = _make_tmp_data_path_with_fuel_and_euro(tmp_path, df_fuel, df_euro)
 
-        start = time.perf_counter()
+        computed = []
+        compute_joint = fs._single_kreis_powertrain_age_euro_joint
+
+        def counting_joint(kreis_ags5, fuel, *args, **kwargs):
+            computed.append((kreis_ags5, fuel))
+            return compute_joint(kreis_ags5, fuel, *args, **kwargs)
+
+        monkeypatch.setattr(fs, "_single_kreis_powertrain_age_euro_joint", counting_joint)
         sampler = fs.FleetSampler.from_data_path(tmp_data)
-        elapsed = time.perf_counter() - start
-        assert elapsed < 10.0, (
-            f"FleetSampler.from_data_path took {elapsed:.2f} s at ~400-Kreis "
-            "scale; expected well under 10 s with the lazy per-Kreis euro joint."
-        )
+        assert computed == [], (
+            f"FleetSampler.from_data_path computed {len(computed)} per-(Kreis, powertrain) "
+            "joints at ~400-Kreis scale; the lazy per-Kreis euro joint computes none.")
         assert sampler.age_euro_joint_kreis is not None
         assert len(sampler.age_euro_joint_kreis) == (8 + 1 + n_extra) * len(ft.POWERTRAIN_LABELS)
+        # A draw resolves exactly the joint it needs, through the same function.
+        sampler.age_euro_joint_kreis[("09000", "petrol")]
+        assert computed == [("09000", "petrol")]
 
 
 # ---------------------------------------------------------------------------
