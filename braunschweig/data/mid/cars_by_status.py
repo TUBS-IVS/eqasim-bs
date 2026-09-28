@@ -64,6 +64,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from braunschweig.data.mid.raumtyp_tilt import tilt_toward_region
 from braunschweig.data.mid.status_by_hhtype import (
     HHTYPE_CATEGORIES,
     HHTYPE_LABEL_TO_KEY,
@@ -285,9 +286,11 @@ def apply_raumtyp_tilt(
     where the national share is zero) and renormalises. Returns an untilted copy of
     ``base`` when ``raumtyp_region`` is ``None`` or absent from ``by_region``, or when
     the tilted mass is zero. ``by_region`` and ``national`` are the pmfs of
-    :func:`cars_probabilities_table`. This is the only implementation of the tilt:
-    :func:`cars_probabilities` and the enrichment stage's per-household car draw
-    (``vehicle_ownership._sample_cars_income_aware``) both apply it.
+    :func:`cars_probabilities_table`. :func:`cars_probabilities` and the enrichment
+    stage's per-household car draw (``vehicle_ownership._sample_cars_income_aware``)
+    both apply it; the tilt step itself is
+    :func:`braunschweig.data.mid.raumtyp_tilt.tilt_toward_region`, shared with the
+    income and tenure couplings.
     """
     if raumtyp_region is None:
         return base.copy()
@@ -295,11 +298,7 @@ def apply_raumtyp_tilt(
     if reg is None:
         return base.copy()
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        tilt = np.where(national > 1e-12, reg / national, 1.0)
-    tilted = base * tilt
-    total = tilted.sum()
-    return (tilted / total) if total > 0 else base.copy()
+    return tilt_toward_region(base, reg, national)
 
 
 def cars_probabilities_table(

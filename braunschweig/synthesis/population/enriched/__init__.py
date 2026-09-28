@@ -159,6 +159,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.income_by_status",
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.data.mid.cars_by_status",
+    # the four couplings above: the raumtyp tilt step they share.
+    "braunschweig.data.mid.raumtyp_tilt",
     # vehicle_ownership: the Haushaltstyp classifier and rake_2d, the rake to the H7 control.
     "braunschweig.data.mid.status_by_hhtype",
     "braunschweig.ipf.joint_age_size",
