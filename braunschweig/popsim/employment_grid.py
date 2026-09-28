@@ -1,7 +1,8 @@
 """Build a per-cell, age×sex-resolved employment target for a 100m PopulationSim control.
 
-SHAPE  = Zensus 2000S-2001 Erwerbstätige by age-group×Kreis
-         (5 groups: 16_29 / 30_39 / 40_49 / 50_59 / 60plus),
+SHAPE  = Zensus 2022 Erwerbstätige by age-group per Kreis -- per Kreis AND sex from the
+         Regionaltabelle since ADR-0137, or one shape for both sexes from the previous
+         2000S-2001 reference (5 groups: 16_29 / 30_39 / 40_49 / 50_59 / 60plus),
          loaded via braunschweig.popsim.zensus_employment_age.
 LEVEL  = cleancensus Erwerbstaetige Kreis×sex totals (kreis_erwerbsstatus parquet).
 DENOM  = the prepared cells' single-year {M,F}_AGE_<year> columns, summed to Kreis×group.
@@ -102,6 +103,19 @@ def select_load_columns(
     return result
 
 
+def _age_share(age_shares_by_kreis: dict, kreis, sex_prefix: str, group: str) -> float:
+    """Share of ``group`` in ``kreis``'s employed persons of one sex.
+
+    ``age_shares_by_kreis[kreis]`` is either ONE shape for both sexes (``{group: share}``) or one
+    per sex (``{"M": {group: share}, "F": {group: share}}``, ADR-0137); the sex keys cannot collide
+    with the group names. A Kreis without an entry contributes 0.0, as before.
+    """
+    shape = age_shares_by_kreis.get(kreis, {})
+    if sex_prefix in shape:
+        shape = shape[sex_prefix]
+    return shape.get(group, 0.0)
+
+
 def per_cell_employment_targets(
     cells: pd.DataFrame,
     census_levels: pd.DataFrame,
@@ -114,7 +128,8 @@ def per_cell_employment_targets(
     """Per-cell EMPLOYED_{M,F}_{16_29,...,60plus}_agg, rescaled per Kreis×sex×group.
 
     For each Kreis k, sex s, group g:
-        sum_cells(EMPLOYED_{s}_{g}_agg) == census_Erwerbstätige[k,s] × age_share[k,g]
+        sum_cells(EMPLOYED_{s}_{g}_agg) == census_Erwerbstätige[k,s] × age_share[k,s,g]
+    where age_share[k,s,g] is the same for both sexes when only one shape per Kreis is given.
 
     Parameters
     ----------
@@ -125,8 +140,9 @@ def per_cell_employment_targets(
         Per-Kreis sex-split Erwerbstaetige levels: ``ARS_kreis`` +
         ``ERWERBSTAT_KURZ_STP__11_M`` / ``ERWERBSTAT_KURZ_STP__11_W`` (the LEVEL).
     age_shares_by_kreis:
-        Dict mapping Kreis string -> dict[group_name, share] where shares sum to 1.0
-        (from zensus_employment_age.load_age_shares).
+        Dict mapping Kreis string -> either dict[group_name, share] (one shape for both sexes,
+        zensus_employment_age.load_age_shares) or {"M": dict, "F": dict} (one per sex,
+        zensus_employment_age.load_kreis_sex_age_shares); shares sum to 1.0 per shape.
     kreis_col:
         Name of the Kreis column on ``cells`` (5-digit ARS).
     min_age, single_year_max:
@@ -135,7 +151,7 @@ def per_cell_employment_targets(
     Returns
     -------
     pandas.DataFrame
-        Frame with ``ZENSUS100m`` + 6 columns: EMPLOYED_{M,F}_{young,prime,old}_agg.
+        Frame with ``ZENSUS100m`` + 10 columns: EMPLOYED_{M,F}_{16_29,...,60plus}_agg.
     """
     out = pd.DataFrame({"ZENSUS100m": cells["ZENSUS100m"].to_numpy()}, index=cells.index)
     lv = census_levels.copy()
@@ -176,8 +192,8 @@ def per_cell_employment_targets(
             pop = _group_cell_pop(cells, prefix, glo, ghi, min_age, single_year_max)
             pop_by_kreis = pop.groupby(cells[kreis_col]).transform("sum")
             level = cells[kreis_col].map(
-                lambda k, _lc=level_col, _g=gname: (
-                    float(lv.loc[k, _lc]) * age_shares_by_kreis.get(k, {}).get(_g, 0.0)
+                lambda k, _lc=level_col, _g=gname, _s=prefix: (
+                    float(lv.loc[k, _lc]) * _age_share(age_shares_by_kreis, k, _s, _g)
                     if k in lv.index else 0.0
                 )
             )
@@ -200,7 +216,7 @@ def add_employment_grid_columns(
     """Return a copy of ``cells`` with the 10 employment-grid columns added.
 
     Thin wrapper over :func:`per_cell_employment_targets` for the stage wiring: it
-    computes the ten per-cell employment targets (Zensus 2001 age-shape rescaled per
+    computes the ten per-cell employment targets (Zensus 2022 age shape rescaled per
     Kreis×sex×group to the census Erwerbstaetige level) and attaches them via merge
     on ZENSUS100m.
 
@@ -213,7 +229,8 @@ def add_employment_grid_columns(
         Per-Kreis sex-split Erwerbstaetige levels: ``ARS_kreis`` +
         ``ERWERBSTAT_KURZ_STP__11_M`` / ``ERWERBSTAT_KURZ_STP__11_W`` (the LEVEL).
     age_shares_by_kreis:
-        Dict mapping Kreis string -> dict[group_name, share] (from load_age_shares).
+        Dict mapping Kreis string -> one shape or one shape per sex (see
+        :func:`per_cell_employment_targets`).
     kreis_col:
         Name of the Kreis column on ``cells`` (5-digit ARS).
     min_age, single_year_max:

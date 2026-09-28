@@ -272,6 +272,10 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EDUCATION_BY_AGE_CONTROL,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
+    KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE,
+    EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX,
+    EMPLOYMENT_GRID_AGE_SHAPE_SOURCES,
+    EMPLOYMENT_GRID_AGE_SHAPE_ZENSUS_2000S_2001,
     KEY_ESCORT_PARTICIPATION_CONTROL,
     KEY_ESCORT_PASSIVE_EDUCATION,
     KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES,
@@ -758,6 +762,9 @@ def configure(context):
     context.config(KEY_KREIS_CONTROLS, "")
     # Employment grid control (Task 5). Default "off" = byte-identical to today.
     context.config(KEY_EMPLOYMENT_GRID, "off")
+    # Its age shape (ADR-0137). Default: the Zensus 2022 Regionaltabelle's exact shape per Kreis
+    # and sex; the previous 2000S-2001 source stays selectable and byte-identical.
+    context.config(KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE, EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX)
     # Ownership grid control (issue #240). Default "on" (project rule: new features
     # default on); "off" is byte-identical to the pre-#240 control set. Effective only
     # for source="mid" -- an ENTD run logs and skips it (see _read_control_config).
@@ -772,8 +779,9 @@ def configure(context):
     # "optimized_2026_06_30" to apply the searched per-group weights (see control_spec).
     context.config(KEY_IMPORTANCE_PROFILE, "uniform")
     # When the employment grid control is ON, the per-cell employment targets are
-    # built from the Zensus 2000S-2001 employment-by-age SHAPE (a committed reference
-    # CSV under data_path; see braunschweig.popsim.zensus_employment_age) rescaled per
+    # built from a Zensus employment-by-age SHAPE (a committed reference CSV under
+    # data_path, chosen by KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE; see
+    # braunschweig.popsim.zensus_employment_age) rescaled per
     # Kreis×sex×group to the census Erwerbstaetige Kreis level. No synpp stage
     # dependency is needed (the former GENESIS SvB stage dependency is gone). We only
     # ensure data_path is declared so the reference CSV can be located; this is a
@@ -1382,11 +1390,13 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
     """Inject the ten per-cell employment-grid target columns (Task 5).
 
     Employment grid control (Task 5): inject the ten per-cell
-    EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from the
-    committed Zensus 2000S-2001 employment-by-age reference (zensus_employment_age.
-    load_age_shares; exact for the kreisfreie Staedte, national fallback for the
-    Landkreise) and is rescaled per Kreis x sex x group to the census Erwerbstaetige
-    Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
+    EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg target columns. The age SHAPE comes from
+    the source ``KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE`` names (ADR-0137): by default the committed
+    Zensus 2022 Regionaltabelle reference, exact per Kreis and sex for every ZGB Kreis
+    (zensus_employment_age.load_kreis_sex_age_shares); alternatively the previous Zensus
+    2000S-2001 reference (load_age_shares; exact for the kreisfreie Staedte, national fallback for
+    the Landkreise, one shape for both sexes). It is rescaled per Kreis x sex x group to the census
+    Erwerbstaetige Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
     dependency is no longer used. When OFF, none of this runs -> byte-identical.
 
     Returns: the cells frame with the ten ``EMPLOYED_*_agg`` columns (MUST be
@@ -1432,50 +1442,82 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
         cells = cells.copy()
         cells[_folders.GEO_KREIS] = derive_geo_kreis_from_ars(cells[mid._ARS_COLUMN])
 
-        # SHAPE: Zensus 2000S-2001 employment-by-age-group shares per Kreis, loaded from
-        # the committed reference CSV under data_path. Built once per distinct Kreis on
-        # the cells frame (exact for 03101/02/03, national fallback for the Landkreise).
+        # SHAPE: the age shape per Kreis, from the configured source (ADR-0137). Built once
+        # per distinct Kreis on the cells frame.
         _eg_data_path = context.config("data_path")
-        _eg_ref = os.path.join(
-            _eg_data_path, "braunschweig/popsim/zensus2022_employment_by_age_ref.csv"
-        )
-        if not os.path.exists(_eg_ref):
-            raise FileNotFoundError(
-                f"employment grid control requires the Zensus age-share reference "
-                f"{_eg_ref}; import zensus2022_employment_by_age_ref.csv into "
-                "data/braunschweig/popsim/."
+        _eg_source = str(context.config(KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE)).strip()
+        if _eg_source not in EMPLOYMENT_GRID_AGE_SHAPE_SOURCES:
+            raise ValueError(
+                f"{KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE} must be one of "
+                f"{list(EMPLOYMENT_GRID_AGE_SHAPE_SOURCES)}, got {_eg_source!r}."
             )
         _eg_kreise = sorted(cells[_folders.GEO_KREIS].astype(str).unique())
-        _eg_age_shares = {k: _za.load_age_shares(_eg_ref, k) for k in _eg_kreise}
-
-        # Fallback observability (CLAUDE.md, no silent fallback): load_age_shares
-        # silently substitutes the national "DE_large_gemeinden" shape for a Kreis absent
-        # from the reference. The Landkreise fall back BY DESIGN (only the kreisfreie
-        # Staedte 03101/02/03 have an exact 2001 shape), so log the exact-vs-fallback split
-        # at info; escalate to warning ONLY if a known-exact kreisfreie Stadt fell back
-        # (that signals a broken/renamed reference, not the expected Landkreis fallback).
-        _eg_ref_regions = set(
-            pd.read_csv(_eg_ref, dtype={"region": str})["region"].astype(str).unique()
-        )
-        _eg_exact = [k for k in _eg_kreise if k in _eg_ref_regions]
-        _eg_fallback = [k for k in _eg_kreise if k not in _eg_ref_regions]
-        _eg_kreisfrei_exact = {"03101", "03102", "03103"}
-        _eg_unexpected = sorted(_eg_kreisfrei_exact.intersection(_eg_fallback))
-        _eg_msg = (
-            "[popsim.stage] employment grid age-shape: %d/%d Kreise exact, %d used the "
-            "national DE_large_gemeinden fallback %s"
-        )
-        if _eg_unexpected:
-            logger.warning(
-                _eg_msg + " -- INCLUDING kreisfreie Stadt/Staedte %s that should be exact; "
-                "check the reference CSV region coding.",
-                len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback, _eg_unexpected,
+        if _eg_source == EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX:
+            # Zensus 2022 Regionaltabelle, exact per Kreis AND sex for every ZGB Kreis. A Kreis
+            # without its own rows takes Germany's shape; that is a data gap, not a design
+            # choice, so it is a WARNING with the Kreise named (no silent fallback).
+            _eg_ref = os.path.join(_eg_data_path, "braunschweig/popsim", _za.KREIS_EMPLOYED_BY_AGE_FILE)
+            if not os.path.exists(_eg_ref):
+                raise FileNotFoundError(
+                    f"employment grid control requires the Zensus employed-by-age reference "
+                    f"{_eg_ref}; write it with scripts/extract_zensus2022_employed_by_age.py or "
+                    f"set {KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE}: "
+                    f"{EMPLOYMENT_GRID_AGE_SHAPE_ZENSUS_2000S_2001}."
+                )
+            _eg_reference = _za.read_kreis_employed_by_age(_eg_ref)
+            _eg_age_shares, _eg_methods = {}, {}
+            for _eg_kreis in _eg_kreise:
+                _eg_age_shares[_eg_kreis], _eg_methods[_eg_kreis] = _za.load_kreis_sex_age_shares(
+                    _eg_ref, _eg_kreis, reference=_eg_reference)
+            _eg_exact = [k for k in _eg_kreise if _eg_methods[k] == _za.SHAPE_EXACT]
+            _eg_fallback = [k for k in _eg_kreise if _eg_methods[k] == _za.SHAPE_NATIONAL]
+            (logger.warning if _eg_fallback else logger.info)(
+                "[popsim.stage] employment grid age-shape (%s, per sex): %d/%d Kreise exact, "
+                "%d fell back to the national shape %s",
+                _eg_source, len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
             )
         else:
-            logger.info(
-                _eg_msg + " (Landkreis fallback is by design).",
-                len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
+            # The previous source (Zensus 2000S-2001), unchanged: exact for the kreisfreie
+            # Staedte, national DE_large_gemeinden shape for the Landkreise.
+            _eg_ref = os.path.join(
+                _eg_data_path, "braunschweig/popsim/zensus2022_employment_by_age_ref.csv"
             )
+            if not os.path.exists(_eg_ref):
+                raise FileNotFoundError(
+                    f"employment grid control requires the Zensus age-share reference "
+                    f"{_eg_ref}; import zensus2022_employment_by_age_ref.csv into "
+                    "data/braunschweig/popsim/."
+                )
+            _eg_age_shares = {k: _za.load_age_shares(_eg_ref, k) for k in _eg_kreise}
+
+            # Fallback observability (CLAUDE.md, no silent fallback): load_age_shares
+            # silently substitutes the national "DE_large_gemeinden" shape for a Kreis absent
+            # from the reference. The Landkreise fall back BY DESIGN of this source (only the
+            # kreisfreie Staedte 03101/02/03 have an exact shape in it), so log the
+            # exact-vs-fallback split at info; escalate to warning ONLY if a known-exact
+            # kreisfreie Stadt fell back (that signals a broken/renamed reference).
+            _eg_ref_regions = set(
+                pd.read_csv(_eg_ref, dtype={"region": str})["region"].astype(str).unique()
+            )
+            _eg_exact = [k for k in _eg_kreise if k in _eg_ref_regions]
+            _eg_fallback = [k for k in _eg_kreise if k not in _eg_ref_regions]
+            _eg_kreisfrei_exact = {"03101", "03102", "03103"}
+            _eg_unexpected = sorted(_eg_kreisfrei_exact.intersection(_eg_fallback))
+            _eg_msg = (
+                "[popsim.stage] employment grid age-shape: %d/%d Kreise exact, %d used the "
+                "national DE_large_gemeinden fallback %s"
+            )
+            if _eg_unexpected:
+                logger.warning(
+                    _eg_msg + " -- INCLUDING kreisfreie Stadt/Staedte %s that should be exact; "
+                    "check the reference CSV region coding.",
+                    len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback, _eg_unexpected,
+                )
+            else:
+                logger.info(
+                    _eg_msg + " (Landkreis fallback is by design of this source).",
+                    len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
+                )
 
         cells = _eg.add_employment_grid_columns(
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
