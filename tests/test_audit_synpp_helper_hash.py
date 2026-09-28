@@ -180,3 +180,78 @@ def test_every_source_hashing_stage_covers_its_required_helpers(real_repository_
     # Guard the guard: the gate must be looking at a non-trivial set of stages.
     hashing = [n for n, e in report.items() if e["hashes_source"]]
     assert len(hashing) >= 15, hashing
+
+
+# --- The transitive closure (step 5, ADR-0136) ---------------------------------------------
+#
+# The gate above stops at a stage module's OWN imports. A helper's own imports run inside the
+# stage just the same: the enriched stage's car-ownership draw read its tilt and base table from
+# braunschweig.data.mid.cars_by_status through vehicle_ownership, and no token hashed that module.
+
+def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
+    """A module the stage reaches only through its hashed helper is reported; a declared stage
+    dependency ends the walk, because the DAG covers its code and its own imports."""
+    package = tmp_path / "braunschweig"
+    package.mkdir()
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "base_bs.yml").write_text("aliases: {}\n", encoding="utf-8")
+    files = {
+        "__init__.py": "",
+        "stage_a.py": (
+            "import hashlib\nimport inspect\n"
+            "from braunschweig import helper_one\n"
+            "_HELPER_MODULES = (helper_one,)\n"
+            "def configure(context):\n    context.stage('braunschweig.stage_b')\n"
+            "def execute(context):\n    return helper_one.run()\n"
+            "def validate(context):\n"
+            "    return hashlib.md5(inspect.getsource(helper_one).encode()).hexdigest()\n"),
+        "helper_one.py": (
+            "def run():\n    from braunschweig import helper_two, stage_b\n"
+            "    return helper_two.value() + stage_b.VALUE\n"),
+        "helper_two.py": "def value():\n    return 1\n",
+        "stage_b.py": (
+            "from braunschweig import behind_stage_b\n"
+            "VALUE = behind_stage_b.VALUE\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return VALUE\n"),
+        "behind_stage_b.py": "VALUE = 2\n",
+    }
+    for name, source in files.items():
+        (package / name).write_text(source, encoding="utf-8")
+
+    entry = audit.build_report(tmp_path)["braunschweig.stage_a"]
+    assert entry["uncovered"] == []  # the one-level gate sees nothing missing
+    assert entry["transitive_uncovered"] == ["braunschweig.helper_two"]
+
+
+#: Stages whose token must hash their WHOLE first-party import closure. The others are held to
+#: the one-level gate above; the audit reports their transitive gaps until they are closed.
+FULL_CLOSURE_STAGES = ("braunschweig.synthesis.population.enriched",)
+
+#: Transitive gaps left open on purpose, per stage. A shrinking register like
+#: EXPECTED_UNCOVERED: every entry needs its reason, and the gate fails when an entry closes.
+DEFERRED_TRANSITIVE_GAPS: dict[str, tuple[str, ...]] = {
+    # The IPF population method is kept as a courtesy path, and its coverage waits (user
+    # decision, 2026-09-28). popsim.attributes imports derive_socioprofessional_class from the
+    # IPF attribute stage module; the fix is to move that function out of
+    # braunschweig.ipf.attributed (narrow the import), not to hash the IPF stage into this
+    # token. The other three are reached only through braunschweig.ipf.attributed.
+    "braunschweig.synthesis.population.enriched": (
+        "braunschweig.data.education.student_share",
+        "braunschweig.ipf.attributed",
+        "braunschweig.ipf.config_validation",
+        "braunschweig.ipf.household_composition",
+    ),
+}
+
+
+@pytest.mark.parametrize("stage", FULL_CLOSURE_STAGES)
+def test_full_closure_stages_hash_every_module_they_reach(real_repository_report, stage):
+    uncovered = tuple(real_repository_report[stage]["transitive_uncovered"])
+    deferred = DEFERRED_TRANSITIVE_GAPS.get(stage, ())
+    assert uncovered == deferred, (
+        f"{stage}: transitive coverage changed.\n"
+        f"unhashed now: {uncovered}\n"
+        f"deferred on purpose: {deferred}\n"
+        "Add a new module to _DEFERRED_HELPER_MODULE_NAMES or narrow the import that reaches "
+        "it; remove a register entry once its gap is closed.")

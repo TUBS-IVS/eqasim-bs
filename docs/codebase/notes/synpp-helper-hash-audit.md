@@ -668,12 +668,20 @@ What this method cannot see, checked rather than assumed:
   difference: the stage module has 4 uncovered direct imports, while its covered
   submodules import roughly as many more first-party modules again, all equally
   outside the token. Read a (c) row as "at least these".
-- **Transitive imports beyond one level:** by design (matching the two
-  reference implementations' own stated boundary), this audit resolves only
-  each stage's **own direct** imports, not what its helpers in turn import.
-  A change buried two levels deep (a helper's helper) is out of scope for
-  every category here, including (b) — this mirrors the explicit boundary
-  `popsim.stage`'s own `validate()` docstring states for itself.
+- **Transitive imports beyond one level:** the categories above resolve only
+  each stage's **own direct** imports, not what its helpers in turn import,
+  matching the two reference implementations' own stated boundary. Since
+  2026-09-28 the script also follows the imports through every first-party
+  module a source-hashing stage reaches (step 5, stopping at declared stage
+  edges) and reports what the token misses as `transitive_uncovered`
+  (ADR-0136). That boundary hid a real gap: the enriched stage's car-ownership
+  draw read its base table and raumtyp tilt from
+  `braunschweig.data.mid.cars_by_status`, imported inside a `vehicle_ownership`
+  function, and no token hashed it. On 2026-09-28, 21 of the 25 source-hashing
+  stages still had such gaps (523 stage-module pairs over 156 modules). The
+  enriched stage is gated on its whole closure (`FULL_CLOSURE_STAGES` in
+  `tests/test_audit_synpp_helper_hash.py`), with the IPF attribute stage it
+  reaches as a registered exception; the other stages keep the one-level gate.
 - **No dynamic/computed `context.stage(...)` calls exist today** (checked:
   every call across all 230 stages had a literal string first argument), so
   no stage needed an `unknown` mark for declared-dependency resolution this

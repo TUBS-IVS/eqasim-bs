@@ -14,6 +14,10 @@ Step 3  declared stage edges   -- literal context.stage("name") calls, resolved 
 Step 4  validate() coverage    -- stages whose validate() hashes source; their
                                   _HELPER_MODULES / _DEFERRED_HELPER_MODULE_NAMES read
                                   STATICALLY, packages enumerated one level deep.
+Step 5  transitive closure     -- the same imports followed through every first-party
+                                  module a source-hashing stage reaches, stopping at its
+                                  declared stage edges; what the token misses of that closure
+                                  is ``transitive_uncovered`` (ADR-0136).
 
 Usage: python scripts/audit_synpp_helper_hash.py [<repo_root>] [--json <out.json>]
 """
@@ -209,6 +213,28 @@ def covered_by_entry(name: str) -> set[str]:
     return {name}
 
 
+def import_closure(stage: str, imports: dict[str, set[str]], stages, declared_modules) -> set[str]:
+    """Every first-party module ``stage`` reaches through imports, the stage module excluded.
+
+    Follows module-level and lazy imports from the stage module through every module it
+    reaches and stops at the stage's DECLARED synpp dependencies, whose code the DAG covers.
+    Static, so it over-approximates the code a run executes: it can ask a token to hash a
+    module the stage never calls, never the other way round. Step 2 stops after the stage
+    module's own imports, the one-level boundary the audit note describes (ADR-0136).
+    """
+    reached, frontier = set(), [stage]
+    while frontier:
+        module = frontier.pop()
+        for target in imports.get(module, ()):
+            if target == stage or target in reached:
+                continue
+            if target in stages and target in declared_modules:
+                continue
+            reached.add(target)
+            frontier.append(target)
+    return reached
+
+
 def report_meta(repo: Path) -> dict:
     """Counts that describe the SCAN rather than any single stage."""
     return {"files": len(list(iter_py(repo)))}
@@ -241,6 +267,11 @@ def build_report(repo: Path) -> dict:
             stages[name] = path
 
     aliases = read_aliases(repo)
+    # Step 5 needs the first-party imports of every module, not only of the stages.
+    imports = {}
+    for module, module_tree in trees.items():
+        module_level_imports, lazy_imports = collect_imports(module_tree, module, on_disk)
+        imports[module] = module_level_imports | lazy_imports
     # Which stages hash Python source at all (the note's `grep -rl "inspect.getsource"`).
     source_hashing = set()
     for name, path in stages.items():
@@ -275,6 +306,8 @@ def build_report(repo: Path) -> dict:
                 resolved |= covered_by_entry(dotted)
             entry["covered"] = sorted(resolved)
             entry["uncovered"] = sorted(required - resolved)
+            entry["transitive_uncovered"] = sorted(
+                import_closure(name, imports, stages, declared_modules) - resolved)
         report[name] = entry
 
     return report
@@ -315,7 +348,8 @@ def main(argv: list[str] | None = None) -> int:
         e = report[n]
         print(f"  {n}: required {len(e['required_helpers'])}, "
               f"covered {len(e.get('covered', []))}, "
-              f"uncovered {e.get('uncovered') or 'none'}")
+              f"uncovered {e.get('uncovered') or 'none'}, "
+              f"transitive gap {len(e.get('transitive_uncovered', []))}")
     if args.json_path is not None:
         args.json_path.parent.mkdir(parents=True, exist_ok=True)
         args.json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

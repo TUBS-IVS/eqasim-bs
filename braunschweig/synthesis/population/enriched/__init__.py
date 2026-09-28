@@ -146,14 +146,33 @@ _HELPER_MODULES = (
 #: module level: the MiD distribution loaders this stage draws income, tenure and car
 #: ownership from. Their tables ARE this stage's enrichment, so an edit to one changes the
 #: enriched population -- the first three were outside the token until the #327 helper-hash
-#: re-audit. cars_by_status is imported inside vehicle_ownership._sample_cars_income_aware,
-#: which the audit does not follow into helper submodules; it builds the car-ownership base
-#: table and holds the raumtyp tilt the draw applies, and was hashed from 2026-09-28 on.
+#: re-audit. cars_by_status is imported inside vehicle_ownership._sample_cars_income_aware;
+#: it builds the car-ownership base table and holds the raumtyp tilt the draw applies.
+#:
+#: The names after it are not imported by this package itself but by its helpers, as each
+#: comment says: this stage runs their code, so an edit there must devalidate it too. The
+#: audit follows imports that far since 2026-09-28 and gates this stage on its whole import
+#: closure (tests/test_audit_synpp_helper_hash.py, ADR-0136). The IPF attribute stage that
+#: popsim.attributes reaches is deliberately left out; the gate names it and why.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.income_by_size",
     "braunschweig.data.mid.income_by_status",
     "braunschweig.data.mid.tenure_by_income",
     "braunschweig.data.mid.cars_by_status",
+    # vehicle_ownership: the Haushaltstyp classifier and rake_2d, the rake to the H7 control.
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.ipf.joint_age_size",
+    # economic_status: the census household-income table.
+    "braunschweig.data.census.household_income",
+    # base: the MiD zone table, the eqasim enrichment it extends and that module's HTS readers.
+    "braunschweig.data.mid.zones",
+    "synthesis.population.enriched",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    # base and availability: the attribute mappers and their missing-value handling.
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.missing",
 )
 
 
