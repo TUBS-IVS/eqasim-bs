@@ -20,6 +20,11 @@ submodules define: `activity_types`, `candidate_columns`, `candidates`,
 `srv_candidates`, `distance_sampling`, `deciders`, `srv_location_types`,
 `escort`, `plans`, `fallback`, `parallel_solving`, `results`, `reporting`.
 
+A fourteenth submodule, `pool_protection` (ADR-0135, the fork pool's memory
+protections; rules in `docs/codebase/notes/chainsolver-fork-pool-memory.md`),
+is imported as a module object only: it is hashed in `_HELPER_MODULES` like the
+others, but its names are not re-exported.
+
 The import path is unchanged: `braunschweig.synthesis.locations.secondary_chainsolvers`
 resolves to the package's `__init__.py` exactly as it resolved to the flat
 module before, so the synpp alias needed no change.

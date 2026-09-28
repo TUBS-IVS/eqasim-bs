@@ -1,0 +1,112 @@
+id: chainsolver-pool-memory-2026-09-28
+date: '2026-09-28'
+repository:
+  commit: 46246109449429ae2b7db02692427c09402b0230
+  branch: main
+  notes: The pipeline commit the run's own provenance record names
+    ("[provenance] pipeline_commit=46246109 eqasim_java_commit=21c1045", written to
+    <working directory>/run_provenance_20260928T074709Z.json on felix). This manifest is a
+    MEASUREMENT over that production run's recorded resource series, not a run of its own;
+    the figures below are what braunschweig.monitoring.summary (pool_memory_episodes,
+    summarize) returns for those series at the commit that adds that function (ADR-0135).
+configuration:
+  base: configs/base_bs.yml
+  notes: The 100 % production run of 2026-09-25 (attempt 1) and its restart of 2026-09-28
+    (attempt 2), base configs/base_bs.yml + a scale overlay derived from
+    configs/overlays/test_100pct.yml that only relocates the working, output and popsim work
+    directories and sets matsim_last_iteration 100. Attempt 1 ran
+    braunschweig.chainsolvers.processes 0 (auto) with worker_memory_gb 0.86; attempt 2 pinned
+    braunschweig.chainsolvers.processes to 16 after attempt 1 exhausted the machine.
+sampling:
+  rate: 100 %
+  scope: ZGB-8
+pipeline:
+  targets:
+  - synthesis.output
+  notes: Measured stages are braunschweig.popsim.trips_stage and
+    braunschweig.synthesis.locations.secondary_chainsolvers (attempt 1) and the chainsolver
+    stage again in attempt 2, whose earlier stages came from the cache attempt 1 wrote.
+classification:
+- validation
+status:
+  execution: completed
+  notes: Post-hoc resource measurement of two production-configuration executions. It is
+    NOT a model-quality validation (no scientific output is assessed) and it replaces the
+    measured basis of braunschweig.chainsolvers.worker_memory_gb recorded in
+    docs/runs/chainsolver-worker-private-memory-2026-09-17.yml. The production run itself
+    (its MATSim phase and its convergence) is recorded separately once it has finished.
+environment: 'felix (94.28 GiB total memory per the recorder''s memory_total_kb, 64 cores,
+  i.e. an 86.28 GiB / 62-core budget after the ADR-0126 reserves). Series measured, both
+  local to the server and not committed: <working directory>/monitoring/resource_series_20260925T192908.jsonl
+  (attempt 1, 1,548 samples, sha256 2d564a0ae9fd697f14f51f1e490d7d0707b44dbdf09ec2ec39586269abdf3821)
+  and resource_series_20260928T094709.jsonl (attempt 2 phase A, 109 samples, sha256
+  baf99be278a6e32a364c31902751c0785b9b4f36695eb792fa6f55cd18887b83). All memory figures are
+  in GiB (the recorder reports kB = KiB; braunschweig.resources calls GiB "GB").
+
+  '
+validation:
+- metric: chainsolver pool, attempt 1 (auto sizing, 56 workers)
+  reference: none (measurement)
+  result: 'The stage''s own sizing line: "driver RSS 37.55 GB, worker_memory_gb 0.86 GB ->
+    ceiling 56 workers". pool_memory_episodes: 2026-09-26 08:27:49 -> 08:38:02 (the last
+    sample of the series), 56 workers, baseline (used - driver) 2.115 GiB, private memory
+    1.039 GiB per worker at the last sample, pool total 58.20 GiB next to a driver RSS of
+    35.96 GiB -- 96.3 GiB against 94.28 GiB of memory. The kernel log (dmesg) on felix names
+    the driver (pid 264803) as the OOM killer''s first victim, followed by four workers; the
+    per-worker figure was still rising when the series ends, so 1.039 GiB is a lower bound of
+    what this pool would have reached.'
+- metric: orphaned chainsolver workers after the driver was killed, attempt 1
+  reference: none (observation)
+  result: 52 pool workers survived the killed driver, re-parented to init, and kept their
+    memory until they were killed by hand before the restart on 2026-09-28. An idle
+    concurrent.futures worker blocks on the call-queue pipe, whose write end it inherited
+    itself, so it never sees an end-of-file.
+- metric: chainsolver pool, attempt 2 (16 workers pinned)
+  reference: none (measurement)
+  result: 'The stage''s sizing line: "driver RSS 36.37 GB, worker_memory_gb 0.86 GB ->
+    ceiling 58 workers" (the 16 pin binds). pool_memory_episodes: 2026-09-28 09:55:18 ->
+    10:36:27, 16 workers, baseline 1.667 GiB, PEAK 1.088 GiB private per worker at 10:20:22,
+    pool total peak 17.41 GiB, driver RSS 36.67 GiB. Pass 1 (862,532 persons, 62 shards)
+    finished in 2334.8 s, pass 2 (3,598 persons) in 140.8 s; phase A ended with exit 0.'
+- metric: copy-on-write signature of the per-worker growth, attempt 2
+  reference: none (measurement)
+  result: From the first pool sample to the peak the private memory per worker grew by
+    0.618 GiB while the mean worker RSS grew by 0.093 GiB. A page copied on write replaces
+    a page the worker already mapped (RSS unchanged); only an allocation grows the RSS. So
+    at least 0.525 GiB per worker (85 %) of the growth are pages the worker shared with the
+    driver and copied, which is what a worker's garbage collection does to the driver's
+    objects it visits (ADR-0135).
+- metric: why the 2026-09-17 bound of 0.86 GB was too low
+  reference: docs/runs/chainsolver-worker-private-memory-2026-09-17.yml
+  result: 'Those seven runs measured 0.475-0.862 per worker next to drivers of 19.6-30.1 GB,
+    the maximum belonging to the largest driver. The copied pages are the driver''s own
+    object pages, so the figure grows with the driver; with the 36-38 GiB drivers of this
+    run it reached 1.088 GiB. 1.088, rounded up to 1.09, is the new measured maximum
+    (braunschweig.chainsolvers.worker_memory_gb in configs/base_bs.yml). It is a maximum
+    WITHOUT gc.freeze; the freeze of ADR-0135 is expected to remove the copied share, which
+    the next production run''s summary measures (the pool lines of
+    resource_series_<ts>.summary.md).'
+- metric: trips_stage memory peak, attempt 1
+  reference: none (measurement)
+  result: summarize() per stage for braunschweig.popsim.trips_stage (wall 45.7 min) - peak
+    process RSS (the driver's VmHWM) 86.32 GiB, minimum available memory 10.14 GiB, of 94.28
+    GiB. The peak falls into the second PlanValidator.repair_trips pass, right after its
+    log line "home-closure dwell capped ... 207/22957" at 07:26:52; every later stage
+    reports the same VmHWM because it is a lifetime maximum of the driver process.
+- metric: wall clock of the PopulationSim stage, attempt 1
+  reference: none (measurement)
+  result: summarize() per stage for braunschweig.popsim.stage - 630.0 min, i.e. what a
+    change to any module that stage hashes (braunschweig.parallelism, braunschweig.resources
+    among them) costs the next 100 % run (ADR-0135 keeps the pool changes out of both).
+- metric: method cross-check on the PopulationSim pool, attempt 1
+  reference: braunschweig.resources.DEFAULT_POPSIM_WORKER_MEMORY_GB (30 GB)
+  result: pool_memory_episodes over braunschweig.popsim.stage (2026-09-25 20:21:48 ->
+    2026-09-26 06:43:07, up to 2 workers) - pool total peak 57.36 GiB, 29.53 GiB for a
+    single live worker; consistent with the 30 GB per-worker default the popsim sizing uses.
+decisions:
+- ADR-0126
+- ADR-0135
+source: braunschweig.monitoring.summary (pool_memory_episodes, summarize) run unchanged over
+  the two series named under environment, plus the stage's own "[resources]" sizing lines in
+  the phase logs <run directory>/logs/attempt1/A_synthesis.log and logs/A_synthesis.log on
+  felix.

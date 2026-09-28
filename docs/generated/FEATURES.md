@@ -75,7 +75,7 @@ may only name run manifests (no run, no claim).
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`) | pending |
-| [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 4 | -- | marker | none | unvalidated | pending |
+| [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [participation_universe_controls](../registry/features/participation_universe_controls.yml) | attributes | active | ON | A/i/- | 15 | proven | marker | committed | measured_vs_reference (`participation-universe-controls-arm4-100pct-2026-09-08`) | Claude (Fable 5.1) subagent-driven task reviews plus one whole-branch review, 2026-09-07; the whole-branch review found the census age-column defect that would have aborted the arm-4 run, so the review is load-bearing evidence and not a formality. User sign-off outstanding., None |
 | [per_band_commute_friction](../registry/features/per_band_commute_friction.yml) | work | supported | off | i/i/i | 1 | proven | marker | committed | unvalidated | pending |
 | [performance_equivalence](../registry/features/performance_equivalence.yml) | infrastructure | active | ON | A/s/s | 7 | proven | marker | none | not_applicable (`performance-equivalence-2026-09-15`) | pending |
@@ -87,7 +87,7 @@ may only name run manifests (no run, no claim).
 | [purpose_main_fold_code_10](../registry/features/purpose_main_fold_code_10.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [rbw_leg_convention](../registry/features/rbw_leg_convention.yml) | behavior | active | ON | A/i/- | 4 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
 | [reactivated_person_attributes](../registry/features/reactivated_person_attributes.yml) | attributes | active | off | -/-/A | 3 | proven | marker | committed | unvalidated | pending |
-| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`) | pending |
+| [resource_adaptive_config](../registry/features/resource_adaptive_config.yml) | infrastructure | active | ON | A/A/A | 21 | not claimed | marker | none | unvalidated (`chainsolver-worker-private-memory-2026-09-17`, `chainsolver-pool-memory-2026-09-28`) | pending |
 | [run_config_composition](../registry/features/run_config_composition.yml) | infrastructure | active | ON | A/s/s | 2 | -- | none | none | unvalidated | pending |
 | [run_resource_recorder](../registry/features/run_resource_recorder.yml) | infrastructure | active | ON | A/A/A | 7 | proven | marker | none | unvalidated | pending |
 | [secondary_distance_by_purpose](../registry/features/secondary_distance_by_purpose.yml) | secondary | active | ON | A/i/i | 4 | -- | none | committed | unvalidated | pending |
