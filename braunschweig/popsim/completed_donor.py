@@ -45,7 +45,7 @@ import numpy as np
 import pandas as pd
 
 from braunschweig.popsim import diary_facts, diary_plan_match
-from braunschweig.popsim import mid
+from braunschweig.popsim.mid import donor as mid_donor
 from braunschweig.popsim import passenger_availability
 from braunschweig.popsim import seed as seedmod
 from braunschweig.popsim import weekend_plan_match
@@ -68,11 +68,11 @@ DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 # shapes the donor build must therefore be folded into validate()'s token, or
 # editing the sibling silently reuses this stage's stale cached output (same
 # hazard documented in braunschweig.popsim.trips_stage.validate(), whose pattern
-# this mirrors). diary_facts / diary_plan_match / weekend_plan_match are already
-# bound module-level names in this file; member_completion and mid.donor are
-# reached only transitively (via mid.load_completed_donor -> member_completion.
-# complete_members, and via mid.load_mid_wege internally) and are not imported
-# here directly, so they are named and imported lazily inside validate().
+# this mirrors). diary_facts / diary_plan_match / weekend_plan_match and the MiD
+# donor loaders (mid_donor) are bound module-level names in this file;
+# member_completion is reached only transitively (via
+# mid_donor.load_completed_donor -> member_completion.complete_members) and is not
+# imported here directly, so it is named and imported lazily inside validate().
 # seedmod (braunschweig.popsim.seed) is included because it OWNS WEEKDAY_KERNWO, the
 # constant diary_plan_match.build_realisable_pool filters the remap donor pool with:
 # changing it changes which donors this stage can draw from, so it must devalidate
@@ -83,21 +83,40 @@ _HELPER_MODULES = (
     passenger_availability,
     seedmod,
     weekend_plan_match,
-    # The braunschweig.popsim.mid PACKAGE __init__, whose load_completed_donor /
-    # load_mid_wege / project_completed_seed ARE this stage's build. Its submodule
-    # mid.donor is covered separately below; a package entry hashes only its own
-    # __init__.py, never its submodules (#327 helper-hash re-audit).
-    mid,
+    # braunschweig.popsim.mid.donor, whose load_completed_donor / load_mid_wege ARE this
+    # stage's build. Imported from the submodule rather than through the popsim.mid package,
+    # whose __init__ would pull every MiD submodule into this token (ADR-0136).
+    mid_donor,
 )
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.member_completion",
-    "braunschweig.popsim.mid.donor",
     # Leaf module holding the KEY_* names AND (since issue #374) the DEFAULT_* values this
     # stage's configure() declares its plan-structure options with. Imported inside
     # configure()/execute() to avoid a heavy top-level import of the popsim stage package, and
     # hashed here for the same reason braunschweig.popsim.trips_stage hashes it: a renamed key or
     # a changed declared default must not serve a donor built under the old option surface.
     "braunschweig.popsim.stage.config_keys",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.trips",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
 )
 
 
@@ -237,7 +256,7 @@ def build_completed_donor(
     # days, overriding seed_day_filter (mirrors stage.execute exactly).
     day_filter = seedmod.ALL_REPORTING_KERNWO if weekend_plan_match_on else seed_day_filter
 
-    households, persons, completeness_report, completion_report = mid.load_completed_donor(
+    households, persons, completeness_report, completion_report = mid_donor.load_completed_donor(
         mid_dir, completion_rng=completion_rng, day_filter_values=day_filter,
         fine_child_age_bands=donor_match_fine_child_age_bands,
         include_passenger_availability=passenger_availability_enabled,
@@ -283,7 +302,7 @@ def build_completed_donor(
     # Diary facts are derived from the MiD Wege table UNCONDITIONALLY (needed both
     # for the diary plan match below AND for the src_* fact columns attached
     # unconditionally further down -- see the docstring Notes).
-    wege = mid.load_mid_wege(mid_dir)
+    wege = mid_donor.load_mid_wege(mid_dir)
     facts = diary_facts.compute_diary_facts(wege)
 
     diary_report = None
@@ -329,9 +348,9 @@ def validate(context):
     THIS file's own source, so editing a sibling helper this stage's build actually
     depends on -- ``diary_facts``, ``diary_plan_match``, ``seed`` (which owns the
     ``WEEKDAY_KERNWO`` pool filter and the seed-column contract) and
-    ``weekend_plan_match`` (own-package siblings imported directly above), plus
-    ``member_completion`` and ``mid.donor`` (reached only transitively, via
-    ``mid.load_completed_donor`` / ``mid.load_mid_wege``) -- would otherwise silently
+    ``weekend_plan_match`` (own-package siblings imported directly above), the MiD
+    donor loaders in ``mid.donor``, plus ``member_completion`` (reached only
+    transitively, via ``mid.donor.load_completed_donor``) -- would otherwise silently
     reuse this stage's stale cached output on a partial rerun. A deferred module that fails to import
     raises rather than being skipped -- skipping it would keep the stale cache
     alive exactly when the code is broken.

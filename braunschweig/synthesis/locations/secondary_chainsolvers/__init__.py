@@ -350,6 +350,35 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # computed under without touching any file this token otherwise covers.
     "braunschweig.popsim.stage.config_keys",
     "braunschweig.synthesis.locations.escort_links",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.calibration.targets",
+    "braunschweig.data.building_potential_attach",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.donor",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.shop_subtype",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.synthesis.locations.secondary_other_potential",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
+    "synthesis.population.spatial.secondary.components",
+    "synthesis.population.spatial.secondary.rda",
 )
 
 

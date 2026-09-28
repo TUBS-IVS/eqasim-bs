@@ -15,10 +15,10 @@ import logging
 
 import numpy as np
 
-from braunschweig.popsim import mid as _popsim_mid
-from braunschweig.popsim import stage as _popsim_stage
-from braunschweig.popsim.stage import KEY_MID
+# KEY_MID comes from the leaf config-key module, not through the popsim stage package: this
+# stage shares the key, never the popsim stage's code, so its token must not hash that stage.
 from braunschweig.popsim.stage import config_keys as _popsim_config_keys
+from braunschweig.popsim.stage.config_keys import KEY_MID
 
 _log = logging.getLogger(__name__)
 
@@ -35,21 +35,59 @@ KEY_DEMOGRAPHICS = "cordon_incommuter_donor_demographics"
 # Module-level dependencies whose source can change this stage's result without
 # changing this file. Keep these as module objects to match their import site.
 _HELPER_MODULES = (
-    _popsim_mid,
-    _popsim_stage,
     _popsim_config_keys,
 )
 
 # Function-level dependencies whose transformations live outside the stage file
-# synpp hashes itself. The MiD facade is covered above as the adapter's direct
-# call surface; donor remains explicit because it implements those re-exports.
+# synpp hashes itself. The MiD source adapter loads the donor tables through
+# braunschweig.popsim.mid.donor.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.expand",
     "braunschweig.popsim.attributes",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.sources.mid",
     "braunschweig.popsim.mid.donor",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.bbsr.regiostar",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.popsim.assembly",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.closure_dwell",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.income",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.plan_validation",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.stratum",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.methods",
+    "braunschweig.population.schema",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
 )
+
+# Stage modules this stage's imports reach although it never runs their code; the
+# import-closure gate stops at them (ADR-0136). As for braunschweig.popsim.stage, the MiD
+# source adapter imports the trips stage only for build_trips, which only the trips stage
+# calls: this stage loads the donor tables through the adapter and builds its trip table with
+# braunschweig.popsim.trips.build_trip_table.
+_TOKEN_CLOSURE_BOUNDARIES = {
+    "braunschweig.popsim.trips_stage": (
+        "reached only through the MiD source adapter's build_trips, which only the trips "
+        "stage calls; this stage loads donors through the adapter and never builds trips with it"
+    ),
+}
 
 
 def validate(context):

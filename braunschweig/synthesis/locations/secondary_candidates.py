@@ -30,35 +30,34 @@ import importlib
 import inspect
 
 
-#: Modules hashed by dotted NAME because both are imported inside a function body.
-#: ``secondary_chainsolvers`` is borrowed as a plain function library (its own
-#: ``_HELPER_MODULES`` are folded in below), and ``landuse_candidates`` appends the landuse
-#: candidate set. Neither was hashed until the #327 helper-hash re-audit: only the
-#: chainsolvers' SUBMODULES were, so an edit to the chainsolvers package ``__init__`` itself
-#: -- where the assembly this stage delegates to lives -- left this cache in place.
+#: Modules hashed by dotted NAME because this stage imports them inside a function body.
+#: The candidate assembly lives in two submodules of the secondary_chainsolvers stage package,
+#: ``candidates`` and ``srv_candidates``, which this stage imports directly rather than through
+#: the package ``__init__``: that stage module would pull the whole chainsolver into this
+#: token, although this stage runs none of it (ADR-0136). ``landuse_candidates`` appends the
+#: landuse candidate set.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.synthesis.locations.landuse_candidates",
-    "braunschweig.synthesis.locations.secondary_chainsolvers",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.candidates",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.srv_candidates",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.building_potential_attach",
+    "braunschweig.synthesis.locations.secondary_other_potential",
 )
 
 
 def validate(context):
-    """synpp validation token: md5 over the chainsolver helpers plus this stage's own.
+    """synpp validation token: md5 over the candidate-assembly helpers this stage runs.
 
     This stage delegates the assembly logic to the secondary_chainsolvers
     package submodules, but synpp's get_stage_hash only hashes THIS file's
     source -- without this hook a change confined to those helpers would
     silently reuse the stale cached candidate set on a partial rerun.
-
-    The borrowed ``secondary_chainsolvers._HELPER_MODULES`` covers that package's helpers;
-    :data:`_DEFERRED_HELPER_MODULE_NAMES` adds the two modules this stage imports itself,
-    including the chainsolvers package ``__init__`` the borrowed tuple does not contain.
+    :data:`_DEFERRED_HELPER_MODULE_NAMES` lists every module of this stage's import closure
+    (tests/test_audit_synpp_helper_hash.py).
     """
-    from braunschweig.synthesis.locations import secondary_chainsolvers
-
     digest = hashlib.md5()
-    for module in secondary_chainsolvers._HELPER_MODULES:
-        digest.update(inspect.getsource(module).encode("utf-8"))
     for module_name in _DEFERRED_HELPER_MODULE_NAMES:
         try:
             deferred_module = importlib.import_module(module_name)
@@ -139,9 +138,9 @@ def configure(context):
 
 
 def execute(context):
-    # Import from the chainsolvers module so the assembly logic exists exactly
-    # once; this stage only orchestrates it.
-    from braunschweig.synthesis.locations.secondary_chainsolvers import (
+    # Import from the chainsolvers' candidate module so the assembly logic exists
+    # exactly once; this stage only orchestrates it.
+    from braunschweig.synthesis.locations.secondary_chainsolvers.candidates import (
         append_residential_visit_candidates,
         build_secondary_candidates,
         external_candidates_cordon_warning,
@@ -236,7 +235,7 @@ def execute(context):
             df_secondary, df_residential_buildings)
 
     if escort_on:
-        from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        from braunschweig.synthesis.locations.secondary_chainsolvers.candidates import (
             append_escort_candidates,
         )
         df_secondary = append_escort_candidates(
@@ -248,7 +247,7 @@ def execute(context):
             LANDUSE_LAYER_TO_CATEGORY,
             grid_seed_polygons,
         )
-        from braunschweig.synthesis.locations.secondary_chainsolvers import (
+        from braunschweig.synthesis.locations.secondary_chainsolvers.srv_candidates import (
             append_external_category_escapes,
             append_landuse_candidates,
             append_location_category_columns,

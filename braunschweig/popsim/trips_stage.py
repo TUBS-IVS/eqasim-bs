@@ -144,6 +144,23 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # package). Hashed so a key rename or a changed declared default cannot serve
     # a cached trip table built under the old option surface.
     "braunschweig.popsim.stage.config_keys",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.gravity.friction",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
 )
 
 

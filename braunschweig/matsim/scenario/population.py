@@ -31,6 +31,7 @@ persons frame the SAME way, so ``add_person`` emits it as ``dayAbsenceState``. W
 from __future__ import annotations
 
 import hashlib
+import importlib
 import inspect
 import logging
 
@@ -58,6 +59,13 @@ _LOG_TAG = "[commute day population]"
 #: leaving this file's own source untouched; both were module-level imports outside the token
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
 _HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
+
+#: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
+#: import, whose code this stage runs without importing it itself. The gate in
+#: tests/test_audit_synpp_helper_hash.py keeps this list complete (ADR-0136).
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "matsim.writers",
+)
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads
@@ -106,6 +114,17 @@ def validate(context):
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"population validate(): cannot hash the deferred helper module "
+                f"{module_name!r} ({type(error).__name__}: {error}); it must not be skipped, "
+                "because skipping it would silently reuse stale cached output."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 

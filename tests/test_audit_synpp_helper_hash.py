@@ -204,7 +204,8 @@ def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
             "def configure(context):\n    context.stage('braunschweig.stage_b')\n"
             "def execute(context):\n    return helper_one.run()\n"
             "def validate(context):\n"
-            "    return hashlib.md5(inspect.getsource(helper_one).encode()).hexdigest()\n"),
+            "    sources = [inspect.getsource(module) for module in _HELPER_MODULES]\n"
+            "    return hashlib.md5(''.join(sources).encode()).hexdigest()\n"),
         "helper_one.py": (
             "def run():\n    from braunschweig import helper_two, stage_b\n"
             "    return helper_two.value() + stage_b.VALUE\n"),
@@ -224,22 +225,129 @@ def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
     assert entry["transitive_uncovered"] == ["braunschweig.helper_two"]
 
 
-#: Stages whose token must hash their WHOLE first-party import closure. The others are held to
-#: the one-level gate above; the audit reports their transitive gaps until they are closed.
-FULL_CLOSURE_STAGES = ("braunschweig.synthesis.population.enriched",)
+def test_exemptions_boundaries_and_unread_tuples_shape_the_closure(tmp_path):
+    """The walk skips an exempt module together with what only it imports, stops at a boundary
+    the stage declares, and credits a helper tuple only when validate() reads it. An exemption
+    without a reason is an error rather than an exemption."""
+    package = tmp_path / "braunschweig"
+    package.mkdir()
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "base_bs.yml").write_text("aliases: {}\n", encoding="utf-8")
+    files = {
+        "__init__.py": "",
+        "stage_a.py": (
+            "import hashlib\nimport inspect\n"
+            "from braunschweig import helper_one\n"
+            "_HELPER_MODULES = (helper_one,)\n"
+            "_DEFERRED_HELPER_MODULE_NAMES = ('braunschweig.helper_two',)\n"
+            "_TOKEN_CLOSURE_BOUNDARIES = {'braunschweig.stage_c': 'reached, never run'}\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return helper_one.run()\n"
+            "def validate(context):\n"
+            "    sources = [inspect.getsource(module) for module in _HELPER_MODULES]\n"
+            "    return hashlib.md5(''.join(sources).encode()).hexdigest()\n"),
+        "helper_one.py": (
+            "from braunschweig import helper_two, quiet\n"
+            "def run():\n    from braunschweig import stage_c\n"
+            "    return quiet.shown(helper_two.value())\n"),
+        "helper_two.py": "def value():\n    return 1\n",
+        "quiet.py": (
+            "from braunschweig import behind_quiet\n"
+            "_SYNPP_TOKEN_EXEMPTION = 'prints only'\n"
+            "def shown(value):\n    behind_quiet.draw()\n    return value\n"),
+        "behind_quiet.py": "def draw():\n    pass\n",
+        "stage_c.py": (
+            "from braunschweig import behind_stage_c\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return behind_stage_c.VALUE\n"),
+        "behind_stage_c.py": "VALUE = 2\n",
+    }
+    for name, source in files.items():
+        (package / name).write_text(source, encoding="utf-8")
+
+    entry = audit.build_report(tmp_path)["braunschweig.stage_a"]
+    # validate() never reads the deferred tuple, so its helper_two entry hashes nothing.
+    assert entry["transitive_uncovered"] == ["braunschweig.helper_two"]
+    assert entry["transitive_exempt"] == ["braunschweig.quiet"]
+    assert entry["closure_boundaries"] == ["braunschweig.stage_c"]
+    assert entry["unreached_boundaries"] == []
+
+    (package / "quiet.py").write_text("_SYNPP_TOKEN_EXEMPTION = ''\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="_SYNPP_TOKEN_EXEMPTION"):
+        audit.build_report(tmp_path)
+
 
 #: Transitive gaps left open on purpose, per stage. A shrinking register like
-#: EXPECTED_UNCOVERED: every entry needs its reason, and the gate fails when an entry closes.
+#: EXPECTED_UNCOVERED, empty by design: every entry needs its reason, and the gate fails when an
+#: entry closes. Two kinds of module are not gaps and are declared where they live instead: a
+#: module that never shapes a stage result carries a ``_SYNPP_TOKEN_EXEMPTION`` reason, and a
+#: stage module that a stage reaches through its imports but never runs is listed, with the
+#: reason, in that stage's ``_TOKEN_CLOSURE_BOUNDARIES``.
 DEFERRED_TRANSITIVE_GAPS: dict[str, tuple[str, ...]] = {}
 
 
-@pytest.mark.parametrize("stage", FULL_CLOSURE_STAGES)
-def test_full_closure_stages_hash_every_module_they_reach(real_repository_report, stage):
-    uncovered = tuple(real_repository_report[stage]["transitive_uncovered"])
-    deferred = DEFERRED_TRANSITIVE_GAPS.get(stage, ())
-    assert uncovered == deferred, (
-        f"{stage}: transitive coverage changed.\n"
-        f"unhashed now: {uncovered}\n"
-        f"deferred on purpose: {deferred}\n"
-        "Add a new module to _DEFERRED_HELPER_MODULE_NAMES or narrow the import that reaches "
-        "it; remove a register entry once its gap is closed.")
+def test_every_source_hashing_stage_hashes_its_whole_import_closure(real_repository_report):
+    """No source-hashing stage may leave a module of its import closure unhashed (ADR-0136).
+
+    The one-level gate above stops at a stage module's own imports. This gate follows them
+    through every first-party module reached: an unhashed module here is code the stage runs
+    whose edit a warm cache would not notice.
+    """
+    report = real_repository_report
+    offenders = {}
+    for name, entry in sorted(report.items()):
+        if not entry["hashes_source"]:
+            continue
+        # A one-level exception holds for the closure too: its reason is about the module and
+        # the stage, not about where the walk found the module.
+        missing = tuple(module for module in entry["transitive_uncovered"]
+                        if module not in EXPECTED_UNCOVERED.get(name, ()))
+        if missing:
+            offenders[name] = missing
+    assert offenders == DEFERRED_TRANSITIVE_GAPS, (
+        "transitive helper-hash coverage changed.\n"
+        + "".join(f"  {stage}: {', '.join(modules)}\n" for stage, modules in offenders.items())
+        + f"deferred on purpose: {DEFERRED_TRANSITIVE_GAPS}\n"
+        "Add each module to the stage's _DEFERRED_HELPER_MODULE_NAMES, or narrow the import "
+        "that reaches it. A module that never shapes a stage result gets a "
+        "_SYNPP_TOKEN_EXEMPTION; a stage module the stage reaches but never runs goes into that "
+        "stage's _TOKEN_CLOSURE_BOUNDARIES. Remove a register entry once its gap closes.")
+
+
+def test_closure_boundaries_are_stages_the_stage_reaches_without_importing_them(
+        real_repository_report):
+    """A boundary may only end the walk at a synpp stage that the stage reaches through its
+    helpers but does not import itself: that stage's own token covers the code for the output it
+    builds. A boundary the walk no longer reaches is stale."""
+    report = real_repository_report
+    problems = []
+    for name, entry in sorted(report.items()):
+        for boundary in entry.get("closure_boundaries", []):
+            if boundary not in report:
+                problems.append(f"{name}: {boundary} is not a synpp stage")
+            if boundary in entry["required_helpers"]:
+                problems.append(f"{name}: imports {boundary} itself, so it runs its code")
+            if boundary in entry["unreached_boundaries"]:
+                problems.append(f"{name}: no longer reaches {boundary}")
+    assert problems == []
+    # Guard the guard: the boundaries this repository declares are actually read.
+    assert any(entry.get("closure_boundaries") for entry in report.values())
+
+
+def test_only_the_trips_stage_builds_trips_through_a_donor_source():
+    """The trips-stage boundary of the popsim and MiD donor stages rests on this fact.
+
+    Their donor-source adapters import the trips stage for PopsimSource.build_trips, and only the
+    trips stage calls build_trips. A second caller could run trip code inside one of those stages
+    while neither token hashes it, so a new caller has to revisit their _TOKEN_CLOSURE_BOUNDARIES.
+    """
+    repo = Path(__file__).resolve().parents[1]
+    callers = set()
+    for path in audit.iter_py(repo):
+        text = path.read_text(encoding="utf-8")
+        if "build_trips" not in text:
+            continue
+        if any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+               and node.func.attr == "build_trips" for node in ast.walk(ast.parse(text))):
+            callers.add(audit.module_name(path, repo))
+    assert callers == {"braunschweig.popsim.trips_stage"}

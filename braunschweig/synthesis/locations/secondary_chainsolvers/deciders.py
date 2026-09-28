@@ -74,7 +74,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     if not context.config("secondary_shop_daily_split"):
         return None
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.shop_subtype import (
         SHOP_DAILY_W_ZWD,
         SHOP_NONDAILY_W_ZWD,
@@ -103,7 +103,7 @@ def _build_shop_subtype_decider(context, random_seed: int):
     else:
         # Estimate the conditional P(daily | mode, tt_band) from MiD Wege.
         mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-        mid_wege = mid_module.load_mid_wege(mid_dir)
+        mid_wege = mid_donor.load_mid_wege(mid_dir)
         # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
         # execute-context read of the key declared in configure(). Applied BEFORE map_mode /
         # the time derivation / the estimation, so every downstream count is on that universe.
@@ -244,7 +244,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
         estimate_group_probabilities,
@@ -268,7 +268,7 @@ def _build_leisure_subtype_decider(context, random_seed: int):
     # fifth leisure group (issue #373, ADR-0115).
     unspecified_subtype = bool(context.config(KEY_LEISURE_UNSPECIFIED_SUBTYPE))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = mid_donor.load_mid_wege(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); same one-argument
     # execute-context form and same imported-key rule as the two flags above. Applied BEFORE
     # map_mode / the time derivation / the coverage guard / the estimation, so the labelled
@@ -390,7 +390,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     escort_purpose_on = bool(context.config("escort_purpose"))  # one-arg: execute-context read; key declared in configure()
 
-    from braunschweig.popsim import mid as mid_module
+    from braunschweig.popsim.mid import donor as mid_donor
     from braunschweig.popsim.purpose_subtype import (
         OTHER_ERRAND_ZWECK,
         OTHER_ESCORT_ZWECK,
@@ -416,7 +416,7 @@ def _build_other_subtype_decider(context, random_seed: int):
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     mid_dir = context.config("braunschweig.population.popsim.mid_dir")
-    mid_wege = mid_module.load_mid_wege(mid_dir)
+    mid_wege = mid_donor.load_mid_wege(mid_dir)
     # The WEEKDAY DIARY estimation universe (issue #373, ADR-0116); one-argument
     # execute-context read of the key declared in configure(). Applied BEFORE map_mode / the
     # time derivation, so BOTH composed estimation stages below (the coarse W_ZWECK split and

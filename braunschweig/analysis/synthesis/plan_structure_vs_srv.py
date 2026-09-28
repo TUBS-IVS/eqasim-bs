@@ -174,7 +174,13 @@ _HELPER_MODULES = (P, SRV, T, run_provenance, _day_absence)
 #: every import of this stage. Its ``assign_geographies`` decides EVERY person's home Kreis and
 #: therefore the head-to-head universe and all per-Kreis rows, so a change there must invalidate
 #: this stage's cache.
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.analysis.spatial",)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.analysis.spatial",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.calibration.srv_absence",
+    "braunschweig.gravity.friction",
+)
 
 
 def validate(context):

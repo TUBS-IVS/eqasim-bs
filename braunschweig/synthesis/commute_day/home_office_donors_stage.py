@@ -193,7 +193,40 @@ _HELPER_MODULES = (_donor_pool, _popsim_trips, _plan_validation, _trips_stage, _
 #: these statically with ``ast`` and cannot follow a name binding. Hashed for the same reason
 #: ``trips_stage`` hashes it: a renamed key or a changed declared default must not serve a
 #: donor pool built under the old option surface.
-_DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.popsim.stage.config_keys",)
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.popsim.stage.config_keys",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.calibration.commute_day_state_reference",
+    "braunschweig.calibration.reported_time_precision",
+    "braunschweig.calibration.srv_departure_times",
+    "braunschweig.calibration.srv_distance_targets",
+    "braunschweig.calibration.srv_plan_structure",
+    "braunschweig.constants",
+    "braunschweig.data.mid.reference_tables",
+    "braunschweig.data.mid.status_by_hhtype",
+    "braunschweig.gravity.friction",
+    "braunschweig.popsim.attributes",
+    "braunschweig.popsim.chain_matching",
+    "braunschweig.popsim.day_type",
+    "braunschweig.popsim.departure_time_model",
+    "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.missing",
+    "braunschweig.popsim.passenger_availability",
+    "braunschweig.popsim.sampling",
+    "braunschweig.popsim.seed",
+    "braunschweig.popsim.sources",
+    "braunschweig.popsim.sources.base",
+    "braunschweig.popsim.time_imputation",
+    "braunschweig.popsim.weekend_plan_match",
+    "braunschweig.population.methods",
+    "braunschweig.population.socioprofessional_class",
+    "braunschweig.resources",
+    "data.hts.egt.cleaned",
+    "data.hts.entd.cleaned",
+    "data.hts.hts",
+    "synthesis.population.matched",
+)
 
 
 def configure(context):

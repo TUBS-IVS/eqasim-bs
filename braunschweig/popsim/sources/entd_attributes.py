@@ -49,7 +49,7 @@ from braunschweig.popsim.sources.entd_vocabulary import (
 # from braunschweig.popsim (verified), and this package already imports from the
 # shared synthesis tree (see braunschweig.popsim.sources.entd_diary_matching,
 # which imports synthesis.population.matched).
-from braunschweig.synthesis.population.enriched import ECONOMIC_STATUS_BY_INCOME_CLASS
+from braunschweig.synthesis.population.enriched.economic_status import ECONOMIC_STATUS_BY_INCOME_CLASS
 
 # Logger name string identical to the facade's (braunschweig.popsim.sources.entd)
 # so log records emitted from here are indistinguishable from records emitted
