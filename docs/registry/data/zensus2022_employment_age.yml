@@ -21,10 +21,12 @@ verification:
 requirements:
   synthesis: optional
   matsim: not_needed
-  production: required
+  production: optional
 licensing:
   license: dl-de/by-2-0
   restricted: false
   redistribution: allowed
 limitations: Landkreise fall back to the national age structure (documented fallback in braunschweig/popsim/zensus_employment_age.py).
-notes: null
+notes: 'Previous employment-grid age shape. Since ADR-0137 read only with
+  braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_2000S_2001;
+  production uses zensus2022_employed_by_age_kreis (exact for every Kreis, per sex).'
