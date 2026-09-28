@@ -142,35 +142,24 @@ def test_build_controls_df_off_path_has_no_kreis_controls():
     )
 
 
-def test_build_controls_df_renders_requested_kreis_controls():
-    from braunschweig.popsim.stage import build_controls_df
-
-    on = build_controls_df(
-        controls_source="catalog", seed="mid", tiers=("tier0",),
-        kreis_control_names=("number_of_cars",),
-    )
-    fields = set(on["control_field"])
-    expected = {f"{c}_KREIS" for c in control_columns(_entry("number_of_cars"))}
-    assert expected <= fields
-    rows = on[on["control_field"].isin(expected)]
-    assert (rows["geography"] == "KREIS").all()
-    assert (rows["seed_table"] == "households").all()
-
-
-def test_build_controls_df_renders_trip_class_person_controls():
+@pytest.mark.parametrize("control, seed_table", [
+    pytest.param("number_of_cars", "households", id="number_of_cars_households"),
     # The person-level trip_class entry renders four KREIS controls on the persons table.
+    pytest.param("trip_class", "persons", id="trip_class_persons"),
+])
+def test_build_controls_df_renders_the_requested_kreis_controls(control, seed_table):
     from braunschweig.popsim.stage import build_controls_df
 
     on = build_controls_df(
         controls_source="catalog", seed="mid", tiers=("tier0",),
-        kreis_control_names=("trip_class",),
+        kreis_control_names=(control,),
     )
     fields = set(on["control_field"])
-    expected = {f"{c}_KREIS" for c in control_columns(_entry("trip_class"))}
+    expected = {f"{c}_KREIS" for c in control_columns(_entry(control))}
     assert expected <= fields
     rows = on[on["control_field"].isin(expected)]
     assert (rows["geography"] == "KREIS").all()
-    assert (rows["seed_table"] == "persons").all()
+    assert (rows["seed_table"] == seed_table).all()
 
 
 def test_build_controls_df_status_kreis_alias_still_renders_economic_status():

@@ -82,28 +82,16 @@ def sampled(sampled_full):
 # --------------------------------------------------------------------------- #
 # THE key assertion: per-Kreis BEV share matches FZ 27.15.
 # --------------------------------------------------------------------------- #
-def test_per_kreis_bev_share_matches_fz_27_15(sampled):
+@pytest.mark.parametrize("powertrain", ["bev", "phev"])
+def test_per_kreis_electric_share_matches_fz_27_15(sampled, powertrain):
     df_spec, _ = sampled
     df_kreis = ft.load_kreis_powertrain(DATA_PATH).set_index("kreis_ags5")
     for kreis in ft.ZGB_KREISE_AGS5:
         sub = df_spec[df_spec["kreis_ags5"] == kreis]
-        sampled_share = float((sub["powertrain"] == "bev").mean())
-        target = float(df_kreis.loc[kreis, "bev_share"])
+        sampled_share = float((sub["powertrain"] == powertrain).mean())
+        target = float(df_kreis.loc[kreis, f"{powertrain}_share"])
         assert sampled_share == pytest.approx(target, abs=0.01), (
-            f"Kreis {kreis}: sampled BEV {sampled_share:.4f} vs "
-            f"FZ 27.15 {target:.4f}"
-        )
-
-
-def test_per_kreis_phev_share_matches_fz_27_15(sampled):
-    df_spec, _ = sampled
-    df_kreis = ft.load_kreis_powertrain(DATA_PATH).set_index("kreis_ags5")
-    for kreis in ft.ZGB_KREISE_AGS5:
-        sub = df_spec[df_spec["kreis_ags5"] == kreis]
-        sampled_share = float((sub["powertrain"] == "phev").mean())
-        target = float(df_kreis.loc[kreis, "phev_share"])
-        assert sampled_share == pytest.approx(target, abs=0.01), (
-            f"Kreis {kreis}: sampled PHEV {sampled_share:.4f} vs "
+            f"Kreis {kreis}: sampled {powertrain.upper()} {sampled_share:.4f} vs "
             f"FZ 27.15 {target:.4f}"
         )
 

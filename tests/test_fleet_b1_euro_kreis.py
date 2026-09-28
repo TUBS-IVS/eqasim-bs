@@ -541,8 +541,12 @@ class TestEuroGivenKreisPowertrain:
             "Hydrogen must use the national euro pmf."
         ))
 
-    def test_phev_equals_national(self, tmp_path):
-        """PHEV pmf must equal the NATIONAL pmf."""
+    @pytest.mark.parametrize("powertrain", [
+        pytest.param("phev", id="phev"),
+        pytest.param("hybrid", id="hybrid"),
+    ])
+    def test_phev_and_hybrid_equal_national(self, tmp_path, powertrain):
+        """PHEV and hybrid pmfs must equal the NATIONAL pmf."""
         if not (DATA / "braunschweig" / "kba" / "derived").exists():
             pytest.skip("real derived data directory absent")
         tmp_data = _make_tmp_data_path_with_euro(
@@ -551,19 +555,7 @@ class TestEuroGivenKreisPowertrain:
         assert result is not None
         national = fs._euro_given_powertrain(tmp_data)
         np.testing.assert_allclose(
-            result[(_AGS_A, "phev")], national["phev"], atol=1e-9)
-
-    def test_hybrid_equals_national(self, tmp_path):
-        """Hybrid pmf must equal the NATIONAL pmf."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
-        tmp_data = _make_tmp_data_path_with_euro(
-            tmp_path, _make_kreis_euro_df_all_zgb())
-        result = fs._euro_given_kreis_powertrain(tmp_data)
-        assert result is not None
-        national = fs._euro_given_powertrain(tmp_data)
-        np.testing.assert_allclose(
-            result[(_AGS_A, "hybrid")], national["hybrid"], atol=1e-9)
+            result[(_AGS_A, powertrain)], national[powertrain], atol=1e-9)
 
     def test_different_kreise_give_different_diesel_pmfs(self, tmp_path):
         """A euro6-heavy Kreis and a euro4-heavy Kreis must have different diesel pmfs."""

@@ -72,26 +72,16 @@ def test_match_household_relaxes_until_pool_nonempty():
     assert mid == 200 and level == len(wpm.SOFT_KEYS_BY_PRIORITY)  # all soft keys dropped
 
 
-def test_match_household_never_crosses_regiostar():
-    # A weekday HH identical in size and EVERY soft key but a different RegioStaR
-    # must NOT be matched (RegioStaR is a hard key) -> falls through to (None, None).
+@pytest.mark.parametrize("size, regiostar7, household_id", [
+    # Identical in size and every soft key but RegioStaR, a hard key: never matched.
+    pytest.param(2, 77, 200, id="other_regiostar"),
+    pytest.param(3, 71, 300, id="no_equal_size"),
+])
+def test_match_household_returns_none_without_an_eligible_donor(size, regiostar7, household_id):
     weekday = pd.DataFrame({
-        "size": [2], "hh_type5": ["couple"], "oek_status": [3], "regiostar7": [77],
+        "size": [size], "hh_type5": ["couple"], "oek_status": [3], "regiostar7": [regiostar7],
         "car_class": ["2plus"], "any_license": [True], "any_pt": [False],
-    }, index=pd.Index([200], name="H_ID"))
-    target = pd.Series({
-        "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
-        "car_class": "2plus", "any_license": True, "any_pt": False,
-    })
-    mid, level = wpm.match_household(7, target, weekday, rng=np.random.RandomState(0))
-    assert mid is None and level is None
-
-
-def test_match_household_returns_none_when_no_equal_size():
-    weekday = pd.DataFrame({
-        "size": [3], "hh_type5": ["couple"], "oek_status": [3], "regiostar7": [71],
-        "car_class": ["2plus"], "any_license": [True], "any_pt": [False],
-    }, index=pd.Index([300], name="H_ID"))
+    }, index=pd.Index([household_id], name="H_ID"))
     target = pd.Series({
         "size": 2, "hh_type5": "couple", "oek_status": 3, "regiostar7": 71,
         "car_class": "2plus", "any_license": True, "any_pt": False,

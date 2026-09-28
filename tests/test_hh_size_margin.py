@@ -13,6 +13,7 @@ import pathlib
 import sys
 
 import pandas as pd
+import pytest
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -43,17 +44,14 @@ class TestParseValueEFlag:
         from braunschweig.data.census.households_size_age import _parse_value
         return _parse_value(pd.Series(values), pd.Series(qs)).tolist()
 
-    def test_e_flag_keeps_value(self):
-        assert self._call(["123"], ["e"]) == [123.0]
-
-    def test_dash_returns_zero(self):
-        assert self._call(["-"], [""]) == [0.0]
-
-    def test_dot_returns_zero(self):
-        assert self._call(["."], [""]) == [0.0]
-
-    def test_plain_numeric_keeps_value(self):
-        assert self._call(["42"], [""]) == [42.0]
+    @pytest.mark.parametrize("expected, value, flag", [
+        pytest.param(123.0, "123", "e", id="e_flag_keeps_value"),
+        pytest.param(0.0, "-", "", id="dash_returns_zero"),
+        pytest.param(0.0, ".", "", id="dot_returns_zero"),
+        pytest.param(42.0, "42", "", id="plain_numeric_keeps_value"),
+    ])
+    def test_parse_value(self, expected, value, flag):
+        assert self._call([value], [flag]) == [expected]
 
     def test_mixed_batch(self):
         assert self._call(
