@@ -168,7 +168,7 @@ def test_v2_brand_empty_rate_zero(v2_output_with_hsn):
 def test_v2_per_kreis_bev_share_within_abs_001(v2_output_with_hsn):
     """Per-Kreis BEV share in v2 output matches FZ 27.15 within abs 0.01.
 
-    Reuses the same assertion as test_fleet_sampling_de::test_per_kreis_bev_share
+    Reuses the same assertion as test_fleet_sampling_de::test_per_kreis_electric_share_matches_fz_27_15
     but on the FULL v2 pipeline (sample_fleet + attach_hsn_tsn) so the e2e
     output is validated, not just the sampler output.
     """

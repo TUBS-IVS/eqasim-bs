@@ -180,7 +180,7 @@ EXPECTED_DEFERRED_HELPER_MODULE_NAMES = (
 ) + EXPECTED_ENRICHED_MODULE_NAMES
 
 # Packages whose submodules must ALL appear in _HELPER_MODULES. Discovered
-# dynamically (see test_helper_modules_cover_every_discovered_submodule) so a
+# dynamically (see test_every_discovered_submodule_is_covered_by_one_of_the_two_mechanisms) so a
 # helper module ADDED later cannot stay unlisted. Enumerated one level deep only,
 # matching the token's own documented bound.
 DYNAMICALLY_ENUMERATED_PACKAGE_NAMES = (

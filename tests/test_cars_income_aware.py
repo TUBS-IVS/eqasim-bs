@@ -28,6 +28,7 @@ DATA_PATH = os.path.join(REPO, "eqasim-data", "data")
 
 from braunschweig.data.mid.cars_by_status import (  # noqa: E402
     CAR_COUNT_CATEGORIES,
+    apply_raumtyp_tilt,
     cars_probabilities,
     cars_probabilities_table,
     load_cars_by_raumtyp,
@@ -104,37 +105,32 @@ def test_extract_fold_is_count_aggregation(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_pmf_sums_to_one():
-    """Every input the enrichment stage draws from is a valid distribution.
+    """Every (hhtype, status) cell yields a valid pmf, untilted and under every raumtyp tilt.
 
-    The stage builds ``cars_probabilities_table`` once and tilts each (hhtype, status)
-    base pmf by ``by_region[raumtyp] / national`` itself (vehicle_ownership), so a bad
-    base cell or a bad raumtyp distribution is what could reach the draw; all of them
-    are checked here from one table build. One tilted pmf per raumtyp variant covers the
-    renormalisation of the tilt. The former cell x variant loop rebuilt the base table on
-    every call (~90 ms each) and was the slowest check in this file.
+    The full product, through the two functions the enrichment stage draws with: one
+    cars_probabilities_table build, then apply_raumtyp_tilt for every cell under every raumtyp
+    region and untilted (480 cheap calls). The inputs are checked first, so a failure names the
+    bad base cell or region distribution. A covering design that checked each cell under one
+    rotated variant only was replaced after review on #435.
     """
     df_h = load_cars_by_status_hhtype(DATA_PATH)
     df_r = load_cars_by_raumtyp(DATA_PATH)
     base_map, by_region, national = cars_probabilities_table(df_h, df_r)
     n_categories = len(CAR_COUNT_CATEGORIES)
-    cells = [(hhtype, status) for hhtype in sorted(df_h["hhtype"].unique())
-             for status in STATUS_CATEGORIES if (hhtype, status) in base_map]
-    assert cells, "the base table holds no (hhtype, status) cell"
-    for hhtype, status in cells:
-        p = base_map[(hhtype, status)]
-        assert p.shape == (n_categories,)
-        assert p.sum() == pytest.approx(1.0), (hhtype, status)
-        assert (p >= 0).all(), (hhtype, status)
     for region, distribution in {**by_region, "national": national}.items():
         assert distribution.shape == (n_categories,), region
         assert distribution.sum() == pytest.approx(1.0), region
         assert (distribution >= 0).all(), region
-    hhtype, status = cells[0]
-    for raumtyp in ("stadtregion_metropole", "laendlich_kleinstaedtisch"):
-        assert raumtyp in by_region, raumtyp
-        p = cars_probabilities(df_h, df_r, status, hhtype, raumtyp)
-        assert p.sum() == pytest.approx(1.0), raumtyp
-        assert (p >= 0).all(), raumtyp
+    cells = [(hhtype, status) for hhtype in sorted(df_h["hhtype"].unique())
+             for status in STATUS_CATEGORIES if (hhtype, status) in base_map]
+    assert cells, "the base table holds no (hhtype, status) cell"
+    assert {"stadtregion_metropole", "laendlich_kleinstaedtisch"} <= set(by_region)
+    for hhtype, status in cells:
+        for raumtyp in [None, *sorted(by_region)]:
+            p = apply_raumtyp_tilt(base_map[(hhtype, status)], by_region, national, raumtyp)
+            assert p.shape == (n_categories,), (hhtype, status, raumtyp)
+            assert p.sum() == pytest.approx(1.0), (hhtype, status, raumtyp)
+            assert (p >= 0).all(), (hhtype, status, raumtyp)
 
 
 def test_monotonicity_mean_cars_and_zero_share():

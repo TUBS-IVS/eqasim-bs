@@ -57,7 +57,8 @@ def _patch_common_metrics(monkeypatch, purposes_no_home, purposes_no_home_active
     """Monkeypatch every metrics/diagnostics call inside
     ``report._build_json_payload`` with small deterministic stand-ins, so the
     payload can be built without any real 10 % output data (mirrors the
-    monkeypatch idiom in test_purpose_mix_no_home_variants_exclude... and the
+    monkeypatch idiom of test_validate_bs_10pct_purpose_mix.py::
+    test_purpose_mix_no_home_variants_exclude_home_and_use_presence_base and the
     e2e smoke test in test_run_population_validation.py)."""
     if purposes_no_home_active is None:
         purposes_no_home_active = purposes_no_home
