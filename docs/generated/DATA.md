@@ -106,7 +106,8 @@ in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 | [vrb_tariff_zone_polygons](../registry/data/vrb_tariff_zone_polygons.yml) | spatial_input, supply_input | manual_download | `data/vrb/vrb_tarifzonen_rgb_25832.geojson` | -/r/r | no |
 | [vrb_tariff_zones](../registry/data/vrb_tariff_zones.yml) | supply_input | scrape (`scripts/build_vrb_stations_json.py`) | `data/vrb/tarifzonen.html -> vrb/stations.json` | -/o/o | no |
 | [zensus2022_age_sex_size](../registry/data/zensus2022_age_sex_size.yml) | control | manual_download | `data/braunschweig/1000A-3082_de_flat.zip` | o/-/- | no |
-| [zensus2022_employment_age](../registry/data/zensus2022_employment_age.yml) | control | manual_download | `data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv` | o/-/r | no |
+| [zensus2022_employed_by_age_kreis](../registry/data/zensus2022_employed_by_age_kreis.yml) | control | derived (`scripts/extract_zensus2022_employed_by_age.py`) | `data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv` | o/-/r | no |
+| [zensus2022_employment_age](../registry/data/zensus2022_employment_age.yml) | control | manual_download | `data/braunschweig/popsim/zensus2022_employment_by_age_ref.csv` | o/-/o | no |
 | [zensus2022_grid_cells](../registry/data/zensus2022_grid_cells.yml) | control | derived | `data/braunschweig/popsim/cells/zensus2022_grid_{100m_de_prepared,1km_de_binned}.parquet` | r/-/r | no |
 | [zensus2022_grid_open](../registry/data/zensus2022_grid_open.yml) | spatial_input | auto_script (`scripts/download_zensus_grid.py`) | `data/zensus_grid/population_100m.parquet` | r/-/r | no |
 | [zensus2022_households_size](../registry/data/zensus2022_households_size.yml) | control | manual_download | `data/braunschweig/5000H-2001_de_flat.csv` | r/-/o | no |
