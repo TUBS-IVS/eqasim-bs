@@ -59,7 +59,7 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 
 # Student in-commuter person attribute defaults, mirroring the eqasim/INSEE
 # activity-status mapping used for residents
-# (braunschweig.ipf.attributed.derive_socioprofessional_class): studying takes
+# (braunschweig.population.socioprofessional_class.derive_socioprofessional_class): studying takes
 # precedence over employment, so SPC_STUDENT (=8) applies regardless of the HTS
 # donor's own employment status. Deliberately simpler than
 # braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS: no origin-Kreis
@@ -67,7 +67,7 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 # ``_build_student_persons`` / ``_build_student_households``.
 _STUDENT_PERSON_DEFAULTS = dict(
     employed=False, studies=True, household_size=1, consumption_units=1.0,
-    socioprofessional_class=8,  # SPC_STUDENT, braunschweig.ipf.attributed
+    socioprofessional_class=8,  # SPC_STUDENT, braunschweig.population.socioprofessional_class
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",

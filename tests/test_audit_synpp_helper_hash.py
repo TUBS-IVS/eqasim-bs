@@ -230,19 +230,7 @@ FULL_CLOSURE_STAGES = ("braunschweig.synthesis.population.enriched",)
 
 #: Transitive gaps left open on purpose, per stage. A shrinking register like
 #: EXPECTED_UNCOVERED: every entry needs its reason, and the gate fails when an entry closes.
-DEFERRED_TRANSITIVE_GAPS: dict[str, tuple[str, ...]] = {
-    # The IPF population method is kept as a courtesy path, and its coverage waits (user
-    # decision, 2026-09-28). popsim.attributes imports derive_socioprofessional_class from the
-    # IPF attribute stage module; the fix is to move that function out of
-    # braunschweig.ipf.attributed (narrow the import), not to hash the IPF stage into this
-    # token. The other three are reached only through braunschweig.ipf.attributed.
-    "braunschweig.synthesis.population.enriched": (
-        "braunschweig.data.education.student_share",
-        "braunschweig.ipf.attributed",
-        "braunschweig.ipf.config_validation",
-        "braunschweig.ipf.household_composition",
-    ),
-}
+DEFERRED_TRANSITIVE_GAPS: dict[str, tuple[str, ...]] = {}
 
 
 @pytest.mark.parametrize("stage", FULL_CLOSURE_STAGES)

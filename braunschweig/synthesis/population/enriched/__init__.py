@@ -152,8 +152,7 @@ _HELPER_MODULES = (
 #: The names after it are not imported by this package itself but by its helpers, as each
 #: comment says: this stage runs their code, so an edit there must devalidate it too. The
 #: audit follows imports that far since 2026-09-28 and gates this stage on its whole import
-#: closure (tests/test_audit_synpp_helper_hash.py, ADR-0136). The IPF attribute stage that
-#: popsim.attributes reaches is deliberately left out; the gate names it and why.
+#: closure (tests/test_audit_synpp_helper_hash.py, ADR-0136).
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.income_by_size",
     "braunschweig.data.mid.income_by_status",
@@ -172,9 +171,11 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "data.hts.egt.cleaned",
     "data.hts.entd.cleaned",
     "data.hts.hts",
-    # base and availability: the attribute mappers and their missing-value handling.
+    # base and availability: the attribute mappers, their missing-value handling and the
+    # socioprofessional class the mappers derive.
     "braunschweig.popsim.attributes",
     "braunschweig.popsim.missing",
+    "braunschweig.population.socioprofessional_class",
 )
 
 
