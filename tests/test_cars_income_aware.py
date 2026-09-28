@@ -29,6 +29,7 @@ DATA_PATH = os.path.join(REPO, "eqasim-data", "data")
 from braunschweig.data.mid.cars_by_status import (  # noqa: E402
     CAR_COUNT_CATEGORIES,
     cars_probabilities,
+    cars_probabilities_table,
     load_cars_by_raumtyp,
     load_cars_by_status_hhtype,
 )
@@ -103,46 +104,54 @@ def test_extract_fold_is_count_aggregation(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_pmf_sums_to_one():
-    """Every (hhtype, status) cell yields a valid pmf, untilted and under each raumtyp tilt.
+    """Every input the enrichment stage draws from is a valid distribution.
 
-    A covering design, not the full product: each cell is checked once while the three
-    raumtyp variants rotate. A bad base cell (NaN, negative) breaks the pmf under any
-    variant, and a bad raumtyp distribution breaks every cell it tilts, so the rotation
-    catches both; the tilted pmf itself is renormalised by construction. Each call rebuilds
-    the base table (~90 ms), which made the full 180-call product the slowest check here.
+    The stage builds ``cars_probabilities_table`` once and tilts each (hhtype, status)
+    base pmf by ``by_region[raumtyp] / national`` itself (vehicle_ownership), so a bad
+    base cell or a bad raumtyp distribution is what could reach the draw; all of them
+    are checked here from one table build. One tilted pmf per raumtyp variant covers the
+    renormalisation of the tilt. The former cell x variant loop rebuilt the base table on
+    every call (~90 ms each) and was the slowest check in this file.
     """
     df_h = load_cars_by_status_hhtype(DATA_PATH)
     df_r = load_cars_by_raumtyp(DATA_PATH)
-    variants = (None, "stadtregion_metropole", "laendlich_kleinstaedtisch")
+    base_map, by_region, national = cars_probabilities_table(df_h, df_r)
+    n_categories = len(CAR_COUNT_CATEGORIES)
     cells = [(hhtype, status) for hhtype in sorted(df_h["hhtype"].unique())
-             for status in STATUS_CATEGORIES]
-    checked_variants = set()
-    for index, (hhtype, status) in enumerate(cells):
-        rk = variants[index % len(variants)]
-        p = cars_probabilities(df_h, df_r, status, hhtype, rk)
-        if p is None:
-            continue
-        checked_variants.add(rk)
-        assert p.shape == (len(CAR_COUNT_CATEGORIES),)
-        assert p.sum() == pytest.approx(1.0), (hhtype, status, rk)
-        assert (p >= 0).all(), (hhtype, status, rk)
-    assert checked_variants == set(variants), "every raumtyp variant must tilt at least one cell"
+             for status in STATUS_CATEGORIES if (hhtype, status) in base_map]
+    assert cells, "the base table holds no (hhtype, status) cell"
+    for hhtype, status in cells:
+        p = base_map[(hhtype, status)]
+        assert p.shape == (n_categories,)
+        assert p.sum() == pytest.approx(1.0), (hhtype, status)
+        assert (p >= 0).all(), (hhtype, status)
+    for region, distribution in {**by_region, "national": national}.items():
+        assert distribution.shape == (n_categories,), region
+        assert distribution.sum() == pytest.approx(1.0), region
+        assert (distribution >= 0).all(), region
+    hhtype, status = cells[0]
+    for raumtyp in ("stadtregion_metropole", "laendlich_kleinstaedtisch"):
+        assert raumtyp in by_region, raumtyp
+        p = cars_probabilities(df_h, df_r, status, hhtype, raumtyp)
+        assert p.sum() == pytest.approx(1.0), raumtyp
+        assert (p >= 0).all(), raumtyp
 
 
 def test_monotonicity_mean_cars_and_zero_share():
     """Higher economic status -> higher mean number_of_cars and lower 0-car share
-    at a fixed household type (the core income-aware signal)."""
+    at a fixed household type (the core income-aware signal), read from the untilted
+    base table the enrichment stage draws from."""
     df_h = load_cars_by_status_hhtype(DATA_PATH)
     df_r = load_cars_by_raumtyp(DATA_PATH)
+    base_map, _by_region, _national = cars_probabilities_table(df_h, df_r)
     cats = np.asarray(CAR_COUNT_CATEGORIES, dtype=float)
-
     # Test on the family + couple household types, where ownership clearly scales
     # with income (single-person types are noisier on the small MiD bases).
     for hhtype in ("couple_youngest_30_59", "child_under_6"):
         means = []
         zero_shares = []
         for status in STATUS_CATEGORIES:  # very_low .. very_high
-            p = cars_probabilities(df_h, df_r, status, hhtype, None)
+            p = base_map.get((hhtype, status))
             assert p is not None
             means.append(float((cats * p).sum()))
             zero_shares.append(float(p[0]))

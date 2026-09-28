@@ -310,13 +310,17 @@ def contrast_data_path(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def contrast_sampled(contrast_data_path):
-    sampler = fs.FleetSampler.from_data_path(contrast_data_path)
+def contrast_sampler(contrast_data_path):
+    return fs.FleetSampler.from_data_path(contrast_data_path)
+
+
+@pytest.fixture(scope="module")
+def contrast_sampled(contrast_data_path, contrast_sampler):
     # 1000 per Kreis (~300 diesel each) clears the >50 diesel / >20 Euro-6 guards
     # below by a wide margin; the validator bands scale with n_eff.
     df_cars = _make_cars(n_per_kreis=1000, seed=7)
     df_spec, df_types, summary = fs.sample_fleet(
-        df_cars, contrast_data_path, random_seed=123, sampler=sampler)
+        df_cars, contrast_data_path, random_seed=123, sampler=contrast_sampler)
     return df_spec, df_types, summary
 
 
@@ -438,6 +442,13 @@ def test_validator_not_flagged_for_euro6_substage(contrast_sampled):
 # --------------------------------------------------------------------------- #
 # (d) Flag OFF / data-absent -> byte-identical, no extra RNG consumed
 # --------------------------------------------------------------------------- #
+# The two byte-identity tests below only need Euro-6 cars in the frame: one extra RNG
+# draw on any of them shifts every later draw, so the frames would differ. 50 per Kreis
+# already draws 171 of them (measured 2026-09-28 on the absent-data mirror); 300 per
+# Kreis bought only time.
+_BYTE_IDENTITY_CARS_PER_KREIS = 50
+
+
 def test_absent_data_flag_value_does_not_matter(tmp_path_factory):
     """With BOTH substage sources absent, euro6_substage=True must consume
     exactly as much RNG as euro6_substage=False -- i.e. produce a byte-identical
@@ -451,7 +462,7 @@ def test_absent_data_flag_value_does_not_matter(tmp_path_factory):
         omit_files=("kba_kreis_euro.csv", "kba_fuel_euro6_substage_nds.csv"),
     )
     sampler = fs.FleetSampler.from_data_path(data_path)
-    df_cars = _make_cars(n_per_kreis=300, seed=1)
+    df_cars = _make_cars(n_per_kreis=_BYTE_IDENTITY_CARS_PER_KREIS, seed=1)
 
     df_on, _, _ = fs.sample_fleet(
         df_cars, data_path, random_seed=99, sampler=sampler, euro6_substage=True)
@@ -460,7 +471,8 @@ def test_absent_data_flag_value_does_not_matter(tmp_path_factory):
     pd.testing.assert_frame_equal(df_on, df_off)
 
 
-def test_flag_off_matches_data_effectively_absent_pre_b4_schema(tmp_path_factory):
+def test_flag_off_matches_data_effectively_absent_pre_b4_schema(
+        tmp_path_factory, contrast_data_path, contrast_sampler):
     """Even when Euro-6 substage data IS present, flag OFF must reproduce
     EXACTLY the same seeded fleet as a run where the substage columns/national
     CSV are absent (pre-Task-B4 schema) -- proving the flag itself gates the
@@ -470,16 +482,14 @@ def test_flag_off_matches_data_effectively_absent_pre_b4_schema(tmp_path_factory
     additive Euro-6 substage columns differ), so any per-Kreis euro joint
     (Task B3/T6b) behaviour is identical between them; the only thing that
     could possibly diverge is Task B5's own RNG usage."""
-    tmp_with = tmp_path_factory.mktemp("b5_flag_with_substage")
     tmp_without = tmp_path_factory.mktemp("b5_flag_without_substage")
 
-    df_with_substage = _make_kreis_euro_df_substage_contrast()
-    df_pre_b4 = df_with_substage.drop(columns=["euro6d", "euro6dtemp", "euro6ab"])
+    # The data-present side is the module's contrast mirror: the same substage
+    # contrast table plus the full national substage table.
+    df_pre_b4 = _make_kreis_euro_df_substage_contrast().drop(
+        columns=["euro6d", "euro6dtemp", "euro6ab"])
 
-    dp_with = _mirror_real_data_with_extras(tmp_with, {
-        "kba_kreis_euro.csv": df_with_substage,
-        "kba_fuel_euro6_substage_nds.csv": _make_national_substage_df_full(),
-    })
+    dp_with = contrast_data_path
     dp_without = _mirror_real_data_with_extras(
         tmp_without,
         {"kba_kreis_euro.csv": df_pre_b4},
@@ -488,9 +498,9 @@ def test_flag_off_matches_data_effectively_absent_pre_b4_schema(tmp_path_factory
         omit_files=("kba_fuel_euro6_substage_nds.csv",),
     )
 
-    sampler_with = fs.FleetSampler.from_data_path(dp_with)
+    sampler_with = contrast_sampler
     sampler_without = fs.FleetSampler.from_data_path(dp_without)
-    df_cars = _make_cars(n_per_kreis=300, seed=1)
+    df_cars = _make_cars(n_per_kreis=_BYTE_IDENTITY_CARS_PER_KREIS, seed=1)
 
     df_present_flag_off, _, _ = fs.sample_fleet(
         df_cars, dp_with, random_seed=99, sampler=sampler_with, euro6_substage=False)

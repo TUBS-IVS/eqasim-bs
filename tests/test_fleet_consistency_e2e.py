@@ -43,16 +43,13 @@ def _load_golden(name: str) -> pd.DataFrame:
 # The two 32,000-car samples come from the session fixtures in conftest.py, which
 # test_fleet_sampling_de draws from as well: same frame, same seed, one draw each.
 @pytest.fixture(scope="module")
-def v2_output_with_hsn(_default_fleet_sample_once):
-    """Full v2 pipeline: sample_fleet (v2) + attach_hsn_tsn on real data."""
+def v2_output_with_hsn(_default_fleet_sample_once, committed_hsn_tsn_lookup):
+    """Full v2 pipeline: sample_fleet (v2) + attach_hsn_tsn on real data.
+
+    The lookup is the session's build of the same data path; the fixture skips when the
+    local-only lookup table is absent."""
     spec = _default_fleet_sample_once[0].copy()
-    try:
-        out = hsn_tsn.attach_hsn_tsn(spec, data_path=DATA_PATH, random_seed=42)
-    except FileNotFoundError:
-        pytest.skip(
-            "HSN/TSN lookup is local-only (run scripts/scrape_hsn_tsn.py); skipped when absent"
-        )
-    return out
+    return hsn_tsn.attach_hsn_tsn(spec, lookup=committed_hsn_tsn_lookup(), random_seed=42)
 
 
 # --------------------------------------------------------------------------- #

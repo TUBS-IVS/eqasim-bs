@@ -19,6 +19,7 @@ household car. The key scientific assertions:
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 import sys
@@ -248,18 +249,16 @@ def test_unknown_kreis_falls_back_and_logs(caplog, sampler):
     assert "fallback" in text
 
 
-def test_deterministic_given_seed(sampler):
+def test_the_draw_is_fixed_by_its_seed(sampler):
+    """Same seed -> identical raked output (the Task 7 rake uses no fresh rng);
+    another seed -> another draw. consistency_v2=True is the default, so this is
+    the recalibrated path; it replaces three tests that each drew twice."""
     df_cars = _make_cars(n_per_kreis=300)
-    a, _, _s1 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
-    b, _, _s2 = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
-    pd.testing.assert_frame_equal(a, b)
-
-
-def test_different_seed_changes_draw(sampler):
-    df_cars = _make_cars(n_per_kreis=300)
-    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=1, sampler=sampler)
-    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=2, sampler=sampler)
-    assert not a["powertrain"].equals(b["powertrain"])
+    first, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
+    again, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=123, sampler=sampler)
+    other, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=124, sampler=sampler)
+    pd.testing.assert_frame_equal(first, again)
+    assert not first["powertrain"].equals(other["powertrain"])
 
 
 def test_gemeinde_tilt_raises_local_bev_share(sampler):
@@ -275,10 +274,12 @@ def test_gemeinde_tilt_raises_local_bev_share(sampler):
     kreis = top["kreis_ags5"]
     gemeinde = top["gemeinde"]
 
+    # 2000 cars per side draw 82 vs 149 BEVs (measured 2026-09-28), a difference of
+    # about 4.4 Poisson standard deviations; 6000 per side bought only time.
     base = pd.DataFrame([{
         "economic_status": "medium", "kreis_ags5": kreis,
         "gemeinde": np.nan, "raumtyp": 75,
-    }] * 6000)
+    }] * 2000)
     tilted = base.copy()
     tilted["gemeinde"] = gemeinde
 
@@ -423,14 +424,6 @@ def test_euro_age_consistent_after_recalibration(sampled):
     assert (bev["hbefa_emission"] == "PC BEV").all()
 
 
-def test_recalibration_deterministic_given_seed(sampler):
-    """Same seed -> identical raked output (the Task 7 rake uses no fresh rng)."""
-    df_cars = _make_cars(n_per_kreis=400)
-    a, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True, sampler=sampler)
-    b, _, _ = fs.sample_fleet(df_cars, DATA_PATH, random_seed=99, consistency_v2=True, sampler=sampler)
-    pd.testing.assert_frame_equal(a, b)
-
-
 def test_electric_rake_warns_on_overshoot(caplog):
     """F5: the rake must WARN symmetrically when the mask forces the achieved
     electric share ABOVE the target and it cannot be scaled back down --
@@ -536,7 +529,7 @@ def test_feasible_fuels_tier_split_via_with_tier_method():
     assert ff.model_feasible_powertrains("FABRIKMARKE", "x") is None
 
 
-def test_feasibility_tier_split_logged_and_counted(monkeypatch, caplog):
+def test_feasibility_tier_split_logged_and_counted(sampler, monkeypatch, caplog):
     """sample_fleet's aggregate log must split Tier-1 vs Tier-2 model-constrained
     hits, and the two counters must sum to the total 'model_constrained' count.
 
@@ -558,7 +551,7 @@ def test_feasibility_tier_split_logged_and_counted(monkeypatch, caplog):
         "gemeinde": np.nan, "raumtyp": 72,
     }] * 4)
 
-    local_sampler = fs.FleetSampler.from_data_path(DATA_PATH)
+    local_sampler = copy.copy(sampler)
     local_sampler.feasible_fuels = ff  # deterministic, small feasibility model
 
     sequence = iter([
@@ -696,19 +689,30 @@ def _make_cars_multi_status(n_per_status: int = 3000, seed: int = 99) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def test_income_age_gradient_in_output(sampler):
+@pytest.fixture(scope="module")
+def _age_income_coupled_draw(sampler):
+    """The balanced 15,000-car draw with age-income coupling (Feature B fully on)
+    that the gradient test and the MiD validation-panel test both read."""
+    df_cars = _make_cars_multi_status(n_per_status=3000)
+    df_spec, _, _ = fs.sample_fleet(
+        df_cars, DATA_PATH, random_seed=42,
+        consistency_v2=True, age_income_coupling=True, sampler=sampler)
+    return df_spec
+
+
+@pytest.fixture
+def age_income_coupled_draw(_age_income_coupled_draw):
+    return _age_income_coupled_draw.copy()
+
+
+def test_income_age_gradient_in_output(age_income_coupled_draw):
     """With age_income_coupling=True, very_low status has clearly older cars
     than very_high status (income->age signal is observable in the output).
 
     Today (pre-Feature-B) the age column is flat ~6.7 across all statuses.
     After applying the MiD tilt, very_low households drive older cars.
     """
-    df_cars = _make_cars_multi_status(n_per_status=3000)
-    df_spec, _, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True,
-        age_income_coupling=True, sampler=sampler
-    )
+    df_spec = age_income_coupled_draw
     mean_age_by_status = df_spec.groupby("economic_status")["age"].mean()
     age_very_low = mean_age_by_status["very_low"]
     age_very_high = mean_age_by_status["very_high"]
@@ -814,7 +818,7 @@ def test_age_income_off_unchanged(sampler):
 # Task 5 (final) — age x status validation panel + MiD-match e2e.
 # --------------------------------------------------------------------------- #
 
-def test_synthetic_age_status_matches_mid(sampler):
+def test_synthetic_age_status_matches_mid(age_income_coupled_draw):
     """Validation panel: Feature B income-age gradient checks (three assertions).
 
     Uses a representative fleet built with age_income_coupling=True (Feature B
@@ -839,12 +843,8 @@ def test_synthetic_age_status_matches_mid(sampler):
     """
     from braunschweig.analysis.population_validation import fleet_age_status as FAS
 
-    # Build a representative fleet with balanced statuses.
-    df_cars = _make_cars_multi_status(n_per_status=3000)
-    df_spec, _, _ = fs.sample_fleet(
-        df_cars, DATA_PATH, random_seed=42,
-        consistency_v2=True, age_income_coupling=True, sampler=sampler
-    )
+    # A representative fleet with balanced statuses (shared module draw).
+    df_spec = age_income_coupled_draw
 
     panel = FAS.build_panel(df_spec, DATA_PATH)
 
@@ -1079,7 +1079,9 @@ def test_expected_segment_is_effective_pmf_not_raw_kba(sampler):
     statuses = list(ft.STATUS_LABELS)
     kreis = ft.ZGB_KREISE_AGS5[0]
     rows = []
-    for _ in range(5000):
+    # The comparison is exact, so the frame only needs a mix of cells; 500 cars cover
+    # the 5 x 7 status x raumtyp cells, and 5000 only lengthened both loops.
+    for _ in range(500):
         rows.append({
             "economic_status": str(rng_input.choice(statuses)),
             "kreis_ags5": kreis,

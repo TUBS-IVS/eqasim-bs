@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO))
 
 import matsim.scenario.vehicles as writer  # noqa: E402
 from braunschweig.data.kba import fleet_tables as ft  # noqa: E402
+from braunschweig.data.kba import hsn_tsn  # noqa: E402
 from braunschweig.synthesis.vehicles import fleet_sampling_de as fs  # noqa: E402
 from braunschweig.synthesis.vehicles import hbefa  # noqa: E402
 from braunschweig.synthesis.vehicles.cars import household as hh  # noqa: E402
@@ -203,8 +204,20 @@ def _fresh_copies(frames):
 # One execute() per configuration: the stage run is dominated by loading the fleet
 # tables (the scenario has five persons), and the tests below only read its output.
 @pytest.fixture(scope="module")
-def _default_run():
-    return hh.execute(_stub())
+def _default_run(committed_hsn_tsn_lookup):
+    # The stage builds its HSN/TSN lookup from data_path (about 5 s). For the committed
+    # path it is handed the session's build of that path instead; any other path would
+    # still build its own, so the stage's data_path wiring stays under test.
+    build = hsn_tsn.HsnTsnLookup.from_data_path
+
+    def from_data_path(data_path):
+        if Path(data_path).resolve() == DATA.resolve():
+            return committed_hsn_tsn_lookup()
+        return build(data_path)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(hsn_tsn.HsnTsnLookup, "from_data_path", staticmethod(from_data_path))
+        return hh.execute(_stub())
 
 
 @pytest.fixture

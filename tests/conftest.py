@@ -97,6 +97,33 @@ def default_fleet_sample_legacy(_default_fleet_sample_legacy_once):
     return df_spec.copy(), df_types.copy()
 
 
+@pytest.fixture(scope="session")
+def committed_hsn_tsn_lookup():
+    """Factory for the HSN/TSN engine lookup of the committed data, built once per session.
+
+    The build parses the whole local-only lookup table (about 5 s) and was repeated by
+    three modules. Each call returns a shallow copy: the tables are read-only, but every
+    attach counts its match tiers into the lookup's diagnostic counters, so each consumer
+    gets fresh ones. Skips when the table is absent, as those consumers did before.
+    """
+    from collections import Counter
+
+    from braunschweig.data.kba import hsn_tsn
+
+    try:
+        lookup = hsn_tsn.HsnTsnLookup.from_data_path(_COMMITTED_DATA_PATH)
+    except FileNotFoundError:
+        pytest.skip("HSN/TSN lookup is local-only (run scripts/scrape_hsn_tsn.py); skipped when absent")
+
+    def fresh_copy():
+        instance = copy.copy(lookup)
+        instance._tier_counts = Counter()
+        instance._unmapped_brands = Counter()
+        return instance
+
+    return fresh_copy
+
+
 # The upstream MATSim writers wrap every output file in an io.BufferedWriter with a 2 GiB
 # buffer, a throughput choice for 100 % populations. Windows commits that memory up front,
 # so parallel test workers (pytest -n) writing at the same time run out of it (MemoryError).

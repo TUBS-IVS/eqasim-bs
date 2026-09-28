@@ -278,15 +278,16 @@ DATA_PATH = str(DATA)
 
 
 @pytest.fixture(scope="module")
-def sampler_real():
-    """Build a FleetSampler from the real data path.
+def sampler_real(request):
+    """The session's FleetSampler over the real data path (tests/conftest.py); the
+    tests below only read it or wrap it.
 
     If kba_model_fuel.csv is absent (the expected worktree state),
     model_fuel will be None.
     """
     if not DATA.exists():
         pytest.skip("eqasim-data not available")
-    return fs.FleetSampler.from_data_path(DATA_PATH)
+    return request.getfixturevalue("committed_fleet_sampler")
 
 
 def test_model_fuel_field_exists_on_sampler(sampler_real):

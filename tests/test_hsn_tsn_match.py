@@ -54,8 +54,10 @@ HSN_TSN_COLUMNS = [
 # Reader: lookup construction + canonicalisation
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
-def lookup():
-    return hsn_tsn.HsnTsnLookup.from_data_path(DATA_PATH)
+def lookup(committed_hsn_tsn_lookup):
+    # Built from DATA_PATH once per session (tests/conftest.py); the tests of this
+    # module share one copy, as they shared their own build before.
+    return committed_hsn_tsn_lookup()
 
 
 def test_reader_builds_lookup_nonempty(lookup):

@@ -309,11 +309,11 @@ def _skip_if_no_data():
 
 
 @pytest.fixture(scope="module")
-def sampler():
-    """One FleetSampler for the module; sample_fleet re-applies every per-call
-    setting, so a reused sampler draws exactly what a fresh one would."""
+def sampler(request):
+    """The session's FleetSampler (tests/conftest.py); sample_fleet re-applies every
+    per-call setting, so a reused sampler draws exactly what a fresh one would."""
     _skip_if_no_data()
-    return fs.FleetSampler.from_data_path(DATA_PATH_REAL)
+    return request.getfixturevalue("committed_fleet_sampler")
 
 
 class TestSampleFleetGridColumnsOptional:

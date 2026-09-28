@@ -277,13 +277,19 @@ class TestNonZgbKreisIsPrimary:
             result[(_AGS_NON_ZGB, "diesel")], national["diesel"], atol=1e-9,
         )
 
-    def test_age_euro_joint_kreis_covers_non_zgb_kreis(self, tmp_path):
+    @pytest.fixture(scope="class")
+    def non_zgb_sampler(self, tmp_path_factory):
+        """One build over the all-ZGB-plus-one-extra-Kreis tables for the two tests
+        that only read its joint (the lazy-build and timing tests need their own)."""
+        tmp_data = _make_tmp_data_path_with_fuel_and_euro(
+            tmp_path_factory.mktemp("non_zgb_kreis"),
+            _make_kreis_fuel_df_all_zgb_plus_extra(), _make_kreis_euro_df_all_zgb_plus_extra())
+        return fs.FleetSampler.from_data_path(tmp_data)
+
+    def test_age_euro_joint_kreis_covers_non_zgb_kreis(self, non_zgb_sampler):
         """FleetSampler's per-(Kreis, powertrain) euro joint covers the non-ZGB
         Kreis for every powertrain (built as PRIMARY, not via national fallback)."""
-        df_fuel = _make_kreis_fuel_df_all_zgb_plus_extra()
-        df_euro = _make_kreis_euro_df_all_zgb_plus_extra()
-        tmp_data = _make_tmp_data_path_with_fuel_and_euro(tmp_path, df_fuel, df_euro)
-        sampler = fs.FleetSampler.from_data_path(tmp_data)
+        sampler = non_zgb_sampler
         assert sampler.age_euro_joint_kreis is not None
         for pt in ft.POWERTRAIN_LABELS:
             assert (_AGS_NON_ZGB, pt) in sampler.age_euro_joint_kreis, (
@@ -352,14 +358,11 @@ class TestNonZgbKreisIsPrimary:
                 err_msg=f"lazy joint for {key} differs from the eager builder",
             )
 
-    def test_age_euro_joint_kreis_caches_repeated_access(self, tmp_path):
+    def test_age_euro_joint_kreis_caches_repeated_access(self, non_zgb_sampler):
         """Repeated access to the same (kreis, powertrain) key returns the
         cached array (same object), proving the joint is computed once, not on
         every draw."""
-        df_fuel = _make_kreis_fuel_df_all_zgb_plus_extra()
-        df_euro = _make_kreis_euro_df_all_zgb_plus_extra()
-        tmp_data = _make_tmp_data_path_with_fuel_and_euro(tmp_path, df_fuel, df_euro)
-        sampler = fs.FleetSampler.from_data_path(tmp_data)
+        sampler = non_zgb_sampler
         key = (_AGS_NON_ZGB, "petrol")
         first = sampler.age_euro_joint_kreis[key]
         second = sampler.age_euro_joint_kreis[key]
@@ -640,13 +643,17 @@ class TestEuroGivenKreisPowertrain:
 class TestFleetSamplerFromDataPathWithEuroCSV:
     """Integration: FleetSampler builds per-Kreis joint when euro CSV is present."""
 
-    def test_age_euro_joint_kreis_not_none(self, tmp_path):
-        """``age_euro_joint_kreis`` is not None when kba_kreis_euro.csv is present."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
+    @pytest.fixture(scope="class")
+    def all_zgb_euro_sampler(self, tmp_path_factory):
+        """One build over the all-ZGB per-Kreis euro table for the tests that only
+        read it; the log test builds its own under caplog."""
         tmp_data = _make_tmp_data_path_with_euro(
-            tmp_path, _make_kreis_euro_df_all_zgb())
-        sampler = fs.FleetSampler.from_data_path(tmp_data)
+            tmp_path_factory.mktemp("all_zgb_euro"), _make_kreis_euro_df_all_zgb())
+        return fs.FleetSampler.from_data_path(tmp_data)
+
+    def test_age_euro_joint_kreis_not_none(self, all_zgb_euro_sampler):
+        """``age_euro_joint_kreis`` is not None when kba_kreis_euro.csv is present."""
+        sampler = all_zgb_euro_sampler
         assert sampler.age_euro_joint_kreis is not None, (
             "FleetSampler.age_euro_joint_kreis must be a dict (not None) "
             "when kba_kreis_euro.csv is present."
@@ -661,18 +668,17 @@ class TestFleetSamplerFromDataPathWithEuroCSV:
         with caplog.at_level(logging.INFO):
             fs.FleetSampler.from_data_path(tmp_data)
         msgs = " ".join(r.message for r in caplog.records).lower()
-        assert "46251" in msgs or "kreis" in msgs, (
-            "Expected a log message referencing per-Kreis euro (46251-03); "
+        # The build's own per-Kreis euro line, not just any message naming a Kreis
+        # (until 2026-09-28 "kreis" anywhere in the build log passed this test).
+        assert "per-kreis euro joint (46251-03)" in msgs, (
+            "Expected the per-Kreis euro joint (46251-03) build message; "
             f"got: {msgs!r}"
         )
+        assert "national euro joint (fz27.4 fallback)" not in msgs
 
-    def test_euro6_heavy_kreis_petrol_joint_more_euro6(self, tmp_path):
+    def test_euro6_heavy_kreis_petrol_joint_more_euro6(self, all_zgb_euro_sampler):
         """A euro6-heavy Kreis's petrol joint has more Euro-6 column mass."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
-        tmp_data = _make_tmp_data_path_with_euro(
-            tmp_path, _make_kreis_euro_df_all_zgb())
-        sampler = fs.FleetSampler.from_data_path(tmp_data)
+        sampler = all_zgb_euro_sampler
         assert sampler.age_euro_joint_kreis is not None
 
         ags_e6 = ft.ZGB_KREISE_AGS5[0]   # euro6-heavy (i=0)
@@ -693,13 +699,9 @@ class TestFleetSamplerFromDataPathWithEuroCSV:
             f"({euro6_mass_e4:.4f})."
         )
 
-    def test_fallback_national_joint_still_present(self, tmp_path):
+    def test_fallback_national_joint_still_present(self, all_zgb_euro_sampler):
         """National ``age_euro_joint`` (per-powertrain) must still be built."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
-        tmp_data = _make_tmp_data_path_with_euro(
-            tmp_path, _make_kreis_euro_df_all_zgb())
-        sampler = fs.FleetSampler.from_data_path(tmp_data)
+        sampler = all_zgb_euro_sampler
         # The national joint must cover all powertrains.
         for pt in ft.POWERTRAIN_LABELS:
             assert pt in sampler.age_euro_joint, (
@@ -736,36 +738,48 @@ def _mirror_without_kreis_euro(tmp_path: Path) -> str:
 class TestFleetSamplerFallbackNoEuroCSV:
     """Fallback: kba_kreis_euro.csv absent -> age_euro_joint_kreis is None."""
 
-    def test_age_euro_joint_kreis_is_none_when_the_euro_csv_is_absent(self, tmp_path):
+    @pytest.fixture(scope="class")
+    def without_kreis_euro(self, tmp_path_factory):
+        """The mirror without kba_kreis_euro.csv and a sampler built from it, once
+        for the tests that only read them; the log test builds its own."""
+        data_path = _mirror_without_kreis_euro(tmp_path_factory.mktemp("without_kreis_euro"))
+        return data_path, fs.FleetSampler.from_data_path(data_path)
+
+    def test_age_euro_joint_kreis_is_none_when_the_euro_csv_is_absent(self, without_kreis_euro):
         """With kba_kreis_euro.csv absent, age_euro_joint_kreis must be None
         (and would pass vacuously on the real data path, see the helper)."""
-        sampler = fs.FleetSampler.from_data_path(_mirror_without_kreis_euro(tmp_path))
+        _data_path, sampler = without_kreis_euro
         assert sampler.age_euro_joint_kreis is None, (
             "age_euro_joint_kreis must be None when kba_kreis_euro.csv is absent; "
             f"got {type(sampler.age_euro_joint_kreis)}"
         )
 
-    def test_age_euro_joint_kreis_is_built_on_committed_data(self):
+    def test_age_euro_joint_kreis_is_built_on_committed_data(self, committed_fleet_sampler):
         """The PRIMARY path: with the committed per-Kreis euro table present, the
         per-Kreis joint must actually be built (ADR-0081/ADR-0082)."""
         if not (DATA / "braunschweig" / "kba" / "derived" / "kba_kreis_euro.csv").exists():
             pytest.skip("kba_kreis_euro.csv absent")
-        sampler = fs.FleetSampler.from_data_path(DATA_PATH)
-        assert sampler.age_euro_joint_kreis is not None
+        assert committed_fleet_sampler.age_euro_joint_kreis is not None
 
-    def test_fallback_logged(self, caplog):
-        """A log message must state that the national (FZ 27.4) joint is used."""
-        if not (DATA / "braunschweig" / "kba" / "derived").exists():
-            pytest.skip("real derived data directory absent")
+    def test_fallback_logged(self, tmp_path, caplog):
+        """A log message must state that the national (FZ 27.4) joint is used.
+
+        Until 2026-09-28 this test built on the REAL data path, where the per-Kreis
+        table is committed, and accepted "national" or "fallback" anywhere in the
+        build log; it passed on messages of other components. It now builds on the
+        mirror without the table and requires the fallback line itself.
+        """
+        data_path = _mirror_without_kreis_euro(tmp_path)
         with caplog.at_level(logging.INFO):
-            fs.FleetSampler.from_data_path(DATA_PATH)
+            fs.FleetSampler.from_data_path(data_path)
         msgs = " ".join(r.message for r in caplog.records).lower()
-        assert "national" in msgs or "fz27.4" in msgs or "fz 27.4" in msgs or "fallback" in msgs, (
-            "Expected a log message referencing national/fallback euro joint; "
+        assert "national euro joint (fz27.4 fallback)" in msgs, (
+            "Expected the national (FZ 27.4) euro joint fallback message; "
             f"got: {msgs!r}"
         )
+        assert "per-kreis euro joint (46251-03)" not in msgs
 
-    def test_sample_fleet_euro_byte_identical_on_fallback(self, tmp_path):
+    def test_sample_fleet_euro_byte_identical_on_fallback(self, without_kreis_euro):
         """On the fallback path (no per-Kreis euro table) the draw runs through the
         national joint and is reproducible for a seed.
 
@@ -773,8 +787,7 @@ class TestFleetSamplerFallbackNoEuroCSV:
         been committed since #277, so it never reached the fallback it names; it
         now samples the constructed mirror without the table.
         """
-        data_path = _mirror_without_kreis_euro(tmp_path)
-        sampler = fs.FleetSampler.from_data_path(data_path)
+        data_path, sampler = without_kreis_euro
         assert sampler.age_euro_joint_kreis is None  # really the fallback path
 
         cars = _make_minimal_cars(n=200, seed=42)
