@@ -330,3 +330,28 @@ def test_fallback_logged_and_counted(capsys):
     # Marginal invariant still holds even with fallbacks (fallback households keep
     # an H7-consistent count, so the rake is unaffected).
     assert df.attrs["number_of_cars_income_aware_primary_count"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# synpp cache coverage of the car-ownership coupling
+# ---------------------------------------------------------------------------
+
+def test_enriched_validate_token_covers_the_cars_module(monkeypatch):
+    """An edit to braunschweig.data.mid.cars_by_status must devalidate the enriched stage.
+
+    The vehicle-ownership draw imports the table builders and the raumtyp tilt of that
+    module inside a function, so the stage hashes it by dotted name. Until 2026-09-28 it
+    was not hashed at all: a changed tilt or base table would have been served from a
+    stale cache.
+    """
+    import inspect
+
+    from braunschweig.data.mid import cars_by_status
+    from braunschweig.synthesis.population import enriched
+
+    before = enriched.validate(None)
+    getsource = inspect.getsource
+    monkeypatch.setattr(
+        inspect, "getsource",
+        lambda obj: getsource(obj) + ("\n# edited\n" if obj is cars_by_status else ""))
+    assert enriched.validate(None) != before

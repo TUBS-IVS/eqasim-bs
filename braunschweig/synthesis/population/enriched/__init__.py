@@ -143,13 +143,17 @@ _HELPER_MODULES = (
 
 
 #: Hashed by dotted NAME because they are imported inside a function body rather than at
-#: module level: the three MiD distribution loaders this stage draws income and tenure from.
-#: Their tables ARE this stage's enrichment, so an edit to one changes the enriched population
-#: -- they were outside the token until the #327 helper-hash re-audit.
+#: module level: the MiD distribution loaders this stage draws income, tenure and car
+#: ownership from. Their tables ARE this stage's enrichment, so an edit to one changes the
+#: enriched population -- the first three were outside the token until the #327 helper-hash
+#: re-audit. cars_by_status is imported inside vehicle_ownership._sample_cars_income_aware,
+#: which the audit does not follow into helper submodules; it builds the car-ownership base
+#: table and holds the raumtyp tilt the draw applies, and was hashed from 2026-09-28 on.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.mid.income_by_size",
     "braunschweig.data.mid.income_by_status",
     "braunschweig.data.mid.tenure_by_income",
+    "braunschweig.data.mid.cars_by_status",
 )
 
 
