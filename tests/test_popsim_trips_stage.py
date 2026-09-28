@@ -923,3 +923,68 @@ def test_entd_source_rejects_the_departure_time_model():
             pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
             departure_time_model="srv_mapped",
         )
+
+
+def _with_unused_mid_wege_columns(wege):
+    """``wege`` plus the first five UNUSED_MID_WEGE_COLUMNS, filled with row-varying values."""
+    from braunschweig.popsim.unused_mid_wege_columns import UNUSED_MID_WEGE_COLUMNS
+    extended = wege.copy()
+    for offset, column in enumerate(UNUSED_MID_WEGE_COLUMNS[:5]):
+        extended[column] = np.arange(len(extended)) + 100 * offset
+    return extended
+
+
+def test_execute_hands_the_mid_trip_build_the_wege_without_the_unused_columns(tmp_path,
+                                                                            monkeypatch):
+    """ADR-0138: execute() drops the never-read MiD Wege columns BEFORE the trip build (and
+    its persons x Wege join) sees the donor Wege, and passes every other column through as
+    delivered -- values, dtypes and column order."""
+    from braunschweig.popsim.sources.mid import MidSource
+    from braunschweig.popsim.unused_mid_wege_columns import UNUSED_MID_WEGE_COLUMNS
+    persons, wege = _persons_and_wege_with_person_attributes()
+    delivered = _with_unused_mid_wege_columns(wege)
+    handed = {}
+
+    def load_donor(self, data_dir, **kwargs):
+        return pd.DataFrame({"H_ID": [10]}), pd.DataFrame({"P_ID": [1]}), delivered
+
+    def build_trips(self, persons_frame, donor_trips, **kwargs):
+        handed["donor_trips"] = donor_trips
+        return "built trip table"
+
+    monkeypatch.setattr(MidSource, "load_donor", load_donor)
+    monkeypatch.setattr(MidSource, "build_trips", build_trips)
+    configure_context = _RecordingConfigureContext()
+    trips_stage.configure(configure_context)
+    values = dict(configure_context.calls)
+    values.update({"random_seed": 1, "data_path": str(tmp_path),
+                   "braunschweig.population.popsim.mid_dir": str(tmp_path)})
+
+    class _ExecuteContext:
+        def config(self, key):
+            return values[key]
+
+        def stage(self, name):
+            assert name == "persons", name
+            return persons
+
+    assert trips_stage.execute(_ExecuteContext()) == "built trip table"
+    assert not set(UNUSED_MID_WEGE_COLUMNS) & set(handed["donor_trips"].columns)
+    pd.testing.assert_frame_equal(handed["donor_trips"], wege)
+
+
+def test_run_output_does_not_depend_on_the_unused_mid_wege_columns():
+    """Dropping the listed columns before the trip build changes nothing else in the trip
+    table: every remaining column -- values, dtypes, row and column order -- is what the build
+    produces while the columns are still there, which then only carries them as extras."""
+    from braunschweig.popsim.unused_mid_wege_columns import (
+        UNUSED_MID_WEGE_COLUMNS, drop_unused_mid_wege_columns)
+    persons, wege = _persons_and_wege_with_person_attributes()
+    delivered = _with_unused_mid_wege_columns(wege)
+
+    full = trips_stage.run(persons, delivered, random_seed=20260910)
+    narrowed = trips_stage.run(
+        persons, drop_unused_mid_wege_columns(delivered, log_tag="[test]"), random_seed=20260910)
+
+    pd.testing.assert_frame_equal(narrowed, full[list(narrowed.columns)])
+    assert set(full.columns) - set(narrowed.columns) == set(UNUSED_MID_WEGE_COLUMNS[:5])
