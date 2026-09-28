@@ -9,18 +9,20 @@ nowhere in this repository -- not by the trip build, not by any stage downstream
 only cost memory, and dropping them before the join cannot change any value of the trip table
 or of anything computed from it (ADR-0138).
 
-The list is the complement of the columns first-party code reads, taken over the 2026-09 MiD 2023
-B1 Wege delivery and kept in that delivery's column order; what each variable means is
-documented in the MiD 2023 codeplan. The list claims nothing about the variables' content, only
-that no first-party code reads them, and ``tests/test_unused_mid_wege_columns.py`` enforces
-exactly that claim by scanning every first-party code and configuration file. **Rule for
-maintainers:** when code starts reading one of these columns, remove it from the list in the
-same change; the scan fails until that is done. A column a future delivery adds is never listed
-here and is therefore kept -- the list only removes columns known to be unread.
+The list holds the Wege columns of the 2026-09 MiD 2023 B1 delivery that no first-party code or
+configuration names, kept in that delivery's column order; what each variable means is
+documented in the MiD 2023 codeplan. It is a subset of the unread columns, not their complement:
+``W_SZ`` and ``W_AZ``, named only by a committed diagnostics script of a past run, are kept. The
+list claims nothing about the variables' content, only that nothing names them, and
+``tests/test_unused_mid_wege_columns.py`` enforces exactly that claim by scanning the first-party
+code and configuration roots. **Rule for maintainers:** when code starts reading one of these
+columns, remove it from the list in the same change; the scan fails until that is done. A column
+a future delivery adds is never listed here and is therefore kept -- the list only removes
+columns known to be unread.
 
-Traceability does not depend on the dropped copies: every trip keeps its donor keys (``H_ID``,
-``P_ID``, ``W_ID`` and the ``trip_key`` built from them), through which any MiD variable can be
-joined back from the delivery for an ad-hoc analysis.
+Traceability does not depend on the dropped copies: a diary trip keeps ``H_ID``, ``P_ID`` and
+``W_ID`` from the join (its ``trip_key`` is ``<person_id>_<W_ID>``), through which any dropped
+variable can be joined back from the delivery for an ad-hoc analysis.
 
 Pure pandas; no synpp.
 """
@@ -69,9 +71,10 @@ def drop_unused_mid_wege_columns(mid_wege: pd.DataFrame, *, log_tag: str) -> pd.
     carry is not an error (a unit fixture, or a delivery without that variable): the list says
     which columns MAY be dropped, it is not a schema. The input frame is not modified.
 
-    Logs, at INFO, how many columns were dropped and kept, how many listed columns the frame does
-    not carry, and the frame's in-memory size before and after (MiB, ``deep=True``), so every
-    run log shows the effect.
+    Logs, at INFO, how many columns were dropped and kept and the frame's in-memory size before
+    and after (MiB, ``deep=True``), so every run log shows the effect. Listed columns the frame
+    does not carry are a WARNING: on a real delivery they mean the variables were renamed and the
+    list needs re-deriving, because the drop has silently become a (memory-only) no-op for them.
 
     Parameters
     ----------
@@ -85,11 +88,19 @@ def drop_unused_mid_wege_columns(mid_wege: pd.DataFrame, *, log_tag: str) -> pd.
     n_columns = len(mid_wege.columns)
     logger.info(
         "%s MiD Wege columns no first-party code reads: dropped %d/%d (%.1f%%) before the trip "
-        "build, kept %d; %d listed columns not in this frame; Wege frame %.1f -> %.1f MiB "
-        "(ADR-0138)",
+        "build, kept %d; Wege frame %.1f -> %.1f MiB (ADR-0138)",
         log_tag, len(present), n_columns, 100.0 * len(present) / max(n_columns, 1),
-        len(narrowed.columns), len(UNUSED_MID_WEGE_COLUMNS) - len(present),
+        len(narrowed.columns),
         mid_wege.memory_usage(index=True, deep=True).sum() / _BYTES_PER_MEBIBYTE,
         narrowed.memory_usage(index=True, deep=True).sum() / _BYTES_PER_MEBIBYTE,
     )
+    n_absent = len(UNUSED_MID_WEGE_COLUMNS) - len(present)
+    if n_absent:
+        logger.warning(
+            "%s %d/%d listed MiD Wege columns are not in this frame (e.g. %s): on a real delivery "
+            "the variables were renamed, so re-derive UNUSED_MID_WEGE_COLUMNS (ADR-0138); the "
+            "absent ones cost memory, never results",
+            log_tag, n_absent, len(UNUSED_MID_WEGE_COLUMNS),
+            ", ".join(column for column in UNUSED_MID_WEGE_COLUMNS
+                      if column not in mid_wege.columns)[:120])
     return narrowed

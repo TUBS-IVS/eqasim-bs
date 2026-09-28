@@ -29,9 +29,9 @@ the first departure onto the committed SrV first-departure distribution of the p
 and activity durations are untouched.
 
 Since ADR-0138, execute() drops the MiD Wege columns no first-party code reads
-(braunschweig.popsim.unused_mid_wege_columns) from the donor Wege before the trip build, so the
-MiD extras this stage outputs are only the columns something reads. run() itself still passes
-through every column it is given.
+(braunschweig.popsim.unused_mid_wege_columns) from the donor Wege before the trip build, so this
+stage's output no longer carries them. run() itself still passes through every column it is
+given.
 """
 
 from __future__ import annotations
