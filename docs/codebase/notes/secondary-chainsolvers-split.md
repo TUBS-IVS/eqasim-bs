@@ -35,26 +35,22 @@ recomputes the stage instead of silently reusing stale cached output. Being a
 brand-new token, the first run after this change recomputes the stage and
 everything downstream of it once; every run after that is cache-stable.
 
-**Known gap (found by the #290 audit, corrected here).** An earlier version of
-this note claimed this package "has no external siblings outside its own
-boundary, so there is no equivalent known gap". That was wrong. `_HELPER_MODULES`
-covers the 13 in-package submodules, but the stage module imports four
-first-party modules from **outside** the package that are not in the tuple and
-therefore outside the token: `braunschweig.calibration.secondary_measurement`
-and `synthesis.population.spatial.secondary.problems` (module level),
+**Gaps found later, now closed.** An earlier version of this note claimed this
+package "has no external siblings outside its own boundary, so there is no
+equivalent known gap". That was wrong: the #290 audit found four first-party
+modules from **outside** the package that the stage module imports but the token
+did not hash, `braunschweig.calibration.secondary_measurement` and
+`synthesis.population.spatial.secondary.problems` (module level),
 `braunschweig.synthesis.locations.escort_links` and `braunschweig.parallelism`
-(inside functions). Editing any of them does not devalidate this stage.
+(inside functions). All four joined the token in the #327 re-audit.
 
 The submodules in turn import further first-party modules of their own
 (`braunschweig.popsim.trips`, `braunschweig.popsim.shop_subtype`,
 `braunschweig.popsim.purpose_subtype`, `braunschweig.data.building_potential_attach`,
-`synthesis.population.spatial.secondary.{components,rda}` and others), which are
-equally outside the token. The token's boundary is one level deep by design, the
-same boundary `braunschweig/popsim/stage/`'s `validate()` docstring states for
-itself — so this gap is a property of that boundary, not of this split.
-
-See `synpp-helper-hash-audit.md` for the repo-wide picture; closing gaps of this
-kind is tracked separately because doing so devalidates additional cached output.
+`synthesis.population.spatial.secondary.{components,rda}` and others). Since ADR-0136
+they are hashed too: the token covers the stage's whole import closure, and
+`tests/test_audit_synpp_helper_hash.py` fails when the closure reaches an unhashed module.
+See `synpp-helper-hash-audit.md` for the repo-wide picture.
 
 ## Standing rules
 
