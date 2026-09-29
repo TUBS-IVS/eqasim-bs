@@ -27,12 +27,24 @@ drawn ``day_absence_state`` (``braunschweig.synthesis.day_absence.absence_stage`
 row per enriched person on both its enabled and disabled path) is merged into the resident
 persons frame the SAME way, so ``add_person`` emits it as ``dayAbsenceState``. With
 ``day_absence_enabled`` false no such column is merged -> byte-identical plans.
+
+Zone-based parking costs (issue #436), the alternative to the legacy 8 km ring
+(``enable_urban_parking``; both flags on is rejected in ``configure``): with
+``parking_zones_enabled`` the frames AFTER the in-commuter merge are handed to
+``braunschweig.parking.attach`` -- the zone of every activity location, the resident zone of every
+home and the free-parking draw of the work/education activities -- so ``add_person`` emits
+``parkingZone`` / ``parkingFree`` on activities and ``residentParkingZone`` on persons,
+in-commuters included. With the flag false the zones stage is not even declared and no column is
+attached -> byte-identical plans.
 """
 from __future__ import annotations
 
 import hashlib
+import importlib
+import importlib.util
 import inspect
 import logging
+import math
 
 import matsim.scenario.population as base
 from braunschweig.synthesis.commute_day import day_view as _day_view
@@ -58,6 +70,16 @@ _LOG_TAG = "[commute day population]"
 #: leaving this file's own source untouched; both were module-level imports outside the token
 #: until the #327 gate was re-run (this stage acquired its ``validate()`` only afterwards).
 _HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
+
+#: Helper modules imported INSIDE :func:`execute` (so this module imports without them), hashed by
+#: dotted NAME in :func:`validate` exactly like
+#: ``braunschweig.matsim.simulation.prepare._DEFERRED_HELPER_MODULE_NAMES``.
+#: ``braunschweig.parking.attach`` decides which zone, resident zone and free-parking value every
+#: plan element carries, i.e. the CONTENT of the parking attributes written here. Hashed
+#: unconditionally, like the module objects above: a token must not depend on a flag.
+_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.parking.attach",
+)
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
 #: the simulation runs, so the pre-assignment trips/activities the vendored ``load_raw`` reads
@@ -92,6 +114,28 @@ ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 #: (java.lang.String) for the persons that have one.
 ABSENCE_STATE_COLUMN = "day_absence_state"
 
+#: Zone-based parking costs (issue #436) and the stage they read when on. Default off: the flag
+#: is switched on in the canonical configuration, not here. Mutually exclusive with
+#: KEY_URBAN_PARKING, the legacy 8 km ring declared by the vendored ``base.configure``.
+KEY_PARKING_ZONES_ENABLED = "parking_zones_enabled"
+DEFAULT_PARKING_ZONES_ENABLED = False
+KEY_URBAN_PARKING = "enable_urban_parking"
+ZONES_STAGE = "braunschweig.parking.zones_stage"
+
+#: Sensitivity arm of the free-parking draw: a share difference (unitless, valid range [-1, 1])
+#: added to the SrV free-parking share of every workplace class before the draw clips the
+#: probability to [0, 1]. 0.0 keeps the observed shares. Declared only when the flag is on.
+KEY_FREE_SHIFT = "parking_workplace_free_share_shift"
+DEFAULT_FREE_SHIFT = 0.0
+
+#: Frame columns ``braunschweig.parking.attach`` adds and ``matsim.scenario.population`` writes:
+#: activity attributes ``parkingZone`` / ``parkingFree``, person attribute ``residentParkingZone``.
+PARKING_ZONE_COLUMN = "parking_zone"
+PARKING_FREE_COLUMN = "parking_free"
+RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+
+_PARKING_LOG_TAG = "[parking population]"
+
 
 def validate(context):
     """synpp validation token: md5 over the vendored writer's source.
@@ -102,10 +146,37 @@ def validate(context):
     cached ``plans.xml.gz`` in place although the writer that produced it changed. The token folds
     that source in, so a vendored-writer edit devalidates the stage exactly like an edit here
     (same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
+
+    The deferred helpers (:data:`_DEFERRED_HELPER_MODULE_NAMES`) follow, imported by name. One that
+    is present but cannot be imported or read raises rather than being skipped: skipping it would
+    silently reuse a stale ``plans.xml.gz`` exactly when the helper is broken.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
+    for module_name in _DEFERRED_HELPER_MODULE_NAMES:
+        # TEMPORARY guard (issue #436) -- REMOVE in the final wave of the parking-zones work.
+        # braunschweig.parking.attach is written by a parallel task, so on this task's branch it
+        # does not exist yet. find_spec() returns None only for an ABSENT module (a missing parent
+        # package still raises), and only then is the module skipped, with a warning. Skipping is
+        # safe meanwhile: without the module a parking run fails in execute() on the import, and
+        # with the flag off the module does not touch the plans.
+        if importlib.util.find_spec(module_name) is None:
+            logger.warning(
+                "%s validate(): deferred helper module %r is absent, so its source is NOT part "
+                "of this stage's cache token (temporary guard until the module lands, issue "
+                "#436).", _PARKING_LOG_TAG, module_name)
+            continue
+        try:
+            deferred_module = importlib.import_module(module_name)
+            deferred_source = inspect.getsource(deferred_module)
+        except Exception as error:
+            raise RuntimeError(
+                f"braunschweig.matsim.scenario.population validate(): cannot hash the deferred "
+                f"helper module {module_name!r} ({type(error).__name__}: {error}); it must not be "
+                "skipped, because skipping it would silently reuse a stale plans.xml.gz."
+            ) from error
+        digest.update(deferred_source.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -129,6 +200,39 @@ def configure(context):
     if context.config("cordon_enabled"):
         context.stage("braunschweig.synthesis.incommuters")
         context.stage("braunschweig.synthesis.student_incommuters")
+    # Zone-based parking costs (issue #436), declared only when on -- the same trade-off as the
+    # blocks above: a workflow with the model off carries neither the zones stage nor its keys.
+    context.config(KEY_PARKING_ZONES_ENABLED, DEFAULT_PARKING_ZONES_ENABLED)
+    if context.config(KEY_PARKING_ZONES_ENABLED):
+        # KEY_URBAN_PARKING was declared by base.configure above. The zone tariffs and the
+        # legacy ring fees are alternative parking-cost models for the same stays, so the pair
+        # is a configuration error, raised here before any stage runs.
+        if context.config(KEY_URBAN_PARKING):
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {KEY_PARKING_ZONES_ENABLED} and {KEY_URBAN_PARKING} are both "
+                f"true, but the zone tariffs ({KEY_PARKING_ZONES_ENABLED}) and the legacy 8 km "
+                f"ring fees ({KEY_URBAN_PARKING}, isParis attributes) must never be combined: set "
+                f"{KEY_URBAN_PARKING}: false to run the zone model, or "
+                f"{KEY_PARKING_ZONES_ENABLED}: false to reproduce the legacy ring.")
+        context.stage(ZONES_STAGE)
+        _require_free_share_shift(context.config(KEY_FREE_SHIFT, DEFAULT_FREE_SHIFT))
+        context.config("random_seed")
+
+
+def _require_free_share_shift(value):
+    """Return ``parking_workplace_free_share_shift`` as a float, raising unless it lies in [-1, 1].
+
+    The shift is a difference of shares: a value beyond +-1 could only saturate the clipped
+    free-parking probability, so it is almost certainly a unit error (percentage points instead
+    of a share difference) and is rejected at configure time.
+    """
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or not -1.0 <= value <= 1.0):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {KEY_FREE_SHIFT} must be a number in [-1, 1] (a difference of "
+            f"free-parking shares, {DEFAULT_FREE_SHIFT} keeps the SrV-observed shares); got "
+            f"{value!r}.")
+    return float(value)
 
 
 def attach_commute_day_state(persons, states):
@@ -188,10 +292,65 @@ def attach_day_absence_state(persons, absence):
     return merged
 
 
+def _require_attach_result(before, after, column, producer):
+    """Return ``after`` if ``producer`` kept every row of ``before`` and added ``column``.
+
+    Each ``braunschweig.parking.attach`` function ADDS one column to the frame it is handed. A
+    changed row count is a duplicating or dropping join inside it (e.g. one location matched to
+    two zones), which would silently duplicate or lose plan elements in the written population,
+    so it raises instead.
+    """
+    if len(after) != len(before):
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {producer} returned {len(after)} rows for {len(before)} input "
+            "rows; the parking attributes must be attached row-preserving, and a changed count "
+            "is a duplicating or dropping join.")
+    if column not in after.columns:
+        raise ValueError(
+            f"{_PARKING_LOG_TAG} {producer} did not add the {column!r} column that "
+            "matsim.scenario.population writes as a MATSim attribute.")
+    return after
+
+
+def _log_parking_coverage(activities, persons, resident_person_ids):
+    """Log ONCE per population how many plan elements carry each parking attribute.
+
+    An activity without ``parkingZone`` lies outside every zone and parks free, and a person
+    without ``residentParkingZone`` is a resident of no zone: both are modelled states, but their
+    rates are the evidence that the zone join worked (CLAUDE.md "Fallback transparency").
+    In-commuters (persons absent from the resident enriched frame) are counted separately,
+    because zoned residents next to not one zoned in-commuter activity is the signature of a
+    broken in-commuter locations join -- that case is logged as a warning.
+    """
+    has_zone = activities[PARKING_ZONE_COLUMN].notna()
+    is_incommuter = ~activities["person_id"].isin(resident_person_ids)
+    n_activities = len(activities)
+    n_zoned = int(has_zone.sum())
+    n_incommuter = int(is_incommuter.sum())
+    n_incommuter_zoned = int((has_zone & is_incommuter).sum())
+    n_free = int(activities[PARKING_FREE_COLUMN].eq(True).sum())
+    n_persons = len(persons)
+    n_resident = int(persons[RESIDENT_PARKING_ZONE_COLUMN].notna().sum())
+    logger.info(
+        "%s parkingZone on %d/%d activities (%.1f%%), in-commuter activities with a parkingZone: "
+        "%d/%d; parkingFree=true on %d activities; residentParkingZone on %d/%d persons "
+        "(%.1f%%). Activities without a parkingZone lie outside every zone and park free "
+        "(assumption Z1).", _PARKING_LOG_TAG, n_zoned, n_activities,
+        100.0 * n_zoned / max(n_activities, 1), n_incommuter_zoned, n_incommuter, n_free,
+        n_resident, n_persons, 100.0 * n_resident / max(n_persons, 1))
+    if n_incommuter > 0 and n_incommuter_zoned == 0 and n_zoned > 0:
+        logger.warning(
+            "%s none of the %d in-commuter activities carries a parkingZone although %d resident "
+            "activities do; check the in-commuter locations handed to attach_parking_zones -- an "
+            "all-unzoned in-commuter set is the signature of a broken join rather than of "
+            "in-commuters who never enter a zone.", _PARKING_LOG_TAG, n_incommuter, n_zoned)
+
+
 def execute(context):
     output_path = "%s/population.xml.gz" % context.path()
     enable_urban_parking = bool(context.config("enable_urban_parking"))
     write_income_eur = bool(context.config("write_income_eur"))
+    parking_zones_enabled = bool(context.config(KEY_PARKING_ZONES_ENABLED))
     # The vendored load_raw reads the PRE-ASSIGNMENT trips/activities by name; the shim answers
     # those two names with the reporting-day frames instead, so the finished day reaches the
     # writer without the pre-assignment pickles ever being unpickled and dropped (both are full
@@ -219,6 +378,10 @@ def execute(context):
         # dayAbsenceState attribute -> byte-identical plans.
         logger.info("%s %s is false -- no dayAbsenceState attribute is written.",
                     _LOG_TAG, KEY_DAY_ABSENCE_ENABLED)
+
+    # The resident persons, captured BEFORE the in-commuter merge below, so the parking coverage
+    # log can count the injected in-commuters separately.
+    resident_person_ids = raw["persons"]["person_id"].to_numpy() if parking_zones_enabled else None
 
     if context.config("cordon_enabled"):
         inc = context.stage("braunschweig.synthesis.incommuters")
@@ -259,6 +422,36 @@ def execute(context):
         raw["vehicles"] = concat_frame(raw["vehicles"], inc["vehicles"], "owner_id")
         raw["vehicles"] = concat_frame(raw["vehicles"], student_inc["vehicles"],
                                        "owner_id")
+
+    # Zone-based parking costs (issue #436). Attached AFTER the in-commuter merge so injected
+    # in-commuters carry parkingZone / parkingFree exactly like residents. The order is fixed by
+    # the data flow: the resident zone is read from the zoned home activities, and the free-parking
+    # draw needs the zone of every work/education activity. The module is imported here rather
+    # than at module level, so the OFF path never imports it; validate() hashes it by name.
+    if parking_zones_enabled:
+        import braunschweig.parking.attach as attach
+
+        release = context.stage(ZONES_STAGE)
+        zoned_activities = attach.attach_parking_zones(
+            raw["activities"], raw["locations"], release["zones"])
+        raw["activities"] = _require_attach_result(
+            raw["activities"], zoned_activities, PARKING_ZONE_COLUMN, "attach_parking_zones")
+        persons_with_zone = attach.attach_resident_zones(
+            raw["persons"], raw["activities"], release["tariffs"])
+        raw["persons"] = _require_attach_result(
+            raw["persons"], persons_with_zone, RESIDENT_PARKING_ZONE_COLUMN,
+            "attach_resident_zones")
+        drawn_activities = attach.draw_parking_free(
+            raw["activities"], release["tariffs"], release["workplace_shares"],
+            int(context.config("random_seed")), shift=float(context.config(KEY_FREE_SHIFT)))
+        raw["activities"] = _require_attach_result(
+            raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free")
+        _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids)
+    else:
+        # No column -> matsim.scenario.population.effective_activity_fields and
+        # effective_person_fields are unchanged -> no parking attribute -> byte-identical plans.
+        logger.info("%s %s is false -- no parkingZone, parkingFree or residentParkingZone "
+                    "attribute is written.", _PARKING_LOG_TAG, KEY_PARKING_ZONES_ENABLED)
 
     df_persons, df_activities, df_trips, df_vehicles = base.prepare_frames(
         raw["persons"], raw["activities"], raw["locations"], raw["trips"], raw["vehicles"])
