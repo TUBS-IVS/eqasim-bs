@@ -15,11 +15,14 @@ Covered here, and why in this shape:
   unchanged writer -- not from this writer, so a refactor that moves one byte fails here.
 * **The regional wrapper** (``braunschweig.matsim.scenario.population``): the flag declarations,
   the mutual exclusion with the legacy ring, and ``execute`` with a STUB
-  ``braunschweig.parking.attach`` module (the real module is built and tested by a parallel task,
-  ``tests/test_parking_attach.py``). The stub proves the wrapper hands the attach functions the
-  frames AFTER the cordon in-commuter merge and that the columns they return reach the plans.
-* **The cache token** names ``braunschweig.parking.attach`` through the deferred-import hashing
-  that ``braunschweig.matsim.simulation.prepare`` uses for its cordon helpers.
+  ``braunschweig.parking.attach`` module, which proves the wrapper hands the attach functions the
+  frames AFTER the cordon in-commuter merge and that the columns they return reach the plans; and
+  ``execute`` once with the REAL module on the fixture release of ``tests/fixtures/parking`` (the
+  attach functions themselves are tested in ``tests/test_parking_attach.py``).
+* **The cache token** names ``braunschweig.parking.attach`` and ``braunschweig.parking.zones`` (whose
+  ``assign_zones`` the attach module calls) through the deferred-import hashing that
+  ``braunschweig.matsim.simulation.prepare`` uses for its cordon helpers; a deferred module that is
+  absent or cannot be read raises.
 """
 from __future__ import annotations
 
@@ -47,7 +50,9 @@ sys.path.insert(0, str(REPO))
 import matsim.scenario.population as pop  # noqa: E402
 import matsim.writers as writers  # noqa: E402
 from braunschweig.matsim.scenario import population as POP  # noqa: E402
+from braunschweig.parking import zones as pz  # noqa: E402
 
+FIXTURES = REPO / "tests" / "fixtures" / "parking"
 CRS = "EPSG:25832"
 ATTACH_MODULE_NAME = "braunschweig.parking.attach"
 ZONES_STAGE_NAME = "braunschweig.parking.zones_stage"
@@ -750,10 +755,74 @@ def test_execute_warns_when_no_incommuter_activity_carries_a_zone(tmp_path, monk
                for record in caplog.records)
 
 
+def _fixture_release():
+    """The Task 2 fixture release of ``tests/fixtures/parking`` (pins arithmetic, not truth) with a small
+    shares frame: bs_zentrum and bs_innenbereich park free with share 1.0, the other classes never."""
+    shares = pd.DataFrame({
+        "workplace_class": ["bs_zentrum", "bs_innenbereich", "03102", "03103", "03157", "total"],
+        "level": ["class"] * 5 + ["total"],
+        "share_free_total": [1.0, 1.0, 0.0, 0.0, 0.0, 0.9],
+    })
+    return {"zones": pz.load_zone_polygons(FIXTURES / "parking_zones_fixture.geojson"),
+            "tariffs": pz.load_tariffs(FIXTURES / "parking_tariffs_fixture.csv"),
+            "workplace_shares": shares, "coverage_register": pd.DataFrame(), "sources": []}
+
+
+def test_real_attach_module_writes_the_parking_attributes_of_the_fixture_release(tmp_path, caplog):
+    """The wrapper with the REAL braunschweig.parking.attach on the fixture release: resident 1 lives in
+    the resident zone fx_res_a and works in fx_bs_ia (class bs_zentrum, share 1.0); resident 2 lives
+    outside every zone and shops in fx_sz; the in-commuter works on campus (fx_campus), which is zoned but
+    never drawn (assumption C1) although its class parks free."""
+    real_attach = importlib.import_module(ATTACH_MODULE_NAME)
+    assert real_attach.PARKING_FREE_SEED_OFFSET == 7371  # the real module, not a stub left behind
+    release = _fixture_release()
+    centre = release["zones"].set_index("zone_id").geometry.centroid
+    context = _wrapper_context(tmp_path, incommuter_work=centre["fx_campus"], shift=0.0)
+    context._stages[ZONES_STAGE_NAME] = release
+    resident_locations = context._stages["synthesis.population.spatial.locations"]
+    moved = {(1, 0): centre["fx_res_a"], (1, 1): centre["fx_bs_ia"], (1, 2): centre["fx_res_a"],
+             (2, 1): centre["fx_sz"]}
+    context._stages["synthesis.population.spatial.locations"] = gpd.GeoDataFrame(
+        resident_locations.drop(columns="geometry"),
+        geometry=[moved.get((person_id, index), point) for person_id, index, point in zip(
+            resident_locations["person_id"], resident_locations["activity_index"],
+            resident_locations.geometry)], crs=CRS)
+
+    with caplog.at_level(logging.INFO, logger=POP.__name__), \
+            caplog.at_level(logging.INFO, logger=ATTACH_MODULE_NAME):
+        POP.execute(context)
+
+    root = _read_plans(tmp_path)
+    assert _person_attributes(root, 1)["residentParkingZone"] == ("java.lang.String", "fx_res_a")
+    assert _activity_attributes(root, 1) == [
+        {"parkingZone": ("java.lang.String", "fx_res_a")},
+        {"parkingZone": ("java.lang.String", "fx_bs_ia"),
+         "parkingFree": ("java.lang.Boolean", "true")},
+        {"parkingZone": ("java.lang.String", "fx_res_a")},
+    ]
+    assert "residentParkingZone" not in _person_attributes(root, 2)
+    assert _activity_attributes(root, 2) == [{}, {"parkingZone": ("java.lang.String", "fx_sz")}, {}]
+    assert "residentParkingZone" not in _person_attributes(root, INCOMMUTER_ID)
+    assert _activity_attributes(root, INCOMMUTER_ID) == [
+        {}, {"parkingZone": ("java.lang.String", "fx_campus")}, {}]
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(message.startswith("[parking] activities in zones: 5/9") for message in messages)
+    [coverage] = [message for message in messages if "parkingZone on" in message]
+    assert "5/9 activities" in coverage and "in-commuter activities with a parkingZone: 1/3" in coverage
+    assert "parkingFree=true on 1 activities" in coverage and "1/3 persons" in coverage
+
+
 # --------------------------------------------------------------------------- wrapper: validate
 
 def test_validate_covers_the_attach_module_by_name():
     assert ATTACH_MODULE_NAME in POP._DEFERRED_HELPER_MODULE_NAMES
+
+
+def test_validate_covers_the_zone_assignment_module_by_name():
+    """attach_parking_zones delegates the point-in-polygon test to braunschweig.parking.zones.assign_zones,
+    so that module decides the parkingZone values as much as the attach module does."""
+    assert "braunschweig.parking.zones" in POP._DEFERRED_HELPER_MODULE_NAMES
 
 
 def test_validate_folds_a_present_deferred_module_into_the_token(monkeypatch):
@@ -786,19 +855,14 @@ def test_validate_raises_when_a_present_deferred_module_cannot_be_hashed(monkeyp
         POP.validate(None)
 
 
-def test_validate_skips_an_absent_deferred_module_with_a_warning(monkeypatch, caplog):
-    """TEMPORARY: pins the find_spec guard that lets this branch run before
-    braunschweig.parking.attach exists. Delete this test together with the guard in the final
-    wave (issue #436); a missing deferred module must then raise like in
-    braunschweig.matsim.simulation.prepare."""
-    absent = "braunschweig.parking.module_absent_for_the_guard_test"
-    monkeypatch.setattr(POP, "_DEFERRED_HELPER_MODULE_NAMES", ())
-    without = POP.validate(None)
+def test_validate_raises_when_a_deferred_module_is_absent(monkeypatch):
+    """No skip for an absent deferred module (the temporary guard of the parallel-task phase is gone):
+    like braunschweig.matsim.simulation.prepare, the token refuses rather than reusing a stale
+    plans.xml.gz."""
+    absent = "braunschweig.parking.module_absent_for_the_token_test"
     monkeypatch.setattr(POP, "_DEFERRED_HELPER_MODULE_NAMES", (absent,))
-    with caplog.at_level(logging.WARNING, logger=POP.__name__):
-        assert POP.validate(None) == without
-    assert any(record.levelno == logging.WARNING and absent in record.getMessage()
-               for record in caplog.records)
+    with pytest.raises(RuntimeError, match=absent):
+        POP.validate(None)
 
 
 # --------------------------------------------------------------------------- pre-change literals

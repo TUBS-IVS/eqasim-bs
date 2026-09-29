@@ -15,7 +15,8 @@ crs: null
 roles:
 - calibration_target
 - validation_reference
-used_by: []
+used_by:
+- braunschweig.parking.zones_stage
 acquisition:
   method: committed
   source: |
@@ -35,15 +36,18 @@ storage:
 verification:
   verifier_entry: null
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed and no pipeline
-    stage reads it at this commit. Guarded by tests/test_srv_parking.py: the builders on synthetic
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed. Read by
+    braunschweig.parking.zones_stage (config key parking_workplace_shares_path) when
+    parking_zones_enabled is true; that stage raises for a tariff workplace class without a
+    class row (tests/test_parking_zones_stage.py).
+    Guarded by tests/test_srv_parking.py: the builders on synthetic
     input (code maps, missing codes, duplicate respondents across the modules, the min_cell_n
     guard, the total row pooling exactly the class rows), the extractor's provenance header on
     synthetic raw files, and the committed file itself (column set, all ten workplace classes,
     share bounds and sums, bs_zentrum as the Braunschweig class with the lowest free share).
 requirements:
   synthesis: not_needed
-  matsim: not_needed
+  matsim: optional
   production: optional
 licensing:
   license: derived aggregate of a scientific-use file; no microdata
@@ -73,11 +77,10 @@ limitations: |
   Verbandsgebiet are represented in no row.
   Read workplace_class as text: the Kreis keys carry a leading zero.
 notes: |
-  Issue #249 deliverable. Consumer (planned, parking-cost-zones plan Task 4):
-  braunschweig.parking.zones_stage reads share_free_total of the level == class rows as
-  P(free | workplace_class) for the parkingFree draw; that task adds the stage to used_by and
-  raises requirements together with the stage record, because the registry test requires every
-  used_by stage to exist. The total row is informational.
+  Issue #249 deliverable. Consumer: braunschweig.parking.zones_stage loads the table (workplace_class
+  read as text) and braunschweig.parking.attach.draw_parking_free reads share_free_total of the
+  level == class rows as P(free | workplace_class) for the parkingFree draw. The total row is
+  informational.
   Exclusion counts, the selection check, min_cell_n (100 unweighted car commuters per class, a
   smaller class raises instead of being pooled silently) and the SHA-256 of every raw input live
   in the file header, the single place that records them. No class was below the guard in this

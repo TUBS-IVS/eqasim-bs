@@ -13,7 +13,8 @@ crs: null
 roles:
 - assumption_basis
 - reference_table
-used_by: []
+used_by:
+- braunschweig.parking.zones_stage
 acquisition:
   method: committed
   source: parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory (excluded rows)

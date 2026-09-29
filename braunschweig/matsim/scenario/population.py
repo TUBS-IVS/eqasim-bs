@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib
-import importlib.util
 import inspect
 import logging
 import math
@@ -75,10 +74,13 @@ _HELPER_MODULES = (base, _day_view, _incommuter_merge_base)
 #: dotted NAME in :func:`validate` exactly like
 #: ``braunschweig.matsim.simulation.prepare._DEFERRED_HELPER_MODULE_NAMES``.
 #: ``braunschweig.parking.attach`` decides which zone, resident zone and free-parking value every
-#: plan element carries, i.e. the CONTENT of the parking attributes written here. Hashed
-#: unconditionally, like the module objects above: a token must not depend on a flag.
+#: plan element carries, i.e. the CONTENT of the parking attributes written here, and
+#: ``braunschweig.parking.zones`` supplies its point-in-polygon test (``assign_zones``), so it
+#: decides the ``parkingZone`` values as well. Hashed unconditionally, like the module objects
+#: above: a token must not depend on a flag.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.parking.attach",
+    "braunschweig.parking.zones",
 )
 
 #: Reporting-day view of the day (ADR-0104, issue #244). The MATSim plans must carry the day
@@ -148,25 +150,13 @@ def validate(context):
     (same mechanism as ``braunschweig.synthesis.commute_day.output_day.validate``).
 
     The deferred helpers (:data:`_DEFERRED_HELPER_MODULE_NAMES`) follow, imported by name. One that
-    is present but cannot be imported or read raises rather than being skipped: skipping it would
-    silently reuse a stale ``plans.xml.gz`` exactly when the helper is broken.
+    cannot be imported or read -- an absent one included -- raises rather than being skipped:
+    skipping it would silently reuse a stale ``plans.xml.gz`` exactly when the helper is broken.
     """
     digest = hashlib.md5()
     for module in _HELPER_MODULES:
         digest.update(inspect.getsource(module).encode("utf-8"))
     for module_name in _DEFERRED_HELPER_MODULE_NAMES:
-        # TEMPORARY guard (issue #436) -- REMOVE in the final wave of the parking-zones work.
-        # braunschweig.parking.attach is written by a parallel task, so on this task's branch it
-        # does not exist yet. find_spec() returns None only for an ABSENT module (a missing parent
-        # package still raises), and only then is the module skipped, with a warning. Skipping is
-        # safe meanwhile: without the module a parking run fails in execute() on the import, and
-        # with the flag off the module does not touch the plans.
-        if importlib.util.find_spec(module_name) is None:
-            logger.warning(
-                "%s validate(): deferred helper module %r is absent, so its source is NOT part "
-                "of this stage's cache token (temporary guard until the module lands, issue "
-                "#436).", _PARKING_LOG_TAG, module_name)
-            continue
         try:
             deferred_module = importlib.import_module(module_name)
             deferred_source = inspect.getsource(deferred_module)

@@ -16,7 +16,8 @@ geography: >-
 crs: EPSG:25832 (stored as WGS84 GeoJSON)
 roles:
 - spatial_input
-used_by: []
+used_by:
+- braunschweig.parking.zones_stage
 acquisition:
   method: committed
   source: >-

@@ -15,7 +15,8 @@ crs: null
 roles:
 - supply_input
 - reference_table
-used_by: []
+used_by:
+- braunschweig.parking.zones_stage
 acquisition:
   method: committed
   source: >-
