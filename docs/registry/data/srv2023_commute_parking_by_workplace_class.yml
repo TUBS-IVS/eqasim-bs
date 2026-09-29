@@ -1,0 +1,84 @@
+dataset: srv2023_commute_parking_by_workplace_class
+title: SrV 2023 parking place and payment of car commuters by workplace class (committed aggregate)
+inventory_id: null
+provider: >-
+  TU Dresden, SrV 2023 Braunschweig + RGB scientific-use file SciUse_v4 (the two P2 add-on
+  person modules, the person file and the trip file); aggregated in-repo
+vintage: 2023 survey year
+geography: >-
+  Workplace classes inside the ZGB (parking-cost-zones design, spec 2026-09-28, section 3.4):
+  Braunschweig split into bs_zentrum, bs_innenbereich and bs_outer (SrV Oberbezirke 1, 2-3 and
+  4-6), one class per other ZGB Kreis (03102, 03103, 03151, 03153, 03154, 03157, 03158), plus a
+  total row pooling exactly the class rows. Respondents are residents of Braunschweig and the
+  seven surveyed RGB Kreise; Wolfsburg (03103) appears as a workplace only, through in-commuters.
+crs: null
+roles:
+- calibration_target
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_commute_parking.py --raw <srv2023_raw directory>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha> (one run writes this table
+    and srv2023_city_center_parking). Reads the two P2 add-on person modules (local copies
+    SrV2023_Personen_Zusatz_Braunschweig.csv and SrV2023_Personen_Zusatz_RGB.csv: V_*_PARKENAPL
+    and its follow-ups V_*_PARKENAPL<k>_ENTGELT), SrV2023_Personen.csv (GEWICHT_P_ZENSUS) and
+    SrV2023_Wege.csv (WNR, V_ZWECK, V_ZIEL_AGS, V_ZIEL_OBERBEZIRK); the definitions live in
+    braunschweig/calibration/srv_parking.py. The raw microdata is local-only (srv2023_raw) and
+    never committed; free-text columns are never read.
+  script: scripts/extract_srv_commute_parking.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed and no pipeline
+    stage reads it at this commit. Guarded by tests/test_srv_parking.py: the builders on synthetic
+    input (code maps, missing codes, duplicate respondents across the modules, the min_cell_n
+    guard, the total row pooling exactly the class rows), the extractor's provenance header on
+    synthetic raw files, and the committed file itself (column set, all ten workplace classes,
+    share bounds and sums, bs_zentrum as the Braunschweig class with the lowest free share).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived aggregate of a scientific-use file; no microdata
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: GEWICHT_P_ZENSUS-weighted shares of the usual parking place when driving to
+  work/education (employer or institution lot, public street, underground/multi-storey garage or
+  large lot, other place) and of free versus paid parking, among CURRENT car commuters whose
+  first work/education trip (V_ZWECK 1 or 6, lowest WNR) of the survey day ends in the class. The
+  question asks for the usual place, not for the survey-day trip. n_eff is the Kish effective
+  sample size; it is well below n_unweighted in several classes, so per-class shares carry a
+  few percentage points of sampling uncertainty.
+  ASSUMPTION A1 (parking-cost-zones design): the free share observed among current car commuters
+  applies to all workers/students of the class. Workers who would have to pay can choose another
+  mode and may therefore be under-represented among car commuters, so the transferred free share
+  may be too high; the design's sensitivity arm parking_workplace_free_share_shift exists for
+  this.
+  Selection: car commuters without a work/education trip on the survey day (about a third of the
+  universe), with a destination outside the ZGB, without a destination AGS, or with a
+  Braunschweig destination whose Oberbezirk could not be computed belong to no row; the file
+  header states their counts and, for groups of at least min_cell_n respondents, their free
+  share next to the total row's.
+  Coverage: respondents live in Braunschweig or the seven surveyed RGB Kreise (stratified PSU
+  sample of about 44 municipalities). Wolfsburg residents are not surveyed, so the 03103 row
+  describes in-commuters from the surveyed area only; in-commuters from outside the
+  Verbandsgebiet are represented in no row.
+  Read workplace_class as text: the Kreis keys carry a leading zero.
+notes: |
+  Issue #249 deliverable. Consumer (planned, parking-cost-zones plan Task 4):
+  braunschweig.parking.zones_stage reads share_free_total of the level == class rows as
+  P(free | workplace_class) for the parkingFree draw; that task adds the stage to used_by and
+  raises requirements together with the stage record, because the registry test requires every
+  used_by stage to exist. The total row is informational.
+  Exclusion counts, the selection check, min_cell_n (100 unweighted car commuters per class, a
+  smaller class raises instead of being pooled silently) and the SHA-256 of every raw input live
+  in the file header, the single place that records them. No class was below the guard in this
+  extraction, so no class was pooled.

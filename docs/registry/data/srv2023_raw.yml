@@ -15,8 +15,9 @@ acquisition:
   script: scripts/derive_srv_location_types.py
 storage:
   expected_path: |
-    eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv, codebook
-    in srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
+    eqasim-data/data/braunschweig/srv/srv2023_raw/SrV2023_{Personen,Wege,Haushalte}.csv and the
+    add-on modules SrV2023_Personen_Zusatz_{Braunschweig,RGB}.csv, codebook in
+    srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
   committed: false
   local_only: true
 verification:
@@ -32,7 +33,8 @@ licensing:
 limitations: null
 notes: |
   Source of the committed srv2023_* aggregates: per-Kreis participation targets (#224,
-  ADR-0055/0060), escort destination types (#201), secondary location types (#262).
+  ADR-0055/0060), escort destination types (#201), secondary location types (#262), commute and
+  city-centre parking shares (#249).
 
   Only scripts/extract_srv_*.py (plus derive_srv_location_types.py, derive_escort_location_weights.py,
   build_srv_participation_aggregate.py) read this directory; nothing under braunschweig/ does. A
@@ -44,11 +46,15 @@ notes: |
     SrV2023_Einzeldaten_Braunschweig und RGB_SciUse_v4_P.csv -> SrV2023_Personen.csv
     SrV2023_Einzeldaten_Braunschweig und RGB_SciUse_v4_W.csv -> SrV2023_Wege.csv
     SrV2023_Einzeldaten_Braunschweig und RGB_SciUse_v4_H.csv -> SrV2023_Haushalte.csv
+    SrV2023_Einzeldaten_Braunschweig und RGB_SciUse_v4_P2_BRAU.csv -> SrV2023_Personen_Zusatz_Braunschweig.csv
+    SrV2023_Einzeldaten_Braunschweig und RGB_SciUse_v4_P2_RGB.csv  -> SrV2023_Personen_Zusatz_RGB.csv
     SrV2023_Datenkodierung_SciUse.xlsx                       -> codebook/
     SrV2023_Teilraumkodierung_Braunschweig und RGB.xlsx      -> codebook/
-  The delivery's ..._v4_P2_BRAU.csv / ..._v4_P2_RGB.csv are read by no generator and are
-  deliberately not copied. Read format: sep=";", decimal=",", encoding="cp1252". The codebook is
-  the authority for every variable value label; it is documentation, no generator opens it.
+  The two P2 files are the add-on person modules (codebook levels P2_BRAU and P2_RGB, which hold
+  the parking questions among others); they are read only by
+  scripts/extract_srv_commute_parking.py (issue #249), which never reads their free-text columns.
+  Read format: sep=";", decimal=",", encoding="cp1252". The codebook is the authority for every
+  variable value label; it is documentation, no generator opens it.
 
   Never-push guard: everything under eqasim-data/ is ignored ("eqasim-data/*" in the repository
   .gitignore) and the committed aggregates are the exception, force-added one by one. A nested
