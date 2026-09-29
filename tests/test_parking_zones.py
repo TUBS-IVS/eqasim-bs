@@ -1,0 +1,384 @@
+"""Loader, validators and zone assignment of the parking cost zones (issue #249, design spec 3.1, 5.3).
+
+The fixture tariff set under ``tests/fixtures/parking`` pins arithmetic, not truth (plan section
+"Fixture tariff set and golden cases"); the committed real data is checked by
+``test_committed_parking_data_is_valid`` and ``scripts/validate_parking_zones.py``.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+import pytest
+from shapely.geometry import Point, Polygon, box
+
+from braunschweig.parking import zones as pz
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "parking"
+TARIFF_FIXTURE = FIXTURES / "parking_tariffs_fixture.csv"
+ZONE_FIXTURE = FIXTURES / "parking_zones_fixture.geojson"
+OVERPASS_FIXTURE = FIXTURES / "overpass_fee_tags_fixture.json"
+
+
+def _write_tariffs(path: Path, frame: pd.DataFrame, header_lines=("# test tariffs",)) -> Path:
+    """Write a tariff frame back to CSV the way the committed file is laid out."""
+    text = frame.copy()
+    for column in pz.MINUTE_COLUMNS:
+        text[column] = text[column].astype("object").where(text[column].notna(), "")
+    text["resident_exempt"] = text["resident_exempt"].map({True: "true", False: "false"})
+    body = text.to_csv(index=False, lineterminator="\n")
+    path.write_text("\n".join(header_lines) + "\n" + body, encoding="utf-8")
+    return path
+
+
+# --------------------------------------------------------------------------- tariff table
+
+
+def test_fixture_tariffs_load_typed():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus"]
+    row = tariffs.set_index("zone_id").loc["fx_sz"]
+    assert row["first_period_min"] == 60 and row["first_period_eur"] == pytest.approx(0.70)
+    assert pd.isna(row["max_stay_min"])
+    assert bool(row["resident_exempt"]) is False
+    assert list(tariffs.columns) == list(pz.TARIFF_COLUMNS)
+    assert str(tariffs["billing_unit_min"].dtype) == "Int64"
+    assert tariffs["fee_start_h"].dtype == float and tariffs["hourly_rate_eur"].dtype == float
+    assert tariffs.set_index("zone_id").loc["fx_res_a", "resident_exempt"] == True  # noqa: E712
+    assert tariffs.set_index("zone_id").loc["fx_sz", "workplace_class"] == "03102"
+    assert tariffs.set_index("zone_id").loc["fx_pe", "municipality_ags"] == "03157006"
+
+
+def test_fixture_tariffs_pass_validation():
+    pz.validate_tariffs(pz.load_tariffs(TARIFF_FIXTURE))
+
+
+def test_hash_inside_a_field_is_not_a_comment(tmp_path):
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    tariffs.loc[0, "source_url"] = "https://www.braunschweig.de/plan/#parken"
+    loaded = pz.load_tariffs(_write_tariffs(tmp_path / "t.csv", tariffs))
+    assert loaded.loc[0, "source_url"] == "https://www.braunschweig.de/plan/#parken"
+
+
+def test_literal_booleans_only(tmp_path):
+    text = TARIFF_FIXTURE.read_text(encoding="utf-8").replace(",false,fixture,2026-09-28", ",no,fixture,2026-09-28", 1)
+    path = tmp_path / "t.csv"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="resident_exempt"):
+        pz.load_tariffs(path)
+
+
+def test_missing_or_unexpected_columns_raise(tmp_path):
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    with pytest.raises(ValueError, match="notes"):
+        pz.load_tariffs(_write_tariffs(tmp_path / "a.csv", tariffs.drop(columns=["notes"])))
+    with pytest.raises(ValueError, match="parking_colour"):
+        pz.load_tariffs(_write_tariffs(tmp_path / "b.csv", tariffs.assign(parking_colour="red")))
+
+
+def test_cross_validate_rejects_missing_and_orphan_rows(tmp_path):
+    zones = pz.load_zone_polygons(ZONE_FIXTURE)
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    pz.cross_validate(zones, tariffs)
+    with pytest.raises(ValueError, match="fx_campus"):
+        pz.cross_validate(zones[zones["zone_id"] != "fx_campus"], tariffs)
+    with pytest.raises(ValueError, match="fx_bs_ia"):
+        pz.cross_validate(zones, tariffs[tariffs["zone_id"] != "fx_bs_ia"])
+
+
+def test_required_fields_per_type_are_enforced(tmp_path):
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_bs_ia", "long_stay_product_eur"] = float("nan")
+    with pytest.raises(ValueError, match="long_stay_product_eur"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_campus", "member_day_eur"] = float("nan")
+    with pytest.raises(ValueError, match="member_day_eur"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_bs_ib", "fee_start_h"] = 21.0
+    with pytest.raises(ValueError, match="fee_start_h"):
+        pz.validate_tariffs(broken)
+
+
+def test_paired_fields_money_and_ids_are_enforced():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_sz", "first_period_eur"] = float("nan")
+    with pytest.raises(ValueError, match="first_period_eur"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_bs_ib", "long_stay_product_eur"] = 9.0
+    with pytest.raises(ValueError, match="max_stay_min"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_wob", "daily_cap_eur"] = -1.0
+    with pytest.raises(ValueError, match="daily_cap_eur"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_pe", "zone_id"] = "fx_sz"
+    with pytest.raises(ValueError, match="duplicate"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_bs_ia", "billing_unit_min"] = 0
+    with pytest.raises(ValueError, match="billing_unit_min"):
+        pz.validate_tariffs(broken)
+
+
+def test_resident_zone_needs_exemption_and_zero_rate():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_res_a", "resident_exempt"] = False
+    with pytest.raises(ValueError, match="resident_exempt"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_res_a", "hourly_rate_eur"] = 1.0
+    with pytest.raises(ValueError, match="hourly_rate_eur"):
+        pz.validate_tariffs(broken)
+
+
+def test_campus_rows_carry_no_metering_fields():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_campus", "hourly_rate_eur"] = 1.0
+    with pytest.raises(ValueError, match="hourly_rate_eur"):
+        pz.validate_tariffs(broken)
+
+
+def test_unknown_workplace_class_and_zone_type_raise():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy(); broken.loc[0, "workplace_class"] = "mars"
+    with pytest.raises(ValueError, match="workplace_class"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy(); broken.loc[0, "zone_type"] = "garage"
+    with pytest.raises(ValueError, match="zone_type"):
+        pz.validate_tariffs(broken)
+
+
+def test_workplace_class_must_match_the_county_of_the_municipality():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_sz", "workplace_class"] = "03103"
+    with pytest.raises(ValueError, match="workplace_class"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_wob", "municipality_ags"] = "09162000"
+    with pytest.raises(ValueError, match="municipality_ags"):
+        pz.validate_tariffs(broken)
+
+
+def test_provenance_fields_and_fee_window_source_are_required():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_sz", "source_url"] = pd.NA
+    with pytest.raises(ValueError, match="source_url"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_sz", "fee_window_source"] = "rumour"
+    with pytest.raises(ValueError, match="fee_window_source"):
+        pz.validate_tariffs(broken)
+    broken = tariffs.copy()
+    broken.loc[broken["zone_id"] == "fx_sz", "valid_from"] = "01.01.2026"
+    with pytest.raises(ValueError, match="valid_from"):
+        pz.validate_tariffs(broken)
+
+
+def test_fixture_marker_can_be_rejected_for_committed_data():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    with pytest.raises(ValueError, match="fixture"):
+        pz.validate_tariffs(tariffs, allow_fixture_marker=False)
+
+
+# --------------------------------------------------------------------------- polygons
+
+
+def test_fixture_zones_load_in_metric_crs():
+    zones = pz.load_zone_polygons(ZONE_FIXTURE)
+    assert zones.crs.to_epsg() == 25832 and len(zones) == 7 and zones["zone_id"].is_unique
+    for column in pz.ZONE_PROVENANCE_COLUMNS:
+        assert zones[column].notna().all(), column
+
+
+def test_overlapping_zones_are_rejected():
+    zones = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(5, 0, 15, 10)]}, crs="EPSG:25832")
+    with pytest.raises(ValueError, match="overlap"):
+        pz.validate_zone_polygons(zones)
+
+
+def test_touching_zones_within_tolerance_are_accepted():
+    zones = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(10, 0, 20, 10)]}, crs="EPSG:25832")
+    pz.validate_zone_polygons(zones)
+    sliver = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(9.95, 0, 20, 10)]}, crs="EPSG:25832")
+    pz.validate_zone_polygons(sliver)  # 0.5 m2 < OVERLAP_TOLERANCE_M2
+
+
+def test_zone_polygons_need_metric_crs_and_unique_ids():
+    wgs84 = gpd.GeoDataFrame({"zone_id": ["a"], "geometry": [box(10.5, 52.2, 10.6, 52.3)]}, crs="EPSG:4326")
+    with pytest.raises(ValueError, match="EPSG:25832"):
+        pz.validate_zone_polygons(wgs84)
+    twins = gpd.GeoDataFrame({"zone_id": ["a", "a"], "geometry": [box(0, 0, 1, 1), box(5, 5, 6, 6)]}, crs="EPSG:25832")
+    with pytest.raises(ValueError, match="duplicate"):
+        pz.validate_zone_polygons(twins)
+
+
+def test_load_zone_polygons_requires_provenance(tmp_path):
+    zones = gpd.read_file(ZONE_FIXTURE).drop(columns=["digitising_note"])
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    with pytest.raises(ValueError, match="digitising_note"):
+        pz.load_zone_polygons(path)
+
+
+def test_load_zone_polygons_repairs_a_self_intersecting_ring(tmp_path, caplog):
+    zones = gpd.read_file(ZONE_FIXTURE).to_crs("EPSG:25832")
+    x0, y0, x1, y1 = zones.geometry.iloc[0].bounds
+    bow_tie = Polygon([(x0, y0), (x1, y1), (x1, y0), (x0, y1)])
+    zones.loc[0, "geometry"] = bow_tie
+    path = tmp_path / "zones.geojson"
+    zones.to_crs("EPSG:4326").to_file(path, driver="GeoJSON")
+    with caplog.at_level("INFO", logger=pz.__name__):
+        repaired = pz.load_zone_polygons(path)
+    assert repaired.geometry.is_valid.all()
+    assert repaired.geometry.iloc[0].area > 0
+    assert "repaired 1" in caplog.text
+
+
+# --------------------------------------------------------------------------- assignment
+
+
+def test_assign_zones_returns_id_inside_and_nan_outside():
+    zones = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(20, 0, 30, 10)]}, crs="EPSG:25832")
+    points = gpd.GeoDataFrame({"person_id": [1, 1, 2], "activity_index": [0, 1, 0]},
+                              geometry=[Point(5, 5), Point(50, 50), Point(25, 5)], crs="EPSG:25832")
+    assigned = pz.assign_zones(points, zones)
+    assert list(assigned.fillna("-")) == ["a", "-", "b"]
+
+
+def test_assign_zones_keeps_the_index_of_the_points_even_when_duplicated():
+    zones = gpd.GeoDataFrame({"zone_id": ["a"], "geometry": [box(0, 0, 10, 10)]}, crs="EPSG:25832")
+    points = gpd.GeoDataFrame({"person_id": [7, 7]}, geometry=[Point(5, 5), Point(50, 50)], crs="EPSG:25832",
+                              index=[3, 3])
+    assigned = pz.assign_zones(points, zones)
+    assert list(assigned.index) == [3, 3]
+    assert list(assigned.fillna("-")) == ["a", "-"]
+
+
+def test_assign_zones_raises_for_a_point_in_two_zones():
+    zones = gpd.GeoDataFrame({"zone_id": ["a", "b"], "geometry": [box(0, 0, 10, 10), box(5, 0, 15, 10)]}, crs="EPSG:25832")
+    points = gpd.GeoDataFrame({"person_id": [1]}, geometry=[Point(7, 5)], crs="EPSG:25832")
+    with pytest.raises(ValueError, match="more than one zone"):
+        pz.assign_zones(points, zones)
+
+
+def test_assign_zones_requires_the_same_crs():
+    zones = gpd.GeoDataFrame({"zone_id": ["a"], "geometry": [box(0, 0, 10, 10)]}, crs="EPSG:25832")
+    points = gpd.GeoDataFrame({"person_id": [1]}, geometry=[Point(10.5, 52.2)], crs="EPSG:4326")
+    with pytest.raises(ValueError, match="CRS"):
+        pz.assign_zones(points, zones)
+
+
+def test_fixture_zone_centroids_are_assigned_to_their_own_zone():
+    zones = pz.load_zone_polygons(ZONE_FIXTURE)
+    points = gpd.GeoDataFrame({"zone_id_expected": zones["zone_id"].values},
+                              geometry=zones.geometry.representative_point().values, crs=zones.crs)
+    assert list(pz.assign_zones(points, zones)) == list(zones["zone_id"])
+
+
+# --------------------------------------------------------------------------- coverage register
+
+
+def _register(rows):
+    return pd.DataFrame(rows, columns=list(pz.REGISTER_COLUMNS))
+
+
+def test_register_accepts_one_status_row_per_municipality_plus_excluded_areas():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    register = _register([
+        ("03101000", "Braunschweig, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03101000", "Braunschweig: hospital lots", "excluded", "", "customer/visitor regimes, no exposure measured yet"),
+        ("03102000", "Salzgitter, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03103000", "Wolfsburg, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03157006", "Peine, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03158037", "Wolfenbuettel, Stadt", "not_audited", "", ""),
+        ("03151009", "Gifhorn, Stadt", "no_paid_parking_known", "https://example.org/source", "checked"),
+    ])
+    pz.validate_coverage_register(register, tariffs)
+    pz.validate_coverage_register(register, tariffs, expected_ags={"03101000", "03102000", "03103000", "03157006",
+                                                                   "03158037", "03151009"})
+    with pytest.raises(ValueError, match="03154028"):
+        pz.validate_coverage_register(register, tariffs, expected_ags={"03101000", "03102000", "03103000",
+                                                                       "03157006", "03158037", "03151009", "03154028"})
+
+
+def test_register_rejects_contradictions():
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    base = [
+        ("03101000", "Braunschweig, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03102000", "Salzgitter, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03103000", "Wolfsburg, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+        ("03157006", "Peine, Stadt", "zoned", "parking_tariffs_2026.csv", ""),
+    ]
+    with pytest.raises(ValueError, match="03157006"):  # a tariff row in a municipality that is not 'zoned'
+        pz.validate_coverage_register(_register(base[:3] + [("03157006", "Peine, Stadt", "not_audited", "", "")]), tariffs)
+    with pytest.raises(ValueError, match="03158037"):  # 'zoned' without any zone
+        pz.validate_coverage_register(_register(base + [("03158037", "Wolfenbuettel", "zoned", "x", "")]), tariffs)
+    with pytest.raises(ValueError, match="source"):
+        pz.validate_coverage_register(_register(base + [("03158037", "Wolfenbuettel", "no_paid_parking_known", "", "")]),
+                                      tariffs)
+    with pytest.raises(ValueError, match="reason"):
+        pz.validate_coverage_register(_register(base + [("03101000", "BS hospital", "excluded", "", "")]), tariffs)
+    with pytest.raises(ValueError, match="duplicate"):
+        pz.validate_coverage_register(_register(base + [("03101000", "Braunschweig again", "not_audited", "", "")]),
+                                      tariffs)
+    with pytest.raises(ValueError, match="status"):
+        pz.validate_coverage_register(_register(base + [("03158037", "Wolfenbuettel", "maybe", "", "")]), tariffs)
+    with pytest.raises(ValueError, match="ags"):
+        pz.validate_coverage_register(_register(base + [("0315803", "Wolfenbuettel", "not_audited", "", "")]), tariffs)
+
+
+def test_load_coverage_register_skips_header_lines(tmp_path):
+    path = tmp_path / "register.csv"
+    path.write_text("# header line\nags,name,status,source,note\n03101000,\"Braunschweig, Stadt\",zoned,"
+                    "https://www.braunschweig.de/plan/#parken,\n", encoding="utf-8")
+    register = pz.load_coverage_register(path)
+    assert list(register.columns) == list(pz.REGISTER_COLUMNS)
+    assert register.loc[0, "ags"] == "03101000" and register.loc[0, "source"].endswith("#parken")
+
+
+# --------------------------------------------------------------------------- curation helper (Overpass)
+
+
+def test_overpass_query_covers_every_fee_statement_and_escapes_names():
+    from scripts.build_parking_zones_from_osm import build_overpass_query
+
+    query = build_overpass_query((52.2, 10.4, 52.35, 10.65), street_names=["Bohlweg", "Am Wendentor (Nord)"],
+                                 timeout_s=180)
+    assert query.startswith("[out:json][timeout:180];")
+    for statement in ('nwr["amenity"="parking"]["fee"="yes"]', 'way["highway"]["parking:both:fee"~"yes"]',
+                      'way["highway"]["parking:left:fee"~"yes"]', 'way["highway"]["parking:right:fee"~"yes"]',
+                      'way["highway"]["parking:condition:both"~"ticket"]',
+                      'way["highway"]["parking:condition:left"~"ticket"]',
+                      'way["highway"]["parking:condition:right"~"ticket"]'):
+        assert statement + "(52.2,10.4,52.35,10.65);" in query
+    assert "Am Wendentor \\\\(Nord\\\\)" in query
+    assert query.rstrip().endswith("out tags geom;")
+
+
+def test_overpass_fixture_dissolves_into_the_expected_candidates():
+    from scripts.build_parking_zones_from_osm import build_candidates, elements_to_features
+
+    payload = json.loads(OVERPASS_FIXTURE.read_text(encoding="utf-8"))
+    features = elements_to_features(payload)
+    assert features.crs.to_epsg() == 25832
+    assert sorted(features["kind"].unique()) == ["parking", "street_fee", "street_named"]
+    candidates = build_candidates(features)
+    # ways 101 and 102 touch and dissolve; the lot 201, the node 301 and the legacy ticket way 103 stay apart;
+    # the named street 401 without fee tags is not fee evidence.
+    assert len(candidates) == 4
+    merged = candidates[candidates["osm_ids"].str.contains("way/101")].iloc[0]
+    assert "way/102" in merged["osm_ids"] and "parking:both:fee=yes" in merged["evidence"]
+    assert not candidates["osm_ids"].str.contains("way/401").any()
+    assert candidates.crs.to_epsg() == 25832 and (candidates.geometry.area > 0).all()

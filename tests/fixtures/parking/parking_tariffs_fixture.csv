@@ -1,0 +1,16 @@
+# Synthetic parking tariff fixture for the tests of the zone-based parking costs (issue #249).
+# It pins ARITHMETIC, NOT TRUTH: the values follow the fixture table of the implementation plan
+# (section "Fixture tariff set and golden cases"), inspired by but not equal to the committed
+# eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv. Never use it as a source of real tariffs.
+# Columns and cost semantics as in the committed tariff table (design spec sections 3.2 and 5.3):
+# money in EUR, minutes as integers, fee hours as decimal hours of the weekday, empty = not applicable.
+# Consumers: tests/test_parking_zones.py, scripts/export_parking_golden_cases.py (Task 3) and the
+# zones stage tests (Task 4); the matching polygons are parking_zones_fixture.geojson (seven squares).
+zone_id,name,municipality_ags,zone_type,workplace_class,hourly_rate_eur,billing_unit_min,free_if_stay_at_most_min,first_period_min,first_period_eur,daily_cap_eur,max_stay_min,long_stay_product_eur,member_day_eur,guest_day_eur,fee_start_h,fee_end_h,resident_exempt,source_url,source_date,valid_from,fee_window_source,notes
+fx_bs_ia,Fixture Braunschweig zone Ia,03101000,street_paid,bs_zentrum,1.80,1,,,,,180,9.00,,,9.0,20.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_bs_ib,Fixture Braunschweig zone Ib,03101000,street_paid,bs_zentrum,1.80,1,,,,9.00,,,,,9.0,20.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_sz,Fixture Salzgitter-Lebenstedt,03102000,street_paid,03102,1.00,6,30,60,0.70,,,,,,10.0,18.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_wob,Fixture Wolfsburg Innenstadt,03103000,street_paid,03103,1.20,60,,60,1.10,6.00,,,,,6.0,24.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_pe,Fixture Peine centre,03157006,street_paid,03157,1.00,30,,,,,180,5.00,,,9.0,17.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_res_a,Fixture resident zone A,03101000,resident_zone,bs_innenbereich,0.00,60,,,,,120,9.00,,,0.0,24.0,true,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
+fx_campus,Fixture TU campus,03101000,campus,bs_innenbereich,,,,,,,,,3.50,9.00,0.0,24.0,false,fixture,2026-09-28,2026-01-01,fixture,fixture: pins arithmetic not truth
