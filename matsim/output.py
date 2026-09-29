@@ -119,6 +119,25 @@ def copy_vrb_fare_inputs(prepare_path, output_path, output_prefix):
         shutil.copy(source, os.path.join(str(output_path), name))
 
 
+def copy_parking_inputs(prepare_path, output_path, output_prefix):
+    """Export the parking inputs (issue #249) listed in the preparation report, under their prefixed names.
+
+    The braunschweigParking module in <prefix>config.xml refers to the tariff model relative to the config, so
+    the model travels with the scenario under the same name, as does the report that lists it. A listed file
+    that is missing fails.
+    """
+    from braunschweig.parking.tariff_export import inputs_report_name
+
+    report_path = os.path.join(str(prepare_path), inputs_report_name(output_prefix))
+    with open(report_path, encoding="utf-8") as stream:
+        names = json.load(stream)["parking_input_files"]
+    for name in names:
+        source = os.path.join(str(prepare_path), name)
+        if not os.path.isfile(source):
+            raise FileNotFoundError("parking input %s listed in %s is missing" % (source, report_path))
+        shutil.copy(source, os.path.join(str(output_path), name))
+
+
 def configure(context):
     if context.config("run_matsim", True):
         # allow disabling performing one run of the simulation
@@ -139,6 +158,9 @@ def configure(context):
     # VRB zone fare model (ADR-0133): the prepared config references its two input files, so they
     # travel with the scenario when the flag is on.
     context.config("vrb_zone_fares_enabled", False)
+    # Zone-based parking costs (issue #249): the prepared config references the tariff model, so it
+    # travels with the scenario, together with its inputs report, when the flag is on.
+    context.config("parking_zones_enabled", False)
     need_osm = context.config("export_detailed_network", False)
     if need_osm:
         context.stage("matsim.scenario.supply.osm")
@@ -172,6 +194,10 @@ def execute(context):
     if context.config("vrb_zone_fares_enabled"):
         copy_vrb_fare_inputs(context.path("matsim.simulation.prepare"), context.config("output_path"),
                              context.config("output_prefix"))
+
+    if context.config("parking_zones_enabled"):
+        copy_parking_inputs(context.path("matsim.simulation.prepare"), context.config("output_path"),
+                            context.config("output_prefix"))
 
     if context.config("export_detailed_network"):
         shutil.copy(
