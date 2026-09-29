@@ -19,6 +19,9 @@ package. `__init__.py` (1181 lines) is the synpp stage itself
 submodules define: `activity_types`, `candidate_columns`, `candidates`,
 `srv_candidates`, `distance_sampling`, `deciders`, `srv_location_types`,
 `escort`, `plans`, `fallback`, `parallel_solving`, `results`, `reporting`.
+Since ADR-0136 `inverse_cdf` holds the inverse-CDF draw that `deciders` and
+`srv_location_types` share. It left `deciders` so that `srv_location_types`, which the
+candidates stage runs, no longer imports the decider machinery.
 
 The import path is unchanged: `braunschweig.synthesis.locations.secondary_chainsolvers`
 resolves to the package's `__init__.py` exactly as it resolved to the flat
@@ -62,7 +65,7 @@ See `synpp-helper-hash-audit.md` for the repo-wide picture.
   `enriched-split.md`), most submodule names are re-exported through
   `__init__.py` for backward compatibility, and siblings that need each
   other's names import them directly, submodule-to-submodule (e.g.
-  `srv_location_types.py` imports from `deciders.py`; `candidates.py` imports
+  `srv_location_types.py` imports from `inverse_cdf.py`; `candidates.py` imports
   from `srv_location_types.py`; `plans.py` imports from `distance_sampling.py`
   and `srv_location_types.py`) rather than through the facade. A test or patch
   aimed at a re-exported name must target the owning submodule attribute, not

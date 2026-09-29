@@ -124,6 +124,7 @@ from . import (
     distance_sampling,
     escort,
     fallback,
+    inverse_cdf,
     parallel_solving,
     plans,
     reporting,
@@ -245,6 +246,8 @@ from .deciders import (  # noqa: F401  (re-exports)
     _build_leisure_subtype_decider,
     _build_other_subtype_decider,
     _build_shop_subtype_decider,
+)
+from .inverse_cdf import (  # noqa: F401  (re-exports)
     _inverse_cdf_choice,
 )
 from .distance_sampling import (  # noqa: F401  (re-exports)
@@ -323,6 +326,7 @@ _HELPER_MODULES: Tuple[Any, ...] = (
     escort,
     escort_links,
     fallback,
+    inverse_cdf,
     parallel_solving,
     passive_joint_links,
     plans,
@@ -338,10 +342,11 @@ _HELPER_MODULES: Tuple[Any, ...] = (
 )
 
 
-#: Hashed by dotted NAME because they are imported inside a function body rather than at
-#: module level: escort_links (the escort anchor/link build) and parallelism (which resolves
-#: the worker count the chainsolver runs with). Both were outside the token until the #327
-#: helper-hash re-audit.
+#: Hashed by dotted NAME because it is imported inside a function body rather than at
+#: module level: parallelism, which resolves the worker count the chainsolver runs with. It
+#: was outside the token until the #327 helper-hash re-audit. escort_links, the other
+#: function-level import of that audit, is hashed as a module object in _HELPER_MODULES,
+#: through the module-level import added for exactly that.
 _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.parallelism",
     # configure() and execute() reach the KEY_/DEFAULT_ constants of this stage through
@@ -349,7 +354,6 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # inspect.getsource of this file. A changed DEFAULT_ there changes what the stage
     # computed under without touching any file this token otherwise covers.
     "braunschweig.popsim.stage.config_keys",
-    "braunschweig.synthesis.locations.escort_links",
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.calibration.targets",
@@ -362,6 +366,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.day_type",
     "braunschweig.popsim.escort_pairing",
     "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.mid.donor",
     "braunschweig.popsim.missing",
     "braunschweig.popsim.passenger_availability",

@@ -80,12 +80,15 @@
 > first-party surface this file inventories is no longer un-gated either: since the
 > 2026-09-09 re-audit
 > `tests/test_audit_synpp_helper_hash.py::test_every_source_hashing_stage_covers_its_required_helpers`
-> enforces it for every source-hashing stage. That test's
-> docstring also records the two AST-resolver bugs (an `ast.AnnAssign`-typed
-> `_HELPER_MODULES` declaration, and a bare `from . import name` relative-import
-> binding) that a sizing probe hit — the re-audit script reproduced BOTH on its
-> first pass before they were fixed there, which is the best argument for keeping
-> the method in code where it can be corrected once.
+> enforces it for every source-hashing stage. That test module also records the
+> AST-resolver bugs found so far. A sizing probe hit the first two (an
+> `ast.AnnAssign`-typed `_HELPER_MODULES` declaration, and a bare `from . import name`
+> relative-import binding), and the re-audit script reproduced BOTH on its first pass
+> before they were fixed there, which is the best argument for keeping the method in
+> code where it can be corrected once. Two more surfaced on 2026-09-29: a relative
+> import in a plain module was anchored at the module instead of its package and
+> silently dropped, and a module object re-exported through another module was not
+> credited (see "Limitations").
 >
 > **Reproduce:** `python scripts/audit_synpp_helper_hash.py . --json <out.json>`.
 > The counts below are that script's output; the per-name category (a) and (c)
@@ -695,7 +698,14 @@ What this method cannot see, checked rather than assumed:
     only the trips stage calls it.
   - Everything else the walk reaches is hashed by dotted name, in a commented
     group at the end of each stage's `_DEFERRED_HELPER_MODULE_NAMES`.
-  - A helper tuple counts only when the stage's `validate()` reads it.
+  - A helper tuple counts only when the stage's `validate()` reads it, and a stage
+    token may hash each module once (`test_no_stage_token_hashes_a_module_twice`).
+  - Two resolver bugs hid part of the closure until 2026-09-29. Relative imports in
+    plain modules were dropped, so the candidates stage did not hash the four
+    chainsolver submodules its `candidates` builder imports. And a module object
+    re-exported through another module was not credited. With both fixed, the inverse-CDF draw moved from `deciders` into the
+    leaf module `inverse_cdf`, which keeps the decider machinery out of the
+    candidates stage's closure.
 - **No dynamic/computed `context.stage(...)` calls exist today** (checked:
   every call across all 230 stages had a literal string first argument), so
   no stage needed an `unknown` mark for declared-dependency resolution this

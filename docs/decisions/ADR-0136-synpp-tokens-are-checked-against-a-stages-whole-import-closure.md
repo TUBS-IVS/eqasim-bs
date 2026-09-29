@@ -33,7 +33,9 @@
    declared synpp dependencies, whose code the DAG already covers. What the token does not hash
    is reported as `transitive_uncovered`. The reading is static, so it over-approximates the
    code a run executes: it can ask to hash a module the stage never calls, never the reverse. A
-   helper tuple counts only when the stage's `validate()` reads it.
+   relative import resolves against the importing module's package, and a module object
+   re-exported through another module counts as that module. A helper tuple counts only when
+   the stage's `validate()` reads it, and a stage token hashes each module once.
 2. Every source-hashing stage is gated on that closure
    (`test_every_source_hashing_stage_hashes_its_whole_import_closure`).
    `DEFERRED_TRANSITIVE_GAPS` holds deliberate exceptions with their reasons and is empty. A
@@ -45,7 +47,9 @@
    `braunschweig.popsim.mid.donor`. The ENTD adapters take `ECONOMIC_STATUS_BY_INCOME_CLASS`
    from the enriched `economic_status` submodule, and the popsim stage takes
    `_apply_housing_tenure` from `housing_tenure`. The candidates stage takes
-   its builders from the chainsolver's `candidates` and `srv_candidates`. The MiD donor stage
+   its builders from the chainsolver's `candidates` and `srv_candidates`, and the chainsolver's
+   `srv_location_types` takes the inverse-CDF draw from the new leaf module `inverse_cdf`
+   instead of from `deciders`. The MiD donor stage
    reads `KEY_MID` from `braunschweig.popsim.stage.config_keys` and no longer hashes the popsim
    stage package.
 4. Two declarations end the walk, each with its reason written where it lives:

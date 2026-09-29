@@ -1,8 +1,8 @@
 """Regression tests for the helper-hash audit script's AST resolver.
 
-``docs/codebase/notes/synpp-helper-hash-audit.md`` records two resolver bugs that a
-sizing probe for ``tests/test_synpp_helper_hash_invariant.py`` hit, "so they are not
-reintroduced". Turning the note's prose method into
+``docs/codebase/notes/synpp-helper-hash-audit.md`` records the resolver bugs found so far;
+the first two a sizing probe for ``tests/test_synpp_helper_hash_invariant.py`` hit, "so they
+are not reintroduced". Turning the note's prose method into
 ``scripts/audit_synpp_helper_hash.py`` (issue #327) reintroduced one of them
 immediately -- the bare ``from . import name`` binding -- which made a fully covered
 stage report as uncovered. These tests are what makes "not reintroduced" checkable
@@ -74,6 +74,30 @@ def test_from_x_import_name_prefers_the_submodule_reading():
     # `assembly` is a module -> that is the import; `braunschweig.popsim` is NOT listed.
     # HIGH_INCOME_THRESHOLD_EUR is an attribute -> its module `...income` is the import.
     assert module_level == {"braunschweig.popsim.assembly", "braunschweig.popsim.income"}
+
+
+def test_a_relative_import_in_a_plain_module_resolves_against_its_package():
+    """``from .sibling import X`` in ``pkg/mod.py`` names ``pkg.sibling``, not ``pkg.mod.sibling``.
+
+    Resolver bug 3. Anchoring a relative import at the importing module is right only for a
+    package ``__init__``. For a plain module it produced a name that is not on disk, so the
+    import was dropped without a trace: the closure never reached the chainsolver's
+    ``activity_types``, which ``candidates`` imports relatively and the candidates stage runs.
+    """
+    on_disk = {"braunschweig.pkg", "braunschweig.pkg.mod", "braunschweig.pkg.sibling",
+               "braunschweig.pkg.other", "braunschweig.parent_sibling"}
+    tree = ast.parse(
+        "from .sibling import VALUE\n"
+        "from . import other\n"
+        "from ..parent_sibling import helper\n")
+    module_level, lazy = audit.collect_imports(
+        tree, "braunschweig.pkg.mod", on_disk, is_package=False)
+    assert lazy == set()
+    assert module_level == {"braunschweig.pkg.sibling", "braunschweig.pkg.other",
+                            "braunschweig.parent_sibling"}
+    _aliases, _deferred, alias_map = audit.helper_tuples(
+        tree, "braunschweig.pkg.mod", is_package=False)
+    assert alias_map["other"] == "braunschweig.pkg.other"
 
 
 def test_a_function_body_import_is_classified_lazy():
@@ -225,6 +249,41 @@ def test_the_closure_follows_helpers_and_stops_at_declared_stages(tmp_path):
     assert entry["transitive_uncovered"] == ["braunschweig.helper_two"]
 
 
+def test_a_module_object_re_exported_by_another_module_counts_as_that_module(tmp_path):
+    """``from braunschweig.resolution import pkg`` binds the package that ``resolution`` imports.
+
+    Resolver bug 4. The name read as ``braunschweig.resolution.pkg``, which is no module, so a
+    helper tuple listing the re-exported package hashed it at run time while the audit called it
+    unhashed. The popsim stage took its ``sources`` package this way from ``source_resolution``.
+    """
+    package = tmp_path / "braunschweig"
+    (package / "pkg").mkdir(parents=True)
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "base_bs.yml").write_text("aliases: {}\n", encoding="utf-8")
+    files = {
+        "__init__.py": "",
+        "pkg/__init__.py": "VALUE = 1\n",
+        "resolution.py": "from braunschweig import pkg\n",
+        "stage_a.py": (
+            "import hashlib\nimport inspect\n"
+            "from braunschweig import resolution\n"
+            "from braunschweig.resolution import pkg\n"
+            "_HELPER_MODULES = (resolution, pkg)\n"
+            "def configure(context):\n    pass\n"
+            "def execute(context):\n    return pkg.VALUE\n"
+            "def validate(context):\n"
+            "    sources = [inspect.getsource(module) for module in _HELPER_MODULES]\n"
+            "    return hashlib.md5(''.join(sources).encode()).hexdigest()\n"),
+    }
+    for name, source in files.items():
+        (package / name).write_text(source, encoding="utf-8")
+
+    entry = audit.build_report(tmp_path)["braunschweig.stage_a"]
+    assert {"braunschweig.pkg", "braunschweig.resolution"} <= set(entry["covered"])
+    assert entry["uncovered"] == []
+    assert entry["transitive_uncovered"] == []
+
+
 def test_exemptions_boundaries_and_unread_tuples_shape_the_closure(tmp_path):
     """The walk skips an exempt module together with what only it imports, stops at a boundary
     the stage declares, and credits a helper tuple only when validate() reads it. An exemption
@@ -312,6 +371,20 @@ def test_every_source_hashing_stage_hashes_its_whole_import_closure(real_reposit
         "that reaches it. A module that never shapes a stage result gets a "
         "_SYNPP_TOKEN_EXEMPTION; a stage module the stage reaches but never runs goes into that "
         "stage's _TOKEN_CLOSURE_BOUNDARIES. Remove a register entry once its gap closes.")
+
+
+def test_no_stage_token_hashes_a_module_twice(real_repository_report):
+    """A module belongs in one of the two tuples, once: its import site decides which.
+
+    Hashing it twice changes nothing a stale cache could hide, but it doubles that module's
+    hashing work and hides which mechanism covers it. The chainsolver stage listed
+    escort_links in both tuples after a module-level import was added next to the
+    function-level one.
+    """
+    offenders = {name: entry["hashed_twice"]
+                 for name, entry in sorted(real_repository_report.items())
+                 if entry.get("hashed_twice")}
+    assert offenders == {}
 
 
 def test_closure_boundaries_are_stages_the_stage_reaches_without_importing_them(

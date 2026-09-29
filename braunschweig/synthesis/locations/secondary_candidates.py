@@ -43,6 +43,10 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     # The rest of this stage's import closure: modules its helpers import, whose code this
     # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
     "braunschweig.data.building_potential_attach",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.activity_types",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.candidate_columns",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.inverse_cdf",
+    "braunschweig.synthesis.locations.secondary_chainsolvers.srv_location_types",
     "braunschweig.synthesis.locations.secondary_other_potential",
 )
 

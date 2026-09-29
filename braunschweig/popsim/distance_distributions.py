@@ -190,6 +190,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.day_type",
     "braunschweig.popsim.member_completion",
+    "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.missing",
     "braunschweig.popsim.passenger_availability",
     "braunschweig.popsim.plan_validation",

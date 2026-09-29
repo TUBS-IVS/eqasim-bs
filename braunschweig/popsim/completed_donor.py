@@ -105,6 +105,7 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.day_type",
     "braunschweig.popsim.escort_pairing",
+    "braunschweig.popsim.mid.csv_format",
     "braunschweig.popsim.missing",
     "braunschweig.popsim.plan_validation",
     "braunschweig.popsim.sampling",
