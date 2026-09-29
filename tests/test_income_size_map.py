@@ -43,6 +43,11 @@ def test_build_map_recognises_five_bin_scheme():
     assert scheme == "5-bin"
 
 
+def test_build_map_rejects_an_unknown_bin_scheme():
+    with pytest.raises(ValueError, match="unrecognised hh_size bins"):
+        _build_income_size_map({"a", "b"})
+
+
 def test_six_bin_large_households_collapse_onto_top_category():
     """Sizes 7..11 must resolve to '6+' (the open-ended top bin), not to
     themselves -- this is the exact regression that crashed the pipeline."""

@@ -87,28 +87,20 @@ def test_hard_criterion_escort_is_never_coarsened():
     assert diagnostics["share_not_replaceable"] == pytest.approx(1.0 / 3.0)
 
 
-def test_exact_match_is_recorded_at_coarsening_level_zero():
+@pytest.mark.parametrize("person_id, donor_id, level", [
+    pytest.param("p1", "d1", 0, id="exact_match_level_zero"),
+    pytest.param("p2", "d2", 4, id="only_sex_differs_level_four"),
+])
+def test_each_person_matches_at_its_expected_coarsening_level(person_id, donor_id, level):
     persons_home = _persons_home_fixture()
     donors = _donors_fixture()
     rng = np.random.RandomState(0)
     matches, diagnostics = _match(persons_home, donors, rng)
 
-    row = matches.set_index("person_id").loc["p1"]
-    assert row["donor_id"] == "d1"
-    assert row["coarsening_level"] == 0
-    assert diagnostics["matched_by_level"][0] == 1
-
-
-def test_coarsening_reaches_level_four_when_only_sex_differs():
-    persons_home = _persons_home_fixture()
-    donors = _donors_fixture()
-    rng = np.random.RandomState(0)
-    matches, diagnostics = _match(persons_home, donors, rng)
-
-    row = matches.set_index("person_id").loc["p2"]
-    assert row["donor_id"] == "d2"
-    assert row["coarsening_level"] == 4
-    assert diagnostics["matched_by_level"][4] == 1
+    row = matches.set_index("person_id").loc[person_id]
+    assert row["donor_id"] == donor_id
+    assert row["coarsening_level"] == level
+    assert diagnostics["matched_by_level"][level] == 1
 
 
 def test_donor_with_unknown_has_car_never_hard_matches():
@@ -123,12 +115,16 @@ def test_donor_with_unknown_has_car_never_hard_matches():
     assert diagnostics["n_donors_hard_excluded_has_car_unknown"] == 1
 
 
-def test_distance_widening_at_level_five_accepts_adjacent_rank():
-    # A single donor pool with only an adjacent-rank donor: exact distance match (levels 0-4)
-    # never succeeds, but the level-5 one-rank widening picks it up.
+@pytest.mark.parametrize("person_distance_class, donor_distance_class", [
+    # Only an adjacent-rank donor: exact distance matching (levels 0-4) never succeeds.
+    pytest.param("25_50", "10_25", id="adjacent_rank"),
+    # A donor of unknown distance class qualifies only from level five on.
+    pytest.param("lt10", "unknown", id="unknown_distance"),
+])
+def test_a_donor_without_the_exact_distance_class_qualifies_from_level_five(person_distance_class, donor_distance_class):
     persons_home = pd.DataFrame({
         "person_id":            ["p1"],
-        "assigned_distance_class": ["25_50"],
+        "assigned_distance_class": [person_distance_class],
         "sex":                  ["male"],
         "age_class":            [2],
         "household_size":       [2],
@@ -138,36 +134,7 @@ def test_distance_widening_at_level_five_accepts_adjacent_rank():
     })
     donors = pd.DataFrame({
         "donor_id":             ["d1"],
-        "distance_class":       ["10_25"],  # adjacent rank below "25_50", not exact.
-        "sex":                  ["male"],
-        "age_class":            [2],
-        "household_size":       [2],
-        "has_active_escort":    [False],
-        "has_children_u14":     [False],
-        "has_car":              [True],
-    })
-    rng = np.random.RandomState(0)
-    matches, diagnostics = _match(persons_home, donors, rng)
-
-    row = matches.set_index("person_id").loc["p1"]
-    assert row["donor_id"] == "d1"
-    assert row["coarsening_level"] == 5
-
-
-def test_unknown_distance_donor_qualifies_only_from_level_five_on():
-    persons_home = pd.DataFrame({
-        "person_id":            ["p1"],
-        "assigned_distance_class": ["lt10"],
-        "sex":                  ["male"],
-        "age_class":            [2],
-        "household_size":       [2],
-        "has_active_escort":    [False],
-        "has_children_u14":     [False],
-        "has_car":              [True],
-    })
-    donors = pd.DataFrame({
-        "donor_id":             ["d1"],
-        "distance_class":       ["unknown"],
+        "distance_class":       [donor_distance_class],
         "sex":                  ["male"],
         "age_class":            [2],
         "household_size":       [2],

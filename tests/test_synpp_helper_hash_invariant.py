@@ -810,14 +810,12 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
     stage's declared keys, but the RULE CODE inside those helper modules was not (issue
     #373 task 1, the same class of gap trips_stage.py closed for the trip build itself).
 
-    ``braunschweig.popsim.mid.donor`` is required in ADDITION to
-    ``braunschweig.popsim.mid`` (cleanup wave fix round, IMPORTANT 1): the package
-    __init__ only RE-EXPORTS ``load_mid_wege`` (``from .donor import load_mid_wege``),
-    so ``inspect.getsource`` of the package object hashes __init__.py's own text --
-    the import statement -- never donor.py's function body where load_mid_wege is
-    actually defined (the same own-package-transitive gap
-    braunschweig.popsim.completed_donor.py already closes for the same module, via
-    the identical mid.load_completed_donor / mid.load_mid_wege transitive path).
+    ``braunschweig.popsim.mid.donor`` is required because ``load_mid_wege`` is defined
+    there (cleanup wave fix round, IMPORTANT 1): the ``braunschweig.popsim.mid`` package
+    __init__ only RE-EXPORTS it, so ``inspect.getsource`` of the package object would hash
+    the import statement, never donor.py's function body. The stage imports the loader
+    from the submodule directly since ADR-0136, so the package __init__, which would pull
+    every MiD submodule into this token, is no longer part of it.
     braunschweig.constants (ROUTED_DETOUR_FACTOR scales EVERY distance value this
     stage produces) and synthesis.population.spatial.secondary.distance_distributions
     (calculate_bounds, the quantile-binning logic) are two further OUT-OF-PACKAGE
@@ -828,7 +826,7 @@ def test_distance_distributions_declares_a_validate_token_over_its_helpers():
     names = ({m.__name__ for m in distance_distributions._HELPER_MODULES}
              | set(distance_distributions._DEFERRED_HELPER_MODULE_NAMES))
     for required in ("braunschweig.popsim.trips", "braunschweig.popsim.time_imputation",
-                     "braunschweig.popsim.escort_pairing", "braunschweig.popsim.mid",
+                     "braunschweig.popsim.escort_pairing",
                      "braunschweig.popsim.mid.donor",
                      "braunschweig.popsim.purpose_subtype", "braunschweig.popsim.shop_subtype",
                      "braunschweig.popsim.seed",

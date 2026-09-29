@@ -231,8 +231,9 @@ def _sample_cars_income_aware(df_persons, data_path, random_seed, df_regiostar):
 
     Replaces the legacy per-Kreis MiD-H7 ``number_of_cars`` (already in
     ``df_persons``) with a draw from the MiD-coupled pmf
-    ``P(num_cars | hhtype, status, raumtyp)``
-    (:func:`braunschweig.data.mid.cars_by_status.cars_probabilities`), then -- per
+    ``P(num_cars | hhtype, status, raumtyp)`` (the base table of
+    :func:`braunschweig.data.mid.cars_by_status.cars_probabilities_table`, tilted by
+    :func:`braunschweig.data.mid.cars_by_status.apply_raumtyp_tilt`), then -- per
     Kreis -- rakes the household pmf matrix to the integer MiD-H7 target counts
     (:func:`_largest_remainder` of the H7 share vector x Kreis household count) and
     assigns each household to a single car count exactly matching those targets
@@ -256,6 +257,7 @@ def _sample_cars_income_aware(df_persons, data_path, random_seed, df_regiostar):
     from braunschweig.data.mid.cars_by_status import (
         CAR_COUNT_CATEGORIES,
         RS7_TO_RAUMTYP_KEY,
+        apply_raumtyp_tilt,
         cars_probabilities_table,
         load_cars_by_raumtyp,
         load_cars_by_status_hhtype,
@@ -330,14 +332,7 @@ def _sample_cars_income_aware(df_persons, data_path, random_seed, df_regiostar):
         if hhtype_key is not None:
             base = base_map.get((hhtype_key, status))
             if base is not None:
-                pmf = base.copy()
-                if raumtyp_key is not None and raumtyp_key in by_region:
-                    with np.errstate(divide="ignore", invalid="ignore"):
-                        tilt = np.where(national > 1e-12, by_region[raumtyp_key] / national, 1.0)
-                    tilted = pmf * tilt
-                    total = tilted.sum()
-                    if total > 0:
-                        pmf = tilted / total
+                pmf = apply_raumtyp_tilt(base, by_region, national, raumtyp_key)
 
         if pmf is None:
             # FALLBACK: degenerate pmf at the legacy per-Kreis H7 draw for this

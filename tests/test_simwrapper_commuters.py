@@ -137,60 +137,22 @@ class TestCommuterBalance:
     def test_sorted_by_ars5(self):
         assert list(self.df["ars5"]) == ["03101", "03102"]
 
-    def test_binnen_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["binnen"] == 10
-
-    def test_einpendler_intern_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["einpendler_intern"] == 3
-
-    def test_einpendler_extern_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["einpendler_extern"] == 1
-
-    def test_einpendler_gesamt_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["einpendler_gesamt"] == 4
-
-    def test_auspendler_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["auspendler"] == 3
-
-    def test_netto_03101(self):
-        row = self.df[self.df["ars5"] == "03101"].iloc[0]
-        assert row["netto"] == 1
-
-    def test_binnen_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["binnen"] == 8
-
-    def test_einpendler_intern_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["einpendler_intern"] == 2
-
-    def test_einpendler_extern_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["einpendler_extern"] == 0
-
-    def test_einpendler_gesamt_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["einpendler_gesamt"] == 2
-
-    def test_auspendler_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["auspendler"] == 3
-
-    def test_netto_03102(self):
-        row = self.df[self.df["ars5"] == "03102"].iloc[0]
-        assert row["netto"] == -1
+    def test_balance_matches_the_reference_calculation(self):
+        """Every balance column of both Kreise equals the calculation in the docstring."""
+        columns = ["binnen", "einpendler_intern", "einpendler_extern",
+                   "einpendler_gesamt", "auspendler", "netto"]
+        actual = {ars5: {c: int(v) for c, v in row.items()}
+                  for ars5, row in self.df.set_index("ars5")[columns].iterrows()}
+        assert actual == {
+            "03101": {"binnen": 10, "einpendler_intern": 3, "einpendler_extern": 1,
+                      "einpendler_gesamt": 4, "auspendler": 3, "netto": 1},
+            "03102": {"binnen": 8, "einpendler_intern": 2, "einpendler_extern": 0,
+                      "einpendler_gesamt": 2, "auspendler": 3, "netto": -1},
+        }
 
     def test_no_external_row(self):
         """Explicit guard: external pseudo-zone never appears as its own row."""
         assert "external" not in self.df["ars5"].tolist()
-
-    def test_result_is_dataframe(self):
-        assert isinstance(self.df, pd.DataFrame)
 
     def test_dtype_is_integer_for_counts(self):
         for col in ["binnen", "einpendler_intern", "einpendler_extern",
@@ -241,9 +203,6 @@ class TestTopRelations:
     def test_values_are_positive_integers(self):
         """Returned values must be positive integers (zero-value rows excluded or included, but all >= 0)."""
         assert (self.df["value"] >= 0).all()
-
-    def test_result_is_dataframe(self):
-        assert isinstance(self.df, pd.DataFrame)
 
 
 # ---------------------------------------------------------------------------

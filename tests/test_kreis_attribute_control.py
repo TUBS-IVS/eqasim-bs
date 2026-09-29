@@ -215,7 +215,7 @@ def test_registry_has_six_entries_with_expected_tiers():
 
 
 def test_registry_has_seven_entries_with_expected_tiers():
-    # Superseded by test_registry_has_nine_entries_with_expected_tiers (feature #224
+    # Superseded by test_registry_has_the_expected_entries_with_expected_tiers (feature #224
     # task 5 adds the leisure_participation / education_participation person-level
     # entries); kept (renamed in spirit, not name) so the historical seven remain
     # covered too.

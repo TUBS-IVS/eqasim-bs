@@ -26,6 +26,7 @@ introduced:
 detail_doc: docs/features/mid-reference-tables.md
 code_paths:
 - braunschweig/ipf/attributed.py
+- braunschweig/population/socioprofessional_class.py
 - synthesis/population/matched.py
 evidence:
   tests:

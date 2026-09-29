@@ -184,7 +184,8 @@ notes: 'Config keys: commute_day_state_enabled (default true, master switch, sha
   validate() returns a cache token folding the summed byte size of the three raw MiD files (so a
   re-delivered extract invalidates the cache) plus an md5 of the pure donor_pool/popsim.trips/
   plan_validation/trips_stage/closure_dwell/diary_facts/diary_plan_match module sources and of
-  the deferred leaf module popsim.stage.config_keys (so an edit to those helpers -- or a changed
+  the deferred leaf module popsim.stage.config_keys, and since ADR-0136 of every other module
+  of its import closure (so an edit to those helpers -- or a changed
   declared default -- invalidates the stage exactly as an edit to this file would, since synpp
   only hashes this module''s own source; the last four were added by issue #374 together with the
   code that depends on them) -- 0 when the model is OFF (nothing is read, nothing can invalidate

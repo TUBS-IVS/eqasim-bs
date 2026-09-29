@@ -30,7 +30,8 @@ from braunschweig.data.mid.income_by_status import (
 from braunschweig.popsim.income import HIGH_INCOME_THRESHOLD_EUR
 # The popsim income-class vocabulary (label) + its EUR midpoints, so the re-derived
 # household_income label stays in the SAME vocabulary the donor mappers use. No
-# circular import: attributes imports only reference_tables / ipf.attributed / popsim.missing.
+# circular import: attributes imports only reference_tables / socioprofessional_class /
+# popsim.missing.
 from braunschweig.popsim.attributes import (
     INCOME_CLASS_BY_GROUP,
     INCOME_GROUP_MIDPOINT_EUR,

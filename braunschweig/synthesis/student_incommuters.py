@@ -59,7 +59,7 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 
 # Student in-commuter person attribute defaults, mirroring the eqasim/INSEE
 # activity-status mapping used for residents
-# (braunschweig.ipf.attributed.derive_socioprofessional_class): studying takes
+# (braunschweig.population.socioprofessional_class.derive_socioprofessional_class): studying takes
 # precedence over employment, so SPC_STUDENT (=8) applies regardless of the HTS
 # donor's own employment status. Deliberately simpler than
 # braunschweig.synthesis.incommuters._INCOMMUTER_PERSON_DEFAULTS: no origin-Kreis
@@ -67,7 +67,7 @@ _ID_OFFSET_ABOVE_RESIDENTS = 10_000_000
 # ``_build_student_persons`` / ``_build_student_households``.
 _STUDENT_PERSON_DEFAULTS = dict(
     employed=False, studies=True, household_size=1, consumption_units=1.0,
-    socioprofessional_class=8,  # SPC_STUDENT, braunschweig.ipf.attributed
+    socioprofessional_class=8,  # SPC_STUDENT, braunschweig.population.socioprofessional_class
     number_of_bicycles=0,
     bicycle_availability="all", license_type="ja", has_license=True,
     has_pt_subscription=False, pt_subscription_type="never_pt",
@@ -123,6 +123,25 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.education.student_origins",
     "braunschweig.data.external_workplaces",
     "braunschweig.data.mikrozensus.reference",
+    # The rest of this stage's import closure: modules its helpers import, whose code this
+    # stage runs without importing it itself (tests/test_audit_synpp_helper_hash.py, ADR-0136).
+    "braunschweig.data.census.population",
+    "braunschweig.data.cordon.external_points",
+    "braunschweig.data.cordon.gate_assignment",
+    "braunschweig.data.cordon.mode_balancer",
+    "braunschweig.data.cordon.network",
+    "braunschweig.data.cordon.pt_reachability",
+    "braunschweig.data.kba.feasible_fuels",
+    "braunschweig.data.kba.fleet_tables",
+    "braunschweig.data.kba.hsn_tsn",
+    "braunschweig.ipf.joint_age_size",
+    "braunschweig.synthesis.locations.education_gravity_model",
+    "braunschweig.synthesis.vehicles.age_income",
+    "braunschweig.synthesis.vehicles.fleet_sampling_de",
+    "braunschweig.synthesis.vehicles.fleet_validation",
+    "braunschweig.synthesis.vehicles.hbefa",
+    "braunschweig.synthesis.vehicles.segment",
+    "braunschweig.synthesis.vehicles.wohnmobile_age",
 )
 
 
