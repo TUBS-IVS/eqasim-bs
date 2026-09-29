@@ -701,11 +701,12 @@ What this method cannot see, checked rather than assumed:
   - A helper tuple counts only when the stage's `validate()` reads it, and a stage
     token may hash each module once (`test_no_stage_token_hashes_a_module_twice`).
   - Two resolver bugs hid part of the closure until 2026-09-29. Relative imports in
-    plain modules were dropped, so the candidates stage did not hash the four
-    chainsolver submodules its `candidates` builder imports. And a module object
-    re-exported through another module was not credited. With both fixed, the inverse-CDF draw moved from `deciders` into the
-    leaf module `inverse_cdf`, which keeps the decider machinery out of the
-    candidates stage's closure.
+    plain modules were dropped, so the candidates stage hashed none of the three
+    chainsolver submodules its `candidates` builder imports relatively
+    (`activity_types`, `candidate_columns`, `srv_location_types`). And a module object
+    re-exported through another module was not credited. With both fixed, the
+    inverse-CDF draw moved from `deciders` into the leaf module `inverse_cdf`, which
+    keeps the decider machinery out of the candidates stage's closure.
 - **No dynamic/computed `context.stage(...)` calls exist today** (checked:
   every call across all 230 stages had a literal string first argument), so
   no stage needed an `unknown` mark for declared-dependency resolution this
