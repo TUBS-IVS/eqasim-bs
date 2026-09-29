@@ -1,0 +1,140 @@
+# Coverage register of the ZGB parking cost zones 2026 (issue #249): one status row per municipality of the eight ZGB
+# counties (the 123 spatial units of data.spatial.municipalities: 113 Gemeinden and 10 gemeindefreie Gebiete), plus one
+# 'excluded' row per paid-parking area deliberately left out of the zones. Columns: ags (8-digit AGS), name, status, source,
+# note. status: zoned (the municipality owns at least one row of parking_tariffs_2026.csv), no_paid_parking_known (only with a
+# source), not_audited (no audit yet: parking is free there by assumption Z1 of the tariff table), excluded (an area with its
+# reason in note). Names: BA Gemeindeband (Beschaeftigungsstatistik, Stichtag 2025-06-30) for the Gemeinden; the
+# gemeindefreie Gebiete matched to their AGS by Wikipedia and by elimination (see the Data Registry record). ASCII
+# transliteration of umlauts. Validated by scripts/validate_parking_zones.py (braunschweig/parking/zones.py).
+ags,name,status,source,note
+03101000,"Braunschweig, Stadt",zoned,"parking_tariffs_2026.csv; ParkGO and BgA Entgeltordnung of the city, parkraummanagement.php, TU GB3 pages","14 zones: ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle (zone 132), six TU campus areas. Not zoned: resident zones 120B (Helmstedter Strasse) and 330B (TU Hauptcampus), where resident streets alternate with unrestricted free streets so a whole-quarter resident zone would overstate costs (follow-up: street-level digitisation); the permit districts A/B/C, which overlay Ia/Ib (exemption of permit holders not modelled); the Parkscheininseln and other ParkGO zone II areas (annex map not published); BgA car park Willy-Brandt-Platz (no matching outline); TU Volkmaroder Strasse (ticketed from 2026-10-01, no outline) and Bevenroder Strasse (not ticketed); the part of zone Ia south of the city's zone-map extent. Park-and-ride car parks are free (parken-in-der-innenstadt.php)."
+03102000,"Salzgitter, Stadt",zoned,parking_tariffs_2026.csv; https://www.salzgitter.de/rathaus/fachdienste/tiefbau/parken.php,"1 zone: Lebenstedt centre. Salzgitter-Bad has disc parking only (2 h), no fees (same page)."
+03103000,"Wolfsburg, Stadt",zoned,"parking_tariffs_2026.csv; https://www.aufbau-gmbh.de/tarife-oeffnungszeiten, wolfsburg.de/mobilitaetverkehr/parken","1 zone: Innenstadt (Norden, Mitte, Sueden). Outside the zone: Fallersleben (fee-tagged car parks in OSM, not audited)."
+03151001,Adenbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151002,Barwedel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151003,Bergfeld,not_audited,,not audited in the first release (design spec section 4 scope)
+03151004,Bokensdorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03151005,"Brome, Flecken",not_audited,,not audited in the first release (design spec section 4 scope)
+03151006,Calberlah,not_audited,,not audited in the first release (design spec section 4 scope)
+03151007,Dedelstorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03151008,Ehra-Lessien,not_audited,,not audited in the first release (design spec section 4 scope)
+03151009,"Gifhorn, Stadt",zoned,parking_tariffs_2026.csv; https://psg-gifhorn.de/parken,1 zone: Innenstadt around the Steinweg.
+03151010,Gross Oesingen,not_audited,,not audited in the first release (design spec section 4 scope)
+03151011,Hankensbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151012,Hillerse,not_audited,,not audited in the first release (design spec section 4 scope)
+03151013,Isenbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151014,Jembke,not_audited,,not audited in the first release (design spec section 4 scope)
+03151015,Leiferde,not_audited,,not audited in the first release (design spec section 4 scope)
+03151016,Meine,not_audited,,not audited in the first release (design spec section 4 scope)
+03151017,Meinersen,not_audited,,not audited in the first release (design spec section 4 scope)
+03151018,Mueden (Aller),not_audited,,not audited in the first release (design spec section 4 scope)
+03151019,Obernholz,not_audited,,not audited in the first release (design spec section 4 scope)
+03151020,Osloss,not_audited,,not audited in the first release (design spec section 4 scope)
+03151021,Parsau,not_audited,,not audited in the first release (design spec section 4 scope)
+03151022,Ribbesbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151023,Roetgesbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151024,Ruehen,not_audited,,not audited in the first release (design spec section 4 scope)
+03151025,Sassenburg,not_audited,,not audited in the first release (design spec section 4 scope)
+03151026,Schoenewoerde,not_audited,,not audited in the first release (design spec section 4 scope)
+03151027,Schwuelper,not_audited,,not audited in the first release (design spec section 4 scope)
+03151028,Sprakensehl,not_audited,,not audited in the first release (design spec section 4 scope)
+03151029,Steinhorst,not_audited,,not audited in the first release (design spec section 4 scope)
+03151030,Tappenbeck,not_audited,,not audited in the first release (design spec section 4 scope)
+03151031,Tiddische,not_audited,,not audited in the first release (design spec section 4 scope)
+03151032,Tuelau,not_audited,,not audited in the first release (design spec section 4 scope)
+03151033,Ummern,not_audited,,not audited in the first release (design spec section 4 scope)
+03151034,Vordorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03151035,Wagenhoff,not_audited,,not audited in the first release (design spec section 4 scope)
+03151036,Wahrenholz,not_audited,,not audited in the first release (design spec section 4 scope)
+03151037,Wasbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
+03151038,Wesendorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03151039,Weyhausen,not_audited,,not audited in the first release (design spec section 4 scope)
+03151040,"Wittingen, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03151041,Didderse,not_audited,,not audited in the first release (design spec section 4 scope)
+03151501,"Giebel, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03153002,"Bad Harzburg, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03153008,Liebenburg,not_audited,,not audited in the first release (design spec section 4 scope)
+03153012,"Seesen, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03153016,"Braunlage, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03153017,"Goslar, Stadt",zoned,parking_tariffs_2026.csv; Goslar ParkGO 2025-06-24 and the city's announcement of the 2026 fees,"1 zone: Altstadt zone 1. Zone 2 (fringe, 1 EUR/h) not digitised, extent not published."
+03153018,"Clausthal-Zellerfeld, Berg- und Universitaetsstadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03153019,"Langelsheim, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03153504,"Harz (Landkreis Goslar), gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03154001,Bahrdorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03154002,Beierstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03154004,Danndorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03154005,Frellstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03154006,Gevensleben,not_audited,,not audited in the first release (design spec section 4 scope)
+03154007,Grafhorst,not_audited,,not audited in the first release (design spec section 4 scope)
+03154008,Grasleben,not_audited,,not audited in the first release (design spec section 4 scope)
+03154009,Gross Twuelpstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03154012,Jerxheim,not_audited,,not audited in the first release (design spec section 4 scope)
+03154013,"Koenigslutter am Elm, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03154014,Lehre,not_audited,,not audited in the first release (design spec section 4 scope)
+03154015,Mariental,not_audited,,not audited in the first release (design spec section 4 scope)
+03154016,Querenhorst,not_audited,,not audited in the first release (design spec section 4 scope)
+03154017,Raebke,not_audited,,not audited in the first release (design spec section 4 scope)
+03154018,Rennau,not_audited,,not audited in the first release (design spec section 4 scope)
+03154019,"Schoeningen, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03154021,Suepplingen,not_audited,,not audited in the first release (design spec section 4 scope)
+03154022,Suepplingenburg,not_audited,,not audited in the first release (design spec section 4 scope)
+03154024,Velpke,not_audited,,not audited in the first release (design spec section 4 scope)
+03154025,Warberg,not_audited,,not audited in the first release (design spec section 4 scope)
+03154026,Wolsdorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03154027,Soellingen,not_audited,,not audited in the first release (design spec section 4 scope)
+03154028,"Helmstedt, Stadt",zoned,parking_tariffs_2026.csv; Helmstedt Gebuehrenordnung fuer das Parken an Parkscheinautomaten (2024),1 zone: Innenstadt.
+03154501,"Brunsleberfeld, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03154502,"Helmstedt, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03154503,"Koenigslutter, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03154504,"Mariental, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03154506,"Schoeningen, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03157001,Edemissen,not_audited,,not audited in the first release (design spec section 4 scope)
+03157002,Hohenhameln,not_audited,,not audited in the first release (design spec section 4 scope)
+03157005,Lengede,not_audited,,not audited in the first release (design spec section 4 scope)
+03157006,"Peine, Stadt",zoned,parking_tariffs_2026.csv; https://www.peine.de/de/rathaus/stadtportraet/verkehr-und-parken/parkplaetze/,1 zone: Innenstadt (Luisenstrasse family).
+03157007,Vechelde,not_audited,,not audited in the first release (design spec section 4 scope)
+03157008,Wendeburg,not_audited,,not audited in the first release (design spec section 4 scope)
+03157009,Ilsede,not_audited,,not audited in the first release (design spec section 4 scope)
+03158002,Baddeckenstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03158004,Burgdorf,not_audited,,not audited in the first release (design spec section 4 scope)
+03158005,Cramme,not_audited,,not audited in the first release (design spec section 4 scope)
+03158006,Cremlingen,not_audited,,not audited in the first release (design spec section 4 scope)
+03158007,Dahlum,not_audited,,not audited in the first release (design spec section 4 scope)
+03158008,Denkte,not_audited,,not audited in the first release (design spec section 4 scope)
+03158009,Dettum,not_audited,,not audited in the first release (design spec section 4 scope)
+03158010,Dorstadt,not_audited,,not audited in the first release (design spec section 4 scope)
+03158011,Elbe,not_audited,,not audited in the first release (design spec section 4 scope)
+03158012,Erkerode,not_audited,,not audited in the first release (design spec section 4 scope)
+03158013,Evessen,not_audited,,not audited in the first release (design spec section 4 scope)
+03158014,Floethe,not_audited,,not audited in the first release (design spec section 4 scope)
+03158016,Haverlah,not_audited,,not audited in the first release (design spec section 4 scope)
+03158017,Hedeper,not_audited,,not audited in the first release (design spec section 4 scope)
+03158018,Heere,not_audited,,not audited in the first release (design spec section 4 scope)
+03158019,Heiningen,not_audited,,not audited in the first release (design spec section 4 scope)
+03158021,Kissenbrueck,not_audited,,not audited in the first release (design spec section 4 scope)
+03158022,Kneitlingen,not_audited,,not audited in the first release (design spec section 4 scope)
+03158023,Ohrum,not_audited,,not audited in the first release (design spec section 4 scope)
+03158025,Roklum,not_audited,,not audited in the first release (design spec section 4 scope)
+03158027,"Schoeppenstedt, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
+03158028,Sehlde,not_audited,,not audited in the first release (design spec section 4 scope)
+03158030,Sickte,not_audited,,not audited in the first release (design spec section 4 scope)
+03158031,Uehrde,not_audited,,not audited in the first release (design spec section 4 scope)
+03158032,Vahlberg,not_audited,,not audited in the first release (design spec section 4 scope)
+03158033,Veltheim (Ohe),not_audited,,not audited in the first release (design spec section 4 scope)
+03158035,Winnigstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03158036,Wittmar,not_audited,,not audited in the first release (design spec section 4 scope)
+03158037,"Wolfenbuettel, Stadt",zoned,parking_tariffs_2026.csv; https://www.stadtbetriebe-wf.de/parkhaeuser.html,1 zone: Innenstadt.
+03158038,Boerssum,not_audited,,not audited in the first release (design spec section 4 scope)
+03158039,Schladen-Werla,not_audited,,not audited in the first release (design spec section 4 scope)
+03158040,Remlingen-Semmenstedt,not_audited,,not audited in the first release (design spec section 4 scope)
+03158501,"Am Grossen Rhode, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03158502,"Barnstorf-Warle, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03158503,"Voigtsdahlum, gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
+03101000,Braunschweig: hospital visitor car parks (e.g. Marienstift Besucherparkplatz),excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed)","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03101000,"Braunschweig: station car parks Hauptbahnhof Nord, Sued and West (private operators)",excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed)","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03101000,Braunschweig: airport short-stay car park Lilienthalplatz,excluded,"city car-park directory braunschweig.de/geojson/parkplaetze.geojson (2.20 EUR per started hour, day maximum 22 EUR)","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03101000,"Braunschweig: shopping-centre car parks (Schloss-Arkaden, Ring Center); inside zone Ia the Ia tariff applies",excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed)","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03102000,Salzgitter: shopping-centre garage City-Tor-Center,excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed)","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03103000,Wolfsburg: Autostadt car parks P1-P3 and the designer outlets car park,excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed); wolfsburg.de/mobilitaetverkehr/parken","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03103000,Wolfsburg: shopping-centre car parks City-Galerie and Suedkopf-Center; inside the zone its tariff applies,excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed); wolfsburg.de/mobilitaetverkehr/parken","customer/visitor regimes, no exposure measured yet (design spec section 4)"
+03103000,Wolfsburg: DB BahnPark station car parks,excluded,"OSM fee=yes objects, Overpass 2026-09-29 (raw response under raw_overpass/, not committed); wolfsburg.de/mobilitaetverkehr/parken","customer/visitor regimes, no exposure measured yet (design spec section 4)"

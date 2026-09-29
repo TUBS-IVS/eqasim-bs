@@ -1,0 +1,72 @@
+dataset: parking_tariffs_2026
+title: Parking tariffs of the ZGB parking cost zones, one sourced row per zone (September 2026)
+inventory_id: null
+provider: >-
+  Own transcription (issue #249) of public tariff publications: Stadt Braunschweig (ParkGO 2022 as amended
+  2025-11-04, BgA Entgeltordnung 2022, parkraummanagement.php, car-park directory of the city map), TU
+  Braunschweig (Parkordnung Stand 2026-06-03, GB3 pages), Aufbau-Gesellschaft Wolfsburg, Stadt Salzgitter,
+  Stadt Peine, Stadt Goslar (ParkGO 2025-06-24 and the announced 2026 fees), Stadtbetriebe Wolfenbuettel,
+  Parkraum- und Schwimmbadgesellschaft Stadt Gifhorn, Stadt Helmstedt (Gebuehrenordnung 2024)
+vintage: >-
+  Tariffs as published in September 2026, retrieved 2026-09-29 (source_date of every row); valid_from per row
+  is the first date the source confirms (the retrieval date where the start is not published).
+geography: The 21 zones of parking_zones_2026 (eight ZGB municipalities)
+crs: null
+roles:
+- supply_input
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: >-
+    https://www.braunschweig.de/politik_verwaltung/politik/stadtrecht/2_08_Parkgebuehrenordnung_2025.pdf and the
+    other source_url values of the table (one primary source per row, secondary sources in the notes column)
+  script: null
+  notes: >-
+    Hand transcription on 2026-09-29; every page and document was retrieved on that day (none taken from the
+    2026-09-21 review list unverified). SHA-256 of the retrieved documents (kept locally under
+    eqasim-data/data/braunschweig/parking/raw_sources/, gitignored): ParkGO Braunschweig 59957701...,
+    BgA Entgeltordnung 50444731..., TU Parkordnung 037bb432..., ParkGO Goslar c3008752..., Helmstedt
+    Gebuehrenordnung 89622fb2..., city car-park directory parkplaetze.geojson 861bc290.... The file's '#'
+    header states the cost semantics of design spec section 3.2 and the assumptions Z1, D1, T1, M1, C1, R1,
+    H1, F1, S1 (spec section 7).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
+  committed: true
+  local_only: false
+  notes: Force-added (git add -f); ASCII, LF line endings, '#' header lines skipped by braunschweig.parking.zones.load_tariffs.
+verification:
+  verifier_entry: null
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    braunschweig.parking.zones.validate_tariffs (allow_fixture_marker=False) checks types, required and
+    forbidden fields per zone type, paired fields, fee windows, workplace class against the county of
+    municipality_ags, ISO dates and provenance; cross_validate checks one row per polygon.
+    tests/test_parking_zones.py runs the validator over the committed files.
+requirements:
+  synthesis: not_needed
+  matsim: optional
+  production: optional
+licensing:
+  license: public tariff publications (facts), attribution to the municipalities, their companies and TU Braunschweig
+  restricted: false
+  redistribution: allowed
+limitations: >-
+  Assumption-labelled fee windows (fee_window_source assumption, F1): bs_bga_kannengiesserstrasse,
+  bs_bga_an_der_martinikirche and bs_bga_jodutenstrasse_klint (Mo-Sa 9-20 as at the directory-listed BgA car
+  parks), gs_altstadt_zone1 and he_innenstadt (9-18 h, not published; most frequent start and median end of
+  the documented municipal meter windows of the table). Braunschweig's ParkGO sets no fee hours (machine
+  display); Ia/Ib take Mo-Sa 9-20 from the city's own car-park directory (municipal_page). Long-stay products
+  chosen by assumption M1: Ia (zone Ib day ticket 9.00 EUR), Peine (8-hour lot ticket 4.20 EUR), Stadthalle
+  (Parkscheininsel 24-h ticket 9.00 EUR). One regime per zone (S1): Wolfsburg takes the municipal Rathaus
+  garage tariff for the whole centre, Wolfenbuettel the garage day tariff, Gifhorn the city meter tariff;
+  night, shoulder and Saturday tariffs are not modelled (D1). Campus members pay the 3.50 EUR day ticket
+  (C1, owner decision 3) although the 10 EUR month ticket costs 0.50 EUR per working day. Resident permits A/B/C
+  (exempt in the centre) and the night-time residents-only rule of the Stadthalle concept are not modelled.
+  Workplace classes of the Braunschweig rows follow the location of each zone relative to the SrV 2023
+  Oberbezirke (Unterbezirk names of the SrV sub-area coding), not a polygon overlay. The Wolfenbuettel URL of
+  the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the current pages were used.
+notes: >-
+  21 rows: street_paid 14, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
+  assumption 5 (validator summary of 2026-09-29, see parking_zones_2026). The synthetic test set with the same
+  columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth).

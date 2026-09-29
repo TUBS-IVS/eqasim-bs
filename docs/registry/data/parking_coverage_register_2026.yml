@@ -1,0 +1,61 @@
+dataset: parking_coverage_register_2026
+title: Coverage register of the ZGB parking cost zones (status of every municipality, excluded areas)
+inventory_id: null
+provider: >-
+  Own compilation (issue #249); municipality universe from the pipeline's data.spatial.municipalities (VG250,
+  BKG), names from the BA Gemeindeband (Beschaeftigungsstatistik, Stichtag 2025-06-30) and, for the
+  gemeindefreie Gebiete, Wikipedia
+vintage: Compiled 2026-09-29 together with parking_zones_2026 and parking_tariffs_2026
+geography: >-
+  The 123 spatial units of the eight ZGB counties (03101, 03102, 03103, 03151, 03153, 03154, 03157, 03158):
+  113 Gemeinden and 10 gemeindefreie Gebiete
+crs: null
+roles:
+- assumption_basis
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: parking_zones_2026 and parking_tariffs_2026 (zoned rows); OSM fee=yes objects and the city car-park directory (excluded rows)
+  script: null
+  notes: >-
+    Universe: the cached output of data.spatial.municipalities of the main checkout (cache_bs_bpsmoke,
+    123 units, ARS -> AGS = first five plus last three digits), because the raw VG250 archive is not present
+    locally (raw-data loss of 2026-07-16). Gemeinde names from the BA Gemeindeband workbook
+    gemband-dlk-0-202506-xlsx.xlsx (113 of 113 AGS matched). The ten gemeindefreie Gebiete appear by name in
+    urbistat_age_gemeinden.csv; their AGS were matched by Wikipedia (Brunsleberfeld 03154501, Helmstedt
+    03154502, Koenigslutter 03154503, Mariental 03154504, Schoeningen 03154506, Barnstorf-Warle 03158502,
+    Voigtsdahlum 03158503) and by elimination where a county has one remaining code (Giebel 03151501, Harz
+    (Landkreis Goslar) 03153504, Am Grossen Rhode 03158501). Excluded rows: hospital, station, airport and
+    shopping-centre car parks with fee=yes in the Overpass responses of 2026-09-29 (Braunschweig, Wolfsburg,
+    Salzgitter) and the airport tariff of the city car-park directory.
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_coverage_register_2026.csv
+  committed: true
+  local_only: false
+  notes: Force-added (git add -f); ASCII (umlauts transliterated), LF line endings, '#' header lines.
+verification:
+  verifier_entry: null
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    braunschweig.parking.zones.validate_coverage_register: one non-excluded row per AGS, statuses, reasons of
+    excluded rows, sources of no_paid_parking_known rows, zoned <=> tariff rows; the validator also requires
+    123 municipality rows (--expected-municipality-count) and a polygon for every zoned municipality.
+requirements:
+  synthesis: not_needed
+  matsim: optional
+  production: optional
+licensing:
+  license: own compilation of public facts; municipality names BA Gemeindeband (Statistik der Bundesagentur fuer Arbeit)
+  restricted: false
+  redistribution: allowed
+limitations: >-
+  115 of 123 municipalities are not_audited: parking there is free by assumption Z1 of the tariff table,
+  including town centres that may charge (not checked in the first release). No municipality is marked
+  no_paid_parking_known (no source states it). The eight excluded rows cover only the hospital, station,
+  airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight zoned
+  municipalities; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
+  (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, permit
+  districts A/B/C, zone II areas, BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse).
+notes: >-
+  Status counts 2026-09-29: zoned 8, no_paid_parking_known 0, not_audited 115, excluded 8 (131 rows).
