@@ -423,6 +423,14 @@ def test_flag_on_with_active_tilt_differs_from_flag_off(sampler):
     (that is the whole point of aggregate preservation, see the placement
     test above), so this checks the PER-STATUS shares instead -- those are
     exactly what the tilt is supposed to move.
+
+    The tilt MULTIPLIES a car's electric share by a per-status factor, so the check is the ratio
+    to the flag-OFF share. A shift in percentage points would scale with this Kreis's KBA bev
+    share, 5 to 6 % here, and move with every KBA update; a no-op gives a ratio of 1.0 for both
+    statuses. Measured on 2026-09-29 over seeds 0..29 at 2000 cars per status, the very_high
+    ratio was at least 1.38 (median 1.55) and the very_low ratio at most 0.66 (median 0.54), so
+    the bounds 1.2 and 0.8 sit between the no-op and the worst seed. At 1000 cars per status the
+    very_high minimum fell to 1.25, at seed 13 itself, which is why the sample stays at 2000.
     """
     df_cars = _make_status_cars(
         ft.ZGB_KREISE_AGS5[0], ["very_high", "very_low"], n_per_status=2000)
@@ -442,11 +450,11 @@ def test_flag_on_with_active_tilt_differs_from_flag_off(sampler):
     high_on, high_off = _bev_share(df_spec_on, "very_high"), _bev_share(df_spec_off, "very_high")
     low_on, low_off = _bev_share(df_spec_on, "very_low"), _bev_share(df_spec_off, "very_low")
 
-    assert high_on > high_off + 0.02, (
-        f"tilt ON should raise the very_high bev share ({high_on:.4f}) above "
-        f"the flag-OFF baseline ({high_off:.4f})"
+    assert high_on / high_off > 1.2, (
+        f"tilt ON should raise the very_high bev share ({high_on:.4f}) by more than a fifth "
+        f"over the flag-OFF baseline ({high_off:.4f})"
     )
-    assert low_on < low_off - 0.02, (
-        f"tilt ON should lower the very_low bev share ({low_on:.4f}) below "
-        f"the flag-OFF baseline ({low_off:.4f})"
+    assert low_on / low_off < 0.8, (
+        f"tilt ON should cut the very_low bev share ({low_on:.4f}) by more than a fifth "
+        f"below the flag-OFF baseline ({low_off:.4f})"
     )
