@@ -15,8 +15,8 @@
   "schema_version": 1,
   "sources": [
     {
-      "path": "scripts/export_parking_golden_cases.py",
-      "sha256": "46fa76a9d058c44389f15ae99ce0b02200759a6dedc1eb553cb49ce3737fdb3e",
+      "path": "tests/fixtures/parking/parking_tariffs_fixture.csv",
+      "sha256": "60337aa516be627febc798efc1a3aafc2d4b7e6a1886a3953cc7d6aaeab1a182",
       "source_id": "parking_tariffs_fixture"
     }
   ],
