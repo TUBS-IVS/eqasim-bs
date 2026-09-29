@@ -382,3 +382,45 @@ def test_overpass_fixture_dissolves_into_the_expected_candidates():
     assert "way/102" in merged["osm_ids"] and "parking:both:fee=yes" in merged["evidence"]
     assert not candidates["osm_ids"].str.contains("way/401").any()
     assert candidates.crs.to_epsg() == 25832 and (candidates.geometry.area > 0).all()
+
+
+# --------------------------------------------------------------------------- committed data (validator CLI)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
+
+
+def test_committed_parking_data_is_valid(capsys):
+    from scripts.validate_parking_zones import main
+
+    assert (COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv").is_file(), "committed tariff table missing"
+    assert main(["--data-path", str(REPO_ROOT / "eqasim-data" / "data")]) == 0
+    out = capsys.readouterr().out
+    assert "[parking-validate] OK" in out
+    assert "register status" in out
+
+
+def test_committed_zones_carry_real_provenance_only():
+    zones = pz.load_zone_polygons(COMMITTED_PARKING_DIR / "parking_zones_2026.geojson")
+    tariffs = pz.load_tariffs(COMMITTED_PARKING_DIR / "parking_tariffs_2026.csv")
+    assert set(zones["geometry_source"]) <= set(pz.GEOMETRY_SOURCES)
+    assert not (tariffs["source_url"] == pz.FIXTURE_MARKER).any()
+    assert tariffs["source_url"].str.startswith("https://").all()
+    # every assumption-grade fee window is explained in its row
+    flagged = tariffs[tariffs["fee_window_source"] == "assumption"]
+    assert flagged["notes"].str.contains("ASSUMPTION F1").all()
+
+
+def test_validator_rejects_a_register_without_the_zoned_municipality(tmp_path):
+    import shutil
+
+    from scripts.validate_parking_zones import main
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    register = target / "parking_coverage_register_2026.csv"
+    text = register.read_text(encoding="utf-8").replace("03102000,\"Salzgitter, Stadt\",zoned", "03102000,\"Salzgitter, Stadt\",not_audited")
+    register.write_text(text, encoding="utf-8")
+    assert main(["--data-path", str(tmp_path)]) == 1

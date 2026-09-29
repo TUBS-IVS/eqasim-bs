@@ -31,6 +31,7 @@ import datetime as dt
 import json
 import logging
 import re
+import ssl
 import sys
 import time
 import urllib.parse
@@ -114,12 +115,30 @@ def build_overpass_query(bbox: Sequence[float], *, street_names: Iterable[str] =
     return "\n".join(lines) + "\n"
 
 
+def default_ca_bundle() -> Optional[str]:
+    """The certifi CA bundle when installed, else None (the interpreter's default trust store).
+
+    The pinned Windows interpreter fails to parse one certificate of the Windows store while building the
+    default TLS context (``ssl.SSLError ASN1 NOT_ENOUGH_DATA``, also noted in the Data Registry record
+    ``vrb_tariff_zone_polygons``); an explicit bundle avoids that store while certificate checks stay on.
+    """
+    try:
+        import certifi
+    except ImportError:
+        return None
+    return certifi.where()
+
+
 def fetch_overpass(query: str, *, url: str = OVERPASS_URL, timeout_s: int = REQUEST_TIMEOUT_S,
-                   user_agent: str = USER_AGENT) -> bytes:
-    """POST one query to the Overpass API and return the raw response body (no retry, no cache)."""
+                   user_agent: str = USER_AGENT, ca_bundle: Optional[str] = None) -> bytes:
+    """POST one query to the Overpass API and return the raw response body (no retry, no cache).
+
+    TLS certificates are always verified; ``ca_bundle`` only selects the trust store.
+    """
+    context = ssl.create_default_context(cafile=ca_bundle) if ca_bundle else ssl.create_default_context()
     request = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
                                      headers={"User-Agent": user_agent}, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:
+    with urllib.request.urlopen(request, timeout=timeout_s, context=context) as response:
         return response.read()
 
 
@@ -244,6 +263,8 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout-s", type=int, default=REQUEST_TIMEOUT_S)
     parser.add_argument("--pause-s", type=float, default=REQUEST_PAUSE_S)
     parser.add_argument("--overwrite", action="store_true", help="replace an existing raw file of today")
+    parser.add_argument("--ca-bundle", default=default_ca_bundle(),
+                        help="CA bundle for TLS verification (default: certifi when installed)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -263,7 +284,9 @@ def main(argv=None) -> int:
         if raw_path.exists() and not args.overwrite:
             raise SystemExit(f"{raw_path} exists; pass --overwrite to replace it or --from-raw to re-process it")
         time.sleep(max(0.0, args.pause_s))
-        body = fetch_overpass(query, timeout_s=args.timeout_s)
+        log.info("sending one Overpass request for %s (TLS trust store: %s)", args.ags,
+                 args.ca_bundle or "interpreter default")
+        body = fetch_overpass(query, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
         raw_path.write_bytes(body)
         raw_path.with_suffix(".query.txt").write_text(query, encoding="utf-8")
         payload = json.loads(body.decode("utf-8"))
