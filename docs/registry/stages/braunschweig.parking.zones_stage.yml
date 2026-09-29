@@ -1,0 +1,56 @@
+stage: braunschweig.parking.zones_stage
+title: Parking cost zone release (polygons, tariffs, coverage register, SrV free-parking shares)
+layer: matsim
+description: 'Loads the four inputs of the zone-based parking costs (issue #249) as ONE release and
+  validates them together: the zone polygons (WGS84 GeoJSON, reprojected to EPSG:25832, invalid rings
+  repaired and counted, pairwise overlap at most 1 m2), the tariff table (typed, validated per zone type,
+  then every row converted by braunschweig.parking.tariff_export.tariff_row_to_zone, the stricter per-row
+  contract of the tariff model the Java cost model reads), exactly one tariff row per polygon, the coverage
+  register against the tariffs (zoned municipalities own tariff rows and vice versa), and the SrV 2023
+  free-parking shares (a level == class row with a share in [0, 1] for the workplace class of every tariff
+  row). Any inconsistency raises. Rows carrying the synthetic test-set marker ''fixture'' are accepted (the
+  tests run the stage on tests/fixtures/parking) but logged as a WARNING naming the zones. Returns
+  {zones, tariffs, workplace_shares (as read, both levels, workplace_class as text), coverage_register,
+  sources}; sources lists the four inputs in a fixed order as {source_id = Data Registry dataset id, path =
+  the configured path relative to data_path (POSIX), sha256 = LF-normalised content hash}, which the
+  preparation stage copies into the tariff model JSON. Config keys (all relative to data_path, defaults of
+  the first release): parking_zones_path (braunschweig/parking/parking_zones_2026.geojson),
+  parking_tariffs_path (braunschweig/parking/parking_tariffs_2026.csv), parking_coverage_register_path
+  (braunschweig/parking/parking_coverage_register_2026.csv), parking_workplace_shares_path
+  (braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv); an absolute path or one with
+  backslashes is rejected at configure time. validate() hashes the LF-normalised content of the four files
+  plus the source of braunschweig.parking.zones, braunschweig.parking.attach,
+  braunschweig.parking.tariff_export and braunschweig.parking.cost.'
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: New for the zone-based parking costs, the successor of the 8 km ring of enable_urban_parking
+    (legacy isParis attributes, no data stage). Declared by braunschweig.matsim.scenario.population (zone,
+    resident-zone and free-parking attributes through braunschweig.parking.attach) and
+    braunschweig.matsim.simulation.prepare (tariff model JSON) only when parking_zones_enabled is true.
+code:
+- braunschweig/parking/zones_stage.py
+- braunschweig/parking/zones.py
+- braunschweig/parking/attach.py
+- braunschweig/parking/tariff_export.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+inputs:
+- parking_zones_2026
+- parking_tariffs_2026
+- parking_coverage_register_2026
+- srv2023_commute_parking_by_workplace_class
+decisions:
+- ADR-TBD-PARKING
+notes: 'STATE AT THIS COMMIT: parking_zones_enabled is false in every committed configuration, so no DAG
+  snapshot contains the stage and the record is parked (production false, every pipeline not_used), as the
+  registry tests require for a stage outside every DAG. The change that turns the flag on in
+  configs/base_bs.yml re-extracts the DAG snapshots and must then set production true and popsim_mid
+  active here, add features [parking_cost_zones] once that feature record exists, and replace the
+  placeholder decision ADR-TBD-PARKING with the ADR id of the zone-based parking costs. Unit tests:
+  tests/test_parking_zones_stage.py (fixture release, sources contract, missing class, rejected tariff row,
+  inconsistent register, cache token, and the committed release through the stage) and
+  tests/test_parking_attach.py (the attach functions the release feeds).'
