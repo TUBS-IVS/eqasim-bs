@@ -32,13 +32,16 @@ from pathlib import Path
 import matsim.runtime.eqasim as eqasim
 import matsim.simulation.prepare as delegate
 from braunschweig.data.vrb import fare_config_xml, fare_model_export, line_scopes
+from braunschweig.matsim import config_modules
+from braunschweig.parking import tariff_export
 
 #: ``delegate`` performs the preparation itself; ``eqasim`` owns ``run()``, i.e. HOW the Java
 #: classes below (AddTransitZoneInformation, RunScenarioCutter) are invoked and with which
 #: arguments, so a change there changes the prepared scenario without touching this file
 #: (#327 gate). The three ``braunschweig.data.vrb`` helpers write the VRB zone fare inputs
-#: (ADR-0133) and are hashed unconditionally, like the deferred cordon helpers below.
-_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes)
+#: (ADR-0133), ``tariff_export`` and ``config_modules`` the parking inputs (issue #249); all are
+#: hashed unconditionally, like the deferred cordon helpers below.
+_HELPER_MODULES = (delegate, eqasim, fare_config_xml, fare_model_export, line_scopes, tariff_export, config_modules)
 
 #: VRB zone fare model (ADR-0133). Flag-gated; absent/false keeps the legacy ring cost model.
 VRB_FARES_KEY = "vrb_zone_fares_enabled"
@@ -63,14 +66,30 @@ VRB_FARE_DEFAULTS = {
 }
 VRB_ZONE_TOOL = "org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation"
 
-#: The two cordon helpers this stage reaches through FUNCTION-LEVEL imports inside
-#: :func:`_cut_to_cordon`, hashed by dotted NAME because they are not module objects here.
-#: ``spatial.cordon`` decides the cordon POLYGON and the buffer width and
+#: Zone-based parking costs (issue #249, design spec 3.6). Flag-gated; absent/false writes no parking input and
+#: leaves the prepared config as it is.
+PARKING_KEY = "parking_zones_enabled"
+#: Parameters of the tariff export, declared only when the flag is on (spec 5.5).
+PARKING_DEFAULTS = {
+    # Tariff state the committed tariff table records; it names the tariff model file.
+    "parking_tariff_snapshot_date": "2026-09-28",
+    # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends (the only implemented rule).
+    "parking_terminal_stay_rule": "until_fee_end",
+}
+#: MATSim config module read by the Java ParkingConfigGroup (eqasim-java-bs, org.eqasim.braunschweig.parking).
+PARKING_MODULE = "braunschweigParking"
+
+#: Modules this stage runs without importing them itself, hashed by dotted NAME because they are
+#: not module objects here. The two cordon helpers are FUNCTION-LEVEL imports inside
+#: :func:`_cut_to_cordon`: ``spatial.cordon`` decides the cordon POLYGON and the buffer width and
 #: ``cordon.extent`` writes the extent file the cutter is driven by, so both shape the cut
 #: scenario. Under the default (cross-cordon off) they are never imported at run time, but a
 #: token must not depend on a flag: hashing them unconditionally is what makes the cached
 #: scenario of a cordon RUN trustworthy, and it costs nothing when the flag is off.
 _DEFERRED_HELPER_MODULE_NAMES = (
+    # ``tariff_export`` turns every tariff row into a ``cost.ZoneTariff`` and writes its fields as the zone
+    # entry of the parking tariff model, so the dataclass decides the model's content and its validation.
+    "braunschweig.parking.cost",
     "braunschweig.data.cordon.extent",
     "braunschweig.data.spatial.cordon",
 )
@@ -87,6 +106,8 @@ def validate(context):
         digest.update(inspect.getsource(module).encode("utf-8"))
     # The committed tariff tables are read at execute time by fare_model_export: a corrected price, matrix or
     # rail table must invalidate the prepared scenario. Hashed unconditionally (a token must not depend on a flag).
+    # The parking inputs are not read here: they arrive through the declared braunschweig.parking.zones_stage,
+    # whose own token hashes them and whose change synpp propagates to this stage.
     for path in fare_model_export.committed_input_paths():
         digest.update(fare_model_export.content_sha256(path).encode("ascii"))
     for module_name in _DEFERRED_HELPER_MODULE_NAMES:
@@ -143,6 +164,34 @@ def configure(context):
         context.config("freight_truck_max_velocity_kmh", 80.0)
         context.config("random_seed")
 
+    # Zone-based parking costs (issue #249): the tariff model JSON and the braunschweigParking module the Java
+    # car cost model reads. OFF declares nothing else and writes nothing.
+    context.config(PARKING_KEY, False)
+    if context.config(PARKING_KEY):
+        context.stage("braunschweig.parking.zones_stage")
+        for key, default in PARKING_DEFAULTS.items():
+            context.config(key, default)
+        _check_parking_parameters(context.config("parking_tariff_snapshot_date"),
+                                  context.config("parking_terminal_stay_rule"))
+
+
+def _check_parking_parameters(snapshot_date, terminal_stay_rule):
+    """Reject a parking parameter the tariff export cannot use, at configure time.
+
+    The export itself runs at the very end of the preparation, i.e. after the whole synthesis; a typo or an
+    unquoted YAML date (which arrives as ``datetime.date``, not as text) must not surface only then.
+    """
+    if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
+        raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
+                         f"{list(tariff_export.SUPPORTED_TERMINAL_STAY_RULES)}")
+    try:
+        # The model file name embeds the snapshot date and accepts only ISO date text.
+        tariff_export.tariff_model_file_name("", snapshot_date)
+    except ValueError as error:
+        raise ValueError(f"parking_tariff_snapshot_date: {error}; write it as quoted YAML text, e.g. "
+                         f"{PARKING_DEFAULTS['parking_tariff_snapshot_date']!r}") from error
+
+
 def execute(context):
     result = delegate.execute(context)
 
@@ -174,6 +223,10 @@ def execute(context):
     # and the freight injection.
     if context.config(VRB_FARES_KEY):
         _write_vrb_fare_inputs(context, result)
+
+    # The parking module goes into the FINAL config too, and the tariff model next to it: written last.
+    if context.config(PARKING_KEY):
+        _write_parking_inputs(context, result)
 
     return result
 
@@ -266,6 +319,37 @@ def _write_vrb_fare_inputs(context, config_name):
         raise RuntimeError("[vrb-fares] only %.2f%% of the final schedule's stop facilities carry a VRB zone "
                            "(minimum %.2f%%); check the CRS of the schedule and the zone polygons and the zone "
                            "field of the polygon layer" % (100 * facility_coverage, 100 * minimum))
+
+
+def _write_parking_inputs(context, config_name):
+    """Tariff model, braunschweigParking config module and an inputs report for the zone-based parking costs.
+
+    The tariff table of ``braunschweig.parking.zones_stage`` (spec 5.3: euros, decimal hours) becomes the tariff
+    model JSON (spec 5.4: integer cents and seconds) next to ``config_name``. The module names that file without
+    a directory, so the Java side resolves it relative to the config wherever the scenario is moved, and the
+    report lists every file ``matsim.output`` must copy with the scenario: the model and the report itself.
+    An identical module already in the config is kept, a conflicting one raises (``config_modules.write_module``);
+    the report is written last, so it exists only when the files it lists do.
+    """
+    root = Path(context.path())
+    prefix = context.config("output_prefix")
+    snapshot_date = context.config("parking_tariff_snapshot_date")
+    terminal_stay_rule = context.config("parking_terminal_stay_rule")
+    release = context.stage("braunschweig.parking.zones_stage")
+    model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
+                                             sources=release["sources"], terminal_stay_rule=terminal_stay_rule)
+    tariffs_name = tariff_export.tariff_model_file_name(prefix, snapshot_date)
+    report_name = tariff_export.inputs_report_name(prefix)
+    tariff_export.write_tariff_model(root / tariffs_name, model)
+    config_modules.write_module(root / config_name, PARKING_MODULE, {
+        "enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule})
+    zone_types = dict(sorted(Counter(zone["zone_type"] for zone in model["zones"].values()).items()))
+    report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
+              "zone_types": zone_types, "terminal_stay_rule": terminal_stay_rule, "sources": model["sources"]}
+    tariff_export.write_json_document(root / report_name, report)
+    print("[parking] prepared inputs: %d zones (%s), terminal stay rule %s; tariff model %s, module %s in %s, "
+          "report %s" % (len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
+                         terminal_stay_rule, tariffs_name, PARKING_MODULE, config_name, report_name))
 
 
 def _cut_to_cordon(context):
