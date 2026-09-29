@@ -113,6 +113,9 @@ OPTIONAL_PERSON_FIELDS = [
     # driver-car attribute above: the Java capability entrypoint consumes it
     # only when the MiD feature produced the column.
     "car_passenger_availability",
+    # Zone-based parking costs (issue #436): the resident parking zone containing the
+    # person's home (written as residentParkingZone). Present only with parking_zones_enabled.
+    "resident_parking_zone",
 ]
 
 
@@ -126,6 +129,65 @@ ACTIVITY_FIELDS = [
     "person_id", "start_time", "end_time", "purpose", "geometry", "location_id"
 ]
 
+# Optional, ADDITIVE activity fields of the zone-based parking costs (issue #436), attached by
+# braunschweig.parking.attach through the braunschweig.matsim.scenario.population wrapper when
+# parking_zones_enabled is on:
+#   parking_zone -> "parkingZone" (java.lang.String): zone_id of the parking tariff table whose
+#                   polygon contains the activity location; NaN outside every zone;
+#   parking_free -> "parkingFree" (java.lang.Boolean): free parking at the work/education place,
+#                   drawn once per person; a boolean for EVERY activity.
+# Appended to the projected fields ONLY when present, exactly like OPTIONAL_PERSON_FIELDS, so the
+# positional ACTIVITY_FIELDS.index(...) lookups are unaffected and frames without the columns are
+# written byte-identically.
+OPTIONAL_ACTIVITY_FIELDS = [
+    "parking_zone",
+    "parking_free",
+]
+
+
+def effective_activity_fields(df_activities):
+    """Return ACTIVITY_FIELDS plus any present OPTIONAL_ACTIVITY_FIELDS (in order)."""
+    return ACTIVITY_FIELDS + [
+        f for f in OPTIONAL_ACTIVITY_FIELDS if f in df_activities.columns
+    ]
+
+
+def _is_missing_value(value):
+    """True for None and the pandas/NumPy missing-value scalars (NaN, pd.NA, NaT)."""
+    if value is None:
+        return True
+    missing = pd.isna(value)
+    return isinstance(missing, (bool, np.bool_)) and bool(missing)
+
+
+def _parking_zone_id(column, value):
+    """Return a present parking zone id, raising ValueError unless it is a non-empty string.
+
+    The id must match a ``zone_id`` of the tariff table the Java cost model reads; a numeric
+    value would be written as e.g. "5.0" and only fail at the first priced car trip, so it is
+    rejected here instead.
+    """
+    if not isinstance(value, str) or value == "":
+        raise ValueError(
+            "Invalid %s %r; expected a non-empty parking zone id string (a zone_id of the "
+            "parking tariff table) or a missing value outside every zone." % (column, value))
+    return value
+
+
+def _is_free_parking(value):
+    """Whether an activity's ``parking_free`` value is True; raises ValueError unless boolean.
+
+    braunschweig.parking.attach.draw_parking_free assigns a boolean to EVERY activity, so a
+    missing or non-boolean value means the row bypassed the draw -- writing it as "not free"
+    would silently price that stay as paid, hence the error.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    raise ValueError(
+        "Invalid parking_free %r; expected a boolean from the free-parking draw "
+        "(braunschweig.parking.attach.draw_parking_free) for every activity." % (value,))
+
+
 TRIP_FIELDS = [
     "person_id", "mode", "departure_time", "travel_time"
 ]
@@ -138,13 +200,24 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
                write_income_eur = False, person_fields = None,
                remode_carless_car_legs = False, id_attribute_types = None,
                rbw_omission_counter = None,
-               passenger_availability_omission_counter = None):
+               passenger_availability_omission_counter = None,
+               activity_fields = None):
     # ``person_fields`` is the (possibly extended) field order of the ``person``
     # tuple. Defaults to PERSON_FIELDS so existing callers are unaffected; the
     # population writer passes effective_person_fields(df) so optional additive
     # attributes (e.g. housing_tenure) can be emitted only when present.
     if person_fields is None:
         person_fields = PERSON_FIELDS
+    # ``activity_fields`` is the same for every activity tuple: ACTIVITY_FIELDS by default,
+    # effective_activity_fields(df) from write_population, so the optional parking attributes
+    # are read only when their columns are present. The optional fields come after
+    # ACTIVITY_FIELDS, so the ACTIVITY_FIELDS.index(...) lookups below stay valid.
+    if activity_fields is None:
+        activity_fields = ACTIVITY_FIELDS
+    parking_zone_index = (activity_fields.index("parking_zone")
+                          if "parking_zone" in activity_fields else None)
+    parking_free_index = (activity_fields.index("parking_free")
+                          if "parking_free" in activity_fields else None)
     # ``rbw_omission_counter`` is an optional collections.Counter owned by the caller
     # (write_population); it accumulates the persons whose rbW attributes had to be
     # omitted so the rate can be logged ONCE for the whole population.
@@ -298,6 +371,20 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
         if _day_absence_state is not None and not pd.isna(_day_absence_state):
             writer.add_attribute("dayAbsenceState", "java.lang.String", str(_day_absence_state))
 
+    # Zone-based parking costs (issue #436): the resident parking zone (Bewohnerparkzone) that
+    # contains the person's home, attached by braunschweig.parking.attach.attach_resident_zones
+    # in the braunschweig.matsim.scenario.population wrapper; the Java cost model exempts the
+    # person from that one zone's fees. ADDITIVE and emitted only when the column is present AND
+    # the home lies in a resident zone: every other person -- most residents and every in-commuter
+    # living outside the zones -- carries NaN and gets NO attribute rather than the literal string
+    # "nan"/"None", because "resident of no zone" is itself the modelled state. Output is
+    # byte-identical when parking_zones_enabled is off (the column is then never attached).
+    if "resident_parking_zone" in person_fields:
+        _resident_parking_zone = person[person_fields.index("resident_parking_zone")]
+        if not _is_missing_value(_resident_parking_zone):
+            writer.add_attribute("residentParkingZone", "java.lang.String",
+                                 _parking_zone_id("resident_parking_zone", _resident_parking_zone))
+
     writer.add_attribute("age", "java.lang.Integer", person[PERSON_FIELDS.index("age")])
     writer.add_attribute("employed", "java.lang.String", person[PERSON_FIELDS.index("employed")])
     writer.add_attribute("sex", "java.lang.String", person[PERSON_FIELDS.index("sex")][0])
@@ -334,6 +421,11 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             None if location_id == -1 else location_id
         )
 
+        # All attributes of this activity go into ONE dict, so an activity carries at most one
+        # <attributes> block; an activity without any attribute is passed ``None`` below and is
+        # written as the bare element, exactly as before the parking attributes existed.
+        activity_attributes = {}
+
         # Activity-level isParis: tag activities whose location lies within
         # the BS inner ring (<= _URBAN_RADIUS_M from BS Hbf). See module
         # docstring above for the rationale. Off by default (D-5).
@@ -341,18 +433,31 @@ def add_person(writer, person, activities, trips, vehicles, enable_urban_parking
             dx = geometry.x - _URBAN_HBF_E
             dy = geometry.y - _URBAN_HBF_N
             is_urban_activity = (dx * dx + dy * dy) <= (_URBAN_RADIUS_M * _URBAN_RADIUS_M)
-            activity_attributes = {
-                "isParis": ("java.lang.Boolean", "true" if is_urban_activity else "false"),
-            }
-        else:
-            activity_attributes = None
+            activity_attributes["isParis"] = (
+                "java.lang.Boolean", "true" if is_urban_activity else "false")
+
+        # Zone-based parking costs (issue #436), mutually exclusive with the ring above (the
+        # wrapper rejects both flags at configure time). ADDITIVE: read only when the columns are
+        # in the activity tuple (parking_zones_enabled on). A location outside every zone carries
+        # NaN and gets NO parkingZone -- never the literal "nan"/"None", which the Java cost model
+        # would reject as an unknown zone id -- because "no zone" is itself the modelled state
+        # (parking is free outside every zone). parkingFree is written ONLY as "true": the Java
+        # side reads an absent attribute as "not free", so a "false" on nearly every activity
+        # would add bytes without information.
+        if parking_zone_index is not None:
+            parking_zone = activity[parking_zone_index]
+            if not _is_missing_value(parking_zone):
+                activity_attributes["parkingZone"] = (
+                    "java.lang.String", _parking_zone_id("parking_zone", parking_zone))
+        if parking_free_index is not None and _is_free_parking(activity[parking_free_index]):
+            activity_attributes["parkingFree"] = ("java.lang.Boolean", "true")
 
         writer.add_activity(
             type = activity[ACTIVITY_FIELDS.index("purpose")],
             location = location,
             start_time = None if np.isnan(start_time) else start_time,
             end_time = None if np.isnan(end_time) else end_time,
-            attributes = activity_attributes,
+            attributes = activity_attributes or None,
         )
 
         if not trip is None:
@@ -412,7 +517,10 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
             writer = writers.PopulationWriter(writer)
             writer.start_population()
 
-            activity_iterator = backlog_iterator(iter(df_activities[ACTIVITY_FIELDS].itertuples(index = False)))
+            # Additive optional activity fields (the parking attributes) are appended AFTER
+            # ACTIVITY_FIELDS when present, the same way as the optional person fields below.
+            activity_fields = effective_activity_fields(df_activities)
+            activity_iterator = backlog_iterator(iter(df_activities[activity_fields].itertuples(index = False)))
             trip_iterator = backlog_iterator(iter(df_trips[TRIP_FIELDS].itertuples(index = False)))
             vehicle_iterator = backlog_iterator(iter(df_vehicles[VEHICLE_FIELDS].itertuples(index = False)))
 
@@ -482,7 +590,8 @@ def write_population(output_path, df_persons, df_activities, df_trips, df_vehicl
                                id_attribute_types=id_attribute_types,
                                rbw_omission_counter=rbw_omission_counter,
                                passenger_availability_omission_counter=
-                               passenger_availability_omission_counter)
+                               passenger_availability_omission_counter,
+                               activity_fields=activity_fields)
                     progress.update()
 
             writer.end_population()
