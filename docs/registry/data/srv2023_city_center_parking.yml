@@ -1,0 +1,62 @@
+dataset: srv2023_city_center_parking
+title: SrV 2023 usual Braunschweig city-centre parking of Braunschweig residents (committed aggregate)
+inventory_id: null
+provider: >-
+  TU Dresden, SrV 2023 Braunschweig + RGB scientific-use file SciUse_v4 (the Braunschweig P2
+  add-on person module and the person file); aggregated in-repo
+vintage: 2023 survey year
+geography: >-
+  The Braunschweig city centre (Innenstadt) as the respondents understand it; the question names
+  no boundary. Respondents are Braunschweig residents only.
+crs: null
+roles:
+- validation_reference
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_commute_parking.py --raw <srv2023_raw directory>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha> (one run writes this table
+    and srv2023_commute_parking_by_workplace_class). Reads V_BRAU_PARKENCITY and its follow-ups
+    V_BRAU_PARKENCITY<k>_ENTGELT from the local copy SrV2023_Personen_Zusatz_Braunschweig.csv and
+    GEWICHT_P_ZENSUS from SrV2023_Personen.csv; the definitions live in
+    braunschweig/calibration/srv_parking.py. The raw microdata is local-only (srv2023_raw) and
+    never committed.
+  script: scripts/extract_srv_commute_parking.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/srv2023_city_center_parking.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed and no pipeline
+    stage reads it. Guarded by tests/test_srv_parking.py: the builder on synthetic input (the
+    PARKENCITY code order, code 4 outside the universe, paid_share_overall over respondents with
+    a valid payment answer) and the committed file (row set, share bounds, place shares summing
+    to 1, provenance header).
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived aggregate of a scientific-use file; no microdata
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Construct: GEWICHT_P_ZENSUS-weighted shares of the usual parking place in the city centre
+  (employer lot, public street, underground/multi-storey garage or large lot, other place) among
+  Braunschweig residents who drive there, plus paid_share_overall, the weighted share paying
+  among those with a valid payment answer. Code 4 (does not drive to the city centre) is outside
+  the universe; -8 (not asked) and -10 (implausible) are dropped with counts in the file header.
+  The codebook orders the V_BRAU_PARKENCITY places differently from V_*_PARKENAPL (1 street,
+  2 garage, 3 employer lot); the builder uses its own code map for it.
+  Universe caveat for any comparison with model output (parking-cost-zones design, section 6):
+  SrV asks Braunschweig residents about their usual centre parking, whereas the model counts all
+  car arrivals, including visitors from the region, and its centre zones have a fixed boundary.
+  Such a comparison is a comparison, not a validation. The employer-lot and other-place rows rest
+  on a few dozen respondents each (n_unweighted column).
+notes: |
+  Issue #249 deliverable; a validation quantity only (parking-cost-zones design, section 6),
+  never a model input. Exclusion counts and the SHA-256 of the raw inputs live in the file
+  header.

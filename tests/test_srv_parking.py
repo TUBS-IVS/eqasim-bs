@@ -94,7 +94,7 @@ def test_unify_maps_missing_codes_to_none_and_rejects_unmapped_codes():
     assert unified["payment"].isna().tolist() == [True, True, True, True, False]
     assert unified["payment"].iloc[4] == "free"
 
-    with pytest.raises(ValueError, match="V_RGB_PARKENAPL"):
+    with pytest.raises(ValueError, match="V_RGB_PARKENAPL: unmapped code"):
         sp.unify_addon_modules(bs, _addon([{"HHNR": 5, "PNR": 1, "V_RGB_PARKENAPL": 9}]))
     # A reported place whose payment follow-up column is absent cannot be resolved.
     with pytest.raises(ValueError, match="V_RGB_PARKENAPL3_ENTGELT"):
@@ -296,3 +296,80 @@ def test_extractor_writes_both_tables_with_the_provenance_header(tmp_path):
     assert list(city.columns) == ["share", "n_unweighted"]
     assert city.loc["garage_large_lot", "share"] == 1.0
     assert city.loc["paid_share_overall", "share"] == 1.0
+
+
+# --- The committed tables ------------------------------------------------------------------------
+
+SRV_DIR = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
+PLACE_SHARE_COLUMNS = ["share_employer_lot", "share_street", "share_garage_large_lot", "share_other"]
+# Four shares rounded to 4 decimals each can miss 1 by up to 2e-4; two shares by up to 1e-4.
+ROUNDING_TOLERANCE = 2.5e-4
+
+
+def _committed_table(name: str) -> pd.DataFrame:
+    path = SRV_DIR / name
+    # Force-added past the eqasim-data/ ignore rule, so an absent file means a broken checkout,
+    # never "nothing to test": assert instead of skipping (the convention of
+    # tests/test_srv_kreis_table_conventions.py), or these pins would pass vacuously.
+    assert path.exists(), (
+        f"Committed SrV table missing: {path}. It is tracked in git (force-added); regenerate it "
+        "with scripts/extract_srv_commute_parking.py only together with a reviewed diff.")
+    return pd.read_csv(path, comment="#", dtype={"workplace_class": str})
+
+
+def _committed_header(name: str) -> list:
+    text = (SRV_DIR / name).read_text(encoding="utf-8")
+    return [line for line in text.splitlines() if line.startswith("#")]
+
+
+def test_committed_commute_table_has_one_row_per_workplace_class_and_a_pooled_total():
+    table = _committed_table(sp.COMMUTE_TABLE_FILE)
+    assert list(table.columns) == list(sp.COMMUTE_TABLE_COLUMNS)
+    classes = table[table["level"] == sp.LEVEL_CLASS]
+    total = table[table["level"] == sp.LEVEL_TOTAL]
+    # Every class the zone stage can reference must be present (a missing class would raise there).
+    assert classes["workplace_class"].tolist() == list(sp.WORKPLACE_CLASSES)
+    assert total["workplace_class"].tolist() == [sp.TOTAL_ROW_CLASS]
+    assert len(table) == len(sp.WORKPLACE_CLASSES) + 1
+    assert int(classes["n_unweighted"].sum()) == int(total["n_unweighted"].iloc[0])
+    assert (classes["n_unweighted"] >= sp.MIN_CELL_N).all()
+    assert (table["n_eff"] <= table["n_unweighted"]).all()
+
+    share_columns = [column for column in table.columns if column.startswith("share_")]
+    assert ((table[share_columns] >= 0) & (table[share_columns] <= 1)).all().all()
+    assert table["share_free_total"].between(0, 1).all()
+    assert (table[PLACE_SHARE_COLUMNS].sum(axis=1) - 1).abs().max() < ROUNDING_TOLERANCE
+    assert (table["share_paid_total"] + table["share_free_total"] - 1).abs().max() < ROUNDING_TOLERANCE
+
+
+def test_committed_commute_table_shows_the_centre_as_the_least_free_braunschweig_class():
+    """A data fact of the extraction of 2026-09-29 (issue #249), pinned because it is what the zone
+    model's free-parking draw rests on: of the three Braunschweig classes, car commuters to the
+    Zentrum (Oberbezirk 1) park free least often. A regeneration that flips it needs a review."""
+    table = _committed_table(sp.COMMUTE_TABLE_FILE).set_index("workplace_class")
+    braunschweig = table.loc[[sp.BS_ZENTRUM, sp.BS_INNENBEREICH, sp.BS_OUTER], "share_free_total"]
+    assert braunschweig.idxmin() == sp.BS_ZENTRUM
+
+
+def test_committed_city_center_table_has_the_place_rows_and_the_paid_share():
+    table = _committed_table(sp.CITY_CENTER_TABLE_FILE)
+    assert list(table.columns) == list(sp.CITY_CENTER_TABLE_COLUMNS)
+    assert table["parking_type"].tolist() == [*sp.DRIVER_PARKING_TYPES, sp.PAID_SHARE_OVERALL]
+    assert table["share"].between(0, 1).all()
+    places = table[table["parking_type"] != sp.PAID_SHARE_OVERALL]
+    assert abs(places["share"].sum() - 1) < ROUNDING_TOLERANCE
+    paid = table.set_index("parking_type").loc[sp.PAID_SHARE_OVERALL]
+    assert 0 < paid["n_unweighted"] <= places["n_unweighted"].sum()
+
+
+def test_committed_tables_carry_the_provenance_header():
+    commute_header = _committed_header(sp.COMMUTE_TABLE_FILE)
+    assert sum("sha256=" in line for line in commute_header) == 4
+    assert any(f"min_cell_n={sp.MIN_CELL_N}" in line for line in commute_header)
+    assert any("assumption A1 of the parking-cost-zones design" in line for line in commute_header)
+    city_header = _committed_header(sp.CITY_CENTER_TABLE_FILE)
+    assert sum("sha256=" in line for line in city_header) == 2
+    for header in (commute_header, city_header):
+        assert any("scripts/extract_srv_commute_parking.py" in line for line in header)
+        assert any("GEWICHT_P_ZENSUS" in line for line in header)
+        assert not any("code state eqasim-bs unknown" in line for line in header)
