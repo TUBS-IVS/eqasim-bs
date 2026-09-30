@@ -370,6 +370,8 @@ def test_committed_tables_carry_the_provenance_header():
     assert sum("sha256=" in line for line in commute_header) == 4
     assert any(f"min_cell_n={sp.MIN_CELL_N}" in line for line in commute_header)
     assert any("assumption A1 of the parking-cost-zones design" in line for line in commute_header)
+    assert any("seven of the eight ZGB Kreise" in line for line in commute_header)
+    assert not any("seven surveyed RGB Kreise" in line for line in commute_header)
     city_header = _committed_header(sp.CITY_CENTER_TABLE_FILE)
     assert sum("sha256=" in line for line in city_header) == 2
     for header in (commute_header, city_header):
