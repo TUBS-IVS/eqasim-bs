@@ -70,4 +70,7 @@ notes: >-
   table parking_zones_2026_qa.csv; Wolfsburg, Peine, Helmstedt and Salzgitter were curated as QA only. Unchanged by
   v2 Amendment B (the majority rule over the parking supply, 2026-09-30): its pre-registered validation B5 failed in
   Braunschweig, so nothing was applied; the rows of Braunschweig, Goslar, Wolfenbuettel and Gifhorn also point to
-  the QA table parking_zones_2026_supply_share_qa.csv (statuses unchanged).
+  the QA table parking_zones_2026_supply_share_qa.csv (statuses unchanged). Unchanged by owner decisions 2 and 3
+  (Task 1c, 2026-09-30): at the owner's post hoc share 0.3 H1 passes but the pre-registered holdout check H2 fails,
+  so still nothing is applied; the reason in the rows of Braunschweig, Goslar, Wolfenbuettel and Gifhorn names both
+  (statuses unchanged).
