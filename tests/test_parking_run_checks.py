@@ -159,7 +159,8 @@ def test_the_outcome_report_of_the_last_iteration_passes_and_logs_one_line(tmp_p
 
 def test_entries_of_iters_that_are_no_iteration_directory_are_ignored(tmp_path):
     output = _output_tree(tmp_path / "simulation_output", range(3))
-    (output / "ITERS" / "it.99.txt").write_text("not an iteration directory", encoding="utf-8")
+    # A FILE named like an iteration directory, and a directory whose suffix is no iteration number.
+    (output / "ITERS" / "it.99").write_text("not an iteration directory", encoding="utf-8")
     (output / "ITERS" / "it.x").mkdir()
     assert runtime_checks.require_parking_outcomes(output) == 2
 
