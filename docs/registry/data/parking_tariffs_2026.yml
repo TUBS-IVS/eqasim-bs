@@ -75,7 +75,9 @@ limitations: >-
   residents-only rule of the Stadthalle concept are not modelled. Workplace classes of the Braunschweig rows follow
   the location of each zone relative to the SrV 2023 Oberbezirke (Unterbezirk names of the SrV sub-area coding), not
   a polygon overlay. The Wolfenbuettel URL of the 2026-09-21 review list (parkhaeuser-1.html) returned HTTP 404; the
-  current pages were used.
+  current pages were used. The release models the tariffs in force from autumn 2026, not strictly those of the
+  retrieval and snapshot date 2026-09-29: tu_forschungsflughafen carries valid_from 2026-10-01 because the TU starts
+  ticketing that campus on that day (GB3 page), so on the snapshot date this zone charged nothing.
 notes: >-
   24 rows: street_paid 17, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
   assumption 8 (validator summary of 2026-09-30, see parking_zones_2026). The synthetic test set with the same

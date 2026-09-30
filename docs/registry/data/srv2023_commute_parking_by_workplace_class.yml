@@ -9,8 +9,9 @@ geography: >-
   Workplace classes inside the ZGB (parking-cost-zones design, spec 2026-09-28, section 3.4):
   Braunschweig split into bs_zentrum, bs_innenbereich and bs_outer (SrV Oberbezirke 1, 2-3 and
   4-6), one class per other ZGB Kreis (03102, 03103, 03151, 03153, 03154, 03157, 03158), plus a
-  total row pooling exactly the class rows. Respondents are residents of Braunschweig and the
-  seven surveyed RGB Kreise; Wolfsburg (03103) appears as a workplace only, through in-commuters.
+  total row pooling exactly the class rows. Respondents are residents of seven of the eight ZGB
+  Kreise, Braunschweig and the six other surveyed Kreise; Wolfsburg (03103) is not surveyed and
+  appears as a workplace only, through in-commuters.
 crs: null
 roles:
 - calibration_target
@@ -72,10 +73,10 @@ limitations: |
   Braunschweig destination whose Oberbezirk could not be computed belong to no row; the file
   header states their counts and, for groups of at least min_cell_n respondents, their free
   share next to the total row's.
-  Coverage: respondents live in Braunschweig or the seven surveyed RGB Kreise (stratified PSU
-  sample of about 44 municipalities). Wolfsburg residents are not surveyed, so the 03103 row
-  describes in-commuters from the surveyed area only; in-commuters from outside the
-  Verbandsgebiet are represented in no row.
+  Coverage: respondents live in seven of the eight ZGB Kreise, Braunschweig and the six other
+  surveyed Kreise (stratified PSU sample of about 44 municipalities, srv2023_covered_municipalities).
+  Wolfsburg (03103) residents are not surveyed, so the 03103 row describes in-commuters from the
+  surveyed area only; in-commuters from outside the Verbandsgebiet are represented in no row.
   Read workplace_class as text: the Kreis keys carry a leading zero.
 notes: |
   Issue #249 deliverable. Consumer: braunschweig.parking.zones_stage loads the table (workplace_class
@@ -86,3 +87,7 @@ notes: |
   smaller class raises instead of being pooled silently) and the SHA-256 of every raw input live
   in the file header, the single place that records them. No class was below the guard in this
   extraction, so no class was pooled.
+  Regenerated on 2026-09-30 (code state dcc1c770) only to correct the header's coverage wording:
+  the data rows are byte-identical to the extraction of 2026-09-29, but the file hash differs from
+  the one the smoke run parking-zones-smoke-zgb-1pct-2026-09-30 recorded in its tariff model
+  sources (ef7eaa362bee...).

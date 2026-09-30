@@ -284,6 +284,9 @@ def test_extractor_writes_both_tables_with_the_provenance_header(tmp_path):
     assert any("GEWICHT_P_ZENSUS" in line for line in header)
     assert ("# Shares are observed among current car commuters (SrV 2023 BS+RGB SciUse_v4); assumption "
             "A1 of the parking-cost-zones design transfers them to all workers of a class.") in header
+    # SrV 2023 surveys seven of the eight ZGB Kreise, Braunschweig included; Wolfsburg is not surveyed.
+    assert any("seven of the eight ZGB Kreise" in line for line in header)
+    assert not any("seven surveyed RGB Kreise" in line for line in header)
     commute = pd.read_csv(out / sp.COMMUTE_TABLE_FILE, comment="#", dtype={"workplace_class": str})
     assert list(commute.columns) == list(sp.COMMUTE_TABLE_COLUMNS)
     assert commute["workplace_class"].tolist() == ["bs_zentrum", "bs_outer", "03103", "total"]
@@ -367,6 +370,8 @@ def test_committed_tables_carry_the_provenance_header():
     assert sum("sha256=" in line for line in commute_header) == 4
     assert any(f"min_cell_n={sp.MIN_CELL_N}" in line for line in commute_header)
     assert any("assumption A1 of the parking-cost-zones design" in line for line in commute_header)
+    assert any("seven of the eight ZGB Kreise" in line for line in commute_header)
+    assert not any("seven surveyed RGB Kreise" in line for line in commute_header)
     city_header = _committed_header(sp.CITY_CENTER_TABLE_FILE)
     assert sum("sha256=" in line for line in city_header) == 2
     for header in (commute_header, city_header):

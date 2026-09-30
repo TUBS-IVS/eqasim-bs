@@ -82,7 +82,10 @@ code paths:
    controller start `ParkingPopulationCheck` fails the run for plans with unknown zone ids, legacy `isParis`
    attributes or mistyped parking attributes and logs the plans' zone coverage. During the run every pricing call is
    counted by outcome (`ITERS/it.N/N.parking_outcomes.csv` and one `[parking]` log line per iteration). Version 1
-   reports the mix and has no failure threshold.
+   reports the mix and has no failure threshold. Because MATSim reads the module of a jar without the parking
+   package as an untyped group, `matsim.simulation.run` refuses a run whose prepared config enables the module when
+   the jar lacks `org.eqasim.braunschweig.parking` or when the last iteration wrote no outcome report
+   (`braunschweig.parking.runtime_checks`).
 8. **Assumptions (D8).** Z1 outside every zone parking is free; D1 the simulated day is an average weekday
    (Saturday and holiday windows are not modelled); T1 a terminal stay pays until the fee window of the arrival
    day ends; M1 the maximum stay compares the chargeable duration and a longer stay buys the long-stay product; A1
@@ -122,7 +125,9 @@ code paths:
   and exempted every resident of the city everywhere; the zones price only the zoned areas, at their sourced
   tariffs, and nothing elsewhere (Z1), residents of the city included. By construction, car costs fall for
   non-residents at destinations inside the ring but outside the zones and rise for residents at paid destinations.
-  How much the mode shares move is not measured yet: the 25 % legacy-vs-zones A/B with frozen ASCs is pending.
+  How much the mode shares move is not established: the local 1 % smoke after 10 iterations (run manifest
+  `parking-zones-smoke-zgb-1pct-2026-09-30`) is too small and too far from an equilibrium to read a direction or a
+  size from, and the 25 % legacy-vs-zones A/B with frozen ASCs is pending.
 - Mode-choice parameters are not recalibrated by this decision; the calibration of #23 starts with the zones on.
 - OFF and LEGACY stay reproducible: the plans writer's OFF and LEGACY output is pinned byte for byte against the
   writer before this feature, the prepared config is unchanged with the flag off, and the Java car cost model names
@@ -134,12 +139,26 @@ code paths:
     zones (only the resident concept zone 132 at the Stadthalle is), so a permit holder parking for a non-home
     activity inside Ia or Ib pays the street tariff. Which areas are zoned and which are not is recorded in the data
     record `parking_zones_2026` and the coverage register `parking_coverage_register_2026`.
-  - Goslar, Wolfenbuettel and Gifhorn use centre approximations instead of sourced zone extents
-    (`parking_zones_2026`).
+  - ParkGO zone II is not zoned in v1 apart from the three Parkscheininseln, and neither is the part of zone Ia
+    south of the city's overview map, so parking there is free (Z1). Zone II is the fee zone around the centre at
+    1.00 EUR per hour (0.50 EUR per 30 min, the ParkGO amounts the Parkscheininsel tariff rows take over) and
+    contains the Stadthalle quarter; it is the largest known gap in the Braunschweig street parking of the first
+    release. Why neither was digitised (the ParkGO annex map could not be georeferenced precisely enough) is
+    recorded in `parking_zones_2026`.
+  - Several zone geometries are approximations, not sourced boundaries: the nine `centre_approximation` zones and
+    the hulls of named streets or fee-tagged car parks that stand for the Salzgitter, Peine and Helmstedt zones.
+    The list and the reason for each are in the limitations of the data record `parking_zones_2026`.
   - C1 charges campus members the day product and therefore overcharges holders of the monthly campus ticket; a
     commuter product is a lever of a second release.
-  - The parked duration equals the activity stay, and a plan's first activity (no incoming car trip) is never
-    priced; both are inherited from the legacy car cost model.
+  - A1 transfers the free share of an SrV workplace class to the work and education activities inside the paid
+    zones of that class, although the class share also counts car commuters whose workplace lies outside every
+    zone; it therefore likely overstates free parking inside the paid zones. The sensitivity arm
+    `parking_workplace_free_share_shift` covers both directions.
+  - The parked duration is approximated by the activity stay (from the car's arrival to the end of the activity),
+    and a plan's first activity (no incoming car trip) is never priced; both are inherited from the legacy car cost
+    model. A car that arrives after the planned end of its activity therefore has a zero-length stay, which pays
+    nothing (D2): in the final iteration of the local 1 % smoke 11.8 % of the chosen car arrivals were such stays
+    (run manifest `parking-zones-smoke-zgb-1pct-2026-09-30`).
   - Under T1 a car whose terminal stay begins after the fee window of its arrival day has ended counts as
     `OUTSIDE_FEE_HOURS` and pays nothing.
   - Cross-cordon in-commuters carry the parking attributes but keep their fixed modes
@@ -162,19 +181,24 @@ code paths:
   `srv2023_city_center_parking`; contributor note `docs/codebase/notes/parking-cost-zones.md`; the Python tests
   listed in the feature record; the Java unit tests of eqasim-java-bs `org.eqasim.braunschweig.parking` (branch
   `feature/i249-parking-cost-zones`).
-- Consistency of the two implementations: the Python reference and the Java calculator agree on the 26 shared
+- Consistency of the two implementations: the Python reference and the Java calculator agree on the 38 shared
   golden cases (`tests/fixtures/parking/parking_golden_cases.json`, copied into the Java test resources) and, in
-  two randomised differential tests of 60,000 cases each run during the implementation review (one over the
-  fixture tariffs, one over the committed 21-zone release with seed 20260929), with 0 mismatches and all nine
-  calculator outcomes covered; the differential scripts are not committed. With the `braunschweigParking` module
-  absent, the branch jar reproduced the jar of `origin/main` exactly on the June 1 % scenario (trips and scores
-  byte-identical for OFF and LEGACY); that check is not yet recorded in a run manifest. These are consistency and
-  regression checks, not a validation.
+  two randomised differential tests of 60,000 cases each, with 0 mismatches and all nine calculator outcomes
+  covered: one over the fixture tariffs during the implementation review, and one over the committed 24-zone
+  release with seed 20260929, recorded in the run manifest `parking-zones-smoke-zgb-1pct-2026-09-30`
+  (`python_java_differential.txt`). The differential scripts are committed under that run's artefact directory
+  (`harness/gen_cases.py`, `harness/DiffCheck.java`). With the `braunschweigParking` module absent, the branch jar
+  reproduced the jar of `origin/main` exactly on the June 1 % scenario (trips and scores byte-identical for OFF and
+  LEGACY, legs identical as a row set), recorded in the same run manifest (`jar_parity_sha256.csv`). These are
+  consistency and regression checks, not a validation.
 - Comparison quantity for the A/B: the committed SrV 2023 table `srv2023_city_center_parking` reports that 70.8 %
   of the Braunschweig residents who drive to the city centre usually park in a garage or large lot and 83.3 % pay.
   In Braunschweig the first release prices the street zones and five BgA car parks, not the multi-storey garages,
   so garage products are the first lever of a second release. Comparing the modelled paid share of car arrivals in the centre zones with this table
   is a comparison with a universe caveat (SrV asks residents about their usual centre parking; the model counts all
-  car arrivals), not a validation.
-- Planned evidence: the local 1 % smoke (ON, OFF and LEGACY) and the 25 % legacy-vs-zones A/B on the server; their
-  run manifests will be linked from the feature record.
+  car arrivals), not a validation; the smoke's figures for it are in its run manifest.
+- Recorded smoke: the local 1 % smoke of ZONES, OFF and LEGACY on the June 2026 scenario, 10 iterations (run
+  manifest `parking-zones-smoke-zgb-1pct-2026-09-30`), shows the Java wiring working end to end and the jar parity
+  above; its A/B is indicative only. A smoke, not a validation.
+- Pending evidence: the 25 % legacy-vs-zones A/B on the server; its run manifest will be linked from the feature
+  record.

@@ -115,6 +115,9 @@ def test_sources_carry_64_hex_content_hashes_and_posix_paths(model):
     ([{"source_id": "tariffs", "path": "a.csv"}], "sha256"),
     ([{"source_id": "tariffs", "path": "dir\\a.csv", "sha256": "0" * 64}], "POSIX"),
     ([{"source_id": "tariffs", "path": "a.csv", "sha256": "0" * 64}] * 2, "duplicate source_id"),
+    # The Java ParkingTariffs reader accepts exactly these three keys per entry, so an extra key is refused here.
+    ([{"source_id": "tariffs", "path": "a.csv", "sha256": "0" * 64, "retrieved": "2026-09-29"}],
+     r"'retrieved'.*\['source_id', 'path', 'sha256'\]"),
 ])
 def test_invalid_sources_are_rejected(table, bad_sources, message):
     with pytest.raises(ValueError, match=message):
