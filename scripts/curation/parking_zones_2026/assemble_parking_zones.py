@@ -31,6 +31,19 @@ committed QA table ``--qa-out`` (``braunschweig.parking.zones`` ``ZONE_QA_COLUMN
 ``QA_COLUMN_GLOSSARY``); ``--counterfactual-qa`` adds the diagnostic runs of ``--all-kerbside-streets-regulated`` to the
 note of their municipality. Without ``--erosion-dir`` the output is the v1 file byte for byte.
 
+Parking cost zones v2, spec Amendment B (majority rule over the parking supply, issue #436; ``--supply-share-dir``):
+the per-town outputs of ``scripts/build_parking_zones_from_osm.py --supply-share`` with the pre-registered parameters
+(``supply_share.PRE_REGISTERED_SUPPLY_PARAMETERS``; ``load_supply_inputs`` refuses others). The pre-registered gate B5
+is re-applied to the Braunschweig metrics (``supply_b5``); only when it passes (B6) do the rule polygons enter as
+``osm_supply_majority`` polygons (provenance ``supply_walk_m``, ``paid_share_threshold``, ``minimum_usable_spaces``,
+``osm_timestamp``): Goslar, Wolfenbuettel and Gifhorn replace their centre approximation (``supply_replacement``;
+tariff rows unchanged), the Braunschweig pieces left after the v1 zones are assigned whole to the annex zone they
+overlap most (``assign_braunschweig_pieces``, ruling R-T1-f: ``bs_zone_ia_sued``, ``bs_zone_ii``), the other towns are
+QA only. Written in every case: the QA table ``--supply-qa-out`` (``supply_qa_rows``, every column defined in its
+header, ``SUPPLY_QA_COLUMN_GLOSSARY``) and the B7 release of the classified cells ``--paid-share-out``
+(``write_paid_share_release``, gzip CSV, EPSG:25832). When B5 fails nothing is applied and the zone file stays the v1
+file byte for byte.
+
 Usage (from the repository root)::
 
     python scripts/curation/parking_zones_2026/assemble_parking_zones.py --ia-ib bs_zone_map_ia_ib.geojson \
@@ -43,6 +56,10 @@ Usage (from the repository root)::
          --reference-outline eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_zones_georeferenced.geojson \
          --qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_qa.csv \
          --counterfactual-qa eqasim-data/data/braunschweig/parking/raw_overpass/03101000_qa_<tag>_allstreets.json ...]
+        [--supply-share-dir eqasim-data/data/braunschweig/parking/raw_osm/derived_supply_share \
+         --reference-outline eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_zones_georeferenced.geojson \
+         --supply-qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_supply_share_qa.csv \
+         --paid-share-out eqasim-data/data/braunschweig/parking/parking_paid_share_2026.csv.gz]
 """
 from __future__ import annotations
 
@@ -64,6 +81,7 @@ import curation_common as cc
 
 # The script runs from its own directory (curation_common); the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from braunschweig.parking import supply_share as ss  # noqa: E402
 from braunschweig.parking import zone_geometry as zg  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
 
@@ -100,6 +118,8 @@ EROSION_DIGITISED_ON = "2026-09-30"
 #: 7 decimals (up to 1.1 cm at 52 deg N), and two independently rounded outlines along a long shared edge would
 #: otherwise overlap by more than the 1 m2 tolerance of the validator (1.6 m2 along 800 m in the assembly test).
 EROSION_CUT_CLEARANCE_M = 0.05
+#: Rule-based geometry sources (lever 1 erosion, Amendment B supply majority): simplified before and cut with clearance.
+RULE_GEOMETRY_SOURCES = tuple(pz.RULE_PROVENANCE_COLUMNS)
 LICENSE_V2 = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, the OSM on-street "
               "parking and car-park tags of the osm_fee_erosion zones, or a georeference on OSM street centrelines); "
               "Open Database License 1.0, https://opendatacommons.org/licenses/odbl/1-0/")
@@ -196,11 +216,15 @@ BS_PIECE_DIAGNOSIS = ("the ParkGO annex outlines are a plausibility check and a 
 
 
 def zone_record(zone_id, ags, geometry, geometry_source, source_url, note, *, walk_m=None, osm_timestamp=None,
-                source_date=DIGITISED_ON, digitised_on=DIGITISED_ON, minimum_part_m2=MINIMUM_PART_M2) -> dict:
-    """One zone of the release as the assembly handles it (keys starting with '_' are not written)."""
+                source_date=DIGITISED_ON, digitised_on=DIGITISED_ON, minimum_part_m2=MINIMUM_PART_M2,
+                supply_walk_m=None, paid_share_threshold=None, minimum_usable_spaces=None) -> dict:
+    """One zone of the release as the assembly handles it (keys starting with '_' are not written; the provenance
+    keys of a rule-based source, ``pz.RULE_PROVENANCE_COLUMNS``, only appear in the file when such a zone exists)."""
     return {"zone_id": zone_id, "_ags": ags, "geometry": geometry, "geometry_source": geometry_source,
             "source_url": source_url, "source_date": source_date, "digitised_on": digitised_on, "digitising_note": note,
-            "unavoidable_walk_m": walk_m, "osm_timestamp": osm_timestamp, "_minimum_part_m2": minimum_part_m2}
+            "unavoidable_walk_m": walk_m, "osm_timestamp": osm_timestamp, "supply_walk_m": supply_walk_m,
+            "paid_share_threshold": paid_share_threshold, "minimum_usable_spaces": minimum_usable_spaces,
+            "_minimum_part_m2": minimum_part_m2}
 
 
 def last_failure(directory, ags: str) -> str:
@@ -311,8 +335,8 @@ def erosion_replacement(zone_id, ags, url, what, erosion: dict) -> Optional[dict
 def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
     """Every zone in ``precedence`` order (then insertion order) takes its area; later zones lose the overlap.
 
-    v1 zones: overlaps above 0.5 m2 are cut, parts below 20 m2 dropped, then simplified by ``SIMPLIFY_M``. An
-    osm_fee_erosion zone is simplified BEFORE the cut and always cut against its neighbours grown by
+    v1 zones: overlaps above 0.5 m2 are cut, parts below 20 m2 dropped, then simplified by ``SIMPLIFY_M``. A
+    rule-based zone (``RULE_GEOMETRY_SOURCES``) is simplified BEFORE the cut and always cut against its neighbours grown by
     ``EROSION_CUT_CLEARANCE_M``, so the cut stays exact after the rounding of the file (simplifying a cut edge
     afterwards moves it by up to ``SIMPLIFY_M`` and lets a large core overlap its neighbours along long shared edges),
     and its parts below the core's minimum island size are dropped (Q2). Returns (zones kept, trims); raises when a v1
@@ -326,10 +350,10 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
             continue
         zone = by_id[zone_id]
         geometry = zone["geometry"].buffer(0)
-        eroded_zone = zone["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE
-        if eroded_zone:
+        rule_zone = zone["geometry_source"] in RULE_GEOMETRY_SOURCES
+        if rule_zone:
             geometry = geometry.simplify(SIMPLIFY_M, preserve_topology=True).buffer(0)
-        if taken is not None and eroded_zone:
+        if taken is not None and rule_zone:
             neighbours = taken.buffer(EROSION_CUT_CLEARANCE_M)
             if geometry.intersects(neighbours):
                 trims.append((zone_id, round(geometry.intersection(taken).area, 1)))
@@ -340,16 +364,16 @@ def apply_precedence(zones: list, precedence=PRECEDENCE) -> tuple:
                 geometry = geometry.difference(taken)
                 trims.append((zone_id, round(overlap, 1)))
         geometry = cc.largest_parts(geometry.buffer(0), zone["_minimum_part_m2"])
-        if not eroded_zone:
+        if not rule_zone:
             geometry = geometry.simplify(SIMPLIFY_M, preserve_topology=True)
         zone["geometry"] = geometry
         if not geometry.is_empty:
             taken = geometry if taken is None else taken.union(geometry)
     emptied = [z["zone_id"] for z in zones if z["geometry"].is_empty]
-    if [zone_id for zone_id in emptied if by_id[zone_id]["geometry_source"] != pz.EROSION_GEOMETRY_SOURCE]:
+    if [zone_id for zone_id in emptied if by_id[zone_id]["geometry_source"] not in RULE_GEOMETRY_SOURCES]:
         raise SystemExit(f"zones emptied by the precedence cuts: {emptied}")
     if emptied:
-        print("osm_fee_erosion zones without a part of the minimum island size after the cuts (not written):", emptied)
+        print("rule-based zones without a part of the minimum island size after the cuts (not written):", emptied)
     return [z for z in zones if not z["geometry"].is_empty], trims
 
 
@@ -361,7 +385,8 @@ def _polygon_parts(geometry) -> list:
     return [part for member in getattr(geometry, "geoms", []) for part in _polygon_parts(member)]
 
 
-def assign_braunschweig_pieces(core, zones: list, annex_zones: gpd.GeoDataFrame, qa: dict) -> tuple:
+def assign_braunschweig_pieces(core, zones: list, annex_zones: gpd.GeoDataFrame, qa: dict, *, zone_factory=None,
+                               noun: str = "core") -> tuple:
     """Braunschweig core minus every zone of the release -> connected pieces, each ASSIGNED WHOLE (ruling R-T1-f).
 
     The core is simplified by ``SIMPLIFY_M`` before the cut and cut against the zones grown by
@@ -369,7 +394,8 @@ def assign_braunschweig_pieces(core, zones: list, annex_zones: gpd.GeoDataFrame,
     core's minimum island size is dropped (Q2 after the cut); every other piece goes to the annex zone it overlaps
     most (``BS_EROSION_ZONES``: Ia -> bs_zone_ia_sued, II -> bs_zone_ii) with the share of its area outside that
     outline reported; a piece whose largest overlap is zone Ib (which keeps its v1 polygon) or that overlaps no annex
-    zone is not zoned. Returns (osm_fee_erosion zone records, one report dict per piece).
+    zone is not zoned. ``zone_factory`` makes the zone records (default ``erosion_zone``; ``supply_zone`` for the
+    majority rule, whose geometry ``noun`` names in the note). Returns (zone records, one report dict per piece).
     """
     minimum = float(qa["parameters"]["minimum_island_m2"])
     taken = unary_union([z["geometry"] for z in zones]).buffer(EROSION_CUT_CLEARANCE_M)
@@ -401,11 +427,12 @@ def assign_braunschweig_pieces(core, zones: list, annex_zones: gpd.GeoDataFrame,
         label = {"ia": "Ia", "ii": "II"}[BS_EROSION_ZONES[zone_id]]
         shares = ", ".join(f"{row['piece_id']} {row['area_m2']:.0f} m2 {100.0 * row['share_outside']:.1f} % outside"
                            for row in report if row["zone_id"] == zone_id)
-        records.append(erosion_zone(zone_id, BS_AGS, unary_union(parts), PARKGO_URL, qa,
-                                    replaces=("New in v2 (spec amendment A2): unzoned in v1, where the annex could not "
-                                              "be georeferenced to an RMS of 10 m or better."),
+        records.append((zone_factory or erosion_zone)(
+                                    zone_id, BS_AGS, unary_union(parts), PARKGO_URL, qa,
+                                    replaces=("New in v2: unzoned in v1, where the annex could not be georeferenced to "
+                                              "an RMS of 10 m or better."),
                                     assignment=(f"Tariff zone {label} of the ParkGO (sec. 1(2), sec. 2(1)): the pieces of "
-                                                "the core left after every v1 zone (Ia and Ib of the city's overview "
+                                                f"the {noun} left after every v1 zone (Ia and Ib of the city's overview "
                                                 "map, BgA car parks, Stadthalle concept, TU campus areas) was cut out, "
                                                 f"each assigned WHOLE to the annex zone it overlaps most, zone {label} "
                                                 f"({ANNEX_REFERENCE}; scripts/curation/parking_zones_2026/"
@@ -434,22 +461,28 @@ def piece_assignment_text(pieces: list, minimum_island_m2: float) -> str:
 
 
 def zone_frame(zones: list) -> gpd.GeoDataFrame:
-    """The zones as the committed frame: provenance columns, plus ``pz.EROSION_PROVENANCE_COLUMNS`` when an
-    osm_fee_erosion zone exists (so a v1-only release keeps its v1 layout)."""
+    """The zones as the committed frame: provenance columns, plus the provenance columns of every rule-based source
+    that has a zone (``pz.RULE_PROVENANCE_COLUMNS``; so a v1-only release keeps its v1 layout)."""
     frame = gpd.GeoDataFrame([{k: v for k, v in z.items() if not k.startswith("_")} for z in zones],
                              geometry="geometry", crs=cc.METRIC_CRS)
     columns = ["zone_id", "geometry_source", "source_url", "source_date", "digitised_on", "digitising_note"]
-    if bool((frame["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE).any()):
-        columns += list(pz.EROSION_PROVENANCE_COLUMNS)
+    present = set(frame["geometry_source"])
+    columns += list(dict.fromkeys(column for source, listed in pz.RULE_PROVENANCE_COLUMNS.items() if source in present
+                                  for column in listed))
     return frame[columns + ["geometry"]]
 
 
 def write_zone_file(frame: gpd.GeoDataFrame, path) -> None:
-    """WGS84 GeoJSON with the licence and attribution members (the v2 wording when an osm_fee_erosion zone exists)."""
-    has_erosion = bool((frame["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE).any())
+    """WGS84 GeoJSON with the licence and attribution members (the v2 wording when a rule-based zone exists)."""
+    sources = set(frame["geometry_source"])
+    if pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE in sources:
+        license_text, attribution = LICENSE_SUPPLY, ATTRIBUTION_SUPPLY
+    elif pz.EROSION_GEOMETRY_SOURCE in sources:
+        license_text, attribution = LICENSE_V2, ATTRIBUTION_V2
+    else:
+        license_text, attribution = LICENSE, ATTRIBUTION
     # RFC 7946 allows foreign members; GDAL writes them at the top level and GeoJSON readers ignore them.
-    members = json.dumps({"license": LICENSE_V2 if has_erosion else LICENSE,
-                          "attribution": ATTRIBUTION_V2 if has_erosion else ATTRIBUTION})
+    members = json.dumps({"license": license_text, "attribution": attribution})
     frame.to_crs("EPSG:4326").to_file(Path(path), driver="GeoJSON", COORDINATE_PRECISION=7,
                                       FOREIGN_MEMBERS_COLLECTION=members)
 
@@ -622,6 +655,429 @@ def write_qa_table(path, rows: list) -> None:
         for row in rows))
 
 
+# ---------------------------------------------------------------- parking cost zones v2, Amendment B (issue #436)
+SUPPLY_DIGITISED_ON = "2026-09-30"
+LICENSE_SUPPLY = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, the OSM "
+                  "parking tags of the Geofabrik extract behind the osm_supply_majority zones and of the Overpass "
+                  "responses behind any osm_fee_erosion zone, or a georeference on OSM street centrelines); Open "
+                  "Database License 1.0, https://opendatacommons.org/licenses/odbl/1-0/")
+ATTRIBUTION_SUPPLY = ("(c) OpenStreetMap contributors (https://www.openstreetmap.org/copyright). Zone boundaries after "
+                      "the parking maps and ordinances of the City of Braunschweig (Abt. Geoinformation; the ParkGO "
+                      "annex map assigns the osm_supply_majority zones bs_zone_ia_sued and bs_zone_ii), the TU "
+                      "Braunschweig GB3 parking pages and the municipal parking pages of Wolfsburg, Salzgitter, Peine, "
+                      "Goslar, Wolfenbuettel, Gifhorn and Helmstedt (source_url per feature).")
+SUPPLY_QA_INTRO = (
+    "Curation QA of the majority rule over the parking supply (parking cost zones v2, spec Amendment B, issue #436):",
+    "one row per curated town, written by scripts/curation/parking_zones_2026/assemble_parking_zones.py",
+    "--supply-share-dir from the <ags>_supply_qa_<tag>.json files of scripts/build_parking_zones_from_osm.py",
+    "--supply-share (the pinned Geofabrik extract and the derived files stay local under raw_osm/, gitignored).",
+    "Rule (braunschweig/parking/supply_share.py): every public parking element inside the town's query box (street",
+    "sides, street-side areas, off-street lots and garages) is paid, restricted, free or excluded (B1: B-a street",
+    "parking without a fee tag is free, B-b disc parking is free, B-c off-street lots without an explicit fee tag are",
+    "excluded); its capacity is the capacity tag, else 5.5 m per street space, 12.5 m2 per street-side area space,",
+    "25 m2 per lot space times the levels of a multi-storey car park (B-d); a 25 m cell is classified when at least",
+    "minimum_usable_spaces usable spaces lie within walk_m of its centre (B-e) and paid when (paid + restricted) /",
+    "usable >= share_threshold (B-f); the paid cells are united, smoothed +/-smoothing_m and parts below",
+    "minimum_island_m2 dropped. B5 (pre-registered): in Braunschweig recall (rule inside the ordinance polygons Ia and",
+    "Ib / their area) and precision (rule inside the annex zones / rule inside the annex map frame) must both reach",
+    "0.70 with the defaults before the rule is applied anywhere (B6); the sensitivity arms are information only.",
+    "Element counts are street sides (two per way), street-side areas and lots inside the query box; spaces are",
+    "usable capacity. Units m, m2, spaces; empty = undefined. scripts/validate_parking_zones.py re-applies the B5 gate",
+    "and the pre-registered parameters. Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap",
+    "contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright). Columns:",
+)
+#: One definition per column of ``supply_share.SUPPLY_SHARE_QA_COLUMNS``.
+SUPPLY_QA_COLUMN_GLOSSARY = {
+    "ags": "8-digit AGS of the curated town",
+    "name": "municipality name (BA Gemeindeband, ASCII)",
+    "role": "zones_from_rule = the rule may become release polygons after B5; qa_only = recorded, the v1 polygon stays",
+    "osm_extract": "the Geofabrik extract the supply was read from (raw_osm/, local, gitignored)",
+    "osm_extract_md5": "its MD5, checked against the Geofabrik MD5 file before use",
+    "osm_timestamp": "OSM snapshot of the extract (osmosis_replication_timestamp of the PBF header, UTC)",
+    "walk_m": "walk distance W in m (pre-registered 250)",
+    "share_threshold": "paid share from which a classified cell is paid (ASSUMPTION B-f, pre-registered 0.5)",
+    "minimum_usable_spaces": "usable spaces within W from which a cell is classified (ASSUMPTION B-e, pre-registered 50)",
+    "cell_m": "raster cell size in m (pre-registered 25)",
+    "smoothing_m": "buffer +/- of the smoothing of the paid cells in m (pre-registered 12.5)",
+    "minimum_island_m2": "smallest rule part that is kept, m2 (ASSUMPTION Q2, pre-registered 10000)",
+    "street_ways": "highway ways inside the query box (kerbside streets and ways with a parking:* key)",
+    "street_side_areas": "separately mapped street-side parking areas inside the query box (amenity=parking, parking="
+                         "street_side, lane, on_kerb, half_on_kerb, shoulder or layby)",
+    "offstreet_lots": "off-street car parks and garages inside the query box (the other amenity=parking objects)",
+    "paid_elements": "elements of class paid (street sides, street-side areas and lots)",
+    "restricted_elements": "elements of class restricted (resident permit)",
+    "free_elements": "elements of class free (B-a, B-b, explicit fee=no)",
+    "excluded_elements": "elements of class excluded (not public, forbidden, mapped separately, B-c, no parking "
+                         "information)",
+    "overpass_response": "the saved Overpass regulation response of Task 1 (raw_overpass/, read only) of the cross-check",
+    "overpass_osm_timestamp": "its OSM snapshot (timestamp_osm_base, UTC)",
+    "overpass_paid_elements": "paid elements of the same classification applied to the Overpass response",
+    "overpass_restricted_elements": "restricted elements of the Overpass response",
+    "overpass_free_elements": "free elements of the Overpass response",
+    "overpass_excluded_elements": "excluded elements of the Overpass response",
+    "cross_check": "per kind and class the extract count / the Overpass count (difference), and the two snapshots",
+    "usable_spaces": "usable capacity (paid + restricted + free) inside the query box, spaces",
+    "paid_spaces": "paid capacity inside the query box, spaces",
+    "restricted_spaces": "restricted capacity inside the query box, spaces",
+    "free_spaces": "free capacity inside the query box, spaces",
+    "tagged_capacity_share": "share of the usable capacity from capacity tags (primary)",
+    "heuristic_capacity_share": "share of the usable capacity from the heuristic B-d (fallback)",
+    "free_street_spaces_without_fee_tag_share": "share of the free street capacity (street sides and street-side "
+                                                "areas) that rests on a missing fee tag (ASSUMPTION B-a)",
+    "offstreet_lots_without_fee_tag": "off-street lots excluded because they carry no explicit fee tag (ASSUMPTION B-c)",
+    "cells": "25 m cells over the query box (its EPSG:25832 bounds)",
+    "classified_cells": "cells with at least minimum_usable_spaces usable spaces within W",
+    "classified_cell_share": "classified_cells / cells (the rest is unclassified)",
+    "paid_cells": "classified cells with paid_share >= share_threshold",
+    "rule_area_m2": "area of the rule polygons (paid cells united, smoothed, islands dropped), m2",
+    "rule_parts": "number of rule polygons",
+    "b5_recall": "Braunschweig: area(rule inside the ordinance polygons Ia and Ib) / area(Ia and Ib)",
+    "b5_precision": "Braunschweig: area(rule inside the annex zones Ia, Ib and II) / area(rule inside the annex map "
+                    "frame)",
+    "b5_passed": "Braunschweig: true when recall and precision are both >= 0.70 (ASSUMPTION Q5); gates B6 in every town",
+    "reference": "outline the rule is compared with (Braunschweig: the georeferenced ParkGO annex; elsewhere the v1 "
+                 "polygon)",
+    "rule_share_inside_reference": "area of the rule inside the reference / area of the rule",
+    "reference_share_covered_by_rule": "area of the rule inside the reference / area of the reference",
+    "largest_outline_distance_m": "Hausdorff distance between the outlines of the rule and the reference, m",
+    "sensitivity": "B5 arms W 150 / 400 m and share 0.3 / 0.7: rule area and, in Braunschweig, recall and precision "
+                   "(information only, never used to select a passing combination)",
+    "applied": "true when the rule became release polygons (geometry_source osm_supply_majority)",
+    "zone_ids": "the osm_supply_majority polygons of an applied row (';'-separated)",
+    "decision": "applied; b5_failed (the pre-registered gate failed, nothing is applied anywhere); no_rule_polygon (B5 "
+                "passed, nothing to apply); qa_only",
+    "note": "the B5 result, the application and the decision in words",
+}
+RELEASE_INTRO = (
+    "Paid-parking share of the public parking supply per 25 m cell (parking cost zones v2, spec Amendment B7, issue",
+    "#436): the classified cells of the eight curated towns, the preparation of a probabilistic variant C (a paid",
+    "probability per stay); no pipeline stage reads this file. Written by",
+    "scripts/curation/parking_zones_2026/assemble_parking_zones.py --supply-share-dir from the rasters",
+    "<ags>_paid_share_<tag>.csv.gz of scripts/build_parking_zones_from_osm.py --supply-share",
+    "(braunschweig.parking.supply_share.paid_share_raster). CRS EPSG:25832: x_m and y_m are cell centres in metres on",
+    "the lattice of multiples of the cell size. A cell is classified when at least minimum_usable_spaces usable",
+    "spaces (paid, restricted or free public parking; capacity tag, else the heuristic B-d) lie within W of its",
+    "centre; unclassified cells are not listed. Assumptions of spec Amendment B: B-a street parking without a fee tag",
+    "is free, B-b disc parking is free, B-c off-street lots without an explicit fee tag are excluded, B-d the capacity",
+    "heuristics, B-e the minimum supply. Derived from OpenStreetMap data: (c) OpenStreetMap contributors, ODbL 1.0",
+    "(https://www.openstreetmap.org/copyright).",
+)
+RELEASE_COLUMN_GLOSSARY = {
+    "x_m": "cell centre, EPSG:25832 easting in metres",
+    "y_m": "cell centre, EPSG:25832 northing in metres",
+    "municipality_ags": "8-digit AGS of the curated town whose query box the cell covers",
+    "paid_share": "(paid + restricted spaces) / usable spaces within W of the cell centre, 0 to 1",
+    "usable_spaces": "paid + restricted + free public spaces within W of the cell centre (at least the minimum supply)",
+    "heuristic_capacity_share": "share of the usable spaces whose capacity comes from the heuristic B-d (no capacity "
+                                "tag), 0 to 1",
+}
+#: Labels of the B5 sensitivity arms in the QA table (``supply_share.SENSITIVITY_ARMS`` order).
+SENSITIVITY_LABELS = ("W 150 m", "W 400 m", "share 0.3", "share 0.7")
+
+
+def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTERED_SUPPLY_PARAMETERS) -> dict:
+    """ags -> {"qa", "rule" (EPSG:25832), "raster", "arms" (tag -> QA of the sensitivity arms present)}.
+
+    Reads ``<ags>_supply_qa_<tag>.json``, ``<ags>_supply_zones_<tag>.geojson`` and ``<ags>_paid_share_<tag>.csv.gz``
+    of the pre-registered parameter tag and refuses (``SystemExit``) a missing town, a QA file whose parameters differ
+    from ``parameters`` and towns read from different extracts or snapshots.
+    """
+    directory = Path(directory)
+    municipalities = tuple(municipalities or tuple(EROSION_ZONES_FROM_CORE) + tuple(EROSION_QA_ONLY))
+    tag = parameters.tag()
+    expected = parameters.as_dict()
+    supply = {}
+    for ags in municipalities:
+        qa_path = directory / f"{ags}_supply_qa_{tag}.json"
+        if not qa_path.is_file():
+            raise SystemExit(f"{ags}: {qa_path.name} missing in {directory}; run scripts/build_parking_zones_from_osm.py "
+                             "--supply-share for it first")
+        qa = json.loads(qa_path.read_text(encoding="utf-8"))
+        if qa["ags"] != ags:
+            raise SystemExit(f"{qa_path} belongs to {qa['ags']}, not {ags}")
+        mismatch = {key: qa["parameters"].get(key) for key, value in expected.items()
+                    if not math.isclose(float(qa["parameters"].get(key, math.nan)), value, rel_tol=1e-9)}
+        if mismatch:
+            raise SystemExit(f"{qa_path}: parameters {mismatch} are not the pre-registered {expected}")
+        rule = gpd.read_file(directory / f"{ags}_supply_zones_{tag}.geojson")
+        rule = (rule.set_crs("EPSG:4326") if rule.crs is None else rule).to_crs(cc.METRIC_CRS)
+        raster = pd.read_csv(directory / f"{ags}_paid_share_{tag}.csv.gz")
+        arms = {}
+        for arm in ss.SENSITIVITY_ARMS:
+            arm_path = directory / f"{ags}_supply_qa_{arm.tag()}.json"
+            if arm_path.is_file():
+                arms[arm.tag()] = json.loads(arm_path.read_text(encoding="utf-8"))
+        supply[ags] = {"qa": qa, "rule": rule, "raster": raster, "arms": arms}
+    sources = {(entry["qa"]["extract"]["md5"], entry["qa"]["osm_timestamp"]) for entry in supply.values()}
+    if len(sources) > 1:
+        raise SystemExit(f"the towns were read from different extracts or snapshots {sorted(sources)}")
+    return supply
+
+
+def supply_b5(supply: dict) -> bool:
+    """The pre-registered gate B5 re-applied to the Braunschweig metrics (``supply_share.passes_validation``); refuses
+    inputs without metrics or whose recorded decision contradicts them."""
+    entry = supply.get(BS_AGS)
+    validation = (entry or {}).get("qa", {}).get("validation")
+    if not validation:
+        raise SystemExit(f"{BS_AGS}: no B5 metrics; run the builder with --legal-zones, --reference {BS_AGS}=<annex>, "
+                         "--annex-affine and --annex-image")
+    passed = ss.passes_validation(validation)
+    if bool(validation.get("passes")) != passed:
+        raise SystemExit(f"{BS_AGS}: the recorded B5 decision {validation.get('passes')} contradicts recall "
+                         f"{validation.get('recall')} and precision {validation.get('precision')}")
+    print(f"B5 (pre-registered, minimum {ss.VALIDATION_MINIMUM:.2f}): recall {validation['recall']:.3f}, precision "
+          f"{validation['precision']:.3f}: {'passed, B6 applies' if passed else 'FAILED, nothing is applied'}")
+    return passed
+
+
+def supply_rule(entry: Optional[dict]):
+    """Union of the rule polygons of one town (EPSG:25832), or None when there is none."""
+    if not entry or not len(entry["rule"]):
+        return None
+    return unary_union(list(entry["rule"].geometry))
+
+
+def supply_note(qa: dict, *, replaces: str, assignment: str = "") -> str:
+    """The digitising note of an osm_supply_majority polygon: rule, parameters, supply, extract and the QA row."""
+    p, s = qa["parameters"], qa["supply"]
+    classes = s["elements_by_class"]
+    heuristic = s["heuristic_capacity_share"]
+    return (f"Majority rule over the public parking supply (parking cost zones v2, spec Amendment B; "
+            f"braunschweig.parking.supply_share, scripts/build_parking_zones_from_osm.py --supply-share): a "
+            f"{p['cell_m']:.0f} m cell is paid when at least {p['minimum_usable_spaces']:.0f} usable spaces lie within "
+            f"W = {p['walk_m']:.0f} m of its centre and at least {p['share_threshold']:.2f} of them are paid or "
+            f"restricted; the paid cells united, smoothed +/-{p['smoothing_m']:.1f} m, parts below "
+            f"{p['minimum_island_m2']:.0f} m2 dropped (rule {qa['rule']['area_m2']:.0f} m2 in {qa['rule']['parts']} "
+            f"part{'' if qa['rule']['parts'] == 1 else 's'}). Supply of the Geofabrik extract {qa['extract']['file']} "
+            f"(MD5 {qa['extract']['md5']}, OSM snapshot {qa['osm_timestamp']}; box {qa['bbox']}): {s['elements']} "
+            f"elements ({classes['paid']} paid, {classes['restricted']} restricted, {classes['free']} free, "
+            f"{classes['excluded']} excluded), {s['usable_spaces']:.0f} usable spaces, "
+            f"{100.0 * (heuristic if heuristic is not None else math.nan):.1f} % of them from the capacity heuristic "
+            f"B-d. Pre-registered validation B5 passed in Braunschweig. " + (assignment + " " if assignment else "")
+            + replaces + f" QA row {qa['ags']} of parking_zones_2026_supply_share_qa.csv.")
+
+
+def supply_zone(zone_id, ags, geometry, source_url, qa, *, replaces, assignment="") -> dict:
+    """An osm_supply_majority zone record with the rule provenance (W, share threshold, minimum supply, snapshot)."""
+    p = qa["parameters"]
+    return zone_record(zone_id, ags, geometry, pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE, source_url,
+                       supply_note(qa, replaces=replaces, assignment=assignment), osm_timestamp=qa["osm_timestamp"],
+                       source_date=SUPPLY_DIGITISED_ON, digitised_on=SUPPLY_DIGITISED_ON,
+                       minimum_part_m2=float(p["minimum_island_m2"]), supply_walk_m=float(p["walk_m"]),
+                       paid_share_threshold=float(p["share_threshold"]),
+                       minimum_usable_spaces=float(p["minimum_usable_spaces"]))
+
+
+def supply_replacement(zone_id, ags, url, what, supply: dict, b5_passed: bool) -> Optional[dict]:
+    """The osm_supply_majority polygon that replaces the v1 centre approximation ``zone_id`` (B6: Goslar,
+    Wolfenbuettel, Gifhorn), or None when B5 failed, ``ags`` may not replace polygons or its rule is empty."""
+    if not b5_passed or EROSION_ZONES_FROM_CORE.get(ags) != zone_id:
+        return None
+    entry = supply.get(ags)
+    rule = supply_rule(entry)
+    if rule is None:
+        return None
+    return supply_zone(zone_id, ags, rule, url, entry["qa"], replaces=(
+        "Replaces the v1 centre approximation of 2026-09-29 (" + what + ", buffered 40 m, from the car network of the "
+        "local MATSim scenario because the fee request of that day failed with HTTP 504); the tariff row is unchanged."))
+
+
+def _share(value, digits=6) -> str:
+    if value is None or (isinstance(value, float) and not math.isfinite(value)):
+        return ""
+    return f"{value:.{digits}f}"
+
+
+def cross_check_text(cross: dict, extract_timestamp: str) -> str:
+    """The QA column cross_check: per kind and class 'extract/Overpass (difference)' and the two snapshots."""
+    clauses = []
+    for kind in ss.ELEMENT_KINDS:
+        parts = []
+        for name in ss.SUPPLY_CLASSES:
+            extract, overpass = cross["extract"][kind][name], cross["overpass"][kind][name]
+            parts.append(f"{name} {extract}/{overpass}" + (f" ({extract - overpass:+d})" if extract != overpass else ""))
+        clauses.append(f"{kind}: " + ", ".join(parts))
+    return ("extract/Overpass: " + "; ".join(clauses) + f"; snapshots extract {extract_timestamp}, Overpass "
+            f"{cross['overpass_osm_timestamp']}")
+
+
+def sensitivity_text(entry: dict, *, with_b5: bool) -> str:
+    """The QA column sensitivity: per arm the rule area and, in Braunschweig, recall and precision."""
+    clauses = []
+    for arm, label in zip(ss.SENSITIVITY_ARMS, SENSITIVITY_LABELS):
+        qa = entry["arms"].get(arm.tag())
+        if qa is None:
+            clauses.append(f"{label}: not run")
+            continue
+        text = f"{label}: rule {qa['rule']['area_m2']:.0f} m2 in {qa['rule']['parts']} parts"
+        if with_b5 and qa.get("validation"):
+            text += f", recall {qa['validation']['recall']:.3f}, precision {qa['validation']['precision']:.3f}"
+        clauses.append(text)
+    return "; ".join(clauses) + " (information only)"
+
+
+def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_zones, decision: str,
+                  note: str) -> dict:
+    """One row of the committed supply-share QA table (``supply_share.SUPPLY_SHARE_QA_COLUMNS``)."""
+    qa = entry["qa"]
+    p, s, cross, raster = qa["parameters"], qa["supply"], qa["cross_check"], qa["raster"]
+    compared = qa.get("reference") or {}
+    by_kind = s["elements_by_kind_and_class"]
+    usable = s["usable_spaces"]
+    row = {column: "" for column in ss.SUPPLY_SHARE_QA_COLUMNS}
+    row.update({
+        "ags": ags, "name": MUNICIPALITY_NAMES[ags], "role": role, "osm_extract": qa["extract"]["file"],
+        "osm_extract_md5": qa["extract"]["md5"], "osm_timestamp": qa["osm_timestamp"],
+        "walk_m": _number(p["walk_m"], 1), "share_threshold": _number(p["share_threshold"], 3),
+        "minimum_usable_spaces": _number(p["minimum_usable_spaces"], 1), "cell_m": _number(p["cell_m"], 1),
+        "smoothing_m": _number(p["smoothing_m"], 1), "minimum_island_m2": _number(p["minimum_island_m2"], 1),
+        "street_ways": str(int(qa["street_ways"])), "street_side_areas": str(sum(by_kind["street_side_area"].values())),
+        "offstreet_lots": str(sum(by_kind["lot"].values())),
+        "overpass_response": cross["overpass_response"], "overpass_osm_timestamp": cross["overpass_osm_timestamp"],
+        "cross_check": cross_check_text(cross, qa["osm_timestamp"]),
+        "usable_spaces": _number(usable, 1), "tagged_capacity_share": _share(s["tagged_spaces"] / usable if usable
+                                                                             else None),
+        "heuristic_capacity_share": _share(s["heuristic_capacity_share"]),
+        "free_street_spaces_without_fee_tag_share": _share(s["free_street_spaces_without_fee_tag_share"]),
+        "offstreet_lots_without_fee_tag": str(int(s["offstreet_lots_without_fee_tag"])),
+        "cells": str(int(raster["cells"])), "classified_cells": str(int(raster["classified_cells"])),
+        "classified_cell_share": _share(raster["classified_cell_share"]), "paid_cells": str(int(raster["paid_cells"])),
+        "rule_area_m2": _number(qa["rule"]["area_m2"], 1), "rule_parts": str(int(qa["rule"]["parts"])),
+        "reference": reference, "rule_share_inside_reference": _share(compared.get("core_share_inside_reference")),
+        "reference_share_covered_by_rule": _share(compared.get("reference_share_covered")),
+        "largest_outline_distance_m": _number(compared.get("largest_outline_distance_m"), 1),
+        "sensitivity": sensitivity_text(entry, with_b5=ags == BS_AGS), "applied": "true" if applied_zones else "false",
+        "zone_ids": ";".join(applied_zones), "decision": decision, "note": note})
+    for name in ss.SUPPLY_CLASSES:
+        row[f"{name}_elements"] = str(int(s["elements_by_class"][name]))
+        row[f"overpass_{name}_elements"] = str(sum(int(cross["overpass"][kind][name]) for kind in ss.ELEMENT_KINDS))
+    for name in ss.USABLE_CLASSES:
+        row[f"{name}_spaces"] = _number(s["spaces_by_class"][name], 1)
+    if ags == BS_AGS and qa.get("validation"):
+        validation = qa["validation"]
+        row.update({"b5_recall": _share(validation["recall"]), "b5_precision": _share(validation["precision"]),
+                    "b5_passed": "true" if ss.passes_validation(validation) else "false"})
+    return row
+
+
+def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool) -> list:
+    """One supply-share QA row per town of ``supply`` (``EROSION_ZONES_FROM_CORE``, ``EROSION_QA_ONLY`` order)."""
+    by_id = {z["zone_id"]: z for z in zones}
+    order = [ags for ags in list(EROSION_ZONES_FROM_CORE) + list(EROSION_QA_ONLY) if ags in supply]
+    rows = []
+    for ags in order:
+        entry = supply[ags]
+        role = "zones_from_rule" if ags in EROSION_ZONES_FROM_CORE else "qa_only"
+        applied = sorted(z["zone_id"] for z in zones
+                         if z["_ags"] == ags and z["geometry_source"] == pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE)
+        zone_id = EROSION_ZONES_FROM_CORE.get(ags) or EROSION_QA_ONLY.get(ags)
+        if role == "qa_only":
+            decision = "qa_only"
+        elif not b5_passed:
+            decision = "b5_failed"
+        else:
+            decision = "applied" if applied else "no_rule_polygon"
+        notes = []
+        if ags == BS_AGS:
+            reference = ANNEX_REFERENCE
+            validation = entry["qa"].get("validation") or {}
+            notes.append(f"B5 (pre-registered: recall and precision >= {ss.VALIDATION_MINIMUM:.2f} with the defaults): "
+                         f"recall {validation.get('recall', math.nan):.3f}, precision "
+                         f"{validation.get('precision', math.nan):.3f}: {'passed' if b5_passed else 'failed'}")
+        elif role == "zones_from_rule":
+            reference = f"v1 polygon {zone_id} (centre_approximation, replaced where the rule is applied)"
+        else:
+            reference = f"v1 polygon {zone_id} ({by_id[zone_id]['geometry_source'] if zone_id in by_id else 'absent'})"
+        if decision == "b5_failed":
+            notes.append("B6 not applied in any town because B5 failed in Braunschweig; " + (
+                "ParkGO zone II and the southern part of zone Ia stay unzoned" if ags == BS_AGS else
+                f"the v1 centre approximation {zone_id} stays"))
+        elif decision == "applied" and ags == BS_AGS:
+            notes.append("the rule pieces left after the v1 zones are assigned whole to the annex zone they overlap "
+                         "most (ruling R-T1-f): " + piece_assignment_text(
+                             pieces, float(entry["qa"]["parameters"]["minimum_island_m2"])))
+        elif decision == "applied":
+            notes.append(f"the rule polygons replace the v1 centre approximation {zone_id} (tariff row unchanged)")
+        elif decision == "no_rule_polygon":
+            notes.append("B5 passed but no rule polygon is left to apply" + (
+                ": " + piece_assignment_text(pieces, float(entry["qa"]["parameters"]["minimum_island_m2"]))
+                if ags == BS_AGS and pieces else f"; the v1 polygon {zone_id} stays"))
+        else:
+            notes.append(f"QA only (spec Amendment B6): the v1 polygon {zone_id} stays")
+        supply_numbers = entry["qa"]["supply"]
+        share = supply_numbers["free_street_spaces_without_fee_tag_share"]
+        if share is not None:
+            notes.append(f"{100.0 * share:.1f} % of the free street capacity rests on a missing fee tag (ASSUMPTION B-a)")
+        # the fallbacks inside the capacity heuristic B-d, next to its rate (column heuristic_capacity_share)
+        notes.append(f"capacity: {supply_numbers['usable_elements_without_extent']} usable nodes without a capacity tag "
+                     f"carry 0 spaces, {supply_numbers['multi_storey_lots_without_levels']} of "
+                     f"{supply_numbers['multi_storey_lots']} multi-storey car parks count one level (no levels tag), "
+                     f"{supply_numbers['capacity_tags_invalid']} capacity tags are no whole number (heuristic used)")
+        rows.append(supply_qa_row(ags, entry, role=role, reference=reference, applied_zones=applied, decision=decision,
+                                  note="; ".join(notes) + "."))
+    return rows
+
+
+def write_supply_share_qa(path, rows: list) -> None:
+    """The supply-share QA table with its header: the intro and one '# <column>: <definition>' line per column."""
+    missing = [column for column in ss.SUPPLY_SHARE_QA_COLUMNS if column not in SUPPLY_QA_COLUMN_GLOSSARY]
+    if missing or len(SUPPLY_QA_COLUMN_GLOSSARY) != len(ss.SUPPLY_SHARE_QA_COLUMNS):
+        raise SystemExit(f"SUPPLY_QA_COLUMN_GLOSSARY and SUPPLY_SHARE_QA_COLUMNS differ: missing {missing}")
+    header = [f"# {line}" for line in SUPPLY_QA_INTRO] + [f"# {column}: {SUPPLY_QA_COLUMN_GLOSSARY[column]}"
+                                                           for column in ss.SUPPLY_SHARE_QA_COLUMNS]
+    table = pd.DataFrame(rows, columns=list(ss.SUPPLY_SHARE_QA_COLUMNS))
+    text = ascii_transliteration("\n".join(header) + "\n" + table.to_csv(index=False, lineterminator="\n"))
+    Path(path).write_text(text, encoding="utf-8", newline="\n")
+    print(f"written {path} with {len(table)} rows: " + ", ".join(f"{row['ags']} {row['decision']}" for row in rows))
+
+
+def paid_share_release(supply: dict) -> pd.DataFrame:
+    """B7: the classified cells of every town (``supply_share.release_frame``), ordered by AGS, validated."""
+    release = pd.concat([ss.release_frame(supply[ags]["raster"], ags) for ags in sorted(supply)], ignore_index=True)
+    ss.validate_paid_share_release(release)
+    return release
+
+
+def paid_share_provenance(supply: dict) -> list:
+    """Header lines of the release: the extract, the parameters and per town the box and the classified cells."""
+    first = supply[sorted(supply)[0]]["qa"]
+    extract, p = first["extract"], first["parameters"]
+    lines = [f"Source: the Geofabrik extract {extract['file']} ({extract.get('bytes', 'unknown')} bytes, MD5 "
+             f"{extract['md5']} checked against the Geofabrik MD5 file, SHA-256 {extract.get('sha256', 'unknown')}; "
+             f"OSM snapshot {first['osm_timestamp']}), read with the GDAL OSM driver.",
+             f"Parameters (pre-registered, spec Amendment B): cells of {p['cell_m']:.0f} m, W = {p['walk_m']:.0f} m, "
+             f"minimum_usable_spaces = {p['minimum_usable_spaces']:.0f} (B-e); the share threshold "
+             f"{p['share_threshold']:.2f} of the zone rule B4 is not applied to this file."]
+    for ags in sorted(supply):
+        qa = supply[ags]["qa"]
+        lines.append(f"{ags} {MUNICIPALITY_NAMES.get(ags, ags)}: query box {qa['bbox']} (south, west, north, east), "
+                     f"{qa['raster']['classified_cells']} of {qa['raster']['cells']} cells classified.")
+    return lines
+
+
+def write_paid_share_release(path, frame: pd.DataFrame, provenance) -> None:
+    """The B7 release as gzip CSV without a time stamp (equal content, equal bytes): the intro, the provenance lines
+    and one '# <column>: <definition>' line per column, then the cells (coordinates 0.1 m, shares 6 decimals,
+    spaces 0.01)."""
+    ss.validate_paid_share_release(frame)
+    if set(RELEASE_COLUMN_GLOSSARY) != set(ss.PAID_SHARE_RELEASE_COLUMNS):
+        raise SystemExit("RELEASE_COLUMN_GLOSSARY and PAID_SHARE_RELEASE_COLUMNS differ")
+    header = [f"# {line}" for line in list(RELEASE_INTRO) + list(provenance) + ["Columns:"]]
+    header += [f"# {column}: {RELEASE_COLUMN_GLOSSARY[column]}" for column in ss.PAID_SHARE_RELEASE_COLUMNS]
+    body = pd.DataFrame({"x_m": [f"{value:.1f}" for value in frame["x_m"]],
+                         "y_m": [f"{value:.1f}" for value in frame["y_m"]],
+                         "municipality_ags": frame["municipality_ags"].astype(str),
+                         "paid_share": [f"{value:.6f}" for value in frame["paid_share"]],
+                         "usable_spaces": [f"{value:.2f}" for value in frame["usable_spaces"]],
+                         "heuristic_capacity_share": [f"{value:.6f}" for value in frame["heuristic_capacity_share"]]})
+    text = ascii_transliteration("\n".join(header) + "\n" + body.to_csv(index=False, lineterminator="\n"))
+    Path(path).write_bytes(ss.deterministic_gzip(text))
+    counts = frame["municipality_ags"].value_counts().sort_index()
+    print(f"written {path} with {len(frame)} classified cells: " + ", ".join(f"{ags} {count}"
+                                                                             for ags, count in counts.items()))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--ia-ib", required=True)
@@ -637,9 +1093,18 @@ def main(argv=None) -> int:
     parser.add_argument("--qa-out", help="v2 lever 1: the QA table to write (parking_zones_2026_qa.csv)")
     parser.add_argument("--counterfactual-qa", action="append", default=[],
                         help="v2 lever 1: QA file of a --all-kerbside-streets-regulated run, cited in the note")
+    parser.add_argument("--supply-share-dir", help="v2 Amendment B: directory with <ags>_supply_qa_<tag>.json, "
+                                                   "<ags>_supply_zones_<tag>.geojson and <ags>_paid_share_<tag>.csv.gz "
+                                                   "of the pre-registered parameters")
+    parser.add_argument("--supply-qa-out", help="v2 Amendment B: the QA table to write "
+                                                "(parking_zones_2026_supply_share_qa.csv)")
+    parser.add_argument("--paid-share-out", help="v2 Amendment B7: the release of the classified cells to write "
+                                                 "(parking_paid_share_2026.csv.gz)")
     args = parser.parse_args(argv)
     if args.erosion_dir and not (args.reference_outline and args.qa_out):
         raise SystemExit("--erosion-dir needs --reference-outline and --qa-out")
+    if args.supply_share_dir and not (args.reference_outline and args.supply_qa_out and args.paid_share_out):
+        raise SystemExit("--supply-share-dir needs --reference-outline, --supply-qa-out and --paid-share-out")
     zones = []
 
     def add(zone_id, ags, geometry, geometry_source, source_url, note):
@@ -651,6 +1116,14 @@ def main(argv=None) -> int:
         erosion = load_erosion_inputs(args.erosion_dir)
         counterfactuals = load_counterfactuals(args.counterfactual_qa)
         annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
+
+    # ---------------------------------------------------------------- v2 Amendment B: majority rule (issue #436)
+    supply, b5_passed = {}, False
+    if args.supply_share_dir:
+        supply = load_supply_inputs(args.supply_share_dir)
+        b5_passed = supply_b5(supply)
+        if annex_zones is None:
+            annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
 
     responses = {ags: cc.overpass_response(args.raw_overpass, ags)
                  for ags in ("03101000", "03102000", "03103000", "03154028", "03157006")}
@@ -845,6 +1318,10 @@ def main(argv=None) -> int:
              "Gifhorn centre around the pedestrian zone Steinweg (Schillerplatz, Torstrasse) with the municipal car parks "
              "Hindenburgstrasse and Schottische Muehle (access Cardenap): convex hull of these car-network ways")):
         replacement = erosion_replacement(zone_id, ags, url, what, erosion)
+        supplied = supply_replacement(zone_id, ags, url, what, supply, b5_passed)
+        if replacement is not None and supplied is not None:
+            raise SystemExit(f"{zone_id}: an accepted erosion core and the supply rule would both replace it")
+        replacement = replacement if replacement is not None else supplied
         if replacement is not None:
             zones.append(replacement)
             continue
@@ -869,6 +1346,14 @@ def main(argv=None) -> int:
         zones += records
         print("Braunschweig core pieces:", piece_assignment_text(
             pieces, float(erosion[BS_AGS]["qa"]["parameters"]["minimum_island_m2"])))
+    supply_pieces = []
+    bs_rule = supply_rule(supply.get(BS_AGS)) if b5_passed else None
+    if bs_rule is not None:
+        records, supply_pieces = assign_braunschweig_pieces(bs_rule, zones, annex_zones, supply[BS_AGS]["qa"],
+                                                            zone_factory=supply_zone, noun="rule polygons")
+        zones += records
+        print("Braunschweig rule pieces:", piece_assignment_text(
+            supply_pieces, float(supply[BS_AGS]["qa"]["parameters"]["minimum_island_m2"])))
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
     ars = municipalities["commune_id"].astype(str)
@@ -887,6 +1372,9 @@ def main(argv=None) -> int:
     print(f"written {out} with {len(frame)} zones")
     if args.erosion_dir:
         write_qa_table(args.qa_out, qa_table_rows(erosion, zones, pieces, counterfactuals))
+    if args.supply_share_dir:
+        write_supply_share_qa(args.supply_qa_out, supply_qa_rows(supply, zones, supply_pieces, b5_passed))
+        write_paid_share_release(args.paid_share_out, paid_share_release(supply), paid_share_provenance(supply))
     return 0
 
 

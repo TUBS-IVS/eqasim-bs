@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written test fixture for the supply-share mode of scripts/build_parking_zones_from_osm.py (issue #436):
+     synthetic test data, not OpenStreetMap content. Ways 501-505 and the lots 601 and 602 repeat the elements of
+     overpass_regulation_fixture.json (same ids, tags and coordinates), so the Overpass cross-check has known
+     differences: the street-side area 603, the service way 507, the node lot 700 and the multi-storey car park 800
+     exist only here. The footway 506 (no parking key), the street 508 (outside the box) and the building 900 must not
+     be read. -->
+<osm version="0.6" generator="hand-written fixture">
+  <node id="1" lat="52.26" lon="10.52"/>
+  <node id="2" lat="52.26" lon="10.523"/>
+  <node id="3" lat="52.261" lon="10.52"/>
+  <node id="4" lat="52.261" lon="10.523"/>
+  <node id="5" lat="52.262" lon="10.52"/>
+  <node id="6" lat="52.262" lon="10.523"/>
+  <node id="7" lat="52.263" lon="10.52"/>
+  <node id="8" lat="52.263" lon="10.523"/>
+  <node id="9" lat="52.264" lon="10.52"/>
+  <node id="10" lat="52.264" lon="10.523"/>
+  <node id="11" lat="52.265" lon="10.52"/>
+  <node id="12" lat="52.265" lon="10.5206"/>
+  <node id="13" lat="52.2654" lon="10.5206"/>
+  <node id="14" lat="52.2654" lon="10.52"/>
+  <node id="15" lat="52.265" lon="10.522"/>
+  <node id="16" lat="52.265" lon="10.5226"/>
+  <node id="17" lat="52.2654" lon="10.5226"/>
+  <node id="18" lat="52.2654" lon="10.522"/>
+  <node id="19" lat="52.2605" lon="10.5205"/>
+  <node id="20" lat="52.2605" lon="10.5215"/>
+  <node id="21" lat="52.26055" lon="10.5215"/>
+  <node id="22" lat="52.26055" lon="10.5205"/>
+  <node id="23" lat="52.2625" lon="10.5205"/>
+  <node id="24" lat="52.2625" lon="10.5225"/>
+  <node id="25" lat="52.2635" lon="10.5205"/>
+  <node id="26" lat="52.2635" lon="10.5225"/>
+  <node id="27" lat="52.30" lon="10.52"/>
+  <node id="28" lat="52.30" lon="10.523"/>
+  <node id="29" lat="52.2645" lon="10.5215">
+    <tag k="amenity" v="parking"/>
+    <tag k="fee" v="no"/>
+    <tag k="capacity" v="12"/>
+  </node>
+  <node id="30" lat="52.2656" lon="10.523"/>
+  <node id="31" lat="52.2656" lon="10.5234"/>
+  <node id="32" lat="52.2659" lon="10.5234"/>
+  <node id="33" lat="52.2659" lon="10.523"/>
+  <node id="34" lat="52.2597" lon="10.5222"/>
+  <node id="35" lat="52.2597" lon="10.5224"/>
+  <node id="36" lat="52.2598" lon="10.5224"/>
+  <node id="37" lat="52.2598" lon="10.5222"/>
+  <way id="501">
+    <nd ref="1"/><nd ref="2"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Fixture Paid Street"/>
+    <tag k="parking:both" v="lane"/>
+    <tag k="parking:both:fee" v="yes"/>
+  </way>
+  <way id="502">
+    <nd ref="3"/><nd ref="4"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Fixture Resident Street"/>
+    <tag k="parking:lane:both" v="parallel"/>
+    <tag k="parking:condition:both" v="residents"/>
+  </way>
+  <way id="503">
+    <nd ref="5"/><nd ref="6"/>
+    <tag k="highway" v="tertiary"/>
+    <tag k="name" v="Fixture No Stopping Street"/>
+    <tag k="parking:both" v="no"/>
+    <tag k="parking:both:restriction" v="no_stopping"/>
+  </way>
+  <way id="504">
+    <nd ref="7"/><nd ref="8"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Fixture Free Street"/>
+    <tag k="parking:both" v="lane"/>
+    <tag k="parking:both:fee" v="no"/>
+  </way>
+  <way id="505">
+    <nd ref="9"/><nd ref="10"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Fixture Untagged Street"/>
+  </way>
+  <way id="506">
+    <nd ref="25"/><nd ref="26"/>
+    <tag k="highway" v="footway"/>
+  </way>
+  <way id="507">
+    <nd ref="23"/><nd ref="24"/>
+    <tag k="highway" v="service"/>
+    <tag k="parking:right" v="lane"/>
+    <tag k="description" v="Fixture &quot;quoted&quot;, with a comma"/>
+  </way>
+  <way id="508">
+    <nd ref="27"/><nd ref="28"/>
+    <tag k="highway" v="residential"/>
+    <tag k="parking:both" v="lane"/>
+  </way>
+  <way id="601">
+    <nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="14"/><nd ref="11"/>
+    <tag k="amenity" v="parking"/>
+    <tag k="fee" v="yes"/>
+    <tag k="parking" v="surface"/>
+    <tag k="name" v="Fixture paid lot"/>
+  </way>
+  <way id="602">
+    <nd ref="15"/><nd ref="16"/><nd ref="17"/><nd ref="18"/><nd ref="15"/>
+    <tag k="amenity" v="parking"/>
+    <tag k="access" v="customers"/>
+    <tag k="fee" v="no"/>
+    <tag k="name" v="Fixture customer lot"/>
+  </way>
+  <way id="603">
+    <nd ref="19"/><nd ref="20"/><nd ref="21"/><nd ref="22"/><nd ref="19"/>
+    <tag k="amenity" v="parking"/>
+    <tag k="parking" v="street_side"/>
+  </way>
+  <way id="801">
+    <nd ref="30"/><nd ref="31"/><nd ref="32"/><nd ref="33"/><nd ref="30"/>
+  </way>
+  <way id="900">
+    <nd ref="34"/><nd ref="35"/><nd ref="36"/><nd ref="37"/><nd ref="34"/>
+    <tag k="building" v="yes"/>
+  </way>
+  <relation id="800">
+    <member type="way" ref="801" role="outer"/>
+    <tag k="type" v="multipolygon"/>
+    <tag k="amenity" v="parking"/>
+    <tag k="parking" v="multi-storey"/>
+    <tag k="fee" v="yes"/>
+    <tag k="building:levels" v="3"/>
+  </relation>
+</osm>

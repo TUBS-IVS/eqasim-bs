@@ -10,8 +10,14 @@ size against the municipality universe of the pipeline (``--expected-municipalit
 rule-based cores (``--qa-path``, ``parking_zones_2026_qa.csv``; required as soon as a polygon has geometry_source
 ``osm_fee_erosion``): ``braunschweig.parking.zones.validate_zone_qa`` against the polygons, plus the pre-registered
 acceptance rule Q4 (``braunschweig.parking.zone_geometry.core_acceptance``) re-applied to every row that has a
-response. Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the
-register status counts and the QA decisions; exits 1 on any violation, 0 otherwise.
+response. The QA table of the majority rule over the parking supply (``--supply-qa-path``,
+``parking_zones_2026_supply_share_qa.csv``; spec Amendment B; required as soon as a polygon has geometry_source
+``osm_supply_majority``): ``braunschweig.parking.supply_share.validate_supply_share_qa`` against the polygons, the
+pre-registered parameters on every row and the pre-registered gate B5 re-applied to the Braunschweig row (the recorded
+``b5_passed`` and every decision must follow from recall and precision); and, when present, the release of the
+classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``, ``supply_share.load_paid_share_release``).
+Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the register
+status counts, the QA decisions and the B5 result; exits 1 on any violation, 0 otherwise.
 
 Usage::
 
@@ -27,6 +33,7 @@ from pathlib import Path
 
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import supply_share  # noqa: E402
 from braunschweig.parking import tariff_export  # noqa: E402
 from braunschweig.parking import zone_geometry  # noqa: E402
 from braunschweig.parking import zones as pz  # noqa: E402
@@ -35,6 +42,8 @@ DEFAULT_ZONES_PATH = "braunschweig/parking/parking_zones_2026.geojson"
 DEFAULT_TARIFFS_PATH = "braunschweig/parking/parking_tariffs_2026.csv"
 DEFAULT_REGISTER_PATH = "braunschweig/parking/parking_coverage_register_2026.csv"
 DEFAULT_QA_PATH = "braunschweig/parking/parking_zones_2026_qa.csv"
+DEFAULT_SUPPLY_QA_PATH = "braunschweig/parking/parking_zones_2026_supply_share_qa.csv"
+DEFAULT_PAID_SHARE_PATH = "braunschweig/parking/parking_paid_share_2026.csv.gz"
 #: The spatial units of data.spatial.municipalities for the eight ZGB counties (113 Gemeinden and 10 gemeindefreie
 #: Gebiete, VG250 as cached by the pipeline); the register must carry exactly one status row for each.
 DEFAULT_EXPECTED_MUNICIPALITY_COUNT = 123
@@ -90,6 +99,36 @@ def check_zone_qa(qa, zones, tariffs) -> None:
                          + "\n  ".join(problems))
 
 
+def check_supply_share_qa(qa, zones, tariffs) -> None:
+    """``supply_share.validate_supply_share_qa`` plus the pre-registered parameters on every row (a sensitivity arm
+    never stands in for the pre-registered run) and the pre-registered gate B5 re-applied: the recorded ``b5_passed``
+    of the Braunschweig row and the decision of every ``zones_from_rule`` row must follow from its recall and
+    precision; raise ``ValueError``."""
+    supply_share.validate_supply_share_qa(qa, zones, tariffs)
+    problems = []
+    pre_registered = supply_share.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
+    for _, row in qa.iterrows():
+        for column, parameter in supply_share.QA_PARAMETER_COLUMNS.items():
+            expected = pre_registered[parameter]
+            if not math.isclose(float(row[column]), expected, rel_tol=1e-9):
+                problems.append(f"ags {row['ags']}: {column} = {row[column]} is not the pre-registered {expected:g}")
+    b5 = qa[qa["ags"] == supply_share.B5_MUNICIPALITY_AGS].iloc[0]
+    passed = supply_share.passes_validation({"recall": float(b5["b5_recall"]), "precision": float(b5["b5_precision"])})
+    gate = "true" if passed else "false"
+    if b5["b5_passed"] != gate:
+        problems.append(f"ags {b5['ags']}: b5_passed {b5['b5_passed']!r} but the B5 gate gives {gate!r} (recall "
+                        f"{b5['b5_recall']}, precision {b5['b5_precision']}, minimum "
+                        f"{supply_share.VALIDATION_MINIMUM:.2f})")
+    allowed = ("applied", "no_rule_polygon") if passed else ("b5_failed",)
+    for _, row in qa[qa["role"] == "zones_from_rule"].iterrows():
+        if row["decision"] not in allowed:
+            problems.append(f"ags {row['ags']}: decision {row['decision']!r} although B5 "
+                            f"{'passed' if passed else 'failed'} (allowed {list(allowed)})")
+    if problems:
+        raise ValueError("supply-share QA table contradicts the pre-registered parameters or the B5 gate:\n  "
+                         + "\n  ".join(problems))
+
+
 def _print_geometry_source_mix(zones) -> None:
     areas = zones.geometry.area.groupby(zones["geometry_source"]).agg(["count", "sum"]).sort_index()
     total = float(areas["sum"].sum())
@@ -99,7 +138,8 @@ def _print_geometry_source_mix(zones) -> None:
 
 
 def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path: str,
-             expected_municipality_count: int, qa_path: str = DEFAULT_QA_PATH) -> None:
+             expected_municipality_count: int, qa_path: str = DEFAULT_QA_PATH,
+             supply_qa_path: str = DEFAULT_SUPPLY_QA_PATH, paid_share_path: str = DEFAULT_PAID_SHARE_PATH) -> None:
     """Run every check; raise ``ValueError`` on the first failing group and print the coverage summary."""
     tariffs = pz.load_tariffs(data_path / tariffs_path)
     pz.validate_tariffs(tariffs, allow_fixture_marker=False)
@@ -125,6 +165,17 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         check_zone_qa(qa, zones, tariffs)
     elif eroded:
         raise ValueError(f"{len(eroded)} osm_fee_erosion zone(s) {eroded} but no zone QA table at {qa_file}")
+    supply_file = data_path / supply_qa_path
+    majority = sorted(zones.loc[zones["geometry_source"] == pz.SUPPLY_MAJORITY_GEOMETRY_SOURCE, "zone_id"])
+    supply_qa = None
+    if supply_file.is_file():
+        supply_qa = supply_share.load_supply_share_qa(supply_file)
+        check_supply_share_qa(supply_qa, zones, tariffs)
+    elif majority:
+        raise ValueError(f"{len(majority)} osm_supply_majority zone(s) {majority} but no supply-share QA table at "
+                         f"{supply_file}")
+    release_file = data_path / paid_share_path
+    release = supply_share.load_paid_share_release(release_file) if release_file.is_file() else None
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6
@@ -148,6 +199,18 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
         applied = qa[qa["applied"] == "true"]
         print(f"[parking-validate] zone QA: {len(qa)} municipalities, applied {len(applied)}: " + (", ".join(
             f"{row['ags']} ({row['zone_ids']})" for _, row in applied.iterrows()) or "none"))
+    if supply_qa is None:
+        print(f"[parking-validate] supply-share QA: no table at {supply_file} (no osm_supply_majority zones)")
+    else:
+        b5 = supply_qa[supply_qa["ags"] == supply_share.B5_MUNICIPALITY_AGS].iloc[0]
+        decisions = supply_qa["decision"].value_counts().reindex(supply_share.SUPPLY_SHARE_DECISIONS, fill_value=0)
+        print(f"[parking-validate] supply-share QA: {len(supply_qa)} towns, B5 recall {b5['b5_recall']}, precision "
+              f"{b5['b5_precision']}, passed {b5['b5_passed']}; decision " + ", ".join(
+                  f"{name} {count}" for name, count in decisions.items()))
+    if release is not None:
+        counts = release["municipality_ags"].value_counts().sort_index()
+        print(f"[parking-validate] paid-share release: {len(release)} classified cells (" + ", ".join(
+            f"{ags} {count}" for ags, count in counts.items()) + ")")
 
 
 def main(argv=None) -> int:
@@ -158,11 +221,15 @@ def main(argv=None) -> int:
     parser.add_argument("--register-path", default=DEFAULT_REGISTER_PATH, help="relative to --data-path")
     parser.add_argument("--expected-municipality-count", type=int, default=DEFAULT_EXPECTED_MUNICIPALITY_COUNT)
     parser.add_argument("--qa-path", default=DEFAULT_QA_PATH, help="zone QA table, relative to --data-path")
+    parser.add_argument("--supply-qa-path", default=DEFAULT_SUPPLY_QA_PATH,
+                        help="supply-share QA table (spec Amendment B), relative to --data-path")
+    parser.add_argument("--paid-share-path", default=DEFAULT_PAID_SHARE_PATH,
+                        help="release of the classified cells (spec Amendment B7), relative to --data-path")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     try:
         validate(Path(args.data_path), args.zones_path, args.tariffs_path, args.register_path,
-                 args.expected_municipality_count, args.qa_path)
+                 args.expected_municipality_count, args.qa_path, args.supply_qa_path, args.paid_share_path)
     except (ValueError, FileNotFoundError) as error:
         print(f"[parking-validate] FAILED: {error}")
         return 1

@@ -19,7 +19,10 @@ Polygons built by the rule-based construction of parking cost zones v2 (lever 1,
 the walking tolerance ``unavoidable_walk_m`` and the OSM snapshot ``osm_timestamp`` of the Overpass response
 (``EROSION_PROVENANCE_COLUMNS``). Their curation QA is the committed table ``parking_zones_2026_qa.csv``
 (``ZONE_QA_COLUMNS``, one row per curated municipality), cross-checked against the polygons by
-``validate_zone_qa``; it is not a release input of the synpp stage.
+``validate_zone_qa``; it is not a release input of the synpp stage. Polygons of the majority rule over the parking
+supply (spec Amendment B; ``braunschweig.parking.supply_share``) carry ``geometry_source`` ``osm_supply_majority`` and,
+for that source only, the walk distance, the share threshold, the minimum supply and the OSM snapshot of the extract
+(``SUPPLY_MAJORITY_PROVENANCE_COLUMNS``); their QA table is checked by ``supply_share.validate_supply_share_qa``.
 
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is
@@ -102,14 +105,23 @@ PAIRED_FIELDS = (("first_period_min", "first_period_eur"), ("max_stay_min", "lon
 FEE_WINDOW_SOURCES = ("ordinance", "signage", "municipal_page", "assumption")
 #: Rule-based core of v2 lever 1 (``braunschweig.parking.zone_geometry``): erode(fill(R), W) minus buffer(F, W).
 EROSION_GEOMETRY_SOURCE = "osm_fee_erosion"
+#: Majority rule of v2 Amendment B (``braunschweig.parking.supply_share``): paid_share of the supply within W.
+SUPPLY_MAJORITY_GEOMETRY_SOURCE = "osm_supply_majority"
 GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
-                    EROSION_GEOMETRY_SOURCE)
+                    EROSION_GEOMETRY_SOURCE, SUPPLY_MAJORITY_GEOMETRY_SOURCE)
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
 ZONE_PROVENANCE_COLUMNS = ("geometry_source", "source_url", "source_date", "digitised_on", "digitising_note")
 #: Required for ``osm_fee_erosion`` polygons only (empty on every other source): the walking tolerance W in metres
 #: and the OSM snapshot of the Overpass response ('YYYY-MM-DDTHH:MM:SSZ', UTC).
 EROSION_PROVENANCE_COLUMNS = ("unavoidable_walk_m", "osm_timestamp")
+#: Required for ``osm_supply_majority`` polygons only: the walk distance W in metres, the paid-share threshold (a
+#: share in (0, 1]), the minimum usable supply of a classified cell in spaces and the OSM snapshot of the extract.
+SUPPLY_MAJORITY_PROVENANCE_COLUMNS = ("supply_walk_m", "paid_share_threshold", "minimum_usable_spaces",
+                                      "osm_timestamp")
+#: Provenance columns per rule-based source; a column is required on the sources that list it and empty elsewhere.
+RULE_PROVENANCE_COLUMNS = {EROSION_GEOMETRY_SOURCE: EROSION_PROVENANCE_COLUMNS,
+                           SUPPLY_MAJORITY_GEOMETRY_SOURCE: SUPPLY_MAJORITY_PROVENANCE_COLUMNS}
 
 REGISTER_COLUMNS = ("ags", "name", "status", "source", "note")
 REGISTER_STATUSES = ("zoned", "no_paid_parking_known", "not_audited", "excluded")
@@ -385,32 +397,48 @@ def _osm_timestamp_text(values: pd.Series) -> pd.Series:
                      dtype=object)
 
 
-def _erosion_provenance_problems(zones: pd.DataFrame) -> list:
-    """``EROSION_PROVENANCE_COLUMNS`` set, valid and non-empty exactly on the ``osm_fee_erosion`` polygons."""
+#: Valid range of every numeric rule provenance column: (description, test).
+_RULE_PROVENANCE_RANGES = {
+    "unavoidable_walk_m": ("a positive number of metres", lambda value: value > 0),
+    "supply_walk_m": ("a positive number of metres", lambda value: value > 0),
+    "paid_share_threshold": ("a share in (0, 1]", lambda value: 0 < value <= 1),
+    "minimum_usable_spaces": ("a number of spaces >= 0", lambda value: value >= 0),
+}
+
+
+def _rule_provenance_problems(zones: pd.DataFrame) -> list:
+    """Every column of ``RULE_PROVENANCE_COLUMNS`` set, valid and non-empty exactly on the polygons of the sources
+    that list it (``osm_timestamp`` belongs to both rule-based sources)."""
     problems = []
-    eroded = (zones["geometry_source"] == EROSION_GEOMETRY_SOURCE).to_numpy()
-    for column in EROSION_PROVENANCE_COLUMNS:
+    sources = zones["geometry_source"].to_numpy()
+    ids = zones["zone_id"].astype(str).to_numpy()
+    columns = list(dict.fromkeys(column for listed in RULE_PROVENANCE_COLUMNS.values() for column in listed))
+    for column in columns:
+        owners = [source for source, listed in RULE_PROVENANCE_COLUMNS.items() if column in listed]
+        owned = np.isin(sources, owners)
         values = zones[column] if column in zones.columns else pd.Series([None] * len(zones), index=zones.index)
         empty = np.array([not _is_set(value) or (isinstance(value, str) and not value.strip()) for value in values],
                          dtype=bool)
-        ids = zones["zone_id"].astype(str).to_numpy()
-        if (eroded & empty).any():
-            problems.append(f"{column} required for geometry_source {EROSION_GEOMETRY_SOURCE} but empty for zone(s) "
-                            f"{sorted(ids[eroded & empty])}")
-        if (~eroded & ~empty).any():
-            problems.append(f"{column} only applies to geometry_source {EROSION_GEOMETRY_SOURCE}; set for zone(s) "
-                            f"{sorted(ids[~eroded & ~empty])}")
-        if column == "unavoidable_walk_m":
-            walk = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
-            invalid = eroded & ~empty & ~(np.isfinite(walk) & (walk > 0))
+        for source in owners:
+            missing = (sources == source) & empty
+            if missing.any():
+                problems.append(f"{column} required for geometry_source {source} but empty for zone(s) "
+                                f"{sorted(ids[missing])}")
+        if (~owned & ~empty).any():
+            problems.append(f"{column} only applies to geometry_source {', '.join(owners)}; set for zone(s) "
+                            f"{sorted(ids[~owned & ~empty])}")
+        if column in _RULE_PROVENANCE_RANGES:
+            description, valid = _RULE_PROVENANCE_RANGES[column]
+            numbers = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
+            invalid = owned & ~empty & ~np.array([math.isfinite(number) and valid(number) for number in numbers],
+                                                 dtype=bool)
             if invalid.any():
-                problems.append(f"unavoidable_walk_m must be a positive number of metres for zone(s) "
-                                f"{sorted(ids[invalid])}")
+                problems.append(f"{column} must be {description} for zone(s) {sorted(ids[invalid])}")
         else:
-            invalid = eroded & ~empty & np.array([not (isinstance(value, str) and _OSM_TIMESTAMP_PATTERN.match(value))
-                                                   for value in values], dtype=bool)
+            invalid = owned & ~empty & np.array([not (isinstance(value, str) and _OSM_TIMESTAMP_PATTERN.match(value))
+                                                 for value in values], dtype=bool)
             if invalid.any():
-                problems.append(f"osm_timestamp must be the Overpass snapshot 'YYYY-MM-DDTHH:MM:SSZ' for zone(s) "
+                problems.append(f"{column} must be the OSM snapshot 'YYYY-MM-DDTHH:MM:SSZ' for zone(s) "
                                 f"{sorted(ids[invalid])}")
     return problems
 
@@ -419,9 +447,11 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
     """Load the zone polygons, reproject to EPSG:25832, repair invalid rings, validate; return the frame.
 
     Required properties per feature: ``zone_id`` and ``ZONE_PROVENANCE_COLUMNS``; ``geometry_source`` must
-    be one of ``GEOMETRY_SOURCES`` (or the test-set marker). ``osm_fee_erosion`` polygons also need
-    ``EROSION_PROVENANCE_COLUMNS`` (a positive ``unavoidable_walk_m`` and ``osm_timestamp`` as returned text
-    'YYYY-MM-DDTHH:MM:SSZ'), which every other polygon leaves empty. Other properties are kept as they are.
+    be one of ``GEOMETRY_SOURCES`` (or the test-set marker). A rule-based polygon also needs the provenance columns
+    of its source (``RULE_PROVENANCE_COLUMNS``: ``osm_fee_erosion`` a positive ``unavoidable_walk_m``,
+    ``osm_supply_majority`` a positive ``supply_walk_m``, ``paid_share_threshold`` in (0, 1] and
+    ``minimum_usable_spaces`` >= 0; both ``osm_timestamp`` as returned text 'YYYY-MM-DDTHH:MM:SSZ'), which every other
+    polygon leaves empty. Other properties are kept as they are.
     """
     path = Path(path)
     if not path.is_file():
@@ -445,7 +475,7 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
                         f"{sorted(zones.loc[unknown, 'zone_id'].astype(str))}")
     if "osm_timestamp" in zones.columns:
         zones["osm_timestamp"] = _osm_timestamp_text(zones["osm_timestamp"])
-    problems += _erosion_provenance_problems(zones)
+    problems += _rule_provenance_problems(zones)
     if problems:
         raise ValueError(f"{path}: invalid zone provenance: " + "; ".join(problems))
     zones = zones.to_crs(CRS)

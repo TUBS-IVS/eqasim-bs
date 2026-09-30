@@ -43,36 +43,72 @@ municipality whose request still fails produces no output at all (it stays uncha
 ``--offline-response`` takes a saved body instead of the network (tests); ``--from-raw`` re-processes a saved
 response without writing a raw copy. An existing raw response is never overwritten without ``--overwrite``.
 
+Supply-share mode (``--supply-share``, parking cost zones v2 spec Amendment B, issue #436): the majority rule over the
+parking supply (``braunschweig.parking.supply_share``) for several towns in one invocation, from the pinned Geofabrik
+extract instead of the Overpass API. ``--osm-extract`` is checked against its Geofabrik MD5 file first
+(``check_extract_md5``; SHA-256 recorded), the snapshot timestamp comes from the PBF header (``pbf_header``,
+``osmosis_replication_timestamp``; ``--osm-timestamp`` only for an extract without one), and each GDAL OSM layer
+(points, lines, multipolygons; ``SUPPLY_LAYER_FILTERS``) is read ONCE over the union of the ``--town
+AGS=south,west,north,east`` boxes grown by ``SUPPLY_INVENTORY_MARGIN_M`` (``read_supply_inventory``, reading time per
+layer recorded); the parking-relevant features are saved as ``supply_inventory_<extract>.gpkg`` with a metadata
+``.json``, which ``--from-inventory`` re-processes without reading the extract. Per town and parameter set
+(``SupplyShareParameters``: ``--walk-m``, ``--share-threshold``, ``--minimum-usable-spaces``; ``--sensitivity-arms``
+adds the four B5 arms, ``--skip-pre-registered`` runs only those): the supply inventory inside the query box (B1, B2;
+the raster also sees the supply up to W plus one cell beyond it), the cross-check of its element counts per kind and
+class with the saved Overpass regulation response of Task 1 (``--overpass-dir``, read only), the paid-share raster
+(B3), the rule polygons (B4), in Braunschweig the pre-registered validation B5 (``--legal-zones`` with the
+ordinance polygons ``bs_zone_ia`` and ``bs_zone_ib``, ``--reference 03101000=<annex zones>``, the annex map frame from
+``--annex-affine`` and ``--annex-image``) and the comparison with a ``--reference AGS=<outline>``. Outputs, named by
+the parameter tag (``SupplyShareParameters.tag``, e.g. ``w250_t0.5_u50_c25_s12.5_i10000``): ``<ags>_supply_qa_<tag>
+.json``, ``<ags>_supply_zones_<tag>.geojson``, ``<ags>_paid_share_<tag>.csv.gz`` (every cell) and
+``<ags>_supply_elements_<tag>.geojson`` (every classified element). Every existing output is refused before any
+reading unless ``--overwrite`` is given (write-through data of the main checkout).
+
 Example::
 
     python scripts/build_parking_zones_from_osm.py --ags 03157006 --bbox 52.30,10.20,52.34,10.26 \
         --out-dir eqasim-data/data/braunschweig/parking/raw_overpass
     python scripts/build_parking_zones_from_osm.py --ags 03153017 --bbox 51.8950,10.4100,51.9170,10.4500 \
         --out-dir eqasim-data/data/braunschweig/parking/raw_overpass --regulation --walk-m 250
+    python scripts/build_parking_zones_from_osm.py --supply-share \
+        --osm-extract eqasim-data/data/braunschweig/parking/raw_osm/niedersachsen-260929.osm.pbf \
+        --town 03101000=52.233,10.498,52.28,10.587 --town 03153017=51.895,10.41,51.917,10.45 ... \
+        --overpass-dir eqasim-data/data/braunschweig/parking/raw_overpass \
+        --reference 03101000=eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_zones_georeferenced.geojson \
+        --legal-zones eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson \
+        --annex-affine scripts/curation/parking_zones_2026/parkgo_annex_affine.json \
+        --annex-image eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_north_up.png \
+        --out-dir eqasim-data/data/braunschweig/parking/raw_osm/derived_supply_share --sensitivity-arms
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import logging
 import math
 import re
 import ssl
+import struct
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence
 
 import geopandas as gpd
-from shapely.geometry import LineString, Point, Polygon
+import numpy as np
+import pandas as pd
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import polygonize, unary_union
 
 # Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import supply_share  # noqa: E402
 from braunschweig.parking import zone_geometry  # noqa: E402
 
 log = logging.getLogger("build_parking_zones_from_osm")
@@ -607,10 +643,509 @@ def run_regulation(payload: dict, *, ags: str, out_dir: Path, raw_name: str, bbo
     return qa
 
 
+# --------------------------------------------------------------------------- supply-share mode (v2 Amendment B, #436)
+
+#: OGR SQL pre-filters of the three GDAL OSM layers read for the supply inventory (``read_supply_inventory``); they
+#: keep a superset of the elements of the regulation query (``REGULATION_STATEMENTS``), which ``inventory_frames``
+#: selects exactly: kerbside streets, every other highway way with a ``parking:*`` key, every ``amenity=parking``
+#: object (node, closed way or multipolygon relation, and an open way drawn as a line). Tags outside the attribute
+#: columns of the default osmconf.ini arrive in ``other_tags`` (HSTORE text, ``parse_other_tags``).
+SUPPLY_LAYER_FILTERS = {
+    "points": "other_tags LIKE '%\"amenity\"=>\"parking\"%'",
+    "lines": ("highway IN (" + ", ".join(f"'{value}'" for value in zone_geometry.STREET_HIGHWAY_TYPES) + ") OR "
+              "(highway IS NOT NULL AND other_tags LIKE '%\"parking:%') OR "
+              "other_tags LIKE '%\"amenity\"=>\"parking\"%'"),
+    "multipolygons": "amenity = 'parking'",
+}
+#: Margin of the inventory box around the union of the town boxes, metres: covers the supply region of every town
+#: (its EPSG:25832 bounds buffered by the largest walk distance of the arms, 400 m, plus one cell).
+SUPPLY_INVENTORY_MARGIN_M = 1000.0
+#: GDAL keeps the node index of the OSM driver in memory up to this size (MB) and writes temporary files beyond it.
+DEFAULT_OSM_MAX_TMPFILE_MB = 4000
+#: B5 is evaluated in Braunschweig against the ordinance polygons of zones Ia and Ib (spec Amendment B).
+B5_AGS = supply_share.B5_MUNICIPALITY_AGS
+LEGAL_ZONE_IDS = supply_share.LEGAL_ZONE_IDS
+_OSM_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_HSTORE_PAIR = re.compile(r'"((?:[^"\\]|\\.)*)"=>"((?:[^"\\]|\\.)*)"')
+_HSTORE_ESCAPE = re.compile(r"\\(.)")
+_QUERY_BOX = re.compile(r"\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)")
+#: Columns of a GDAL OSM layer that are no OSM tags.
+_NON_TAG_COLUMNS = ("osm_id", "osm_way_id", "other_tags", "z_order", "geometry")
+
+
+def extract_stem(path) -> str:
+    """The name of an extract without ``.osm.pbf`` / ``.osm`` (``niedersachsen-260929``)."""
+    name = Path(path).name
+    for suffix in (".osm.pbf", ".pbf", ".osm"):
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return Path(path).stem
+
+
+def check_extract_md5(path, md5_path=None) -> dict:
+    """File name, size, MD5 and SHA-256 of the extract, after its MD5 was checked against the Geofabrik ``.md5`` file
+    (default ``<extract>.md5``, one line ``<md5>  <file name>``); ``SystemExit`` when the file names another extract or
+    the MD5 differs (the extract must not be used)."""
+    path = Path(path)
+    md5_path = Path(md5_path) if md5_path else path.with_name(path.name + ".md5")
+    if not path.is_file() or not md5_path.is_file():
+        raise SystemExit(f"extract {path} or its Geofabrik MD5 file {md5_path} is missing")
+    fields = md5_path.read_text(encoding="ascii").split()
+    if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{32}", fields[0]):
+        raise SystemExit(f"{md5_path}: expected one line '<md5>  <file name>', found {fields}")
+    if fields[1].lstrip("*") != path.name:
+        raise SystemExit(f"{md5_path} names {fields[1]!r}, not the extract {path.name!r}")
+    md5, sha256 = hashlib.md5(), hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            md5.update(chunk)
+            sha256.update(chunk)
+    if md5.hexdigest() != fields[0]:
+        raise SystemExit(f"{path}: MD5 {md5.hexdigest()} differs from the Geofabrik MD5 {fields[0]} of {md5_path}; "
+                         "the extract is corrupt or not the pinned one")
+    digests = {"file": path.name, "bytes": path.stat().st_size, "md5": md5.hexdigest(), "sha256": sha256.hexdigest(),
+               "md5_file": md5_path.name}
+    log.info("[parking-supply] extract %s: %d bytes, MD5 %s = the Geofabrik MD5 of %s, SHA-256 %s", path,
+             digests["bytes"], digests["md5"], md5_path.name, digests["sha256"])
+    return digests
+
+
+def _varint(data: bytes, position: int) -> tuple:
+    value, shift = 0, 0
+    while True:
+        byte = data[position]
+        position += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, position
+        shift += 7
+
+
+def _protobuf_fields(data: bytes):
+    """(field number, wire type, value) of a protobuf message (varint, 64-bit, length-delimited, 32-bit)."""
+    position = 0
+    while position < len(data):
+        key, position = _varint(data, position)
+        number, wire = key >> 3, key & 7
+        if wire == 0:
+            value, position = _varint(data, position)
+        elif wire == 1:
+            value, position = data[position:position + 8], position + 8
+        elif wire == 2:
+            length, position = _varint(data, position)
+            value, position = data[position:position + length], position + length
+        elif wire == 5:
+            value, position = data[position:position + 4], position + 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire}")
+        yield number, wire, value
+
+
+def pbf_header(path) -> dict:
+    """The OSMHeader block of a PBF extract (first blob; OSM PBF format): ``required_features``,
+    ``writingprogram``, ``source``, ``osmosis_replication_timestamp`` ('YYYY-MM-DDTHH:MM:SSZ', the snapshot of the
+    data), ``osmosis_replication_sequence_number`` and ``osmosis_replication_base_url`` (None when absent)."""
+    with open(path, "rb") as stream:
+        size = struct.unpack(">I", stream.read(4))[0]
+        blob_header = {number: value for number, _, value in _protobuf_fields(stream.read(size))}
+        if blob_header.get(1) != b"OSMHeader":
+            raise ValueError(f"{path}: the first blob is {blob_header.get(1)!r}, not the OSMHeader of a PBF file")
+        blob = {number: value for number, _, value in _protobuf_fields(stream.read(blob_header[3]))}
+    if 3 in blob:
+        data = zlib.decompress(blob[3])
+    elif 1 in blob:
+        data = blob[1]
+    else:
+        raise ValueError(f"{path}: the OSMHeader blob is neither raw nor zlib-compressed")
+    header = {"required_features": [], "optional_features": [], "writingprogram": None, "source": None,
+              "osmosis_replication_timestamp": None, "osmosis_replication_sequence_number": None,
+              "osmosis_replication_base_url": None}
+    for number, _, value in _protobuf_fields(data):
+        if number in (4, 5):
+            header["required_features" if number == 4 else "optional_features"].append(value.decode("utf-8"))
+        elif number in (16, 17, 34):
+            header[{16: "writingprogram", 17: "source", 34: "osmosis_replication_base_url"}[number]] = \
+                value.decode("utf-8")
+        elif number == 32:
+            header["osmosis_replication_timestamp"] = dt.datetime.fromtimestamp(value, dt.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+        elif number == 33:
+            header["osmosis_replication_sequence_number"] = int(value)
+    return header
+
+
+def parse_other_tags(text) -> dict:
+    """The ``other_tags`` field of the GDAL OSM driver (HSTORE text ``"key"=>"value",...``, quotes and backslashes
+    escaped by a backslash) as a dict; empty for None."""
+    if not isinstance(text, str) or not text:
+        return {}
+    return {_HSTORE_ESCAPE.sub(r"\1", key): _HSTORE_ESCAPE.sub(r"\1", value) for key, value in _HSTORE_PAIR.findall(text)}
+
+
+def _layer_tags(frame) -> list:
+    columns = [column for column in frame.columns if column not in _NON_TAG_COLUMNS]
+    tags = []
+    for record in frame[columns + (["other_tags"] if "other_tags" in frame.columns else [])].to_dict("records"):
+        values = {column: str(record[column]) for column in columns
+                  if record[column] is not None and not (isinstance(record[column], float) and math.isnan(record[column]))}
+        values.update(parse_other_tags(record.get("other_tags")))
+        tags.append(values)
+    return tags
+
+
+def read_supply_inventory(path, bbox, *, max_tmpfile_mb: int = DEFAULT_OSM_MAX_TMPFILE_MB) -> tuple:
+    """Read the parking-relevant features of ``bbox`` (south, west, north, east, WGS84) from an OSM file (PBF or XML)
+    with the GDAL OSM driver: each layer of ``SUPPLY_LAYER_FILTERS`` once (the driver scans the whole file per layer).
+
+    Returns ({layer: EPSG:4326 frame with ``osm_type``, ``osm_id``, ``tags``}, {layer: reading seconds}). GDAL's
+    temporary files go to a temporary directory that is removed afterwards.
+    """
+    import pyogrio
+    import tempfile
+
+    south, west, north, east = bbox
+    layers, seconds = {}, {}
+    with tempfile.TemporaryDirectory(prefix="gdal_osm_") as scratch:
+        pyogrio.set_gdal_config_options({"CPL_TMPDIR": scratch, "OSM_MAX_TMPFILE_SIZE": str(int(max_tmpfile_mb))})
+        try:
+            for layer, where in SUPPLY_LAYER_FILTERS.items():
+                started = time.perf_counter()
+                frame = pyogrio.read_dataframe(str(path), layer=layer, bbox=(west, south, east, north), where=where)
+                seconds[layer] = round(time.perf_counter() - started, 1)
+                if layer == "multipolygons":
+                    relation = frame["osm_id"].notna().to_numpy()
+                    osm_type = np.where(relation, "relation", "way")
+                    osm_id = np.where(relation, frame["osm_id"], frame["osm_way_id"])
+                else:
+                    osm_type = "node" if layer == "points" else "way"
+                    osm_id = frame["osm_id"]
+                layers[layer] = gpd.GeoDataFrame({"osm_type": osm_type, "osm_id": pd.Series(osm_id).astype("int64")
+                                                  .to_numpy(), "tags": _layer_tags(frame)},
+                                                 geometry=frame.geometry.values, crs=frame.crs or "EPSG:4326")
+                log.info("[parking-supply] read layer %s of %s: %d features in %.1f s", layer, Path(path).name,
+                         len(frame), seconds[layer])
+        finally:
+            pyogrio.set_gdal_config_options({"CPL_TMPDIR": None, "OSM_MAX_TMPFILE_SIZE": None})
+    return layers, seconds
+
+
+def inventory_frames(layers: dict) -> tuple:
+    """(street ways, parking objects) in EPSG:25832 from the inventory layers: the ways are the highway lines that are
+    no ``amenity=parking`` and are kerbside streets (``zone_geometry.STREET_HIGHWAY_TYPES``) or carry a ``parking:*``
+    key (the selection of the regulation query), the objects every ``amenity=parking`` node, area and line."""
+    columns = ["osm_type", "osm_id", "tags", "geometry"]
+    lines = layers["lines"]
+    parking_line = np.array([tags.get("amenity") == "parking" for tags in lines["tags"]], dtype=bool)
+    street = np.array([bool(tags.get("highway")) and (tags.get("highway") in zone_geometry.STREET_HIGHWAY_TYPES or
+                                                      any(key.startswith("parking:") for key in tags))
+                       for tags in lines["tags"]], dtype=bool)
+    ways = lines[street & ~parking_line][columns]
+    parts = [layers["points"], layers["multipolygons"], lines[parking_line]]
+    parts = [part[np.array([tags.get("amenity") == "parking" for tags in part["tags"]], dtype=bool)][columns]
+             for part in parts]
+    objects = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=lines.crs)
+    return ways.to_crs(METRIC_CRS).reset_index(drop=True), objects.to_crs(METRIC_CRS)
+
+
+def supply_inventory_paths(out_dir: Path, extract) -> dict:
+    stem = f"supply_inventory_{extract_stem(extract)}"
+    return {"inventory": out_dir / f"{stem}.gpkg", "meta": out_dir / f"{stem}.json"}
+
+
+def write_supply_inventory(layers: dict, meta: dict, paths: dict) -> None:
+    """The inventory as a GeoPackage (one layer per GDAL layer, tags as JSON text) and its metadata as JSON."""
+    import pyogrio
+
+    if paths["inventory"].exists():
+        # only reached with --overwrite (guard_outputs logged the replacement): a GeoPackage keeps its old layers
+        paths["inventory"].unlink()
+    for layer, frame in layers.items():
+        pyogrio.write_dataframe(frame.assign(tags=[json.dumps(tags, sort_keys=True, ensure_ascii=True)
+                                                   for tags in frame["tags"]]), paths["inventory"], layer=layer)
+    paths["meta"].write_text(json.dumps(_json_safe(meta), indent=1, ensure_ascii=True) + "\n", encoding="utf-8",
+                             newline="\n")
+
+
+def load_supply_inventory(path) -> tuple:
+    """(layers, metadata) of a saved inventory (``write_supply_inventory``; the metadata file next to it)."""
+    import pyogrio
+
+    path = Path(path)
+    meta_path = path.with_suffix(".json")
+    if not path.is_file() or not meta_path.is_file():
+        raise SystemExit(f"inventory {path} or its metadata {meta_path} is missing")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    layers = {}
+    for layer in SUPPLY_LAYER_FILTERS:
+        frame = pyogrio.read_dataframe(path, layer=layer)
+        frame["tags"] = [json.loads(text) for text in frame["tags"]]
+        frame["osm_id"] = frame["osm_id"].astype("int64")
+        layers[layer] = frame
+    log.info("[parking-supply] re-processing the saved inventory %s (%s; no extract read)", path,
+             ", ".join(f"{layer} {len(frame)}" for layer, frame in layers.items()))
+    return layers, meta
+
+
+def town_query_polygon(bbox):
+    """The query box (south, west, north, east, WGS84) as an EPSG:25832 polygon."""
+    south, west, north, east = bbox
+    return gpd.GeoSeries([box(west, south, east, north)], crs="EPSG:4326").to_crs(METRIC_CRS).iloc[0]
+
+
+def union_bbox(bboxes, margin_m: float) -> tuple:
+    """(south, west, north, east) of the union of ``bboxes`` grown by about ``margin_m`` metres in every direction."""
+    south, west = min(b[0] for b in bboxes), min(b[1] for b in bboxes)
+    north, east = max(b[2] for b in bboxes), max(b[3] for b in bboxes)
+    dlat = margin_m / 111_320.0
+    dlon = margin_m / (111_320.0 * math.cos(math.radians(max(abs(south), abs(north)))))
+    return south - dlat, west - dlon, north + dlat, east + dlon
+
+
+def parse_town(text: str) -> tuple:
+    """``AGS=south,west,north,east`` -> (ags, bbox)."""
+    ags, _, bbox = text.partition("=")
+    if not re.fullmatch(r"\d{8}", ags):
+        raise SystemExit(f"--town {text!r}: expected AGS=south,west,north,east with an 8-digit AGS")
+    return ags, parse_bbox(bbox)
+
+
+def annex_map_frame(affine_path, image_path):
+    """The annex map frame (EPSG:25832 polygon): the image rectangle mapped by the inverse of the annex affine
+    (``extract_parkgo_annex_zones.inverse_affine``; EPSG:25832 -> pixels)."""
+    from PIL import Image
+    from shapely.affinity import affine_transform
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "curation" / "parking_zones_2026"))
+    try:
+        import extract_parkgo_annex_zones
+    finally:
+        sys.path.pop(0)
+    fit = json.loads(Path(affine_path).read_text(encoding="utf-8"))
+    with Image.open(image_path) as image:
+        width, height = image.size
+    return affine_transform(box(0, 0, width, height), extract_parkgo_annex_zones.inverse_affine(fit))
+
+
+def overpass_supply_elements(payload: dict, *, label: str = "") -> gpd.GeoDataFrame:
+    """The supply elements of a saved Overpass regulation response (same classification as the extract)."""
+    segments, lots = regulation_features(payload)
+    areas, offstreet = supply_share.split_parking_objects(lots)
+    return supply_share.supply_elements(segments, areas, offstreet, label=label)
+
+
+def _counts_by_kind_and_class(elements) -> dict:
+    return supply_share.summarise_supply(elements)["elements_by_kind_and_class"]
+
+
+def cross_check(extract_elements, overpass_elements, *, response: str, overpass_timestamp: str) -> dict:
+    """Element counts per kind and class of the extract and of the Overpass response of the same box, and their
+    difference (extract minus Overpass)."""
+    extract_counts = _counts_by_kind_and_class(extract_elements)
+    overpass_counts = _counts_by_kind_and_class(overpass_elements)
+    difference = {kind: {name: extract_counts[kind][name] - overpass_counts[kind][name]
+                         for name in supply_share.SUPPLY_CLASSES} for kind in supply_share.ELEMENT_KINDS}
+    return {"overpass_response": response, "overpass_osm_timestamp": overpass_timestamp, "extract": extract_counts,
+            "overpass": overpass_counts, "difference": difference}
+
+
+def supply_output_paths(out_dir: Path, ags: str, parameters) -> dict:
+    """The four derived files of one town and parameter set, named by ``SupplyShareParameters.tag``."""
+    tag = parameters.tag()
+    return {"qa": out_dir / f"{ags}_supply_qa_{tag}.json", "zones": out_dir / f"{ags}_supply_zones_{tag}.geojson",
+            "raster": out_dir / f"{ags}_paid_share_{tag}.csv.gz",
+            "elements": out_dir / f"{ags}_supply_elements_{tag}.geojson"}
+
+
+def _overpass_response(directory, ags: str) -> Path:
+    """The one saved regulation response of ``ags`` in ``directory`` (read only)."""
+    found = sorted(Path(directory).glob(f"{ags}_{REGULATION_RAW_TAG}_overpass_*.json"))
+    if len(found) != 1:
+        raise SystemExit(f"{ags}: expected one saved regulation response {ags}_{REGULATION_RAW_TAG}_overpass_<date>"
+                         f".json in {directory} for the cross-check, found {[path.name for path in found]}")
+    return found[0]
+
+
+def check_query_box(response: Path, bbox) -> None:
+    """The query text saved next to a regulation response (``<name>.query.txt``) must use exactly the town box, so
+    that the cross-check compares the same box; ``SystemExit`` otherwise."""
+    query = response.with_suffix(".query.txt")
+    if not query.is_file():
+        raise SystemExit(f"{query} is missing: the query box of {response.name} cannot be checked")
+    boxes = {tuple(float(value) for value in match) for match in _QUERY_BOX.findall(query.read_text(encoding="utf-8"))}
+    if len(boxes) != 1 or not all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(next(iter(boxes)), bbox)):
+        raise SystemExit(f"{response.name}: query box {sorted(boxes)} of {query.name} differs from the town box "
+                         f"{tuple(bbox)}; the cross-check needs the same box")
+
+
+def overpass_cross_check_input(path: Path, ags: str) -> tuple:
+    """(response name, OSM snapshot, supply elements) of a saved regulation response, for ``cross_check``."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    check_remark(payload)
+    elements = overpass_supply_elements(payload, label=f"{ags} Overpass {path.name}")
+    return path.name, (payload.get("osm3s") or {}).get("timestamp_osm_base", ""), elements
+
+
+def run_supply_town(ags: str, bbox, ways, objects, parameters, *, meta: dict, overpass: tuple, reference,
+                    b5_inputs: Optional[tuple], out_dir: Path) -> dict:
+    """The majority rule for one town and parameter set: inventory, raster, rule polygons, cross-check (``overpass``
+    = ``overpass_cross_check_input``), B5 (when ``b5_inputs`` = (legal zones, annex zones, map frame)) and the reference
+    comparison; writes the four files of ``supply_output_paths`` and returns the QA document."""
+    started = time.perf_counter()
+    query = town_query_polygon(bbox)
+    bounds = query.bounds
+    region = box(*bounds).buffer(parameters.walk_m + parameters.cell_m, join_style=2)
+    inventory_box = town_query_polygon(meta["box"])
+    if not inventory_box.contains(region):
+        raise SystemExit(f"{ags}: the supply region (bounds buffered by W + one cell) leaves the inventory box "
+                         f"{meta['box']}; read the extract with a larger margin")
+    town_ways = ways[ways.intersects(region)]
+    areas, lots = supply_share.split_parking_objects(objects[objects.intersects(region)])
+    elements = supply_share.supply_elements(town_ways, areas, lots, label=ags)
+    in_box = elements.intersects(query).to_numpy()
+    supply = supply_share.summarise_supply(elements[in_box])
+    response, overpass_timestamp, overpass_elements = overpass
+    checked = cross_check(elements[in_box], overpass_elements, response=response,
+                          overpass_timestamp=overpass_timestamp)
+    raster = supply_share.paid_share_raster(elements, bounds, parameters.cell_m, parameters.walk_m,
+                                            parameters.minimum_usable_spaces, label=ags)
+    rule = supply_share.zone_polygons(raster, parameters.share_threshold, parameters.smoothing_m,
+                                      parameters.minimum_island_m2, cell_m=parameters.cell_m, label=ags)
+    paid = supply_share.paid_cells(raster, parameters.share_threshold)
+    qa = {"ags": ags, "parameters": parameters.as_dict(), "tag": parameters.tag(), "bbox": list(bbox),
+          "bounds_m": [round(value, 1) for value in bounds], "osm_timestamp": meta["osm_timestamp"],
+          "extract": meta["extract"], "inventory": {key: meta[key] for key in ("file", "box", "read_seconds",
+                                                                               "features")},
+          "supply": supply, "supply_region_elements": int(len(elements)),
+          "street_ways": int(town_ways.intersects(query).sum()), "cross_check": checked,
+          "raster": {"cells": int(len(raster)), "classified_cells": int(raster["classified"].sum()),
+                     "classified_cell_share": float(raster["classified"].mean()) if len(raster) else math.nan,
+                     "paid_cells": int(paid.sum())},
+          "rule": {"area_m2": round(float(rule.geometry.area.sum()), 1) if len(rule) else 0.0,
+                   "parts": int(len(rule))},
+          "validation": None, "reference": None}
+    if b5_inputs is not None:
+        metrics = supply_share.validation_metrics(rule, *b5_inputs)
+        qa["validation"] = dict(metrics, passes=supply_share.passes_validation(metrics),
+                                minimum=supply_share.VALIDATION_MINIMUM)
+        log.info("[parking-supply] %s B5 (%s): recall %.3f, precision %.3f, minimum %.2f: %s", ags, parameters.tag(),
+                 metrics["recall"], metrics["precision"], supply_share.VALIDATION_MINIMUM,
+                 "passes" if qa["validation"]["passes"] else "FAILS")
+    if reference is not None:
+        path, outline = reference
+        qa["reference"] = dict(zone_geometry.compare_outlines(rule, outline), path=str(path))
+    rule_out = rule.copy()
+    rule_out.insert(0, "ags", ags)
+    rule_out["tag"] = parameters.tag()
+    paths = supply_output_paths(out_dir, ags, parameters)
+    _write_geojson(rule_out, paths["zones"])
+    paths["raster"].write_bytes(supply_share.deterministic_gzip(raster.to_csv(index=False, lineterminator="\n")))
+    _write_geojson(elements.assign(in_query_box=in_box, osm_id=elements["osm_id"].astype(float)), paths["elements"])
+    qa["seconds"] = round(time.perf_counter() - started, 1)
+    paths["qa"].write_text(json.dumps(_json_safe(qa), indent=1, allow_nan=False, ensure_ascii=True) + "\n",
+                           encoding="utf-8", newline="\n")
+    log.info("[parking-supply] %s %s: %d elements in the box (%s), heuristic capacity share %s; %d of %d cells "
+             "classified, %d paid; rule %.0f m2 in %d parts; %.1f s; written %s", ags, parameters.tag(),
+             supply["elements"], supply["elements_by_class"], supply["heuristic_capacity_share"],
+             qa["raster"]["classified_cells"], qa["raster"]["cells"], qa["raster"]["paid_cells"], qa["rule"]["area_m2"],
+             qa["rule"]["parts"], qa["seconds"], paths["qa"])
+    return qa
+
+
+def _parameter_sets(args) -> list:
+    chosen = supply_share.SupplyShareParameters(walk_m=args.walk_m, share_threshold=args.share_threshold,
+                                                minimum_usable_spaces=args.minimum_usable_spaces)
+    sets = [] if args.skip_pre_registered else [chosen]
+    if args.sensitivity_arms:
+        sets += [arm for arm in supply_share.SENSITIVITY_ARMS if arm not in sets]
+    if not sets:
+        raise SystemExit("--skip-pre-registered needs --sensitivity-arms (nothing to run)")
+    return sets
+
+
+def run_supply_share(args) -> int:
+    """The supply-share mode: acquire (or re-load) the inventory, then every town and parameter set."""
+    towns = dict(parse_town(text) for text in args.town)
+    if not towns:
+        raise SystemExit("--supply-share needs at least one --town AGS=south,west,north,east")
+    if bool(args.osm_extract) == bool(args.from_inventory):
+        raise SystemExit("--supply-share needs exactly one of --osm-extract and --from-inventory")
+    references = {}
+    for text in args.reference:
+        ags, _, path = text.partition("=")
+        references[ags] = Path(path)
+    b5_needed = B5_AGS in towns
+    if b5_needed and not (args.legal_zones and args.annex_affine and args.annex_image and B5_AGS in references):
+        raise SystemExit(f"{B5_AGS}: B5 needs --legal-zones, --reference {B5_AGS}=<annex zones>, --annex-affine and "
+                         "--annex-image")
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    parameter_sets = _parameter_sets(args)
+    targets = {}
+    if args.osm_extract:
+        targets.update(supply_inventory_paths(out_dir, args.osm_extract))
+    for ags in towns:
+        for parameters in parameter_sets:
+            targets.update({f"{ags}_{parameters.tag()}_{key}": path
+                            for key, path in supply_output_paths(out_dir, ags, parameters).items()})
+    responses = {ags: _overpass_response(args.overpass_dir, ags) for ags in towns}
+    for ags, bbox in towns.items():
+        check_query_box(responses[ags], bbox)
+    guard_outputs(targets, overwrite=args.overwrite)
+
+    if args.from_inventory:
+        layers, meta = load_supply_inventory(args.from_inventory)
+    else:
+        digests = check_extract_md5(args.osm_extract, args.osm_extract_md5)
+        header = None
+        if str(args.osm_extract).endswith(".pbf"):
+            header = pbf_header(args.osm_extract)
+            log.info("[parking-supply] PBF header: %s", header)
+        snapshot = (header or {}).get("osmosis_replication_timestamp")
+        if snapshot and args.osm_timestamp and args.osm_timestamp != snapshot:
+            raise SystemExit(f"--osm-timestamp {args.osm_timestamp} contradicts the PBF header timestamp {snapshot}")
+        snapshot = snapshot or args.osm_timestamp
+        if not snapshot or not _OSM_TIMESTAMP.match(snapshot):
+            raise SystemExit("the OSM snapshot timestamp comes from the PBF header (osmosis_replication_timestamp) or, "
+                             "for an extract without one, from --osm-timestamp YYYY-MM-DDTHH:MM:SSZ")
+        inventory_bbox = union_bbox(list(towns.values()), SUPPLY_INVENTORY_MARGIN_M)
+        layers, seconds = read_supply_inventory(args.osm_extract, inventory_bbox, max_tmpfile_mb=args.osm_max_tmpfile_mb)
+        import pyogrio
+
+        paths = supply_inventory_paths(out_dir, args.osm_extract)
+        meta = {"file": paths["inventory"].name, "extract": digests, "pbf_header": header, "osm_timestamp": snapshot,
+                "box": [round(value, 6) for value in inventory_bbox], "margin_m": SUPPLY_INVENTORY_MARGIN_M,
+                "towns": {ags: list(bbox) for ags, bbox in towns.items()}, "read_seconds": seconds,
+                "features": {layer: int(len(frame)) for layer, frame in layers.items()},
+                "layer_filters": SUPPLY_LAYER_FILTERS, "gdal": pyogrio.__gdal_version_string__,
+                "pyogrio": pyogrio.__version__}
+        write_supply_inventory(layers, meta, paths)
+        log.info("[parking-supply] inventory of %s written to %s: %s; reading %s s", Path(args.osm_extract).name,
+                 paths["inventory"], meta["features"], seconds)
+    ways, objects = inventory_frames(layers)
+    b5_inputs = None
+    if b5_needed:
+        legal = gpd.read_file(args.legal_zones).to_crs(METRIC_CRS)
+        legal = legal[legal["zone_id"].isin(LEGAL_ZONE_IDS)]
+        if sorted(legal["zone_id"]) != sorted(LEGAL_ZONE_IDS):
+            raise SystemExit(f"{args.legal_zones}: B5 needs the polygons {list(LEGAL_ZONE_IDS)}, found "
+                             f"{sorted(legal['zone_id'])}")
+        annex = gpd.read_file(references[B5_AGS]).to_crs(METRIC_CRS)
+        b5_inputs = (legal, annex, annex_map_frame(args.annex_affine, args.annex_image))
+    for ags, bbox in towns.items():
+        reference = None
+        if ags in references:
+            reference = (references[ags], gpd.read_file(references[ags]).to_crs(METRIC_CRS))
+        overpass = overpass_cross_check_input(responses[ags], ags)
+        for parameters in parameter_sets:
+            run_supply_town(ags, bbox, ways, objects, parameters, meta=meta, overpass=overpass, reference=reference,
+                            b5_inputs=b5_inputs if ags == B5_AGS else None, out_dir=out_dir)
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--ags", required=True, help="8-digit AGS of the municipality (file name prefix)")
-    parser.add_argument("--bbox", required=True, help="south,west,north,east in WGS84 decimal degrees")
+    parser.add_argument("--ags", help="8-digit AGS of the municipality (file name prefix; fee and regulation mode)")
+    parser.add_argument("--bbox", help="south,west,north,east in WGS84 decimal degrees (fee and regulation mode)")
     parser.add_argument("--out-dir", required=True, help="directory for the raw response and the candidates")
     parser.add_argument("--street-names-file", help="UTF-8 file, one street name per line, fetched as context "
                                                     "(regulation mode: compared with the fee-tagged ways)")
@@ -647,8 +1182,42 @@ def main(argv=None) -> int:
     parser.add_argument("--all-kerbside-streets-regulated", action="store_true",
                         help="diagnostic counterfactual: every kerbside street counts as regulated (upper bound of the "
                              "fill cap); outputs tagged '_allstreets', never a release input")
+    supply = parser.add_argument_group("supply-share mode (v2 Amendment B)")
+    supply.add_argument("--supply-share", action="store_true",
+                        help="majority rule over the parking supply of the pinned extract for every --town")
+    supply.add_argument("--osm-extract", help="OSM extract (Geofabrik PBF) read with the GDAL OSM driver")
+    supply.add_argument("--osm-extract-md5", help="Geofabrik MD5 file of the extract (default: <extract>.md5)")
+    supply.add_argument("--osm-timestamp", help="snapshot YYYY-MM-DDTHH:MM:SSZ for an extract without a PBF header "
+                                                "timestamp (checked against the header otherwise)")
+    supply.add_argument("--osm-max-tmpfile-mb", type=int, default=DEFAULT_OSM_MAX_TMPFILE_MB,
+                        help="memory for the node index of the GDAL OSM driver before it writes temporary files, MB")
+    supply.add_argument("--from-inventory", help="re-process a saved supply_inventory_<extract>.gpkg (no extract read)")
+    supply.add_argument("--town", action="append", default=[], help="AGS=south,west,north,east (repeatable)")
+    supply.add_argument("--overpass-dir", help="saved Overpass regulation responses <ags>_regulation_overpass_<date>"
+                                               ".json for the cross-check (read only)")
+    supply.add_argument("--reference", action="append", default=[],
+                        help="AGS=outline GeoJSON the rule is compared with (Braunschweig: the annex zones; repeatable)")
+    supply.add_argument("--legal-zones", help="zone release with the ordinance polygons bs_zone_ia and bs_zone_ib (B5)")
+    supply.add_argument("--annex-affine", help="affine of the ParkGO annex map (parkgo_annex_affine.json; B5 frame)")
+    supply.add_argument("--annex-image", help="the annex rendering the affine refers to (B5 frame)")
+    supply.add_argument("--share-threshold", type=float, default=supply_share.DEFAULT_SHARE_THRESHOLD,
+                        help="paid share from which a classified cell is paid (ASSUMPTION B-f)")
+    supply.add_argument("--minimum-usable-spaces", type=float, default=supply_share.DEFAULT_MINIMUM_USABLE_SPACES,
+                        help="usable spaces within W from which a cell is classified (ASSUMPTION B-e)")
+    supply.add_argument("--sensitivity-arms", action="store_true",
+                        help="also run the B5 sensitivity arms (W 150 / 400 m, share 0.3 / 0.7; information only)")
+    supply.add_argument("--skip-pre-registered", action="store_true",
+                        help="with --sensitivity-arms: run only the arms")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.supply_share:
+        if args.regulation or args.from_raw or args.offline_response:
+            raise SystemExit("--supply-share excludes --regulation, --from-raw and --offline-response")
+        if not args.overpass_dir:
+            raise SystemExit("--supply-share needs --overpass-dir (the saved regulation responses of the cross-check)")
+        return run_supply_share(args)
+    if not (args.ags and args.bbox):
+        parser.error("--ags and --bbox are required outside the supply-share mode")
     if args.from_raw and args.offline_response:
         raise SystemExit("--from-raw and --offline-response exclude each other")
     parameters = None
