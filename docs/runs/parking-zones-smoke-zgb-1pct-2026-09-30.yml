@@ -129,6 +129,8 @@ artifacts:
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_off.csv
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_legacy.csv
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/eqasim_termination_zones.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_share_long_runs.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_share.py
 issues:
 - '#436'
 - '#249'
@@ -140,7 +142,11 @@ notes: 'Local-only outputs (not committed; per-person data of a synthetic popula
   zone model inherits from the legacy car cost model (parked duration = planned activity stay); (2) zone II of the
   Braunschweig ParkGO and the southern part of zone Ia are not zoned in v1 (coverage register); (3) the SrV centre
   figure is dominated by garage parking, which v1 prices only at five car parks. Convergence of any arm would not
-  be validation either.'
+  be validation either. Follow-up of (1), decided after this run: assumption L1 of ADR-0139 (decision 9) prices
+  every car stay in a zone for at least 15 min; this run priced without it (as with L = 0). Its evidence table
+  zero_length_share_long_runs.csv (script zero_length_share.py, both in this run''s artifact directory) counts the
+  zero-length stays per travel mode in the final iteration of the OFF arm of this run (car: 2,116 of 17,711
+  arrivals, 11.9 %; the 11.8 % above is the ZONES arm) and of three older local 25 % and 100 % runs.'
 source: 'harness/evaluate_smoke.py --repo <integration worktree at 2d990e70> --smoke-dir <scratchpad>/smoke --out-dir
   docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30 on the three final-iteration outputs; the Java lines
   from smoke/zones/run.log; the parity hashes with sha256sum over the decompressed tables (jar_parity_sha256.csv, with
