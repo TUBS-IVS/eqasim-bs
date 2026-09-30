@@ -8,9 +8,9 @@ flag itself and no parking stage, leaves the prepared config byte-identical and 
 
 The zones stage is faked: its tariff table is ``tests/fixtures/parking/parking_tariffs_fixture.csv`` read by the
 production loader ``braunschweig.parking.zones.load_tariffs`` (the frame the real stage returns), which pins
-arithmetic, not truth. The context double follows ``tests/test_vrb_zone_fares_prepare_wiring.py`` but is strict in the
-execute phase, like synpp's ExecuteContext, so an execute-time read that configure() did not declare fails here
-instead of in a real run (``tests/test_execute_context_config_contract.py``).
+arithmetic, not truth. The context double follows ``tests/test_vrb_zone_fares_prepare_wiring.py`` but is strict
+in the execute phase, like synpp's ExecuteContext, so an execute-time read that configure() did not declare fails
+here instead of in a real run (``tests/test_execute_context_config_contract.py``).
 """
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ def _prepare_context(tmp_path, monkeypatch, **values):
 
 
 @pytest.mark.parametrize("values", [{}, {"parking_zones_enabled": False}], ids=["absent", "false"])
-def test_off_declares_no_parking_parameter_and_leaves_the_prepared_config_byte_identical(
+def test_off_declares_only_the_flag_and_leaves_the_prepared_config_byte_identical(
         tmp_path, monkeypatch, values):
     context, config = _prepare_context(tmp_path, monkeypatch, **values)
     assert context.declared_config[prepare.PARKING_KEY] is False

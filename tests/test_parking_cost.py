@@ -173,8 +173,8 @@ def test_zero_is_rejected_in_every_field_the_cost_rule_tests_for_truthiness(over
 
 
 def test_a_daily_cap_below_the_first_period_price_is_a_contradictory_tariff():
-    # The first period is charged in full for any use, so a lower cap would replace its price on every stay:
-    # the tariff contradicts itself. The error names the zone and both values.
+    # The first period is charged in full for any use, so a lower cap would replace its price on every metered
+    # stay: the tariff contradicts itself. The error names the zone and both values.
     with pytest.raises(ValueError) as error:
         _tariff(first_period_min=60, first_period_cents=110, daily_cap_cents=100)
     message = str(error.value)

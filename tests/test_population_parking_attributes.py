@@ -299,7 +299,7 @@ def test_malformed_resident_parking_zone_raises():
 @pytest.mark.parametrize("column", ["parking_zone", "resident_parking_zone"])
 def test_the_text_form_of_a_missing_zone_raises_instead_of_becoming_a_zone_id(column, text):
     """str(np.nan), str(None) and str(pd.NA): what a broken upstream join (e.g. astype(str) over missing zones)
-    leaves in the column. Written as a zone id, the Java cost model would reject it at the first priced trip."""
+    leaves in the column. Written as a zone id, it would name a zone the tariff model does not have."""
     with pytest.raises(ValueError, match=f"{column}.*missing value"):
         if column == "parking_zone":
             _write_one_person([{"purpose": "work", "parking_zone": text, "parking_free": False}],
