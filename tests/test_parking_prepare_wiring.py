@@ -154,18 +154,27 @@ def test_off_declares_only_the_flag_and_leaves_the_prepared_config_byte_identica
     assert not [path.name for path in config.parent.iterdir() if "parking" in path.name]
 
 
-def test_on_declares_the_zones_stage_and_the_two_parking_parameters(tmp_path, monkeypatch):
+def test_on_declares_the_zones_stage_and_the_parking_parameters(tmp_path, monkeypatch):
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
-        "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end"}
+        "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end",
+        "parking_minimum_stay_min": 15}
 
 
 @pytest.mark.parametrize("values, message", [
     ({"parking_terminal_stay_rule": "flat_8h"}, "parking_terminal_stay_rule"),
     # An unquoted YAML date arrives as datetime.date, not as the text the file name and the model carry.
     ({"parking_tariff_snapshot_date": datetime.date(2026, 9, 28)}, "parking_tariff_snapshot_date"),
-], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date"])
+    # The Java ParkingConfigGroup reads minimumStayMinutes as plain digits whose seconds fit a Java int; YAML `true`
+    # arrives as a bool, which is an int in Python, and must not become a minimum of 1 min.
+    ({"parking_minimum_stay_min": -1}, "parking_minimum_stay_min"),
+    ({"parking_minimum_stay_min": 7.5}, "parking_minimum_stay_min"),
+    ({"parking_minimum_stay_min": "15"}, "parking_minimum_stay_min"),
+    ({"parking_minimum_stay_min": True}, "parking_minimum_stay_min"),
+    ({"parking_minimum_stay_min": 35_791_395}, "parking_minimum_stay_min"),
+], ids=["unsupported_terminal_stay_rule", "unquoted_yaml_date", "negative_minimum_stay", "fractional_minimum_stay",
+        "text_minimum_stay", "boolean_minimum_stay", "minimum_stay_beyond_the_java_int_seconds"])
 def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path, values, message):
     # Checked at configure time: the export itself runs only at the end of the preparation, hours later.
     context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
@@ -219,10 +228,24 @@ def test_on_execute_writes_the_parking_module_and_keeps_every_other_byte_of_the_
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     prepare.execute(context)
     assert config_modules.read_module(config, prepare.PARKING_MODULE) == {
-        "enabled": "true", "tariffsPath": TARIFFS_NAME, "terminalStayRule": "until_fee_end"}
+        "enabled": "true", "tariffsPath": TARIFFS_NAME, "terminalStayRule": "until_fee_end",
+        "minimumStayMinutes": "15"}
     text = config.read_bytes().decode("utf-8")
     assert text.startswith(PREPARED_CONFIG[:PREPARED_CONFIG.rindex("</config>")])
     assert text.endswith("\t</module>\n</config>\n")
+
+
+@pytest.mark.parametrize("minimum_stay_min, text", [(0, "0"), (30, "30"), (35_791_394, "35791394")],
+                         ids=["rule_off", "sensitivity_arm_30_min", "largest_value_java_accepts"])
+def test_on_execute_writes_the_configured_minimum_stay_as_plain_digits(tmp_path, monkeypatch, minimum_stay_min, text):
+    # 0 and 30 min are the sensitivity arms of rule L1 (ADR-0139); 35,791,394 min is the largest value whose seconds
+    # fit a Java int. The Java side reads plain digits only, so the value travels without a sign or decimals.
+    context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True,
+                                       parking_minimum_stay_min=minimum_stay_min)
+    prepare.execute(context)
+    assert config_modules.read_module(config, prepare.PARKING_MODULE)["minimumStayMinutes"] == text
+    report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["minimum_stay_min"] == minimum_stay_min
 
 
 def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
@@ -238,7 +261,8 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert report["parking_input_files"] == [tariffs_path, REPORT_NAME]
     assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 8,
                       "zone_types": {"campus": 1, "resident_zone": 1, "street_paid": 6},
-                      "terminal_stay_rule": "until_fee_end", "sources": context.stages[PARKING_STAGE]["sources"]}
+                      "terminal_stay_rule": "until_fee_end", "minimum_stay_min": 15,
+                      "sources": context.stages[PARKING_STAGE]["sources"]}
 
 
 def test_on_execute_logs_the_zone_count_and_the_file_names_once(tmp_path, monkeypatch, capsys):

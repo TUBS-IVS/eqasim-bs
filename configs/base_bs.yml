@@ -677,6 +677,12 @@ config:
   # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends. The only
   # supported value; the preparation stage and the Java ParkingConfigGroup reject others.
   parking_terminal_stay_rule: until_fee_end
+  # ASSUMPTION L1 (owner decision 2026-09-30): every priced car stay lasts at least this many minutes
+  # (whole minutes >= 0). A car that arrives after the planned end of its activity would otherwise park
+  # for free; the priced stay is [arrival, max(departure, arrival + L)), before the tariff rules. It
+  # changes the price only, never the simulated timing. 0 prices as before L1; 0 and 30 are the
+  # sensitivity arms of the 25 % A/B.
+  parking_minimum_stay_min: 15
 
   remode_carless_car_legs: true
 

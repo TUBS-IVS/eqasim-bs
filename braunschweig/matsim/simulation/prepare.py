@@ -70,13 +70,19 @@ VRB_ZONE_TOOL = "org.eqasim.braunschweig.scenario.AddVrbTariffZoneInformation"
 #: Zone-based parking costs (issue #249, design spec 3.6). Flag-gated; absent/false writes no parking input and
 #: leaves the prepared config as it is.
 PARKING_KEY = "parking_zones_enabled"
-#: Parameters of the tariff export, declared only when the flag is on (spec 5.5).
+#: Parameters of the parking inputs (tariff model and braunschweigParking module), declared only when the flag is on
+#: (spec 5.5).
 PARKING_DEFAULTS = {
     # Tariff state the committed tariff table records; it names the tariff model file.
     "parking_tariff_snapshot_date": "2026-09-29",
     # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends (the only implemented rule).
     "parking_terminal_stay_rule": "until_fee_end",
+    # ASSUMPTION L1 (ADR-0139): every priced car stay lasts at least this many minutes (the module parameter
+    # minimumStayMinutes); 0 prices the stays as before L1.
+    "parking_minimum_stay_min": 15,
 }
+#: Largest parking_minimum_stay_min the Java ParkingConfigGroup accepts: the minimum in seconds must fit a Java int.
+PARKING_MINIMUM_STAY_MAXIMUM_MIN = (2 ** 31 - 1) // 60
 #: MATSim config module read by the Java ParkingConfigGroup (eqasim-java-bs, org.eqasim.braunschweig.parking).
 PARKING_MODULE = "braunschweigParking"
 
@@ -181,20 +187,29 @@ def configure(context):
         for key, default in PARKING_DEFAULTS.items():
             context.config(key, default)
         _check_parking_parameters(context.config("parking_tariff_snapshot_date"),
-                                  context.config("parking_terminal_stay_rule"))
+                                  context.config("parking_terminal_stay_rule"),
+                                  context.config("parking_minimum_stay_min"))
 
 
-def _check_parking_parameters(snapshot_date, terminal_stay_rule):
-    """Reject a parking parameter the tariff export cannot use, at configure time.
+def _check_parking_parameters(snapshot_date, terminal_stay_rule, minimum_stay_min):
+    """Reject a parking parameter the tariff export or the Java ParkingConfigGroup cannot use, at configure time.
 
-    The export itself runs at the very end of the preparation, i.e. after the whole synthesis; a typo or an
-    unquoted YAML date (which arrives as ``datetime.date``, not as text) must not surface only then. The date
-    is checked by the validator the export uses, ``tariff_export.check_snapshot_date``, and the message names
-    the fix that matches the mistake: quotes for a YAML date, the ISO format for text in another format.
+    The export itself runs at the very end of the preparation, i.e. after the whole synthesis, and the Java side
+    reads the module only when the run starts; a typo or an unquoted YAML date (which arrives as ``datetime.date``,
+    not as text) must not surface only then. The date is checked by the validator the export uses,
+    ``tariff_export.check_snapshot_date``, and the message names the fix that matches the mistake: quotes for a YAML
+    date, the ISO format for text in another format. The minimum stay (L1) must be a whole number of minutes in
+    ``[0, PARKING_MINIMUM_STAY_MAXIMUM_MIN]``, the range the Java side reads from plain digits; a bool is rejected
+    although Python counts it as an int, so a YAML ``true`` never becomes a minimum of one minute.
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
                          f"{list(tariff_export.SUPPORTED_TERMINAL_STAY_RULES)}")
+    if (not isinstance(minimum_stay_min, int) or isinstance(minimum_stay_min, bool)
+            or not 0 <= minimum_stay_min <= PARKING_MINIMUM_STAY_MAXIMUM_MIN):
+        raise ValueError(f"parking_minimum_stay_min must be a whole number of minutes in "
+                         f"[0, {PARKING_MINIMUM_STAY_MAXIMUM_MIN}] (rule L1, ADR-0139; 0 prices the stays as before "
+                         f"L1), got {minimum_stay_min!r}")
     example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
         tariff_export.check_snapshot_date(snapshot_date)
@@ -342,13 +357,16 @@ def _write_parking_inputs(context, config_name):
     model JSON (spec 5.4: integer cents and seconds) next to ``config_name``. The module names that file without
     a directory, so the Java side resolves it relative to the config wherever the scenario is moved, and the
     report lists every file ``matsim.output`` must copy with the scenario: the model and the report itself.
-    An identical module already in the config is kept, a conflicting one raises (``config_modules.write_module``);
-    the report is written last, so it exists only when the files it lists do.
+    The minimum stay (rule L1) is a run parameter, not a tariff property: it travels as the module parameter
+    ``minimumStayMinutes`` (plain digits, the form the Java side reads) and is recorded in the report, while the
+    tariff model stays as it was. An identical module already in the config is kept, a conflicting one raises
+    (``config_modules.write_module``); the report is written last, so it exists only when the files it lists do.
     """
     root = Path(context.path())
     prefix = context.config("output_prefix")
     snapshot_date = context.config("parking_tariff_snapshot_date")
     terminal_stay_rule = context.config("parking_terminal_stay_rule")
+    minimum_stay_min = context.config("parking_minimum_stay_min")
     release = context.stage("braunschweig.parking.zones_stage")
     model = tariff_export.build_tariff_model(release["tariffs"], snapshot_date=snapshot_date,
                                              sources=release["sources"], terminal_stay_rule=terminal_stay_rule)
@@ -356,14 +374,17 @@ def _write_parking_inputs(context, config_name):
     report_name = tariff_export.inputs_report_name(prefix)
     tariff_export.write_tariff_model(root / tariffs_name, model)
     config_modules.write_module(root / config_name, PARKING_MODULE, {
-        "enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule})
+        "enabled": "true", "tariffsPath": tariffs_name, "terminalStayRule": terminal_stay_rule,
+        "minimumStayMinutes": str(int(minimum_stay_min))})
     zone_types = dict(sorted(Counter(zone["zone_type"] for zone in model["zones"].values()).items()))
     report = {"parking_input_files": [tariffs_name, report_name], "zones": len(model["zones"]),
-              "zone_types": zone_types, "terminal_stay_rule": terminal_stay_rule, "sources": model["sources"]}
+              "zone_types": zone_types, "terminal_stay_rule": terminal_stay_rule, "minimum_stay_min": minimum_stay_min,
+              "sources": model["sources"]}
     tariff_export.write_json_document(root / report_name, report)
-    print("[parking] prepared inputs: %d zones (%s), terminal stay rule %s; tariff model %s, module %s in %s, "
-          "report %s" % (len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
-                         terminal_stay_rule, tariffs_name, PARKING_MODULE, config_name, report_name))
+    print("[parking] prepared inputs: %d zones (%s), terminal stay rule %s, minimum stay %d min; tariff model %s, "
+          "module %s in %s, report %s" % (len(model["zones"]), ", ".join("%s %d" % item for item in zone_types.items()),
+                                          terminal_stay_rule, minimum_stay_min, tariffs_name, PARKING_MODULE,
+                                          config_name, report_name))
 
 
 def _cut_to_cordon(context):
