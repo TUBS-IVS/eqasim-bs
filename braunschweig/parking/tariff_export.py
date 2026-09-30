@@ -243,13 +243,20 @@ def zone_to_json(zone: ZoneTariff) -> dict:
     return fields
 
 
-def _check_snapshot_date(snapshot_date) -> str:
+def check_snapshot_date(snapshot_date) -> str:
+    """Return ``snapshot_date`` if it is the text of a real calendar date in ISO form ``YYYY-MM-DD``.
+
+    The tariff snapshot date names the tariff model file (``tariff_model_file_name``) and is recorded in the
+    model (``tariff_snapshot_date``), so only its exact text form is accepted: no ``datetime.date`` object (an
+    unquoted YAML date), no unpadded or other format, no impossible day. Raises ``ValueError`` otherwise. Pure;
+    the configure-time check of ``braunschweig.matsim.simulation.prepare`` and the export share it.
+    """
     try:
         parsed = datetime.date.fromisoformat(snapshot_date)
     except (TypeError, ValueError):
         parsed = None
     if parsed is None or parsed.isoformat() != snapshot_date:
-        raise ValueError(f"snapshot_date must be an ISO date YYYY-MM-DD, got {snapshot_date!r}")
+        raise ValueError(f"snapshot_date must be an ISO date text YYYY-MM-DD, got {snapshot_date!r}")
     return snapshot_date
 
 
@@ -286,7 +293,7 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
     if terminal_stay_rule not in SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
                          f"{SUPPORTED_TERMINAL_STAY_RULES}")
-    _check_snapshot_date(snapshot_date)
+    check_snapshot_date(snapshot_date)
     checked_sources = _check_sources(sources)
     missing = [column for column in TARIFF_COLUMNS if column not in tariffs.columns]
     if missing:
@@ -331,7 +338,7 @@ def write_tariff_model(path, model: Mapping) -> Path:
 
 def tariff_model_file_name(prefix: str, snapshot_date: str) -> str:
     """File name of the tariff model next to ``<prefix>config.xml``; it carries the tariff snapshot date."""
-    return f"{prefix}parking_tariffs_{_check_snapshot_date(snapshot_date)}.json"
+    return f"{prefix}parking_tariffs_{check_snapshot_date(snapshot_date)}.json"
 
 
 def inputs_report_name(prefix: str) -> str:

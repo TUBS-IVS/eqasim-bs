@@ -113,9 +113,18 @@ def _reject_unknown_zones(zone_ids: pd.Series, known_zone_ids, what: str) -> Non
                          "and the tariff table must belong to one release (braunschweig.parking.zones_stage)")
 
 
-def _count_line(values: pd.Series, limit: int | None = None) -> str:
-    """'zone count, ...' by descending count (ties by name); 'none' when every value is missing."""
-    counts = sorted(values.dropna().value_counts().items(), key=lambda item: (-item[1], str(item[0])))
+def format_value_counts(values: pd.Series, limit: int | None = None, *, by_value: bool = False) -> str:
+    """'value count, ...' of the non-missing ``values`` for a log line; 'none' when every value is missing.
+
+    Sorted by descending count (ties by value), or by value with ``by_value`` (a fixed order, e.g. the zone
+    types of a release); ``limit`` keeps the first entries only. The one count-line helper of the parking
+    package: ``braunschweig.parking.zones_stage`` uses it, too.
+    """
+    counts = values.dropna().value_counts().items()
+    if by_value:
+        counts = sorted(counts, key=lambda item: str(item[0]))
+    else:
+        counts = sorted(counts, key=lambda item: (-item[1], str(item[0])))
     if limit is not None:
         counts = counts[:limit]
     return ", ".join(f"{value} {count}" for value, count in counts) or "none"
@@ -185,7 +194,7 @@ def attach_parking_zones(activities: pd.DataFrame, locations: gpd.GeoDataFrame,
     n_inside = int(assigned.notna().sum())
     log.info("%s activities in zones: %d/%d (%.1f %%), %d outside every zone park free (assumption Z1); "
              "top zones: %s", _LOG_TAG, n_inside, n_activities, _rate(n_inside, n_activities),
-             n_activities - n_inside, _count_line(assigned, TOP_ZONES_LOGGED))
+             n_activities - n_inside, format_value_counts(assigned, TOP_ZONES_LOGGED))
     if n_activities > 0 and n_inside == 0:
         raise ValueError(f"{_LOG_TAG} not one of the {n_activities} activities lies in any of the {len(zones)} "
                          f"parking zones: this is the signature of a broken locations join or a CRS mismatch "
@@ -241,7 +250,7 @@ def attach_resident_zones(persons: pd.DataFrame, activities: pd.DataFrame, tarif
     n_without_home = int((~result["person_id"].isin(home_zone.index)).sum())
     log.info("%s persons with a resident parking zone: %d/%d (%.1f %%) (%s); %d live in a zone of another type "
              "(no resident exemption, assumption R1); %d have no home activity", _LOG_TAG, n_resident, n_persons,
-             _rate(n_resident, n_persons), _count_line(result[RESIDENT_PARKING_ZONE_COLUMN]), n_other_zone,
+             _rate(n_resident, n_persons), format_value_counts(result[RESIDENT_PARKING_ZONE_COLUMN]), n_other_zone,
              n_without_home)
     return result
 

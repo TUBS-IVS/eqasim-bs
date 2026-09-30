@@ -174,6 +174,34 @@ def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path
         prepare.configure(context)
 
 
+@pytest.mark.parametrize("snapshot_date, fix, wrong_fix", [
+    (datetime.date(2026, 9, 28), "quote", None),
+    ("2026-9-28", "YYYY-MM-DD", "quote"),
+    ("28.09.2026", "YYYY-MM-DD", "quote"),
+], ids=["unquoted_yaml_date", "quoted_but_unpadded", "quoted_but_german"])
+def test_on_configure_names_the_fix_that_matches_the_bad_snapshot_date(tmp_path, snapshot_date, fix, wrong_fix):
+    # An unquoted YAML date needs quotes; a quoted text in the wrong format already is quoted and needs the ISO
+    # format instead, so telling its author to quote it would send them the wrong way.
+    context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
+                                              "freight_enabled": False, "parking_zones_enabled": True,
+                                              "parking_tariff_snapshot_date": snapshot_date})
+    with pytest.raises(ValueError, match="parking_tariff_snapshot_date") as error:
+        prepare.configure(context)
+    assert fix in str(error.value) and "'2026-09-28'" in str(error.value)
+    if wrong_fix is not None:
+        assert wrong_fix not in str(error.value)
+
+
+def test_the_configure_check_uses_the_public_snapshot_date_validator(tmp_path, monkeypatch):
+    # One validator for the configure-time check and the export: tariff_export.check_snapshot_date.
+    calls = []
+    real_check = prepare.tariff_export.check_snapshot_date
+    monkeypatch.setattr(prepare.tariff_export, "check_snapshot_date",
+                        lambda value: calls.append(value) or real_check(value))
+    _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
+    assert calls == ["2026-09-28"]
+
+
 def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monkeypatch):
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     prepare.execute(context)

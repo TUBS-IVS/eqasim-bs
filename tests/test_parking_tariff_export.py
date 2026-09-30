@@ -1,6 +1,7 @@
 """The parking tariff JSON export (schema 1, spec 5.4) and its committed fixture model (issue #249)."""
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import re
@@ -131,6 +132,19 @@ def test_the_snapshot_date_must_be_an_iso_date(table, sources):
         te.build_tariff_model(table, snapshot_date="28.09.2026", sources=sources)
     with pytest.raises(ValueError, match="snapshot_date"):
         te.tariff_model_file_name("bs_", "2026-9-28")
+
+
+def test_check_snapshot_date_returns_iso_date_text_unchanged():
+    assert te.check_snapshot_date("2026-09-28") == "2026-09-28"
+
+
+@pytest.mark.parametrize("value", ["2026-9-28", "28.09.2026", "2026-02-30", "", None, 20260928,
+                                   datetime.date(2026, 9, 28)],
+                         ids=["unpadded", "german", "no_such_day", "empty", "none", "number", "date_object"])
+def test_check_snapshot_date_accepts_only_iso_date_text(value):
+    # The date names the tariff model file and is recorded in the model, so only its exact text form counts.
+    with pytest.raises(ValueError, match="snapshot_date must be an ISO date text YYYY-MM-DD"):
+        te.check_snapshot_date(value)
 
 
 def test_a_tariff_row_with_an_unknown_zone_type_raises(table, sources):

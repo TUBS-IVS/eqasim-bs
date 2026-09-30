@@ -252,6 +252,15 @@ def test_a_fixture_marked_release_logs_a_warning_naming_the_zones(fixture_data, 
     assert all(zone_id in warning for zone_id in FIXTURE_ZONE_IDS)
 
 
+def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fixture_data, caplog):
+    with caplog.at_level(logging.INFO, logger=STAGE_LOGGER):
+        _release(fixture_data)
+    [line] = [record.getMessage() for record in caplog.records if "zone release:" in record.getMessage()]
+    assert "8 zones (campus 1, resident_zone 1, street_paid 6) in 4 municipalities" in line
+    assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
+    assert "free shares for 6 workplace classes" in line
+
+
 # --------------------------------------------------------------------------- validate
 
 

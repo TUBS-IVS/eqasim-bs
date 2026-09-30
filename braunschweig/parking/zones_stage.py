@@ -178,10 +178,6 @@ def _fixture_marked_zones(zone_polygons: pd.DataFrame, tariffs: pd.DataFrame) ->
     return sorted(marked)
 
 
-def _count_line(values: pd.Series) -> str:
-    return ", ".join(f"{value} {count}" for value, count in sorted(values.value_counts().items()))
-
-
 def execute(context):
     files = _release_files(context)
     paths = {key: path for key, _, _, path in files}
@@ -209,8 +205,9 @@ def execute(context):
     sources = [{"source_id": source_id, "path": relative, "sha256": tariff_export.content_sha256(path)}
                for _, source_id, relative, path in files]
     log.info("%s zone release: %d zones (%s) in %d municipalities; coverage register %d rows (%s); free shares "
-             "for %d workplace classes; sources %s", _LOG_TAG, len(zone_polygons), _count_line(tariffs["zone_type"]),
-             tariffs["municipality_ags"].nunique(), len(coverage_register), _count_line(coverage_register["status"]),
+             "for %d workplace classes; sources %s", _LOG_TAG, len(zone_polygons),
+             attach.format_value_counts(tariffs["zone_type"], by_value=True), tariffs["municipality_ags"].nunique(),
+             len(coverage_register), attach.format_value_counts(coverage_register["status"], by_value=True),
              len(free_shares), ", ".join(f"{source['source_id']} {source['sha256'][:12]}" for source in sources))
     return {
         "zones": zone_polygons,

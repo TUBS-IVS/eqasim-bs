@@ -18,6 +18,7 @@ namespace; the class itself is region-neutral (point-in-polygon zone
 attribution against the supplied shapefile).
 """
 
+import datetime
 import gzip
 import hashlib
 import importlib
@@ -179,17 +180,22 @@ def _check_parking_parameters(snapshot_date, terminal_stay_rule):
     """Reject a parking parameter the tariff export cannot use, at configure time.
 
     The export itself runs at the very end of the preparation, i.e. after the whole synthesis; a typo or an
-    unquoted YAML date (which arrives as ``datetime.date``, not as text) must not surface only then.
+    unquoted YAML date (which arrives as ``datetime.date``, not as text) must not surface only then. The date
+    is checked by the validator the export uses, ``tariff_export.check_snapshot_date``, and the message names
+    the fix that matches the mistake: quotes for a YAML date, the ISO format for text in another format.
     """
     if terminal_stay_rule not in tariff_export.SUPPORTED_TERMINAL_STAY_RULES:
         raise ValueError(f"parking_terminal_stay_rule {terminal_stay_rule!r} is not implemented; supported: "
                          f"{list(tariff_export.SUPPORTED_TERMINAL_STAY_RULES)}")
+    example = PARKING_DEFAULTS["parking_tariff_snapshot_date"]
     try:
-        # The model file name embeds the snapshot date and accepts only ISO date text.
-        tariff_export.tariff_model_file_name("", snapshot_date)
+        tariff_export.check_snapshot_date(snapshot_date)
     except ValueError as error:
-        raise ValueError(f"parking_tariff_snapshot_date: {error}; write it as quoted YAML text, e.g. "
-                         f"{PARKING_DEFAULTS['parking_tariff_snapshot_date']!r}") from error
+        if isinstance(snapshot_date, datetime.date):  # datetime.datetime included
+            fix = f"YAML read the unquoted value as a date; quote it, e.g. {example!r}"
+        else:
+            fix = f"use the ISO form, e.g. {example!r}"
+        raise ValueError(f"parking_tariff_snapshot_date: {error}; {fix}") from error
 
 
 def execute(context):

@@ -256,6 +256,15 @@ def test_attach_parking_zones_logs_the_coverage_rate_and_the_top_zones(caplog):
     assert "z_res 2" in line and "z_paid_a 1" in line
 
 
+def test_value_counts_are_formatted_by_count_or_by_value():
+    # The one count-line helper of the parking package (also used by braunschweig.parking.zones_stage).
+    values = pd.Series(["b", "a", "b", None, "c", "b", "a", np.nan], dtype=object)
+    assert attach.format_value_counts(values) == "b 3, a 2, c 1"
+    assert attach.format_value_counts(values, limit=2) == "b 3, a 2"
+    assert attach.format_value_counts(values, by_value=True) == "a 2, b 3, c 1"
+    assert attach.format_value_counts(pd.Series([None, np.nan], dtype=object)) == "none"
+
+
 # --------------------------------------------------------------------------- attach_resident_zones
 
 
