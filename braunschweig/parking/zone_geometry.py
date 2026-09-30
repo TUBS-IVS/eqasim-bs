@@ -5,13 +5,15 @@ parking exists within the walking tolerance ``W``. Construction (amendment A1, a
 all in EPSG:25832 metres:
 
 1. ``R`` = union of the regulated street segments (``classify_way`` in ``REGULATED_CLASSES``: paid, restricted or
-   forbidden on at least one side) buffered ``street_buffer_m`` (25 m) and the paid or restricted lots buffered
-   ``lot_buffer_m`` (10 m);
+   forbidden on at least one side) buffered ``street_buffer_m`` (25 m) and the paid or restricted parking objects
+   (lots and separately mapped street-side areas) buffered ``lot_buffer_m`` (10 m);
 2. ``fill(R)``: every hole of ``R`` up to ``maximum_filled_hole_m2`` is filled (20,000 m2, ASSUMPTION Q3: a block
    enclosed by regulated streets is regulated; a larger enclosed area is no block and stays open);
-3. ``F`` = the street segments with at least one side explicitly tagged as free public parking (``classify_side``
-   = ``unregulated``). A way with one paid and one free side belongs to ``R`` AND to ``F``, and ``F`` wins
-   spatially (conservative reading of "no free parking within W", ruling T1-a of the v2 ledger);
+3. ``F`` = the street segments with at least one side tagged as free public parking (``classify_side`` =
+   ``unregulated``) plus the free public street-side parking areas (``amenity=parking`` with a ``parking=*`` type in
+   ``STREET_SIDE_LOT_TYPES``, ``lot_class`` unregulated; ruling R-T1-e of fix round 1). A way with one paid and one
+   free side belongs to ``R`` AND to ``F``, and ``F`` wins spatially (conservative reading of "no free parking
+   within W", ruling T1-a of the v2 ledger);
 4. ``Z`` = erode(fill(``R``), ``W``) minus buffer(``F``, ``W``); parts below ``minimum_island_m2`` are dropped
    (1 ha, ASSUMPTION Q2). ``W`` = 250 m (ASSUMPTION Q1: five minutes at 3 km/h there and back).
 
@@ -19,9 +21,14 @@ The rev-1 construction "``Z`` = ``R`` eroded by ``W``" is empty in every street 
 separated by the blocks); the fill step is what makes a core possible (``tests/test_parking_zone_geometry.py`` pins
 both). A street without any parking tag is no evidence of free parking (a mapping gap) and is ignored in ``F``; the
 share of street length inside fill(``R``) that carries parking information is reported instead (tagging
-completeness, streets = ``STREET_HIGHWAY_TYPES``). Free public LOTS are no part of ``F`` (the rule speaks of street
-parking, ruling T1-b); they are counted inside ``Z`` for the QA report. Lots with ``access=private|customers`` are
-neither paid nor free supply.
+completeness, streets = ``STREET_HIGHWAY_TYPES``). A side tagged ``separate`` (its parking is mapped as its own area)
+carries no information about the street itself: it is neither ``R`` nor ``F`` (class ``separate``, which counts as
+tagged), and the separately mapped street-side AREA decides by its own class (R-T1-e). Free public OFF-STREET lots are
+no part of ``F`` (the rule speaks of street parking, ruling T1-b, narrowed to off-street by R-T1-e); they are counted
+inside ``Z`` for the QA report. Parking objects with ``access=private|customers`` are neither paid nor free supply.
+ASSUMPTION (F4 of fix round 1): a parking side or street-side area without any fee tag counts as free; the QA reports
+how many free ways and areas rest on that assumption (``free_segments_without_fee_tag``,
+``free_street_side_areas_without_fee_tag``).
 
 Acceptance rule Q4 (ASSUMPTION, pre-registered in the v2 plan, Task 1 Step 4): a core is accepted when its area is at
 least ``ACCEPTANCE_MINIMUM_CORE_M2`` (1 ha) and the tagging completeness inside fill(``R``) is at least
@@ -34,8 +41,10 @@ Tag schemes (``classify_side``; the value of ``<prefix>:<side>:*`` falls back to
   ``parking:condition:<side>=ticket``;
 * restricted: ``parking:<side>:access=permit|private``, ``parking:<side>:authentication:disc=yes`` (the new-scheme
   form of the legacy disc condition), legacy ``parking:condition:<side>=residents|disc|private``;
-* forbidden: ``parking:<side>=no|separate``, ``parking:<side>:restriction=no_parking|no_stopping``,
-  ``parking:<side>:access=no``, legacy ``parking:lane:<side>=no_parking|no_stopping|no|separate`` and
+* separate (checked first, so it overrides every other tag of that side): ``parking:<side>=separate`` or legacy
+  ``parking:lane:<side>=separate``;
+* forbidden: ``parking:<side>=no``, ``parking:<side>:restriction=no_parking|no_stopping``,
+  ``parking:<side>:access=no``, legacy ``parking:lane:<side>=no_parking|no_stopping|no`` and
   ``parking:condition:<side>=no_parking|no_stopping``;
 * not public: any other side access or restriction value (customers, delivery, loading_only, ...) and any other
   legacy condition except ``free``; on the way itself ``access=private|customers`` (then the sides are not read);
@@ -45,6 +54,10 @@ Tag schemes (``classify_side``; the value of ``<prefix>:<side>:*`` falls back to
 
 The class of a way is the first of its two side classes in ``WAY_CLASSES`` order, so a way with any regulated side
 is regulated; ``has_free_side`` answers the F question separately.
+
+Parameters of a run (``ZoneCoreParameters``) name its output files (``ZoneCoreParameters.tag``); the pre-registered
+values are ``PRE_REGISTERED_PARAMETERS`` (W 250 m, buffers 25 and 10 m, fill 20,000 m2, islands 10,000 m2), the only
+ones the committed QA table may carry.
 
 Pure functions: no file or network access. Every GeoDataFrame input must be in EPSG:25832 (``ValueError``
 otherwise); shapely geometries passed between the steps (``R``, fill(``R``)) are EPSG:25832 by contract. Used by the
@@ -60,6 +73,7 @@ from typing import Mapping, Optional
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import shapely
 from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
@@ -71,7 +85,7 @@ _LOG_TAG = "[parking-geometry]"
 METRIC_CRS = "EPSG:25832"
 
 #: Classes of a street side and of a way, in precedence order (the class of a way is its first side class).
-WAY_CLASSES = ("paid", "restricted", "forbidden", "unregulated", "not_public", "no_parking_info")
+WAY_CLASSES = ("paid", "restricted", "forbidden", "unregulated", "not_public", "separate", "no_parking_info")
 #: Classes that put a street segment into R.
 REGULATED_CLASSES = ("paid", "restricted", "forbidden")
 #: Classes of an ``amenity=parking`` object; paid and restricted lots enter R, unregulated lots are free lots.
@@ -80,12 +94,15 @@ REGULATED_LOT_CLASSES = ("paid", "restricted")
 SIDES = ("left", "right")
 #: New-scheme values of ``parking:<side>`` that place parking on the street (a parking side).
 PARKING_POSITIONS = ("lane", "street_side", "on_kerb", "half_on_kerb", "shoulder")
-#: New-scheme values of ``parking:<side>`` without parking on the carriageway (forbidden per the v2 plan interface).
-NO_PARKING_POSITIONS = ("no", "separate")
+#: New-scheme values of ``parking:<side>`` that forbid parking on that side.
+NO_PARKING_POSITIONS = ("no",)
+#: Value of ``parking:<side>`` / legacy ``parking:lane:<side>``: the side's parking is mapped as its own area, so the
+#: street carries no information about it (ruling R-T1-e; the area is classified by ``classify_lot``).
+SEPARATE_POSITION = "separate"
 #: Legacy values of ``parking:lane:<side>`` that place parking on the street.
 LEGACY_PARKING_LANE_TYPES = ("parallel", "diagonal", "perpendicular", "marked", "yes")
 #: Legacy values of ``parking:lane:<side>`` without parking.
-LEGACY_NO_PARKING_LANE_TYPES = ("no_parking", "no_stopping", "no", "separate")
+LEGACY_NO_PARKING_LANE_TYPES = ("no_parking", "no_stopping", "no")
 FORBIDDEN_RESTRICTIONS = ("no_parking", "no_stopping")
 #: Side access values that restrict parking to permit holders or to the owner's users.
 RESTRICTED_ACCESS = ("permit", "private")
@@ -97,8 +114,9 @@ PUBLIC_ACCESS = ("yes", "permissive", "public", "destination")
 NOT_PUBLIC_ACCESS = ("private", "customers")
 #: Street classes that can carry kerbside parking: the denominator of the tagging completeness.
 STREET_HIGHWAY_TYPES = ("primary", "secondary", "tertiary", "unclassified", "residential", "living_street")
-#: ``parking=*`` values of an ``amenity=parking`` area that is street parking mapped as a separate object.
-STREET_SIDE_LOT_TYPES = ("street_side", "lane", "on_kerb", "half_on_kerb")
+#: ``parking=*`` values of an ``amenity=parking`` area that is street parking mapped as a separate object (``layby``
+#: is the older value of a street-side bay).
+STREET_SIDE_LOT_TYPES = ("street_side", "lane", "on_kerb", "half_on_kerb", "shoulder", "layby")
 
 DEFAULT_STREET_BUFFER_M = 25.0
 DEFAULT_LOT_BUFFER_M = 10.0
@@ -158,6 +176,8 @@ def classify_side(tags: Mapping, side: str) -> str:
     lane = _tokens(_side_tag(tags, "parking:lane", side))
     condition = _tokens(_side_tag(tags, "parking:condition", side))
 
+    if position == SEPARATE_POSITION or SEPARATE_POSITION in lane:
+        return "separate"
     if "yes" in fee or _conditional_yes(_side_tag(tags, "parking", side, "fee:conditional")) or "ticket" in condition:
         return "paid"
     if access & set(RESTRICTED_ACCESS) or condition & set(LEGACY_RESTRICTED_CONDITIONS) or "yes" in disc:
@@ -195,6 +215,27 @@ def has_free_side(tags: Mapping) -> bool:
     return _way_is_public(tags) and any(classify_side(tags, side) == "unregulated" for side in SIDES)
 
 
+def has_explicit_free_side(tags: Mapping) -> bool:
+    """A free side that says so (``parking:<side>:fee=no`` or legacy ``parking:condition:<side>=free``); a free side
+    without any fee tag rests on the ASSUMPTION "no fee tag = free"."""
+    if not _way_is_public(tags):
+        return False
+    for side in SIDES:
+        if classify_side(tags, side) != "unregulated":
+            continue
+        if "no" in _tokens(_side_tag(tags, "parking", side, "fee")) or \
+                "free" in _tokens(_side_tag(tags, "parking:condition", side)):
+            return True
+    return False
+
+
+def _side_pair(tags: Mapping) -> str:
+    """The two side classes of a way, sorted and joined by '+' (a way that is not public: 'not_public+not_public')."""
+    if not _way_is_public(tags):
+        return "not_public+not_public"
+    return "+".join(sorted(classify_side(tags, side) for side in SIDES))
+
+
 def _has_separate_side(tags: Mapping) -> bool:
     return any((_side_tag(tags, "parking", side) or "").lower() == "separate"
                or "separate" in _tokens(_side_tag(tags, "parking:lane", side)) for side in SIDES)
@@ -230,7 +271,9 @@ def classify_segments(ways: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     frame["way_class"] = [classify_way(value) for value in tags]
     frame["regulated"] = frame["way_class"].isin(REGULATED_CLASSES).astype(bool)
     frame["free_side"] = np.array([has_free_side(value) for value in tags], dtype=bool)
+    frame["free_side_explicit"] = np.array([has_explicit_free_side(value) for value in tags], dtype=bool)
     frame["separate_side"] = np.array([_has_separate_side(value) for value in tags], dtype=bool)
+    frame["side_pair"] = [_side_pair(value) for value in tags]
     return frame
 
 
@@ -242,19 +285,36 @@ def classify_lots(lots: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     frame["lot_class"] = [classify_lot(value) for value in tags]
     frame["street_side_lot"] = np.array([str(value.get("parking", "")).lower() in STREET_SIDE_LOT_TYPES
                                          for value in tags], dtype=bool)
+    frame["fee_tagged"] = np.array([_tag_text(value, "fee") is not None for value in tags], dtype=bool)
     return frame
 
 
-def free_supply(segments: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """F: the classified street segments with at least one free public side."""
+def free_street_side_areas(lots: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Free public street-side parking areas (``lot_class`` unregulated, ``parking=*`` in ``STREET_SIDE_LOT_TYPES``):
+    street parking mapped as its own object, part of F (ruling R-T1-e)."""
+    _require_columns(lots, ("lot_class", "street_side_lot"), "parking objects (run classify_lots first)")
+    return lots[(lots["lot_class"] == "unregulated") & lots["street_side_lot"].astype(bool)]
+
+
+def free_offstreet_lots(lots: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Free public off-street lots (``lot_class`` unregulated, not street-side): reported in the QA, never part of F
+    (ruling T1-b: the rule speaks of street parking)."""
+    _require_columns(lots, ("lot_class", "street_side_lot"), "parking objects (run classify_lots first)")
+    return lots[(lots["lot_class"] == "unregulated") & ~lots["street_side_lot"].astype(bool)]
+
+
+def free_supply(segments: gpd.GeoDataFrame, lots: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
+    """F: the classified street segments with at least one free public side plus, when ``lots`` is given, the free
+    public street-side areas (``free_street_side_areas``); one row per element with ``kind`` segment or
+    street_side_area."""
     _require_columns(segments, ("free_side",), "street segments (run classify_segments first)")
-    return segments[segments["free_side"].astype(bool)]
-
-
-def free_lots(lots: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Free public lots (``lot_class`` unregulated): reported in the QA, never part of F."""
-    _require_columns(lots, ("lot_class",), "parking objects (run classify_lots first)")
-    return lots[lots["lot_class"] == "unregulated"]
+    parts = [segments[segments["free_side"].astype(bool)].assign(kind="segment")]
+    if lots is not None:
+        _require_metric(lots, "parking objects")
+        parts.append(free_street_side_areas(lots).assign(kind="street_side_area"))
+    columns = ["kind", "geometry"] + (["osm_id"] if all("osm_id" in part.columns for part in parts) else [])
+    frame = pd.concat([part[columns] for part in parts], ignore_index=True)
+    return gpd.GeoDataFrame(frame, geometry="geometry", crs=segments.crs)
 
 
 # --------------------------------------------------------------------------- geometry helpers
@@ -483,6 +543,21 @@ class ZoneCoreParameters:
     def as_dict(self) -> dict:
         return {field.name: float(getattr(self, field.name)) for field in dataclasses.fields(self)}
 
+    def tag(self) -> str:
+        """File-name tag of a run: ``w<walk_m>_b<street_buffer_m>_l<lot_buffer_m>_h<maximum_filled_hole_m2>_i<minimum_
+        island_m2>`` (metres and square metres), e.g. ``w250_b25_l10_h20000_i10000``; runs with other parameters never
+        share a file."""
+        def number(value: float) -> str:
+            return str(int(value)) if float(value).is_integer() else repr(float(value))
+
+        return (f"w{number(self.walk_m)}_b{number(self.street_buffer_m)}_l{number(self.lot_buffer_m)}"
+                f"_h{number(self.maximum_filled_hole_m2)}_i{number(self.minimum_island_m2)}")
+
+
+#: The parameters pre-registered in the v2 plan (Q1 W 250 m, Q2 islands 1 ha, Q3 holes up to 2 ha, buffers 25 / 10 m):
+#: the only ones the committed QA table and the release may carry.
+PRE_REGISTERED_PARAMETERS = ZoneCoreParameters()
+
 
 def _finite_or_none(value):
     if isinstance(value, float) and not math.isfinite(value):
@@ -508,12 +583,19 @@ class ZoneCore:
     islands_dropped: int
     street_length_in_fill_m: float
     tagged_street_length_in_fill_m: float
-    free_lots: int
-    free_lots_in_core: int
-    free_lot_area_in_core_m2: float
-    free_street_side_lots_in_core: int
+    free_segments_without_fee_tag: int
+    free_street_side_areas: int
+    free_street_side_areas_without_fee_tag: int
+    free_offstreet_lots: int
+    free_offstreet_lots_in_core: int
+    free_offstreet_lot_area_in_core_m2: float
+    side_class_pairs: dict
     #: erode(fill(R), W) before F is subtracted: separates a fill too fragmented for W from a core carved by F.
-    eroded_filled_area_m2: float = 0.0
+    eroded_filled: BaseGeometry = dataclasses.field(default_factory=Polygon)
+
+    @property
+    def eroded_filled_area_m2(self) -> float:
+        return round(float(self.eroded_filled.area), 1)
 
     @property
     def regulated_area_m2(self) -> float:
@@ -558,10 +640,13 @@ class ZoneCore:
             "street_length_in_fill_m": round(self.street_length_in_fill_m, 1),
             "tagged_street_length_in_fill_m": round(self.tagged_street_length_in_fill_m, 1),
             "tagging_completeness": self.tagging_completeness,
-            "free_lots": self.free_lots,
-            "free_lots_in_core": self.free_lots_in_core,
-            "free_lot_area_in_core_m2": self.free_lot_area_in_core_m2,
-            "free_street_side_lots_in_core": self.free_street_side_lots_in_core,
+            "free_segments_without_fee_tag": self.free_segments_without_fee_tag,
+            "free_street_side_areas": self.free_street_side_areas,
+            "free_street_side_areas_without_fee_tag": self.free_street_side_areas_without_fee_tag,
+            "free_offstreet_lots": self.free_offstreet_lots,
+            "free_offstreet_lots_in_core": self.free_offstreet_lots_in_core,
+            "free_offstreet_lot_area_in_core_m2": self.free_offstreet_lot_area_in_core_m2,
+            "side_class_pairs": dict(self.side_class_pairs),
             "decision": acceptance.decision,
             "decision_reason": acceptance.reason,
         }
@@ -574,28 +659,45 @@ def build_zone_core(segments: gpd.GeoDataFrame, lots: gpd.GeoDataFrame,
     regulated = regulated_area(segments, lots, parameters.street_buffer_m, parameters.lot_buffer_m)
     filled = fill_holes(regulated, parameters.maximum_filled_hole_m2)
     holes_filled, holes_kept = hole_counts(regulated, parameters.maximum_filled_hole_m2)
-    free = free_supply(segments)
-    core, dropped = _core_frame(_core_parts(filled, free, parameters.walk_m), parameters.minimum_island_m2)
+    free = free_supply(segments, lots)
+    free_ways = segments[segments["free_side"].astype(bool)]
+    street_side = free_street_side_areas(lots)
+    core, dropped = _core_parts_frame(filled, free, parameters)
     streets = segments[segments["highway"].isin(STREET_HIGHWAY_TYPES)] if "highway" in segments.columns else segments
     tagged_m, total_m = _street_lengths(streets, filled)
-    public_lots = free_lots(lots)
+    offstreet = free_offstreet_lots(lots)
     core_geometry = _union(list(core.geometry))
-    inside = public_lots[public_lots.geometry.intersects(core_geometry)] if len(core) else public_lots.iloc[0:0]
+    inside = offstreet[offstreet.geometry.intersects(core_geometry)] if len(core) else offstreet.iloc[0:0]
+    explicit = free_ways["free_side_explicit"].astype(bool) if "free_side_explicit" in free_ways.columns else \
+        pd.Series(False, index=free_ways.index)
+    fee_tagged = street_side["fee_tagged"].astype(bool) if "fee_tagged" in street_side.columns else \
+        pd.Series(False, index=street_side.index)
     result = ZoneCore(
         parameters=parameters, regulated=regulated, filled=filled, core=core,
         segment_counts=_counts(segments["way_class"], WAY_CLASSES), lot_counts=_counts(lots["lot_class"], LOT_CLASSES),
-        regulated_segments=int(segments["regulated"].sum()), free_segments=int(len(free)),
+        regulated_segments=int(segments["regulated"].sum()), free_segments=int(len(free_ways)),
         mixed_segments=int((segments["regulated"].astype(bool) & segments["free_side"].astype(bool)).sum()),
         separate_segments=int(segments["separate_side"].sum()) if "separate_side" in segments.columns else 0,
         holes_filled=holes_filled, holes_kept=holes_kept, islands_dropped=dropped,
-        street_length_in_fill_m=total_m, tagged_street_length_in_fill_m=tagged_m, free_lots=int(len(public_lots)),
-        free_lots_in_core=int(len(inside)),
-        free_lot_area_in_core_m2=round(float(inside.geometry.intersection(core_geometry).area.sum()), 1)
+        street_length_in_fill_m=total_m, tagged_street_length_in_fill_m=tagged_m,
+        free_segments_without_fee_tag=int((~explicit).sum()), free_street_side_areas=int(len(street_side)),
+        free_street_side_areas_without_fee_tag=int((~fee_tagged).sum()), free_offstreet_lots=int(len(offstreet)),
+        free_offstreet_lots_in_core=int(len(inside)),
+        free_offstreet_lot_area_in_core_m2=round(float(inside.geometry.intersection(core_geometry).area.sum()), 1)
         if len(inside) else 0.0,
-        free_street_side_lots_in_core=int(inside["street_side_lot"].sum()) if "street_side_lot" in inside.columns else 0,
-        eroded_filled_area_m2=round(float(filled.buffer(-parameters.walk_m).area), 1) if not filled.is_empty else 0.0)
-    log.info("%s core: R %.0f m2, fill(R) %.0f m2, Z %.0f m2 in %d parts; tagging completeness %s; %d free lots, %d "
-             "of them inside Z (%.0f m2); decision %s %s", _LOG_TAG, result.regulated_area_m2, result.filled_area_m2,
-             result.core_area_m2, len(core), result.tagging_completeness, result.free_lots, result.free_lots_in_core,
-             result.free_lot_area_in_core_m2, result.acceptance().decision, result.acceptance().reason)
+        side_class_pairs=_counts(segments["side_pair"], sorted(set(segments["side_pair"])))
+        if "side_pair" in segments.columns else {},
+        eroded_filled=filled.buffer(-parameters.walk_m) if not filled.is_empty else Polygon())
+    log.info("%s core: R %.0f m2, fill(R) %.0f m2, Z %.0f m2 in %d parts; tagging completeness %s; F = %d ways with a "
+             "free side (%d without any fee tag) + %d free street-side areas (%d without any fee tag); %d free "
+             "off-street lots, %d of them inside Z (%.0f m2); decision %s %s", _LOG_TAG, result.regulated_area_m2,
+             result.filled_area_m2, result.core_area_m2, len(core), result.tagging_completeness, result.free_segments,
+             result.free_segments_without_fee_tag, result.free_street_side_areas,
+             result.free_street_side_areas_without_fee_tag, result.free_offstreet_lots,
+             result.free_offstreet_lots_in_core, result.free_offstreet_lot_area_in_core_m2,
+             result.acceptance().decision, result.acceptance().reason)
     return result
+
+
+def _core_parts_frame(filled: BaseGeometry, free: gpd.GeoDataFrame, parameters: ZoneCoreParameters) -> tuple:
+    return _core_frame(_core_parts(filled, free, parameters.walk_m), parameters.minimum_island_m2)

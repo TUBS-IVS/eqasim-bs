@@ -115,23 +115,32 @@ REGISTER_COLUMNS = ("ags", "name", "status", "source", "note")
 REGISTER_STATUSES = ("zoned", "no_paid_parking_known", "not_audited", "excluded")
 
 #: Curation QA of the rule-based cores (``parking_zones_2026_qa.csv``), one row per curated municipality. Counts,
-#: areas (m2) and the tagging completeness come from ``<ags>_qa.json`` of the curation aid; ``role`` says whether
+#: areas (m2) and the tagging completeness come from ``<ags>_qa_<tag>.json`` of the curation aid; ``role`` says whether
 #: an accepted core may replace polygons (``zones_from_core``) or is QA only; ``q4_decision`` is the pre-registered
 #: acceptance rule Q4 or ``request_failed`` (no response, the municipality stayed unchanged); ``applied`` and
 #: ``zone_ids`` (';'-separated) name the polygons that carry the core.
 ZONE_QA_COLUMNS = (
     "ags", "name", "role", "raw_response", "osm_timestamp", "walk_m", "maximum_filled_hole_m2", "minimum_island_m2",
-    "segments", "regulated_segments", "free_segments", "mixed_segments", "separate_segments", "lots", "free_lots",
-    "free_lots_in_core", "free_lot_area_in_core_m2", "tagging_completeness", "regulated_area_m2", "filled_area_m2",
-    "eroded_filled_area_m2", "core_area_m2", "core_parts", "reference", "core_share_inside_reference",
-    "reference_share_covered_by_core", "reference_tagging_completeness", "largest_outline_distance_m", "q4_decision",
-    "applied", "zone_ids", "note",
+    "segments", "regulated_segments", "free_segments", "free_segments_without_fee_tag", "mixed_segments",
+    "separate_segments", "lots", "free_street_side_areas", "free_street_side_areas_without_fee_tag",
+    "free_offstreet_lots", "free_offstreet_lots_in_core", "free_offstreet_lot_area_in_core_m2", "tagging_completeness",
+    "regulated_area_m2", "filled_area_m2", "eroded_filled_area_m2", "core_area_m2", "core_parts", "reference",
+    "core_share_inside_reference", "reference_share_covered_by_core", "reference_tagging_completeness",
+    "largest_outline_distance_m", "reference_paid_ways", "reference_paid_street_side_areas", "reference_free_side_ways",
+    "reference_free_side_length_m",
+    "reference_free_street_side_areas", "reference_conflicts", "piece_assignment", "q4_decision", "applied", "zone_ids",
+    "note",
 )
 ZONE_QA_ROLES = ("zones_from_core", "qa_only")
 ZONE_QA_DECISIONS = ("accepted", "rejected", "request_failed")
-_QA_COUNT_COLUMNS = ("segments", "regulated_segments", "free_segments", "mixed_segments", "separate_segments", "lots",
-                     "free_lots", "free_lots_in_core", "core_parts")
-_QA_AREA_COLUMNS = ("free_lot_area_in_core_m2", "regulated_area_m2", "filled_area_m2", "eroded_filled_area_m2",
+_QA_COUNT_COLUMNS = ("segments", "regulated_segments", "free_segments", "free_segments_without_fee_tag",
+                     "mixed_segments", "separate_segments", "lots", "free_street_side_areas",
+                     "free_street_side_areas_without_fee_tag", "free_offstreet_lots", "free_offstreet_lots_in_core",
+                     "core_parts")
+#: Counts that exist only where a reference outline was compared (empty otherwise).
+_QA_OPTIONAL_COUNT_COLUMNS = ("reference_paid_ways", "reference_paid_street_side_areas", "reference_free_side_ways",
+                              "reference_free_street_side_areas")
+_QA_AREA_COLUMNS = ("free_offstreet_lot_area_in_core_m2", "regulated_area_m2", "filled_area_m2", "eroded_filled_area_m2",
                     "core_area_m2")
 _QA_PARAMETER_COLUMNS = ("walk_m", "maximum_filled_hole_m2", "minimum_island_m2")
 _QA_SHARE_COLUMNS = ("tagging_completeness", "core_share_inside_reference", "reference_share_covered_by_core",
@@ -655,8 +664,8 @@ def validate_zone_qa(qa: pd.DataFrame, zones: pd.DataFrame, tariffs: pd.DataFram
         if row["applied"] not in ("true", "false"):
             problems.append(f"{prefix}: applied {row['applied']!r}; use the literal 'true' or 'false'")
         applied = row["applied"] == "true"
-        numbers = _QA_COUNT_COLUMNS + _QA_AREA_COLUMNS + _QA_PARAMETER_COLUMNS + _QA_SHARE_COLUMNS + (
-            "largest_outline_distance_m",)
+        numbers = _QA_COUNT_COLUMNS + _QA_OPTIONAL_COUNT_COLUMNS + _QA_AREA_COLUMNS + _QA_PARAMETER_COLUMNS + \
+            _QA_SHARE_COLUMNS + ("largest_outline_distance_m", "reference_free_side_length_m")
         if decision == "request_failed":
             carried = [column for column in numbers + ("osm_timestamp", "raw_response") if _is_set(row[column])]
             if carried:
@@ -672,10 +681,11 @@ def validate_zone_qa(qa: pd.DataFrame, zones: pd.DataFrame, tariffs: pd.DataFram
                 value = _qa_number(row[column])
                 if value is None or not (math.isfinite(value) and value >= 0) or (column == "walk_m" and value <= 0):
                     problems.append(f"{prefix}: {column} = {row[column]!r} must be a positive number")
-            for column in _QA_COUNT_COLUMNS:
-                if not re.fullmatch(r"\d+", str(row[column])):
+            for column in _QA_COUNT_COLUMNS + _QA_OPTIONAL_COUNT_COLUMNS:
+                empty_allowed = column in _QA_OPTIONAL_COUNT_COLUMNS and not _is_set(row[column])
+                if not empty_allowed and not re.fullmatch(r"\d+", str(row[column])):
                     problems.append(f"{prefix}: {column} = {row[column]!r} must be a whole number >= 0")
-            for column in _QA_AREA_COLUMNS + ("largest_outline_distance_m",):
+            for column in _QA_AREA_COLUMNS + ("largest_outline_distance_m", "reference_free_side_length_m"):
                 value = _qa_number(row[column])
                 required = column in _QA_AREA_COLUMNS
                 if (value is None and required) or (value is not None and not (math.isfinite(value) and value >= 0)):

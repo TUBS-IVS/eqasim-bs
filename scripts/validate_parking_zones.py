@@ -61,13 +61,24 @@ def check_tariff_model_rows(tariffs) -> None:
         raise ValueError("tariff rows the tariff model rejects:\n  " + "\n  ".join(problems))
 
 
+#: QA column -> pre-registered construction parameter (``zone_geometry.PRE_REGISTERED_PARAMETERS``).
+PRE_REGISTERED_QA_COLUMNS = {"walk_m": "walk_m", "maximum_filled_hole_m2": "maximum_filled_hole_m2",
+                             "minimum_island_m2": "minimum_island_m2"}
+
+
 def check_zone_qa(qa, zones, tariffs) -> None:
-    """``validate_zone_qa`` plus rule Q4 re-applied to every row with a response; raise ``ValueError``."""
+    """``validate_zone_qa`` plus, for every row with a response, the pre-registered parameters (a sensitivity arm
+    never stands in for the pre-registered run) and rule Q4 re-applied; raise ``ValueError``."""
     pz.validate_zone_qa(qa, zones, tariffs)
     problems = []
+    pre_registered = zone_geometry.PRE_REGISTERED_PARAMETERS.as_dict()
     for _, row in qa.iterrows():
         if row["q4_decision"] == "request_failed":
             continue
+        for column, parameter in PRE_REGISTERED_QA_COLUMNS.items():
+            expected = pre_registered[parameter]
+            if not math.isclose(float(row[column]), expected, rel_tol=1e-9):
+                problems.append(f"ags {row['ags']}: {column} = {row[column]} is not the pre-registered {expected:g}")
         completeness = float(row["tagging_completeness"]) if row["tagging_completeness"] else math.nan
         expected = zone_geometry.core_acceptance(float(row["core_area_m2"]), completeness)
         if expected.decision != row["q4_decision"]:
@@ -75,7 +86,8 @@ def check_zone_qa(qa, zones, tariffs) -> None:
                             f"{expected.decision!r} (core {row['core_area_m2']} m2, tagging completeness "
                             f"{row['tagging_completeness'] or 'undefined'}; {expected.reason or 'both thresholds met'})")
     if problems:
-        raise ValueError("zone QA table contradicts the acceptance rule Q4:\n  " + "\n  ".join(problems))
+        raise ValueError("zone QA table contradicts the pre-registered parameters or the acceptance rule Q4:\n  "
+                         + "\n  ".join(problems))
 
 
 def _print_geometry_source_mix(zones) -> None:

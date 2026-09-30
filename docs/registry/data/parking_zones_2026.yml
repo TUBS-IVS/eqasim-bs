@@ -57,7 +57,8 @@ acquisition:
     (2026-04-29) instead. Overlaps are resolved by precedence (BgA car parks and the International House lots
     cut out of Ia and the campus areas, the Parkscheininseln cut out of zone 132), so no two zones overlap by more
     than 1 m2.
-    Rule-based geometry, parking cost zones v2 lever 1 (issue #436, spec amendments A1 and A2, 2026-09-30):
+    Rule-based geometry, parking cost zones v2 lever 1 (issue #436, spec amendments A1 and A2, 2026-09-30; fix
+    round 1 rulings R-T1-e to R-T1-g):
     scripts/build_parking_zones_from_osm.py --regulation sent one regulation request per municipality (every
     kerbside street, every highway way with a parking:* key and every car park of a centre box, with all tags;
     5 s courtesy pause, up to three attempts with 60 and 120 s backoff; the seven failed attempts, HTTP 429 and
@@ -65,17 +66,33 @@ acquisition:
     Braunschweig, Goslar, Wolfenbuettel and Gifhorn (cores that may replace polygons) and for Wolfsburg, Peine,
     Helmstedt and Salzgitter (QA only). The raw responses <ags>_regulation_overpass_2026-09-30.json (OSM base
     2026-09-30T14:24Z to 14:38Z) stay local; their query texts are committed next to the v1 ones under
-    scripts/curation/parking_zones_2026/overpass_queries/. braunschweig.parking.zone_geometry built
-    each core (regulated ways buffered 25 m and paid or restricted car parks 10 m, holes up to 2 ha filled,
-    eroded by W = 250 m minus the 250 m buffer of the ways with a free side, parts below 1 ha dropped) and the
+    scripts/curation/parking_zones_2026/overpass_queries/. The committed QA table was re-derived from these
+    responses without any new request (--from-raw) into raw_overpass/derived_fix_round_1/, where every output
+    carries its parameter tag (<ags>_qa_w250_b25_l10_h20000_i10000.json, <ags>_core_..., <ags>_regulated_...,
+    and the two diagnostic Braunschweig files ..._allstreets.json) and is replaced only with --overwrite; the
+    untagged <ags>_{regulated,core,qa} files and the tagged files in raw_overpass/ itself are superseded
+    intermediate outputs (before ruling R-T1-e and the paid-area report), no input of the committed table.
+    braunschweig.parking.zone_geometry built each core: R = the ways with a paid, restricted or forbidden side
+    buffered 25 m plus the paid or restricted parking objects (car parks and separately mapped street-side areas)
+    buffered 10 m; holes up to 2 ha filled; F = the ways with a free side plus the free public street-side areas;
+    a side mapped separately (parking:<side>=separate) is neither R nor F, its separately mapped area decides by
+    its own class (R-T1-e); Z = erode(fill(R), 250 m) minus the 250 m buffer of F, parts below 1 ha dropped; the
     pre-registered acceptance rule Q4 (core >= 1 ha and tagging completeness >= 60 %) decided. Braunschweig was
     compared with the ParkGO annex outlines (scripts/curation/parking_zones_2026/extract_parkgo_annex_zones.py
-    with the v1 page-3 affine parkgo_annex_affine.json, which re-running the v1 scratch fit from its start
-    affine reproduced bit for bit), the other towns with their v1 polygons. Counts, areas and decisions are the
-    committed QA table parking_zones_2026_qa.csv, written by assemble_parking_zones.py --erosion-dir. No core
-    was accepted, so no polygon changed: re-running the whole chain (georeference_zone_map.py,
-    extract_braunschweig_zone_map.py, digitise_stadthalle_fee_islands.py, then assemble_parking_zones.py with
-    the v2 cores) reproduces this file byte for byte.
+    with the v1 page-3 affine parkgo_annex_affine.json; that parameter file is the only record of the v1 fit,
+    whose line mask exists only in the v1 scratch area: the committed extractor needs a darkness threshold of 100
+    on the rendering in raw_sources where the v1 mask used 60 on another rendering, so the fit cannot be re-run
+    from the repository), the other towns with their v1 polygons. An accepted Braunschweig core would be cut by
+    every v1 zone and each remaining piece assigned WHOLE to the annex zone it overlaps most (bs_zone_ia_sued,
+    bs_zone_ii; R-T1-f, the annex is never a clipping geometry), pinned with the rest of the accepted path by
+    tests/test_parking_zone_assembly.py on synthetic inputs. Counts, areas, ordinance conflicts, diagnostics and
+    decisions are the committed QA table parking_zones_2026_qa.csv (assemble_parking_zones.py --erosion-dir
+    raw_overpass/derived_fix_round_1 --counterfactual-qa <the two _allstreets files>; its header defines every
+    column); the assembly refuses QA inputs without the pre-registered parameters (W 250 m, fill 20,000 m2,
+    islands 10,000 m2, buffers 25 and 10 m) or with a counterfactual. No core was accepted, so no polygon changed:
+    re-running the whole chain (georeference_zone_map.py, extract_braunschweig_zone_map.py,
+    digitise_stadthalle_fee_islands.py, then assemble_parking_zones.py with the v2 cores) reproduces this file
+    byte for byte.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -100,10 +117,12 @@ verification:
     Since v2 lever 1 the validator also prints the geometry-source mix by area and, where the QA table exists
     (required as soon as a polygon has geometry_source osm_fee_erosion, whose unavoidable_walk_m and
     osm_timestamp load_zone_polygons requires for that source only), checks it against the polygons
-    (braunschweig.parking.zones.validate_zone_qa) and re-applies rule Q4 to every row with a response;
-    tests/test_parking_zones.py (test_osm_fee_erosion_zones_need_walk_and_snapshot_provenance,
-    test_zone_qa_table_is_cross_checked_against_the_polygons, test_validator_reapplies_the_acceptance_rule_to_the_qa_table)
-    and tests/test_parking_zone_geometry.py (construction, tag classification, the curation aid offline) pin it.
+    (braunschweig.parking.zones.validate_zone_qa) and re-applies rule Q4 and the pre-registered parameters to
+    every row with a response; tests/test_parking_zones.py (test_osm_fee_erosion_zones_need_walk_and_snapshot_provenance,
+    test_zone_qa_table_is_cross_checked_against_the_polygons, test_validator_reapplies_the_acceptance_rule_to_the_qa_table),
+    tests/test_parking_zone_geometry.py (construction, tag classification, ordinance conflicts, the curation aid
+    offline, parameter-tagged outputs) and tests/test_parking_zone_assembly.py (the accepted-core path of the
+    assembly) pin it.
 requirements:
   synthesis: not_needed
   matsim: required
@@ -145,19 +164,35 @@ limitations: >-
   Parkscheininseln, the BgA car park Willy-Brandt-Platz, TU Volkmaroder Strasse (ticketed from 2026-10-01) and
   Bevenroder Strasse, Goslar zone 2 (see the coverage register). The five BgA car-park polygons contain no activity
   of the local 1 % scenario; activities are located at buildings, so a car park without buildings rarely carries a
-  destination. v2 lever 1 (2026-09-30) accepted no rule-based core, so every approximation and gap above stays:
-  gs_altstadt_zone1, wf_innenstadt and gf_innenstadt remain centre approximations, ParkGO zone II and the southern
-  part of zone 1a remain unzoned, and the Wolfsburg, Peine, Helmstedt and Salzgitter polygons are unchanged (QA
-  only). In all eight towns erode(fill(R), 250 m) is already empty before the ways with a free side are subtracted
-  (eroded_filled_area_m2 0 in every row of parking_zones_2026_qa.csv): the regulated area is a set of 50 m wide
-  strips along the regulated ways (in Braunschweig 922 of the 941 regulated ways carry only forbidden sides: no
-  parking, no stopping, or parking mapped separately; segment_counts of the local raw_overpass/03101000_qa.json,
-  reproducible from the raw response), and kerbside streets without any parking tag (and pedestrian streets, which the regulation query does
-  not fetch) leave the blocks open. The tagging completeness of rule Q4 is measured inside fill(R), which is built from tagged ways, and
-  overstates the mapping of the ordinance areas (Braunschweig 0.752 inside fill(R) against 0.364 inside the annex
-  zones, column reference_tagging_completeness). At the sensitivity arm W = 150 m of the design only Braunschweig
-  would give a core (one part of 1.26 ha; build_parking_zones_from_osm.py --regulation --from-raw <response>
-  --walk-m 150), at W = 400 m none.
+  destination. v2 lever 1 (2026-09-30, fix round 1) accepted no rule-based core, so every approximation and gap
+  above stays: gs_altstadt_zone1, wf_innenstadt and gf_innenstadt remain centre approximations, ParkGO zone II and
+  the southern part of zone 1a remain unzoned, and the Wolfsburg, Peine, Helmstedt and Salzgitter polygons are
+  unchanged (QA only). Why the cores are empty (parking_zones_2026_qa.csv and the local QA files under
+  raw_overpass/derived_fix_round_1/, reproducible from the raw responses): (1) in all eight towns erode(fill(R),
+  250 m) is already empty before F is subtracted (eroded_filled_area_m2 0): R is a set of 50 m wide strips along
+  the regulated ways (in Braunschweig 778 regulated ways, 768 of them with no paid or restricted side: 511
+  forbidden on both sides, 125 with a free other side, 92 with a side mapped separately and 40 with an untagged
+  one; no street is paid by its own tags, because the 8 fee-tagged ways map their paid side separately and the fee
+  sits on the 415 paid street-side areas; side_class_pairs of 03101000_qa_w250_b25_l10_h20000_i10000.json), and
+  kerbside streets without any parking tag and pedestrian streets (which the regulation query does not fetch) leave
+  the blocks open. (2) The fill cap Q3 binds whatever the tagging: with every fetched kerbside street counted as
+  regulated (the diagnostic counterfactual --all-kerbside-streets-regulated adds 2,100 of the 2,835 kerbside
+  streets to the 778 regulated ways), erode(fill(R), 250 m) inside the annex zones is only 858 m2 (Ia 8, Ib 0, II
+  850) at the pre-registered 2 ha cap and 1.161 km2 (Ia 0.427, Ib 0.294, II 0.440) at a 10 ha cap (python
+  scripts/build_parking_zones_from_osm.py --regulation --ags 03101000 --bbox 52.2330,10.4980,52.2800,10.5870
+  --from-raw raw_overpass/03101000_regulation_overpass_2026-09-30.json --reference-outline
+  raw_sources/bs_2_08_annex_zones_georeferenced.geojson --all-kerbside-streets-regulated
+  [--maximum-filled-hole-m2 100000] --out-dir <dir>; note column of the Braunschweig row): better OSM tagging alone
+  cannot produce the ParkGO zones under Q3 = 2 ha. The tagging completeness of rule Q4 is measured inside fill(R),
+  which is built from tagged ways, and overstates the mapping of the ordinance areas (Braunschweig 0.733 inside
+  fill(R) against 0.364 inside the annex zones, column reference_tagging_completeness). ASSUMPTION (no fee tag =
+  free): a parking side or a street-side area without any fee tag counts as free supply; in Braunschweig 363 of the
+  372 ways with a free side and 439 of the 839 free street-side areas rest on it (free_segments_without_fee_tag,
+  free_street_side_areas_without_fee_tag), and inside the annex zones OSM makes 15 (Ia), 12 (Ib) and 47 (II) ways
+  free on a side, 72 of them only by that assumption, next to 269, 183 and 1 paid street-side areas (column
+  reference_conflicts names them per zone; conflicts are resolved by the source, not by the script). At the
+  sensitivity arms W = 150 m and 400 m no town gives a core (Braunschweig at 150 m: erode(fill(R)) 294 m2, Z 0 once
+  F is subtracted).
 notes: >-
   Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data,
   2026-09-30, after v2 lever 1): 24 zones, 24 tariff rows, 131 register rows (123 municipalities); zone_type

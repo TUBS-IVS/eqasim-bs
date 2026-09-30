@@ -26,10 +26,17 @@ with their tags (``REGULATION_STATEMENTS``); restrict ``--bbox`` to the town cen
 turned into the unavoidable-paid-parking core by ``braunschweig.parking.zone_geometry.build_zone_core``
 (``--walk-m``, ``--maximum-filled-hole-m2``, ``--minimum-island-m2``; buffers ``--street-buffer-m`` and
 ``--lot-buffer-m``). Outputs next to the v1 files: the raw response ``<ags>_regulation_overpass_<date>.json`` with
-its query, ``<ags>_regulated.geojson`` (R, fill(R) and every classified way and lot), ``<ags>_core.geojson`` (the
-parts of Z, possibly none) and ``<ags>_qa.json`` (counts, areas, tagging completeness, the Q4 decision, and with
-``--reference-outline`` the comparison with a georeferenced ordinance map plus the fee-tagged ways outside it; with
-``--street-names-file`` the listed streets without a fee tag and the fee-tagged streets outside the list). The v1
+its query, and three files named by the parameter tag of the run (``zone_geometry.ZoneCoreParameters.tag``, e.g.
+``w250_b25_l10_h20000_i10000``, so a sensitivity run never replaces the pre-registered one): ``<ags>_regulated_<tag>
+.geojson`` (R, fill(R) and every classified way and lot), ``<ags>_core_<tag>.geojson`` (the parts of Z, possibly
+none) and ``<ags>_qa_<tag>.json`` (counts, areas, tagging completeness, the Q4 decision, and with
+``--reference-outline`` the comparison with a georeferenced ordinance map: per zone the paid ways, the ways with a free
+side and the free street-side areas by name, the paid ways outside it and erode(fill(R), W) inside it; with
+``--street-names-file`` the listed streets without a fee tag and the fee-tagged streets outside the list). An existing
+output is replaced only with ``--overwrite`` (logged as a warning), because the out-dir is write-through data of the
+main checkout. ``--all-kerbside-streets-regulated`` is a diagnostic counterfactual (every kerbside street counts as
+regulated: the upper bound of what the fill cap Q3 allows whatever the tagging); its files carry the tag suffix
+``_allstreets`` and the QA file names the counterfactual, so the assembly never takes it for a release input. The v1
 candidate files are not written in this mode. The request is retried with exponential backoff (``--attempts``,
 ``--backoff-s``) after the courtesy pause; every failed attempt is appended to ``overpass_failures.log`` and a
 municipality whose request still fails produces no output at all (it stays unchanged, never filled in).
@@ -102,6 +109,9 @@ REGULATION_STATEMENTS = (
 )
 #: Part of the raw file name of a regulation response, so that it never collides with a v1 response of the same day.
 REGULATION_RAW_TAG = "regulation"
+#: Name of the counterfactual of ``--all-kerbside-streets-regulated`` in the QA file and its file-name suffix.
+COUNTERFACTUAL_ALL_STREETS = "all_kerbside_streets_regulated"
+COUNTERFACTUAL_TAG_SUFFIX = "_allstreets"
 DEFAULT_ATTEMPTS = 3
 #: Pause before the second attempt; it doubles for every further attempt.
 DEFAULT_BACKOFF_S = 60.0
@@ -455,26 +465,60 @@ def _regulated_frame(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, l
     return frame[~frame.geometry.is_empty]
 
 
-def reference_report(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, path: str) -> dict:
-    """Comparison with a reference outline (a georeferenced ordinance map) and the fee-tagged ways outside it.
+def _named_elements(frame: gpd.GeoDataFrame, outline, measure: str) -> dict:
+    """Count, length (m) or area (m2) inside ``outline`` and the sorted names of the elements that touch it."""
+    inside = frame[frame.geometry.intersects(outline)]
+    parts = inside.geometry.intersection(outline)
+    amount = parts.length.sum() if measure == "length_m" else parts.area.sum()
+    names = {str((tags or {}).get("name", "")).strip() for tags in inside["tags"]}
+    return {"count": int(len(inside)), measure: round(float(amount), 1), "names": sorted(name for name in names if name)}
 
-    ``zone_geometry.compare_outlines`` for the union of all reference features and, when the file carries a
-    ``zone`` column, per zone; plus the paid ways that do not touch any reference feature (the ordinance map is the
-    authority: such conflicts are resolved by the source, not by this script) and the untagged street length inside
-    the reference.
+
+def zone_conflicts(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, lots: gpd.GeoDataFrame, outline) -> dict:
+    """Parking evidence inside one ordinance outline that the ordinance and OSM may disagree on (spec lever 1: the
+    source resolves conflicts, the script reports them): the paid ways and the paid street-side areas (since ruling
+    R-T1-e the fee of a side mapped separately sits on its area), the ways OSM makes free on a side (most of them only
+    because they carry no fee tag, see ``free_side_explicit``) and the free street-side areas, with the length or area
+    inside and the names; plus erode(fill(R), W) inside the outline."""
+    free_ways = segments[segments["free_side"].astype(bool)]
+    paid_areas = lots[(lots["lot_class"] == "paid") & lots["street_side_lot"].astype(bool)]
+    report = {"paid_ways": _named_elements(segments[segments["way_class"] == "paid"], outline, "length_m"),
+              "paid_street_side_areas": _named_elements(paid_areas, outline, "area_m2"),
+              "free_side_ways": _named_elements(free_ways, outline, "length_m"),
+              "free_side_ways_without_fee_tag": int((~free_ways[free_ways.geometry.intersects(outline)]
+                                                     ["free_side_explicit"].astype(bool)).sum()),
+              "free_street_side_areas": _named_elements(zone_geometry.free_street_side_areas(lots), outline, "area_m2"),
+              "eroded_filled_inside_m2": round(float(core.eroded_filled.intersection(outline).area), 1)}
+    return report
+
+
+def reference_report(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, lots: gpd.GeoDataFrame,
+                     path: str) -> dict:
+    """Comparison with a reference outline (a georeferenced ordinance map) and the ordinance conflicts.
+
+    ``zone_geometry.compare_outlines`` and ``zone_conflicts`` for the union of all reference features and, when the
+    file carries a ``zone`` column, per zone; plus the paid ways that do not touch any reference feature (the
+    ordinance map is the authority: such conflicts are resolved by the source, not by this script) and the untagged
+    street length inside the reference.
     """
     reference = gpd.read_file(path).to_crs(METRIC_CRS)
+    outline = unary_union(list(reference.geometry))
     report = {"path": str(path)}
     report.update(zone_geometry.compare_outlines(core.core, reference))
+    report.update(zone_conflicts(core, segments, lots, outline))
     if "zone" in reference.columns:
-        report["zones"] = {str(label): zone_geometry.compare_outlines(core.core, group)
-                           for label, group in reference.groupby("zone")}
-    outline = unary_union(list(reference.geometry))
+        report["zones"] = {}
+        for label, group in reference.groupby("zone"):
+            zone_report = zone_geometry.compare_outlines(core.core, group)
+            zone_report.update(zone_conflicts(core, segments, lots, unary_union(list(group.geometry))))
+            report["zones"][str(label)] = zone_report
     paid = segments[segments["way_class"] == "paid"]
     outside = paid[~paid.geometry.intersects(outline)]
     report["paid_segments_outside"] = int(len(outside))
     report["paid_length_outside_m"] = round(float(outside.geometry.length.sum()), 1)
     report["paid_names_outside"] = sorted({name for name in outside["name"] if name})
+    paid_areas = lots[(lots["lot_class"] == "paid") & lots["street_side_lot"].astype(bool)]
+    report["paid_street_side_areas_outside"] = int((~paid_areas.geometry.intersects(outline)).sum())
     streets = segments[segments["highway"].isin(zone_geometry.STREET_HIGHWAY_TYPES)]
     inside = streets[streets.geometry.intersects(outline)]
     lengths = inside.geometry.intersection(outline).length
@@ -501,26 +545,59 @@ def street_list_report(segments: gpd.GeoDataFrame, names: Sequence[str]) -> dict
             "fee_tagged_unnamed_segments": int((paid["name"] == "").sum())}
 
 
+def output_paths(out_dir: Path, ags: str, parameters, *, counterfactual: Optional[str] = None) -> dict:
+    """The three derived files of a regulation run, named by the parameter tag (and the counterfactual suffix)."""
+    tag = parameters.tag() + (COUNTERFACTUAL_TAG_SUFFIX if counterfactual else "")
+    return {"regulated": out_dir / f"{ags}_regulated_{tag}.geojson", "core": out_dir / f"{ags}_core_{tag}.geojson",
+            "qa": out_dir / f"{ags}_qa_{tag}.json"}
+
+
+def guard_outputs(paths: dict, *, overwrite: bool) -> None:
+    """Refuse to replace an existing derived output unless ``overwrite`` is set; every replacement is logged."""
+    existing = [path for path in paths.values() if path.exists()]
+    if existing and not overwrite:
+        raise SystemExit(f"{', '.join(str(path) for path in existing)} exists; pass --overwrite to replace the outputs "
+                         "of this parameter set (the out-dir may be write-through data of the main checkout)")
+    for path in existing:
+        log.warning("[parking-osm] --overwrite: replacing the existing output %s", path)
+
+
 def run_regulation(payload: dict, *, ags: str, out_dir: Path, raw_name: str, bbox, parameters, reference: Optional[str],
-                   street_names: Sequence[str]) -> dict:
-    """Classify, build the core, write ``<ags>_regulated.geojson``, ``<ags>_core.geojson`` and ``<ags>_qa.json``."""
+                   street_names: Sequence[str], counterfactual: Optional[str] = None, overwrite: bool = False) -> dict:
+    """Classify, build the core, write ``<ags>_regulated_<tag>.geojson``, ``<ags>_core_<tag>.geojson`` and
+    ``<ags>_qa_<tag>.json`` (``output_paths``; existing outputs only with ``overwrite``).
+
+    ``counterfactual`` ``COUNTERFACTUAL_ALL_STREETS`` counts every kerbside street (``STREET_HIGHWAY_TYPES``) as
+    regulated before R is built: a diagnostic upper bound, never a release input.
+    """
+    if counterfactual not in (None, COUNTERFACTUAL_ALL_STREETS):
+        raise ValueError(f"unknown counterfactual {counterfactual!r}")
+    paths = output_paths(out_dir, ags, parameters, counterfactual=counterfactual)
+    guard_outputs(paths, overwrite=overwrite)
     segments, lots = regulation_features(payload)
+    if counterfactual == COUNTERFACTUAL_ALL_STREETS:
+        kerbside = segments["highway"].isin(zone_geometry.STREET_HIGHWAY_TYPES)
+        log.warning("[parking-osm] %s: COUNTERFACTUAL %s: %d of %d kerbside streets count as regulated in addition to "
+                    "the %d regulated ways (diagnostic only)", ags, counterfactual,
+                    int((kerbside & ~segments["regulated"]).sum()), int(kerbside.sum()), int(segments["regulated"].sum()))
+        segments = segments.assign(regulated=segments["regulated"].astype(bool) | kerbside)
     core = zone_geometry.build_zone_core(segments, lots, parameters)
     timestamp = (payload.get("osm3s") or {}).get("timestamp_osm_base", "")
     qa = {"ags": ags, "raw_response": raw_name, "osm_timestamp": timestamp,
-          "bbox": list(bbox) if bbox is not None else None, "segments": int(len(segments)), "lots": int(len(lots))}
+          "bbox": list(bbox) if bbox is not None else None, "segments": int(len(segments)), "lots": int(len(lots)),
+          "counterfactual": counterfactual}
     qa.update(core.qa())
     if reference:
-        qa["reference"] = reference_report(core, segments, reference)
+        qa["reference"] = reference_report(core, segments, lots, reference)
     if street_names:
         qa["street_list"] = street_list_report(segments, street_names)
     parts = core.core.copy()
     parts.insert(0, "ags", ags)
     parts["walk_m"] = parameters.walk_m
     parts["osm_timestamp"] = timestamp
-    _write_geojson(_regulated_frame(core, segments, lots, ags=ags), out_dir / f"{ags}_regulated.geojson")
-    _write_geojson(parts, out_dir / f"{ags}_core.geojson")
-    qa_path = out_dir / f"{ags}_qa.json"
+    _write_geojson(_regulated_frame(core, segments, lots, ags=ags), paths["regulated"])
+    _write_geojson(parts, paths["core"])
+    qa_path = paths["qa"]
     qa_path.write_text(json.dumps(_json_safe(qa), indent=1, allow_nan=False, ensure_ascii=True) + "\n",
                        encoding="utf-8", newline="\n")
     log.info("[parking-osm] %s: %d street ways (%s), %d lots (%s); R %.0f m2, fill(R) %.0f m2, Z %.0f m2 in %d parts, "
@@ -548,7 +625,9 @@ def main(argv=None) -> int:
     parser.add_argument("--attempts", type=int, default=DEFAULT_ATTEMPTS, help="tries of the request (regulation mode)")
     parser.add_argument("--backoff-s", type=float, default=DEFAULT_BACKOFF_S,
                         help="pause before the second try, doubled for every further try (regulation mode)")
-    parser.add_argument("--overwrite", action="store_true", help="replace an existing raw file of today")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="replace an existing raw file of today and, in regulation mode, the existing outputs of the "
+                             "same parameter set (logged)")
     parser.add_argument("--ca-bundle", default=default_ca_bundle(),
                         help="CA bundle for TLS verification (default: certifi when installed)")
     parser.add_argument("--regulation", action="store_true",
@@ -565,6 +644,9 @@ def main(argv=None) -> int:
                         help="buffer of a paid or restricted lot in metres")
     parser.add_argument("--reference-outline", help="GeoJSON of a georeferenced ordinance map (optional 'zone' "
                                                     "column) the core is compared with (regulation mode)")
+    parser.add_argument("--all-kerbside-streets-regulated", action="store_true",
+                        help="diagnostic counterfactual: every kerbside street counts as regulated (upper bound of the "
+                             "fill cap); outputs tagged '_allstreets', never a release input")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if args.from_raw and args.offline_response:
@@ -580,6 +662,10 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     bbox = parse_bbox(args.bbox)
     street_names = _read_names(args.street_names_file)
+    if args.regulation and not args.overwrite:
+        # Fail before any request is sent when this parameter set was already written.
+        guard_outputs(output_paths(out_dir, args.ags, parameters, counterfactual=COUNTERFACTUAL_ALL_STREETS
+                                   if args.all_kerbside_streets_regulated else None), overwrite=False)
     if args.from_raw:
         raw_path = Path(args.from_raw)
         payload = json.loads(raw_path.read_text(encoding="utf-8"))
@@ -620,7 +706,9 @@ def main(argv=None) -> int:
     check_remark(payload)
     if args.regulation:
         run_regulation(payload, ags=args.ags, out_dir=out_dir, raw_name=raw_path.name, bbox=bbox,
-                       parameters=parameters, reference=args.reference_outline, street_names=street_names)
+                       parameters=parameters, reference=args.reference_outline, street_names=street_names,
+                       counterfactual=COUNTERFACTUAL_ALL_STREETS if args.all_kerbside_streets_regulated else None,
+                       overwrite=args.overwrite)
         return 0
     features = elements_to_features(payload)
     candidates = build_candidates(features)

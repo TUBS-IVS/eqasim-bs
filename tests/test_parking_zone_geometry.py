@@ -10,6 +10,7 @@ erode(R, 250 m) = 0; erode(fill(R), 250 m) = (1,550 m - 2 x 250 m)^2) are reprod
 from __future__ import annotations
 
 import json
+import logging
 import math
 import urllib.error
 from pathlib import Path
@@ -30,6 +31,8 @@ FREE = {"highway": "residential", "parking:both": "lane", "parking:both:fee": "n
 MIXED = {"highway": "residential", "parking:left": "lane", "parking:left:fee": "yes", "parking:right": "lane"}
 UNTAGGED = {"highway": "residential"}
 WALK_M = 250.0
+#: File tag of the pre-registered parameters (W 250 m, buffers 25 / 10 m, fill 20,000 m2, islands 10,000 m2).
+TAG = "w250_b25_l10_h20000_i10000"
 
 
 def _line(x0: float, y0: float, x1: float, y1: float) -> LineString:
@@ -170,8 +173,29 @@ def test_access_customers_lot_is_neither_supply():
     lots = zg.classify_lots(_ways([(outline, {"amenity": "parking", "fee": "yes", "access": "customers"}),
                                    (outline, {"amenity": "parking", "access": "customers"})]))
     assert lots["lot_class"].tolist() == ["not_public", "not_public"]
-    assert zg.regulated_area(zg.classify_segments(_ways([])), lots).is_empty
-    assert zg.free_lots(lots).empty
+    no_streets = zg.classify_segments(_ways([]))
+    assert zg.regulated_area(no_streets, lots).is_empty
+    assert zg.free_supply(no_streets, lots).empty and zg.free_offstreet_lots(lots).empty
+
+
+def test_free_street_side_area_carves_the_core_and_an_offstreet_lot_does_not():
+    # Ruling R-T1-e: a free public street-side area (parking mapped as its own area next to the street) is free supply
+    # exactly like a free street, so buffer(F, W) removes the core around it; an off-street free lot is no free supply
+    # (T1-b, the rule speaks of street parking) and is only reported.
+    area = box(ORIGIN[0] + 700.0, ORIGIN[1] + 740.0, ORIGIN[0] + 800.0, ORIGIN[1] + 745.0)
+    segments = zg.classify_segments(_ways(_grid()))
+    full_core_m2 = (1550.0 - 2 * WALK_M) ** 2
+    street_side = zg.build_zone_core(segments, zg.classify_lots(_ways([(area, {"amenity": "parking",
+                                                                               "parking": "street_side"})])))
+    assert street_side.free_street_side_areas == 1
+    # the W buffer of the 100 m x 5 m area: 500 + 2 x 105 x 250 + pi x 250^2 m2, entirely inside the eroded square
+    assert street_side.core_area_m2 == pytest.approx(full_core_m2 - (500.0 + 52_500.0 + math.pi * WALK_M ** 2),
+                                                     rel=0.01)
+    assert min(part.distance(area) for part in street_side.core.geometry) >= WALK_M - 0.5
+    offstreet = zg.build_zone_core(segments, zg.classify_lots(_ways([(area, {"amenity": "parking",
+                                                                             "parking": "surface"})])))
+    assert offstreet.free_street_side_areas == 0 and offstreet.free_offstreet_lots_in_core == 1
+    assert offstreet.core_area_m2 == pytest.approx(full_core_m2, rel=0.01)
 
 
 # --------------------------------------------------------------------------- classification
@@ -187,7 +211,9 @@ def test_access_customers_lot_is_neither_supply():
     ({"highway": "residential", "parking:right": "lane", "parking:right:access": "permit"}, "restricted"),
     ({"highway": "residential", "parking:both": "street_side", "parking:both:access": "private"}, "restricted"),
     ({"highway": "tertiary", "parking:both": "no"}, "forbidden"),
-    ({"highway": "tertiary", "parking:both": "separate"}, "forbidden"),
+    # "separate": the side's parking is mapped as its own area, the street itself says nothing (ruling R-T1-e)
+    ({"highway": "tertiary", "parking:both": "separate"}, "separate"),
+    ({"highway": "tertiary", "parking:left": "separate", "parking:right": "no"}, "forbidden"),
     ({"highway": "tertiary", "parking:left": "lane", "parking:left:restriction": "no_stopping"}, "forbidden"),
     ({"highway": "residential", "parking:both": "half_on_kerb"}, "unregulated"),
     ({"highway": "residential", "parking:left": "on_kerb", "parking:left:fee": "no"}, "unregulated"),
@@ -201,6 +227,7 @@ def test_access_customers_lot_is_neither_supply():
     ({"highway": "residential", "parking:lane:both": "diagonal", "parking:condition:both": "disc"}, "restricted"),
     ({"highway": "primary", "parking:lane:both": "no_stopping"}, "forbidden"),
     ({"highway": "residential", "parking:lane:left": "no_parking"}, "forbidden"),
+    ({"highway": "residential", "parking:lane:both": "separate"}, "separate"),
     ({"highway": "residential", "parking:lane:both": "parallel"}, "unregulated"),
     ({"highway": "residential", "parking:lane:both": "perpendicular", "parking:condition:both": "free"},
      "unregulated"),
@@ -223,22 +250,41 @@ def test_classify_way_side_keys_override_both_and_mixed_ways_have_a_free_side():
     assert not zg.has_free_side(UNTAGGED) and not zg.is_regulated(UNTAGGED)
 
 
-@pytest.mark.parametrize("tags, lot_class, in_regulated_area, free_lot", [
-    ({"amenity": "parking", "fee": "yes"}, "paid", True, False),
-    ({"amenity": "parking", "fee": "no", "fee:conditional": "yes @ (Mo-Fr 08:00-18:00)"}, "paid", True, False),
-    ({"amenity": "parking", "access": "permit"}, "restricted", True, False),
-    ({"amenity": "parking", "fee": "no"}, "unregulated", False, True),
-    ({"amenity": "parking"}, "unregulated", False, True),
-    ({"amenity": "parking", "fee": "yes", "access": "private"}, "not_public", False, False),
-    ({"amenity": "bicycle_parking"}, "no_parking_info", False, False),
+def test_separate_side_alone_is_neither_regulated_nor_free_but_tagged():
+    # Ruling R-T1-e: a side mapped as a separate area carries no information about the street itself; the area decides
+    # by its own class. The mapper documented the parking situation, so the street counts as tagged.
+    line = _line(0.0, 0.0, 100.0, 0.0)
+    segments = zg.classify_segments(_ways([(line, {"highway": "residential", "parking:both": "separate"})]))
+    assert segments["way_class"].tolist() == ["separate"]
+    assert not segments["regulated"].iloc[0] and not segments["free_side"].iloc[0]
+    assert zg.regulated_area(segments, _no_lots()).is_empty
+    assert zg.free_supply(segments, _no_lots()).empty
+    assert zg.tagging_completeness(segments, line.buffer(10.0)) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("tags, lot_class, in_regulated_area, free_supply, offstreet_free_lot", [
+    ({"amenity": "parking", "fee": "yes"}, "paid", True, False, False),
+    ({"amenity": "parking", "fee": "no", "fee:conditional": "yes @ (Mo-Fr 08:00-18:00)"}, "paid", True, False, False),
+    ({"amenity": "parking", "access": "permit"}, "restricted", True, False, False),
+    # a paid street-side area joins R like a lot (ruling R-T1-e)
+    ({"amenity": "parking", "parking": "street_side", "fee": "yes"}, "paid", True, False, False),
+    ({"amenity": "parking", "parking": "street_side"}, "unregulated", False, True, False),
+    ({"amenity": "parking", "parking": "half_on_kerb", "fee": "no"}, "unregulated", False, True, False),
+    ({"amenity": "parking", "fee": "no"}, "unregulated", False, False, True),
+    ({"amenity": "parking"}, "unregulated", False, False, True),
+    ({"amenity": "parking", "fee": "yes", "access": "private"}, "not_public", False, False, False),
+    ({"amenity": "parking", "parking": "street_side", "access": "customers"}, "not_public", False, False, False),
+    ({"amenity": "bicycle_parking"}, "no_parking_info", False, False, False),
 ])
-def test_lot_class_decides_its_supply_role(tags, lot_class, in_regulated_area, free_lot):
+def test_lot_class_decides_its_supply_role(tags, lot_class, in_regulated_area, free_supply, offstreet_free_lot):
     outline = box(ORIGIN[0], ORIGIN[1], ORIGIN[0] + 60.0, ORIGIN[1] + 40.0)
     lots = zg.classify_lots(_ways([(outline, tags)]))
+    no_streets = zg.classify_segments(_ways([]))
     assert lots["lot_class"].tolist() == [lot_class]
-    area = zg.regulated_area(zg.classify_segments(_ways([])), lots)
+    area = zg.regulated_area(no_streets, lots)
     assert area.area == (pytest.approx(outline.buffer(10.0).area, rel=1e-6) if in_regulated_area else 0.0)
-    assert len(zg.free_lots(lots)) == int(free_lot)
+    assert len(zg.free_supply(no_streets, lots)) == int(free_supply)
+    assert len(zg.free_offstreet_lots(lots)) == int(offstreet_free_lot)
 
 
 # --------------------------------------------------------------------------- QA helpers and the acceptance rule Q4
@@ -289,17 +335,20 @@ def test_build_zone_core_reports_counts_and_areas():
     assert result.regulated_segments == 31 and result.free_segments == 1 and result.mixed_segments == 0
     assert result.lot_counts == {"unregulated": 1}
     assert result.filled_area_m2 > result.regulated_area_m2 > result.core_area_m2 > 0
-    # The free lot (x 300 .. 340 m) lies inside the western core part (x 225 .. 450 m); free lots are no free supply
-    # (spec: street parking), they are only reported.
-    assert result.free_lots_in_core == 1
-    assert result.free_lot_area_in_core_m2 == pytest.approx(40.0 * 30.0, rel=1e-6)
+    # The free off-street lot (x 300 .. 340 m) lies inside the western core part (x 225 .. 450 m); off-street lots are
+    # no free supply (spec: street parking), they are only reported.
+    assert result.free_offstreet_lots_in_core == 1
+    assert result.free_offstreet_lot_area_in_core_m2 == pytest.approx(40.0 * 30.0, rel=1e-6)
     qa = result.qa()
+    assert qa["side_class_pairs"] == {"paid+paid": 31, "unregulated+unregulated": 1}
+    # the free street carries fee=no, so it does not rest on the "no fee tag = free" assumption
+    assert qa["free_segments_without_fee_tag"] == 0 and qa["free_street_side_areas"] == 0
     assert qa["parameters"] == {"street_buffer_m": 25.0, "lot_buffer_m": 10.0, "maximum_filled_hole_m2": 20_000.0,
                                 "walk_m": 250.0, "minimum_island_m2": 10_000.0}
     assert qa["core_parts"] == 2 and qa["tagging_completeness"] == pytest.approx(1.0)
     # erode(fill(R), W) before the free street is subtracted: tells a fill that is too fragmented from a carved core
     assert qa["eroded_filled_area_m2"] == pytest.approx((1550.0 - 2 * WALK_M) ** 2, rel=0.01)
-    json.dumps(qa)  # serialisable for <ags>_qa.json
+    json.dumps(qa)  # serialisable for <ags>_qa_<tag>.json
 
 
 # --------------------------------------------------------------------------- CRS contract
@@ -338,12 +387,12 @@ def test_regulation_cli_writes_the_three_outputs_offline(tmp_path):
     arguments = ["--ags", "03101000", "--bbox", "52.2595,10.5195,52.2660,10.5235", "--out-dir", str(tmp_path),
                  "--regulation", "--offline-response", str(REGULATION_FIXTURE), "--pause-s", "0"]
     assert main(arguments) == 0
-    for name in ("03101000_regulated.geojson", "03101000_core.geojson", "03101000_qa.json"):
+    for name in (f"03101000_regulated_{TAG}.geojson", f"03101000_core_{TAG}.geojson", f"03101000_qa_{TAG}.json"):
         assert (tmp_path / name).is_file(), name
     raw = sorted(tmp_path.glob("03101000_regulation_overpass_*.json"))
     assert len(raw) == 1 and raw[0].read_bytes() == REGULATION_FIXTURE.read_bytes()
     assert raw[0].with_suffix(".query.txt").is_file()
-    qa = json.loads((tmp_path / "03101000_qa.json").read_text(encoding="utf-8"))
+    qa = json.loads((tmp_path / f"03101000_qa_{TAG}.json").read_text(encoding="utf-8"))
     assert qa["ags"] == "03101000" and qa["osm_timestamp"] == "2026-09-28T00:00:00Z"
     assert qa["raw_response"] == raw[0].name
     assert qa["segment_counts"] == {"paid": 1, "restricted": 1, "forbidden": 1, "unregulated": 1,
@@ -352,13 +401,13 @@ def test_regulation_cli_writes_the_three_outputs_offline(tmp_path):
     assert qa["regulated_segments"] == 3 and qa["free_segments"] == 1
     assert qa["core_area_m2"] == 0.0 and qa["decision"] == "rejected"
     assert qa["parameters"]["walk_m"] == 250.0
-    regulated = gpd.read_file(tmp_path / "03101000_regulated.geojson")
+    regulated = gpd.read_file(tmp_path / f"03101000_regulated_{TAG}.geojson")
     assert {"regulated_area", "filled_area", "segment", "lot"} <= set(regulated["kind"])
     classes = {int(row.osm_id): row.element_class for row in regulated.itertuples() if row.kind in ("segment", "lot")}
     assert classes == {501: "paid", 502: "restricted", 503: "forbidden", 504: "unregulated", 505: "no_parking_info",
                        601: "paid", 602: "not_public"}
     assert set(regulated.loc[regulated["kind"] == "lot"].geometry.geom_type) == {"Polygon"}
-    core = json.loads((tmp_path / "03101000_core.geojson").read_text(encoding="utf-8"))
+    core = json.loads((tmp_path / f"03101000_core_{TAG}.geojson").read_text(encoding="utf-8"))
     assert core["type"] == "FeatureCollection" and core["features"] == []
     # A second run must not overwrite the raw response it saved (write-through data is never rewritten).
     with pytest.raises(SystemExit, match="exists"):
@@ -376,7 +425,8 @@ def test_regulation_cli_compares_with_a_reference_outline(tmp_path):
                  "--regulation", "--from-raw", str(REGULATION_FIXTURE), "--reference-outline", str(reference),
                  "--walk-m", "150", "--maximum-filled-hole-m2", "10000", "--minimum-island-m2", "5000"]
     assert main(arguments) == 0
-    qa = json.loads((tmp_path / "03101000_qa.json").read_text(encoding="utf-8"))
+    qa_path = tmp_path / "03101000_qa_w150_b25_l10_h10000_i5000.json"
+    qa = json.loads(qa_path.read_text(encoding="utf-8"))
     assert qa["parameters"]["walk_m"] == 150.0 and qa["parameters"]["maximum_filled_hole_m2"] == 10_000.0
     assert qa["parameters"]["minimum_island_m2"] == 5_000.0
     assert qa["reference"]["path"] == str(reference)
@@ -385,7 +435,79 @@ def test_regulation_cli_compares_with_a_reference_outline(tmp_path):
     assert qa["reference"]["tagging_completeness_inside"] == pytest.approx(0.8, abs=0.01)
     # undefined shares (empty core) are written as JSON null, never as NaN
     assert qa["reference"]["core_share_inside_reference"] is None
-    assert "NaN" not in (tmp_path / "03101000_qa.json").read_text(encoding="utf-8")
+    assert "NaN" not in qa_path.read_text(encoding="utf-8")
+    # ordinance conflicts inside the reference (spec lever 1): the paid way and the way OSM makes free, by name
+    zone = qa["reference"]["zones"]["fixture_zone"]
+    assert zone["paid_ways"]["names"] == ["Fixture Paid Street"]
+    assert zone["free_side_ways"]["count"] == 1 and zone["free_side_ways"]["names"] == ["Fixture Free Street"]
+    # the free fixture way runs 0.003 deg of longitude at 52.263 deg N: about 204 m
+    assert zone["free_side_ways"]["length_m"] == pytest.approx(204.0, rel=0.02)
+    assert zone["free_street_side_areas"]["count"] == 0 and zone["eroded_filled_inside_m2"] == 0.0
+    assert qa["reference"]["free_side_ways"]["count"] == 1
+    assert qa["free_segments_without_fee_tag"] == 0  # the free fixture way carries fee=no
+
+
+def test_zone_conflicts_report_paid_and_free_evidence_by_name():
+    # F4: inside an ordinance outline the report names what OSM makes paid and free. Since ruling R-T1-e the paid
+    # evidence of a separately mapped side sits on its street-side AREA, so paid areas are reported next to paid ways.
+    from scripts.build_parking_zones_from_osm import zone_conflicts
+
+    segments = zg.classify_segments(_ways([
+        (_line(0.0, 0.0, 100.0, 0.0), dict(PAID, name="Paid Way")),
+        (_line(0.0, 50.0, 100.0, 50.0), {"highway": "residential", "name": "Free Untagged Fee", "parking:both": "lane"}),
+        (_line(0.0, 90.0, 100.0, 90.0), dict(FREE, name="Free With Fee No")),
+        (_line(0.0, 70.0, 100.0, 70.0), {"highway": "residential", "name": "Separate Paid", "parking:both": "separate",
+                                         "parking:both:fee": "yes"})]))
+    lots = zg.classify_lots(_ways([
+        (box(ORIGIN[0], ORIGIN[1] + 72.0, ORIGIN[0] + 50.0, ORIGIN[1] + 76.0),
+         {"amenity": "parking", "parking": "street_side", "fee": "yes", "name": "Paid Bay"}),
+        (box(ORIGIN[0] + 50.0, ORIGIN[1] + 72.0, ORIGIN[0] + 90.0, ORIGIN[1] + 76.0),
+         {"amenity": "parking", "parking": "street_side", "name": "Free Bay"}),
+        (box(ORIGIN[0] + 10.0, ORIGIN[1] + 20.0, ORIGIN[0] + 40.0, ORIGIN[1] + 40.0),
+         {"amenity": "parking", "name": "Free Car Park"})]))
+    core = zg.build_zone_core(segments, lots)
+    report = zone_conflicts(core, segments, lots, box(ORIGIN[0] - 10.0, ORIGIN[1] - 10.0, ORIGIN[0] + 110.0,
+                                                      ORIGIN[1] + 110.0))
+    assert report["paid_ways"]["names"] == ["Paid Way"]
+    assert report["paid_street_side_areas"]["names"] == ["Paid Bay"]
+    assert report["paid_street_side_areas"]["area_m2"] == pytest.approx(200.0)
+    assert report["free_side_ways"]["names"] == ["Free Untagged Fee", "Free With Fee No"]
+    assert report["free_side_ways_without_fee_tag"] == 1
+    assert report["free_street_side_areas"]["names"] == ["Free Bay"]  # the off-street car park is no street parking
+
+
+def test_regulation_outputs_are_parameter_tagged_and_never_overwritten_silently(tmp_path, caplog):
+    # Ruling R-T1-g: raw_overpass/ is write-through data of the main checkout; a sensitivity run must not replace
+    # the inputs of the committed QA table, and a re-run replaces its own outputs only when asked to, and says so.
+    from scripts.build_parking_zones_from_osm import main
+
+    base = ["--ags", "03101000", "--bbox", "52.2595,10.5195,52.2660,10.5235", "--out-dir", str(tmp_path),
+            "--regulation", "--from-raw", str(REGULATION_FIXTURE)]
+    assert main(base) == 0
+    qa_path = tmp_path / f"03101000_qa_{TAG}.json"
+    before = qa_path.read_bytes()
+    with pytest.raises(SystemExit, match="exists"):
+        main(base)
+    assert main(base + ["--walk-m", "150"]) == 0
+    assert (tmp_path / "03101000_qa_w150_b25_l10_h20000_i10000.json").is_file()
+    assert qa_path.read_bytes() == before
+    caplog.clear()
+    assert main(base + ["--overwrite"]) == 0
+    assert any(record.levelno == logging.WARNING and qa_path.name in record.getMessage() for record in caplog.records)
+
+
+def test_counterfactual_all_kerbside_streets_regulated_is_tagged_and_marked(tmp_path):
+    # F3: the upper bound of the fill cap (every fetched kerbside street regulated) is a diagnostic, never a release
+    # input: its files carry their own tag and the QA file names the counterfactual.
+    from scripts.build_parking_zones_from_osm import main
+
+    assert main(["--ags", "03101000", "--bbox", "52.2595,10.5195,52.2660,10.5235", "--out-dir", str(tmp_path),
+                 "--regulation", "--from-raw", str(REGULATION_FIXTURE), "--all-kerbside-streets-regulated"]) == 0
+    qa = json.loads((tmp_path / f"03101000_qa_{TAG}_allstreets.json").read_text(encoding="utf-8"))
+    assert qa["counterfactual"] == "all_kerbside_streets_regulated"
+    # every kerbside fixture way counts as regulated, the free and the untagged one included
+    assert qa["regulated_segments"] == 5
+    assert not (tmp_path / f"03101000_qa_{TAG}.json").exists()
 
 
 def test_overpass_retry_backs_off_and_logs_every_failure(tmp_path):

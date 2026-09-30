@@ -315,14 +315,19 @@ def _qa_row(**changes) -> pd.DataFrame:
     row = {"ags": "03101000", "name": "Braunschweig, Stadt", "role": "zones_from_core",
            "raw_response": "03101000_regulation_overpass_2026-09-30.json", "osm_timestamp": SNAPSHOT,
            "walk_m": "250.0", "maximum_filled_hole_m2": "20000.0", "minimum_island_m2": "10000.0", "segments": "40",
-           "regulated_segments": "30", "free_segments": "4", "mixed_segments": "1", "separate_segments": "0",
-           "lots": "5", "free_lots": "2", "free_lots_in_core": "0", "free_lot_area_in_core_m2": "0.0",
-           "tagging_completeness": "0.812", "regulated_area_m2": "150000.0", "filled_area_m2": "260000.0",
-           "eroded_filled_area_m2": "52000.0", "core_area_m2": "40000.0", "core_parts": "1",
-           "reference": "fixture outline", "core_share_inside_reference": "0.95",
-           "reference_share_covered_by_core": "0.20", "reference_tagging_completeness": "0.41",
-           "largest_outline_distance_m": "310.0", "q4_decision": "accepted", "applied": "true",
-           "zone_ids": ERODED_ZONE, "note": "fixture row"}
+           "regulated_segments": "30", "free_segments": "4", "free_segments_without_fee_tag": "3",
+           "mixed_segments": "1", "separate_segments": "0", "lots": "5", "free_street_side_areas": "2",
+           "free_street_side_areas_without_fee_tag": "2", "free_offstreet_lots": "2", "free_offstreet_lots_in_core": "0",
+           "free_offstreet_lot_area_in_core_m2": "0.0", "tagging_completeness": "0.812",
+           "regulated_area_m2": "150000.0", "filled_area_m2": "260000.0", "eroded_filled_area_m2": "52000.0",
+           "core_area_m2": "40000.0", "core_parts": "1", "reference": "fixture outline",
+           "core_share_inside_reference": "0.95", "reference_share_covered_by_core": "0.20",
+           "reference_tagging_completeness": "0.41", "largest_outline_distance_m": "310.0",
+           "reference_paid_ways": "3", "reference_paid_street_side_areas": "2", "reference_free_side_ways": "1",
+           "reference_free_side_length_m": "120.0",
+           "reference_free_street_side_areas": "0", "reference_conflicts": "fixture_zone: 1 way with a free side",
+           "piece_assignment": "", "q4_decision": "accepted", "applied": "true", "zone_ids": ERODED_ZONE,
+           "note": "fixture row"}
     row.update(changes)
     return pd.DataFrame([row], columns=list(pz.ZONE_QA_COLUMNS))
 
@@ -552,7 +557,13 @@ def test_committed_parking_data_is_valid(capsys):
     assert "geometry_source mix" in out
 
 
-def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsys):
+@pytest.mark.parametrize("changes, message", [
+    # a QA-only row whose recorded decision contradicts rule Q4 (60 % tagging completeness)
+    ({"tagging_completeness": "0.5"}, "ags 03103000: q4_decision 'accepted' but rule Q4 gives 'rejected'"),
+    # a sensitivity arm must never stand in for the pre-registered run (ruling R-T1-g)
+    ({"walk_m": "150.0"}, "ags 03103000: walk_m = 150.0 is not the pre-registered 250"),
+], ids=["q4_contradiction", "sensitivity_parameters"])
+def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsys, changes, message):
     import shutil
 
     from scripts.validate_parking_zones import main
@@ -566,13 +577,12 @@ def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsy
     committed_qa = COMMITTED_PARKING_DIR / "parking_zones_2026_qa.csv"
     rows = pz.load_zone_qa(committed_qa) if committed_qa.is_file() else _qa_row().iloc[0:0]
     contradicting = _qa_row(ags="03103000", name="Wolfsburg, Stadt", role="qa_only", applied="false", zone_ids="",
-                            tagging_completeness="0.5")
+                            **changes)
     table = pd.concat([rows[rows["ags"] != "03103000"], contradicting], ignore_index=True)
     (target / "parking_zones_2026_qa.csv").write_text("# QA\n" + table.to_csv(index=False, lineterminator="\n"),
                                                       encoding="utf-8")
     assert main(["--data-path", str(tmp_path)]) == 1
-    out = capsys.readouterr().out
-    assert "ags 03103000: q4_decision 'accepted' but rule Q4 gives 'rejected'" in out
+    assert message in capsys.readouterr().out
 
 
 def test_committed_zones_carry_the_licence_notice():
