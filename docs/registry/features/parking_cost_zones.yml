@@ -71,11 +71,14 @@ evidence:
       before this feature byte for byte (golden literals generated from base commit 1fe22664; the legacy
       ring is pinned the same way by test_legacy_ring_frames_match_the_prechange_writer_bytes, and the
       wrapper never touches braunschweig.parking.attach, test_execute_off_never_touches_the_attach_module);
-      the preparation then declares no parking key and leaves the prepared config byte-identical
-      (tests/test_parking_prepare_wiring.py::test_off_declares_no_parking_parameter_and_leaves_the_prepared_config_byte_identical).
+      the preparation then declares only the flag and leaves the prepared config byte-identical
+      (tests/test_parking_prepare_wiring.py::test_off_declares_only_the_flag_and_leaves_the_prepared_config_byte_identical),
+      and the run stage calls no parking check and starts MATSim with unchanged arguments
+      (tests/test_parking_run_checks.py::test_off_calls_no_parking_check_and_runs_matsim_exactly_as_before).
       Without the braunschweigParking module the Java car cost model name is unchanged (eqasim-java-bs
       BraunschweigConfiguratorParkingTest). The simulation-level check of the jar without the module is
-      described in ADR-0139 (Evidence) and not yet recorded in a run manifest.
+      recorded in the run manifest parking-zones-smoke-zgb-1pct-2026-09-30: OFF and LEGACY trips and scores
+      byte-identical across the jars of origin/main and the branch (jar_parity_sha256.csv).
   fallback_rate:
     instrumented: true
     log_marker: '[parking]'

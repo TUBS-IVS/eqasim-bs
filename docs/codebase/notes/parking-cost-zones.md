@@ -22,7 +22,10 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    `parking_workplace_free_share_shift`). The vendored writer `matsim.scenario.population` emits them through
    `OPTIONAL_ACTIVITY_FIELDS` and `OPTIONAL_PERSON_FIELDS` as the activity attributes `parkingZone`
    (`java.lang.String`) and `parkingFree` (`java.lang.Boolean`, written only when true) and the person attribute
-   `residentParkingZone` (`java.lang.String`); a missing value writes no attribute, never `"nan"`.
+   `residentParkingZone` (`java.lang.String`); a missing value writes no attribute, never `"nan"`. A very small
+   smoke (a single Kreis at 0.1 %) can place no activity inside any of the small zone polygons and then stops with
+   the zero-coverage error of `attach_parking_zones`, the broken-join guard: widen the region or the sample of such
+   a smoke instead of weakening the guard.
 3. `braunschweig.matsim.simulation.prepare._write_parking_inputs`, the last step of the preparation: the release
    tariffs become the tariff model `<prefix>parking_tariffs_<parking_tariff_snapshot_date>.json`
    (`tariff_export.build_tariff_model`: integer cents and seconds, the rendered `ASSUMPTIONS_REGISTER`, the release
@@ -40,6 +43,13 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
    `ITERS/it.N/N.parking_outcomes.csv` (columns `outcome`, `count`, `share`; one row per outcome, zero counts
    included) and one `[parking]` log line per iteration. The counts are pricing calls, one per car alternative that
    mode choice priced, chosen or not: not distinct trips or persons.
+5. `matsim.simulation.run` checks around the Java run (`braunschweig.parking.runtime_checks`), because MATSim reads
+   the module of a jar without the parking package as an untyped group and would price nothing: when the prepared
+   config enables `braunschweigParking`, `require_parking_package` refuses a jar without
+   `org/eqasim/braunschweig/parking/ParkingConfigGroup.class` before MATSim starts, and `require_parking_outcomes`
+   refuses a run whose last iteration (the highest `ITERS/it.N`; the eqasim termination criterion can end a run
+   before `lastIteration`) wrote no `N.parking_outcomes.csv`; one `[parking] run check:` INFO line reports that both
+   passed. With the module absent or disabled neither check runs.
 
 ## Adding or changing a zone
 
