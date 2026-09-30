@@ -10,6 +10,7 @@ by ``tests/test_parking_zones_stage.py``, the writer integration by
 from __future__ import annotations
 
 import logging
+import math
 
 import geopandas as gpd
 import numpy as np
@@ -255,6 +256,15 @@ def test_attach_parking_zones_logs_the_coverage_rate_and_the_top_zones(caplog):
     assert "z_res 2" in line and "z_paid_a 1" in line
 
 
+def test_value_counts_are_formatted_by_count_or_by_value():
+    # The one count-line helper of the parking package (also used by braunschweig.parking.zones_stage).
+    values = pd.Series(["b", "a", "b", None, "c", "b", "a", np.nan], dtype=object)
+    assert attach.format_value_counts(values) == "b 3, a 2, c 1"
+    assert attach.format_value_counts(values, limit=2) == "b 3, a 2"
+    assert attach.format_value_counts(values, by_value=True) == "a 2, b 3, c 1"
+    assert attach.format_value_counts(pd.Series([None, np.nan], dtype=object)) == "none"
+
+
 # --------------------------------------------------------------------------- attach_resident_zones
 
 
@@ -477,8 +487,11 @@ def test_draw_requires_the_parking_zone_column():
         attach.draw_parking_free(activities, _tariffs(), _shares(), SEED)
 
 
-@pytest.mark.parametrize("shift", [1.5, -1.01, float("nan"), "0.1", True], ids=str)
+@pytest.mark.parametrize("shift", [math.nextafter(1.0, 2.0), math.nextafter(-1.0, -2.0), 1.5, -1.01, float("nan"),
+                                   "0.1", True], ids=str)
 def test_draw_rejects_a_shift_outside_minus_one_to_one(shift):
+    # The nearest floats beyond -1.0 and +1.0 are rejected; the ends themselves are accepted
+    # (test_shift_plus_one_frees_every_eligible_person_and_minus_one_none).
     with pytest.raises(ValueError, match="shift"):
         attach.draw_parking_free(_commuters([1], "z_paid_a"), _tariffs(), _shares(), SEED, shift=shift)
 

@@ -1,6 +1,7 @@
 """The parking tariff JSON export (schema 1, spec 5.4) and its committed fixture model (issue #249)."""
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import re
@@ -14,7 +15,7 @@ from braunschweig.parking.cost import ZoneTariff
 
 FIXTURE_JSON = Path(__file__).resolve().parent / "fixtures" / "parking" / "parking_tariffs_fixture.json"
 SNAPSHOT_DATE = "2026-09-28"
-FIXTURE_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus"}
+FIXTURE_ZONE_IDS = {"fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"}
 # Table column in euros -> JSON field in cents, written out here independently of the implementation.
 EURO_FIELDS = {"hourly_rate_eur": "hourly_rate_cents", "first_period_eur": "first_period_cents",
                "daily_cap_eur": "daily_cap_cents", "long_stay_product_eur": "long_stay_product_cents",
@@ -55,7 +56,7 @@ def _row(table, row_zone_id: str, /, **changes) -> dict:
     return {**row, **changes}
 
 
-def test_the_model_has_the_schema_1_header_and_the_seven_fixture_zones(model):
+def test_the_model_has_the_schema_1_header_and_the_fixture_zones(model):
     assert model["schema_version"] == 1
     assert model["tariff_snapshot_date"] == SNAPSHOT_DATE
     assert model["currency"] == "EUR" and model["weekday_only"] is True
@@ -133,6 +134,19 @@ def test_the_snapshot_date_must_be_an_iso_date(table, sources):
         te.tariff_model_file_name("bs_", "2026-9-28")
 
 
+def test_check_snapshot_date_returns_iso_date_text_unchanged():
+    assert te.check_snapshot_date("2026-09-28") == "2026-09-28"
+
+
+@pytest.mark.parametrize("value", ["2026-9-28", "28.09.2026", "2026-02-30", "", None, 20260928,
+                                   datetime.date(2026, 9, 28)],
+                         ids=["unpadded", "german", "no_such_day", "empty", "none", "number", "date_object"])
+def test_check_snapshot_date_accepts_only_iso_date_text(value):
+    # The date names the tariff model file and is recorded in the model, so only its exact text form counts.
+    with pytest.raises(ValueError, match="snapshot_date must be an ISO date text YYYY-MM-DD"):
+        te.check_snapshot_date(value)
+
+
 def test_a_tariff_row_with_an_unknown_zone_type_raises(table, sources):
     broken = table.copy()
     broken.loc[broken["zone_id"] == "fx_pe", "zone_type"] = "garage"
@@ -169,6 +183,40 @@ def test_row_conversion_reads_text_cells_as_a_csv_reader_delivers_them(table):
 def test_row_conversion_rejects_cells_it_cannot_convert_exactly(table, changes, message):
     with pytest.raises(ValueError, match=message):
         te.tariff_row_to_zone(_row(table, "fx_bs_ia", **changes))
+
+
+@pytest.mark.parametrize("fee_start_h, fee_end_h", [(20.0, 9.0), (9.0, 9.0), (9.0, 24.5)],
+                         ids=["reversed", "zero_length", "past_midnight"])
+def test_a_fee_window_error_names_the_hour_columns_of_the_table(table, fee_start_h, fee_end_h):
+    # The table holds decimal hours; the message must speak in those columns, not in the derived seconds.
+    with pytest.raises(ValueError) as error:
+        te.tariff_row_to_zone(_row(table, "fx_bs_ia", fee_start_h=fee_start_h, fee_end_h=fee_end_h))
+    message = str(error.value)
+    assert message.startswith("tariff row 'fx_bs_ia': ")
+    assert f"fee_start_h = {fee_start_h:g} h" in message and f"fee_end_h = {fee_end_h:g} h" in message
+    assert "0 <= fee_start_h < fee_end_h <= 24" in message
+    assert "fee_start_s" not in message and "fee_end_s" not in message and "86400" not in message
+
+
+@pytest.mark.parametrize("zone_id, changes, column", [
+    ("fx_bs_ia", {"member_day_eur": 3.50}, "member_day_eur"),
+    ("fx_res_a", {"daily_cap_eur": 9.00}, "daily_cap_eur"),
+    ("fx_res_a", {"free_if_stay_at_most_min": 30}, "free_if_stay_at_most_min"),
+    ("fx_campus", {"hourly_rate_eur": 1.80}, "hourly_rate_eur"),
+])
+def test_a_cell_the_zone_type_does_not_have_is_named_with_the_hint_to_leave_it_empty(table, zone_id, changes, column):
+    with pytest.raises(ValueError) as error:
+        te.tariff_row_to_zone(_row(table, zone_id, **changes))
+    message = str(error.value)
+    assert message.startswith(f"tariff row {zone_id!r}: {column} does not apply to zone_type ")
+    assert "leave the cell empty" in message
+
+
+def test_a_daily_cap_below_the_first_period_price_is_rejected_for_the_row(table):
+    # fx_wob charges a first period of 1.10 EUR; a cap of 1.00 EUR contradicts it.
+    with pytest.raises(ValueError, match=r"'fx_wob'.*daily_cap_cents 100 is below first_period_cents 110"):
+        te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.00))
+    assert te.tariff_row_to_zone(_row(table, "fx_wob", daily_cap_eur=1.10)).daily_cap_cents == 110
 
 
 def test_write_tariff_model_writes_sorted_keys_and_lf_line_endings(tmp_path, model):

@@ -33,6 +33,7 @@ import importlib
 import inspect
 import io
 import logging
+import math
 import sys
 import types
 from pathlib import Path
@@ -294,6 +295,19 @@ def test_malformed_resident_parking_zone_raises():
                           person_overrides={"resident_parking_zone": 7})
 
 
+@pytest.mark.parametrize("text", ["nan", "None", "<NA>"])
+@pytest.mark.parametrize("column", ["parking_zone", "resident_parking_zone"])
+def test_the_text_form_of_a_missing_zone_raises_instead_of_becoming_a_zone_id(column, text):
+    """str(np.nan), str(None) and str(pd.NA): what a broken upstream join (e.g. astype(str) over missing zones)
+    leaves in the column. Written as a zone id, it would name a zone the tariff model does not have."""
+    with pytest.raises(ValueError, match=f"{column}.*missing value"):
+        if column == "parking_zone":
+            _write_one_person([{"purpose": "work", "parking_zone": text, "parking_free": False}],
+                              activity_fields=ZONE_AND_FREE_FIELDS)
+        else:
+            _write_one_person([{}], person_fields=pop.PERSON_FIELDS + [column], person_overrides={column: text})
+
+
 def test_default_add_person_call_writes_no_parking_attribute():
     """Existing callers pass no ``activity_fields``: the legacy tuple is read unchanged and every
     activity stays the bare element."""
@@ -450,7 +464,16 @@ def test_configure_accepts_the_legacy_ring_alone():
     assert ZONES_STAGE_NAME not in recorder.stages
 
 
-@pytest.mark.parametrize("shift", [1.5, -1.01, float("nan"), "0.1", True])
+@pytest.mark.parametrize("shift", [-1.0, 1.0, -1, 1], ids=["minus_one", "plus_one", "minus_one_int", "plus_one_int"])
+def test_configure_accepts_the_free_share_shift_boundaries(shift):
+    # The valid range is the closed interval [-1, 1]: both ends are legitimate sensitivity arms.
+    recorder = _declare(parking_zones_enabled=True, parking_workplace_free_share_shift=shift)
+    assert ZONES_STAGE_NAME in recorder.stages
+
+
+@pytest.mark.parametrize("shift", [math.nextafter(1.0, 2.0), math.nextafter(-1.0, -2.0), 1.5, -1.01, float("nan"),
+                                   "0.1", True],
+                         ids=["just_above_one", "just_below_minus_one", "1.5", "-1.01", "nan", "text", "bool"])
 def test_configure_rejects_a_free_share_shift_outside_minus_one_to_one(shift):
     with pytest.raises(ValueError, match="parking_workplace_free_share_shift"):
         _declare(parking_zones_enabled=True, parking_workplace_free_share_shift=shift)
@@ -744,6 +767,37 @@ def test_execute_rejects_an_attach_result_that_changes_the_row_count(tmp_path, m
         POP.execute(_wrapper_context(tmp_path))
 
 
+def _relabel_first_row(function, key):
+    """``function`` with the ``key`` of the first returned row replaced: same row count, changed key set."""
+    def relabelled(frame, *args, **kwargs):
+        result = function(frame, *args, **kwargs)
+        result.iloc[0, result.columns.get_loc(key)] = 777777
+        return result
+    return relabelled
+
+
+@pytest.mark.parametrize("producer, key", [("attach_parking_zones", "activity_index"),
+                                           ("attach_parking_zones", "person_id"),
+                                           ("attach_resident_zones", "person_id"),
+                                           ("draw_parking_free", "activity_index")])
+def test_execute_rejects_an_attach_result_that_changes_a_key(tmp_path, monkeypatch, producer, key):
+    """Same row count, changed keys: a duplicating plus dropping (or mismatching) join that a count check alone
+    cannot see; it would attach the parking attributes to the wrong plan elements."""
+    module = _stub_attach_module({})
+    setattr(module, producer, _relabel_first_row(getattr(module, producer), key))
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match=f"{producer} changed the key column {key!r} in 1 of "):
+        POP.execute(_wrapper_context(tmp_path))
+
+
+def test_execute_rejects_an_attach_result_without_the_added_column(tmp_path, monkeypatch):
+    module = _stub_attach_module({})
+    module.draw_parking_free = lambda activities, tariffs, workplace_shares, random_seed, shift=0.0: activities.copy()
+    _inject_attach(monkeypatch, module)
+    with pytest.raises(ValueError, match="draw_parking_free did not add the 'parking_free' column"):
+        POP.execute(_wrapper_context(tmp_path))
+
+
 def test_execute_warns_when_no_incommuter_activity_carries_a_zone(tmp_path, monkeypatch, caplog):
     """In-commuters present, residents zoned, not one in-commuter activity zoned: the signature of
     a broken in-commuter locations join, surfaced loudly rather than written silently."""
@@ -759,9 +813,9 @@ def _fixture_release():
     """The Task 2 fixture release of ``tests/fixtures/parking`` (pins arithmetic, not truth) with a small
     shares frame: bs_zentrum and bs_innenbereich park free with share 1.0, the other classes never."""
     shares = pd.DataFrame({
-        "workplace_class": ["bs_zentrum", "bs_innenbereich", "03102", "03103", "03157", "total"],
-        "level": ["class"] * 5 + ["total"],
-        "share_free_total": [1.0, 1.0, 0.0, 0.0, 0.0, 0.9],
+        "workplace_class": ["bs_zentrum", "bs_innenbereich", "bs_outer", "03102", "03103", "03157", "total"],
+        "level": ["class"] * 6 + ["total"],
+        "share_free_total": [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.9],
     })
     return {"zones": pz.load_zone_polygons(FIXTURES / "parking_zones_fixture.geojson"),
             "tariffs": pz.load_tariffs(FIXTURES / "parking_tariffs_fixture.csv"),
@@ -869,8 +923,14 @@ def test_validate_raises_when_a_deferred_module_is_absent(monkeypatch):
 #
 # Generated from base commit 1fe22664 (the writer BEFORE the parking attributes) by running
 # _write_frames(..., *_two_person_frames(), enable_urban_parking=False/True) on that commit.
-# Never regenerate them from the current writer: that would turn the byte-identity pin into a
-# tautology.
+# Never regenerate them from the current writer just to make a failing pin pass: that would turn the
+# byte-identity pin into a tautology.
+#
+# The one legitimate update is a deliberate change of the OFF or LEGACY plans themselves, i.e. a writer
+# change that is not about the parking attributes (for example a new person attribute every plan gets),
+# reviewed as such. Then: regenerate both literals with the call above on the commit that makes that change,
+# check that the diff of the literals is exactly the intended change and carries no parking attribute,
+# and replace the commit id 1fe22664 above (and in the module docstring) with that commit's id.
 
 PRECHANGE_OFF_XML = """\
 <?xml version="1.0" encoding="utf-8"?>

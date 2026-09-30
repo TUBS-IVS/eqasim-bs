@@ -39,7 +39,8 @@ def _write_tariffs(path: Path, frame: pd.DataFrame, header_lines=("# test tariff
 
 def test_fixture_tariffs_load_typed():
     tariffs = pz.load_tariffs(TARIFF_FIXTURE)
-    assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus"]
+    assert list(tariffs["zone_id"]) == ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus",
+                                        "fx_frac"]
     row = tariffs.set_index("zone_id").loc["fx_sz"]
     assert row["first_period_min"] == 60 and row["first_period_eur"] == pytest.approx(0.70)
     assert pd.isna(row["max_stay_min"])
@@ -215,7 +216,7 @@ def test_fixture_marker_can_be_rejected_for_committed_data():
 
 def test_fixture_zones_load_in_metric_crs():
     zones = pz.load_zone_polygons(ZONE_FIXTURE)
-    assert zones.crs.to_epsg() == 25832 and len(zones) == 7 and zones["zone_id"].is_unique
+    assert zones.crs.to_epsg() == 25832 and len(zones) == 8 and zones["zone_id"].is_unique
     for column in pz.ZONE_PROVENANCE_COLUMNS:
         assert zones[column].notna().all(), column
 
@@ -258,7 +259,7 @@ def test_load_zone_polygons_tolerates_licence_members(tmp_path):
     document["attribution"] = "(c) OpenStreetMap contributors"
     path = tmp_path / "zones.geojson"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert len(pz.load_zone_polygons(path)) == 7
+    assert len(pz.load_zone_polygons(path)) == len(document["features"])
 
 
 def test_load_zone_polygons_repairs_a_self_intersecting_ring(tmp_path, caplog):

@@ -3,20 +3,20 @@
 With ``parking_zones_enabled`` the preparation stage exports the tariff table of
 ``braunschweig.parking.zones_stage`` as the tariff model JSON next to ``<prefix>config.xml``, writes the
 ``braunschweigParking`` module that names this JSON by its bare file name, and lists both files in the parking
-inputs report; ``matsim.output`` copies the listed files with the scenario. OFF declares no parking parameter,
-leaves the prepared config byte-identical and writes no parking file.
+inputs report; ``matsim.output`` copies the listed files with the scenario. OFF declares no parking key but the
+flag itself and no parking stage, leaves the prepared config byte-identical and writes no parking file.
 
-The zones stage is faked: its tariff table is the seven-zone fixture set of the plan, which pins arithmetic,
-not truth. The context double follows ``tests/test_vrb_zone_fares_prepare_wiring.py`` but is strict in the
-execute phase, like synpp's ExecuteContext, so an execute-time read that configure() did not declare fails here
-instead of in a real run (``tests/test_execute_context_config_contract.py``).
+The zones stage is faked: its tariff table is ``tests/fixtures/parking/parking_tariffs_fixture.csv`` read by the
+production loader ``braunschweig.parking.zones.load_tariffs`` (the frame the real stage returns), which pins
+arithmetic, not truth. The context double follows ``tests/test_vrb_zone_fares_prepare_wiring.py`` but is strict
+in the execute phase, like synpp's ExecuteContext, so an execute-time read that configure() did not declare fails
+here instead of in a real run (``tests/test_execute_context_config_contract.py``).
 """
 from __future__ import annotations
 
 import datetime
 import hashlib
 import inspect
-import io
 import json
 import re
 from pathlib import Path
@@ -28,11 +28,15 @@ from shapely.geometry import box
 
 from braunschweig.matsim import config_modules
 from braunschweig.matsim.simulation import prepare
+from braunschweig.parking import zones as parking_zones
 from matsim import output
 
 REPO = Path(__file__).resolve().parents[1]
-#: The spec 5.4 model of the same seven rows, built by the production export (scripts/export_parking_golden_cases.py).
-FIXTURE_MODEL_PATH = REPO / "tests" / "fixtures" / "parking" / "parking_tariffs_fixture.json"
+FIXTURE_DIRECTORY = REPO / "tests" / "fixtures" / "parking"
+#: The fixture tariff table (spec 5.3 columns), the input of the faked zones stage.
+FIXTURE_TARIFFS_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.csv"
+#: The spec 5.4 model of the same table, built by the production export (scripts/export_parking_golden_cases.py).
+FIXTURE_MODEL_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.json"
 
 PARKING_STAGE = "braunschweig.parking.zones_stage"
 PREFIX = "bs_"
@@ -52,33 +56,6 @@ PREPARED_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
                    '\t<module name="plans">\n\t\t<param name="inputPlansFile" value="bs_population.xml.gz" />\n'
                    '\t</module>\n'
                    '</config>\n')
-
-#: Tariff columns of the plan's fixture table, in the plan's order.
-FIXTURE_COLUMNS = ("zone_id", "zone_type", "workplace_class", "hourly_rate_eur", "billing_unit_min",
-                   "free_if_stay_at_most_min", "first_period_min", "first_period_eur", "daily_cap_eur",
-                   "max_stay_min", "long_stay_product_eur", "member_day_eur", "guest_day_eur", "fee_start_h",
-                   "fee_end_h", "resident_exempt")
-#: The seven zones of the plan section "Fixture tariff set and golden cases", one CSV row each (an empty cell
-#: is "not applicable"), so the table reaches the export in the shape a CSV read delivers.
-FIXTURE_ROWS = (
-    "fx_bs_ia,street_paid,bs_zentrum,1.80,1,,,,,180,9.00,,,9.0,20.0,false",
-    "fx_bs_ib,street_paid,bs_zentrum,1.80,1,,,,9.00,,,,,9.0,20.0,false",
-    "fx_sz,street_paid,03102,1.00,6,30,60,0.70,,,,,,10.0,18.0,false",
-    "fx_wob,street_paid,03103,1.20,60,,60,1.10,6.00,,,,,6.0,24.0,false",
-    "fx_pe,street_paid,03157,1.00,30,,,,,180,5.00,,,9.0,17.0,false",
-    "fx_res_a,resident_zone,bs_innenbereich,0.00,60,,,,,120,9.00,,,0.0,24.0,true",
-    "fx_campus,campus,bs_innenbereich,,,,,,,,,3.50,9.00,0.0,24.0,false",
-)
-#: The spec 5.3 columns in their order; the export reads none of the provenance columns, which carry
-#: placeholders labelled as fixture values.
-SPEC_COLUMNS = ("zone_id", "name", "municipality_ags", "zone_type", "workplace_class", "hourly_rate_eur",
-                "billing_unit_min", "free_if_stay_at_most_min", "first_period_min", "first_period_eur",
-                "daily_cap_eur", "max_stay_min", "long_stay_product_eur", "member_day_eur", "guest_day_eur",
-                "fee_start_h", "fee_end_h", "resident_exempt", "source_url", "source_date", "valid_from",
-                "fee_window_source", "notes")
-FIXTURE_PROVENANCE = {"name": "fixture zone", "municipality_ags": None, "source_url": "fixture (plan table)",
-                      "source_date": "2026-09-28", "valid_from": "2026-09-28", "fee_window_source": "assumption",
-                      "notes": "test fixture: pins arithmetic, not truth"}
 
 
 class _Context:
@@ -127,10 +104,9 @@ class _Context:
 
 
 def _fixture_tariffs() -> pd.DataFrame:
-    """The fixture tariff table with the spec 5.3 columns; identifier columns stay text (03102)."""
-    text = "\n".join((",".join(FIXTURE_COLUMNS), *FIXTURE_ROWS)) + "\n"
-    table = pd.read_csv(io.StringIO(text), dtype={"zone_id": str, "zone_type": str, "workplace_class": str})
-    return table.assign(**FIXTURE_PROVENANCE)[list(SPEC_COLUMNS)]
+    """The fixture tariff table as the zones stage returns it: read by the production loader (typed, the
+    identifier columns as text, e.g. 03102), so the export sees exactly the frame of a real release."""
+    return parking_zones.load_tariffs(FIXTURE_TARIFFS_PATH)
 
 
 def _zones_stage_result() -> dict:
@@ -164,12 +140,14 @@ def _prepare_context(tmp_path, monkeypatch, **values):
 
 
 @pytest.mark.parametrize("values", [{}, {"parking_zones_enabled": False}], ids=["absent", "false"])
-def test_off_declares_no_parking_parameter_and_leaves_the_prepared_config_byte_identical(
+def test_off_declares_only_the_flag_and_leaves_the_prepared_config_byte_identical(
         tmp_path, monkeypatch, values):
     context, config = _prepare_context(tmp_path, monkeypatch, **values)
     assert context.declared_config[prepare.PARKING_KEY] is False
-    assert PARKING_STAGE not in context.declared_stages
-    assert not set(prepare.PARKING_DEFAULTS) & set(context.declared_config)
+    # The flag is the ONLY parking key OFF declares -- not merely none of PARKING_DEFAULTS -- and no parking
+    # stage is declared, so a key added later cannot leak into OFF configurations unnoticed.
+    assert [key for key in context.declared_config if "parking" in key] == [prepare.PARKING_KEY]
+    assert not [stage for stage in context.declared_stages if "parking" in stage]
     before = config.read_bytes()
     assert prepare.execute(context) == CONFIG_NAME
     assert config.read_bytes() == before
@@ -196,12 +174,41 @@ def test_on_configure_rejects_a_parking_parameter_the_export_cannot_use(tmp_path
         prepare.configure(context)
 
 
-def test_on_execute_exports_the_seven_fixture_zones_as_the_tariff_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize("snapshot_date, fix, wrong_fix", [
+    (datetime.date(2026, 9, 28), "quote", None),
+    ("2026-9-28", "YYYY-MM-DD", "quote"),
+    ("28.09.2026", "YYYY-MM-DD", "quote"),
+], ids=["unquoted_yaml_date", "quoted_but_unpadded", "quoted_but_german"])
+def test_on_configure_names_the_fix_that_matches_the_bad_snapshot_date(tmp_path, snapshot_date, fix, wrong_fix):
+    # An unquoted YAML date needs quotes; a quoted text in the wrong format already is quoted and needs the ISO
+    # format instead, so telling its author to quote it would send them the wrong way.
+    context = _Context(tmp_path / "prepare", {"output_prefix": PREFIX, "cordon_enabled": False,
+                                              "freight_enabled": False, "parking_zones_enabled": True,
+                                              "parking_tariff_snapshot_date": snapshot_date})
+    with pytest.raises(ValueError, match="parking_tariff_snapshot_date") as error:
+        prepare.configure(context)
+    assert fix in str(error.value) and "'2026-09-28'" in str(error.value)
+    if wrong_fix is not None:
+        assert wrong_fix not in str(error.value)
+
+
+def test_the_configure_check_uses_the_public_snapshot_date_validator(tmp_path, monkeypatch):
+    # One validator for the configure-time check and the export: tariff_export.check_snapshot_date.
+    calls = []
+    real_check = prepare.tariff_export.check_snapshot_date
+    monkeypatch.setattr(prepare.tariff_export, "check_snapshot_date",
+                        lambda value: calls.append(value) or real_check(value))
+    _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
+    assert calls == ["2026-09-28"]
+
+
+def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monkeypatch):
     context, config = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     prepare.execute(context)
     model = json.loads((config.parent / TARIFFS_NAME).read_text(encoding="utf-8"))
-    assert sorted(model["zones"]) == ["fx_bs_ia", "fx_bs_ib", "fx_campus", "fx_pe", "fx_res_a", "fx_sz", "fx_wob"]
-    # Same seven rows, same production export: the cents and seconds of the committed fixture model.
+    assert sorted(model["zones"]) == ["fx_bs_ia", "fx_bs_ib", "fx_campus", "fx_frac", "fx_pe", "fx_res_a", "fx_sz",
+                                      "fx_wob"]
+    # Same fixture table, same production export: the cents and seconds of the committed fixture model.
     assert model["zones"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["zones"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
@@ -229,8 +236,8 @@ def test_module_paths_are_relative_and_listed_in_report(tmp_path, monkeypatch):
     assert (config.parent / tariffs_path).is_file()
     report = json.loads((config.parent / REPORT_NAME).read_text(encoding="utf-8"))
     assert report["parking_input_files"] == [tariffs_path, REPORT_NAME]
-    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 7,
-                      "zone_types": {"campus": 1, "resident_zone": 1, "street_paid": 5},
+    assert report == {"parking_input_files": [TARIFFS_NAME, REPORT_NAME], "zones": 8,
+                      "zone_types": {"campus": 1, "resident_zone": 1, "street_paid": 6},
                       "terminal_stay_rule": "until_fee_end", "sources": context.stages[PARKING_STAGE]["sources"]}
 
 
@@ -239,7 +246,7 @@ def test_on_execute_logs_the_zone_count_and_the_file_names_once(tmp_path, monkey
     prepare.execute(context)
     lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[parking]")]
     assert len(lines) == 1, lines
-    assert "7 zones" in lines[0] and TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
+    assert "8 zones" in lines[0] and TARIFFS_NAME in lines[0] and REPORT_NAME in lines[0], lines[0]
 
 
 def test_a_second_execute_on_the_same_config_is_idempotent(tmp_path, monkeypatch):

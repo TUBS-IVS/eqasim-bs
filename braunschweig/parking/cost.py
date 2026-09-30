@@ -1,9 +1,10 @@
 """Deterministic parking cost of one car stay in a zone (issue #249): the Python reference implementation.
 
-This module implements the algorithm of the design spec section 3.2
-(``docs/superpowers/specs/2026-09-28-parking-cost-zones-design.md``, local). The Java
-``ParkingCostCalculator`` (eqasim-java-bs) must reproduce it exactly; the shared contract is the 26 golden
-cases of ``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
+``parking_cost_cents`` applies the rules of a zone's tariff in a fixed order (listed in its docstring) to the
+part of the stay that falls inside the zone's daily fee window (``chargeable_seconds``), and ``ZoneTariff``
+validates a tariff against its zone type when it is constructed. The Java ``ParkingCostCalculator``
+(eqasim-java-bs) must reproduce this calculation exactly; the shared contract is the golden cases of
+``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
 ``tests/fixtures/parking/parking_golden_cases.json``. All money is in integer euro cents and all times are
 in integer simulation seconds, so both implementations run the same integer arithmetic and cannot drift
 apart through floating-point rounding.
@@ -72,8 +73,12 @@ _REQUIRED_FIELDS = {
     RESIDENT_ZONE: ("hourly_rate_cents", "billing_unit_min", "max_stay_min", "long_stay_product_cents"),
     CAMPUS: ("member_day_cents", "guest_day_cents"),
 }
-# Fields the zone type does not have (spec 3.1): a value there would be a tariff element the cost
-# algorithm never applies, so it is rejected instead of being silently ignored.
+# Fields the zone type does not have (spec 3.1). A value there is rejected, because it would either be ignored
+# or change the regime without anybody noticing. Most of them the algorithm never reads for the type: the
+# campus day products are returned before any metering step, the day products are read only on campus, and a
+# cap cannot bind on a resident zone, whose metered price is 0 ct. On a resident zone, however,
+# free_if_stay_at_most_min and the first period WOULD change the price: FREE_WITHIN_LIMIT is evaluated before
+# the maximum-stay check, and the first period is charged in the metered step.
 _NOT_APPLICABLE_FIELDS = {
     STREET_PAID: ("member_day_cents", "guest_day_cents"),
     RESIDENT_ZONE: ("free_if_stay_at_most_min", "first_period_min", "first_period_cents", "daily_cap_cents",
@@ -112,6 +117,17 @@ class ZoneTariff:
 
     def __post_init__(self) -> None:
         _check_tariff(self)
+
+
+def not_applicable_fields(zone_type: str) -> tuple[str, ...]:
+    """The ``ZoneTariff`` fields a tariff of ``zone_type`` must leave empty (None), in a fixed order.
+
+    The rule ``ZoneTariff`` enforces, exposed so that ``braunschweig.parking.tariff_export`` can name the
+    offending column of the tariff table. Raises ``ValueError`` for an unknown zone type. Pure.
+    """
+    if zone_type not in ZONE_TYPES:
+        raise ValueError(f"unknown zone_type {zone_type!r}; expected one of {ZONE_TYPES}")
+    return _NOT_APPLICABLE_FIELDS[zone_type]
 
 
 def _is_plain_int(value) -> bool:
@@ -153,6 +169,13 @@ def _check_tariff(tariff: ZoneTariff) -> None:
     for name in _NOT_APPLICABLE_FIELDS[tariff.zone_type]:
         if getattr(tariff, name) is not None:
             fail(f"{name} does not apply to zone_type {tariff.zone_type!r} and must be empty")
+    # The first period is charged in full for any use, so a lower cap would replace its price on every metered
+    # stay: the tariff contradicts itself.
+    if (tariff.daily_cap_cents is not None and tariff.first_period_cents is not None
+            and tariff.daily_cap_cents < tariff.first_period_cents):
+        fail(f"daily_cap_cents {tariff.daily_cap_cents} is below first_period_cents {tariff.first_period_cents}: "
+             "a daily cap below the first-period price contradicts the tariff (every metered stay would pay "
+             "exactly the cap)")
     if tariff.zone_type == RESIDENT_ZONE:
         if tariff.hourly_rate_cents != 0:
             fail(f"hourly_rate_cents must be 0 for a resident_zone (disc parking), got {tariff.hourly_rate_cents}")
@@ -229,10 +252,11 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2).
 
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
-    outcome ``NO_ZONE``). ``arrival_s`` is the car arrival and ``departure_s`` the activity departure in
-    simulation seconds (for a terminal activity use ``terminal_departure_s``); ``purpose`` is the MATSim
-    activity type, ``parking_free`` the activity attribute ``parkingFree``, ``resident_of_zone`` whether the
-    person lives in this zone (R1). The checks run in the order of spec 3.2; the first that applies decides:
+    outcome ``NO_ZONE``, decided before every check below, so also for the home purpose). ``arrival_s`` is
+    the car arrival and ``departure_s`` the activity departure in simulation seconds (for a terminal
+    activity use ``terminal_departure_s``); ``purpose`` is the MATSim activity type, ``parking_free`` the
+    activity attribute ``parkingFree``, ``resident_of_zone`` whether the person lives in this zone (R1). The
+    checks run in the order of spec 3.2; the first that applies decides:
 
     1. home purpose -> 0, ``HOME`` (H1);
     2. ``parking_free`` -> 0, ``EMPLOYER_FREE``;

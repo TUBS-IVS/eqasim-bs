@@ -16,7 +16,7 @@
   "sources": [
     {
       "path": "tests/fixtures/parking/parking_tariffs_fixture.csv",
-      "sha256": "60337aa516be627febc798efc1a3aafc2d4b7e6a1886a3953cc7d6aaeab1a182",
+      "sha256": "bbfc6cbe96bec7fca149f164dec69791089bfe15699aa5dcd236ff9fcc64e153",
       "source_id": "parking_tariffs_fixture"
     }
   ],
@@ -71,6 +71,22 @@
       "member_day_cents": 350,
       "resident_exempt": false,
       "zone_type": "campus"
+    },
+    "fx_frac": {
+      "billing_unit_min": 1,
+      "daily_cap_cents": 700,
+      "fee_end_s": 64800,
+      "fee_start_s": 28800,
+      "first_period_cents": null,
+      "first_period_min": null,
+      "free_if_stay_at_most_min": null,
+      "guest_day_cents": null,
+      "hourly_rate_cents": 175,
+      "long_stay_product_cents": null,
+      "max_stay_min": null,
+      "member_day_cents": null,
+      "resident_exempt": false,
+      "zone_type": "street_paid"
     },
     "fx_pe": {
       "billing_unit_min": 30,

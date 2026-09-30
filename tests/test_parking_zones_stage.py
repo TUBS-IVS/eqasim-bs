@@ -28,7 +28,7 @@ FIXTURES = REPO / "tests" / "fixtures" / "parking"
 COMMITTED_DATA = REPO / "eqasim-data" / "data"
 STAGE_LOGGER = "braunschweig.parking.zones_stage"
 
-FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus"]
+FIXTURE_ZONE_IDS = ["fx_bs_ia", "fx_bs_ib", "fx_sz", "fx_wob", "fx_pe", "fx_res_a", "fx_campus", "fx_frac"]
 DEFAULT_PATHS = {
     "parking_zones_path": "braunschweig/parking/parking_zones_2026.geojson",
     "parking_tariffs_path": "braunschweig/parking/parking_tariffs_2026.csv",
@@ -56,17 +56,19 @@ REGISTER_LINES = (
     "03157006,Fixture Peine,zoned,fixture,",
     "03153017,Fixture Goslar,not_audited,,",
 )
-#: The SrV commute-parking layout with made-up shares: one class row per fixture workplace class + total.
+#: The SrV commute-parking layout with made-up shares: one class row per fixture workplace class and the pooled
+#: total row, the unweighted mean of the class rows (bs_outer carries that mean itself).
 SHARES_LINES = (
     "# Synthetic SrV-shaped free-parking shares for the parking fixture tariffs (tests only).",
     "workplace_class,level,n_unweighted,n_eff,share_employer_lot,share_street,share_garage_large_lot,"
     "share_other,share_paid_total,share_free_total",
     "bs_zentrum,class,200,100.0,0.5,0.3,0.2,0.0,0.25,0.75",
     "bs_innenbereich,class,200,100.0,0.6,0.3,0.1,0.0,0.1,0.9",
+    "bs_outer,class,200,100.0,0.68,0.22,0.1,0.0,0.096,0.904",
     "03102,class,200,100.0,0.8,0.2,0.0,0.0,0.05,0.95",
     "03103,class,200,100.0,0.8,0.1,0.1,0.0,0.05,0.95",
     "03157,class,200,100.0,0.7,0.2,0.1,0.0,0.03,0.97",
-    "total,total,1000,500.0,0.68,0.22,0.1,0.0,0.096,0.904",
+    "total,total,1200,600.0,0.68,0.22,0.1,0.0,0.096,0.904",
 )
 
 
@@ -168,8 +170,9 @@ def test_execute_returns_the_validated_fixture_release(fixture_data):
     assert list(release["tariffs"].columns) == list(pz.TARIFF_COLUMNS)
     # The shares table is returned as read: both levels, the class names as text (leading zeros kept).
     shares = release["workplace_shares"]
-    assert list(shares["level"]) == ["class"] * 5 + ["total"]
-    assert list(shares["workplace_class"]) == ["bs_zentrum", "bs_innenbereich", "03102", "03103", "03157", "total"]
+    assert list(shares["level"]) == ["class"] * 6 + ["total"]
+    assert list(shares["workplace_class"]) == ["bs_zentrum", "bs_innenbereich", "bs_outer", "03102", "03103", "03157",
+                                               "total"]
     assert attach.free_share_by_class(shares)["03102"] == pytest.approx(0.95)
     assert list(release["coverage_register"]["ags"]) == [line.split(",")[0] for line in REGISTER_LINES[2:]]
 
@@ -248,6 +251,15 @@ def test_a_fixture_marked_release_logs_a_warning_naming_the_zones(fixture_data, 
     [warning] = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
     assert pz.FIXTURE_MARKER in warning
     assert all(zone_id in warning for zone_id in FIXTURE_ZONE_IDS)
+
+
+def test_the_release_line_counts_the_zone_types_and_register_statuses_by_name(fixture_data, caplog):
+    with caplog.at_level(logging.INFO, logger=STAGE_LOGGER):
+        _release(fixture_data)
+    [line] = [record.getMessage() for record in caplog.records if "zone release:" in record.getMessage()]
+    assert "8 zones (campus 1, resident_zone 1, street_paid 6) in 4 municipalities" in line
+    assert "coverage register 5 rows (not_audited 1, zoned 4)" in line
+    assert "free shares for 6 workplace classes" in line
 
 
 # --------------------------------------------------------------------------- validate

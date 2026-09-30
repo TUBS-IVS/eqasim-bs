@@ -45,6 +45,8 @@ import inspect
 import logging
 import math
 
+import numpy as np
+
 import matsim.scenario.population as base
 from braunschweig.synthesis.commute_day import day_view as _day_view
 from braunschweig.synthesis.commute_day.day_view import StageOverrideContext
@@ -135,6 +137,10 @@ DEFAULT_FREE_SHIFT = 0.0
 PARKING_ZONE_COLUMN = "parking_zone"
 PARKING_FREE_COLUMN = "parking_free"
 RESIDENT_PARKING_ZONE_COLUMN = "resident_parking_zone"
+#: The identifying columns of the frames the attach functions extend, which must come back unchanged:
+#: an activity is keyed by (person_id, activity_index), a person by person_id.
+ACTIVITY_KEY_COLUMNS = ("person_id", "activity_index")
+PERSON_KEY_COLUMNS = ("person_id",)
 
 _PARKING_LOG_TAG = "[parking population]"
 
@@ -282,19 +288,39 @@ def attach_day_absence_state(persons, absence):
     return merged
 
 
-def _require_attach_result(before, after, column, producer):
-    """Return ``after`` if ``producer`` kept every row of ``before`` and added ``column``.
+def _require_attach_result(before, after, column, producer, keys):
+    """Return ``after`` if ``producer`` kept every row of ``before`` with its ``keys`` and added ``column``.
 
-    Each ``braunschweig.parking.attach`` function ADDS one column to the frame it is handed. A
-    changed row count is a duplicating or dropping join inside it (e.g. one location matched to
-    two zones), which would silently duplicate or lose plan elements in the written population,
-    so it raises instead.
+    Each ``braunschweig.parking.attach`` function ADDS one column to a copy of the frame it is handed:
+    same rows, same order. A changed row count is a duplicating or dropping join inside it (e.g. one
+    location matched to two zones); a changed key at an unchanged count is a duplicating-and-dropping
+    or a mismatching join. Either would silently duplicate, lose or mislabel plan elements in the
+    written population, so it raises instead. ``keys`` are the identifying columns of the frame
+    (:data:`ACTIVITY_KEY_COLUMNS` or :data:`PERSON_KEY_COLUMNS`); they are compared row by row, which
+    implies an unchanged key set, with column-wise comparisons that stay cheap on a full population.
     """
     if len(after) != len(before):
         raise ValueError(
             f"{_PARKING_LOG_TAG} {producer} returned {len(after)} rows for {len(before)} input "
             "rows; the parking attributes must be attached row-preserving, and a changed count "
             "is a duplicating or dropping join.")
+    for key in keys:
+        if key not in after.columns:
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {producer} dropped the key column {key!r}; the parking "
+                "attributes must be attached to the rows as handed.")
+        expected = before[key].reset_index(drop=True)
+        found = after[key].reset_index(drop=True)
+        unchanged = expected.eq(found).fillna(False).to_numpy(dtype=bool)
+        if not unchanged.all():
+            changed = np.flatnonzero(~unchanged)
+            first = int(changed[0])
+            raise ValueError(
+                f"{_PARKING_LOG_TAG} {producer} changed the key column {key!r} in {len(changed)} of "
+                f"{len(before)} rows (first at position {first}: {expected.iloc[first]!r} -> "
+                f"{found.iloc[first]!r}); the parking attributes must be attached to the rows as "
+                "handed and in their order, so a changed key is a duplicating, dropping or "
+                "mismatching join.")
     if column not in after.columns:
         raise ValueError(
             f"{_PARKING_LOG_TAG} {producer} did not add the {column!r} column that "
@@ -425,17 +451,19 @@ def execute(context):
         zoned_activities = attach.attach_parking_zones(
             raw["activities"], raw["locations"], release["zones"])
         raw["activities"] = _require_attach_result(
-            raw["activities"], zoned_activities, PARKING_ZONE_COLUMN, "attach_parking_zones")
+            raw["activities"], zoned_activities, PARKING_ZONE_COLUMN, "attach_parking_zones",
+            ACTIVITY_KEY_COLUMNS)
         persons_with_zone = attach.attach_resident_zones(
             raw["persons"], raw["activities"], release["tariffs"])
         raw["persons"] = _require_attach_result(
             raw["persons"], persons_with_zone, RESIDENT_PARKING_ZONE_COLUMN,
-            "attach_resident_zones")
+            "attach_resident_zones", PERSON_KEY_COLUMNS)
         drawn_activities = attach.draw_parking_free(
             raw["activities"], release["tariffs"], release["workplace_shares"],
             int(context.config("random_seed")), shift=float(context.config(KEY_FREE_SHIFT)))
         raw["activities"] = _require_attach_result(
-            raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free")
+            raw["activities"], drawn_activities, PARKING_FREE_COLUMN, "draw_parking_free",
+            ACTIVITY_KEY_COLUMNS)
         _log_parking_coverage(raw["activities"], raw["persons"], resident_person_ids)
     else:
         # No column -> matsim.scenario.population.effective_activity_fields and
