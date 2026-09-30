@@ -190,10 +190,10 @@ def _commute_header(table: pd.DataFrame, universe: pd.DataFrame, report: dict, p
                   f"row {total['share_free_total']:.{SHARE_DECIMALS}f} "
                   f"(n={int(total['n_unweighted'])})."),
         f"# Guard: min_cell_n={min_cell_n} (a class with fewer unweighted respondents raises).",
-        "# Coverage: respondents are residents of Braunschweig and the seven surveyed RGB Kreise",
-        "#   (stratified PSU sample of ~44 municipalities). Wolfsburg residents are not surveyed, so",
-        "#   the 03103 row describes in-commuters from the surveyed area only; in-commuters from",
-        "#   outside the Verbandsgebiet are represented in no row.",
+        "# Coverage: respondents are residents of seven of the eight ZGB Kreise, Braunschweig and the",
+        "#   six other surveyed Kreise (stratified PSU sample of ~44 municipalities). Wolfsburg (03103)",
+        "#   residents are not surveyed, so the 03103 row describes in-commuters from the surveyed area",
+        "#   only; in-commuters from outside the Verbandsgebiet are represented in no row.",
         f"# {A1_SENTENCE}",
         f"# Shares are weighted fractions in [0, 1], rounded to {SHARE_DECIMALS} decimals (n_eff to "
         f"{N_EFF_DECIMALS}); per row the",

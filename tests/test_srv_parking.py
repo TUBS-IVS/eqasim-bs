@@ -284,6 +284,9 @@ def test_extractor_writes_both_tables_with_the_provenance_header(tmp_path):
     assert any("GEWICHT_P_ZENSUS" in line for line in header)
     assert ("# Shares are observed among current car commuters (SrV 2023 BS+RGB SciUse_v4); assumption "
             "A1 of the parking-cost-zones design transfers them to all workers of a class.") in header
+    # SrV 2023 surveys seven of the eight ZGB Kreise, Braunschweig included; Wolfsburg is not surveyed.
+    assert any("seven of the eight ZGB Kreise" in line for line in header)
+    assert not any("seven surveyed RGB Kreise" in line for line in header)
     commute = pd.read_csv(out / sp.COMMUTE_TABLE_FILE, comment="#", dtype={"workplace_class": str})
     assert list(commute.columns) == list(sp.COMMUTE_TABLE_COLUMNS)
     assert commute["workplace_class"].tolist() == ["bs_zentrum", "bs_outer", "03103", "total"]
