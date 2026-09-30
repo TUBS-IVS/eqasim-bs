@@ -1,0 +1,23 @@
+# Jar parity of the OFF and LEGACY arms (parking-zones-smoke-zgb-1pct-2026-09-30)
+# sha256 over the DECOMPRESSED eqasim_trips.csv.gz, over scorestats.csv, and over the lines of the decompressed
+# eqasim_legs.csv.gz sorted with 'sort' (the parallel writer's row order differs between runs).
+# Jars: main = origin/main 21c1045c4 (2.3.1); jar3b2232176 = branch 3b2232176; final = branch 06b65b3c8 (all arms).
+arm,jar,table,sha256,first_log_line_time,iteration_10_end_time
+off,main,eqasim_trips.csv,beaadfb1aab4935ec2350faf9fdb4004371b6c7991fa707de4b1eee22c4af03f,2026-09-29T07:08:30,2026-09-29T07:20:17
+off,main,scorestats.csv,ecc0e972482c0c26c854db56cb9e0beccd6b9020aa41a3e09da6a761c786f609,2026-09-29T07:08:30,2026-09-29T07:20:17
+off,main,eqasim_legs.csv(sorted),8ee3256fd1faf6e17f39893a3c3ae0cfb852970c68fd8e18fa5d12cfa9d04f66,2026-09-29T07:08:30,2026-09-29T07:20:17
+off,jar3b2232176,eqasim_trips.csv,beaadfb1aab4935ec2350faf9fdb4004371b6c7991fa707de4b1eee22c4af03f,2026-09-29T11:57:41,2026-09-29T12:34:18
+off,jar3b2232176,scorestats.csv,ecc0e972482c0c26c854db56cb9e0beccd6b9020aa41a3e09da6a761c786f609,2026-09-29T11:57:41,2026-09-29T12:34:18
+off,jar3b2232176,eqasim_legs.csv(sorted),8ee3256fd1faf6e17f39893a3c3ae0cfb852970c68fd8e18fa5d12cfa9d04f66,2026-09-29T11:57:41,2026-09-29T12:34:18
+off,final,eqasim_trips.csv,beaadfb1aab4935ec2350faf9fdb4004371b6c7991fa707de4b1eee22c4af03f,2026-09-30T05:31:36,2026-09-30T05:44:04
+off,final,scorestats.csv,ecc0e972482c0c26c854db56cb9e0beccd6b9020aa41a3e09da6a761c786f609,2026-09-30T05:31:36,2026-09-30T05:44:04
+off,final,eqasim_legs.csv(sorted),8ee3256fd1faf6e17f39893a3c3ae0cfb852970c68fd8e18fa5d12cfa9d04f66,2026-09-30T05:31:36,2026-09-30T05:44:04
+legacy,main,eqasim_trips.csv,8b7a5bfbccb804f81dcd2174cf29c1e49a9dd8564cd6cb6036d2222fb62ab4ae,2026-09-29T07:08:30,2026-09-29T07:20:10
+legacy,main,scorestats.csv,e24a578f78a7d2983b0a161b98cf9cd27f62e1f3e51dd2fed9c9ea092f4967f2,2026-09-29T07:08:30,2026-09-29T07:20:10
+legacy,main,eqasim_legs.csv(sorted),6f770c73f3e689e32e399dcc06303348b2de5a9f18f3dd4ee8ebb1d65fc52387,2026-09-29T07:08:30,2026-09-29T07:20:10
+legacy,jar3b2232176,eqasim_trips.csv,8b7a5bfbccb804f81dcd2174cf29c1e49a9dd8564cd6cb6036d2222fb62ab4ae,2026-09-29T11:57:40,2026-09-29T12:36:32
+legacy,jar3b2232176,scorestats.csv,e24a578f78a7d2983b0a161b98cf9cd27f62e1f3e51dd2fed9c9ea092f4967f2,2026-09-29T11:57:40,2026-09-29T12:36:32
+legacy,jar3b2232176,eqasim_legs.csv(sorted),6f770c73f3e689e32e399dcc06303348b2de5a9f18f3dd4ee8ebb1d65fc52387,2026-09-29T11:57:40,2026-09-29T12:36:32
+legacy,final,eqasim_trips.csv,8b7a5bfbccb804f81dcd2174cf29c1e49a9dd8564cd6cb6036d2222fb62ab4ae,2026-09-30T05:45:00,2026-09-30T05:54:33
+legacy,final,scorestats.csv,e24a578f78a7d2983b0a161b98cf9cd27f62e1f3e51dd2fed9c9ea092f4967f2,2026-09-30T05:45:00,2026-09-30T05:54:33
+legacy,final,eqasim_legs.csv(sorted),6f770c73f3e689e32e399dcc06303348b2de5a9f18f3dd4ee8ebb1d65fc52387,2026-09-30T05:45:00,2026-09-30T05:54:33

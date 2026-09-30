@@ -1,0 +1,4 @@
+reason,car_arrivals
+zero_length_stay_inside_fee_window,10
+stay_before_fee_window,6
+arrival_after_fee_window,3

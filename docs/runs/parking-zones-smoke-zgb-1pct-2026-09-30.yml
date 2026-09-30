@@ -59,14 +59,14 @@ validation:
     1,078-1,321 car candidates each: NO_ZONE 94.1-97.0 %, HOME 0.9-3.3 %, EMPLOYER_FREE 0.4-1.7 %, paid outcomes
     0.74-1.97 %, all ten outcome rows written to ITERS/it.N/N.parking_outcomes.csv.'
   artifact: 'docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_outcomes_by_iteration_zones.csv,
-    docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_log_lines_zones.txt'
+    docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_log_lines_zones.txt, docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/prepare_zones_arm_log.txt'
   notes: 'The Java counts are per evaluated car CANDIDATE of mode choice, not per chosen trip.'
 - metric: OFF-path and legacy parity of the branch jar
   reference: 'the OFF and LEGACY arms run with the jar of origin/main 21c1045c4 (2.3.1) on the same inputs'
   result: 'pass: eqasim_trips.csv.gz (decompressed) and scorestats.csv are byte-identical across the jars of
     origin/main, 3b2232176 and 06b65b3c8, for OFF and for LEGACY; eqasim_legs.csv.gz is identical as a sorted row set
     (93,419 legs for OFF; only the row order of the parallel writer differs).'
-  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/modestats_off.csv
+  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/jar_parity_sha256.csv
   notes: 'Without a braunschweigParking module the branch changes nothing; the legacy ring reproduces exactly.'
 - metric: Python reference vs Java calculator on the committed 24-zone release
   reference: 'none -- consistency of the two implementations of the ADR-0139 rules'
@@ -89,7 +89,8 @@ validation:
     OUTSIDE_FEE_HOURS 39, PAID_CAMPUS_GUEST 5, PAID_LONG_STAY 4, FREE_WITHIN_LIMIT 2; 180 paid (25.6 %) at a mean
     of 3.23 EUR per paid stay. 49 of the 703 (7.0 %) are zero-length stays (the car arrives after the planned end
     of the activity) and pay nothing; over all 17,685 chosen car arrivals the share of zero-length stays is 11.8 %.'
-  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zone_outcomes_chosen_car_trips.csv
+  artifact: 'docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zone_outcomes_chosen_car_trips.csv,
+    docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_stays.csv'
   notes: 'Arrival = destination activity start, departure = its end, terminal activities by rule T1, from
     eqasim_activities.csv.gz of the final iteration.'
 - metric: share of chosen car arrivals in the Braunschweig centre street zones (bs_zone_*) with a paid outcome
@@ -101,7 +102,8 @@ validation:
     arrivals (47): 59.6 % paid, 40.4 % outside fee hours; persons whose home lies within 8 km of the Hbf (43, an
     APPROXIMATION of "Braunschweig residents"): 58.1 %. Of the 19 outside-fee-hours visits in the 47, 9 lie outside
     9-20 h (6 arrive 7-9 h, 3 after 20 h) and 10 are zero-length stays inside the fee window.'
-  artifact: docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_paid_share_comparison.csv
+  artifact: 'docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_paid_share_comparison.csv,
+    docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_outside_fee_hours_breakdown.csv, docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_stays.csv'
   notes: 'The closest model universe (non-home, non-commute arrivals) is small (47) and inflated in its free share by
     zero-length stays of an unconverged run; commute arrivals follow the separate SrV commute table through the
     employer-free draw. The SrV figure also covers the garages and large lots that 70.8 % of those respondents use,
@@ -113,6 +115,10 @@ artifacts:
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/mode_shares_by_arm.csv
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zone_outcomes_chosen_car_trips.csv
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_paid_share_comparison.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/centre_outside_fee_hours_breakdown.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/zero_length_stays.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/jar_parity_sha256.csv
+- docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/prepare_zones_arm_log.txt
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_outcomes_by_iteration_zones.csv
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_log_lines_zones.txt
 - docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30/parking_tariff_model_zones_arm_2026-09-29.json
@@ -137,4 +143,6 @@ notes: 'Local-only outputs (not committed; per-person data of a synthetic popula
   be validation either.'
 source: 'harness/evaluate_smoke.py --repo <integration worktree at 2d990e70> --smoke-dir <scratchpad>/smoke --out-dir
   docs/runs/artifacts/parking-zones-smoke-zgb-1pct-2026-09-30 on the three final-iteration outputs; the Java lines
-  from smoke/zones/run.log; the parity hashes with sha256sum over the decompressed tables.'
+  from smoke/zones/run.log; the parity hashes with sha256sum over the decompressed tables (jar_parity_sha256.csv, with
+  the run times from each arm''s log); the Python attach counts from harness/prepare_zones_arm.py (logging INFO) re-run
+  on a fresh copy with byte-identical output (prepare_zones_arm_log.txt).'

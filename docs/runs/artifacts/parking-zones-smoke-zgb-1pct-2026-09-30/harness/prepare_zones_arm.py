@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import logging
 import sys
 from pathlib import Path
 
@@ -108,6 +109,8 @@ def main(argv=None):
     parser.add_argument("--snapshot-date", default="2026-09-28")
     parser.add_argument("--terminal-stay-rule", default="until_fee_end")
     args = parser.parse_args(argv)
+    # INFO shows the rate lines of the package code ([parking] / [parking-zones]), the transparency evidence.
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     repo, arm = Path(args.repo).resolve(), Path(args.arm_dir).resolve()
     data_path = repo / "eqasim-data" / "data"
 

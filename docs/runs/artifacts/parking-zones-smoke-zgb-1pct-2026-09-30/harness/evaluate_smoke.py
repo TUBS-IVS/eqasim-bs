@@ -17,6 +17,12 @@ centre_paid_share_comparison.csv
     within 8 km of Braunschweig Hbf (APPROXIMATION of "Braunschweig residents"), next to the SrV 2023
     paid_share_overall. A COMPARISON with a universe caveat (SrV: usual centre parking of Braunschweig
     residents, all places incl. garages), never a validation.
+zero_length_stays.csv
+    universe, car_arrivals, zero_length_stays, zero_length_share -- chosen car arrivals whose destination activity
+    ends at or before the arrival (a late arrival of an unconverged plan; no chargeable second, priced as free).
+centre_outside_fee_hours_breakdown.csv
+    reason, car_arrivals -- why the non-home, non-commute centre visits with OUTSIDE_FEE_HOURS pay nothing: the
+    stay lies before the zone's daily fee window, the arrival is after it, or a zero-length stay arrives inside it.
 """
 from __future__ import annotations
 
@@ -142,7 +148,13 @@ def main(argv=None):
             resident_of_zone=zone_id is not None and person_attrs.get(key[0]) == zone_id)
         records.append({"person_id": key[0], "zone_id": zone_id or "", "zone_type": tariff.zone_type if tariff else "",
                         "purpose": str(act["purpose"]), "outcome": outcome, "cents": cents,
-                        "home_within_8km": bool(home_in_ring.get(key[0], False))})
+                        "home_within_8km": bool(home_in_ring.get(key[0], False)),
+                        # A zero-length stay: the car arrives at or after the planned end of the activity (a late
+                        # arrival of an unconverged plan); it has no chargeable second and prices as free.
+                        "zero_length": bool(math.isfinite(end) and departure <= arrival),
+                        "arrival_time_of_day_s": arrival % 86400,
+                        "fee_start_s": tariff.fee_start_s if tariff else None,
+                        "fee_end_s": tariff.fee_end_s if tariff else None})
     priced = pd.DataFrame(records)
     table = (priced.groupby(["zone_id", "zone_type", "outcome"])
              .agg(car_trips=("cents", "size"), mean_cost_eur=("cents", lambda c: round(c.mean() / 100.0, 2)))
@@ -172,6 +184,33 @@ def main(argv=None):
     rows.append({"universe": "srv2023_bs_residents_usual_centre_parking_all_places", "car_arrivals": "",
                  "paid_share": srv_paid, "outside_fee_hours_share": ""})
     pd.DataFrame(rows).to_csv(out / "centre_paid_share_comparison.csv", index=False, lineterminator="\n")
+
+    # Zero-length stays per universe (all chosen car arrivals; those in a zone; the centre visits above).
+    zero_rows = []
+    for universe, subset in (("all_chosen_car_arrivals", priced),
+                             ("chosen_car_arrivals_in_a_zone", priced[priced["zone_id"] != ""]),
+                             ("non_home_non_commute_car_arrivals_in_bs_centre_zones", non_commute)):
+        zero_rows.append({"universe": universe, "car_arrivals": len(subset),
+                          "zero_length_stays": int(subset["zero_length"].sum()),
+                          "zero_length_share": round(float(subset["zero_length"].mean()), 4) if len(subset) else ""})
+    pd.DataFrame(zero_rows).to_csv(out / "zero_length_stays.csv", index=False, lineterminator="\n")
+
+    # Why the outside-fee-hours centre visits pay nothing: the stay lies before or after the zone's daily fee
+    # window, or it is a zero-length stay whose arrival falls inside the window.
+    def reason(row):
+        if row["zero_length"] and row["fee_start_s"] <= row["arrival_time_of_day_s"] < row["fee_end_s"]:
+            return "zero_length_stay_inside_fee_window"
+        if row["arrival_time_of_day_s"] < row["fee_start_s"]:
+            return "stay_before_fee_window"
+        if row["arrival_time_of_day_s"] >= row["fee_end_s"]:
+            return "arrival_after_fee_window"
+        return "other"
+
+    outside = non_commute[non_commute["outcome"] == "OUTSIDE_FEE_HOURS"]
+    breakdown = outside.apply(reason, axis=1).value_counts().rename_axis("reason").reset_index(name="car_arrivals")
+    breakdown.to_csv(out / "centre_outside_fee_hours_breakdown.csv", index=False, lineterminator="\n")
+    print(pd.DataFrame(zero_rows).to_string(index=False))
+    print(breakdown.to_string(index=False))
     print(pd.DataFrame(rows).to_string(index=False))
     print(table.to_string(index=False))
     return 0

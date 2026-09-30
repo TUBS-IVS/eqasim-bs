@@ -1,0 +1,4 @@
+universe,car_arrivals,zero_length_stays,zero_length_share
+all_chosen_car_arrivals,17685,2092,0.1183
+chosen_car_arrivals_in_a_zone,703,49,0.0697
+non_home_non_commute_car_arrivals_in_bs_centre_zones,47,15,0.3191

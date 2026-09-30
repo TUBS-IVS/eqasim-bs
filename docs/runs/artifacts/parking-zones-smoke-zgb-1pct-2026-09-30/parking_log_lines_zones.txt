@@ -1,4 +1,4 @@
-ParkingTariffs:129 [parking] tariff model C:\Users\bienzeisler\AppData\Local\Temp\claude\c--Users-bienzeisler-Documents-GitHub-eqasim-bs\83d53d74-7e1f-45ec-87d3-161fdc8cc5fb\scratchpad\smoke\zones\braunschweig_cordon_gatecheck_parking_tariffs_2026-09-29.json: 24 zones {campus=6, resident_zone=1, street_paid=17}, snapshot 2026-09-29, schema 1, 4 source(s)
+ParkingTariffs:129 [parking] tariff model <scratchpad>\smoke\zones\braunschweig_cordon_gatecheck_parking_tariffs_2026-09-29.json: 24 zones {campus=6, resident_zone=1, street_paid=17}, snapshot 2026-09-29, schema 1, 4 source(s)
 ParkingPopulationCheck:117 [parking] population: 12073 persons, 49293 activities; 1964 in a zone (4.0 %: street_paid 1608, resident_zone 49, campus 307), 407 parkingFree, 18 persons with residentParkingZone (0.1 %)
 ParkingOutcomeReportListener:70 [parking] it 0: no car stay priced
 ParkingOutcomeReportListener:70 [parking] it 1: NO_ZONE 1231 (94.5 %), HOME 27 (2.1 %), EMPLOYER_FREE 22 (1.7 %), OUTSIDE_FEE_HOURS 4 (0.3 %), PAID_METERED 3 (0.2 %), PAID_CAMPUS_MEMBER 15 (1.2 %)
