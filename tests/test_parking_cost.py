@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
 
 from braunschweig.parking import cost
-from braunschweig.parking.golden_cases import GOLDEN_CASES, evaluate_case, golden_case_mismatches
+from braunschweig.parking.golden_cases import GOLDEN_CASES, STAY_ERROR_PATTERN, evaluate_case, golden_case_mismatches
 
 GOLDEN_JSON = Path(__file__).resolve().parent / "fixtures" / "parking" / "parking_golden_cases.json"
 REGENERATE_HINT = "regenerate with: python scripts/export_parking_golden_cases.py"
@@ -239,3 +240,62 @@ def test_the_first_period_is_charged_in_full_for_any_use_and_the_rest_rounds_hal
         per_minute = _tariff(hourly_rate_cents=rate_cents, billing_unit_min=1)
         assert cost.parking_cost_cents(per_minute, 36000, 36060, purpose="shop", parking_free=False,
                                        resident_of_zone=False) == expected
+
+
+# Rule L1 (ADR-0139): every priced car stay lasts at least L minutes, applied to the stay before the tariff rules.
+# The eight cases L01..L08 are shared with the Java ParkingCostCalculatorTest (fixture tariffs, derived by hand like
+# the golden cases). With L = 15 min (900 s) the stay is priced up to the priced departure; with L = 0 it is priced up
+# to its original departure, exactly as before rule L1. Times of day: 36000 = 10:00, 40000 = 11:06:40,
+# 71400 = 19:50, 72000 = 20:00 (the end of the fee window of fx_bs_ia and fx_bs_ib), 73000 = 20:16:40.
+_MINIMUM_STAY_S = 900
+_MINIMUM_STAY_ROWS = (
+    # id, zone, purpose, arrival_s, departure_s, priced departure_s, result with L = 15 min, result with L = 0.
+    # A zero-length stay inside the fee window pays 15 min at 180 ct/h instead of nothing.
+    ("L01", "fx_bs_ia", "shop", 36000, 36000, 36900, (45, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    # 15 min lie within the free threshold of 30 min.
+    ("L02", "fx_sz", "shop", 40000, 40000, 40900, (0, "FREE_WITHIN_LIMIT"), (0, "OUTSIDE_FEE_HOURS")),
+    # Only the 10 min before the end of the fee window are chargeable: 30 ct.
+    ("L03", "fx_bs_ib", "shop", 71400, 71400, 72300, (30, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    # Any use buys the first period (60 min, 110 ct) in full.
+    ("L04", "fx_wob", "shop", 36000, 36000, 36900, (110, "PAID_METERED"), (0, "OUTSIDE_FEE_HOURS")),
+    # A 5-min stay pays 15 min: 45 ct instead of 15 ct.
+    ("L05", "fx_bs_ia", "shop", 36000, 36300, 36900, (45, "PAID_METERED"), (15, "PAID_METERED")),
+    # A stay longer than the minimum is priced unchanged.
+    ("L06", "fx_bs_ia", "shop", 36000, 39600, 39600, (180, "PAID_METERED"), (180, "PAID_METERED")),
+    # A zero-length work stay on campus pays the member day product.
+    ("L07", "fx_campus", "work", 36000, 36000, 36900, (350, "PAID_CAMPUS_MEMBER"), (0, "OUTSIDE_FEE_HOURS")),
+    # The extended stay still lies after the fee window: free.
+    ("L08", "fx_bs_ib", "shop", 73000, 73000, 73900, (0, "OUTSIDE_FEE_HOURS"), (0, "OUTSIDE_FEE_HOURS")),
+)
+
+
+@pytest.mark.parametrize("row", _MINIMUM_STAY_ROWS, ids=[row[0] for row in _MINIMUM_STAY_ROWS])
+def test_the_minimum_stay_extends_the_priced_stay_and_zero_prices_it_as_before(row, fixture_zones):
+    _, zone_id, purpose, arrival_s, departure_s, priced_departure_s, with_minimum, without_minimum = row
+    tariff = fixture_zones[zone_id]
+    flags = {"purpose": purpose, "parking_free": False, "resident_of_zone": False}
+    extended_s = cost.minimum_stay_departure_s(arrival_s, departure_s, _MINIMUM_STAY_S)
+    assert extended_s == priced_departure_s
+    assert cost.parking_cost_cents(tariff, arrival_s, extended_s, **flags) == with_minimum
+    unchanged_s = cost.minimum_stay_departure_s(arrival_s, departure_s, 0)
+    assert unchanged_s == departure_s
+    assert cost.parking_cost_cents(tariff, arrival_s, unchanged_s, **flags) == without_minimum
+
+
+def test_the_minimum_stay_rejects_invalid_input_instead_of_pricing_it():
+    # The max() would quietly turn an invalid stay into a valid one, so the helper validates first, like the Java
+    # ParkingCostCalculator.minimumStayDeparture_s. A departure before the arrival stays the stay check's error
+    # (golden G26) instead of becoming the stay [37860, 38760).
+    with pytest.raises(ValueError, match=STAY_ERROR_PATTERN):
+        cost.minimum_stay_departure_s(37860, 36000, _MINIMUM_STAY_S)
+    with pytest.raises(ValueError, match="arrival_s must be non-negative"):
+        cost.minimum_stay_departure_s(-600, 36000, _MINIMUM_STAY_S)
+    # Integer seconds only, as everywhere in the reference: a non-finite time is not a time.
+    with pytest.raises(TypeError, match="departure_s must be an integer"):
+        cost.minimum_stay_departure_s(36000, math.inf, _MINIMUM_STAY_S)
+    # A negative or non-integer minimum is a configuration error (the Java config group rejects it at load time).
+    with pytest.raises(ValueError, match="minimum_stay_s must be non-negative"):
+        cost.minimum_stay_departure_s(36000, 36000, -60)
+    for minimum_stay_s in (900.0, True):
+        with pytest.raises(TypeError, match="minimum_stay_s must be an integer"):
+            cost.minimum_stay_departure_s(36000, 36000, minimum_stay_s)

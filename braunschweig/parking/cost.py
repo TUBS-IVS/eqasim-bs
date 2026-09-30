@@ -20,6 +20,11 @@ Assumptions (spec section 7; their full texts travel with the tariff JSON, see
 - T1: a terminal stay pays until the fee window of the arrival day ends (``terminal_departure_s``).
 - Z1: outside every zone parking is free (no tariff -> ``NO_ZONE``).
 
+L1 (ADR-0139) is a run parameter, not a tariff property, so it is not part of that register: every priced stay lasts
+at least L minutes (``minimum_stay_departure_s``, applied to the stay before ``parking_cost_cents``). L comes from the
+config key ``parking_minimum_stay_min`` and reaches the Java port as the ``braunschweigParking`` module parameter
+``minimumStayMinutes``.
+
 Every function is pure: no file or network access and no global state.
 """
 from __future__ import annotations
@@ -247,6 +252,27 @@ def terminal_departure_s(arrival_s: int, fee_end_s: int) -> int:
     return max(arrival_s, (arrival_s // SECONDS_PER_DAY) * SECONDS_PER_DAY + fee_end_s)
 
 
+def minimum_stay_departure_s(arrival_s: int, departure_s: int, minimum_stay_s: int) -> int:
+    """Departure up to which a car stay is priced under the minimum parked duration (assumption L1, ADR-0139).
+
+    Returns ``max(departure_s, arrival_s + minimum_stay_s)``: a stay shorter than ``minimum_stay_s`` seconds, including
+    the zero-length stay of a car that arrives at or after the planned end of its activity, is priced as if it lasted
+    ``minimum_stay_s``; a longer stay is priced as it is. Apply it before ``parking_cost_cents``, so every tariff rule
+    prices the extended stay unchanged, and for a terminal stay to the departure of the terminal-stay rule
+    (``terminal_departure_s``, T1). ``minimum_stay_s = 0`` returns ``departure_s``, the pricing before L1. The priced
+    interval changes, never the simulated timing. Seconds in, seconds out.
+
+    Raises ``ValueError`` for a negative time or minimum and for a departure before the arrival (the extension must
+    never turn an invalid stay into a valid one), ``TypeError`` for a non-integer value. Pure function.
+    """
+    arrival_s = _time_s("arrival_s", arrival_s)
+    departure_s = _time_s("departure_s", departure_s)
+    minimum_stay_s = _time_s("minimum_stay_s", minimum_stay_s)
+    if departure_s < arrival_s:
+        raise ValueError(f"departure_s {departure_s} is before arrival_s {arrival_s}")
+    return max(departure_s, arrival_s + minimum_stay_s)
+
+
 def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: int, *, purpose: str,
                        parking_free: bool, resident_of_zone: bool) -> tuple[int, str]:
     """Parking cost of one car stay in integer euro cents, with the outcome that decided it (spec 3.2).
@@ -254,7 +280,8 @@ def parking_cost_cents(tariff: ZoneTariff | None, arrival_s: int, departure_s: i
     ``tariff`` is the tariff of the zone the activity lies in, or None when it lies in no zone (Z1: free,
     outcome ``NO_ZONE``, decided before every check below, so also for the home purpose). ``arrival_s`` is
     the car arrival and ``departure_s`` the activity departure in simulation seconds (for a terminal
-    activity use ``terminal_departure_s``); ``purpose`` is the MATSim activity type, ``parking_free`` the
+    activity use ``terminal_departure_s``; under the minimum stay L1 pass the departure of
+    ``minimum_stay_departure_s``); ``purpose`` is the MATSim activity type, ``parking_free`` the
     activity attribute ``parkingFree``, ``resident_of_zone`` whether the person lives in this zone (R1). The
     checks run in the order of spec 3.2; the first that applies decides:
 
