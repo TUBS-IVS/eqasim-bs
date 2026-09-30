@@ -667,9 +667,10 @@ config:
   parking_tariffs_path: braunschweig/parking/parking_tariffs_2026.csv
   parking_coverage_register_path: braunschweig/parking/parking_coverage_register_2026.csv
   parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
-  # Tariff state of the release; names the tariff model JSON. Quoted: an unquoted YAML date is
+  # Tariff state of the release (the date its tariff rows were retrieved, source_date of
+  # parking_tariffs_2026.csv); names the tariff model JSON. Quoted: an unquoted YAML date is
   # rejected at configure time.
-  parking_tariff_snapshot_date: "2026-09-28"
+  parking_tariff_snapshot_date: "2026-09-29"
   # Sensitivity arm for assumption A1: a share difference in [-1, 1] added to the SrV free-parking
   # share of every workplace class before the draw clips it to [0, 1]; 0.0 keeps the SrV shares.
   parking_workplace_free_share_shift: 0.0

@@ -74,9 +74,9 @@ variables.
 | [mikrozensus_school_distance](../registry/data/mikrozensus_school_distance.yml) | calibration_target | auto_script (`scripts/seed_mikrozensus_school_distance.py`) | `data/braunschweig/mikrozensus/mikrozensus2024_school*.csv` | o/-/o | no |
 | [osm_cordon_ring](../registry/data/osm_cordon_ring.yml) | network | derived (`scripts/clip_osm_to_cordon_ring.py`) | `data/osm/germany-latest.zgb_ring.osm.pbf (+ osm/cordon/)` | -/r/r | no |
 | [osm_niedersachsen](../registry/data/osm_niedersachsen.yml) | spatial_input, network | manual_download (`scripts/preprocess_osm_pois.py`) | `data/osm/niedersachsen-latest.osm.pbf -> braunschweig/preprocessed/osm_pois.parquet` | r/r/r | no |
-| [parking_coverage_register_2026](../registry/data/parking_coverage_register_2026.yml) | assumption_basis, reference_table | committed | `data/braunschweig/parking/parking_coverage_register_2026.csv` | -/o/o | no |
-| [parking_tariffs_2026](../registry/data/parking_tariffs_2026.yml) | supply_input, reference_table | committed | `data/braunschweig/parking/parking_tariffs_2026.csv` | -/o/o | no |
-| [parking_zones_2026](../registry/data/parking_zones_2026.yml) | spatial_input | committed (`scripts/build_parking_zones_from_osm.py`) | `data/braunschweig/parking/parking_zones_2026.geojson` | -/o/o | no |
+| [parking_coverage_register_2026](../registry/data/parking_coverage_register_2026.yml) | assumption_basis, reference_table | committed | `data/braunschweig/parking/parking_coverage_register_2026.csv` | -/r/r | no |
+| [parking_tariffs_2026](../registry/data/parking_tariffs_2026.yml) | supply_input, reference_table | committed | `data/braunschweig/parking/parking_tariffs_2026.csv` | -/r/r | no |
+| [parking_zones_2026](../registry/data/parking_zones_2026.yml) | spatial_input | committed (`scripts/build_parking_zones_from_osm.py`) | `data/braunschweig/parking/parking_zones_2026.geojson` | -/r/r | no |
 | [regiostar](../registry/data/regiostar.yml) | spatial_input, reference_table | auto_script (`scripts/download_regiostar.py`) | `data/regiostar/regiostar_referenzdatei.xlsx` | r/-/r | no |
 | [rvb_visum_taz](../registry/data/rvb_visum_taz.yml) | spatial_input | restricted_delivery (`scripts/import_rvb_verkehrszellen.py`) | `data/braunschweig/taz/rvb_verkehrszellen_epsg25832.parquet` | -/-/- | YES |
 | [srv2023_absence_by_age_band](../registry/data/srv2023_absence_by_age_band.yml) | validation_reference, reference_table | committed (`scripts/extract_srv_absence.py`) | `data/braunschweig/srv/srv2023_absence_by_age_band.csv` | r/-/r | no |

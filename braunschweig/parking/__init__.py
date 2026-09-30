@@ -1,4 +1,5 @@
 """Zone-based parking costs (issue #249): committed zone polygons and tariffs attached to activities.
 
-Design: docs/superpowers/specs/2026-09-28-parking-cost-zones-design.md (local); ADR reserved in the plan.
+Rationale and assumptions: docs/decisions/ADR-0139-zone-based-parking-costs-replace-the-8-km-ring.md;
+data flow and maintenance: docs/codebase/notes/parking-cost-zones.md.
 """

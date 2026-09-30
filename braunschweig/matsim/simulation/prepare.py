@@ -73,7 +73,7 @@ PARKING_KEY = "parking_zones_enabled"
 #: Parameters of the tariff export, declared only when the flag is on (spec 5.5).
 PARKING_DEFAULTS = {
     # Tariff state the committed tariff table records; it names the tariff model file.
-    "parking_tariff_snapshot_date": "2026-09-28",
+    "parking_tariff_snapshot_date": "2026-09-29",
     # ASSUMPTION T1: a terminal stay pays until the fee window of the arrival day ends (the only implemented rule).
     "parking_terminal_stay_rule": "until_fee_end",
 }

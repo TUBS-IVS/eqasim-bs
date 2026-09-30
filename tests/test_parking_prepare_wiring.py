@@ -41,7 +41,7 @@ FIXTURE_MODEL_PATH = FIXTURE_DIRECTORY / "parking_tariffs_fixture.json"
 PARKING_STAGE = "braunschweig.parking.zones_stage"
 PREFIX = "bs_"
 CONFIG_NAME = f"{PREFIX}config.xml"
-TARIFFS_NAME = f"{PREFIX}parking_tariffs_2026-09-28.json"
+TARIFFS_NAME = f"{PREFIX}parking_tariffs_2026-09-29.json"
 REPORT_NAME = f"{PREFIX}parking_inputs_report.json"
 #: The scenario files other than the config that matsim.output copies from the prepared stage.
 SCENARIO_FILES = tuple(f"{PREFIX}{name}" for name in (
@@ -158,7 +158,7 @@ def test_on_declares_the_zones_stage_and_the_two_parking_parameters(tmp_path, mo
     context, _ = _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
     assert PARKING_STAGE in context.declared_stages
     assert {key: context.declared_config[key] for key in prepare.PARKING_DEFAULTS} == {
-        "parking_tariff_snapshot_date": "2026-09-28", "parking_terminal_stay_rule": "until_fee_end"}
+        "parking_tariff_snapshot_date": "2026-09-29", "parking_terminal_stay_rule": "until_fee_end"}
 
 
 @pytest.mark.parametrize("values, message", [
@@ -187,7 +187,7 @@ def test_on_configure_names_the_fix_that_matches_the_bad_snapshot_date(tmp_path,
                                               "parking_tariff_snapshot_date": snapshot_date})
     with pytest.raises(ValueError, match="parking_tariff_snapshot_date") as error:
         prepare.configure(context)
-    assert fix in str(error.value) and "'2026-09-28'" in str(error.value)
+    assert fix in str(error.value) and "'2026-09-29'" in str(error.value)
     if wrong_fix is not None:
         assert wrong_fix not in str(error.value)
 
@@ -199,7 +199,7 @@ def test_the_configure_check_uses_the_public_snapshot_date_validator(tmp_path, m
     monkeypatch.setattr(prepare.tariff_export, "check_snapshot_date",
                         lambda value: calls.append(value) or real_check(value))
     _prepare_context(tmp_path, monkeypatch, parking_zones_enabled=True)
-    assert calls == ["2026-09-28"]
+    assert calls == ["2026-09-29"]
 
 
 def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monkeypatch):
@@ -212,7 +212,7 @@ def test_on_execute_exports_the_fixture_zones_as_the_tariff_model(tmp_path, monk
     assert model["zones"] == json.loads(FIXTURE_MODEL_PATH.read_text(encoding="utf-8"))["zones"]
     assert model["sources"] == context.stages[PARKING_STAGE]["sources"]
     assert (model["schema_version"], model["tariff_snapshot_date"], model["terminal_stay_rule"]) == (
-        1, "2026-09-28", "until_fee_end")
+        1, "2026-09-29", "until_fee_end")
 
 
 def test_on_execute_writes_the_parking_module_and_keeps_every_other_byte_of_the_config(tmp_path, monkeypatch):
