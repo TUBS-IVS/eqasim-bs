@@ -13,6 +13,10 @@ Covered here, and why in this shape:
   (the ring's activity attribute now shares one attribute dict with the parking attributes). The
   two literals at the end of this module were generated from base commit 1fe22664 -- the
   unchanged writer -- not from this writer, so a refactor that moves one byte fails here.
+* **The plain writer refuses the flag.** A pipeline that runs ``matsim.scenario.population`` itself
+  (no alias to the wrapper, e.g. simple_ipf_open) attaches no parking attribute, so its
+  ``configure`` rejects ``parking_zones_enabled`` and names the alias; with the flag off it only
+  declares the key. Asserted with synpp's real ``ConfigurationContext``.
 * **The regional wrapper** (``braunschweig.matsim.scenario.population``): the flag declarations,
   the mutual exclusion with the legacy ring, and ``execute`` with a STUB
   ``braunschweig.parking.attach`` module, which proves the wrapper hands the attach functions the
@@ -44,6 +48,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Point, box
+from synpp.pipeline import ConfigurationContext
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -397,6 +402,24 @@ def test_all_missing_parking_values_write_the_same_bytes_as_absent_columns(tmp_p
         resident_parking_zone=pd.Series([np.nan] * len(persons), dtype=object))
     assert _write_frames(tmp_path / "missing", persons, activities, locations, trips,
                          vehicles) == golden
+
+
+# --------------------------------------------------------------------------- plain writer: configure
+
+def test_plain_writer_rejects_parking_zones_at_configure_time():
+    """Without the wrapper no plan element would carry a parkingZone, while the preparation still
+    writes the tariff model and the braunschweigParking module: the run would price no stay."""
+    with pytest.raises(ValueError) as error:
+        pop.configure(ConfigurationContext({"parking_zones_enabled": True}))
+    assert "parking_zones_enabled" in str(error.value)
+    assert "matsim.scenario.population: braunschweig.matsim.scenario.population" in str(error.value)
+
+
+@pytest.mark.parametrize("values", [{}, {"parking_zones_enabled": False}], ids=["absent", "false"])
+def test_plain_writer_only_declares_the_flag_when_it_is_off(values):
+    context = ConfigurationContext(values)
+    pop.configure(context)
+    assert context.required_config["parking_zones_enabled"] is False
 
 
 # --------------------------------------------------------------------------- wrapper: configure

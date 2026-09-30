@@ -21,7 +21,39 @@ RBW_PERSON_ATTRIBUTES = (
 
 PASSENGER_AVAILABILITY_VALUES = frozenset(("none", "some", "all"))
 
+#: Zone-based parking costs (issue #436, ADR-0139). Only the braunschweig.matsim.scenario.population
+#: wrapper attaches the parking columns (through braunschweig.parking.attach); this writer only writes
+#: them when the frames carry them. A pipeline that runs THIS stage (no alias to the wrapper) would
+#: therefore write plans without a single parkingZone next to the tariff model and the
+#: braunschweigParking module that the preparation writes -- a run pricing no stay -- so configure
+#: rejects the flag instead.
+KEY_PARKING_ZONES_ENABLED = "parking_zones_enabled"
+#: The alias a run config needs for the zone-based parking costs.
+PARKING_WRITER_ALIAS = "matsim.scenario.population: braunschweig.matsim.scenario.population"
+
+
 def configure(context):
+    """synpp configure of this stage: the writer's own declarations plus the parking-zone guard.
+
+    synpp substitutes an alias for the stage name, so this function runs only in pipelines where
+    this plain writer IS the ``matsim.scenario.population`` stage; the braunschweig wrapper calls
+    :func:`declare_writer_inputs` instead and declares the flag itself.
+    """
+    declare_writer_inputs(context)
+    if context.config(KEY_PARKING_ZONES_ENABLED, False):
+        raise ValueError(
+            "[population] %s is true, but this pipeline writes the MATSim plans with the plain "
+            "matsim.scenario.population stage, which attaches no parking attribute: the preparation "
+            "would write the parking tariff model and the braunschweigParking module, yet no "
+            "activity would carry a parkingZone, so the run would price no parking stay. Alias the "
+            "writer to the braunschweig wrapper that attaches the attributes (aliases: %s, wired as "
+            "in configs/base_bs.yml or configs/fixtures/config_popsim_open_braunschweig.yml), or set "
+            "%s: false."
+            % (KEY_PARKING_ZONES_ENABLED, PARKING_WRITER_ALIAS, KEY_PARKING_ZONES_ENABLED))
+
+
+def declare_writer_inputs(context):
+    """Declare the stages and config keys the writer reads (shared with the braunschweig wrapper)."""
     context.stage("synthesis.population.enriched")
 
     context.stage("synthesis.population.activities")

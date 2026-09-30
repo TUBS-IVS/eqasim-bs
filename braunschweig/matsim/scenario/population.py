@@ -121,7 +121,7 @@ ABSENCE_STATE_COLUMN = "day_absence_state"
 
 #: Zone-based parking costs (issue #436) and the stage they read when on. Default off: the flag
 #: is switched on in the canonical configuration, not here. Mutually exclusive with
-#: KEY_URBAN_PARKING, the legacy 8 km ring declared by the vendored ``base.configure``.
+#: KEY_URBAN_PARKING, the legacy 8 km ring declared by the vendored ``base.declare_writer_inputs``.
 KEY_PARKING_ZONES_ENABLED = "parking_zones_enabled"
 DEFAULT_PARKING_ZONES_ENABLED = False
 KEY_URBAN_PARKING = "enable_urban_parking"
@@ -178,7 +178,10 @@ def validate(context):
 
 
 def configure(context):
-    base.configure(context)
+    # The vendored writer's declarations only: its own configure() additionally rejects
+    # KEY_PARKING_ZONES_ENABLED, because the plain writer attaches no parking attribute; this
+    # wrapper attaches them (execute) and declares the flag itself below.
+    base.declare_writer_inputs(context)
     context.stage(DAY_TRIPS_STAGE)
     context.stage(DAY_ACTIVITIES_STAGE)
     context.config(KEY_COMMUTE_DAY_STATE_ENABLED, DEFAULT_COMMUTE_DAY_STATE_ENABLED)
@@ -201,7 +204,7 @@ def configure(context):
     # blocks above: a workflow with the model off carries neither the zones stage nor its keys.
     context.config(KEY_PARKING_ZONES_ENABLED, DEFAULT_PARKING_ZONES_ENABLED)
     if context.config(KEY_PARKING_ZONES_ENABLED):
-        # KEY_URBAN_PARKING was declared by base.configure above. The zone tariffs and the
+        # KEY_URBAN_PARKING was declared by base.declare_writer_inputs above. The zone tariffs and the
         # legacy ring fees are alternative parking-cost models for the same stays, so the pair
         # is a configuration error, raised here before any stage runs.
         if context.config(KEY_URBAN_PARKING):
