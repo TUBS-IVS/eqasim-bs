@@ -156,7 +156,7 @@ flowchart LR
 | `braunschweig.ipf.model` | population | -- | -- | x |
 | `braunschweig.ipf.prepare` | population | -- | -- | x |
 | `braunschweig.locations.work` | work | x | -- | -- |
-| `braunschweig.parking.zones_stage` | matsim | x | -- | -- |
+| `braunschweig.parking.zones_stage` | matsim | x | x | -- |
 | `braunschweig.popsim.completed_donor` | population | x | -- | -- |
 | `braunschweig.synthesis.commute_day.home_office_donors_stage` | behavior | x | -- | -- |
 | `braunschweig.synthesis.commute_day.state_stage` | behavior | x | -- | -- |

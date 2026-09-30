@@ -20,7 +20,7 @@ stages:
 - matsim.output
 pipelines:
   popsim_mid: active
-  popsim_open: supported
+  popsim_open: active
   simple_ipf_open: not_used
 lifecycle: experimental
 production:
@@ -63,6 +63,7 @@ evidence:
   - tests/test_parking_run_checks.py
   - tests/test_srv_parking.py
   - tests/test_configs_composed.py
+  - tests/test_popsim_config_parity.py
   off_path_byte_identical:
     claimed: true
     test: tests/test_population_parking_attributes.py::test_frames_without_parking_columns_match_the_prechange_writer_bytes
@@ -127,8 +128,15 @@ assessment:
   pending_reason: >-
     Owner review of the 25 % legacy-vs-zones A/B, which is still to run on the server, and of the
     production flip of parking_zones_enabled to true, which is part of the reviewed branch although the
-    design had planned it for after the A/B; the owner decides the flip at PR review.
+    design had planned it for after the A/B; the owner decides the flip at PR review. The two popsim
+    fixture configurations follow the flip with the parking block of configs/base_bs.yml
+    (tests/test_popsim_config_parity.py pins it), so reverting it there reverts them too.
   note: >-
     Java implementation lives in eqasim-java-bs (org.eqasim.braunschweig.parking, branch
     feature/i249-parking-cost-zones) with its own unit tests; the golden cases are shared through
     tests/fixtures/parking/parking_golden_cases.json.
+notes: >-
+  simple_ipf_open is not_used because its configurations write the plans with the plain
+  matsim.scenario.population stage, which attaches no parking attribute and therefore rejects
+  parking_zones_enabled at configure time (stage record matsim.scenario.population); the zones need the
+  alias to braunschweig.matsim.scenario.population.

@@ -167,8 +167,8 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 |---|---|---|---|---|---|
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
-| [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/s/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
-| [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/A/i | unvalidated |  |
+| [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
+| [Urban parking (BS inner ring, legacy)](../registry/features/urban_parking.yml) | supported | off | i/i/i | unvalidated |  |
 | [VRB zone fare model (compact, sourced prices)](../registry/features/vrb_zone_fare_model.yml) | EXPERIMENTAL | ON | A/s/s | unvalidated (`vrb-zone-fares-smoke-1pct-2026-09-25`, `vrb-zone-fares-routing-surcharge-1pct-2026-09-25`) | [#430](https://github.com/TUBS-IVS/eqasim-bs/issues/430) |
 
 ## Analysis

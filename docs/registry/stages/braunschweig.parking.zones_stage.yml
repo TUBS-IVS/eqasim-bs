@@ -28,8 +28,10 @@ lineage:
     enable_urban_parking (legacy isParis attributes, no data stage). Declared by
     braunschweig.matsim.scenario.population (zone, resident-zone and free-parking attributes through
     braunschweig.parking.attach) and braunschweig.matsim.simulation.prepare (tariff model JSON) only when
-    parking_zones_enabled is true, which configs/base_bs.yml sets (popsim_mid); the open workflow fixture
-    configurations leave the flag off, so their DAG snapshots do not contain the stage.
+    parking_zones_enabled is true, which configs/base_bs.yml (popsim_mid) and the popsim_open fixture
+    configuration set, so the production and popsim_open DAG snapshots contain the stage. The
+    simple_ipf_open configurations write the plans with the plain matsim.scenario.population stage,
+    which rejects the flag at configure time, so the stage never enters that DAG.
 code:
 - braunschweig/parking/zones_stage.py
 - braunschweig/parking/zones.py
@@ -37,7 +39,7 @@ code:
 - braunschweig/parking/tariff_export.py
 pipelines:
   popsim_mid: active
-  popsim_open: not_used
+  popsim_open: active
   simple_ipf_open: not_used
 production: true
 inputs:

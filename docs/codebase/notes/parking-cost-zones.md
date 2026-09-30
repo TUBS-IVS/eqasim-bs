@@ -79,12 +79,17 @@ feature state lives in the feature record `parking_cost_zones`, the data in the 
 - The two parking flags stay mutually exclusive (`braunschweig.matsim.scenario.population.configure` raises;
   `tests/test_configs_composed.py` pins the ring off). The OFF path must stay byte-identical
   (`tests/test_population_parking_attributes.py`, `tests/test_parking_prepare_wiring.py`).
+- The zones need the plans-writer wrapper: a configuration that runs them aliases `matsim.scenario.population` to
+  `braunschweig.matsim.scenario.population`. The plain writer attaches no parking column, so its `configure`
+  rejects `parking_zones_enabled`; the wrapper calls `declare_writer_inputs` instead of that `configure`, and must
+  keep doing so.
 - A scenario prepared with the zones on has no `isParis` attributes: never switch `braunschweigParking.enabled` off
   on it (the legacy model would then price no parking and no check runs), re-prepare with the flags of the wanted
   mode instead. The reverse, ring plans with the module on, fails at controller start (`ParkingPopulationCheck`).
 - The seed offset `PARKING_FREE_SEED_OFFSET` (7371) must stay unused by every other seeded stream.
-- Assumption parameters live in `configs/base_bs.yml` under `parking_*`; a change of an assumption needs an ADR
-  amendment and an update of `ASSUMPTIONS_REGISTER`.
+- Assumption parameters live in `configs/base_bs.yml` under `parking_*`; the two popsim fixture configurations
+  carry the same block, pinned equal by `tests/test_popsim_config_parity.py`. A change of an assumption needs an
+  ADR amendment and an update of `ASSUMPTIONS_REGISTER`.
 
 ## Known limitations
 

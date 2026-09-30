@@ -8,7 +8,7 @@ stages:
 - matsim.scenario.population
 pipelines:
   popsim_mid: inactive
-  popsim_open: active
+  popsim_open: inactive
   simple_ipf_open: inactive
 lifecycle: supported
 production:
@@ -40,7 +40,7 @@ evidence:
   reference:
     kind: none
     note: |
-      Infrastructure/scenario feature scoped to the Braunschweig inner ring; no external reference applies. docs/codebase/CONCERNS.md flags a MEDIUM-severity "parking scenario parity" concern about enable_urban_parking differing between the base config and the fixtures; since ADR-0139 the base config sets it false while configs/fixtures/config_popsim_mid_braunschweig.yml and config_popsim_open_braunschweig.yml keep it true.
+      Infrastructure/scenario feature scoped to the Braunschweig inner ring; no external reference applies. docs/codebase/CONCERNS.md flags a MEDIUM-severity "parking scenario parity" concern about enable_urban_parking differing between the base config and the fixtures; since issue #436 configs/base_bs.yml and both popsim fixture configurations (config_popsim_mid_braunschweig.yml, config_popsim_open_braunschweig.yml) set it false and run the zones (parking_cost_zones), so the base and those fixtures agree again.
 validation:
   state: unvalidated
   runs: []
@@ -53,10 +53,10 @@ assessment:
   pending_reason: |
     ADR-0039 documents the design decision. The file-path discrepancy this record reported is FIXED (issue #254, 2026-08-17): ADR-0039's Decision text now names matsim/scenario/population.py and points at the enclosing symbols (registered in configure, forwarded by write_population, applied in add_person) rather than matsim/simulation/prepare.py, which contains no parking logic.
     SUPERSEDED by parking_cost_zones (ADR-0139), which is the canonical configuration's parking cost model; this record stays for the legacy reproduction (parking_zones_enabled false, enable_urban_parking true).
-    STILL PENDING: no owner verdict on the popsim fixture configs, which keep the ring on (tests/test_popsim_config_parity.py pins it) while configs/base_bs.yml runs the zones.
+    The popsim fixture configs no longer keep the ring on: since issue #436 they run the zones like configs/base_bs.yml, and tests/test_popsim_config_parity.py pins the ring off there.
   source: ADR-0039
 notes: >-
   superseded by parking_cost_zones (ADR-0139); kept as legacy reproduction. Lifecycle 'supported' is the
   closest allowed state to 'deprecated' (braunschweig.documentation.schema.LIFECYCLES has no deprecated
-  value): the ring stays wired and usable but is no longer the configured default. popsim_open stays
-  active because its fixture configuration still enables the ring.
+  value): the ring stays wired and usable but is no longer the configured default. No committed
+  pipeline configuration enables it any more (inactive in all three pipelines since issue #436).

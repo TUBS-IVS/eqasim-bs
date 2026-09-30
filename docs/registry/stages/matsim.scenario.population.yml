@@ -25,7 +25,11 @@ description: 'Writes plans.xml; the braunschweig wrapper adds cordon in-commuter
   braunschweig.parking.zones_stage), so add_person writes the activity attributes parkingZone and
   parkingFree and the person attribute residentParkingZone; combining the flag with the legacy ring
   enable_urban_parking is rejected in configure, and with the flag off no parking column is attached
-  (byte-identical plans). Mechanism: docs/codebase/notes/parking-cost-zones.md.'
+  (byte-identical plans). The plain writer, which the simple_ipf_open configurations run without the
+  alias, attaches no parking column, so its own configure declares parking_zones_enabled and rejects it
+  when true, naming the alias the zones need; the wrapper declares the writer''s inputs through
+  declare_writer_inputs instead, so the check never fires there. Mechanism:
+  docs/codebase/notes/parking-cost-zones.md.'
 lineage:
   type: overridden
   upstream: matsim.scenario.population

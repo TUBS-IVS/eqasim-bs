@@ -64,7 +64,7 @@ the DAG node names; aliased seams list their per-workflow resolution).
 | [braunschweig.ipf.model](../registry/stages/braunschweig.ipf.model.yml) | population | braunschweig_new | -- | -/-/A | -- | employment_margin, household_size_margin, ipf_synthesis_legacy |
 | [braunschweig.ipf.prepare](../registry/stages/braunschweig.ipf.prepare.yml) | population | braunschweig_new | -- | -/-/A | -- | household_size_margin, ipf_synthesis_legacy, joint_age_size_margin |
 | [braunschweig.locations.work](../registry/stages/braunschweig.locations.work.yml) | work | braunschweig_new | x | A/-/- | -- | building_potentials_work, taz_work_location_choice |
-| [braunschweig.parking.zones_stage](../registry/stages/braunschweig.parking.zones_stage.yml) | matsim | braunschweig_new | x | A/-/- | -- | parking_cost_zones |
+| [braunschweig.parking.zones_stage](../registry/stages/braunschweig.parking.zones_stage.yml) | matsim | braunschweig_new | x | A/A/- | -- | parking_cost_zones |
 | [braunschweig.popsim.completed_donor](../registry/stages/braunschweig.popsim.completed_donor.yml) | population | braunschweig_new | x | A/-/- | -- | diary_plan_match, mid_passenger_availability, participation_universe_controls, performance_equivalence, popsim_method |
 | [braunschweig.synthesis.commute_day.home_office_donors_stage](../registry/stages/braunschweig.synthesis.commute_day.home_office_donors_stage.yml) | behavior | braunschweig_new | x | A/-/- | -- | commute_day_state, escort_passive_from_adult, performance_equivalence, purpose_main_fold_code_10 |
 | [braunschweig.synthesis.commute_day.state_stage](../registry/stages/braunschweig.synthesis.commute_day.state_stage.yml) | behavior | braunschweig_new | x | A/-/- | -- | commute_day_state |
