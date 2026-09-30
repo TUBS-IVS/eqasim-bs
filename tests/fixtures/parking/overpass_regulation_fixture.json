@@ -1,0 +1,60 @@
+{
+  "version": 0.6,
+  "generator": "hand-written test fixture in the shape of an Overpass API 'out tags geom' response (regulation query)",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-28T00:00:00Z",
+    "copyright": "Synthetic test data; not OpenStreetMap content."
+  },
+  "elements": [
+    {
+      "type": "way",
+      "id": 501,
+      "geometry": [{"lat": 52.2600, "lon": 10.5200}, {"lat": 52.2600, "lon": 10.5230}],
+      "tags": {"highway": "residential", "name": "Fixture Paid Street", "parking:both": "lane", "parking:both:fee": "yes"}
+    },
+    {
+      "type": "way",
+      "id": 502,
+      "geometry": [{"lat": 52.2610, "lon": 10.5200}, {"lat": 52.2610, "lon": 10.5230}],
+      "tags": {"highway": "residential", "name": "Fixture Resident Street", "parking:lane:both": "parallel",
+               "parking:condition:both": "residents"}
+    },
+    {
+      "type": "way",
+      "id": 503,
+      "geometry": [{"lat": 52.2620, "lon": 10.5200}, {"lat": 52.2620, "lon": 10.5230}],
+      "tags": {"highway": "tertiary", "name": "Fixture No Stopping Street", "parking:both": "no",
+               "parking:both:restriction": "no_stopping"}
+    },
+    {
+      "type": "way",
+      "id": 504,
+      "geometry": [{"lat": 52.2630, "lon": 10.5200}, {"lat": 52.2630, "lon": 10.5230}],
+      "tags": {"highway": "residential", "name": "Fixture Free Street", "parking:both": "lane", "parking:both:fee": "no"}
+    },
+    {
+      "type": "way",
+      "id": 505,
+      "geometry": [{"lat": 52.2640, "lon": 10.5200}, {"lat": 52.2640, "lon": 10.5230}],
+      "tags": {"highway": "residential", "name": "Fixture Untagged Street"}
+    },
+    {
+      "type": "way",
+      "id": 601,
+      "geometry": [
+        {"lat": 52.2650, "lon": 10.5200}, {"lat": 52.2650, "lon": 10.5206}, {"lat": 52.2654, "lon": 10.5206},
+        {"lat": 52.2654, "lon": 10.5200}, {"lat": 52.2650, "lon": 10.5200}
+      ],
+      "tags": {"amenity": "parking", "fee": "yes", "parking": "surface", "name": "Fixture paid lot"}
+    },
+    {
+      "type": "way",
+      "id": 602,
+      "geometry": [
+        {"lat": 52.2650, "lon": 10.5220}, {"lat": 52.2650, "lon": 10.5226}, {"lat": 52.2654, "lon": 10.5226},
+        {"lat": 52.2654, "lon": 10.5220}, {"lat": 52.2650, "lon": 10.5220}
+      ],
+      "tags": {"amenity": "parking", "access": "customers", "fee": "no", "name": "Fixture customer lot"}
+    }
+  ]
+}

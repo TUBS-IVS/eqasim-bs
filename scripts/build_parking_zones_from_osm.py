@@ -19,10 +19,29 @@ The candidates are reviewed by hand and merged into
 ``eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson``; the committed file records the
 geometry source of every polygon. CRS: requests in WGS84, geometry work in EPSG:25832 (metres).
 
+Regulation mode (``--regulation``, parking cost zones v2 lever 1, issue #436): instead of the fee evidence the
+request fetches every kerbside street of the box (``zone_geometry.STREET_HIGHWAY_TYPES``, the denominator of the
+tagging completeness), every other highway way with a ``parking:*`` key and every ``amenity=parking`` object, all
+with their tags (``REGULATION_STATEMENTS``); restrict ``--bbox`` to the town centre. The response is classified and
+turned into the unavoidable-paid-parking core by ``braunschweig.parking.zone_geometry.build_zone_core``
+(``--walk-m``, ``--maximum-filled-hole-m2``, ``--minimum-island-m2``; buffers ``--street-buffer-m`` and
+``--lot-buffer-m``). Outputs next to the v1 files: the raw response ``<ags>_regulation_overpass_<date>.json`` with
+its query, ``<ags>_regulated.geojson`` (R, fill(R) and every classified way and lot), ``<ags>_core.geojson`` (the
+parts of Z, possibly none) and ``<ags>_qa.json`` (counts, areas, tagging completeness, the Q4 decision, and with
+``--reference-outline`` the comparison with a georeferenced ordinance map plus the fee-tagged ways outside it; with
+``--street-names-file`` the listed streets without a fee tag and the fee-tagged streets outside the list). The v1
+candidate files are not written in this mode. The request is retried with exponential backoff (``--attempts``,
+``--backoff-s``) after the courtesy pause; every failed attempt is appended to ``overpass_failures.log`` and a
+municipality whose request still fails produces no output at all (it stays unchanged, never filled in).
+``--offline-response`` takes a saved body instead of the network (tests); ``--from-raw`` re-processes a saved
+response without writing a raw copy. An existing raw response is never overwritten without ``--overwrite``.
+
 Example::
 
     python scripts/build_parking_zones_from_osm.py --ags 03157006 --bbox 52.30,10.20,52.34,10.26 \
         --out-dir eqasim-data/data/braunschweig/parking/raw_overpass
+    python scripts/build_parking_zones_from_osm.py --ags 03153017 --bbox 51.8950,10.4100,51.9170,10.4500 \
+        --out-dir eqasim-data/data/braunschweig/parking/raw_overpass --regulation --walk-m 250
 """
 from __future__ import annotations
 
@@ -30,6 +49,7 @@ import argparse
 import datetime as dt
 import json
 import logging
+import math
 import re
 import ssl
 import sys
@@ -38,11 +58,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence
 
 import geopandas as gpd
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
+
+# Running the file directly puts scripts/ on sys.path; the repository root holds the braunschweig package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from braunschweig.parking import zone_geometry  # noqa: E402
 
 log = logging.getLogger("build_parking_zones_from_osm")
 
@@ -69,6 +93,18 @@ FEE_STATEMENTS = (
 EVIDENCE_KEYS = ("amenity", "fee", "fee:conditional", "charge", "maxstay", "access", "operator", "name",
                  "opening_hours")
 CANDIDATE_KINDS = ("parking", "street_fee")
+#: Regulation mode: every kerbside street of the box (tagging completeness), every highway way with a parking:* key
+#: and every parking object, with all tags.
+REGULATION_STATEMENTS = (
+    'way["highway"~"^(' + "|".join(zone_geometry.STREET_HIGHWAY_TYPES) + ')$"]',
+    'way["highway"][~"^parking:"~"."]',
+    'nwr["amenity"="parking"]',
+)
+#: Part of the raw file name of a regulation response, so that it never collides with a v1 response of the same day.
+REGULATION_RAW_TAG = "regulation"
+DEFAULT_ATTEMPTS = 3
+#: Pause before the second attempt; it doubles for every further attempt.
+DEFAULT_BACKOFF_S = 60.0
 _REGEX_SPECIAL = re.compile(r"([\\.^$|?*+()\[\]{}])")
 
 
@@ -271,53 +307,321 @@ def _read_names(path: Optional[str]) -> list:
     return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
+# --------------------------------------------------------------------------- regulation mode (v2 lever 1, #436)
+
+
+def build_regulation_query(bbox: Sequence[float], *, extra_statements: Iterable[str] = (),
+                           timeout_s: int = REQUEST_TIMEOUT_S) -> str:
+    """Overpass QL of the regulation mode for ``bbox`` (``REGULATION_STATEMENTS``) plus optional raw statements."""
+    box = _bbox_text(bbox)
+    lines = [f"[out:json][timeout:{int(timeout_s)}];", "("]
+    lines += [f"  {statement}({box});" for statement in REGULATION_STATEMENTS]
+    for statement in extra_statements:
+        statement = statement.strip().replace("{bbox}", box)
+        lines.append(f"  {statement if statement.endswith(';') else statement + ';'}")
+    lines += [");", "out tags geom;"]
+    return "\n".join(lines) + "\n"
+
+
+class OverpassResponseError(RuntimeError):
+    """A response that arrived but cannot be used: not JSON, or a ``remark`` (server-side timeout, truncated)."""
+
+
+def fetch_checked(query: str, **options) -> bytes:
+    """``fetch_overpass`` plus the checks of a usable body; raises ``OverpassResponseError`` otherwise."""
+    body = fetch_overpass(query, **options)
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except ValueError as error:
+        raise OverpassResponseError(f"response of {len(body)} bytes is not JSON ({error})") from error
+    try:
+        check_remark(payload)
+    except ValueError as error:
+        raise OverpassResponseError(str(error)) from error
+    return body
+
+
+def fetch_with_retry(query: str, *, ags: str, out_dir: Path, attempts: int = DEFAULT_ATTEMPTS,
+                     backoff_s: float = DEFAULT_BACKOFF_S, fetch: Callable[..., bytes] = fetch_checked,
+                     sleep: Callable[[float], None] = time.sleep, **fetch_options) -> bytes:
+    """``fetch`` with up to ``attempts`` tries; the pause before try k+1 is ``backoff_s * 2**(k-1)``.
+
+    Network errors, HTTP errors and unusable responses (``OverpassResponseError``, e.g. a server-side timeout that
+    Overpass reports as HTTP 200 with a ``remark``) count as failed tries. Every failed try is appended to
+    ``overpass_failures.log`` (``log_failed_request``); after the last failure the error is raised, so the
+    municipality produces no output (it stays unchanged, never filled in).
+    """
+    if attempts < 1:
+        raise ValueError(f"attempts must be >= 1, got {attempts}")
+    for attempt in range(1, attempts + 1):
+        try:
+            body = fetch(query, **fetch_options)
+        except (urllib.error.URLError, TimeoutError, OSError, OverpassResponseError) as error:
+            failure_log = log_failed_request(out_dir, ags, error)
+            if attempt == attempts:
+                log.error("[parking-osm] %s: Overpass request failed on attempt %d of %d (%s); recorded in %s; the "
+                          "municipality stays unchanged", ags, attempt, attempts, error, failure_log)
+                raise
+            pause = backoff_s * 2 ** (attempt - 1)
+            log.warning("[parking-osm] %s: Overpass request failed on attempt %d of %d (%s); retrying in %.0f s", ags,
+                        attempt, attempts, error, pause)
+            sleep(pause)
+        else:
+            if attempt > 1:
+                log.info("[parking-osm] %s: Overpass request succeeded on attempt %d of %d", ags, attempt, attempts)
+            return body
+    raise AssertionError("unreachable")
+
+
+def _element_geometry(element: dict, *, as_area: bool):
+    element_type = element.get("type")
+    if element_type == "node":
+        return Point(element["lon"], element["lat"]) if "lon" in element else None
+    if element_type == "way":
+        return _way_geometry(element, as_area=as_area)
+    if element_type == "relation":
+        return _relation_geometry(element)
+    return None
+
+
+def regulation_features(payload: dict) -> tuple:
+    """Overpass JSON of the regulation query -> (classified street segments, classified parking objects).
+
+    Segments: highway ways as lines (``zone_geometry.classify_segments``); parking objects: ``amenity=parking``
+    nodes, ways and relations (``zone_geometry.classify_lots``). Both in EPSG:25832 with ``osm_type``, ``osm_id``,
+    ``name``, ``evidence`` and ``tags``. Elements without usable geometry are skipped and counted.
+    """
+    segments, lots, skipped, other = [], [], 0, 0
+    for element in payload.get("elements", []):
+        tags = element.get("tags") or {}
+        is_parking = tags.get("amenity") == "parking"
+        is_street = "highway" in tags and element.get("type") == "way" and not is_parking
+        if not (is_parking or is_street):
+            other += 1
+            continue
+        geometry = _element_geometry(element, as_area=is_parking)
+        if geometry is None or geometry.is_empty:
+            skipped += 1
+            log.warning("skipping %s/%s: no usable geometry in the response", element.get("type"), element.get("id"))
+            continue
+        row = {"osm_type": element.get("type"), "osm_id": int(element["id"]), "name": tags.get("name", ""),
+               "evidence": _evidence(tags), "tags": dict(tags), "geometry": geometry}
+        (lots if is_parking else segments).append(row)
+    total = len(segments) + len(lots) + skipped
+    log.info("[parking-osm] regulation response: %d street ways, %d parking objects, %d without geometry skipped "
+             "(%.1f %% of %d), %d other elements ignored", len(segments), len(lots), skipped,
+             100.0 * skipped / total if total else 0.0, total, other)
+    columns = ["osm_type", "osm_id", "name", "evidence", "tags", "geometry"]
+
+    def frame(rows):
+        return gpd.GeoDataFrame(rows, columns=columns, geometry="geometry", crs="EPSG:4326").to_crs(METRIC_CRS)
+
+    return zone_geometry.classify_segments(frame(segments)), zone_geometry.classify_lots(frame(lots))
+
+
+def _json_safe(value):
+    """Nested copy with NaN and infinity replaced by None (the QA file is strict JSON)."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def _write_geojson(frame: gpd.GeoDataFrame, path: Path) -> None:
+    """WGS84 GeoJSON, also for an empty frame (an empty FeatureCollection)."""
+    path.write_text(frame.to_crs("EPSG:4326").to_json(drop_id=True), encoding="utf-8", newline="\n")
+
+
+def _regulated_frame(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, lots: gpd.GeoDataFrame, *,
+                     ags: str) -> gpd.GeoDataFrame:
+    """R, fill(R) and every classified way and lot as one reviewable layer (``kind``)."""
+    rows = [{"kind": "regulated_area", "osm_id": None, "name": "", "highway": "", "element_class": "",
+             "free_side": None, "evidence": "", "area_m2": core.regulated_area_m2, "geometry": core.regulated},
+            {"kind": "filled_area", "osm_id": None, "name": "", "highway": "", "element_class": "",
+             "free_side": None, "evidence": "", "area_m2": core.filled_area_m2, "geometry": core.filled}]
+    for row in segments.itertuples():
+        rows.append({"kind": "segment", "osm_id": int(row.osm_id), "name": row.name, "highway": row.highway,
+                     "element_class": row.way_class, "free_side": bool(row.free_side), "evidence": row.evidence,
+                     "area_m2": None, "geometry": row.geometry})
+    for row in lots.itertuples():
+        rows.append({"kind": "lot", "osm_id": int(row.osm_id), "name": row.name, "highway": "",
+                     "element_class": row.lot_class, "free_side": None, "evidence": row.evidence,
+                     "area_m2": round(float(row.geometry.area), 1), "geometry": row.geometry})
+    frame = gpd.GeoDataFrame(rows, geometry="geometry", crs=METRIC_CRS)
+    frame.insert(0, "ags", ags)
+    return frame[~frame.geometry.is_empty]
+
+
+def reference_report(core: zone_geometry.ZoneCore, segments: gpd.GeoDataFrame, path: str) -> dict:
+    """Comparison with a reference outline (a georeferenced ordinance map) and the fee-tagged ways outside it.
+
+    ``zone_geometry.compare_outlines`` for the union of all reference features and, when the file carries a
+    ``zone`` column, per zone; plus the paid ways that do not touch any reference feature (the ordinance map is the
+    authority: such conflicts are resolved by the source, not by this script) and the untagged street length inside
+    the reference.
+    """
+    reference = gpd.read_file(path).to_crs(METRIC_CRS)
+    report = {"path": str(path)}
+    report.update(zone_geometry.compare_outlines(core.core, reference))
+    if "zone" in reference.columns:
+        report["zones"] = {str(label): zone_geometry.compare_outlines(core.core, group)
+                           for label, group in reference.groupby("zone")}
+    outline = unary_union(list(reference.geometry))
+    paid = segments[segments["way_class"] == "paid"]
+    outside = paid[~paid.geometry.intersects(outline)]
+    report["paid_segments_outside"] = int(len(outside))
+    report["paid_length_outside_m"] = round(float(outside.geometry.length.sum()), 1)
+    report["paid_names_outside"] = sorted({name for name in outside["name"] if name})
+    streets = segments[segments["highway"].isin(zone_geometry.STREET_HIGHWAY_TYPES)]
+    inside = streets[streets.geometry.intersects(outline)]
+    lengths = inside.geometry.intersection(outline).length
+    report["street_length_inside_m"] = round(float(lengths.sum()), 1)
+    report["untagged_street_length_inside_m"] = round(float(lengths[inside["way_class"] == "no_parking_info"].sum()), 1)
+    # The completeness of Q4 is measured inside fill(R), which is built from tagged ways; inside the reference it
+    # shows how much of the ordinance area carries parking information at all.
+    total = report["street_length_inside_m"]
+    report["tagging_completeness_inside"] = (
+        round((total - report["untagged_street_length_inside_m"]) / total, 6) if total > 0 else None)
+    return report
+
+
+def street_list_report(segments: gpd.GeoDataFrame, names: Sequence[str]) -> dict:
+    """Listed streets without a paid way and paid ways outside the list (the list is the authority)."""
+    listed = sorted({name for name in names if name})
+    paid = segments[segments["way_class"] == "paid"]
+    found = set(segments["name"])
+    paid_names = set(paid["name"])
+    return {"listed": len(listed),
+            "listed_not_in_response": [name for name in listed if name not in found],
+            "listed_without_fee_tag": [name for name in listed if name in found and name not in paid_names],
+            "fee_tagged_outside_list": sorted(name for name in paid_names if name and name not in set(listed)),
+            "fee_tagged_unnamed_segments": int((paid["name"] == "").sum())}
+
+
+def run_regulation(payload: dict, *, ags: str, out_dir: Path, raw_name: str, bbox, parameters, reference: Optional[str],
+                   street_names: Sequence[str]) -> dict:
+    """Classify, build the core, write ``<ags>_regulated.geojson``, ``<ags>_core.geojson`` and ``<ags>_qa.json``."""
+    segments, lots = regulation_features(payload)
+    core = zone_geometry.build_zone_core(segments, lots, parameters)
+    timestamp = (payload.get("osm3s") or {}).get("timestamp_osm_base", "")
+    qa = {"ags": ags, "raw_response": raw_name, "osm_timestamp": timestamp,
+          "bbox": list(bbox) if bbox is not None else None, "segments": int(len(segments)), "lots": int(len(lots))}
+    qa.update(core.qa())
+    if reference:
+        qa["reference"] = reference_report(core, segments, reference)
+    if street_names:
+        qa["street_list"] = street_list_report(segments, street_names)
+    parts = core.core.copy()
+    parts.insert(0, "ags", ags)
+    parts["walk_m"] = parameters.walk_m
+    parts["osm_timestamp"] = timestamp
+    _write_geojson(_regulated_frame(core, segments, lots, ags=ags), out_dir / f"{ags}_regulated.geojson")
+    _write_geojson(parts, out_dir / f"{ags}_core.geojson")
+    qa_path = out_dir / f"{ags}_qa.json"
+    qa_path.write_text(json.dumps(_json_safe(qa), indent=1, allow_nan=False, ensure_ascii=True) + "\n",
+                       encoding="utf-8", newline="\n")
+    log.info("[parking-osm] %s: %d street ways (%s), %d lots (%s); R %.0f m2, fill(R) %.0f m2, Z %.0f m2 in %d parts, "
+             "tagging completeness %s, decision %s %s; written %s", ags, len(segments), qa["segment_counts"], len(lots),
+             qa["lot_counts"], qa["regulated_area_m2"], qa["filled_area_m2"], qa["core_area_m2"], qa["core_parts"],
+             qa["tagging_completeness"], qa["decision"], qa["decision_reason"], qa_path)
+    return qa
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--ags", required=True, help="8-digit AGS of the municipality (file name prefix)")
     parser.add_argument("--bbox", required=True, help="south,west,north,east in WGS84 decimal degrees")
     parser.add_argument("--out-dir", required=True, help="directory for the raw response and the candidates")
-    parser.add_argument("--street-names-file", help="UTF-8 file, one street name per line, fetched as context")
+    parser.add_argument("--street-names-file", help="UTF-8 file, one street name per line, fetched as context "
+                                                    "(regulation mode: compared with the fee-tagged ways)")
     parser.add_argument("--street-bbox", help="south,west,north,east restricting the named streets")
     parser.add_argument("--extra-statement", action="append", default=[],
                         help="raw Overpass statement added to the union; '{bbox}' is replaced by --bbox")
     parser.add_argument("--from-raw", help="re-process a saved raw response instead of sending a request")
+    parser.add_argument("--offline-response", help="use this saved response body instead of the network; the raw "
+                                                   "copy and the query are written as for a request (tests)")
     parser.add_argument("--timeout-s", type=int, default=REQUEST_TIMEOUT_S)
     parser.add_argument("--pause-s", type=float, default=REQUEST_PAUSE_S)
+    parser.add_argument("--attempts", type=int, default=DEFAULT_ATTEMPTS, help="tries of the request (regulation mode)")
+    parser.add_argument("--backoff-s", type=float, default=DEFAULT_BACKOFF_S,
+                        help="pause before the second try, doubled for every further try (regulation mode)")
     parser.add_argument("--overwrite", action="store_true", help="replace an existing raw file of today")
     parser.add_argument("--ca-bundle", default=default_ca_bundle(),
                         help="CA bundle for TLS verification (default: certifi when installed)")
+    parser.add_argument("--regulation", action="store_true",
+                        help="v2 lever 1: fetch all parking regulation of the box and build the unavoidable core")
+    parser.add_argument("--walk-m", type=float, default=zone_geometry.DEFAULT_WALK_M,
+                        help="walking tolerance W in metres (ASSUMPTION Q1)")
+    parser.add_argument("--maximum-filled-hole-m2", type=float, default=zone_geometry.DEFAULT_MAXIMUM_FILLED_HOLE_M2,
+                        help="largest hole of R that is filled, square metres (ASSUMPTION Q3)")
+    parser.add_argument("--minimum-island-m2", type=float, default=zone_geometry.DEFAULT_MINIMUM_ISLAND_M2,
+                        help="smallest part of the core that is kept, square metres (ASSUMPTION Q2)")
+    parser.add_argument("--street-buffer-m", type=float, default=zone_geometry.DEFAULT_STREET_BUFFER_M,
+                        help="buffer of a regulated street segment in metres")
+    parser.add_argument("--lot-buffer-m", type=float, default=zone_geometry.DEFAULT_LOT_BUFFER_M,
+                        help="buffer of a paid or restricted lot in metres")
+    parser.add_argument("--reference-outline", help="GeoJSON of a georeferenced ordinance map (optional 'zone' "
+                                                    "column) the core is compared with (regulation mode)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.from_raw and args.offline_response:
+        raise SystemExit("--from-raw and --offline-response exclude each other")
+    parameters = None
+    if args.regulation:
+        parameters = zone_geometry.ZoneCoreParameters(
+            street_buffer_m=args.street_buffer_m, lot_buffer_m=args.lot_buffer_m,
+            maximum_filled_hole_m2=args.maximum_filled_hole_m2, walk_m=args.walk_m,
+            minimum_island_m2=args.minimum_island_m2)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    bbox = parse_bbox(args.bbox)
+    street_names = _read_names(args.street_names_file)
     if args.from_raw:
         raw_path = Path(args.from_raw)
         payload = json.loads(raw_path.read_text(encoding="utf-8"))
         log.info("re-processing %s (no request sent)", raw_path)
     else:
-        bbox = parse_bbox(args.bbox)
-        street_bbox = parse_bbox(args.street_bbox) if args.street_bbox else None
-        query = build_overpass_query(bbox, street_names=_read_names(args.street_names_file), street_bbox=street_bbox,
-                                     extra_statements=args.extra_statement, timeout_s=args.timeout_s)
+        if args.regulation:
+            query = build_regulation_query(bbox, extra_statements=args.extra_statement, timeout_s=args.timeout_s)
+        else:
+            street_bbox = parse_bbox(args.street_bbox) if args.street_bbox else None
+            query = build_overpass_query(bbox, street_names=street_names, street_bbox=street_bbox,
+                                         extra_statements=args.extra_statement, timeout_s=args.timeout_s)
         stamp = dt.date.today().isoformat()
-        raw_path = out_dir / f"{args.ags}_overpass_{stamp}.json"
+        tag = f"_{REGULATION_RAW_TAG}" if args.regulation else ""
+        raw_path = out_dir / f"{args.ags}{tag}_overpass_{stamp}.json"
         if raw_path.exists() and not args.overwrite:
             raise SystemExit(f"{raw_path} exists; pass --overwrite to replace it or --from-raw to re-process it")
-        time.sleep(max(0.0, args.pause_s))
-        log.info("sending one Overpass request for %s (TLS trust store: %s)", args.ags,
-                 args.ca_bundle or "interpreter default")
-        try:
-            body = fetch_overpass(query, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            failure_log = log_failed_request(out_dir, args.ags, error)
-            log.error("Overpass request for %s failed (%s); recorded in %s", args.ags, error, failure_log)
-            raise
+        if args.offline_response:
+            body = Path(args.offline_response).read_bytes()
+            log.info("offline: using %s as the response of %s (no request sent)", args.offline_response, args.ags)
+        else:
+            time.sleep(max(0.0, args.pause_s))
+            log.info("sending one Overpass request for %s (TLS trust store: %s)", args.ags,
+                     args.ca_bundle or "interpreter default")
+            if args.regulation:
+                body = fetch_with_retry(query, ags=args.ags, out_dir=out_dir, attempts=args.attempts,
+                                        backoff_s=args.backoff_s, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
+            else:
+                try:
+                    body = fetch_overpass(query, timeout_s=args.timeout_s, ca_bundle=args.ca_bundle)
+                except (urllib.error.URLError, TimeoutError, OSError) as error:
+                    failure_log = log_failed_request(out_dir, args.ags, error)
+                    log.error("Overpass request for %s failed (%s); recorded in %s", args.ags, error, failure_log)
+                    raise
         raw_path.write_bytes(body)
         raw_path.with_suffix(".query.txt").write_text(query, encoding="utf-8")
         payload = json.loads(body.decode("utf-8"))
         log.info("saved the raw response (%d bytes) to %s", len(body), raw_path)
     check_remark(payload)
+    if args.regulation:
+        run_regulation(payload, ags=args.ags, out_dir=out_dir, raw_name=raw_path.name, bbox=bbox,
+                       parameters=parameters, reference=args.reference_outline, street_names=street_names)
+        return 0
     features = elements_to_features(payload)
     candidates = build_candidates(features)
     candidates.insert(0, "ags", args.ags)
