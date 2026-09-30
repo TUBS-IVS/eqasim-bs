@@ -67,4 +67,7 @@ notes: >-
   Status counts 2026-09-29: zoned 8, no_paid_parking_known 0, not_audited 115, excluded 8 (131 rows). Unchanged by
   v2 lever 1 (2026-09-30), which accepted no rule-based core: the rows of Braunschweig (zone II and the southern
   part of zone 1a stay unzoned), Goslar, Wolfenbuettel and Gifhorn (centre approximations stay) point to the QA
-  table parking_zones_2026_qa.csv; Wolfsburg, Peine, Helmstedt and Salzgitter were curated as QA only.
+  table parking_zones_2026_qa.csv; Wolfsburg, Peine, Helmstedt and Salzgitter were curated as QA only. Unchanged by
+  v2 Amendment B (the majority rule over the parking supply, 2026-09-30): its pre-registered validation B5 failed in
+  Braunschweig, so nothing was applied; the rows of Braunschweig, Goslar, Wolfenbuettel and Gifhorn also point to
+  the QA table parking_zones_2026_supply_share_qa.csv (statuses unchanged).

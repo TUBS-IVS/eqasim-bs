@@ -290,6 +290,20 @@ INPUTS: List[Input] = [
         ),
         matsim_only=True,
     ),
+    # D9: the classified cells of the majority rule over the parking supply (parking cost zones v2, spec
+    # Amendment B7). Committed like D5-D8 but read by no stage yet (preparation of a probabilistic variant),
+    # hence optional.
+    Input(
+        name="D9  Paid-parking share per 25 m cell 2026 (committed)",
+        rel_path="braunschweig/parking/parking_paid_share_2026.csv.gz",
+        source="Committed with the repository (docs/registry/data/parking_paid_share_2026.yml); nothing to download.",
+        notes=(
+            "No stage reads it yet. ODbL 1.0 (derived from OpenStreetMap), (c) OpenStreetMap contributors. "
+            "Check it with python scripts/validate_parking_zones.py --data-path eqasim-data/data."
+        ),
+        matsim_only=True,
+        optional=True,
+    ),
 ]
 
 

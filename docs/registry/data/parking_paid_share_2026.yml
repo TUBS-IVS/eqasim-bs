@@ -1,0 +1,93 @@
+dataset: parking_paid_share_2026
+title: Paid-parking share of the public parking supply per 25 m cell in the eight curated ZGB towns (preparation of variant C)
+inventory_id: null
+provider: >-
+  Own derivation (issue #436, parking cost zones v2, spec Amendment B7) from OpenStreetMap data: the pinned
+  Geofabrik extract niedersachsen-260929.osm.pbf, whose file, Geofabrik MD5, SHA-256 and snapshot timestamp are
+  recorded in the data record parking_zones_2026
+vintage: >-
+  OSM snapshot 2026-09-29T20:22:51Z (osmosis_replication_timestamp of the PBF header); derived on 2026-09-30.
+geography: >-
+  The query boxes of the eight curated towns (the boxes of the lever-1 regulation queries of 2026-09-30, committed
+  under scripts/curation/parking_zones_2026/overpass_queries/): Braunschweig, Goslar, Wolfenbuettel, Gifhorn,
+  Wolfsburg, Peine, Helmstedt and Salzgitter; 25 m cells on the EPSG:25832 lattice of multiples of 25 m covering
+  the EPSG:25832 bounds of each box.
+crs: EPSG:25832
+roles:
+- derived_input
+used_by: []
+acquisition:
+  method: derived
+  source: >-
+    niedersachsen-260929.osm.pbf (https://download.geofabrik.de/europe/germany/niedersachsen-260929.osm.pbf, with
+    its Geofabrik .md5), local and gitignored under eqasim-data/data/braunschweig/parking/raw_osm/
+  script: scripts/build_parking_zones_from_osm.py
+  notes: >-
+    Two steps, both curation aids and never pipeline stages. (1) python scripts/build_parking_zones_from_osm.py
+    --supply-share (command with the eight --town boxes, the --reference outlines and the B5 inputs in the data
+    record parking_zones_2026) checks the extract against its Geofabrik MD5, reads each GDAL OSM layer once over
+    the union of the eight boxes grown by 1 km (points 527 features in 12.8 s, lines 42,809 in 86.1 s,
+    multipolygons 8,418 in 117.4 s; GDAL 3.10.2 through pyogrio 0.10.0; saved as the local inventory
+    raw_osm/derived_supply_share/supply_inventory_niedersachsen-260929.gpkg with its .json) and writes per town
+    the raster <ags>_paid_share_w250_t0.5_u50_c25_s12.5_i10000.csv.gz of every cell
+    (braunschweig.parking.supply_share.paid_share_raster: usable spaces paid + restricted + free within 250 m of
+    the cell centre, paid_share = (paid + restricted) / usable, classified from 50 usable spaces; the supply comes
+    from the classes B1 and the capacities B2 of supply_elements, spread over points every 5 m along lines and on a
+    5 m grid inside areas so that the radius sums are length- and area-correct, summed with a KD-tree; the raster
+    sees the supply up to 250 m plus one cell beyond the box). (2)
+    scripts/curation/parking_zones_2026/assemble_parking_zones.py --supply-share-dir
+    raw_osm/derived_supply_share --paid-share-out ... (with the v1 inputs of the zone release) keeps the classified
+    cells of the pre-registered parameters only (supply_share.release_frame; it refuses other parameters) and
+    writes them with their provenance header. The share threshold and the smoothing of the zone rule B4 are not
+    applied to this file; the rule polygons and the pre-registered validation B5 are in the QA table
+    parking_zones_2026_supply_share_qa.csv (data record parking_zones_2026).
+storage:
+  expected_path: eqasim-data/data/braunschweig/parking/parking_paid_share_2026.csv.gz
+  committed: true
+  local_only: false
+  notes: >-
+    Force-added (git add -f) per the .gitignore allowlist of the parking release. gzip CSV written without a time
+    stamp (equal content gives equal bytes), ASCII, LF; '#' header lines: the intro, the provenance (extract, MD5,
+    SHA-256, snapshot, parameters, per town the box and the classified cells) and one definition per column;
+    columns x_m, y_m (cell centre, 0.1 m), municipality_ags, paid_share, usable_spaces (0.01 spaces),
+    heuristic_capacity_share (shares to 6 decimals). 578,353 bytes.
+verification:
+  verifier_entry: D9
+  script: scripts/validate_parking_zones.py
+  notes: >-
+    Listed as D9 (matsim_only, optional, committed) in scripts/verify_braunschweig_inputs.py: no stage reads it.
+    braunschweig.parking.supply_share.load_paid_share_release validates the columns, the 8-digit AGS, finite
+    coordinates, one row per cell, paid_share and heuristic_capacity_share in [0, 1] and usable_spaces > 0;
+    scripts/validate_parking_zones.py runs it when the file exists and prints the cells per town.
+    tests/test_parking_supply_share.py pins the writer (test_release_file_holds_the_classified_cells_as_gzip_csv_in_epsg_25832:
+    classified cells only, gzip, the EPSG:25832 header, every column defined, byte-reproducible) and the raster on
+    synthetic layouts.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: ODbL 1.0, (c) OpenStreetMap contributors (every value is derived from OpenStreetMap data)
+  restricted: false
+  redistribution: allowed
+  notes: >-
+    Redistribution must keep the OpenStreetMap attribution and the ODbL share-alike terms; the file header carries
+    both.
+limitations: >-
+  A preparation of the probabilistic variant C of spec Amendment B7 (a paid probability per stay outside the
+  ordinance zones), which is not implemented: no stage reads this file. Every cell value rests on the OSM mapping
+  and on the assumptions of Amendment B: B-a street parking without a fee tag counts as free (between 67.6 % and
+  100 % of the free street capacity of a town rests on it, column free_street_spaces_without_fee_tag_share of the QA
+  table), B-b disc parking is free, B-c off-street lots without an explicit fee tag are excluded, B-d the capacity
+  heuristics (between 66.5 % and 96.2 % of the usable capacity of a town, column heuristic_capacity_share), B-e 50
+  usable spaces. Cells are listed only where they are classified; the rest of each box (a street or quarter without
+  mapped parking) is absent, not free. Cells near the box edge see the supply up to 250 m beyond it, cells of a town
+  never see another town's supply. The pre-registered validation of the zone rule in Braunschweig failed (recall
+  0.689 below 0.70, precision 0.845; QA table parking_zones_2026_supply_share_qa.csv), so the cells carry no
+  validated meaning as paid-zone evidence.
+notes: >-
+  Content on 2026-09-30: 62,659 classified cells (03101000 Braunschweig 29,024 of 53,535; 03102000 Salzgitter 4,570
+  of 19,317; 03103000 Wolfsburg 6,843 of 12,880; 03151009 Gifhorn 4,587 of 11,172; 03153017 Goslar 3,740 of
+  11,526; 03154028 Helmstedt 3,333 of 12,995; 03157006 Peine 3,452 of 17,136; 03158037 Wolfenbuettel 7,110 of
+  14,464). Method and rule: braunschweig.parking.supply_share; per-town counts, the Overpass cross-check, B5 and
+  the sensitivity arms: parking_zones_2026_supply_share_qa.csv.
