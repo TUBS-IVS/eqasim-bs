@@ -223,8 +223,18 @@ config:
   fleet_hsn_tsn_attributes: true
   fleet_electric_calibration: kreis_mix_gemeinde_bev_tilt
 
-  # Urban parking (3 EUR/h for non-resident car trips into the BS inner ring).
-  enable_urban_parking: true
+  # Parking costs (ADR-0139, issue #436): the zone tariffs replace the legacy 8 km ring (the two
+  # flags are mutually exclusive), with the parking block of configs/base_bs.yml, pinned equal by
+  # tests/test_popsim_config_parity.py. The zones need the plans-writer alias below.
+  parking_zones_enabled: true
+  enable_urban_parking: false
+  parking_zones_path: braunschweig/parking/parking_zones_2026.geojson
+  parking_tariffs_path: braunschweig/parking/parking_tariffs_2026.csv
+  parking_coverage_register_path: braunschweig/parking/parking_coverage_register_2026.csv
+  parking_workplace_shares_path: braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv
+  parking_tariff_snapshot_date: "2026-09-29"
+  parking_workplace_free_share_shift: 0.0
+  parking_terminal_stay_rule: until_fee_end
 
   # Household fleet routing-consistency: re-mode the initial car-driver legs of
   # carless persons (0-car households own no "car" vehicle) to car_passenger
