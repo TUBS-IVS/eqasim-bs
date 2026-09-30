@@ -6,7 +6,10 @@ an explicit fee tag are excluded); the capacity B2 (the capacity tag first, else
 street-side area space, 25 m2 per lot space times the levels of a multi-storey car park); the paid-share raster B3
 (25 m cells, usable spaces within W = 250 m, classified from 50 usable spaces on); the zone rule B4 (paid_share >= 0.5,
 smoothing +12.5 m then -12.5 m, islands below 1 ha dropped); the pre-registered validation B5 (recall and precision
->= 70 %) and the release file of B7. The numbers pin arithmetic, not truth.
+>= 70 %) and the release file of B7. Owner decisions 2 and 3 (Task 1c): the default share threshold 0.3 (a POST HOC
+change of B-f), H1 (B5 at that share) and the pre-registered holdout check H2 (pooled area-weighted recall and
+precision >= 70 %, every town's recall >= 50 %), which both gate the application; the information arms S (street supply
+only) and T (payment evidence within 75 m). The numbers pin arithmetic, not truth.
 """
 from __future__ import annotations
 
@@ -449,13 +452,143 @@ def test_b5_gate_refuses_application_below_70_percent(recall, precision, passes)
     assert ss.passes_validation({"recall": recall, "precision": precision}) is passes
 
 
-def test_pre_registered_parameters_name_the_outputs_and_the_arms_differ_in_one_parameter_each():
+def test_default_share_is_the_owners_0_3_and_every_output_name_carries_it():
+    # owner decision 2 (a POST HOC change of B-f): the default share threshold is 0.3; the pre-registered 0.5 of
+    # Amendment B stays the centre of its B5 arms
+    assert ss.DEFAULT_SHARE_THRESHOLD == 0.3 and ss.SupplyShareParameters().share_threshold == 0.3
+    assert ss.DEFAULT_SUPPLY_PARAMETERS.tag() == "w250_t0.3_u50_c25_s12.5_i10000"
     assert ss.PRE_REGISTERED_SUPPLY_PARAMETERS.tag() == "w250_t0.5_u50_c25_s12.5_i10000"
     arms = {arm.tag() for arm in ss.SENSITIVITY_ARMS}
     assert arms == {"w150_t0.5_u50_c25_s12.5_i10000", "w400_t0.5_u50_c25_s12.5_i10000",
                     "w250_t0.3_u50_c25_s12.5_i10000", "w250_t0.7_u50_c25_s12.5_i10000"}
+    # B is the default arm; the information arms of owner decisions 2 and 3 (S at 0.3 and 0.5, T at 0.5 and 0.3, S+T at
+    # 0.5 and 0.3) carry their share and their inventory variant in the name, so no arm shares a file with B
+    assert ss.DEFAULT_ARM.tag() == ss.DEFAULT_SUPPLY_PARAMETERS.tag()
+    assert [arm.tag() for arm in ss.VARIANT_ARMS] == [
+        "w250_t0.3_u50_c25_s12.5_i10000_streetonly", "w250_t0.5_u50_c25_s12.5_i10000_streetonly",
+        "w250_t0.5_u50_c25_s12.5_i10000_payment75m", "w250_t0.3_u50_c25_s12.5_i10000_payment75m",
+        "w250_t0.5_u50_c25_s12.5_i10000_streetonly_payment75m", "w250_t0.3_u50_c25_s12.5_i10000_streetonly_payment75m"]
     with pytest.raises(ValueError, match="share_threshold"):
         ss.SupplyShareParameters(share_threshold=1.5)
+    with pytest.raises(ValueError, match="payment_evidence_m"):
+        ss.SupplyVariant(payment_evidence_m=0.0)
+
+
+# --------------------------------------------------------------------------- H2: the pre-registered holdout check
+
+
+def _references(rows) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame({"zone_id": [zone_id for zone_id, _ in rows]}, geometry=[geometry for _, geometry in rows],
+                            crs=METRIC_CRS)
+
+
+def test_holdout_recall_and_precision_on_synthetic_references_with_known_overlap():
+    # town P (a precision town): a 100 x 100 m reference; the rule covers 60 x 100 m of it, 40 x 100 m more inside the
+    # query box and 50 x 100 m beyond the box (outside the precision frame)
+    query_box = _box(0, 0, 1000, 1000)
+    rule_p = gpd.GeoDataFrame(geometry=[_box(140, 100, 240, 200), _box(1000, 100, 1050, 200)], crs=METRIC_CRS)
+    town_p = ss.holdout_town_metrics(rule_p, _references([("p_ref", _box(100, 100, 200, 200))]), query_box=query_box)
+    assert town_p["recall"] == pytest.approx(0.6) and town_p["precision"] == pytest.approx(0.6)
+    assert (town_p["reference_area_m2"], town_p["rule_inside_reference_m2"], town_p["rule_inside_query_box_m2"]) == \
+        (pytest.approx(10_000.0), pytest.approx(6_000.0), pytest.approx(10_000.0))
+    # town R (recall only, like the Braunschweig street lists): two references of 100 x 20 m, one covered completely
+    rule_r = gpd.GeoDataFrame(geometry=[_box(-10, -10, 110, 30)], crs=METRIC_CRS)
+    town_r = ss.holdout_town_metrics(rule_r, _references([("r1", _box(0, 0, 100, 20)), ("r2", _box(0, 100, 100, 120))]))
+    assert town_r["recall"] == pytest.approx(0.5) and town_r["precision"] is None
+    assert town_r["references"]["r1"]["rule_inside_m2"] == pytest.approx(2_000.0)
+    # pooled recall is area-weighted over every reference (8,000 / 14,000, not the mean 0.55 of the town recalls);
+    # pooled precision over the precision towns only; the per-town minimum is the smallest town recall
+    zones = {"P": ("p_ref",), "R": ("r1", "r2")}
+    pooled = ss.holdout_pooled_metrics({"P": town_p, "R": town_r}, reference_zones=zones, precision_towns=("P",))
+    assert pooled["pooled_recall"] == pytest.approx(8_000.0 / 14_000.0)
+    assert pooled["pooled_precision"] == pytest.approx(0.6) and pooled["minimum_town_recall"] == pytest.approx(0.5)
+    assert pooled["passes"] is False
+    # a missing town leaves H2 undefined; a precision town's reference must lie inside its frame
+    with pytest.raises(ValueError, match="R"):
+        ss.holdout_pooled_metrics({"P": town_p}, reference_zones=zones, precision_towns=("P",))
+    with pytest.raises(ValueError, match="query box"):
+        ss.holdout_town_metrics(rule_p, _references([("p_ref", _box(950, 100, 1050, 200))]), query_box=query_box)
+
+
+@pytest.mark.parametrize("pooled_recall, pooled_precision, minimum_town_recall, passes", [
+    (0.70, 0.70, 0.50, True),
+    (0.6999, 0.95, 0.95, False),
+    (0.95, 0.6999, 0.95, False),
+    (0.95, 0.95, 0.4999, False),
+    (0.95, float("nan"), 0.95, False),
+])
+def test_h2_gate_needs_pooled_recall_and_precision_of_70_percent_and_every_town_at_50(
+        pooled_recall, pooled_precision, minimum_town_recall, passes):
+    metrics = {"pooled_recall": pooled_recall, "pooled_precision": pooled_precision,
+               "minimum_town_recall": minimum_town_recall}
+    assert ss.passes_holdout(metrics) is passes
+
+
+# --------------------------------------------------------------------------- variants S and T (information arms)
+
+
+def test_variant_s_drops_offstreet_lots_and_garages_from_the_inventory():
+    # 2 x 20 free street spaces and 30 paid street-side spaces, a paid surface lot (400) and a paid garage (300)
+    elements = _elements(ways=[(_line(0, 0, 110, 0), _street(**{"parking:both": "lane"}))],
+                         areas=[(_box(100, 40, 110, 50), _area(fee="yes", capacity="30"))],
+                         lots=[(_box(150, 150, 170, 170), _lot(fee="yes", capacity="400")),
+                               (_box(0, 150, 20, 170), _lot(parking="multi-storey", fee="yes", capacity="300"))])
+    street = ss.variant_elements(elements, ss.STREET_SUPPLY_ONLY)
+    assert sorted(street["kind"]) == ["street_side", "street_side", "street_side_area"]
+    assert ss.summarise_supply(street)["elements_by_kind_and_class"]["lot"] == {name: 0 for name in ss.SUPPLY_CLASSES}
+    full_cell = ss.paid_share_raster(elements, ONE_CELL).iloc[0]
+    street_cell = ss.paid_share_raster(street, ONE_CELL).iloc[0]
+    assert full_cell["paid_share"] == pytest.approx(730.0 / 770.0)
+    assert street_cell["usable_spaces"] == pytest.approx(70.0) and street_cell["paid_share"] == pytest.approx(3.0 / 7.0)
+    # the full inventory is B itself
+    assert ss.variant_elements(elements, ss.FULL_INVENTORY)["element_id"].tolist() == elements["element_id"].tolist()
+
+
+def _osm_objects(rows) -> gpd.GeoDataFrame:
+    """OSM elements of any type: ``rows`` of (osm_type, osm_id, geometry, tags)."""
+    return gpd.GeoDataFrame({"osm_type": [row[0] for row in rows], "osm_id": [row[1] for row in rows],
+                             "tags": [dict(row[3]) for row in rows]}, geometry=[row[2] for row in rows], crs=METRIC_CRS)
+
+
+def test_variant_t_payment_evidence_turns_nearby_untagged_street_parking_paid():
+    machine = {"amenity": "vending_machine", "vending": "parking_tickets;public_transport_tickets"}
+    ways = [(_line(50, 0, 50, 400), _street(**{"parking:both": "lane"})),   # 1: 50 m away at its end, centroid 206 m
+            (_line(-300, -80, 0, -80), _street(**{"parking:both": "lane"})),  # 2: 80 m from the machine
+            (_line(-100, 10, -20, 10), _street(**{"parking:both": "lane", "parking:both:fee": "no"})),  # 3: fee=no
+            (_line(-100, -10, -20, -10), _street(**{"parking:both": "lane",
+                                                   "parking:both:authentication:disc": "yes"})),  # 4: disc, B-b
+            (_line(500, 50, 520, 50), _street(**{"parking:right": "lane"})),  # 5: 30 m from the fee=no lot 201
+            (_line(700, 0, 750, 0), _street(**{"parking:right": "lane"}))]  # 6: 20 m from a shop with payment:apple_pay
+    areas = [(_box(0, 60, 10, 70), _area())]                                 # 100: 60 m from the machine
+    lots = [(_box(300, 300, 320, 320), _lot(**{"payment:app": "yes"})),       # 200: app payment, no fee tag
+            (_box(500, 0, 520, 20), _lot(fee="no", **{"payment:app": "yes"})),  # 201: app payment and fee=no
+            (_box(900, 900, 920, 920), _lot())]                               # 202: B-c
+    elements = _elements(ways=ways, areas=areas, lots=lots)
+    osm = _osm_objects([("node", 1, Point(X0, Y0), machine),
+                        ("node", 2, Point(X0 - 50, Y0 - 60), {"amenity": "vending_machine", "vending": "cigarettes"}),
+                        ("node", 3, Point(X0 - 100, Y0 - 70), {"shop": "bakery", "payment:app": "no"}),
+                        # the literal reading of the pre-registered key pattern payment:app* (data record)
+                        ("node", 4, Point(X0 + 725, Y0 + 20), {"shop": "bakery", "payment:apple_pay": "yes"}),
+                        ("way", 200, _box(300, 300, 320, 320), lots[0][1]), ("way", 201, _box(500, 0, 520, 20), lots[1][1])])
+    assert ss.is_parking_ticket_machine(machine) and not ss.is_parking_ticket_machine(osm["tags"].iloc[1])
+    evidence = ss.payment_evidence(osm)
+    assert sorted(zip(evidence["osm_type"], evidence["osm_id"])) == [("node", 1), ("node", 4), ("way", 200), ("way", 201)]
+    paid = ss.variant_elements(elements, ss.PAYMENT_EVIDENCE, evidence).set_index("element_id")
+    expected = {"way/1:left": ("paid", "payment_evidence", "ticket_machine"),
+                "way/1:right": ("paid", "payment_evidence", "ticket_machine"),
+                "way/2:left": ("free", "no_fee_tag", ""), "way/3:left": ("free", "fee_no", ""),
+                "way/4:left": ("free", "disc", ""), "way/5:right": ("paid", "payment_evidence", "app_payment_parking"),
+                "way/6:right": ("paid", "payment_evidence", "app_payment_other"),
+                "way/100": ("paid", "payment_evidence", "ticket_machine"),
+                "way/200": ("paid", "app_payment_tag", "own_app_payment_tag"), "way/201": ("free", "fee_no", ""),
+                "way/202": ("excluded", "no_fee_tag_offstreet", "")}
+    assert {key: tuple(paid.loc[key, ["class", "reason", "payment_evidence"]]) for key in expected} == expected
+    # the machines add no capacity: the same elements with the same spaces; B itself is untouched
+    assert paid.index.tolist() == elements["element_id"].tolist()
+    assert np.allclose(paid["capacity_spaces"], elements["capacity_spaces"])
+    assert (elements.set_index("element_id").loc["way/1:left", "class"], len(elements)) == ("free", len(paid))
+    with pytest.raises(ValueError, match="payment evidence"):
+        ss.variant_elements(elements, ss.PAYMENT_EVIDENCE)
 
 
 # --------------------------------------------------------------------------- B7: the release file
@@ -538,18 +671,19 @@ OSM_FIXTURE = FIXTURES / "osm_supply_fixture.osm"
 REGULATION_FIXTURE = FIXTURES / "overpass_regulation_fixture.json"
 #: south, west, north, east of the Overpass regulation fixture (the same elements are in the OSM fixture)
 FIXTURE_BBOX = (52.2595, 10.5195, 52.2660, 10.5235)
-TAG = ss.PRE_REGISTERED_SUPPLY_PARAMETERS.tag()
+TAG = ss.DEFAULT_SUPPLY_PARAMETERS.tag()
 
 
 def test_supply_inventory_reads_the_parking_features_of_the_box_with_the_gdal_osm_driver():
-    from scripts.build_parking_zones_from_osm import inventory_frames, read_supply_inventory
+    from scripts.build_parking_zones_from_osm import inventory_evidence, inventory_frames, read_supply_inventory
 
     layers, seconds = read_supply_inventory(OSM_FIXTURE, FIXTURE_BBOX)
     assert set(seconds) == {"points", "lines", "multipolygons"}
     ids = {layer: sorted((row.osm_type, int(row.osm_id)) for row in frame.itertuples())
            for layer, frame in layers.items()}
-    # the footway without parking key, the street outside the box and the building are not read
-    assert ids == {"points": [("node", 29)],
+    # the footway without parking key, the street outside the box, the building and the cigarette machine 42 are not
+    # read; the ticket machine 40 and the node 41 with payment:app=no pass the layer filter of the payment evidence
+    assert ids == {"points": [("node", 29), ("node", 40), ("node", 41)],
                    "lines": [("way", 501), ("way", 502), ("way", 503), ("way", 504), ("way", 505), ("way", 507),
                              ("way", 509)],
                    "multipolygons": [("relation", 800), ("way", 601), ("way", 602), ("way", 603)]}
@@ -561,6 +695,10 @@ def test_supply_inventory_reads_the_parking_features_of_the_box_with_the_gdal_os
     assert ways.crs.to_epsg() == 25832 and objects.crs.to_epsg() == 25832
     assert sorted(ways["osm_id"]) == [501, 502, 503, 504, 505, 507, 509]
     assert sorted(objects["osm_id"]) == [29, 601, 602, 603, 800]
+    # variant T: the ticket machine and the street-side area with payment:app=yes; payment:app=no is no evidence
+    evidence = inventory_evidence(layers)
+    assert evidence.crs.to_epsg() == 25832
+    assert sorted(zip(evidence["osm_type"], evidence["osm_id"])) == [("node", 40), ("way", 603)]
 
 
 def test_extract_digests_are_checked_against_the_geofabrik_md5_before_use(tmp_path):
@@ -649,8 +787,16 @@ def _b5_inputs(directory: Path) -> list:
     paths["affine"].write_text(json.dumps({"affine_px": [1.0, 0.0, -left], "affine_py": [0.0, -1.0, top]}),
                                encoding="utf-8")
     Image.new("RGB", (400, 900), "white").save(paths["image"])
+    # H2: the Braunschweig holdout references (the Parkscheininseln and zone 132) as small boxes inside the fixture box
+    holdout = gpd.GeoDataFrame({"zone_id": list(ss.HOLDOUT_REFERENCE_ZONES["03101000"])},
+                               geometry=[box(minx + 20 + 60 * number, miny + 100, minx + 60 + 60 * number, miny + 140)
+                                         for number in range(len(ss.HOLDOUT_REFERENCE_ZONES["03101000"]))],
+                               crs=METRIC_CRS)
+    paths["holdout"] = directory / "holdout_zones.geojson"
+    holdout.to_crs("EPSG:4326").to_file(paths["holdout"], driver="GeoJSON")
     return ["--legal-zones", str(paths["legal"]), "--reference", f"03101000={paths['annex']}",
-            "--annex-affine", str(paths["affine"]), "--annex-image", str(paths["image"])]
+            "--annex-affine", str(paths["affine"]), "--annex-image", str(paths["image"]),
+            "--holdout-zones", str(paths["holdout"])]
 
 
 def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_path, caplog):
@@ -682,15 +828,26 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     assert meta["extract"]["md5"] == hashlib.md5(extract.read_bytes()).hexdigest()
     assert meta["osm_timestamp"] == "2026-09-28T00:00:00Z"
     assert set(meta["read_seconds"]) == {"points", "lines", "multipolygons"}
+    assert meta["payment_evidence"] is True
+    # the default share 0.3 (owner decision 2) names every output of the run
     qa_path = out / f"03101000_supply_qa_{TAG}.json"
     qa = json.loads(qa_path.read_text(encoding="utf-8"))
     assert qa["osm_timestamp"] == "2026-09-28T00:00:00Z"
-    assert qa["parameters"] == ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
+    assert qa["parameters"] == ss.DEFAULT_SUPPLY_PARAMETERS.as_dict() and qa["parameters"]["share_threshold"] == 0.3
+    assert qa["variant"] == ss.FULL_INVENTORY.as_dict()
+    # H2 in Braunschweig: recall over the four street-list references only, no precision frame
+    assert sorted(qa["holdout"]["references"]) == sorted(ss.HOLDOUT_REFERENCE_ZONES["03101000"])
+    assert 0.0 <= qa["holdout"]["recall"] <= 1.0 and qa["holdout"]["precision"] is None
+    # the payment evidence of the box is counted in every run (the ticket machine 40, the area 603), applied in T only
+    assert qa["payment_evidence"]["evidence"] == {"ticket_machines": 1, "app_payment_elements": 1,
+                                                  "app_payment_parking_objects": 1, "app_payment_other_objects": 0,
+                                                  "apple_pay_only_elements": 0}
+    assert qa["payment_evidence"]["converted"] is None
     assert qa["supply"]["elements_by_kind_and_class"] == {
         "street_side": {"paid": 2, "restricted": 2, "free": 4, "excluded": 6},
         "street_side_area": {"paid": 0, "restricted": 0, "free": 1, "excluded": 0},
         "lot": {"paid": 2, "restricted": 0, "free": 1, "excluded": 1}}
-    # the Overpass fixture lacks the service way 507, the way 509, the street-side area 603, the node lot 700 and the
+    # the Overpass fixture lacks the service way 507, the way 509, the street-side area 603, the node lot 29 and the
     # car park 800
     assert qa["cross_check"]["overpass_response"] == "03101000_regulation_overpass_2026-09-30.json"
     assert qa["cross_check"]["difference"] == {
@@ -714,12 +871,43 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
     with pytest.raises(SystemExit, match="query box"):
         main([argument for argument in common if argument not in town] + shifted + read)
     before = qa_path.read_bytes()
-    # re-processing the saved inventory with the sensitivity arms writes their own tagged files only
-    assert main(common + ["--from-inventory", str(out / "supply_inventory_fixture-260928.gpkg"),
-                          "--sensitivity-arms", "--skip-pre-registered"]) == 0
-    for arm in ss.SENSITIVITY_ARMS:
+    inventory = ["--from-inventory", str(out / "supply_inventory_fixture-260928.gpkg")]
+    # re-processing the saved inventory with the Amendment B arms (its pre-registered share 0.5 and the B5 arms other
+    # than the default) writes their own tagged files only
+    assert main(common + inventory + ["--sensitivity-arms", "--arms-only"]) == 0
+    assert [arm.parameters for arm in ss.AMENDMENT_B_ARMS] == [ss.PRE_REGISTERED_SUPPLY_PARAMETERS] + [
+        arm for arm in ss.SENSITIVITY_ARMS if arm != ss.DEFAULT_SUPPLY_PARAMETERS]
+    for arm in ss.AMENDMENT_B_ARMS:
         assert (out / f"03101000_supply_qa_{arm.tag()}.json").is_file(), arm.tag()
     assert qa_path.read_bytes() == before
+    # variant T needs an inventory read with the payment evidence: one saved before Task 1c is refused, nothing written
+    for suffix in (".gpkg", ".json"):
+        shutil.copy(out / f"supply_inventory_fixture-260928{suffix}", tmp_path / f"old_inventory{suffix}")
+    old_meta = json.loads((tmp_path / "old_inventory.json").read_text(encoding="utf-8"))
+    del old_meta["payment_evidence"]
+    (tmp_path / "old_inventory.json").write_text(json.dumps(old_meta), encoding="utf-8")
+    with pytest.raises(SystemExit, match="payment evidence"):
+        main(common + ["--from-inventory", str(tmp_path / "old_inventory.gpkg"), "--variant-arms", "--arms-only"])
+    assert not any((out / f"03101000_supply_qa_{arm.tag()}.json").exists() for arm in ss.VARIANT_ARMS)
+    # the information arms S, T and S+T: their own tagged files; S drops the lots, T turns the service way 507 (11 m
+    # from the ticket machine 40) paid and the street-side area 603 by its own payment:app tag; the free side of way 509
+    # lies 89 m away and way 504 carries fee=no
+    assert main(common + inventory + ["--variant-arms", "--arms-only"]) == 0
+    arms = {arm.tag(): json.loads((out / f"03101000_supply_qa_{arm.tag()}.json").read_text(encoding="utf-8"))
+            for arm in ss.VARIANT_ARMS}
+    street = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.STREET_SUPPLY_ONLY).tag()]
+    assert street["variant"] == ss.STREET_SUPPLY_ONLY.as_dict()
+    assert street["supply"]["elements_by_kind_and_class"]["lot"] == {name: 0 for name in ss.SUPPLY_CLASSES}
+    payment = arms[ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE).tag()]
+    assert payment["supply"]["elements_by_kind_and_class"] == {
+        "street_side": {"paid": 3, "restricted": 2, "free": 3, "excluded": 6},
+        "street_side_area": {"paid": 1, "restricted": 0, "free": 0, "excluded": 0},
+        "lot": {"paid": 2, "restricted": 0, "free": 1, "excluded": 1}}
+    assert payment["payment_evidence"]["converted"] == {"street_side": 1, "street_side_area": 1, "lot": 0}
+    assert payment["payment_evidence"]["converted_by"] == {"ticket_machine": 1, "app_payment_parking": 0,
+                                                           "app_payment_other": 0, "own_app_payment_tag": 1}
+    # the cross-check stays the B1 classification of the extract in every arm
+    assert payment["cross_check"] == qa["cross_check"] and qa_path.read_bytes() == before
     # G1: the POST HOC counterfactual (yes sides as no information) writes its own tagged files, named in the QA,
     # checked against the Geofabrik MD5 of the extract the inventory was read from
     md5_file = ["--osm-extract-md5", str(tmp_path / "fixture-260928.osm.md5")]
@@ -740,15 +928,32 @@ def test_supply_share_cli_writes_tagged_outputs_with_the_cross_check_and_b5(tmp_
 # --------------------------------------------------------------------------- B6: the assembly of the rule polygons
 
 
-BS, GS, WOB = "03101000", "03153017", "03103000"
+BS, GS, WOB, SZ, PE, HE = "03101000", "03153017", "03103000", "03102000", "03157006", "03154028"
 MD5 = "0c513947b19145d84afb0b3bc36d95f5"
+#: synthetic supply of each town placed apart, because the release holds one row per cell
+SHIFTS = {BS: 0.0, GS: 10_000.0, WOB: 20_000.0, SZ: 30_000.0, PE: 40_000.0, HE: 50_000.0}
+NO_EVIDENCE = {"distance_m": None, "evidence": {"ticket_machines": 2, "app_payment_elements": 1,
+                                                "app_payment_parking_objects": 1, "app_payment_other_objects": 0,
+                                                "apple_pay_only_elements": 0},
+               "converted": None, "converted_spaces": None, "converted_by": None}
 
 
-def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=None, reference=None,
-                         parameters=ss.PRE_REGISTERED_SUPPLY_PARAMETERS) -> None:
-    """The files of ``build_parking_zones_from_osm.py --supply-share`` for one town, on a small synthetic supply
-    (placed per town, because the release holds one row per cell and the real town boxes are disjoint)."""
-    shift = {BS: 0.0, GS: 10_000.0, WOB: 20_000.0}[ags]
+def _holdout_block(ags: str, recall: float, precision: float) -> dict:
+    """The holdout block of the builder for a town with 10,000 m2 of references (recall and precision set the areas)."""
+    ids = ss.HOLDOUT_REFERENCE_ZONES[ags]
+    inside = recall * 10_000.0
+    frame = ags in ss.HOLDOUT_PRECISION_TOWNS
+    return {"references": {zone_id: {"area_m2": 10_000.0 / len(ids), "rule_inside_m2": inside / len(ids)}
+                           for zone_id in ids},
+            "reference_area_m2": 10_000.0, "rule_inside_reference_m2": inside, "recall": recall,
+            "rule_inside_query_box_m2": inside / precision if frame else None, "precision": precision if frame else None}
+
+
+def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=None, reference=None, holdout=None,
+                         arm=ss.DEFAULT_ARM) -> None:
+    """The files of ``build_parking_zones_from_osm.py --supply-share`` for one town and arm, on a small synthetic
+    supply (placed per town, because the release holds one row per cell and the real town boxes are disjoint)."""
+    shift = SHIFTS[ags]
     elements = _elements(ways=[(_line(shift, 0, shift + 110, 0), _street(**{"parking:both": "lane",
                                                                           "parking:both:fee": "yes"}))],
                          areas=[(_box(shift, 10, shift + 10, 35), _area())])
@@ -756,8 +961,9 @@ def _write_supply_inputs(directory: Path, ags: str, rule_parts, *, validation=No
     counts = ss.summarise_supply(elements)["elements_by_kind_and_class"]
     rule = gpd.GeoDataFrame({"part_id": [f"z{number:03d}" for number in range(1, len(rule_parts) + 1)]},
                             geometry=list(rule_parts), crs=METRIC_CRS)
-    tag = parameters.tag()
-    document = {"ags": ags, "parameters": parameters.as_dict(), "tag": tag, "bbox": [52.2, 10.5, 52.3, 10.6],
+    tag, parameters = arm.tag(), arm.parameters
+    document = {"ags": ags, "parameters": parameters.as_dict(), "tag": tag, "variant": arm.variant.as_dict(),
+                "holdout": holdout, "payment_evidence": NO_EVIDENCE, "bbox": [52.2, 10.5, 52.3, 10.6],
                 "osm_timestamp": SNAPSHOT, "extract": {"file": "niedersachsen-260929.osm.pbf", "md5": MD5,
                                                        "sha256": "c2b33b84", "bytes": 506480293},
                 "supply": ss.summarise_supply(elements), "street_ways": 1,
@@ -791,33 +997,41 @@ def _v1_zones(assembly) -> list:
                                  "centre_approximation", "https://v1", "v1")]
 
 
-def _assemble(assembly, directory: Path, recall: float, precision: float, counterfactuals=()) -> tuple:
+def _assemble(assembly, directory: Path, recall: float, precision: float, *, holdout_recall: float = 0.8,
+              holdout_precision: float = 0.9, counterfactuals=()) -> tuple:
     """Rule inputs of Braunschweig (a piece half under the v1 zone Ia, one inside zone II, one outside every annex
-    zone), Goslar (replaces its centre approximation) and Wolfsburg (QA only), assembled like the script's main."""
+    zone; H1 = ``recall`` / ``precision``), Goslar (replaces its centre approximation) and the QA-only holdout towns
+    Wolfsburg, Salzgitter, Peine and Helmstedt (H2 = ``holdout_recall`` / ``holdout_precision`` in every holdout town),
+    assembled like the script's main."""
     metrics = {"recall": recall, "precision": precision, "rule_area_m2": 1.0, "legal_area_m2": 1.0,
                "rule_inside_legal_m2": 1.0, "rule_inside_frame_m2": 1.0, "rule_inside_annex_m2": 1.0}
     validation = dict(metrics, passes=ss.passes_validation(metrics), minimum=ss.VALIDATION_MINIMUM)
     _write_supply_inputs(directory, BS, [_box(100, 100, 900, 800), _box(500, -700, 1500, -100),
                                          _box(5000, 5000, 5200, 5200)], validation=validation,
                          reference={"path": "annex.geojson", "core_share_inside_reference": 0.8,
-                                    "reference_share_covered": 0.2, "largest_outline_distance_m": 900.0})
+                                    "reference_share_covered": 0.2, "largest_outline_distance_m": 900.0},
+                         holdout=_holdout_block(BS, holdout_recall, holdout_precision))
     _write_supply_inputs(directory, GS, [_box(20_100, -39_900, 20_900, -39_100)])
-    _write_supply_inputs(directory, WOB, [_box(17_100, 20_100, 17_300, 20_300)])
-    supply = assembly.load_supply_inputs(directory, municipalities=(BS, GS, WOB))
-    b5_passed = assembly.supply_b5(supply)
+    _write_supply_inputs(directory, WOB, [_box(17_100, 20_100, 17_300, 20_300)],
+                         holdout=_holdout_block(WOB, holdout_recall, holdout_precision))
+    for ags in (SZ, PE, HE):
+        _write_supply_inputs(directory, ags, [_box(SHIFTS[ags], 0, SHIFTS[ags] + 200, 200)],
+                             holdout=_holdout_block(ags, holdout_recall, holdout_precision))
+    supply = assembly.load_supply_inputs(directory, municipalities=(BS, GS, WOB, SZ, PE, HE))
+    gate = assembly.supply_gate(supply)
     zones = [zone for zone in _v1_zones(assembly) if zone["zone_id"] != "gs_altstadt_zone1"]
     replacement = assembly.supply_replacement("gs_altstadt_zone1", GS, "https://goslar", "the v1 hull", supply,
-                                              b5_passed)
+                                              gate["passed"])
     zones.append(replacement or [zone for zone in _v1_zones(assembly) if zone["zone_id"] == "gs_altstadt_zone1"][0])
     zones, _ = assembly.apply_precedence(zones)
     pieces = []
-    if b5_passed:
+    if gate["passed"]:
         records, pieces = assembly.assign_braunschweig_pieces(assembly.supply_rule(supply[BS]), zones, _annex_zones(),
                                                               supply[BS]["qa"], zone_factory=assembly.supply_zone,
                                                               noun="rule polygons")
         zones += records
     assembly.write_zone_file(assembly.zone_frame(zones), directory / "zones.geojson")
-    assembly.write_supply_share_qa(directory / "qa.csv", assembly.supply_qa_rows(supply, zones, pieces, b5_passed,
+    assembly.write_supply_share_qa(directory / "qa.csv", assembly.supply_qa_rows(supply, zones, pieces, gate,
                                                                                 counterfactuals=counterfactuals))
     assembly.write_paid_share_release(directory / "release.csv.gz", assembly.paid_share_release(supply),
                                       provenance=assembly.paid_share_provenance(supply))
@@ -836,14 +1050,16 @@ def pz_load(path):
     return pz.load_zone_polygons(path)
 
 
-def test_b6_applies_the_rule_polygons_when_b5_passes(assembly, tmp_path):
+def test_b6_applies_the_rule_polygons_when_h1_and_h2_pass(assembly, tmp_path):
     zones, qa, pieces = _assemble(assembly, tmp_path, recall=0.81, precision=0.90)
     assert set(zones.index) == {"bs_zone_ia", "bs_zone_ib", "wob_innenstadt", "gs_altstadt_zone1", "bs_zone_ia_sued",
                                 "bs_zone_ii"}
     goslar = zones.loc["gs_altstadt_zone1"]
     assert goslar["geometry_source"] == "osm_supply_majority" and goslar["osm_timestamp"] == SNAPSHOT
+    # the owner's post hoc share 0.3 is the provenance of an applied polygon
     assert (goslar["supply_walk_m"], goslar["paid_share_threshold"], goslar["minimum_usable_spaces"]) == \
-        (250.0, 0.5, 50.0)
+        (250.0, 0.3, 50.0)
+    assert "holdout check H2" in goslar["digitising_note"] and "POST HOC" in goslar["digitising_note"]
     assert goslar.geometry.area == pytest.approx(800.0 * 800.0, rel=1e-4)
     assert "unavoidable_walk_m" not in zones.columns
     # assigned WHOLE to the annex zone of largest overlap (ruling R-T1-f): the southern half of the first piece
@@ -856,7 +1072,15 @@ def test_b6_applies_the_rule_polygons_when_b5_passes(assembly, tmp_path):
         ("applied", "true", "bs_zone_ia_sued;bs_zone_ii")
     assert (qa.loc[GS, "decision"], qa.loc[GS, "zone_ids"]) == ("applied", "gs_altstadt_zone1")
     assert (qa.loc[WOB, "role"], qa.loc[WOB, "decision"], qa.loc[WOB, "applied"]) == ("qa_only", "qa_only", "false")
+    # H1 (B5 at the default share) and the pooled H2 on the Braunschweig row, the holdout overlaps on every holdout
+    # town (precision only in the four towns with a query-box frame); a town without references carries none
     assert (qa.loc[BS, "b5_recall"], qa.loc[BS, "b5_passed"]) == ("0.810000", "true") and qa.loc[GS, "b5_passed"] == ""
+    assert (qa.loc[BS, "h2_pooled_recall"], qa.loc[BS, "h2_pooled_precision"], qa.loc[BS, "h2_minimum_town_recall"],
+            qa.loc[BS, "h2_passed"]) == ("0.800000", "0.900000", "0.800000", "true")
+    assert (qa.loc[BS, "holdout_recall"], qa.loc[BS, "holdout_precision"]) == ("0.800000", "")
+    assert (qa.loc[WOB, "holdout_references"], qa.loc[WOB, "holdout_precision"]) == ("wob_innenstadt", "0.900000")
+    assert qa.loc[GS, ["holdout_references", "holdout_recall", "h2_passed"]].tolist() == ["", "", ""]
+    assert (qa.loc[BS, "ticket_machines"], qa.loc[BS, "app_payment_elements"]) == ("2", "1")
     document = json.loads((tmp_path / "zones.geojson").read_text(encoding="utf-8"))
     assert "osm_supply_majority" in document["license"] and "OpenStreetMap contributors" in document["attribution"]
     text = (tmp_path / "qa.csv").read_text(encoding="utf-8")
@@ -865,50 +1089,73 @@ def test_b6_applies_the_rule_polygons_when_b5_passes(assembly, tmp_path):
     for column in ss.SUPPLY_SHARE_QA_COLUMNS:
         assert any(line.startswith(f"# {column}: ") for line in header), column
     release = ss.load_paid_share_release(tmp_path / "release.csv.gz")
-    assert sorted(set(release["municipality_ags"])) == sorted([BS, GS, WOB])
+    assert sorted(set(release["municipality_ags"])) == sorted([BS, GS, WOB, SZ, PE, HE])
 
 
-def test_b6_leaves_every_polygon_when_b5_fails(assembly, tmp_path):
-    # the POST HOC counterfactual is cited in the Braunschweig note next to the decisive interpretation, never applied
+@pytest.mark.parametrize("h1, h2, failed", [
+    ((0.689, 0.845), (0.8, 0.9), "H1"),     # B5 at the default share fails, the holdout check passes
+    ((0.883, 0.856), (0.8, 0.3), "H2"),     # H1 passes, the pooled holdout precision fails
+], ids=["h1_fails", "h2_fails"])
+def test_b6_leaves_every_polygon_when_h1_or_h2_fails(assembly, tmp_path, h1, h2, failed):
+    # the POST HOC counterfactual is cited in the Braunschweig note next to the interpretation it varies, never applied
     counterfactual = {"ags": BS, "counterfactual": ss.YES_SIDES_COUNTERFACTUAL, "_path": "counterfactual.json",
                       "parameters": ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict(),
                       "validation": {"recall": 0.762837, "precision": 0.854269, "passes": True}}
-    zones, qa, pieces = _assemble(assembly, tmp_path, recall=0.689, precision=0.845, counterfactuals=[counterfactual])
+    zones, qa, pieces = _assemble(assembly, tmp_path, recall=h1[0], precision=h1[1], holdout_recall=h2[0],
+                                  holdout_precision=h2[1], counterfactuals=[counterfactual])
     note = qa.loc[BS, "note"]
     assert "parking:<side>=yes" in note and "POST HOC" in note and "0.763" in note and "not a validation" in note
+    assert f"{failed} failed" in note and "set value" in note
     assert set(zones["geometry_source"]) == {"ordinance_map", "osm_fee_tags", "centre_approximation"}
     # without a rule-based polygon the release keeps its v1 layout (byte identity of the regenerated file)
     assert list(zones.columns) == ["geometry_source", "source_url", "source_date", "digitised_on", "digitising_note",
                                    "geometry"]
     assert pieces == []
-    assert [qa.loc[ags, "decision"] for ags in (BS, GS, WOB)] == ["b5_failed", "b5_failed", "qa_only"]
+    assert [qa.loc[ags, "decision"] for ags in (BS, GS, WOB, SZ)] == ["gate_failed", "gate_failed", "qa_only",
+                                                                     "qa_only"]
     assert (qa["applied"] == "false").all() and (qa["zone_ids"] == "").all()
-    assert qa.loc[BS, "b5_passed"] == "false" and "0.689" in qa.loc[BS, "note"]
+    assert (qa.loc[BS, "b5_passed"], qa.loc[BS, "h2_passed"]) == (("false", "true") if failed == "H1" else
+                                                                  ("true", "false"))
 
 
 @pytest.mark.parametrize("change, message", [
-    ("sensitivity_arm", "pre-registered"),
+    ("sensitivity_arm", "default"),
     ("counterfactual", "counterfactual"),
+    ("variant", "variant"),
     ("contradicting_gate", "contradicts"),
-], ids=["sensitivity_arm", "counterfactual", "contradicting_gate"])
+    ("missing_holdout_town", "holdout"),
+], ids=["sensitivity_arm", "counterfactual", "variant", "contradicting_gate", "missing_holdout_town"])
 def test_assembly_refuses_supply_inputs_it_cannot_trust(assembly, tmp_path, change, message):
     metrics = {"recall": 0.60, "precision": 0.90}
-    if change in ("sensitivity_arm", "counterfactual"):
+    if change in ("sensitivity_arm", "counterfactual", "variant"):
         _write_supply_inputs(tmp_path, GS, [_box(0, 0, 200, 200)])
         path = tmp_path / f"{GS}_supply_qa_{TAG}.json"
         document = json.loads(path.read_text(encoding="utf-8"))
         if change == "sensitivity_arm":
             document["parameters"]["walk_m"] = 400.0
-        else:
+        elif change == "counterfactual":
             document["counterfactual"] = ss.YES_SIDES_COUNTERFACTUAL
+        else:
+            document["variant"] = ss.PAYMENT_EVIDENCE.as_dict()
         path.write_text(json.dumps(document), encoding="utf-8")
         with pytest.raises(SystemExit, match=message):
             assembly.load_supply_inputs(tmp_path, municipalities=(GS,))
-    else:
+    elif change == "contradicting_gate":
         _write_supply_inputs(tmp_path, BS, [_box(0, 0, 200, 200)], validation=dict(metrics, passes=True))
         supply = assembly.load_supply_inputs(tmp_path, municipalities=(BS,))
         with pytest.raises(SystemExit, match=message):
             assembly.supply_b5(supply)
+    else:
+        # H2 pools every holdout reference: without the Salzgitter holdout block the gate is undefined, not passed
+        _write_supply_inputs(tmp_path, BS, [_box(0, 0, 200, 200)], validation=dict(metrics, passes=False),
+                             holdout=_holdout_block(BS, 0.8, 0.9))
+        for ags in (WOB, PE, HE):
+            _write_supply_inputs(tmp_path, ags, [_box(SHIFTS[ags], 0, SHIFTS[ags] + 200, 200)],
+                                 holdout=_holdout_block(ags, 0.8, 0.9))
+        _write_supply_inputs(tmp_path, SZ, [_box(SHIFTS[SZ], 0, SHIFTS[SZ] + 200, 200)])
+        supply = assembly.load_supply_inputs(tmp_path, municipalities=(BS, WOB, PE, HE, SZ))
+        with pytest.raises(SystemExit, match=message):
+            assembly.supply_gate(supply)
 
 
 # --------------------------------------------------------------------------- the validator on the committed tables
@@ -917,7 +1164,7 @@ def test_assembly_refuses_supply_inputs_it_cannot_trust(assembly, tmp_path, chan
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
 
 
-def test_validator_reapplies_the_b5_gate_and_the_pre_registered_parameters(assembly, tmp_path, capsys):
+def test_validator_reapplies_the_h1_and_h2_gates_and_the_default_parameters(assembly, tmp_path, capsys):
     import shutil
 
     from scripts.validate_parking_zones import main
@@ -940,12 +1187,26 @@ def test_validator_reapplies_the_b5_gate_and_the_pre_registered_parameters(assem
         return code, capsys.readouterr().out
 
     code, out = run(rows)
-    assert code == 0 and "supply-share QA" in out and "paid-share release" in out
+    assert code == 0 and "supply-share QA" in out and "H2 pooled recall 0.800000" in out and "paid-share release" in out
     contradicting = rows.copy()
     contradicting.loc[contradicting["ags"] == BS, "b5_passed"] = "true"
     code, out = run(contradicting)
-    assert code == 1 and "ags 03101000: b5_passed 'true' but the B5 gate gives 'false'" in out
+    assert code == 1 and "ags 03101000: b5_passed 'true' but the H1 gate gives 'false'" in out
+    # H2 is recomputed from the holdout overlaps of the town rows: a town share, a pooled value or a gate that
+    # contradicts them fails (Wolfsburg with 1,000 instead of 8,000 m2 of the rule inside its reference)
+    holdout = rows.copy()
+    holdout.loc[holdout["ags"] == WOB, "holdout_rule_inside_reference_m2"] = "1000.0"
+    code, out = run(holdout)
+    assert code == 1 and "ags 03103000: holdout_recall 0.800000 but 0.100000 recomputed" in out
+    holdout.loc[holdout["ags"] == WOB, ["holdout_recall", "holdout_precision"]] = ["0.100000", "0.112500"]
+    code, out = run(holdout)
+    assert code == 1 and "h2_pooled_recall 0.800000 but 0.660000 recomputed from the holdout overlaps" in out
+    assert "h2_passed 'true' but the H2 gate gives 'false'" in out
+    gate = rows.copy()
+    gate.loc[gate["ags"] == BS, "h2_passed"] = "false"
+    code, out = run(gate)
+    assert code == 1 and "ags 03101000: h2_passed 'false' but the H2 gate gives 'true'" in out
     arm = rows.copy()
-    arm.loc[arm["ags"] == GS, "walk_m"] = "150.0"
+    arm.loc[arm["ags"] == GS, "share_threshold"] = "0.5"
     code, out = run(arm)
-    assert code == 1 and "ags 03153017: walk_m = 150.0 is not the pre-registered 250" in out
+    assert code == 1 and "ags 03153017: share_threshold = 0.5 is not the default 0.3" in out

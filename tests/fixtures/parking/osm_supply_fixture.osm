@@ -2,9 +2,11 @@
 <!-- Hand-written test fixture for the supply-share mode of scripts/build_parking_zones_from_osm.py (issue #436):
      synthetic test data, not OpenStreetMap content. Ways 501-505 and the lots 601 and 602 repeat the elements of
      overpass_regulation_fixture.json (same ids, tags and coordinates), so the Overpass cross-check has known
-     differences: the street-side area 603, the service way 507, the node lot 700 and the multi-storey car park 800
+     differences: the street-side area 603, the service way 507, the node lot 29 and the multi-storey car park 800
      exist only here. The footway 506 (no parking key), the street 508 (outside the box) and the building 900 must not
-     be read. -->
+     be read. Payment evidence of variant T (Task 1c): the parking ticket machine 40 (11 m from the service way 507,
+     44 m from the fee=no way 504, 89 m from way 509), the node 41 with payment:app=no (read by the layer filter, no
+     evidence), the cigarette machine 42 (not read) and payment:app=yes on the street-side area 603. -->
 <osm version="0.6" generator="hand-written fixture">
   <node id="1" lat="52.26" lon="10.52"/>
   <node id="2" lat="52.26" lon="10.523"/>
@@ -49,6 +51,18 @@
   <node id="37" lat="52.2598" lon="10.5222"/>
   <node id="38" lat="52.2618" lon="10.5205"/>
   <node id="39" lat="52.2618" lon="10.5225"/>
+  <node id="40" lat="52.2626" lon="10.5215">
+    <tag k="amenity" v="vending_machine"/>
+    <tag k="vending" v="parking_tickets"/>
+  </node>
+  <node id="41" lat="52.2640" lon="10.5230">
+    <tag k="shop" v="bakery"/>
+    <tag k="payment:app" v="no"/>
+  </node>
+  <node id="42" lat="52.2641" lon="10.5231">
+    <tag k="amenity" v="vending_machine"/>
+    <tag k="vending" v="cigarettes"/>
+  </node>
   <way id="501">
     <nd ref="1"/><nd ref="2"/>
     <tag k="highway" v="residential"/>
@@ -122,6 +136,7 @@
     <nd ref="19"/><nd ref="20"/><nd ref="21"/><nd ref="22"/><nd ref="19"/>
     <tag k="amenity" v="parking"/>
     <tag k="parking" v="street_side"/>
+    <tag k="payment:app" v="yes"/>
   </way>
   <way id="801">
     <nd ref="30"/><nd ref="31"/><nd ref="32"/><nd ref="33"/><nd ref="30"/>

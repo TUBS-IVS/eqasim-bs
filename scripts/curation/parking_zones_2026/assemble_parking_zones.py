@@ -32,18 +32,23 @@ committed QA table ``--qa-out`` (``braunschweig.parking.zones`` ``ZONE_QA_COLUMN
 note of their municipality. Without ``--erosion-dir`` the output is the v1 file byte for byte.
 
 Parking cost zones v2, spec Amendment B (majority rule over the parking supply, issue #436; ``--supply-share-dir``):
-the per-town outputs of ``scripts/build_parking_zones_from_osm.py --supply-share`` with the pre-registered parameters
-(``supply_share.PRE_REGISTERED_SUPPLY_PARAMETERS``; ``load_supply_inputs`` refuses others). The pre-registered gate B5
-is re-applied to the Braunschweig metrics (``supply_b5``); only when it passes (B6) do the rule polygons enter as
+the per-town outputs of ``scripts/build_parking_zones_from_osm.py --supply-share`` of arm B, the default parameters of
+owner decision 2 (``supply_share.DEFAULT_ARM``: share 0.3, a POST HOC change of the pre-registered 0.5, full inventory;
+``load_supply_inputs`` refuses other parameters, variants and counterfactuals). The application gate of owner
+decision 2 is re-applied (``supply_gate``): H1, B5 recomputed at the default parameters on the Braunschweig metrics
+(``supply_b5``), and H2, the pre-registered holdout check pooled from the holdout overlaps of the town QA files
+(``supply_h2``); only when both pass (B6) do the rule polygons enter as
 ``osm_supply_majority`` polygons (provenance ``supply_walk_m``, ``paid_share_threshold``, ``minimum_usable_spaces``,
 ``osm_timestamp``): Goslar, Wolfenbuettel and Gifhorn replace their centre approximation (``supply_replacement``;
 tariff rows unchanged), the Braunschweig pieces left after the v1 zones are assigned whole to the annex zone they
 overlap most (``assign_braunschweig_pieces``, ruling R-T1-f: ``bs_zone_ia_sued``, ``bs_zone_ii``), the other towns are
 QA only. Written in every case: the QA table ``--supply-qa-out`` (``supply_qa_rows``, every column defined in its
-header, ``SUPPLY_QA_COLUMN_GLOSSARY``) and the B7 release of the classified cells ``--paid-share-out``
-(``write_paid_share_release``, gzip CSV, EPSG:25832). When B5 fails nothing is applied and the zone file stays the v1
-file byte for byte. ``--supply-counterfactual-qa`` cites POST HOC counterfactual runs (``--counterfactual`` of the
-builder) in the note of their town, next to the interpretation they vary; they are never applied.
+header, ``SUPPLY_QA_COLUMN_GLOSSARY``; H1, H2, the payment evidence and the arms: the Amendment B arms and the
+information arms S, T and S+T of owner decisions 2 and 3 with their H1 and H2, never applied) and the B7 release of the
+classified cells ``--paid-share-out`` (``write_paid_share_release``, gzip CSV, EPSG:25832). When H1 or H2 fails
+nothing is applied and the zone file stays the v1 file byte for byte. ``--supply-counterfactual-qa`` cites POST HOC
+counterfactual runs (``--counterfactual`` of the builder) in the note of their town, next to the interpretation they
+vary; they are never applied.
 
 Usage (from the repository root)::
 
@@ -679,27 +684,40 @@ SUPPLY_QA_INTRO = (
     "25 m2 per lot space times the levels of a multi-storey car park (B-d); a 25 m cell is classified when at least",
     "minimum_usable_spaces usable spaces lie within walk_m of its centre (B-e) and paid when (paid + restricted) /",
     "usable >= share_threshold (B-f); the paid cells are united, smoothed +/-smoothing_m and parts below",
-    "minimum_island_m2 dropped. B5 (pre-registered): in Braunschweig recall (rule inside the ordinance polygons Ia and",
-    "Ib / their area) and precision (rule inside the annex zones / rule inside the annex map frame) must both reach",
-    "0.70 with the defaults before the rule is applied anywhere (B6); the sensitivity arms are information only.",
+    "minimum_island_m2 dropped. B5 (pre-registered with the share 0.5): in Braunschweig recall (rule inside the",
+    "ordinance polygons Ia and Ib / their area) and precision (rule inside the annex zones / rule inside the annex map",
+    "frame) must both reach 0.70; it failed with 0.5 (Task 1b). Owner decision 2 (2026-09-30, a POST HOC change of",
+    "B-f): the share threshold of this table is 0.3; the 0.70 and 0.50 bounds are set values, not laws. The rule is",
+    "applied in any town (B6) only when H1 (B5 recomputed with this table's parameters, the b5_* columns) and H2 pass.",
+    "H2 (the holdout check, pre-registered before any holdout overlap at 0.3 was computed): references not used by B5",
+    "and no approximations (sz_lebenstedt, wob_innenstadt, pe_innenstadt, he_innenstadt, the three Braunschweig",
+    "Parkscheininseln and bs_resident_stadthalle_132); recall per town = rule inside the references / their area,",
+    "precision per town (the four towns only) = rule inside the references / rule inside the town's query box; pass",
+    "when the pooled recall (area-weighted over every reference) and the pooled precision reach 0.70 and every town's",
+    "recall reaches 0.50 (ASSUMPTION Q6). The arms (the Amendment B arms around its share 0.5 and the information arms",
+    "S = street supply only and T = payment evidence of owner decision 3 within 75 m, ASSUMPTION T-a) are computed",
+    "with H1 and H2 and never applied: seven arms of owner decisions 2 and 3 (B and six information arms) plus four",
+    "Amendment B arms, so a passing information arm is no validation of that arm.",
     "Element counts are street sides (two per way), street-side areas and lots inside the query box; spaces are",
     "usable capacity. Interpretations beyond B-a..B-f (implementation choices, not owner rulings) are listed in the data",
-    "record parking_zones_2026; the one that decides B5 (parking:<side>=yes read as street parking, literal B-a) is",
-    "stated with a POST HOC counterfactual in the Braunschweig note.",
-    "Units m, m2, spaces; empty = undefined. scripts/validate_parking_zones.py re-applies the B5 gate",
-    "and the pre-registered parameters. Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap",
-    "contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright). Columns:",
+    "record parking_zones_2026; the one that decided B5 at the share 0.5 (parking:<side>=yes read as street parking,",
+    "literal B-a) is stated with a POST HOC counterfactual in the Braunschweig note.",
+    "Units m, m2, spaces; empty = undefined. scripts/validate_parking_zones.py re-applies H1, H2 and the default",
+    "parameters. Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap contributors, ODbL 1.0",
+    "(https://www.openstreetmap.org/copyright). Columns:",
 )
 #: One definition per column of ``supply_share.SUPPLY_SHARE_QA_COLUMNS``.
 SUPPLY_QA_COLUMN_GLOSSARY = {
     "ags": "8-digit AGS of the curated town",
     "name": "municipality name (BA Gemeindeband, ASCII)",
-    "role": "zones_from_rule = the rule may become release polygons after B5; qa_only = recorded, the v1 polygon stays",
+    "role": "zones_from_rule = the rule may become release polygons after H1 and H2; qa_only = recorded, the v1 polygon "
+            "stays",
     "osm_extract": "the Geofabrik extract the supply was read from (raw_osm/, local, gitignored)",
     "osm_extract_md5": "its MD5, checked against the Geofabrik MD5 file before use",
     "osm_timestamp": "OSM snapshot of the extract (osmosis_replication_timestamp of the PBF header, UTC)",
     "walk_m": "walk distance W in m (pre-registered 250)",
-    "share_threshold": "paid share from which a classified cell is paid (ASSUMPTION B-f, pre-registered 0.5)",
+    "share_threshold": "paid share from which a classified cell is paid (ASSUMPTION B-f: 0.3 by owner decision 2, a "
+                       "POST HOC change of the pre-registered 0.5)",
     "minimum_usable_spaces": "usable spaces within W from which a cell is classified (ASSUMPTION B-e, pre-registered 50)",
     "cell_m": "raster cell size in m (pre-registered 25)",
     "smoothing_m": "buffer +/- of the smoothing of the paid cells in m (pre-registered 12.5)",
@@ -732,28 +750,55 @@ SUPPLY_QA_COLUMN_GLOSSARY = {
     "offstreet_spaces_without_fee_tag_share": "share of the public off-street capacity (usable lots plus those excluded "
                                               "for their fee tag) that is excluded for lack of a fee tag (ASSUMPTION "
                                               "B-c)",
+    "ticket_machines": "variant T evidence: parking ticket machines inside the query box (nodes with amenity="
+                       "vending_machine and vending=parking_tickets)",
+    "app_payment_elements": "variant T evidence: elements inside the query box with an app-payment tag (a key starting "
+                            "payment:app or payment:mobile whose value is not no; the literal pattern also matches "
+                            "payment:apple_pay), whatever the element is",
+    "payment_evidence_paid_elements": "variant T at the default share (information only): street sides, street-side "
+                                      "areas and lots inside the query box that the payment evidence turns paid",
+    "payment_evidence_paid_spaces": "their capacity, spaces",
     "cells": "25 m cells over the query box (its EPSG:25832 bounds)",
     "classified_cells": "cells with at least minimum_usable_spaces usable spaces within W",
     "classified_cell_share": "classified_cells / cells (the rest is unclassified)",
     "paid_cells": "classified cells with paid_share >= share_threshold",
     "rule_area_m2": "area of the rule polygons (paid cells united, smoothed, islands dropped), m2",
     "rule_parts": "number of rule polygons",
-    "b5_recall": "Braunschweig: area(rule inside the ordinance polygons Ia and Ib) / area(Ia and Ib)",
-    "b5_precision": "Braunschweig: area(rule inside the annex zones Ia, Ib and II) / area(rule inside the annex map "
+    "b5_recall": "Braunschweig, H1: area(rule inside the ordinance polygons Ia and Ib) / area(Ia and Ib), B5 with this "
+                 "table's parameters",
+    "b5_precision": "Braunschweig, H1: area(rule inside the annex zones Ia, Ib and II) / area(rule inside the annex map "
                     "frame)",
-    "b5_passed": "Braunschweig: true when recall and precision are both >= 0.70 (ASSUMPTION Q5); gates B6 in every town",
+    "b5_passed": "Braunschweig: true when H1 recall and precision are both >= 0.70 (ASSUMPTION Q5, a set value)",
+    "h2_pooled_recall": "Braunschweig row, H2: sum of the rule inside the holdout references / sum of their areas over "
+                        "every holdout town (area-weighted)",
+    "h2_pooled_precision": "Braunschweig row, H2: sum of the rule inside the references / sum of the rule inside the "
+                           "query box over the four towns with a precision frame",
+    "h2_minimum_town_recall": "Braunschweig row, H2: the smallest holdout_recall of the holdout towns",
+    "h2_passed": "Braunschweig row: true when both pooled values are >= 0.70 and every town's recall >= 0.50 "
+                 "(ASSUMPTION Q6); B6 applies in any town only when b5_passed and h2_passed are both true",
+    "holdout_references": "holdout towns: the reference polygons of H2 in the zone release (';'-separated)",
+    "holdout_reference_area_m2": "their area (union), m2",
+    "holdout_rule_inside_reference_m2": "area of the rule inside them, m2",
+    "holdout_rule_inside_query_box_m2": "the four precision towns: area of the rule inside the town's query box, m2 "
+                                        "(Braunschweig: recall only)",
+    "holdout_recall": "holdout_rule_inside_reference_m2 / holdout_reference_area_m2",
+    "holdout_precision": "the four precision towns: holdout_rule_inside_reference_m2 / holdout_rule_inside_query_box_m2",
     "reference": "outline the rule is compared with (Braunschweig: the georeferenced ParkGO annex; elsewhere the v1 "
                  "polygon)",
     "rule_share_inside_reference": "area of the rule inside the reference / area of the rule",
     "reference_share_covered_by_rule": "area of the rule inside the reference / area of the reference",
     "largest_outline_distance_m": "Hausdorff distance between the outlines of the rule and the reference, m",
-    "sensitivity": "B5 arms W 150 / 400 m and share 0.3 / 0.7: rule area and, in Braunschweig, recall and precision "
-                   "(information only, never used to select a passing combination)",
+    "sensitivity": "Amendment B arms around its pre-registered share 0.5 (share 0.5, W 150 m, W 400 m, share 0.7): rule "
+                   "area, H1 in Braunschweig, the holdout overlaps in the holdout towns and the pooled H2 on the "
+                   "Braunschweig row (information only, never used to select a passing combination)",
+    "variant_arms": "information arms of owner decisions 2 and 3 (S = street supply only, T = payment evidence within "
+                    "75 m, S+T; each at 0.3 and 0.5), reported like the sensitivity column plus the elements T turns "
+                    "paid; never applied",
     "applied": "true when the rule became release polygons (geometry_source osm_supply_majority)",
     "zone_ids": "the osm_supply_majority polygons of an applied row (';'-separated)",
-    "decision": "applied; b5_failed (the pre-registered gate failed, nothing is applied anywhere); no_rule_polygon (B5 "
-                "passed, nothing to apply); qa_only",
-    "note": "the B5 result, the application and the decision in words",
+    "decision": "applied; gate_failed (H1 or H2 failed, nothing is applied anywhere); no_rule_polygon (both passed, "
+                "nothing to apply); qa_only",
+    "note": "H1, H2, the payment evidence, the application and the decision in words",
 }
 RELEASE_INTRO = (
     "Paid-parking share of the public parking supply per 25 m cell (parking cost zones v2, spec Amendment B7, issue",
@@ -778,21 +823,25 @@ RELEASE_COLUMN_GLOSSARY = {
     "heuristic_capacity_share": "share of the usable spaces whose capacity comes from the heuristic B-d (no capacity "
                                 "tag), 0 to 1",
 }
-#: Labels of the B5 sensitivity arms in the QA table (``supply_share.SENSITIVITY_ARMS`` order).
-SENSITIVITY_LABELS = ("W 150 m", "W 400 m", "share 0.3", "share 0.7")
+#: The arms reported next to B (information only): the Amendment B arms (column sensitivity) and the information arms
+#: of owner decisions 2 and 3 (column variant_arms).
+REPORTED_ARMS = tuple(ss.AMENDMENT_B_ARMS) + tuple(ss.VARIANT_ARMS)
+#: The arm whose payment-evidence conversions the QA table reports (T at the default share).
+PAYMENT_EVIDENCE_ARM = ss.SupplyArm(ss.DEFAULT_SUPPLY_PARAMETERS, ss.PAYMENT_EVIDENCE)
 
 
-def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTERED_SUPPLY_PARAMETERS) -> dict:
-    """ags -> {"qa", "rule" (EPSG:25832), "raster", "arms" (tag -> QA of the sensitivity arms present)}.
+def load_supply_inputs(directory, municipalities=None, arm=ss.DEFAULT_ARM) -> dict:
+    """ags -> {"qa", "rule" (EPSG:25832), "raster", "arms" (tag -> QA of the ``REPORTED_ARMS`` present)}.
 
     Reads ``<ags>_supply_qa_<tag>.json``, ``<ags>_supply_zones_<tag>.geojson`` and ``<ags>_paid_share_<tag>.csv.gz``
-    of the pre-registered parameter tag and refuses (``SystemExit``) a missing town, a QA file whose parameters differ
-    from ``parameters`` and towns read from different extracts or snapshots.
+    of the tag of ``arm`` (default B: the parameters of owner decision 2 on the full inventory) and refuses
+    (``SystemExit``) a missing town, a QA file whose parameters are not the default ones, a variant or a counterfactual
+    (never release inputs) and towns read from different extracts or snapshots.
     """
     directory = Path(directory)
     municipalities = tuple(municipalities or tuple(EROSION_ZONES_FROM_CORE) + tuple(EROSION_QA_ONLY))
-    tag = parameters.tag()
-    expected = parameters.as_dict()
+    tag = arm.tag()
+    expected = arm.parameters.as_dict()
     supply = {}
     for ags in municipalities:
         qa_path = directory / f"{ags}_supply_qa_{tag}.json"
@@ -808,15 +857,22 @@ def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTE
         mismatch = {key: qa["parameters"].get(key) for key, value in expected.items()
                     if not math.isclose(float(qa["parameters"].get(key, math.nan)), value, rel_tol=1e-9)}
         if mismatch:
-            raise SystemExit(f"{qa_path}: parameters {mismatch} are not the pre-registered {expected}")
+            raise SystemExit(f"{qa_path}: parameters {mismatch} are not the default {expected} (owner decision 2)")
+        if qa.get("variant") != arm.variant.as_dict():
+            raise SystemExit(f"{qa_path}: variant {qa.get('variant')} is not the inventory of arm "
+                             f"{arm.variant.as_dict()}; the variants S and T are information arms, never release inputs")
         rule = gpd.read_file(directory / f"{ags}_supply_zones_{tag}.geojson")
         rule = (rule.set_crs("EPSG:4326") if rule.crs is None else rule).to_crs(cc.METRIC_CRS)
         raster = pd.read_csv(directory / f"{ags}_paid_share_{tag}.csv.gz")
         arms = {}
-        for arm in ss.SENSITIVITY_ARMS:
-            arm_path = directory / f"{ags}_supply_qa_{arm.tag()}.json"
-            if arm_path.is_file():
-                arms[arm.tag()] = json.loads(arm_path.read_text(encoding="utf-8"))
+        for reported in REPORTED_ARMS:
+            arm_path = directory / f"{ags}_supply_qa_{reported.tag()}.json"
+            if arm_path.is_file() and reported != arm:
+                document = json.loads(arm_path.read_text(encoding="utf-8"))
+                if document.get("variant") != reported.variant.as_dict() or document.get("counterfactual"):
+                    raise SystemExit(f"{arm_path}: its variant or counterfactual does not match the arm "
+                                     f"{reported.label}")
+                arms[reported.tag()] = document
         supply[ags] = {"qa": qa, "rule": rule, "raster": raster, "arms": arms}
     sources = {(entry["qa"]["extract"]["md5"], entry["qa"]["osm_timestamp"]) for entry in supply.values()}
     if len(sources) > 1:
@@ -826,37 +882,42 @@ def load_supply_inputs(directory, municipalities=None, parameters=ss.PRE_REGISTE
 
 def load_supply_counterfactuals(paths) -> list:
     """The QA files of POST HOC counterfactual runs (builder ``--counterfactual``) named on the command line; each
-    must name its counterfactual and carry the pre-registered parameters (only the tag reading differs)."""
+    must name its counterfactual and carry the default parameters of owner decision 2 or the pre-registered ones of
+    Amendment B (only the tag reading differs; the note states the share)."""
     documents = []
-    expected = ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
+    allowed = [ss.DEFAULT_SUPPLY_PARAMETERS.as_dict(), ss.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()]
     for path in paths or ():
         document = json.loads(Path(path).read_text(encoding="utf-8"))
         if not document.get("counterfactual"):
             raise SystemExit(f"{path} is not a counterfactual QA file")
-        if any(not math.isclose(float(document["parameters"].get(key, math.nan)), value, rel_tol=1e-9)
-               for key, value in expected.items()):
-            raise SystemExit(f"{path}: a counterfactual varies the tag reading only, not the pre-registered "
-                             f"parameters {expected}")
+        if not any(all(math.isclose(float(document["parameters"].get(key, math.nan)), value, rel_tol=1e-9)
+                       for key, value in expected.items()) for expected in allowed):
+            raise SystemExit(f"{path}: a counterfactual varies the tag reading only, not the parameters (default or "
+                             f"pre-registered: {allowed})")
         documents.append(dict(document, _path=Path(path).name))
     return documents
 
 
 def decisive_interpretation_text(entry: dict, counterfactuals=()) -> str:
-    """The Braunschweig note on the interpretation beyond B-a..B-f that decides B5: parking:<side>=yes read as street
-    parking (literal B-a) with its B5 numbers, and every POST HOC counterfactual run of it with its numbers."""
+    """The Braunschweig note on the interpretation beyond B-a..B-f that decided B5 at the pre-registered share 0.5:
+    parking:<side>=yes read as street parking (literal B-a) with the H1 numbers of this table, and every POST HOC
+    counterfactual run of it with its share and numbers."""
     qa = entry["qa"]
     validation, supply = qa.get("validation") or {}, qa["supply"]
-    text = (f"decisive interpretation beyond B-a..B-f (an implementation choice fixed before the result was known, not "
-            f"an owner ruling): parking:<side>=yes, the fallback value of the street parking scheme, is read as street "
-            f"parking, free without a fee tag (the literal B-a reading; {supply['free_street_sides_position_yes']} free "
-            f"sides with {supply['free_street_side_spaces_position_yes']:.0f} spaces in the query box): recall "
-            f"{validation.get('recall', math.nan):.3f}, precision {validation.get('precision', math.nan):.3f}")
+    text = (f"interpretation beyond B-a..B-f that decided B5 at the pre-registered share 0.5 (an implementation choice "
+            f"fixed before the result was known, not an owner ruling): parking:<side>=yes, the fallback value of the "
+            f"street parking scheme, is read as street parking, free without a fee tag (the literal B-a reading; "
+            f"{supply['free_street_sides_position_yes']} free sides with "
+            f"{supply['free_street_side_spaces_position_yes']:.0f} spaces in the query box); with it H1 at the share "
+            f"{qa['parameters']['share_threshold']:g}: recall {validation.get('recall', math.nan):.3f}, precision "
+            f"{validation.get('precision', math.nan):.3f}")
     cited = [document for document in counterfactuals if document["ags"] == qa["ags"]]
     for document in cited:
         other = document.get("validation") or {}
         passes = ss.passes_validation(other)
-        text += (f"; POST HOC counterfactual {document['counterfactual']} ({document['_path']}; those sides read as no "
-                 f"parking information, as lever 1 reads them): recall {other.get('recall', math.nan):.3f}, precision "
+        text += (f"; POST HOC counterfactual {document['counterfactual']} at the share "
+                 f"{document['parameters']['share_threshold']:g} ({document['_path']}; those sides read as no parking "
+                 f"information, as lever 1 reads them): recall {other.get('recall', math.nan):.3f}, precision "
                  f"{other.get('precision', math.nan):.3f}, which would {'pass' if passes else 'fail'} B5 - not a "
                  "validation and never a default; the owner decides the tag meaning in the Amendment-B ADR")
     if not cited:
@@ -865,8 +926,8 @@ def decisive_interpretation_text(entry: dict, counterfactuals=()) -> str:
 
 
 def supply_b5(supply: dict) -> bool:
-    """The pre-registered gate B5 re-applied to the Braunschweig metrics (``supply_share.passes_validation``); refuses
-    inputs without metrics or whose recorded decision contradicts them."""
+    """H1: the B5 gate re-applied to the Braunschweig metrics of the default parameters
+    (``supply_share.passes_validation``); refuses inputs without metrics or whose recorded decision contradicts them."""
     entry = supply.get(BS_AGS)
     validation = (entry or {}).get("qa", {}).get("validation")
     if not validation:
@@ -876,9 +937,49 @@ def supply_b5(supply: dict) -> bool:
     if bool(validation.get("passes")) != passed:
         raise SystemExit(f"{BS_AGS}: the recorded B5 decision {validation.get('passes')} contradicts recall "
                          f"{validation.get('recall')} and precision {validation.get('precision')}")
-    print(f"B5 (pre-registered, minimum {ss.VALIDATION_MINIMUM:.2f}): recall {validation['recall']:.3f}, precision "
-          f"{validation['precision']:.3f}: {'passed, B6 applies' if passed else 'FAILED, nothing is applied'}")
+    share = entry["qa"]["parameters"]["share_threshold"]
+    print(f"H1 (B5 at the share {share:g} of owner decision 2, POST HOC; minimum {ss.VALIDATION_MINIMUM:.2f}): recall "
+          f"{validation['recall']:.3f}, precision {validation['precision']:.3f}: {'passed' if passed else 'FAILED'}")
     return passed
+
+
+def holdout_blocks(supply: dict, tag: Optional[str] = None) -> dict:
+    """ags -> the holdout block of every holdout town (``supply_share.HOLDOUT_REFERENCE_ZONES``) in ``supply``, of the
+    loaded arm (``tag`` None) or of the reported arm ``tag``; towns without the block are left out."""
+    blocks = {}
+    for ags in ss.HOLDOUT_REFERENCE_ZONES:
+        entry = supply.get(ags)
+        qa = None if entry is None else (entry["qa"] if tag is None else entry["arms"].get(tag))
+        if qa is not None and qa.get("holdout"):
+            blocks[ags] = qa["holdout"]
+    return blocks
+
+
+def supply_h2(supply: dict) -> dict:
+    """H2: the pre-registered holdout check pooled from the holdout overlaps of the town QA files
+    (``supply_share.holdout_pooled_metrics``); ``SystemExit`` when a holdout town or its overlaps are missing (H2 is
+    undefined then, never passed)."""
+    try:
+        pooled = ss.holdout_pooled_metrics(holdout_blocks(supply))
+    except ValueError as error:
+        raise SystemExit(f"H2 cannot be computed: {error}; run the builder for every holdout town with "
+                         "--holdout-zones") from error
+    print(f"H2 (pre-registered holdout check, minimums {ss.HOLDOUT_POOLED_MINIMUM:.2f} pooled and "
+          f"{ss.HOLDOUT_TOWN_RECALL_MINIMUM:.2f} per town): pooled recall {pooled['pooled_recall']:.3f}, pooled precision "
+          f"{pooled['pooled_precision']:.3f}, smallest town recall {pooled['minimum_town_recall']:.3f}: "
+          f"{'passed' if pooled['passes'] else 'FAILED'}")
+    return pooled
+
+
+def supply_gate(supply: dict) -> dict:
+    """The application gate of owner decision 2: H1 (``supply_b5``) and H2 (``supply_h2``) must both pass; returns
+    {"h1", "h1_passed", "h2", "h2_passed", "passed"}."""
+    h1_passed = supply_b5(supply)
+    h2 = supply_h2(supply)
+    gate = {"h1": supply[BS_AGS]["qa"]["validation"], "h1_passed": h1_passed, "h2": h2, "h2_passed": bool(h2["passes"]),
+            "passed": bool(h1_passed and h2["passes"])}
+    print(f"application gate (H1 and H2): {'passed, B6 applies' if gate['passed'] else 'FAILED, nothing is applied'}")
+    return gate
 
 
 def supply_rule(entry: Optional[dict]):
@@ -904,7 +1005,9 @@ def supply_note(qa: dict, *, replaces: str, assignment: str = "") -> str:
             f"elements ({classes['paid']} paid, {classes['restricted']} restricted, {classes['free']} free, "
             f"{classes['excluded']} excluded), {s['usable_spaces']:.0f} usable spaces, "
             f"{100.0 * (heuristic if heuristic is not None else math.nan):.1f} % of them from the capacity heuristic "
-            f"B-d. Pre-registered validation B5 passed in Braunschweig. " + (assignment + " " if assignment else "")
+            f"B-d. The share threshold {p['share_threshold']:g} is the owner's POST HOC choice (owner decision 2, the "
+            f"pre-registered value was 0.5); H1 (B5 at that share, Braunschweig) and the pre-registered holdout check H2 "
+            f"passed. " + (assignment + " " if assignment else "")
             + replaces + f" QA row {qa['ags']} of parking_zones_2026_supply_share_qa.csv.")
 
 
@@ -919,10 +1022,11 @@ def supply_zone(zone_id, ags, geometry, source_url, qa, *, replaces, assignment=
                        minimum_usable_spaces=float(p["minimum_usable_spaces"]))
 
 
-def supply_replacement(zone_id, ags, url, what, supply: dict, b5_passed: bool) -> Optional[dict]:
+def supply_replacement(zone_id, ags, url, what, supply: dict, gate_passed: bool) -> Optional[dict]:
     """The osm_supply_majority polygon that replaces the v1 centre approximation ``zone_id`` (B6: Goslar,
-    Wolfenbuettel, Gifhorn), or None when B5 failed, ``ags`` may not replace polygons or its rule is empty."""
-    if not b5_passed or EROSION_ZONES_FROM_CORE.get(ags) != zone_id:
+    Wolfenbuettel, Gifhorn), or None when the application gate (H1 and H2) failed, ``ags`` may not replace polygons or
+    its rule is empty."""
+    if not gate_passed or EROSION_ZONES_FROM_CORE.get(ags) != zone_id:
         return None
     entry = supply.get(ags)
     rule = supply_rule(entry)
@@ -952,24 +1056,80 @@ def cross_check_text(cross: dict, extract_timestamp: str) -> str:
             f"{cross['overpass_osm_timestamp']}")
 
 
-def sensitivity_text(entry: dict, *, with_b5: bool) -> str:
-    """The QA column sensitivity: per arm the rule area and, in Braunschweig, recall and precision."""
-    clauses = []
-    for arm, label in zip(ss.SENSITIVITY_ARMS, SENSITIVITY_LABELS):
-        qa = entry["arms"].get(arm.tag())
-        if qa is None:
-            clauses.append(f"{label}: not run")
-            continue
-        text = f"{label}: rule {qa['rule']['area_m2']:.0f} m2 in {qa['rule']['parts']} parts"
-        if with_b5 and qa.get("validation"):
-            text += f", recall {qa['validation']['recall']:.3f}, precision {qa['validation']['precision']:.3f}"
-        clauses.append(text)
-    return "; ".join(clauses) + " (information only)"
+def pooled_holdout_by_arm(supply: dict) -> dict:
+    """tag -> the pooled H2 of every reported arm whose QA files exist for every holdout town, else None."""
+    pooled = {}
+    for arm in REPORTED_ARMS:
+        blocks = holdout_blocks(supply, arm.tag())
+        pooled[arm.tag()] = (ss.holdout_pooled_metrics(blocks) if len(blocks) == len(ss.HOLDOUT_REFERENCE_ZONES)
+                             else None)
+    return pooled
+
+
+def _gate_word(passed: bool) -> str:
+    return "passes" if passed else "fails"
+
+
+def arm_text(arm, qa: Optional[dict], *, ags: str, pooled: Optional[dict]) -> str:
+    """One arm in the QA columns sensitivity and variant_arms: the rule area; in Braunschweig H1; in a holdout town
+    its holdout recall (and precision); for T the elements the payment evidence turns paid; on the Braunschweig row
+    the pooled H2 of the arm."""
+    if qa is None:
+        return f"{arm.label}: not run"
+    parts = int(qa["rule"]["parts"])
+    text = f"{arm.label}: rule {qa['rule']['area_m2']:.0f} m2 in {parts} part{'' if parts == 1 else 's'}"
+    validation = qa.get("validation")
+    if ags == BS_AGS and validation:
+        text += (f", H1 recall {validation['recall']:.3f}, precision {validation['precision']:.3f} "
+                 f"({_gate_word(ss.passes_validation(validation))})")
+    holdout = qa.get("holdout")
+    if holdout:
+        text += f", holdout recall {holdout['recall']:.3f}" + (
+            f", precision {holdout['precision']:.3f}" if holdout.get("precision") is not None else "")
+    payment = qa.get("payment_evidence") or {}
+    if payment.get("converted") is not None:
+        text += (f", T turns {sum(payment['converted'].values())} elements ({payment['converted_spaces']:.0f} spaces) "
+                 "paid")
+    if ags == BS_AGS:
+        text += ("; H2 not computed (a holdout town was not run)" if pooled is None else
+                 f"; H2 pooled recall {pooled['pooled_recall']:.3f}, pooled precision {pooled['pooled_precision']:.3f}, "
+                 f"smallest town recall {pooled['minimum_town_recall']:.3f} ({_gate_word(pooled['passes'])})")
+    return text
+
+
+def arms_text(entry: dict, arms, *, ags: str, pooled: dict, closing: str) -> str:
+    """The clauses of ``arms`` (``arm_text``) for one town, joined, with the ``closing`` remark."""
+    return " | ".join(arm_text(arm, entry["arms"].get(arm.tag()), ags=ags, pooled=pooled.get(arm.tag()))
+                      for arm in arms) + f" ({closing})"
+
+
+def payment_evidence_text(entry: dict) -> str:
+    """The note on the payment evidence of variant T in the town's query box and what T at the default share turns
+    paid (information only)."""
+    evidence = (entry["qa"].get("payment_evidence") or {}).get("evidence")
+    if not evidence:
+        return "payment evidence of variant T: not read (inventory before Task 1c)"
+    text = (f"payment evidence of variant T in the query box: {evidence['ticket_machines']} parking ticket machines, "
+            f"{evidence['app_payment_elements']} elements with an app-payment tag ({evidence['app_payment_parking_objects']} "
+            f"on parking objects, {evidence['app_payment_other_objects']} on other elements, "
+            f"{evidence['apple_pay_only_elements']} only through payment:apple_pay)")
+    payment = (entry["arms"].get(PAYMENT_EVIDENCE_ARM.tag()) or {}).get("payment_evidence") or {}
+    if payment.get("converted") is not None:
+        by = payment["converted_by"]
+        text += (f"; T within {payment['distance_m']:.0f} m turns {payment['converted']['street_side']} street sides, "
+                 f"{payment['converted']['street_side_area']} street-side areas and {payment['converted']['lot']} lots "
+                 f"({payment['converted_spaces']:.0f} spaces) paid: {by['ticket_machine']} by a ticket machine, "
+                 f"{by['app_payment_parking']} by an app-payment tag on a parking object, {by['app_payment_other']} by "
+                 f"one on another element, {by['own_app_payment_tag']} by their own app-payment tag (information only)")
+    return text
 
 
 def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_zones, decision: str,
-                  note: str) -> dict:
-    """One row of the committed supply-share QA table (``supply_share.SUPPLY_SHARE_QA_COLUMNS``)."""
+                  note: str, gate: Optional[dict] = None, pooled: Optional[dict] = None) -> dict:
+    """One row of the committed supply-share QA table (``supply_share.SUPPLY_SHARE_QA_COLUMNS``); ``gate``
+    (``supply_gate``) fills the H1 and H2 columns of the Braunschweig row, ``pooled`` (``pooled_holdout_by_arm``) the
+    arms of that row."""
+    pooled = pooled or {}
     qa = entry["qa"]
     p, s, cross, raster = qa["parameters"], qa["supply"], qa["cross_check"], qa["raster"]
     compared = qa.get("reference") or {}
@@ -998,25 +1158,69 @@ def supply_qa_row(ags: str, entry: dict, *, role: str, reference: str, applied_z
         "reference": reference, "rule_share_inside_reference": _share(compared.get("core_share_inside_reference")),
         "reference_share_covered_by_rule": _share(compared.get("reference_share_covered")),
         "largest_outline_distance_m": _number(compared.get("largest_outline_distance_m"), 1),
-        "sensitivity": sensitivity_text(entry, with_b5=ags == BS_AGS), "applied": "true" if applied_zones else "false",
+        "sensitivity": arms_text(entry, ss.AMENDMENT_B_ARMS, ags=ags, pooled=pooled, closing=(
+            "Amendment B arms around its pre-registered share 0.5, information only")),
+        "variant_arms": arms_text(entry, ss.VARIANT_ARMS, ags=ags, pooled=pooled, closing=(
+            "information arms of owner decisions 2 and 3, never applied")),
+        "applied": "true" if applied_zones else "false",
         "zone_ids": ";".join(applied_zones), "decision": decision, "note": note})
     for name in ss.SUPPLY_CLASSES:
         row[f"{name}_elements"] = str(int(s["elements_by_class"][name]))
         row[f"overpass_{name}_elements"] = str(sum(int(cross["overpass"][kind][name]) for kind in ss.ELEMENT_KINDS))
     for name in ss.USABLE_CLASSES:
         row[f"{name}_spaces"] = _number(s["spaces_by_class"][name], 1)
+    evidence = (qa.get("payment_evidence") or {}).get("evidence")
+    if evidence:
+        row.update({"ticket_machines": str(int(evidence["ticket_machines"])),
+                    "app_payment_elements": str(int(evidence["app_payment_elements"]))})
+    converted = (entry["arms"].get(PAYMENT_EVIDENCE_ARM.tag()) or {}).get("payment_evidence") or {}
+    if converted.get("converted") is not None:
+        row.update({"payment_evidence_paid_elements": str(sum(int(value) for value in converted["converted"].values())),
+                    "payment_evidence_paid_spaces": _number(converted["converted_spaces"], 1)})
+    holdout = qa.get("holdout")
+    if ags in ss.HOLDOUT_REFERENCE_ZONES and holdout:
+        row.update({"holdout_references": ";".join(ss.HOLDOUT_REFERENCE_ZONES[ags]),
+                    "holdout_reference_area_m2": _number(holdout["reference_area_m2"], 1),
+                    "holdout_rule_inside_reference_m2": _number(holdout["rule_inside_reference_m2"], 1),
+                    "holdout_recall": _share(holdout["recall"])})
+        if ags in ss.HOLDOUT_PRECISION_TOWNS:
+            row.update({"holdout_rule_inside_query_box_m2": _number(holdout["rule_inside_query_box_m2"], 1),
+                        "holdout_precision": _share(holdout["precision"])})
     if ags == BS_AGS and qa.get("validation"):
         validation = qa["validation"]
         row.update({"b5_recall": _share(validation["recall"]), "b5_precision": _share(validation["precision"]),
                     "b5_passed": "true" if ss.passes_validation(validation) else "false"})
+    if ags == BS_AGS and gate is not None:
+        h2 = gate["h2"]
+        row.update({"h2_pooled_recall": _share(h2["pooled_recall"]), "h2_pooled_precision": _share(h2["pooled_precision"]),
+                    "h2_minimum_town_recall": _share(h2["minimum_town_recall"]),
+                    "h2_passed": "true" if gate["h2_passed"] else "false"})
     return row
 
 
-def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool, counterfactuals=()) -> list:
-    """One supply-share QA row per town of ``supply`` (``EROSION_ZONES_FROM_CORE``, ``EROSION_QA_ONLY`` order);
-    ``counterfactuals`` (``load_supply_counterfactuals``) are cited in the Braunschweig note."""
+def gate_text(gate: dict) -> str:
+    """The Braunschweig note on the application gate of owner decision 2: H1 and H2 with their numbers and bounds."""
+    h1, h2 = gate["h1"], gate["h2"]
+    towns = ", ".join(f"{ags} {value:.3f}" for ags, value in h2["town_recall"].items())
+    return (f"H1 (B5 recomputed with the owner's POST HOC share threshold of this table, owner decision 2; recall and "
+            f"precision >= {ss.VALIDATION_MINIMUM:.2f}, a set value, not a law): recall {h1['recall']:.3f}, precision "
+            f"{h1['precision']:.3f}: H1 {'passed' if gate['h1_passed'] else 'failed'}; H2 (the holdout check, "
+            f"pre-registered before any holdout overlap at that share was computed): pooled recall "
+            f"{h2['pooled_recall']:.3f} ({h2['rule_inside_reference_m2']:.0f} of {h2['reference_area_m2']:.0f} m2 of "
+            f"every holdout reference), pooled precision {h2['pooled_precision']:.3f} "
+            f"({h2['precision_rule_inside_reference_m2']:.0f} of {h2['rule_inside_query_box_m2']:.0f} m2 of the rule in "
+            f"the query boxes of the four towns), minimum {ss.HOLDOUT_POOLED_MINIMUM:.2f} each; town recall {towns} "
+            f"(minimum {ss.HOLDOUT_TOWN_RECALL_MINIMUM:.2f}, ASSUMPTION Q6): H2 {'passed' if gate['h2_passed'] else 'failed'}; "
+            f"the rule is applied only when both pass")
+
+
+def supply_qa_rows(supply: dict, zones: list, pieces: list, gate: dict, counterfactuals=()) -> list:
+    """One supply-share QA row per town of ``supply`` (``EROSION_ZONES_FROM_CORE``, ``EROSION_QA_ONLY`` order), with
+    the application gate ``gate`` (``supply_gate``: H1 and H2) and the reported arms; ``counterfactuals``
+    (``load_supply_counterfactuals``) are cited in the Braunschweig note."""
     by_id = {z["zone_id"]: z for z in zones}
     order = [ags for ags in list(EROSION_ZONES_FROM_CORE) + list(EROSION_QA_ONLY) if ags in supply]
+    pooled = pooled_holdout_by_arm(supply)
     rows = []
     for ags in order:
         entry = supply[ags]
@@ -1026,24 +1230,31 @@ def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool, cou
         zone_id = EROSION_ZONES_FROM_CORE.get(ags) or EROSION_QA_ONLY.get(ags)
         if role == "qa_only":
             decision = "qa_only"
-        elif not b5_passed:
-            decision = "b5_failed"
+        elif not gate["passed"]:
+            decision = "gate_failed"
         else:
             decision = "applied" if applied else "no_rule_polygon"
         notes = []
         if ags == BS_AGS:
             reference = ANNEX_REFERENCE
-            validation = entry["qa"].get("validation") or {}
-            notes.append(f"B5 (pre-registered: recall and precision >= {ss.VALIDATION_MINIMUM:.2f} with the defaults): "
-                         f"recall {validation.get('recall', math.nan):.3f}, precision "
-                         f"{validation.get('precision', math.nan):.3f}: {'passed' if b5_passed else 'failed'}")
+            notes.append(gate_text(gate))
             notes.append(decisive_interpretation_text(entry, counterfactuals))
         elif role == "zones_from_rule":
             reference = f"v1 polygon {zone_id} (centre_approximation, replaced where the rule is applied)"
         else:
             reference = f"v1 polygon {zone_id} ({by_id[zone_id]['geometry_source'] if zone_id in by_id else 'absent'})"
-        if decision == "b5_failed":
-            notes.append("B6 not applied in any town because B5 failed in Braunschweig; " + (
+        holdout = entry["qa"].get("holdout")
+        if holdout:
+            notes.append("H2 references " + ", ".join(
+                f"{zone_id_} {values['rule_inside_m2']:.0f} of {values['area_m2']:.0f} m2 inside the rule"
+                for zone_id_, values in holdout["references"].items()) + f": recall {holdout['recall']:.3f}" + (
+                f", precision {holdout['precision']:.3f} ({holdout['rule_inside_reference_m2']:.0f} of "
+                f"{holdout['rule_inside_query_box_m2']:.0f} m2 of the rule in the query box)"
+                if holdout.get("precision") is not None else " (recall only)"))
+        if decision == "gate_failed":
+            failed = " and ".join(name for name, passed in (("H1", gate["h1_passed"]), ("H2", gate["h2_passed"]))
+                                  if not passed)
+            notes.append(f"B6 not applied in any town because {failed} failed; " + (
                 "ParkGO zone II and the southern part of zone Ia stay unzoned" if ags == BS_AGS else
                 f"the v1 centre approximation {zone_id} stays"))
         elif decision == "applied" and ags == BS_AGS:
@@ -1053,7 +1264,7 @@ def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool, cou
         elif decision == "applied":
             notes.append(f"the rule polygons replace the v1 centre approximation {zone_id} (tariff row unchanged)")
         elif decision == "no_rule_polygon":
-            notes.append("B5 passed but no rule polygon is left to apply" + (
+            notes.append("H1 and H2 passed but no rule polygon is left to apply" + (
                 ": " + piece_assignment_text(pieces, float(entry["qa"]["parameters"]["minimum_island_m2"]))
                 if ags == BS_AGS and pieces else f"; the v1 polygon {zone_id} stays"))
         else:
@@ -1067,8 +1278,9 @@ def supply_qa_rows(supply: dict, zones: list, pieces: list, b5_passed: bool, cou
                      f"carry 0 spaces, {supply_numbers['multi_storey_lots_without_levels']} of "
                      f"{supply_numbers['multi_storey_lots']} multi-storey car parks count one level (no levels tag), "
                      f"{supply_numbers['capacity_tags_invalid']} capacity tags are no whole number (heuristic used)")
+        notes.append(payment_evidence_text(entry))
         rows.append(supply_qa_row(ags, entry, role=role, reference=reference, applied_zones=applied, decision=decision,
-                                  note="; ".join(notes) + "."))
+                                  note="; ".join(notes) + ".", gate=gate if ags == BS_AGS else None, pooled=pooled))
     return rows
 
 
@@ -1099,9 +1311,10 @@ def paid_share_provenance(supply: dict) -> list:
     lines = [f"Source: the Geofabrik extract {extract['file']} ({extract.get('bytes', 'unknown')} bytes, MD5 "
              f"{extract['md5']} checked against the Geofabrik MD5 file, SHA-256 {extract.get('sha256', 'unknown')}; "
              f"OSM snapshot {first['osm_timestamp']}), read with the GDAL OSM driver.",
-             f"Parameters (pre-registered, spec Amendment B): cells of {p['cell_m']:.0f} m, W = {p['walk_m']:.0f} m, "
+             f"Parameters (spec Amendment B): cells of {p['cell_m']:.0f} m, W = {p['walk_m']:.0f} m, "
              f"minimum_usable_spaces = {p['minimum_usable_spaces']:.0f} (B-e); the share threshold "
-             f"{p['share_threshold']:.2f} of the zone rule B4 is not applied to this file."]
+             f"{p['share_threshold']:.2f} of the zone rule B4 (owner decision 2, a POST HOC change of the pre-registered "
+             f"0.50) is not applied to this file."]
     for ags in sorted(supply):
         qa = supply[ags]["qa"]
         lines.append(f"{ags} {MUNICIPALITY_NAMES.get(ags, ags)}: query box {qa['bbox']} (south, west, north, east), "
@@ -1148,7 +1361,7 @@ def main(argv=None) -> int:
                         help="v2 lever 1: QA file of a --all-kerbside-streets-regulated run, cited in the note")
     parser.add_argument("--supply-share-dir", help="v2 Amendment B: directory with <ags>_supply_qa_<tag>.json, "
                                                    "<ags>_supply_zones_<tag>.geojson and <ags>_paid_share_<tag>.csv.gz "
-                                                   "of the pre-registered parameters")
+                                                   "of the default arm B (owner decision 2) and the reported arms")
     parser.add_argument("--supply-qa-out", help="v2 Amendment B: the QA table to write "
                                                 "(parking_zones_2026_supply_share_qa.csv)")
     parser.add_argument("--paid-share-out", help="v2 Amendment B7: the release of the classified cells to write "
@@ -1173,13 +1386,14 @@ def main(argv=None) -> int:
         annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
 
     # ---------------------------------------------------------------- v2 Amendment B: majority rule (issue #436)
-    supply, b5_passed, supply_counterfactuals = {}, False, []
+    supply, gate, supply_counterfactuals = {}, None, []
     if args.supply_share_dir:
         supply = load_supply_inputs(args.supply_share_dir)
         supply_counterfactuals = load_supply_counterfactuals(args.supply_counterfactual_qa)
-        b5_passed = supply_b5(supply)
+        gate = supply_gate(supply)
         if annex_zones is None:
             annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
+    gate_passed = bool(gate and gate["passed"])
 
     responses = {ags: cc.overpass_response(args.raw_overpass, ags)
                  for ags in ("03101000", "03102000", "03103000", "03154028", "03157006")}
@@ -1374,7 +1588,7 @@ def main(argv=None) -> int:
              "Gifhorn centre around the pedestrian zone Steinweg (Schillerplatz, Torstrasse) with the municipal car parks "
              "Hindenburgstrasse and Schottische Muehle (access Cardenap): convex hull of these car-network ways")):
         replacement = erosion_replacement(zone_id, ags, url, what, erosion)
-        supplied = supply_replacement(zone_id, ags, url, what, supply, b5_passed)
+        supplied = supply_replacement(zone_id, ags, url, what, supply, gate_passed)
         if replacement is not None and supplied is not None:
             raise SystemExit(f"{zone_id}: an accepted erosion core and the supply rule would both replace it")
         replacement = replacement if replacement is not None else supplied
@@ -1403,7 +1617,7 @@ def main(argv=None) -> int:
         print("Braunschweig core pieces:", piece_assignment_text(
             pieces, float(erosion[BS_AGS]["qa"]["parameters"]["minimum_island_m2"])))
     supply_pieces = []
-    bs_rule = supply_rule(supply.get(BS_AGS)) if b5_passed else None
+    bs_rule = supply_rule(supply.get(BS_AGS)) if gate_passed else None
     if bs_rule is not None:
         records, supply_pieces = assign_braunschweig_pieces(bs_rule, zones, annex_zones, supply[BS_AGS]["qa"],
                                                             zone_factory=supply_zone, noun="rule polygons")
@@ -1429,7 +1643,7 @@ def main(argv=None) -> int:
     if args.erosion_dir:
         write_qa_table(args.qa_out, qa_table_rows(erosion, zones, pieces, counterfactuals))
     if args.supply_share_dir:
-        write_supply_share_qa(args.supply_qa_out, supply_qa_rows(supply, zones, supply_pieces, b5_passed,
+        write_supply_share_qa(args.supply_qa_out, supply_qa_rows(supply, zones, supply_pieces, gate,
                                                                  supply_counterfactuals))
         write_paid_share_release(args.paid_share_out, paid_share_release(supply), paid_share_provenance(supply))
     return 0

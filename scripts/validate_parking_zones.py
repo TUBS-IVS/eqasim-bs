@@ -13,11 +13,13 @@ acceptance rule Q4 (``braunschweig.parking.zone_geometry.core_acceptance``) re-a
 response. The QA table of the majority rule over the parking supply (``--supply-qa-path``,
 ``parking_zones_2026_supply_share_qa.csv``; spec Amendment B; required as soon as a polygon has geometry_source
 ``osm_supply_majority``): ``braunschweig.parking.supply_share.validate_supply_share_qa`` against the polygons, the
-pre-registered parameters on every row and the pre-registered gate B5 re-applied to the Braunschweig row (the recorded
-``b5_passed`` and every decision must follow from recall and precision); and, when present, the release of the
-classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``, ``supply_share.load_paid_share_release``).
-Prints counts per zone type, geometry source (with the area mix), fee-window source and municipality, the register
-status counts, the QA decisions and the B5 result; exits 1 on any violation, 0 otherwise.
+default parameters of owner decision 2 (share 0.3) on every row and the application gate re-applied: H1 (the B5 gate
+on the Braunschweig recall and precision) and H2 (the pre-registered holdout check recomputed from the holdout overlaps
+of the town rows); the recorded ``b5_passed`` and ``h2_passed`` and every decision must follow from them; and, when
+present, the release of the classified cells (``--paid-share-path``, ``parking_paid_share_2026.csv.gz``,
+``supply_share.load_paid_share_release``). Prints counts per zone type, geometry source (with the area mix),
+fee-window source and municipality, the register status counts, the QA decisions and the H1 and H2 results; exits 1 on
+any violation, 0 otherwise.
 
 Usage::
 
@@ -99,33 +101,85 @@ def check_zone_qa(qa, zones, tariffs) -> None:
                          + "\n  ".join(problems))
 
 
+#: Recorded H2 shares (6 decimals, from unrounded areas) may differ this much from the shares recomputed from the
+#: recorded areas (0.1 m2).
+H2_RECOMPUTE_TOLERANCE = 1e-5
+
+
+def recompute_holdout(qa) -> tuple:
+    """(pooled H2, problems): H2 recomputed from the holdout overlaps of the town rows
+    (``supply_share.holdout_pooled_metrics``) and every town share or recorded pooled value that contradicts it."""
+    rows = qa.set_index("ags")
+    problems, blocks = [], {}
+    for ags in supply_share.HOLDOUT_REFERENCE_ZONES:
+        if ags not in rows.index:
+            problems.append(f"ags {ags}: the holdout town is missing, H2 cannot be recomputed")
+            continue
+        row = rows.loc[ags]
+        framed = ags in supply_share.HOLDOUT_PRECISION_TOWNS
+        blocks[ags] = {"references": dict.fromkeys(zone_id for zone_id in row["holdout_references"].split(";")),
+                       "reference_area_m2": float(row["holdout_reference_area_m2"]),
+                       "rule_inside_reference_m2": float(row["holdout_rule_inside_reference_m2"]),
+                       "rule_inside_query_box_m2": float(row["holdout_rule_inside_query_box_m2"]) if framed else None}
+        shares = {"holdout_recall": blocks[ags]["rule_inside_reference_m2"] / blocks[ags]["reference_area_m2"]}
+        if framed:
+            shares["holdout_precision"] = (blocks[ags]["rule_inside_reference_m2"]
+                                           / blocks[ags]["rule_inside_query_box_m2"])
+        for column, value in shares.items():
+            if not math.isclose(float(row[column]), value, abs_tol=H2_RECOMPUTE_TOLERANCE):
+                problems.append(f"ags {ags}: {column} {row[column]} but {value:.6f} recomputed from the holdout "
+                                "overlaps of its row")
+    if problems:
+        return None, problems
+    pooled = supply_share.holdout_pooled_metrics(blocks)
+    gate_row = rows.loc[supply_share.B5_MUNICIPALITY_AGS]
+    for column, key in (("h2_pooled_recall", "pooled_recall"), ("h2_pooled_precision", "pooled_precision"),
+                        ("h2_minimum_town_recall", "minimum_town_recall")):
+        if not math.isclose(float(gate_row[column]), pooled[key], abs_tol=H2_RECOMPUTE_TOLERANCE):
+            problems.append(f"ags {supply_share.B5_MUNICIPALITY_AGS}: {column} {gate_row[column]} but {pooled[key]:.6f} "
+                            "recomputed from the holdout overlaps of the town rows")
+    return pooled, problems
+
+
 def check_supply_share_qa(qa, zones, tariffs) -> None:
-    """``supply_share.validate_supply_share_qa`` plus the pre-registered parameters on every row (a sensitivity arm
-    never stands in for the pre-registered run) and the pre-registered gate B5 re-applied: the recorded ``b5_passed``
-    of the Braunschweig row and the decision of every ``zones_from_rule`` row must follow from its recall and
-    precision; raise ``ValueError``."""
+    """``supply_share.validate_supply_share_qa`` plus the default parameters of owner decision 2 on every row (an arm
+    never stands in for B) and the application gate re-applied: H1 (the B5 gate on the Braunschweig recall and
+    precision) and H2 (recomputed from the holdout overlaps of the town rows, ``recompute_holdout``); the recorded
+    ``b5_passed`` and ``h2_passed`` and the decision of every ``zones_from_rule`` row must follow from them; raise
+    ``ValueError``."""
     supply_share.validate_supply_share_qa(qa, zones, tariffs)
     problems = []
-    pre_registered = supply_share.PRE_REGISTERED_SUPPLY_PARAMETERS.as_dict()
+    default = supply_share.DEFAULT_SUPPLY_PARAMETERS.as_dict()
     for _, row in qa.iterrows():
         for column, parameter in supply_share.QA_PARAMETER_COLUMNS.items():
-            expected = pre_registered[parameter]
+            expected = default[parameter]
             if not math.isclose(float(row[column]), expected, rel_tol=1e-9):
-                problems.append(f"ags {row['ags']}: {column} = {row[column]} is not the pre-registered {expected:g}")
+                problems.append(f"ags {row['ags']}: {column} = {row[column]} is not the default {expected:g} (owner "
+                                "decision 2)")
     b5 = qa[qa["ags"] == supply_share.B5_MUNICIPALITY_AGS].iloc[0]
-    passed = supply_share.passes_validation({"recall": float(b5["b5_recall"]), "precision": float(b5["b5_precision"])})
-    gate = "true" if passed else "false"
+    h1_passed = supply_share.passes_validation({"recall": float(b5["b5_recall"]),
+                                                "precision": float(b5["b5_precision"])})
+    gate = "true" if h1_passed else "false"
     if b5["b5_passed"] != gate:
-        problems.append(f"ags {b5['ags']}: b5_passed {b5['b5_passed']!r} but the B5 gate gives {gate!r} (recall "
+        problems.append(f"ags {b5['ags']}: b5_passed {b5['b5_passed']!r} but the H1 gate gives {gate!r} (recall "
                         f"{b5['b5_recall']}, precision {b5['b5_precision']}, minimum "
                         f"{supply_share.VALIDATION_MINIMUM:.2f})")
-    allowed = ("applied", "no_rule_polygon") if passed else ("b5_failed",)
+    pooled, holdout_problems = recompute_holdout(qa)
+    problems += holdout_problems
+    h2_passed = bool(pooled and pooled["passes"])
+    gate = "true" if h2_passed else "false"
+    if pooled is not None and b5["h2_passed"] != gate:
+        problems.append(f"ags {b5['ags']}: h2_passed {b5['h2_passed']!r} but the H2 gate gives {gate!r} (pooled recall "
+                        f"{pooled['pooled_recall']:.6f}, pooled precision {pooled['pooled_precision']:.6f}, smallest town "
+                        f"recall {pooled['minimum_town_recall']:.6f})")
+    passed = h1_passed and h2_passed
+    allowed = ("applied", "no_rule_polygon") if passed else ("gate_failed",)
     for _, row in qa[qa["role"] == "zones_from_rule"].iterrows():
         if row["decision"] not in allowed:
-            problems.append(f"ags {row['ags']}: decision {row['decision']!r} although B5 "
+            problems.append(f"ags {row['ags']}: decision {row['decision']!r} although the gate (H1 and H2) "
                             f"{'passed' if passed else 'failed'} (allowed {list(allowed)})")
     if problems:
-        raise ValueError("supply-share QA table contradicts the pre-registered parameters or the B5 gate:\n  "
+        raise ValueError("supply-share QA table contradicts the default parameters or the H1 / H2 gates:\n  "
                          + "\n  ".join(problems))
 
 
@@ -204,8 +258,10 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     else:
         b5 = supply_qa[supply_qa["ags"] == supply_share.B5_MUNICIPALITY_AGS].iloc[0]
         decisions = supply_qa["decision"].value_counts().reindex(supply_share.SUPPLY_SHARE_DECISIONS, fill_value=0)
-        print(f"[parking-validate] supply-share QA: {len(supply_qa)} towns, B5 recall {b5['b5_recall']}, precision "
-              f"{b5['b5_precision']}, passed {b5['b5_passed']}; decision " + ", ".join(
+        print(f"[parking-validate] supply-share QA: {len(supply_qa)} towns at the share {b5['share_threshold']}, H1 "
+              f"recall {b5['b5_recall']}, precision {b5['b5_precision']}, passed {b5['b5_passed']}; H2 pooled recall "
+              f"{b5['h2_pooled_recall']}, pooled precision {b5['h2_pooled_precision']}, smallest town recall "
+              f"{b5['h2_minimum_town_recall']}, passed {b5['h2_passed']}; decision " + ", ".join(
                   f"{name} {count}" for name, count in decisions.items()))
     if release is not None:
         counts = release["municipality_ags"].value_counts().sort_index()
