@@ -56,6 +56,8 @@ _COLUMN_OF_FIELD = {**{field: column for column, field in EURO_COLUMNS.items()},
                     **{column: column for column in MINUTE_COLUMNS}}
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+#: The keys of one ``sources`` entry; the Java ``ParkingTariffs`` reader accepts exactly these (``SOURCE_FIELDS``).
+SOURCE_KEYS = ("source_id", "path", "sha256")
 
 
 @dataclass(frozen=True)
@@ -265,9 +267,14 @@ def _check_sources(sources: Sequence[Mapping]) -> list[dict]:
         raise ValueError("at least one source is required: the model must name the files it was built from")
     checked, seen = [], set()
     for source in sources:
-        for key in ("source_id", "path", "sha256"):
+        for key in SOURCE_KEYS:
             if not isinstance(source.get(key), str) or not source[key]:
                 raise ValueError(f"source {dict(source)} needs a non-empty text {key!r}")
+        unknown = sorted(set(source) - set(SOURCE_KEYS), key=str)
+        if unknown:
+            raise ValueError(f"source {source['source_id']!r} has the unknown key(s) {', '.join(map(repr, unknown))}; "
+                             f"an entry has exactly the keys {list(SOURCE_KEYS)}, the only ones the Java "
+                             "ParkingTariffs reader accepts")
         if not _SHA256_HEX.fullmatch(source["sha256"]):
             raise ValueError(f"source {source['source_id']!r}: sha256 must be 64 lowercase hex characters, "
                              f"got {source['sha256']!r}")
@@ -286,7 +293,8 @@ def build_tariff_model(tariffs: pd.DataFrame, *, snapshot_date: str, sources: Se
 
     ``snapshot_date`` (ISO date) names the tariff state the table records. ``sources`` lists the input
     files as ``{"source_id", "path" (POSIX, repository-relative), "sha256" (see ``content_sha256``)}``;
-    extra keys are kept. Only the terminal-stay rule ``until_fee_end`` (T1) exists. Raises ``ValueError``
+    an entry with any other key raises, because the Java ``ParkingTariffs`` reader accepts exactly these
+    three (``SOURCE_KEYS``). Only the terminal-stay rule ``until_fee_end`` (T1) exists. Raises ``ValueError``
     for an empty table, a missing column, a duplicate zone id, an invalid row or invalid sources. The
     returned dict is plain JSON data: integer cents and seconds, None for "not applicable".
     """
