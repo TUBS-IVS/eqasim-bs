@@ -3,9 +3,10 @@
 Checks (all via ``braunschweig.parking.zones``): the tariff table (types, required fields per zone type, fee windows,
 paired fields, workplace classes, no test-set marker), the zone polygons (EPSG:25832 after loading, valid, provenance,
 pairwise overlap <= ``OVERLAP_TOLERANCE_M2``), one tariff row per polygon and vice versa, the coverage register (one status
-row per municipality, reasons, sources, ``zoned`` <=> tariff rows) and its size against the municipality universe of the
-pipeline (``--expected-municipality-count``). Prints counts per zone type, geometry source, fee-window source and
-municipality, plus the register status counts; exits 1 on any violation, 0 otherwise.
+row per municipality, reasons, sources, ``zoned`` <=> tariff rows, hence a polygon for every zoned municipality) and its
+size against the municipality universe of the pipeline (``--expected-municipality-count``). Prints counts per zone type,
+geometry source, fee-window source and municipality, plus the register status counts; exits 1 on any violation, 0
+otherwise.
 
 Usage::
 
@@ -50,11 +51,8 @@ def validate(data_path: Path, zones_path: str, tariffs_path: str, register_path:
     if len(status_rows) != expected_municipality_count:
         raise ValueError(f"coverage register has {len(status_rows)} municipality rows, expected "
                          f"{expected_municipality_count} (one per spatial unit of the ZGB counties)")
-    polygon_ags = set(zones.merge(tariffs[["zone_id", "municipality_ags"]], on="zone_id")["municipality_ags"])
-    zoned = set(status_rows.loc[status_rows["status"] == "zoned", "ags"])
-    missing = sorted(zoned - polygon_ags)
-    if missing:
-        raise ValueError(f"'zoned' municipalities without a polygon: {missing}")
+    # A zoned municipality always owns a polygon here: cross_validate pairs every tariff row with a polygon and
+    # validate_coverage_register pairs every zoned municipality with a tariff row.
 
     merged = zones.merge(tariffs, on="zone_id", suffixes=("_polygon", ""))
     merged["area_km2"] = merged.geometry.area / 1e6

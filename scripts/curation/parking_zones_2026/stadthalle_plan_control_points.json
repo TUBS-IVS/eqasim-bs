@@ -1,0 +1,14 @@
+{
+  "description": "Control points of the Stadthalle concept plan 202308-Beschilderung-Bestand-PRMK-Stadthalle (raw_sources/bs_prmk_stadthalle.jpg, 1920x1358 px, SHA-256 ac9275bf0d09d216..., origin top-left). px/py: the junction centre read off 4x zoomed crops of the plan (street centrelines between the kerb lines) on 2026-09-29; E/N: the intersection of the named OSM ways of the Overpass response of 2026-09-29 (03101000), EPSG:25832. Used by digitise_stadthalle_fee_islands.py.",
+  "points": [
+    {"label": "Koernerstrasse x Marthastrasse", "px": 866, "py": 461, "E": 605003.7, "N": 5791171.7},
+    {"label": "Gerstaeckerstrasse x Kleine Campestrasse", "px": 588, "py": 888, "E": 604819.2, "N": 5790892.0},
+    {"label": "Mentestrasse x Schillstrasse", "px": 1486, "py": 1108, "E": 605411.1, "N": 5790746.7},
+    {"label": "Leonhardstrasse x Marthastrasse", "px": 835, "py": 671, "E": 604978.2, "N": 5791029.9},
+    {"label": "Kleine Campestrasse x Lachmannstrasse", "px": 587, "py": 1010, "E": 604818.1, "N": 5790810.7},
+    {"label": "Bertramstrasse x Gerstaeckerstrasse", "px": 472, "py": 900, "E": 604744.7, "N": 5790880.2},
+    {"label": "Adolfstrasse x Leonhardstrasse", "px": 462, "py": 535, "E": 604736.7, "N": 5791121.1},
+    {"label": "Helmstedter Strasse x Koernerstrasse", "px": 1122, "py": 480, "E": 605169.0, "N": 5791164.2},
+    {"label": "Bertramstrasse x Lachmannstrasse", "px": 421, "py": 1005, "E": 604710.7, "N": 5790815.9}
+  ]
+}

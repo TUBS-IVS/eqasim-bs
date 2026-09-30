@@ -1,5 +1,5 @@
 dataset: parking_zones_2026
-title: Parking cost zone polygons of the ZGB, first release (21 zones in eight municipalities)
+title: Parking cost zone polygons of the ZGB, first release (24 zones in eight municipalities)
 inventory_id: null
 provider: >-
   Own digitisation (issue #249) from public sources: City of Braunschweig parking-zone overview map and
@@ -11,8 +11,8 @@ vintage: >-
   target world September 2026 (design spec decision 1).
 geography: >-
   Paid-parking areas of Braunschweig (ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle
-  zone 132, six TU campus areas), Wolfsburg Innenstadt, Salzgitter-Lebenstedt, Peine, Goslar Altstadt zone 1,
-  Wolfenbuettel, Gifhorn and Helmstedt town centres
+  zone 132 and its three Parkscheininseln, six TU campus areas), Wolfsburg Innenstadt, Salzgitter-Lebenstedt,
+  Peine, Goslar Altstadt zone 1, Wolfenbuettel, Gifhorn and Helmstedt town centres
 crs: EPSG:25832 (stored as WGS84 GeoJSON)
 roles:
 - spatial_input
@@ -26,22 +26,32 @@ acquisition:
     https://www.tu-braunschweig.de/gb3/parkraumbewirtschaftung/parkbereiche, https://overpass-api.de/api/interpreter
   script: scripts/build_parking_zones_from_osm.py
   notes: >-
-    Hand curation, not reproducible by one command. Every feature carries geometry_source
+    Hand curation, not reproducible by one command (the curation scripts named below re-create the file from
+    the gitignored raw inputs). Every feature carries geometry_source
     (street_list_buffer = named streets of a municipal source buffered 15 m and dissolved; osm_fee_tags =
     fee-tagged OSM parking objects; centre_approximation = a polygon around a town centre or campus whose
-    extent the digitising_note justifies; ordinance_map = traced from a municipal zone map), source_url,
-    source_date, digitised_on and a digitising_note with the method and all parameters (buffers, windows,
+    extent the digitising_note justifies; ordinance_map = extent set by a municipal zone map or ordinance
+    annex: traced from the map for zones 1a/1b, the OSM outline of the lot the BgA annex marks for Markthalle),
+    source_url, source_date, digitised_on and a digitising_note with the method and all parameters (buffers, windows,
     closing distances, OSM ids, the affine of the georeferenced Braunschweig zone map). Raw inputs kept locally
     (gitignored) under eqasim-data/data/braunschweig/parking/raw_overpass/ (one Overpass response per
     municipality, written by scripts/build_parking_zones_from_osm.py) and raw_sources/ (retrieved pages and
     documents; SHA-256 of the zone map image 20251126_Karte-Parkzone-Innenstadt-a-b-2025-01 94a8d46e...,
-    of the BgA order 50444731..., of the Stadthalle concept plan ac9275bf...). The image georeferencing
-    (chamfer fit of OSM centrelines, pixel masks of the dotted 1a outline and the green 1b fill) was a one-off
-    curation step whose parameters are recorded in the digitising notes; its scratch code is not committed.
+    of the BgA order 50444731..., of the Stadthalle concept plan ac9275bf..., of the ParkGO 59957701...). The
+    one-off curation scripts that produced the geometry are committed under scripts/curation/parking_zones_2026/
+    (not pipeline stages; they read the gitignored raw inputs): georeference_zone_map.py (chamfer fit of the
+    zone map to OSM centrelines) and extract_braunschweig_zone_map.py (pixel masks of the dotted 1a outline and
+    the green 1b fill), digitise_stadthalle_fee_islands.py (the three Parkscheininseln: the blue kerb lines of the
+    Stadthalle concept plan, georeferenced on nine street junctions in stadthalle_plan_control_points.json, matched
+    to the named OSM ways) and assemble_parking_zones.py (all polygons, precedence, municipality containment, the
+    licence members). Re-run in the review fix round (2026-09-30), they reproduce the zone-map affine and the
+    coordinates of every polygon of the first commit exactly, except zone 132, from which two fee islands are now
+    cut out.
     Overpass requests for Goslar, Wolfenbuettel and Gifhorn failed (HTTP 504) and were not repeated; their
     centre polygons use the OSM-derived car network of the local MATSim scenario eqasim-data/output_bs
     (2026-04-29) instead. Overlaps are resolved by precedence (BgA car parks and the International House lots
-    cut out of Ia and the campus areas), so no two zones overlap by more than 1 m2.
+    cut out of Ia and the campus areas, the Parkscheininseln cut out of zone 132), so no two zones overlap by more
+    than 1 m2.
 storage:
   expected_path: eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
   committed: true
@@ -52,45 +62,58 @@ verification:
   script: scripts/validate_parking_zones.py
   notes: >-
     braunschweig.parking.zones.load_zone_polygons reprojects to EPSG:25832, repairs invalid rings (0 on
-    2026-09-29), checks provenance fields and pairwise overlap <= 1 m2; tests/test_parking_zones.py
-    (test_committed_parking_data_is_valid, test_committed_zones_carry_real_provenance_only) runs the validator
-    over the committed files.
+    2026-09-30), checks provenance fields and pairwise overlap <= 1 m2; tests/test_parking_zones.py
+    (test_committed_parking_data_is_valid, test_committed_zones_carry_real_provenance_only,
+    test_committed_zones_carry_the_licence_notice, test_committed_parking_files_are_ascii,
+    test_committed_parkscheininseln_are_street_paid_zones_cut_out_of_the_resident_zone) runs the validator and
+    pins the licence members, ASCII text and the cut-out islands of the committed files.
 requirements:
   synthesis: not_needed
   matsim: optional
   production: optional
 licensing:
   license: >-
-    ODbL 1.0 for the OSM-derived outlines (geometry_source osm_fee_tags and street_list_buffer, the TU campus
-    outlines, and the three centre approximations built from the OSM-derived car network): (c) OpenStreetMap
-    contributors. The zone boundaries traced from municipal maps and ordinances are facts of public law
-    (Stadt Braunschweig, Abt. Geoinformation, maps); attribution to the municipalities.
+    ODbL 1.0 for the whole file, (c) OpenStreetMap contributors: the coordinates of every polygon depend on
+    OpenStreetMap, through an OSM outline (the five BgA car parks including Markthalle, the six TU campus areas),
+    OSM street geometry (the street_list_buffer zones: Stadthalle 132, the three Parkscheininseln, Salzgitter;
+    the fee-tagged objects of Wolfsburg, Peine and Helmstedt; the Goslar, Wolfenbuettel and Gifhorn hulls from the
+    OSM-derived car network) or a georeference on OSM street centrelines (zones 1a and 1b, and the Stadthalle
+    concept plan behind the Parkscheininseln). Which areas are paid follows the municipal maps and ordinances
+    (facts of public law; maps of the Stadt Braunschweig, Abt. Geoinformation); attribution to the
+    municipalities. The GeoJSON carries both as top-level members (license, attribution).
   restricted: false
   redistribution: allowed
-  notes: Redistribution must keep the OpenStreetMap attribution and the ODbL share-alike terms for the OSM-derived parts.
+  notes: Redistribution must keep the OpenStreetMap attribution and the ODbL share-alike terms (whole file).
 limitations: >-
-  Centre approximations (not sourced boundaries): tu_zentralcampus, tu_campus_nord,
-  tu_campus_ost_beethovenstrasse, tu_campus_ost_langer_kamp, tu_international_house, tu_forschungsflughafen (OSM
-  campus outlines or TU car parks standing for the ticketed campus areas), gs_altstadt_zone1 (streets chosen
-  to stand for zone 1, no official street list), wf_innenstadt and gf_innenstadt (hulls of centre streets);
-  sz_lebenstedt, pe_innenstadt and he_innenstadt are hulls of named streets or fee-tagged car parks, not
-  ordinance extents. bs_zone_ia misses any part of zone 1a south of the city's zone-map extent; the zone map
-  is an overview map, not the ParkGO annex map (not published online), georeferenced with an RMS of 4.5 m.
-  Not digitised: resident zones 120B and 330B, the permit districts A/B/C, the Parkscheininseln and other
-  ParkGO zone II areas, the BgA car park Willy-Brandt-Platz, TU Volkmaroder Strasse (ticketed from
-  2026-10-01) and Bevenroder Strasse, Goslar zone 2 (see the coverage register). The five BgA car-park
-  polygons contain no activity of the local 1 % scenario; activities are located at buildings, so a car park
-  without buildings rarely carries a destination.
+  Centre approximations (not sourced boundaries): tu_zentralcampus, tu_campus_nord, tu_campus_ost_beethovenstrasse,
+  tu_campus_ost_langer_kamp, tu_international_house, tu_forschungsflughafen (OSM campus outlines or TU car parks
+  standing for the ticketed campus areas), gs_altstadt_zone1 (streets chosen to stand for zone 1, no official street
+  list), wf_innenstadt and gf_innenstadt (hulls of centre streets); sz_lebenstedt, pe_innenstadt and he_innenstadt
+  are hulls of named streets or fee-tagged car parks, not ordinance extents. Zones 1a and 1b are traced from the
+  city's overview map of the two zones (georeferenced with an RMS of 4.5 m), not from the map that defines them: the
+  ParkGO annex map (sec. 2(1); 'Anlage zur ParkGO', published on page 3 of 2_08_Parkgebuehrenordnung_2025.pdf) also
+  draws zone II and the part of zone 1a south of the overview map, but it was not digitised in v1 because it could
+  not be georeferenced to an RMS of 10 m or better (best affine fit at about 3.7 m per pixel: 11.1 m RMS between the
+  1a/1b outline and the annex zone lines, 26.8 m RMS at the five BgA car parks as check points). Hence bs_zone_ia
+  misses the part of zone 1a south of the overview map, and zone II is not zoned apart from the three
+  Parkscheininseln (free by Z1). The Parkscheininseln follow the blue kerb lines of the Stadthalle concept plan
+  (file 202308-Beschilderung-Bestand-PRMK-Stadthalle), which the city labels an overview only (signage on site
+  governs). Not digitised: resident zones 120B and 330B, the permit districts A/B/C, ParkGO zone II apart from the
+  Parkscheininseln, the BgA car park Willy-Brandt-Platz, TU Volkmaroder Strasse (ticketed from 2026-10-01) and
+  Bevenroder Strasse, Goslar zone 2 (see the coverage register). The five BgA car-park polygons contain no activity
+  of the local 1 % scenario; activities are located at buildings, so a car park without buildings rarely carries a
+  destination.
 notes: >-
   Validator summary on the committed files (scripts/validate_parking_zones.py --data-path eqasim-data/data,
-  2026-09-29): 21 zones, 21 tariff rows, 131 register rows (123 municipalities); zone_type campus 6,
-  resident_zone 1, street_paid 14; geometry_source centre_approximation 9, ordinance_map 3, osm_fee_tags 7,
-  street_list_buffer 2; fee_window_source assumption 5, municipal_page 10, ordinance 6; per municipality
-  03101000 Braunschweig 14 zones 3.045 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 1 zone
+  2026-09-30): 24 zones, 24 tariff rows, 131 register rows (123 municipalities); zone_type campus 6,
+  resident_zone 1, street_paid 17; geometry_source centre_approximation 9, ordinance_map 3, osm_fee_tags 7,
+  street_list_buffer 5; fee_window_source assumption 8, municipal_page 10, ordinance 6; per municipality
+  03101000 Braunschweig 17 zones 3.048 km2, 03102000 Salzgitter 1 zone 0.574 km2, 03103000 Wolfsburg 1 zone
   0.592 km2, 03151009 Gifhorn 1 zone 0.284 km2, 03153017 Goslar 1 zone 0.642 km2, 03154028 Helmstedt 1 zone
   0.326 km2, 03157006 Peine 1 zone 0.343 km2, 03158037 Wolfenbuettel 1 zone 0.513 km2; register status zoned 8,
   no_paid_parking_known 0, not_audited 115, excluded 8; OK. Curation check, not a validation: assign_zones over
   the 47,362 activities of the local 1 % scenario eqasim-data/output_bs (2026-04-29) puts 1,950 (4.1 %) into a
-  zone (Ia 375, Ib 220, Stadthalle 59, TU campuses 274 of which 201 education and 44 work, Wolfsburg 283,
-  Goslar 245, Peine 131, Wolfenbuettel 125, Helmstedt 115, Salzgitter 98, Gifhorn 25, BgA car parks and
-  International House 0). Tariffs: parking_tariffs_2026; coverage: parking_coverage_register_2026.
+  zone (Ia 375, Ib 220, Stadthalle 132 46, Parkscheininsel Marthastrasse/Koernerstrasse 13, the other two
+  islands 0, TU campuses 274 of which 201 education and 44 work, Wolfsburg 283, Goslar 245, Peine 131,
+  Wolfenbuettel 125, Helmstedt 115, Salzgitter 98, Gifhorn 25, BgA car parks and International House 0).
+  Tariffs: parking_tariffs_2026; coverage: parking_coverage_register_2026.

@@ -56,6 +56,8 @@ limitations: >-
   airport and shopping-centre car parks visible as fee=yes in the Overpass responses of the eight zoned
   municipalities; three of these municipalities (Goslar, Wolfenbuettel, Gifhorn) have no Overpass response
   (HTTP 504). The Braunschweig row lists what is known but not zoned (resident zones 120B and 330B, permit
-  districts A/B/C, zone II areas, BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse).
+  districts A/B/C, ParkGO zone II apart from the three Parkscheininseln and the part of zone 1a south of the
+  city's overview map, both drawn on the ParkGO annex map on page 3 of the ParkGO PDF but not digitised in v1,
+  BgA Willy-Brandt-Platz, TU Volkmaroder and Bevenroder Strasse).
 notes: >-
   Status counts 2026-09-29: zoned 8, no_paid_parking_known 0, not_audited 115, excluded 8 (131 rows).
