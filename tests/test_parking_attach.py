@@ -10,6 +10,7 @@ by ``tests/test_parking_zones_stage.py``, the writer integration by
 from __future__ import annotations
 
 import logging
+import math
 
 import geopandas as gpd
 import numpy as np
@@ -477,8 +478,11 @@ def test_draw_requires_the_parking_zone_column():
         attach.draw_parking_free(activities, _tariffs(), _shares(), SEED)
 
 
-@pytest.mark.parametrize("shift", [1.5, -1.01, float("nan"), "0.1", True], ids=str)
+@pytest.mark.parametrize("shift", [math.nextafter(1.0, 2.0), math.nextafter(-1.0, -2.0), 1.5, -1.01, float("nan"),
+                                   "0.1", True], ids=str)
 def test_draw_rejects_a_shift_outside_minus_one_to_one(shift):
+    # The ends -1.0 and +1.0 themselves are accepted (test_shift_plus_one_frees_every_eligible_person_and_minus_one_none);
+    # the nearest floats beyond them are not.
     with pytest.raises(ValueError, match="shift"):
         attach.draw_parking_free(_commuters([1], "z_paid_a"), _tariffs(), _shares(), SEED, shift=shift)
 

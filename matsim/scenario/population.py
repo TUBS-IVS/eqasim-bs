@@ -160,17 +160,29 @@ def _is_missing_value(value):
     return isinstance(missing, (bool, np.bool_)) and bool(missing)
 
 
+#: The text forms of a missing value -- str(np.nan), str(None), str(pd.NA) -- that a broken upstream
+#: join or an astype(str) over missing zones leaves in an object column. None of them is a zone id.
+_STRINGIFIED_MISSING_VALUES = frozenset(("nan", "None", "<NA>"))
+
+
 def _parking_zone_id(column, value):
     """Return a present parking zone id, raising ValueError unless it is a non-empty string.
 
     The id must match a ``zone_id`` of the tariff table the Java cost model reads; a numeric
     value would be written as e.g. "5.0" and only fail at the first priced car trip, so it is
-    rejected here instead.
+    rejected here instead. The same holds for the text forms of a missing value
+    (``_STRINGIFIED_MISSING_VALUES``): outside every zone the value must stay missing, so that
+    no attribute is written at all.
     """
     if not isinstance(value, str) or value == "":
         raise ValueError(
             "Invalid %s %r; expected a non-empty parking zone id string (a zone_id of the "
             "parking tariff table) or a missing value outside every zone." % (column, value))
+    if value in _STRINGIFIED_MISSING_VALUES:
+        raise ValueError(
+            "Invalid %s %r: the text form of a missing value, which a broken upstream join (or an "
+            "astype(str) over missing zones) leaves behind; outside every zone the value must stay "
+            "missing (NaN/None) so that no attribute is written." % (column, value))
     return value
 
 

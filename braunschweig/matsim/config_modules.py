@@ -41,8 +41,11 @@ def _check_params(params: Mapping) -> dict[str, str]:
 def read_module(config_path, name: str) -> dict[str, str] | None:
     """Parameters of the module ``name`` of a MATSim config, or None when the config has no such module.
 
-    Raises ``ValueError`` when the file is not a MATSim config (root element other than ``<config>``) or the
-    module is not flat (parameter sets, repeated parameter names). Reads the file; no side effects.
+    Raises ``xml.etree.ElementTree.ParseError`` when the file is not well-formed XML (for example a truncated
+    config); note that ``ParseError`` derives from ``SyntaxError``, not from ``ValueError``, so a caller that
+    catches ``ValueError`` does not catch it. Raises ``ValueError`` when the file is not a MATSim config (root
+    element other than ``<config>``) or the module is not flat (parameter sets, repeated parameter names).
+    Reads the file; no side effects.
     """
     _check_module_name(name)
     root = ET.parse(str(config_path)).getroot()
@@ -69,8 +72,9 @@ def write_module(config_path, name: str, params: Mapping[str, str]) -> Path:
 
     Side effect: rewrites ``config_path`` unless an identical module is already present (then nothing is
     written). Raises ``ValueError`` for a conflicting existing module, a missing ``</config>`` tag or a file
-    that is not a MATSim config, and ``TypeError`` for non-text parameter names or values. Names and values
-    are XML-escaped.
+    that is not a MATSim config, ``xml.etree.ElementTree.ParseError`` for a file that is not well-formed XML
+    (from ``read_module``; nothing is written), and ``TypeError`` for non-text parameter names or values.
+    Names and values are XML-escaped.
     """
     path = Path(config_path)
     _check_module_name(name)

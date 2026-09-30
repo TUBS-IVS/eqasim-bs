@@ -1,9 +1,10 @@
 """Deterministic parking cost of one car stay in a zone (issue #249): the Python reference implementation.
 
-This module implements the algorithm of the design spec section 3.2
-(``docs/superpowers/specs/2026-09-28-parking-cost-zones-design.md``, local). The Java
-``ParkingCostCalculator`` (eqasim-java-bs) must reproduce it exactly; the shared contract is the golden
-cases of ``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
+``parking_cost_cents`` applies the rules of a zone's tariff in a fixed order (listed in its docstring) to the
+part of the stay that falls inside the zone's daily fee window (``chargeable_seconds``), and ``ZoneTariff``
+validates a tariff against its zone type when it is constructed. The Java ``ParkingCostCalculator``
+(eqasim-java-bs) must reproduce this calculation exactly; the shared contract is the golden cases of
+``braunschweig.parking.golden_cases``, exported with the fixture tariffs to
 ``tests/fixtures/parking/parking_golden_cases.json``. All money is in integer euro cents and all times are
 in integer simulation seconds, so both implementations run the same integer arithmetic and cannot drift
 apart through floating-point rounding.

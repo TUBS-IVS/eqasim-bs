@@ -1,6 +1,8 @@
 """The generic MATSim config-module writer: a text edit that keeps the DOCTYPE and every other byte."""
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+
 import pytest
 
 from braunschweig.matsim import config_modules as cm
@@ -63,6 +65,17 @@ def test_a_file_that_is_not_a_matsim_config_is_rejected(tmp_path):
 
 def test_read_module_returns_none_for_an_absent_module(tmp_path):
     assert cm.read_module(_config(tmp_path), MODULE_NAME) is None
+
+
+def test_malformed_xml_raises_the_documented_parse_error_and_nothing_is_written(tmp_path):
+    # ElementTree's ParseError is a SyntaxError, not a ValueError, which is why the docstrings name it.
+    truncated = CONFIG[:CONFIG.rindex("</config>")]
+    path = _config(tmp_path, truncated)
+    with pytest.raises(ET.ParseError):
+        cm.read_module(path, MODULE_NAME)
+    with pytest.raises(ET.ParseError):
+        cm.write_module(path, MODULE_NAME, PARAMS)
+    assert path.read_bytes() == truncated.encode("utf-8")
 
 
 def test_values_are_escaped_and_crlf_line_endings_are_kept(tmp_path):
