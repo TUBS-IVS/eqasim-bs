@@ -7,7 +7,7 @@
 # gemeindefreie Gebiete matched to their AGS by Wikipedia and by elimination (see the Data Registry record). ASCII
 # transliteration of umlauts. Validated by scripts/validate_parking_zones.py (braunschweig/parking/zones.py).
 ags,name,status,source,note
-03101000,"Braunschweig, Stadt",zoned,"parking_tariffs_2026.csv; ParkGO and BgA Entgeltordnung of the city, parkraummanagement.php, TU GB3 pages","17 zones: ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle (zone 132) and its three Parkscheininseln (street_paid), six TU campus areas. Not zoned: resident zones 120B (Helmstedter Strasse) and 330B (TU Hauptcampus), where resident streets alternate with unrestricted free streets so a whole-quarter resident zone would overstate costs (follow-up: street-level digitisation); the permit districts A/B/C, which overlay Ia/Ib (exemption of permit holders not modelled); ParkGO zone II apart from the Parkscheininseln, and the part of zone Ia south of the city's zone-map extent: both are drawn on the ParkGO annex map, published on page 3 of 2_08_Parkgebuehrenordnung_2025.pdf, but not digitised in v1 because the annex could not be georeferenced to an RMS of 10 m or better; BgA car park Willy-Brandt-Platz (in zone II, no matching outline); TU Volkmaroder Strasse (ticketed from 2026-10-01, no outline) and Bevenroder Strasse (not ticketed). Park-and-ride car parks are free (parken-in-der-innenstadt.php)."
+03101000,"Braunschweig, Stadt",zoned,"parking_tariffs_2026.csv; ParkGO and BgA Entgeltordnung of the city, parkraummanagement.php, TU GB3 pages","17 zones: ParkGO zones Ia and Ib, five BgA car parks, resident concept Stadthalle (zone 132) and its three Parkscheininseln (street_paid), six TU campus areas. Not zoned: resident zones 120B (Helmstedter Strasse) and 330B (TU Hauptcampus), where resident streets alternate with unrestricted free streets so a whole-quarter resident zone would overstate costs (follow-up: street-level digitisation); the permit districts A/B/C, which overlay Ia/Ib (exemption of permit holders not modelled); ParkGO zone II apart from the Parkscheininseln, and the part of zone Ia south of the city's zone-map extent: both are drawn on the ParkGO annex map, published on page 3 of 2_08_Parkgebuehrenordnung_2025.pdf, but not digitised in v1 because the annex could not be georeferenced to an RMS of 10 m or better, and the rule-based construction of v2 lever 1 (2026-09-30) yields no core there (parking_zones_2026_qa.csv); BgA car park Willy-Brandt-Platz (in zone II, no matching outline); TU Volkmaroder Strasse (ticketed from 2026-10-01, no outline) and Bevenroder Strasse (not ticketed). Park-and-ride car parks are free (parken-in-der-innenstadt.php)."
 03102000,"Salzgitter, Stadt",zoned,parking_tariffs_2026.csv; https://www.salzgitter.de/rathaus/fachdienste/tiefbau/parken.php,"1 zone: Lebenstedt centre. Salzgitter-Bad has disc parking only (2 h), no fees (same page)."
 03103000,"Wolfsburg, Stadt",zoned,"parking_tariffs_2026.csv; https://www.aufbau-gmbh.de/tarife-oeffnungszeiten, wolfsburg.de/mobilitaetverkehr/parken","1 zone: Innenstadt (Norden, Mitte, Sueden). Outside the zone: Fallersleben (fee-tagged car parks in OSM, not audited)."
 03151001,Adenbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
@@ -18,7 +18,7 @@ ags,name,status,source,note
 03151006,Calberlah,not_audited,,not audited in the first release (design spec section 4 scope)
 03151007,Dedelstorf,not_audited,,not audited in the first release (design spec section 4 scope)
 03151008,Ehra-Lessien,not_audited,,not audited in the first release (design spec section 4 scope)
-03151009,"Gifhorn, Stadt",zoned,parking_tariffs_2026.csv; https://psg-gifhorn.de/parken,1 zone: Innenstadt around the Steinweg.
+03151009,"Gifhorn, Stadt",zoned,parking_tariffs_2026.csv; https://psg-gifhorn.de/parken,"1 zone: Innenstadt around the Steinweg (centre approximation; the rule-based core of v2 lever 1 (2026-09-30) was rejected, parking_zones_2026_qa.csv)."
 03151010,Gross Oesingen,not_audited,,not audited in the first release (design spec section 4 scope)
 03151011,Hankensbuettel,not_audited,,not audited in the first release (design spec section 4 scope)
 03151012,Hillerse,not_audited,,not audited in the first release (design spec section 4 scope)
@@ -56,7 +56,7 @@ ags,name,status,source,note
 03153008,Liebenburg,not_audited,,not audited in the first release (design spec section 4 scope)
 03153012,"Seesen, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
 03153016,"Braunlage, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
-03153017,"Goslar, Stadt",zoned,parking_tariffs_2026.csv; Goslar ParkGO 2025-06-24 and the city's announcement of the 2026 fees,"1 zone: Altstadt zone 1. Zone 2 (fringe, 1 EUR/h) not digitised, extent not published."
+03153017,"Goslar, Stadt",zoned,parking_tariffs_2026.csv; Goslar ParkGO 2025-06-24 and the city's announcement of the 2026 fees,"1 zone: Altstadt zone 1 (centre approximation; the rule-based core of v2 lever 1 (2026-09-30) was rejected, parking_zones_2026_qa.csv). Zone 2 (fringe, 1 EUR/h) not digitised, extent not published."
 03153018,"Clausthal-Zellerfeld, Berg- und Universitaetsstadt",not_audited,,not audited in the first release (design spec section 4 scope)
 03153019,"Langelsheim, Stadt",not_audited,,not audited in the first release (design spec section 4 scope)
 03153504,"Harz (Landkreis Goslar), gemeindefreies Gebiet",not_audited,,"gemeindefreies Gebiet (unincorporated, no municipal parking ordinance); not audited"
@@ -123,7 +123,7 @@ ags,name,status,source,note
 03158033,Veltheim (Ohe),not_audited,,not audited in the first release (design spec section 4 scope)
 03158035,Winnigstedt,not_audited,,not audited in the first release (design spec section 4 scope)
 03158036,Wittmar,not_audited,,not audited in the first release (design spec section 4 scope)
-03158037,"Wolfenbuettel, Stadt",zoned,parking_tariffs_2026.csv; https://www.stadtbetriebe-wf.de/parkhaeuser.html,1 zone: Innenstadt.
+03158037,"Wolfenbuettel, Stadt",zoned,parking_tariffs_2026.csv; https://www.stadtbetriebe-wf.de/parkhaeuser.html,"1 zone: Innenstadt (centre approximation; the rule-based core of v2 lever 1 (2026-09-30) was rejected, parking_zones_2026_qa.csv)."
 03158038,Boerssum,not_audited,,not audited in the first release (design spec section 4 scope)
 03158039,Schladen-Werla,not_audited,,not audited in the first release (design spec section 4 scope)
 03158040,Remlingen-Semmenstedt,not_audited,,not audited in the first release (design spec section 4 scope)

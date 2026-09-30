@@ -1,0 +1,7 @@
+[out:json][timeout:180];
+(
+  way["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street)$"](51.895,10.41,51.917,10.45);
+  way["highway"][~"^parking:"~"."](51.895,10.41,51.917,10.45);
+  nwr["amenity"="parking"](51.895,10.41,51.917,10.45);
+);
+out tags geom;

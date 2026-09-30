@@ -11,6 +11,20 @@ digitised_on and a digitising_note with its method and parameters; overlaps are 
 municipality. The file carries the ODbL licence and attribution as top-level members, because every polygon's
 coordinates depend on OpenStreetMap (outline, street or georeference).
 
+Parking cost zones v2, lever 1 (issue #436, spec amendments A1 and A2; ``--erosion-dir``): the rule-based cores of
+``scripts/build_parking_zones_from_osm.py --regulation`` (``<ags>_core.geojson`` and ``<ags>_qa.json``, one per
+municipality of ``EROSION_ZONES_FROM_CORE`` and ``EROSION_QA_ONLY``) enter as ``osm_fee_erosion`` polygons with the
+provenance fields ``unavoidable_walk_m`` and ``osm_timestamp``, but only where the pre-registered acceptance rule Q4
+accepted the core. Goslar, Wolfenbuettel and Gifhorn: an accepted core replaces the ``centre_approximation``
+polygon of the same zone id (tariff row unchanged). Braunschweig: the core is split by the georeferenced ParkGO
+annex outlines (``--reference-outline``, extract_parkgo_annex_zones.py) into ``bs_zone_ia_sued`` (inside the annex
+outline of zone Ia) and ``bs_zone_ii`` (inside zone II); every v1 zone is cut out of them by precedence (ordinance
+and street-list polygons win), core outside both outlines is not zoned. After the cuts the parts below the core's
+``minimum_island_m2`` are dropped again (ASSUMPTION Q2). The other municipalities are QA only. A municipality without
+a response (a request that failed after all attempts, see ``overpass_failures.log``) keeps its v1 polygon. Every
+curated municipality gets one row of the committed QA table ``--qa-out`` (``braunschweig.parking.zones``
+``ZONE_QA_COLUMNS``). Without ``--erosion-dir`` the output is the v1 file byte for byte.
+
 Usage (from the repository root)::
 
     python scripts/curation/parking_zones_2026/assemble_parking_zones.py --ia-ib bs_zone_map_ia_ib.geojson \
@@ -18,20 +32,29 @@ Usage (from the repository root)::
         --raw-overpass eqasim-data/data/braunschweig/parking/raw_overpass \
         --network <main checkout>/eqasim-data/output_bs/braunschweig_1pct_network.xml.gz \
         --municipalities <main checkout>/eqasim-data/cache_bs_bpsmoke/data.spatial.municipalities__<hash>.p \
-        --out eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson
+        --out eqasim-data/data/braunschweig/parking/parking_zones_2026.geojson \
+        [--erosion-dir eqasim-data/data/braunschweig/parking/raw_overpass \
+         --reference-outline eqasim-data/data/braunschweig/parking/raw_sources/bs_2_08_annex_zones_georeferenced.geojson \
+         --qa-out eqasim-data/data/braunschweig/parking/parking_zones_2026_qa.csv]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import pickle
+import sys
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import box
 from shapely.ops import unary_union
 
 import curation_common as cc
+
+# The script runs from its own directory (curation_common); the repository root holds the braunschweig package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from braunschweig.parking import zones as pz  # noqa: E402
 
 DIGITISED_ON = "2026-09-29"
 LICENSE = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, or a georeference "
@@ -60,6 +83,131 @@ MINIMUM_PART_M2 = 20.0
 SIMPLIFY_M = 0.5
 MINIMUM_INSIDE_SHARE = 0.99
 
+# ---------------------------------------------------------------- parking cost zones v2, lever 1 (issue #436)
+EROSION_DIGITISED_ON = "2026-09-30"
+LICENSE_V2 = ("ODbL-1.0: every polygon is derived from OpenStreetMap data (OSM outlines, OSM streets, the OSM on-street "
+              "parking and car-park tags of the osm_fee_erosion zones, or a georeference on OSM street centrelines); "
+              "Open Database License 1.0, https://opendatacommons.org/licenses/odbl/1-0/")
+ATTRIBUTION_V2 = ("(c) OpenStreetMap contributors (https://www.openstreetmap.org/copyright). Zone boundaries after the "
+                  "parking maps and ordinances of the City of Braunschweig (Abt. Geoinformation; the ParkGO annex map "
+                  "assigns the osm_fee_erosion zones bs_zone_ia_sued and bs_zone_ii), the TU Braunschweig GB3 parking "
+                  "pages and the municipal parking pages of Wolfsburg, Salzgitter, Peine, Goslar, Wolfenbuettel, "
+                  "Gifhorn and Helmstedt (source_url per feature).")
+BS_AGS = "03101000"
+#: Municipalities whose accepted core becomes zone geometry (plan Task 1 Step 4): Braunschweig's new zones of spec
+#: amendment A2 (assigned by the annex outlines), the other three replace their centre_approximation polygon.
+EROSION_ZONES_FROM_CORE = {BS_AGS: None, "03153017": "gs_altstadt_zone1", "03158037": "wf_innenstadt",
+                           "03151009": "gf_innenstadt"}
+#: Municipalities whose core is computed and recorded for QA only (their v1 polygons stay).
+EROSION_QA_ONLY = {"03103000": "wob_innenstadt", "03157006": "pe_innenstadt", "03154028": "he_innenstadt",
+                   "03102000": "sz_lebenstedt"}
+MUNICIPALITY_NAMES = {BS_AGS: "Braunschweig, Stadt", "03153017": "Goslar, Stadt", "03158037": "Wolfenbuettel, Stadt",
+                      "03151009": "Gifhorn, Stadt", "03103000": "Wolfsburg, Stadt", "03157006": "Peine, Stadt",
+                      "03154028": "Helmstedt, Stadt", "03102000": "Salzgitter, Stadt"}
+#: Braunschweig zones of amendment A2 and the annex outline (extract_parkgo_annex_zones.py) that assigns them.
+BS_EROSION_ZONES = {"bs_zone_ia_sued": "ia", "bs_zone_ii": "ii"}
+PARKGO_URL = "https://www.braunschweig.de/politik_verwaltung/politik/stadtrecht/2_08_Parkgebuehrenordnung_2025.pdf"
+ANNEX_REFERENCE = ("ParkGO annex map (page 3 of 2_08_Parkgebuehrenordnung_2025.pdf), zones Ia, Ib and II, georeferenced "
+                   "by the v1 affine (outline RMS 11.1 m, BgA check points 26.8 m RMS)")
+QA_HEADER = (
+    "# Curation QA of the rule-based parking zone cores (parking cost zones v2, lever 1, issue #436; spec amendments A1",
+    "# and A2): one row per curated municipality. Written by scripts/curation/parking_zones_2026/assemble_parking_zones.py",
+    "# from the <ags>_qa.json files of scripts/build_parking_zones_from_osm.py --regulation (raw responses local under",
+    "# raw_overpass/, gitignored). Construction (braunschweig/parking/zone_geometry.py): R = ways with a paid, restricted",
+    "# or forbidden side buffered 25 m plus paid or restricted car parks buffered 10 m; fill(R) = holes up to",
+    "# maximum_filled_hole_m2 filled (ASSUMPTION Q3); Z = erode(fill(R), walk_m) minus the walk_m buffer of the ways with",
+    "# a free public side (ASSUMPTION Q1: walk_m 250), parts below minimum_island_m2 dropped (ASSUMPTION Q2). Units: m and",
+    "# m2; counts are OSM elements of the regulation response. tagging_completeness = share of the kerbside street",
+    "# length (highway primary to living_street) inside fill(R) whose way carries parking information. free_lots_in_core",
+    "# = public car parks without fee inside Z (not free supply by the rule, which speaks of street parking; reported",
+    "# only). eroded_filled_area_m2 = erode(fill(R), walk_m) before the free ways are subtracted (0 means the regulated",
+    "# area is too fragmented for walk_m, not that free ways carved it). reference = the outline the core is compared",
+    "# with (Braunschweig: the georeferenced ParkGO annex, a plausibility check; elsewhere the v1 polygon);",
+    "# core_share_inside_reference and reference_share_covered_by_core = intersection over core and over reference;",
+    "# reference_tagging_completeness = tagging completeness of the kerbside streets inside the reference outline;",
+    "# largest_outline_distance_m = Hausdorff distance of the two outlines. Empty = undefined (e.g. no core).",
+    "# q4_decision = pre-registered acceptance rule Q4 (core >= 1 ha and tagging completeness >= 0.60) or request_failed",
+    "# (no response after all attempts: the municipality keeps its v1 polygon). role zones_from_core: an accepted core",
+    "# becomes the polygons in zone_ids (applied true, geometry_source osm_fee_erosion); qa_only: recorded, v1 stays.",
+    "# The owner reviews the decisions at the PR. Validated by scripts/validate_parking_zones.py (Q4 re-applied).",
+    "# Counts and areas are derived from OpenStreetMap data: (c) OpenStreetMap contributors, ODbL 1.0",
+    "# (https://www.openstreetmap.org/copyright).",
+)
+
+
+def erosion_inputs(directory, ags: str) -> tuple:
+    """(QA dict, core parts in EPSG:25832) of one municipality, or (None, None) when no response exists."""
+    qa_path = Path(directory) / f"{ags}_qa.json"
+    if not qa_path.is_file():
+        return None, None
+    qa = json.loads(qa_path.read_text(encoding="utf-8"))
+    if qa["ags"] != ags:
+        raise SystemExit(f"{qa_path} belongs to {qa['ags']}, not {ags}")
+    core = gpd.read_file(Path(directory) / f"{ags}_core.geojson")
+    core = core.set_crs("EPSG:4326") if core.crs is None else core
+    return qa, core.to_crs(cc.METRIC_CRS)
+
+
+def last_failure(directory, ags: str) -> str:
+    """The last line of overpass_failures.log for ``ags`` (time and error), or '' when there is none."""
+    path = Path(directory) / "overpass_failures.log"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    matching = [line for line in lines if line.split("\t")[1:2] == [ags]]
+    return matching[-1].replace("\t", " ") if matching else ""
+
+
+def erosion_note(qa: dict, *, replaces: str, assignment: str = "") -> str:
+    """The digitising note of an osm_fee_erosion polygon: method, parameters, counts and the QA row."""
+    p = qa["parameters"]
+    return (f"Rule-based core of parking cost zones v2 (lever 1, spec amendment A1; braunschweig.parking.zone_geometry, "
+            f"scripts/build_parking_zones_from_osm.py --regulation): OSM ways with a paid, restricted or forbidden side "
+            f"buffered {p['street_buffer_m']:.0f} m and paid or restricted car parks buffered {p['lot_buffer_m']:.0f} m "
+            f"(R {qa['regulated_area_m2']:.0f} m2), holes up to {p['maximum_filled_hole_m2']:.0f} m2 filled (fill(R) "
+            f"{qa['filled_area_m2']:.0f} m2), eroded by W = {p['walk_m']:.0f} m and minus the {p['walk_m']:.0f} m buffer "
+            f"of the {qa['free_segments']} ways with a free public side, parts below {p['minimum_island_m2']:.0f} m2 "
+            f"dropped (Z {qa['core_area_m2']:.0f} m2 in {qa['core_parts']} part{'' if qa['core_parts'] == 1 else 's'}). "
+            f"Regulation response "
+            f"{qa['raw_response']} of the Overpass API (OSM base {qa['osm_timestamp']}; box {qa['bbox']}): "
+            f"{qa['segments']} highway ways ({qa['regulated_segments']} regulated, {qa['free_segments']} with a free "
+            f"side, {qa['mixed_segments']} both), {qa['lots']} car parks; tagging completeness "
+            f"{qa['tagging_completeness']:.3f} inside fill(R); acceptance rule Q4 met (Z >= 1 ha, completeness >= "
+            f"0.60). " + (assignment + " " if assignment else "") + replaces
+            + f" QA row {qa['ags']} of parking_zones_2026_qa.csv.")
+
+
+def qa_row(ags: str, qa, *, role: str, reference: str, applied_zones, note: str, failure: str = "") -> dict:
+    """One row of the committed QA table (``pz.ZONE_QA_COLUMNS``)."""
+    row = {column: "" for column in pz.ZONE_QA_COLUMNS}
+    row.update({"ags": ags, "name": MUNICIPALITY_NAMES[ags], "role": role, "reference": reference,
+                "applied": "true" if applied_zones else "false", "zone_ids": ";".join(applied_zones), "note": note})
+    if qa is None:
+        row.update({"q4_decision": "request_failed",
+                    "note": f"no Overpass response after all attempts ({failure or 'no failure recorded'}); the "
+                            f"municipality keeps its v1 polygon. " + note})
+        return row
+    reference_numbers = qa.get("reference") or {}
+
+    def number(value, digits):
+        return "" if value is None else f"{value:.{digits}f}"
+
+    row.update({"raw_response": qa["raw_response"], "osm_timestamp": qa["osm_timestamp"],
+                "walk_m": number(qa["parameters"]["walk_m"], 1),
+                "maximum_filled_hole_m2": number(qa["parameters"]["maximum_filled_hole_m2"], 1),
+                "minimum_island_m2": number(qa["parameters"]["minimum_island_m2"], 1),
+                "tagging_completeness": number(qa["tagging_completeness"], 6),
+                "core_share_inside_reference": number(reference_numbers.get("core_share_inside_reference"), 4),
+                "reference_share_covered_by_core": number(reference_numbers.get("reference_share_covered"), 4),
+                "reference_tagging_completeness": number(reference_numbers.get("tagging_completeness_inside"), 6),
+                "largest_outline_distance_m": number(reference_numbers.get("largest_outline_distance_m"), 1),
+                "q4_decision": qa["decision"]})
+    for column in ("segments", "regulated_segments", "free_segments", "mixed_segments", "separate_segments", "lots",
+                   "free_lots", "free_lots_in_core", "core_parts"):
+        row[column] = str(int(qa[column]))
+    for column in ("free_lot_area_in_core_m2", "regulated_area_m2", "filled_area_m2", "eroded_filled_area_m2",
+                   "core_area_m2"):
+        row[column] = number(qa[column], 1)
+    return row
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -70,13 +218,46 @@ def main(argv=None) -> int:
     parser.add_argument("--network", required=True)
     parser.add_argument("--municipalities", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--erosion-dir", help="v2 lever 1: directory with <ags>_core.geojson and <ags>_qa.json")
+    parser.add_argument("--reference-outline", help="v2 lever 1: georeferenced ParkGO annex zones (Braunschweig)")
+    parser.add_argument("--qa-out", help="v2 lever 1: the QA table to write (parking_zones_2026_qa.csv)")
     args = parser.parse_args(argv)
+    if args.erosion_dir and not (args.reference_outline and args.qa_out):
+        raise SystemExit("--erosion-dir needs --reference-outline and --qa-out")
     zones = []
 
-    def add(zone_id, ags, geometry, geometry_source, source_url, note):
+    def add(zone_id, ags, geometry, geometry_source, source_url, note, *, walk_m=None, osm_timestamp=None,
+            source_date=DIGITISED_ON, digitised_on=DIGITISED_ON, minimum_part_m2=MINIMUM_PART_M2):
         zones.append({"zone_id": zone_id, "_ags": ags, "geometry": geometry, "geometry_source": geometry_source,
-                      "source_url": source_url, "source_date": DIGITISED_ON, "digitised_on": DIGITISED_ON,
-                      "digitising_note": note})
+                      "source_url": source_url, "source_date": source_date, "digitised_on": digitised_on,
+                      "digitising_note": note, "unavoidable_walk_m": walk_m, "osm_timestamp": osm_timestamp,
+                      "_minimum_part_m2": minimum_part_m2})
+
+    # ---------------------------------------------------------------- v2 lever 1: rule-based cores (issue #436)
+    erosion = {}
+    if args.erosion_dir:
+        for ags in list(EROSION_ZONES_FROM_CORE) + list(EROSION_QA_ONLY):
+            qa, core = erosion_inputs(args.erosion_dir, ags)
+            failure = last_failure(args.erosion_dir, ags)
+            if qa is None and not failure:
+                raise SystemExit(f"{ags}: neither {ags}_qa.json nor a failed request in overpass_failures.log; run "
+                                 "scripts/build_parking_zones_from_osm.py --regulation for it first")
+            erosion[ags] = {"qa": qa, "core": core, "failure": failure}
+        annex_zones = gpd.read_file(args.reference_outline).to_crs(cc.METRIC_CRS).set_index("zone")
+
+    def accepted_core(ags):
+        """Union of the core parts of an accepted zones_from_core municipality, else None."""
+        entry = erosion.get(ags)
+        if not entry or entry["qa"] is None or entry["qa"]["decision"] != "accepted" or ags not in EROSION_ZONES_FROM_CORE:
+            return None
+        return unary_union(list(entry["core"].geometry))
+
+    def add_erosion(zone_id, ags, geometry, source_url, *, replaces, assignment=""):
+        qa = erosion[ags]["qa"]
+        add(zone_id, ags, geometry, pz.EROSION_GEOMETRY_SOURCE, source_url,
+            erosion_note(qa, replaces=replaces, assignment=assignment), walk_m=float(qa["parameters"]["walk_m"]),
+            osm_timestamp=qa["osm_timestamp"], source_date=EROSION_DIGITISED_ON, digitised_on=EROSION_DIGITISED_ON,
+            minimum_part_m2=float(qa["parameters"]["minimum_island_m2"]))
 
     responses = {ags: cc.overpass_response(args.raw_overpass, ags)
                  for ags in ("03101000", "03102000", "03103000", "03154028", "03157006")}
@@ -270,6 +451,13 @@ def main(argv=None) -> int:
              "https://psg-gifhorn.de/parken",
              "Gifhorn centre around the pedestrian zone Steinweg (Schillerplatz, Torstrasse) with the municipal car parks "
              "Hindenburgstrasse and Schottische Muehle (access Cardenap): convex hull of these car-network ways")):
+        core = accepted_core(ags)
+        if core is not None:
+            add_erosion(zone_id, ags, core, url, replaces=(
+                "Replaces the v1 centre approximation of 2026-09-29 (" + what + ", buffered 40 m, from the car network "
+                "of the local MATSim scenario because the fee request of that day failed with HTTP 504); the tariff row "
+                "is unchanged."))
+            continue
         x0, y0, x1, y1 = window.bounds
         sub = links.cx[x0:x1, y0:y1]
         chosen = sub[sub["name"].isin(names)]
@@ -281,6 +469,25 @@ def main(argv=None) -> int:
             "output_bs, 2026-04-29; OSM-derived links with osm:way:name) because the Overpass request of 2026-09-29 for "
             "this municipality failed with HTTP 504 and was not repeated (at most one request per municipality).")
 
+    # ---------------------------------------------------------------- Braunschweig zone II and southern Ia (A2, v2)
+    bs_core = accepted_core(BS_AGS)
+    bs_inside_annex = {}
+    if bs_core is not None:
+        for zone_id, annex_zone in BS_EROSION_ZONES.items():
+            label = {"ia": "Ia", "ii": "II"}[annex_zone]
+            assigned = bs_core.intersection(annex_zones.loc[annex_zone, "geometry"])
+            bs_inside_annex[zone_id] = (label, assigned.area)
+            add_erosion(zone_id, BS_AGS, assigned, PARKGO_URL,
+                        replaces=("New in v2 (spec amendment A2): unzoned in v1, where the annex could not be "
+                                  "georeferenced to an RMS of 10 m or better."),
+                        assignment=(f"Tariff zone {label} of the ParkGO (sec. 1(2), sec. 2(1)): the core inside the "
+                                    f"annex outline of zone {label} ({ANNEX_REFERENCE}; scripts/curation/"
+                                    "parking_zones_2026/extract_parkgo_annex_zones.py); the georeference is a "
+                                    "plausibility check, so near a zone border the assignment carries its uncertainty "
+                                    "of about 27 m. Every v1 zone (Ia and Ib of the city's overview map, BgA car parks, "
+                                    "Stadthalle concept, TU campus areas) is cut out by precedence; the core outside "
+                                    "the annex zones Ia and II is not zoned."))
+
     # ---------------------------------------------------------------- precedence, containment, output
     by_id = {z["zone_id"]: z for z in zones}
     order = PRECEDENCE + [z["zone_id"] for z in zones if z["zone_id"] not in PRECEDENCE]
@@ -288,15 +495,40 @@ def main(argv=None) -> int:
     for zone_id in order:
         zone = by_id[zone_id]
         geometry = zone["geometry"].buffer(0)
+        eroded_zone = zone["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE
+        if eroded_zone:
+            # A core is simplified BEFORE the cut, so that the cut stays exact: simplifying a cut edge afterwards
+            # moves it by up to SIMPLIFY_M and lets a large core overlap its neighbours along long shared edges.
+            geometry = geometry.simplify(SIMPLIFY_M, preserve_topology=True).buffer(0)
         if taken is not None and geometry.intersects(taken):
             overlap = geometry.intersection(taken).area
-            if overlap > 0.5:
+            if overlap > 0.5 or (eroded_zone and overlap > 0):
                 geometry = geometry.difference(taken)
                 trims.append((zone_id, round(overlap, 1)))
-        geometry = cc.largest_parts(geometry.buffer(0), MINIMUM_PART_M2).simplify(SIMPLIFY_M, preserve_topology=True)
+        geometry = cc.largest_parts(geometry.buffer(0), zone["_minimum_part_m2"])
+        if not eroded_zone:
+            geometry = geometry.simplify(SIMPLIFY_M, preserve_topology=True)
         zone["geometry"] = geometry
-        taken = geometry if taken is None else taken.union(geometry)
+        if not geometry.is_empty:
+            taken = geometry if taken is None else taken.union(geometry)
     print("trimmed by precedence:", trims)
+    emptied = [z["zone_id"] for z in zones if z["geometry"].is_empty]
+    if [zone_id for zone_id in emptied if by_id[zone_id]["geometry_source"] != pz.EROSION_GEOMETRY_SOURCE]:
+        raise SystemExit(f"zones emptied by the precedence cuts: {emptied}")
+    zones = [z for z in zones if not z["geometry"].is_empty]
+    if emptied:
+        print("osm_fee_erosion zones without a part of the minimum island size after the cuts (not written):", emptied)
+    bs_note = ""
+    if bs_core is not None:
+        bs_final = unary_union([z["geometry"] for z in zones if z["_ags"] == BS_AGS])
+        written = {z["zone_id"]: z["geometry"].area for z in zones if z["zone_id"] in BS_EROSION_ZONES}
+        bs_note = (f"Braunschweig core {bs_core.area:.0f} m2, of it inside the annex zone " + ", zone ".join(
+            f"{label} {area:.0f} m2" for label, area in bs_inside_annex.values()) + "; after the cuts by the v1 zones and "
+            "the minimum island size " + ", ".join(
+            f"{zone_id} {written[zone_id]:.0f} m2" if zone_id in written else f"{zone_id} not written (no part left)"
+            for zone_id in BS_EROSION_ZONES) + f"; {bs_core.difference(bs_final).area:.0f} m2 of the core lie outside "
+            "every zone of the release and are not zoned")
+        print(bs_note)
     with open(args.municipalities, "rb") as stream:
         municipalities = pickle.load(stream)
     ars = municipalities["commune_id"].astype(str)
@@ -309,15 +541,71 @@ def main(argv=None) -> int:
         if inside < MINIMUM_INSIDE_SHARE:
             raise SystemExit(f"{zone['zone_id']} lies only {inside:.3f} inside its municipality {zone['_ags']}")
         zone["digitising_note"].encode("ascii")
-    frame = gpd.GeoDataFrame([{k: v for k, v in z.items() if k != "_ags"} for z in zones], geometry="geometry",
-                             crs=cc.METRIC_CRS)
-    frame = frame[["zone_id", "geometry_source", "source_url", "source_date", "digitised_on", "digitising_note", "geometry"]]
+    frame = gpd.GeoDataFrame([{k: v for k, v in z.items() if not k.startswith("_")} for z in zones],
+                             geometry="geometry", crs=cc.METRIC_CRS)
+    columns = ["zone_id", "geometry_source", "source_url", "source_date", "digitised_on", "digitising_note"]
+    has_erosion = bool((frame["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE).any())
+    if has_erosion:
+        columns += list(pz.EROSION_PROVENANCE_COLUMNS)
+    frame = frame[columns + ["geometry"]]
     out = Path(args.out)
     # RFC 7946 allows foreign members; GDAL writes them at the top level and GeoJSON readers ignore them.
-    members = json.dumps({"license": LICENSE, "attribution": ATTRIBUTION})
+    members = json.dumps({"license": LICENSE_V2 if has_erosion else LICENSE,
+                          "attribution": ATTRIBUTION_V2 if has_erosion else ATTRIBUTION})
     frame.to_crs("EPSG:4326").to_file(out, driver="GeoJSON", COORDINATE_PRECISION=7, FOREIGN_MEMBERS_COLLECTION=members)
     print(f"written {out} with {len(frame)} zones")
+    if args.erosion_dir:
+        write_qa_table(args.qa_out, erosion, zones, by_id, bs_note)
     return 0
+
+
+def write_qa_table(path, erosion: dict, zones: list, by_id: dict, bs_note: str) -> None:
+    """One row per curated municipality (``EROSION_ZONES_FROM_CORE`` then ``EROSION_QA_ONLY``) -> ``path``."""
+    rows = []
+    for ags in list(EROSION_ZONES_FROM_CORE) + list(EROSION_QA_ONLY):
+        entry = erosion[ags]
+        qa = entry["qa"]
+        role = "zones_from_core" if ags in EROSION_ZONES_FROM_CORE else "qa_only"
+        applied = sorted(z["zone_id"] for z in zones
+                         if z["_ags"] == ags and z["geometry_source"] == pz.EROSION_GEOMETRY_SOURCE)
+        zone_id = EROSION_ZONES_FROM_CORE.get(ags) or EROSION_QA_ONLY.get(ags)
+        if ags == BS_AGS:
+            reference = ANNEX_REFERENCE
+        elif role == "zones_from_core":
+            reference = f"v1 polygon {zone_id} (centre_approximation, replaced where the core is accepted)"
+        else:
+            reference = f"v1 polygon {zone_id} ({by_id[zone_id]['geometry_source']})"
+        notes = []
+        if qa is not None:
+            notes.append("Q4 " + (qa["decision"] if not qa["decision_reason"] else
+                                  f"{qa['decision']}: {qa['decision_reason']}"))
+            outside = (qa.get("reference") or {}).get("paid_segments_outside")
+            if outside:
+                notes.append(f"{outside} paid ways ({qa['reference']['paid_length_outside_m']:.0f} m) outside the "
+                             "reference outline")
+            if qa["separate_segments"]:
+                notes.append(f"{qa['separate_segments']} ways with a side mapped separately (parking:<side>=separate, "
+                             f"forbidden by the rule), {qa['free_street_side_lots_in_core']} street-side car parks "
+                             "without fee inside Z")
+        if role == "qa_only":
+            notes.append(f"QA only (plan Task 1 Step 4): the v1 polygon {zone_id} stays")
+        elif ags == BS_AGS and bs_note:
+            notes.append(bs_note)
+        elif ags == BS_AGS and qa is not None:
+            notes.append("ParkGO zone II and the southern part of zone Ia stay unzoned")
+        elif applied:
+            notes.append(f"the core replaces the v1 centre approximation {zone_id}")
+        elif qa is not None:
+            notes.append(f"the v1 centre approximation {zone_id} stays")
+        rows.append(qa_row(ags, qa, role=role, reference=reference, applied_zones=applied, note="; ".join(notes) + ".",
+                           failure=entry["failure"]))
+    table = pd.DataFrame(rows, columns=list(pz.ZONE_QA_COLUMNS))
+    text = "\n".join(QA_HEADER) + "\n" + table.to_csv(index=False, lineterminator="\n")
+    text.encode("ascii")
+    Path(path).write_text(text, encoding="utf-8", newline="\n")
+    print(f"written {path} with {len(table)} rows: " + ", ".join(
+        f"{row['ags']} {row['q4_decision']}{' applied ' + row['zone_ids'] if row['applied'] == 'true' else ''}"
+        for row in rows))
 
 
 if __name__ == "__main__":

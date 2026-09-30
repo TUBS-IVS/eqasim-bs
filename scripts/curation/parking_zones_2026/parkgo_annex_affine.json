@@ -1,0 +1,23 @@
+{
+  "description": "Affine georeference of the ParkGO annex map ('Anlage zur ParkGO', page 3 of 2_08_Parkgebuehrenordnung_2025.pdf) in its north-up rendering raw_sources/bs_2_08_annex_north_up.png (1477 x 1155 px): EPSG:25832 metres -> image pixels, px = a E + b N + c, py = d E + e N + f.",
+  "image": "raw_sources/bs_2_08_annex_north_up.png",
+  "crs": "EPSG:25832",
+  "affine_px": [0.28221838781884856, 6.961910021948845e-05, -170522.74501148754],
+  "affine_py": [-0.00026712644913240576, -0.25759168455144094, 1492334.9312732029],
+  "metres_per_px": 3.70886890290705,
+  "fit": "v1 curation of 2026-09-29 (scratch code, not committed in v1 because the fit produced no committed geometry): affine chamfer fit of the exterior rings of the committed bs_zone_ia and bs_zone_ib polygons north of N 5790560 (the lower edge of the city's overview map, where those polygons are closed artificially) to the thick zone lines of the annex (dark pixels with max RGB < 60, 3 x 3 opening, connected parts of at least 1500 px), Powell minimisation of the mean truncated distance with truncation 8, 4 and 2 px, started from the least-squares affine of the five BgA car-park dots (start_affine_px/py, check-point RMS 20.8 m). Parameters copied verbatim from that fit; re-running the scratch fit from the same start on 2026-09-30 reproduced them bit for bit (anisotropy 1.0956, shear angle 89.93 deg). The v1 digitising notes of bs_zone_ia/bs_zone_ib quote the same statistics.",
+  "start_affine_px": [0.2843005033603027, -0.0007206214539040331, -167207.20810420575],
+  "start_affine_py": [0.0022452039299590094, -0.25232130254686636, 1460294.046587799],
+  "outline_rms_m": 11.14521948930664,
+  "outline_median_m": 0.18606331465195963,
+  "outline_p90_m": 18.57179724958701,
+  "check_points": [
+    {"label": "BgA car park Markthalle", "px": 314.1, "py": 214.9, "E": 603906.0, "N": 5791956.0, "residual_m": 3.778299306895285},
+    {"label": "BgA car park Kannengiesserstrasse", "px": 248.5, "py": 309.9, "E": 603705.9, "N": 5791596.8, "residual_m": 35.23374405668846},
+    {"label": "BgA car park An der Martinikirche", "px": 188.8, "py": 378.1, "E": 603499.2, "N": 5791294.6, "residual_m": 44.47778996803872},
+    {"label": "BgA car park Suedstrasse", "px": 197.2, "py": 445.5, "E": 603483.4, "N": 5791049.8, "residual_m": 12.251361351377014},
+    {"label": "BgA car park Jodutenstrasse/Klint", "px": 428.8, "py": 452.0, "E": 604325.3, "N": 5791023.4, "residual_m": 14.467524284762986}
+  ],
+  "check_point_rms_m": 26.8,
+  "use": "Plausibility check and tariff-zone assignment of the rule-based cores of parking cost zones v2 (issue #436, spec amendment A2); not a geometry source: the annex could not be georeferenced to an RMS of 10 m or better."
+}

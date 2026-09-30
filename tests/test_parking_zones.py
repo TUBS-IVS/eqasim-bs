@@ -276,6 +276,92 @@ def test_load_zone_polygons_repairs_a_self_intersecting_ring(tmp_path, caplog):
     assert "repaired 1" in caplog.text
 
 
+ERODED_ZONE = "fx_bs_ib"
+SNAPSHOT = "2026-09-30T12:00:00Z"
+
+
+def _erosion_release(tmp_path, *, walk=250.0, timestamp=SNAPSHOT, other_walk=None) -> Path:
+    """The fixture polygons with ERODED_ZONE digitised by the lever-1 construction (v2, osm_fee_erosion)."""
+    zones = gpd.read_file(ZONE_FIXTURE)
+    eroded = zones["zone_id"] == ERODED_ZONE
+    zones.loc[eroded, "geometry_source"] = pz.EROSION_GEOMETRY_SOURCE
+    zones["unavoidable_walk_m"] = [walk if flag else other_walk for flag in eroded]
+    zones["osm_timestamp"] = [timestamp if flag else None for flag in eroded]
+    path = tmp_path / "zones.geojson"
+    zones.to_file(path, driver="GeoJSON")
+    return path
+
+
+@pytest.mark.parametrize("walk, timestamp, other_walk, message", [
+    (250.0, SNAPSHOT, None, None),
+    (None, SNAPSHOT, None, "unavoidable_walk_m required"),
+    (250.0, None, None, "osm_timestamp required"),
+    (-5.0, SNAPSHOT, None, "unavoidable_walk_m must be a positive number"),
+    (250.0, "2026-09-30", None, "osm_timestamp must be"),
+    (250.0, SNAPSHOT, 250.0, "only applies to geometry_source osm_fee_erosion"),
+], ids=["complete", "no_walk", "no_timestamp", "negative_walk", "date_only", "walk_on_other_source"])
+def test_osm_fee_erosion_zones_need_walk_and_snapshot_provenance(tmp_path, walk, timestamp, other_walk, message):
+    path = _erosion_release(tmp_path, walk=walk, timestamp=timestamp, other_walk=other_walk)
+    if message is None:
+        zones = pz.load_zone_polygons(path).set_index("zone_id")
+        assert zones.loc[ERODED_ZONE, "unavoidable_walk_m"] == 250.0
+        assert zones.loc[ERODED_ZONE, "osm_timestamp"] == SNAPSHOT
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.load_zone_polygons(path)
+
+
+def _qa_row(**changes) -> pd.DataFrame:
+    row = {"ags": "03101000", "name": "Braunschweig, Stadt", "role": "zones_from_core",
+           "raw_response": "03101000_regulation_overpass_2026-09-30.json", "osm_timestamp": SNAPSHOT,
+           "walk_m": "250.0", "maximum_filled_hole_m2": "20000.0", "minimum_island_m2": "10000.0", "segments": "40",
+           "regulated_segments": "30", "free_segments": "4", "mixed_segments": "1", "separate_segments": "0",
+           "lots": "5", "free_lots": "2", "free_lots_in_core": "0", "free_lot_area_in_core_m2": "0.0",
+           "tagging_completeness": "0.812", "regulated_area_m2": "150000.0", "filled_area_m2": "260000.0",
+           "eroded_filled_area_m2": "52000.0", "core_area_m2": "40000.0", "core_parts": "1",
+           "reference": "fixture outline", "core_share_inside_reference": "0.95",
+           "reference_share_covered_by_core": "0.20", "reference_tagging_completeness": "0.41",
+           "largest_outline_distance_m": "310.0", "q4_decision": "accepted", "applied": "true",
+           "zone_ids": ERODED_ZONE, "note": "fixture row"}
+    row.update(changes)
+    return pd.DataFrame([row], columns=list(pz.ZONE_QA_COLUMNS))
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({}, None),
+    ({"walk_m": "150.0"}, "unavoidable_walk_m"),
+    ({"osm_timestamp": "2026-09-29T05:10:00Z"}, "osm_timestamp"),
+    ({"q4_decision": "rejected"}, "applied rows need q4_decision 'accepted'"),
+    ({"applied": "false", "zone_ids": ""}, "not listed in the zone_ids of an applied QA row"),
+    ({"zone_ids": "fx_bs_ia"}, "is not an osm_fee_erosion polygon"),
+    ({"ags": "03102000", "name": "Salzgitter"}, "municipality_ags"),
+    ({"role": "qa_only"}, "role 'zones_from_core'"),
+    ({"tagging_completeness": "1.4"}, "tagging_completeness"),
+    ({"q4_decision": "request_failed", "applied": "false", "zone_ids": ""}, "request_failed"),
+], ids=["consistent", "walk_mismatch", "snapshot_mismatch", "applied_but_rejected", "polygon_not_listed",
+        "listed_zone_not_eroded", "wrong_municipality", "qa_only_applied", "completeness_out_of_range",
+        "failed_request_with_numbers"])
+def test_zone_qa_table_is_cross_checked_against_the_polygons(tmp_path, changes, message):
+    zones = pz.load_zone_polygons(_erosion_release(tmp_path))
+    tariffs = pz.load_tariffs(TARIFF_FIXTURE)
+    qa = _qa_row(**changes)
+    if message is None:
+        pz.validate_zone_qa(qa, zones, tariffs)
+    else:
+        with pytest.raises(ValueError, match=message):
+            pz.validate_zone_qa(qa, zones, tariffs)
+
+
+def test_load_zone_qa_reads_the_documented_layout(tmp_path):
+    path = tmp_path / "qa.csv"
+    path.write_text("# QA table\n" + _qa_row().to_csv(index=False, lineterminator="\n"), encoding="utf-8")
+    qa = pz.load_zone_qa(path)
+    assert list(qa.columns) == list(pz.ZONE_QA_COLUMNS) and qa.loc[0, "zone_ids"] == ERODED_ZONE
+    path.write_text(_qa_row().drop(columns=["note"]).to_csv(index=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="note"):
+        pz.load_zone_qa(path)
+
+
 # --------------------------------------------------------------------------- assignment
 
 
@@ -449,7 +535,8 @@ def test_overpass_fixture_dissolves_into_the_expected_candidates():
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_PARKING_DIR = REPO_ROOT / "eqasim-data" / "data" / "braunschweig" / "parking"
-COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv")
+COMMITTED_PARKING_FILES = ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv",
+                           "parking_zones_2026_qa.csv")
 PARKSCHEININSELN = ("bs_parkscheininsel_marthastrasse_koernerstrasse",
                     "bs_parkscheininsel_gerstaeckerstrasse_kleine_campestrasse", "bs_parkscheininsel_mentestrasse")
 
@@ -462,6 +549,30 @@ def test_committed_parking_data_is_valid(capsys):
     out = capsys.readouterr().out
     assert "[parking-validate] OK" in out
     assert "register status" in out
+    assert "geometry_source mix" in out
+
+
+def test_validator_reapplies_the_acceptance_rule_to_the_qa_table(tmp_path, capsys):
+    import shutil
+
+    from scripts.validate_parking_zones import main
+
+    target = tmp_path / "braunschweig" / "parking"
+    target.mkdir(parents=True)
+    for name in ("parking_zones_2026.geojson", "parking_tariffs_2026.csv", "parking_coverage_register_2026.csv"):
+        shutil.copy(COMMITTED_PARKING_DIR / name, target / name)
+    # The committed QA rows stay (they are consistent with the polygons); the Wolfsburg row (QA only, no polygon
+    # depends on it) is replaced by one whose recorded decision contradicts rule Q4 (60 % tagging completeness).
+    committed_qa = COMMITTED_PARKING_DIR / "parking_zones_2026_qa.csv"
+    rows = pz.load_zone_qa(committed_qa) if committed_qa.is_file() else _qa_row().iloc[0:0]
+    contradicting = _qa_row(ags="03103000", name="Wolfsburg, Stadt", role="qa_only", applied="false", zone_ids="",
+                            tagging_completeness="0.5")
+    table = pd.concat([rows[rows["ags"] != "03103000"], contradicting], ignore_index=True)
+    (target / "parking_zones_2026_qa.csv").write_text("# QA\n" + table.to_csv(index=False, lineterminator="\n"),
+                                                      encoding="utf-8")
+    assert main(["--data-path", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "ags 03103000: q4_decision 'accepted' but rule Q4 gives 'rejected'" in out
 
 
 def test_committed_zones_carry_the_licence_notice():

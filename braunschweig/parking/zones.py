@@ -14,6 +14,13 @@ The zone-based parking cost model (design spec ``2026-09-28-parking-cost-zones-d
 * **coverage register** -- one row per municipality of the eight ZGB counties with a status in
   ``REGISTER_STATUSES``, plus one ``excluded`` row per paid-parking area deliberately left out.
 
+Polygons built by the rule-based construction of parking cost zones v2 (lever 1, issue #436;
+``braunschweig.parking.zone_geometry``) carry ``geometry_source`` ``osm_fee_erosion`` and, for that source only,
+the walking tolerance ``unavoidable_walk_m`` and the OSM snapshot ``osm_timestamp`` of the Overpass response
+(``EROSION_PROVENANCE_COLUMNS``). Their curation QA is the committed table ``parking_zones_2026_qa.csv``
+(``ZONE_QA_COLUMNS``, one row per curated municipality), cross-checked against the polygons by
+``validate_zone_qa``; it is not a release input of the synpp stage.
+
 Every validator raises ``ValueError`` listing every violation with the zone id or AGS and the field, so
 a broken release fails at load time and never degrades into free parking. The only repair is
 ``shapely.make_valid`` for invalid rings when the polygons are loaded; it is counted and logged.
@@ -93,16 +100,48 @@ FORBIDDEN_FIELDS_BY_TYPE = {
 PAIRED_FIELDS = (("first_period_min", "first_period_eur"), ("max_stay_min", "long_stay_product_eur"))
 
 FEE_WINDOW_SOURCES = ("ordinance", "signage", "municipal_page", "assumption")
-GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map")
+#: Rule-based core of v2 lever 1 (``braunschweig.parking.zone_geometry``): erode(fill(R), W) minus buffer(F, W).
+EROSION_GEOMETRY_SOURCE = "osm_fee_erosion"
+GEOMETRY_SOURCES = ("street_list_buffer", "osm_fee_tags", "centre_approximation", "ordinance_map",
+                    EROSION_GEOMETRY_SOURCE)
 #: Marker of the synthetic test set in ``tests/fixtures/parking``; rejected for the committed data.
 FIXTURE_MARKER = "fixture"
 ZONE_PROVENANCE_COLUMNS = ("geometry_source", "source_url", "source_date", "digitised_on", "digitising_note")
+#: Required for ``osm_fee_erosion`` polygons only (empty on every other source): the walking tolerance W in metres
+#: and the OSM snapshot of the Overpass response ('YYYY-MM-DDTHH:MM:SSZ', UTC).
+EROSION_PROVENANCE_COLUMNS = ("unavoidable_walk_m", "osm_timestamp")
 
 REGISTER_COLUMNS = ("ags", "name", "status", "source", "note")
 REGISTER_STATUSES = ("zoned", "no_paid_parking_known", "not_audited", "excluded")
 
+#: Curation QA of the rule-based cores (``parking_zones_2026_qa.csv``), one row per curated municipality. Counts,
+#: areas (m2) and the tagging completeness come from ``<ags>_qa.json`` of the curation aid; ``role`` says whether
+#: an accepted core may replace polygons (``zones_from_core``) or is QA only; ``q4_decision`` is the pre-registered
+#: acceptance rule Q4 or ``request_failed`` (no response, the municipality stayed unchanged); ``applied`` and
+#: ``zone_ids`` (';'-separated) name the polygons that carry the core.
+ZONE_QA_COLUMNS = (
+    "ags", "name", "role", "raw_response", "osm_timestamp", "walk_m", "maximum_filled_hole_m2", "minimum_island_m2",
+    "segments", "regulated_segments", "free_segments", "mixed_segments", "separate_segments", "lots", "free_lots",
+    "free_lots_in_core", "free_lot_area_in_core_m2", "tagging_completeness", "regulated_area_m2", "filled_area_m2",
+    "eroded_filled_area_m2", "core_area_m2", "core_parts", "reference", "core_share_inside_reference",
+    "reference_share_covered_by_core", "reference_tagging_completeness", "largest_outline_distance_m", "q4_decision",
+    "applied", "zone_ids", "note",
+)
+ZONE_QA_ROLES = ("zones_from_core", "qa_only")
+ZONE_QA_DECISIONS = ("accepted", "rejected", "request_failed")
+_QA_COUNT_COLUMNS = ("segments", "regulated_segments", "free_segments", "mixed_segments", "separate_segments", "lots",
+                     "free_lots", "free_lots_in_core", "core_parts")
+_QA_AREA_COLUMNS = ("free_lot_area_in_core_m2", "regulated_area_m2", "filled_area_m2", "eroded_filled_area_m2",
+                    "core_area_m2")
+_QA_PARAMETER_COLUMNS = ("walk_m", "maximum_filled_hole_m2", "minimum_island_m2")
+_QA_SHARE_COLUMNS = ("tagging_completeness", "core_share_inside_reference", "reference_share_covered_by_core",
+                     "reference_tagging_completeness")
+#: Relative tolerance when comparing W of a polygon with W of its QA row.
+_WALK_TOLERANCE = 1e-9
+
 _ZONE_ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _AGS_PATTERN = re.compile(r"^\d{8}$")
+_OSM_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 # --------------------------------------------------------------------------- reading helpers
@@ -322,11 +361,58 @@ def _polygonal_part(geometry):
     return unary_union(parts) if parts else None
 
 
+def _osm_timestamp_text(values: pd.Series) -> pd.Series:
+    """``osm_timestamp`` as text: GDAL reads an ISO string with 'Z' as a UTC datetime, which is written back as
+    'YYYY-MM-DDTHH:MM:SSZ'; a timezone-naive datetime (a date or a local time) keeps its ISO form and then fails
+    the snapshot pattern."""
+    if isinstance(values.dtype, pd.DatetimeTZDtype):
+        utc = values.dt.tz_convert("UTC")
+        return pd.Series([None if pd.isna(value) else value.strftime("%Y-%m-%dT%H:%M:%SZ") for value in utc],
+                         index=values.index, dtype=object)
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return pd.Series([None if pd.isna(value) else value.isoformat() for value in values], index=values.index,
+                         dtype=object)
+    return pd.Series([None if not _is_set(value) else str(value).strip() for value in values], index=values.index,
+                     dtype=object)
+
+
+def _erosion_provenance_problems(zones: pd.DataFrame) -> list:
+    """``EROSION_PROVENANCE_COLUMNS`` set, valid and non-empty exactly on the ``osm_fee_erosion`` polygons."""
+    problems = []
+    eroded = (zones["geometry_source"] == EROSION_GEOMETRY_SOURCE).to_numpy()
+    for column in EROSION_PROVENANCE_COLUMNS:
+        values = zones[column] if column in zones.columns else pd.Series([None] * len(zones), index=zones.index)
+        empty = np.array([not _is_set(value) or (isinstance(value, str) and not value.strip()) for value in values],
+                         dtype=bool)
+        ids = zones["zone_id"].astype(str).to_numpy()
+        if (eroded & empty).any():
+            problems.append(f"{column} required for geometry_source {EROSION_GEOMETRY_SOURCE} but empty for zone(s) "
+                            f"{sorted(ids[eroded & empty])}")
+        if (~eroded & ~empty).any():
+            problems.append(f"{column} only applies to geometry_source {EROSION_GEOMETRY_SOURCE}; set for zone(s) "
+                            f"{sorted(ids[~eroded & ~empty])}")
+        if column == "unavoidable_walk_m":
+            walk = pd.to_numeric(values, errors="coerce").to_numpy(dtype=float)
+            invalid = eroded & ~empty & ~(np.isfinite(walk) & (walk > 0))
+            if invalid.any():
+                problems.append(f"unavoidable_walk_m must be a positive number of metres for zone(s) "
+                                f"{sorted(ids[invalid])}")
+        else:
+            invalid = eroded & ~empty & np.array([not (isinstance(value, str) and _OSM_TIMESTAMP_PATTERN.match(value))
+                                                   for value in values], dtype=bool)
+            if invalid.any():
+                problems.append(f"osm_timestamp must be the Overpass snapshot 'YYYY-MM-DDTHH:MM:SSZ' for zone(s) "
+                                f"{sorted(ids[invalid])}")
+    return problems
+
+
 def load_zone_polygons(path) -> gpd.GeoDataFrame:
     """Load the zone polygons, reproject to EPSG:25832, repair invalid rings, validate; return the frame.
 
     Required properties per feature: ``zone_id`` and ``ZONE_PROVENANCE_COLUMNS``; ``geometry_source`` must
-    be one of ``GEOMETRY_SOURCES`` (or the test-set marker). Other properties are kept as they are.
+    be one of ``GEOMETRY_SOURCES`` (or the test-set marker). ``osm_fee_erosion`` polygons also need
+    ``EROSION_PROVENANCE_COLUMNS`` (a positive ``unavoidable_walk_m`` and ``osm_timestamp`` as returned text
+    'YYYY-MM-DDTHH:MM:SSZ'), which every other polygon leaves empty. Other properties are kept as they are.
     """
     path = Path(path)
     if not path.is_file():
@@ -348,6 +434,9 @@ def load_zone_polygons(path) -> gpd.GeoDataFrame:
     if unknown.any():
         problems.append(f"geometry_source not one of {list(GEOMETRY_SOURCES)} for zone(s) "
                         f"{sorted(zones.loc[unknown, 'zone_id'].astype(str))}")
+    if "osm_timestamp" in zones.columns:
+        zones["osm_timestamp"] = _osm_timestamp_text(zones["osm_timestamp"])
+    problems += _erosion_provenance_problems(zones)
     if problems:
         raise ValueError(f"{path}: invalid zone provenance: " + "; ".join(problems))
     zones = zones.to_crs(CRS)
@@ -502,3 +591,133 @@ def validate_coverage_register(register: pd.DataFrame, tariffs: pd.DataFrame, *,
                             f"unexpected {unexpected}")
     if problems:
         raise ValueError("invalid parking coverage register:\n  " + "\n  ".join(problems))
+
+
+# --------------------------------------------------------------------------- curation QA of the rule-based cores
+
+
+def load_zone_qa(path) -> pd.DataFrame:
+    """Load ``parking_zones_2026_qa.csv`` (``#`` lines skipped, text columns ``ZONE_QA_COLUMNS``, empty = "")."""
+    qa = _read_documented_csv(path)
+    _check_columns(qa, ZONE_QA_COLUMNS, str(path))
+    qa = qa[list(ZONE_QA_COLUMNS)].apply(lambda column: column.str.strip())
+    log.info("[parking-zones] loaded %d zone QA rows from %s", len(qa), path)
+    return qa
+
+
+def _qa_number(value) -> Optional[float]:
+    """A QA cell as float, None when empty, NaN when not a number."""
+    if not _is_set(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def _zone_ids(text) -> list:
+    return [zone_id.strip() for zone_id in str(text or "").split(";") if zone_id.strip()]
+
+
+def validate_zone_qa(qa: pd.DataFrame, zones: pd.DataFrame, tariffs: pd.DataFrame) -> None:
+    """Check the QA table against itself and against the polygons; raise ``ValueError`` listing every violation.
+
+    Rules: one row per 8-digit ZGB ``ags``; ``role`` in ``ZONE_QA_ROLES``, ``q4_decision`` in
+    ``ZONE_QA_DECISIONS``, ``applied`` in {true, false}; a ``request_failed`` row is not applied, carries no numbers
+    and names the failure in ``note``; every other row has the snapshot, the raw file, positive parameters,
+    non-negative counts and areas and shares in [0, 1] (empty allowed where undefined); an applied row has role
+    ``zones_from_core``, decision ``accepted`` and at least one zone id, a row that is not applied none. Every zone id
+    of an applied row is an ``osm_fee_erosion`` polygon whose tariff row lies in the row's municipality and whose
+    ``unavoidable_walk_m`` and ``osm_timestamp`` equal the row's ``walk_m`` and ``osm_timestamp``; every
+    ``osm_fee_erosion`` polygon is listed by exactly one applied row. The acceptance rule itself (Q4) is re-applied
+    by ``scripts/validate_parking_zones.py``.
+    """
+    _check_columns(qa, ZONE_QA_COLUMNS, "zone QA table")
+    problems = []
+    if qa.empty:
+        problems.append("no rows")
+    duplicated = sorted(set(qa["ags"][qa["ags"].duplicated()]))
+    if duplicated:
+        problems.append(f"duplicate rows for ags {duplicated}; one row per municipality")
+    polygons = zones.set_index("zone_id")
+    municipality = tariffs.set_index("zone_id")["municipality_ags"]
+    listed = {}
+    for _, row in qa.iterrows():
+        ags = row["ags"]
+        prefix = f"ags {ags}"
+        if not _AGS_PATTERN.match(str(ags)) or str(ags)[:5] not in ZGB_COUNTY_KEYS:
+            problems.append(f"{prefix}: not an 8-digit AGS of the ZGB counties")
+        if row["role"] not in ZONE_QA_ROLES:
+            problems.append(f"{prefix}: role {row['role']!r} is not one of {list(ZONE_QA_ROLES)}")
+        decision = row["q4_decision"]
+        if decision not in ZONE_QA_DECISIONS:
+            problems.append(f"{prefix}: q4_decision {decision!r} is not one of {list(ZONE_QA_DECISIONS)}")
+        if row["applied"] not in ("true", "false"):
+            problems.append(f"{prefix}: applied {row['applied']!r}; use the literal 'true' or 'false'")
+        applied = row["applied"] == "true"
+        numbers = _QA_COUNT_COLUMNS + _QA_AREA_COLUMNS + _QA_PARAMETER_COLUMNS + _QA_SHARE_COLUMNS + (
+            "largest_outline_distance_m",)
+        if decision == "request_failed":
+            carried = [column for column in numbers + ("osm_timestamp", "raw_response") if _is_set(row[column])]
+            if carried:
+                problems.append(f"{prefix}: request_failed rows carry no numbers and no snapshot, found {carried}")
+            if not _is_set(row["note"]):
+                problems.append(f"{prefix}: a request_failed row names the failure in 'note'")
+        elif decision in ZONE_QA_DECISIONS:
+            if not _OSM_TIMESTAMP_PATTERN.match(str(row["osm_timestamp"])):
+                problems.append(f"{prefix}: osm_timestamp {row['osm_timestamp']!r} is not 'YYYY-MM-DDTHH:MM:SSZ'")
+            if not _is_set(row["raw_response"]):
+                problems.append(f"{prefix}: raw_response is empty")
+            for column in _QA_PARAMETER_COLUMNS:
+                value = _qa_number(row[column])
+                if value is None or not (math.isfinite(value) and value >= 0) or (column == "walk_m" and value <= 0):
+                    problems.append(f"{prefix}: {column} = {row[column]!r} must be a positive number")
+            for column in _QA_COUNT_COLUMNS:
+                if not re.fullmatch(r"\d+", str(row[column])):
+                    problems.append(f"{prefix}: {column} = {row[column]!r} must be a whole number >= 0")
+            for column in _QA_AREA_COLUMNS + ("largest_outline_distance_m",):
+                value = _qa_number(row[column])
+                required = column in _QA_AREA_COLUMNS
+                if (value is None and required) or (value is not None and not (math.isfinite(value) and value >= 0)):
+                    problems.append(f"{prefix}: {column} = {row[column]!r} must be a number >= 0")
+            for column in _QA_SHARE_COLUMNS:
+                value = _qa_number(row[column])
+                if value is not None and not (math.isfinite(value) and 0.0 <= value <= 1.0):
+                    problems.append(f"{prefix}: {column} = {row[column]!r} must lie in [0, 1] (or be empty)")
+        zone_ids = _zone_ids(row["zone_ids"])
+        if applied:
+            if row["role"] != "zones_from_core":
+                problems.append(f"{prefix}: applied rows need role 'zones_from_core', found {row['role']!r}")
+            if decision != "accepted":
+                problems.append(f"{prefix}: applied rows need q4_decision 'accepted', found {decision!r}")
+            if not zone_ids:
+                problems.append(f"{prefix}: an applied row lists its zone_ids")
+        elif zone_ids:
+            problems.append(f"{prefix}: zone_ids {zone_ids} on a row that is not applied")
+        for zone_id in zone_ids if applied else []:
+            listed.setdefault(zone_id, []).append(ags)
+            if zone_id not in polygons.index:
+                problems.append(f"{prefix}: zone {zone_id!r} has no polygon")
+                continue
+            polygon = polygons.loc[zone_id]
+            if polygon["geometry_source"] != EROSION_GEOMETRY_SOURCE:
+                problems.append(f"{prefix}: zone {zone_id!r} is not an osm_fee_erosion polygon "
+                                f"({polygon['geometry_source']})")
+                continue
+            if municipality.get(zone_id) != ags:
+                problems.append(f"{prefix}: zone {zone_id!r} has municipality_ags {municipality.get(zone_id)!r}")
+            walk = _qa_number(row["walk_m"])
+            if walk is None or not math.isclose(float(polygon["unavoidable_walk_m"]), walk, rel_tol=_WALK_TOLERANCE):
+                problems.append(f"{prefix}: zone {zone_id!r} has unavoidable_walk_m {polygon['unavoidable_walk_m']} "
+                                f"but the QA row walk_m {row['walk_m']!r}")
+            if polygon["osm_timestamp"] != row["osm_timestamp"]:
+                problems.append(f"{prefix}: zone {zone_id!r} has osm_timestamp {polygon['osm_timestamp']!r} but the "
+                                f"QA row {row['osm_timestamp']!r}")
+    eroded = sorted(zones.loc[zones["geometry_source"] == EROSION_GEOMETRY_SOURCE, "zone_id"].astype(str))
+    for zone_id in eroded:
+        if zone_id not in listed:
+            problems.append(f"zone {zone_id!r} (osm_fee_erosion) is not listed in the zone_ids of an applied QA row")
+        elif len(listed[zone_id]) > 1:
+            problems.append(f"zone {zone_id!r} is listed by several applied QA rows {listed[zone_id]}")
+    if problems:
+        raise ValueError("invalid parking zone QA table:\n  " + "\n  ".join(problems))

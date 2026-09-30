@@ -81,4 +81,8 @@ limitations: >-
 notes: >-
   24 rows: street_paid 17, resident_zone 1, campus 6; fee_window_source municipal_page 10, ordinance 6,
   assumption 8 (validator summary of 2026-09-30, see parking_zones_2026). The synthetic test set with the same
-  columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth).
+  columns is tests/fixtures/parking/parking_tariffs_fixture.csv (pins arithmetic, not truth). v2 lever 1
+  (2026-09-30) accepted no rule-based core (parking_zones_2026_qa.csv), so no zone and hence no tariff row was
+  added: the planned bs_zone_ii would take the ParkGO sec. 1(2) zone II amounts (0.50 EUR per 30 min, i.e.
+  1.00 EUR/h, and the 9 h (540 min) to 24 h ticket of 9.00 EUR as day cap) and bs_zone_ia_sued the Ia row; both
+  rows are written only together with their polygons (cross_validate).
