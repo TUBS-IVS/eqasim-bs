@@ -288,8 +288,10 @@ python scripts/measure_gemeinde_bev_composition.py  # per-Gemeinde BEV:PHEV comp
 (`braunschweig/parking/parking_coverage_register_2026.csv`) and the SrV 2023 free-parking shares
 (`braunschweig/srv/srv2023_commute_parking_by_workplace_class.csv`) ship with the repository and are read by
 `braunschweig.parking.zones_stage` because `parking_zones_enabled` is on. The preflight lists them as D5 to D8, and
-`python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the three parking files. The
-zone polygons are partly derived from OpenStreetMap and therefore licensed under the ODbL 1.0: keep the attribution
+`python scripts/validate_parking_zones.py --data-path eqasim-data/data` cross-checks the three parking files. With the
+flag on, the sibling `eqasim-java-bs` checkout (the tree `eqasim_source_path` points to) must contain the package
+`org.eqasim.braunschweig.parking`: `matsim.simulation.run` fails fast when the jar lacks it or when the run writes
+no parking outcome report. The zone polygons are partly derived from OpenStreetMap and therefore licensed under the ODbL 1.0: keep the attribution
 "(c) OpenStreetMap contributors" and the share-alike terms when you redistribute them. The two SrV parking tables
 (the shares above and `braunschweig/srv/srv2023_city_center_parking.csv`, a comparison quantity only) are
 regenerated with `python scripts/extract_srv_commute_parking.py --raw <srv2023_raw dir> --out-dir

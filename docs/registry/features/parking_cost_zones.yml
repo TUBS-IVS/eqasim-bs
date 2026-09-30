@@ -16,6 +16,7 @@ stages:
 - braunschweig.parking.zones_stage
 - matsim.scenario.population
 - matsim.simulation.prepare
+- matsim.simulation.run
 - matsim.output
 pipelines:
   popsim_mid: active
@@ -38,11 +39,13 @@ code_paths:
 - braunschweig/parking/cost.py
 - braunschweig/parking/tariff_export.py
 - braunschweig/parking/golden_cases.py
+- braunschweig/parking/runtime_checks.py
 - braunschweig/calibration/srv_parking.py
 - braunschweig/matsim/config_modules.py
 - braunschweig/matsim/scenario/population.py
 - matsim/scenario/population.py
 - braunschweig/matsim/simulation/prepare.py
+- matsim/simulation/run.py
 - matsim/output.py
 - scripts/extract_srv_commute_parking.py
 - scripts/validate_parking_zones.py
@@ -57,6 +60,7 @@ evidence:
   - tests/test_parking_attach.py
   - tests/test_population_parking_attributes.py
   - tests/test_parking_prepare_wiring.py
+  - tests/test_parking_run_checks.py
   - tests/test_srv_parking.py
   - tests/test_configs_composed.py
   off_path_byte_identical:
@@ -85,7 +89,10 @@ evidence:
       parking attributes and logs the plans' zone coverage in one [parking] population line. During the run
       every pricing call is counted by outcome (ITERS/it.N/N.parking_outcomes.csv and one [parking] log line
       per iteration); the counts are pricing calls, one per car alternative that mode choice evaluated,
-      chosen or not, and version 1 reports the mix without a threshold.
+      chosen or not, and version 1 reports the mix without a threshold. When the prepared config enables
+      the braunschweigParking module, matsim.simulation.run refuses a jar without the Java parking package
+      before the run and a run whose last iteration wrote no outcome report after it
+      (braunschweig.parking.runtime_checks), so a zones-prepared scenario cannot run unpriced.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/parking/parking_tariffs_2026.csv
